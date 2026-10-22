@@ -3,6 +3,7 @@
 //! reports only its total drain; per program there is no power reading, so programs are ranked by their
 //! share of the work instead.
 
+use crate::BatteryId;
 use crate::Effect;
 use crate::State;
 use crate::session::instance::Instance;
@@ -64,17 +65,6 @@ pub struct Battery {
     pub spenders: Vec<Spender>,
     /// The history could be read (UPower runs and has a battery).
     pub has_history: bool,
-}
-
-/// A choice in the menu of a row of the list (a tap on it opens it): Quit or Force kill what it is, or
-/// back to the list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BatteryId {
-    /// The list's row, by position.
-    Spender(u16),
-    Quit,
-    ForceKill,
-    Back,
 }
 
 /// What a running entry costs: its share of the machine's CPU and GPU (0-1; the GPU's unknown if any of it
@@ -173,6 +163,7 @@ impl State {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::id::BatteryId;
     use crate::testkit::*;
     use crate::*;
 

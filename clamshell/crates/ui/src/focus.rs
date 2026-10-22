@@ -261,7 +261,7 @@ pub(crate) fn back(s: &State) -> Option<Event> {
     }
     // The Device view in shelf's place: back to shelf.
     if s.top_view() == clamshell_core::device::TopView::Device {
-        return Some(PointerEvent::Activate(Id::Device(clamshell_core::device::DeviceId::Close)).into());
+        return Some(PointerEvent::Activate(Id::Device(clamshell_core::DeviceId::Close)).into());
     }
     // On shelf's actions (A held took the pad there): back to the entry in the list.
     if matches!(s.pointer().focus(), Some(Id::Shelf(id)) if !matches!(id, ShelfId::Entry(_) | ShelfId::Collection(_) | ShelfId::Up)) {

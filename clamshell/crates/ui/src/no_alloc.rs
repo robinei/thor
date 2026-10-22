@@ -4,10 +4,11 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
+use clamshell_core::DeviceId;
 use clamshell_core::bottom::keyboard::{self, Key, Modifier};
+use clamshell_core::device::SticksEvent;
 use clamshell_core::device::account::Account;
 use clamshell_core::device::sticks::Calibrator;
-use clamshell_core::device::{DeviceId, SticksEvent};
 use clamshell_core::keymap::{Button, Input, Keymaps, Layer, Param, Side};
 use clamshell_core::levels::slider::Control;
 use clamshell_core::session::windows::Window;
@@ -366,7 +367,7 @@ fn warm_frames_do_not_allocate() {
                     }],
                     has_history: false,
                 })),
-                tap(Id::Battery(battery::BatteryId::Spender(0))),
+                tap(Id::Battery(clamshell_core::BatteryId::Spender(0))),
             ],
         ),
         (

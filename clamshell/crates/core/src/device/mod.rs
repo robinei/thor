@@ -10,6 +10,7 @@ pub mod buttons;
 pub mod idle;
 pub mod sticks;
 
+use crate::DeviceId;
 use crate::State;
 use crate::bottom::Tab;
 use crate::bottom::editor::{Editor, Purpose};
@@ -26,27 +27,6 @@ pub enum TopView {
     #[default]
     Shelf,
     Device,
-}
-
-/// The Device view's targets.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum DeviceId {
-    /// Wi-Fi's row: the Wi-Fi tab.
-    Wifi,
-    /// The time zone's row: the time tab.
-    Zone,
-    Password,
-    Ssh,
-    /// The sticks calibrated.
-    Sticks,
-    /// The gyro calibrated.
-    Gyro,
-    /// The top screen's refresh rate calibrated.
-    Refresh,
-    /// The first start's setup done.
-    Done,
-    /// Back to shelf.
-    Close,
 }
 
 /// The refresh rate's calibration.
@@ -209,6 +189,7 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::id::DeviceId;
     use crate::testkit::*;
     use crate::{EditorId, Event, Init, Reading};
 

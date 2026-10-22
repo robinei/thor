@@ -53,11 +53,11 @@ pub use crate::session::program::Program;
 pub use crate::session::running::{Front, Launching, Origin, Running};
 pub use crate::settings::env::{count_env, parse_env};
 pub use crate::settings::panel::{Scope, TileOrigin};
-pub use crate::status::time::{ClockField, TimeId, TimePage, TimeRow, TimeZones};
+pub use crate::status::time::{ClockField, TimePage, TimeRow, TimeZones};
 pub use crate::status::{Status, Sys};
 pub use effect::{Dirty, Effect, Save, Watch, WindowCommand};
 pub use event::{Event, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
-pub use id::{AudioId, BtId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, WifiId};
+pub use id::{AudioId, BatteryId, BtId, DeviceId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, TimeId, WifiId};
 pub use levels::{Brightness, Level, Levels, Sound};
 pub use radios::{RadioStatus, Radios};
 pub use session::Session;
@@ -188,7 +188,7 @@ impl State {
         s.device.calibrations = init.sticks;
         if init.first_start {
             s.device.open = true;
-            s.pointer.focus = Some(Id::Device(device::DeviceId::Wifi));
+            s.pointer.focus = Some(Id::Device(crate::DeviceId::Wifi));
         }
         if let Some(tab) = init.start_tab {
             s.bottom.tab = tab;

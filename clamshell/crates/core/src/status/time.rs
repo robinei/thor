@@ -7,6 +7,7 @@
 //! The system's side (systemd's timedated) is read while the tab is open and after each change.
 
 use crate::State;
+use crate::TimeId;
 use crate::effect::{Dirty, Effect, Save};
 use crate::nav::lists::ListId;
 
@@ -53,21 +54,6 @@ pub enum ClockField {
 impl ClockField {
     /// As the main page shows them, left to right.
     pub const ALL: [ClockField; 5] = [ClockField::Day, ClockField::Month, ClockField::Year, ClockField::Hour, ClockField::Minute];
-}
-
-/// The time tab's targets.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TimeId {
-    /// The header's way back: from a region's zones to the regions, from those to the main page.
-    Back,
-    /// The time zone's row: the regions.
-    Zone,
-    /// Whether the network sets the clock.
-    Ntp,
-    /// 12 hours or 24.
-    TwelveHour,
-    /// A field one up (`true`) or down, while the clock is set by hand.
-    Step(ClockField, bool),
 }
 
 /// A row of the time tab's list (the regions, a region's zones).
@@ -227,6 +213,7 @@ impl State {
 mod tests {
     use super::*;
     use crate::event::Reading;
+    use crate::id::TimeId;
     use crate::{Event, Id, Init, Tab};
 
     fn state() -> State {

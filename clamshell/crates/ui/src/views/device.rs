@@ -7,11 +7,12 @@
 
 use std::fmt::{self, Display, Formatter, Write};
 
+use clamshell_core::DeviceId;
 use clamshell_core::Id;
 use clamshell_core::bottom::editor::{Editor, Purpose};
+use clamshell_core::device::Refresh;
 use clamshell_core::device::account::PasswordStep;
 use clamshell_core::device::sticks::{Phase, Progress, StickAxis};
-use clamshell_core::device::{DeviceId, Refresh};
 
 use super::time::Name;
 use crate::draw::{Align, Column, Keep, Rect};

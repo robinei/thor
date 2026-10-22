@@ -7,8 +7,9 @@
 use std::fmt;
 use std::path::Path;
 
+use clamshell_core::DeviceId;
 use clamshell_core::bottom::keyboard::{Key, Modifier, Named};
-use clamshell_core::device::{DeviceId, SticksEvent};
+use clamshell_core::device::SticksEvent;
 use clamshell_core::keymap::{Actuation, Button, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
 use clamshell_core::levels::Level;
 use clamshell_core::levels::slider::Control;

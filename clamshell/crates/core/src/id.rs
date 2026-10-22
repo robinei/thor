@@ -13,6 +13,7 @@ use crate::levels::Level;
 use crate::levels::slider::Control;
 use crate::settings::Setting;
 use crate::settings::panel::Scope;
+use crate::status::time::ClockField;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Id {
@@ -55,11 +56,11 @@ pub enum Id {
     /// points (see [`crate::bottom::touch`]).
     Blank,
     /// The time tab's (see [`crate::status::time`]).
-    Time(crate::status::time::TimeId),
+    Time(TimeId),
     /// The Device view's (see [`crate::device`]).
-    Device(crate::device::DeviceId),
+    Device(DeviceId),
     /// The battery tab's list of what is using the machine (see [`crate::status::battery`]).
-    Battery(crate::status::battery::BatteryId),
+    Battery(BatteryId),
     /// The bar's button for the front program's windows on the bottom screen, hidden by ClamShell's view:
     /// they are shown.
     BottomWindows,
@@ -243,6 +244,53 @@ impl Id {
             _ => Dirty::BOTTOM,
         }
     }
+}
+
+/// The time tab's targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TimeId {
+    /// The header's way back: from a region's zones to the regions, from those to the main page.
+    Back,
+    /// The time zone's row: the regions.
+    Zone,
+    /// Whether the network sets the clock.
+    Ntp,
+    /// 12 hours or 24.
+    TwelveHour,
+    /// A field one up (`true`) or down, while the clock is set by hand.
+    Step(ClockField, bool),
+}
+
+/// The Device view's targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DeviceId {
+    /// Wi-Fi's row: the Wi-Fi tab.
+    Wifi,
+    /// The time zone's row: the time tab.
+    Zone,
+    Password,
+    Ssh,
+    /// The sticks calibrated.
+    Sticks,
+    /// The gyro calibrated.
+    Gyro,
+    /// The top screen's refresh rate calibrated.
+    Refresh,
+    /// The first start's setup done.
+    Done,
+    /// Back to shelf.
+    Close,
+}
+
+/// A choice in the menu of a row of the list (a tap on it opens it): Quit or Force kill what it is, or
+/// back to the list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BatteryId {
+    /// The list's row, by position.
+    Spender(u16),
+    Quit,
+    ForceKill,
+    Back,
 }
 
 /// What holding a target does once the press lasts beyond a tap.
