@@ -120,7 +120,7 @@ and the UI change with the code they call; doc links to moved methods are fixed 
 
 ## Also on the list
 
-- [ ] `apply` reuses its buffers: `apply(event, &mut Vec<Effect>) -> Dirty` with the caller's vector, and the
+- [x] `apply` reuses its buffers: `apply(event, &mut Vec<Effect>) -> Dirty` with the caller's vector, and the
       event queue a `State` field lent out for the call and returned cleared (capacity kept). Each
       `apply_event` drains only what it queued, by index (`remove(mark)`), so a queued event's own requests
       still run right after it. Fix `landing_up`'s per-reconcile `String`. `tests/apply_alloc.rs` then

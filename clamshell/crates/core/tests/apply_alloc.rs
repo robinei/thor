@@ -1,11 +1,16 @@
-//! How much `State::apply` allocates for the events that come all the time, once the state is warm.
-//! Exploration for now: it prints the counts (`cargo test -p clamshell-core --test apply_alloc -- --nocapture`).
+//! `State::apply` allocates nothing for the events that come all the time, once the state is warm: ticks,
+//! readings, the windows and scopes listed again, presses and the pad's focus. The counts are printed
+//! (`cargo test -p clamshell-core --test apply_alloc -- --nocapture`), and with CLAMSHELL_ALLOC_TRACE set,
+//! where each allocation came from.
 #![allow(clippy::unwrap_used, unsafe_code)]
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
-use clamshell_core::{Effect, Event, Id, Init, PointerEvent, Reading, State, Status, Tab};
+use clamshell_core::radios::wifi::{Network, Wifi};
+use clamshell_core::session::windows::Window;
+use clamshell_core::status::metrics::Metrics;
+use clamshell_core::{Effect, EntryAct, Event, Id, Init, Instance, ListEvent, ListId, PointerEvent, Reading, State, Status, Tab};
 
 thread_local! {
     static ALLOCS: Cell<usize> = const { Cell::new(0) };
@@ -23,7 +28,7 @@ fn trace() {
         return;
     }
     let bt = std::backtrace::Backtrace::force_capture().to_string();
-    let frames: Vec<&str> = bt.lines().filter(|l| l.contains("clamshell_core::") && !l.contains("apply_alloc")).map(str::trim).take(4).collect();
+    let frames: Vec<&str> = bt.lines().filter(|l| l.contains("clamshell_core::") && !l.contains("apply_alloc")).map(str::trim).take(8).collect();
     eprintln!("  alloc at: {}", frames.join(" <- "));
     TRACE.with(|t| t.set(false));
 }
@@ -65,31 +70,93 @@ fn count(s: &mut State, event: Event, effects: &mut Vec<Effect>) -> usize {
     ALLOCS.with(Cell::get) - before
 }
 
+/// A warm state: up, with two programs of ours running, each with a window, one of them in front, and a
+/// terminal of the user's on another workspace.
+fn warm() -> (State, Vec<Window>, Vec<Instance>) {
+    let mut s = State::new(Init { library: clamshell_library::demo::library(), ..Init::default() });
+    let mut effects = Vec::new();
+    s.apply(Event::Start, &mut effects);
+    s.apply(Event::Tick { unix_secs: T0, mono_secs: 10 }, &mut effects);
+    let mut units = Vec::new();
+    let mut windows = vec![Window { id: 1, app_id: "foot".into(), workspace: "1".into(), ..Window::default() }];
+    for (n, id) in ["desktop:firefox", "desktop:foot"].into_iter().enumerate() {
+        effects.clear();
+        s.apply(Event::Entry(id.into(), EntryAct::Play), &mut effects);
+        let instance = effects
+            .iter()
+            .find_map(|e| match e {
+                Effect::Launch { instance, .. } => Some(instance.clone()),
+                _ => None,
+            })
+            .unwrap();
+        units.push(instance.clone());
+        s.apply(Event::Units(units.clone()), &mut effects);
+        for w in &mut windows {
+            w.focused = false;
+        }
+        windows.push(Window {
+            id: 10 + n as i64,
+            app_id: id.trim_start_matches("desktop:").into(),
+            unit: Some(format!("{}.scope", instance.name())),
+            workspace: instance.workspace(),
+            focused: true,
+            visible: true,
+            ..Window::default()
+        });
+        s.apply(Event::Windows(windows.clone()), &mut effects);
+    }
+    assert_eq!(s.session().running_entries().len(), 2, "both programs run");
+    (s, windows, units)
+}
+
+const T0: u64 = 1_760_000_000;
+
 #[test]
 fn allocations_per_event() {
-    let mut s = State::new(Init { library: clamshell_library::demo::library(), ..Init::default() });
-    let t0 = 1_760_000_000;
     let mut rows = Vec::new();
     let mut effects = Vec::new();
     let mut run = |name: &str, s: &mut State, make: &dyn Fn(u64) -> Event| {
-        // Warm up with the same kind of event, then measure the third.
-        for i in 0..2 {
+        // Warm up with the same kind of event, then measure the next few.
+        for i in 0..3 {
             effects.clear();
             s.apply(make(i), &mut effects);
         }
-        rows.push((name.to_owned(), count(s, make(2), &mut effects)));
+        let n = (3..6).map(|i| count(s, make(i), &mut effects)).max().unwrap_or(0);
+        rows.push((name.to_owned(), n));
     };
+    let mut s = State::new(Init { library: clamshell_library::demo::library(), ..Init::default() });
     s.apply(Event::Start, &mut Vec::new());
-    run("tick, same minute", &mut s, &|i| Event::Tick { unix_secs: t0 + i, mono_secs: 100 + i });
-    run("tick, a new minute each", &mut s, &|i| Event::Tick { unix_secs: t0 + 60 * (i + 1), mono_secs: 200 + 60 * i });
-    run("status reading, unchanged", &mut s, &|_| Event::Reading(Reading::Status(Status::default())));
-    run("windows, none, unchanged", &mut s, &|_| Event::Windows(Vec::new()));
-    run("units, none, unchanged", &mut s, &|_| Event::Units(Vec::new()));
-    run("pointer down and up on a tab", &mut s, &|i| {
-        Event::Pointer(if i % 2 == 0 { PointerEvent::Down(Id::Tab(Tab::Volume)) } else { PointerEvent::Up(Id::Tab(Tab::Volume)) })
-    });
-    run("focus moved by the pad", &mut s, &|i| Event::Pointer(PointerEvent::Focus(Id::Tab(if i % 2 == 0 { Tab::Volume } else { Tab::Wifi }))));
-    for (name, n) in rows {
+    let (mut w, windows, units) = warm();
+    for (state, s) in [("idle", &mut s), ("running", &mut w)] {
+        // A list of networks, longer than the 3 rows shown.
+        let networks: Vec<Network> = (0..8).map(|i| Network { ssid: format!("network {i}"), strength: 50, ..Network::default() }).collect();
+        let wifi = Wifi { present: true, on: true, networks, ..Wifi::default() };
+        s.apply(Event::Reading(Reading::Wifi(wifi.clone())), &mut Vec::new());
+        s.apply(ListEvent::Visible(ListId::Wifi, 3.0).into(), &mut Vec::new());
+        let windows = if state == "idle" { Vec::new() } else { windows.clone() };
+        let units = if state == "idle" { Vec::new() } else { units.clone() };
+        let name = |what: &str| format!("{state}: {what}");
+        run(&name("tick, same minute"), s, &|i| Event::Tick { unix_secs: T0 + 1000 + i, mono_secs: 1000 + i });
+        run(&name("tick, a new minute each"), s, &|i| Event::Tick { unix_secs: T0 + 2000 + 60 * i, mono_secs: 2000 + 60 * i });
+        run(&name("status reading, unchanged"), s, &|_| Event::Reading(Reading::Status(Status::default())));
+        run(&name("status reading, changing"), s, &|i| Event::Reading(Reading::Status(Status { battery: Some(50 + i as u8 % 2), ..Status::default() })));
+        run(&name("metrics reading"), s, &|i| Event::Reading(Reading::Metrics(Metrics { cpu: Some(i as f32 / 10.0), ..Metrics::default() })));
+        run(&name("frames reading"), s, &|i| Event::Reading(Reading::Frames { fps: Some(60.0 + i as f32), frame_ms: None }));
+        run(&name("wifi reading, unchanged"), s, &|_| Event::Reading(Reading::Wifi(wifi.clone())));
+        run(&name("windows, unchanged"), s, &|_| Event::Windows(windows.clone()));
+        run(&name("units, unchanged"), s, &|_| Event::Units(units.clone()));
+        run(&name("pointer down and up on a tab"), s, &|i| {
+            Event::Pointer(if i % 2 == 0 { PointerEvent::Down(Id::Tab(Tab::Volume)) } else { PointerEvent::Up(Id::Tab(Tab::Volume)) })
+        });
+        run(&name("pointer down and up on a row"), s, &|i| {
+            Event::Pointer(if i % 2 == 0 { PointerEvent::Down(ListId::Wifi.row(0)) } else { PointerEvent::Up(ListId::Wifi.row(0)) })
+        });
+        run(&name("focus moved by the pad"), s, &|i| Event::Pointer(PointerEvent::Focus(Id::Tab(if i % 2 == 0 { Tab::Volume } else { Tab::Wifi }))));
+        run(&name("focus moved by the pad down a list"), s, &|i| Event::Pointer(PointerEvent::Focus(ListId::Wifi.row(if i % 2 == 0 { 0 } else { 7 }))));
+    }
+    for (name, n) in &rows {
         println!("{n:4}  {name}");
     }
+    let allocating: Vec<_> = rows.iter().filter(|(_, n)| *n > 0).collect();
+    assert!(allocating.is_empty(), "allocations per event: {allocating:?}");
 }
