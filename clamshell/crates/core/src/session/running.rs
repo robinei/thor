@@ -500,7 +500,10 @@ impl Session {
     pub(crate) fn followed(&mut self) {
         self.followed_windows.clear();
         self.followed_windows.extend(self.windows.iter().map(|w| w.id));
-        self.followed_front = self.windows.iter().find(|w| w.focused && !w.down).map(|w| w.workspace.clone());
+        let front = self.windows.iter().find(|w| w.focused && !w.down).map(|w| w.workspace.as_str());
+        if self.followed_front.as_deref() != front {
+            self.followed_front = front.map(str::to_owned);
+        }
     }
 }
 
