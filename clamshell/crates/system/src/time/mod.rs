@@ -2,5 +2,5 @@
 //! timedated sets them.
 
 pub mod clock;
-pub mod timedated;
-pub mod wake;
+pub(crate) mod timedated;
+pub(crate) mod wake;

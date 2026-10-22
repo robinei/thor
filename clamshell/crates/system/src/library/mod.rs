@@ -2,11 +2,11 @@
 //! desktop files' games and apps; play time and favourites as kept (see [`crate::store`]). The model is
 //! clamshell-library's.
 
-pub mod content;
-pub mod desktop;
+pub(crate) mod content;
+pub(crate) mod desktop;
 pub mod meta;
-pub mod runners;
-pub mod steam;
+pub(crate) mod runners;
+pub(crate) mod steam;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

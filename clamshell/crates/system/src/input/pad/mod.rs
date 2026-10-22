@@ -16,7 +16,7 @@
 mod calibrate;
 mod device;
 mod listen;
-pub mod motion;
+pub(crate) mod motion;
 mod mouse;
 mod navigator;
 mod remap;

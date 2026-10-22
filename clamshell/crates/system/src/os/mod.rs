@@ -6,18 +6,18 @@
 //! - files written whole and JSON ([`fs`]); HTTP by curl ([`http`]); escaped text ([`text`]); the XDG
 //!   data directories and icon themes ([`xdg`]).
 
-pub mod cgroup;
-pub mod command;
+pub(crate) mod cgroup;
+pub(crate) mod command;
 pub mod dbus;
-pub mod drm;
+pub(crate) mod drm;
 pub mod evdev;
-pub mod fs;
-pub mod http;
+pub(crate) mod fs;
+pub(crate) mod http;
 pub(crate) mod qrtr;
-pub mod sys;
-pub mod text;
+pub(crate) mod sys;
+pub(crate) mod text;
 pub mod worker;
-pub mod xdg;
+pub(crate) mod xdg;
 
 /// Locks `m`. Nothing here panics while holding a lock (the workspace's lints rule panics out), so a lock
 /// poisoned anyway still holds usable data: it is taken as it is.

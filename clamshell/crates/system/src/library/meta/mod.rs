@@ -22,7 +22,7 @@
 //! libretro's lists (a system's thumbnails, its database's files) are kept in ~/.cache/clamshell/libretro
 //! and fetched again after [`LISTS_KEPT`]; an older copy serves while a fetch fails.
 
-pub mod cache;
+pub(crate) mod cache;
 mod libretro;
 mod probe;
 mod steam;

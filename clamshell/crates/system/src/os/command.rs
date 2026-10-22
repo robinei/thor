@@ -97,12 +97,6 @@ pub fn output(program: &str, args: &[&str]) -> Option<Vec<u8>> {
     }
 }
 
-/// Whether `program` with `args` succeeds within [`LIMIT`], for a question it answers with its exit
-/// status (a failure is an answer, not logged).
-pub fn succeeds(program: &str, args: &[&str]) -> bool {
-    run(program, args, None, LIMIT).is_ok_and(|ran| ran.status.success())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,7 +104,7 @@ mod tests {
     #[test]
     fn outputs_and_failures() {
         assert_eq!(output("echo", &["hi"]).as_deref(), Some(&b"hi\n"[..]));
-        assert!(output("false", &[]).is_none() && !succeeds("false", &[]) && succeeds("true", &[]));
+        assert!(output("false", &[]).is_none());
         assert!(output("clamshell-no-such-program", &[]).is_none());
     }
 

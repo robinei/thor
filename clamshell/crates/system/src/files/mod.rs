@@ -6,8 +6,8 @@
 //! eject (`udisksctl`), extract (`bsdtar`, its progress read from how far it has read the archive).
 //! An archive is browsed as a folder through its mount (see [`crate::files::archives`]).
 
-pub mod archives;
-pub mod browse;
-pub mod mounts;
-pub mod ops;
+pub(crate) mod archives;
+pub(crate) mod browse;
+pub(crate) mod mounts;
+pub(crate) mod ops;
 mod trash;

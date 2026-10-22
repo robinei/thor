@@ -1,4 +1,4 @@
 //! The radios: Wi-Fi (NetworkManager) and Bluetooth (BlueZ).
 
-pub mod bluetooth;
-pub mod wifi;
+pub(crate) mod bluetooth;
+pub(crate) mod wifi;
