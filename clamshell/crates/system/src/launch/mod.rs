@@ -6,3 +6,4 @@ pub mod job;
 pub mod launcher;
 pub mod mpv;
 pub mod scopes;
+pub mod steam;

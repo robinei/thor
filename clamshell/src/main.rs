@@ -63,7 +63,7 @@ fn carry_out(command: Command) -> Result<(), String> {
         }
         Command::Ctl(words) => control::send(env.control.as_ref().or(paths.control.as_ref()), &words.join(" ")).map_err(|e| format!("ctl: {e}")),
         Command::FollowSteam(appid) => {
-            clamshell_system::launch::launcher::follow_steam(appid);
+            clamshell_system::launch::steam::follow(appid);
             Ok(())
         }
         Command::MangohudEnv => {
