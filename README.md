@@ -1,5 +1,7 @@
 # thor (working name)
 
+[![check](https://github.com/robinei/thor/actions/workflows/check.yml/badge.svg)](https://github.com/robinei/thor/actions/workflows/check.yml)
+
 Linux on the AYN Thor, a handheld with two screens. This repository holds ClamShell, the program that
 runs the device's session, and the system around it: Arch Linux ARM with our own packages, built on a PC
 and kept current by pacman. `docs/thor-gameplan.md` says what to do when the device arrives and what is
