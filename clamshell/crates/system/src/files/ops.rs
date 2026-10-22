@@ -74,11 +74,15 @@ fn run(op: &FileOp, home: Option<&Path>, sink: &impl Sink) -> Result<String, Str
             Ok(format!("Deleted {}", name_of(path)))
         }
         FileOp::EmptyTrash(files) => {
-            for entry in fs::read_dir(files)
-                .map_err(|e| failed("Reading", files, &e))?
-                .filter_map(|e| e.inspect_err(|e| log::warn!("files: {}: {e}", files.display())).ok())
-            {
-                remove(&entry.path()).map_err(|e| failed("Deleting", &entry.path(), &e))?;
+            let mut unread = 0;
+            for entry in fs::read_dir(files).map_err(|e| failed("Reading", files, &e))? {
+                match entry {
+                    Ok(entry) => remove(&entry.path()).map_err(|e| failed("Deleting", &entry.path(), &e))?,
+                    Err(e) => {
+                        log::warn!("files: {}: {e}", files.display());
+                        unread += 1;
+                    }
+                }
             }
             if let Some(info) = files.parent().map(|t| t.join("info")) {
                 match fs::read_dir(&info) {
@@ -93,7 +97,10 @@ fn run(op: &FileOp, home: Option<&Path>, sink: &impl Sink) -> Result<String, Str
                     Err(e) => log::warn!("files: {}: {e}", info.display()),
                 }
             }
-            Ok("Emptied the Trash".to_owned())
+            match unread {
+                0 => Ok("Emptied the Trash".to_owned()),
+                n => Err(format!("Emptying the Trash: {n} couldn't be read")),
+            }
         }
         FileOp::Eject(device) => {
             super::mounts::eject(device, EJECT_LIMIT).map_err(|e| format!("Ejecting {device}: {}", e.message()))?;
