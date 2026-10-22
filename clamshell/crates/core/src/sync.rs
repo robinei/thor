@@ -1,5 +1,5 @@
 //! What the outside is kept up to date with. After an event and the steps that follow it,
-//! [`State::wanted`] says what the outside should have as things are now ([`Wanted`]), and [`Sent`]
+//! [`crate::State::wanted`] says what the outside should have as things are now ([`Wanted`]), and [`Sent`]
 //! compares that with what it was last sent and sends what differs, in a fixed order. An event that
 //! leaves the outside in an unknown state, such as the UI starting, has some of it sent again
 //! ([`Resend`]).
@@ -7,7 +7,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::bottom::Tab;
 use crate::device::idle::Stage;
 use crate::effect::{Effect, Watch, WindowCommand};
 use crate::keymap::screens::Keymapping;
@@ -15,39 +14,39 @@ use crate::out::Out;
 use crate::settings::{Setting, Values};
 use crate::shelf::files::{Browse, BrowseCommand};
 use crate::shelf::{Shelf, ShelfView};
-use crate::{Levels, PadRoute, Running, State};
+use crate::{Levels, PadRoute, Running};
 
 /// What the outside should have as things are now. It is built after every event, so it holds
 /// references and small values only.
 pub(crate) struct Wanted<'a> {
-    shelf: &'a Shelf,
+    pub(crate) shelf: &'a Shelf,
     /// What shelf shows while metadata is being fetched (see [`Shelf::fetch_first`]).
-    shown: Option<ShelfView>,
+    pub(crate) shown: Option<ShelfView>,
     /// The open browsed folder and its directory (see [`Shelf::browsed`]), and whether hidden files are
     /// listed.
-    browsed: Option<(&'a Arc<str>, &'a Path)>,
-    hidden: bool,
+    pub(crate) browsed: Option<(&'a Arc<str>, &'a Path)>,
+    pub(crate) hidden: bool,
     /// The running entries, whose files are in use (see [`Shelf::in_use`]).
-    running: &'a [Running],
+    pub(crate) running: &'a [Running],
     /// How far idle has gone, and the levels, for the screens' brightness while dimmed.
-    stage: Stage,
-    levels: &'a Levels,
-    /// The program in force and the settings in force (see [`State::in_force`]).
-    program: Option<&'a Arc<str>>,
-    settings: Values,
+    pub(crate) stage: Stage,
+    pub(crate) levels: &'a Levels,
+    /// The program in force and the settings in force (see [`crate::State::in_force`]).
+    pub(crate) program: Option<&'a Arc<str>>,
+    pub(crate) settings: Values,
     /// The bottom screen is on (see [`crate::Bottom::off`]).
-    bottom_on: bool,
+    pub(crate) bottom_on: bool,
     /// ClamShell's view is on the bottom screen, and that screen is on.
-    bottom_seen: bool,
+    pub(crate) bottom_seen: bool,
     /// What the open tab watches.
-    tab: Option<Watch>,
+    pub(crate) tab: Option<Watch>,
     /// The Device view is open.
-    device_open: bool,
+    pub(crate) device_open: bool,
     /// The keymap in force (see [`Keymapping::version_of`]), and the keymaps it is taken from.
-    keymap: (u16, u64),
-    keymapping: &'a Keymapping,
+    pub(crate) keymap: (u16, u64),
+    pub(crate) keymapping: &'a Keymapping,
     /// Where the pad goes.
-    route: PadRoute,
+    pub(crate) route: PadRoute,
 }
 
 /// What the outside was last sent.
@@ -151,7 +150,7 @@ impl Sent {
     }
 
     /// Sends what differs from `w`, in this order.
-    fn sync(&mut self, w: &Wanted, out: &mut Out) {
+    pub(crate) fn sync(&mut self, w: &Wanted, out: &mut Out) {
         self.fetch_first(w, out);
         self.browse(w, out);
         self.idle(w, out);
@@ -286,43 +285,5 @@ impl Sent {
         if self.route.replace(w.route) != Some(w.route) {
             out.effects.push(Effect::PadRoute(w.route));
         }
-    }
-}
-
-impl State {
-    /// What the outside should have as things are now. The second screen watches what the open tab
-    /// watches; the dock with an entry's menu open watches the battery tab's readings, to show what the
-    /// entry costs. It can be seen when ClamShell's view is on the bottom screen and that screen is on.
-    pub(crate) fn wanted(&self) -> Wanted<'_> {
-        let tab = match self.bottom.tab() {
-            Tab::Dock if self.dock.menu().is_some() => Some(Watch::Battery),
-            tab => tab.watch(),
-        };
-        let settings = self.in_force();
-        Wanted {
-            shelf: &self.shelf,
-            shown: self.shelf.fetch_first(),
-            browsed: self.shelf.browsed(),
-            hidden: self.shelf.files().hidden(),
-            running: self.session.running_entries(),
-            stage: self.idle.stage(),
-            levels: &self.levels,
-            program: self.session.program(),
-            settings,
-            bottom_on: !self.bottom.off(),
-            bottom_seen: !self.bottom.shows_windows(&self.session) && !self.bottom.off(),
-            tab,
-            device_open: self.device.is_open(),
-            keymap: self.keymapping.version_of(settings.get(Setting::Keymap)),
-            keymapping: &self.keymapping,
-            route: self.pad.route(),
-        }
-    }
-
-    /// Sends the outside what differs from what it was last sent.
-    pub(crate) fn sync(&mut self, out: &mut Out) {
-        let mut sent = std::mem::take(&mut self.sent);
-        sent.sync(&self.wanted(), out);
-        self.sent = sent;
     }
 }

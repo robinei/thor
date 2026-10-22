@@ -284,7 +284,7 @@ mod tests {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
         let key = zelda.key().unwrap().to_owned();
-        s.prefs.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Pauses.value()));
+        s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Pauses.value()));
         let window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), visible) };
         s.apply(Event::tick(100));
         s.apply(Event::Windows(vec![window(true)]));
@@ -330,7 +330,7 @@ mod tests {
         let mut library = clamshell_library::demo::library();
         library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap().runner = Some(runner.clone());
         let mut s = State::new(crate::Init { library, ..init() });
-        s.prefs.settings_mut().set(Some(&runner.key), Setting::Background, Some(InBackground::Pauses.value()));
+        s.settings_mut().set(Some(&runner.key), Setting::Background, Some(InBackground::Pauses.value()));
         let (pause, resume) = (Effect::RunnerCommand(vec!["pause".into()]), Effect::RunnerCommand(vec!["resume".into()]));
         // With nothing of it running, it is paused after the grace period.
         s.apply(Event::tick(100));
@@ -363,14 +363,12 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         let key = zelda.key().unwrap().to_owned();
         // Set to Runs hidden, it is paused only by Suspend.
-        s.prefs.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Runs.value()));
+        s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Runs.value()));
         let window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), visible) };
         s.apply(Event::tick(100));
         s.apply(Event::Windows(vec![window(true)]));
         assert!(s.session().suspendable("zelda-lttp"));
-        let mut out = crate::out::Out::default();
-        s.session.suspend("zelda-lttp", &mut out);
-        let fx = out.effects;
+        let fx = s.handle(Event::Entry("zelda-lttp".into(), crate::EntryAct::Suspend));
         assert!(fx.contains(&freeze(&key, true)) && fx.contains(&Effect::Window(crate::effect::WindowCommand::ShowShelf)), "{fx:?}");
         assert!(s.session().suspended("zelda-lttp") && !s.session().suspendable("zelda-lttp"));
         // Hidden, it stays frozen and isn't frozen twice.
@@ -396,7 +394,7 @@ mod tests {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
         let key = zelda.key().unwrap().to_owned();
-        s.prefs.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Pauses.value()));
+        s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Pauses.value()));
         let window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), visible) };
         s.apply(Event::tick(100));
         s.apply(Event::Windows(vec![window(false)]));
@@ -427,7 +425,7 @@ mod tests {
         assert!(fx.contains(&freeze(&key, true)), "a game: {fx:?}");
         assert!(!fx.contains(&freeze(foot.key().unwrap(), true)), "an app: {fx:?}");
         // With All set to run, the game runs too.
-        s.prefs.settings_mut().set(None, Setting::Background, Some(InBackground::Runs.value()));
+        s.settings_mut().set(None, Setting::Background, Some(InBackground::Runs.value()));
         assert!(s.apply(Event::tick(101 + GRACE)).1.contains(&freeze(&key, false)));
         assert_eq!(s.session().background_of("zelda-lttp", s.shelf().library(), s.prefs().settings()), InBackground::Runs);
     }
@@ -437,7 +435,7 @@ mod tests {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
         let key = zelda.key().unwrap().to_owned();
-        s.prefs.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Quits.value()));
+        s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Quits.value()));
         // With no window yet, while starting, it is left alone.
         assert!(!s.apply(Event::Windows(vec![])).1.iter().any(|e| matches!(e, Effect::EndRun { .. })));
         s.apply(Event::Windows(vec![Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), true) }]));

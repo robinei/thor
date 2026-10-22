@@ -55,9 +55,8 @@ mod tests {
         assert!(s.session().pending_show().is_none(), "not shown");
         assert_eq!(launches(&s.apply(Event::Units(vec![])).1), 0, "once");
         // Choosing in the dock menu saves the list.
-        let mut out = crate::out::Out::default();
-        s.session.toggle_autostart("zelda-lttp".into(), &mut out);
-        assert_eq!(out.effects, vec![Effect::Save(Save::Autostart(vec!["desktop:firefox".into(), "gone".into()]))]);
+        let fx = s.handle(Event::Entry("zelda-lttp".into(), crate::EntryAct::ToggleAutostart));
+        assert_eq!(fx, vec![Effect::Save(Save::Autostart(vec!["desktop:firefox".into(), "gone".into()]))]);
         assert!(!s.session().autostarts("zelda-lttp"));
     }
 }

@@ -9,16 +9,16 @@ use crate::*;
 /// the one the launch asked for, or else one of the entry's, as if an earlier ClamShell had started it.
 pub fn start(s: &mut State, id: &str) -> (Dirty, Vec<Effect>) {
     let key = s.entry(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());
-    let launch = s.session.launching().iter().find(|l| &*l.entry == id).map(|l| l.instance.clone());
-    let mut units = s.session.units().to_vec();
-    units.push(launch.unwrap_or(Instance::Run { key, secs: s.clock.unix(), n: 99 }));
+    let launch = s.session().launching().iter().find(|l| &*l.entry == id).map(|l| l.instance.clone());
+    let mut units = s.session().units().to_vec();
+    units.push(launch.unwrap_or(Instance::Run { key, secs: s.clock().unix(), n: 99 }));
     s.apply(Event::Units(units))
 }
 
 /// Entry `id`'s launches end, as systemd reports it: its scopes are no longer listed.
 pub fn end(s: &mut State, id: &str) -> (Dirty, Vec<Effect>) {
     let key = s.entry(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());
-    let units = s.session.units().iter().filter(|u| u.key() != Some(key.as_str())).cloned().collect();
+    let units = s.session().units().iter().filter(|u| u.key() != Some(key.as_str())).cloned().collect();
     s.apply(Event::Units(units))
 }
 
@@ -34,9 +34,13 @@ pub fn state() -> State {
 
 /// A test state with this library.
 pub fn state_with(library: Library) -> State {
-    let mut s = State::new(Init { library, ..Init::default() });
-    s.sent.ui_started();
-    s.sync(&mut crate::out::Out::default());
+    started(Init { library, ..Init::default() })
+}
+
+/// A test state from `init` that is up, as after the UI's Start, with its watches in force.
+pub fn started(init: Init) -> State {
+    let mut s = State::new(init);
+    s.ui_up();
     s
 }
 
@@ -102,16 +106,12 @@ pub fn launch(s: &mut State, id: &str) -> Instance {
 
 /// Quit on entry `id`, as from its dock menu, with what it does at once.
 pub fn quit(s: &mut State, id: &str) -> Vec<Effect> {
-    let mut out = crate::out::Out::default();
-    s.session.quit(&id.into(), s.shelf.library(), &mut out);
-    out.effects
+    s.handle(Event::Entry(id.into(), EntryAct::Quit))
 }
 
 /// Force kill on entry `id`, with what it does.
 pub fn force_kill(s: &mut State, id: &str) -> Vec<Effect> {
-    let mut out = crate::out::Out::default();
-    s.session.force_kill(id, s.shelf.library(), &mut out);
-    out.effects
+    s.handle(Event::Entry(id.into(), EntryAct::ForceKill))
 }
 
 /// Launches entry `id` again, as the dock's Open another does, with what that does at once.
@@ -123,7 +123,5 @@ pub fn launch_now(s: &mut State, id: &str) -> Vec<Effect> {
 
 /// Shows running entry `id`, as a tap on its dock tile does, with what that does at once.
 pub fn show(s: &mut State, id: &str) -> Vec<Effect> {
-    let mut out = crate::out::Out::default();
-    s.session.show(id, &s.clock, s.shelf.library(), s.bottom.notice_mut(), &mut out);
-    out.effects
+    s.handle(Event::Entry(id.into(), EntryAct::Show))
 }

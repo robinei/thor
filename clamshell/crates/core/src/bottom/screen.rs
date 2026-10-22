@@ -26,7 +26,7 @@ use crate::out::Out;
 use crate::session::instance::Instance;
 use crate::session::windows::Window;
 use crate::settings::BottomWhenIdle;
-use crate::{Clock, Session, State};
+use crate::{Clock, Session};
 
 /// A window that goes to the bottom screen when its entry opens it. The rule names the entry by its id,
 /// the app id, and optionally the title.
@@ -345,33 +345,15 @@ impl Bottom {
     }
 }
 
-impl State {
-    /// Whether the second screen is dark (see [`Bottom::dark`]).
-    pub fn bottom_dark(&self) -> bool {
-        self.bottom.dark(self.session.program().is_some(), self.in_force().choice::<BottomWhenIdle>())
-    }
-
-    /// What the second screen's power follows, as things are now.
-    pub(crate) fn power(&self) -> Power {
-        Power {
-            any_down: self.session.windows_down().next().is_some(),
-            in_game: self.session.program().is_some(),
-            when_idle: self.in_force().choice::<BottomWhenIdle>(),
-            discharging: self.sys.status().discharging,
-            refreshing: *self.device.refresh() == crate::device::Refresh::Running,
-        }
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use crate::Event;
     use crate::device::buttons::DeviceKey;
     use crate::session::running::{Origin, Running};
     use crate::settings::{Choice, Setting};
     use crate::testkit::state;
+    use crate::{Event, State};
 
     fn win(id: i64, unit: &str, title: &str, focused: bool, down: bool) -> Window {
         Window {
@@ -401,7 +383,7 @@ mod tests {
     /// A game started by shelf, running with a top window and a second window, the second in front.
     fn emulator() -> State {
         let mut s = state();
-        s.session.add_run(running("melonds", "melonds_1"), emu());
+        s.add_run(running("melonds", "melonds_1"), emu());
         s.apply(Event::Windows(vec![win(1, GAME, "Top", false, false), win(2, GAME, "Bottom", true, false)]));
         s
     }
@@ -413,7 +395,7 @@ mod tests {
     #[test]
     fn a_programs_only_window_is_remembered_by_its_app_id_alone() {
         let mut s = state();
-        s.session.add_run(running("melonds", "melonds_1"), emu());
+        s.add_run(running("melonds", "melonds_1"), emu());
         s.apply(Event::Windows(vec![win(2, GAME, "Page one", true, false)]));
         let fx = key(&mut s, DeviceKey::WindowDown);
         let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: None };
@@ -458,26 +440,24 @@ mod tests {
         let rules = s.bottom().window_rules().clone();
         // A fresh start with the rules. The game's windows open on top, and the one the rule names goes
         // down, once.
-        let mut s = state();
-        s.bottom = Bottom::new(rules.clone());
-        s.session.add_run(running("melonds", "melonds_1"), emu());
+        let mut s = crate::testkit::started(crate::Init { window_rules: rules.clone(), ..crate::testkit::init() });
+        s.add_run(running("melonds", "melonds_1"), emu());
         let fx = s.apply(Event::Windows(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)])).1;
         assert!(fx.contains(&Effect::Window(WindowCommand::Down(6))), "{fx:?}");
         assert!(!fx.contains(&Effect::Window(WindowCommand::Down(5))));
         let fx = s.apply(Event::Windows(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)])).1;
         assert!(!fx.contains(&Effect::Window(WindowCommand::Down(6))), "asked once");
         // Its window appears before its scope is listed, and is sent down when the scope appears.
-        let mut s = state();
-        s.bottom = Bottom::new(rules.clone());
+        let mut s = crate::testkit::started(crate::Init { window_rules: rules.clone(), ..crate::testkit::init() });
         let fx = s.apply(Event::Windows(vec![win(8, GAME, "Bottom", true, false)])).1;
         assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Down(_)))), "no entry yet: {fx:?}");
-        s.session.add_run(running("melonds", "melonds_1"), emu());
+        s.add_run(running("melonds", "melonds_1"), emu());
         let fx = s.apply(Event::Units(vec![emu()])).1;
         assert!(fx.contains(&Effect::Window(WindowCommand::Down(8))), "{fx:?}");
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
         // Another game's window with that title doesn't match the rule.
-        s.session.add_run(running("other", "other_2"), Instance::Run { key: "other_2".into(), secs: 5, n: 2 });
+        s.add_run(running("other", "other_2"), Instance::Run { key: "other_2".into(), secs: 5, n: 2 });
         let fx = s.apply(Event::Windows(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom", false, false)])).1;
         assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Down(_)))), "{fx:?}");
     }
@@ -563,11 +543,11 @@ mod tests {
         s.apply(Event::tick(1000));
         assert_eq!(power(&s.apply(Event::tick(1000 + DIM_AFTER + OFF_AFTER)).1), None, "on the charger: only dimmed");
         // Unplugged now, but set to Screen on, so it is only dimmed.
-        s.prefs.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::On.value());
+        s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::On.value());
         on_battery(&mut s, true);
         assert_eq!(power(&s.apply(Event::tick(1001 + DIM_AFTER + OFF_AFTER)).1), None);
         // Back to the default, it turns off. With the charger plugged in, it turns on.
-        s.prefs.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::OffWhenIdle.value());
+        s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::OffWhenIdle.value());
         assert_eq!(power(&s.apply(Event::tick(1002 + DIM_AFTER + OFF_AFTER)).1), Some(false));
         assert_eq!(power(&on_battery(&mut s, false)), Some(true), "the charger: on again");
     }
@@ -576,7 +556,7 @@ mod tests {
     fn dark_for_a_game_on_battery_it_goes_off_and_a_tap_wakes_it() {
         let mut s = state();
         on_battery(&mut s, true);
-        s.prefs.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::DarkInGame.value());
+        s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::DarkInGame.value());
         crate::testkit::start(&mut s, "zelda-lttp");
         assert!(s.bottom_dark());
         assert!(s.bottom().off(), "dark on battery: off at once");

@@ -7,13 +7,11 @@
 //! doesn't move the rows under the finger. The exception is a view at the very top, where new rows show.
 //!
 //! A list's rows are all targets of one kind ([`Id::Row`]). What a row is, how many there are and what a
-//! tap on one does are up to the list's feature ([`crate::kit::list::Rows`], [`State::on_row`]). This
+//! tap on one does are up to the list's feature ([`crate::kit::list::Rows`], [`crate::State::on_row`]). This
 //! module only maps each list to its feature.
 
-use crate::State;
 use crate::id::Id;
-use crate::kit::list::{EMPTY, RowsOf, Scroll};
-use crate::out::Out;
+use crate::kit::list::{EMPTY, Scroll};
 
 /// A scrolled list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -128,106 +126,6 @@ impl ListEvent {
         match self {
             ListEvent::Scroll(list, _) | ListEvent::Visible(list, _) => list,
         }
-    }
-}
-
-impl State {
-    pub fn lists(&self) -> &Lists {
-        &self.lists
-    }
-
-    /// A list's rows, from its feature.
-    pub(crate) fn rows(&self, list: ListId) -> RowsOf<'_> {
-        match list {
-            ListId::Shelf => RowsOf::Of(&self.shelf),
-            ListId::Wifi => RowsOf::Of(self.radios.wifi()),
-            ListId::Bluetooth => RowsOf::Of(self.radios.bluetooth()),
-            ListId::Streams => RowsOf::Of(self.levels.audio()),
-            ListId::Backlights => RowsOf::Of(self.levels.backlight_rows()),
-            ListId::Keymaps => RowsOf::Count(self.panel().keymap_rows_len()),
-            ListId::Layers => RowsOf::Count(self.keymapping.layer_rows()),
-            ListId::Time => RowsOf::Count(self.sys.time_rows()),
-            ListId::Dock => RowsOf::Count(self.dock.items().len().div_ceil(crate::session::dock::DOCK_COLUMNS)),
-        }
-    }
-
-    /// A tap or long press on a row, handled by the list's feature.
-    pub(crate) fn on_row(&mut self, list: ListId, i: usize, part: RowPart, long: bool, out: &mut Out) {
-        match list {
-            ListId::Wifi => self.radios.tap_network(i, long, self.bottom.editors_mut(), out),
-            ListId::Bluetooth => self.radios.tap_device(i, long, out),
-            ListId::Streams => self.levels.on_stream(i, part, out),
-            ListId::Keymaps => self.on_keymap_row(i, part, long, out),
-            ListId::Layers => self.on_layer_row(i, part, long, out),
-            ListId::Time => self.sys.on_time_row(i, self.lists.get_mut(ListId::Time), out),
-            // Its tiles are targets of their own.
-            ListId::Dock => {}
-            // A shelf game's row is its game's target, and a backlight's row is only its level.
-            ListId::Shelf | ListId::Backlights => {}
-        }
-    }
-
-    /// Where `list` is scrolled. For shelf, this is the current collection's position.
-    pub fn scroll(&self, list: ListId) -> &Scroll {
-        match list {
-            ListId::Shelf => self.shelf.scroll(),
-            _ => self.lists.get(list),
-        }
-    }
-
-    pub(crate) fn scroll_mut(&mut self, list: ListId) -> Option<&mut Scroll> {
-        match list {
-            ListId::Shelf => self.shelf.scroll_mut(),
-            _ => self.lists.get_mut(list),
-        }
-    }
-
-    /// How many rows `list` has now.
-    pub fn list_len(&self, list: ListId) -> usize {
-        self.rows(list).len()
-    }
-
-    /// A list scrolled or was laid out. Returns whether it moved.
-    pub(crate) fn on_list(&mut self, event: ListEvent) -> bool {
-        match event {
-            ListEvent::Scroll(list, rows) => self.move_list(list, |s, len| s.scroll_by(rows, len)),
-            ListEvent::Visible(list, rows) => self.move_list(list, |s, len| s.set_visible(rows, len)),
-        }
-    }
-
-    /// The pad's focus moved to `id`. If it is a list row, the list scrolls to show it.
-    pub(crate) fn show_focused(&mut self, id: &Id) {
-        if let Some((list, i)) = ListId::of(id) {
-            self.move_list(list, |s, len| s.show(i, len));
-        }
-    }
-
-    /// Moves `list` by `f`, given its scroll and how many rows it has. If it moved, the item now at the top
-    /// of its view is remembered, to keep there when the list changes. Returns whether it moved.
-    fn move_list(&mut self, list: ListId, f: impl FnOnce(&mut Scroll, usize) -> bool) -> bool {
-        let len = self.list_len(list);
-        if !self.scroll_mut(list).is_some_and(|s| f(s, len)) {
-            return false;
-        }
-        let key = self.rows(list).key(self.scroll(list).top());
-        if let Some(s) = self.scroll_mut(list) {
-            s.anchor(key);
-        }
-        true
-    }
-
-    /// Runs after the lists' contents may have changed. Each scrolled list keeps its top item where it
-    /// is, while that item is still there, and stays within its ends. Returns whether any moved.
-    pub(crate) fn follow_lists(&mut self) -> bool {
-        let mut moved = false;
-        for list in ListId::ALL {
-            let len = self.list_len(list);
-            let found = self.scroll(list).anchored().and_then(|key| self.rows(list).find(key));
-            if let Some(s) = self.scroll_mut(list) {
-                moved |= s.follow(found, len);
-            }
-        }
-        moved
     }
 }
 

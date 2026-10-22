@@ -187,22 +187,6 @@ impl Pad {
     }
 }
 
-impl crate::State {
-    /// What the pad's Back button does on ClamShell's screens, as the target it activates. In the editor
-    /// it is Cancel. In the dock's menu or move mode it is the dock's Back. On the keymap screens it goes
-    /// back one screen, or gives up picking a control. Nothing else has a back of its own. On the edit
-    /// screen while the pad listens, Back comes in as an input to remap.
-    pub fn pad_back(&self) -> Option<crate::Id> {
-        if self.bottom.editor().is_some() {
-            return Some(crate::Id::Editor(crate::EditorId::Cancel));
-        }
-        if (self.dock.menu().is_some() || self.dock.moving().is_some()) && self.bottom.tab() == crate::Tab::Dock {
-            return Some(crate::Id::Dock(crate::DockId::Back));
-        }
-        self.keymapping.shown(self.bottom.tab()).map(|_| crate::Id::Keymap(crate::KeymapId::Back))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::testkit::*;

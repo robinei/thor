@@ -2,6 +2,7 @@ use super::*;
 use crate::bottom::keyboard::{Modifier, find};
 use crate::keymap::{Button, Dir, MouseButton, Side};
 use crate::levels::slider::Control;
+use crate::settings::Setting;
 use crate::testkit::*;
 use crate::*;
 

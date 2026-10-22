@@ -5,14 +5,12 @@
 
 use std::sync::Arc;
 
-use crate::State;
 use crate::bottom::editor::{Editor, Editors, Purpose};
 use crate::effect::{Effect, Save};
-use crate::id::SettingsId;
 use crate::keymap::screens::{Keymapping, PickerRow};
-use crate::out::Out;
 use crate::session::running::Front;
-use crate::settings::{Setting, Settings, Values};
+use crate::settings::{Setting, Settings};
+use crate::{Session, Shelf};
 
 /// What the settings panel edits: the global settings (All), the runner of the item in context, or the
 /// item itself. The item can be a game, an app or a film, but not a browsed file or a folder, nor an
@@ -107,7 +105,7 @@ pub struct Program<'a> {
 }
 
 /// The settings panel as it is now: the item in context, the levels it offers, what it edits, and the
-/// keymaps' picker for it. Built by [`State::panel`]; it doesn't allocate, since the UI builds it while
+/// keymaps' picker for it. Built by [`Panel::new`]; it doesn't allocate, since the UI builds it while
 /// drawing.
 #[derive(Debug, Clone)]
 pub struct Panel<'a> {
@@ -122,7 +120,41 @@ pub struct Panel<'a> {
 }
 
 impl<'a> Panel<'a> {
-    /// The item the settings panel is about, chosen by what is in front (see [`State::panel`]). It is
+    /// The settings panel as it is now. Its item is chosen by what is in front: the entry whose window is
+    /// in front, or shelf's selection, where a browsed file that belongs to a library entry stands for
+    /// that entry. There is none for a window of no program.
+    pub(crate) fn new(session: &'a Session, shelf: &'a Shelf, prefs: &'a Prefs, keymapping: &'a Keymapping) -> Panel<'a> {
+        let entry_of = |id: &str| session.entry(shelf.library(), id);
+        let id = match session.front() {
+            Front::Program => session.windows().iter().find(|w| w.focused && !w.down).and_then(|w| session.owner_of(w)).or_else(|| session.program().cloned()),
+            Front::Shelf => shelf.selected().cloned().map(|id| shelf.entry_of_file(&id).unwrap_or(id)),
+            Front::Other => None,
+        };
+        let context = id.and_then(|id| entry_of(&id).map(|g| Program { id, title: &g.title }));
+        let entry = context.as_ref().and_then(|item| entry_of(&item.id));
+        let levels = match (&context, entry) {
+            (Some(item), Some(g)) => match &g.runner {
+                Some(r) => {
+                    let runner = Some((Scope::Runner, Program { id: r.key.clone(), title: &r.name }));
+                    let own = (r.item_settings && g.browsed.is_none() && !g.is_group()).then(|| (Scope::Content, item.clone()));
+                    [runner, own]
+                }
+                None => [Some((Scope::Runner, item.clone())), None],
+            },
+            _ => [None, None],
+        };
+        let scope = prefs.scope;
+        let editing = match &levels {
+            _ if scope == Scope::Global => None,
+            [Some((s, p)), _] if *s == scope => Some(p.clone()),
+            [runner, own] => own.as_ref().or(runner.as_ref()).map(|(_, p)| p.clone()),
+        };
+        let runner = editing.as_ref().and_then(|p| entry_of(&p.id)).and_then(|g| g.runner.as_ref()).map(|r| &*r.key);
+        let handover = editing.is_some() && entry.and_then(|g| g.runner.as_ref()).is_some_and(|r| r.handover);
+        Panel { prefs, keymapping, context, levels, editing, runner, handover }
+    }
+
+    /// The item the settings panel is about, chosen by what is in front (see [`Panel::new`]). It is
     /// none for a window of no program, and then the panel edits the defaults.
     pub fn context(&self) -> Option<&Program<'a>> {
         self.context.as_ref()
@@ -203,128 +235,6 @@ impl<'a> Panel<'a> {
     /// Whether the panel edits a game that has no keymap of its own and so can make one.
     pub fn keymap_can_make_own(&self) -> bool {
         self.keymapping.can_make_own(self.game())
-    }
-}
-
-impl State {
-    pub fn prefs(&self) -> &Prefs {
-        &self.prefs
-    }
-
-    /// The settings in force: those of the program in force (see [`crate::session::program`]), or else
-    /// the global ones.
-    pub fn in_force(&self) -> Values {
-        self.session.program().as_ref().map_or(self.prefs.settings.global, |id| self.settings_of(id))
-    }
-
-    /// The level that entry `id` takes its settings from before its own, which is its runner's, if it
-    /// has one.
-    fn runner_of(&self, id: &str) -> Option<&str> {
-        self.entry(id).and_then(|g| g.runner.as_ref()).map(|r| &*r.key)
-    }
-
-    /// The settings entry or level `id` runs with: the global ones, then its runner's, then its own.
-    pub fn settings_of(&self, id: &str) -> Values {
-        self.prefs.settings.of_in(id, self.runner_of(id).as_slice())
-    }
-
-    /// For runners that come with one of ClamShell's keymaps (see [`crate::Library::runner_keymaps`]) and
-    /// have no keymap chosen and none of their own: makes that keymap their own, chooses it, and saves.
-    pub(crate) fn follow_runner_keymaps(&mut self, out: &mut Out) {
-        let library = self.shelf.library();
-        let wanting: Vec<(std::sync::Arc<str>, crate::keymap::Keymap)> = library
-            .runner_keymaps
-            .iter()
-            .filter(|(key, _)| self.prefs.settings.overrides_of(key).get(Setting::Keymap).is_none() && self.keymapping.keymaps().own_of(key).is_none())
-            .filter_map(|(key, name)| Some((key.clone(), crate::keymap::preset(name)?)))
-            .collect();
-        if wanting.is_empty() {
-            return;
-        }
-        for (key, preset) in &wanting {
-            if let Some(id) = self.keymapping.make_own_from(preset, key) {
-                self.prefs.set(Some(key), Setting::Keymap, Some(id));
-            }
-        }
-        out.effects.push(self.keymapping.save_effect());
-        out.effects.push(self.prefs.save_effect());
-    }
-
-    /// The settings panel as it is now. Its item is chosen by what is in front: the entry whose window is
-    /// in front, or shelf's selection, where a browsed file that belongs to a library entry stands for
-    /// that entry. There is none for a window of no program.
-    pub fn panel(&self) -> Panel<'_> {
-        let id = match self.session.front() {
-            Front::Program => {
-                self.session.windows().iter().find(|w| w.focused && !w.down).and_then(|w| self.session.owner_of(w)).or_else(|| self.session.program().cloned())
-            }
-            Front::Shelf => self.shelf.selected().cloned().map(|id| self.shelf.entry_of_file(&id).unwrap_or(id)),
-            Front::Other => None,
-        };
-        let context = id.and_then(|id| self.entry(&id).map(|g| Program { id, title: &g.title }));
-        let entry = context.as_ref().and_then(|item| self.entry(&item.id));
-        let levels = match (&context, entry) {
-            (Some(item), Some(g)) => match &g.runner {
-                Some(r) => {
-                    let runner = Some((Scope::Runner, Program { id: r.key.clone(), title: &r.name }));
-                    let own = (r.item_settings && g.browsed.is_none() && !g.is_group()).then(|| (Scope::Content, item.clone()));
-                    [runner, own]
-                }
-                None => [Some((Scope::Runner, item.clone())), None],
-            },
-            _ => [None, None],
-        };
-        let scope = self.prefs.scope;
-        let editing = match &levels {
-            _ if scope == Scope::Global => None,
-            [Some((s, p)), _] if *s == scope => Some(p.clone()),
-            [runner, own] => own.as_ref().or(runner.as_ref()).map(|(_, p)| p.clone()),
-        };
-        let runner = editing.as_ref().and_then(|p| self.runner_of(&p.id));
-        let handover = editing.is_some() && entry.and_then(|g| g.runner.as_ref()).is_some_and(|r| r.handover);
-        Panel { prefs: &self.prefs, keymapping: &self.keymapping, context, levels, editing, runner, handover }
-    }
-
-    /// A tap or long press in the settings tab.
-    pub(crate) fn on_settings(&mut self, id: SettingsId, long: bool, out: &mut Out) {
-        match id {
-            SettingsId::Tile(Setting::Keymap) if !long => self.keymapping.open_picker(),
-            SettingsId::Tile(setting) => {
-                let value = if long { None } else { Some(setting.next(self.panel().tile_value(setting))) };
-                self.change(setting, value, out);
-            }
-            SettingsId::Env => {
-                let game = self.panel().editing().map(|g| g.id.clone());
-                self.prefs.open_env_editor(game, self.bottom.editors_mut());
-            }
-            SettingsId::Scope(scope) => self.prefs.set_scope(scope),
-            SettingsId::Reset => {
-                let before = self.in_force();
-                if let Some(id) = self.panel().editing().map(|g| g.id.clone()) {
-                    self.prefs.reset(&id);
-                }
-                self.saved_and_applied(before, out);
-            }
-        }
-    }
-
-    /// Changes `setting` where the panel edits, in the game's overrides or the global settings. It is set
-    /// to `value`, or back to the default for `None`. The change is saved, and applied at once if the
-    /// settings in force changed.
-    pub(crate) fn change(&mut self, setting: Setting, value: Option<u16>, out: &mut Out) {
-        let before = self.in_force();
-        let game = self.panel().editing().map(|g| g.id.clone());
-        self.prefs.set(game.as_ref(), setting, value);
-        self.saved_and_applied(before, out);
-    }
-
-    /// Saves the settings, and applies the settings in force after the event if they changed from
-    /// `before`.
-    pub(crate) fn saved_and_applied(&mut self, before: Values, out: &mut Out) {
-        out.effects.push(self.prefs.save_effect());
-        if self.in_force() != before {
-            self.sent.resend(crate::sync::Resend::Settings);
-        }
     }
 }
 
@@ -420,7 +330,7 @@ mod tests {
         assert!(own.is_some());
         assert_eq!(s.prefs().settings().overrides_of("runner:text").get(Setting::Keymap), own);
         // With Default chosen for it instead, it is left that way, also when the library is read again.
-        s.prefs.settings_mut().set(Some(&runner_key("text")), Setting::Keymap, Some(0));
+        s.settings_mut().set(Some(&runner_key("text")), Setting::Keymap, Some(0));
         let fx = s.apply(Event::Library(Box::new(s.shelf().library().clone()))).1;
         assert!(!fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))));
     }

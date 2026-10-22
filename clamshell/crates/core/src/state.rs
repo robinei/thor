@@ -1,0 +1,1376 @@
+//! [`State`]: the areas, and what runs across them. Its impl builds the areas, gives each to outside code
+//! to read, applies events in three phases (handle, settle, sync: see [`State::apply`]), and carries out
+//! what needs more than one area.
+
+use std::sync::Arc;
+
+use crate::bottom::Bottom;
+use crate::bottom::editor::{Done, Purpose};
+use crate::bottom::keyboard::Keyboard;
+use crate::bottom::notice::NoticeKind;
+use crate::bottom::screen::Power;
+use crate::device::Device;
+use crate::device::buttons::DeviceKey;
+use crate::device::idle::Idle;
+use crate::keymap::screens::{KeymapCx, Keymapping, Screen};
+use crate::kit::debounce::Debounce;
+use crate::kit::list::{ItemKey, RowsOf};
+use crate::levels::slider::Control;
+use crate::out::Out;
+use crate::resume::SAVE_AFTER;
+use crate::session::running::app_id_of;
+use crate::settings::{BottomWhenIdle, MouseAtLaunch, Setting, Values};
+use crate::sync::{Resend, Sent, Wanted};
+use crate::{
+    AudioId, BtId, Clock, Dirty, Dock, DockId, EditorId, Effect, Entry, EntryAct, Event, Id, Init, KeymapEvent, KeymapId, Launch, LaunchEvent, Level,
+    LevelEvent, Levels, Library, ListEvent, ListId, Lists, Pad, PadRoute, Panel, Pointer, PointerEvent, Prefs, Radios, Reading, Resume, RowPart, Save, Scroll,
+    Session, SettingsId, Shelf, ShelfId, Slide, Sys, Tab, Watch, WifiId, WindowCommand,
+};
+
+/// Everything ClamShell knows, as its areas (see the [crate docs](crate)).
+#[derive(Debug, Default)]
+pub struct State {
+    shelf: Shelf,
+    bottom: Bottom,
+    session: Session,
+    dock: Dock,
+    /// The Device view on the main screen (see [`crate::device`]).
+    device: Device,
+    levels: Levels,
+    radios: Radios,
+    pad: Pad,
+    pointer: Pointer,
+    sys: Sys,
+    /// Every entry's settings, and the scope the settings panel edits.
+    prefs: Prefs,
+    keyboard: Keyboard,
+    /// The keymaps and their screens (see [`crate::keymap::screens`]).
+    keymapping: Keymapping,
+    lists: Lists,
+    clock: Clock,
+    /// Where shelf and the second screen are ([`State::resume`]), saved once they stop changing for a
+    /// moment. Shelf and the bottom screen say when they changed; `apply` touches this at its end.
+    resume: Debounce,
+    idle: Idle,
+    /// What the steps after an event last saw.
+    settled: Settled,
+    /// What the outside was last sent (see [`crate::sync`]).
+    sent: Sent,
+}
+
+impl State {
+    // Construction and the areas.
+
+    pub fn new(init: Init) -> State {
+        let mut s = State {
+            shelf: Shelf::new(init.library),
+            prefs: Prefs::new(init.settings),
+            keymapping: Keymapping::new(init.keymaps),
+            bottom: Bottom::new(init.window_rules),
+            sys: Sys::new(init.twelve_hour),
+            levels: Levels::new(init.brightness),
+            session: Session::new(init.autostart, init.device_session),
+            dock: init.dock,
+            device: Device::new(init.sticks, init.first_start),
+            ..State::default()
+        };
+        if let Some(resume) = &init.resume {
+            resume.restore(&mut s.shelf, &mut s.bottom);
+        }
+        s.dock.drop_gone_at_start(s.shelf.library(), &s.session);
+        s.session.follow_pausable_runners(s.shelf.library());
+        s.pointer.focus_shelf(s.shelf.selected());
+        if init.first_start {
+            s.pointer.focus_on(Id::Device(crate::DeviceId::Wifi));
+        }
+        if let Some(tab) = init.start_tab {
+            s.bottom.restore_tab(tab);
+        }
+        s.reconcile_pad();
+        if init.pad_mouse {
+            s.pad.toggle_mouse();
+            s.reconcile_pad();
+        }
+        s.settled = Settled::new(&s.session);
+        s.sent = Sent::new(&s.wanted());
+        s
+    }
+
+    pub fn shelf(&self) -> &Shelf {
+        &self.shelf
+    }
+
+    pub fn bottom(&self) -> &Bottom {
+        &self.bottom
+    }
+
+    pub fn session(&self) -> &Session {
+        &self.session
+    }
+
+    pub fn dock(&self) -> &Dock {
+        &self.dock
+    }
+
+    pub fn device(&self) -> &Device {
+        &self.device
+    }
+
+    pub fn levels(&self) -> &Levels {
+        &self.levels
+    }
+
+    pub fn radios(&self) -> &Radios {
+        &self.radios
+    }
+
+    pub fn pad(&self) -> &Pad {
+        &self.pad
+    }
+
+    pub fn pointer(&self) -> &Pointer {
+        &self.pointer
+    }
+
+    pub fn sys(&self) -> &Sys {
+        &self.sys
+    }
+
+    pub fn prefs(&self) -> &Prefs {
+        &self.prefs
+    }
+
+    pub fn keyboard(&self) -> &Keyboard {
+        &self.keyboard
+    }
+
+    pub fn keymapping(&self) -> &Keymapping {
+        &self.keymapping
+    }
+
+    pub fn lists(&self) -> &Lists {
+        &self.lists
+    }
+
+    pub fn idle(&self) -> &crate::device::idle::Idle {
+        &self.idle
+    }
+
+    pub fn clock(&self) -> &Clock {
+        &self.clock
+    }
+
+    // Applying an event: handle, settle, sync.
+
+    /// Applies one event and returns which screens changed and what must happen outside. After the event
+    /// itself, the state is settled ([`State::settle`]), and then the outside is told what changed for it
+    /// ([`State::sync`]).
+    pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
+        let mut out = Out::default();
+        self.apply_event(event, &mut out);
+        self.settle(&mut out);
+        self.sync(&mut out);
+        // Both are taken, so neither is left marked.
+        if self.shelf.take_unsaved() | self.bottom.take_unsaved() {
+            self.resume.touch(self.clock.mono());
+        }
+        // The follow-up steps don't queue events: one queued here would never be handled.
+        debug_assert!(out.events.is_empty(), "an event queued after the event was handled: {:?}", out.events);
+        (out.dirty, out.effects)
+    }
+
+    fn apply_event(&mut self, event: Event, out: &mut Out) {
+        match event {
+            Event::Tick { unix_secs, mono_secs } => self.tick(unix_secs, mono_secs, out),
+            Event::Reading(reading) => self.reading_came(reading, out),
+            Event::List(e) => {
+                if self.on_list(e) {
+                    out.mark(e.list().screens());
+                }
+            }
+            Event::Pointer(e) => self.pointer_event(e, out),
+            Event::Slide(slide) => self.on_slide(slide, out),
+            Event::Level(e) => self.on_level(e, out),
+            Event::Shelf(e) => self.shelf.on_event(e, &mut self.pointer, out),
+            Event::Launch(e) => self.on_launch_event(e, out),
+            Event::Windows(windows) => {
+                self.session.set_windows(windows);
+                out.mark(Dirty::BOTH);
+            }
+            Event::Meta { id, meta } => {
+                if self.shelf.apply_meta(&id, &meta) {
+                    out.mark(Dirty::BOTH);
+                }
+            }
+            Event::Library(library) => {
+                out.mark(Dirty::BOTH);
+                self.library_read(*library, out);
+                self.sent.resend(Resend::Shown);
+            }
+            Event::Files(e) => {
+                out.mark(Dirty::BOTH);
+                self.shelf.on_files(e, &mut self.pointer, self.bottom.notice_mut(), self.clock.mono(), out);
+            }
+            Event::Fetching(on) => {
+                self.shelf.set_fetching(on);
+                self.sent.resend(Resend::Shown);
+            }
+            Event::Tray(items) => {
+                if self.session.set_tray(items, &self.clock, self.shelf.library(), out) {
+                    out.mark(Dirty::BOTH);
+                }
+            }
+            Event::Units(units) => {
+                self.session.set_units(units);
+                out.mark(Dirty::BOTTOM);
+            }
+            Event::Start => {
+                out.mark(Dirty::BOTH);
+                self.ui_started(out);
+            }
+            // On a screen that listens for input, Home leaves it. Home is never taken as an input.
+            Event::Home if self.listening() => {
+                self.keymap_back();
+                out.mark(Dirty::BOTTOM);
+            }
+            // When the Device view is in shelf's place, Home goes back to shelf.
+            Event::Home if self.session.shelf_in_front() && self.device.is_open() => self.device.close(&mut self.pointer, self.shelf.selected()),
+            Event::Home => self.session.home(out),
+            Event::Listened(input) => {
+                out.mark(Dirty::BOTTOM);
+                self.keymapping.listened(input, self.pad.route() == PadRoute::Listen, out);
+            }
+            Event::PadSwitch => self.pad.switch(),
+            // Never applied here: the UI handles pad navigation itself.
+            Event::Pad(_) => {}
+            Event::TextInput(active) => {
+                let (dirty, changed) = self.bottom.text_input(active);
+                if changed {
+                    self.left_tab();
+                }
+                out.mark(dirty);
+            }
+            Event::Pointing(pointing) => self.bottom.point(pointing, out),
+            Event::Resumed => {
+                self.idle.resumed(self.clock.mono());
+                self.sent.resend(Resend::Resumed);
+            }
+            Event::Idle(event) => self.idle.heard(event, self.clock.mono()),
+            Event::Device(key) => {
+                out.mark(Dirty::BOTTOM);
+                self.on_device_key(key, out);
+            }
+            Event::BottomTouched => out.mark(self.bottom.used(&self.session, &self.clock)),
+            Event::Frozen(keys) => {
+                self.session.found_frozen(keys);
+                out.mark(Dirty::BOTTOM);
+            }
+            Event::Paste => {
+                self.bottom.paste();
+                out.mark(Dirty::BOTTOM);
+            }
+            Event::Screenshot(result) => {
+                self.bottom.notify(crate::bottom::notice::NoticeKind::Screenshot(result), self.clock.mono());
+                out.mark(Dirty::BOTTOM);
+            }
+            Event::Sticks(event) => {
+                out.mark(Dirty::TOP);
+                self.device.sticks_event(event, out);
+            }
+            Event::RefreshCalibrated(result) => {
+                self.device.refresh_done(result);
+                out.mark(Dirty::TOP);
+                self.sent.resend(Resend::RefreshCalibrated);
+            }
+            Event::GyroCalibrated(ok) => {
+                self.bottom.notify(crate::bottom::notice::NoticeKind::Gyro(Some(ok)), self.clock.mono());
+                out.mark(Dirty::BOTTOM);
+            }
+            Event::AccountChanged(result) => {
+                // What the helper did, or why it failed, shown for a moment.
+                self.bottom.notify(crate::bottom::notice::NoticeKind::Account(result), self.clock.mono());
+                out.mark(Dirty::BOTTOM);
+            }
+            Event::ChooseTab(tab) => {
+                self.choose_tab(tab);
+                out.mark(Dirty::BOTH);
+            }
+            Event::Entry(id, act) => {
+                out.mark(Dirty::BOTTOM);
+                match act {
+                    EntryAct::Play => self.play(id, out),
+                    EntryAct::Show => self.session.show(&id, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out),
+                    EntryAct::OpenAnother => {
+                        if self.opens_another(&id) {
+                            self.launch(id, None, true, out);
+                        }
+                    }
+                    EntryAct::Suspend => self.session.suspend(&id, out),
+                    EntryAct::ToggleAutostart => self.session.toggle_autostart(id, out),
+                    EntryAct::TogglePin => self.dock.toggle_pin(id, &self.session, out),
+                    EntryAct::Quit => self.session.quit(&id, self.shelf.library(), out),
+                    EntryAct::ForceKill => self.session.force_kill(&id, self.shelf.library(), out),
+                }
+            }
+            Event::Enqueue => {
+                out.mark(Dirty::BOTTOM);
+                self.enqueue(out);
+            }
+            Event::Keymap(e) => {
+                out.mark(Dirty::BOTTOM);
+                self.keymap_event(e, out);
+            }
+            Event::EditOnKeyboard(editor) => {
+                if self.bottom.open_on_keyboard(editor) {
+                    self.left_tab();
+                }
+                out.mark(Dirty::BOTH);
+            }
+            Event::Quit => {
+                out.effects.push(Effect::Save(Save::Resume(self.resume())));
+                out.effects.push(Effect::Quit);
+            }
+        }
+        // What the event's rules asked of State, in order, after the effects they pushed.
+        for queued in std::mem::take(&mut out.events) {
+            self.apply_event(queued, out);
+        }
+    }
+
+    /// Brings the state up to date with what happened. The steps run in this order, since each reads
+    /// what the earlier ones settled. The first six follow the session's inputs (the windows, systemd's
+    /// scopes, the tray, the launcher's messages, the library and the clock), and run only when one
+    /// changed, which [`crate::Session::version`] counts:
+    ///
+    /// 1. systemd's scopes: entries found running, found ones promoted to launches, and ours ended
+    ///    ([`crate::Session::follow_units`]). The first time, the entries to start with ClamShell are
+    ///    started.
+    /// 2. The windows: entries started by their app ids ([`crate::Session::start_by_app_id`]), with Steam's
+    ///    games launched before the windows are followed, since a starting launch's window is left where
+    ///    it is; then windows moved to their entries, programs found by them, and entries ended by them
+    ///    ([`crate::Session::follow_windows`], which compares with the windows the last pass saw). Then the
+    ///    rules that send windows down. The windows' effects come after those of steps 3 and 4.
+    /// 3. In the background: entries paused, thawed or ended by their setting. This reads 1 and 2.
+    /// 4. What is shown: a launch's first window, a workspace whose window came back, and going back to
+    ///    what was before when the one in front closed.
+    /// 5. Quitting entries are ended once their windows are gone. This reads 1 to 3.
+    /// 6. The dock: running entries are added to it and ended ones removed.
+    ///
+    /// The rest run after every event:
+    ///
+    /// 7. The second screen's dimming.
+    /// 8. The browsed folder's selection and armed action.
+    /// 9. The idle stage.
+    /// 10. The program in force.
+    /// 11. The second screen turning off or on by itself, which reads the program in force's setting and
+    ///     darkness.
+    /// 12. The pad mouse, when the program in force changed.
+    /// 13. What claims the pad, and where it goes. The focus ring shows where the pad is, so it is hidden
+    ///     when the pad leaves ClamShell's screens.
+    ///
+    /// A step does nothing when nothing changed for it.
+    fn settle(&mut self, out: &mut Out) {
+        if self.session.version() != self.settled.session {
+            self.settled.session = self.session.version();
+            let mut before = std::mem::take(&mut self.settled.running);
+            before.clear();
+            before.extend(self.session.running_entries().iter().map(|r| r.id.clone()));
+            if self.session.follow_units(&self.clock, &mut self.shelf, self.bottom.notice_mut(), out) {
+                self.bottom.unwake();
+            }
+            let mut due = Vec::new();
+            self.session.autostart_due(self.shelf.library(), &mut due);
+            // They start in the background, so what was going to be shown still is.
+            for id in due {
+                self.launch(id, None, false, out);
+            }
+            // The windows' effects are moved after those of the steps that follow them, below.
+            let windows_from = out.effects.len();
+            let mut steam = Vec::new();
+            if self.session.start_by_app_id(&self.clock, self.shelf.library(), &mut steam) {
+                self.bottom.unwake();
+            }
+            // Before following the windows, which leaves a starting launch's windows where they are.
+            for id in steam {
+                self.launch(id, None, true, out);
+            }
+            self.session.follow_windows(&self.clock, &mut self.shelf, out);
+            let by_windows = out.effects.len() - windows_from;
+            self.bottom.follow_window_rules(&self.session, out);
+            self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
+            self.session.show_pending(out);
+            self.session.show_reopened(self.clock.mono(), out);
+            self.session.follow_quitting(self.shelf.library(), out);
+            self.session.follow_closed(self.clock.mono(), out);
+            // After handling the front one closing, so that a window just taken by a browsed file is shown
+            // over it.
+            if let Some(effects) = out.effects.get_mut(windows_from..) {
+                effects.rotate_left(by_windows);
+            }
+            let docked = self.dock.follow(&self.session);
+            self.session.followed();
+            // The dock and the running entries are shown on the second screen.
+            if docked || !self.session.running_entries().iter().map(|r| &r.id).eq(before.iter()) {
+                out.mark(Dirty::BOTTOM);
+            }
+            self.settled.running = before;
+        }
+        if self.bottom.follow_dim(&self.session, &self.clock) {
+            out.mark(Dirty::BOTTOM);
+        }
+        self.shelf.follow_folder();
+        // Sleep only in the device's own session. A program in front doesn't hold it off; one playing a
+        // video asks the compositor to keep the screen on.
+        let policy = crate::device::idle::Policy::of(&self.prefs.settings().global, self.session.device_session());
+        let refreshing = *self.device.refresh() == crate::device::Refresh::Running;
+        self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), out);
+        let changed = self.session.follow_program();
+        self.bottom.follow_power(self.power(), self.clock.mono());
+        if changed && self.follow_pad_mouse() {
+            out.mark(Dirty::BOTH);
+        }
+        if self.reconcile_pad().is_some_and(|route| route != PadRoute::Ui) && self.pointer.hide_focus() {
+            out.mark(Dirty::BOTH);
+        }
+    }
+
+    /// Called when the program in force changed. Turns the pad mouse on if the program wants it
+    /// (Setting::PadMouse), and off again if the program had turned it on. Returns whether it changed.
+    fn follow_pad_mouse(&mut self) -> bool {
+        let wanted = self.session.program().is_some() && self.in_force().choice::<MouseAtLaunch>() == MouseAtLaunch::On;
+        self.pad.follow_game(wanted)
+    }
+
+    /// Works out where the pad goes as things are now. Returns the new route if it changed.
+    fn reconcile_pad(&mut self) -> Option<PadRoute> {
+        let listening = self.listening();
+        let moving = self.dock.moving().is_some() && self.bottom.tab() == Tab::Dock;
+        self.pad.reconcile(self.session.front(), self.bottom.tab(), self.pointer.show_focus(), listening, moving)
+    }
+
+    /// What the outside should have as things are now. The second screen watches what the open tab
+    /// watches; the dock with an entry's menu open watches the battery tab's readings, to show what the
+    /// entry costs. It can be seen when ClamShell's view is on the bottom screen and that screen is on.
+    fn wanted(&self) -> Wanted<'_> {
+        let tab = match self.bottom.tab() {
+            Tab::Dock if self.dock.menu().is_some() => Some(Watch::Battery),
+            tab => tab.watch(),
+        };
+        let settings = self.in_force();
+        Wanted {
+            shelf: &self.shelf,
+            shown: self.shelf.fetch_first(),
+            browsed: self.shelf.browsed(),
+            hidden: self.shelf.files().hidden(),
+            running: self.session.running_entries(),
+            stage: self.idle.stage(),
+            levels: &self.levels,
+            program: self.session.program(),
+            settings,
+            bottom_on: !self.bottom.off(),
+            bottom_seen: !self.bottom.shows_windows(&self.session) && !self.bottom.off(),
+            tab,
+            device_open: self.device.is_open(),
+            keymap: self.keymapping.version_of(settings.get(Setting::Keymap)),
+            keymapping: &self.keymapping,
+            route: self.pad.route(),
+        }
+    }
+
+    /// Sends the outside what differs from what it was last sent.
+    fn sync(&mut self, out: &mut Out) {
+        let mut sent = std::mem::take(&mut self.sent);
+        sent.sync(&self.wanted(), out);
+        self.sent = sent;
+    }
+
+    // What comes in.
+
+    /// The clock ticked. Once a minute, the bar's clock and both screens' burn-in orbit move on. Changes
+    /// are saved once they have stopped for a moment.
+    fn tick(&mut self, unix_secs: u64, mono_secs: u64, out: &mut Out) {
+        // The first tick. Anything idle heard before it was timed at 0, so count from now.
+        if !self.clock.read() {
+            self.idle.resumed(mono_secs);
+        }
+        let minute_changed = self.clock.tick(unix_secs, mono_secs);
+        // The session's steps follow the time.
+        self.session.changed();
+        if self.resume.due(mono_secs, SAVE_AFTER) {
+            out.effects.push(Effect::Save(Save::Resume(self.resume())));
+        }
+        self.levels.save_due(mono_secs, out);
+        let notice_gone = self.bottom.expire_notice(mono_secs);
+        if minute_changed {
+            out.mark(Dirty::BOTH);
+        } else if notice_gone {
+            out.mark(Dirty::BOTTOM);
+        }
+    }
+
+    /// A reading from a system thread. After a status reading, the battery warning is checked.
+    fn reading_came(&mut self, reading: Reading, out: &mut Out) {
+        let status = matches!(reading, Reading::Status(_));
+        let dirty = self.on_reading(reading);
+        if status {
+            self.sys.battery_warning(out);
+        }
+        out.mark(if self.follow_lists() { Dirty::BOTTOM } else { dirty });
+    }
+
+    /// A reading of the system. It is stored, and the second screen is redrawn if it shows what changed.
+    fn on_reading(&mut self, reading: Reading) -> Dirty {
+        let shown = self.bottom.tab().shows(&reading);
+        let changed = match reading {
+            // The volume, mute and brightness go to the levels, where a finger on a slider wins over the
+            // reading.
+            Reading::Status(status) => {
+                let levels = self.levels.read(status.volume, status.muted, status.brightness);
+                self.sys.read_status(status) | levels
+            }
+            Reading::Clipboard(text) => self.bottom.read_clipboard(text),
+            Reading::Icon { entry, path } => self.session.set_icon(&entry, path),
+            // The graphs move on with every reading.
+            Reading::Metrics(metrics) => {
+                self.sys.read_metrics(metrics);
+                true
+            }
+            Reading::Frames { fps, frame_ms } => {
+                self.sys.frames(fps, frame_ms);
+                true
+            }
+            Reading::Wifi(wifi) => self.radios.read_wifi(wifi),
+            Reading::Bluetooth(bluetooth) => self.radios.read_bluetooth(bluetooth),
+            Reading::Battery(battery) => self.sys.read_battery(battery),
+            Reading::Audio(audio) => self.levels.read_audio(audio),
+            Reading::Backlights(backlights) => self.levels.read_backlights(backlights),
+            Reading::Time(time) => self.sys.read_time(time),
+            Reading::Account(account) => {
+                // The account is shown in the Device view, on the main screen.
+                return if self.device.read_account(account) { Dirty::TOP } else { Dirty::NONE };
+            }
+        };
+        if changed && shown { Dirty::BOTTOM } else { Dirty::NONE }
+    }
+
+    /// The library was read again. New problems are reported once and shelf is reloaded. Then what
+    /// depends on its entries is updated: runners' pauses and keymaps, landing rules, and pins of entries
+    /// that are gone.
+    fn library_read(&mut self, library: Library, out: &mut Out) {
+        self.session.changed();
+        let problems = &library.problems;
+        if !problems.is_empty() && *problems != self.shelf.library().problems {
+            let first = problems.first().cloned().unwrap_or_default();
+            self.bottom.notify(crate::bottom::notice::NoticeKind::Problems(first, problems.len()), self.clock.mono());
+        }
+        if self.shelf.reload(library) {
+            self.shelf.moved(&mut self.pointer);
+        }
+        self.session.follow_pausable_runners(self.shelf.library());
+        self.follow_runner_keymaps(out);
+        out.effects.push(crate::session::running::land_rules(self.shelf.library()));
+        if self.dock.drop_gone(self.shelf.library(), &self.session) {
+            out.effects.push(self.dock.save_effect());
+        }
+    }
+
+    /// The UI is up. Sends what was waiting for it: the dock if pins were dropped at start, the
+    /// brightness, the runners' keymaps and the down rules, and after the event the pad's route and
+    /// keymap. The open tab's watch starts from now (see [`crate::sync::Sent::ui_started`]).
+    fn ui_started(&mut self, out: &mut Out) {
+        self.sent.ui_started();
+        self.sent.resend(Resend::Start);
+        if self.dock.take_unsaved() {
+            out.effects.push(self.dock.save_effect());
+        }
+        out.effects.extend(self.levels.brightness_effect());
+        self.follow_runner_keymaps(out);
+        out.effects.push(self.bottom.window_rules().effect());
+    }
+
+    fn on_launch_event(&mut self, event: LaunchEvent, out: &mut Out) {
+        out.mark(Dirty::BOTH);
+        self.session.changed();
+        match event {
+            LaunchEvent::Position { entry: game, position } => self.shelf.set_position(&game, position, self.clock.unix()),
+            // A launch that never started doesn't change what runs, but it is no longer starting.
+            LaunchEvent::LaunchFailed(game) => self.session.launch_failed(game, self.shelf.library(), &self.clock, self.bottom.notice_mut()),
+        }
+    }
+
+    /// A touch or a pad focus change. Focusing or pressing a target on the second screen counts as using
+    /// that screen.
+    fn pointer_event(&mut self, e: PointerEvent, out: &mut Out) {
+        let used = match &e {
+            PointerEvent::Focus(id) | PointerEvent::Activate(id) | PointerEvent::LongPress(id) | PointerEvent::Down(id) => id.screen() == Dirty::BOTTOM,
+            _ => false,
+        };
+        if used {
+            out.mark(self.bottom.used(&self.session, &self.clock));
+        }
+        self.on_pointer(e, out);
+    }
+
+    fn on_pointer(&mut self, event: PointerEvent, out: &mut Out) {
+        // Input that reached ClamShell itself, such as the pad driving the screens.
+        self.idle.own_input(self.clock.mono());
+        match event {
+            PointerEvent::Focus(id) => {
+                self.show_focused(&id);
+                self.pointer.focus_on(id);
+                self.pointer.show();
+                out.mark(Dirty::BOTH);
+            }
+            PointerEvent::HideFocus => {
+                if self.pointer.hide_focus() {
+                    out.mark(Dirty::BOTH);
+                }
+            }
+            // A press that woke the screens does nothing else.
+            PointerEvent::Activate(_) | PointerEvent::LongPress(_) if self.idle.swallows_press(self.clock.mono()) => {}
+            PointerEvent::Activate(id) => self.activate(&id, false, out),
+            PointerEvent::LongPress(id) => self.activate(&id, true, out),
+            PointerEvent::Down(id) => {
+                out.mark(id.screen());
+                if let Id::Key(pos) = id {
+                    self.keyboard.down(pos);
+                }
+                let item = self.item_key(&id);
+                self.pointer.down(id, item);
+            }
+            PointerEvent::Up(id) => {
+                self.pointer.up(&id);
+                if Level::of(&id).is_some() {
+                    self.levels.release();
+                }
+                if let Id::Key(pos) = id {
+                    self.keyboard.up(pos);
+                }
+                out.mark(id.screen());
+            }
+        }
+    }
+
+    /// A tap or long press on `id`, resolved to what the press landed on. It gets the focus, and its
+    /// subsystem acts on it.
+    fn activate(&mut self, id: &Id, long: bool, out: &mut Out) {
+        // The list item the press came down on is gone.
+        let Some(id) = self.resolve(id) else {
+            out.mark(Dirty::BOTTOM);
+            return;
+        };
+        self.pointer.focus_on(id.clone());
+        match id {
+            // A hold on the selected entry with the pad, while its focus is showing, moves the pad to the
+            // entry's actions and focuses the first. Up and down go through them, A runs one, and B goes
+            // back to the list.
+            Id::Shelf(ShelfId::Entry(game)) if long && self.pointer.show_focus() && self.shelf.selected() == Some(&game) => {
+                if let Some(first) = self.shelf.actions().as_slice().first() {
+                    self.pointer.focus_on(Id::Shelf(first.id()));
+                }
+                out.mark(Dirty::BOTH);
+            }
+            Id::Shelf(id) => {
+                out.mark(Dirty::BOTH);
+                self.shelf.on_target(id, &mut self.pointer, out);
+            }
+            Id::Dock(id) => {
+                out.mark(Dirty::BOTTOM);
+                self.dock.on(id, long, &self.session, &mut self.bottom, out);
+            }
+            Id::Settings(id) => {
+                out.mark(if matches!(id, SettingsId::Tile(_) | SettingsId::Reset) { Dirty::BOTH } else { Dirty::BOTTOM });
+                self.on_settings(id, long, out);
+            }
+            Id::Editor(id) => {
+                let done = match id {
+                    EditorId::Save => Done::Save,
+                    EditorId::Cancel => Done::Cancel,
+                };
+                out.mark(Dirty::BOTTOM);
+                self.editor_done(done, out);
+            }
+            Id::Wifi(WifiId::Power) => {
+                out.mark(Dirty::BOTTOM);
+                self.radios.power_wifi(out);
+            }
+            Id::Bluetooth(BtId::Power) => {
+                out.mark(Dirty::BOTTOM);
+                self.radios.power_bluetooth(out);
+            }
+            Id::Audio(id) => {
+                out.mark(Dirty::BOTTOM);
+                self.levels.on_audio(id, out);
+            }
+            Id::Row { list, i, part } => {
+                out.mark(list.screens());
+                self.on_row(list, usize::from(i), part, long, out);
+            }
+            Id::Keymap(id) => {
+                out.mark(Dirty::BOTTOM);
+                self.on_keymap(id, long, out);
+            }
+            Id::Tab(tab) => {
+                self.choose_tab(tab);
+                out.mark(Dirty::BOTH);
+            }
+            // A tap opens the tab. Slides are handled by the UI and don't end in a tap.
+            Id::Control(control) if !long => {
+                let tab = match control {
+                    Control::Volume => Tab::Volume,
+                    Control::Brightness => Tab::Brightness,
+                    // A keymap parameter is held or slid, not tapped.
+                    Control::Param(_) => return,
+                };
+                self.choose_tab(tab);
+                out.mark(Dirty::BOTH);
+            }
+            Id::Control(_) | Id::Level(_) | Id::List(_) | Id::Blank => {}
+            Id::Key(pos) => {
+                let stroke = self.keyboard.press(pos, long);
+                // The key goes to the editor while it is open, to finding an entry while shelf is in
+                // front, and otherwise to the focused app.
+                out.mark(Dirty::BOTTOM);
+                match stroke {
+                    Some(stroke) if self.bottom.editor().is_some() => {
+                        if let Some(done) = self.bottom.edit(stroke) {
+                            self.editor_done(done, out);
+                        }
+                    }
+                    Some(stroke) if self.keymapping.capturing(self.bottom.tab(), self.bottom.editor().is_some()) => {
+                        self.keymapping.captured(crate::keymap::screens::chord(stroke), out);
+                    }
+                    Some(stroke) if self.session.front() == crate::session::running::Front::Shelf => {
+                        out.mark(Dirty::BOTH);
+                        self.shelf.find(stroke, &mut self.pointer, out);
+                    }
+                    Some(stroke) => out.effects.push(Effect::Key(stroke)),
+                    None => {}
+                }
+            }
+            Id::BottomWindows => {
+                if let Some(window) = self.bottom.hidden_down(&self.session) {
+                    out.mark(Dirty::BOTH);
+                    self.bottom.show_program_down(window, out);
+                }
+            }
+            Id::Time(id) => self.sys.on_time(id, self.lists.get_mut(ListId::Time), out),
+            Id::Device(id) => {
+                out.mark(Dirty::BOTH);
+                self.device.tap(id, self.clock.mono(), &mut self.bottom, &mut self.pointer, self.shelf.selected(), out);
+            }
+            Id::Battery(id) => {
+                out.mark(Dirty::BOTTOM);
+                self.sys.on_battery(id, &self.session, out);
+            }
+            Id::PadMouse => {
+                self.pad.toggle_mouse();
+                out.mark(Dirty::BOTTOM);
+            }
+            Id::Wake => {
+                self.bottom.wake();
+                out.mark(Dirty::BOTTOM);
+            }
+        }
+    }
+
+    // Queries across areas.
+
+    /// A library entry by its id. An entry that is still running after leaving the library, because its
+    /// file was deleted, is returned as it was.
+    pub fn entry(&self, id: &str) -> Option<&Entry> {
+        self.session.entry(self.shelf.library(), id)
+    }
+
+    /// Whether the dock menu offers Open another for `id`. It does when `id` is running and another launch
+    /// of it makes sense (see [`crate::Entry::another`]).
+    pub fn opens_another(&self, id: &str) -> bool {
+        // Not for an entry handed over to another program, such as Android's: launching it again just
+        // shows the one already running.
+        self.session.running(id).is_some() && self.entry(id).is_some_and(|g| g.another && !g.runner.as_ref().is_some_and(|r| r.handover))
+    }
+
+    /// The settings in force: those of the program in force (see [`crate::session::program`]), or else
+    /// the global ones.
+    pub fn in_force(&self) -> Values {
+        self.session.program().as_ref().map_or(self.prefs.settings().global, |id| self.settings_of(id))
+    }
+
+    /// The level that entry `id` takes its settings from before its own, which is its runner's, if it
+    /// has one.
+    fn runner_of(&self, id: &str) -> Option<&str> {
+        self.entry(id).and_then(|g| g.runner.as_ref()).map(|r| &*r.key)
+    }
+
+    /// The settings entry or level `id` runs with: the global ones, then its runner's, then its own.
+    pub fn settings_of(&self, id: &str) -> Values {
+        self.prefs.settings().of_in(id, self.runner_of(id).as_slice())
+    }
+
+    /// The settings panel as it is now (see [`Panel::new`]).
+    pub fn panel(&self) -> Panel<'_> {
+        Panel::new(&self.session, &self.shelf, &self.prefs, &self.keymapping)
+    }
+
+    /// Whether the second screen is dark (see [`Bottom::dark`]).
+    pub fn bottom_dark(&self) -> bool {
+        self.bottom.dark(self.session.program().is_some(), self.in_force().choice::<BottomWhenIdle>())
+    }
+
+    /// What the second screen's power follows, as things are now.
+    fn power(&self) -> Power {
+        Power {
+            any_down: self.session.windows_down().next().is_some(),
+            in_game: self.session.program().is_some(),
+            when_idle: self.in_force().choice::<BottomWhenIdle>(),
+            discharging: self.sys.status().discharging,
+            refreshing: *self.device.refresh() == crate::device::Refresh::Running,
+        }
+    }
+
+    /// What the pad's Back button does on ClamShell's screens, as the target it activates. In the editor
+    /// it is Cancel. In the dock's menu or move mode it is the dock's Back. On the keymap screens it goes
+    /// back one screen, or gives up picking a control. Nothing else has a back of its own. On the edit
+    /// screen while the pad listens, Back comes in as an input to remap.
+    pub fn pad_back(&self) -> Option<crate::Id> {
+        if self.bottom.editor().is_some() {
+            return Some(crate::Id::Editor(crate::EditorId::Cancel));
+        }
+        if (self.dock.menu().is_some() || self.dock.moving().is_some()) && self.bottom.tab() == crate::Tab::Dock {
+            return Some(crate::Id::Dock(crate::DockId::Back));
+        }
+        self.keymapping.shown(self.bottom.tab()).map(|_| crate::Id::Keymap(crate::KeymapId::Back))
+    }
+
+    /// Where shelf and the second screen are, to come back to.
+    pub(crate) fn resume(&self) -> Resume {
+        Resume::of(&self.shelf, &self.bottom)
+    }
+
+    /// Whether the pad listens for inputs (see [`Keymapping::listening`]).
+    pub(crate) fn listening(&self) -> bool {
+        self.keymapping.listening(self.bottom.tab(), self.bottom.editor().is_some())
+    }
+
+    /// What the keymaps' screens read from the settings panel and the clock (see [`KeymapCx`]).
+    fn keymap_cx(&self) -> KeymapCx {
+        let panel = self.panel();
+        KeymapCx { game: panel.editing().map(|g| g.id.clone()), chosen: panel.keymap_chosen(), now: self.clock.mono() }
+    }
+
+    // Lists and their items.
+
+    /// A list's rows, from its feature.
+    fn rows(&self, list: ListId) -> RowsOf<'_> {
+        match list {
+            ListId::Shelf => RowsOf::Of(&self.shelf),
+            ListId::Wifi => RowsOf::Of(self.radios.wifi()),
+            ListId::Bluetooth => RowsOf::Of(self.radios.bluetooth()),
+            ListId::Streams => RowsOf::Of(self.levels.audio()),
+            ListId::Backlights => RowsOf::Of(self.levels.backlight_rows()),
+            ListId::Keymaps => RowsOf::Count(self.panel().keymap_rows_len()),
+            ListId::Layers => RowsOf::Count(self.keymapping.layer_rows()),
+            ListId::Time => RowsOf::Count(self.sys.time_rows()),
+            ListId::Dock => RowsOf::Count(self.dock.items().len().div_ceil(crate::session::dock::DOCK_COLUMNS)),
+        }
+    }
+
+    /// Where `list` is scrolled. For shelf, this is the current collection's position.
+    pub fn scroll(&self, list: ListId) -> &Scroll {
+        match list {
+            ListId::Shelf => self.shelf.scroll(),
+            _ => self.lists.get(list),
+        }
+    }
+
+    fn scroll_mut(&mut self, list: ListId) -> Option<&mut Scroll> {
+        match list {
+            ListId::Shelf => self.shelf.scroll_mut(),
+            _ => self.lists.get_mut(list),
+        }
+    }
+
+    /// How many rows `list` has now.
+    pub fn list_len(&self, list: ListId) -> usize {
+        self.rows(list).len()
+    }
+
+    /// A list scrolled or was laid out. Returns whether it moved.
+    fn on_list(&mut self, event: ListEvent) -> bool {
+        match event {
+            ListEvent::Scroll(list, rows) => self.move_list(list, |s, len| s.scroll_by(rows, len)),
+            ListEvent::Visible(list, rows) => self.move_list(list, |s, len| s.set_visible(rows, len)),
+        }
+    }
+
+    /// A tap or long press on a row, handled by the list's feature.
+    fn on_row(&mut self, list: ListId, i: usize, part: RowPart, long: bool, out: &mut Out) {
+        match list {
+            ListId::Wifi => self.radios.tap_network(i, long, self.bottom.editors_mut(), out),
+            ListId::Bluetooth => self.radios.tap_device(i, long, out),
+            ListId::Streams => self.levels.on_stream(i, part, out),
+            ListId::Keymaps => self.on_keymap_row(i, part, long, out),
+            ListId::Layers => self.on_layer_row(i, part, long, out),
+            ListId::Time => self.sys.on_time_row(i, self.lists.get_mut(ListId::Time), out),
+            // Its tiles are targets of their own.
+            ListId::Dock => {}
+            // A shelf game's row is its game's target, and a backlight's row is only its level.
+            ListId::Shelf | ListId::Backlights => {}
+        }
+    }
+
+    /// The pad's focus moved to `id`. If it is a list row, the list scrolls to show it.
+    fn show_focused(&mut self, id: &Id) {
+        if let Some((list, i)) = ListId::of(id) {
+            self.move_list(list, |s, len| s.show(i, len));
+        }
+    }
+
+    /// Moves `list` by `f`, given its scroll and how many rows it has. If it moved, the item now at the top
+    /// of its view is remembered, to keep there when the list changes. Returns whether it moved.
+    fn move_list(&mut self, list: ListId, f: impl FnOnce(&mut Scroll, usize) -> bool) -> bool {
+        let len = self.list_len(list);
+        if !self.scroll_mut(list).is_some_and(|s| f(s, len)) {
+            return false;
+        }
+        let key = self.rows(list).key(self.scroll(list).top());
+        if let Some(s) = self.scroll_mut(list) {
+            s.anchor(key);
+        }
+        true
+    }
+
+    /// Runs after the lists' contents may have changed. Each scrolled list keeps its top item where it
+    /// is, while that item is still there, and stays within its ends. Returns whether any moved.
+    fn follow_lists(&mut self) -> bool {
+        let mut moved = false;
+        for list in ListId::ALL {
+            let len = self.list_len(list);
+            let found = self.scroll(list).anchored().and_then(|key| self.rows(list).find(key));
+            if let Some(s) = self.scroll_mut(list) {
+                moved |= s.follow(found, len);
+            }
+        }
+        moved
+    }
+
+    /// The key of the item `id` points at, if `id` is a list item.
+    fn item_key(&self, id: &Id) -> Option<ItemKey> {
+        let at = |i: &u16| usize::from(*i);
+        match id {
+            Id::Row { list, i, .. } => self.rows(*list).key(at(i)),
+            Id::Dock(DockId::Entry(i)) => self.dock.items().get(at(i)).map(|e| ItemKey::Name(e.id.to_string())),
+            Id::Shelf(ShelfId::Collection(i)) => self.shelf.library().collections.get(at(i)).map(|c| ItemKey::Name(c.name.clone())),
+            Id::Audio(AudioId::Output(i)) => self.levels.audio().outputs.get(at(i)).map(|o| ItemKey::Number(o.id)),
+            _ => None,
+        }
+    }
+
+    /// Where the item with `key` is now, as an id of the same kind as `id`.
+    fn find_item(&self, id: &Id, key: &ItemKey) -> Option<Id> {
+        let index = |p: Option<usize>| p.and_then(|p| u16::try_from(p).ok());
+        match (id, key) {
+            (Id::Row { list, part, .. }, key) => index(self.rows(*list).find(key)).map(|i| Id::Row { list: *list, i, part: *part }),
+            (Id::Dock(DockId::Entry(_)), ItemKey::Name(n)) => index(self.dock.items().iter().position(|e| *e.id == **n)).map(|i| Id::Dock(DockId::Entry(i))),
+            (Id::Shelf(ShelfId::Collection(_)), ItemKey::Name(n)) => {
+                index(self.shelf.library().collections.iter().position(|x| x.name == *n)).map(|i| Id::Shelf(ShelfId::Collection(i)))
+            }
+            (Id::Audio(AudioId::Output(_)), ItemKey::Number(n)) => {
+                index(self.levels.audio().outputs.iter().position(|x| x.id == *n)).map(|i| Id::Audio(AudioId::Output(i)))
+            }
+            _ => None,
+        }
+    }
+
+    /// `id` resolved to the item the press landed on: the same item where it is now, or `None` once it
+    /// is gone. Ids that aren't list items, or weren't pressed, are returned as they are.
+    fn resolve(&self, id: &Id) -> Option<Id> {
+        match self.pointer.pressed_item(id) {
+            Some(item) => self.find_item(id, item),
+            None => Some(id.clone()),
+        }
+    }
+
+    /// A level row resolved to the one the finger landed on (see [`State::resolve`]).
+    fn resolve_level(&self, level: Level) -> Option<Level> {
+        self.resolve(&level.id()).as_ref().and_then(Level::of)
+    }
+
+    // Tabs, the editor and the device's keys.
+
+    /// The user chose a tab (see [`Bottom::choose_tab`]).
+    fn choose_tab(&mut self, tab: Tab) {
+        if self.bottom.choose_tab(tab) {
+            self.left_tab();
+        }
+    }
+
+    /// Goes back to the tab the keyboard came up from, if it did.
+    fn back_from_keyboard(&mut self) {
+        if self.bottom.back_from_keyboard() {
+            self.left_tab();
+        }
+    }
+
+    /// The second screen's tab changed, and its watch follows (see [`crate::sync::Sent::watches`]). What the
+    /// tab left had going ends: the dock's menu or move, and any level row being set. The time tab opens
+    /// on its main page again.
+    fn left_tab(&mut self) {
+        self.dock.close();
+        self.levels.release();
+        self.sys.reset_time_page();
+    }
+
+    /// The editor's Save or Cancel, by its button or a key. Either closes it. Save hands the text to its
+    /// purpose: the environment is saved, the network joined with the password, the keymap or file named,
+    /// or the account password used. Cancelling a file's name goes back to the tab the keyboard came up
+    /// from.
+    fn editor_done(&mut self, done: Done, out: &mut Out) {
+        let Some(editor) = self.bottom.close_editor() else {
+            return;
+        };
+        match (done, editor.purpose) {
+            // The keyboard goes back to the tab it came up from.
+            (Done::Cancel, Purpose::FileName(_)) => self.back_from_keyboard(),
+            (Done::Cancel, _) => {}
+            (Done::Save, Purpose::Env { entry: game }) => {
+                self.prefs.set_env(game, &editor.text);
+                out.effects.push(self.prefs.save_effect());
+            }
+            (Done::Save, Purpose::Password { ssid }) => self.radios.join(ssid, Some(editor.text), out),
+            (Done::Save, Purpose::KeymapName(action)) => self.keymapping.named(action, &editor.text, out),
+            (Done::Save, Purpose::FileName(purpose)) => {
+                self.back_from_keyboard();
+                out.effects.extend(crate::shelf::files::named(purpose, &editor.text).map(Effect::Files));
+            }
+            (Done::Save, Purpose::AccountPassword(step)) => crate::device::account::password_typed(step, editor.text, self.bottom.editors_mut(), out),
+        }
+    }
+
+    /// A hardware key. A level key steps the level and shows it. The others take a screenshot or run
+    /// their Home combination.
+    fn on_device_key(&mut self, key: DeviceKey, out: &mut Out) {
+        let (level, direction) = match key {
+            DeviceKey::VolumeUp => (Level::Volume, 1),
+            DeviceKey::VolumeDown => (Level::Volume, -1),
+            DeviceKey::BrightnessUp => (Level::Brightness, 1),
+            DeviceKey::BrightnessDown => (Level::Brightness, -1),
+            DeviceKey::Mute => {
+                self.bottom.notify(NoticeKind::Level(Control::Volume), self.clock.mono());
+                return self.levels.toggle_mute(out);
+            }
+            DeviceKey::Screenshot => return out.effects.push(Effect::Screenshot),
+            DeviceKey::BottomView => return self.bottom.toggle_view(&self.session),
+            DeviceKey::CloseWindow => return self.session.close_front_window(self.bottom.shows_windows(&self.session), out),
+            DeviceKey::Quit => return self.session.quit_front(self.bottom.shows_windows(&self.session), out),
+            DeviceKey::BottomPower => return self.bottom.toggle_power(self.power(), self.clock.mono()),
+            DeviceKey::WindowDown => return self.bottom.window_down(&self.session, self.clock.mono(), out),
+            DeviceKey::WindowUp => return self.bottom.window_up(&self.session, self.clock.mono(), out),
+        };
+        let control = if level == Level::Volume { Control::Volume } else { Control::Brightness };
+        self.bottom.notify(NoticeKind::Level(control), self.clock.mono());
+        self.levels.change(self.clock.mono(), |l| l.step(level, direction, out));
+    }
+
+    fn on_slide(&mut self, slide: Slide, out: &mut Out) {
+        match slide {
+            Slide::Start { control: Control::Param(param), x, width } => {
+                self.keymapping.param_slide_start(param, x, width);
+                out.mark(Dirty::BOTTOM);
+            }
+            Slide::Start { control, x, width } => {
+                self.levels.slide_start(control, x, width);
+                out.mark(Dirty::BOTTOM);
+            }
+            Slide::To { x } if self.levels.slider().is_none() => {
+                if self.keymapping.param_slide_to(x) {
+                    out.mark(Dirty::BOTTOM);
+                }
+            }
+            Slide::To { x } => {
+                let before = out.effects.len();
+                self.levels.change(self.clock.mono(), |l| l.slide_to(x, out));
+                if out.effects.len() > before {
+                    out.mark(Dirty::BOTTOM);
+                }
+            }
+            Slide::End => {
+                self.levels.slide_end();
+                out.mark(Dirty::BOTTOM);
+                self.keymapping.param_slide_end(out);
+            }
+        }
+    }
+
+    fn on_level(&mut self, event: LevelEvent, out: &mut Out) {
+        match event {
+            LevelEvent::Set(level, value) => {
+                let Some(level) = self.resolve_level(level) else {
+                    return;
+                };
+                let before = self.levels.level(level);
+                self.levels.change(self.clock.mono(), |l| l.set(level, value, out));
+                if self.levels.level(level) != before {
+                    out.mark(Dirty::BOTTOM);
+                }
+            }
+            LevelEvent::Step(level, direction) => {
+                out.mark(Dirty::BOTTOM);
+                self.levels.change(self.clock.mono(), |l| l.step(level, direction, out));
+            }
+        }
+    }
+
+    // Launches.
+
+    /// Shelf's action on its selected entry, or a tap on a stopped dock entry: shows the entry if it runs,
+    /// or else starts it. A group isn't started; it is shown open in shelf.
+    fn play(&mut self, game: Arc<str>, out: &mut Out) {
+        // A browsed file that is also a library entry plays as that entry.
+        let game = self.shelf.entry_of_file(&game).unwrap_or(game);
+        if self.session.running(&game).is_some() {
+            self.session.show(&game, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out);
+            return;
+        }
+        let title = self.shelf.entry(&game).map(|g| g.title.clone());
+        let mark = out.effects.len();
+        self.launch(game, None, true, out);
+        // The notice comes at once, since a start may take a while: Android's first start, a Steam
+        // game's, or Proton's setup.
+        if let Some(title) = title.filter(|_| out.effects.iter().skip(mark).any(|e| matches!(e, Effect::Launch { .. }))) {
+            self.bottom.notify(crate::bottom::notice::NoticeKind::Starting(title), self.clock.mono());
+        }
+    }
+
+    /// Launches `game`, again in another tab if it runs, unless a launch of it is starting. An entry that
+    /// runs in another program's processes is shown instead, since Steam doesn't start a game twice and
+    /// Android doesn't start an app twice. It runs `command` instead of its own if given, and a group can
+    /// then be launched too. The launch is `shown` once its first window appears, or else started in the
+    /// background.
+    pub(crate) fn launch(&mut self, game: Arc<str>, command: Option<Launch>, shown: bool, out: &mut Out) {
+        if let Some(Launch::Tool(tool)) = self.shelf.entry(&game).map(|g| &g.launch) {
+            // The Device view is ClamShell's own, on the main screen.
+            if *tool == clamshell_library::Tool::Device {
+                self.device.open(&mut self.pointer, out);
+            } else {
+                out.effects.push(Effect::Tool(*tool));
+            }
+            return;
+        }
+        if command.is_none() && self.shelf.entry(&game).is_some_and(crate::Entry::is_group) {
+            if self.shelf.reveal(&game) {
+                self.shelf.moved(&mut self.pointer);
+                out.effects.push(Effect::Window(WindowCommand::ShowShelf));
+            }
+            return;
+        }
+        if self.session.is_launching(&game) {
+            return;
+        }
+        if self.session.running(&game).is_some_and(|r| r.app_id.is_some()) {
+            self.session.show(&game, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out);
+            return;
+        }
+        let Some(g) = self.shelf.entry(&game) else {
+            return;
+        };
+        let app_id = app_id_of(g).filter(|_| command.is_none());
+        let (launch, key) = (command.unwrap_or_else(|| g.launch.clone()), g.key.clone());
+        let runner = g.runner.as_ref().map(|r| &*r.key);
+        let settings = self.prefs.settings().of_in(&game, runner.as_slice());
+        let mut env = Vec::new();
+        self.prefs.settings().env_in(&game, runner.as_slice(), &mut env);
+        // If its runner, and so its container, is paused, it is resumed first.
+        self.session.resume_runner_of(&game, self.shelf.library(), out);
+        let instance = self.session.begin_launch(game.clone(), key, app_id, &self.clock, shown);
+        out.effects.push(Effect::Save(Save::Resume(self.resume())));
+        out.effects.push(Effect::Launch { entry: game, instance, settings, env, launch });
+    }
+
+    /// Enqueue was pressed on what shelf's details show. The entries are added to the running launch of
+    /// their runner, or else launched (see [`crate::session::enqueue`]).
+    fn enqueue(&mut self, out: &mut Out) {
+        let Some(enqueued) = self.shelf.take_enqueued() else {
+            return;
+        };
+        if self.session.enqueue(&enqueued, self.bottom.notice_mut(), self.clock.mono(), out) {
+            return;
+        }
+        if enqueued.alone {
+            // A file alone is opened as A opens it, which includes resuming where it was left.
+            self.play(enqueued.entry, out);
+        } else {
+            let entry = self.shelf.entry_of_file(&enqueued.entry).unwrap_or(enqueued.entry);
+            self.launch(entry, Some(enqueued.runner.command_for(&enqueued.files)), true, out);
+        }
+    }
+
+    // Settings and keymaps.
+
+    /// For runners that come with one of ClamShell's keymaps (see [`crate::Library::runner_keymaps`]) and
+    /// have no keymap chosen and none of their own: makes that keymap their own, chooses it, and saves.
+    fn follow_runner_keymaps(&mut self, out: &mut Out) {
+        let library = self.shelf.library();
+        let wanting: Vec<(std::sync::Arc<str>, crate::keymap::Keymap)> = library
+            .runner_keymaps
+            .iter()
+            .filter(|(key, _)| self.prefs.settings().overrides_of(key).get(Setting::Keymap).is_none() && self.keymapping.keymaps().own_of(key).is_none())
+            .filter_map(|(key, name)| Some((key.clone(), crate::keymap::preset(name)?)))
+            .collect();
+        if wanting.is_empty() {
+            return;
+        }
+        for (key, preset) in &wanting {
+            if let Some(id) = self.keymapping.make_own_from(preset, key) {
+                self.prefs.set(Some(key), Setting::Keymap, Some(id));
+            }
+        }
+        out.effects.push(self.keymapping.save_effect());
+        out.effects.push(self.prefs.save_effect());
+    }
+
+    /// A tap or long press in the settings tab.
+    fn on_settings(&mut self, id: SettingsId, long: bool, out: &mut Out) {
+        match id {
+            SettingsId::Tile(Setting::Keymap) if !long => self.keymapping.open_picker(),
+            SettingsId::Tile(setting) => {
+                let value = if long { None } else { Some(setting.next(self.panel().tile_value(setting))) };
+                self.change(setting, value, out);
+            }
+            SettingsId::Env => {
+                let game = self.panel().editing().map(|g| g.id.clone());
+                self.prefs.open_env_editor(game, self.bottom.editors_mut());
+            }
+            SettingsId::Scope(scope) => self.prefs.set_scope(scope),
+            SettingsId::Reset => {
+                let before = self.in_force();
+                if let Some(id) = self.panel().editing().map(|g| g.id.clone()) {
+                    self.prefs.reset(&id);
+                }
+                self.saved_and_applied(before, out);
+            }
+        }
+    }
+
+    /// Changes `setting` where the panel edits, in the game's overrides or the global settings. It is set
+    /// to `value`, or back to the default for `None`. The change is saved, and applied at once if the
+    /// settings in force changed.
+    fn change(&mut self, setting: Setting, value: Option<u16>, out: &mut Out) {
+        let before = self.in_force();
+        let game = self.panel().editing().map(|g| g.id.clone());
+        self.prefs.set(game.as_ref(), setting, value);
+        self.saved_and_applied(before, out);
+    }
+
+    /// Saves the settings, and applies the settings in force after the event if they changed from
+    /// `before`.
+    fn saved_and_applied(&mut self, before: Values, out: &mut Out) {
+        out.effects.push(self.prefs.save_effect());
+        if self.in_force() != before {
+            self.sent.resend(crate::sync::Resend::Settings);
+        }
+    }
+
+    /// The keymaps' screens' buttons. Back goes back a screen; the others are the screen's.
+    fn on_keymap(&mut self, id: KeymapId, long: bool, out: &mut Out) {
+        if id == KeymapId::Back {
+            self.keymap_back();
+            return;
+        }
+        let cx = self.keymap_cx();
+        self.keymapping.on(id, long, &cx, self.prefs.settings(), &mut self.bottom, out);
+    }
+
+    /// A row of the picker (see [`Keymapping::on_row`]).
+    fn on_keymap_row(&mut self, i: usize, part: RowPart, long: bool, out: &mut Out) {
+        let cx = self.keymap_cx();
+        self.keymapping.on_row(i, part, long, &cx, self.bottom.editors_mut(), out);
+    }
+
+    /// A row of the list of layers, as the button it stands for.
+    fn on_layer_row(&mut self, i: usize, part: RowPart, long: bool, out: &mut Out) {
+        if let Some(id) = self.keymapping.layer_row_id(i, part) {
+            self.on_keymap(id, long, out);
+        }
+    }
+
+    /// Goes back one screen. Leaving the capture screen drops the modifiers held.
+    fn keymap_back(&mut self) {
+        if self.keymapping.back() {
+            self.keyboard.take_modifiers();
+        }
+    }
+
+    /// What the keymaps' screens ask of the settings and the keyboard.
+    fn keymap_event(&mut self, event: KeymapEvent, out: &mut Out) {
+        match event {
+            KeymapEvent::Choose(id) => self.change(Setting::Keymap, Some(id), out),
+            // The settings are saved before the keymaps.
+            KeymapEvent::MadeOwn(id) => {
+                self.change(Setting::Keymap, Some(id), out);
+                out.effects.push(self.keymapping.save());
+            }
+            KeymapEvent::Deleted(id) => {
+                // The settings in force never depend on the keymaps, so this is as before the delete.
+                let before = self.in_force();
+                self.prefs.forget_keymap(id);
+                self.saved_and_applied(before, out);
+            }
+            KeymapEvent::Capture => {
+                if matches!(self.keymapping.screen(), Some(Screen::Capture { .. })) {
+                    let chord = self.keyboard.take_modifiers();
+                    self.keymapping.captured(chord, out);
+                }
+            }
+        }
+    }
+
+    // Setting up tests.
+
+    /// Marks the UI up, as Start does, with what the outside would be sent for it dropped.
+    #[cfg(test)]
+    pub(crate) fn ui_up(&mut self) {
+        self.sent.ui_started();
+        self.sync(&mut Out::default());
+    }
+
+    /// Handles `event` without the steps that follow it, and returns the effects it pushed.
+    #[cfg(test)]
+    pub(crate) fn handle(&mut self, event: Event) -> Vec<Effect> {
+        let mut out = Out::default();
+        self.apply_event(event, &mut out);
+        out.effects
+    }
+
+    #[cfg(test)]
+    pub(crate) fn settings_mut(&mut self) -> &mut crate::settings::Settings {
+        self.prefs.settings_mut()
+    }
+
+    /// Has `running` run in scope `unit` (see [`Session::add_run`]).
+    #[cfg(test)]
+    pub(crate) fn add_run(&mut self, running: crate::Running, unit: crate::Instance) {
+        self.session.add_run(running, unit);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn editor_mut(&mut self) -> Option<&mut crate::Editor> {
+        self.bottom.editor_mut()
+    }
+}
+
+/// What the steps after an event last saw (see [`State::settle`]).
+#[derive(Debug, Default)]
+pub(crate) struct Settled {
+    /// The session's version (see [`crate::Session::version`]).
+    session: u64,
+    /// The running entries' ids before the session's steps, kept so that the list is reused.
+    running: Vec<std::sync::Arc<str>>,
+}
+
+impl Settled {
+    /// As at start: the session's steps run on the first change to what it follows.
+    pub(crate) fn new(session: &crate::Session) -> Settled {
+        Settled { session: session.version(), running: Vec::new() }
+    }
+}

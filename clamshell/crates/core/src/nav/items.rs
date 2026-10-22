@@ -1,57 +1,8 @@
 //! List items by what they are, not where they are. Taps, long presses and level rows name list items by
 //! position, so drawing needs no allocation. But a list can change under a finger: a scan re-sorts the
 //! networks, a device connects and moves up, an app stops playing, a game ends. So a press remembers
-//! what its item is when it comes down ([`ItemKey`]), and acts on that item wherever it is by then, or
+//! what its item is when it comes down ([`crate::kit::list::ItemKey`]), and acts on that item wherever it is by then, or
 //! not at all once it is gone.
-
-use crate::State;
-use crate::id::{AudioId, DockId, Id, ShelfId};
-use crate::kit::list::ItemKey;
-use crate::levels::Level;
-
-impl State {
-    /// The key of the item `id` points at, if `id` is a list item.
-    pub(crate) fn item_key(&self, id: &Id) -> Option<ItemKey> {
-        let at = |i: &u16| usize::from(*i);
-        match id {
-            Id::Row { list, i, .. } => self.rows(*list).key(at(i)),
-            Id::Dock(DockId::Entry(i)) => self.dock.items().get(at(i)).map(|e| ItemKey::Name(e.id.to_string())),
-            Id::Shelf(ShelfId::Collection(i)) => self.shelf.library().collections.get(at(i)).map(|c| ItemKey::Name(c.name.clone())),
-            Id::Audio(AudioId::Output(i)) => self.levels.audio().outputs.get(at(i)).map(|o| ItemKey::Number(o.id)),
-            _ => None,
-        }
-    }
-
-    /// Where the item with `key` is now, as an id of the same kind as `id`.
-    pub(crate) fn find_item(&self, id: &Id, key: &ItemKey) -> Option<Id> {
-        let index = |p: Option<usize>| p.and_then(|p| u16::try_from(p).ok());
-        match (id, key) {
-            (Id::Row { list, part, .. }, key) => index(self.rows(*list).find(key)).map(|i| Id::Row { list: *list, i, part: *part }),
-            (Id::Dock(DockId::Entry(_)), ItemKey::Name(n)) => index(self.dock.items().iter().position(|e| *e.id == **n)).map(|i| Id::Dock(DockId::Entry(i))),
-            (Id::Shelf(ShelfId::Collection(_)), ItemKey::Name(n)) => {
-                index(self.shelf.library().collections.iter().position(|x| x.name == *n)).map(|i| Id::Shelf(ShelfId::Collection(i)))
-            }
-            (Id::Audio(AudioId::Output(_)), ItemKey::Number(n)) => {
-                index(self.levels.audio().outputs.iter().position(|x| x.id == *n)).map(|i| Id::Audio(AudioId::Output(i)))
-            }
-            _ => None,
-        }
-    }
-
-    /// `id` resolved to the item the press landed on: the same item where it is now, or `None` once it
-    /// is gone. Ids that aren't list items, or weren't pressed, are returned as they are.
-    pub(crate) fn resolve(&self, id: &Id) -> Option<Id> {
-        match self.pointer.pressed_item(id) {
-            Some(item) => self.find_item(id, item),
-            None => Some(id.clone()),
-        }
-    }
-
-    /// A level row resolved to the one the finger landed on (see [`State::resolve`]).
-    pub(crate) fn resolve_level(&self, level: Level) -> Option<Level> {
-        self.resolve(&level.id()).as_ref().and_then(Level::of)
-    }
-}
 
 #[cfg(test)]
 mod tests {

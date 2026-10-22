@@ -31,8 +31,8 @@ use crate::keymap::{Actuation, Binding, Chord, Input, Keymap, Keymaps, Kind, Lay
 use crate::levels::slider::{Control, Slider};
 use crate::nav::lists::RowPart;
 use crate::out::Out;
-use crate::settings::{Setting, Settings};
-use crate::{Bottom, Event, State, Tab};
+use crate::settings::Settings;
+use crate::{Bottom, Event, Tab};
 
 mod layers;
 mod params;
@@ -753,77 +753,6 @@ impl Keymapping {
                     return;
                 }
                 self.choose(id, input, Output::Keys(so_far), out);
-            }
-        }
-    }
-}
-
-impl State {
-    pub fn keymapping(&self) -> &Keymapping {
-        &self.keymapping
-    }
-
-    /// What the keymaps' screens read from the settings panel and the clock (see [`KeymapCx`]).
-    fn keymap_cx(&self) -> KeymapCx {
-        let panel = self.panel();
-        KeymapCx { game: panel.editing().map(|g| g.id.clone()), chosen: panel.keymap_chosen(), now: self.clock.mono() }
-    }
-
-    /// Whether the pad listens for inputs (see [`Keymapping::listening`]).
-    pub(crate) fn listening(&self) -> bool {
-        self.keymapping.listening(self.bottom.tab(), self.bottom.editor().is_some())
-    }
-
-    /// The keymaps' screens' buttons. Back goes back a screen; the others are the screen's.
-    pub(crate) fn on_keymap(&mut self, id: KeymapId, long: bool, out: &mut Out) {
-        if id == KeymapId::Back {
-            self.keymap_back();
-            return;
-        }
-        let cx = self.keymap_cx();
-        self.keymapping.on(id, long, &cx, self.prefs.settings(), &mut self.bottom, out);
-    }
-
-    /// A row of the picker (see [`Keymapping::on_row`]).
-    pub(crate) fn on_keymap_row(&mut self, i: usize, part: RowPart, long: bool, out: &mut Out) {
-        let cx = self.keymap_cx();
-        self.keymapping.on_row(i, part, long, &cx, self.bottom.editors_mut(), out);
-    }
-
-    /// A row of the list of layers, as the button it stands for.
-    pub(crate) fn on_layer_row(&mut self, i: usize, part: RowPart, long: bool, out: &mut Out) {
-        if let Some(id) = self.keymapping.layer_row_id(i, part) {
-            self.on_keymap(id, long, out);
-        }
-    }
-
-    /// Goes back one screen. Leaving the capture screen drops the modifiers held.
-    pub(crate) fn keymap_back(&mut self) {
-        if self.keymapping.back() {
-            self.keyboard.take_modifiers();
-        }
-    }
-
-    /// What the keymaps' screens ask of the settings and the keyboard.
-    pub(crate) fn keymap_event(&mut self, event: KeymapEvent, out: &mut Out) {
-        match event {
-            KeymapEvent::Choose(id) => self.change(Setting::Keymap, Some(id), out),
-            // The settings are saved before the keymaps.
-            KeymapEvent::MadeOwn(id) => {
-                self.change(Setting::Keymap, Some(id), out);
-                out.effects.push(self.keymapping.save());
-            }
-            KeymapEvent::Deleted(id) => {
-                // The settings in force never depend on the keymaps, so this is as before the delete.
-                let before = self.in_force();
-                self.prefs.forget_keymap(id);
-                self.saved_and_applied(before, out);
-            }
-            KeymapEvent::Capture => {
-                if matches!(self.keymapping.screen(), Some(Screen::Capture { .. })) {
-                    let chord = self.keyboard.take_modifiers();
-                    self.keymapping.captured(chord, out);
-                }
             }
         }
     }

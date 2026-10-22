@@ -7,8 +7,6 @@ use std::fmt;
 use std::sync::Arc;
 
 use crate::bottom::keyboard::{self, Key, Named, Stroke};
-use crate::effect::Effect;
-use crate::out::Out;
 
 /// What the editor edits, and the text so far.
 #[derive(Clone, PartialEq, Eq)]
@@ -150,34 +148,6 @@ impl crate::Bottom {
     /// A reading of the system clipboard's text. Returns whether it changed.
     pub(crate) fn read_clipboard(&mut self, text: Option<Arc<str>>) -> bool {
         crate::kit::replace(&mut self.clipboard, text)
-    }
-}
-
-impl crate::State {
-    /// The editor's Save or Cancel, by its button or a key. Either closes it. Save hands the text to its
-    /// purpose: the environment is saved, the network joined with the password, the keymap or file named,
-    /// or the account password used. Cancelling a file's name goes back to the tab the keyboard came up
-    /// from.
-    pub(crate) fn editor_done(&mut self, done: Done, out: &mut Out) {
-        let Some(editor) = self.bottom.close_editor() else {
-            return;
-        };
-        match (done, editor.purpose) {
-            // The keyboard goes back to the tab it came up from.
-            (Done::Cancel, Purpose::FileName(_)) => self.back_from_keyboard(),
-            (Done::Cancel, _) => {}
-            (Done::Save, Purpose::Env { entry: game }) => {
-                self.prefs.set_env(game, &editor.text);
-                out.effects.push(self.prefs.save_effect());
-            }
-            (Done::Save, Purpose::Password { ssid }) => self.radios.join(ssid, Some(editor.text), out),
-            (Done::Save, Purpose::KeymapName(action)) => self.keymapping.named(action, &editor.text, out),
-            (Done::Save, Purpose::FileName(purpose)) => {
-                self.back_from_keyboard();
-                out.effects.extend(crate::shelf::files::named(purpose, &editor.text).map(Effect::Files));
-            }
-            (Done::Save, Purpose::AccountPassword(step)) => crate::device::account::password_typed(step, editor.text, self.bottom.editors_mut(), out),
-        }
     }
 }
 

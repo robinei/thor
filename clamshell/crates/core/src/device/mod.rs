@@ -17,7 +17,6 @@ pub mod idle;
 pub mod sticks;
 
 use crate::DeviceId;
-use crate::State;
 use std::sync::Arc;
 
 use crate::bottom::editor::{Editor, Purpose};
@@ -200,25 +199,19 @@ impl Device {
     }
 }
 
-impl State {
-    pub fn device(&self) -> &Device {
-        &self.device
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::id::DeviceId;
     use crate::testkit::*;
-    use crate::{EditorId, Event, Init, Reading};
+    use crate::{EditorId, Event, Init, Reading, State};
 
     fn tap(s: &mut State, id: DeviceId) -> Vec<Effect> {
         s.apply(Event::Pointer(crate::PointerEvent::Activate(Id::Device(id)))).1
     }
 
     fn type_and_save(s: &mut State, text: &str) -> Vec<Effect> {
-        if let Some(e) = s.bottom.editor_mut() {
+        if let Some(e) = s.editor_mut() {
             e.text = text.to_owned();
         }
         s.apply(Event::Pointer(crate::PointerEvent::Activate(Id::Editor(EditorId::Save)))).1

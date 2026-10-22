@@ -106,7 +106,7 @@ and the UI change with the code they call; doc links to moved methods are fixed 
         Resumed, RefreshCalibrated, Library/Fetching. Replaces `follow_watch`, `follow_power`,
         `follow_keymap`, `follow_shown`, `follow_browse`, `follow_dim` and their last-sent fields.
 - [x] 14. Fields private everywhere; `#[cfg(test)]` helpers where tests poked fields.
-- [ ] 15. `state.rs`: the one `impl State`, `apply.rs` folded in.
+- [x] 15. `state.rs`: the one `impl State`, `apply.rs` folded in.
 
 ## Risks to watch
 

@@ -15,6 +15,7 @@
 
 pub mod slider;
 
+use crate::AudioId;
 use crate::effect::{Effect, Save};
 use crate::id::Id;
 use crate::kit::debounce::Debounce;
@@ -22,7 +23,6 @@ use crate::kit::list::{ItemKey, Rows};
 use crate::nav::lists::{ListId, RowPart};
 use crate::out::Out;
 use crate::resume::SAVE_AFTER;
-use crate::{AudioId, Dirty, LevelEvent, Slide, State};
 use slider::{Control, Slider};
 
 /// A level row.
@@ -463,57 +463,6 @@ impl Rows for Backlights {
 
     fn find(&self, key: &ItemKey) -> Option<usize> {
         self.0.iter().position(|b| matches!(key, ItemKey::Name(n) if n == b))
-    }
-}
-
-impl State {
-    pub(crate) fn on_slide(&mut self, slide: Slide, out: &mut Out) {
-        match slide {
-            Slide::Start { control: Control::Param(param), x, width } => {
-                self.keymapping.param_slide_start(param, x, width);
-                out.mark(Dirty::BOTTOM);
-            }
-            Slide::Start { control, x, width } => {
-                self.levels.slide_start(control, x, width);
-                out.mark(Dirty::BOTTOM);
-            }
-            Slide::To { x } if self.levels.slider().is_none() => {
-                if self.keymapping.param_slide_to(x) {
-                    out.mark(Dirty::BOTTOM);
-                }
-            }
-            Slide::To { x } => {
-                let before = out.effects.len();
-                self.levels.change(self.clock.mono(), |l| l.slide_to(x, out));
-                if out.effects.len() > before {
-                    out.mark(Dirty::BOTTOM);
-                }
-            }
-            Slide::End => {
-                self.levels.slide_end();
-                out.mark(Dirty::BOTTOM);
-                self.keymapping.param_slide_end(out);
-            }
-        }
-    }
-
-    pub(crate) fn on_level(&mut self, event: LevelEvent, out: &mut Out) {
-        match event {
-            LevelEvent::Set(level, value) => {
-                let Some(level) = self.resolve_level(level) else {
-                    return;
-                };
-                let before = self.levels.level(level);
-                self.levels.change(self.clock.mono(), |l| l.set(level, value, out));
-                if self.levels.level(level) != before {
-                    out.mark(Dirty::BOTTOM);
-                }
-            }
-            LevelEvent::Step(level, direction) => {
-                out.mark(Dirty::BOTTOM);
-                self.levels.change(self.clock.mono(), |l| l.step(level, direction, out));
-            }
-        }
     }
 }
 

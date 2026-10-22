@@ -22,16 +22,15 @@
 //! kill ends it at once. What is in front, whether shelf, a running entry or another window, decides where
 //! the pad goes, what Home does and what the settings page edits.
 
-use crate::{Dirty, LaunchEvent};
 use std::sync::Arc;
 
 use clamshell_library::{Launch, ids};
 
 use crate::bottom::notice::{Notice, NoticeKind};
-use crate::effect::{Effect, Save, WindowCommand};
+use crate::effect::{Effect, WindowCommand};
 use crate::out::Out;
 use crate::session::instance::{Instance, STEAM_APP_PREFIX};
-use crate::{Clock, Entry, Library, Session, Shelf, State};
+use crate::{Clock, Entry, Library, Session, Shelf};
 
 /// What is in front on the main screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,72 +167,6 @@ pub fn has_app_id(g: &Entry, app_id: &str) -> bool {
 /// A handed-over entry's app id: its desktop file's name.
 fn handed_over_app(g: &Entry) -> Option<&str> {
     ids::desktop_file(&g.id).filter(|_| g.runner.as_ref().is_some_and(|r| r.handover))
-}
-
-impl State {
-    /// Shelf's action on its selected entry, or a tap on a stopped dock entry: shows the entry if it runs,
-    /// or else starts it. A group isn't started; it is shown open in shelf.
-    pub(crate) fn play(&mut self, game: Arc<str>, out: &mut Out) {
-        // A browsed file that is also a library entry plays as that entry.
-        let game = self.shelf.entry_of_file(&game).unwrap_or(game);
-        if self.session.running(&game).is_some() {
-            self.session.show(&game, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out);
-            return;
-        }
-        let title = self.shelf.entry(&game).map(|g| g.title.clone());
-        let mark = out.effects.len();
-        self.launch(game, None, true, out);
-        // The notice comes at once, since a start may take a while: Android's first start, a Steam
-        // game's, or Proton's setup.
-        if let Some(title) = title.filter(|_| out.effects.iter().skip(mark).any(|e| matches!(e, Effect::Launch { .. }))) {
-            self.bottom.notify(crate::bottom::notice::NoticeKind::Starting(title), self.clock.mono());
-        }
-    }
-
-    /// Launches `game`, again in another tab if it runs, unless a launch of it is starting. An entry that
-    /// runs in another program's processes is shown instead, since Steam doesn't start a game twice and
-    /// Android doesn't start an app twice. It runs `command` instead of its own if given, and a group can
-    /// then be launched too. The launch is `shown` once its first window appears, or else started in the
-    /// background.
-    pub(crate) fn launch(&mut self, game: Arc<str>, command: Option<Launch>, shown: bool, out: &mut Out) {
-        if let Some(Launch::Tool(tool)) = self.shelf.entry(&game).map(|g| &g.launch) {
-            // The Device view is ClamShell's own, on the main screen.
-            if *tool == clamshell_library::Tool::Device {
-                self.device.open(&mut self.pointer, out);
-            } else {
-                out.effects.push(Effect::Tool(*tool));
-            }
-            return;
-        }
-        if command.is_none() && self.shelf.entry(&game).is_some_and(crate::Entry::is_group) {
-            if self.shelf.reveal(&game) {
-                self.shelf.moved(&mut self.pointer);
-                out.effects.push(Effect::Window(WindowCommand::ShowShelf));
-            }
-            return;
-        }
-        if self.session.is_launching(&game) {
-            return;
-        }
-        if self.session.running(&game).is_some_and(|r| r.app_id.is_some()) {
-            self.session.show(&game, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out);
-            return;
-        }
-        let Some(g) = self.shelf.entry(&game) else {
-            return;
-        };
-        let app_id = app_id_of(g).filter(|_| command.is_none());
-        let (launch, key) = (command.unwrap_or_else(|| g.launch.clone()), g.key.clone());
-        let runner = g.runner.as_ref().map(|r| &*r.key);
-        let settings = self.prefs.settings().of_in(&game, runner.as_slice());
-        let mut env = Vec::new();
-        self.prefs.settings().env_in(&game, runner.as_slice(), &mut env);
-        // If its runner, and so its container, is paused, it is resumed first.
-        self.session.resume_runner_of(&game, self.shelf.library(), out);
-        let instance = self.session.begin_launch(game.clone(), key, app_id, &self.clock, shown);
-        out.effects.push(Effect::Save(Save::Resume(self.resume())));
-        out.effects.push(Effect::Launch { entry: game, instance, settings, env, launch });
-    }
 }
 
 impl Session {
@@ -624,18 +557,6 @@ impl Session {
             }
         }
         self.quitting = quitting;
-    }
-}
-
-impl State {
-    pub(crate) fn on_launch_event(&mut self, event: LaunchEvent, out: &mut Out) {
-        out.mark(Dirty::BOTH);
-        self.session.changed();
-        match event {
-            LaunchEvent::Position { entry: game, position } => self.shelf.set_position(&game, position, self.clock.unix()),
-            // A launch that never started doesn't change what runs, but it is no longer starting.
-            LaunchEvent::LaunchFailed(game) => self.session.launch_failed(game, self.shelf.library(), &self.clock, self.bottom.notice_mut()),
-        }
     }
 }
 

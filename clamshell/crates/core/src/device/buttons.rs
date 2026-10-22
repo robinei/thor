@@ -1,14 +1,6 @@
 //! The device's own buttons and what they do: volume and brightness up and down, mute, a screenshot, and
 //! the Home combinations. Each one says what happened in a notice (see [`crate::bottom::notice`]).
 
-use crate::bottom::notice::NoticeKind;
-use crate::effect::Effect;
-use crate::levels::Level;
-use crate::levels::slider::Control;
-use crate::out::Out;
-
-use crate::State;
-
 /// A hardware key, or the same key requested through the control pipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceKey {
@@ -33,40 +25,15 @@ pub enum DeviceKey {
     WindowUp,
 }
 
-impl State {
-    /// A hardware key. A level key steps the level and shows it. The others take a screenshot or run
-    /// their Home combination.
-    pub(crate) fn on_device_key(&mut self, key: DeviceKey, out: &mut Out) {
-        let (level, direction) = match key {
-            DeviceKey::VolumeUp => (Level::Volume, 1),
-            DeviceKey::VolumeDown => (Level::Volume, -1),
-            DeviceKey::BrightnessUp => (Level::Brightness, 1),
-            DeviceKey::BrightnessDown => (Level::Brightness, -1),
-            DeviceKey::Mute => {
-                self.bottom.notify(NoticeKind::Level(Control::Volume), self.clock.mono());
-                return self.levels.toggle_mute(out);
-            }
-            DeviceKey::Screenshot => return out.effects.push(Effect::Screenshot),
-            DeviceKey::BottomView => return self.bottom.toggle_view(&self.session),
-            DeviceKey::CloseWindow => return self.session.close_front_window(self.bottom.shows_windows(&self.session), out),
-            DeviceKey::Quit => return self.session.quit_front(self.bottom.shows_windows(&self.session), out),
-            DeviceKey::BottomPower => return self.bottom.toggle_power(self.power(), self.clock.mono()),
-            DeviceKey::WindowDown => return self.bottom.window_down(&self.session, self.clock.mono(), out),
-            DeviceKey::WindowUp => return self.bottom.window_up(&self.session, self.clock.mono(), out),
-        };
-        let control = if level == Level::Volume { Control::Volume } else { Control::Brightness };
-        self.bottom.notify(NoticeKind::Level(control), self.clock.mono());
-        self.levels.change(self.clock.mono(), |l| l.step(level, direction, out));
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bottom::notice::NoticeKind;
     use crate::levels::Sound;
+    use crate::levels::slider::Control;
     use crate::status::Status;
     use crate::testkit::state;
-    use crate::{Event, Reading};
+    use crate::{Effect, Event, Reading};
 
     #[test]
     fn keys_step_the_levels_and_show_them_for_a_moment() {

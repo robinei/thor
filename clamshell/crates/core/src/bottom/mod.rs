@@ -16,7 +16,7 @@ use crate::effect::Watch;
 use crate::event::Reading;
 use crate::kit::names::names;
 use crate::out::Out;
-use crate::{Dirty, Effect, State};
+use crate::{Dirty, Effect};
 use editor::{Editor, Editors};
 use notice::Notice;
 
@@ -182,7 +182,7 @@ impl Bottom {
 impl Bottom {
     /// Changes the tab. Whatever the old tab had open, such as an editor or the keymap screens, stays
     /// there for coming back to. Returns whether it changed, so State can follow (see
-    /// [`State::left_tab`]).
+    /// [`crate::State::left_tab`]).
     pub(crate) fn set_tab(&mut self, tab: Tab) -> bool {
         if tab == self.tab {
             return false;
@@ -273,31 +273,6 @@ impl Bottom {
         if self.pointing != before {
             out.mark(Dirty::BOTTOM);
         }
-    }
-}
-
-impl State {
-    /// The user chose a tab (see [`Bottom::choose_tab`]).
-    pub(crate) fn choose_tab(&mut self, tab: Tab) {
-        if self.bottom.choose_tab(tab) {
-            self.left_tab();
-        }
-    }
-
-    /// Goes back to the tab the keyboard came up from, if it did.
-    pub(crate) fn back_from_keyboard(&mut self) {
-        if self.bottom.back_from_keyboard() {
-            self.left_tab();
-        }
-    }
-
-    /// The second screen's tab changed, and its watch follows (see [`crate::sync::Sent::watches`]). What the
-    /// tab left had going ends: the dock's menu or move, and any level row being set. The time tab opens
-    /// on its main page again.
-    pub(crate) fn left_tab(&mut self) {
-        self.dock.close();
-        self.levels.release();
-        self.sys.reset_time_page();
     }
 }
 

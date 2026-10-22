@@ -2,9 +2,10 @@
 //! what the outside world must do comes back as [`Effect`]s. The UI and the system threads only read the
 //! state and send events, so all of this can be unit-tested.
 //!
-//! The state is grouped by subject, and so are the modules. Each area holds its model and its rules. The
-//! rules are `impl State` blocks, since most of them read more than one group.
-//!
+//! The state is made of areas, one per subject, and so are the modules. Each area is a type that owns its
+//! fields privately, with its rules as methods and the getters the UI reads. A rule takes what it reads
+//! of other areas as parameters, and an area it changes, where that area alone owns the change, as a
+//! `&mut` parameter (a notice, the pointer's focus). The areas:
 //!
 //! - [`shelf`]: the library view on the main screen ([`Shelf`]), with its actions and files;
 //! - [`bottom`]: the second screen's tabs ([`Bottom`]), the editor, the on-screen keyboard, and the
@@ -20,15 +21,25 @@
 //! - [`nav`]: focus and presses ([`Pointer`]), the lists, and the pad's routing ([`Pad`]);
 //! - [`kit`]: generic parts the areas build on, which know nothing about them.
 //!
-//! `apply.rs` passes each event to its area, and then runs everything that follows from it, in order;
-//! `sync.rs` then tells the outside what changed for it.
+//! [`State`] holds the areas and coordinates them. Outside code reads an area through State's accessor
+//! for it (`s.radios().wifi()`), and changes state only by sending an event to [`State::apply`], which
+//! runs in three phases:
+//!
+//! 1. Handle: the event goes to the rules of its area. They push effects into one [`out::Out`] in the
+//!    order things happen and mark the screens they changed. What needs several areas, such as a tab
+//!    change, playing an entry or choosing a keymap, is queued as an event, which State handles after
+//!    the rule returns, so its effects follow those pushed before it. Outside code may send the same
+//!    events.
+//! 2. Settle: the steps that bring every area up to date with what happened, in an order where each
+//!    finds the ones it reads settled (see [`State::settle`]).
+//! 3. Sync: what the outside should have as things are now is compared with what it was last sent, and
+//!    the difference is sent ([`sync`]).
 //!
 //! The workspace lints rule out panics: no `unwrap`, `expect` or indexing. A lookup whose index is valid
 //! by construction, such as an enum's position in an array sized for it, or an index held by the
 //! library's own tree, falls back quietly. Where a bug could reach a fallback, a `debug_assert!` catches
 //! it in tests.
 
-mod apply;
 pub mod bottom;
 mod clock;
 pub mod device;
@@ -45,6 +56,7 @@ mod resume;
 pub mod session;
 pub mod settings;
 pub mod shelf;
+mod state;
 pub mod status;
 mod sync;
 #[cfg(test)]
@@ -54,8 +66,6 @@ pub(crate) mod testkit;
 #[allow(clippy::unwrap_used)]
 mod tests;
 
-use bottom::keyboard::Keyboard;
-use out::Out;
 use settings::Settings;
 
 // What other crates use to talk to the state: the events and effects and what they carry, the ids, and
@@ -81,6 +91,7 @@ pub use session::instance::Instance;
 pub use session::running::{Front, Launching, Origin, Running};
 pub use settings::panel::{Panel, Prefs, Program, Scope, TileOrigin};
 pub use shelf::{Cursor, Shelf};
+pub use state::State;
 pub use status::time::{ClockField, TimePage, TimeRow, TimeZones};
 pub use status::{Status, Sys};
 
@@ -117,156 +128,4 @@ pub struct Init {
     pub first_start: bool,
     /// The sticks' calibrations, by controller (see [`crate::device::sticks`]).
     pub sticks: crate::device::sticks::Calibrations,
-}
-
-#[derive(Debug, Default)]
-pub struct State {
-    shelf: Shelf,
-    bottom: Bottom,
-    session: Session,
-    dock: Dock,
-    /// The Device view on the main screen (see [`device`]).
-    device: device::Device,
-    levels: Levels,
-    radios: Radios,
-    pad: Pad,
-    pointer: Pointer,
-    sys: Sys,
-    /// Every entry's settings, and the scope the settings panel edits.
-    prefs: Prefs,
-    keyboard: Keyboard,
-    /// The keymaps and their screens (see [`keymap::screens`]).
-    keymapping: keymap::screens::Keymapping,
-    lists: Lists,
-    clock: Clock,
-    /// Where shelf and the second screen are ([`State::resume`]), saved once they stop changing for a
-    /// moment. Shelf and the bottom screen say when they changed; `apply` touches this at its end.
-    resume: kit::debounce::Debounce,
-    idle: crate::device::idle::Idle,
-    /// What the steps after an event last saw.
-    settled: apply::Settled,
-    /// What the outside was last sent (see [`sync`]).
-    sent: sync::Sent,
-}
-
-impl State {
-    pub fn new(init: Init) -> State {
-        let mut s = State {
-            shelf: Shelf::new(init.library),
-            prefs: Prefs::new(init.settings),
-            keymapping: keymap::screens::Keymapping::new(init.keymaps),
-            bottom: Bottom::new(init.window_rules),
-            sys: Sys::new(init.twelve_hour),
-            levels: Levels::new(init.brightness),
-            session: Session::new(init.autostart, init.device_session),
-            dock: init.dock,
-            device: device::Device::new(init.sticks, init.first_start),
-            ..State::default()
-        };
-        if let Some(resume) = &init.resume {
-            resume.restore(&mut s.shelf, &mut s.bottom);
-        }
-        s.dock.drop_gone_at_start(s.shelf.library(), &s.session);
-        s.session.follow_pausable_runners(s.shelf.library());
-        s.pointer.focus_shelf(s.shelf.selected());
-        if init.first_start {
-            s.pointer.focus_on(Id::Device(crate::DeviceId::Wifi));
-        }
-        if let Some(tab) = init.start_tab {
-            s.bottom.restore_tab(tab);
-        }
-        s.reconcile_pad();
-        if init.pad_mouse {
-            s.pad.toggle_mouse();
-            s.reconcile_pad();
-        }
-        s.settled = apply::Settled::new(&s.session);
-        s.sent = sync::Sent::new(&s.wanted());
-        s
-    }
-
-    pub fn shelf(&self) -> &Shelf {
-        &self.shelf
-    }
-
-    pub fn bottom(&self) -> &Bottom {
-        &self.bottom
-    }
-
-    pub fn session(&self) -> &Session {
-        &self.session
-    }
-
-    pub fn dock(&self) -> &Dock {
-        &self.dock
-    }
-
-    pub fn levels(&self) -> &Levels {
-        &self.levels
-    }
-
-    pub fn radios(&self) -> &Radios {
-        &self.radios
-    }
-
-    pub fn pad(&self) -> &Pad {
-        &self.pad
-    }
-
-    pub fn pointer(&self) -> &Pointer {
-        &self.pointer
-    }
-
-    pub fn sys(&self) -> &Sys {
-        &self.sys
-    }
-
-    pub fn keyboard(&self) -> &Keyboard {
-        &self.keyboard
-    }
-
-    pub fn idle(&self) -> &crate::device::idle::Idle {
-        &self.idle
-    }
-
-    pub fn clock(&self) -> &Clock {
-        &self.clock
-    }
-
-    /// Whether the dock menu offers Open another for `id`. It does when `id` is running and another launch
-    /// of it makes sense (see [`crate::Entry::another`]).
-    pub fn opens_another(&self, id: &str) -> bool {
-        // Not for an entry handed over to another program, such as Android's: launching it again just
-        // shows the one already running.
-        self.session.running(id).is_some() && self.entry(id).is_some_and(|g| g.another && !g.runner.as_ref().is_some_and(|r| r.handover))
-    }
-
-    /// Enqueue was pressed on what shelf's details show. The entries are added to the running launch of
-    /// their runner, or else launched (see [`crate::session::enqueue`]).
-    pub(crate) fn enqueue(&mut self, out: &mut Out) {
-        let Some(enqueued) = self.shelf.take_enqueued() else {
-            return;
-        };
-        if self.session.enqueue(&enqueued, self.bottom.notice_mut(), self.clock.mono(), out) {
-            return;
-        }
-        if enqueued.alone {
-            // A file alone is opened as A opens it, which includes resuming where it was left.
-            self.play(enqueued.entry, out);
-        } else {
-            let entry = self.shelf.entry_of_file(&enqueued.entry).unwrap_or(enqueued.entry);
-            self.launch(entry, Some(enqueued.runner.command_for(&enqueued.files)), true, out);
-        }
-    }
-
-    /// Where shelf and the second screen are, to come back to.
-    pub(crate) fn resume(&self) -> Resume {
-        Resume::of(&self.shelf, &self.bottom)
-    }
-
-    /// A library entry by its id. An entry that is still running after leaving the library, because its
-    /// file was deleted, is returned as it was.
-    pub fn entry(&self, id: &str) -> Option<&Entry> {
-        self.session.entry(self.shelf.library(), id)
-    }
 }
