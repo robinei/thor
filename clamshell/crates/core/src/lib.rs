@@ -423,23 +423,9 @@ impl State {
     fn apply_event(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
         match event {
             Event::Tick { unix_secs, mono_secs } => self.tick(unix_secs, mono_secs),
-            Event::Reading(reading) => {
-                let status = matches!(reading, Reading::Status(_));
-                let dirty = self.on_reading(reading);
-                let effects = if status { self.sys.battery_warning().into_iter().collect() } else { vec![] };
-                (if self.follow_lists() { Dirty::BOTTOM } else { dirty }, effects)
-            }
+            Event::Reading(reading) => self.reading_came(reading),
             Event::List(e) => (if self.on_list(e) { e.list().screens() } else { Dirty::NONE }, vec![]),
-            Event::Pointer(e) => {
-                // (The pad's focus, or a press, on the second screen's targets: it is in use.)
-                let used = match &e {
-                    PointerEvent::Focus(id) | PointerEvent::Activate(id) | PointerEvent::LongPress(id) | PointerEvent::Down(id) => id.screen() == Dirty::BOTTOM,
-                    _ => false,
-                };
-                let lit = if used { self.bottom_used() } else { Dirty::NONE };
-                let (dirty, effects) = self.on_pointer(e);
-                (dirty.or(lit), effects)
-            }
+            Event::Pointer(e) => self.pointer_event(e),
             Event::Slide(slide) => self.on_slide(slide),
             Event::Level(e) => self.on_level(e),
             Event::Shelf(e) => self.on_shelf_event(e),
@@ -449,25 +435,7 @@ impl State {
                 (Dirty::BOTH, vec![])
             }
             Event::Meta { id, meta } => (if self.shelf.apply_meta(&id, &meta) { Dirty::BOTH } else { Dirty::NONE }, vec![]),
-            Event::Library(library) => {
-                // (Problems the library didn't have before: said once.)
-                let problems = &library.problems;
-                if !problems.is_empty() && *problems != self.shelf.library().problems {
-                    let first = problems.first().cloned().unwrap_or_default();
-                    self.notify(notice::NoticeKind::Problems(first, problems.len()));
-                }
-                if self.shelf.reload(*library) {
-                    self.moved_collection();
-                }
-                self.follow_pausable_runners();
-                let mut effects = self.follow_runner_keymaps();
-                effects.push(self.land_rules());
-                if self.drop_gone_pins() {
-                    effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
-                }
-                self.shown = None;
-                (Dirty::BOTH, effects)
-            }
+            Event::Library(library) => (Dirty::BOTH, self.library_read(*library)),
             Event::Files(e) => (Dirty::BOTH, self.on_files(e)),
             Event::Fetching(on) => {
                 self.fetching = on;
@@ -482,20 +450,7 @@ impl State {
                 self.session.set_units(units);
                 (Dirty::BOTTOM, vec![])
             }
-            Event::Start => {
-                // (The open tab's watch from now: see follow_watch.)
-                self.ui_up = true;
-                let mut effects: Vec<Effect> = Vec::new();
-                if std::mem::take(&mut self.pins_dropped) {
-                    effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
-                }
-                effects.extend(self.levels.brightness_effect());
-                effects.push(Effect::PadRoute(self.pad.route()));
-                effects.extend(self.follow_runner_keymaps());
-                effects.extend(self.follow_keymap(true));
-                effects.push(self.down_rules_effect());
-                (Dirty::BOTH, effects)
-            }
+            Event::Start => (Dirty::BOTH, self.ui_started()),
             // On a screen that listens, Home leaves it (it is never an input).
             Event::Home if self.listening() => {
                 self.keymap_back();
@@ -507,35 +462,10 @@ impl State {
                 self.pad.switch();
                 (Dirty::NONE, vec![])
             }
+            // (Never applied: the UI handles the pad's navigation itself.)
             Event::Pad(_) => (Dirty::NONE, vec![]),
-            Event::TextInput(active) => {
-                let (before, pointing) = (self.bottom.tab, self.bottom.pointing);
-                // (A field taking focus: typing is back.)
-                self.bottom.pointing &= !active;
-                let effects = self.text_input(active);
-                let dirty = if self.bottom.tab != before {
-                    Dirty::BOTH
-                } else if self.bottom.pointing != pointing {
-                    Dirty::BOTTOM
-                } else {
-                    Dirty::NONE
-                };
-                (dirty, effects)
-            }
-            Event::Pointing(pointing) => {
-                let before = self.bottom.pointing;
-                let effects = match pointing {
-                    crate::touch::Pointing::Contacts(contacts) => {
-                        self.bottom.pointing = true;
-                        vec![Effect::Touchpad(contacts)]
-                    }
-                    crate::touch::Pointing::Idle => {
-                        self.bottom.pointing = false;
-                        vec![]
-                    }
-                };
-                (if self.bottom.pointing == before { Dirty::NONE } else { Dirty::BOTTOM }, effects)
-            }
+            Event::TextInput(active) => self.text_input_changed(active),
+            Event::Pointing(pointing) => self.pointing(pointing),
             // Sleep may have reset what the settings set (frequency caps, cores): again.
             Event::Resumed => {
                 self.idle.resumed(self.mono_secs);
@@ -559,11 +489,7 @@ impl State {
                 self.on_screenshot(result);
                 (Dirty::BOTTOM, vec![])
             }
-            Event::Sticks(event) => {
-                let done = matches!(event, device::SticksEvent::Done(_, Some(_)));
-                self.on_sticks(event);
-                (Dirty::TOP, if done { vec![self.sticks_saved()] } else { vec![] })
-            }
+            Event::Sticks(event) => (Dirty::TOP, self.sticks_event(event)),
             Event::RefreshCalibrated(result) => {
                 self.on_refresh(result);
                 // (The tool turned the bottom screen off meanwhile and back as it was: as ClamShell has it.)
@@ -579,6 +505,103 @@ impl State {
             }
             Event::Quit => (Dirty::NONE, vec![Effect::Save(Save::Resume(self.resume())), Effect::Quit]),
         }
+    }
+
+    /// A reading from a system thread: the battery warned about after a status reading.
+    fn reading_came(&mut self, reading: Reading) -> (Dirty, Vec<Effect>) {
+        let status = matches!(reading, Reading::Status(_));
+        let dirty = self.on_reading(reading);
+        let effects = if status { self.sys.battery_warning().into_iter().collect() } else { vec![] };
+        (if self.follow_lists() { Dirty::BOTTOM } else { dirty }, effects)
+    }
+
+    /// A touch or the pad's focus: the pad's focus, or a press, on the second screen's targets means it
+    /// is in use.
+    fn pointer_event(&mut self, e: PointerEvent) -> (Dirty, Vec<Effect>) {
+        let used = match &e {
+            PointerEvent::Focus(id) | PointerEvent::Activate(id) | PointerEvent::LongPress(id) | PointerEvent::Down(id) => id.screen() == Dirty::BOTTOM,
+            _ => false,
+        };
+        let lit = if used { self.bottom_used() } else { Dirty::NONE };
+        let (dirty, effects) = self.on_pointer(e);
+        (dirty.or(lit), effects)
+    }
+
+    /// The library read anew: problems it didn't have before said once, shelf reloaded, and what
+    /// follows from its entries (runners' pauses and keymaps, landing rules, pins of entries gone).
+    fn library_read(&mut self, library: Library) -> Vec<Effect> {
+        let problems = &library.problems;
+        if !problems.is_empty() && *problems != self.shelf.library().problems {
+            let first = problems.first().cloned().unwrap_or_default();
+            self.notify(notice::NoticeKind::Problems(first, problems.len()));
+        }
+        if self.shelf.reload(library) {
+            self.moved_collection();
+        }
+        self.follow_pausable_runners();
+        let mut effects = self.follow_runner_keymaps();
+        effects.push(self.land_rules());
+        if self.drop_gone_pins() {
+            effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
+        }
+        self.shown = None;
+        effects
+    }
+
+    /// The UI is up: what was waiting for it (pins dropped at start saved, the brightness, the pad's
+    /// route, the keymaps, the down rules). The open tab's watch starts from now (see
+    /// [`State::follow_watch`]).
+    fn ui_started(&mut self) -> Vec<Effect> {
+        self.ui_up = true;
+        let mut effects: Vec<Effect> = Vec::new();
+        if std::mem::take(&mut self.pins_dropped) {
+            effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
+        }
+        effects.extend(self.levels.brightness_effect());
+        effects.push(Effect::PadRoute(self.pad.route()));
+        effects.extend(self.follow_runner_keymaps());
+        effects.extend(self.follow_keymap(true));
+        effects.push(self.down_rules_effect());
+        effects
+    }
+
+    /// A text field of the app in front wants typing, or no longer does. A field taking focus brings
+    /// typing back from the touchpad.
+    fn text_input_changed(&mut self, active: bool) -> (Dirty, Vec<Effect>) {
+        let (before, pointing) = (self.bottom.tab, self.bottom.pointing);
+        self.bottom.pointing &= !active;
+        let effects = self.text_input(active);
+        let dirty = if self.bottom.tab != before {
+            Dirty::BOTH
+        } else if self.bottom.pointing != pointing {
+            Dirty::BOTTOM
+        } else {
+            Dirty::NONE
+        };
+        (dirty, effects)
+    }
+
+    /// The touchpad tab's contacts: passed on as the pointer's, or none.
+    fn pointing(&mut self, pointing: crate::touch::Pointing) -> (Dirty, Vec<Effect>) {
+        let before = self.bottom.pointing;
+        let effects = match pointing {
+            crate::touch::Pointing::Contacts(contacts) => {
+                self.bottom.pointing = true;
+                vec![Effect::Touchpad(contacts)]
+            }
+            crate::touch::Pointing::Idle => {
+                self.bottom.pointing = false;
+                vec![]
+            }
+        };
+        (if self.bottom.pointing == before { Dirty::NONE } else { Dirty::BOTTOM }, effects)
+    }
+
+    /// A stick calibration's progress or end; a calibration made is saved.
+    fn sticks_event(&mut self, event: device::SticksEvent) -> Vec<Effect> {
+        let done = matches!(event, device::SticksEvent::Done(_, Some(_)));
+        self.on_sticks(event);
+        if done { vec![self.sticks_saved()] } else { vec![] }
     }
 
     /// The clock: once a minute the bar's clock and both screens' burn-in orbit step; starts systemd
