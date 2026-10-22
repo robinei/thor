@@ -1,12 +1,14 @@
 //! The edit screen's Undo: the keymap as it was before each change saved since the screen opened.
 
+use std::collections::VecDeque;
+
 use super::*;
 
 /// The edit screen's Undo: the keymap being edited as last saved, and as it was before each change.
 #[derive(Debug, Clone, Default)]
 pub struct Undo {
     pub(crate) last: Option<Keymap>,
-    pub(crate) steps: Vec<Keymap>,
+    pub(crate) steps: VecDeque<Keymap>,
 }
 
 /// How many changes Undo goes back over.
@@ -23,7 +25,7 @@ impl State {
             let before = undo.last.replace(now.clone());
             undo.steps.extend(before);
             if undo.steps.len() > UNDO_MAX {
-                undo.steps.remove(0);
+                undo.steps.pop_front();
             }
         }
         Effect::Save(Save::Keymaps(self.keymaps.clone()))
@@ -38,7 +40,8 @@ impl State {
     /// is gone).
     pub(super) fn undo(&mut self, id: u16) -> Vec<Effect> {
         let undo = &mut self.bottom.keymap_undo;
-        let Some(before) = undo.steps.pop().filter(|k| k.id == id) else {
+        // (Only the keymap being edited has steps; one of another is left, not dropped.)
+        let Some(before) = undo.steps.pop_back_if(|k| k.id == id) else {
             return vec![];
         };
         undo.last = Some(before.clone());
@@ -57,6 +60,6 @@ impl State {
     pub(super) fn open_edit(&mut self, id: u16) {
         self.bottom.keymaps = Some(Screen::Edit(id));
         self.bottom.keymap_edit = EditView::default();
-        self.bottom.keymap_undo = Undo { last: self.keymaps.get(id).cloned(), steps: Vec::new() };
+        self.bottom.keymap_undo = Undo { last: self.keymaps.get(id).cloned(), steps: VecDeque::new() };
     }
 }
