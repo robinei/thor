@@ -15,19 +15,19 @@ use crate::wifi;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
-    /// Start this game (its launch command or Steam id, and its file) with these settings and extra
+    /// Start this entry (its launch command or Steam id, and its file) with these settings and extra
     /// environment, in a scope and on a workspace of its own.
     Launch {
-        game: Arc<str>,
+        entry: Arc<str>,
         instance: Instance,
         settings: Values,
         env: Vec<(String, String)>,
         launch: Launch,
     },
-    /// The settings in force changed: the running game's (`game`), or the global ones while none runs
-    /// (also when a game ends). Apply them now.
+    /// The settings in force changed: the running entry's (`entry`), or the global ones while none runs
+    /// (also when one ends). Apply them now.
     Apply {
-        game: Option<Arc<str>>,
+        entry: Option<Arc<str>>,
         settings: Values,
     },
     /// The keymap in force changed (the game's, or all games'; Default: id 0, no bindings): the pad
@@ -95,15 +95,15 @@ pub enum Effect {
     Tool(clamshell_library::Tool),
     /// What shelf shows (the selected entry first): fetch their metadata before the rest.
     FetchFirst(Vec<Arc<str>>),
-    /// Where mpv left video `file` (entry `game`'s), read as its play ended (then
+    /// Where mpv left video `file` (`entry`'s), read as its play ended (then
     /// [`crate::LaunchEvent::Position`]).
     ReadPosition {
-        game: Arc<str>,
+        entry: Arc<str>,
         file: std::path::PathBuf,
     },
     /// A play, recorded (clamshell-system's `store`).
     RecordPlay {
-        game: Arc<str>,
+        entry: Arc<str>,
         start: u64,
         duration: u64,
     },
@@ -198,8 +198,8 @@ pub enum Save {
     Autostart(Vec<std::sync::Arc<str>>),
     /// Clocks on a 12-hour dial, or 24-hour.
     TwelveHour(bool),
-    /// The setup is done: it doesn't open by itself again.
-    SetupDone,
+    /// The first start is over (the Device view closed with Done): it doesn't open by itself again.
+    FirstStartDone,
     /// The sticks' calibrations, by controller.
     Sticks(crate::sticks::Calibrations),
 }

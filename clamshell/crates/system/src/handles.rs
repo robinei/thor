@@ -69,7 +69,7 @@ impl Handles {
                 }
                 None => log::info!("effect: {effect:?} (no virtual keyboard)"),
             },
-            Effect::Launch { game, instance, launch, settings, env } => {
+            Effect::Launch { entry: game, instance, launch, settings, env } => {
                 log::info!("launching {game}");
                 // MangoHud's first, so a game's own variables can still override it.
                 let mut game_env = self.tuning.apply(settings, Some(game)).map(|config| crate::tuning::mangohud_env(&config)).unwrap_or_default();
@@ -84,7 +84,7 @@ impl Handles {
                     env: game_env,
                 }));
             }
-            Effect::Apply { game, settings } => {
+            Effect::Apply { entry: game, settings } => {
                 self.tuning.apply(settings, game.as_deref());
             }
             Effect::Keymap(keymap) => self.tuning.keymap(keymap),
@@ -96,8 +96,8 @@ impl Handles {
             }
             Effect::FetchFirst(ids) => self.fetching.first(ids),
             Effect::Tool(tool) => (self.rescan)(*tool == clamshell_library::Tool::Refetch),
-            Effect::ReadPosition { game, file } => self.launcher.send(launcher::Command::ReadPosition { game: game.clone(), file: file.clone() }),
-            Effect::RecordPlay { game, start, duration } => {
+            Effect::ReadPosition { entry: game, file } => self.launcher.send(launcher::Command::ReadPosition { game: game.clone(), file: file.clone() }),
+            Effect::RecordPlay { entry: game, start, duration } => {
                 if let Some(store) = &self.store {
                     store.send(Write::Play { id: game.clone(), start: *start, duration: *duration });
                 }

@@ -118,7 +118,7 @@ impl State {
     /// Back to shelf, the focus on its selection.
     pub(crate) fn close_device(&mut self) -> Vec<Effect> {
         self.device.open = false;
-        self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Game(g)));
+        self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
         vec![]
     }
 
@@ -152,9 +152,9 @@ impl State {
             }
             DeviceId::Refresh => vec![],
             // The first time: never again; shelf after it, and the device's default tab below.
-            DeviceId::Done if self.first_run => {
-                self.first_run = false;
-                let mut effects = vec![Effect::Save(Save::SetupDone)];
+            DeviceId::Done if self.first_start => {
+                self.first_start = false;
+                let mut effects = vec![Effect::Save(Save::FirstStartDone)];
                 effects.extend(self.close_device());
                 effects.extend(self.choose_tab(Tab::default()));
                 effects
@@ -224,12 +224,12 @@ mod tests {
 
     #[test]
     fn the_first_start_opens_the_device_view_and_done_ends_it_for_good() {
-        let mut s = State::new(Init { setup: true, ..init() });
+        let mut s = State::new(Init { first_start: true, ..init() });
         assert_eq!(s.top_view(), TopView::Device, "the first start opens it");
         let effects = tap(&mut s, DeviceId::Done);
-        assert!(effects.contains(&Effect::Save(Save::SetupDone)));
+        assert!(effects.contains(&Effect::Save(Save::FirstStartDone)));
         assert_eq!(s.top_view(), TopView::Shelf);
-        assert!(!s.first_run());
+        assert!(!s.first_start());
     }
 
     #[test]
@@ -241,7 +241,7 @@ mod tests {
         assert_eq!(s.pointer.focus, Some(Id::Device(DeviceId::Wifi)));
         let effects = tap(&mut s, DeviceId::Close);
         assert_eq!(s.top_view(), TopView::Shelf);
-        assert!(!effects.contains(&Effect::Save(Save::SetupDone)), "not the first start: nothing saved");
+        assert!(!effects.contains(&Effect::Save(Save::FirstStartDone)), "not the first start: nothing saved");
     }
 
     #[test]

@@ -124,14 +124,14 @@ impl Shelf {
     }
 
     /// An entry by its id.
-    pub fn game(&self, id: &str) -> Option<&Entry> {
+    pub fn entry(&self, id: &str) -> Option<&Entry> {
         self.library.entries.iter().find(|g| &*g.id == id)
     }
 
     /// The library entry (not browsed) of browsed file `id`'s file, if there is one.
     pub(crate) fn entry_of_file(&self, id: &str) -> Option<Arc<str>> {
         // (An archive, though browsed as a folder: a ROM's zip is a file of the library's.)
-        let file = self.game(id).filter(|g| g.browsed.as_ref().is_some_and(|b| !b.folder || b.archive))?.file.as_ref()?;
+        let file = self.entry(id).filter(|g| g.browsed.as_ref().is_some_and(|b| !b.folder || b.archive))?.file.as_ref()?;
         self.library.entries.iter().find(|g| g.browsed.is_none() && !g.is_group() && g.file.as_ref() == Some(file)).map(|g| g.id.clone())
     }
 
@@ -196,7 +196,7 @@ impl Shelf {
     }
 
     /// The entry at `position` in the current list.
-    pub fn game_at(&self, position: usize) -> Option<&Entry> {
+    pub fn entry_at(&self, position: usize) -> Option<&Entry> {
         self.library.entries.get(*self.list().get(position)?)
     }
 
@@ -205,8 +205,8 @@ impl Shelf {
         self.list().get(self.cursor().index).copied()
     }
 
-    pub fn selected_game(&self) -> Option<&Entry> {
-        self.game_at(self.cursor().index)
+    pub fn selected_entry(&self) -> Option<&Entry> {
+        self.entry_at(self.cursor().index)
     }
 
     /// Where `game` is in collection `c`'s list.
@@ -225,7 +225,7 @@ impl Shelf {
             p.scroll.set_visible(rows, len);
             p.scroll.show(p.index, len);
         }
-        self.selected = self.selected_game().map(|g| g.id.clone());
+        self.selected = self.selected_entry().map(|g| g.id.clone());
         self.selected != before
     }
 
@@ -628,7 +628,7 @@ mod tests {
         tap(&mut s, Id::Shelf(ShelfId::Launch));
         assert_eq!(titles(&s), vec!["1. Standing Up in the Milky Way"]);
         let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
-        assert!(fx.iter().any(|e| matches!(e, Effect::Launch { game, .. } if game.ends_with("Milky Way.mkv"))), "an episode plays: {fx:?}");
+        assert!(fx.iter().any(|e| matches!(e, Effect::Launch { entry: game, .. } if game.ends_with("Milky Way.mkv"))), "an episode plays: {fx:?}");
         tap(&mut s, Id::Shelf(ShelfId::Up));
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("tv:Cosmos/Season 2"), "back where it was");
         tap(&mut s, Id::Shelf(ShelfId::Up));
@@ -665,21 +665,21 @@ mod tests {
         let first = "tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv";
         let launched = |fx: &[Effect]| {
             fx.iter().find_map(|e| match e {
-                Effect::Launch { game, .. } => Some(game.to_string()),
+                Effect::Launch { entry: game, .. } => Some(game.to_string()),
                 _ => None,
             })
         };
         // (The demo's second episode is under way: not here.)
-        s.apply(LaunchEvent::Position { game: "tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv".into(), position: None }.into());
+        s.apply(LaunchEvent::Position { entry: "tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv".into(), position: None }.into());
         let fx = tap(&mut s, Id::Shelf(ShelfId::Continue));
         assert_eq!(launched(&fx).as_deref(), Some(first), "none watched: the first");
         crate::testkit::start(&mut s, first);
-        s.apply(LaunchEvent::Position { game: first.into(), position: Some(600) }.into());
+        s.apply(LaunchEvent::Position { entry: first.into(), position: Some(600) }.into());
         end(&mut s, first);
         let fx = s.apply(ShelfEvent::Continue.into()).1;
         assert_eq!(launched(&fx).as_deref(), Some(first), "left early: it again");
         crate::testkit::start(&mut s, first);
-        s.apply(LaunchEvent::Position { game: first.into(), position: None }.into());
+        s.apply(LaunchEvent::Position { entry: first.into(), position: None }.into());
         end(&mut s, first);
         let fx = s.apply(ShelfEvent::Continue.into()).1;
         assert_eq!(launched(&fx).as_deref(), Some("tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv"), "watched to its end: the next");
@@ -692,7 +692,7 @@ mod tests {
         let fx = tap(&mut s, game("ff6"));
         assert!(
             fx.iter().any(
-                |e| matches!(e, Effect::Launch { game, settings, env, launch: Launch::None, .. } if &**game == "ff6" && *settings == Values::default() && env.is_empty())
+                |e| matches!(e, Effect::Launch { entry: game, settings, env, launch: Launch::None, .. } if &**game == "ff6" && *settings == Values::default() && env.is_empty())
             ),
             "{fx:?}"
         );

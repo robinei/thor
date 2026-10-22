@@ -128,7 +128,7 @@ pub fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worker<Comma
                 }
                 Command::ReadPosition { game, file } => {
                     let position = crate::mpv::position(&config.watch_later, &file).map(|(s, _)| s);
-                    let _ = sink.send(Event::Launch(LaunchEvent::Position { game, position }));
+                    let _ = sink.send(Event::Launch(LaunchEvent::Position { entry: game, position }));
                 }
             });
             if let Err(e) = started {

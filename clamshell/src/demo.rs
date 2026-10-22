@@ -3,7 +3,7 @@
 
 use clamshell_core::battery::{Battery, Charge, Group, Spender};
 use clamshell_core::bluetooth::{self, Bluetooth, Kind};
-use clamshell_core::levels::{Audio, Output, Stream};
+use clamshell_core::levels::{Audio, AudioOutput, Stream};
 use clamshell_core::metrics::Metrics;
 use clamshell_core::wifi::{Network, Wifi};
 use clamshell_core::windows::Window;
@@ -121,7 +121,7 @@ pub fn bluetooth() -> Bluetooth {
 /// Two outputs and three apps playing, one muted.
 pub fn audio() -> Audio {
     Audio {
-        outputs: vec![Output { id: 50, name: "Speakers".into(), default: true }, Output { id: 51, name: "WH-1000XM4".into(), default: false }],
+        outputs: vec![AudioOutput { id: 50, name: "Speakers".into(), default: true }, AudioOutput { id: 51, name: "WH-1000XM4".into(), default: false }],
         streams: [("Firefox", 80, false), ("Steam", 100, false), ("Spotify", 35, true)]
             .map(|(app, volume, muted)| Stream { id: 90, app: app.into(), title: String::new(), volume, muted })
             .to_vec(),

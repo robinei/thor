@@ -142,7 +142,7 @@ mod tests {
         // Its picture: looked up by its app id; found, it is the entry's.
         assert!(fx.contains(&Effect::FindIcon { entry: "window:org.x.Thing".into(), app_id: "org.x.Thing".into() }), "{fx:?}");
         s.apply(Event::Reading(crate::Reading::Icon { entry: "window:org.x.Thing".into(), path: "/icons/thing.svg".into() }));
-        assert_eq!(s.game("window:org.x.Thing").and_then(|g| g.icon.clone()), Some("/icons/thing.svg".into()));
+        assert_eq!(s.entry("window:org.x.Thing").and_then(|g| g.icon.clone()), Some("/icons/thing.svg".into()));
         // Not moved yet (the system didn't): its process ended; its windows gone, it has ended.
         assert_eq!(s.force_kill("window:org.x.Thing"), vec![Effect::EndProcesses { pids: vec![500], force: true }]);
         s.apply(Event::Windows(vec![]));

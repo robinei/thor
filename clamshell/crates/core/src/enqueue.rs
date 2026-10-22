@@ -104,13 +104,13 @@ mod tests {
         assert!(s.actions().contains(&crate::actions::Action::Enqueue));
         let fx = tap(&mut s, Id::Shelf(ShelfId::Enqueue));
         let launch = fx.iter().find_map(|e| match e {
-            Effect::Launch { game, launch, .. } => Some((game.to_string(), launch.clone())),
+            Effect::Launch { entry: game, launch, .. } => Some((game.to_string(), launch.clone())),
             _ => None,
         });
         let argv = ["mpv", "--input-ipc-server={socket}", "/m/Album/a.mp3", "/m/Album/b.mp3"].map(String::from).to_vec();
         assert_eq!(launch, Some(("album".into(), Launch::Program { argv, workdir: Some("/m/Album".into()) })), "the album's songs: {fx:?}");
         crate::testkit::start(&mut s, "album");
-        tap(&mut s, Id::Shelf(ShelfId::Game("single".into())));
+        tap(&mut s, Id::Shelf(ShelfId::Entry("single".into())));
         let fx = tap(&mut s, Id::Shelf(ShelfId::Enqueue));
         let key = s.session().running("album").unwrap().key.clone();
         let line = r#"{"command": ["loadfile", "/m/single.mp3", "append-play"]}"#.to_owned();

@@ -217,7 +217,7 @@ pub enum LaunchEvent {
     /// list of our scopes says ([`crate::Event::Units`]).
     LaunchFailed(Arc<str>),
     /// A video mpv played ended: where mpv left it (none: at its end; see [`crate::Effect::ReadPosition`]).
-    Position { game: Arc<str>, position: Option<u32> },
+    Position { entry: Arc<str>, position: Option<u32> },
 }
 
 macro_rules! into_event {

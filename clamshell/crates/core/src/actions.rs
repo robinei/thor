@@ -178,7 +178,7 @@ mod tests {
     fn a_held_on_the_selected_entry_takes_the_pad_to_its_actions() {
         use crate::PointerEvent;
         let mut s = state();
-        let g = Id::Shelf(ShelfId::Game(s.shelf().selected().cloned().unwrap_or_else(|| "?".into())));
+        let g = Id::Shelf(ShelfId::Entry(s.shelf().selected().cloned().unwrap_or_else(|| "?".into())));
         // By touch (no focus shown): nothing.
         s.apply(PointerEvent::LongPress(g.clone()).into());
         assert_eq!(s.pointer().focus(), Some(&g));

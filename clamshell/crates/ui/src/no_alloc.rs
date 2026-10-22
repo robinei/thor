@@ -64,7 +64,7 @@ fn key(k: Key) -> Event {
 fn device() -> Vec<Event> {
     let library = clamshell_library::demo::library();
     let tools = library.collections.iter().position(|c| c.name == "Tools").unwrap_or(0);
-    let entry = || tap(Id::Shelf(ShelfId::Game("tool:device".into())));
+    let entry = || tap(Id::Shelf(ShelfId::Entry("tool:device".into())));
     vec![tap(Id::Shelf(ShelfId::Collection(u16::try_from(tools).unwrap_or(0)))), entry(), entry()]
 }
 
@@ -265,7 +265,7 @@ fn warm_frames_do_not_allocate() {
             vec![
                 Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Volume))),
                 Event::Reading(Reading::Audio(levels::Audio {
-                    outputs: vec![levels::Output { id: 1, name: "Speakers".into(), default: true }],
+                    outputs: vec![levels::AudioOutput { id: 1, name: "Speakers".into(), default: true }],
                     streams: vec![levels::Stream { id: 2, app: "Firefox".into(), title: String::new(), volume: 40, muted: false }],
                 })),
                 Event::Pointer(PointerEvent::Down(levels::Level::Stream(0).id())),

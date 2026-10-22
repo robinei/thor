@@ -6,7 +6,7 @@ use std::io;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-use clamshell_core::levels::{Audio, Output, Stream};
+use clamshell_core::levels::{Audio, AudioOutput, Stream};
 use clamshell_core::{Event, Reading};
 use serde_json::Value;
 
@@ -109,7 +109,7 @@ fn parse(dump: &Value) -> Audio {
             Some("Audio/Sink") => {
                 let name = Some(text("node.description")).filter(|n| !n.is_empty()).unwrap_or_else(|| text("node.name"));
                 let default = default_sink.is_some_and(|d| at(props, "/node.name").as_str() == Some(d));
-                audio.outputs.push(Output { id, name, default });
+                audio.outputs.push(AudioOutput { id, name, default });
             }
             Some("Stream/Output/Audio") => {
                 let app =
@@ -145,7 +145,7 @@ mod tests {
         let audio = parse(&dump);
         assert_eq!(
             audio.outputs,
-            vec![Output { id: 58, name: "Speakers".into(), default: false }, Output { id: 59, name: "alsa_output.hdmi".into(), default: true }]
+            vec![AudioOutput { id: 58, name: "Speakers".into(), default: false }, AudioOutput { id: 59, name: "alsa_output.hdmi".into(), default: true }]
         );
         assert_eq!(audio.streams, vec![Stream { id: 90, app: "Firefox".into(), title: "A video".into(), volume: 60, muted: true }]);
     }

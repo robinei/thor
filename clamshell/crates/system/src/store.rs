@@ -11,7 +11,7 @@
 //!     settings screen's file); no folder: the initial ones;
 //!   - `window-rules.json`, `dock.json`, `autostart.json`, `favourites.json`, `resume.json` (where shelf and
 //!     the second screen were), `sticks.json` (the sticks' calibrations, by controller), `brightness.json`,
-//!     `clock.json`, `setup.json` (the setup done: see `clamshell_core::account`).
+//!     `clock.json`, `first-start.json` (the first start over: see `clamshell_core::device`).
 //! - `plays.jsonl`: an entry's plays, a line each (its id, start in seconds since the epoch, duration in
 //!   seconds), appended; a line cut short is skipped.
 //!
@@ -131,7 +131,7 @@ struct ClockFile {
 }
 
 #[derive(Serialize, Deserialize)]
-struct SetupFile {
+struct FirstStartFile {
     done: bool,
 }
 
@@ -181,7 +181,7 @@ impl Store {
             }
             Save::Dock(list) => write_json(&self.file("dock.json"), &ids(list)),
             Save::Autostart(list) => write_json(&self.file("autostart.json"), &ids(list)),
-            Save::SetupDone => write_json(&self.file("setup.json"), &SetupFile { done: true }),
+            Save::FirstStartDone => write_json(&self.file("first-start.json"), &FirstStartFile { done: true }),
             Save::Sticks(c) => write_json(&self.file("sticks.json"), c),
         }
     }
@@ -312,9 +312,9 @@ impl Store {
         Some(Resume { collection: r.collection, tab: r.tab, places: r.places })
     }
 
-    /// Whether the setup was done (else it opens at the start).
-    pub fn setup_done(&self) -> bool {
-        read_json::<SetupFile>(&self.file("setup.json")).is_some_and(|f| f.done)
+    /// Whether the first start is over (else the Device view opens at the start).
+    pub fn first_start_done(&self) -> bool {
+        read_json::<FirstStartFile>(&self.file("first-start.json")).is_some_and(|f| f.done)
     }
 
     /// The sticks' calibrations, by controller.

@@ -40,7 +40,7 @@ impl State {
 
     /// The level entry `id` takes its settings from before its own: its runner's, if it has one.
     fn runner_of(&self, id: &str) -> Option<&str> {
-        self.game(id).and_then(|g| g.runner.as_ref()).map(|r| &*r.key)
+        self.entry(id).and_then(|g| g.runner.as_ref()).map(|r| &*r.key)
     }
 
     /// The settings entry (or level) `id` runs with: the global ones, its runner's, its own.
@@ -64,7 +64,7 @@ impl State {
     /// the same; one that minds, online play, is set to run).
     pub fn is_games(&self, id: &str) -> bool {
         let game = |g: &crate::Entry| !g.app && g.browsed.is_none() && g.mpv_file().is_none() && !g.is_group();
-        if let Some(g) = self.game(id) {
+        if let Some(g) = self.entry(id) {
             return game(g);
         }
         let mut of_runner = self.shelf.library().entries.iter().filter(|g| g.runner.as_ref().is_some_and(|r| &*r.key == id)).peekable();
@@ -81,7 +81,7 @@ impl State {
     /// browsed file, a folder, or a runner's item without item settings (`All | Text`); only its own for
     /// one without a runner (ClamShell's tools).
     pub fn setting_levels(&self) -> [Option<(Scope, Program<'_>)>; 2] {
-        let Some((item, g)) = self.context().and_then(|item| Some((item.clone(), self.game(&item.id)?))) else {
+        let Some((item, g)) = self.context().and_then(|item| Some((item.clone(), self.entry(&item.id)?))) else {
             return [None, None];
         };
         match &g.runner {
@@ -148,7 +148,7 @@ impl State {
     /// (Android's: Waydroid's session runs them), or an item of it: what works through the launch's
     /// process (see [`Setting::through_launch`], and the environment) has no effect on it.
     pub fn handed_over(&self) -> bool {
-        self.editing().is_some() && self.context().and_then(|item| self.game(&item.id)).and_then(|g| g.runner.as_ref()).is_some_and(|r| r.handover)
+        self.editing().is_some() && self.context().and_then(|item| self.entry(&item.id)).and_then(|g| g.runner.as_ref()).is_some_and(|r| r.handover)
     }
 
     /// The scope the settings panel shows chosen: the one chosen, or the level that stands in for it.
@@ -215,7 +215,7 @@ impl State {
         let mut effects = vec![Effect::Save(Save::Settings(self.settings.clone()))];
         let now = self.in_force();
         if now != before {
-            effects.push(Effect::Apply { game: self.session.program.clone(), settings: now });
+            effects.push(Effect::Apply { entry: self.session.program.clone(), settings: now });
         }
         effects
     }
@@ -224,7 +224,7 @@ impl State {
     fn open_editor(&mut self) {
         let game = self.editing().map(|g| g.id.clone());
         let text = self.settings.env_text(game.as_deref()).to_owned();
-        self.bottom.open_editor(Editor { purpose: Purpose::Env { game }, text });
+        self.bottom.open_editor(Editor { purpose: Purpose::Env { entry: game }, text });
     }
 
     /// Drops the edited game's overrides and environment.
@@ -387,14 +387,14 @@ mod tests {
         tap(&mut s, game("ff6"));
         // The running game is the context, not the selection.
         let fx = taps(&mut s, Setting::FpsCap, 1);
-        assert!(fx.iter().any(|e| matches!(e, Effect::Apply { game: Some(g), settings } if &**g == "zelda-lttp" && settings.get(Setting::FpsCap) == 30)));
+        assert!(fx.iter().any(|e| matches!(e, Effect::Apply { entry: Some(g), settings } if &**g == "zelda-lttp" && settings.get(Setting::FpsCap) == 30)));
         // A global change reaches it only where it doesn't override.
         scope(&mut s, Scope::Global);
         assert!(!taps(&mut s, Setting::FpsCap, 1).iter().any(|e| matches!(e, Effect::Apply { .. })), "its own cap stays: nothing to apply");
         let fx = taps(&mut s, Setting::Power, 1);
         assert!(fx.iter().any(|e| matches!(e, Effect::Apply { settings, .. } if settings.get(Setting::Power) == 2)));
         let fx: Vec<Effect> = end(&mut s, "zelda-lttp").1.into_iter().filter(|e| !matches!(e, Effect::RecordPlay { .. })).collect();
-        assert_eq!(fx, vec![Effect::Apply { game: None, settings: s.settings().global }, Effect::PadRoute(PadRoute::Ui)], "and the pad back to shelf");
+        assert_eq!(fx, vec![Effect::Apply { entry: None, settings: s.settings().global }, Effect::PadRoute(PadRoute::Ui)], "and the pad back to shelf");
     }
 
     #[test]

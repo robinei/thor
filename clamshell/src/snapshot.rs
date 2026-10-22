@@ -79,7 +79,7 @@ impl From<ParseError> for Error {
 fn open_device() -> Vec<Event> {
     let library = clamshell_library::demo::library();
     let tools = state(library).shelf().library().collections.iter().position(|c| c.name == "Tools").unwrap_or(0);
-    let device = || tap(Id::Shelf(ShelfId::Game("tool:device".into())));
+    let device = || tap(Id::Shelf(ShelfId::Entry("tool:device".into())));
     vec![tap(Id::Shelf(ShelfId::Collection(u16::try_from(tools).unwrap_or(0)))), device(), device()]
 }
 
@@ -214,7 +214,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
     use Screen::{Bottom, Top};
     let shot = |name, screen, before| Shot { name, screen, before };
     let group = |start, shots| Group { start, shots };
-    let ff6 = || tap(Id::Shelf(ShelfId::Game("ff6".into())));
+    let ff6 = || tap(Id::Shelf(ShelfId::Entry("ff6".into())));
     let ctrl = || control::key(Key::Mod(Modifier::Ctrl));
     let volume = Id::Control(Control::Volume);
     Ok(vec![
@@ -240,8 +240,8 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                     Top,
                     vec![
                         ff6(),
-                        Event::Pointer(PointerEvent::Focus(Id::Shelf(ShelfId::Game("ff6".into())))),
-                        Event::Pointer(PointerEvent::LongPress(Id::Shelf(ShelfId::Game("ff6".into())))),
+                        Event::Pointer(PointerEvent::Focus(Id::Shelf(ShelfId::Entry("ff6".into())))),
+                        Event::Pointer(PointerEvent::LongPress(Id::Shelf(ShelfId::Entry("ff6".into())))),
                     ],
                 ),
             ],

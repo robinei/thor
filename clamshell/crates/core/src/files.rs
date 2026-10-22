@@ -194,7 +194,7 @@ impl State {
     /// What the details show the actions of: the selected entry, or with none (an empty folder) the
     /// folder open; and whether it is the selected one.
     pub fn file_target(&self) -> Option<(&Entry, bool)> {
-        match self.shelf.selected_game() {
+        match self.shelf.selected_entry() {
             Some(g) => Some((g, true)),
             None => self.shelf.group().map(|g| (g, false)),
         }
@@ -211,7 +211,7 @@ impl State {
     /// The runner archive `game` opens in (Open in): its library entry's (a ROM's zip a scan has), else
     /// the one its name matches.
     pub fn opened_in<'a>(&'a self, game: &'a Entry) -> Option<&'a clamshell_library::RunnerOf> {
-        let entry = self.shelf.entry_of_file(&game.id).and_then(|id| self.shelf.game(&id));
+        let entry = self.shelf.entry_of_file(&game.id).and_then(|id| self.shelf.entry(&id));
         entry.and_then(|e| e.runner.as_ref()).or(game.runner.as_ref())
     }
 
@@ -269,7 +269,7 @@ impl State {
         if self.files.selected.is_empty() {
             return self.file_target().and_then(|(g, _)| entry(g)).into_iter().collect();
         }
-        self.files.selected.iter().filter_map(|id| self.shelf.game(id)).filter_map(entry).collect()
+        self.files.selected.iter().filter_map(|id| self.shelf.entry(id)).filter_map(entry).collect()
     }
 
     /// Whether `action` waits to be confirmed (pressed once) on what the details show.

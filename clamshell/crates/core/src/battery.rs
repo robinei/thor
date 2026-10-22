@@ -192,7 +192,7 @@ mod tests {
         crate::testkit::start(&mut s, "ff6");
         let terminal = Instance::Run { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 9 };
         assert_eq!(s.spender_name(&spender(Group::Instance(terminal))), "Terminal");
-        let title = |id: &str| s.game(id).map(|g| g.title.clone()).unwrap_or_default();
+        let title = |id: &str| s.entry(id).map(|g| g.title.clone()).unwrap_or_default();
         assert_eq!(s.spender_name(&spender(Group::Instance(zelda))), title(&first));
         assert_eq!(s.spender_name(&spender(Group::Instance(ff6))), title("ff6"));
         assert_eq!(s.spender_name(&spender(Group::Process("firefox".into()))), "firefox");

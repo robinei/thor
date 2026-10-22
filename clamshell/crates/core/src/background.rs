@@ -187,7 +187,7 @@ impl State {
 
     /// Before an entry of a paused runner is launched or shown: the runner resumed.
     pub(crate) fn resume_runner_of(&mut self, id: &str) -> Option<Effect> {
-        let runner = self.game(id)?.runner.as_ref()?;
+        let runner = self.entry(id)?.runner.as_ref()?;
         let resume = runner.resume.to_vec();
         self.background.runner_pauses.resume(&runner.key.clone()).then_some(Effect::RunnerCommand(resume))
     }

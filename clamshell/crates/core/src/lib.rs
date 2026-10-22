@@ -119,8 +119,9 @@ pub struct Init {
     pub window_rules: bottom_screen::WindowRules,
     /// Clocks on a 12-hour dial (else 24-hour).
     pub twelve_hour: bool,
-    /// The setup not done yet (ClamShell's first start): the Device view opens (see [`device`]).
-    pub setup: bool,
+    /// ClamShell's first start (the Device view not closed with Done yet): the Device view opens (see
+    /// [`device`]).
+    pub first_start: bool,
     /// The sticks' calibrations, by controller (see [`sticks`]).
     pub sticks: sticks::Calibrations,
 }
@@ -181,8 +182,8 @@ pub struct State {
     shown: Option<shelf::ShelfView>,
     /// Pins of entries gone were dropped at start: saved once the UI is up.
     pins_dropped: bool,
-    /// The setup not done yet (see [`account`]).
-    first_run: bool,
+    /// ClamShell's first start (see [`Init::first_start`]).
+    first_start: bool,
     /// The file actions' clipboard and confirmation, the folder browsed (see [`files`]).
     files: files::Files,
     /// The text on the system's clipboard, for the editor's Ctrl+V (files copied in the Files tab are its
@@ -209,7 +210,7 @@ impl State {
             dock: init.dock,
             autostart: init.autostart,
             device_session: init.device_session,
-            first_run: init.setup,
+            first_start: init.first_start,
             ..State::default()
         };
         if let Some(resume) = &init.resume {
@@ -218,9 +219,9 @@ impl State {
         // (Saved once the UI is up.)
         s.pins_dropped = s.drop_gone_pins();
         s.follow_pausable_runners();
-        s.pointer.focus = s.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Game(g)));
+        s.pointer.focus = s.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
         s.device.calibrations = init.sticks;
-        if init.setup {
+        if init.first_start {
             s.device.open = true;
             s.pointer.focus = Some(Id::Device(device::DeviceId::Wifi));
         }
@@ -299,12 +300,12 @@ impl State {
     /// (see [`crate::Entry::another`]).
     pub fn opens_another(&self, id: &str) -> bool {
         // (Not one handed over to another program, Android's: a launch shows the one it runs.)
-        self.session.running(id).is_some() && self.game(id).is_some_and(|g| g.another && !g.runner.as_ref().is_some_and(|r| r.handover))
+        self.session.running(id).is_some() && self.entry(id).is_some_and(|g| g.another && !g.runner.as_ref().is_some_and(|r| r.handover))
     }
 
     /// A library entry by its id, or one that runs after leaving the library (its file deleted), as it was.
-    pub fn game(&self, id: &str) -> Option<&Entry> {
-        self.shelf.game(id).or_else(|| self.session.running(id).and_then(|r| r.entry.as_deref()))
+    pub fn entry(&self, id: &str) -> Option<&Entry> {
+        self.shelf.entry(id).or_else(|| self.session.running(id).and_then(|r| r.entry.as_deref()))
     }
 
     /// Whether the pad, on ClamShell's screens, may go to shelf's (shelf is in front and nothing else
@@ -431,7 +432,7 @@ impl State {
             Event::Slide(slide) => self.on_slide(slide),
             Event::Level(e) => self.on_level(e),
             Event::Shelf(e) => self.on_shelf_event(e),
-            Event::Launch(e) => self.on_game(e),
+            Event::Launch(e) => self.on_launch_event(e),
             Event::Windows(windows) => {
                 self.session.set_windows(windows);
                 (Dirty::BOTH, vec![])
@@ -471,7 +472,7 @@ impl State {
             // Sleep may have reset what the settings set (frequency caps, cores): again.
             Event::Resumed => {
                 self.idle.resumed(self.mono_secs);
-                (Dirty::NONE, vec![Effect::Apply { game: self.session.program.clone(), settings: self.in_force() }])
+                (Dirty::NONE, vec![Effect::Apply { entry: self.session.program.clone(), settings: self.in_force() }])
             }
             Event::Idle(event) => {
                 self.idle.heard(event, self.mono_secs);
@@ -731,7 +732,7 @@ impl State {
         match id {
             // Held on the selected entry with the pad (its focus showing): the pad to its actions, the
             // first focused (up and down go through them, A does one, B goes back to the list).
-            Id::Shelf(ShelfId::Game(game)) if long && self.pointer.show_focus && self.shelf.selected() == Some(&game) => {
+            Id::Shelf(ShelfId::Entry(game)) if long && self.pointer.show_focus && self.shelf.selected() == Some(&game) => {
                 if let Some(first) = self.actions().as_slice().first() {
                     self.pointer.focus = Some(Id::Shelf(first.id()));
                 }
@@ -804,7 +805,7 @@ impl State {
     /// Shelf's targets.
     fn on_shelf(&mut self, id: ShelfId) -> Vec<Effect> {
         match id {
-            ShelfId::Game(game) => {
+            ShelfId::Entry(game) => {
                 // Activating the selected entry again opens it (a group) or plays it (starts it, or
                 // switches to it).
                 if self.shelf.selected() == Some(&game) {
@@ -863,8 +864,8 @@ impl State {
     /// Shelf went to another collection or list: the place is saved, and a focus in shelf's list follows.
     fn moved_collection(&mut self) {
         self.saves.resume.touch(self.mono_secs);
-        if matches!(self.pointer.focus, Some(Id::Shelf(ShelfId::Game(_) | ShelfId::Collection(_)))) {
-            self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Game(g)));
+        if matches!(self.pointer.focus, Some(Id::Shelf(ShelfId::Entry(_) | ShelfId::Collection(_)))) {
+            self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
         }
     }
 
@@ -874,7 +875,7 @@ impl State {
                 if self.shelf.step(step) {
                     self.saves.resume.touch(self.mono_secs);
                 }
-                self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Game(g)));
+                self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
                 self.pointer.show_focus = true;
                 (Dirty::BOTH, vec![])
             }
@@ -931,9 +932,9 @@ impl State {
         vec![Effect::Save(Save::Favourites(ids))]
     }
 
-    fn on_game(&mut self, event: LaunchEvent) -> (Dirty, Vec<Effect>) {
+    fn on_launch_event(&mut self, event: LaunchEvent) -> (Dirty, Vec<Effect>) {
         let effects = match event {
-            LaunchEvent::Position { game, position } => {
+            LaunchEvent::Position { entry: game, position } => {
                 self.shelf.set_position(&game, position, self.unix_secs);
                 vec![]
             }
@@ -1128,8 +1129,8 @@ pub(crate) mod testkit {
     /// Entry `id`'s launch starts, as systemd tells it: its scope listed with the others (the launch's
     /// asked for, else one of the entry's, as a ClamShell before this one started).
     pub fn start(s: &mut State, id: &str) -> (Dirty, Vec<Effect>) {
-        let key = s.game(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());
-        let launch = s.session.launching.iter().find(|l| &*l.game == id).map(|l| l.instance.clone());
+        let key = s.entry(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());
+        let launch = s.session.launching.iter().find(|l| &*l.entry == id).map(|l| l.instance.clone());
         let mut units = s.session.units.clone();
         units.push(launch.unwrap_or(Instance::Run { key, secs: s.unix_secs, n: 99 }));
         s.apply(Event::Units(units))
@@ -1137,7 +1138,7 @@ pub(crate) mod testkit {
 
     /// Entry `id`'s launches end, as systemd tells it: its scopes no longer listed.
     pub fn end(s: &mut State, id: &str) -> (Dirty, Vec<Effect>) {
-        let key = s.game(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());
+        let key = s.entry(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());
         let units = s.session.units.iter().filter(|u| u.key() != Some(key.as_str())).cloned().collect();
         s.apply(Event::Units(units))
     }
@@ -1171,7 +1172,7 @@ pub(crate) mod testkit {
 
     /// A game in shelf's list.
     pub fn game(id: &str) -> Id {
-        Id::Shelf(ShelfId::Game(id.into()))
+        Id::Shelf(ShelfId::Entry(id.into()))
     }
 
     /// A tap on `id`: what it asks for.

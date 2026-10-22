@@ -766,7 +766,7 @@ mod tests {
         assert_eq!(points(&moved), vec![(finger, ContactPhase::Down)]);
         input.up(finger, End::Release, &state, t);
         // Nowhere on shelf (the main screen), nor by the mouse.
-        let game = target(Id::Shelf(clamshell_core::ShelfId::Game("g".into())), None);
+        let game = target(Id::Shelf(clamshell_core::ShelfId::Entry("g".into())), None);
         input.touch(Source::Touch(2), &game, (0.0, 0.0), t);
         assert!(points(&input.moved(Source::Touch(2), (100.0, 0.0), t)).is_empty());
         input.touch(Source::Mouse, &tab_free(), (0.0, 0.0), t);

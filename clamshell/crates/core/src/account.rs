@@ -44,9 +44,9 @@ impl State {
         self.sys.account
     }
 
-    /// Whether this is the first start: the setup not done yet (the Device view: [`crate::device`]).
-    pub fn first_run(&self) -> bool {
-        self.first_run
+    /// Whether this is ClamShell's first start (the Device view: [`crate::device`]).
+    pub fn first_start(&self) -> bool {
+        self.first_start
     }
 
     /// A change asked of the helper is done (what it did), or failed (why): shown for a moment.

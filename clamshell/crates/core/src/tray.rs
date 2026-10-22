@@ -238,7 +238,7 @@ mod tests {
         assert!(s.session().running("desktop:firefox").is_none());
         // One the library has no desktop file for: an entry of its own, named as the icon.
         s.apply(Event::Tray(vec![zelda_icon.clone(), item(":1.7/c", "thing", None)]));
-        assert_eq!(s.game("tray:thing").map(|g| g.title.as_str()), Some("thing"), "named by its id, the same each run");
+        assert_eq!(s.entry("tray:thing").map(|g| g.title.as_str()), Some("thing"), "named by its id, the same each run");
         assert!(s.dock().items().iter().any(|i| &*i.id == "tray:thing"));
         // Moved into a scope of ours (systemd lists it): a launch, ended by its slice and when that ends.
         let (_, fx) = s.apply(Event::Tray(vec![zelda_icon.clone(), firefox_icon]));

@@ -195,9 +195,9 @@ fn draw_tile(f: &mut Frame, r: Rect, tile: Tile) {
 fn editor(f: &mut Frame) {
     let s = f.s;
     let title = match s.bottom().editor() {
-        Some(Editor { purpose: Purpose::Env { game }, .. }) => {
+        Some(Editor { purpose: Purpose::Env { entry: game }, .. }) => {
             let title = match game {
-                Some(id) => s.game(id).map_or("this game", |g| g.title.as_str()),
+                Some(id) => s.entry(id).map_or("this game", |g| g.title.as_str()),
                 None => "all games",
             };
             Fmt::<160>::of(format_args!("Environment for {title}: KEY=value, space-separated"))

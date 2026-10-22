@@ -152,10 +152,13 @@ Helpers that exist but are bypassed:
 - [ ] Plain sentences in docs and comments: module docs first (`keymap_screens`, `tray`, `found`,
       `keymaps` view, `dock`, `snapshot`, `worker`), then the README; the parenthesised asides where they
       don't help.
-- [ ] One name for one concept: entry ids are "game" in core (`State::game`, `Shelf::game`, `on_game`,
-      `Effect::Launch { game }`) → entry; `KeymapId` (a button enum) renamed, the keymap's id a newtype;
-      `Init.setup` / `first_run` / `SetupDone`; the name collisions (`Output`, `Device`, `Kind`,
-      `Action`).
+- [x] One name for one concept: the API's entry lookups, targets and fields named `entry` (`State::entry`,
+      `Shelf::entry`, `ShelfId::Entry`, `on_launch_event`, `Effect::Launch { entry }`, ...); the first start
+      one name (`first_start`, `FirstStartDone`, `first-start.json`); `levels::AudioOutput`. Kept, with
+      reasons: `KeymapId` (one of the screens' target enums, as `DockId`; `id.rs` says so), the keymap's
+      `u16` id (a newtype would touch dozens of signatures and the settings' storage for little),
+      `bluetooth::{Device, Kind, Action}` (module paths tell them apart, as `io::Error` and
+      `fmt::Error`), and locals named `game`.
 - [x] Commit messages: short imperative scoped subjects, one concern each (from 2026-10-22 on).
 - [x] `docs/review-2026-10.md` framed as the design record it is.
 - [x] Cargo metadata: `description`, `repository`, `publish = false`, `rust-version`.

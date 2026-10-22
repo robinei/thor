@@ -23,7 +23,7 @@ impl State {
 
     /// An entry by its id, with its name.
     pub fn program(&self, id: &Arc<str>) -> Option<Program<'_>> {
-        self.game(id).map(|g| Program { id: id.clone(), title: &g.title })
+        self.entry(id).map(|g| Program { id: id.clone(), title: &g.title })
     }
 
     /// The program in force (see the module's doc), if any.
@@ -42,6 +42,6 @@ impl State {
             return (false, vec![]);
         }
         self.session.program = program.clone();
-        (true, vec![Effect::Apply { game: program, settings: self.in_force() }])
+        (true, vec![Effect::Apply { entry: program, settings: self.in_force() }])
     }
 }

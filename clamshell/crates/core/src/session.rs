@@ -48,7 +48,7 @@ pub struct Session {
 /// runs; and its runner's stop, for one that ends with its windows (known by its app id).
 #[derive(Debug, Clone)]
 pub(crate) struct Quitting {
-    pub(crate) game: Arc<str>,
+    pub(crate) entry: Arc<str>,
     pub(crate) ended: bool,
     pub(crate) stop: Option<Effect>,
 }
@@ -61,7 +61,7 @@ impl Session {
 
     /// Whether entry `id` is quitting.
     pub(crate) fn is_quitting(&self, id: &str) -> bool {
-        self.quitting.iter().any(|q| &*q.game == id)
+        self.quitting.iter().any(|q| &*q.entry == id)
     }
 
     /// The entries that run, in the order they started.

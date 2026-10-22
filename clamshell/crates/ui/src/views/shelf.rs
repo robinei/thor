@@ -132,7 +132,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
     let cursor = s.shelf().cursor();
     let scrolled = Scrolled::begin(f, ListId::Shelf, list, row_h, len);
     for position in scrolled.shown() {
-        let Some(game) = s.shelf().game_at(position) else {
+        let Some(game) = s.shelf().entry_at(position) else {
             break;
         };
         let at = scrolled.row(position);
@@ -150,7 +150,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         // (Every row's picture in a square, cropped to fill it: the titles in line.)
         let thumb_h = r.h * THUMB;
         let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * ROW_ASPECT, thumb_h);
-        f.button(Id::Shelf(ShelfId::Game(game.id.clone())), r, look, |f| {
+        f.button(Id::Shelf(ShelfId::Entry(game.id.clone())), r, look, |f| {
             widgets::thumb(f.c, f.images, game, thumb, THUMB_RADIUS, false);
             // Its marks at the row's right end, right to left: a folder's chevron, running (dim while
             // paused), on the dock, a favourite.

@@ -66,7 +66,7 @@ pub(super) fn draw(f: &mut Frame) {
 /// An entry's tile: its picture (in colour while it runs, else grey) over its name.
 fn entry_tile(f: &mut Frame, r: Rect, i: usize, id: &std::sync::Arc<str>, several: bool) {
     let s = f.s;
-    let Some(game) = s.game(id) else {
+    let Some(game) = s.entry(id) else {
         return;
     };
     let running = s.session().running(id).is_some();
@@ -111,7 +111,7 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
     if let Some((tray, entries)) = s.tray_page().filter(|_| s.dock().tray_open()) {
         return draw_tray_menu(f, &tray.title, entries);
     }
-    let title = s.game(entry).map_or("", |g| g.title.as_str());
+    let title = s.entry(entry).map_or("", |g| g.title.as_str());
     let running = s.session().running(entry).is_some();
     let pinned = s.dock().items().iter().any(|i| i.id == *entry && i.pinned);
     // (A tray icon's own tile isn't an entry of the library: it can't be pinned.)

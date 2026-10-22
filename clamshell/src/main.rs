@@ -152,7 +152,7 @@ fn saved(paths: &Paths) -> Init {
         window_rules: store.window_rules(),
         brightness: store.brightness(),
         twelve_hour: store.twelve_hour(),
-        setup: !store.setup_done(),
+        first_start: !store.first_start_done(),
         sticks: store.sticks(),
         dock: store.dock(),
         autostart: store.autostart(),

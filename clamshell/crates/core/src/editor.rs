@@ -41,7 +41,7 @@ impl Editor {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Purpose {
     /// A game's environment variables, or all games' (`None`).
-    Env { game: Option<Arc<str>> },
+    Env { entry: Option<Arc<str>> },
     /// The password for joining this Wi-Fi network.
     Password { ssid: String },
     /// A keymap's name.
@@ -182,7 +182,7 @@ impl crate::State {
             return vec![];
         };
         match editor.purpose {
-            Purpose::Env { game } => {
+            Purpose::Env { entry: game } => {
                 self.settings.set_env(game, &editor.text);
                 vec![Effect::Save(Save::Settings(self.settings.clone()))]
             }
@@ -206,7 +206,7 @@ mod tests {
     fn a_password_being_typed_stays_out_of_logs() {
         let e = Editor { purpose: Purpose::Password { ssid: "home".into() }, text: "hunter22".into() };
         assert!(!format!("{e:?}").contains("hunter22"));
-        let e = Editor { purpose: Purpose::Env { game: None }, text: "A=1".into() };
+        let e = Editor { purpose: Purpose::Env { entry: None }, text: "A=1".into() };
         assert!(format!("{e:?}").contains("A=1"), "the rest is shown");
         let connect = crate::wifi::Command::Connect { ssid: "home".into(), password: Some(crate::secret::Secret("hunter22".into())) };
         assert!(!format!("{connect:?}").contains("hunter22"));
@@ -214,7 +214,7 @@ mod tests {
 
     #[test]
     fn typing_editing_and_finishing() {
-        let mut e = Editor { purpose: Purpose::Env { game: None }, text: String::new() };
+        let mut e = Editor { purpose: Purpose::Env { entry: None }, text: String::new() };
         for c in ['a', '-', 'b'] {
             assert_eq!(e.key(stroke(Key::Char(c), c == '-')), None);
         }

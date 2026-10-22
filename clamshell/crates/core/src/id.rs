@@ -1,6 +1,8 @@
 //! Stable ids of everything that can be focused or tapped, on either screen, grouped by what they belong
-//! to. Focus is kept by id, so it survives redraws and layout changes; list items are named by position
-//! (so drawing needs no allocation) and resolved by what they are when pressed (see [`crate::items`]).
+//! to: [`Id`], and an enum per screen of its targets (`ShelfId`, `DockId`, `KeymapId`, ...). These name
+//! targets, not the things they act on (a keymap's own id is its number, a `u16`). Focus is kept by id, so
+//! it survives redraws and layout changes; list items are named by position (so drawing needs no
+//! allocation) and resolved by what they are when pressed (see [`crate::items`]).
 
 use std::sync::Arc;
 
@@ -65,7 +67,7 @@ pub enum Id {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ShelfId {
-    Game(Arc<str>),
+    Entry(Arc<str>),
     /// A collection, by position.
     Collection(u16),
     Launch,

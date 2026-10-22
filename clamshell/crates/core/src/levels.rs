@@ -55,7 +55,7 @@ impl Level {
 
 /// An output (a PipeWire sink).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Output {
+pub struct AudioOutput {
     /// PipeWire's object id: what it is asked about.
     pub id: u32,
     pub name: String,
@@ -77,7 +77,7 @@ pub struct Stream {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Audio {
-    pub outputs: Vec<Output>,
+    pub outputs: Vec<AudioOutput>,
     pub streams: Vec<Stream>,
 }
 
@@ -446,7 +446,7 @@ mod tests {
 
     fn audio() -> Audio {
         Audio {
-            outputs: vec![Output { id: 50, name: "Speakers".into(), default: true }, Output { id: 51, name: "Headphones".into(), default: false }],
+            outputs: vec![AudioOutput { id: 50, name: "Speakers".into(), default: true }, AudioOutput { id: 51, name: "Headphones".into(), default: false }],
             streams: vec![Stream { id: 80, app: "Firefox".into(), title: String::new(), volume: 60, muted: false }],
         }
     }

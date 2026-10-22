@@ -34,7 +34,7 @@ pub(crate) enum PadScope {
 }
 
 pub(crate) fn scope(s: &State) -> PadScope {
-    let in_list = matches!(s.pointer().focus(), Some(Id::Shelf(ShelfId::Game(_) | ShelfId::Collection(_))));
+    let in_list = matches!(s.pointer().focus(), Some(Id::Shelf(ShelfId::Entry(_) | ShelfId::Collection(_))));
     match (s.pad_on_top(), in_list) {
         (true, true) => PadScope::ShelfList,
         (true, false) => PadScope::BothScreens,
@@ -46,7 +46,7 @@ pub(crate) fn scope(s: &State) -> PadScope {
 /// tab's button.
 pub(crate) fn default_focus(s: &State, screen: Screen) -> Option<Id> {
     match screen {
-        Screen::Top => s.shelf().selected().cloned().map(|g| Id::Shelf(ShelfId::Game(g))),
+        Screen::Top => s.shelf().selected().cloned().map(|g| Id::Shelf(ShelfId::Entry(g))),
         Screen::Bottom => Some(Id::Tab(s.bottom().tab())),
     }
 }
@@ -160,7 +160,7 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
         };
         // (A list's area is for fingers: the pad goes to its rows. Shelf's actions only by A held. A dock
         // tile's tray mark is for fingers too: the pad has the tile's long-press menu's Menu.)
-        let actions = |id: &Id| matches!(id, Id::Shelf(s) if !matches!(s, ShelfId::Game(_) | ShelfId::Collection(_) | ShelfId::Up));
+        let actions = |id: &Id| matches!(id, Id::Shelf(s) if !matches!(s, ShelfId::Entry(_) | ShelfId::Collection(_) | ShelfId::Up));
         let fingers = |id: &Id| matches!(id, Id::List(_) | Id::Dock(DockId::Tray(_)));
         all.extend(d.targets(screen).iter().filter(|t| !fingers(&t.id) && !actions(&t.id)).map(|t| NavTarget {
             screen,
@@ -264,7 +264,7 @@ pub(crate) fn back(s: &State) -> Option<Event> {
         return Some(PointerEvent::Activate(Id::Device(clamshell_core::device::DeviceId::Close)).into());
     }
     // On shelf's actions (A held took the pad there): back to the entry in the list.
-    if matches!(s.pointer().focus(), Some(Id::Shelf(id)) if !matches!(id, ShelfId::Game(_) | ShelfId::Collection(_) | ShelfId::Up)) {
+    if matches!(s.pointer().focus(), Some(Id::Shelf(id)) if !matches!(id, ShelfId::Entry(_) | ShelfId::Collection(_) | ShelfId::Up)) {
         return default_focus(s, Screen::Top).map(|id| PointerEvent::Focus(id).into());
     }
     // In shelf: what is typed to find an entry cleared, else out of the open group.
@@ -331,7 +331,7 @@ mod tests {
     }
 
     fn game(s: &State, i: usize) -> Id {
-        Id::Shelf(ShelfId::Game(s.shelf().game_at(i).map(|g| g.id.clone()).unwrap_or_else(|| "?".into())))
+        Id::Shelf(ShelfId::Entry(s.shelf().entry_at(i).map(|g| g.id.clone()).unwrap_or_else(|| "?".into())))
     }
 
     fn drawn(s: &State) -> Fake {
