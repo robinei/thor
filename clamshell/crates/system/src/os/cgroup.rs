@@ -1,7 +1,11 @@
-//! Which systemd unit a process runs in, from its cgroup (`/proc/<pid>/cgroup`, the unified hierarchy):
-//! the kernel's record of which launch it comes from, whatever it did since (detached, double-forked).
+//! cgroups (the unified hierarchy): which systemd unit a process runs in, from its cgroup
+//! (`/proc/<pid>/cgroup`: the kernel's record of which launch it comes from, whatever it did since,
+//! detached or double-forked), and what a cgroup's processes spend.
 
-use crate::os::sys;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+use crate::os::{drm, sys};
 
 /// The unit a process runs in (`….scope`, `….service`), if it can be read.
 pub fn unit_of(pid: u32) -> Option<String> {
@@ -11,6 +15,32 @@ pub fn unit_of(pid: u32) -> Option<String> {
 /// A process's cgroup path in the unified hierarchy (`/user.slice/…/app.slice/foo.scope`).
 pub fn path_of(pid: u32) -> Option<String> {
     parse_path(&sys::text(format!("/proc/{pid}/cgroup"))?).map(str::to_owned)
+}
+
+/// Where cgroup `path` (`/user.slice/…`) is in the cgroup filesystem.
+pub fn dir(path: &str) -> PathBuf {
+    Path::new("/sys/fs/cgroup").join(path.trim_start_matches('/'))
+}
+
+/// A cgroup's CPU time so far (microseconds), its subgroups' included.
+pub fn cpu_usec(dir: &Path) -> Option<u64> {
+    let stat = sys::text(dir.join("cpu.stat"))?;
+    stat.lines().find_map(|l| l.strip_prefix("usage_usec ")).and_then(|v| v.trim().parse().ok())
+}
+
+/// The GPU time so far of a cgroup's processes (its subgroups' too), each DRM client once (nanoseconds).
+pub fn gpu_ns(dir: &Path) -> u64 {
+    let mut clients = HashMap::new();
+    let mut dirs = vec![dir.to_path_buf()];
+    while let Some(d) = dirs.pop() {
+        for pid in sys::text(d.join("cgroup.procs")).unwrap_or_default().lines() {
+            clients.extend(drm::clients(&Path::new("/proc").join(pid)));
+        }
+        if let Ok(entries) = std::fs::read_dir(&d) {
+            dirs.extend(entries.flatten().filter(|e| e.file_type().is_ok_and(|t| t.is_dir())).map(|e| e.path()));
+        }
+    }
+    clients.values().sum()
 }
 
 /// The unified hierarchy's path in a cgroup file (its `0::` line).

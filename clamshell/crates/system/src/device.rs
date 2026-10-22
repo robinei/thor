@@ -197,11 +197,7 @@ const BUSY_NET: f64 = 100_000.0;
 /// manager's cgroup, all of them: ClamShell's launches, Steam), or the network's traffic; why.
 fn busy() -> Option<String> {
     let user = user_cgroup();
-    let cpu = || {
-        user.as_ref()
-            .and_then(|d| crate::os::sys::text(d.join("cpu.stat")))
-            .and_then(|s| s.lines().find_map(|l| l.strip_prefix("usage_usec ")?.trim().parse::<u64>().ok()))
-    };
+    let cpu = || user.as_deref().and_then(crate::os::cgroup::cpu_usec);
     let net = || {
         let text = crate::os::sys::text("/proc/net/dev").unwrap_or_default();
         // (Each interface but loopback: received bytes, the 1st number, and sent, the 9th.)
@@ -231,7 +227,7 @@ fn busy() -> Option<String> {
 fn user_cgroup() -> Option<PathBuf> {
     let path = crate::os::cgroup::path_of(std::process::id())?;
     let end = path.find(".service/").map(|i| i + ".service".len())?;
-    Some(PathBuf::from("/sys/fs/cgroup").join(path.get(..end)?.trim_start_matches('/')))
+    Some(crate::os::cgroup::dir(path.get(..end)?))
 }
 
 fn sleep() {

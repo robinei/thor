@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use clamshell_core::{Event, Instance};
 
+use crate::os::cgroup;
 use crate::os::dbus::{self, Bus, Message, Path, value};
 use crate::os::worker::{self, Changed, Ended, Service, lost_on};
 use crate::{Closed, Sink};
@@ -426,8 +427,8 @@ fn working_without_drawing(group: Option<String>) -> bool {
         thread::sleep(WATCH);
         return false;
     };
-    let dir = std::path::PathBuf::from("/sys/fs/cgroup").join(group.trim_start_matches('/'));
-    let sample = || (cpu_usec(&dir), gpu_ns(&dir), Instant::now());
+    let dir = cgroup::dir(&group);
+    let sample = || (cgroup::cpu_usec(&dir), cgroup::gpu_ns(&dir), Instant::now());
     let (cpu0, gpu0, t0) = sample();
     thread::sleep(WATCH);
     let (cpu1, gpu1, t1) = sample();
@@ -438,27 +439,6 @@ fn working_without_drawing(group: Option<String>) -> bool {
     let cpu = cpu1.saturating_sub(cpu0) as f64 / 1e6 / wall;
     let gpu = gpu1.saturating_sub(gpu0) as f64 / 1e9 / wall;
     cpu > BUSY_CPU && gpu < DRAWING_GPU
-}
-
-/// A cgroup's CPU time so far (microseconds).
-fn cpu_usec(dir: &std::path::Path) -> Option<u64> {
-    let stat = crate::os::sys::text(dir.join("cpu.stat"))?;
-    stat.lines().find_map(|l| l.strip_prefix("usage_usec ")).and_then(|v| v.trim().parse().ok())
-}
-
-/// The GPU time so far of a cgroup's processes (its subgroups' too), each DRM client once.
-fn gpu_ns(dir: &std::path::Path) -> u64 {
-    let mut clients = std::collections::HashMap::new();
-    let mut dirs = vec![dir.to_path_buf()];
-    while let Some(d) = dirs.pop() {
-        for pid in crate::os::sys::text(d.join("cgroup.procs")).unwrap_or_default().lines() {
-            clients.extend(crate::os::drm::clients(&std::path::Path::new("/proc").join(pid)));
-        }
-        if let Ok(entries) = std::fs::read_dir(&d) {
-            dirs.extend(entries.flatten().filter(|e| e.file_type().is_ok_and(|t| t.is_dir())).map(|e| e.path()));
-        }
-    }
-    clients.values().sum()
 }
 
 /// Waits for a scope to appear, within `appear`.
