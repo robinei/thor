@@ -408,19 +408,19 @@ pub(crate) fn header(f: &mut Frame, back: Option<Id>, title: &str, centred: bool
 
 /// A menu: text actions down `area` from its top (each `(target, label, tone)`), in a column beside the
 /// first when they don't fit (a long one: a program's tray menu), as many as fit.
-pub(crate) fn menu(f: &mut Frame, area: Rect, items: &[(Id, &str, Tone)]) {
+pub(crate) fn menu<L: std::ops::Deref<Target = str>>(f: &mut Frame, area: Rect, items: impl IntoIterator<Item = (Id, L, Tone)>) {
     let pad = f.pad();
     let h = f.body().h * MENU_BUTTON_H;
     let size = f.text(Text::Body);
     let w = menu_w(area, size);
     let per_column = (((area.h + pad * 0.5) / (h + pad * 0.5)) as usize).max(1);
-    for (i, (id, label, tone)) in items.iter().enumerate() {
+    for (i, (id, label, tone)) in items.into_iter().enumerate() {
         let (column, row) = (i / per_column, i % per_column);
         let r = Rect::new(area.x + column as f32 * (w + pad), area.y + row as f32 * (h + pad * 0.5), w, h);
         if r.right() > area.right() {
             break;
         }
-        f.text_button(id.clone(), r, size, *tone, label, Align::Start);
+        f.text_button(id, r, size, tone, &label, Align::Start);
     }
 }
 

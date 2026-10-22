@@ -117,7 +117,8 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
     // (A tray icon's own tile isn't an entry of the library: it can't be pinned.)
     let pinnable = s.shelf().library().has(entry);
     let item = |id, label, tone| Some((Id::Dock(id), label, tone));
-    let items: Vec<(Id, &str, Tone)> = [
+    // (An array of the items that apply, none left out by allocating: drawn every frame.)
+    let items = [
         if s.opens_another(entry) { item(DockId::OpenAnother, "Open another", Tone::Fn) } else { None },
         if running && s.entry_window(entry).is_some() { item(DockId::CloseWindow, "Close window", Tone::Fn) } else { None },
         if s.tray_of(entry).is_some() { item(DockId::TrayMenu, "Menu", Tone::Fn) } else { None },
@@ -137,10 +138,7 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
         },
         if running { item(DockId::Quit, "Quit", Tone::Accent) } else { None },
         if running { item(DockId::ForceKill, "Force kill", Tone::Accent) } else { None },
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
+    ];
     let mut area = widgets::header(f, Some(Id::Dock(DockId::Back)), title, false, HeaderRight::None);
     // What it costs now, once read (see the battery tab).
     if let Some(clamshell_core::battery::Cost { cpu, gpu, memory }) = s.cost_of(entry) {
@@ -149,25 +147,18 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
         let cost = Fmt::<64>::of(format_args!("{} · CPU {} · GPU {}", Bytes(memory), Share(cpu), MaybeShare(gpu)));
         f.c.text_fit(line.top_line(size), size, Tone::Dim, &cost, Keep::Start);
     }
-    widgets::menu(f, area, &items);
+    widgets::menu(f, area, items.into_iter().flatten());
 }
 
 /// A program's tray menu (or a submenu of it): its entries (a disabled one dim, a checked one after a
 /// dot, a submenu's ending in `›`), in columns as they fit. The back arrow: up a submenu, else the dock.
 fn draw_tray_menu(f: &mut Frame, title: &str, entries: &[TrayEntry]) {
-    let labels: Vec<String> = entries
-        .iter()
-        .map(|e| {
-            let mark = if e.checked == Some(true) { "• " } else { "" };
-            let more = if e.children.is_empty() { "" } else { " ›" };
-            format!("{mark}{}{more}", e.label)
-        })
-        .collect();
-    let items: Vec<(Id, &str, Tone)> = entries
-        .iter()
-        .zip(&labels)
-        .map(|(e, label)| (Id::Dock(DockId::TrayEntry(e.id)), label.as_str(), if e.enabled { Tone::Fn } else { Tone::Dim }))
-        .collect();
+    let items = entries.iter().map(|e| {
+        let mark = if e.checked == Some(true) { "• " } else { "" };
+        let more = if e.children.is_empty() { "" } else { " ›" };
+        let label = Fmt::<160>::of(format_args!("{mark}{}{more}", e.label));
+        (Id::Dock(DockId::TrayEntry(e.id)), label, if e.enabled { Tone::Fn } else { Tone::Dim })
+    });
     let area = widgets::header(f, Some(Id::Dock(DockId::Back)), title, false, HeaderRight::None);
-    widgets::menu(f, area, &items);
+    widgets::menu(f, area, items);
 }

@@ -172,7 +172,7 @@ fn menu(f: &mut Frame, id: u16) {
             (k(KeymapId::SaveAs), "Save as…", Tone::Fn),
             (k(KeymapId::Delete), "Delete", Tone::Accent),
         ];
-        return widgets::menu(f, area, &items);
+        return widgets::menu(f, area, items);
     }
     let items = [
         (k(KeymapId::Edit), "Edit", Tone::Fn),
@@ -180,7 +180,7 @@ fn menu(f: &mut Frame, id: u16) {
         (k(KeymapId::Duplicate), "Duplicate", Tone::Fn),
         (k(KeymapId::Delete), "Delete", Tone::Accent),
     ];
-    widgets::menu(f, area, &items);
+    widgets::menu(f, area, items);
 }
 
 fn delete(f: &mut Frame, id: u16) {
@@ -210,7 +210,7 @@ fn confirm(f: &mut Frame, title: &str, text: &str, (act, label): (KeymapId, &str
     let used = f.c.wrap(Span { x: area.x, y: area.y, w: area.w }, size, Tone::Normal, text, 3);
     let pad = f.pad();
     let rest = Rect::new(area.x, area.y + used + pad, area.w, area.h - used - pad);
-    widgets::menu(f, rest, &[(Id::Keymap(KeymapId::Back), "Keep it", Tone::Fn), (Id::Keymap(act), label, Tone::Accent)]);
+    widgets::menu(f, rest, [(Id::Keymap(KeymapId::Back), "Keep it", Tone::Fn), (Id::Keymap(act), label, Tone::Accent)]);
 }
 
 /// The edit screen: the labels' text, of the small text size; of the area's width, a cluster's width,

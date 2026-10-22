@@ -59,9 +59,9 @@ pub(super) fn layer_menu(f: &mut Frame, id: u16, layer: Layer) {
     let area = header(f, name, HeaderRight::None);
     let k = |id| Id::Keymap(id);
     if f.s.keymap_edit().clearing {
-        widgets::menu(f, area, &[(k(KeymapId::ConfirmClear), "Clear all its bindings", Tone::Accent), (k(KeymapId::Back), "Cancel", Tone::Fn)]);
+        widgets::menu(f, area, [(k(KeymapId::ConfirmClear), "Clear all its bindings", Tone::Accent), (k(KeymapId::Back), "Cancel", Tone::Fn)]);
     } else if layer == Layer::BASE {
-        widgets::menu(f, area, &[(k(KeymapId::Clear), "Clear", Tone::Fn)]);
+        widgets::menu(f, area, [(k(KeymapId::Clear), "Clear", Tone::Fn)]);
     } else {
         // Once: a switch, and what it means.
         let size = f.text(Text::Body);
@@ -78,7 +78,7 @@ pub(super) fn layer_menu(f: &mut Frame, id: u16, layer: Layer) {
         widgets::menu(
             f,
             rest,
-            &[(k(KeymapId::RenameLayer), "Rename", Tone::Fn), (k(KeymapId::Clear), "Clear", Tone::Fn), (k(KeymapId::DeleteLayer), "Delete", Tone::Accent)],
+            [(k(KeymapId::RenameLayer), "Rename", Tone::Fn), (k(KeymapId::Clear), "Clear", Tone::Fn), (k(KeymapId::DeleteLayer), "Delete", Tone::Accent)],
         );
     }
 }
