@@ -112,3 +112,15 @@ and the UI change with the code they call; doc links to moved methods are fixed 
 - `before = in_force()` taken before a settings change; `tick`'s first-tick resume before the clock moves.
 - `bottom().dimmed()` read from the cached field: only valid because `follow_bottom_dim` runs on every
   apply after the event.
+
+## Also on the list
+
+- [ ] `apply` reuses its buffers: `apply(event, &mut Vec<Effect>) -> Dirty` with the caller's vector, and the
+      event queue a `State` field lent out for the call and returned cleared (capacity kept). Each
+      `apply_event` drains only what it queued, by index (`remove(mark)`), so a queued event's own requests
+      still run right after it. Fix `landing_up`'s per-reconcile `String`. `tests/apply_alloc.rs` then
+      asserts no allocation for warm ticks, readings, windows/units, pointer and pad events.
+- [ ] Each frame target records the key of the item it shows (a `u64` hash, so drawing stays
+      allocation-free); a press keys its item from the target it landed on rather than from the state
+      at `Down`. Today a list that changes between a frame and the press keys the item now at that
+      position, not the one that was drawn there.
