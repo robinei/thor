@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use std::process::{Command as Process, Stdio};
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use clamshell_core::{Event, Instance, Launch, LaunchEvent};
 use rustix::process::{Pid, Signal};
@@ -113,10 +113,6 @@ impl From<units::Error> for Error {
     fn from(e: units::Error) -> Self {
         Error::Units(e)
     }
-}
-
-fn now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
 pub fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worker<Command>> {
@@ -230,7 +226,7 @@ fn ask_steam(config: &Config, request: &Request, appid: u32) -> Result<(), Error
     // (`-silent`: if Steam isn't running, it starts without its window, only the game showing.)
     let argv: Vec<String> = ["steam", "-silent", "-applaunch", &appid.to_string()].map(String::from).to_vec();
     if !steam_client_running() {
-        let instance = Instance::Run { key: clamshell_library::key_of(STEAM_ENTRY), secs: now(), n: 0 };
+        let instance = Instance::Run { key: clamshell_library::key_of(STEAM_ENTRY), secs: clamshell_core::unix_secs(), n: 0 };
         let job = Job { unit: instance.name(), workspace: instance.workspace(), slice: instance.slice(), argv, env: vec![], workdir: None };
         log::info!("launcher: Steam isn't running: starting it in {}", job.unit);
         if let Started::Child(child) = config.jobs.without_sway().start(&job)? {

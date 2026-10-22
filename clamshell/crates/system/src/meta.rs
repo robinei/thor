@@ -25,7 +25,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use clamshell_core::{Event, Meta};
 use serde::Deserialize;
@@ -194,8 +193,8 @@ pub fn spawn(fetch: Fetch, queue: &Queue, sink: impl Sink + Clone) -> std::io::R
     Ok(())
 }
 
-pub fn now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
+fn now() -> u64 {
+    clamshell_core::unix_secs()
 }
 
 /// What the threads share: the keys, where images go, and libretro's file lists (fetched once per

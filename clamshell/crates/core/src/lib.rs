@@ -72,7 +72,7 @@ use slider::Control;
 pub use dock::{Dock, DockItem};
 pub use editor::{Editor, count_env, parse_env};
 pub use effect::{Dirty, Effect, Save, Watch, WindowCommand};
-pub use event::{Event, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide, mono_secs};
+pub use event::{Event, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide, mono_secs, unix_secs, unix_secs_at};
 pub use id::{AudioId, BtId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, WifiId};
 pub use instance::Instance;
 pub use levels::{Brightness, Level, Levels, Sound};

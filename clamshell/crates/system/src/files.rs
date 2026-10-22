@@ -12,7 +12,7 @@ use std::mem::MaybeUninit;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::TryRecvError;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use clamshell_core::files::{Browse, BrowseCommand, FileOp, FilesEvent};
 use clamshell_core::{Browsed, Entry, Event};
@@ -186,7 +186,7 @@ pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, h
             let meta = fs::metadata(&path).ok();
             let is_dir = meta.as_ref().is_some_and(fs::Metadata::is_dir);
             let size = meta.as_ref().filter(|m| m.is_file()).map(fs::Metadata::len);
-            let modified = meta.and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
+            let modified = meta.and_then(|m| m.modified().ok()).map_or(0, clamshell_core::unix_secs_at);
             let mut game = Entry::new(&format!("{folder}/{name}"), &name);
             // (An archive: browsed as a folder, through its mount; a runner that opens it kept, for
             // Open in.)
@@ -655,7 +655,7 @@ fn deletion_date() -> String {
     if let Some(out) = crate::command::output("date", &["+%Y-%m-%dT%H:%M:%S"]) {
         return String::from_utf8_lossy(&out).trim().to_owned();
     }
-    let secs = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let secs = clamshell_core::unix_secs();
     let (y, mo, d, h, mi, s) = crate::device::civil(secs);
     format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}")
 }

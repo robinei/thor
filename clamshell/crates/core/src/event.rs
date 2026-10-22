@@ -20,6 +20,16 @@ use crate::sys::Status;
 use crate::wifi::Wifi;
 use crate::windows::Window;
 
+/// Seconds since the epoch on the wall clock at `t` (0 before the epoch).
+pub fn unix_secs_at(t: std::time::SystemTime) -> u64 {
+    t.duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
+/// Seconds since the epoch on the wall clock now.
+pub fn unix_secs() -> u64 {
+    unix_secs_at(std::time::SystemTime::now())
+}
+
 /// Seconds on a monotonic clock, counted from the first call (the program's start); stopped while the
 /// system sleeps.
 pub fn mono_secs() -> u64 {
