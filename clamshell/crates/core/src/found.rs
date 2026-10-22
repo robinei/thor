@@ -15,13 +15,13 @@
 
 use std::sync::Arc;
 
+use clamshell_library::ids;
+
 use crate::effect::{Effect, WindowCommand};
 use crate::instance::Instance;
 use crate::running::{Origin, Running};
 use crate::windows::Window;
 use crate::{Entry, State};
-
-const PREFIX: &str = "window:";
 
 impl State {
     /// A found program's process (and those it started) moved into a scope of ours, as a launch of
@@ -57,7 +57,7 @@ impl State {
             let game = self.found_entry(&w.app_id, || {
                 let name = app_id.as_deref().map_or_else(|| pid.to_string(), str::to_owned);
                 let title = if w.app_id.is_empty() { &w.title } else { &w.app_id };
-                Entry { app: true, ..Entry::new(&format!("{PREFIX}{name}"), title) }
+                Entry { app: true, ..Entry::new(&format!("{}{name}", ids::WINDOW), title) }
             });
             if session.running(&game.id).is_some() {
                 continue;
@@ -70,7 +70,7 @@ impl State {
     /// The entry a program found by `name` (its window's app id, its tray icon's id) runs as: the
     /// library's desktop entry of that name (any case), else one of its own, made by `own`.
     pub(crate) fn found_entry(&self, name: &str, own: impl FnOnce() -> Entry) -> Entry {
-        let named = format!("desktop:{name}").to_lowercase();
+        let named = format!("{}{name}", ids::DESKTOP).to_lowercase();
         self.shelf.library().entries.iter().find(|g| g.id.to_lowercase() == named).cloned().unwrap_or_else(own)
     }
 
@@ -88,7 +88,7 @@ impl State {
             if mine.iter().any(|w| w.focused) {
                 effects.push(Effect::Window(WindowCommand::Focus(r.workspace())));
             }
-            if r.id.starts_with(PREFIX)
+            if r.id.starts_with(ids::WINDOW)
                 && let Some(app_id) = &r.app_id
             {
                 effects.push(Effect::FindIcon { entry: r.id.clone(), app_id: app_id.to_string() });

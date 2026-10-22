@@ -6,6 +6,7 @@
 #[cfg(any(test, feature = "demo"))]
 pub mod demo;
 pub mod hash;
+pub mod ids;
 pub mod pattern;
 pub mod plays;
 pub mod sort;
@@ -215,7 +216,7 @@ impl Entry {
 
 /// The key of runner `id`: its settings, environment and own keymap are kept by it (`runner:snes`).
 pub fn runner_key(id: &str) -> Arc<str> {
-    format!("runner:{id}").into()
+    format!("{}{id}", ids::RUNNER).into()
 }
 
 /// An entry's runner: its key ([`runner_key`] of its id, which outlives a new name), its name (shown),

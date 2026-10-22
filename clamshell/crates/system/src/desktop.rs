@@ -87,7 +87,7 @@ pub fn entries(dirs: &[PathBuf]) -> Vec<Desktop> {
             }
             let category = |c: &str| entry.categories.split(';').any(|x| x == c);
             let title = if entry.name.is_empty() { id.clone() } else { entry.name.clone() };
-            let mut game = clamshell_library::Entry::new(&format!("desktop:{id}"), &title);
+            let mut game = clamshell_library::Entry::new(&format!("{}{id}", clamshell_library::ids::DESKTOP), &title);
             game.launch = clamshell_library::Launch::Program { argv, workdir: (!entry.path.is_empty()).then(|| PathBuf::from(&entry.path)) };
             game.icon = (!entry.icon.is_empty()).then(|| find_icon(&entry.icon, dirs)).flatten();
             // (A game launcher or a tool for games is no game: its games are entries of their own.)

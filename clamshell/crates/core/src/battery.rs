@@ -146,7 +146,7 @@ impl State {
                 entry.map_or_else(|| key.unwrap_or("?"), |g| g.title.as_str())
             }
             Group::App(app) => {
-                let entry = self.shelf.library().entries.iter().find(|g| g.id.strip_prefix("desktop:") == Some(app.as_str()));
+                let entry = self.shelf.library().entries.iter().find(|g| clamshell_library::ids::desktop_file(&g.id) == Some(app.as_str()));
                 entry.map_or(app.as_str(), |g| g.title.as_str())
             }
             Group::Process(name) => name,

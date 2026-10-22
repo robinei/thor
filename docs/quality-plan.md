@@ -101,7 +101,7 @@ Helpers that exist but are bypassed:
 - [x] Wi-Fi and Bluetooth: one vocabulary (`present`, `on`, `busy`, `connected`); `Effect::Browse` carries its
       `BrowseCommand` as other effects carry theirs. (Their error types stay apart: a failed join has its
       own causes; a Bluetooth failure is an action and BlueZ's message.)
-- [ ] Entry ids' prefixes (`desktop:`, `tray:`, `window:`, `runner:`) as constants or helpers in
+- [x] Entry ids' prefixes (`desktop:`, `tray:`, `window:`, `runner:`) as constants or helpers in
       `clamshell_library`.
 - [ ] Anonymous tuples in state as named structs: shelf's view (`shelf.rs:242`), `cost_of`, `Files`'
       `armed`/`busy`/`browsing`, `Calibrator`'s `(Calibrator, Instant, Instant)`,

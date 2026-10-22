@@ -39,7 +39,7 @@ pub fn games(root: &Path) -> Vec<Entry> {
                 continue;
             };
             if let Some((appid, name)) = steam::manifest(&parse_vdf(&text)) {
-                let mut game = Entry::new(&format!("steam:{appid}"), name);
+                let mut game = Entry::new(&format!("{}{appid}", clamshell_library::ids::STEAM), name);
                 game.launch = Launch::Steam { appid };
                 game.box_front = art(&root.join("appcache/librarycache"), appid);
                 games.push(game);

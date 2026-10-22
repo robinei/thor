@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use clamshell_library::Launch;
+use clamshell_library::{Launch, ids};
 
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::instance::{Instance, STEAM_APP_PREFIX};
@@ -143,7 +143,7 @@ pub struct Launching {
 pub fn app_id_of(g: &Entry) -> Option<Arc<str>> {
     match &g.launch {
         Launch::Steam { appid } => Some(format!("{STEAM_APP_PREFIX}{appid}").into()),
-        _ => g.id.strip_prefix("desktop:").filter(|_| g.runner.as_ref().is_some_and(|r| r.handover)).map(Into::into),
+        _ => ids::desktop_file(&g.id).filter(|_| g.runner.as_ref().is_some_and(|r| r.handover)).map(Into::into),
     }
 }
 
@@ -500,8 +500,8 @@ impl State {
             Launch::Program { argv, .. } => argv.first().and_then(|p| p.rsplit('/').next()).is_some_and(|p| p.to_lowercase() == app),
             _ => false,
         };
-        let named = |g: &&crate::Entry| g.id.strip_prefix("desktop:").is_some_and(|d| d.to_lowercase() == app);
-        games.iter().find(named).or_else(|| games.iter().filter(|g| g.id.starts_with("desktop:")).find(program))
+        let named = |g: &&crate::Entry| ids::desktop_file(&g.id).is_some_and(|d| d.to_lowercase() == app);
+        games.iter().find(named).or_else(|| games.iter().filter(|g| ids::desktop_file(&g.id).is_some()).find(program))
     }
 
     /// The windows of a running entry (moved to the bottom screen too).

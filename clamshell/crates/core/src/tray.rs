@@ -14,6 +14,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use clamshell_library::ids;
+
 use crate::effect::Effect;
 use crate::instance::Instance;
 use crate::running::{Origin, Running};
@@ -58,9 +60,6 @@ pub enum TrayCommand {
     Click { item: Arc<str>, id: i32 },
 }
 
-/// The id of an entry found by a tray icon the library has no desktop file for.
-const PREFIX: &str = "tray:";
-
 impl State {
     /// The tray icons, after any change: programs not started by ClamShell run as entries found by
     /// them, and end with them (or with their last window, if one is still open).
@@ -94,7 +93,7 @@ impl State {
                 // (Named by the icon's own id, the same each time the program runs, so a pin or a
                 // setting stays its; its D-Bus name, if it has none.)
                 let name = if t.id.is_empty() { &*t.key } else { t.id.as_str() };
-                Entry { icon: t.icon.clone(), app: true, ..Entry::new(&format!("{PREFIX}{name}"), title) }
+                Entry { icon: t.icon.clone(), app: true, ..Entry::new(&format!("{}{name}", ids::TRAY), title) }
             });
             // (Its entry runs already: found otherwise (by a window), its icon is that one's; a launch of
             // ours, its own.)

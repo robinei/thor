@@ -370,7 +370,7 @@ fn keymap_file(k: &Keymap) -> String {
 
 /// A settings screen's file name: `runner-<key>.json` for a runner's level, else `entry-<key>.json`.
 fn screen_file(id: &str) -> String {
-    match id.strip_prefix("runner:") {
+    match id.strip_prefix(clamshell_library::ids::RUNNER) {
         Some(runner) => format!("runner-{}.json", key_of(runner)),
         None => format!("entry-{}.json", key_of(id)),
     }

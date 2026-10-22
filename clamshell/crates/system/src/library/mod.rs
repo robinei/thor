@@ -9,7 +9,7 @@ pub mod steam;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use clamshell_library::{BrowseKind, Browsed, Collection, Entry, Launch, Library, Meta, Tool};
+use clamshell_library::{BrowseKind, Browsed, Collection, Entry, Launch, Library, Meta, Tool, ids};
 
 use crate::meta::{How, Keys, RETRY_MISS, Wanted};
 
@@ -381,7 +381,7 @@ impl Builder<'_> {
             let _ = std::fs::create_dir_all(&dir);
         }
         let kind = if root.trash { BrowseKind::Trash } else { BrowseKind::Root };
-        self.browsed_root(&place, browsed_root(&format!("browse:{place}"), dir, kind));
+        self.browsed_root(&place, browsed_root(&format!("{}{place}", ids::BROWSE), dir, kind));
     }
 
     /// The removable filesystems mounted, each taken by the first removable source matching it.
@@ -406,7 +406,7 @@ impl Builder<'_> {
             let Some(place) = self.resolve(place).map(|p| p.replace("{label}", name)) else {
                 continue;
             };
-            let id = format!("browse:media/{}", if m.uuid.is_empty() { &m.device } else { &m.uuid });
+            let id = format!("{}media/{}", ids::BROWSE, if m.uuid.is_empty() { &m.device } else { &m.uuid });
             self.browsed_root(&place, browsed_root(&id, m.dir, BrowseKind::Removable(m.device)));
         }
     }
@@ -480,7 +480,7 @@ impl Builder<'_> {
             };
             game.runner = Some(runner.of(self.sources.home.as_deref()));
             // (A desktop runner's own command, if it has one, instead of the desktop file's.)
-            if let Some(launch) = game.id.strip_prefix("desktop:").and_then(|id| runner.wrap(id, &game.launch, self.sources.home.as_deref())) {
+            if let Some(launch) = ids::desktop_file(&game.id).and_then(|id| runner.wrap(id, &game.launch, self.sources.home.as_deref())) {
                 game.launch = launch;
             }
             let how = match (rule.metadata.as_deref(), &game.launch) {
