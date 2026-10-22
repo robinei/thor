@@ -16,7 +16,7 @@ pub struct Handles {
     /// Where saves go; `None` without a state dir, or its thread (then nothing is kept).
     pub store: Option<Writer>,
     /// What waits for its metadata.
-    pub fetching: crate::meta::Queue,
+    pub fetching: crate::library::meta::Queue,
     /// Reads the library again (and fetches what it wants), on a thread; `true`: the metadata misses
     /// forgotten first.
     pub rescan: Box<dyn Fn(bool)>,

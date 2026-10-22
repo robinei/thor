@@ -38,7 +38,7 @@ pub struct Browsing {
     pub config: Option<PathBuf>,
     pub home: Option<PathBuf>,
     pub art: Option<PathBuf>,
-    pub probe: Box<dyn Fn(Vec<crate::meta::Wanted>) + Send>,
+    pub probe: Box<dyn Fn(Vec<crate::library::meta::Wanted>) + Send>,
     /// Where archives' indexes are kept (see [`crate::archives`]).
     pub cache: Option<PathBuf>,
 }
@@ -49,7 +49,7 @@ pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Br
     Worker::spawn_belled("browse", move |commands, bell| {
         let mut archives = crate::archives::Mounts::new(cache);
         // (The videos' lengths and frames read from it at each listing with videos.)
-        let store = art.as_deref().map(crate::store::Cache::open);
+        let store = art.as_deref().map(crate::library::meta::cache::Cache::open);
         let mut in_use: Vec<PathBuf> = Vec::new();
         let notify = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).map_err(|e| log::warn!("browse: inotify: {e}")).ok();
         let flags = inotify::WatchFlags::CREATE
@@ -256,11 +256,11 @@ const PEEK: usize = 256;
 
 /// The videos (mpv's) among `entries`: their lengths and frames as the cache has them (read before,
 /// here or as scanned entries'); those it hasn't, to read.
-fn known_videos(entries: &mut [Entry], store: Option<&crate::store::Cache>) -> Vec<crate::meta::Wanted> {
+fn known_videos(entries: &mut [Entry], store: Option<&crate::library::meta::cache::Cache>) -> Vec<crate::library::meta::Wanted> {
     if !entries.iter().any(|g| g.mpv_file().is_some()) {
         return Vec::new();
     }
-    let probes = store.map(crate::store::Cache::probes).unwrap_or_default();
+    let probes = store.map(crate::library::meta::cache::Cache::probes).unwrap_or_default();
     let mut wanted = Vec::new();
     for g in entries.iter_mut() {
         let Some(file) = g.mpv_file().map(Path::to_path_buf) else {
@@ -275,12 +275,12 @@ fn known_videos(entries: &mut [Entry], store: Option<&crate::store::Cache>) -> V
             }
             None => {
                 g.glyph = None;
-                wanted.push(crate::meta::Wanted {
+                wanted.push(crate::library::meta::Wanted {
                     id: g.id.clone(),
                     key: g.key.clone(),
                     title: g.title.clone(),
                     file: Some(file),
-                    how: crate::meta::How::Duration,
+                    how: crate::library::meta::How::Duration,
                     art: true,
                 });
             }

@@ -9,7 +9,7 @@ pub struct Paths {
     pub library: Option<PathBuf>,
     /// What ClamShell keeps (see [`crate::store`]): ~/.local/share/clamshell.
     pub state_dir: Option<PathBuf>,
-    /// Fetched covers and screenshots (see [`crate::meta`]): ~/.cache/clamshell/art.
+    /// Fetched covers and screenshots (see [`crate::library::meta`]): ~/.cache/clamshell/art.
     pub art: Option<PathBuf>,
     /// Where mpv keeps the places of videos quit before their end (see [`crate::mpv`]).
     pub watch_later: Vec<PathBuf>,

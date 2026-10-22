@@ -1,17 +1,11 @@
-//! Where mpv left a video, and how long a video is. With `save-position-on-quit`, mpv keeps the place of a
+//! Where mpv left a video. With `save-position-on-quit`, mpv keeps the place of a
 //! video quit before its end in a file of its watch_later folder, named by the MD5 (in capitals) of the
 //! video's path, or of its file name alone with `ignore-path-in-watch-later-config`; the line
 //! `start=<seconds>` is the place. A video watched to its end has none. Both names are looked for (the path's
 //! first), in the folder mpv.conf names (`watch-later-dir`) and in mpv's own (~/.local/state/mpv/watch_later,
-//! older ~/.config/mpv/watch_later). The length is ffprobe's; a frame to show for it, ffmpeg's (both at the
-//! lowest priority: a game started meanwhile comes first): of the keyframes from a point on, the most
-//! representative (its `thumbnail` filter), so not a dark scene, a fade or a title card.
+//! older ~/.config/mpv/watch_later).
 
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
-
-use crate::os::command;
 
 /// The folders mpv keeps places in, the one mpv.conf names first.
 pub fn watch_later_dirs(config_home: Option<&Path>, state_home: Option<&Path>) -> Vec<PathBuf> {
@@ -48,40 +42,6 @@ pub fn position(dirs: &[PathBuf], file: &Path) -> Option<(u32, u64)> {
     let start = text.lines().find_map(|l| l.trim().strip_prefix("start="))?;
     let at = std::fs::metadata(&kept).and_then(|m| m.modified()).ok().map_or(0, crate::clock::unix_secs_at);
     start.trim().parse::<f64>().ok().filter(|s| *s >= 0.0).map(|s| (s as u32, at))
-}
-
-/// A video's length (seconds), from ffprobe.
-pub fn duration(file: &Path) -> Option<u32> {
-    let mut args: Vec<&OsStr> = ["-n", "19", "ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0"].map(OsStr::new).into();
-    args.push(file.as_os_str());
-    let out = command::run("nice", &args, None, PROBE_LIMIT).ok()?;
-    let seconds: f64 = String::from_utf8_lossy(&out.stdout).trim().parse().ok()?;
-    (seconds > 0.0).then_some(seconds.round() as u32)
-}
-
-/// How long ffprobe may take to read a video's length, and ffmpeg to pick a frame (it decodes keyframes
-/// only; a network mount may be slow).
-const PROBE_LIMIT: Duration = Duration::from_secs(30);
-const FRAME_LIMIT: Duration = Duration::from_secs(120);
-
-/// Keyframes `frame` chooses among (from its starting point: a few minutes of a video).
-const FRAMES_LOOKED_AT: u32 = 60;
-
-/// A frame of `file`, 640 pixels wide, into `out` (JPEG; written whole, then renamed into place): of the
-/// [`FRAMES_LOOKED_AT`] keyframes from `at` seconds on, the most representative (ffmpeg's `thumbnail`
-/// filter; keyframes only, so it is quick). Whether it worked.
-pub fn frame(file: &Path, at: u32, out: &Path) -> bool {
-    if let Some(dir) = out.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let part = out.with_extension("part.jpg");
-    let (choose, at) = (format!("scale=640:-2,thumbnail={FRAMES_LOOKED_AT}"), at.to_string());
-    let mut args: Vec<&OsStr> = ["-n", "19", "ffmpeg", "-v", "quiet", "-y", "-skip_frame", "nokey", "-ss", &at, "-i"].map(OsStr::new).into();
-    args.push(file.as_os_str());
-    args.extend(["-vf", &choose, "-frames:v", "1", "-fps_mode", "vfr", "-q:v", "4"].map(OsStr::new));
-    args.push(part.as_os_str());
-    let ok = command::run("nice", &args, None, FRAME_LIMIT).is_ok_and(|ran| ran.status.success());
-    ok && std::fs::rename(&part, out).is_ok()
 }
 
 /// MD5 of `data` as 32 capital hex digits (as mpv names its watch_later files).

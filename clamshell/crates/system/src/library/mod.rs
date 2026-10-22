@@ -3,6 +3,7 @@
 //! clamshell-library's.
 
 pub mod content;
+pub mod meta;
 pub mod runners;
 pub mod steam;
 
@@ -11,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use clamshell_library::{BrowseKind, Browsed, Collection, Details, Entry, Launch, Library, Meta, Tool, ids};
 
-use crate::meta::{How, Keys, RETRY_MISS, Wanted};
+use meta::{How, Keys, RETRY_MISS, Wanted};
 
 use crate::paths::Paths;
 
@@ -603,7 +604,7 @@ fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &Sources) -> V
     let mut metas = std::collections::HashMap::new();
     let mut probes = std::collections::HashMap::new();
     if let Some(art) = sources.art.as_deref() {
-        let cache = crate::store::Cache::open(art);
+        let cache = crate::library::meta::cache::Cache::open(art);
         metas = cache.metas();
         probes = cache.probes();
     }

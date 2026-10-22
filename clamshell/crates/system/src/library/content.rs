@@ -43,7 +43,7 @@
 //!   every folder under it, the files matching these patterns are entries and the folders with any are
 //!   groups (a series' seasons, their episodes). `metadata`: where its entries' covers, screenshots and the
 //!   rest come from (`libretro:<system>`, `tmdb:movie`, `tmdb:tv`; `keys`: the services' keys, see
-//!   [`crate::meta`]). Ids: `<id>:<path in dir>`, so moving the whole dir (a new `dir`) keeps them;
+//!   [`crate::library::meta`]). Ids: `<id>:<path in dir>`, so moving the whole dir (a new `dir`) keeps them;
 //!   renaming or moving inside it doesn't. Titles: the name at the top of `dir`, an episode's file name,
 //!   without the extension (a file's); in a season's folder (`Season 2`, `S02`, `Series 2`; `Specials` for
 //!   season 0), a file named for an episode of that season (`017 S02E18 Title`) is titled by its number
@@ -92,7 +92,7 @@ pub struct Config {
     #[serde(default)]
     pub sources: Vec<Source>,
     #[serde(default)]
-    pub keys: crate::meta::Keys,
+    pub keys: crate::library::meta::Keys,
 }
 
 /// Where entries come from (`type`), and where they go: a dir scanned (`dir`), one browsed (`browse`), the

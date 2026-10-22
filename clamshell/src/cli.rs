@@ -27,7 +27,7 @@ pub enum Command {
     /// clamshell_system::wayland_filter).
     WaylandFilter,
     /// `--fetch-metadata`: fetch what the library wants (covers, screenshots, ...; see
-    /// clamshell_system::meta) without the UI, printing what was found; a running ClamShell shows it from
+    /// clamshell_system::library::meta) without the UI, printing what was found; a running ClamShell shows it from
     /// its next start.
     FetchMetadata,
     /// `--snapshot DIR`: draw both screens at the Thor's size into PNG files, no Wayland needed (built
