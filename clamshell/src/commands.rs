@@ -6,7 +6,7 @@ use clamshell_system::library::meta;
 use clamshell_system::library::{self, Sources};
 use clamshell_system::paths::Paths;
 
-/// `--tray`: the tray icons there are, and their menus.
+/// `--tray`: prints the tray icons and their menus.
 pub(crate) fn print_tray() -> Result<(), String> {
     let items = clamshell_system::session::tray::read_now().map_err(|e| format!("tray: {e}"))?;
     for item in items {
@@ -16,7 +16,7 @@ pub(crate) fn print_tray() -> Result<(), String> {
     Ok(())
 }
 
-/// A tray menu's entries, indented by depth (`--tray`).
+/// Prints a tray menu's entries, indented by `depth` (`--tray`).
 fn print_tray_menu(entries: &[clamshell_core::session::tray::TrayEntry], depth: usize) {
     for e in entries {
         let state = match (e.enabled, e.checked) {
@@ -30,7 +30,7 @@ fn print_tray_menu(entries: &[clamshell_core::session::tray::TrayEntry], depth: 
     }
 }
 
-/// `--fetch-metadata`: what the library wants fetched, printing what was found for each entry.
+/// `--fetch-metadata`: fetches what the library is missing and prints what was found for each entry.
 pub(crate) fn fetch_metadata(paths: &Paths, sources: &Sources) -> Result<(), String> {
     let loaded = library::load(sources);
     let art = paths.art.clone().ok_or("no home dir: nowhere to keep it")?;
@@ -38,7 +38,7 @@ pub(crate) fn fetch_metadata(paths: &Paths, sources: &Sources) -> Result<(), Str
     println!("fetching for {} entries", loaded.wanted.len());
     let (tx, rx) = std::sync::mpsc::channel();
     meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art }, &meta::Queue::default(), tx).map_err(|e| e.to_string())?;
-    // (The threads' senders go when they are done: the channel ends.)
+    // The channel ends when the fetch threads are done and drop their senders.
     for event in rx {
         if let clamshell_core::Event::Meta { id, meta } = event {
             let has = |b: bool, what: &'static str| if b { what } else { "" };
@@ -68,7 +68,7 @@ pub(crate) fn print_library(library: &Library) {
     }
 }
 
-/// An entry, `depth` deep, and a group's entries under it.
+/// Prints an entry indented `depth` levels and, for a group, its entries under it.
 fn print_entry(library: &Library, i: usize, depth: usize) {
     let Some(g) = library.entries.get(i) else {
         return;

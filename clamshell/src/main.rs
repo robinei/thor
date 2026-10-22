@@ -1,7 +1,7 @@
-//! ClamShell: shelf, the second screen, the bar, input and power policy in one process with one state.
-//! This is the program around them: the command line ([`cli`]), the environment ([`config`]), the session
-//! ([`session`]), the one-shot commands ([`commands`]), the control pipe ([`control`]), and, built with
-//! the `dev` feature, the snapshots and their demo state (`dev`).
+//! ClamShell runs the shelf, the second screen, the bar, and input and power policy in one process with
+//! one state. This crate is the program around them: the command line ([`cli`]), the environment
+//! ([`config`]), the session ([`session`]), the one-shot commands ([`commands`]) and the control pipe
+//! ([`control`]). With the `dev` feature it also has the snapshots and their demo state (`dev`).
 
 mod cli;
 mod commands;
@@ -39,14 +39,14 @@ fn main() -> ExitCode {
     }
 }
 
-/// Carries out what the command line asked for; what went wrong, if anything.
+/// Carries out what the command line asked for. The error is a message saying what went wrong.
 fn carry_out(command: Command) -> Result<(), String> {
     let env = Env::from_env();
     let paths = Paths::new(&env.base);
     let sources = Sources::new(&paths, env.base.home.as_deref(), env.steam);
     match command {
         Command::Run => session::run(&env, paths, &sources),
-        // (It returns only if the job's program couldn't take over.)
+        // `job::run` returns only if the job's program couldn't take over.
         Command::RunJob(file) => Err(format!("{}: {}", file.display(), job::run(&file))),
         Command::Ctl(words) if words == ["help"] => {
             print!("{}", control::help());

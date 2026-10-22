@@ -1,5 +1,5 @@
-//! The session: the state built from what was saved, the UI run, and the system threads started once it
-//! is up.
+//! The session: it builds the state from what was saved, runs the UI, and starts the system threads once
+//! the UI is up.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -19,8 +19,8 @@ use clamshell_ui::{Config, EventSender};
 use crate::config::Env;
 use crate::control;
 
-/// What was saved: each piece's default where there is none (or it can't be read: logged). The keymaps
-/// the first time: the ready-made ones, saved at once.
+/// Loads what was saved. A piece that is missing or can't be read gets its default, and a read error is
+/// logged. On the first start the keymaps are the ready-made ones, and they are saved at once.
 pub(crate) fn saved(paths: &Paths) -> Init {
     let Some(dir) = paths.state_dir.as_deref() else {
         return Init { keymaps: Keymaps::initial(), ..Init::default() };
@@ -48,10 +48,10 @@ pub(crate) fn saved(paths: &Paths) -> Init {
     }
 }
 
-/// The session: the state from what was saved, the UI, and the system threads.
+/// Runs the session: the state from what was saved, the UI, and the system threads.
 pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources) -> Result<(), String> {
     let loaded = library::load(sources);
-    // Metadata to fetch once the threads run (with somewhere to keep it).
+    // Metadata to fetch once the threads run, if there is somewhere to keep it.
     let fetch = paths.art.clone().map(|art| meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art });
     let state = State::new(Init {
         library: loaded.library,
@@ -71,7 +71,8 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources) -> Result<(), Stri
     };
     let layout = config.touch_layout.clone();
     let global = state.settings().global;
-    // The threads start once the UI's event loop is there (they send to it); effects come only after.
+    // The threads send to the UI's event loop, so they start once it exists. Effects are dispatched only
+    // after that.
     let handles: Rc<RefCell<Option<Handles>>> = Rc::default();
     let started = handles.clone();
     let result = clamshell_ui::run(

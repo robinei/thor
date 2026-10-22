@@ -6,29 +6,29 @@ use std::path::PathBuf;
 pub enum Command {
     /// No arguments: run the session (the UI and every system thread).
     Run,
-    /// `--run FILE`: become a launched job's program (sway's exec starts us this way; see
+    /// `--run FILE`: become a launched job's program. Sway's exec starts us this way (see
     /// clamshell_system::launch::job).
     RunJob(PathBuf),
-    /// `--follow-steam <id>`: in a Steam game's launch scope, Steam's launcher for it moved in as long as
-    /// it runs (see clamshell-system's `launcher`).
+    /// `--follow-steam <id>`: run in a Steam game's launch scope and move Steam's launcher for the game
+    /// into it for as long as the launcher runs (see clamshell_system::launch::steam).
     FollowSteam(u32),
-    /// `--mangohud-env`: print the environment that makes a game (started by hand) report its frame rate
+    /// `--mangohud-env`: print the environment that makes a game started by hand report its frame rate
     /// here.
     MangohudEnv,
     /// `--library`: print the tabs and entries found (library.json's content dirs, Steam, desktop files).
     Library,
     /// `--tray`: print the tray icons there are, and their menus (see clamshell_system::session::tray).
     Tray,
-    /// `--clipboard get`: the clipboard's text, written out; `--clipboard set`: the clipboard set to what is
-    /// read in (see clamshell_system::session::clipboard).
+    /// `--clipboard get`: print the clipboard's text. `--clipboard set`: set the clipboard to the text read
+    /// from stdin (see clamshell_system::session::clipboard).
     ClipboardGet,
     ClipboardSet,
     /// `--wayland-filter`: a Wayland proxy for Waydroid beside the compositor's socket (see
     /// clamshell_system::waydroid).
     WaylandFilter,
-    /// `--fetch-metadata`: fetch what the library wants (covers, screenshots, ...; see
-    /// clamshell_system::library::meta) without the UI, printing what was found; a running ClamShell shows it from
-    /// its next start.
+    /// `--fetch-metadata`: fetch what the library is missing (covers, screenshots, ...) without the UI and
+    /// print what was found (see clamshell_system::library::meta). A running ClamShell shows it from its
+    /// next start.
     FetchMetadata,
     /// `--snapshot DIR`: draw both screens at the Thor's size into PNG files, no Wayland needed (built
     /// with the `dev` feature).

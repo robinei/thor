@@ -13,24 +13,24 @@ pub struct Env {
     /// CLAMSHELL_BOTTOM_PANEL=1: on a desktop, the bottom view as a panel in a corner instead of a
     /// window, so tapping its keyboard leaves the keyboard focus on the app being typed into.
     pub bottom_panel: bool,
-    /// CLAMSHELL_GAMEPAD: the controller, its /dev/input path or part of its name (default: the first
-    /// gamepad).
+    /// CLAMSHELL_GAMEPAD: the controller, as its /dev/input path or part of its name. The default is the
+    /// first gamepad.
     pub gamepad: DeviceSpec,
-    /// CLAMSHELL_STEAM=off: without Steam's games (tests).
+    /// CLAMSHELL_STEAM=off: leave out Steam's games, for tests.
     pub steam: bool,
-    /// CLAMSHELL_START_TAB: start in this tab (touchpad, keyboard, dock, ...; development). What it
-    /// watches starts with the others' at the start.
+    /// CLAMSHELL_START_TAB: start in this tab (touchpad, keyboard, dock, ...), for development. Whatever
+    /// the tab watches is started at startup along with the rest.
     pub start_tab: Option<Tab>,
-    /// CLAMSHELL_PAD_MOUSE=1: start with the pad mouse on (where the pad goes is sent at the start).
+    /// CLAMSHELL_PAD_MOUSE=1: start with the pad mouse on. Where the pad's input goes is sent at startup.
     pub pad_mouse: bool,
     /// CLAMSHELL_CONTROL: the control pipe, where `clamshell ctl` and tests send commands (see
-    /// [`crate::control`]); default $XDG_RUNTIME_DIR/clamshell-control.
+    /// [`crate::control`]). The default is $XDG_RUNTIME_DIR/clamshell-control.
     pub control: Option<PathBuf>,
     /// CLAMSHELL_SESSION=device: ClamShell is the device's own session. It may put the device to sleep
     /// when idle, and it takes the hardware keys (volume, brightness). A desktop run leaves it unset.
     pub device_session: bool,
-    /// CLAMSHELL_BACKLIGHTS: another folder laid out as /sys/class/backlight (tests, desktops without
-    /// one).
+    /// CLAMSHELL_BACKLIGHTS: a folder laid out like /sys/class/backlight to use instead, for tests and
+    /// for desktops without a backlight.
     pub backlights: PathBuf,
     /// SWAYSOCK: sway's socket, under sway.
     pub sway: Option<PathBuf>,
