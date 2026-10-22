@@ -21,12 +21,12 @@ impl Icon {
             Tab::Wifi => Icon::Wifi { bars: Some(3) },
             Tab::Battery => Icon::Battery { tenths: 10, charging: false },
             Tab::Bluetooth => Icon::Bluetooth { connected: false },
-            // (Its button is the clock.)
+            // Its button in the bar is the clock.
             Tab::Time => Icon::Gauge,
         }
     }
 
-    /// A Wi-Fi signal's quality (0-100); `None`: not connected.
+    /// The icon for a Wi-Fi signal's quality (0-100), or `None` when not connected.
     pub fn wifi(quality: Option<u8>) -> Icon {
         Icon::Wifi { bars: quality.map(signal_bars) }
     }

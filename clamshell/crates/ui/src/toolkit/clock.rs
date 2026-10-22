@@ -1,4 +1,4 @@
-//! The local time as the bar and the time tab show it: the zone looked up once a minute, not per frame.
+//! The local time as the bar and the time tab show it, worked out once a minute rather than every frame.
 
 use super::format::Fmt;
 
@@ -45,8 +45,8 @@ impl LocalTime {
     }
 }
 
-/// Kept between frames: the local time, worked out once a minute (the time zone looked up then, not
-/// every frame).
+/// Kept between frames: the local time, worked out once a minute rather than every frame, and the time
+/// zone it is in.
 #[derive(Debug, Default)]
 pub struct Scratch {
     local: Option<(u64, LocalTime)>,
@@ -55,8 +55,9 @@ pub struct Scratch {
 }
 
 impl Scratch {
-    /// The local time at `unix_secs`: in `zone` (the time tab's reading, once there is one: the system's
-    /// zone as it changes), else the system's zone as the program found it.
+    /// The local time at `unix_secs`. It is in `zone` when given; that is the time tab's reading, which
+    /// follows the system's zone as it changes. Before there is a reading, it is in the system's zone as
+    /// the program found it.
     pub(crate) fn local(&mut self, unix_secs: u64, zone: Option<&str>) -> LocalTime {
         let minute = unix_secs / 60;
         if self.zone.as_ref().map(|(name, _)| name.as_str()) != zone {

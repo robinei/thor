@@ -1,5 +1,5 @@
-//! Text that drawing formats: [`Fmt`], a string on the stack (so a frame doesn't allocate, and any number
-//! of them can exist at once), and the numbers, times and counts the views show, as `Display` values.
+//! Text formatted for drawing. [`Fmt`] is a string on the stack, so a frame doesn't allocate and any
+//! number of them can exist at once. The numbers, times and counts the views show are `Display` values.
 
 use std::fmt::{self, Display, Formatter, Write};
 
@@ -15,7 +15,7 @@ impl<const N: usize> Fmt<N> {
         Fmt { buf: [0; N], len: 0 }
     }
 
-    /// `args` formatted (with `format_args!`).
+    /// `args` formatted, as made by `format_args!`.
     pub fn of(args: fmt::Arguments) -> Self {
         let mut f = Fmt::new();
         let _ = f.write_fmt(args);
@@ -75,7 +75,7 @@ impl Display for Percent {
     }
 }
 
-/// A share (0-1) as a percentage: one decimal below 10 %, so small ones don't all read 0 %.
+/// A share (0-1) as a percentage. Below 10 % it has one decimal, so small shares don't all read 0 %.
 pub struct Share(pub f32);
 
 impl Display for Share {
@@ -85,7 +85,7 @@ impl Display for Share {
     }
 }
 
-/// A share that may be unknown (unreadable): a dash then.
+/// A share that may be unknown because it couldn't be read. An unknown share is shown as a dash.
 pub struct MaybeShare(pub Option<f32>);
 
 impl Display for MaybeShare {

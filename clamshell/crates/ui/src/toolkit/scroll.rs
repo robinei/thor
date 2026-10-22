@@ -1,7 +1,9 @@
-//! A scrolled list: rows of one height in an area, moved by the list's offset in the state (in rows),
-//! drawn cut to the area, with a thin dim bar at its right edge while the list has more rows than fit.
-//! The area itself is a target under the rows (a finger between rows drags the list too), and every
-//! target drawn in it says it is in the list (see [`InList`]), cut to the area.
+//! A scrolled list. Its rows all have one height and are drawn in an area, moved by the list's offset in
+//! the state (counted in rows) and cut to the area. A thin dim bar shows at the right edge while the list
+//! has more rows than fit.
+//!
+//! The area itself is a target under the rows, so a finger between rows drags the list too. Every target
+//! drawn in it is cut to the area and marked as being in the list (see [`InList`]).
 
 use clamshell_core::{Id, ListId};
 
@@ -9,8 +11,8 @@ use super::Frame;
 use super::style::Tone;
 use crate::gfx::Rect;
 
-/// A target in a scrolled list: which, and how tall its rows are (a drag of a row's height scrolls by
-/// one row).
+/// Marks a target as being in a scrolled list. It records which list and how tall its rows are, since a
+/// drag of one row's height scrolls by one row.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InList {
     pub list: ListId,
@@ -20,59 +22,59 @@ pub struct InList {
 /// The scroll bar's width and its least length, in logical pixels.
 const BAR_W: f32 = 3.0;
 const BAR_MIN: f32 = 24.0;
-/// How far past the area drawing reaches: a focus ring's room (see `style::Look`).
+/// How far past the area drawing reaches, to leave room for a focus ring (see `style::Look`).
 const RING_ROOM: f32 = 4.0;
 
-/// A list being drawn: begun with [`Scrolled::begin`], its rows drawn where [`Scrolled::row`] says,
-/// finished with [`Scrolled::end`].
+/// A list being drawn. It is begun with [`Scrolled::begin`], its rows are drawn where [`Scrolled::row`]
+/// says, and it is finished with [`Scrolled::end`].
 pub(crate) struct Scrolled {
     list: ListId,
     area: Rect,
     row_h: f32,
     len: usize,
-    /// Rows scrolled past (within the ends).
+    /// How many rows are scrolled past, kept within the list's ends.
     offset: f32,
     visible: f32,
-    /// Where this list's targets start in the frame's.
+    /// The index in the frame's targets where this list's targets start.
     first_target: usize,
 }
 
 impl Scrolled {
-    /// Begins `list` of `len` rows of `row_h` in `area`: reports how many rows show, puts the area's
-    /// target down and keeps drawing within it.
+    /// Begins `list`, with `len` rows of height `row_h`, in `area`. It reports how many rows show, adds
+    /// the area's target and limits drawing to the area.
     pub fn begin(f: &mut Frame, list: ListId, area: Rect, row_h: f32, len: usize) -> Scrolled {
         let row_h = row_h.max(1.0);
         let visible = (area.h / row_h).max(0.0);
         if let Some(slot) = f.out.lists.get_mut(list.index()) {
             *slot = Some(visible);
         }
-        // (The state keeps it within the list's ends.)
+        // The state keeps it within the list's ends.
         let offset = f.s.list_offset(list);
         let first_target = f.targets.len();
         if area.h > 0.0 && area.w > 0.0 {
             f.targets.push(super::Target { rect: area, id: Id::List(list), track: None, list: None });
         }
-        // (A little beyond the area, so a focus ring around a row whole in it isn't cut.)
+        // Clip a little beyond the area, so the focus ring around a row that fits in it isn't cut.
         f.c.clip(Some(area.inset(-RING_ROOM)));
         Scrolled { list, area, row_h, len, offset, visible, first_target }
     }
 
-    /// The rows that show, at least partly: their positions.
+    /// The positions of the rows that show, at least partly.
     pub fn shown(&self) -> std::ops::Range<usize> {
         let first = self.offset.floor() as usize;
         let last = ((self.offset + self.visible).ceil() as usize).min(self.len);
         first.min(last)..last
     }
 
-    /// Row `i`'s rect (it may reach past the area's top or bottom: drawing and its target are cut to the
-    /// area).
+    /// Row `i`'s rect. It may reach past the area's top or bottom; drawing and the row's target are cut
+    /// to the area.
     pub fn row(&self, i: usize) -> Rect {
         Rect::new(self.area.x, self.area.y + (i as f32 - self.offset) * self.row_h, self.area.w, self.row_h)
     }
 
-    /// The list is drawn: drawing goes on over the whole screen; the list's targets are cut to its area
-    /// (those left without any are dropped) and know their list; the scroll bar while it overflows. `bar_x`:
-    /// where the bar goes (its left edge).
+    /// Finishes the list. Drawing is no longer limited to the area. The list's targets are cut to the
+    /// area and marked with their list, and those left with no area are dropped. While the list
+    /// overflows, the scroll bar is drawn with its left edge at `bar_x`.
     pub fn end(self, f: &mut Frame, bar_x: f32) {
         f.c.clip(None);
         let area = self.area;

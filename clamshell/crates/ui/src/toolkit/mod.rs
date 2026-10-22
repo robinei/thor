@@ -1,7 +1,8 @@
-//! What every screen is drawn with: [`Frame`] (the drawing context: the canvas, the state, the targets
-//! the screen lists, the sizes of the area drawn in) and the pieces built on it: [`style`] (palette,
-//! sizes, looks), [`widgets`] (headers, menus, rows, sliders, switches, tiles), [`format`](mod@format) (text without
-//! allocation) and [`scroll`] (scrolled lists). The screens themselves are in `views`.
+//! What every screen is drawn with. [`Frame`] is the drawing context: it holds the canvas, the state,
+//! the targets the screen registers and the size of the area being drawn in. Built on it are [`style`]
+//! (palette, sizes, looks), [`widgets`] (headers, menus, rows, sliders, switches, tiles),
+//! [`format`](mod@format) (text without allocation) and [`scroll`] (scrolled lists). The screens
+//! themselves are in `views`.
 
 mod clock;
 pub(crate) mod format;
@@ -17,21 +18,21 @@ use crate::gfx::{Canvas, Rect};
 pub(crate) use clock::{LocalTime, Scratch};
 use style::{Look, PRESSED, RADIUS_S, Text, Tone};
 
-/// Something drawn that can be tapped or focused. While drawing, in layout units; once the frame is done,
-/// in the surface's logical pixels (moved by the burn-in offset).
+/// Something drawn that can be tapped or focused. Its rect is in layout units while drawing, and in the
+/// surface's logical pixels, moved by the burn-in offset, once the frame is done.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Target {
     pub rect: Rect,
     pub id: Id,
     /// Where a finger on it sets a value, if it does.
     pub track: Option<Track>,
-    /// The scrolled list it is in, if it is in one: a vertical drag on it scrolls the list.
+    /// The scrolled list it is in, if any. A vertical drag on it scrolls the list.
     pub list: Option<scroll::InList>,
 }
 
-/// The span along x that a finger on a target sets a value over: a level row's track (0 at `x0`, 100 at
-/// `x0 + w`), or for the bar's volume and brightness, the whole screen width that their slider runs
-/// along. In the same units as the target's rect.
+/// The span along x over which a finger on a target sets a value, in the same units as the target's
+/// rect. For a level row it is the row's track, 0 at `x0` and 100 at `x0 + w`. For the bar's volume and
+/// brightness it is the whole screen width that their slider runs along.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Track {
     pub x0: f32,
@@ -54,17 +55,18 @@ impl Track {
 /// What a frame tells the rest of the program besides its picture and targets.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct FrameOut {
-    /// How many rows shelf's list shows (the main screen): the state keeps the selection within them.
+    /// How many rows the shelf's list on the main screen shows. The state keeps the selection within them.
     pub list_rows: Option<usize>,
-    /// The area below the bar (the second screen): where a finger may point (see clamshell-core's `touch`).
+    /// The area below the bar on the second screen, where a finger may point (see clamshell-core's
+    /// `touch`).
     pub touchpad_area: Option<Rect>,
-    /// How many rows each scrolled list drawn shows (by [`ListId::index`]): the state keeps the lists'
-    /// offsets and the pad's focus within them.
+    /// How many rows each scrolled list drawn shows, indexed by [`ListId::index`]. The state keeps the
+    /// lists' offsets and the pad's focus within them.
     pub lists: [Option<f32>; ListId::COUNT],
 }
 
-/// One screen's drawing pass: the canvas, the state it shows, images and kept text, the targets it
-/// registers and what it reports.
+/// One screen's drawing pass. It holds the canvas, the state it shows, the images and kept text, the
+/// targets it registers and what it reports.
 pub struct Frame<'f, 'c> {
     pub c: &'f mut Canvas<'c>,
     pub s: &'f State,
@@ -72,8 +74,8 @@ pub struct Frame<'f, 'c> {
     pub(crate) scratch: &'f mut Scratch,
     pub(crate) targets: &'f mut Vec<Target>,
     pub(crate) out: FrameOut,
-    /// The area the screen's content goes in (the second screen's: below the bar), which its sizes are
-    /// fractions of (see [`Frame::pad`], [`Frame::text`]).
+    /// The area the screen's content goes in; on the second screen, the area below the bar. Sizes are
+    /// fractions of its height (see [`Frame::pad`], [`Frame::text`]).
     pub(crate) body: Rect,
 }
 
@@ -98,14 +100,14 @@ impl<'f, 'c> Frame<'f, 'c> {
         t.size(self.body.h)
     }
 
-    /// A tappable, focusable area: its background (lit while pressed), `content`, then the focus ring if
-    /// focused; `rect` becomes its target.
+    /// A tappable, focusable area. Draws its background (lit while pressed), then `content`, then the
+    /// focus ring if it is focused. `rect` becomes its target.
     pub(crate) fn button(&mut self, id: Id, rect: Rect, look: Look, content: impl FnOnce(&mut Self)) {
         self.button_in(id, rect, rect, look, content);
     }
 
-    /// [`Frame::button`] for something drawn smaller than its target: the background and the focus ring
-    /// follow `shown`, the target is `rect`.
+    /// [`Frame::button`] for something drawn smaller than its target. The background and the focus ring
+    /// follow `shown`, and the target is `rect`.
     pub(crate) fn button_in(&mut self, id: Id, rect: Rect, shown: Rect, look: Look, content: impl FnOnce(&mut Self)) {
         let pressed = self.pressed(&id);
         let background = if pressed && look.press_fill { Some(PRESSED) } else { look.fill };
@@ -124,13 +126,13 @@ impl<'f, 'c> Frame<'f, 'c> {
         self.targets.push(Target { rect, id, track: None, list: None });
     }
 
-    /// Whether `id` is under a finger (or the pad's A) now: not a control whose slider is up (the
-    /// finger is on the slider then, not the button).
+    /// Whether `id` is held down by a finger or the pad's A. A control whose slider is up doesn't count,
+    /// since the finger is then on the slider rather than the button.
     pub(crate) fn pressed(&self, id: &Id) -> bool {
         self.s.pointer().pressed() == Some(id) && !self.sliding(id)
     }
 
-    /// Whether `id` is a control whose held slider is up (the bar's, a keymap parameter's).
+    /// Whether `id` is a control whose held slider is up, such as the bar's or a keymap parameter's.
     pub(crate) fn sliding(&self, id: &Id) -> bool {
         let Id::Control(control) = id else {
             return false;
@@ -139,9 +141,9 @@ impl<'f, 'c> Frame<'f, 'c> {
         up(self.s.levels().slider().copied()) || up(self.s.keymap_edit().slider)
     }
 
-    /// A text action (see [`Look::TEXT`]): `label` in `r` at `size` (centred, or from the left with
-    /// [`crate::gfx::Align::Start`]), in `tone` (blue for an action, see [`Tone::Fn`]), white while
-    /// pressed. The whole of `r` is its target.
+    /// A text action (see [`Look::TEXT`]). Draws `label` in `r` at `size`, centred, or from the left with
+    /// [`crate::gfx::Align::Start`]. It is in `tone` (blue for an action, see [`Tone::Fn`]), and white
+    /// while pressed. The whole of `r` is its target.
     pub(crate) fn text_button(&mut self, id: Id, r: Rect, size: f32, tone: Tone, label: &str, align: crate::gfx::Align) {
         let tone = if self.pressed(&id) { Tone::High } else { tone };
         self.button(id, r, Look::TEXT, |f| {
@@ -151,7 +153,8 @@ impl<'f, 'c> Frame<'f, 'c> {
         });
     }
 
-    /// Gives the last target a track (whatever drew the track knows where it is).
+    /// Gives the last target a track. The caller passes it because whatever drew the track knows where
+    /// it is.
     pub(crate) fn track(&mut self, track: Track) {
         if let Some(t) = self.targets.last_mut() {
             t.track = Some(track);
