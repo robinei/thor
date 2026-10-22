@@ -67,7 +67,7 @@ impl State {
     /// readings, to show what the entry costs.
     pub(crate) fn follow_watch(&mut self, out: &mut Out) {
         let tab = match self.bottom.tab() {
-            Tab::Dock if self.dock.menu.is_some() => Some(Watch::Battery),
+            Tab::Dock if self.dock.menu().is_some() => Some(Watch::Battery),
             tab => tab.watch(),
         };
         let wanted = Wanted {

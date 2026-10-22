@@ -121,6 +121,15 @@ pub enum Event {
 pub enum EntryAct {
     /// Starts it, or shows it if it runs (see [`crate::State::play`]).
     Play,
+    /// Shows it, as a tap on its dock tile does: its workspace, thawed if it was paused or suspended.
+    Show,
+    /// Launches it again, in another tab, if it runs and another launch of it makes sense (see
+    /// [`crate::State::opens_another`]).
+    OpenAnother,
+    /// Freezes it until it is shown (see [`crate::session::background`]).
+    Suspend,
+    /// Starts it with ClamShell, or stops doing so (see [`crate::session::autostart`]).
+    ToggleAutostart,
     /// Pins it to the dock, or unpins it.
     TogglePin,
     /// Adds it, or the entries selected in its folder, to what its runner plays (see

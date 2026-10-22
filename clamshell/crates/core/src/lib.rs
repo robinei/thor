@@ -191,6 +191,10 @@ impl State {
         &self.session
     }
 
+    pub fn dock(&self) -> &Dock {
+        &self.dock
+    }
+
     pub fn levels(&self) -> &Levels {
         &self.levels
     }

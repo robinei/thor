@@ -17,12 +17,14 @@
 
 use std::sync::Arc;
 
-use crate::State;
+use crate::bottom::Bottom;
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::id::DockId;
 use crate::keymap::Dir;
 use crate::out::Out;
+use crate::session::tray::{TrayCommand, TrayEntry, TrayItem};
 use crate::session::windows::Window;
+use crate::{EntryAct, Event, Session};
 
 /// The dock's tiles in a row.
 pub const DOCK_COLUMNS: usize = 4;
@@ -39,12 +41,12 @@ pub struct DockItem {
 pub struct Dock {
     items: Vec<DockItem>,
     /// The entry whose menu is open.
-    pub(crate) menu: Option<Arc<str>>,
+    menu: Option<Arc<str>>,
     /// The entry being moved with the D-pad.
-    pub(crate) moving: Option<Arc<str>>,
+    moving: Option<Arc<str>>,
     /// Set when the menu shows its entry's tray menu instead of its own. It holds the submenus open in it;
     /// empty is the top.
-    pub(crate) tray: Option<Vec<i32>>,
+    tray: Option<Vec<i32>>,
     /// Pins of entries that no longer exist were dropped at start. The dock is saved once the UI is up.
     unsaved: bool,
 }
@@ -108,152 +110,119 @@ impl Dock {
     }
 }
 
-impl State {
-    pub fn dock(&self) -> &Dock {
-        &self.dock
+impl Dock {
+    /// Closes the menu and ends move mode, as when the tab is left.
+    pub(crate) fn close(&mut self) {
+        self.menu = None;
+        self.moving = None;
     }
 
     /// Runs after anything that may start or stop an entry. Running entries not on the dock are added at
     /// its end, and stopped ones that are neither pinned nor being moved are removed. Returns whether it
     /// changed.
-    pub(crate) fn follow_dock(&mut self) -> bool {
-        let before = self.dock.items.len();
-        let session = &self.session;
-        let moving = self.dock.moving.clone();
-        self.dock.items.retain(|i| i.pinned || session.running(&i.id).is_some() || moving.as_ref() == Some(&i.id));
-        let removed = before != self.dock.items.len();
-        let new: Vec<Arc<str>> = session.running.iter().filter(|r| self.dock.position(&r.id).is_none()).map(|r| r.id.clone()).collect();
-        let added = !new.is_empty();
-        self.dock.items.extend(new.into_iter().map(|id| DockItem { id, pinned: false }));
+    pub(crate) fn follow(&mut self, session: &Session) -> bool {
+        let before = self.items.len();
+        let moving = &self.moving;
+        self.items.retain(|i| i.pinned || session.running(&i.id).is_some() || moving.as_ref() == Some(&i.id));
+        let removed = before != self.items.len();
+        let mut added = false;
+        for r in session.running_entries() {
+            if self.position(&r.id).is_none() {
+                self.items.push(DockItem { id: r.id.clone(), pinned: false });
+                added = true;
+            }
+        }
         removed || added
     }
 
-    /// An entry's window in view, for the menu's Close window. It is the one in front on the top screen,
-    /// or else one shown there, or else, with nothing of the entry on top, one shown on the bottom screen.
-    pub fn entry_window(&self, id: &str) -> Option<i64> {
-        let session = &self.session;
-        let mine = || session.windows_of(id);
-        let on_top = mine().filter(|w| !w.down).find(|w| w.focused).or_else(|| mine().filter(|w| !w.down).find(|w| w.visible));
-        let shown = on_top.or_else(|| mine().all(|w| w.down).then(|| mine().filter(|w| w.down).find(|w| w.visible)).flatten());
-        shown.map(|w| w.id)
-    }
-
     /// A tap or long press on a dock tile, a choice in its menu, which then closes, or a step in move mode.
-    pub(crate) fn on_dock(&mut self, id: DockId, long: bool, out: &mut Out) {
+    pub(crate) fn on(&mut self, id: DockId, long: bool, session: &Session, bottom: &mut Bottom, out: &mut Out) {
         match id {
             DockId::Entry(i) => {
-                let Some(entry) = self.dock.items.get(usize::from(i)).map(|item| item.id.clone()) else {
+                let Some(entry) = self.items.get(usize::from(i)).map(|item| item.id.clone()) else {
                     return;
                 };
                 if long {
-                    self.dock.menu = Some(entry);
-                    self.dock.tray = None;
+                    self.menu = Some(entry);
+                    self.tray = None;
                     return;
                 }
-                self.tap_entry(entry, out);
+                tap(entry, session, bottom, out);
             }
             DockId::Tray(i) => {
-                if let Some(entry) = self.dock.items.get(usize::from(i)).map(|item| item.id.clone()) {
-                    self.dock.menu = Some(entry);
-                    self.dock.tray = Some(vec![]);
+                if let Some(entry) = self.items.get(usize::from(i)).map(|item| item.id.clone()) {
+                    self.menu = Some(entry);
+                    self.tray = Some(vec![]);
                 }
             }
             DockId::TrayMenu => {
-                if self.dock.menu.is_some() {
-                    self.dock.tray = Some(vec![]);
+                if self.menu.is_some() {
+                    self.tray = Some(vec![]);
                 }
             }
-            DockId::TrayEntry(id) => self.dock.tray_choice(id, &self.session, out),
+            DockId::TrayEntry(id) => self.tray_choice(id, session, out),
             // Back in a submenu goes to the menu above it.
-            DockId::Back if self.dock.tray.as_ref().is_some_and(|path| !path.is_empty()) => {
-                if let Some(path) = &mut self.dock.tray {
+            DockId::Back if self.tray.as_ref().is_some_and(|path| !path.is_empty()) => {
+                if let Some(path) = &mut self.tray {
                     path.pop();
                 }
             }
             DockId::Step(dir) => self.step(dir, out),
             DockId::Done => {
-                self.dock.moving = None;
-                self.follow_dock();
+                self.moving = None;
+                self.follow(session);
             }
             choice => {
-                self.dock.tray = None;
-                if let Some(entry) = self.dock.menu.take() {
-                    self.menu_choice(choice, entry, out);
+                self.tray = None;
+                if let Some(entry) = self.menu.take() {
+                    self.menu_choice(choice, entry, session, out);
                 }
             }
         }
     }
 
-    /// A tap on a dock entry. A stopped entry starts. A running one is shown, on the bottom screen if all
-    /// its windows are there.
-    fn tap_entry(&mut self, entry: Arc<str>, out: &mut Out) {
-        if self.session.running(&entry).is_none() {
-            self.play(entry, out);
-            return;
-        }
-        let below = |w: &&Window| w.down;
-        let down = self.session.windows_of(&entry).all(|w| w.down).then(|| self.session.windows_of(&entry).find(below).map(|w| w.id)).flatten();
-        match down {
-            Some(window) => self.bottom.show_program_down(window, out),
-            None => self.session.show(&entry, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out),
-        }
-    }
-
-    fn menu_choice(&mut self, choice: DockId, entry: Arc<str>, out: &mut Out) {
-        let effects = match choice {
-            DockId::OpenAnother if self.opens_another(&entry) => {
-                self.launch(entry, None, true, out);
-                vec![]
+    fn menu_choice(&mut self, choice: DockId, entry: Arc<str>, session: &Session, out: &mut Out) {
+        let act = match choice {
+            DockId::OpenAnother => EntryAct::OpenAnother,
+            DockId::CloseWindow => {
+                if let Some(w) = session.entry_window(&entry) {
+                    out.effects.push(Effect::Window(WindowCommand::Close(vec![w])));
+                }
+                return;
             }
-            DockId::OpenAnother => vec![],
-            DockId::CloseWindow => self.entry_window(&entry).map(|w| vec![Effect::Window(WindowCommand::Close(vec![w]))]).unwrap_or_default(),
-            DockId::Pin => self.toggle_pin(entry),
-            DockId::Autostart => {
-                self.session.toggle_autostart(entry, out);
-                vec![]
-            }
-            DockId::Suspend if self.session.suspended(&entry) => {
-                self.session.show(&entry, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out);
-                vec![]
-            }
-            DockId::Suspend => {
-                self.session.suspend(&entry, out);
-                vec![]
-            }
+            DockId::Pin => return self.toggle_pin(entry, session, out),
+            DockId::Autostart => EntryAct::ToggleAutostart,
+            // Resume shows it, which thaws it.
+            DockId::Suspend if session.suspended(&entry) => EntryAct::Show,
+            DockId::Suspend => EntryAct::Suspend,
             DockId::Move => {
-                self.dock.moving = Some(entry);
-                vec![]
+                self.moving = Some(entry);
+                return;
             }
-            DockId::Quit => {
-                self.session.quit(&entry, self.shelf.library(), out);
-                vec![]
-            }
-            DockId::ForceKill => {
-                self.session.force_kill(&entry, self.shelf.library(), out);
-                vec![]
-            }
-            _ => vec![],
+            DockId::Quit => EntryAct::Quit,
+            DockId::ForceKill => EntryAct::ForceKill,
+            _ => return,
         };
-        out.effects.extend(effects);
+        out.events.push(Event::Entry(entry, act));
     }
 
     /// Pins `entry` to the dock, at the end if it isn't there, or unpins it, which removes it unless it
     /// runs. The pins are saved.
-    pub(crate) fn toggle_pin(&mut self, entry: Arc<str>) -> Vec<Effect> {
-        match self.dock.position(&entry).and_then(|i| self.dock.items.get_mut(i)) {
+    pub(crate) fn toggle_pin(&mut self, entry: Arc<str>, session: &Session, out: &mut Out) {
+        match self.position(&entry).and_then(|i| self.items.get_mut(i)) {
             Some(item) => item.pinned = !item.pinned,
-            None => self.dock.items.push(DockItem { id: entry, pinned: true }),
+            None => self.items.push(DockItem { id: entry, pinned: true }),
         }
-        self.follow_dock();
-        vec![Effect::Save(Save::Dock(self.dock.pinned_ids()))]
+        self.follow(session);
+        out.effects.push(Effect::Save(Save::Dock(self.pinned_ids())));
     }
 
     /// In move mode, moves the entry one place left or right, or one row up or down, and saves the order.
     fn step(&mut self, dir: Dir, out: &mut Out) {
-        let Some(at) = self.dock.moving.as_ref().and_then(|id| self.dock.position(id)) else {
+        let Some(at) = self.moving.as_ref().and_then(|id| self.position(id)) else {
             return;
         };
-        let last = self.dock.items.len().saturating_sub(1);
+        let last = self.items.len().saturating_sub(1);
         let to = match dir {
             Dir::Left => at.saturating_sub(1),
             Dir::Right => (at + 1).min(last),
@@ -263,9 +232,69 @@ impl State {
         if to == at {
             return;
         }
-        let item = self.dock.items.remove(at);
-        self.dock.items.insert(to, item);
-        out.effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
+        let item = self.items.remove(at);
+        self.items.insert(to, item);
+        out.effects.push(Effect::Save(Save::Dock(self.pinned_ids())));
+    }
+}
+
+impl Dock {
+    /// The open menu page, if there is one: the entry's tray icon and the entries of the open submenu.
+    pub fn tray_page<'a>(&self, session: &'a Session) -> Option<(&'a TrayItem, &'a [TrayEntry])> {
+        let path = self.tray.as_ref()?;
+        let item = session.tray_of(self.menu()?)?;
+        let mut entries = item.menu.as_slice();
+        for id in path {
+            entries = entries.iter().find(|e| e.id == *id)?.children.as_slice();
+        }
+        Some((item, entries))
+    }
+
+    /// An entry of the open menu page was chosen. A submenu opens; anything else is clicked, and the menu
+    /// closes. A disabled entry does nothing.
+    pub(crate) fn tray_choice(&mut self, id: i32, session: &Session, out: &mut Out) {
+        let Some((item, entries)) = self.tray_page(session) else {
+            return;
+        };
+        let Some(entry) = entries.iter().find(|e| e.id == id).filter(|e| e.enabled) else {
+            return;
+        };
+        if !entry.children.is_empty() {
+            if let Some(path) = &mut self.tray {
+                path.push(id);
+            }
+            return;
+        }
+        let click = Effect::Tray(TrayCommand::Click { item: item.key.clone(), id });
+        self.menu = None;
+        self.tray = None;
+        out.effects.push(click);
+    }
+}
+
+/// A tap on a dock entry. A stopped entry starts. A running one is shown, on the bottom screen if all its
+/// windows are there.
+fn tap(entry: Arc<str>, session: &Session, bottom: &mut Bottom, out: &mut Out) {
+    if session.running(&entry).is_none() {
+        out.events.push(Event::Entry(entry, EntryAct::Play));
+        return;
+    }
+    let below = |w: &&Window| w.down;
+    let down = session.windows_of(&entry).all(|w| w.down).then(|| session.windows_of(&entry).find(below).map(|w| w.id)).flatten();
+    match down {
+        Some(window) => bottom.show_program_down(window, out),
+        None => out.events.push(Event::Entry(entry, EntryAct::Show)),
+    }
+}
+
+impl Session {
+    /// An entry's window in view, for the menu's Close window. It is the one in front on the top screen,
+    /// or else one shown there, or else, with nothing of the entry on top, one shown on the bottom screen.
+    pub fn entry_window(&self, id: &str) -> Option<i64> {
+        let mine = || self.windows_of(id);
+        let on_top = mine().filter(|w| !w.down).find(|w| w.focused).or_else(|| mine().filter(|w| !w.down).find(|w| w.visible));
+        let shown = on_top.or_else(|| mine().all(|w| w.down).then(|| mine().filter(|w| w.down).find(|w| w.visible)).flatten());
+        shown.map(|w| w.id)
     }
 }
 
@@ -301,7 +330,7 @@ mod tests {
         s.apply(Event::Windows(vec![win(3, "zelda3", &zelda.workspace(), false)]));
         assert_eq!(tap(&mut s, dock(0)), vec![focus(&zelda)]);
         long(&mut s, dock(0));
-        assert_eq!(s.dock().menu.as_deref(), Some("zelda-lttp"));
+        assert_eq!(s.dock().menu().map(|m| &**m), Some("zelda-lttp"));
         let fx = tap(&mut s, Id::Dock(DockId::Pin));
         assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids)), _] if ids.last().is_some_and(|i| &**i == "zelda-lttp")), "{fx:?}");
         assert_eq!(fx.last(), Some(&closed()));
@@ -361,7 +390,7 @@ mod tests {
         assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids))] if ids.iter().map(|i| &**i).eq(["ff6", "zelda-lttp"])), "{fx:?}");
         assert_eq!(tap(&mut s, Id::Dock(DockId::Step(keymap::Dir::Right))), vec![], "at the end");
         tap(&mut s, Id::Dock(DockId::Done));
-        assert_eq!(s.dock().moving, None);
+        assert_eq!(s.dock().moving(), None);
     }
 
     #[test]

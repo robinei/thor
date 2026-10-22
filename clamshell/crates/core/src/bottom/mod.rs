@@ -295,8 +295,7 @@ impl State {
     /// tab left had going ends: the dock's menu or move, and any level row being set. The time tab opens
     /// on its main page again.
     pub(crate) fn left_tab(&mut self) {
-        self.dock.menu = None;
-        self.dock.moving = None;
+        self.dock.close();
         self.levels.release();
         self.sys.reset_time_page();
     }

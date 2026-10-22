@@ -125,7 +125,7 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
     // An array with `None` for the items that don't apply, so that drawing it every frame doesn't allocate.
     let items = [
         if s.opens_another(entry) { item(DockId::OpenAnother, "Open another", Tone::Fn) } else { None },
-        if running && s.entry_window(entry).is_some() { item(DockId::CloseWindow, "Close window", Tone::Fn) } else { None },
+        if running && s.session().entry_window(entry).is_some() { item(DockId::CloseWindow, "Close window", Tone::Fn) } else { None },
         if s.session().tray_of(entry).is_some() { item(DockId::TrayMenu, "Menu", Tone::Fn) } else { None },
         if pinnable { item(DockId::Pin, if pinned { "Unpin" } else { "Pin" }, Tone::Fn) } else { None },
         if pinnable {

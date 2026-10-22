@@ -27,7 +27,7 @@ use crate::out::Out;
 use crate::session::found::found_entry;
 use crate::session::instance::Instance;
 use crate::session::running::{Origin, Running};
-use crate::{Clock, Dock, Entry, Library, Session};
+use crate::{Clock, Entry, Library, Session};
 
 /// A tray icon.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -141,40 +141,6 @@ impl Session {
         self.pending_show = Some(Instance::Run { key: r.key.clone(), secs: clock.unix(), n: 0 });
         out.effects.push(Effect::Tray(TrayCommand::Activate(key)));
         true
-    }
-}
-
-impl Dock {
-    /// The open menu page, if there is one: the entry's tray icon and the entries of the open submenu.
-    pub fn tray_page<'a>(&self, session: &'a Session) -> Option<(&'a TrayItem, &'a [TrayEntry])> {
-        let path = self.tray.as_ref()?;
-        let item = session.tray_of(self.menu()?)?;
-        let mut entries = item.menu.as_slice();
-        for id in path {
-            entries = entries.iter().find(|e| e.id == *id)?.children.as_slice();
-        }
-        Some((item, entries))
-    }
-
-    /// An entry of the open menu page was chosen. A submenu opens; anything else is clicked, and the menu
-    /// closes. A disabled entry does nothing.
-    pub(crate) fn tray_choice(&mut self, id: i32, session: &Session, out: &mut Out) {
-        let Some((item, entries)) = self.tray_page(session) else {
-            return;
-        };
-        let Some(entry) = entries.iter().find(|e| e.id == id).filter(|e| e.enabled) else {
-            return;
-        };
-        if !entry.children.is_empty() {
-            if let Some(path) = &mut self.tray {
-                path.push(id);
-            }
-            return;
-        }
-        let click = Effect::Tray(TrayCommand::Click { item: item.key.clone(), id });
-        self.menu = None;
-        self.tray = None;
-        out.effects.push(click);
     }
 }
 

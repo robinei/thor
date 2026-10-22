@@ -111,7 +111,7 @@ impl State {
         if let Some(effects) = out.effects.get_mut(windows_from..) {
             effects.rotate_left(by_windows);
         }
-        let docked = self.follow_dock();
+        let docked = self.dock.follow(&self.session);
         self.session.followed();
         let after = self.session.running_entries().iter().map(|r| &r.id);
         docked || !after.eq(before.iter())
@@ -127,7 +127,7 @@ impl State {
     /// Works out where the pad goes as things are now. Returns the new route if it changed.
     pub(crate) fn reconcile_pad(&mut self) -> Option<PadRoute> {
         let listening = self.listening();
-        let moving = self.dock.moving.is_some() && self.bottom.tab() == Tab::Dock;
+        let moving = self.dock.moving().is_some() && self.bottom.tab() == Tab::Dock;
         self.pad.reconcile(self.session.front(), self.bottom.tab(), self.pointer.show_focus(), listening, moving)
     }
 
@@ -251,7 +251,15 @@ impl State {
                 out.mark(Dirty::BOTTOM);
                 match act {
                     EntryAct::Play => self.play(id, out),
-                    EntryAct::TogglePin => out.effects.extend(self.toggle_pin(id)),
+                    EntryAct::Show => self.session.show(&id, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out),
+                    EntryAct::OpenAnother => {
+                        if self.opens_another(&id) {
+                            self.launch(id, None, true, out);
+                        }
+                    }
+                    EntryAct::Suspend => self.session.suspend(&id, out),
+                    EntryAct::ToggleAutostart => self.session.toggle_autostart(id, out),
+                    EntryAct::TogglePin => self.dock.toggle_pin(id, &self.session, out),
                     EntryAct::Enqueue => out.effects.extend(self.enqueue(&id)),
                     EntryAct::Quit => self.session.quit(&id, self.shelf.library(), out),
                     EntryAct::ForceKill => self.session.force_kill(&id, self.shelf.library(), out),
@@ -459,7 +467,7 @@ impl State {
             }
             Id::Dock(id) => {
                 out.mark(Dirty::BOTTOM);
-                self.on_dock(id, long, out);
+                self.dock.on(id, long, &self.session, &mut self.bottom, out);
             }
             Id::Settings(id) => {
                 out.mark(if matches!(id, SettingsId::Tile(_) | SettingsId::Reset) { Dirty::BOTH } else { Dirty::BOTTOM });
