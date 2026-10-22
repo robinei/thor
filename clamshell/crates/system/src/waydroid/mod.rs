@@ -23,256 +23,19 @@
 //! `xdg_surface`s and their `wl_surface`s, their toplevels (app id, size, activated); ids are forgotten as
 //! the compositor deletes them (`wl_display.delete_id`).
 
-use std::collections::{HashMap, HashSet};
-use std::io::{self, IoSlice, IoSliceMut};
-use std::mem::MaybeUninit;
-use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
+mod objects;
+mod wire;
+
+use std::io;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
-use std::time::{Duration, Instant};
 
-use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, SendAncillaryBuffer, SendAncillaryMessage, SendFlags};
+use objects::Objects;
+use wire::relay;
 
 use crate::os::worker;
 use crate::readings::mangohud;
-
-/// The display object's id, and the opcodes read.
-const DISPLAY: u32 = 1;
-/// wl_display: `get_registry` (request), `delete_id` (event).
-const GET_REGISTRY: u16 = 1;
-const DELETE_ID: u16 = 1;
-/// wl_registry: `bind`.
-const BIND: u16 = 0;
-/// xdg_wm_base: `get_xdg_surface`.
-const GET_XDG_SURFACE: u16 = 2;
-/// xdg_surface: `get_toplevel`, `set_window_geometry`.
-const GET_TOPLEVEL: u16 = 1;
-const SET_WINDOW_GEOMETRY: u16 = 3;
-/// xdg_toplevel: `set_app_id` (request), `configure` (event; its `activated` state).
-const SET_APP_ID: u16 = 3;
-const CONFIGURE: u16 = 0;
-const ACTIVATED: u32 = 4;
-/// wl_surface: `commit`.
-const COMMIT: u16 = 6;
-
-/// File descriptors a message may carry at most (libwayland's).
-const MAX_FDS: usize = 28;
-/// How often a frame rate row is written, and how often the settings' files are read again.
-const ROW_EVERY: Duration = Duration::from_millis(500);
-const SETTINGS_EVERY: Duration = Duration::from_secs(1);
-
-/// What to do with a message.
-#[derive(Debug, PartialEq, Eq)]
-enum Pass {
-    Keep,
-    Drop,
-    /// Passed on changed (whole: header and arguments).
-    Replace(Vec<u8>),
-}
-
-/// The settings ClamShell gives the proxy (see the module's doc), read again at most every second.
-#[derive(Debug, Default)]
-pub struct Settings {
-    dir: Option<PathBuf>,
-    read: Option<Instant>,
-    /// The caption's height (pixels; 0: shown).
-    caption: i32,
-}
-
-impl Settings {
-    fn refresh(&mut self, now: Instant) {
-        let Some(dir) = &self.dir else {
-            return;
-        };
-        if self.read.is_some_and(|t| now.duration_since(t) < SETTINGS_EVERY) {
-            return;
-        }
-        self.read = Some(now);
-        self.caption = std::fs::read_to_string(dir.join("android-caption")).unwrap_or_default().trim().parse().unwrap_or(0);
-    }
-}
-
-/// A toplevel the proxy follows.
-#[derive(Debug)]
-struct Toplevel {
-    xdg_surface: u32,
-    surface: u32,
-    app_id: String,
-    /// The size of the last configure passed on (none yet: the first goes), as the compositor gave it.
-    size: Option<(i32, i32)>,
-    active: bool,
-    /// Commits since `since`.
-    commits: u32,
-    since: Option<Instant>,
-}
-
-/// What the proxy knows of a connection's objects.
-#[derive(Debug, Default)]
-struct Objects {
-    registries: HashSet<u32>,
-    wm_bases: HashSet<u32>,
-    /// Each xdg_surface's wl_surface.
-    xdg_surfaces: HashMap<u32, u32>,
-    toplevels: HashMap<u32, Toplevel>,
-    settings: Settings,
-}
-
-impl Objects {
-    pub fn new(settings_dir: Option<PathBuf>) -> Objects {
-        Objects { settings: Settings { dir: settings_dir, ..Settings::default() }, ..Objects::default() }
-    }
-
-    fn toplevel_of_xdg_surface(&self, xdg_surface: u32) -> Option<u32> {
-        self.toplevels.iter().find(|(_, t)| t.xdg_surface == xdg_surface).map(|(id, _)| *id)
-    }
-
-    fn toplevel_of_surface(&self, surface: u32) -> Option<u32> {
-        self.toplevels.iter().find(|(_, t)| t.surface == surface).map(|(id, _)| *id)
-    }
-
-    /// A request from the client: the objects it makes that the proxy follows; a window geometry moved
-    /// below the caption.
-    fn request(&mut self, object: u32, opcode: u16, args: &[u8], now: Instant) -> Pass {
-        let word = |i: usize| args.get(i * 4..i * 4 + 4).and_then(|b| b.try_into().ok()).map(u32::from_ne_bytes);
-        if self.registries.contains(&object) && opcode == BIND {
-            // name, interface (a string: its length, then its bytes padded to 4), version, id.
-            let len = word(1).unwrap_or(0) as usize;
-            let after = 8 + len.div_ceil(4) * 4;
-            let id = args.get(after + 4..after + 8).and_then(|b| b.try_into().ok()).map(u32::from_ne_bytes);
-            if args.get(8..8 + len.saturating_sub(1)) == Some(b"xdg_wm_base") {
-                self.wm_bases.extend(id);
-            }
-            return Pass::Keep;
-        }
-        match opcode {
-            GET_REGISTRY if object == DISPLAY => self.registries.extend(word(0)),
-            GET_XDG_SURFACE if self.wm_bases.contains(&object) => {
-                if let (Some(id), Some(surface)) = (word(0), word(1)) {
-                    self.xdg_surfaces.insert(id, surface);
-                }
-            }
-            GET_TOPLEVEL if self.xdg_surfaces.contains_key(&object) => {
-                let surface = self.xdg_surfaces.get(&object).copied().unwrap_or(0);
-                if let Some(id) = word(0) {
-                    let t = Toplevel { xdg_surface: object, surface, app_id: String::new(), size: None, active: false, commits: 0, since: None };
-                    self.toplevels.insert(id, t);
-                }
-            }
-            SET_WINDOW_GEOMETRY if self.xdg_surfaces.contains_key(&object) && self.toplevel_of_xdg_surface(object).is_some() => {
-                self.settings.refresh(now);
-                let caption = self.settings.caption;
-                let int = |i: usize| word(i).map(|w| w as i32);
-                if let (Some(x), Some(y), Some(w), Some(h)) = (int(0), int(1), int(2), int(3))
-                    && caption > 0
-                    && h > caption
-                {
-                    return Pass::Replace(message(object, opcode, &ints(&[x, y + caption, w, h - caption])));
-                }
-            }
-            SET_APP_ID if self.toplevels.contains_key(&object) => {
-                let len = word(0).unwrap_or(0) as usize;
-                let app_id = args.get(4..4 + len.saturating_sub(1)).map(|b| String::from_utf8_lossy(b).into_owned()).unwrap_or_default();
-                if let Some(t) = self.toplevels.get_mut(&object) {
-                    t.app_id = app_id;
-                }
-            }
-            COMMIT => {
-                if let Some(t) = self.toplevel_of_surface(object).and_then(|id| self.toplevels.get_mut(&id)) {
-                    t.commits += 1;
-                    t.since.get_or_insert(now);
-                }
-            }
-            _ => {}
-        }
-        Pass::Keep
-    }
-
-    /// An event from the compositor: a configure of the size the window had dropped, another made taller
-    /// by the caption; ids deleted forgotten.
-    fn event(&mut self, object: u32, opcode: u16, args: &[u8], now: Instant) -> Pass {
-        let int = |i: usize| args.get(i * 4..i * 4 + 4).and_then(|b| b.try_into().ok()).map(i32::from_ne_bytes);
-        if object == DISPLAY && opcode == DELETE_ID {
-            let Some(id) = int(0).map(|i| i as u32) else {
-                return Pass::Keep;
-            };
-            self.registries.remove(&id);
-            self.wm_bases.remove(&id);
-            self.xdg_surfaces.remove(&id);
-            self.toplevels.remove(&id);
-            return Pass::Keep;
-        }
-        if opcode != CONFIGURE {
-            return Pass::Keep;
-        }
-        let Some(t) = self.toplevels.get_mut(&object) else {
-            return Pass::Keep;
-        };
-        let (Some(w), Some(h)) = (int(0), int(1)) else {
-            return Pass::Keep;
-        };
-        // The states: an array (its length in bytes, then u32s).
-        let states_len = int(2).unwrap_or(0) as usize;
-        let states = args.get(12..12 + states_len).unwrap_or_default();
-        t.active = states.chunks_exact(4).any(|s| s.try_into().ok().map(u32::from_ne_bytes) == Some(ACTIVATED));
-        if t.size == Some((w, h)) {
-            return Pass::Drop;
-        }
-        t.size = Some((w, h));
-        self.settings.refresh(now);
-        let caption = self.settings.caption;
-        if caption > 0 && h > 0 {
-            let mut changed = args.to_vec();
-            changed.splice(4..8, (h + caption).to_ne_bytes());
-            return Pass::Replace(message(object, opcode, &changed));
-        }
-        Pass::Keep
-    }
-
-    /// The active toplevel's frame rate, once half a second has passed since it was last told: its app id
-    /// and its commits a second.
-    fn frame_rate(&mut self, now: Instant) -> Option<(String, f32)> {
-        let t = self.toplevels.values_mut().find(|t| t.active && !t.app_id.is_empty())?;
-        let since = t.since?;
-        let elapsed = now.duration_since(since);
-        if elapsed < ROW_EVERY {
-            return None;
-        }
-        let fps = t.commits as f32 / elapsed.as_secs_f32();
-        t.commits = 0;
-        t.since = Some(now);
-        Some((t.app_id.clone(), fps))
-    }
-}
-
-/// A message: its object, its opcode and its arguments, with its header.
-fn message(object: u32, opcode: u16, args: &[u8]) -> Vec<u8> {
-    let mut m = object.to_ne_bytes().to_vec();
-    m.extend((((args.len() + 8) as u32) << 16 | u32::from(opcode)).to_ne_bytes());
-    m.extend_from_slice(args);
-    m
-}
-
-fn ints(values: &[i32]) -> Vec<u8> {
-    values.iter().flat_map(|v| v.to_ne_bytes()).collect()
-}
-
-/// The whole messages at the start of `buf`: each `(object, opcode, args)`, and how many bytes they take
-/// (a message cut off at the end is left for the next read).
-fn messages(buf: &[u8]) -> (Vec<(u32, u16, std::ops::Range<usize>)>, usize) {
-    let mut out = Vec::new();
-    let mut at = 0;
-    let word = |i: usize| buf.get(i..i + 4).and_then(|b| b.try_into().ok()).map(u32::from_ne_bytes);
-    while let (Some(object), Some(word)) = (word(at), word(at + 4)) {
-        let (size, opcode) = ((word >> 16) as usize, (word & 0xffff) as u16);
-        if size < 8 || at + size > buf.len() {
-            break;
-        }
-        out.push((object, opcode, at + 8..at + size));
-        at += size;
-    }
-    (out, at)
-}
 
 /// Listens on `<display>-android` beside the compositor's socket (`$XDG_RUNTIME_DIR`, `$WAYLAND_DISPLAY`)
 /// and passes each connection through; `settings`: ClamShell's runtime dir (its `android-*` files),
@@ -361,86 +124,18 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path, 
     }
 }
 
-/// Passes messages from `from` to `to` as `pass` says, with the file descriptors that come with them,
-/// until either end closes (then both are shut); `after` is called after each read, `closed` with which
-/// end closed (`from`: true) before both are shut.
-fn relay(
-    from: &UnixStream,
-    to: &UnixStream,
-    mut pass: impl FnMut(u32, u16, &[u8], Instant) -> Pass,
-    mut after: impl FnMut(Instant),
-    closed: impl FnOnce(bool),
-) {
-    let mut buf: Vec<u8> = Vec::new();
-    let mut chunk = vec![0u8; 16384];
-    let mut out = Vec::new();
-    let from_closed = loop {
-        let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(MAX_FDS))];
-        let mut ancillary = RecvAncillaryBuffer::new(&mut space);
-        let n = match rustix::net::recvmsg(from, &mut [IoSliceMut::new(&mut chunk)], &mut ancillary, RecvFlags::CMSG_CLOEXEC) {
-            Ok(r) if r.bytes > 0 => r.bytes,
-            Err(rustix::io::Errno::INTR) => continue,
-            Ok(_) | Err(_) => break true,
-        };
-        let mut received: Vec<OwnedFd> = Vec::new();
-        for message in ancillary.drain() {
-            if let RecvAncillaryMessage::ScmRights(fds) = message {
-                received.extend(fds);
-            }
-        }
-        let now = Instant::now();
-        buf.extend_from_slice(chunk.get(..n).unwrap_or_default());
-        let (found, used) = messages(&buf);
-        out.clear();
-        for (object, opcode, args) in found {
-            let whole = buf.get(args.start - 8..args.end).unwrap_or_default();
-            match pass(object, opcode, buf.get(args).unwrap_or_default(), now) {
-                Pass::Keep => out.extend_from_slice(whole),
-                Pass::Drop => {}
-                Pass::Replace(m) => out.extend(m),
-            }
-        }
-        buf.drain(..used);
-        after(now);
-        // (The descriptors go with the bytes they came with: the receiver takes them in order, by message.)
-        if (!out.is_empty() || !received.is_empty()) && send(to, &out, &received).is_err() {
-            break false;
-        }
-    };
-    closed(from_closed);
-    let _ = from.shutdown(std::net::Shutdown::Both);
-    let _ = to.shutdown(std::net::Shutdown::Both);
-}
-
-/// Sends `bytes` with `fds` (with the first part sent), all of it.
-fn send(to: &UnixStream, bytes: &[u8], fds: &[OwnedFd]) -> io::Result<()> {
-    let borrowed: Vec<BorrowedFd> = fds.iter().map(AsFd::as_fd).collect();
-    let mut sent = 0;
-    let mut first = true;
-    while sent < bytes.len() || (first && !borrowed.is_empty()) {
-        let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(MAX_FDS))];
-        let mut ancillary = SendAncillaryBuffer::new(&mut space);
-        if first && !borrowed.is_empty() {
-            ancillary.push(SendAncillaryMessage::ScmRights(&borrowed));
-        }
-        let rest = bytes.get(sent..).unwrap_or_default();
-        let n = match rustix::net::sendmsg(to, &[IoSlice::new(rest)], &mut ancillary, SendFlags::NOSIGNAL) {
-            Err(rustix::io::Errno::INTR) => continue,
-            sent => sent?,
-        };
-        if n == 0 && rest.is_empty() {
-            break;
-        }
-        sent += n;
-        first = false;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
+    use super::objects::*;
+    use super::wire::*;
     use super::*;
+    use std::io::IoSliceMut;
+    use std::mem::MaybeUninit;
+    use std::os::fd::OwnedFd;
+    use std::time::{Duration, Instant};
+
+    use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags};
 
     fn words(ws: &[u32]) -> Vec<u8> {
         ws.iter().flat_map(|w| w.to_ne_bytes()).collect()
