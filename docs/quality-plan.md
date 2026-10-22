@@ -98,8 +98,9 @@ Helpers that exist but are bypassed:
 - [x] Duplicated logic in core: `editor.rs` `words()` / `count_env()`; `levels.rs:247-263` and
       `backlights()`/`backlight_rows()`; the six `if changed { save_keymaps }`; identical match arms
       (`keymap_screens/mod.rs:419/428,610/614`); `panel.rs:47-52,77-83`.
-- [ ] Wi-Fi and Bluetooth: one vocabulary and one error model; `Effect::Browse`/`FilesInUse` as other
-      commands are.
+- [x] Wi-Fi and Bluetooth: one vocabulary (`present`, `on`, `busy`, `connected`); `Effect::Browse` carries its
+      `BrowseCommand` as other effects carry theirs. (Their error types stay apart: a failed join has its
+      own causes; a Bluetooth failure is an action and BlueZ's message.)
 - [ ] Entry ids' prefixes (`desktop:`, `tray:`, `window:`, `runner:`) as constants or helpers in
       `clamshell_library`.
 - [ ] Anonymous tuples in state as named structs: shelf's view (`shelf.rs:242`), `cost_of`, `Files`'

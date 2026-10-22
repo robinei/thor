@@ -406,7 +406,7 @@ impl State {
         let in_use: Vec<PathBuf> = open.into_iter().chain(copied).chain(running).collect();
         if in_use != self.files.in_use {
             self.files.in_use = in_use.clone();
-            effects.push(Effect::FilesInUse(in_use));
+            effects.push(Effect::Browse(BrowseCommand::InUse(in_use)));
         }
         effects
     }
@@ -428,7 +428,7 @@ impl State {
             self.files.selected.clear();
         }
         self.files.browsing = now;
-        Some(Effect::Browse(open))
+        Some(Effect::Browse(BrowseCommand::Open(open)))
     }
 }
 
@@ -455,7 +455,7 @@ mod tests {
 
     /// The folder listed and watched, of `fx`.
     fn browses(fx: Vec<Effect>) -> Vec<Effect> {
-        fx.into_iter().filter(|e| matches!(e, Effect::Browse(_))).collect()
+        fx.into_iter().filter(|e| matches!(e, Effect::Browse(BrowseCommand::Open(_)))).collect()
     }
 
     #[test]
@@ -479,7 +479,7 @@ mod tests {
         assert!(fx.contains(&Effect::Files(FileOp::Extract { archive: "/Home/game.tar.gz".into(), name: "game".into() })), "{fx:?}");
         // Opened: browsed as a folder (the archive itself the dir), and in use while open.
         let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
-        assert!(fx.contains(&Effect::FilesInUse(vec!["/Home/game.tar.gz".into()])), "{fx:?}");
+        assert!(fx.contains(&Effect::Browse(BrowseCommand::InUse(vec!["/Home/game.tar.gz".into()]))), "{fx:?}");
         listed(&mut s, "browse:Home/game.tar.gz", vec![entry("browse:Home/game.tar.gz/a.sfc", false, BrowseKind::Plain)]);
         // Inside: only copied out; nothing pasted in or made.
         let acts = s.file_actions();
@@ -489,7 +489,7 @@ mod tests {
         }
         // Left: no longer in use.
         let fx = tap(&mut s, Id::Shelf(ShelfId::Up));
-        assert!(fx.contains(&Effect::FilesInUse(vec!["/Home".into()])), "{fx:?}");
+        assert!(fx.contains(&Effect::Browse(BrowseCommand::InUse(vec!["/Home".into()]))), "{fx:?}");
     }
 
     #[test]
@@ -507,19 +507,22 @@ mod tests {
     fn the_folder_open_is_listed_and_watched_while_open() {
         let mut s = files_state();
         let fx = browses(s.apply(Event::Pointer(crate::PointerEvent::Activate(Id::Shelf(ShelfId::Launch)))).1);
-        assert_eq!(fx, vec![Effect::Browse(Some(Browse { folder: "browse:Home".into(), dir: "/Home".into(), hidden: false }))]);
+        assert_eq!(fx, vec![Effect::Browse(BrowseCommand::Open(Some(Browse { folder: "browse:Home".into(), dir: "/Home".into(), hidden: false })))]);
         assert!(s.shelf().list().is_empty(), "nothing in it until listed");
         listed(&mut s, "browse:Home", vec![entry("browse:Home/Films", true, BrowseKind::Plain), entry("browse:Home/a.txt", false, BrowseKind::Plain)]);
         assert_eq!(s.shelf().list().len(), 2);
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("browse:Home/Films"));
         // Into Films (listed and watched instead), back out (Home again).
         let fx = browses(tap(&mut s, Id::Shelf(ShelfId::Launch)));
-        assert_eq!(fx, vec![Effect::Browse(Some(Browse { folder: "browse:Home/Films".into(), dir: "/Home/Films".into(), hidden: false }))]);
+        assert_eq!(
+            fx,
+            vec![Effect::Browse(BrowseCommand::Open(Some(Browse { folder: "browse:Home/Films".into(), dir: "/Home/Films".into(), hidden: false })))]
+        );
         let fx = browses(tap(&mut s, Id::Shelf(ShelfId::Up)));
-        assert!(matches!(fx.as_slice(), [Effect::Browse(Some(b))] if &*b.folder == "browse:Home"));
+        assert!(matches!(fx.as_slice(), [Effect::Browse(BrowseCommand::Open(Some(b)))] if &*b.folder == "browse:Home"));
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("browse:Home/Films"), "where it was");
         let fx = browses(tap(&mut s, Id::Shelf(ShelfId::Up)));
-        assert_eq!(fx, vec![Effect::Browse(None)], "out of the folders: no watch");
+        assert_eq!(fx, vec![Effect::Browse(BrowseCommand::Open(None))], "out of the folders: no watch");
     }
 
     #[test]
@@ -532,7 +535,7 @@ mod tests {
         let library = files_state().shelf().library().clone();
         let (_, fx) = s.apply(Event::Library(Box::new(library)));
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("browse:Home/Films/x.mkv"), "still in Films");
-        assert!(!fx.iter().any(|e| matches!(e, Effect::Browse(_))), "the same folder: watched still");
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Browse(BrowseCommand::Open(_)))), "the same folder: watched still");
     }
 
     #[test]
@@ -583,7 +586,7 @@ mod tests {
         assert!(s.files().selected.is_empty());
         // Hidden files: the folder listed again with them.
         let fx = tap(&mut s, Id::Shelf(ShelfId::File(FileAction::ShowHidden)));
-        assert!(matches!(fx.as_slice(), [Effect::Browse(Some(Browse { hidden: true, .. }))]), "{fx:?}");
+        assert!(matches!(fx.as_slice(), [Effect::Browse(BrowseCommand::Open(Some(Browse { hidden: true, .. })))]), "{fx:?}");
     }
 
     #[test]

@@ -114,11 +114,10 @@ impl Handles {
                     }
                 });
             }
-            Effect::Browse(browse) => {
+            Effect::Browse(command) => {
                 log::info!("effect: {effect:?}");
-                self.browse.send(clamshell_core::files::BrowseCommand::Open(browse.clone()));
+                self.browse.send(command.clone());
             }
-            Effect::FilesInUse(files) => self.browse.send(clamshell_core::files::BrowseCommand::InUse(files.clone())),
             Effect::Files(op) => self.files.send(op.clone()),
             Effect::Sound(sound) => self.sound.send(sound.clone()),
             Effect::Brightness { level, shares } => self.brightness.send(brightness::Command { level: *level, shares: shares.clone() }),
