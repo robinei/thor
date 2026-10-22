@@ -812,8 +812,10 @@ mod tests {
         );
         std::fs::write(root.join("library.json"), config).unwrap();
         let lib = load(&Sources { config: Some(root.join("library.json")), ..Sources::default() }).library;
-        // The test's emulators aren't installed, and that should be the only problem.
-        assert!(lib.problems.iter().all(|p| p.ends_with("isn't installed")), "{:?}", lib.problems);
+        // The test's emulators aren't installed, and that should be the only problem, besides the tools
+        // ClamShell runs that this machine may lack.
+        let tool_missing = |p: &str| NEEDED.iter().any(|(tool, _)| p.starts_with(&format!("{tool} isn't installed")));
+        assert!(lib.problems.iter().all(|p| p.ends_with("isn't installed") || tool_missing(p)), "{:?}", lib.problems);
         assert_eq!(lib.collections.last().map(|c| c.name.as_str()), Some("Mine"), "ClamShell's tools, named and placed as declared");
         assert_eq!((lib.collections[0].name.as_str(), lib.collections[0].icon.as_deref()), ("Games", Some("film")), "listed: its icon; Other has nothing");
         let games = |ids: &[usize]| ids.iter().map(|&i| lib.entries[i].title.clone()).collect::<Vec<_>>();
