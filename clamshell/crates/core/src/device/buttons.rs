@@ -47,12 +47,12 @@ impl State {
                 return self.levels.toggle_mute(out);
             }
             DeviceKey::Screenshot => return out.effects.push(Effect::Screenshot),
-            DeviceKey::BottomView => return out.effects.extend(self.bottom.toggle_view(&self.session)),
+            DeviceKey::BottomView => return self.bottom.toggle_view(&self.session),
             DeviceKey::CloseWindow => return self.close_front_window(out),
             DeviceKey::Quit => return self.quit_front(out),
-            DeviceKey::BottomPower => return out.effects.extend(self.bottom.toggle_power(self.power(), self.clock.mono())),
-            DeviceKey::WindowDown => return out.effects.extend(self.bottom.window_down(&self.session, self.clock.mono())),
-            DeviceKey::WindowUp => return out.effects.extend(self.bottom.window_up(&self.session, self.clock.mono())),
+            DeviceKey::BottomPower => return self.bottom.toggle_power(self.power(), self.clock.mono(), out),
+            DeviceKey::WindowDown => return self.bottom.window_down(&self.session, self.clock.mono(), out),
+            DeviceKey::WindowUp => return self.bottom.window_up(&self.session, self.clock.mono(), out),
         };
         let control = if level == Level::Volume { Control::Volume } else { Control::Brightness };
         self.bottom.notify(NoticeKind::Level(control), self.clock.mono());

@@ -22,6 +22,7 @@ use std::sync::Arc;
 use crate::bottom::Bottom;
 use crate::bottom::notice::NoticeKind;
 use crate::effect::{Dirty, Effect, Save, WindowCommand};
+use crate::out::Out;
 use crate::session::instance::Instance;
 use crate::session::windows::Window;
 use crate::settings::BottomWhenIdle;
@@ -220,13 +221,14 @@ impl Bottom {
     /// Runs after any event. Turns the bottom screen off or on by itself as [`Bottom::idle_wanted`] says.
     /// A touch, the pad's focus, a window moved down or the charger turn it on again. Does nothing while
     /// it is off by hand, or while both screens are off for idle; when the screens come back they read
-    /// [`Bottom::off`].
-    pub(crate) fn follow_power(&mut self, p: Power, now: u64) -> Vec<Effect> {
+    /// [`Bottom::off`]. Returns whether it turned the screen off or on.
+    pub(crate) fn follow_power(&mut self, p: Power, now: u64, out: &mut Out) -> bool {
         let wanted = self.idle_wanted(p, now);
         if wanted == std::mem::replace(&mut self.screen.idle_off, wanted) || self.screen.off || p.screens_off {
-            return vec![];
+            return false;
         }
-        vec![Effect::Window(WindowCommand::BottomPower(!wanted))]
+        out.effects.push(Effect::Window(WindowCommand::BottomPower(!wanted)));
+        true
     }
 
     /// The darkened second screen was tapped awake. This lasts until the next game.
@@ -241,11 +243,11 @@ impl Bottom {
 
     /// Home+Down moves the window in front on the top screen to the bottom screen, shows it there, and
     /// remembers it for its program.
-    pub(crate) fn window_down(&mut self, session: &Session, now: u64) -> Vec<Effect> {
+    pub(crate) fn window_down(&mut self, session: &Session, now: u64, out: &mut Out) {
         let Some(w) = session.windows.iter().find(|w| w.focused && !w.down && w.home() != Some(Instance::Shelf)) else {
-            return vec![];
+            return;
         };
-        let mut effects = self.show_down(w.id);
+        self.show_down(w.id, out);
         // The title is only used to tell it apart from another window of its program with the same
         // app id.
         let others = session.windows.iter().any(|o| o.id != w.id && o.app_id == w.app_id && o.unit == w.unit);
@@ -253,54 +255,51 @@ impl Bottom {
         if let Some(owner) = session.owner_of(w)
             && self.window_rules.add(WindowRule { owner, app_id: w.app_id.clone(), title })
         {
-            effects.extend(self.window_rules_changed(true, now));
+            self.window_rules_changed(true, now, out);
         }
-        effects
     }
 
     /// Moves a window down and shows it there, turning the bottom screen on again if it was off.
-    fn show_down(&mut self, id: i64) -> Vec<Effect> {
+    fn show_down(&mut self, id: i64, out: &mut Out) {
         self.screen.windows = true;
-        let mut effects = vec![Effect::Window(WindowCommand::Down(id))];
+        out.effects.push(Effect::Window(WindowCommand::Down(id)));
         if std::mem::take(&mut self.screen.off) {
-            effects.push(Effect::Window(WindowCommand::BottomPower(true)));
+            out.effects.push(Effect::Window(WindowCommand::BottomPower(true)));
         }
-        effects
     }
 
     /// Home+Up moves the window the bottom screen shows (the tab in view) back to its place on the top
     /// screen, and forgets its rule. The bottom screen then shows the next tab, or ClamShell's view after
     /// the last one.
-    pub(crate) fn window_up(&mut self, session: &Session, now: u64) -> Vec<Effect> {
+    pub(crate) fn window_up(&mut self, session: &Session, now: u64, out: &mut Out) {
         if !self.shows_windows(session) {
-            return vec![];
+            return;
         }
         let Some(w) = session.windows_down().find(|w| w.visible).or_else(|| session.windows_down().next()) else {
-            return vec![];
+            return;
         };
-        let mut effects = vec![Effect::Window(WindowCommand::Up { window: w.id, to: w.home() })];
+        out.effects.push(Effect::Window(WindowCommand::Up { window: w.id, to: w.home() }));
         if let Some(owner) = session.owner_of(w)
             && self.window_rules.forget(&owner, w)
         {
-            effects.extend(self.window_rules_changed(false, now));
+            self.window_rules_changed(false, now, out);
         }
-        effects
     }
 
     /// A rule was added or forgotten. That is shown in a notice, and the rules are saved and given to
     /// sway.
-    fn window_rules_changed(&mut self, added: bool, now: u64) -> Vec<Effect> {
+    fn window_rules_changed(&mut self, added: bool, now: u64, out: &mut Out) {
         self.notify(NoticeKind::BottomRule(added), now);
-        vec![Effect::Save(Save::WindowRules(self.window_rules.clone())), self.window_rules.effect()]
+        out.effects.push(Effect::Save(Save::WindowRules(self.window_rules.clone())));
+        out.effects.push(self.window_rules.effect());
     }
 
     /// Home+Select switches the bottom screen between the windows moved there and ClamShell's view. It
     /// does nothing when no window is down.
-    pub(crate) fn toggle_view(&mut self, session: &Session) -> Vec<Effect> {
+    pub(crate) fn toggle_view(&mut self, session: &Session) {
         if session.windows_down().next().is_some() {
             self.screen.windows = !self.screen.windows;
         }
-        vec![]
     }
 
     /// A window of the program in front on the top screen that is on the bottom screen but hidden by
@@ -316,18 +315,19 @@ impl Bottom {
 
     /// A tap on a program whose windows are all on the bottom screen shows them there, with its first
     /// tab in view.
-    pub(crate) fn show_program_down(&mut self, window: i64) -> Vec<Effect> {
+    pub(crate) fn show_program_down(&mut self, window: i64, out: &mut Out) {
         self.screen.windows = true;
-        vec![Effect::Window(WindowCommand::ShowDown(window))]
+        out.effects.push(Effect::Window(WindowCommand::ShowDown(window)));
     }
 
     /// Home+Start turns the bottom screen off, or on again. If it had turned off by itself, this turns it
     /// on, as a touch would.
-    pub(crate) fn toggle_power(&mut self, p: Power, now: u64) -> Vec<Effect> {
+    pub(crate) fn toggle_power(&mut self, p: Power, now: u64, out: &mut Out) {
         if self.screen.idle_off && !self.screen.off {
             self.used_at = Some(now);
             self.woken = true;
-            return self.follow_power(p, now);
+            self.follow_power(p, now, out);
+            return;
         }
         self.screen.off = !self.screen.off;
         // Turned on again by hand, so it is in use and shouldn't turn off by itself either.
@@ -336,12 +336,11 @@ impl Bottom {
             self.woken = true;
             self.screen.idle_off = false;
         }
-        vec![Effect::Window(WindowCommand::BottomPower(!self.screen.off))]
+        out.effects.push(Effect::Window(WindowCommand::BottomPower(!self.screen.off)));
     }
 
     /// Runs after the windows changed. A window whose program has a rule for it is sent down, once.
-    pub(crate) fn follow_window_rules(&mut self, session: &Session) -> Vec<Effect> {
-        let mut effects = Vec::new();
+    pub(crate) fn follow_window_rules(&mut self, session: &Session, out: &mut Out) {
         let wanted: Vec<i64> = session
             .windows
             .iter()
@@ -351,10 +350,9 @@ impl Bottom {
             .collect();
         for id in wanted {
             self.sent_down.push(id);
-            effects.extend(self.show_down(id));
+            self.show_down(id, out);
         }
         self.sent_down.retain(|id| session.windows.iter().any(|w| w.id == *id));
-        effects
     }
 }
 

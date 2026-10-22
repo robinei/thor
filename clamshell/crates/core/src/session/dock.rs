@@ -173,7 +173,7 @@ impl State {
         let below = |w: &&Window| w.down;
         let down = self.session.windows_of(&entry).all(|w| w.down).then(|| self.session.windows_of(&entry).find(below).map(|w| w.id)).flatten();
         match down {
-            Some(window) => out.effects.extend(self.bottom.show_program_down(window)),
+            Some(window) => self.bottom.show_program_down(window, out),
             None => out.effects.extend(self.show_running(&entry)),
         }
     }

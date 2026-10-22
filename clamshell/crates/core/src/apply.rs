@@ -34,9 +34,7 @@ impl State {
         out.effects.extend(applied);
         // This comes after the program in force is settled, since it reads that program's setting and
         // darkness. If it changed anything, the watch is followed again.
-        let power = self.bottom.follow_power(self.power(), self.clock.mono());
-        if !power.is_empty() {
-            out.effects.extend(power);
+        if self.bottom.follow_power(self.power(), self.clock.mono(), &mut out) {
             self.follow_watch(&mut out);
         }
         if changed && self.follow_pad_mouse() {
@@ -81,7 +79,7 @@ impl State {
             out.effects.extend(self.start_autostart());
         }
         let by_windows = self.follow_windows(&known);
-        out.effects.extend(self.bottom.follow_window_rules(&self.session));
+        self.bottom.follow_window_rules(&self.session, out);
         out.effects.extend(self.follow_background());
         out.effects.extend(self.session.show_pending());
         out.effects.extend(self.session.show_reopened(self.clock.mono()));
@@ -188,11 +186,7 @@ impl State {
                 }
                 out.mark(dirty);
             }
-            Event::Pointing(pointing) => {
-                let (dirty, effects) = self.bottom.point(pointing);
-                out.mark(dirty);
-                out.effects.extend(effects);
-            }
+            Event::Pointing(pointing) => self.bottom.point(pointing, out),
             // Sleep may have reset what the settings set, such as frequency caps and cores, so apply them
             // again.
             Event::Resumed => {
@@ -514,7 +508,7 @@ impl State {
             Id::BottomWindows => {
                 if let Some(window) = self.bottom.hidden_down(&self.session) {
                     out.mark(Dirty::BOTH);
-                    out.effects.extend(self.bottom.show_program_down(window));
+                    self.bottom.show_program_down(window, out);
                 }
             }
             Id::Time(id) => self.sys.on_time(id, self.lists.get_mut(ListId::Time), out),

@@ -15,6 +15,7 @@ pub mod touch;
 use crate::effect::Watch;
 use crate::event::Reading;
 use crate::kit::names::names;
+use crate::out::Out;
 use crate::settings::panel::Scope;
 use crate::{Dirty, Effect, State};
 use editor::{Editor, Editors};
@@ -267,19 +268,18 @@ impl Bottom {
     }
 
     /// Contacts on the area below the bar, passed on to the virtual touchpad, or none (see [`touch`]).
-    pub(crate) fn point(&mut self, pointing: touch::Pointing) -> (Dirty, Vec<Effect>) {
+    pub(crate) fn point(&mut self, pointing: touch::Pointing, out: &mut Out) {
         let before = self.pointing;
-        let effects = match pointing {
+        match pointing {
             touch::Pointing::Contacts(contacts) => {
                 self.pointing = true;
-                vec![Effect::Touchpad(contacts)]
+                out.effects.push(Effect::Touchpad(contacts));
             }
-            touch::Pointing::Idle => {
-                self.pointing = false;
-                vec![]
-            }
-        };
-        (if self.pointing == before { Dirty::NONE } else { Dirty::BOTTOM }, effects)
+            touch::Pointing::Idle => self.pointing = false,
+        }
+        if self.pointing != before {
+            out.mark(Dirty::BOTTOM);
+        }
     }
 
     pub(crate) fn set_scope(&mut self, scope: Scope) {
