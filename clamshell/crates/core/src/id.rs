@@ -44,7 +44,7 @@ pub enum Id {
         i: u16,
         part: crate::nav::lists::RowPart,
     },
-    /// The keymaps' screens' buttons (see [`crate::keymap_screens`]).
+    /// The keymaps' screens' buttons (see [`crate::keymap::screens`]).
     Keymap(KeymapId),
     /// A scrolled list's area, under its rows: a finger on it (between rows) drags the list; a tap does
     /// nothing.

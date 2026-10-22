@@ -34,7 +34,6 @@ pub mod idle;
 pub mod instance;
 pub mod keyboard;
 pub mod keymap;
-pub mod keymap_screens;
 pub mod kit;
 pub mod levels;
 pub mod metrics;
@@ -151,8 +150,8 @@ pub struct State {
     settings: Settings,
     keyboard: Keyboard,
     keymaps: keymap::Keymaps,
-    /// The keymaps' screens over the settings tab (see [`keymap_screens`]).
-    keymap_screens: keymap_screens::Screens,
+    /// The keymaps' screens over the settings tab (see [`keymap::screens`]).
+    keymap_screens: crate::keymap::screens::Screens,
     /// The keymap in force as last sent to the pad.
     keymap_sent: Option<keymap::Keymap>,
     lists: Lists,

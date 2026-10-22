@@ -1,8 +1,8 @@
 //! The edit screen's panel: the selected input's name, actuation tabs, what it does, the ways to remap it
 //! and its parameters (rows, switches, held sliders); and the panel while a control is picked.
 
+use clamshell_core::keymap::screens::{EditView, way_of, ways};
 use clamshell_core::keymap::{Actuation, Binding, Change, Input, Keymap, Kind, Layer, Output, Param, change, params_of};
-use clamshell_core::keymap_screens::{EditView, way_of, ways};
 use clamshell_core::levels::slider::{Control, Slider};
 use clamshell_core::{Id, KeymapId, Target};
 

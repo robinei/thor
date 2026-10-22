@@ -27,6 +27,7 @@ use crate::kit::names::names;
 mod inputs;
 mod outputs;
 mod param;
+pub mod screens;
 
 pub use inputs::*;
 pub use outputs::*;
