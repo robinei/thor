@@ -57,7 +57,19 @@ fn saved() -> Option<std::path::PathBuf> {
 /// It starts from the text a ClamShell before kept, offered if the clipboard is empty.
 pub fn spawn(sink: impl Sink + Clone + 'static) -> io::Result<()> {
     worker::detached("clipboard", move || {
-        let before = saved().and_then(|path| std::fs::read_to_string(path).ok()).filter(|t| t.len() <= MOST);
+        let before = saved()
+            .and_then(|path| {
+                std::fs::read_to_string(&path)
+                    .inspect_err(|e| {
+                        if e.kind() == io::ErrorKind::NotFound {
+                            log::debug!("clipboard: {}: {e}", path.display());
+                        } else {
+                            log::warn!("clipboard: {}: {e}", path.display());
+                        }
+                    })
+                    .ok()
+            })
+            .filter(|t| t.len() <= MOST);
         if before.is_some() {
             let _ = sink.send(Event::Reading(Reading::Clipboard(before.as_deref().map(Arc::from))));
         }
@@ -84,7 +96,12 @@ pub fn spawn(sink: impl Sink + Clone + 'static) -> io::Result<()> {
         match Keeper::connect(Mode::Keep { kept, own: None }) {
             Ok((mut keeper, mut queue)) => {
                 log::info!("clipboard: kept by ClamShell");
-                while queue.blocking_dispatch(&mut keeper).is_ok() {}
+                let gone = loop {
+                    if let Err(e) = queue.blocking_dispatch(&mut keeper) {
+                        break e;
+                    }
+                };
+                log::warn!("clipboard: {gone}");
             }
             Err(e) => log::warn!("clipboard: {e}"),
         }
@@ -212,7 +229,7 @@ impl Keeper {
                     let kept = kept.clone();
                     let (conn, manager, device, qh) = (self.conn.clone(), self.manager.clone(), self.device.clone(), qh.clone());
                     let reading = worker::detached("clipboard read", move || {
-                        let Some(text) = read.ok().and_then(read_text) else {
+                        let Some(text) = read.inspect_err(|e| log::warn!("clipboard: reading the copied text: {e}")).ok().and_then(read_text) else {
                             return;
                         };
                         let changed = kept.text().as_ref() != Some(&text);
@@ -226,7 +243,9 @@ impl Keeper {
                                 source.offer(t.to_owned());
                             }
                             device.set_primary_selection(Some(&source));
-                            let _ = conn.flush();
+                            if let Err(e) = conn.flush() {
+                                log::warn!("clipboard: offering the primary selection: {e}");
+                            }
                         }
                     });
                     if let Err(e) = reading {
@@ -252,7 +271,9 @@ impl Keeper {
             return;
         };
         let written = worker::detached("clipboard send", move || {
-            let _ = File::from(fd).write_all(text.as_bytes());
+            if let Err(e) = File::from(fd).write_all(text.as_bytes()) {
+                log::debug!("clipboard: sending the text: {e}");
+            }
         });
         if let Err(e) = written {
             log::warn!("clipboard: {e}");
@@ -272,7 +293,7 @@ fn receive(conn: &Connection, offer: &ExtDataControlOfferV1, mime: &str) -> Resu
 /// A pipe's text, to its end (none: too long, or not text).
 fn read_text(read: OwnedFd) -> Option<String> {
     let mut bytes = Vec::new();
-    File::from(read).take(MOST as u64 + 1).read_to_end(&mut bytes).ok()?;
+    File::from(read).take(MOST as u64 + 1).read_to_end(&mut bytes).inspect_err(|e| log::warn!("clipboard: reading the copied text: {e}")).ok()?;
     if bytes.len() > MOST {
         return None;
     }
@@ -286,7 +307,7 @@ fn dispatch_for(queue: &mut EventQueue<Keeper>, keeper: &mut Keeper, wait: Durat
         let fd = guard.connection_fd();
         let mut fds = [rustix::event::PollFd::new(&fd, rustix::event::PollFlags::IN)];
         let timeout = rustix::event::Timespec::try_from(wait).ok();
-        if rustix::event::poll(&mut fds, timeout.as_ref()).is_ok_and(|n| n > 0) {
+        if rustix::event::poll(&mut fds, timeout.as_ref()).inspect_err(|e| log::debug!("clipboard: waiting for the compositor: {e}")).is_ok_and(|n| n > 0) {
             guard.read().map_err(|e| e.to_string())?;
         }
     }

@@ -144,7 +144,9 @@ impl<S: Sink> Service for Tray<S> {
                 rustix::event::PollFd::from_borrowed_fd(self.bell.fd(), rustix::event::PollFlags::IN),
                 rustix::event::PollFd::from_borrowed_fd(s.bus.fd(), rustix::event::PollFlags::IN),
             ];
-            let _ = rustix::event::poll(&mut fds, None);
+            if let Err(e) = rustix::event::poll(&mut fds, None) {
+                log::debug!("tray: waiting: {e}");
+            }
             self.bell.clear();
         }
     }
@@ -161,8 +163,10 @@ impl Session {
         let signals = self.bus.signals()?;
         let registered = self.ours.as_ref().map(|w| std::mem::take(&mut crate::os::lock(w).registered)).unwrap_or_default();
         for key in &registered {
-            if let Ok(signal) = Message::new_signal(WATCHER_PATH, WATCHER, "StatusNotifierItemRegistered") {
-                let _ = self.bus.send(signal.append1(key.as_str()));
+            if let Ok(signal) = Message::new_signal(WATCHER_PATH, WATCHER, "StatusNotifierItemRegistered")
+                && let Err(e) = self.bus.send(signal.append1(key.as_str()))
+            {
+                log::warn!("tray: signalling {key} registered: {e}");
             }
         }
         Ok(!signals.is_empty() || !registered.is_empty())
@@ -218,7 +222,7 @@ fn answer_watcher(watched: &Mutex<Watched>, call: &Message) -> Option<Message> {
         // An icon registered: by its D-Bus name (its object at the usual path), or by its object path
         // (the sender's). Kept as KDE's watcher has it: the name, then the path.
         (WATCHER, "RegisterStatusNotifierItem") => {
-            let service: String = call.read1().ok()?;
+            let service: String = call.read1().inspect_err(|e| log::debug!("tray: RegisterStatusNotifierItem: {e}")).ok()?;
             let sender = call.sender().map(|s| s.to_string()).unwrap_or_default();
             let key = if service.starts_with('/') { format!("{sender}{service}") } else { format!("{service}{ITEM_PATH}") };
             if !w.items.contains(&key) {
@@ -230,7 +234,7 @@ fn answer_watcher(watched: &Mutex<Watched>, call: &Message) -> Option<Message> {
         // A host (a panel) registered: we are the only one shown.
         (WATCHER, "RegisterStatusNotifierHost") => Some(call.method_return()),
         ("org.freedesktop.DBus.Properties", "Get") => {
-            let (_, name): (String, String) = call.read2().ok()?;
+            let (_, name): (String, String) = call.read2().inspect_err(|e| log::debug!("tray: Properties.Get: {e}")).ok()?;
             Some(call.return_with_args((property(&w, &name)?,)))
         }
         ("org.freedesktop.DBus.Properties", "GetAll") => {
@@ -247,13 +251,17 @@ fn answer_watcher(watched: &Mutex<Watched>, call: &Message) -> Option<Message> {
 /// The icons registered: ours (those whose program is gone dropped), or the watcher's there.
 fn registered(s: &mut Session) -> dbus::Result<Vec<String>> {
     let Some(ours) = &s.ours else {
-        return Ok(s.bus.get::<Vec<String>>(WATCHER, WATCHER_PATH, WATCHER, "RegisteredStatusNotifierItems").unwrap_or_default());
+        return Ok(s
+            .bus
+            .get::<Vec<String>>(WATCHER, WATCHER_PATH, WATCHER, "RegisteredStatusNotifierItems")
+            .inspect_err(|e| log::warn!("tray: reading the watcher's icons: {e}"))
+            .unwrap_or_default());
     };
     let items = crate::os::lock(ours).items.clone();
     let mut kept = Vec::with_capacity(items.len());
     for key in items {
         let owned: dbus::Result<(bool,)> = s.bus.call(BUS_NAME, BUS_PATH, BUS_NAME, "NameHasOwner", (split(&key).0,));
-        if owned.is_ok_and(|(o,)| o) {
+        if owned.inspect_err(|e| log::debug!("tray: {key}: NameHasOwner: {e}")).is_ok_and(|(o,)| o) {
             kept.push(key);
         }
     }
@@ -296,7 +304,11 @@ fn read_item(bus: &mut Bus, key: &str, dirs: &[PathBuf]) -> Result<(TrayItem, Op
     let all = bus.get_all(name, path, ITEM)?;
     let props = Props(&all);
     let text = |k: &str| props.str(k).unwrap_or_default();
-    let pid = bus.call::<(u32,)>(BUS_NAME, BUS_PATH, BUS_NAME, "GetConnectionUnixProcessID", (name,)).ok().map(|(pid,)| pid);
+    let pid = bus
+        .call::<(u32,)>(BUS_NAME, BUS_PATH, BUS_NAME, "GetConnectionUnixProcessID", (name,))
+        .inspect_err(|e| log::debug!("tray: {key}: its process: {e}"))
+        .ok()
+        .map(|(pid,)| pid);
     // (Remembered as it is now: what is done to it later by its id is checked to be it still.)
     if let Some(pid) = pid {
         crate::os::sys::saw(pid);
@@ -329,7 +341,9 @@ fn find_icon(name: &str, theme_path: &str, dirs: &[PathBuf]) -> Option<PathBuf> 
 
 /// A menu's entries, as its program has them now (asked to bring the menu up to date first).
 fn read_menu(bus: &mut Bus, name: &str, path: &str) -> Vec<TrayEntry> {
-    let _ = bus.call::<(bool,)>(name, path, MENU, "AboutToShow", (0i32,));
+    if let Err(e) = bus.call::<(bool,)>(name, path, MENU, "AboutToShow", (0i32,)) {
+        log::debug!("tray: {name}{path}: AboutToShow: {e}");
+    }
     let layout = bus.call::<(u32, Node)>(name, path, MENU, "GetLayout", (0i32, -1i32, Vec::<String>::new()));
     match layout {
         Ok((_, (_, _, children))) => children.iter().filter_map(|c| entry(c)).collect(),
