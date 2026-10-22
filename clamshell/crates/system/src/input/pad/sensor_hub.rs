@@ -13,7 +13,7 @@
 //! Turned into the frame ClamShell's [`Rate`] is in (the Steam Deck's: x right, y up the screen, z
 //! toward the player), in degrees per second. The stream runs while the pad thread has the controller,
 //! as an evdev motion sensor's does, but not over sleep: the source is dropped before it (its Drop
-//! stops the stream; `crate::sleep::spawn_hold`) and found again after.
+//! stops the stream; `crate::power::sleep::spawn_hold`) and found again after.
 
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};

@@ -18,9 +18,10 @@ use clamshell_system::library::meta::cache::Cache;
 use clamshell_system::library::{self, Sources};
 use clamshell_system::os::worker::Worker;
 use clamshell_system::paths::Paths;
+use clamshell_system::power::tuning;
+use clamshell_system::power::tuning::Tuning;
 use clamshell_system::store::{Store, Writer};
-use clamshell_system::tuning::Tuning;
-use clamshell_system::{Closed, Handles, Sink, battery, bluetooth, clock, frames, metrics, status, sway, tuning, wifi};
+use clamshell_system::{Closed, Handles, Sink, battery, bluetooth, clock, frames, metrics, status, sway, wifi};
 use clamshell_ui::EventSender;
 
 use crate::config::Env;
@@ -131,7 +132,7 @@ pub fn start(
         pad.send(pad::Command::Sticks(Store::open(dir).sticks()));
     }
     // (Sleep waits for the pad to close the gyro's stream.)
-    detached("sleep", clamshell_system::sleep::spawn_hold(pad.clone()));
+    detached("sleep", clamshell_system::power::sleep::spawn_hold(pad.clone()));
     let battery = started("battery", battery::spawn(sink.clone()));
     let mixer = started("mixer", mixer::spawn(backlights.clone(), sink.clone()));
     let bluetooth = started("bluetooth", bluetooth::spawn(sink.clone()));

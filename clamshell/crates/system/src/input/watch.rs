@@ -3,7 +3,7 @@
 //! there is some): keys, buttons, relative motion, and absolute axes that moved a real distance (a resting
 //! stick's jitter isn't input). And, in the device's own session, the device's hardware keys: volume, mute
 //! and brightness on small button devices (gpio-keys, a headset's buttons), never on a full keyboard, whose
-//! keys are the desktop's business; and the lid, for the power key's wakeup ([`crate::lid`]). Devices that
+//! keys are the desktop's business; and the lid, for the power key's wakeup ([`crate::power::lid`]). Devices that
 //! come and go are picked up as /dev/input changes (inotify; without it, within [`RESCAN_EVERY`]). Grabbed
 //! devices (the controller) say nothing here; their input reaches the state through their own paths and the
 //! virtual devices they feed.
@@ -23,9 +23,9 @@ use std::os::fd::OwnedFd;
 use rustix::event::{PollFd, PollFlags};
 use rustix::fs::inotify;
 
-use crate::lid;
 use crate::os::evdev::{Press, Range, Raw};
 use crate::os::worker;
+use crate::power::lid;
 use crate::{Closed, Sink};
 
 /// Input is reported at most this often.

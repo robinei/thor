@@ -1,5 +1,5 @@
 //! The clock: a `Tick` at the start of every second, and `Resumed` after the system slept (see
-//! [`crate::sleep`]).
+//! [`crate::power::sleep`]).
 
 use std::io;
 use std::thread;
@@ -8,7 +8,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use clamshell_core::Event;
 
 use crate::os::worker;
-use crate::{Closed, Sink, sleep};
+use crate::power::sleep;
+use crate::{Closed, Sink};
 
 /// Seconds since the epoch on the wall clock at `t` (0 before the epoch).
 pub fn unix_secs_at(t: SystemTime) -> u64 {

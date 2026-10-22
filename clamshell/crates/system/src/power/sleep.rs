@@ -2,7 +2,7 @@
 //! so their difference grows by however long the system slept. The clock thread checks it every second.
 //! (No D-Bus: logind's PrepareForSleep(false) didn't reach us after a resume in testing, and this also
 //! sees sleep that didn't go through logind.) Suspending itself is logind's: the power button and the
-//! lid, per logind.conf (the power key not waking it while the lid is closed: [`crate::lid`]).
+//! lid, per logind.conf (the power key not waking it while the lid is closed: [`crate::power::lid`]).
 //!
 //! Before sleep, though, the pad thread closes the gyro's stream (the Thor's sensor hub samples on the
 //! ADSP while asleep otherwise, as PB-OS's pbos-motiond found): [`spawn_hold`] keeps a logind delay lock,

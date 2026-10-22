@@ -20,16 +20,14 @@ pub mod icons;
 pub mod input;
 pub mod launch;
 pub mod library;
-pub mod lid;
 pub mod metrics;
 pub mod os;
 pub mod paths;
-pub mod sleep;
+pub mod power;
 pub mod status;
 pub mod store;
 pub mod sway;
 pub mod tray;
-pub mod tuning;
 pub mod wayland_filter;
 pub mod wifi;
 

@@ -1,6 +1,6 @@
 //! The device as a whole: a screenshot of both screens (grim, through the compositor's screen capture),
 //! sleep through logind (suspend-then-hibernate where the system can, a swap file to hibernate to, else
-//! suspend; waking is noticed by the clock thread, see [`crate::sleep`]), and notifications through the
+//! suspend; waking is noticed by the clock thread, see [`crate::power::sleep`]), and notifications through the
 //! session's notification daemon (mako, on the main screen); the time zone, whether the network sets
 //! the clock (NTP) and the clock itself through timedated (`timedatectl`: setting them needs polkit's
 //! permission, which the image gives the session's user); the account through the image's helper (see

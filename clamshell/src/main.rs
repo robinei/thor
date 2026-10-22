@@ -20,12 +20,13 @@ use std::sync::Arc;
 use clamshell_core::keymap::Keymaps;
 use clamshell_core::settings::Hud;
 use clamshell_core::{Init, Library, State};
+use clamshell_system::Handles;
 use clamshell_system::launch::job;
 use clamshell_system::library::meta;
 use clamshell_system::library::{self, Sources};
 use clamshell_system::paths::Paths;
+use clamshell_system::power::tuning;
 use clamshell_system::store::Store;
-use clamshell_system::{Handles, tuning};
 use clamshell_ui::Config;
 
 use cli::Command;

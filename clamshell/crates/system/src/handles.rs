@@ -10,8 +10,8 @@ use crate::launch::job::Runner;
 use crate::launch::launcher;
 use crate::os::worker::{self, Shown, Worker};
 use crate::paths::Paths;
+use crate::power::tuning::Tuning;
 use crate::store::{Write, Writer};
-use crate::tuning::Tuning;
 use crate::{bluetooth, sway, wifi};
 
 /// The threads (and the one device) that effects go to.
@@ -76,7 +76,7 @@ impl Handles {
             Effect::Launch { entry: game, instance, launch, settings, env } => {
                 log::info!("launching {game}");
                 // MangoHud's first, so a game's own variables can still override it.
-                let mut game_env = self.tuning.apply(settings, Some(game)).map(|config| crate::tuning::mangohud_env(&config)).unwrap_or_default();
+                let mut game_env = self.tuning.apply(settings, Some(game)).map(|config| crate::power::tuning::mangohud_env(&config)).unwrap_or_default();
                 game_env.extend(env.iter().cloned());
                 // (First: a game's own may override it.)
                 game_env.splice(0..0, self.pad_taken.env());

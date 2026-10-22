@@ -67,7 +67,7 @@ pub enum Command {
     /// any command).
     Look,
     /// The system is about to sleep: the gyro's stream closed (its source dropped), then the
-    /// acknowledgement ([`crate::sleep::spawn_hold`]).
+    /// acknowledgement ([`crate::power::sleep::spawn_hold`]).
     Sleep(Ack),
     /// Awake again: the gyro found again.
     Woke,
