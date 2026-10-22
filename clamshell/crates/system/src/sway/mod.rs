@@ -28,7 +28,7 @@ mod windows;
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -189,33 +189,11 @@ pub fn spawn(socket: Option<PathBuf>, bottom: String, sink: impl Sink) -> io::Re
         return Ok(None);
     };
     let top = TopOutput { bottom, known: Arc::default() };
-    let exe = std::env::current_exe()?;
-    let commands_socket = socket.clone();
-    let commands_top = top.clone();
     let (down, land) = (DownRules::default(), LandRules::default());
-    let (commands_down, commands_land) = (down.clone(), land.clone());
+    let carrier = Carrier { socket: socket.clone(), top: top.clone(), exe: std::env::current_exe()?, down: down.clone(), land: land.clone() };
     let worker = Worker::spawn("sway commands", move |commands: Receiver<Command>| {
         for command in commands {
-            let rules = match &command {
-                Command::DownRules(rules) => Some((
-                    "down",
-                    Ipc::connect(&commands_socket)
-                        .map_err(Error::from)
-                        .and_then(|mut ipc| commands_down.apply(&mut ipc, Some(rules.clone()), false, &commands_top.bottom)),
-                )),
-                Command::LandRules(ids) => Some((
-                    "landing",
-                    Ipc::connect(&commands_socket).map_err(Error::from).and_then(|mut ipc| commands_land.apply(&mut ipc, Some(ids.clone()), false)),
-                )),
-                _ => None,
-            };
-            if let Some((what, applied)) = rules {
-                if let Err(e) = applied {
-                    log::warn!("sway: {what} rules: {e}");
-                }
-                continue;
-            }
-            if let Err(e) = carry_out(&commands_socket, &commands_top, &exe, &command) {
+            if let Err(e) = carrier.carry_out(&command) {
                 log::warn!("sway: {command:?}: {e}");
             }
         }
@@ -225,27 +203,40 @@ pub fn spawn(socket: Option<PathBuf>, bottom: String, sink: impl Sink) -> io::Re
     Ok(Some(worker))
 }
 
-/// Carries out one command on a connection of its own (sway may have restarted since the last).
-fn carry_out(socket: &Path, top: &TopOutput, exe: &Path, command: &Command) -> Result<(), Error> {
-    let mut ipc = Ipc::connect(socket)?;
-    let bottom = top.bottom.clone();
-    let top = top.get(&mut ipc);
-    let top = top.as_deref();
-    let text = match command {
-        Command::Workspace(name) => commands::show(name, top),
-        Command::Launch { workspace, job } => commands::launch(workspace, job, exe, top)?,
-        Command::Close(id) => commands::close(*id),
-        Command::Move { windows, workspace } => commands::move_windows(windows, workspace, top),
-        Command::Down(id) => commands::down(*id, top),
-        Command::Up { window, workspace } => commands::up(*window, workspace.as_deref(), top),
-        Command::ShowDown(id) => commands::show_down(*id, top),
-        Command::Power(on) => commands::power(&bottom, *on),
-        Command::DownRules(_) | Command::LandRules(_) => return Ok(()),
-    };
-    if let Some(error) = ipc::refused(&ipc.command(&text)?) {
-        log::debug!("sway: {text}: {error}");
+/// The commands' thread: what carrying them out needs. The rules are shared with the windows' thread, which
+/// applies them again when sway restarts.
+struct Carrier {
+    socket: PathBuf,
+    top: TopOutput,
+    exe: PathBuf,
+    down: DownRules,
+    land: LandRules,
+}
+
+impl Carrier {
+    /// Carries out one command on a connection of its own (sway may have restarted since the last).
+    fn carry_out(&self, command: &Command) -> Result<(), Error> {
+        let mut ipc = Ipc::connect(&self.socket)?;
+        let (bottom, exe) = (&self.top.bottom, &self.exe);
+        let top = self.top.get(&mut ipc);
+        let top = top.as_deref();
+        let text = match command {
+            Command::DownRules(rules) => return self.down.apply(&mut ipc, Some(rules.clone()), false, bottom),
+            Command::LandRules(ids) => return self.land.apply(&mut ipc, Some(ids.clone()), false),
+            Command::Workspace(name) => commands::show(name, top),
+            Command::Launch { workspace, job } => commands::launch(workspace, job, exe, top)?,
+            Command::Close(id) => commands::close(*id),
+            Command::Move { windows, workspace } => commands::move_windows(windows, workspace, top),
+            Command::Down(id) => commands::down(*id, top),
+            Command::Up { window, workspace } => commands::up(*window, workspace.as_deref(), top),
+            Command::ShowDown(id) => commands::show_down(*id, top),
+            Command::Power(on) => commands::power(bottom, *on),
+        };
+        if let Some(error) = ipc::refused(&ipc.command(&text)?) {
+            log::debug!("sway: {text}: {error}");
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 /// The thread following sway's windows.
