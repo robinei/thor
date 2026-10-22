@@ -1,24 +1,32 @@
-//! Pointing: the second screen below the bar is a touchpad. A finger that would tap (a key, a button, a
-//! row, nothing) and moves far enough points instead (what it was on let go without a tap), handed with
-//! the other fingers then tapping to a virtual touchpad, so libinput moves the pointer, taps to click,
-//! scrolls with two fingers, drags. What moves of its own takes the motion first: a slider sideways, a
-//! list up and down (so on a list only a sideways move points), a held key nowhere. While it points the
-//! area below the bar fades, and fingers that come down on it point too, until none has been on it a
-//! moment or a text field takes focus. The touchpad tab is that area with nothing in it, always
-//! pointing: every finger below the bar points at once. The UI decides which fingers point (its input
-//! machine); the state keeps whether it points.
+//! Pointing: the second screen below the bar works as a touchpad.
+//!
+//! A finger that would tap something (a key, a button, a row, or nothing) and then moves far enough
+//! points instead, and what it was on is released without a tap. That finger, and any other fingers
+//! tapping at the time, are handed to a virtual touchpad, so libinput moves the pointer, taps to click,
+//! scrolls with two fingers and drags.
+//!
+//! Anything that moves by itself takes the motion first: a slider takes sideways motion and a list takes
+//! up and down, so on a list only a sideways move points. A held key never points.
+//!
+//! While it is pointing, the area below the bar fades, and fingers that come down on it point too. This
+//! lasts until no finger has been on it for a moment, or a text field takes focus. The touchpad tab is
+//! that area with nothing in it, always pointing, so every finger below the bar points at once.
+//!
+//! The UI decides which fingers point, in its input state machine. The state keeps whether it is
+//! pointing.
 
-/// What the virtual touchpad needs of the second screen's layout: its size in pixels (the touchscreen
-/// covers it). The UI updates it with every frame of the second screen.
+/// What the virtual touchpad needs from the second screen's layout: its size in pixels, which the
+/// touchscreen covers. The UI updates it with every frame of the second screen.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TouchLayout {
     pub screen: (f32, f32),
 }
 
-/// Fingers (slots) a touchpad tracks.
+/// How many fingers (slots) a touchpad tracks.
 pub const SLOTS: i32 = 10;
 
-/// A finger pointing on the keyboard: its slot (one per finger), what it did, and where (screen pixels).
+/// A finger pointing on the second screen: its slot (one per finger), what it did, and where it is in
+/// screen pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Contact {
     pub slot: u8,
@@ -34,8 +42,8 @@ pub enum ContactPhase {
     Up,
 }
 
-/// Pointing: the fingers' contacts in one touch frame (pointing starts, or goes on), or the fingers idle
-/// long enough that taps act again.
+/// Either the fingers' contacts in one touch frame, as pointing starts or goes on, or `Idle` once the
+/// fingers have been idle long enough that taps act again.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pointing {
     Contacts(Vec<Contact>),

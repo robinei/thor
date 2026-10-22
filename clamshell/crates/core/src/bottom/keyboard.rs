@@ -1,15 +1,15 @@
-//! The on-screen keyboard: a PC-style layout (US) with an Fn layer, modifiers that a tap arms for the
-//! next key or that act while held (as on a real keyboard, with another finger typing), and Caps Lock.
-//! Keys are identified by their position, so the same key keeps its id on both layers.
+//! The on-screen keyboard: a PC-style US layout with an Fn layer, and Caps Lock. A tap on a modifier arms
+//! it for the next key, and holding one makes it act while held, as on a real keyboard with another
+//! finger typing. Keys are identified by their position, so the same key keeps its id on both layers.
 
 /// What a key does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Key {
-    /// A printable ASCII character, unshifted (`a`, `1`, `[`); Shift picks the US shifted one.
+    /// A printable ASCII character, unshifted (`a`, `1`, `[`). Shift picks the US shifted one.
     Char(char),
     Named(Named),
     Mod(Modifier),
-    /// Caps Lock: on until tapped again; shifts letters only. Kept here (it isn't sent).
+    /// Caps Lock stays on until tapped again and shifts letters only. It is kept here and never sent.
     Caps,
 }
 
@@ -39,7 +39,7 @@ pub enum Modifier {
     Shift,
     Ctrl,
     Alt,
-    /// The logo key; sent to the app or compositor like any other modifier.
+    /// The logo key. It is sent to the app or compositor like any other modifier.
     Super,
     Fn,
 }
@@ -48,13 +48,14 @@ impl Modifier {
     pub const ALL: [Modifier; 5] = [Modifier::Shift, Modifier::Ctrl, Modifier::Alt, Modifier::Super, Modifier::Fn];
 }
 
-/// A modifier's state: armed by a tap for the next key, and held while a finger is on it. Holding it
-/// while typing makes it act for those keys and end with the finger; a tap without typing arms it.
+/// A modifier's state. A tap arms it for the next key, and it is held while a finger is on it. Holding
+/// it while typing makes it act for those keys and end when the finger lifts. A tap without typing arms
+/// it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Latch {
     pub armed: bool,
     pub held: bool,
-    /// A key was typed while held (so lifting ends it, rather than arming it).
+    /// A key was typed while it was held, so lifting ends it rather than arming it.
     used: bool,
 }
 
@@ -96,12 +97,14 @@ const fn n(k: Named) -> Key {
     Key::Named(k)
 }
 
-/// The layout: US letters and digits in their usual places, every row 10 units so keys use the full width.
-/// The most typed punctuation sits after the space bar, nearest the thumbs (; , . / and with Shift : < > ?);
-/// the rest has its own row on top with Esc, Tab and Caps Lock, - and = at its right as on a PC. Fn: F1-F10
-/// on the digits, F11 and F12 at the top right (on - and =), arrows on w/a/s/d under the left hand, and under
-/// the right a PC's six-key block with its outer columns swapped: PgUp, Home, Insert on i/o/p over PgDn, End,
-/// Delete on k/l/Backspace.
+/// The layout. US letters and digits are in their usual places, and every row is 10 units so the keys
+/// use the full width. The most typed punctuation (; , . / and with Shift : < > ?) sits after the space
+/// bar, nearest the thumbs. The rest has its own row on top with Esc, Tab and Caps Lock, with - and = at
+/// its right as on a PC.
+///
+/// The Fn layer has F1-F10 on the digits, and F11 and F12 at the top right on - and =. The arrows are on
+/// w/a/s/d under the left hand. Under the right hand is a PC's six-key block with its outer columns
+/// swapped: PgUp, Home and Insert on i/o/p, over PgDn, End and Delete on k/l/Backspace.
 pub const LAYOUT: &[&[Slot]] = &[
     &[
         named(Named::Esc, 1.0),
@@ -130,7 +133,7 @@ pub const LAYOUT: &[&[Slot]] = &[
         Slot { base: n(Named::Backspace), fn_key: Some(n(Named::Delete)), width: 1.0 },
     ],
     &[
-        // One Shift is enough: a tap arms it for one key, or hold it while typing.
+        // One Shift is enough, since a tap arms it for one key, or it can be held while typing.
         modifier(Modifier::Shift, 1.5),
         c('z'),
         c('x'),
@@ -144,7 +147,8 @@ pub const LAYOUT: &[&[Slot]] = &[
     &[
         modifier(Modifier::Fn, 1.0),
         modifier(Modifier::Ctrl, 1.0),
-        // Super (sway's shortcuts; rarely needed here) is Fn+Alt, for a wider space bar.
+        // Super is Fn+Alt, to leave room for a wider space bar. It is for sway's shortcuts and rarely
+        // needed here.
         Slot { base: Key::Mod(Modifier::Alt), fn_key: Some(Key::Mod(Modifier::Super)), width: 1.0 },
         Slot { base: Key::Char(' '), fn_key: None, width: 3.0 },
         c(';'),
@@ -154,7 +158,7 @@ pub const LAYOUT: &[&[Slot]] = &[
     ],
 ];
 
-/// A key's place on the layout: its stable id.
+/// A key's position on the layout, which is its stable id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct KeyPos {
     pub row: u8,
@@ -165,7 +169,7 @@ pub fn slot(pos: KeyPos) -> Option<&'static Slot> {
     LAYOUT.get(usize::from(pos.row))?.get(usize::from(pos.col))
 }
 
-/// The first position of `key` on the base layer (for tests and the pad's default focus).
+/// The first position of `key` on the base layer. Used by tests and for the pad's default focus.
 pub fn find(key: Key) -> Option<KeyPos> {
     LAYOUT.iter().enumerate().find_map(|(row, keys)| {
         let col = keys.iter().position(|s| s.base == key)?;
@@ -202,8 +206,8 @@ pub fn shifted(c: char) -> char {
     }
 }
 
-/// A key press to send to the focused app, with the modifiers held for it. `Char` stays unshifted; the
-/// receiver sends Shift as a modifier, as a real keyboard does.
+/// A key press to send to the focused app, with the modifiers held for it. `Char` stays unshifted, and
+/// the receiver sends Shift as a modifier, as a real keyboard does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Stroke {
     pub key: Key,
@@ -244,8 +248,8 @@ impl Keyboard {
         }
     }
 
-    /// Whether `key` is typed shifted now: Shift shifts anything; Caps Lock letters, which Shift then
-    /// turns back to lower case.
+    /// Whether `key` is typed shifted now. Shift shifts anything. Caps Lock shifts letters only, and
+    /// Shift then turns them back to lower case.
     pub fn shifts(&self, key: Key) -> bool {
         match key {
             Key::Char(c) if c.is_ascii_alphabetic() => self.shift.on() != self.caps,
@@ -253,7 +257,7 @@ impl Keyboard {
         }
     }
 
-    /// A finger came down on the key at `pos`: a modifier is held.
+    /// A finger came down on the key at `pos`. If it is a modifier, it is now held.
     pub fn down(&mut self, pos: KeyPos) {
         if let Some(Key::Mod(m)) = self.effective(pos) {
             let latch = self.latch_mut(m);
@@ -262,8 +266,9 @@ impl Keyboard {
         }
     }
 
-    /// The finger lifted from the key at `pos` (after its tap, if it was one): a modifier that was used
-    /// while held is done. (Either of the key's modifiers: Fn may have changed since it came down.)
+    /// The finger lifted from the key at `pos`, after its tap if it was one. A modifier that was used
+    /// while held is done. Both of the key's modifiers are checked, since Fn may have changed since the
+    /// finger came down.
     pub fn up(&mut self, pos: KeyPos) {
         let Some(slot) = slot(pos) else {
             return;
@@ -283,8 +288,8 @@ impl Keyboard {
         }
     }
 
-    /// The modifiers armed or held, as a chord of their own; they are let go (a chord of modifiers
-    /// alone is done).
+    /// Returns the modifiers armed or held as a chord of their own, and releases them, since a chord of
+    /// modifiers alone is complete.
     pub fn take_modifiers(&mut self) -> crate::keymap::Chord {
         let chord = crate::keymap::Chord { key: None, shift: self.shift.on(), ctrl: self.ctrl.on(), alt: self.alt.on(), logo: self.logo.on() };
         for m in Modifier::ALL {
@@ -295,7 +300,7 @@ impl Keyboard {
         chord
     }
 
-    /// What the key at `pos` does now (its Fn function while Fn is on).
+    /// What the key at `pos` does now. While Fn is on, this is its Fn function.
     pub fn effective(&self, pos: KeyPos) -> Option<Key> {
         let slot = slot(pos)?;
         Some(match (self.fn_layer.on(), slot.fn_key) {
@@ -304,15 +309,17 @@ impl Keyboard {
         })
     }
 
-    /// A tap (`long` = false) or long press on the key at `pos`; returns the stroke to send, if any. A tap
-    /// on a modifier arms or disarms it (a long press on one does nothing: holding is `down` and `up`).
+    /// A tap (`long` = false) or long press on the key at `pos`. Returns the stroke to send, if any. A
+    /// tap on a modifier arms or disarms it. A long press on one does nothing, since holding is handled
+    /// by `down` and `up`.
     pub fn press(&mut self, pos: KeyPos, long: bool) -> Option<Stroke> {
         match self.effective(pos)? {
             Key::Mod(m) => {
                 if !long {
                     let latch = self.latch_mut(m);
                     latch.armed = !latch.armed;
-                    // A modifier reached through Fn (Super on Alt) uses Fn up, so the next key is plain.
+                    // A modifier reached through Fn, such as Super on Alt, uses up Fn, so the next key
+                    // is plain.
                     if slot(pos).is_some_and(|s| s.base != Key::Mod(m)) && !self.fn_layer.held {
                         self.fn_layer.armed = false;
                     }
@@ -325,7 +332,7 @@ impl Keyboard {
             }
             key => {
                 let stroke = Stroke { key, shift: self.shifts(key), ctrl: self.ctrl.on(), alt: self.alt.on(), logo: self.logo.on() };
-                // Armed modifiers are used up; held ones stay until lifted.
+                // Armed modifiers are used up. Held ones stay until lifted.
                 for m in Modifier::ALL {
                     let latch = self.latch_mut(m);
                     if latch.held {
@@ -376,7 +383,7 @@ mod tests {
         }
     }
 
-    /// A finger on a key and off again, as the input side reports it: down, the tap, up.
+    /// A finger on a key and off again, as the input side reports it: down, the tap, then up.
     fn touch(kb: &mut Keyboard, key: Key) -> Option<Stroke> {
         let p = pos(key);
         kb.down(p);
@@ -403,7 +410,7 @@ mod tests {
         kb.down(shift);
         assert!(touch(&mut kb, Key::Char('h')).unwrap().shift);
         assert!(touch(&mut kb, Key::Char('e')).unwrap().shift, "still held");
-        // Held past a long press: the long press does nothing, lifting ends it.
+        // Held past a long press: the long press does nothing, and lifting ends it.
         kb.press(shift, true);
         kb.up(shift);
         assert!(!touch(&mut kb, Key::Char('l')).unwrap().shift);

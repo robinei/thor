@@ -1,7 +1,7 @@
-//! The editor: a line of text typed on the on-screen keyboard (Enter saves, Esc cancels), for a game's
-//! environment, a Wi-Fi password, a keymap's name or a file's. Its keys, Save and Cancel, and the
-//! clipboard pasted into it, are the state's here; what a saved text does is its purpose's (the settings,
-//! Wi-Fi, keymaps, files).
+//! The editor: a line of text typed on the on-screen keyboard, where Enter saves and Esc cancels. It is
+//! used for a game's environment, a Wi-Fi password, a keymap's name or a file's name. Its keys, its Save
+//! and Cancel buttons, and pasting the clipboard into it are handled here. What a saved text does is up
+//! to the module it is for: the settings, Wi-Fi, keymaps or files.
 
 use std::fmt;
 use std::sync::Arc;
@@ -18,7 +18,7 @@ pub struct Editor {
 }
 
 impl fmt::Debug for Editor {
-    /// A password typed is kept out of logs, as a [`crate::kit::secret::Secret`] is.
+    /// Keeps a typed password out of logs, as [`crate::kit::secret::Secret`] does.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let password = matches!(self.purpose, Purpose::Password { .. } | Purpose::AccountPassword(_));
         let text: &dyn fmt::Debug = if password { &"…" } else { &self.text };
@@ -27,8 +27,8 @@ impl fmt::Debug for Editor {
 }
 
 impl Editor {
-    /// The tab it shows on: Wi-Fi for a network's password, Settings for the environment and a keymap's
-    /// name, and Keyboard for the account password and a file's name.
+    /// The tab the editor shows on: Wi-Fi for a network's password, Settings for the environment and a
+    /// keymap's name, and Keyboard for the account password and a file's name.
     pub fn tab(&self) -> crate::Tab {
         match self.purpose {
             Purpose::Password { .. } => crate::Tab::Wifi,
@@ -61,7 +61,8 @@ pub enum KeymapName {
     Duplicate(u16),
     /// A copy of a game's own keymap, as a new named one.
     SaveAs(u16),
-    /// A new layer of this keymap (shown once made); for an input, mapped to it.
+    /// A new layer of this keymap, shown once it is made. If an input is given, it is mapped to the
+    /// layer.
     NewLayer(u16, Option<(crate::keymap::Input, crate::keymap::Actuation)>),
     RenameLayer(u16, crate::keymap::Layer),
 }
@@ -74,13 +75,13 @@ pub enum Done {
 }
 
 impl Editor {
-    /// Adds `text` (a line: its line breaks as spaces, its ends trimmed of them).
+    /// Adds `text` as one line. Line breaks at the ends are trimmed and the rest become spaces.
     pub fn paste(&mut self, text: &str) {
         let line: String = text.trim_matches(['\n', '\r']).chars().map(|c| if c == '\n' || c == '\r' { ' ' } else { c }).collect();
         self.text.push_str(&line);
     }
 
-    /// Types `stroke`: a character or Backspace; Enter saves, Esc cancels.
+    /// Types `stroke`, a character or Backspace. Enter saves and Esc cancels.
     pub fn key(&mut self, stroke: Stroke) -> Option<Done> {
         match stroke.key {
             Key::Char(c) if !stroke.ctrl && !stroke.alt && !stroke.logo => {
@@ -106,14 +107,15 @@ impl crate::State {
         }
     }
 
-    /// The clipboard's text into the open editor (Ctrl+V, or a right click), if there is one.
+    /// Pastes the clipboard's text into the open editor, if there is one. Used by Ctrl+V and a right
+    /// click.
     pub(crate) fn paste(&mut self) {
         if let (Some(text), Some(editor)) = (self.clipboard.clone(), self.bottom.editor_mut()) {
             editor.paste(&text);
         }
     }
 
-    /// A key from the on-screen keyboard while the editor is open: Ctrl+V pastes the clipboard's text.
+    /// A key from the on-screen keyboard while the editor is open. Ctrl+V pastes the clipboard's text.
     pub(crate) fn edit(&mut self, stroke: Stroke) -> Vec<Effect> {
         if stroke.ctrl && !stroke.alt && stroke.key == crate::bottom::keyboard::Key::Char('v') {
             self.paste();
@@ -126,7 +128,8 @@ impl crate::State {
         }
     }
 
-    /// The editor's Cancel: closed (a file's name: back to the tab the keyboard came up from).
+    /// The editor's Cancel closes it. For a file's name, it also goes back to the tab the keyboard came
+    /// up from.
     fn cancel_editor(&mut self) -> Vec<Effect> {
         match self.bottom.close_editor().map(|e| e.purpose) {
             Some(Purpose::FileName(_)) => self.file_name_cancelled(),
@@ -134,7 +137,8 @@ impl crate::State {
         }
     }
 
-    /// The editor's Save: the environment saved, or the network joined with the password.
+    /// The editor's Save closes it and hands the text to its purpose: the environment is saved, the
+    /// network joined with the password, the keymap or file named, or the account password used.
     fn save_editor(&mut self) -> Vec<Effect> {
         let Some(editor) = self.bottom.close_editor() else {
             return vec![];

@@ -1,8 +1,10 @@
-//! The second screen: its tabs, chosen from the bar (the last one chosen stays, also across restarts),
-//! and what belongs to the screen rather than to a tab's subject: the editor over the keyboard, the
-//! settings panel's scope, the keyboard a text field brought up, and the screen being dark while a game
-//! runs. Volume and brightness open from their controls, Bluetooth, Wi-Fi and Battery from their status
-//! icons; all are tabs alike.
+//! The second screen. Its tabs are chosen from the bar, and the last one chosen stays, also across
+//! restarts. This module also holds what belongs to the screen rather than to a tab's subject: the
+//! editor over the keyboard, the settings panel's scope, the keyboard a text field brought up, and the
+//! screen going dark while a game runs.
+//!
+//! Volume and brightness open from their controls, and Bluetooth, Wi-Fi and Battery from their status
+//! icons. All of them are ordinary tabs.
 
 pub mod editor;
 pub mod keyboard;
@@ -20,7 +22,7 @@ use editor::Editor;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Tab {
     Settings,
-    /// The apps at hand and what runs (the game first).
+    /// The apps at hand and what is running, with the game first.
     Dock,
     Keyboard,
     Touchpad,
@@ -31,11 +33,11 @@ pub enum Tab {
     Wifi,
     Bluetooth,
     Battery,
-    /// The clock's: the time zone.
+    /// The clock's tab, for the time zone.
     Time,
 }
 
-// (In the bar's order.)
+// In the bar's order.
 names!(Tab {
     Settings: "settings";
     Dock: "dock";
@@ -51,12 +53,12 @@ names!(Tab {
 });
 
 impl Tab {
-    /// Whether it has a button of its own in the bar (the time tab's is the clock).
+    /// Whether the tab has its own button in the bar. The time tab's button is the clock.
     pub fn in_bar(self) -> bool {
         self != Tab::Time
     }
 
-    /// What the tab watches while open (the system read for it).
+    /// What the tab watches while open, meaning what is read from the system for it.
     pub fn watch(self) -> Option<Watch> {
         match self {
             Tab::Volume => Some(Watch::Audio),
@@ -70,14 +72,14 @@ impl Tab {
         }
     }
 
-    /// Whether the second screen shows `reading` with this tab open: the bar shows the status and
-    /// Bluetooth always, the tabs their own readings.
+    /// Whether the second screen shows `reading` with this tab open. The bar always shows the status
+    /// and Bluetooth, and each tab shows its own readings.
     pub fn shows(self, reading: &Reading) -> bool {
         match reading {
             Reading::Status(_) | Reading::Bluetooth(_) => true,
-            // (An editor's Paste, in any tab that has one.)
+            // For an editor's Paste, in any tab that has one.
             Reading::Clipboard(_) => true,
-            // (The dock's.)
+            // Shown in the dock.
             Reading::Icon { .. } => true,
             Reading::Metrics(_) => matches!(self, Tab::Sysinfo | Tab::Battery),
             Reading::Frames { .. } => self == Tab::Sysinfo,
@@ -85,9 +87,9 @@ impl Tab {
             Reading::Battery(_) => self == Tab::Battery,
             Reading::Audio(_) => self == Tab::Volume,
             Reading::Backlights(_) => self == Tab::Brightness,
-            // (The clock shows it too.)
+            // The clock shows it too.
             Reading::Time(_) => true,
-            // (The Device view's, on the main screen.)
+            // Shown in the Device view, on the main screen.
             Reading::Account(_) => false,
         }
     }
@@ -97,28 +99,29 @@ impl Tab {
 #[derive(Debug, Clone, Default)]
 pub struct Bottom {
     pub(crate) tab: Tab,
-    /// When the second screen was last touched, or the pad's focus was on it (monotonic seconds, as in [`crate::Event::Tick`]; none
-    /// before the clock's first reading), and whether it is drawn dimmed (see
-    /// [`crate::State::bottom_dimmed`]).
+    /// When the second screen was last touched or had the pad's focus, in monotonic seconds as in
+    /// [`crate::Event::Tick`]. None before the clock's first reading. Also whether the screen is drawn
+    /// dimmed (see [`crate::State::bottom_dimmed`]).
     pub(crate) used_at: Option<u64>,
     pub(crate) dimmed: bool,
-    /// The tab the keyboard was brought up from by an app's text field: back there when the field is
-    /// done, unless the user chose a tab meanwhile.
+    /// The tab that was open when an app's text field brought up the keyboard. The screen goes back to it
+    /// when the field is done, unless the user chose a tab in the meantime.
     pub(crate) raised_from: Option<Tab>,
-    /// The texts being edited (a game's environment, a Wi-Fi password), each in its own tab, kept while
-    /// another tab is shown (at most one a tab).
+    /// The texts being edited, such as a game's environment or a Wi-Fi password. Each is in its own tab,
+    /// at most one per tab, and is kept while another tab is shown.
     pub(crate) editors: Vec<Editor>,
-    /// What the settings panel edits (global whenever there is no game in context).
+    /// What the settings panel edits. It is global whenever there is no game in context.
     pub(crate) scope: Scope,
-    /// The dark second screen was tapped awake (until the next game).
+    /// The darkened second screen was tapped awake. This lasts until the next game.
     pub(crate) woken: bool,
-    /// What the bottom screen shows (ClamShell's view or a window moved down), and whether it is off.
+    /// What the bottom screen shows, ClamShell's view or a window moved down, and whether it is off.
     pub(crate) screen: crate::bottom::screen::BottomScreen,
     /// What the time tab shows: its main page, the regions, or a region's zones.
     pub(crate) time_page: crate::status::time::TimePage,
-    /// What a key just did (a level, a screenshot), shown under the bar for a moment.
+    /// What a key just did, such as change a level or take a screenshot, shown under the bar for a
+    /// moment.
     pub(crate) notice: Option<crate::bottom::notice::Notice>,
-    /// The area below the bar points (see [`crate::bottom::touch`]).
+    /// Whether the area below the bar is pointing (see [`crate::bottom::touch`]).
     pub(crate) pointing: bool,
 }
 
@@ -127,7 +130,8 @@ impl Bottom {
         self.tab
     }
 
-    /// Whether the area below the bar points (see [`crate::bottom::touch`]): always in the touchpad tab.
+    /// Whether the area below the bar is pointing (see [`crate::bottom::touch`]). It always is in the
+    /// touchpad tab.
     pub fn pointing(&self) -> bool {
         self.pointing || self.tab == Tab::Touchpad
     }
@@ -142,13 +146,13 @@ impl Bottom {
         self.editors.iter_mut().find(|e| e.tab() == tab)
     }
 
-    /// Opens an editor in its tab (one there before is replaced).
+    /// Opens an editor in its tab, replacing any editor already there.
     pub(crate) fn open_editor(&mut self, editor: Editor) {
         self.editors.retain(|e| e.tab() != editor.tab());
         self.editors.push(editor);
     }
 
-    /// Closes the editor of the tab shown, giving it back.
+    /// Closes the editor of the tab shown and returns it.
     pub(crate) fn close_editor(&mut self) -> Option<Editor> {
         let tab = self.tab;
         let i = self.editors.iter().position(|e| e.tab() == tab)?;
@@ -163,16 +167,16 @@ impl Bottom {
         self.scope
     }
 
-    /// The tab to come back to after a restart: the one chosen, not the keyboard a text field brought
-    /// up.
+    /// The tab to come back to after a restart. This is the tab that was chosen, not the keyboard a text
+    /// field brought up.
     pub fn chosen_tab(&self) -> Tab {
         self.raised_from.unwrap_or(self.tab)
     }
 }
 
 impl State {
-    /// The user chose a tab (its icon, a control's tap, the shoulder buttons): it stays, also over a
-    /// keyboard a text field brought up.
+    /// The user chose a tab, by its icon, by tapping a control, or with the shoulder buttons. The tab
+    /// stays, even if a text field had brought up the keyboard.
     pub(crate) fn choose_tab(&mut self, tab: Tab) -> Vec<Effect> {
         if self.bottom.raised_from.take().is_some() {
             self.saves.resume.touch(self.mono_secs);
@@ -180,8 +184,9 @@ impl State {
         self.set_tab(tab)
     }
 
-    /// Changes the second screen's tab (its watch follows: see [`State::follow_watch`]); a level being set
-    /// ends. What the tab left had open (an editor, the keymaps' screens) stays for coming back to.
+    /// Changes the second screen's tab, and its watch follows (see [`State::follow_watch`]). Any level
+    /// being set is released. Whatever the old tab had open, such as an editor or the keymap screens,
+    /// stays there for coming back to.
     pub(crate) fn set_tab(&mut self, tab: Tab) -> Vec<Effect> {
         if tab == self.bottom.tab {
             return vec![];
@@ -192,17 +197,19 @@ impl State {
         self.dock.moving = None;
         // No level row of the tab left is being set any more.
         self.levels.release();
-        // (The time tab opens on its main page again.)
+        // The time tab opens on its main page again.
         self.bottom.time_page = TimePage::Main;
         vec![]
     }
 
-    /// What the second screen watches: the open tab's (the dock's, with an entry's menu open: what the
-    /// entry costs, the battery tab's readings), while it can be seen (ClamShell's view on the bottom
-    /// screen, that on, the screens on) and the UI is up. Its watch started and stopped as that changes.
+    /// Keeps the second screen's watch up to date. It watches what the open tab watches, while the tab
+    /// can be seen and the UI is up. It can be seen when ClamShell's view is on the bottom screen, that
+    /// screen is on, and the screens aren't off for idle. The dock with an entry's menu open watches the
+    /// battery tab's readings, to show what the entry costs. Watches are started and stopped as this
+    /// changes.
     pub(crate) fn follow_watch(&mut self) -> Vec<Effect> {
         let mut effects = Vec::new();
-        // (The bar's status: while the screens are on.)
+        // The bar's status is watched while the screens are on.
         let screens_off = self.idle.stage() >= crate::device::idle::Stage::Off;
         if screens_off != std::mem::replace(&mut self.status_unwatched, screens_off) {
             effects.push(Effect::Watch(Watch::Status, !screens_off));
@@ -212,7 +219,7 @@ impl State {
             Tab::Dock if self.dock.menu.is_some() => Some(Watch::Battery),
             tab => tab.watch(),
         };
-        // (The account: while the Device view is open and the UI up.)
+        // The account is watched while the Device view is open and the UI is up.
         let account = self.ui_up && self.device.open;
         if account != std::mem::replace(&mut self.account_watched, account) {
             effects.push(Effect::Watch(Watch::Account, account));
@@ -226,11 +233,11 @@ impl State {
         effects
     }
 
-    /// A text field wants typing (or is done): the keyboard comes up, and goes back to the tab it came up
-    /// from when the field is done, unless the user chose a tab meanwhile.
+    /// A text field wants typing, or is done. The keyboard comes up, and when the field is done the
+    /// screen goes back to the tab it came from, unless the user chose a tab in the meantime.
     pub(crate) fn text_input(&mut self, active: bool) -> Vec<Effect> {
         if active {
-            // (Not over an open editor: what is typed there would be lost.)
+            // Not over an open editor, since what is typed there would be lost.
             if self.bottom.tab == Tab::Keyboard || self.bottom.editor().is_some() {
                 return vec![];
             }
@@ -270,7 +277,7 @@ mod tests {
         let (dirty, fx) = s.apply(Event::TextInput(true));
         assert_eq!(s.bottom().tab(), Tab::Keyboard);
         assert_eq!((dirty, fx), (Dirty::BOTH, vec![Effect::PadRoute(PadRoute::Keys)]));
-        // (The app in front has the pad again, as a game would.)
+        // The app in front has the pad again, as a game would.
         let back = vec![Effect::PadRoute(PadRoute::Game)];
         assert_eq!(s.apply(Event::TextInput(false)).1, back);
         assert_eq!(s.bottom().tab(), Tab::Touchpad, "back where it came from");
@@ -286,7 +293,7 @@ mod tests {
         s.apply(Event::TextInput(false));
         assert_eq!(s.bottom().tab(), Tab::Keyboard);
         assert_eq!(s.resume().tab, "keyboard");
-        // Already on the keyboard: nothing to go back to.
+        // Already on the keyboard, so there is nothing to go back to.
         tap(&mut s, Id::Tab(Tab::Dock));
         tap(&mut s, Id::Tab(Tab::Keyboard));
         s.apply(Event::TextInput(true));

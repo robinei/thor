@@ -1,17 +1,21 @@
-//! The bottom screen shared with programs' windows (a dual-screen emulator's second screen). Home+Down
-//! moves the window shown on the top screen down (sway marks it, so it stays), Home+Up the one shown
-//! below back up. The windows down there are tabs of one workspace (a tap on a tab shows it); Home+Select
-//! switches the bottom screen between ClamShell's view and them (nothing without one); Home+Start turns
-//! the bottom screen off and on. None of it takes the keyboard from the window in front on the top
-//! screen.
+//! The bottom screen shared with programs' windows, such as a dual-screen emulator's second screen.
 //!
-//! Moving a game's or a dock app's window down is remembered as a rule ([`WindowRule`]: the program and
-//! the window's app id; its title too only when the program has another window of that app id open, as a
-//! dual-screen emulator does, since titles change with what a window shows): the next time it opens a
-//! window like it, the window goes down by itself. Moving it up forgets the rule. The rules are saved, and
-//! given to sway ([`WindowCommand::DownRules`]), which places a matching window on the bottom screen as
-//! it opens, before it is drawn; ClamShell then marks it as one moved down (and moves it there itself if
-//! sway's rule didn't: by app id and title alone, sway can't tell whose a window is).
+//! Home+Down moves the window shown on the top screen down, and sway marks it so it stays there. Home+Up
+//! moves the one shown below back up. The windows on the bottom screen are tabs of one workspace, and a
+//! tap on a tab shows it. Home+Select switches the bottom screen between ClamShell's view and those
+//! windows, and does nothing if there are none. Home+Start turns the bottom screen off and on. None of
+//! this takes the keyboard from the window in front on the top screen.
+//!
+//! Moving a game's or a dock app's window down is remembered as a rule ([`WindowRule`]), so the next
+//! time the program opens a window like it, the window goes down by itself. Moving it up forgets the
+//! rule. A rule holds the program and the window's app id. It holds the title too, but only when the
+//! program has another window with that app id open, as a dual-screen emulator does, since titles change
+//! with what a window shows.
+//!
+//! The rules are saved and given to sway ([`WindowCommand::DownRules`]), which places a matching window
+//! on the bottom screen as it opens, before it is drawn. ClamShell then marks it as moved down. If sway's
+//! rule didn't move it, ClamShell moves it itself, since by app id and title alone sway can't tell which
+//! program a window belongs to.
 
 use std::sync::Arc;
 
@@ -22,8 +26,8 @@ use crate::session::instance::Instance;
 use crate::session::windows::Window;
 use crate::settings::BottomWhenIdle;
 
-/// A window that goes to the bottom screen when its entry opens it: the entry's (by its id), with this
-/// app id and, if said, this title.
+/// A window that goes to the bottom screen when its entry opens it. The rule names the entry by its id,
+/// the app id, and optionally the title.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowRule {
     pub owner: Arc<str>,
@@ -36,14 +40,14 @@ impl WindowRule {
         &*self.owner == owner && self.down_rule().matches(w)
     }
 
-    /// What sway can match a window by: its app id and title (not whose it is).
+    /// What sway can match a window by: its app id and title, but not which program it belongs to.
     pub fn down_rule(&self) -> DownRule {
         DownRule { app_id: self.app_id.clone(), title: self.title.clone() }
     }
 }
 
-/// A window that goes to the bottom screen as it opens, as sway matches it: by app id, and title if
-/// said.
+/// A window that goes to the bottom screen as it opens, as sway matches it: by app id, and by title if
+/// one is given.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DownRule {
     pub app_id: String,
@@ -56,14 +60,14 @@ impl DownRule {
     }
 }
 
-/// The rules: which programs' windows go to the bottom screen.
+/// The rules for which programs' windows go to the bottom screen.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct WindowRules {
     list: Vec<WindowRule>,
 }
 
 impl WindowRules {
-    /// These rules, as saved.
+    /// The rules from their saved list.
     pub fn from_list(list: Vec<WindowRule>) -> WindowRules {
         WindowRules { list }
     }
@@ -72,7 +76,7 @@ impl WindowRules {
         &self.list
     }
 
-    /// Adds a rule (unless there is one like it); whether it was new.
+    /// Adds a rule unless there is one like it. Returns whether it was new.
     fn add(&mut self, rule: WindowRule) -> bool {
         if self.list.contains(&rule) {
             return false;
@@ -81,7 +85,7 @@ impl WindowRules {
         true
     }
 
-    /// Forgets the rules a window of `owner`'s matches; whether there were any.
+    /// Forgets the rules that match a window of `owner`. Returns whether there were any.
     fn forget(&mut self, owner: &str, w: &Window) -> bool {
         let before = self.list.len();
         self.list.retain(|r| !r.matches(owner, w));
@@ -92,7 +96,7 @@ impl WindowRules {
         self.list.iter().any(|r| r.matches(owner, w))
     }
 
-    /// For sway: what the rules match, each once.
+    /// What the rules match, for sway, without duplicates.
     pub fn down_rules(&self) -> Vec<DownRule> {
         let mut out: Vec<DownRule> = Vec::new();
         for rule in self.list.iter().map(WindowRule::down_rule) {
@@ -107,48 +111,50 @@ impl WindowRules {
 /// What the bottom screen shows, besides being on or off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct BottomScreen {
-    /// The windows moved down (the tab sway shows), over ClamShell's view; else ClamShell's view.
+    /// Whether the bottom screen shows the windows moved down (the tab sway shows) over ClamShell's
+    /// view, rather than ClamShell's view.
     pub(crate) windows: bool,
     /// Turned off with Home+Start.
     pub(crate) off: bool,
-    /// Turned off by itself: idle (or dark) on battery ([`State::follow_bottom_power`]).
+    /// Turned off by itself, when idle or dark on battery ([`State::follow_bottom_power`]).
     pub(crate) idle_off: bool,
 }
 
-/// How long the second screen goes untouched, the pad's focus not on it, before it dims; and after that
-/// before it powers off by itself (on battery, the setting not "Screen on": see
-/// [`State::follow_bottom_power`]).
+/// How long, in seconds, the second screen goes untouched and without the pad's focus before it dims,
+/// and after that before it powers off by itself. It only powers off on battery and when the setting
+/// isn't "Screen on" (see [`State::follow_bottom_power`]).
 const DIM_AFTER: u64 = 60;
 const OFF_AFTER: u64 = 180;
 
 impl State {
-    /// The second screen is dark: a program is in force that wants it so, and it hasn't been tapped
-    /// since.
+    /// Whether the second screen is dark. It is when the program in force wants it dark and the screen
+    /// hasn't been tapped since.
     pub fn bottom_dark(&self) -> bool {
         self.session.program.is_some() && self.in_force().choice::<BottomWhenIdle>() == BottomWhenIdle::DarkInGame && !self.bottom.woken
     }
 
-    /// Whether the second screen is drawn dimmed: ClamShell's view on it (not windows moved there, which
-    /// are watched without touching), untouched and the pad's focus not on it for [`DIM_AFTER`]. A game
-    /// played with the pad on the main screen keeps the device awake, while nobody looks below: the OLED
-    /// spared. A touch on it, or the pad's focus coming to it, brings it back.
+    /// Whether the second screen is drawn dimmed. It is when it shows ClamShell's view and has gone
+    /// untouched, without the pad's focus, for [`DIM_AFTER`]. Windows moved there are never dimmed, since
+    /// they are watched without touching. This spares the OLED while a game played with the pad on the
+    /// main screen keeps the device awake and nobody looks below. A touch on it, or the pad's focus
+    /// coming to it, brings it back.
     pub fn bottom_dimmed(&self) -> bool {
         !self.bottom_shows_windows() && self.bottom_idle_for() >= DIM_AFTER
     }
 
-    /// Seconds since the second screen was last used (0 before the clock's first reading).
+    /// Seconds since the second screen was last used, or 0 before the clock's first reading.
     fn bottom_idle_for(&self) -> u64 {
         self.bottom.used_at.map_or(0, |at| self.mono_secs.saturating_sub(at))
     }
 
-    /// The second screen in use: lit (redrawn, if it was dimmed).
+    /// The second screen is in use, so it is lit, and redrawn if it was dimmed.
     pub(crate) fn bottom_used(&mut self) -> Dirty {
         self.bottom.used_at = Some(self.mono_secs);
         if self.follow_bottom_dim() { Dirty::BOTTOM } else { Dirty::NONE }
     }
 
-    /// After any event: whether the second screen's dimming changed (to redraw it). Its time counts from
-    /// the first clock reading.
+    /// Runs after any event. Returns whether the second screen's dimming changed, so it can be redrawn.
+    /// The time counts from the first clock reading.
     pub(crate) fn follow_bottom_dim(&mut self) -> bool {
         if self.bottom.used_at.is_none() && self.clock_read() {
             self.bottom.used_at = Some(self.mono_secs);
@@ -167,15 +173,17 @@ impl State {
         self.bottom.screen.windows && self.windows_down().next().is_some()
     }
 
-    /// Whether the bottom screen is turned off (by hand, or by itself).
+    /// Whether the bottom screen is turned off, by hand or by itself.
     pub fn bottom_off(&self) -> bool {
         self.bottom.screen.off || self.bottom.screen.idle_off
     }
 
-    /// Whether the bottom screen is to be off by itself: on battery, the setting in force not "Screen on",
-    /// ClamShell's view on it (no window moved down) with nothing being typed there; and dark for a game
-    /// (not tapped since), or untouched (the pad's focus not on it) [`DIM_AFTER`] and [`OFF_AFTER`] more.
-    /// The panel is driven in video mode, streamed every frame whatever it shows: only off saves that.
+    /// Whether the bottom screen should be off by itself. That needs all of: running on battery, the
+    /// setting in force not "Screen on", no refresh calibration running, ClamShell's view on it rather
+    /// than a window moved down, and nothing being typed there. On top of that, the screen must be dark
+    /// for a game and not tapped since, or untouched and without the pad's focus for [`DIM_AFTER`] plus
+    /// [`OFF_AFTER`]. The panel is driven in video mode and streamed every frame whatever it shows, so
+    /// only turning it off saves power.
     fn bottom_idle_wanted(&self) -> bool {
         let untouched = self.bottom_idle_for() >= DIM_AFTER + OFF_AFTER;
         self.sys.status.discharging
@@ -186,9 +194,10 @@ impl State {
             && (self.bottom_dark() || untouched)
     }
 
-    /// After any event: the bottom screen off or on by itself as [`State::bottom_idle_wanted`] says (a
-    /// touch, the pad's focus, a window moved down, the charger: on again). Not while it is off by hand,
-    /// nor while both screens are off (idle): the screens' coming back reads [`State::bottom_off`].
+    /// Runs after any event. Turns the bottom screen off or on by itself as [`State::bottom_idle_wanted`]
+    /// says. A touch, the pad's focus, a window moved down or the charger turn it on again. Does nothing
+    /// while it is off by hand, or while both screens are off for idle; when the screens come back they
+    /// read [`State::bottom_off`].
     pub(crate) fn follow_bottom_power(&mut self) -> Vec<Effect> {
         let wanted = self.bottom_idle_wanted();
         let screens_off = self.idle.stage() >= crate::device::idle::Stage::Off;
@@ -198,19 +207,20 @@ impl State {
         vec![Effect::Window(WindowCommand::BottomPower(!wanted))]
     }
 
-    /// Whose a window is, for a rule: the running entry's it belongs to.
+    /// Which running entry a window belongs to, for a rule.
     fn owner(&self, w: &Window) -> Option<Arc<str>> {
         self.session.running_of(w).map(|r| r.id.clone())
     }
 
-    /// Home+Down: the window in front on the top screen to the bottom screen, shown there, and
-    /// remembered for its program.
+    /// Home+Down moves the window in front on the top screen to the bottom screen, shows it there, and
+    /// remembers it for its program.
     pub(crate) fn window_down(&mut self) -> Vec<Effect> {
         let Some(w) = self.session.windows.iter().find(|w| w.focused && !w.down && w.home() != Some(Instance::Shelf)).cloned() else {
             return vec![];
         };
         let mut effects = self.show_down(w.id);
-        // (Its title only to tell it from another window of its program with its app id.)
+        // The title is only used to tell it apart from another window of its program with the same
+        // app id.
         let others = self.session.windows.iter().any(|o| o.id != w.id && o.app_id == w.app_id && o.unit == w.unit);
         let title = others.then(|| w.title.clone());
         if let Some(owner) = self.owner(&w)
@@ -223,7 +233,7 @@ impl State {
         effects
     }
 
-    /// A window moved down and shown there (the bottom screen on again if it was off).
+    /// Moves a window down and shows it there, turning the bottom screen on again if it was off.
     fn show_down(&mut self, id: i64) -> Vec<Effect> {
         self.bottom.screen.windows = true;
         let mut effects = vec![Effect::Window(WindowCommand::Down(id))];
@@ -233,8 +243,9 @@ impl State {
         effects
     }
 
-    /// Home+Up: the window the bottom screen shows (its tab in view) back to its place on the top screen,
-    /// and its rule forgotten. The bottom screen shows the next tab, or ClamShell's view after the last.
+    /// Home+Up moves the window the bottom screen shows (the tab in view) back to its place on the top
+    /// screen, and forgets its rule. The bottom screen then shows the next tab, or ClamShell's view after
+    /// the last one.
     pub(crate) fn window_up(&mut self) -> Vec<Effect> {
         if !self.bottom_shows_windows() {
             return vec![];
@@ -253,13 +264,13 @@ impl State {
         effects
     }
 
-    /// The rules as sway is to place windows by them.
+    /// The rules in the form sway uses to place windows.
     pub(crate) fn down_rules_effect(&self) -> Effect {
         Effect::Window(WindowCommand::DownRules(self.window_rules.down_rules()))
     }
 
-    /// Home+Select: the bottom screen shows the windows moved there, or ClamShell's view again; nothing
-    /// without a window down.
+    /// Home+Select switches the bottom screen between the windows moved there and ClamShell's view. It
+    /// does nothing when no window is down.
     pub(crate) fn toggle_bottom_view(&mut self) -> Vec<Effect> {
         if self.windows_down().next().is_some() {
             self.bottom.screen.windows = !self.bottom.screen.windows;
@@ -267,9 +278,9 @@ impl State {
         vec![]
     }
 
-    /// A window of the program in front on the top screen that is on the bottom screen, hidden by
-    /// ClamShell's view (the bar then offers to show them). By the windows' scopes, which our programs run
-    /// in (no allocation: the bar asks every frame).
+    /// A window of the program in front on the top screen that is on the bottom screen but hidden by
+    /// ClamShell's view. The bar then offers to show them. Windows are matched by their scopes, which our
+    /// programs run in. It doesn't allocate, since the bar asks every frame.
     pub fn hidden_down(&self) -> Option<i64> {
         if self.bottom_shows_windows() {
             return None;
@@ -278,13 +289,15 @@ impl State {
         self.windows_down().find(|w| w.unit.as_deref() == Some(front)).map(|w| w.id)
     }
 
-    /// A tap on a program whose windows are all on the bottom screen: shown there, its first tab in view.
+    /// A tap on a program whose windows are all on the bottom screen shows them there, with its first
+    /// tab in view.
     pub(crate) fn show_program_down(&mut self, window: i64) -> Vec<Effect> {
         self.bottom.screen.windows = true;
         vec![Effect::Window(WindowCommand::ShowDown(window))]
     }
 
-    /// Home+Start: the bottom screen off, or on again (off by itself: on, as a touch would).
+    /// Home+Start turns the bottom screen off, or on again. If it had turned off by itself, this turns it
+    /// on, as a touch would.
     pub(crate) fn toggle_bottom_power(&mut self) -> Vec<Effect> {
         if self.bottom.screen.idle_off && !self.bottom.screen.off {
             self.bottom.used_at = Some(self.mono_secs);
@@ -292,7 +305,7 @@ impl State {
             return self.follow_bottom_power();
         }
         self.bottom.screen.off = !self.bottom.screen.off;
-        // (On again by hand: in use, so not off by itself either.)
+        // Turned on again by hand, so it is in use and shouldn't turn off by itself either.
         if !self.bottom.screen.off {
             self.bottom.used_at = Some(self.mono_secs);
             self.bottom.woken = true;
@@ -301,7 +314,7 @@ impl State {
         vec![Effect::Window(WindowCommand::BottomPower(!self.bottom.screen.off))]
     }
 
-    /// After the windows changed: a window whose program has a rule for it goes down (once).
+    /// Runs after the windows changed. A window whose program has a rule for it is sent down, once.
     pub(crate) fn follow_window_rules(&mut self) -> Vec<Effect> {
         let mut effects = Vec::new();
         let wanted: Vec<i64> = self
@@ -357,7 +370,7 @@ mod tests {
         Running { id: id.into(), key: key.into(), origin: Origin::Ours, app_id: None, start: 0, seen: false, entry: None }
     }
 
-    /// A game running (shelf's), with a top window and a second window, the second in front.
+    /// A game started by shelf, running with a top window and a second window, the second in front.
     fn emulator() -> State {
         let mut s = state();
         s.session.running.push(running("melonds", "melonds_1"));
@@ -379,7 +392,7 @@ mod tests {
         let fx = key(&mut s, DeviceKey::WindowDown);
         let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: None };
         assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(r)) if r.list() == [rule.clone()]), "{fx:?}");
-        // Another title next time (a page, a command): still its.
+        // A different title next time, such as a page or a command, still matches.
         assert!(rule.matches("melonds", &win(3, GAME, "Page two", true, false)));
     }
 
@@ -390,21 +403,21 @@ mod tests {
         assert!(!s.bottom_shows_windows());
         let fx = key(&mut s, DeviceKey::WindowDown);
         assert_eq!(fx[0], Effect::Window(WindowCommand::Down(2)));
-        // (Its title too: the emulator has another window of its app id.)
+        // The title is included, since the emulator has another window with the same app id.
         let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: Some("Bottom".into()) };
         assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(r)) if r.list() == [rule.clone()]), "{fx:?}");
         assert_eq!(fx[2], Effect::Window(WindowCommand::DownRules(vec![rule.down_rule()])), "for sway");
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::BottomRule(true)));
-        // sway reports it down: shown there.
+        // sway reports it down, so it is shown there.
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
         assert!(s.bottom_shows_windows());
-        // Home+Select: ClamShell's view (Home+Up then does nothing), then the windows again.
+        // Home+Select shows ClamShell's view, where Home+Up does nothing, and then the windows again.
         key(&mut s, DeviceKey::BottomView);
         assert!(!s.bottom_shows_windows());
         assert_eq!(key(&mut s, DeviceKey::WindowUp), vec![]);
         key(&mut s, DeviceKey::BottomView);
         assert!(s.bottom_shows_windows());
-        // Up: back to its workspace, the rule forgotten, ClamShell's view below.
+        // Up moves it back to its workspace, forgets the rule, and shows ClamShell's view below.
         let fx = key(&mut s, DeviceKey::WindowUp);
         assert_eq!(fx[0], Effect::Window(WindowCommand::Up { window: 2, to: Some(emu()) }));
         assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(r)) if r.list().is_empty()), "{fx:?}");
@@ -417,8 +430,8 @@ mod tests {
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
         let rules = s.window_rules.clone();
-        // A fresh start with the rules: the game's windows open on top; the one the rule names goes down,
-        // once.
+        // A fresh start with the rules. The game's windows open on top, and the one the rule names goes
+        // down, once.
         let mut s = state();
         s.window_rules = WindowRules::from_list(rules.list().to_vec());
         s.session.running.push(running("melonds", "melonds_1"));
@@ -428,7 +441,7 @@ mod tests {
         assert!(!fx.contains(&Effect::Window(WindowCommand::Down(5))));
         let fx = s.apply(Event::Windows(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)])).1;
         assert!(!fx.contains(&Effect::Window(WindowCommand::Down(6))), "asked once");
-        // Its window there before its scope is listed: sent down as the scope comes.
+        // Its window appears before its scope is listed, and is sent down when the scope appears.
         let mut s = state();
         s.window_rules = WindowRules::from_list(rules.list().to_vec());
         let fx = s.apply(Event::Windows(vec![win(8, GAME, "Bottom", true, false)])).1;
@@ -439,7 +452,7 @@ mod tests {
         assert!(fx.contains(&Effect::Window(WindowCommand::Down(8))), "{fx:?}");
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
-        // Another game's window of that title: not its rule.
+        // Another game's window with that title doesn't match the rule.
         s.session.running.push(running("other", "other_2"));
         s.session.units.push(Instance::Run { key: "other_2".into(), secs: 5, n: 2 });
         let fx = s.apply(Event::Windows(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom", false, false)])).1;
@@ -473,7 +486,7 @@ mod tests {
         let fx = s.apply(Event::Pointer(crate::PointerEvent::Activate(crate::Id::BottomWindows))).1;
         assert_eq!(fx, vec![Effect::Window(WindowCommand::ShowDown(2)), Effect::Watch(crate::Watch::Metrics, false)], "its view not seen: not watched");
         assert!(s.bottom_shows_windows());
-        // Another program in front: not its windows.
+        // With another program in front, the bar doesn't offer these windows.
         key(&mut s, DeviceKey::BottomView);
         s.apply(Event::Windows(vec![
             win(1, GAME, "Top", false, false),
@@ -483,7 +496,7 @@ mod tests {
         assert_eq!(s.hidden_down(), None);
     }
 
-    /// The battery's status read: on battery or on the charger.
+    /// A status reading that says the device is on battery or on the charger.
     fn on_battery(s: &mut State, discharging: bool) -> Vec<Effect> {
         let status = crate::Status { battery: Some(50), charging: !discharging, discharging, ..crate::Status::default() };
         s.apply(Event::Reading(crate::Reading::Status(status))).1
@@ -526,11 +539,11 @@ mod tests {
         on_battery(&mut s, false);
         s.apply(Event::tick(1000));
         assert_eq!(power(&s.apply(Event::tick(1000 + DIM_AFTER + OFF_AFTER)).1), None, "on the charger: only dimmed");
-        // Unplugged now, set to Screen on: still only dimmed.
+        // Unplugged now, but set to Screen on, so it is only dimmed.
         s.settings.global.set(Setting::BottomScreen, BottomWhenIdle::On.value());
         on_battery(&mut s, true);
         assert_eq!(power(&s.apply(Event::tick(1001 + DIM_AFTER + OFF_AFTER)).1), None);
-        // The default again: off; the charger plugged in: on.
+        // Back to the default, it turns off. With the charger plugged in, it turns on.
         s.settings.global.set(Setting::BottomScreen, BottomWhenIdle::OffWhenIdle.value());
         assert_eq!(power(&s.apply(Event::tick(1002 + DIM_AFTER + OFF_AFTER)).1), Some(false));
         assert_eq!(power(&on_battery(&mut s, false)), Some(true), "the charger: on again");
@@ -586,17 +599,18 @@ mod tests {
         assert!(!s.bottom_dimmed());
         let (dirty, _) = s.apply(Event::tick(1000 + DIM_AFTER));
         assert!(s.bottom_dimmed() && dirty.bottom, "untouched a while: dimmed, redrawn");
-        // A touch on it: lit.
+        // A touch on it lights it.
         let (dirty, _) = s.apply(Event::BottomTouched);
         assert!(!s.bottom_dimmed() && dirty.bottom);
-        // The pad's focus coming to one of its targets: lit too; shelf's targets (the main screen) not.
+        // The pad's focus coming to one of its targets lights it too, but not shelf's targets on the main
+        // screen.
         s.apply(Event::tick(1000 + 3 * DIM_AFTER));
         assert!(s.bottom_dimmed());
         s.apply(Event::Pointer(crate::PointerEvent::Focus(crate::Id::Shelf(crate::ShelfId::Launch))));
         assert!(s.bottom_dimmed(), "the main screen's");
         s.apply(Event::Pointer(crate::PointerEvent::Focus(crate::Id::Tab(crate::Tab::Dock))));
         assert!(!s.bottom_dimmed());
-        // Windows moved there: watched without touching, never dimmed.
+        // Windows moved there are watched without touching, so they are never dimmed.
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
         s.apply(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));

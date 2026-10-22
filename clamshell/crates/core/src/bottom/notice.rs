@@ -1,5 +1,5 @@
-//! The short notice under the bar that says what just happened: a level changed by a key, a screenshot
-//! saved, a launch starting, a file operation done. One shows at a time, for [`NOTICE_FOR`].
+//! The short notice under the bar that says what just happened, such as a level changed by a key, a
+//! screenshot saved, a launch starting or a file operation done. One shows at a time, for [`NOTICE_FOR`].
 
 use crate::State;
 use crate::levels::slider::Control;
@@ -16,28 +16,30 @@ pub struct Notice {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NoticeKind {
-    /// A level changed by a key: show it.
+    /// A level changed by a key.
     Level(Control),
-    /// A screenshot was saved (its file), or wasn't (why).
+    /// A screenshot was saved, with its file, or wasn't, with the reason.
     Screenshot(Result<String, String>),
-    /// The gyro calibrating (none: hold still), or done (whether it took).
+    /// The gyro is calibrating (None, meaning hold still), or is done (whether it worked).
     Gyro(Option<bool>),
-    /// A window moved down is remembered for its program (true), or moved up and forgotten (false).
+    /// A window moved down is now remembered for its program (true), or was moved up and forgotten
+    /// (false).
     BottomRule(bool),
     /// A file operation ended: what was done, or what went wrong.
     Files(Result<String, String>),
-    /// Entries enqueued: how many, and to what (the running entry's title).
+    /// Entries were enqueued: how many, and the title of the running entry they went to.
     Enqueued(usize, String),
-    /// A running entry asked for has no window to show (its title).
+    /// A running entry that was asked for has no window to show. Holds its title.
     NoWindow(String),
-    /// A launch didn't start (its entry's title; why is in the log).
+    /// A launch didn't start. Holds the entry's title; the reason is in the log.
     NotStarted(String),
-    /// A launch asked for (its entry's title): it is starting.
+    /// A requested launch is starting. Holds the entry's title.
     Starting(String),
-    /// A change of the account is done (what), or failed (why) (see [`crate::device::account`]).
+    /// An account change is done, with what was done, or failed, with the reason (see
+    /// [`crate::device::account`]).
     Account(Result<String, String>),
-    /// The library read anew has problems (the first, and how many: all are listed on the Tools tab's
-    /// Rescan library).
+    /// The library was read again and has problems. Holds the first one and how many there are. All of
+    /// them are listed under Rescan library on the Tools tab.
     Problems(String, usize),
 }
 
@@ -46,7 +48,7 @@ impl State {
         self.bottom.notice = Some(Notice { what, until: self.mono_secs + NOTICE_FOR });
     }
 
-    /// The notice timed out at `now`: whether it went.
+    /// Removes the notice if it has timed out at `now`. Returns whether it did.
     pub(crate) fn expire_notice(&mut self, now: u64) -> bool {
         let expired = self.bottom.notice.as_ref().is_some_and(|n| now >= n.until);
         if expired {
