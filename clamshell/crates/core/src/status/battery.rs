@@ -238,9 +238,9 @@ mod tests {
         assert_eq!(tap(&mut s, Id::Battery(BatteryId::Quit)), vec![Effect::Window(WindowCommand::Close(vec![6]))]);
         // Settings that go through the launch's own process don't reach it either.
         tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Global)));
-        assert!(!s.handed_over(), "All");
+        assert!(!s.panel().handed_over(), "All");
         tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Runner)));
-        assert!(s.handed_over());
+        assert!(s.panel().handed_over());
     }
 
     #[test]

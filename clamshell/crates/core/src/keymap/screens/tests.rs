@@ -61,8 +61,8 @@ fn the_picker_chooses_a_keymap_for_the_scope_edited() {
     assert_eq!(s.list_len(ListId::Keymaps), 3, "the game's own (made from it), Default, Nintendo layout");
     tap(&mut s, row(2));
     assert_eq!(s.keymapping().screen(), None, "chosen: the picker closes");
-    assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(1));
-    assert_eq!(s.settings().keymap_users(1), Users { all_games: false, games: 1 });
+    assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(1));
+    assert_eq!(s.prefs().settings().keymap_users(1), Users { all_games: false, games: 1 });
     // Once the game runs, the keymap is sent to the pad, and only once.
     let fx = crate::testkit::start(&mut s, "zelda-lttp").1;
     assert_eq!(sent(&fx).map(|k| k.name.as_str()), Some("Nintendo layout"));
@@ -71,7 +71,7 @@ fn the_picker_chooses_a_keymap_for_the_scope_edited() {
     picker(&mut s);
     let fx = tap(&mut s, row(1));
     assert_eq!(sent(&fx).map(|k| (k.id, k.bindings().len())), Some((0, 0)));
-    assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(0));
+    assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(0));
 }
 
 #[test]
@@ -220,7 +220,7 @@ fn rename_duplicate_and_delete_with_games_using_it() {
     tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Global)));
     picker(&mut s);
     tap(&mut s, row(1));
-    assert_eq!(s.settings().keymap_users(1), Users { all_games: true, games: 1 });
+    assert_eq!(s.prefs().settings().keymap_users(1), Users { all_games: true, games: 1 });
     // Rename.
     picker(&mut s);
     long(&mut s, row(1));
@@ -246,8 +246,8 @@ fn rename_duplicate_and_delete_with_games_using_it() {
     let fx = keymap(&mut s, KeymapId::ConfirmDelete);
     assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Settings(_)))), "{fx:?}");
     assert!(s.keymapping().keymaps().list().is_empty());
-    assert_eq!(s.settings().global.get(Setting::Keymap), 0);
-    assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Keymap), None, "Default, as all games");
+    assert_eq!(s.prefs().settings().global.get(Setting::Keymap), 0);
+    assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Keymap), None, "Default, as all games");
     // The Default row has no menu.
     long(&mut s, row(0));
     assert_eq!(s.keymapping().screen(), Some(Screen::List));
@@ -601,22 +601,22 @@ fn a_games_own_keymap_is_made_and_kept_while_another_is_chosen() {
     // The game's own keymap is made from Nintendo layout, which is in force for it. It is chosen and its
     // edit screen opens.
     picker(&mut s);
-    assert_eq!(s.keymap_row(0), Some(PickerRow::Own(None)));
+    assert_eq!(s.panel().keymap_row(0), Some(PickerRow::Own(None)));
     let fx = tap(&mut s, row(0));
     assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))), "{fx:?}");
     let own = s.keymapping().keymaps().own_of("zelda-lttp").unwrap().id;
     assert_eq!(s.keymapping().screen(), Some(Screen::Edit(own)));
-    assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(own));
+    assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(own));
     assert_eq!((s.keymapping().name(own), s.keymapping().keymaps().get(own).unwrap().bindings().len()), ("Own keymap", 4));
-    assert_eq!(s.settings().keymap_users(1), Users::default(), "Nintendo layout no longer used");
+    assert_eq!(s.prefs().settings().keymap_users(1), Users::default(), "Nintendo layout no longer used");
     // With Default chosen, the game's own keymap stays and is still offered.
     keymap(&mut s, KeymapId::Back);
     tap(&mut s, row(1));
-    assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(0));
+    assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(0));
     picker(&mut s);
-    assert_eq!(s.keymap_row(0).map(|r| matches!(r, PickerRow::Own(Some(k)) if k.id == own)), Some(true));
+    assert_eq!(s.panel().keymap_row(0).map(|r| matches!(r, PickerRow::Own(Some(k)) if k.id == own)), Some(true));
     tap(&mut s, row(0));
-    assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(own), "chosen again");
+    assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(own), "chosen again");
     // Deleting it from its menu asks first, since it is in use. The game is then back on Default.
     picker(&mut s);
     long(&mut s, row(0));
@@ -624,7 +624,7 @@ fn a_games_own_keymap_is_made_and_kept_while_another_is_chosen() {
     assert_eq!(s.keymapping().screen(), Some(Screen::Delete(own)));
     keymap(&mut s, KeymapId::ConfirmDelete);
     assert!(s.keymapping().keymaps().own_of("zelda-lttp").is_none());
-    assert_eq!(s.keymap_row(0), Some(PickerRow::Own(None)));
+    assert_eq!(s.panel().keymap_row(0), Some(PickerRow::Own(None)));
 }
 
 #[test]
@@ -642,14 +642,14 @@ fn a_games_own_keymap_is_saved_as_a_new_named_one_or_over_one() {
     long(&mut s, row(0));
     keymap(&mut s, KeymapId::SaveAs);
     assert_eq!(s.keymapping().screen(), Some(Screen::SaveAs(own)));
-    assert_eq!((s.keymap_row(0), s.list_len(ListId::Keymaps)), (Some(PickerRow::New), 2), "a new one, Nintendo layout");
+    assert_eq!((s.panel().keymap_row(0), s.list_len(ListId::Keymaps)), (Some(PickerRow::New), 2), "a new one, Nintendo layout");
     tap(&mut s, row(0));
     type_text(&mut s, "zelda");
     tap(&mut s, Id::Editor(EditorId::Save));
     let copy = s.keymapping().keymaps().named().find(|k| k.name == "zelda").unwrap().id;
     assert_eq!(s.keymapping().keymaps().get(copy).unwrap().get(Input::Button(Button::A)).map(|b| b.output), Some(Output::Nothing));
     assert_eq!(s.keymapping().keymaps().own_of("zelda-lttp").map(|k| k.id), Some(own), "kept");
-    assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(own), "still chosen");
+    assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(own), "still chosen");
     // Saving over Nintendo layout asks first. Then Nintendo layout has the game's own bindings.
     long(&mut s, row(0));
     keymap(&mut s, KeymapId::SaveAs);
@@ -663,7 +663,7 @@ fn a_games_own_keymap_is_saved_as_a_new_named_one_or_over_one() {
     assert_eq!(s.keymapping().keymaps().get(1).unwrap().get(Input::Button(Button::A)).map(|b| b.output), Some(Output::Nothing));
     assert_eq!(s.keymapping().name(1), "Nintendo layout", "its name kept");
     // Make own, on a shared keymap's edit screen, is only for a game without its own keymap.
-    assert!(!s.keymap_can_make_own());
+    assert!(!s.panel().keymap_can_make_own());
 }
 
 #[test]
@@ -679,7 +679,7 @@ fn a_named_keymap_is_loaded_into_a_games_own_and_undo_goes_back() {
     long(&mut s, row(0));
     keymap(&mut s, KeymapId::LoadFrom);
     assert_eq!(s.keymapping().screen(), Some(Screen::Load(own)));
-    assert_eq!((s.keymap_row(0), s.list_len(ListId::Keymaps)), (Some(PickerRow::Default), 2), "Default, Nintendo layout");
+    assert_eq!((s.panel().keymap_row(0), s.list_len(ListId::Keymaps)), (Some(PickerRow::Default), 2), "Default, Nintendo layout");
     let fx = tap(&mut s, row(1));
     assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))), "{fx:?}");
     assert_eq!(s.keymapping().screen(), Some(Screen::Edit(own)));

@@ -99,7 +99,7 @@ fn remap_title(input: Input) -> Fmt<64> {
 
 /// Who uses a keymap, in words.
 fn users(f: &Frame, id: u16) -> Fmt<48> {
-    let u = f.s.settings().keymap_users(id);
+    let u = f.s.prefs().settings().keymap_users(id);
     match (u.all_games, u.games) {
         (true, 0) => Fmt::of(format_args!("All games")),
         (true, n) => Fmt::of(format_args!("All games, {n} {}", if n == 1 { "game" } else { "games" })),
@@ -122,7 +122,8 @@ enum Listing {
 /// The picker, or the list of keymaps to load into a game's own or to save it as.
 fn list(f: &mut Frame, listing: Listing) {
     let s = f.s;
-    let scope = match (s.bottom().scope(), s.editing()) {
+    let panel = s.panel();
+    let scope = match (panel.scope(), panel.editing()) {
         (Scope::Runner | Scope::Content, Some(game)) => game.title,
         _ => "all",
     };
@@ -137,10 +138,10 @@ fn list(f: &mut Frame, listing: Listing) {
     let loading = (listing != Listing::Pick).then_some(());
     let list = ListArea::new(f, area, f.body().h * ROW_H);
     list.hint(f, hint);
-    let chosen = s.keymap_chosen();
+    let chosen = panel.keymap_chosen();
     let rows = list.scrolled(f, ListId::Keymaps, s.list_len(ListId::Keymaps));
     for i in rows.shown() {
-        let Some(row) = s.keymap_row(i) else {
+        let Some(row) = panel.keymap_row(i) else {
             continue;
         };
         let at = |part| Id::Row { list: ListId::Keymaps, i: i as u16, part };
@@ -200,7 +201,7 @@ fn delete(f: &mut Frame, id: u16) {
 fn overwrite(f: &mut Frame, to: u16) {
     let name = f.s.keymapping().name(to);
     let title = Fmt::<128>::of(format_args!("Replace {name}?"));
-    let text = if f.s.settings().keymap_users(to).any() {
+    let text = if f.s.prefs().settings().keymap_users(to).any() {
         Fmt::<160>::of(format_args!("Its bindings become the own keymap's, for every game using it ({}).", users(f, to).as_str()))
     } else {
         Fmt::of(format_args!("Its bindings become the own keymap's."))

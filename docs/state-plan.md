@@ -88,7 +88,7 @@ and the UI change with the code they call; doc links to moved methods are fixed 
 - [x] 10. Lists: `move_list`; drop `list_offset`, `list_can_scroll`, `anchor`.
 - [x] 11. Keymapping: data methods on `Settings`; the struct; getters and editing; the handlers pushing into
       `Out` (choose/delete/capture as events).
-- [ ] 12. Prefs and the `Panel` view.
+- [x] 12. Prefs and the `Panel` view.
 - [ ] 13. Session: fields in; session-only rules; units, windows, found, tray, background; `launch` and
       `reconcile`; dock with `EntryAct`; enqueue.
 - [ ] 13b. `Wanted`: the outside's desired state computed from the final state after each event (watches,

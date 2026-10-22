@@ -7,7 +7,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use crate::bottom::keyboard::{self, Key, Named, Stroke};
-use crate::effect::{Effect, Save};
+use crate::effect::Effect;
 use crate::out::Out;
 
 /// What the editor edits, and the text so far.
@@ -167,8 +167,8 @@ impl crate::State {
             (Done::Cancel, Purpose::FileName(_)) => self.back_from_keyboard(),
             (Done::Cancel, _) => {}
             (Done::Save, Purpose::Env { entry: game }) => {
-                self.settings.set_env(game, &editor.text);
-                out.effects.push(Effect::Save(Save::Settings(self.settings.clone())));
+                self.prefs.set_env(game, &editor.text);
+                out.effects.push(self.prefs.save_effect());
             }
             (Done::Save, Purpose::Password { ssid }) => self.radios.join(ssid, Some(editor.text), out),
             (Done::Save, Purpose::KeymapName(action)) => self.keymapping.named(action, &editor.text, out),

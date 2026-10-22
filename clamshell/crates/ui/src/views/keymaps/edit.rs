@@ -418,12 +418,12 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
 /// copy for that game alone to edit from then on.
 fn keymap_line(f: &mut Frame, mut row: Rect, id: u16, size: f32) {
     let own = f.s.keymapping().is_own(id);
-    let text = match (own, f.s.editing()) {
+    let text = match (own, f.s.panel().editing()) {
         (true, Some(game)) => Fmt::<128>::of(format_args!("Own keymap of {}", game.title)),
         (true, None) => Fmt::of(format_args!("Own keymap")),
         (false, _) => Fmt::of(format_args!("{}, used by {}", f.s.keymapping().name(id), Lower(super::users(f, id).as_str()))),
     };
-    let label = if !own && f.s.keymap_can_make_own() { "Make own" } else { "" };
+    let label = if !own && f.s.panel().keymap_can_make_own() { "Make own" } else { "" };
     // The text and then the action, centred together.
     let gap = size;
     let action_w = if label.is_empty() { 0.0 } else { f.c.text_width(size, label) + gap };

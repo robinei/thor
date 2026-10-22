@@ -16,7 +16,6 @@ use crate::effect::Watch;
 use crate::event::Reading;
 use crate::kit::names::names;
 use crate::out::Out;
-use crate::settings::panel::Scope;
 use crate::{Dirty, Effect, State};
 use editor::{Editor, Editors};
 use notice::Notice;
@@ -110,8 +109,6 @@ pub struct Bottom {
     /// when the field is done, unless the user chose a tab in the meantime.
     raised_from: Option<Tab>,
     editors: Editors,
-    /// What the settings panel edits. It is global whenever there is no game in context.
-    scope: Scope,
     /// The darkened second screen was tapped awake. This lasts until the next game.
     woken: bool,
     /// What the bottom screen shows, ClamShell's view or a window moved down, and whether it is off.
@@ -173,10 +170,6 @@ impl Bottom {
 
     pub fn window_rules(&self) -> &screen::WindowRules {
         &self.window_rules
-    }
-
-    pub fn scope(&self) -> Scope {
-        self.scope
     }
 
     /// The tab to come back to after a restart. This is the tab that was chosen, not the keyboard a text
@@ -280,10 +273,6 @@ impl Bottom {
         if self.pointing != before {
             out.mark(Dirty::BOTTOM);
         }
-    }
-
-    pub(crate) fn set_scope(&mut self, scope: Scope) {
-        self.scope = scope;
     }
 }
 

@@ -144,7 +144,7 @@ impl State {
             ListId::Bluetooth => RowsOf::Of(self.radios.bluetooth()),
             ListId::Streams => RowsOf::Of(self.levels.audio()),
             ListId::Backlights => RowsOf::Of(self.levels.backlight_rows()),
-            ListId::Keymaps => RowsOf::Count(self.keymap_rows_len()),
+            ListId::Keymaps => RowsOf::Count(self.panel().keymap_rows_len()),
             ListId::Layers => RowsOf::Count(self.keymapping.layer_rows()),
             ListId::Time => RowsOf::Count(self.sys.time_rows()),
             ListId::Dock => RowsOf::Count(self.dock.items().len().div_ceil(crate::session::dock::DOCK_COLUMNS)),

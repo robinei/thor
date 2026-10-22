@@ -70,7 +70,7 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources) -> Result<(), Stri
         touch_layout: Arc::default(),
     };
     let layout = config.touch_layout.clone();
-    let global = state.settings().global;
+    let global = state.prefs().settings().global;
     // The threads send to the UI's event loop, so they start once it exists. Effects are dispatched only
     // after that.
     let handles: Rc<RefCell<Option<Handles>>> = Rc::default();

@@ -337,7 +337,7 @@ impl Setting {
     }
 
     /// Whether the setting works through the launch's own process, as MangoHud's cap and HUD do. An app
-    /// that the launch hands over to another program (see [`crate::State::handed_over`]) doesn't get it.
+    /// that the launch hands over to another program (see [`crate::Panel::handed_over`]) doesn't get it.
     pub fn through_launch(self) -> bool {
         matches!(self, Setting::FpsCap | Setting::Hud)
     }

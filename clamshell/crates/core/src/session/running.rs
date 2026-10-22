@@ -1004,12 +1004,12 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         let in_front = |s: &mut State, w: Window| s.apply(Event::Windows(vec![w]));
         tap(&mut s, game("ff6"));
-        let id = |s: &State| s.context().map(|g| g.id.to_string());
+        let id = |s: &State| s.panel().context().map(|g| g.id.to_string());
         in_front(&mut s, Window { unit: zelda.unit(), ..win(2, "zelda3", &zelda.workspace(), true) });
         assert_eq!(id(&s).as_deref(), Some("zelda-lttp"), "the entry in front");
         in_front(&mut s, win(1, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), true));
         assert_eq!(id(&s).as_deref(), Some("ff6"), "shelf in front: its selection");
         in_front(&mut s, win(3, "foot", "1", true));
-        assert_eq!(s.context(), None, "a window of none of ours: the defaults");
+        assert_eq!(s.panel().context(), None, "a window of none of ours: the defaults");
     }
 }

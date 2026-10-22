@@ -3,13 +3,17 @@
 //! Changes are applied at once when they change the settings in force. The panel also opens the
 //! environment editor.
 
+use std::sync::Arc;
+
 use crate::State;
-use crate::bottom::editor::{Editor, Purpose};
+use crate::bottom::editor::{Editor, Editors, Purpose};
 use crate::effect::{Effect, Save};
 use crate::id::SettingsId;
+use crate::keymap::screens::{Keymapping, PickerRow};
+use crate::out::Out;
 use crate::session::program::Program;
 use crate::session::running::Front;
-use crate::settings::{Setting, Values};
+use crate::settings::{Setting, Settings, Values};
 
 /// What the settings panel edits: the global settings (All), the runner of the item in context, or the
 /// item itself. The item can be a game, an app or a film, but not a browsed file or a folder, nor an
@@ -34,11 +38,177 @@ pub enum TileOrigin {
     Global,
 }
 
+/// Every entry's settings, and the scope the settings panel edits. The scope is global whenever there is
+/// no item in context.
+#[derive(Debug, Clone, Default)]
+pub struct Prefs {
+    settings: Settings,
+    scope: Scope,
+}
+
+impl Prefs {
+    pub(crate) fn new(settings: Settings) -> Prefs {
+        Prefs { settings, ..Prefs::default() }
+    }
+
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    /// The scope chosen in the settings panel (see [`Panel::scope_shown`] for the one it shows).
+    pub fn scope(&self) -> Scope {
+        self.scope
+    }
+
+    pub(crate) fn set_scope(&mut self, scope: Scope) {
+        self.scope = scope;
+    }
+
+    /// Sets `setting` for `game`, or for all games (see [`Settings::set`]).
+    pub(crate) fn set(&mut self, game: Option<&Arc<str>>, setting: Setting, value: Option<u16>) {
+        self.settings.set(game, setting, value);
+    }
+
+    /// Drops a game's overrides and environment (see [`Settings::reset`]).
+    pub(crate) fn reset(&mut self, game: &str) {
+        self.settings.reset(game);
+    }
+
+    pub(crate) fn set_env(&mut self, game: Option<Arc<str>>, text: &str) {
+        self.settings.set_env(game, text);
+    }
+
+    /// Keymap `id` is gone (see [`Settings::forget_keymap`]).
+    pub(crate) fn forget_keymap(&mut self, id: u16) {
+        self.settings.forget_keymap(id);
+    }
+
+    /// Opens the editor on `game`'s environment variables, or with none, those for all games.
+    pub(crate) fn open_env_editor(&self, game: Option<Arc<str>>, editors: &mut Editors) {
+        let text = self.settings.env_text(game.as_deref()).to_owned();
+        editors.open(Editor { purpose: Purpose::Env { entry: game }, text });
+    }
+
+    pub(crate) fn save_effect(&self) -> Effect {
+        Effect::Save(Save::Settings(self.settings.clone()))
+    }
+
+    /// The settings, for a test to set up.
+    #[cfg(test)]
+    pub(crate) fn settings_mut(&mut self) -> &mut Settings {
+        &mut self.settings
+    }
+}
+
+/// The settings panel as it is now: the item in context, the levels it offers, what it edits, and the
+/// keymaps' picker for it. Built by [`State::panel`]; it doesn't allocate, since the UI builds it while
+/// drawing.
+#[derive(Debug, Clone)]
+pub struct Panel<'a> {
+    prefs: &'a Prefs,
+    keymapping: &'a Keymapping,
+    context: Option<Program<'a>>,
+    levels: [Option<(Scope, Program<'a>)>; 2],
+    editing: Option<Program<'a>>,
+    /// The level the edited one takes its settings from before its own, which is its runner's.
+    runner: Option<&'a str>,
+    handover: bool,
+}
+
+impl<'a> Panel<'a> {
+    /// The item the settings panel is about, chosen by what is in front (see [`State::panel`]). It is
+    /// none for a window of no program, and then the panel edits the defaults.
+    pub fn context(&self) -> Option<&Program<'a>> {
+        self.context.as_ref()
+    }
+
+    /// The levels below All that the panel offers for the item in context, with their titles. Normally
+    /// these are its runner's and its own (`All | SNES | Zelda`, `All | Desktop | Spotify`). There is only
+    /// its runner's for a browsed file, a folder, or a runner's item without item settings (`All |
+    /// Text`). There is only its own for an item without a runner, such as ClamShell's tools.
+    pub fn levels(&self) -> &[Option<(Scope, Program<'a>)>; 2] {
+        &self.levels
+    }
+
+    /// What the panel edits now: the level of the chosen scope, or none for All. Content edits the
+    /// runner's level when the item has none of its own.
+    pub fn editing(&self) -> Option<&Program<'a>> {
+        self.editing.as_ref()
+    }
+
+    /// The scope chosen.
+    pub fn scope(&self) -> Scope {
+        self.prefs.scope
+    }
+
+    /// The scope the panel shows as chosen: the one chosen, or the level that stands in for it.
+    pub fn scope_shown(&self) -> Scope {
+        match &self.editing {
+            None => Scope::Global,
+            Some(p) => self.levels.iter().flatten().find(|(_, l)| l.id == p.id).map_or(Scope::Global, |(scope, _)| *scope),
+        }
+    }
+
+    /// Whether the panel edits a runner whose launches hand their app over to another program, or an item
+    /// of such a runner. Android is one: Waydroid's session runs its apps. Anything that works through
+    /// the launch's process, such as [`Setting::through_launch`] settings and the environment, has no
+    /// effect there.
+    pub fn handed_over(&self) -> bool {
+        self.handover
+    }
+
+    /// The value a tile shows and steps from: the edited level's effective value, or the global one.
+    pub fn tile_value(&self, setting: Setting) -> u16 {
+        match &self.editing {
+            Some(g) if !setting.global_only() => self.prefs.settings.of_in(&g.id, self.runner.as_slice()).get(setting),
+            _ => self.prefs.settings.global.get(setting),
+        }
+    }
+
+    /// Where a tile's value comes from.
+    pub fn tile_origin(&self, setting: Setting) -> TileOrigin {
+        match &self.editing {
+            Some(g) if !setting.global_only() => match self.prefs.settings.overrides_of(&g.id).get(setting) {
+                Some(_) => TileOrigin::Own,
+                None => TileOrigin::Inherited,
+            },
+            _ => TileOrigin::Global,
+        }
+    }
+
+    /// The keymap chosen for the scope edited; 0 is Default.
+    pub fn keymap_chosen(&self) -> u16 {
+        self.tile_value(Setting::Keymap)
+    }
+
+    fn game(&self) -> Option<&str> {
+        self.editing.as_ref().map(|g| &*g.id)
+    }
+
+    /// Row `i` of the keymaps' picker, for what the panel edits.
+    pub fn keymap_row(&self, i: usize) -> Option<PickerRow<'a>> {
+        self.keymapping.row(i, self.game())
+    }
+
+    pub(crate) fn keymap_rows_len(&self) -> usize {
+        self.keymapping.rows_len(self.game())
+    }
+
+    /// Whether the panel edits a game that has no keymap of its own and so can make one.
+    pub fn keymap_can_make_own(&self) -> bool {
+        self.keymapping.can_make_own(self.game())
+    }
+}
+
 impl State {
+    pub fn prefs(&self) -> &Prefs {
+        &self.prefs
+    }
+
     /// The settings in force: those of the program in force (see [`crate::session::program`]), or else
     /// the global ones.
     pub fn in_force(&self) -> Values {
-        self.session.program.as_ref().map_or(self.settings.global, |id| self.settings_of(id))
+        self.session.program.as_ref().map_or(self.prefs.settings.global, |id| self.settings_of(id))
     }
 
     /// The level that entry `id` takes its settings from before its own, which is its runner's, if it
@@ -49,7 +219,7 @@ impl State {
 
     /// The settings entry or level `id` runs with: the global ones, then its runner's, then its own.
     pub fn settings_of(&self, id: &str) -> Values {
-        self.settings.of_in(id, self.runner_of(id).as_slice())
+        self.prefs.settings.of_in(id, self.runner_of(id).as_slice())
     }
 
     /// What entry or level `id` does while hidden ([`Setting::Background`]). If it is set to Pauses
@@ -77,25 +247,7 @@ impl State {
 
     /// The environment entry `id` gets: the global variables, then its runner's, then its own.
     pub fn env_of(&self, id: &str) -> Vec<(String, String)> {
-        self.settings.env_in(id, self.runner_of(id).as_slice())
-    }
-
-    /// The levels below All that the settings panel offers for the item in context, with their titles.
-    /// Normally these are its runner's and its own (`All | SNES | Zelda`, `All | Desktop | Spotify`).
-    /// There is only its runner's for a browsed file, a folder, or a runner's item without item settings
-    /// (`All | Text`). There is only its own for an item without a runner, such as ClamShell's tools.
-    pub fn setting_levels(&self) -> [Option<(Scope, Program<'_>)>; 2] {
-        let Some((item, g)) = self.context().and_then(|item| Some((item.clone(), self.entry(&item.id)?))) else {
-            return [None, None];
-        };
-        match &g.runner {
-            Some(r) => {
-                let runner = Some((Scope::Runner, Program { id: r.key.clone(), title: &r.name }));
-                let own = (r.item_settings && g.browsed.is_none() && !g.is_group()).then_some((Scope::Content, item));
-                [runner, own]
-            }
-            _ => [Some((Scope::Runner, item)), None],
-        }
+        self.prefs.settings.env_in(id, self.runner_of(id).as_slice())
     }
 
     /// For runners that come with one of ClamShell's keymaps (see [`crate::Library::runner_keymaps`]) and
@@ -105,7 +257,7 @@ impl State {
         let wanting: Vec<(std::sync::Arc<str>, crate::keymap::Keymap)> = library
             .runner_keymaps
             .iter()
-            .filter(|(key, _)| self.settings.overrides_of(key).get(Setting::Keymap).is_none() && self.keymapping.keymaps().own_of(key).is_none())
+            .filter(|(key, _)| self.prefs.settings.overrides_of(key).get(Setting::Keymap).is_none() && self.keymapping.keymaps().own_of(key).is_none())
             .filter_map(|(key, name)| Some((key.clone(), crate::keymap::preset(name)?)))
             .collect();
         if wanting.is_empty() {
@@ -113,132 +265,87 @@ impl State {
         }
         for (key, preset) in &wanting {
             if let Some(id) = self.keymapping.make_own_from(preset, key) {
-                self.settings.set(Some(key), Setting::Keymap, Some(id));
+                self.prefs.set(Some(key), Setting::Keymap, Some(id));
             }
         }
-        vec![self.keymapping.save_effect(), Effect::Save(Save::Settings(self.settings.clone()))]
+        vec![self.keymapping.save_effect(), self.prefs.save_effect()]
     }
 
-    /// The item the settings panel is about, chosen by what is in front. It is the entry whose window is
+    /// The settings panel as it is now. Its item is chosen by what is in front: the entry whose window is
     /// in front, or shelf's selection, where a browsed file that belongs to a library entry stands for
-    /// that entry. It is none for a window of no program, and then the panel edits the defaults.
-    pub fn context(&self) -> Option<Program<'_>> {
+    /// that entry. There is none for a window of no program.
+    pub fn panel(&self) -> Panel<'_> {
         let id = match self.session.front() {
             Front::Program => {
                 self.session.windows.iter().find(|w| w.focused && !w.down).and_then(|w| self.program_of(w)).or_else(|| self.session.program.clone())
             }
             Front::Shelf => self.shelf.selected().cloned().map(|id| self.shelf.entry_of_file(&id).unwrap_or(id)),
             Front::Other => None,
-        }?;
-        self.program(&id)
-    }
-
-    /// What the settings panel edits now: the level of the chosen scope, or none for All. Content edits
-    /// the runner's level when the item has none of its own.
-    pub fn editing(&self) -> Option<Program<'_>> {
-        if self.bottom.scope() == Scope::Global {
-            return None;
-        }
-        let [runner, own] = self.setting_levels();
-        let chosen = |l: &Option<(Scope, Program<'_>)>| l.as_ref().is_some_and(|(scope, _)| *scope == self.bottom.scope());
-        match (chosen(&runner), own) {
-            (true, _) => runner.map(|(_, p)| p),
-            (false, Some((_, p))) => Some(p),
-            (false, None) => runner.map(|(_, p)| p),
-        }
-    }
-
-    /// Whether the settings panel edits a runner whose launches hand their app over to another program,
-    /// or an item of such a runner. Android is one: Waydroid's session runs its apps. Anything that works
-    /// through the launch's process, such as [`Setting::through_launch`] settings and the environment,
-    /// has no effect there.
-    pub fn handed_over(&self) -> bool {
-        self.editing().is_some() && self.context().and_then(|item| self.entry(&item.id)).and_then(|g| g.runner.as_ref()).is_some_and(|r| r.handover)
-    }
-
-    /// The scope the settings panel shows as chosen: the one chosen, or the level that stands in for it.
-    pub fn scope_shown(&self) -> Scope {
-        match self.editing() {
-            None => Scope::Global,
-            Some(p) => self.setting_levels().into_iter().flatten().find(|(_, l)| l.id == p.id).map_or(Scope::Global, |(scope, _)| scope),
-        }
-    }
-
-    /// The value a tile shows and steps from: the game's effective value, or the global one.
-    pub fn tile_value(&self, setting: Setting) -> u16 {
-        match self.editing() {
-            Some(g) if !setting.global_only() => self.settings_of(&g.id).get(setting),
-            _ => self.settings.global.get(setting),
-        }
-    }
-
-    /// Where a tile's value comes from.
-    pub fn tile_origin(&self, setting: Setting) -> TileOrigin {
-        match self.editing() {
-            Some(g) if !setting.global_only() => match self.settings.overrides_of(&g.id).get(setting) {
-                Some(_) => TileOrigin::Own,
-                None => TileOrigin::Inherited,
+        };
+        let context = id.and_then(|id| self.program(&id));
+        let entry = context.as_ref().and_then(|item| self.entry(&item.id));
+        let levels = match (&context, entry) {
+            (Some(item), Some(g)) => match &g.runner {
+                Some(r) => {
+                    let runner = Some((Scope::Runner, Program { id: r.key.clone(), title: &r.name }));
+                    let own = (r.item_settings && g.browsed.is_none() && !g.is_group()).then(|| (Scope::Content, item.clone()));
+                    [runner, own]
+                }
+                None => [Some((Scope::Runner, item.clone())), None],
             },
-            _ => TileOrigin::Global,
-        }
+            _ => [None, None],
+        };
+        let scope = self.prefs.scope;
+        let editing = match &levels {
+            _ if scope == Scope::Global => None,
+            [Some((s, p)), _] if *s == scope => Some(p.clone()),
+            [runner, own] => own.as_ref().or(runner.as_ref()).map(|(_, p)| p.clone()),
+        };
+        let runner = editing.as_ref().and_then(|p| self.runner_of(&p.id));
+        let handover = editing.is_some() && entry.and_then(|g| g.runner.as_ref()).is_some_and(|r| r.handover);
+        Panel { prefs: &self.prefs, keymapping: &self.keymapping, context, levels, editing, runner, handover }
     }
 
     /// A tap or long press in the settings tab.
-    pub(crate) fn on_settings(&mut self, id: SettingsId, long: bool) -> Vec<Effect> {
+    pub(crate) fn on_settings(&mut self, id: SettingsId, long: bool, out: &mut Out) {
         match id {
-            SettingsId::Tile(Setting::Keymap) if !long => {
-                self.keymapping.open_picker();
-                vec![]
-            }
+            SettingsId::Tile(Setting::Keymap) if !long => self.keymapping.open_picker(),
             SettingsId::Tile(setting) => {
-                let value = if long { None } else { Some(setting.next(self.tile_value(setting))) };
-                self.change(setting, value)
+                let value = if long { None } else { Some(setting.next(self.panel().tile_value(setting))) };
+                self.change(setting, value, out);
             }
             SettingsId::Env => {
-                self.open_editor();
-                vec![]
+                let game = self.panel().editing().map(|g| g.id.clone());
+                self.prefs.open_env_editor(game, self.bottom.editors_mut());
             }
-            SettingsId::Scope(scope) => {
-                self.bottom.set_scope(scope);
-                vec![]
+            SettingsId::Scope(scope) => self.prefs.set_scope(scope),
+            SettingsId::Reset => {
+                let before = self.in_force();
+                if let Some(id) = self.panel().editing().map(|g| g.id.clone()) {
+                    self.prefs.reset(&id);
+                }
+                self.saved_and_applied(before, out);
             }
-            SettingsId::Reset => self.reset(),
         }
     }
 
     /// Changes `setting` where the panel edits, in the game's overrides or the global settings. It is set
     /// to `value`, or back to the default for `None`. The change is saved, and applied at once if the
     /// settings in force changed.
-    pub(crate) fn change(&mut self, setting: Setting, value: Option<u16>) -> Vec<Effect> {
+    pub(crate) fn change(&mut self, setting: Setting, value: Option<u16>, out: &mut Out) {
         let before = self.in_force();
-        let game = self.editing().map(|g| g.id.clone());
-        self.settings.set(game.as_ref(), setting, value);
-        self.saved_and_applied(before)
+        let game = self.panel().editing().map(|g| g.id.clone());
+        self.prefs.set(game.as_ref(), setting, value);
+        self.saved_and_applied(before, out);
     }
 
-    pub(crate) fn saved_and_applied(&self, before: Values) -> Vec<Effect> {
-        let mut effects = vec![Effect::Save(Save::Settings(self.settings.clone()))];
+    /// Saves the settings, and applies the settings in force if they changed from `before`.
+    pub(crate) fn saved_and_applied(&self, before: Values, out: &mut Out) {
+        out.effects.push(self.prefs.save_effect());
         let now = self.in_force();
         if now != before {
-            effects.push(Effect::Apply { entry: self.session.program.clone(), settings: now });
+            out.effects.push(Effect::Apply { entry: self.session.program.clone(), settings: now });
         }
-        effects
-    }
-
-    /// Opens the editor on what the panel edits: the game's variables, or those for all games.
-    fn open_editor(&mut self) {
-        let game = self.editing().map(|g| g.id.clone());
-        let text = self.settings.env_text(game.as_deref()).to_owned();
-        self.bottom.editors_mut().open(Editor { purpose: Purpose::Env { entry: game }, text });
-    }
-
-    /// Drops the edited game's overrides and environment.
-    fn reset(&mut self) -> Vec<Effect> {
-        let before = self.in_force();
-        if let Some(id) = self.editing().map(|g| g.id.clone()) {
-            self.settings.reset(&id);
-        }
-        self.saved_and_applied(before)
     }
 }
 
@@ -295,7 +402,7 @@ mod tests {
             g.runner = Some(clamshell_library::RunnerOf::new("video", "Video", true));
         }
         let mut s = State::new(Init { library, ..init() });
-        let levels = |s: &State| s.setting_levels().into_iter().flatten().map(|(scope, l)| (scope, l.title.to_owned())).collect::<Vec<_>>();
+        let levels = |s: &State| s.panel().levels().iter().flatten().map(|(scope, l)| (*scope, l.title.to_owned())).collect::<Vec<_>>();
         assert_eq!(levels(&s), [(Scope::Runner, "A Link to the Past".to_owned())], "a game with no runner: its own, as its runner");
         tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
         assert_eq!(levels(&s), [(Scope::Runner, "Video".to_owned())], "a series: its runner's only");
@@ -303,11 +410,11 @@ mod tests {
         tap(&mut s, Id::Shelf(ShelfId::Launch));
         let title = "1. The Shores of the Cosmic Ocean".to_owned();
         assert_eq!(levels(&s), [(Scope::Runner, "Video".to_owned()), (Scope::Content, title.clone())]);
-        assert_eq!(s.editing().map(|p| p.title), Some(title.as_str()), "its own by default");
+        assert_eq!(s.panel().editing().map(|p| p.title), Some(title.as_str()), "its own by default");
         scope(&mut s, Scope::Runner);
-        assert_eq!(s.editing().map(|p| p.id), Some(runner_key("video")));
+        assert_eq!(s.panel().editing().map(|p| p.id.clone()), Some(runner_key("video")));
         taps(&mut s, Setting::Power, 1);
-        assert_eq!(s.settings().overrides_of("runner:video").get(Setting::Power), Some(2), "kept by the runner");
+        assert_eq!(s.prefs().settings().overrides_of("runner:video").get(Setting::Power), Some(2), "kept by the runner");
         assert_eq!(s.settings_of("tv:Cosmos/Season 2/1. Standing Up in the Milky Way.mkv").get(Setting::Power), 2, "every video's");
     }
 
@@ -318,9 +425,9 @@ mod tests {
             g.runner = Some(clamshell_library::RunnerOf::new("snes", "SNES", false));
         }
         let s = State::new(Init { library, ..init() });
-        let levels = s.setting_levels().into_iter().flatten().map(|(scope, l)| (scope, l.title)).collect::<Vec<_>>();
+        let levels = s.panel().levels().iter().flatten().map(|(scope, l)| (*scope, l.title)).collect::<Vec<_>>();
         assert_eq!(levels, [(Scope::Runner, "SNES")]);
-        assert_eq!(s.editing().map(|p| p.id), Some(runner_key("snes")), "the item's tab: its runner's");
+        assert_eq!(s.panel().editing().map(|p| p.id.clone()), Some(runner_key("snes")), "the item's tab: its runner's");
     }
 
     #[test]
@@ -332,9 +439,9 @@ mod tests {
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))), "{fx:?}");
         let own = s.keymapping().keymaps().own_of("runner:text").map(|k| k.id);
         assert!(own.is_some());
-        assert_eq!(s.settings().overrides_of("runner:text").get(Setting::Keymap), own);
+        assert_eq!(s.prefs().settings().overrides_of("runner:text").get(Setting::Keymap), own);
         // With Default chosen for it instead, it is left that way, also when the library is read again.
-        s.settings.set(Some(&runner_key("text")), Setting::Keymap, Some(0));
+        s.prefs.settings_mut().set(Some(&runner_key("text")), Setting::Keymap, Some(0));
         let fx = s.apply(Event::Library(Box::new(s.shelf().library().clone()))).1;
         assert!(!fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))));
     }
@@ -349,26 +456,26 @@ mod tests {
         let Some(Effect::Save(Save::Settings(saved))) = fx.first() else {
             unreachable!("{fx:?}");
         };
-        assert_eq!(saved, s.settings(), "saved whole");
+        assert_eq!(saved, s.prefs().settings(), "saved whole");
         assert_eq!(saved.overrides_of("zelda-lttp").get(Setting::Power), Some(2));
         let zelda = s.settings_of("zelda-lttp");
         assert_eq!((zelda.get(Setting::Power), zelda.get(Setting::FpsCap)), (2, 60));
         assert_eq!(s.settings_of("ff6").get(Setting::Power), 1);
-        assert_eq!((s.tile_origin(Setting::Power), s.tile_origin(Setting::FpsCap)), (TileOrigin::Own, TileOrigin::Inherited));
+        assert_eq!((s.panel().tile_origin(Setting::Power), s.panel().tile_origin(Setting::FpsCap)), (TileOrigin::Own, TileOrigin::Inherited));
         let fresh = state_with(saved);
         assert_eq!(fresh.settings_of("zelda-lttp"), zelda);
-        assert_eq!(fresh.settings().global, s.settings().global);
+        assert_eq!(fresh.prefs().settings().global, s.prefs().settings().global);
         // A long press drops one override, and Reset drops all of them.
         taps(&mut s, Setting::Rumble, 1);
         long(&mut s, Id::Settings(SettingsId::Tile(Setting::Power)));
-        assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Power), None);
-        assert_eq!(s.settings().overrides_of("zelda-lttp").get(Setting::Rumble), Some(0));
+        assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Power), None);
+        assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Rumble), Some(0));
         tap(&mut s, Id::Settings(SettingsId::Reset));
-        assert!(s.settings().overrides.is_empty());
+        assert!(s.prefs().settings().overrides.is_empty());
         // Global-only settings change the global value even on a game's tab.
         taps(&mut s, Setting::ChargeLimit, 1);
-        assert_eq!(s.settings().global.get(Setting::ChargeLimit), 90);
-        assert_eq!(s.tile_origin(Setting::ChargeLimit), TileOrigin::Global);
+        assert_eq!(s.prefs().settings().global.get(Setting::ChargeLimit), 90);
+        assert_eq!(s.panel().tile_origin(Setting::ChargeLimit), TileOrigin::Global);
     }
 
     #[test]
@@ -399,7 +506,7 @@ mod tests {
         let fx = taps(&mut s, Setting::Power, 1);
         assert!(fx.iter().any(|e| matches!(e, Effect::Apply { settings, .. } if settings.get(Setting::Power) == 2)));
         let fx: Vec<Effect> = end(&mut s, "zelda-lttp").1.into_iter().filter(|e| !matches!(e, Effect::RecordPlay { .. })).collect();
-        assert_eq!(fx, vec![Effect::Apply { entry: None, settings: s.settings().global }, Effect::PadRoute(PadRoute::Ui)], "and the pad back to shelf");
+        assert_eq!(fx, vec![Effect::Apply { entry: None, settings: s.prefs().settings().global }, Effect::PadRoute(PadRoute::Ui)], "and the pad back to shelf");
     }
 
     #[test]
@@ -423,7 +530,7 @@ mod tests {
         tap(&mut empty, Id::Tab(Tab::Settings));
         assert_eq!(empty.bottom().tab(), Tab::Settings, "always available");
         taps(&mut empty, Setting::FpsCap, 2);
-        assert_eq!(empty.settings().global.get(Setting::FpsCap), 40);
+        assert_eq!(empty.prefs().settings().global.get(Setting::FpsCap), 40);
     }
 
     #[test]
@@ -462,7 +569,7 @@ mod tests {
         assert!(matches!(fx.first(), Some(Effect::Save(Save::Settings(t))) if t.env_text(Some("zelda-lttp")) == "dxv=1"), "{fx:?}");
         assert_eq!(s.bottom().editor(), None);
         assert_eq!(s.env_of("zelda-lttp"), vec![("dxv".to_owned(), "1".to_owned())]);
-        let fresh = state_with(s.settings());
+        let fresh = state_with(s.prefs().settings());
         assert_eq!(fresh.env_of("zelda-lttp"), s.env_of("zelda-lttp"));
     }
 

@@ -806,31 +806,18 @@ impl State {
 
     /// What the keymaps' screens read from the settings panel and the clock (see [`KeymapCx`]).
     fn keymap_cx(&self) -> KeymapCx {
-        KeymapCx { game: self.editing().map(|g| g.id), chosen: self.keymap_chosen(), in_force: self.in_force().get(Setting::Keymap), now: self.clock.mono() }
+        let panel = self.panel();
+        KeymapCx {
+            game: panel.editing().map(|g| g.id.clone()),
+            chosen: panel.keymap_chosen(),
+            in_force: self.in_force().get(Setting::Keymap),
+            now: self.clock.mono(),
+        }
     }
 
     /// Whether the pad listens for inputs (see [`Keymapping::listening`]).
     pub(crate) fn listening(&self) -> bool {
         self.keymapping.listening(self.bottom.tab(), self.bottom.editor().is_some())
-    }
-
-    pub(crate) fn keymap_rows_len(&self) -> usize {
-        self.keymapping.rows_len(self.editing().as_ref().map(|g| &*g.id))
-    }
-
-    /// Row `i` of the picker, for the game the settings panel edits.
-    pub fn keymap_row(&self, i: usize) -> Option<PickerRow<'_>> {
-        self.keymapping.row(i, self.editing().as_ref().map(|g| &*g.id))
-    }
-
-    /// Whether the panel edits a game that has no keymap of its own and so can make one.
-    pub fn keymap_can_make_own(&self) -> bool {
-        self.keymapping.can_make_own(self.editing().as_ref().map(|g| &*g.id))
-    }
-
-    /// The keymap used by the settings panel's scope; 0 is Default.
-    pub fn keymap_chosen(&self) -> u16 {
-        self.tile_value(Setting::Keymap)
     }
 
     /// The keymap in force, to send to the pad if it changed since it was last sent, or if `always`.
@@ -846,7 +833,7 @@ impl State {
             return;
         }
         let cx = self.keymap_cx();
-        self.keymapping.on(id, long, &cx, &self.settings, &mut self.bottom, out);
+        self.keymapping.on(id, long, &cx, self.prefs.settings(), &mut self.bottom, out);
     }
 
     /// A row of the picker (see [`Keymapping::on_row`]).
@@ -872,17 +859,17 @@ impl State {
     /// What the keymaps' screens ask of the settings and the keyboard.
     pub(crate) fn keymap_event(&mut self, event: KeymapEvent, out: &mut Out) {
         match event {
-            KeymapEvent::Choose(id) => out.effects.extend(self.change(Setting::Keymap, Some(id))),
+            KeymapEvent::Choose(id) => self.change(Setting::Keymap, Some(id), out),
             // The settings are saved before the keymaps.
             KeymapEvent::MadeOwn(id) => {
-                out.effects.extend(self.change(Setting::Keymap, Some(id)));
+                self.change(Setting::Keymap, Some(id), out);
                 out.effects.push(self.keymapping.save());
             }
             KeymapEvent::Deleted(id) => {
                 // The settings in force never depend on the keymaps, so this is as before the delete.
                 let before = self.in_force();
-                self.settings.forget_keymap(id);
-                out.effects.extend(self.saved_and_applied(before));
+                self.prefs.forget_keymap(id);
+                self.saved_and_applied(before, out);
             }
             KeymapEvent::Capture => {
                 if matches!(self.keymapping.screen(), Some(Screen::Capture { .. })) {

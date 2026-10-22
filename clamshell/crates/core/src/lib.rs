@@ -78,7 +78,7 @@ pub use session::dock::{Dock, DockItem};
 pub use session::instance::Instance;
 pub use session::program::Program;
 pub use session::running::{Front, Launching, Origin, Running};
-pub use settings::panel::{Scope, TileOrigin};
+pub use settings::panel::{Panel, Prefs, Scope, TileOrigin};
 pub use shelf::{Cursor, Shelf};
 pub use status::time::{ClockField, TimePage, TimeRow, TimeZones};
 pub use status::{Status, Sys};
@@ -140,7 +140,8 @@ pub struct State {
     pad: Pad,
     pointer: Pointer,
     sys: Sys,
-    settings: Settings,
+    /// Every entry's settings, and the scope the settings panel edits.
+    prefs: Prefs,
     keyboard: Keyboard,
     /// The keymaps and their screens (see [`keymap::screens`]).
     keymapping: keymap::screens::Keymapping,
@@ -160,7 +161,7 @@ impl State {
     pub fn new(init: Init) -> State {
         let mut s = State {
             shelf: Shelf::new(init.library),
-            settings: init.settings,
+            prefs: Prefs::new(init.settings),
             keymapping: keymap::screens::Keymapping::new(init.keymaps),
             bottom: Bottom::new(init.window_rules),
             sys: Sys::new(init.twelve_hour),
@@ -223,10 +224,6 @@ impl State {
 
     pub fn sys(&self) -> &Sys {
         &self.sys
-    }
-
-    pub fn settings(&self) -> &Settings {
-        &self.settings
     }
 
     pub fn keyboard(&self) -> &Keyboard {

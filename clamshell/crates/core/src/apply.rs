@@ -447,7 +447,7 @@ impl State {
             }
             Id::Settings(id) => {
                 out.mark(if matches!(id, SettingsId::Tile(_) | SettingsId::Reset) { Dirty::BOTH } else { Dirty::BOTTOM });
-                out.effects.extend(self.on_settings(id, long));
+                self.on_settings(id, long, out);
             }
             Id::Editor(id) => {
                 let done = match id {

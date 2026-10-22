@@ -68,9 +68,10 @@ pub(super) fn draw(f: &mut Frame) {
         return super::keymaps::draw(f, screen);
     }
     let s = f.s;
-    let context = s.context();
-    let game = s.editing();
-    let shown = s.scope_shown();
+    let panel = s.panel();
+    let context = panel.context();
+    let game = panel.editing();
+    let shown = panel.scope_shown();
     let pad = f.pad();
     let mut grid = style::content(body);
     let bar = grid.take_top(f.body().h * TABS_H);
@@ -78,12 +79,12 @@ pub(super) fn draw(f: &mut Frame) {
     // Tabs: All (the defaults), then the item's levels (its runner's and its own), with a note on the
     // right.
     let inner = pad * 0.8;
-    let levels = s.setting_levels();
+    let levels = panel.levels();
     let tabs = std::iter::once((Scope::Global, "All")).chain(levels.iter().flatten().map(|(scope, level)| (*scope, level.title)));
     let items = tabs.map(|(scope, name)| (Id::Settings(SettingsId::Scope(scope)), None, name, scope == shown));
     let tabs_area = Rect::new(bar.x - inner, bar.y, bar.w + inner, bar.h);
     let tabs_end = widgets::tabs(f, tabs_area, f.text(Text::Heading), inner, bar.w * TAB_MAX, items);
-    let running = context.as_ref().is_some_and(|g| s.program_in_force() == Some(&g.id));
+    let running = context.is_some_and(|g| s.program_in_force() == Some(&g.id));
     let note = match (game.is_some().then_some(()), running) {
         (Some(_), true) => "applies now",
         (Some(_), false) => "applies at launch",
@@ -129,10 +130,11 @@ fn note(later: bool, no_effect: bool) -> &'static str {
 }
 
 fn face(s: &State, tile: Tile) -> Face {
-    let game = s.editing().map(|g| g.id);
+    let p = s.panel();
+    let game = p.editing().map(|g| g.id.clone());
     match tile {
         Tile::Setting(setting) => {
-            let value = s.tile_value(setting);
+            let value = p.tile_value(setting);
             // The keymap's tile shows its name.
             let text = match setting {
                 Setting::Keymap => Fmt::of(format_args!("{}", s.keymapping().name(value))),
@@ -147,21 +149,21 @@ fn face(s: &State, tile: Tile) -> Face {
                 icon: Icon::for_setting(setting),
                 value: text,
                 impact: setting.impact(value),
-                origin: s.tile_origin(setting),
-                active: setting.active() && !(setting.through_launch() && s.handed_over()),
-                note: note(!setting.active(), setting.through_launch() && s.handed_over()),
+                origin: p.tile_origin(setting),
+                active: setting.active() && !(setting.through_launch() && p.handed_over()),
+                note: note(!setting.active(), setting.through_launch() && p.handed_over()),
             }
         }
         Tile::Env => {
-            let count = clamshell_core::settings::env::count_env(s.settings().env_text(game.as_deref()));
+            let count = clamshell_core::settings::env::count_env(s.prefs().settings().env_text(game.as_deref()));
             let impact = if count > 0 { Impact::Changes } else { Impact::Stock };
             let origin = if game.is_some() && count > 0 { TileOrigin::Own } else { TileOrigin::Global };
             let value = Fmt::of(format_args!("{}", Variables(count)));
-            let off = s.handed_over();
+            let off = p.handed_over();
             Face { id: Id::Settings(SettingsId::Env), icon: Icon::Env, value, impact, origin, active: !off, note: note(false, off) }
         }
         Tile::Reset => {
-            let any = game.as_ref().is_some_and(|g| s.settings().has_own(g));
+            let any = game.as_ref().is_some_and(|g| s.prefs().settings().has_own(g));
             let value = Fmt::of(format_args!("{}", if any { "Reset" } else { "Nothing to reset" }));
             Face { id: Id::Settings(SettingsId::Reset), icon: Icon::Reset, value, impact: Impact::Stock, origin: TileOrigin::Global, active: any, note: "" }
         }

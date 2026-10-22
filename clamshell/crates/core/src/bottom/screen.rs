@@ -580,11 +580,11 @@ mod tests {
         s.apply(Event::tick(1000));
         assert_eq!(power(&s.apply(Event::tick(1000 + DIM_AFTER + OFF_AFTER)).1), None, "on the charger: only dimmed");
         // Unplugged now, but set to Screen on, so it is only dimmed.
-        s.settings.global.set(Setting::BottomScreen, BottomWhenIdle::On.value());
+        s.prefs.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::On.value());
         on_battery(&mut s, true);
         assert_eq!(power(&s.apply(Event::tick(1001 + DIM_AFTER + OFF_AFTER)).1), None);
         // Back to the default, it turns off. With the charger plugged in, it turns on.
-        s.settings.global.set(Setting::BottomScreen, BottomWhenIdle::OffWhenIdle.value());
+        s.prefs.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::OffWhenIdle.value());
         assert_eq!(power(&s.apply(Event::tick(1002 + DIM_AFTER + OFF_AFTER)).1), Some(false));
         assert_eq!(power(&on_battery(&mut s, false)), Some(true), "the charger: on again");
     }
@@ -593,7 +593,7 @@ mod tests {
     fn dark_for_a_game_on_battery_it_goes_off_and_a_tap_wakes_it() {
         let mut s = state();
         on_battery(&mut s, true);
-        s.settings.global.set(Setting::BottomScreen, BottomWhenIdle::DarkInGame.value());
+        s.prefs.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::DarkInGame.value());
         crate::testkit::start(&mut s, "zelda-lttp");
         assert!(s.bottom_dark());
         assert!(s.bottom().off(), "dark on battery: off at once");
