@@ -264,7 +264,7 @@ impl State {
         let status = matches!(reading, Reading::Status(_));
         let dirty = self.on_reading(reading);
         if status {
-            out.effects.extend(self.sys.battery_warning());
+            self.sys.battery_warning(out);
         }
         out.mark(if self.follow_lists() { Dirty::BOTTOM } else { dirty });
     }
@@ -517,11 +517,7 @@ impl State {
                     out.effects.extend(self.bottom.show_program_down(window));
                 }
             }
-            Id::Time(id) => {
-                let (dirty, effects) = self.sys.on_time(id, self.lists.get_mut(ListId::Time));
-                out.mark(dirty);
-                out.effects.extend(effects);
-            }
+            Id::Time(id) => self.sys.on_time(id, self.lists.get_mut(ListId::Time), out),
             Id::Device(id) => {
                 out.mark(Dirty::BOTH);
                 self.device.tap(id, self.clock.mono(), &mut self.bottom, &mut self.pointer, self.shelf.selected(), out);

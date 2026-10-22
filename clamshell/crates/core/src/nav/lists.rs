@@ -159,7 +159,7 @@ impl State {
             ListId::Streams => self.levels.on_stream(i, part, out),
             ListId::Keymaps => out.effects.extend(self.on_keymap_row(i, part, long)),
             ListId::Layers => out.effects.extend(self.on_layer_row(i, part, long)),
-            ListId::Time => out.effects.extend(self.sys.on_time_row(i, self.lists.get_mut(ListId::Time))),
+            ListId::Time => self.sys.on_time_row(i, self.lists.get_mut(ListId::Time), out),
             // Its tiles are targets of their own.
             ListId::Dock => {}
             // A shelf game's row is its game's target, and a backlight's row is only its level.

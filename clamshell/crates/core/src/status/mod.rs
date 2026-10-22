@@ -9,6 +9,7 @@ pub mod time;
 
 use crate::effect::Effect;
 use crate::kit::replace;
+use crate::out::Out;
 use battery::{Battery, Group};
 use metrics::{History, Metrics};
 use time::{TimePage, TimeZones};
@@ -103,18 +104,20 @@ impl Sys {
 
     /// Runs after a status reading. Gives a warning when the battery has fallen to one of [`WARN_AT`],
     /// with the lower one marked urgent.
-    pub(crate) fn battery_warning(&mut self) -> Option<Effect> {
+    pub(crate) fn battery_warning(&mut self, out: &mut Out) {
         let Status { battery: Some(level), charging: false, .. } = self.status else {
             self.warned = None;
-            return None;
+            return;
         };
-        let at = WARN_AT.into_iter().filter(|&t| level <= t).min()?;
+        let Some(at) = WARN_AT.into_iter().filter(|&t| level <= t).min() else {
+            return;
+        };
         if self.warned.is_some_and(|w| w <= at) {
-            return None;
+            return;
         }
         self.warned = Some(at);
         let summary = format!("Battery at {level} %");
-        Some(Effect::Notify { summary, body: "Plug in the charger: at 3 % the device hibernates.".to_owned(), urgent: at == WARN_AT[1] })
+        out.effects.push(Effect::Notify { summary, body: "Plug in the charger: at 3 % the device hibernates.".to_owned(), urgent: at == WARN_AT[1] });
     }
 
     /// A metrics reading. The frame rate comes separately (see [`Sys::frames`]) and is kept.

@@ -14,6 +14,7 @@
 use crate::TimeId;
 use crate::effect::{Dirty, Effect, Save};
 use crate::kit::list::Scroll;
+use crate::out::Out;
 use crate::status::Sys;
 
 /// The system's time zone and the ones to choose from, by tzdata name ("Europe/Oslo"), and whether the
@@ -140,55 +141,51 @@ impl Sys {
 
     /// A tap on a row. A region opens, scrolled to the zone in force if it is there. UTC or a zone is
     /// set, and the main page comes back. `scroll` is the list's.
-    pub(crate) fn on_time_row(&mut self, i: usize, scroll: Option<&mut Scroll>) -> Vec<Effect> {
+    pub(crate) fn on_time_row(&mut self, i: usize, scroll: Option<&mut Scroll>, out: &mut Out) {
         let region = match self.time_row(i) {
             Some(TimeRow::Region(_)) => u8::try_from(i).ok(),
-            Some(TimeRow::Utc) => return self.set_zone("UTC"),
+            Some(TimeRow::Utc) => return self.set_zone("UTC", out),
             Some(TimeRow::Zone(zone)) => {
                 let zone = zone.to_owned();
-                return self.set_zone(&zone);
+                return self.set_zone(&zone, out);
             }
-            None => return vec![],
+            None => return,
         };
         let Some(region) = region else {
-            return vec![];
+            return;
         };
         self.time_page = TimePage::Region(region);
         let current = self.time.current.as_deref();
         let at = self.time_region().and_then(|region| self.time.of(region).position(|z| Some(z) == current));
         self.show_time_row(at.unwrap_or(0), scroll);
-        vec![]
     }
 
-    fn set_zone(&mut self, zone: &str) -> Vec<Effect> {
+    fn set_zone(&mut self, zone: &str, out: &mut Out) {
         self.time_page = TimePage::Main;
-        vec![Effect::SetTimeZone(zone.to_owned())]
+        out.effects.push(Effect::SetTimeZone(zone.to_owned()));
     }
 
     /// A tap on one of the tab's own targets. `scroll` is the list's.
-    pub(crate) fn on_time(&mut self, id: TimeId, scroll: Option<&mut Scroll>) -> (Dirty, Vec<Effect>) {
-        let effects = match id {
-            TimeId::Back => {
-                self.time_back(scroll);
-                vec![]
-            }
+    pub(crate) fn on_time(&mut self, id: TimeId, scroll: Option<&mut Scroll>, out: &mut Out) {
+        match id {
+            TimeId::Back => self.time_back(scroll),
             TimeId::Zone => {
                 // Show the regions, scrolled to the one the zone in force is in.
                 self.time_page = TimePage::Regions;
                 let current = self.time.current.as_deref();
                 let at = REGIONS.iter().position(|r| current.is_some_and(|c| in_region(c, r)));
                 self.show_time_row(at.unwrap_or(0), scroll);
-                vec![]
             }
-            TimeId::Ntp => self.time.ntp.map(|on| Effect::SetNtp(!on)).into_iter().collect(),
+            TimeId::Ntp => out.effects.extend(self.time.ntp.map(|on| Effect::SetNtp(!on))),
             TimeId::TwelveHour => {
                 self.twelve_hour = !self.twelve_hour;
-                return (Dirty::BOTH, vec![Effect::Save(Save::TwelveHour(self.twelve_hour))]);
+                out.effects.push(Effect::Save(Save::TwelveHour(self.twelve_hour)));
+                out.mark(Dirty::BOTH);
             }
-            TimeId::Step(field, up) if self.clock_by_hand() => vec![Effect::StepClock(field, if up { 1 } else { -1 })],
-            TimeId::Step(..) => vec![],
-        };
-        (Dirty::BOTTOM, effects)
+            TimeId::Step(field, up) if self.clock_by_hand() => out.effects.push(Effect::StepClock(field, if up { 1 } else { -1 })),
+            TimeId::Step(..) => {}
+        }
+        out.mark(Dirty::BOTTOM);
     }
 
     /// Goes back one page: from a region's zones to the regions, with that region shown, and from the
