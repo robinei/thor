@@ -401,8 +401,8 @@ impl Session {
     /// - An entry running by its windows that had windows and has none, or that waited in vain, has ended.
     pub(crate) fn follow_windows(&mut self, clock: &Clock, shelf: &mut Shelf, out: &mut Out) {
         self.windows_to_their_entries(out);
-        let (taken, stray) = self.stray_to_waiting(clock.mono(), out);
-        let given: Vec<i64> = if taken.is_some() { stray } else { Vec::new() };
+        let mut given = Vec::new();
+        let taken = self.stray_to_waiting(clock.mono(), &mut given, out);
         self.follow_found_windows(&given, clock, shelf.library(), out);
         if taken.is_none() {
             self.landing_up(out);
@@ -421,8 +421,9 @@ impl Session {
     }
 
     /// Moves new windows of no launch of ours, those the last pass didn't see, to the latest browsed file
-    /// waiting for one, and shows it. Returns the entry that took them, if one did, and those windows.
-    fn stray_to_waiting(&self, now: u64, out: &mut Out) -> (Option<Arc<str>>, Vec<i64>) {
+    /// waiting for one, and shows it. Returns the entry that took them, if one did, and adds those windows
+    /// to `taken`.
+    fn stray_to_waiting(&self, now: u64, taken: &mut Vec<i64>, out: &mut Out) -> Option<Arc<str>> {
         let known = &self.followed_windows;
         let stray: Vec<i64> =
             self.windows.iter().filter(|w| !known.contains(&w.id) && w.home().is_none() && !w.down && self.running_of(w).is_none()).map(|w| w.id).collect();
@@ -431,14 +432,11 @@ impl Session {
             .iter()
             .filter(|r| r.app_id.is_none() && !r.seen && matches!(r.origin, Origin::Windows { until, .. } if now <= until))
             .max_by_key(|r| r.start);
-        match waiting.filter(|_| !stray.is_empty()) {
-            Some(r) => {
-                out.effects.push(Effect::Window(WindowCommand::Move { windows: stray.clone(), to: r.workspace() }));
-                out.effects.push(Effect::Window(WindowCommand::Focus(r.workspace())));
-                (Some(r.id.clone()), stray)
-            }
-            None => (None, stray),
-        }
+        let r = waiting.filter(|_| !stray.is_empty())?;
+        taken.extend(&stray);
+        out.effects.push(Effect::Window(WindowCommand::Move { windows: stray, to: r.workspace() }));
+        out.effects.push(Effect::Window(WindowCommand::Focus(r.workspace())));
+        Some(r.id.clone())
     }
 
     /// Moves windows left on the landing workspace to the main screen; their entry has left the library
