@@ -257,10 +257,16 @@ impl State {
 
     /// The keymap in force for the pad, if it changed since last sent (or `always`).
     pub(crate) fn follow_keymap(&mut self, always: bool) -> Option<Effect> {
-        let now = self.keymap_in_force();
-        if !always && self.keymap_sent.as_ref() == Some(&now) {
+        // (Compared in place: this runs after every event. Default, no keymap stored, is id 0.)
+        let stored = self.keymaps.get(self.in_force().get(Setting::Keymap));
+        let same = self.keymap_sent.as_ref().is_some_and(|sent| match stored {
+            Some(k) => sent == k,
+            None => sent.id == 0,
+        });
+        if same && !always {
             return None;
         }
+        let now = self.keymap_in_force();
         self.keymap_sent = Some(now.clone());
         Some(Effect::Keymap(now))
     }

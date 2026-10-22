@@ -70,8 +70,8 @@ impl State {
     /// The entry a program found by `name` (its window's app id, its tray icon's id) runs as: the
     /// library's desktop entry of that name (any case), else one of its own, made by `own`.
     pub(crate) fn found_entry(&self, name: &str, own: impl FnOnce() -> Entry) -> Entry {
-        let named = format!("{}{name}", ids::DESKTOP).to_lowercase();
-        self.shelf.library().entries.iter().find(|g| g.id.to_lowercase() == named).cloned().unwrap_or_else(own)
+        let named = |g: &&Entry| ids::desktop_file(&g.id).is_some_and(|d| d.eq_ignore_ascii_case(name));
+        self.shelf.library().entries.iter().find(named).cloned().unwrap_or_else(own)
     }
 
     /// Entries just found (by windows or tray icons) run: their windows (but `taken`) to their

@@ -109,7 +109,7 @@ Helpers that exist but are bypassed:
 - [x] Silent fallbacks the no-panic lints produce: the policy stated in core's crate doc (quiet where an
       index is valid by construction, `debug_assert!` where a bug could reach the fallback); `Actions` had
       14 slots for 19 actions, now room for each and an assertion.
-- [ ] Per-event waste: `follow_keymap` clones the keymap each event; `app_id_of` `format!`s per entry ×
+- [x] Per-event waste: `follow_keymap` clones the keymap each event; `app_id_of` `format!`s per entry ×
       window each second; `found.rs:73` lowercases every id.
 - [ ] Giant functions split: `core::apply_event`, `keymap_screens::on_keymap`, `running::follow_windows`,
       `remap::wanted`, `PadThread::route_events` (the rumble mixing a pure, tested function), `main`

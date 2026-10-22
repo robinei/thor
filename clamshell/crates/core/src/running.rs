@@ -143,8 +143,21 @@ pub struct Launching {
 pub fn app_id_of(g: &Entry) -> Option<Arc<str>> {
     match &g.launch {
         Launch::Steam { appid } => Some(format!("{STEAM_APP_PREFIX}{appid}").into()),
-        _ => ids::desktop_file(&g.id).filter(|_| g.runner.as_ref().is_some_and(|r| r.handover)).map(Into::into),
+        _ => handed_over_app(g).map(Into::into),
     }
+}
+
+/// Whether `app_id` is [`app_id_of`] `g`, without making it (asked for every window and entry).
+pub fn has_app_id(g: &Entry, app_id: &str) -> bool {
+    match &g.launch {
+        Launch::Steam { appid } => app_id.strip_prefix(STEAM_APP_PREFIX).and_then(|n| n.parse::<u32>().ok()) == Some(*appid),
+        _ => handed_over_app(g) == Some(app_id),
+    }
+}
+
+/// A handed-over entry's app id: its desktop file's name.
+fn handed_over_app(g: &Entry) -> Option<&str> {
+    ids::desktop_file(&g.id).filter(|_| g.runner.as_ref().is_some_and(|r| r.handover))
 }
 
 impl State {
@@ -335,7 +348,7 @@ impl State {
         let mut new: Vec<&Entry> = Vec::new();
         for w in session.windows.iter().filter(|w| !session.running.iter().any(|r| r.owns(w))) {
             let games = &self.shelf.library().entries;
-            let Some(g) = games.iter().find(|g| app_id_of(g).as_deref() == Some(w.app_id.as_str())) else {
+            let Some(g) = games.iter().find(|g| has_app_id(g, &w.app_id)) else {
                 continue;
             };
             if !session.launching.iter().any(|l| l.game == g.id) && !new.iter().any(|n| n.id == g.id) {
@@ -494,13 +507,13 @@ impl State {
         self.shelf.game(id).filter(|g| g.browsed.is_some())?;
         let session = &self.session;
         let window = session.windows_of(id).next()?;
-        let app = window.app_id.to_lowercase();
+        let app = window.app_id.as_str();
         let games = &self.shelf.library().entries;
         let program = |g: &&crate::Entry| match &g.launch {
-            Launch::Program { argv, .. } => argv.first().and_then(|p| p.rsplit('/').next()).is_some_and(|p| p.to_lowercase() == app),
+            Launch::Program { argv, .. } => argv.first().and_then(|p| p.rsplit('/').next()).is_some_and(|p| p.eq_ignore_ascii_case(app)),
             _ => false,
         };
-        let named = |g: &&crate::Entry| ids::desktop_file(&g.id).is_some_and(|d| d.to_lowercase() == app);
+        let named = |g: &&crate::Entry| ids::desktop_file(&g.id).is_some_and(|d| d.eq_ignore_ascii_case(app));
         games.iter().find(named).or_else(|| games.iter().filter(|g| ids::desktop_file(&g.id).is_some()).find(program))
     }
 
@@ -604,6 +617,21 @@ mod tests {
 
     fn key(id: &str) -> String {
         clamshell_library::key_of(id)
+    }
+
+    #[test]
+    fn has_app_id_agrees_with_app_id_of() {
+        let steam = Entry { launch: Launch::Steam { appid: 620 }, ..Entry::new("steam:620", "Portal 2") };
+        let handed = Entry {
+            runner: Some(clamshell_library::RunnerOf { handover: true, ..clamshell_library::RunnerOf::new("android", "Android", false) }),
+            ..Entry::new("desktop:org.app", "App")
+        };
+        let ours = Entry::new("desktop:foot", "Terminal");
+        for g in [&steam, &handed, &ours] {
+            for app_id in ["steam_app_620", "steam_app_62", "org.app", "foot", ""] {
+                assert_eq!(super::has_app_id(g, app_id), super::app_id_of(g).as_deref() == Some(app_id), "{} {app_id}", g.id);
+            }
+        }
     }
 
     #[test]
