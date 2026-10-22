@@ -458,7 +458,7 @@ impl State {
         let before = self.levels.brightness().clone();
         let effects = change(&mut self.levels);
         if *self.levels.brightness() != before {
-            self.saves.brightness.touch(self.mono_secs);
+            self.saves.brightness.touch(self.clock.mono());
         }
         effects
     }

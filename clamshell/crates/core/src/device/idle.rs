@@ -202,7 +202,7 @@ impl State {
         // video asks the compositor to keep the screen on.
         let may_sleep = self.device_session;
         let policy = Policy::of(&self.settings.global, may_sleep);
-        let now = self.mono_secs;
+        let now = self.clock.mono();
         let mut effects = vec![];
         // While the top screen's refresh rate is being calibrated, it is measured on the screen, so the
         // screen is kept on.

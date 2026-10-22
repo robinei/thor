@@ -247,7 +247,7 @@ impl State {
         };
         let app_id = app_id_of(g).filter(|_| command.is_none());
         let (launch, key) = (command.unwrap_or_else(|| g.launch.clone()), g.key.clone());
-        let (secs, n) = (self.unix_secs, self.session.next_instance());
+        let (secs, n) = (self.clock.unix(), self.session.next_instance());
         let instance = Instance::Run { key, secs, n };
         let settings = self.settings_of(&game);
         let env = self.env_of(&game);
@@ -267,7 +267,7 @@ impl State {
     /// still come, or a browsed file's entry soon after it started, runs on by its windows (see
     /// [`Origin::Windows`]). The rest have ended, and their play is recorded.
     pub(crate) fn follow_ours(&mut self) -> Vec<Effect> {
-        let now = self.mono_secs;
+        let now = self.clock.mono();
         let session = &self.session;
         let mut ended = Vec::new();
         let mut handed = Vec::new();
@@ -309,10 +309,10 @@ impl State {
     /// until now, dated by the wall clock. For a video, it also reads where mpv left it, which mpv wrote as
     /// it quit.
     fn record_play(&mut self, game: Arc<str>, start: u64) -> Vec<Effect> {
-        let duration = self.mono_secs.saturating_sub(start);
-        let start = self.unix_at(start);
+        let duration = self.clock.mono().saturating_sub(start);
+        let start = self.clock.unix_at(start);
         if self.shelf.add_play(&game, start, duration) {
-            self.saves.resume.touch(self.mono_secs);
+            self.saves.resume.touch(self.clock.mono());
         }
         let file = self.shelf.entry(&game).and_then(|g| g.mpv_file()).map(std::path::Path::to_path_buf);
         let position = file.map(|file| Effect::ReadPosition { entry: game.clone(), file });
@@ -335,7 +335,7 @@ impl State {
             return;
         };
         if self.session.running(&game).is_none() {
-            let now = self.mono_secs;
+            let now = self.clock.mono();
             let origin = Origin::Windows { since: now, until: now + HANDOFF };
             self.session.running.push(Running { app_id, ..Running::of(&entry, origin, now) });
         }
@@ -370,7 +370,7 @@ impl State {
     /// whose it is before its scope does, since a game Steam started is in Steam's scope. A Steam game is
     /// launched, and the launcher finds it running. The rest run by their windows, and the last is shown.
     fn start_by_app_id(&mut self) -> Vec<Effect> {
-        let now = self.mono_secs;
+        let now = self.clock.mono();
         let session = &self.session;
         let mut new: Vec<&Entry> = Vec::new();
         for w in session.windows.iter().filter(|w| !session.running.iter().any(|r| r.owns(w))) {
@@ -387,7 +387,7 @@ impl State {
         let new: Vec<Running> =
             new.into_iter().map(|g| Running { app_id: app_id_of(g), seen: true, ..Running::of(g, Origin::Windows { since: now, until: now }, now) }).collect();
         if let Some(r) = new.last() {
-            self.session.pending_show = Some(Instance::Run { key: r.key.clone(), secs: self.unix_secs, n: 0 });
+            self.session.pending_show = Some(Instance::Run { key: r.key.clone(), secs: self.clock.unix(), n: 0 });
             self.bottom.woken = false;
         }
         self.session.running.extend(new);
@@ -410,7 +410,7 @@ impl State {
     /// Moves new windows of no launch of ours, those not in `known`, to the latest browsed file waiting
     /// for one, and shows it. Returns the entry that took them, if one did, and those windows.
     fn stray_to_waiting(&self, known: &[i64], effects: &mut Vec<Effect>) -> (Option<Arc<str>>, Vec<i64>) {
-        let now = self.mono_secs;
+        let now = self.clock.mono();
         let session = &self.session;
         let stray: Vec<i64> = session
             .windows
@@ -451,7 +451,7 @@ impl State {
     /// Ends entries running by their windows, or found by a tray icon, once those are gone. `taken` is an
     /// entry that was just given a window, which is still where it came up. A play by windows is recorded.
     fn end_windowless(&mut self, taken: Option<&Arc<str>>) -> Vec<Effect> {
-        let now = self.mono_secs;
+        let now = self.clock.mono();
         let session = &self.session;
         let with: Vec<Arc<str>> =
             session.running.iter().filter(|r| taken == Some(&r.id) || session.windows_of(&r.id).next().is_some()).map(|r| r.id.clone()).collect();
@@ -489,7 +489,7 @@ impl State {
     /// in the scope's name. An entry found by its tray icon whose process is now in a scope of ours runs as
     /// a launch. Then the entries whose launches have ended are handled (see [`State::follow_ours`]).
     pub(crate) fn follow_units(&mut self) -> Vec<Effect> {
-        let (now, unix) = (self.mono_secs, self.unix_secs);
+        let (now, unix) = (self.clock.mono(), self.clock.unix());
         // The entries of launches whose scope is there run as launches of ours, including one that was
         // handed over to its windows and launched again. A second screen tapped awake may go dark again
         // for the new launch.
@@ -647,7 +647,7 @@ impl State {
     pub(crate) fn on_launch_event(&mut self, event: LaunchEvent) -> (Dirty, Vec<Effect>) {
         let effects = match event {
             LaunchEvent::Position { entry: game, position } => {
-                self.shelf.set_position(&game, position, self.unix_secs);
+                self.shelf.set_position(&game, position, self.clock.unix());
                 vec![]
             }
             // A launch that never started doesn't change what runs, but it is no longer starting.

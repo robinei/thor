@@ -85,7 +85,7 @@ impl State {
         if !self.device_session {
             return vec![];
         }
-        let now = self.mono_secs;
+        let now = self.clock.mono();
         let mut new = Vec::new();
         for t in &self.tray {
             let ours = t.unit.as_deref().and_then(Instance::from_unit).is_some();
@@ -162,7 +162,7 @@ impl State {
     pub(crate) fn activate_tray(&mut self, entry: &str) -> Option<Effect> {
         let key = self.tray_of(entry)?.key.clone();
         let r = self.session.running(entry)?;
-        self.session.pending_show = Some(Instance::Run { key: r.key.clone(), secs: self.unix_secs, n: 0 });
+        self.session.pending_show = Some(Instance::Run { key: r.key.clone(), secs: self.clock.unix(), n: 0 });
         Some(Effect::Tray(TrayCommand::Activate(key)))
     }
 }

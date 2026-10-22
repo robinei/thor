@@ -19,7 +19,7 @@ impl State {
             Some(ws) if !Instance::Shelf.is(ws) => vec![Effect::Window(WindowCommand::Focus(ws.clone()))],
             _ => vec![Effect::Window(WindowCommand::ShowShelf)],
         };
-        self.session.closed_front = Some((was, self.mono_secs));
+        self.session.closed_front = Some((was, self.clock.mono()));
         effects
     }
 

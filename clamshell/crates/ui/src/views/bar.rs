@@ -110,7 +110,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
     let mouse = bar.take_right(bar_h * SLOT);
     let tone = if f.s.pad().mouse_on() { Tone::Accent } else { Tone::Dim };
     icon_button(f, Id::PadMouse, mouse, Icon::Mouse, tone);
-    let clock = f.scratch.local(f.s.unix_secs(), f.s.time_zones().current.as_deref()).time(f.s.twelve_hour());
+    let clock = f.scratch.local(f.s.clock().unix(), f.s.time_zones().current.as_deref()).time(f.s.twelve_hour());
     let size = bar_h * CLOCK_TEXT;
     let clock_w = f.c.text_width(size, &clock) + bar_h * CLOCK_PAD;
     let clock_r = bar.take_right(clock_w);

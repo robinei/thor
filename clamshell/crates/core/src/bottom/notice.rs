@@ -45,7 +45,7 @@ pub enum NoticeKind {
 
 impl State {
     pub(crate) fn notify(&mut self, what: NoticeKind) {
-        self.bottom.notice = Some(Notice { what, until: self.mono_secs + NOTICE_FOR });
+        self.bottom.notice = Some(Notice { what, until: self.clock.mono() + NOTICE_FOR });
     }
 
     /// Removes the notice if it has timed out at `now`. Returns whether it did.

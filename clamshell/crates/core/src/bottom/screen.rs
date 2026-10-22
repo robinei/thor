@@ -144,20 +144,20 @@ impl State {
 
     /// Seconds since the second screen was last used, or 0 before the clock's first reading.
     fn bottom_idle_for(&self) -> u64 {
-        self.bottom.used_at.map_or(0, |at| self.mono_secs.saturating_sub(at))
+        self.bottom.used_at.map_or(0, |at| self.clock.mono().saturating_sub(at))
     }
 
     /// The second screen is in use, so it is lit, and redrawn if it was dimmed.
     pub(crate) fn bottom_used(&mut self) -> Dirty {
-        self.bottom.used_at = Some(self.mono_secs);
+        self.bottom.used_at = Some(self.clock.mono());
         if self.follow_bottom_dim() { Dirty::BOTTOM } else { Dirty::NONE }
     }
 
     /// Runs after any event. Returns whether the second screen's dimming changed, so it can be redrawn.
     /// The time counts from the first clock reading.
     pub(crate) fn follow_bottom_dim(&mut self) -> bool {
-        if self.bottom.used_at.is_none() && self.clock_read() {
-            self.bottom.used_at = Some(self.mono_secs);
+        if self.bottom.used_at.is_none() && self.clock.read() {
+            self.bottom.used_at = Some(self.clock.mono());
         }
         let dimmed = self.bottom_dimmed();
         std::mem::replace(&mut self.bottom.dimmed, dimmed) != dimmed
@@ -300,14 +300,14 @@ impl State {
     /// on, as a touch would.
     pub(crate) fn toggle_bottom_power(&mut self) -> Vec<Effect> {
         if self.bottom.screen.idle_off && !self.bottom.screen.off {
-            self.bottom.used_at = Some(self.mono_secs);
+            self.bottom.used_at = Some(self.clock.mono());
             self.bottom.woken = true;
             return self.follow_bottom_power();
         }
         self.bottom.screen.off = !self.bottom.screen.off;
         // Turned on again by hand, so it is in use and shouldn't turn off by itself either.
         if !self.bottom.screen.off {
-            self.bottom.used_at = Some(self.mono_secs);
+            self.bottom.used_at = Some(self.clock.mono());
             self.bottom.woken = true;
             self.bottom.screen.idle_off = false;
         }

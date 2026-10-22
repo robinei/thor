@@ -169,7 +169,7 @@ fn history(f: &mut Frame, g: Rect, size: f32) {
         f.c.text_in(plot, size, Tone::Dim, "No charge history from UPower", Align::Center);
         return;
     }
-    let now = s.unix_secs() as f32;
+    let now = s.clock().unix() as f32;
     let x_at = |at: u64| plot.x + ((at as f32 - (now - SPAN)) / SPAN).clamp(0.0, 1.0) * plot.w;
     let y_at = |level: u8| plot.y + plot.h * (1.0 - f32::from(level) / 100.0);
     // A step line made of rectangles, since paths would allocate while drawing. It runs along at each
@@ -188,7 +188,7 @@ fn history(f: &mut Frame, g: Rect, size: f32) {
     }
     // From the last point to now, at the current level.
     if let (Some(last), Some(level)) = (history.last(), s.sys().status.battery) {
-        step(f, (last.at, last.level), (s.unix_secs(), level), s.sys().status.charging);
+        step(f, (last.at, last.level), (s.clock().unix(), level), s.sys().status.charging);
     }
     if history.is_empty() {
         f.c.text_in(plot, size, Tone::Dim, "No changes recorded yet", Align::Center);

@@ -82,7 +82,7 @@ impl State {
         effects.extend(self.follow_window_rules());
         effects.extend(self.follow_background());
         effects.extend(self.session.show_pending());
-        effects.extend(self.session.show_reopened(self.mono_secs));
+        effects.extend(self.session.show_reopened(self.clock.mono()));
         effects.extend(self.follow_quitting());
         effects.extend(self.follow_closed(was));
         // After handling the front one closing, so that a window just taken by a browsed file is shown
@@ -158,11 +158,11 @@ impl State {
             // Sleep may have reset what the settings set, such as frequency caps and cores, so apply them
             // again.
             Event::Resumed => {
-                self.idle.resumed(self.mono_secs);
+                self.idle.resumed(self.clock.mono());
                 (Dirty::NONE, vec![Effect::Apply { entry: self.session.program.clone(), settings: self.in_force() }])
             }
             Event::Idle(event) => {
-                self.idle.heard(event, self.mono_secs);
+                self.idle.heard(event, self.clock.mono());
                 (Dirty::NONE, vec![])
             }
             Event::Device(key) => (Dirty::BOTTOM, self.on_device_key(key)),
@@ -299,13 +299,11 @@ impl State {
     /// The clock ticked. Once a minute, the bar's clock and both screens' burn-in orbit move on. Changes
     /// are saved once they have stopped for a moment.
     fn tick(&mut self, unix_secs: u64, mono_secs: u64) -> (Dirty, Vec<Effect>) {
-        let minute_changed = unix_secs / 60 != self.unix_secs / 60;
         // The first tick. Anything idle heard before it was timed at 0, so count from now.
-        if self.unix_secs == 0 {
+        if !self.clock.read() {
             self.idle.resumed(mono_secs);
         }
-        self.unix_secs = unix_secs;
-        self.mono_secs = mono_secs;
+        let minute_changed = self.clock.tick(unix_secs, mono_secs);
         let mut effects = vec![];
         if self.saves.resume.due(mono_secs, SAVE_AFTER) {
             effects.push(Effect::Save(Save::Resume(self.resume())));
@@ -370,7 +368,7 @@ impl State {
 
     fn on_pointer(&mut self, event: PointerEvent) -> (Dirty, Vec<Effect>) {
         // Input that reached ClamShell itself, such as the pad driving the screens.
-        self.idle.own_input(self.mono_secs);
+        self.idle.own_input(self.clock.mono());
         match event {
             PointerEvent::Focus(id) => {
                 self.show_focused(&id);
@@ -380,7 +378,7 @@ impl State {
             }
             PointerEvent::HideFocus => (if self.pointer.hide_focus() { Dirty::BOTH } else { Dirty::NONE }, vec![]),
             // A press that woke the screens does nothing else.
-            PointerEvent::Activate(_) | PointerEvent::LongPress(_) if self.idle.swallows_press(self.mono_secs) => (Dirty::NONE, vec![]),
+            PointerEvent::Activate(_) | PointerEvent::LongPress(_) if self.idle.swallows_press(self.clock.mono()) => (Dirty::NONE, vec![]),
             PointerEvent::Activate(id) => self.activate(&id, false),
             PointerEvent::LongPress(id) => self.activate(&id, true),
             PointerEvent::Down(id) => {

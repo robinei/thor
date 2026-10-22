@@ -30,14 +30,14 @@ impl State {
     /// Moves a found program's process, and those it started, into a scope of ours as a launch of entry
     /// `key`. Once systemd lists the scope, it runs as a launch (see [`State::follow_units`]).
     pub(crate) fn adopt(&mut self, key: &str, pid: u32) -> Effect {
-        let (secs, n) = (self.unix_secs, self.session.next_instance());
+        let (secs, n) = (self.clock.unix(), self.session.next_instance());
         Effect::Adopt { instance: Instance::Run { key: key.to_owned(), secs, n }, pid }
     }
 
     /// Makes the programs of windows that still belong to no entry run as entries found by them. `taken`
     /// lists windows just given to a browsed file, which are left out.
     pub(crate) fn follow_found_windows(&mut self, taken: &[i64]) -> Vec<Effect> {
-        let now = self.mono_secs;
+        let now = self.clock.mono();
         let session = &self.session;
         // A starting launch's window is left out, such as a Steam game found running whose launch is
         // still to come.

@@ -174,7 +174,7 @@ impl View {
         images: &mut Images,
         qh: &QueueHandle<App>,
     ) -> Result<Option<FrameOut>, Error> {
-        let at = self.placement(state.unix_secs());
+        let at = self.placement(state.clock().unix());
         let (w, h) = (i32::try_from(at.size_px.0)?, i32::try_from(at.size_px.1)?);
         let Some(index) = free_buffer(&mut self.buffers, pool, w, h)? else {
             return Ok(None);

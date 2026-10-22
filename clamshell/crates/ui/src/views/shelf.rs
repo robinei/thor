@@ -231,7 +231,7 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
 
     // A browsed file: its size and when it was changed.
     if let Some(b) = game.browsed.as_ref().filter(|b| !b.folder && b.modified > 0) {
-        let days = s.unix_secs().saturating_sub(b.modified) / 86_400;
+        let days = s.clock().unix().saturating_sub(b.modified) / 86_400;
         let facts = Fmt::<64>::of(format_args!("{}{}", Bytes(b.size.unwrap_or(0)), DaysAgo(days)));
         para(f, &mut col, detail, Tone::Dim, &facts, 1);
     }
@@ -266,7 +266,7 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
     // The play time.
     let plays = game.plays;
     if plays.count > 0 {
-        let days = s.unix_secs().saturating_sub(plays.last) / 86_400;
+        let days = s.clock().unix().saturating_sub(plays.last) / 86_400;
         let played = Fmt::<64>::of(format_args!("{}{}", PlayTime(plays.seconds), DaysAgo(days)));
         para(f, &mut col, detail, Tone::Dim, &played, 2);
     }

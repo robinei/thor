@@ -179,7 +179,7 @@ impl State {
     /// stays, even if a text field had brought up the keyboard.
     pub(crate) fn choose_tab(&mut self, tab: Tab) -> Vec<Effect> {
         if self.bottom.raised_from.take().is_some() {
-            self.saves.resume.touch(self.mono_secs);
+            self.saves.resume.touch(self.clock.mono());
         }
         self.set_tab(tab)
     }
@@ -191,7 +191,7 @@ impl State {
         if tab == self.bottom.tab {
             return vec![];
         }
-        self.saves.resume.touch(self.mono_secs);
+        self.saves.resume.touch(self.clock.mono());
         self.bottom.tab = tab;
         self.dock.menu = None;
         self.dock.moving = None;

@@ -29,6 +29,7 @@
 
 mod apply;
 pub mod bottom;
+mod clock;
 pub mod device;
 mod effect;
 mod event;
@@ -56,6 +57,7 @@ use settings::Settings;
 
 // What other crates use to talk to the state: the events and effects and what they carry, the ids, and
 // the groups the getters return.
+pub use clock::Clock;
 pub use effect::{Dirty, Effect, Save, Watch, WindowCommand};
 pub use event::{Event, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
 pub use id::{AudioId, BatteryId, BtId, DeviceId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, TimeId, WifiId};
@@ -154,12 +156,7 @@ pub struct State {
     /// The keymap in force as last sent to the pad.
     keymap_sent: Option<keymap::Keymap>,
     lists: Lists,
-    unix_secs: u64,
-    /// A monotonic clock, as of the last tick (see [`Event::Tick`]). Every duration is timed by it: idle,
-    /// the bottom screen, notices, saves, plays, background grace and handoffs. That way a jump in the
-    /// wall clock, whether set by hand or by NTP, doesn't count as time passing. The wall clock is only
-    /// used to date things.
-    mono_secs: u64,
+    clock: Clock,
     saves: Saves,
     idle: crate::device::idle::Idle,
     /// ClamShell is the device's own session (see [`Init::device_session`]).
@@ -267,20 +264,8 @@ impl State {
         &self.idle
     }
 
-    /// The wall clock in epoch seconds, as of the last tick.
-    pub fn unix_secs(&self) -> u64 {
-        self.unix_secs
-    }
-
-    /// Whether the clocks have been read, that is, whether the first [`Event::Tick`] has come.
-    pub(crate) fn clock_read(&self) -> bool {
-        self.unix_secs != 0
-    }
-
-    /// Epoch seconds at monotonic time `mono`, going by the wall clock now. If the wall clock has jumped
-    /// since, the result moves with it.
-    pub(crate) fn unix_at(&self, mono: u64) -> u64 {
-        self.unix_secs.saturating_sub(self.mono_secs.saturating_sub(mono))
+    pub fn clock(&self) -> &Clock {
+        &self.clock
     }
 
     /// Whether the dock menu offers Open another for `id`. It does when `id` is running and another launch

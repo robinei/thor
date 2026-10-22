@@ -15,7 +15,7 @@ impl State {
                     return self.activate_selected();
                 }
                 if self.shelf.select(&game) {
-                    self.saves.resume.touch(self.mono_secs);
+                    self.saves.resume.touch(self.clock.mono());
                 }
                 vec![]
             }
@@ -67,7 +67,7 @@ impl State {
     /// Shelf went to another collection or list. The place is saved, and a focus in shelf's list follows
     /// the selection.
     pub(crate) fn moved_collection(&mut self) {
-        self.saves.resume.touch(self.mono_secs);
+        self.saves.resume.touch(self.clock.mono());
         if matches!(self.pointer.focus, Some(Id::Shelf(ShelfId::Entry(_) | ShelfId::Collection(_)))) {
             self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
         }
@@ -77,7 +77,7 @@ impl State {
         match event {
             ShelfEvent::ListStep(step) => {
                 if self.shelf.step(step) {
-                    self.saves.resume.touch(self.mono_secs);
+                    self.saves.resume.touch(self.clock.mono());
                 }
                 self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
                 self.pointer.show_focus = true;
@@ -130,7 +130,7 @@ impl State {
             return vec![];
         };
         if moved {
-            self.saves.resume.touch(self.mono_secs);
+            self.saves.resume.touch(self.clock.mono());
         }
         let ids = self.shelf.library().favourite_ids().map(str::to_owned).collect();
         vec![Effect::Save(Save::Favourites(ids))]

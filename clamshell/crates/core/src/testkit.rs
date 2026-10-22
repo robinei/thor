@@ -11,7 +11,7 @@ pub fn start(s: &mut State, id: &str) -> (Dirty, Vec<Effect>) {
     let key = s.entry(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());
     let launch = s.session.launching.iter().find(|l| &*l.entry == id).map(|l| l.instance.clone());
     let mut units = s.session.units.clone();
-    units.push(launch.unwrap_or(Instance::Run { key, secs: s.unix_secs, n: 99 }));
+    units.push(launch.unwrap_or(Instance::Run { key, secs: s.clock.unix(), n: 99 }));
     s.apply(Event::Units(units))
 }
 

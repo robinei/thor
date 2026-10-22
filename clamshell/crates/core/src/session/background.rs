@@ -123,7 +123,7 @@ impl Pauses {
 impl State {
     /// Runs after the windows changed, and every second. Pauses, thaws or ends entries by their setting.
     pub(crate) fn follow_background(&mut self) -> Vec<Effect> {
-        let now = self.mono_secs;
+        let now = self.clock.mono();
         let mut effects = Vec::new();
         let mut end = Vec::new();
         let session = &self.session;
@@ -173,7 +173,7 @@ impl State {
     /// no window yet, since paused it would never draw one. Resumes the runner as one is shown, or when its
     /// setting changes.
     fn follow_runner_pauses(&mut self) -> Vec<Effect> {
-        let now = self.mono_secs;
+        let now = self.clock.mono();
         let mut effects = Vec::new();
         for runner in &self.background.runners {
             let pauses = self.background_of(&runner.key) == InBackground::Pauses;

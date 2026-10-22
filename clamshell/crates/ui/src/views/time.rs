@@ -49,7 +49,7 @@ fn main(f: &mut Frame) {
     let row_h = body.h * ROW_H;
     let rows_h = 3.0 * row_h;
     let clock = Rect::new(area.x, area.y, area.w, area.h - rows_h - pad);
-    let local = f.scratch.local(s.unix_secs(), s.time_zones().current.as_deref());
+    let local = f.scratch.local(s.clock().unix(), s.time_zones().current.as_deref());
     if s.clock_by_hand() {
         steppers(f, clock, local);
     } else {
