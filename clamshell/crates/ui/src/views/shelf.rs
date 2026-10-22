@@ -359,7 +359,7 @@ fn actions(f: &mut Frame, game: &Entry, r: Rect, action_h: f32, pad: f32) -> f32
         widgets::key_action(f, Id::Shelf(action.id()), Rect::new(r.x, y, row_w, action_h), key, &label, tone, in_actions);
         y += action_h + pad * 0.15;
     }
-    if let Some((what, fraction)) = &s.files().busy {
+    if let Some(clamshell_core::files::Busy { what, fraction }) = &s.files().busy {
         y += pad * 0.3;
         let size = action_h * 0.62;
         f.c.text_fit(Rect::new(r.x, y, r.w, size * 1.4), size, Tone::Normal, what, Keep::Start);

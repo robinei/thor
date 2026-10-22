@@ -77,6 +77,15 @@ pub enum BatteryId {
     Back,
 }
 
+/// What a running entry costs: its share of the machine's CPU and GPU (0-1; the GPU's unknown if any of it
+/// is unreadable, see [`Group::gpu_known`]), and its resident memory (bytes).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Cost {
+    pub cpu: f32,
+    pub gpu: Option<f32>,
+    pub memory: u64,
+}
+
 impl State {
     /// The row whose menu is open: what it is.
     pub fn spender_menu(&self) -> Option<&Group> {
@@ -121,10 +130,9 @@ impl State {
         }
     }
 
-    /// What a running entry costs now, from the last reading (its launches together): CPU, GPU (of the
-    /// machine, 0-1; unknown if any of it is unreadable, see [`Group::gpu_known`]), resident memory
-    /// (bytes). Read while the battery tab or the entry's dock menu is open.
-    pub fn cost_of(&self, entry: &str) -> Option<(f32, Option<f32>, u64)> {
+    /// What a running entry costs now, from the last reading (its launches together). Read while the
+    /// battery tab or the entry's dock menu is open.
+    pub fn cost_of(&self, entry: &str) -> Option<Cost> {
         let r = self.session.running(entry)?;
         let mine = self.sys.battery.spenders.iter().filter(|s| match &s.group {
             Group::Instance(i) => i.key() == Some(r.key.as_str()),
@@ -132,8 +140,9 @@ impl State {
             _ => false,
         });
         mine.fold(None, |sum, s| {
-            let (cpu, gpu, memory) = sum.unwrap_or((0.0, Some(0.0), 0));
-            Some((cpu + s.cpu, gpu.zip(s.group.gpu_known().then_some(s.gpu)).map(|(a, b)| a + b), memory + s.memory))
+            let Cost { cpu, gpu, memory } = sum.unwrap_or(Cost { cpu: 0.0, gpu: Some(0.0), memory: 0 });
+            let gpu = gpu.zip(s.group.gpu_known().then_some(s.gpu)).map(|(a, b)| a + b);
+            Some(Cost { cpu: cpu + s.cpu, gpu, memory: memory + s.memory })
         })
     }
 
@@ -197,7 +206,7 @@ mod tests {
         let firefox = Spender { pids: vec![40, 41], ..spender(Group::Process("firefox".into())) };
         let spenders = vec![spender(Group::Instance(zelda.clone())), firefox, spender(Group::System)];
         s.apply(Event::Reading(Reading::Battery(Battery { spenders, ..Battery::default() })));
-        assert_eq!(s.cost_of("zelda-lttp"), Some((0.1, Some(0.0), 0)));
+        assert_eq!(s.cost_of("zelda-lttp"), Some(Cost { cpu: 0.1, gpu: Some(0.0), memory: 0 }));
         // Another program: its processes.
         tap(&mut s, Id::Battery(BatteryId::Spender(1)));
         assert_eq!(s.spender_menu(), Some(&Group::Process("firefox".into())));
@@ -231,7 +240,7 @@ mod tests {
         // Its processes (another program's, Android's): its cost, its row named and ended as the entry.
         let spenders = vec![spender(Group::App("firefox".into())), spender(Group::App("org.other".into()))];
         s.apply(Event::Reading(Reading::Battery(Battery { spenders, ..Battery::default() })));
-        assert_eq!(s.cost_of("desktop:firefox"), Some((0.1, None, 0)), "its GPU time: another user's");
+        assert_eq!(s.cost_of("desktop:firefox"), Some(Cost { cpu: 0.1, gpu: None, memory: 0 }), "its GPU time: another user's");
         assert_eq!(s.spender_name(&spender(Group::App("firefox".into()))), "Firefox");
         tap(&mut s, Id::Battery(BatteryId::Spender(1)));
         assert_eq!(s.spender_menu(), None, "an app that isn't an entry running: no menu");

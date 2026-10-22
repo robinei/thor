@@ -170,7 +170,7 @@ pub struct State {
     /// Metadata is being fetched; what shelf showed when it was last asked for first (see
     /// [`State::follow_shown`]).
     fetching: bool,
-    shown: Option<(usize, Option<usize>, usize, usize, usize)>,
+    shown: Option<shelf::ShelfView>,
     /// Pins of entries gone were dropped at start: saved once the UI is up.
     pins_dropped: bool,
     /// The setup not done yet (see [`account`]).

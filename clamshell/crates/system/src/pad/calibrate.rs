@@ -29,7 +29,14 @@ pub struct StickState {
     range: Range,
     raw: [i32; AXES],
     pub sticks: Option<Sticks>,
-    calibrating: Option<(Calibrator, Instant, Instant)>,
+    calibrating: Option<Calibrating>,
+}
+
+/// A calibration going: the calibrator, when it started, and when its progress was last sent.
+struct Calibrating {
+    calibrator: Calibrator,
+    started: Instant,
+    reported: Instant,
 }
 
 /// What a calibration said.
@@ -63,7 +70,7 @@ impl StickState {
 
     /// A calibration from now.
     pub fn calibrate(&mut self, now: Instant) {
-        self.calibrating = Some((Calibrator::new(self.range.min, self.range.max), now, now));
+        self.calibrating = Some(Calibrating { calibrator: Calibrator::new(self.range.min, self.range.max), started: now, reported: now });
     }
 
     /// The controller's events: its sticks' kept as raw values, and corrected (an extreme passed
@@ -90,7 +97,7 @@ impl StickState {
     /// A calibration going, at `now`: what it says (progress now and then, or its end), and when to look
     /// again.
     pub fn step(&mut self, now: Instant) -> (Option<Said>, Option<Instant>) {
-        let Some((calibrator, started, reported)) = self.calibrating.as_mut() else { return (None, None) };
+        let Some(Calibrating { calibrator, started, reported }) = self.calibrating.as_mut() else { return (None, None) };
         let ms = u64::try_from(now.saturating_duration_since(*started).as_millis()).unwrap_or(u64::MAX);
         match calibrator.sample(self.raw, ms) {
             Step::Going(p) => {

@@ -55,6 +55,17 @@ pub struct Shelf {
     listings: Vec<(Arc<str>, Vec<Entry>)>,
 }
 
+/// What shelf's list shows: the collection, the open group, the first row shown, how many rows, and the
+/// selected position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ShelfView {
+    collection: usize,
+    group: Option<usize>,
+    top: usize,
+    rows: usize,
+    selected: usize,
+}
+
 impl Shelf {
     pub(crate) fn new(library: Library) -> Shelf {
         let navs = vec![Nav::default(); library.collections.len()];
@@ -237,17 +248,21 @@ impl Shelf {
         self.sync()
     }
 
-    /// What the list shows, to tell when it changed: the collection, the open group, the first row
-    /// shown, the rows, the selected position.
-    pub(crate) fn view(&self) -> (usize, Option<usize>, usize, usize, usize) {
-        let group = self.navs.get(self.current).and_then(|n| n.open.last().copied());
-        (self.current, group, self.cursor().top.floor().max(0.0) as usize, self.rows, self.cursor().index)
+    /// What the list shows, to tell when it changed.
+    pub(crate) fn view(&self) -> ShelfView {
+        ShelfView {
+            collection: self.current,
+            group: self.navs.get(self.current).and_then(|n| n.open.last().copied()),
+            top: self.cursor().top.floor().max(0.0) as usize,
+            rows: self.rows,
+            selected: self.cursor().index,
+        }
     }
 
     /// The entries in view, the selected first, then the rows shown, then the groups the list is in (a
     /// series, when its episodes show).
     pub(crate) fn shown(&self) -> Vec<Arc<str>> {
-        let (_, group, top, rows, selected) = self.view();
+        let ShelfView { group, top, rows, selected, .. } = self.view();
         let list = self.list();
         let rows = (top..top + rows + 1).filter(|&p| p != selected);
         let mut indices: Vec<usize> = std::iter::once(selected).chain(rows).filter_map(|p| list.get(p).copied()).collect();

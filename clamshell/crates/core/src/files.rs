@@ -127,19 +127,37 @@ pub enum FilesEvent {
     Mounts,
 }
 
-/// The file actions' state: the entries copied or cut, those selected (in the folder open), the action
-/// waiting to be confirmed (on the entry), the paste under way, whether hidden files show, the folder
-/// listed and watched (and with them or not).
+/// The file actions' state.
 #[derive(Debug, Clone, Default)]
 pub struct Files {
+    /// The entries copied or cut.
     pub clip: Option<Clip>,
+    /// The entries selected, in the folder open.
     pub selected: Vec<Arc<str>>,
-    pub armed: Option<(FileAction, Arc<str>)>,
-    pub busy: Option<(String, f32)>,
+    /// An action waiting to be confirmed (pressed again).
+    pub armed: Option<Armed>,
+    /// An operation under way.
+    pub busy: Option<Busy>,
+    /// Whether hidden files show.
     pub hidden: bool,
-    pub(crate) browsing: Option<(Arc<str>, bool)>,
+    /// The folder listed and watched, as last asked for.
+    pub(crate) browsing: Option<Browse>,
     /// The files in use last told (see [`BrowseCommand::InUse`]).
     pub(crate) in_use: Vec<PathBuf>,
+}
+
+/// An action waiting to be confirmed, on an entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Armed {
+    pub action: FileAction,
+    pub entry: Arc<str>,
+}
+
+/// An operation under way: what it says, and how far it is (0-1).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Busy {
+    pub what: String,
+    pub fraction: f32,
 }
 
 /// Entries copied (or cut), to paste: their files and names.
@@ -256,7 +274,7 @@ impl State {
 
     /// Whether `action` waits to be confirmed (pressed once) on what the details show.
     pub fn file_armed(&self, action: FileAction) -> bool {
-        self.files.armed.as_ref().is_some_and(|(a, id)| *a == action && self.file_target().is_some_and(|(g, _)| g.id == *id))
+        self.files.armed.as_ref().is_some_and(|a| a.action == action && self.file_target().is_some_and(|(g, _)| g.id == a.entry))
     }
 
     /// A file action pressed (if what the details show has it).
@@ -270,7 +288,7 @@ impl State {
         let (id, path, kind) = (game.id.clone(), game.file.clone(), game.browsed.as_ref().map(|b| b.kind.clone()));
         let name = game.title.clone();
         if action.confirms() && !self.file_armed(action) {
-            self.files.armed = Some((action, id));
+            self.files.armed = Some(Armed { action, entry: id });
             return vec![];
         }
         self.files.armed = None;
@@ -380,7 +398,7 @@ impl State {
                 vec![]
             }
             FilesEvent::Busy { what, fraction } => {
-                self.files.busy = Some((what, fraction));
+                self.files.busy = Some(Busy { what, fraction });
                 vec![]
             }
             FilesEvent::Done(result) => {
@@ -412,22 +430,21 @@ impl State {
     }
 
     fn follow_open_folder(&mut self) -> Option<Effect> {
-        if let Some((_, id)) = &self.files.armed
-            && self.file_target().is_none_or(|(g, _)| g.id != *id)
+        if let Some(armed) = &self.files.armed
+            && self.file_target().is_none_or(|(g, _)| g.id != armed.entry)
         {
             self.files.armed = None;
         }
         let hidden = self.files.hidden;
         let open = self.shelf.group().and_then(|g| Some(Browse { folder: g.id.clone(), dir: g.browsed_dir()?.to_path_buf(), hidden }));
-        let now = open.as_ref().map(|b| (b.folder.clone(), hidden));
-        if self.files.browsing == now {
+        if self.files.browsing == open {
             return None;
         }
         // (Another folder: the selection was the last one's.)
-        if self.files.browsing.as_ref().map(|(f, _)| f) != now.as_ref().map(|(f, _)| f) {
+        if self.files.browsing.as_ref().map(|b| &b.folder) != open.as_ref().map(|b| &b.folder) {
             self.files.selected.clear();
         }
-        self.files.browsing = now;
+        self.files.browsing.clone_from(&open);
         Some(Effect::Browse(BrowseCommand::Open(open)))
     }
 }

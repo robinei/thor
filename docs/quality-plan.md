@@ -103,9 +103,9 @@ Helpers that exist but are bypassed:
       own causes; a Bluetooth failure is an action and BlueZ's message.)
 - [x] Entry ids' prefixes (`desktop:`, `tray:`, `window:`, `runner:`) as constants or helpers in
       `clamshell_library`.
-- [ ] Anonymous tuples in state as named structs: shelf's view (`shelf.rs:242`), `cost_of`, `Files`'
+- [x] Anonymous tuples in state as named structs: shelf's view (`shelf.rs:242`), `cost_of`, `Files`'
       `armed`/`busy`/`browsing`, `Calibrator`'s `(Calibrator, Instant, Instant)`,
-      `remap::wanted`'s 6-tuple.
+      `remap::actuate`'s 6-tuple, the gyro calibration's `Option<Option<Run>>`.
 - [ ] Silent fallbacks the no-panic lints produce where an invariant should hold: `debug_assert!`
       (`Values::get`, `Lists::get`, `Actions::push`, library indices).
 - [ ] Per-event waste: `follow_keymap` clones the keymap each event; `app_id_of` `format!`s per entry ×

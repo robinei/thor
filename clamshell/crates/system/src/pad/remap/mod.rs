@@ -221,6 +221,18 @@ enum Span {
     Cancelled,
 }
 
+/// What an input is doing now, read before its actuator follows: pressed (`on`), pulled past its full
+/// pull's threshold (`full`), its hold's time if it has a hold's binding, whether it has a double's, and
+/// which of its actuations' bindings toggle.
+struct InputState {
+    input: Input,
+    on: bool,
+    full: bool,
+    hold: Option<Duration>,
+    double: bool,
+    toggles: [bool; Actuation::ALL.len()],
+}
+
 /// The controller's codes for a button (the back buttons go by several names).
 fn button_codes(b: Button) -> &'static [KeyCode] {
     match b {
@@ -453,11 +465,11 @@ impl Remap {
             let double = self.find(input, Actuation::Double).is_some();
             let binding = |act| self.binding_of(input, act);
             let toggles = Actuation::ALL.map(|a| binding(a).is_some_and(|b| b.toggle));
-            states.push((input, on, full, hold, double, toggles));
+            states.push(InputState { input, on, full, hold, double, toggles });
         }
         // The actuations that came on now (a Once layer's use).
         let mut risen = Vec::new();
-        for (input, on, full, hold, double, toggles) in states {
+        for InputState { input, on, full, hold, double, toggles } in states {
             let found = self.actuators.iter().position(|a| a.input == input);
             if found.is_none() && !on && !full {
                 continue;

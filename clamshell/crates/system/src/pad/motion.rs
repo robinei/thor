@@ -91,30 +91,44 @@ impl Run {
 pub struct Calibration {
     bias: Rate,
     still: Option<Run>,
-    asked: Option<Option<Run>>,
+    asked: Asked,
+}
+
+/// A calibration asked for: none, waiting for its first sample, or gathering samples.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+enum Asked {
+    #[default]
+    No,
+    First,
+    Gathering(Run),
 }
 
 impl Calibration {
     /// Calibrates from the next samples; [`Calibration::correct`] says how it went.
     pub fn ask(&mut self) {
-        self.asked = Some(None);
+        self.asked = Asked::First;
     }
 
     /// A sample's rate, `dt` after the last: the rate with the offset taken off; and when a calibration
     /// asked for ends, whether it took.
     pub fn correct(&mut self, rate: Rate, dt: f32) -> (Rate, Option<bool>) {
         let mut done = None;
-        if let Some(run) = &mut self.asked {
-            match run {
-                None => *run = Some(Run::start(rate)),
-                Some(r) => r.add(rate, dt),
+        let gathering = match self.asked {
+            Asked::No => None,
+            Asked::First => Some(Run::start(rate)),
+            Asked::Gathering(mut r) => {
+                r.add(rate, dt);
+                Some(r)
             }
-            if let Some(r) = run.filter(|r| r.time >= CALIBRATE_FOR) {
+        };
+        if let Some(r) = gathering {
+            self.asked = Asked::Gathering(r);
+            if r.time >= CALIBRATE_FOR {
                 let ok = r.spread() <= CALIBRATE_SPREAD;
                 if ok {
                     self.bias = r.mean();
                 }
-                self.asked = None;
+                self.asked = Asked::No;
                 self.still = None;
                 done = Some(ok);
             }
