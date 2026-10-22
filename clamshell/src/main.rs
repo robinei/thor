@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clamshell_core::keymap::Keymaps;
+use clamshell_core::settings::Hud;
 use clamshell_core::{Init, Library, State};
 use clamshell_system::library::{self, Sources};
 use clamshell_system::meta;
@@ -34,137 +35,103 @@ fn main() -> ExitCode {
         eprintln!("{}", cli::USAGE);
         return ExitCode::FAILURE;
     };
+    match carry_out(command) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            log::error!("{e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Carries out what the command line asked for; what went wrong, if anything.
+fn carry_out(command: Command) -> Result<(), String> {
     let env = Env::from_env();
     let paths = Paths::new(&env.base);
     let sources = Sources::new(&paths, env.base.home.as_deref(), env.steam);
     match command {
+        Command::Run => run(&env, paths, &sources),
+        // (It returns only if the job's program couldn't take over.)
+        Command::RunJob(file) => Err(format!("{}: {}", file.display(), job::run(&file))),
         Command::Ctl(words) if words == ["help"] => {
             print!("{}", control::help());
-            ExitCode::SUCCESS
+            Ok(())
         }
-        Command::Ctl(words) => match control::send(env.control.as_ref().or(paths.control.as_ref()), &words.join(" ")) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => {
-                eprintln!("clamshell ctl: {e}");
-                ExitCode::FAILURE
-            }
-        },
+        Command::Ctl(words) => control::send(env.control.as_ref().or(paths.control.as_ref()), &words.join(" ")).map_err(|e| format!("ctl: {e}")),
         Command::FollowSteam(appid) => {
             clamshell_system::launcher::follow_steam(appid);
-            ExitCode::SUCCESS
+            Ok(())
         }
-        Command::RunJob(file) => {
-            log::error!("{}: {}", file.display(), job::run(&file));
-            ExitCode::FAILURE
+        Command::MangohudEnv => {
+            let config = tuning::mangohud_config(&paths.mangohud, "default", 0, Hud::Off).map_err(|e| format!("MangoHud config: {e}"))?;
+            for (k, v) in tuning::mangohud_env(&config) {
+                println!("{k}={v}");
+            }
+            Ok(())
         }
-        Command::MangohudEnv => match tuning::mangohud_config(&paths.mangohud, "default", 0, clamshell_core::settings::Hud::Off) {
-            Ok(config) => {
-                for (k, v) in tuning::mangohud_env(&config) {
-                    println!("{k}={v}");
-                }
-                ExitCode::SUCCESS
-            }
-            Err(e) => {
-                log::error!("{e}");
-                ExitCode::FAILURE
-            }
-        },
         Command::Library => {
             print_library(State::new(Init { library: library::load(&sources).library, ..Init::default() }).shelf().library());
-            ExitCode::SUCCESS
+            Ok(())
         }
-        Command::WaylandFilter => match clamshell_system::wayland_filter::run(
-            paths.mangohud.parent().map_or_else(|| paths.mangohud.clone(), std::path::Path::to_path_buf),
-            paths.mangohud.clone(),
-        ) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => {
-                eprintln!("wayland filter: {e}");
-                ExitCode::FAILURE
-            }
-        },
-        Command::ClipboardGet => match clamshell_system::clipboard::get() {
-            Ok(text) => {
-                print!("{}", text.unwrap_or_default());
-                ExitCode::SUCCESS
-            }
-            Err(e) => {
-                eprintln!("clipboard: {e}");
-                ExitCode::FAILURE
-            }
-        },
+        Command::WaylandFilter => {
+            let runtime = paths.mangohud.parent().map_or_else(|| paths.mangohud.clone(), std::path::Path::to_path_buf);
+            clamshell_system::wayland_filter::run(runtime, paths.mangohud.clone()).map_err(|e| format!("wayland filter: {e}"))
+        }
+        Command::ClipboardGet => {
+            let text = clamshell_system::clipboard::get().map_err(|e| format!("clipboard: {e}"))?;
+            print!("{}", text.unwrap_or_default());
+            Ok(())
+        }
         Command::ClipboardSet => {
             let mut text = String::new();
-            let result =
-                std::io::Read::read_to_string(&mut std::io::stdin(), &mut text).map_err(|e| e.to_string()).and_then(|_| clamshell_system::clipboard::set(text));
-            match result {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(e) => {
-                    eprintln!("clipboard: {e}");
-                    ExitCode::FAILURE
-                }
-            }
+            std::io::Read::read_to_string(&mut std::io::stdin(), &mut text).map_err(|e| format!("clipboard: {e}"))?;
+            clamshell_system::clipboard::set(text).map_err(|e| format!("clipboard: {e}"))
         }
-        Command::Tray => match clamshell_system::tray::read_now() {
-            Ok(items) => {
-                for item in items {
-                    println!("{} ({}) pid {:?} unit {:?} icon {:?}", item.title, item.id, item.pid, item.unit, item.icon);
-                    print_tray_menu(&item.menu, 1);
-                }
-                ExitCode::SUCCESS
-            }
-            Err(e) => {
-                eprintln!("tray: {e}");
-                ExitCode::FAILURE
-            }
-        },
-        Command::FetchMetadata => {
-            let loaded = library::load(&sources);
-            let Some(art) = paths.art.clone() else {
-                log::error!("no home dir: nowhere to keep it");
-                return ExitCode::FAILURE;
-            };
-            let titles: std::collections::HashMap<_, _> = loaded.library.entries.iter().map(|g| (g.id.clone(), g.title.clone())).collect();
-            println!("fetching for {} entries", loaded.wanted.len());
-            let (tx, rx) = std::sync::mpsc::channel();
-            if let Err(e) = meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art }, &meta::Queue::default(), tx) {
-                log::error!("{e}");
-                return ExitCode::FAILURE;
-            }
-            // (The threads' senders go when they are done: the channel ends.)
-            for event in rx {
-                if let clamshell_core::Event::Meta { id, meta } = event {
-                    let has = |b: bool, what: &'static str| if b { what } else { "" };
-                    let found = [
-                        has(meta.cover.is_some(), "cover"),
-                        has(meta.shot.is_some(), "screenshot"),
-                        has(!meta.summary.is_empty(), "summary"),
-                        has(meta.year.is_some(), "year"),
-                        has(!meta.developer.is_empty(), "developer"),
-                    ];
-                    println!(
-                        "{}: {}",
-                        titles.get(&id).map_or(&*id, String::as_str),
-                        found.iter().filter(|f| !f.is_empty()).copied().collect::<Vec<_>>().join(", ")
-                    );
-                }
-            }
-            ExitCode::SUCCESS
-        }
+        Command::Tray => print_tray(),
+        Command::FetchMetadata => fetch_metadata(&paths, &sources),
         Command::Snapshot(dir) => {
             // The demo games unless asked for the real library.
             let library = if env.snapshot_real_library { library::load(&sources).library } else { clamshell_library::demo::library() };
             let now = if env.snapshot_now { SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() } else { snapshot::FIXED_NOW };
-            match snapshot::render(&|| snapshot::state(library.clone()), now, &dir) {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(e) => {
-                    log::error!("{e}");
-                    ExitCode::FAILURE
-                }
-            }
+            snapshot::render(&|| snapshot::state(library.clone()), now, &dir).map_err(|e| e.to_string())
         }
-        Command::Run => run(&env, paths, &sources),
     }
+}
+
+/// `--tray`: the tray icons there are, and their menus.
+fn print_tray() -> Result<(), String> {
+    let items = clamshell_system::tray::read_now().map_err(|e| format!("tray: {e}"))?;
+    for item in items {
+        println!("{} ({}) pid {:?} unit {:?} icon {:?}", item.title, item.id, item.pid, item.unit, item.icon);
+        print_tray_menu(&item.menu, 1);
+    }
+    Ok(())
+}
+
+/// `--fetch-metadata`: what the library wants fetched, printing what was found for each entry.
+fn fetch_metadata(paths: &Paths, sources: &Sources) -> Result<(), String> {
+    let loaded = library::load(sources);
+    let art = paths.art.clone().ok_or("no home dir: nowhere to keep it")?;
+    let titles: std::collections::HashMap<_, _> = loaded.library.entries.iter().map(|g| (g.id.clone(), g.title.clone())).collect();
+    println!("fetching for {} entries", loaded.wanted.len());
+    let (tx, rx) = std::sync::mpsc::channel();
+    meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art }, &meta::Queue::default(), tx).map_err(|e| e.to_string())?;
+    // (The threads' senders go when they are done: the channel ends.)
+    for event in rx {
+        if let clamshell_core::Event::Meta { id, meta } = event {
+            let has = |b: bool, what: &'static str| if b { what } else { "" };
+            let found = [
+                has(meta.cover.is_some(), "cover"),
+                has(meta.shot.is_some(), "screenshot"),
+                has(!meta.summary.is_empty(), "summary"),
+                has(meta.year.is_some(), "year"),
+                has(!meta.developer.is_empty(), "developer"),
+            ];
+            let found: Vec<&str> = found.into_iter().filter(|f| !f.is_empty()).collect();
+            println!("{}: {}", titles.get(&id).map_or(&*id, String::as_str), found.join(", "));
+        }
+    }
+    Ok(())
 }
 
 /// What was saved: each piece's default where there is none (or it can't be read: logged). The keymaps
@@ -227,7 +194,7 @@ fn print_entry(library: &Library, i: usize, depth: usize) {
 }
 
 /// The session: the state from what was saved, the UI, and the system threads.
-fn run(env: &Env, paths: Paths, sources: &Sources) -> ExitCode {
+fn run(env: &Env, paths: Paths, sources: &Sources) -> Result<(), String> {
     let loaded = library::load(sources);
     // Metadata to fetch once the threads run (with somewhere to keep it).
     let fetch = paths.art.clone().map(|art| meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art });
@@ -262,13 +229,7 @@ fn run(env: &Env, paths: Paths, sources: &Sources) -> ExitCode {
             }
         },
     );
-    match result {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            log::error!("{e}");
-            ExitCode::FAILURE
-        }
-    }
+    result.map_err(|e| e.to_string())
 }
 
 /// A tray menu's entries, indented by depth (`--tray`).
