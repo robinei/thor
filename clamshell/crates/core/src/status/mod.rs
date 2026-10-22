@@ -8,8 +8,10 @@ pub mod metrics;
 pub mod time;
 
 use crate::effect::Effect;
-use battery::Battery;
+use crate::kit::replace;
+use battery::{Battery, Group};
 use metrics::{History, Metrics};
+use time::{TimePage, TimeZones};
 
 /// Battery levels at which a notification warns, over whatever is running, while not charging. Each
 /// warns once until the battery charges. UPower hibernates the device at 3 % (the image's UPower.conf).
@@ -37,19 +39,61 @@ pub struct Status {
 #[derive(Debug, Clone, Default)]
 pub struct Sys {
     /// The last status reading, as read. The levels that are shown come from [`crate::levels::Levels`].
-    pub status: Status,
-    pub metrics: Metrics,
-    pub history: History,
-    pub battery: Battery,
+    status: Status,
+    metrics: Metrics,
+    history: History,
+    battery: Battery,
     /// The time zone and the ones to choose from, as last read.
-    pub time: crate::status::time::TimeZones,
+    time: TimeZones,
     /// The account, as last read (see [`crate::device::account`]).
-    pub account: crate::device::account::Account,
+    pub(crate) account: crate::device::account::Account,
     /// The lowest of [`WARN_AT`] warned about since the battery last charged.
     warned: Option<u8>,
+    /// The battery tab row whose menu is open (see [`battery`]).
+    spender_menu: Option<Group>,
+    /// Show clocks in 12-hour format (see [`time`]).
+    twelve_hour: bool,
+    /// What the time tab shows: its main page, the regions, or a region's zones.
+    time_page: TimePage,
 }
 
 impl Sys {
+    pub(crate) fn new(twelve_hour: bool) -> Sys {
+        Sys { twelve_hour, ..Sys::default() }
+    }
+
+    /// The last status reading. Its volume and mute are as read: the levels shown are
+    /// [`crate::levels::Levels`]'.
+    pub fn status(&self) -> &Status {
+        &self.status
+    }
+
+    pub fn metrics(&self) -> &Metrics {
+        &self.metrics
+    }
+
+    pub fn history(&self) -> &History {
+        &self.history
+    }
+
+    pub fn battery(&self) -> &Battery {
+        &self.battery
+    }
+
+    pub fn time_zones(&self) -> &TimeZones {
+        &self.time
+    }
+
+    /// A reading of the battery's history and what is using the machine. Returns whether it changed.
+    pub(crate) fn read_battery(&mut self, battery: Battery) -> bool {
+        replace(&mut self.battery, battery)
+    }
+
+    /// A reading of the time zones. Returns whether it changed.
+    pub(crate) fn read_time(&mut self, time: TimeZones) -> bool {
+        replace(&mut self.time, time)
+    }
+
     /// A status reading. Returns whether it changed, leaving out the volume and mute: what the bar shows
     /// of those comes from the levels.
     pub(crate) fn read_status(&mut self, status: Status) -> bool {
@@ -109,8 +153,8 @@ mod tests {
         assert_eq!(read(&mut s, Reading::Metrics(crate::status::metrics::Metrics::default())), Dirty::NONE, "sysinfo isn't open");
         tap(&mut s, Id::Tab(Tab::Sysinfo));
         assert_eq!(read(&mut s, Reading::Frames { fps: Some(60.0), frame_ms: Some(16.7) }), Dirty::BOTTOM);
-        assert_eq!(s.sys().metrics.fps, Some(60.0));
+        assert_eq!(s.sys().metrics().fps, Some(60.0));
         read(&mut s, Reading::Metrics(crate::status::metrics::Metrics::default()));
-        assert_eq!(s.sys().metrics.fps, Some(60.0), "the frame rate comes separately");
+        assert_eq!(s.sys().metrics().fps, Some(60.0), "the frame rate comes separately");
     }
 }

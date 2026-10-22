@@ -11,10 +11,10 @@
 //!
 //! The system side, systemd's timedated, is read while the tab is open and after each change.
 
-use crate::State;
 use crate::TimeId;
 use crate::effect::{Dirty, Effect, Save};
-use crate::nav::lists::ListId;
+use crate::kit::list::Scroll;
+use crate::status::Sys;
 
 /// The system's time zone and the ones to choose from, by tzdata name ("Europe/Oslo"), and whether the
 /// network sets the clock.
@@ -82,13 +82,14 @@ pub fn in_region(zone: &str, region: &str) -> bool {
     zone.strip_prefix(region).is_some_and(|rest| rest.starts_with('/'))
 }
 
-impl State {
-    pub fn time_zones(&self) -> &TimeZones {
-        &self.sys.time
+impl Sys {
+    pub fn time_page(&self) -> TimePage {
+        self.time_page
     }
 
-    pub fn time_page(&self) -> TimePage {
-        self.bottom.time_page
+    /// Back to the main page, as when the tab is left.
+    pub(crate) fn reset_time_page(&mut self) {
+        self.time_page = TimePage::Main;
     }
 
     /// Whether ClamShell's clocks show 12 hours rather than 24.
@@ -98,36 +99,36 @@ impl State {
 
     /// Whether the date and time are set by hand now, rather than by the network.
     pub fn clock_by_hand(&self) -> bool {
-        self.sys.time.ntp != Some(true)
+        self.time.ntp != Some(true)
     }
 
     /// The region whose zones the tab shows, if one is open.
     pub fn time_region(&self) -> Option<&'static str> {
-        match self.bottom.time_page {
+        match self.time_page {
             TimePage::Region(i) => REGIONS.get(usize::from(i)).copied(),
             _ => None,
         }
     }
 
-    pub(crate) fn time_rows(&self) -> usize {
-        match self.bottom.time_page {
+    pub fn time_rows(&self) -> usize {
+        match self.time_page {
             TimePage::Main => 0,
             TimePage::Regions => REGIONS.len() + 1,
-            TimePage::Region(_) => self.time_region().map_or(0, |region| self.sys.time.of(region).count()),
+            TimePage::Region(_) => self.time_region().map_or(0, |region| self.time.of(region).count()),
         }
     }
 
     pub fn time_row(&self, i: usize) -> Option<TimeRow<'_>> {
-        match self.bottom.time_page {
+        match self.time_page {
             TimePage::Main => None,
             TimePage::Regions => REGIONS.get(i).map(|r| TimeRow::Region(r)).or((i == REGIONS.len()).then_some(TimeRow::Utc)),
-            TimePage::Region(_) => self.time_region().and_then(|region| self.sys.time.of(region).nth(i)).map(TimeRow::Zone),
+            TimePage::Region(_) => self.time_region().and_then(|region| self.time.of(region).nth(i)).map(TimeRow::Zone),
         }
     }
 
     /// Whether a row is the zone in force, or the region it is in.
     pub fn time_row_current(&self, row: TimeRow) -> bool {
-        let Some(current) = self.sys.time.current.as_deref() else {
+        let Some(current) = self.time.current.as_deref() else {
             return false;
         };
         match row {
@@ -138,8 +139,8 @@ impl State {
     }
 
     /// A tap on a row. A region opens, scrolled to the zone in force if it is there. UTC or a zone is
-    /// set, and the main page comes back.
-    pub(crate) fn on_time_row(&mut self, i: usize) -> Vec<Effect> {
+    /// set, and the main page comes back. `scroll` is the list's.
+    pub(crate) fn on_time_row(&mut self, i: usize, scroll: Option<&mut Scroll>) -> Vec<Effect> {
         let region = match self.time_row(i) {
             Some(TimeRow::Region(_)) => u8::try_from(i).ok(),
             Some(TimeRow::Utc) => return self.set_zone("UTC"),
@@ -152,34 +153,34 @@ impl State {
         let Some(region) = region else {
             return vec![];
         };
-        self.bottom.time_page = TimePage::Region(region);
-        let current = self.sys.time.current.as_deref();
-        let at = self.time_region().and_then(|region| self.sys.time.of(region).position(|z| Some(z) == current));
-        self.show_time_row(at.unwrap_or(0));
+        self.time_page = TimePage::Region(region);
+        let current = self.time.current.as_deref();
+        let at = self.time_region().and_then(|region| self.time.of(region).position(|z| Some(z) == current));
+        self.show_time_row(at.unwrap_or(0), scroll);
         vec![]
     }
 
     fn set_zone(&mut self, zone: &str) -> Vec<Effect> {
-        self.bottom.time_page = TimePage::Main;
+        self.time_page = TimePage::Main;
         vec![Effect::SetTimeZone(zone.to_owned())]
     }
 
-    /// A tap on one of the tab's own targets.
-    pub(crate) fn on_time(&mut self, id: TimeId) -> (Dirty, Vec<Effect>) {
+    /// A tap on one of the tab's own targets. `scroll` is the list's.
+    pub(crate) fn on_time(&mut self, id: TimeId, scroll: Option<&mut Scroll>) -> (Dirty, Vec<Effect>) {
         let effects = match id {
             TimeId::Back => {
-                self.time_back();
+                self.time_back(scroll);
                 vec![]
             }
             TimeId::Zone => {
                 // Show the regions, scrolled to the one the zone in force is in.
-                self.bottom.time_page = TimePage::Regions;
-                let current = self.sys.time.current.as_deref();
+                self.time_page = TimePage::Regions;
+                let current = self.time.current.as_deref();
                 let at = REGIONS.iter().position(|r| current.is_some_and(|c| in_region(c, r)));
-                self.show_time_row(at.unwrap_or(0));
+                self.show_time_row(at.unwrap_or(0), scroll);
                 vec![]
             }
-            TimeId::Ntp => self.sys.time.ntp.map(|on| Effect::SetNtp(!on)).into_iter().collect(),
+            TimeId::Ntp => self.time.ntp.map(|on| Effect::SetNtp(!on)).into_iter().collect(),
             TimeId::TwelveHour => {
                 self.twelve_hour = !self.twelve_hour;
                 return (Dirty::BOTH, vec![Effect::Save(Save::TwelveHour(self.twelve_hour))]);
@@ -192,20 +193,20 @@ impl State {
 
     /// Goes back one page: from a region's zones to the regions, with that region shown, and from the
     /// regions to the main page.
-    pub(crate) fn time_back(&mut self) {
-        match self.bottom.time_page {
+    fn time_back(&mut self, scroll: Option<&mut Scroll>) {
+        match self.time_page {
             TimePage::Main => {}
-            TimePage::Regions => self.bottom.time_page = TimePage::Main,
+            TimePage::Regions => self.time_page = TimePage::Main,
             TimePage::Region(i) => {
-                self.bottom.time_page = TimePage::Regions;
-                self.show_time_row(usize::from(i));
+                self.time_page = TimePage::Regions;
+                self.show_time_row(usize::from(i), scroll);
             }
         }
     }
 
-    fn show_time_row(&mut self, i: usize) {
+    fn show_time_row(&self, i: usize, scroll: Option<&mut Scroll>) {
         let len = self.time_rows();
-        if let Some(scroll) = self.scroll_mut(ListId::Time) {
+        if let Some(scroll) = scroll {
             // Start from the top, since another region's scroll position means nothing here.
             scroll.scroll_by(-scroll.offset(), len);
             scroll.show(i, len);
@@ -219,7 +220,8 @@ mod tests {
     use super::*;
     use crate::event::Reading;
     use crate::id::TimeId;
-    use crate::{Event, Id, Init, Tab};
+    use crate::nav::lists::ListId;
+    use crate::{Event, Id, Init, State, Tab};
 
     fn state() -> State {
         let mut s = State::new(Init::default());
@@ -241,22 +243,22 @@ mod tests {
     #[test]
     fn regions_then_their_zones_and_a_zone_tapped_is_set() {
         let mut s = state();
-        assert_eq!((s.time_page(), s.time_rows()), (TimePage::Main, 0), "the main page first");
+        assert_eq!((s.sys().time_page(), s.sys().time_rows()), (TimePage::Main, 0), "the main page first");
         time(&mut s, TimeId::Zone);
-        assert_eq!(s.time_rows(), REGIONS.len() + 1, "the regions and UTC");
-        assert!(s.time_row_current(TimeRow::Region("Europe")));
-        assert!(!s.time_row_current(TimeRow::Region("America")));
+        assert_eq!(s.sys().time_rows(), REGIONS.len() + 1, "the regions and UTC");
+        assert!(s.sys().time_row_current(TimeRow::Region("Europe")));
+        assert!(!s.sys().time_row_current(TimeRow::Region("America")));
         assert!(tap(&mut s, 1).is_empty(), "America opens");
-        assert_eq!(s.time_region(), Some("America"));
+        assert_eq!(s.sys().time_region(), Some("America"));
         assert_eq!(
-            (s.time_row(0), s.time_row(1), s.time_row(2)),
+            (s.sys().time_row(0), s.sys().time_row(1), s.sys().time_row(2)),
             (Some(TimeRow::Zone("America/Argentina/Salta")), Some(TimeRow::Zone("America/New_York")), None)
         );
         time(&mut s, TimeId::Back);
-        assert_eq!(s.time_page(), TimePage::Regions, "back to the regions");
+        assert_eq!(s.sys().time_page(), TimePage::Regions, "back to the regions");
         tap(&mut s, 1);
         assert_eq!(tap(&mut s, 1), vec![Effect::SetTimeZone("America/New_York".to_owned())]);
-        assert_eq!(s.time_page(), TimePage::Main, "set: the main page again");
+        assert_eq!(s.sys().time_page(), TimePage::Main, "set: the main page again");
         time(&mut s, TimeId::Zone);
         assert_eq!(tap(&mut s, REGIONS.len() as u16), vec![Effect::SetTimeZone("UTC".to_owned())]);
     }
@@ -266,14 +268,14 @@ mod tests {
         let mut s = state();
         assert_eq!(time(&mut s, TimeId::Step(ClockField::Hour, true)), vec![], "the network sets it: no steps");
         assert_eq!(time(&mut s, TimeId::Ntp), vec![Effect::SetNtp(false)]);
-        let mut by_hand = s.time_zones().clone();
+        let mut by_hand = s.sys().time_zones().clone();
         by_hand.ntp = Some(false);
         s.apply(Event::Reading(Reading::Time(by_hand)));
-        assert!(s.clock_by_hand());
+        assert!(s.sys().clock_by_hand());
         assert_eq!(time(&mut s, TimeId::Step(ClockField::Month, false)), vec![Effect::StepClock(ClockField::Month, -1)]);
-        assert!(!s.twelve_hour());
+        assert!(!s.sys().twelve_hour());
         assert_eq!(time(&mut s, TimeId::TwelveHour), vec![Effect::Save(Save::TwelveHour(true))]);
-        assert!(s.twelve_hour());
+        assert!(s.sys().twelve_hour());
     }
 
     #[test]

@@ -34,7 +34,7 @@ const STEP_ARROW: f32 = 0.28;
 const STEP_GAP: f32 = 0.5;
 
 pub(super) fn draw(f: &mut Frame) {
-    match f.s.time_page() {
+    match f.s.sys().time_page() {
         TimePage::Main => main(f),
         TimePage::Regions | TimePage::Region(_) => zones(f),
     }
@@ -49,14 +49,14 @@ fn main(f: &mut Frame) {
     let row_h = body.h * ROW_H;
     let rows_h = 3.0 * row_h;
     let clock = Rect::new(area.x, area.y, area.w, area.h - rows_h - pad);
-    let local = f.scratch.local(s.clock().unix(), s.time_zones().current.as_deref());
-    if s.clock_by_hand() {
+    let local = f.scratch.local(s.clock().unix(), s.sys().time_zones().current.as_deref());
+    if s.sys().clock_by_hand() {
         steppers(f, clock, local);
     } else {
         large_clock(f, clock, local);
     }
     let mut col = Column::new(Rect::new(area.x, area.bottom() - rows_h, area.w, rows_h));
-    let zones = s.time_zones();
+    let zones = s.sys().time_zones();
     let zone = col.take(row_h);
     let name = match zones.current.as_deref() {
         Some(current) => Fmt::<96>::of(format_args!("{}", Name(current))),
@@ -75,7 +75,7 @@ fn main(f: &mut Frame) {
         }
         None => widgets::value_row(f, ntp, size, "Set automatically", "Unavailable", false),
     }
-    widgets::switch_row(f, Id::Time(TimeId::TwelveHour), col.take(row_h), size, "24-hour clock", !s.twelve_hour());
+    widgets::switch_row(f, Id::Time(TimeId::TwelveHour), col.take(row_h), size, "24-hour clock", !s.sys().twelve_hour());
     if let Some(error) = &zones.error {
         let line = Rect::new(clock.x, clock.bottom() - size * 1.4, clock.w, size * 1.4);
         widgets::centred_text(f, line, f.text(Text::Small), Tone::Accent, error);
@@ -93,7 +93,7 @@ fn large_clock(f: &mut Frame, r: Rect, local: LocalTime) {
     let s = f.s;
     let big = r.h * CLOCK;
     let small = f.text(Text::Body);
-    let (time, half) = if s.twelve_hour() {
+    let (time, half) = if s.sys().twelve_hour() {
         let (h, pm) = local.twelve();
         (Fmt::<8>::of(format_args!("{h}:{:02}", local.minute)), Some(if pm { "PM" } else { "AM" }))
     } else {
@@ -137,7 +137,7 @@ fn steppers(f: &mut Frame, r: Rect, local: LocalTime) {
             ClockField::Day => Fmt::<12>::of(format_args!("{}", local.day)),
             ClockField::Month => Fmt::of(format_args!("{}", local.month_name().get(..3).unwrap_or(""))),
             ClockField::Year => Fmt::of(format_args!("{}", local.year)),
-            ClockField::Hour if s.twelve_hour() => {
+            ClockField::Hour if s.sys().twelve_hour() => {
                 let (h, pm) = local.twelve();
                 Fmt::of(format_args!("{h} {}", if pm { "PM" } else { "AM" }))
             }
@@ -163,8 +163,8 @@ fn steppers(f: &mut Frame, r: Rect, local: LocalTime) {
 /// The zone pages: the regions and UTC, or a region's zones. The header's arrow goes back a page.
 fn zones(f: &mut Frame) {
     let s = f.s;
-    let zones = s.time_zones();
-    let region = s.time_region();
+    let zones = s.sys().time_zones();
+    let region = s.sys().time_region();
     let title = match region {
         Some(region) => Fmt::<96>::of(format_args!("{region}")),
         None => Fmt::of(format_args!("Time zone")),
@@ -176,10 +176,10 @@ fn zones(f: &mut Frame) {
     }
     let rows = list.scrolled(f, ListId::Time, s.list_len(ListId::Time));
     for i in rows.shown() {
-        let Some(row) = s.time_row(i) else {
+        let Some(row) = s.sys().time_row(i) else {
             continue;
         };
-        let current = s.time_row_current(row);
+        let current = s.sys().time_row_current(row);
         let label = match row {
             TimeRow::Region(region) => Fmt::<64>::of(format_args!("{region}")),
             TimeRow::Utc => Fmt::of(format_args!("UTC")),

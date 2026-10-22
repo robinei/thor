@@ -70,7 +70,7 @@ and the UI change with the code they call; doc links to moved methods are fixed 
 - [x] 3. Radios: private fields, `tap_network`/`tap_device`/`join`/power, `read_wifi`/`read_bluetooth`.
 - [x] 4. Levels: brightness debounce in, `change`/`on_audio`/`on_stream`; `read_status` split between
       `Sys` and `Levels`.
-- [ ] 5. Sys: private fields and getters; `spender_menu`, `twelve_hour`, `time_page` in; the time tab's
+- [x] 5. Sys: private fields and getters; `spender_menu`, `twelve_hour`, `time_page` in; the time tab's
       rules (taking the Time list's scroll) and the battery tab's.
 - [ ] 6. Device and Idle: `first_start`, `account` in; taps, sticks, refresh; `Idle::follow`.
 - [ ] 7. `Watches`.

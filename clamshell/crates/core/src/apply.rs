@@ -4,11 +4,12 @@
 use crate::bottom::keyboard::Key;
 use crate::kit::replace;
 use crate::levels::slider::Control;
-use crate::mutation::Mutation;
+use crate::mutation::{EntryAct, Mutation};
 use crate::resume::SAVE_AFTER;
 use crate::settings::MouseAtLaunch;
 use crate::{
-    BtId, Dirty, Effect, Event, Hold, Id, Level, Library, PadRoute, PointerEvent, Reading, Save, SettingsId, ShelfId, State, Tab, WifiId, WindowCommand, device,
+    BtId, Dirty, Effect, Event, Hold, Id, Level, Library, ListId, PadRoute, PointerEvent, Reading, Save, SettingsId, ShelfId, State, Tab, WifiId,
+    WindowCommand, device,
 };
 
 impl State {
@@ -250,6 +251,8 @@ impl State {
                 Mutation::Effect(e) => effects.push(e),
                 Mutation::Notify(what) => self.notify(what),
                 Mutation::OpenEditor(editor) => self.bottom.open_editor(editor),
+                Mutation::Act(id, EntryAct::Quit) => effects.extend(self.quit(&id)),
+                Mutation::Act(id, EntryAct::ForceKill) => effects.extend(self.force_kill(&id)),
             }
         }
         effects
@@ -361,10 +364,10 @@ impl State {
             }
             Reading::Wifi(wifi) => self.radios.read_wifi(wifi),
             Reading::Bluetooth(bluetooth) => self.radios.read_bluetooth(bluetooth),
-            Reading::Battery(battery) => replace(&mut self.sys.battery, battery),
+            Reading::Battery(battery) => self.sys.read_battery(battery),
             Reading::Audio(audio) => self.levels.read_audio(audio),
             Reading::Backlights(backlights) => self.levels.read_backlights(backlights),
-            Reading::Time(time) => replace(&mut self.sys.time, time),
+            Reading::Time(time) => self.sys.read_time(time),
             Reading::Account(account) => {
                 // The account is shown in the Device view, on the main screen.
                 let changed = replace(&mut self.sys.account, account);
@@ -473,9 +476,12 @@ impl State {
                 Some(window) => (Dirty::BOTH, self.show_program_down(window)),
                 None => (Dirty::NONE, vec![]),
             },
-            Id::Time(id) => self.on_time(id),
+            Id::Time(id) => self.sys.on_time(id, self.lists.get_mut(ListId::Time)),
             Id::Device(id) => (Dirty::BOTH, self.on_device(id)),
-            Id::Battery(id) => (Dirty::BOTTOM, self.on_battery(id)),
+            Id::Battery(id) => {
+                let mutations = self.sys.on_battery(id, &self.session);
+                (Dirty::BOTTOM, self.settle(mutations))
+            }
             Id::PadMouse => {
                 self.pad.toggle_mouse();
                 (Dirty::BOTTOM, vec![])

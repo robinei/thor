@@ -136,8 +136,6 @@ pub struct State {
     device: device::Device,
     /// The screens are off, so the bar's status isn't watched (see [`Watch::Status`]).
     status_unwatched: bool,
-    /// The battery tab row whose menu is open (see [`crate::status::battery`]).
-    spender_menu: Option<crate::status::battery::Group>,
     /// Programs paused or ended while hidden (see [`crate::session::background`]).
     background: crate::session::background::Background,
     /// The entries started with ClamShell, and whether they have been started yet (see
@@ -164,8 +162,6 @@ pub struct State {
     device_session: bool,
     /// Which programs' windows go to the bottom screen.
     window_rules: crate::bottom::screen::WindowRules,
-    /// Show clocks in 12-hour format (see [`crate::status::time`]).
-    pub(crate) twelve_hour: bool,
     /// Whether metadata is being fetched, and what shelf showed when it was last asked to fetch it first
     /// (see [`State::follow_shown`]).
     fetching: bool,
@@ -189,7 +185,7 @@ impl State {
             settings: init.settings,
             keymaps: init.keymaps,
             window_rules: init.window_rules,
-            twelve_hour: init.twelve_hour,
+            sys: Sys::new(init.twelve_hour),
             levels: Levels::new(init.brightness),
             dock: init.dock,
             autostart: init.autostart,

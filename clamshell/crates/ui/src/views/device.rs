@@ -56,16 +56,16 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     // Wi-Fi: the joined network, by name once the Wi-Fi tab has read it.
     let wifi = col.take(row_h);
     let joined = s.radios().wifi().networks.iter().find(|n| n.connected).map(|n| n.ssid.as_str());
-    let value = match (joined, s.sys().status.wifi) {
+    let value = match (joined, s.sys().status().wifi) {
         (Some(ssid), _) => Fmt::<96>::of(format_args!("{ssid}")),
         (None, Some(_)) => Fmt::of(format_args!("Connected")),
         (None, None) => Fmt::of(format_args!("Not connected")),
     };
-    let connected = s.sys().status.wifi.is_some();
+    let connected = s.sys().status().wifi.is_some();
     f.button(Id::Device(DeviceId::Wifi), wifi, Look::ROW, |f| widgets::value_row(f, wifi, size, "Wi-Fi", &value, connected));
 
     let zone = col.take(row_h);
-    let name = match s.time_zones().current.as_deref() {
+    let name = match s.sys().time_zones().current.as_deref() {
         Some(current) => Fmt::<96>::of(format_args!("{}", Name(current))),
         None => Fmt::of(format_args!("Unknown")),
     };

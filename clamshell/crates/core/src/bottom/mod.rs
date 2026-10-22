@@ -16,7 +16,7 @@ use crate::effect::Watch;
 use crate::event::Reading;
 use crate::kit::names::names;
 use crate::settings::panel::Scope;
-use crate::{Effect, State, TimePage};
+use crate::{Effect, State};
 use editor::Editor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -116,8 +116,6 @@ pub struct Bottom {
     pub(crate) woken: bool,
     /// What the bottom screen shows, ClamShell's view or a window moved down, and whether it is off.
     pub(crate) screen: crate::bottom::screen::BottomScreen,
-    /// What the time tab shows: its main page, the regions, or a region's zones.
-    pub(crate) time_page: crate::status::time::TimePage,
     /// What a key just did, such as change a level or take a screenshot, shown under the bar for a
     /// moment.
     pub(crate) notice: Option<crate::bottom::notice::Notice>,
@@ -198,7 +196,7 @@ impl State {
         // No level row of the tab left is being set any more.
         self.levels.release();
         // The time tab opens on its main page again.
-        self.bottom.time_page = TimePage::Main;
+        self.sys.reset_time_page();
         vec![]
     }
 

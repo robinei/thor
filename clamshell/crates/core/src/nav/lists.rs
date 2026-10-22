@@ -109,7 +109,7 @@ impl Lists {
         self.scrolls.get(list.index()).unwrap_or(&EMPTY)
     }
 
-    fn get_mut(&mut self, list: ListId) -> Option<&mut Scroll> {
+    pub(crate) fn get_mut(&mut self, list: ListId) -> Option<&mut Scroll> {
         self.scrolls.get_mut(list.index())
     }
 }
@@ -146,7 +146,7 @@ impl State {
             ListId::Backlights => RowsOf::Of(self.levels.backlight_rows()),
             ListId::Keymaps => RowsOf::Count(self.keymap_rows_len()),
             ListId::Layers => RowsOf::Count(self.layer_rows()),
-            ListId::Time => RowsOf::Count(self.time_rows()),
+            ListId::Time => RowsOf::Count(self.sys.time_rows()),
             ListId::Dock => RowsOf::Count(self.dock.items().len().div_ceil(crate::session::dock::DOCK_COLUMNS)),
         }
     }
@@ -162,7 +162,7 @@ impl State {
             ListId::Streams => self.levels.on_stream(i, part),
             ListId::Keymaps => self.on_keymap_row(i, part, long),
             ListId::Layers => self.on_layer_row(i, part, long),
-            ListId::Time => self.on_time_row(i),
+            ListId::Time => self.sys.on_time_row(i, self.lists.get_mut(ListId::Time)),
             // Its tiles are targets of their own.
             ListId::Dock => vec![],
             // A shelf game's row is its game's target, and a backlight's row is only its level.

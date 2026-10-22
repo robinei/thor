@@ -44,7 +44,7 @@ const SPAN: f32 = 24.0 * 3600.0;
 
 pub(super) fn draw(f: &mut Frame) {
     let s = f.s;
-    if let Some(group) = s.spender_menu() {
+    if let Some(group) = s.sys().spender_menu() {
         return spender_menu(f, group);
     }
     let body = f.body();
@@ -64,7 +64,7 @@ pub(super) fn draw(f: &mut Frame) {
     let list = Rect::new(rest.x, title_y + size * 1.6, rest.w, rest.y + rest.h - title_y - size * 1.6);
     let row_h = f.body().h * ROW_H;
     let rows = (list.h / row_h).floor().max(0.0) as usize;
-    let spenders = &s.sys().battery.spenders;
+    let spenders = &s.sys().battery().spenders;
     if spenders.is_empty() {
         f.c.text(list.x, list.y, size, Tone::Dim, "Measuring");
     }
@@ -75,7 +75,7 @@ pub(super) fn draw(f: &mut Frame) {
         let r = Rect::new(list.x, list.y + i as f32 * row_h, list.w, row_h);
         let row = |f: &mut Frame| {
             let name_w = r.w * NAME_W;
-            f.c.text_fit(Rect::new(r.x, r.y, name_w - pad, r.h), size, Tone::Normal, s.spender_name(p), Keep::Start);
+            f.c.text_fit(Rect::new(r.x, r.y, name_w - pad, r.h), size, Tone::Normal, p.name(s.shelf().library()), Keep::Start);
             let figures = Fmt::<64>::of(format_args!("CPU {} · GPU {} · {}", Share(p.cpu), MaybeShare(p.group.gpu_known().then_some(p.gpu)), Bytes(p.memory)));
             let figures_w = f.c.text_width(size * SMALL, &figures);
             // In smaller text, on the same line as the name.
@@ -101,7 +101,7 @@ pub(super) fn draw(f: &mut Frame) {
 /// dock; for another program they act on its processes. The back arrow returns to the tab.
 fn spender_menu(f: &mut Frame, group: &Group) {
     let s = f.s;
-    let name = s.sys().battery.spenders.iter().find(|p| p.group == *group).map_or("", |p| s.spender_name(p));
+    let name = s.sys().battery().spenders.iter().find(|p| p.group == *group).map_or("", |p| p.name(s.shelf().library()));
     let area = widgets::header(f, Some(Id::Battery(BatteryId::Back)), name, false, HeaderRight::None);
     let items = [(Id::Battery(BatteryId::Quit), "Quit", Tone::Accent), (Id::Battery(BatteryId::ForceKill), "Force kill", Tone::Accent)];
     widgets::menu(f, area, items);
@@ -124,7 +124,7 @@ fn top_line(f: &mut Frame, top: Rect, body_h: f32) {
     }
     // The level and two lines under it, in the middle of the row.
     let mut lines = Rect::new(row.x, row.y + (row.h - level_size * LINE - 2.0 * size * LINE) / 2.0, row.w - size, row.h);
-    let Some(level) = s.sys().status.battery else {
+    let Some(level) = s.sys().status().battery else {
         f.c.text_in(lines.take_top(level_size * LINE), size, Tone::Dim, "No battery", Align::Start);
         return;
     };
@@ -139,13 +139,13 @@ fn top_line(f: &mut Frame, top: Rect, body_h: f32) {
 /// the time left ("3 h 10 min left") when discharging.
 fn drain(s: &State) -> (Fmt<64>, Fmt<64>) {
     let sys = s.sys();
-    let state = match (sys.status.charging, sys.metrics.power_w) {
+    let state = match (sys.status().charging, sys.metrics().power_w) {
         (true, Some(w)) if w.abs() > 0.05 => Fmt::of(format_args!("Charging · {:.1} W", w.abs())),
         (true, _) => Fmt::of(format_args!("Charging or full")),
         (false, Some(w)) => Fmt::of(format_args!("Discharging · {w:.1} W")),
         (false, None) => Fmt::of(format_args!("Discharging")),
     };
-    let left = match (sys.status.charging, sys.metrics.minutes_left) {
+    let left = match (sys.status().charging, sys.metrics().minutes_left) {
         (false, Some(m)) => Fmt::of(format_args!("{} left", Duration(m))),
         _ => Fmt::of(format_args!("")),
     };
@@ -165,7 +165,7 @@ fn history(f: &mut Frame, g: Rect, size: f32) {
     f.c.text_in(labels, small, Tone::Dim, "24 h ago", Align::Start);
     f.c.text_in(labels, small, Tone::Dim, "12 h", Align::Center);
     f.c.text_in(labels, small, Tone::Dim, "now", Align::End);
-    if !s.sys().battery.has_history {
+    if !s.sys().battery().has_history {
         f.c.text_in(plot, size, Tone::Dim, "No charge history from UPower", Align::Center);
         return;
     }
@@ -180,15 +180,15 @@ fn history(f: &mut Frame, g: Rect, size: f32) {
         f.c.fill(Rect::new(x0, y0 - STROKE / 2.0, (x1 - x0).max(STROKE), STROKE), tone);
         f.c.fill(Rect::new(x1 - STROKE / 2.0, y0.min(y1) - STROKE / 2.0, STROKE, (y1 - y0).abs() + STROKE), tone);
     };
-    let history = &s.sys().battery.history;
+    let history = &s.sys().battery().history;
     for pair in history.windows(2) {
         if let [a, b] = pair {
             step(f, (a.at, a.level), (b.at, b.level), a.charging);
         }
     }
     // From the last point to now, at the current level.
-    if let (Some(last), Some(level)) = (history.last(), s.sys().status.battery) {
-        step(f, (last.at, last.level), (s.clock().unix(), level), s.sys().status.charging);
+    if let (Some(last), Some(level)) = (history.last(), s.sys().status().battery) {
+        step(f, (last.at, last.level), (s.clock().unix(), level), s.sys().status().charging);
     }
     if history.is_empty() {
         f.c.text_in(plot, size, Tone::Dim, "No changes recorded yet", Align::Center);

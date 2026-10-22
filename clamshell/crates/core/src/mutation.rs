@@ -1,6 +1,8 @@
 //! What an area's rule asks of the rest of the state. A rule changes its own area directly and returns
 //! the changes it needs elsewhere, which [`crate::State::settle`] applies in order.
 
+use std::sync::Arc;
+
 use crate::Effect;
 use crate::bottom::editor::Editor;
 use crate::bottom::notice::NoticeKind;
@@ -13,4 +15,14 @@ pub(crate) enum Mutation {
     Notify(NoticeKind),
     /// An editor opened in its tab.
     OpenEditor(Editor),
+    /// Something done to an entry, by its id.
+    Act(Arc<str>, EntryAct),
+}
+
+/// What is done to an entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EntryAct {
+    /// Quit, as from the dock.
+    Quit,
+    ForceKill,
 }

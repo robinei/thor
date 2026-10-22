@@ -71,12 +71,12 @@ fn tab_button(s: &State, tab: Tab) -> (Id, Icon, Tone) {
             (Id::Tab(tab), Icon::Bluetooth { connected }, lit(bt.on && connected))
         }
         Tab::Wifi => {
-            let quality = s.sys().status.wifi;
+            let quality = s.sys().status().wifi;
             (Id::Tab(tab), Icon::wifi(quality), lit(quality.is_some()))
         }
         // An empty, dim battery when there is none, and the accent colour when low.
         Tab::Battery => {
-            let status = &s.sys().status;
+            let status = &s.sys().status();
             let (icon, tone) = match status.battery {
                 Some(level) => {
                     let low = level <= LOW_BATTERY && !status.charging;
@@ -110,7 +110,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
     let mouse = bar.take_right(bar_h * SLOT);
     let tone = if f.s.pad().mouse_on() { Tone::Accent } else { Tone::Dim };
     icon_button(f, Id::PadMouse, mouse, Icon::Mouse, tone);
-    let clock = f.scratch.local(f.s.clock().unix(), f.s.time_zones().current.as_deref()).time(f.s.twelve_hour());
+    let clock = f.scratch.local(f.s.clock().unix(), f.s.sys().time_zones().current.as_deref()).time(f.s.sys().twelve_hour());
     let size = bar_h * CLOCK_TEXT;
     let clock_w = f.c.text_width(size, &clock) + bar_h * CLOCK_PAD;
     let clock_r = bar.take_right(clock_w);

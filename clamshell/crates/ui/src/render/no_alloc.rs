@@ -391,7 +391,7 @@ fn warm_frames_do_not_allocate() {
         ("shelf, a video", |s| s.shelf().selected().is_some_and(|id| id.ends_with(".mkv"))),
         ("dock, an entry's menu", |s| s.dock().menu().is_some() && !s.dock().tray_open()),
         ("dock, a tray menu", |s| s.dock().tray_open()),
-        ("battery, a program's menu", |s| s.spender_menu().is_some()),
+        ("battery, a program's menu", |s| s.sys().spender_menu().is_some()),
         ("time", |s| s.bottom().tab() == Tab::Time),
     ];
     for (name, events) in cases {

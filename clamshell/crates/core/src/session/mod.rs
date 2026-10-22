@@ -83,6 +83,11 @@ impl Session {
         &self.running
     }
 
+    /// The running entry whose windows have app id `app`.
+    pub(crate) fn running_app(&self, app: &str) -> Option<Arc<str>> {
+        self.running.iter().find(|r| r.app_id.as_deref() == Some(app)).map(|r| r.id.clone())
+    }
+
     /// A running entry, by its id.
     pub fn running(&self, id: &str) -> Option<&Running> {
         self.running.iter().find(|r| &*r.id == id)

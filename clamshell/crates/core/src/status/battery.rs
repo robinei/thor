@@ -3,10 +3,10 @@
 //! The battery reports only its total drain. There is no power reading per program, so programs are
 //! ranked by their share of the work instead.
 
-use crate::BatteryId;
-use crate::Effect;
-use crate::State;
+use crate::mutation::{EntryAct, Mutation};
 use crate::session::instance::Instance;
+use crate::status::Sys;
+use crate::{BatteryId, Effect, Library, Running, Session};
 
 /// Who a spender is. It is one of our instances or a game started by shelf, known by its scope. Or an
 /// app run in another program's processes, known by its app id, such as an Android app in Waydroid's
@@ -78,7 +78,26 @@ pub struct Cost {
     pub memory: u64,
 }
 
-impl State {
+impl Spender {
+    /// Its name: the entry its scope is a launch of, the program's name, or "System".
+    pub fn name<'a>(&'a self, library: &'a Library) -> &'a str {
+        match &self.group {
+            Group::Instance(instance) => {
+                let key = instance.key();
+                let entry = library.entries.iter().find(|g| Some(g.key.as_str()) == key);
+                entry.map_or_else(|| key.unwrap_or("?"), |g| g.title.as_str())
+            }
+            Group::App(app) => {
+                let entry = library.entries.iter().find(|g| clamshell_library::ids::desktop_file(&g.id) == Some(app.as_str()));
+                entry.map_or(app.as_str(), |g| g.title.as_str())
+            }
+            Group::Process(name) => name,
+            Group::System => "System",
+        }
+    }
+}
+
+impl Sys {
     /// What the row whose menu is open is.
     pub fn spender_menu(&self) -> Option<&Group> {
         self.spender_menu.as_ref()
@@ -87,12 +106,12 @@ impl State {
     /// A tap on a row of what is using the machine, or a choice in a row's menu. A tap opens the row's
     /// menu, except for rows that can't be ended, such as the system's. In the menu, an entry is quit or
     /// killed as from the dock, and another program's processes are asked to end or killed.
-    pub(crate) fn on_battery(&mut self, id: BatteryId) -> Vec<Effect> {
+    pub(crate) fn on_battery(&mut self, id: BatteryId, session: &Session) -> Vec<Mutation> {
         match id {
             BatteryId::Spender(i) => {
                 // An app is ended as its entry, so only one that is running gets a menu.
-                let endable = |s: &&Spender| s.endable && !matches!(&s.group, Group::App(app) if self.running_app(app).is_none());
-                self.spender_menu = self.sys.battery.spenders.get(usize::from(i)).filter(endable).map(|s| s.group.clone());
+                let endable = |s: &&Spender| s.endable && !matches!(&s.group, Group::App(app) if session.running_app(app).is_none());
+                self.spender_menu = self.battery.spenders.get(usize::from(i)).filter(endable).map(|s| s.group.clone());
                 vec![]
             }
             BatteryId::Back => {
@@ -105,28 +124,24 @@ impl State {
                     return vec![];
                 };
                 let entry = match &group {
-                    Group::Instance(instance) => self.session.running.iter().find(|r| Some(r.key.as_str()) == instance.key()).map(|r| r.id.clone()),
-                    Group::App(app) => self.running_app(app),
+                    Group::Instance(instance) => session.running_entries().iter().find(|r| Some(r.key.as_str()) == instance.key()).map(|r| r.id.clone()),
+                    Group::App(app) => session.running_app(app),
                     Group::Process(_) => {
-                        let pids = self.sys.battery.spenders.iter().find(|s| s.group == group).map(|s| s.pids.clone()).unwrap_or_default();
-                        return if pids.is_empty() { vec![] } else { vec![Effect::EndProcesses { pids, force }] };
+                        let pids = self.battery.spenders.iter().find(|s| s.group == group).map(|s| s.pids.clone()).unwrap_or_default();
+                        return if pids.is_empty() { vec![] } else { vec![Mutation::Effect(Effect::EndProcesses { pids, force })] };
                     }
                     Group::System => None,
                 };
-                match entry {
-                    Some(id) if force => self.force_kill(&id),
-                    Some(id) => self.quit(&id),
-                    None => vec![],
-                }
+                let act = if force { EntryAct::ForceKill } else { EntryAct::Quit };
+                entry.map(|id| Mutation::Act(id, act)).into_iter().collect()
             }
         }
     }
 
     /// What a running entry costs now, from the last reading, with all its launches together. It is read
     /// while the battery tab or the entry's dock menu is open.
-    pub fn cost_of(&self, entry: &str) -> Option<Cost> {
-        let r = self.session.running(entry)?;
-        let mine = self.sys.battery.spenders.iter().filter(|s| match &s.group {
+    pub fn cost_of(&self, r: &Running) -> Option<Cost> {
+        let mine = self.battery.spenders.iter().filter(|s| match &s.group {
             Group::Instance(i) => i.key() == Some(r.key.as_str()),
             Group::App(app) => r.app_id.as_deref() == Some(app.as_str()),
             _ => false,
@@ -136,28 +151,6 @@ impl State {
             let gpu = gpu.zip(s.group.gpu_known().then_some(s.gpu)).map(|(a, b)| a + b);
             Some(Cost { cpu: cpu + s.cpu, gpu, memory: memory + s.memory })
         })
-    }
-
-    /// A spender's name: the entry its scope is a launch of, the program's name, or "System".
-    pub fn spender_name<'a>(&'a self, spender: &'a Spender) -> &'a str {
-        match &spender.group {
-            Group::Instance(instance) => {
-                let key = instance.key();
-                let entry = self.shelf.library().entries.iter().find(|g| Some(g.key.as_str()) == key);
-                entry.map_or_else(|| key.unwrap_or("?"), |g| g.title.as_str())
-            }
-            Group::App(app) => {
-                let entry = self.shelf.library().entries.iter().find(|g| clamshell_library::ids::desktop_file(&g.id) == Some(app.as_str()));
-                entry.map_or(app.as_str(), |g| g.title.as_str())
-            }
-            Group::Process(name) => name,
-            Group::System => "System",
-        }
-    }
-
-    /// The running entry whose windows have app id `app`.
-    fn running_app(&self, app: &str) -> Option<std::sync::Arc<str>> {
-        self.session.running.iter().find(|r| r.app_id.as_deref() == Some(app)).map(|r| r.id.clone())
     }
 }
 
@@ -184,12 +177,12 @@ mod tests {
         let ff6 = launch(&mut s, "ff6");
         crate::testkit::start(&mut s, "ff6");
         let terminal = Instance::Run { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 9 };
-        assert_eq!(s.spender_name(&spender(Group::Instance(terminal))), "Terminal");
+        assert_eq!(spender(Group::Instance(terminal)).name(s.shelf().library()), "Terminal");
         let title = |id: &str| s.entry(id).map(|g| g.title.clone()).unwrap_or_default();
-        assert_eq!(s.spender_name(&spender(Group::Instance(zelda))), title(&first));
-        assert_eq!(s.spender_name(&spender(Group::Instance(ff6))), title("ff6"));
-        assert_eq!(s.spender_name(&spender(Group::Process("firefox".into()))), "firefox");
-        assert_eq!(s.spender_name(&spender(Group::System)), "System");
+        assert_eq!(spender(Group::Instance(zelda)).name(s.shelf().library()), title(&first));
+        assert_eq!(spender(Group::Instance(ff6)).name(s.shelf().library()), title("ff6"));
+        assert_eq!(spender(Group::Process("firefox".into())).name(s.shelf().library()), "firefox");
+        assert_eq!(spender(Group::System).name(s.shelf().library()), "System");
     }
 
     #[test]
@@ -199,22 +192,22 @@ mod tests {
         let firefox = Spender { pids: vec![40, 41], ..spender(Group::Process("firefox".into())) };
         let spenders = vec![spender(Group::Instance(zelda.clone())), firefox, spender(Group::System)];
         s.apply(Event::Reading(Reading::Battery(Battery { spenders, ..Battery::default() })));
-        assert_eq!(s.cost_of("zelda-lttp"), Some(Cost { cpu: 0.1, gpu: Some(0.0), memory: 0 }));
+        assert_eq!(s.session().running("zelda-lttp").and_then(|r| s.sys().cost_of(r)), Some(Cost { cpu: 0.1, gpu: Some(0.0), memory: 0 }));
         // Another program ends its processes.
         tap(&mut s, Id::Battery(BatteryId::Spender(1)));
-        assert_eq!(s.spender_menu(), Some(&Group::Process("firefox".into())));
+        assert_eq!(s.sys().spender_menu(), Some(&Group::Process("firefox".into())));
         assert_eq!(tap(&mut s, Id::Battery(BatteryId::ForceKill)), vec![Effect::EndProcesses { pids: vec![40, 41], force: true }]);
-        assert_eq!(s.spender_menu(), None);
+        assert_eq!(s.sys().spender_menu(), None);
         // An entry ends as from the dock. With no window, it is ended at once.
         tap(&mut s, Id::Battery(BatteryId::Spender(0)));
         assert_eq!(tap(&mut s, Id::Battery(BatteryId::Quit)), vec![Effect::EndRun { key: zelda.key().unwrap().to_owned(), force: false }]);
         // The system's row, or the session's own, has no menu.
         tap(&mut s, Id::Battery(BatteryId::Spender(2)));
-        assert_eq!(s.spender_menu(), None);
+        assert_eq!(s.sys().spender_menu(), None);
         let sway = Spender { endable: false, ..spender(Group::Process("sway".into())) };
         s.apply(Event::Reading(Reading::Battery(Battery { spenders: vec![sway], ..Battery::default() })));
         tap(&mut s, Id::Battery(BatteryId::Spender(0)));
-        assert_eq!(s.spender_menu(), None);
+        assert_eq!(s.sys().spender_menu(), None);
     }
 
     #[test]
@@ -234,10 +227,14 @@ mod tests {
         // the row is named and ended as the entry.
         let spenders = vec![spender(Group::App("firefox".into())), spender(Group::App("org.other".into()))];
         s.apply(Event::Reading(Reading::Battery(Battery { spenders, ..Battery::default() })));
-        assert_eq!(s.cost_of("desktop:firefox"), Some(Cost { cpu: 0.1, gpu: None, memory: 0 }), "its GPU time: another user's");
-        assert_eq!(s.spender_name(&spender(Group::App("firefox".into()))), "Firefox");
+        assert_eq!(
+            s.session().running("desktop:firefox").and_then(|r| s.sys().cost_of(r)),
+            Some(Cost { cpu: 0.1, gpu: None, memory: 0 }),
+            "its GPU time: another user's"
+        );
+        assert_eq!(spender(Group::App("firefox".into())).name(s.shelf().library()), "Firefox");
         tap(&mut s, Id::Battery(BatteryId::Spender(1)));
-        assert_eq!(s.spender_menu(), None, "an app that isn't an entry running: no menu");
+        assert_eq!(s.sys().spender_menu(), None, "an app that isn't an entry running: no menu");
         tap(&mut s, Id::Battery(BatteryId::Spender(0)));
         assert_eq!(tap(&mut s, Id::Battery(BatteryId::Quit)), vec![Effect::Window(WindowCommand::Close(vec![6]))]);
         // Settings that go through the launch's own process don't reach it either.

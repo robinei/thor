@@ -67,7 +67,7 @@ impl Tile {
 pub(super) fn draw(f: &mut Frame) {
     let body = f.body();
     let s = f.s;
-    let (m, h) = (&s.sys().metrics, &s.sys().history);
+    let (m, h) = (&s.sys().metrics(), &s.sys().history());
     let pad = f.pad();
     let c = &mut *f.c;
     let mut grid = style::content(body);
@@ -92,7 +92,7 @@ pub(super) fn draw(f: &mut Frame) {
     t.graph(c, &h.fps, h.fps.max().max(FPS_SCALE), FPS);
 
     let t = tile("Power", 3);
-    let (value, detail) = match (m.power_w, m.minutes_left, s.sys().status.battery) {
+    let (value, detail) = match (m.power_w, m.minutes_left, s.sys().status().battery) {
         (Some(w), Some(min), Some(b)) if w > 0.0 => (Line::of(format_args!("{w:.1} W")), Line::of(format_args!("{b}% · {} left", HoursMinutes(min)))),
         (Some(w), _, Some(b)) if w < 0.0 => (Line::of(format_args!("{:.1} W", -w)), Line::of(format_args!("{b}% · charging"))),
         (Some(w), _, _) => (Line::of(format_args!("{:.1} W", w.abs())), Line::of(format_args!("battery"))),
