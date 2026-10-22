@@ -7,17 +7,18 @@ use std::sync::Arc;
 
 use clamshell_core::{Event, Reading};
 
+use crate::Sink;
 use crate::os::worker::Worker;
-use crate::{Sink, desktop};
+use crate::os::xdg;
 
 /// The icons thread; its requests: an entry and the app id to look up.
 pub fn spawn(sink: impl Sink) -> io::Result<Worker<(Arc<str>, String)>> {
     Worker::spawn("icons", move |requests: std::sync::mpsc::Receiver<(Arc<str>, String)>| {
-        let dirs = desktop::data_dirs();
+        let dirs = xdg::data_dirs();
         for (entry, app_id) in requests {
             let last = app_id.rsplit('.').next().unwrap_or_default().to_lowercase();
             let names = [app_id.clone(), app_id.to_lowercase(), last];
-            if let Some(path) = names.iter().filter(|n| !n.is_empty()).find_map(|n| desktop::find_icon(n, &dirs))
+            if let Some(path) = names.iter().filter(|n| !n.is_empty()).find_map(|n| xdg::find_icon(n, &dirs))
                 && sink.send(Event::Reading(Reading::Icon { entry, path })).is_err()
             {
                 return;

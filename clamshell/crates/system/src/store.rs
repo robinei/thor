@@ -36,6 +36,8 @@ use clamshell_core::settings::{Setting, Settings};
 use clamshell_core::{Dock, Resume, Save};
 use clamshell_library::{Meta, Plays, key_of};
 use serde::de::DeserializeOwned;
+
+use crate::os::fs::{read_json, write_json};
 use serde::{Deserialize, Serialize};
 
 /// A video's length and a frame of it, as read.
@@ -51,39 +53,6 @@ pub struct Fetched {
     pub source: String,
     pub at: u64,
     pub meta: Meta,
-}
-
-/// Writes `bytes` to `path` whole: to a file beside it, flushed to the disk, then renamed over it (and
-/// the rename made to last).
-pub fn write_file(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let dir = path.parent().ok_or_else(|| io::Error::other("no folder"))?;
-    fs::create_dir_all(dir)?;
-    let mut part = path.as_os_str().to_owned();
-    part.push(".part");
-    let part = PathBuf::from(part);
-    let mut file = fs::File::create(&part)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    fs::rename(&part, path)?;
-    fs::File::open(dir)?.sync_all()
-}
-
-fn write_json(path: &Path, value: &impl Serialize) -> io::Result<()> {
-    let mut text = serde_json::to_string_pretty(value).map_err(io::Error::other)?;
-    text.push('\n');
-    write_file(path, text.as_bytes())
-}
-
-/// A file read as `T`: none if it isn't there, or doesn't read (logged).
-fn read_json<T: DeserializeOwned>(path: &Path) -> Option<T> {
-    let text = fs::read_to_string(path)
-        .map_err(|e| {
-            if e.kind() != io::ErrorKind::NotFound {
-                log::warn!("{}: {e}", path.display())
-            }
-        })
-        .ok()?;
-    serde_json::from_str(&text).map_err(|e| log::warn!("{}: {e}", path.display())).ok()
 }
 
 /// A settings screen's file.

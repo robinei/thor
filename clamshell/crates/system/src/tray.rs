@@ -270,7 +270,7 @@ fn split(key: &str) -> (&str, &str) {
 
 /// Every icon (those that can't be read left out), and their menus' paths.
 fn read(bus: &mut Bus, keys: &[String]) -> (Vec<TrayItem>, HashMap<String, String>) {
-    let dirs = crate::desktop::data_dirs();
+    let dirs = crate::os::xdg::data_dirs();
     let mut menus = HashMap::new();
     let items = keys
         .iter()
@@ -319,11 +319,11 @@ fn find_icon(name: &str, theme_path: &str, dirs: &[PathBuf]) -> Option<PathBuf> 
             }
         }
         let parent = base.parent().map(Path::to_path_buf);
-        if let Some(found) = crate::desktop::find_icon(name, &[base.to_path_buf()].into_iter().chain(parent).collect::<Vec<_>>()) {
+        if let Some(found) = crate::os::xdg::find_icon(name, &[base.to_path_buf()].into_iter().chain(parent).collect::<Vec<_>>()) {
             return Some(found);
         }
     }
-    crate::desktop::find_icon(name, dirs)
+    crate::os::xdg::find_icon(name, dirs)
 }
 
 /// A menu's entries, as its program has them now (asked to bring the menu up to date first).

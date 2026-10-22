@@ -32,8 +32,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::Sink;
-use crate::os::{command, text, worker};
-use crate::store::{self, Cache};
+use crate::os::{http, text, worker};
+use crate::store::Cache;
 
 /// Fetches at once.
 const THREADS: usize = 4;
@@ -231,17 +231,17 @@ impl Shared {
     }
 
     /// One of libretro's lists (`name` in the lists' folder, next to the art cache), from `url`: kept on
-    /// disk (see [`kept`]).
+    /// disk (see [`http::kept`]).
     fn list(&self, name: &str, url: &str) -> Option<String> {
         let dir = self.art.with_file_name("libretro");
         let file = dir.join(name.replace('/', "_"));
-        kept(&file, LISTS_KEPT, || get(url, &[])).map(|b| String::from_utf8_lossy(&b).into_owned())
+        http::kept(&file, LISTS_KEPT, || http::get(url, &[])).map(|b| String::from_utf8_lossy(&b).into_owned())
     }
 
     /// The image at `url` into the art cache as `<key>-<what>.<its extension>`.
     fn image(&self, w: &Wanted, what: &str, url: &str) -> Option<PathBuf> {
         let file = self.art.join(format!("{}-{what}.{}", w.key, extension(url)));
-        download(url, &[], &file).then_some(file)
+        http::download(url, &[], &file).then_some(file)
     }
 
     fn libretro(&self, w: &Wanted, system: &str) -> Meta {
@@ -337,7 +337,7 @@ impl Shared {
             if bearer.is_none() {
                 url.push_str(&format!("&api_key={}", text::percent_encode(key, b"")));
             }
-            get_json(&url, &headers).and_then(|v| v.get("results")?.get(0).cloned())
+            http::get_json(&url, &headers).and_then(|v| v.get("results")?.get(0).cloned())
         };
         // By the title's year first; else (TMDB may date a series from another year than its pilot's) any.
         let Some(hit) = search(year).or_else(|| year.and_then(|_| search(None))) else {
@@ -359,7 +359,7 @@ impl Shared {
 
     fn steam(&self, w: &Wanted, appid: u32) -> Meta {
         let url = format!("https://store.steampowered.com/api/appdetails?appids={appid}&l=english");
-        let Some(data) = get_json(&url, &[]).and_then(|v| v.get(appid.to_string())?.get("data").cloned()) else {
+        let Some(data) = http::get_json(&url, &[]).and_then(|v| v.get(appid.to_string())?.get("data").cloned()) else {
             return Meta::default();
         };
         let text = |v: Option<&Value>| v.and_then(Value::as_str).map(entities).unwrap_or_default();
@@ -383,9 +383,9 @@ impl Shared {
         };
         let auth = format!("Authorization: Bearer {key}");
         let api = "https://www.steamgriddb.com/api/v2";
-        let game = get_json(&format!("{api}/search/autocomplete/{}", text::percent_encode(&w.title, b"")), &[&auth])
+        let game = http::get_json(&format!("{api}/search/autocomplete/{}", text::percent_encode(&w.title, b"")), &[&auth])
             .and_then(|v| v.get("data")?.get(0)?.get("id")?.as_u64());
-        let grid = game.and_then(|g| get_json(&format!("{api}/grids/game/{g}?dimensions=600x900"), &[&auth]));
+        let grid = game.and_then(|g| http::get_json(&format!("{api}/grids/game/{g}?dimensions=600x900"), &[&auth]));
         let url = grid.and_then(|v| v.get("data")?.get(0)?.get("url")?.as_str().map(str::to_owned));
         Meta { cover: url.and_then(|u| self.image(w, "cover", &u)), ..Meta::default() }
     }
@@ -491,73 +491,6 @@ fn zip_crc(zip: &[u8], base: usize) -> Option<u32> {
         at += 46 + usize::from(u16_at(at + 28)?) + usize::from(u16_at(at + 30)?) + usize::from(u16_at(at + 32)?);
     }
     best.map(|(crc, _)| crc)
-}
-
-/// The body of `url` (a GET, redirects followed), if it answered 2xx. The URL and the headers go to curl
-/// on its stdin, as a config (`-K -`): they may hold an API key, and a command line is anyone's to read
-/// in /proc.
-fn get(url: &str, headers: &[&str]) -> Option<Vec<u8>> {
-    let mut config = format!("url = {}\n", quoted(url));
-    for h in headers {
-        config.push_str(&format!("header = {}\n", quoted(h)));
-    }
-    let out = command::run("curl", &["-sfL", "--max-time", "30", "-A", "ClamShell", "-K", "-"], Some(config.as_bytes()), CURL_LIMIT).ok()?;
-    out.status.success().then_some(out.stdout)
-}
-
-/// How long curl may take: its own limit, and a little more.
-const CURL_LIMIT: std::time::Duration = std::time::Duration::from_secs(35);
-
-/// `text` as a curl config's quoted string.
-fn quoted(text: &str) -> String {
-    let mut out = String::with_capacity(text.len() + 2);
-    out.push('"');
-    for c in text.chars() {
-        match c {
-            '\\' | '"' => {
-                out.push('\\');
-                out.push(c);
-            }
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
-fn get_json(url: &str, headers: &[&str]) -> Option<Value> {
-    serde_json::from_slice(&get(url, headers)?).ok()
-}
-
-/// `file`'s contents if it is younger than `max_age`; else `fetch`ed and kept in it (see
-/// [`store::write_file`]), or (the fetch failing) its older contents, if any.
-fn kept(file: &Path, max_age: std::time::Duration, fetch: impl FnOnce() -> Option<Vec<u8>>) -> Option<Vec<u8>> {
-    let age = std::fs::metadata(file).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
-    if age.is_some_and(|a| a < max_age)
-        && let Ok(kept) = std::fs::read(file)
-    {
-        return Some(kept);
-    }
-    match fetch().filter(|b| !b.is_empty()) {
-        Some(body) => {
-            if let Err(e) = store::write_file(file, &body) {
-                log::warn!("meta: {}: {e}", file.display());
-            }
-            Some(body)
-        }
-        None => std::fs::read(file).ok(),
-    }
-}
-
-/// `url` into `file` (see [`store::write_file`]); whether it worked.
-fn download(url: &str, headers: &[&str], file: &Path) -> bool {
-    let Some(body) = get(url, headers).filter(|b| !b.is_empty()) else {
-        return false;
-    };
-    store::write_file(file, &body).map_err(|e| log::warn!("meta: {}: {e}", file.display())).is_ok()
 }
 
 /// An image URL's extension (jpg, png or webp), jpg where it says none of them.
@@ -736,25 +669,6 @@ mod tests {
         queue.first(&["c".into(), "x".into(), "b".into()]);
         let order: Vec<String> = std::iter::from_fn(|| queue.next()).map(|w| w.id.to_string()).collect();
         assert_eq!(order, ["c", "b", "a", "d"]);
-    }
-
-    #[test]
-    fn lists_are_kept_fetched_again_when_old_and_used_old_when_offline() {
-        let dir = clamshell_core::kit::testdir::TempDir::new("lists");
-        let file = dir.join("Named_Boxarts - Nintendo - SNES.html");
-        let day = std::time::Duration::from_secs(86_400);
-        assert_eq!(kept(&file, day, || None), None, "nothing kept, nothing fetched");
-        assert_eq!(kept(&file, day, || Some(b"one".to_vec())).as_deref(), Some(&b"one"[..]));
-        assert_eq!(kept(&file, day, || panic!("not fetched again")).as_deref(), Some(&b"one"[..]), "kept");
-        let now = std::time::Duration::ZERO;
-        assert_eq!(kept(&file, now, || Some(b"two".to_vec())).as_deref(), Some(&b"two"[..]), "old: fetched again");
-        assert_eq!(kept(&file, now, || None).as_deref(), Some(&b"two"[..]), "the fetch failing: the old one");
-    }
-
-    #[test]
-    fn curl_config_strings() {
-        assert_eq!(quoted("https://x/?q=a b"), r#""https://x/?q=a b""#);
-        assert_eq!(quoted("say \"hi\" \\ there\n"), r#""say \"hi\" \\ there\n""#);
     }
 
     #[test]
