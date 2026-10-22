@@ -1,53 +1,23 @@
-//! Waking from sleep, seen from the clocks: CLOCK_BOOTTIME counts time asleep, CLOCK_MONOTONIC doesn't,
-//! so their difference grows by however long the system slept. The clock thread checks it every second.
-//! (No D-Bus: logind's PrepareForSleep(false) didn't reach us after a resume in testing, and this also
-//! sees sleep that didn't go through logind.) Suspending itself is logind's: the power button and the
-//! lid, per logind.conf (the power key not waking it while the lid is closed: [`crate::power::lid`]).
+//! Sleep. Suspending is logind's: the power button and the lid, per logind.conf (the power key not
+//! waking it while the lid is closed: [`crate::power::lid`]), and the Sleep action ([`suspend`]), which
+//! first checks that the machine isn't busy ([`busy`]). Waking is noticed from the clocks
+//! ([`crate::time::wake`]).
 //!
-//! Before sleep, though, the pad thread closes the gyro's stream (the Thor's sensor hub samples on the
-//! ADSP while asleep otherwise, as PB-OS's pbos-motiond found): [`spawn_hold`] keeps a logind delay lock,
-//! and at PrepareForSleep(true) tells the pad ([`pad::Command::Sleep`]), waits for it, and lets the sleep
-//! go on; after it ([`pad::Command::Woke`]: PrepareForSleep(false), or the clocks, should that signal not
+//! Before sleep, the pad thread closes the gyro's stream (the Thor's sensor hub samples on the ADSP while
+//! asleep otherwise, as PB-OS's pbos-motiond found): [`spawn_hold`] keeps a logind delay lock, and at
+//! PrepareForSleep(true) tells the pad ([`pad::Command::Sleep`]), waits for it, and lets the sleep go
+//! on; after it ([`pad::Command::Woke`]: PrepareForSleep(false), or the clocks, should that signal not
 //! come), takes the lock again.
 
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use crate::input::pad;
-use crate::os::dbus::{Bus, Message};
+use crate::os::dbus::{self, Bus, Message};
 use crate::os::worker::{self, Worker};
-
-use rustix::time::{ClockId, clock_gettime};
-
-/// Time spent asleep since boot.
-pub fn slept() -> Duration {
-    let as_duration = |t: rustix::time::Timespec| Duration::new(t.tv_sec.max(0) as u64, t.tv_nsec.clamp(0, 999_999_999) as u32);
-    as_duration(clock_gettime(ClockId::Boottime)).saturating_sub(as_duration(clock_gettime(ClockId::Monotonic)))
-}
-
-/// Sleep shorter than this isn't counted (the two clocks are read one after the other).
-const AT_LEAST: Duration = Duration::from_secs(1);
-
-/// Notices a sleep between two checks.
-#[derive(Debug)]
-pub struct Watch {
-    last: Duration,
-}
-
-impl Watch {
-    pub fn new(slept: Duration) -> Self {
-        Watch { last: slept }
-    }
-
-    /// With the time slept so far: whether the system slept since the last check.
-    pub fn woke(&mut self, slept: Duration) -> bool {
-        let woke = slept >= self.last + AT_LEAST;
-        if woke || slept < self.last {
-            self.last = slept;
-        }
-        woke
-    }
-}
+use crate::os::{cgroup, sys};
+use crate::time::wake::{Watch, slept};
 
 const LOGIN1: &str = "org.freedesktop.login1";
 const LOGIN1_PATH: &str = "/org/freedesktop/login1";
@@ -122,21 +92,75 @@ fn hold(pad: &Worker<pad::Command>) -> Result<(), crate::os::dbus::Error> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Sleep: suspend, then hibernate after a while (logind's HibernateDelaySec) if it can, else suspend.
+/// Above this much CPU (cores) for the user's processes, or this many bytes a second on the network, the
+/// machine is busy: not put to sleep.
+const BUSY_CPU: f64 = 0.3;
+const BUSY_NET: f64 = 100_000.0;
 
-    #[test]
-    fn a_sleep_is_noticed_once() {
-        let mut watch = Watch::new(Duration::from_secs(100));
-        assert!(!watch.woke(Duration::from_millis(100_400)), "jitter");
-        assert!(watch.woke(Duration::from_secs(160)));
-        assert!(!watch.woke(Duration::from_secs(160)));
-        assert!(watch.woke(Duration::from_secs(170)));
+/// Whether the machine is busy now (looked at for a few seconds): the user's processes' CPU (the user
+/// manager's cgroup, all of them: ClamShell's launches, Steam), or the network's traffic; why.
+pub fn busy() -> Option<String> {
+    let user = user_cgroup();
+    let cpu = || user.as_deref().and_then(cgroup::cpu_usec);
+    let net = || {
+        let text = sys::text("/proc/net/dev").unwrap_or_default();
+        // (Each interface but loopback: received bytes, the 1st number, and sent, the 9th.)
+        text.lines()
+            .skip(2)
+            .filter_map(|l| l.split_once(':'))
+            .filter(|(name, _)| name.trim() != "lo")
+            .map(|(_, v)| {
+                let n: Vec<u64> = v.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+                n.first().copied().unwrap_or(0) + n.get(8).copied().unwrap_or(0)
+            })
+            .sum::<u64>()
+    };
+    let (cpu0, net0, t0) = (cpu(), net(), std::time::Instant::now());
+    std::thread::sleep(std::time::Duration::from_secs(3));
+    let (cpu1, net1) = (cpu(), net());
+    let secs = t0.elapsed().as_secs_f64();
+    let cores = cpu0.zip(cpu1).map_or(0.0, |(a, b)| b.saturating_sub(a) as f64 / 1e6 / secs);
+    let rate = net1.saturating_sub(net0) as f64 / secs;
+    if cores > BUSY_CPU {
+        return Some(format!("{cores:.1} cores in use"));
     }
+    (rate > BUSY_NET).then(|| format!("{:.0} kB/s on the network", rate / 1000.0))
+}
 
+/// The user manager's cgroup (`user@<uid>.service`): the cgroup ClamShell runs in, up to it.
+fn user_cgroup() -> Option<PathBuf> {
+    let path = cgroup::path_of(std::process::id())?;
+    let end = path.find(".service/").map(|i| i + ".service".len())?;
+    Some(cgroup::dir(path.get(..end)?))
+}
+
+/// Suspends through logind: suspend-then-hibernate where the system can (a swap file to hibernate to),
+/// else suspend.
+pub fn suspend() {
+    let logind = |bus: &mut dbus::Bus, method: &str| bus.call::<(String,)>(LOGIN1, LOGIN1_PATH, MANAGER, method, ());
+    let slept = dbus::Bus::system().and_then(|mut bus| {
+        let (method, interactive) = if logind(&mut bus, "CanSuspendThenHibernate")?.0 == "yes" {
+            log::info!("sleep: suspend, then hibernate");
+            ("SuspendThenHibernate", false)
+        } else {
+            log::info!("sleep: suspend");
+            ("Suspend", false)
+        };
+        bus.call::<()>(LOGIN1, LOGIN1_PATH, MANAGER, method, (interactive,))
+    });
+    if let Err(e) = slept {
+        log::warn!("sleep: {e}");
+    }
+}
+
+#[cfg(test)]
+mod live {
+    /// On a desktop: whether the machine is busy now, and the cgroup looked at (run by hand: `--ignored
+    /// --nocapture`).
     #[test]
-    fn the_clocks_can_be_read() {
-        assert!(slept() < Duration::from_secs(10 * 365 * 24 * 3600));
+    #[ignore = "reads this machine"]
+    fn busy_now() {
+        println!("{:?}: {:?}", super::user_cgroup(), super::busy());
     }
 }

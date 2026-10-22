@@ -4,4 +4,5 @@
 pub mod account;
 pub mod clipboard;
 pub mod icons;
+pub mod notify;
 pub mod tray;

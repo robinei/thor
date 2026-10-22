@@ -1,5 +1,5 @@
 //! The clock: a `Tick` at the start of every second, and `Resumed` after the system slept (see
-//! [`crate::power::sleep`]).
+//! [`crate::time::wake`]).
 
 use std::io;
 use std::thread;
@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use clamshell_core::Event;
 
 use crate::os::worker;
-use crate::power::sleep;
+use crate::time::wake;
 use crate::{Closed, Sink};
 
 /// Seconds since the epoch on the wall clock at `t` (0 before the epoch).
@@ -36,10 +36,10 @@ pub fn spawn(sink: impl Sink) -> io::Result<()> {
 
 /// Ticks until the UI is gone.
 fn tick(sink: &impl Sink) -> Result<(), Closed> {
-    let mut asleep = sleep::Watch::new(sleep::slept());
+    let mut asleep = wake::Watch::new(wake::slept());
     loop {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
-        if asleep.woke(sleep::slept()) {
+        if asleep.woke(wake::slept()) {
             log::info!("woke from sleep");
             sink.send(Event::Resumed)?;
         }
