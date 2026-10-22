@@ -376,7 +376,6 @@ fn timespec(t: Duration) -> Timespec {
     Timespec { tv_sec: i64::try_from(t.as_secs()).unwrap_or(i64::MAX), tv_nsec: i64::from(t.subsec_nanos()) }
 }
 
-/// Waits (up to `timeout`, if given) for the controller's, the gyro's, the AYN button's or the virtual
 /// The controller's events and gyro samples since the last read, into `raws` and `samples`: events the
 /// kernel dropped replaced by the controller as it is now, the letters swapped where the controller has
 /// them the other way, the sticks through their calibration, the AYN button's. A gyro or AYN button that
@@ -412,6 +411,7 @@ fn read_controller(c: &mut Controller, router: &mut PadRouter, raws: &mut Vec<Ra
     Ok(())
 }
 
+/// Waits (up to `timeout`, if given) for the controller's, the gyro's, the AYN button's or the virtual
 /// pad's (rumble) events, or a command (the bell).
 fn wait(
     pad: &Grabbed,
