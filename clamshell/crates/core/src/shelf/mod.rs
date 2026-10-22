@@ -61,6 +61,8 @@ pub struct Shelf {
     /// The listings of browsed folders, by folder, in the order they came; a folder's listing comes before
     /// those of the folders in it. They are applied again when the library is read again.
     listings: Vec<(Arc<str>, Vec<Entry>)>,
+    /// The place changed since it was last saved (see [`crate::State::resume`]).
+    unsaved: bool,
 }
 
 /// What shelf's list shows: the collection, the open group, the first row shown, how many rows, and the
@@ -231,6 +233,23 @@ impl Shelf {
     /// Where `game` is in collection `c`'s list.
     fn position_in(&self, c: usize, game: &str) -> Option<usize> {
         self.list_of(c).iter().position(|&i| self.library.entries.get(i).is_some_and(|g| &*g.id == game))
+    }
+
+    /// Marks the place as changed, to be saved.
+    pub(crate) fn mark_unsaved(&mut self) {
+        self.unsaved = true;
+    }
+
+    /// Shelf went to another collection or list. The place is saved, and a focus in shelf's list follows
+    /// the selection.
+    pub(crate) fn moved(&mut self, pointer: &mut crate::Pointer) {
+        self.unsaved = true;
+        pointer.follow_shelf(self.selected());
+    }
+
+    /// Whether the place changed since this was last asked, so it is saved.
+    pub(crate) fn take_unsaved(&mut self) -> bool {
+        std::mem::take(&mut self.unsaved)
     }
 
     /// Keeps the cursor in range and on screen, and `selected` in step with it. Returns whether the
@@ -404,10 +423,10 @@ impl Shelf {
         let before = self.selected.clone();
         let places = self.places();
         let current = self.collection().map(|c| c.name.clone());
-        let rows = self.rows;
+        let (rows, unsaved) = (self.rows, self.unsaved);
         let listings = std::mem::take(&mut self.listings);
         *self = Shelf::new(library);
-        self.rows = rows;
+        (self.rows, self.unsaved) = (rows, unsaved);
         for (folder, entries) in listings {
             if let Some(f) = self.library.entries.iter().position(|g| g.id == folder) {
                 self.library.set_listing(f, entries.clone());

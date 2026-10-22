@@ -232,7 +232,7 @@ impl State {
             if !self.shelf.reveal(&game) {
                 return vec![];
             }
-            self.moved_collection();
+            self.shelf.moved(&mut self.pointer);
             return vec![Effect::Window(WindowCommand::ShowShelf)];
         }
         let session = &self.session;
@@ -312,7 +312,7 @@ impl State {
         let duration = self.clock.mono().saturating_sub(start);
         let start = self.clock.unix_at(start);
         if self.shelf.add_play(&game, start, duration) {
-            self.saves.resume.touch(self.clock.mono());
+            self.resume.touch(self.clock.mono());
         }
         let file = self.shelf.entry(&game).and_then(|g| g.mpv_file()).map(std::path::Path::to_path_buf);
         let position = file.map(|file| Effect::ReadPosition { entry: game.clone(), file });

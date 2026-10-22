@@ -4,17 +4,9 @@
 
 use crate::State;
 use crate::bottom::Tab;
-use crate::kit::debounce::Debounce;
 
 /// Seconds after the last change before it is saved.
 pub(crate) const SAVE_AFTER: u64 = 2;
-
-/// What waits to be saved.
-#[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct Saves {
-    /// Where shelf and the second screen are ([`State::resume`]).
-    pub resume: Debounce,
-}
 
 /// Where shelf and the second screen are, to come back to after a restart.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

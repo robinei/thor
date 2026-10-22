@@ -399,7 +399,7 @@ impl State {
         match event {
             FilesEvent::Listed { folder, entries } => {
                 if self.shelf.listed(folder, entries) {
-                    self.moved_collection();
+                    self.shelf.moved(&mut self.pointer);
                 }
                 vec![]
             }

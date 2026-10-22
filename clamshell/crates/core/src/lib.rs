@@ -54,7 +54,6 @@ mod tests;
 mod watch;
 
 use bottom::keyboard::Keyboard;
-use resume::Saves;
 use settings::Settings;
 
 // What other crates use to talk to the state: the events and effects and what they carry, the ids, and
@@ -150,7 +149,9 @@ pub struct State {
     keymap_sent: Option<keymap::Keymap>,
     lists: Lists,
     clock: Clock,
-    saves: Saves,
+    /// Where shelf and the second screen are ([`State::resume`]), saved once they stop changing for a
+    /// moment. Shelf and the bottom screen say when they changed; `apply` touches this at its end.
+    resume: kit::debounce::Debounce,
     idle: crate::device::idle::Idle,
     /// ClamShell is the device's own session (see [`Init::device_session`]).
     device_session: bool,

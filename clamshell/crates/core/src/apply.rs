@@ -48,8 +48,9 @@ impl State {
                 out.mark(Dirty::BOTH);
             }
         }
-        if self.bottom.take_unsaved() {
-            self.saves.resume.touch(self.clock.mono());
+        // Both are taken, so neither is left marked.
+        if self.shelf.take_unsaved() | self.bottom.take_unsaved() {
+            self.resume.touch(self.clock.mono());
         }
         // The follow-up steps don't queue events: one queued here would never be handled.
         debug_assert!(out.events.is_empty(), "an event queued after the event was handled: {:?}", out.events);
@@ -288,7 +289,7 @@ impl State {
             self.bottom.notify(crate::bottom::notice::NoticeKind::Problems(first, problems.len()), self.clock.mono());
         }
         if self.shelf.reload(library) {
-            self.moved_collection();
+            self.shelf.moved(&mut self.pointer);
         }
         self.follow_pausable_runners();
         out.effects.extend(self.follow_runner_keymaps());
@@ -322,7 +323,7 @@ impl State {
             self.idle.resumed(mono_secs);
         }
         let minute_changed = self.clock.tick(unix_secs, mono_secs);
-        if self.saves.resume.due(mono_secs, SAVE_AFTER) {
+        if self.resume.due(mono_secs, SAVE_AFTER) {
             out.effects.push(Effect::Save(Save::Resume(self.resume())));
         }
         self.levels.save_due(mono_secs, out);

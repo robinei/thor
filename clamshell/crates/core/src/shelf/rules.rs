@@ -15,13 +15,13 @@ impl State {
                     return self.activate_selected();
                 }
                 if self.shelf.select(&game) {
-                    self.saves.resume.touch(self.clock.mono());
+                    self.shelf.mark_unsaved();
                 }
                 vec![]
             }
             ShelfId::Collection(i) => {
                 if self.shelf.set_collection(usize::from(i)) {
-                    self.moved_collection();
+                    self.shelf.moved(&mut self.pointer);
                 }
                 vec![]
             }
@@ -36,7 +36,7 @@ impl State {
             ShelfId::File(action) => self.on_file(action),
             ShelfId::Up => {
                 if self.shelf.up() {
-                    self.moved_collection();
+                    self.shelf.moved(&mut self.pointer);
                 }
                 vec![]
             }
@@ -55,7 +55,7 @@ impl State {
     /// Shelf's action on its selected entry: a group opens, anything else plays.
     pub(crate) fn activate_selected(&mut self) -> Vec<Effect> {
         if self.shelf.open() {
-            self.moved_collection();
+            self.shelf.moved(&mut self.pointer);
             return vec![];
         }
         match self.shelf.selected().cloned() {
@@ -64,18 +64,11 @@ impl State {
         }
     }
 
-    /// Shelf went to another collection or list. The place is saved, and a focus in shelf's list follows
-    /// the selection.
-    pub(crate) fn moved_collection(&mut self) {
-        self.saves.resume.touch(self.clock.mono());
-        self.pointer.follow_shelf(self.shelf.selected());
-    }
-
     pub(crate) fn on_shelf_event(&mut self, event: ShelfEvent) -> (Dirty, Vec<Effect>) {
         match event {
             ShelfEvent::ListStep(step) => {
                 if self.shelf.step(step) {
-                    self.saves.resume.touch(self.clock.mono());
+                    self.shelf.mark_unsaved();
                 }
                 self.pointer.focus_shelf(self.shelf.selected());
                 self.pointer.show();
@@ -83,7 +76,7 @@ impl State {
             }
             ShelfEvent::CollectionStep(step) => {
                 if self.shelf.collection_step(step) {
-                    self.moved_collection();
+                    self.shelf.moved(&mut self.pointer);
                 }
                 self.pointer.show();
                 (Dirty::BOTH, vec![])
@@ -95,7 +88,7 @@ impl State {
             ShelfEvent::TogglePin => (Dirty::BOTH, self.act(crate::shelf::actions::Shortcut::X)),
             ShelfEvent::ClearFilter => {
                 if self.shelf.set_filter(String::new()) {
-                    self.moved_collection();
+                    self.shelf.moved(&mut self.pointer);
                 }
                 (Dirty::BOTH, vec![])
             }
@@ -117,7 +110,7 @@ impl State {
             _ => return vec![],
         }
         if self.shelf.set_filter(filter) {
-            self.moved_collection();
+            self.shelf.moved(&mut self.pointer);
         }
         vec![]
     }
@@ -128,7 +121,7 @@ impl State {
             return vec![];
         };
         if moved {
-            self.saves.resume.touch(self.clock.mono());
+            self.shelf.mark_unsaved();
         }
         let ids = self.shelf.library().favourite_ids().map(str::to_owned).collect();
         vec![Effect::Save(Save::Favourites(ids))]
