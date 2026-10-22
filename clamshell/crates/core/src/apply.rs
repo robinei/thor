@@ -4,12 +4,11 @@
 use crate::bottom::editor::Done;
 use crate::kit::replace;
 use crate::levels::slider::Control;
-use crate::mutation::{EntryAct, Mutation};
 use crate::out::Out;
 use crate::resume::SAVE_AFTER;
 use crate::settings::MouseAtLaunch;
 use crate::{
-    BtId, Dirty, EditorId, Effect, Event, Id, Level, Library, ListId, PadRoute, PointerEvent, Reading, Save, SettingsId, ShelfId, State, Tab, WifiId,
+    BtId, Dirty, EditorId, Effect, EntryAct, Event, Id, Level, Library, ListId, PadRoute, PointerEvent, Reading, Save, SettingsId, ShelfId, State, Tab, WifiId,
     WindowCommand,
 };
 
@@ -246,10 +245,25 @@ impl State {
                 self.bottom.notify(crate::bottom::notice::NoticeKind::Account(result), self.clock.mono());
                 out.mark(Dirty::BOTTOM);
             }
+            Event::ChooseTab(tab) => {
+                self.choose_tab(tab);
+                out.mark(Dirty::BOTH);
+            }
+            Event::Entry(id, act) => {
+                out.mark(Dirty::BOTTOM);
+                match act {
+                    EntryAct::Quit => out.effects.extend(self.quit(&id)),
+                    EntryAct::ForceKill => out.effects.extend(self.force_kill(&id)),
+                }
+            }
             Event::Quit => {
                 out.effects.push(Effect::Save(Save::Resume(self.resume())));
                 out.effects.push(Effect::Quit);
             }
+        }
+        // What the event's rules asked of State, in order, after the effects they pushed.
+        for queued in std::mem::take(&mut out.events) {
+            self.apply_event(queued, out);
         }
     }
 
@@ -295,21 +309,6 @@ impl State {
             out.effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
         }
         self.shown = None;
-    }
-
-    /// Applies what an area's rule asked of the rest of the state, in order, and returns its effects in
-    /// the order they were asked for.
-    pub(crate) fn settle(&mut self, mutations: Vec<Mutation>) -> Vec<Effect> {
-        let mut effects = Vec::new();
-        for m in mutations {
-            match m {
-                Mutation::Effect(e) => effects.push(e),
-                Mutation::Tab(tab) => self.choose_tab(tab),
-                Mutation::Act(id, EntryAct::Quit) => effects.extend(self.quit(&id)),
-                Mutation::Act(id, EntryAct::ForceKill) => effects.extend(self.force_kill(&id)),
-            }
-        }
-        effects
     }
 
     /// The UI is up. Sends what was waiting for it: the dock if pins were dropped at start, the
@@ -532,17 +531,12 @@ impl State {
                 out.effects.extend(effects);
             }
             Id::Device(id) => {
-                let mutations = {
-                    let (editors, notice) = self.bottom.editors_and_notice();
-                    self.device.tap(id, self.clock.mono(), editors, notice, &mut self.pointer, self.shelf.selected())
-                };
                 out.mark(Dirty::BOTH);
-                out.effects.extend(self.settle(mutations));
+                self.device.tap(id, self.clock.mono(), &mut self.bottom, &mut self.pointer, self.shelf.selected(), out);
             }
             Id::Battery(id) => {
-                let mutations = self.sys.on_battery(id, &self.session);
                 out.mark(Dirty::BOTTOM);
-                out.effects.extend(self.settle(mutations));
+                self.sys.on_battery(id, &self.session, out);
             }
             Id::PadMouse => {
                 self.pad.toggle_mouse();

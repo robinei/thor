@@ -20,13 +20,13 @@ use crate::DeviceId;
 use crate::State;
 use std::sync::Arc;
 
-use crate::bottom::Tab;
-use crate::bottom::editor::{Editor, Editors, Purpose};
-use crate::bottom::notice::{Notice, NoticeKind};
+use crate::bottom::editor::{Editor, Purpose};
+use crate::bottom::notice::NoticeKind;
+use crate::bottom::{Bottom, Tab};
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::kit::replace;
-use crate::mutation::Mutation;
-use crate::{Id, Pointer};
+use crate::out::Out;
+use crate::{Event, Id, Pointer};
 use account::{Account, AccountCommand, PasswordStep};
 use sticks::{Calibrations, Progress, Sticks};
 
@@ -131,55 +131,47 @@ impl Device {
     }
 
     /// A tap on one of the Device view's targets at `now`. Closing it gives the focus back to shelf's
-    /// selection (`selected`). A tab to open is returned as a mutation, since State changes tabs.
-    pub(crate) fn tap(
-        &mut self,
-        id: DeviceId,
-        now: u64,
-        editors: &mut Editors,
-        notice: &mut Option<Notice>,
-        pointer: &mut Pointer,
-        selected: Option<&Arc<str>>,
-    ) -> Vec<Mutation> {
+    /// selection (`selected`). A tab to open is queued as an event, since State changes tabs.
+    pub(crate) fn tap(&mut self, id: DeviceId, now: u64, bottom: &mut Bottom, pointer: &mut Pointer, selected: Option<&Arc<str>>, out: &mut Out) {
         let account = self.account;
         match id {
-            DeviceId::Wifi => vec![Mutation::Tab(Tab::Wifi)],
-            DeviceId::Zone => vec![Mutation::Tab(Tab::Time)],
+            DeviceId::Wifi => out.events.push(Event::ChooseTab(Tab::Wifi)),
+            DeviceId::Zone => out.events.push(Event::ChooseTab(Tab::Time)),
             // Typed in the editor on the second screen's keyboard.
             DeviceId::Password if account.available => {
                 let step = if account.password { PasswordStep::Current } else { PasswordStep::New { current: None } };
-                editors.open(Editor { purpose: Purpose::AccountPassword(step), text: String::new() });
-                vec![Mutation::Tab(Tab::Keyboard)]
+                bottom.editors_mut().open(Editor { purpose: Purpose::AccountPassword(step), text: String::new() });
+                out.events.push(Event::ChooseTab(Tab::Keyboard));
             }
             // Remote login needs a password to log in with.
-            DeviceId::Ssh if account.available && account.password => vec![Mutation::Effect(Effect::Account(AccountCommand::Ssh(!account.ssh)))],
-            DeviceId::Password | DeviceId::Ssh => vec![],
+            DeviceId::Ssh if account.available && account.password => out.effects.push(Effect::Account(AccountCommand::Ssh(!account.ssh))),
+            DeviceId::Password | DeviceId::Ssh => {}
             DeviceId::Sticks if self.sticks.is_none() => {
                 self.sticks_failed = false;
-                vec![Mutation::Effect(Effect::CalibrateSticks)]
+                out.effects.push(Effect::CalibrateSticks);
             }
-            DeviceId::Sticks => vec![],
+            DeviceId::Sticks => {}
             DeviceId::Gyro => {
-                *notice = Some(Notice::new(NoticeKind::Gyro(None), now));
-                vec![Mutation::Effect(Effect::CalibrateGyro)]
+                bottom.notify(NoticeKind::Gyro(None), now);
+                out.effects.push(Effect::CalibrateGyro);
             }
             DeviceId::Refresh if self.refresh != Refresh::Running => {
                 self.refresh = Refresh::Running;
-                vec![Mutation::Effect(Effect::CalibrateRefresh)]
+                out.effects.push(Effect::CalibrateRefresh);
             }
-            DeviceId::Refresh => vec![],
+            DeviceId::Refresh => {}
             // The first time, Done ends the first start for good. Shelf shows next, with the default tab
             // below.
             DeviceId::Done if self.first_start => {
                 self.first_start = false;
                 self.close();
                 pointer.focus_shelf(selected);
-                vec![Mutation::Effect(Effect::Save(Save::FirstStartDone)), Mutation::Tab(Tab::default())]
+                out.effects.push(Effect::Save(Save::FirstStartDone));
+                out.events.push(Event::ChooseTab(Tab::default()));
             }
             DeviceId::Done | DeviceId::Close => {
                 self.close();
                 pointer.focus_shelf(selected);
-                vec![]
             }
         }
     }

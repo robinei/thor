@@ -37,7 +37,6 @@ mod id;
 pub mod keymap;
 pub mod kit;
 pub mod levels;
-mod mutation;
 pub mod nav;
 mod out;
 pub mod radios;
@@ -62,7 +61,7 @@ use settings::Settings;
 // the groups the getters return.
 pub use clock::Clock;
 pub use effect::{Dirty, Effect, Save, Watch, WindowCommand};
-pub use event::{Event, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
+pub use event::{EntryAct, Event, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
 pub use id::{AudioId, BatteryId, BtId, DeviceId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, TimeId, WifiId};
 pub use resume::Resume;
 

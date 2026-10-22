@@ -3,10 +3,10 @@
 //! The battery reports only its total drain. There is no power reading per program, so programs are
 //! ranked by their share of the work instead.
 
-use crate::mutation::{EntryAct, Mutation};
+use crate::out::Out;
 use crate::session::instance::Instance;
 use crate::status::Sys;
-use crate::{BatteryId, Effect, Library, Running, Session};
+use crate::{BatteryId, Effect, EntryAct, Event, Library, Running, Session};
 
 /// Who a spender is. It is one of our instances or a game started by shelf, known by its scope. Or an
 /// app run in another program's processes, known by its app id, such as an Android app in Waydroid's
@@ -106,34 +106,33 @@ impl Sys {
     /// A tap on a row of what is using the machine, or a choice in a row's menu. A tap opens the row's
     /// menu, except for rows that can't be ended, such as the system's. In the menu, an entry is quit or
     /// killed as from the dock, and another program's processes are asked to end or killed.
-    pub(crate) fn on_battery(&mut self, id: BatteryId, session: &Session) -> Vec<Mutation> {
+    pub(crate) fn on_battery(&mut self, id: BatteryId, session: &Session, out: &mut Out) {
         match id {
             BatteryId::Spender(i) => {
                 // An app is ended as its entry, so only one that is running gets a menu.
                 let endable = |s: &&Spender| s.endable && !matches!(&s.group, Group::App(app) if session.running_app(app).is_none());
                 self.spender_menu = self.battery.spenders.get(usize::from(i)).filter(endable).map(|s| s.group.clone());
-                vec![]
             }
-            BatteryId::Back => {
-                self.spender_menu = None;
-                vec![]
-            }
+            BatteryId::Back => self.spender_menu = None,
             BatteryId::Quit | BatteryId::ForceKill => {
                 let force = id == BatteryId::ForceKill;
                 let Some(group) = self.spender_menu.take() else {
-                    return vec![];
+                    return;
                 };
                 let entry = match &group {
                     Group::Instance(instance) => session.running_entries().iter().find(|r| Some(r.key.as_str()) == instance.key()).map(|r| r.id.clone()),
                     Group::App(app) => session.running_app(app),
                     Group::Process(_) => {
                         let pids = self.battery.spenders.iter().find(|s| s.group == group).map(|s| s.pids.clone()).unwrap_or_default();
-                        return if pids.is_empty() { vec![] } else { vec![Mutation::Effect(Effect::EndProcesses { pids, force })] };
+                        if !pids.is_empty() {
+                            out.effects.push(Effect::EndProcesses { pids, force });
+                        }
+                        return;
                     }
                     Group::System => None,
                 };
                 let act = if force { EntryAct::ForceKill } else { EntryAct::Quit };
-                entry.map(|id| Mutation::Act(id, act)).into_iter().collect()
+                out.events.extend(entry.map(|id| Event::Entry(id, act)));
             }
         }
     }

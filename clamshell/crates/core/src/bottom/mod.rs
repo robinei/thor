@@ -166,11 +166,6 @@ impl Bottom {
         &mut self.editors
     }
 
-    /// The editors and the notice, for a rule that may open an editor or show a notice.
-    pub(crate) fn editors_and_notice(&mut self) -> (&mut Editors, &mut Option<Notice>) {
-        (&mut self.editors, &mut self.notice)
-    }
-
     pub fn notice(&self) -> Option<&Notice> {
         self.notice.as_ref()
     }

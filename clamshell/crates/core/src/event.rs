@@ -104,7 +104,19 @@ pub enum Event {
     /// A change requested of the account helper is done, with what it did, or failed, with the reason. A
     /// new account reading follows (see [`crate::device::account`]).
     AccountChanged(Result<String, String>),
+    /// Opens a tab on the second screen, as tapping its icon does.
+    ChooseTab(crate::Tab),
+    /// Something done to an entry, by its id.
+    Entry(Arc<str>, EntryAct),
     Quit,
+}
+
+/// What is done to an entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntryAct {
+    /// Quit, as from the dock.
+    Quit,
+    ForceKill,
 }
 
 /// What a system thread read from the system.
