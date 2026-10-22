@@ -23,11 +23,11 @@ programs started rather than read (`systemd-run`, `nice`, `pkexec`, `fusermount3
 
 - [x] MD5 and CRC32 (`clamshell_library::hash`) → `md5` and `crc32fast`. FNV stays (a few lines).
 - [x] Percent encoding (`os/text`) → `percent-encoding`.
-- [ ] Icon lookup (`os/xdg::find_icon`: three themes and two layouts guessed) → `freedesktop-icons`, which
-      follows the icon theme spec (`index.theme`, inheritance, the user's theme), if its dependencies are
-      reasonable.
-- [ ] sway's IPC (`sway/ipc`) → `swayipc` (blocking, typed replies and events), if it fits how the sway
-      thread polls.
+- [x] Icon lookup: looked at `freedesktop-icons`, kept ours. The crate brings about 20 crates, reads only
+      the XDG dirs from the environment (the tray needs a program's own theme path, and the tests pass
+      temporary folders), and ours covers how apps install their icons.
+- [x] sway's IPC: looked at `swayipc`, kept ours. The framing is about 60 lines; the replies are already
+      typed with serde, reading only the fields used, and tested.
 
 Staying, with reasons:
 
