@@ -86,39 +86,7 @@ pub fn frame(file: &Path, at: u32, out: &Path) -> bool {
 
 /// MD5 of `data` as 32 capital hex digits (as mpv names its watch_later files).
 fn md5_hex(data: &[u8]) -> String {
-    const SHIFTS: [u32; 64] = [
-        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4,
-        11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
-    ];
-    let k: Vec<u32> = (0..64).map(|i: i32| (f64::from(i + 1).sin().abs() * 4_294_967_296.0) as u32).collect();
-    let mut message = data.to_vec();
-    let bits = (data.len() as u64).wrapping_mul(8);
-    message.push(0x80);
-    while message.len() % 64 != 56 {
-        message.push(0);
-    }
-    message.extend_from_slice(&bits.to_le_bytes());
-    let mut state: [u32; 4] = [0x6745_2301, 0xefcd_ab89, 0x98ba_dcfe, 0x1032_5476];
-    for chunk in message.chunks_exact(64) {
-        let m: Vec<u32> = chunk.chunks_exact(4).filter_map(|w| <[u8; 4]>::try_from(w).ok()).map(u32::from_le_bytes).collect();
-        let [mut a, mut b, mut c, mut d] = state;
-        for (i, (&k, &shift)) in k.iter().zip(SHIFTS.iter()).enumerate() {
-            let (f, g) = match i / 16 {
-                0 => ((b & c) | (!b & d), i),
-                1 => ((d & b) | (!d & c), (5 * i + 1) % 16),
-                2 => (b ^ c ^ d, (3 * i + 5) % 16),
-                _ => (c ^ (b | !d), (7 * i) % 16),
-            };
-            let word = m.get(g).copied().unwrap_or(0);
-            let rotated = a.wrapping_add(f).wrapping_add(k).wrapping_add(word).rotate_left(shift);
-            (a, d, c) = (d, c, b);
-            b = b.wrapping_add(rotated);
-        }
-        for (s, v) in state.iter_mut().zip([a, b, c, d]) {
-            *s = s.wrapping_add(v);
-        }
-    }
-    state.iter().flat_map(|s| s.to_le_bytes()).map(|b| format!("{b:02X}")).collect()
+    clamshell_library::hash::md5(data).iter().map(|b| format!("{b:02X}")).collect()
 }
 
 #[cfg(test)]
@@ -128,8 +96,6 @@ mod tests {
 
     #[test]
     fn md5_as_mpv_names_its_files() {
-        assert_eq!(md5_hex(b""), "D41D8CD98F00B204E9800998ECF8427E");
-        assert_eq!(md5_hex(b"The quick brown fox jumps over the lazy dog"), "9E107D9D372BB6826BD81D3542A419D6");
         assert_eq!(md5_hex(b"Silo S02E01.mp4"), "BCD88637A55DC78D245B2F1BCFF455D4");
     }
 

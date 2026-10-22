@@ -453,7 +453,7 @@ fn checksum(file: &Path) -> Option<u32> {
     if std::fs::metadata(file).ok()?.len() > CHECKSUM_MAX || !file.is_file() {
         return None;
     }
-    Some(crc32(&std::fs::read(file).ok()?))
+    Some(clamshell_library::hash::crc32(&std::fs::read(file).ok()?))
 }
 
 /// The end of a zip (its last MiB: the central directory of a few files is there), and where in the file
@@ -492,30 +492,6 @@ fn zip_crc(zip: &[u8], base: usize) -> Option<u32> {
     }
     best.map(|(crc, _)| crc)
 }
-
-/// CRC32 (as zip and No-Intro have it).
-fn crc32(data: &[u8]) -> u32 {
-    !data.iter().fold(!0u32, |c, &b| CRC32_TABLE.get(usize::from((c as u8) ^ b)).copied().unwrap_or(0) ^ (c >> 8))
-}
-
-/// CRC-32's table (the reflected polynomial 0xEDB88320), built at compile time.
-// (Indexing in a const can't panic at run time: out of bounds, it fails the build.)
-#[allow(clippy::indexing_slicing)]
-const CRC32_TABLE: [u32; 256] = {
-    let mut table = [0u32; 256];
-    let mut i = 0;
-    while i < 256 {
-        let mut c = i as u32;
-        let mut k = 0;
-        while k < 8 {
-            c = if c & 1 == 1 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
-            k += 1;
-        }
-        table[i] = c;
-        i += 1;
-    }
-    table
-};
 
 /// The body of `url` (a GET, redirects followed), if it answered 2xx. The URL and the headers go to curl
 /// on its stdin, as a config (`-K -`): they may hold an API key, and a command line is anyone's to read
@@ -783,13 +759,12 @@ mod tests {
 
     #[test]
     fn checksums_and_databases() {
-        assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
         // A zip of two files (stored), made by hand: its directory's checksum of the larger.
         let mut zip = Vec::new();
         let mut directory = Vec::new();
         for (name, data) in [("a.txt", &b"hi"[..]), ("game.sfc", &b"123456789"[..])] {
             let offset = zip.len() as u32;
-            let crc = crc32(data);
+            let crc = clamshell_library::hash::crc32(data);
             let header = |sig: u32, extra: &[u8]| {
                 let mut h = sig.to_le_bytes().to_vec();
                 h.extend_from_slice(extra);
