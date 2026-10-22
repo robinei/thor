@@ -7,4 +7,6 @@ set -eu
 cd "$(dirname "$0")/../clamshell"
 cargo fmt --check
 cargo clippy --workspace --all-targets --quiet -- -D warnings
+# (The development build too: --snapshot and the demo library.)
+cargo clippy --package clamshell --features dev --quiet -- -D warnings
 cargo test --workspace --quiet

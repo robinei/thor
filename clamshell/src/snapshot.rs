@@ -24,6 +24,19 @@ use crate::demo;
 /// The time snapshots are taken at, unless asked for the current one.
 pub const FIXED_NOW: u64 = 1_760_000_000;
 
+/// `--snapshot DIR`: the demo library's snapshots, or the real library's with
+/// CLAMSHELL_SNAPSHOT_LIBRARY=real; at [`FIXED_NOW`], or the time they are taken with
+/// CLAMSHELL_SNAPSHOT_NOW set.
+pub fn command(sources: &clamshell_system::library::Sources, dir: &Path) -> Result<(), String> {
+    let real = std::env::var("CLAMSHELL_SNAPSHOT_LIBRARY").is_ok_and(|v| v == "real");
+    let library = if real { clamshell_system::library::load(sources).library } else { clamshell_library::demo::library() };
+    let now = match std::env::var_os("CLAMSHELL_SNAPSHOT_NOW") {
+        Some(_) => std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+        None => FIXED_NOW,
+    };
+    render(&|| state(library.clone()), now, dir).map_err(|e| e.to_string())
+}
+
 /// One file: the screen drawn, after these events.
 pub struct Shot {
     pub name: &'static str,

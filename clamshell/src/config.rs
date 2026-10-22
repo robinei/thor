@@ -32,11 +32,6 @@ pub struct Env {
     /// CLAMSHELL_BACKLIGHTS: another folder laid out as /sys/class/backlight (tests, desktops without
     /// one).
     pub backlights: PathBuf,
-    /// CLAMSHELL_SNAPSHOT_LIBRARY=real: snapshots of the real library instead of the demo games.
-    pub snapshot_real_library: bool,
-    /// CLAMSHELL_SNAPSHOT_NOW set: snapshots at the time they are taken, instead of a fixed time (with
-    /// which they compare byte for byte across runs).
-    pub snapshot_now: bool,
     /// SWAYSOCK: sway's socket, under sway.
     pub sway: Option<PathBuf>,
     /// HOME and the XDG base directories, where ClamShell's files go (see [`clamshell_system::paths`]).
@@ -58,8 +53,6 @@ impl Env {
             control: path("CLAMSHELL_CONTROL"),
             device_session: flag("CLAMSHELL_SESSION", "device"),
             backlights: path("CLAMSHELL_BACKLIGHTS").unwrap_or_else(|| PathBuf::from("/sys/class/backlight")),
-            snapshot_real_library: flag("CLAMSHELL_SNAPSHOT_LIBRARY", "real"),
-            snapshot_now: std::env::var_os("CLAMSHELL_SNAPSHOT_NOW").is_some(),
             sway: path("SWAYSOCK"),
             base: Base::from_env(),
         }

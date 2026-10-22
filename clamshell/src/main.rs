@@ -1,11 +1,14 @@
 //! ClamShell: shelf, the second screen, the bar, input and power policy in one process with one state.
 //! This is the program around them: the command line ([`cli`]), the environment ([`config`]), starting
-//! the system threads ([`wiring`]), the control pipe ([`control`]) and the snapshots ([`snapshot`]).
+//! the system threads ([`wiring`]), the control pipe ([`control`]), and, built with the `dev` feature, the
+//! snapshots (`snapshot`).
 
 mod cli;
 mod config;
 mod control;
+#[cfg(any(test, feature = "dev"))]
 mod demo;
+#[cfg(any(test, feature = "dev"))]
 mod snapshot;
 mod wiring;
 
@@ -13,7 +16,6 @@ use std::cell::RefCell;
 use std::process::ExitCode;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use clamshell_core::keymap::Keymaps;
 use clamshell_core::settings::Hud;
@@ -89,12 +91,8 @@ fn carry_out(command: Command) -> Result<(), String> {
         }
         Command::Tray => print_tray(),
         Command::FetchMetadata => fetch_metadata(&paths, &sources),
-        Command::Snapshot(dir) => {
-            // The demo games unless asked for the real library.
-            let library = if env.snapshot_real_library { library::load(&sources).library } else { clamshell_library::demo::library() };
-            let now = if env.snapshot_now { SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() } else { snapshot::FIXED_NOW };
-            snapshot::render(&|| snapshot::state(library.clone()), now, &dir).map_err(|e| e.to_string())
-        }
+        #[cfg(any(test, feature = "dev"))]
+        Command::Snapshot(dir) => snapshot::command(&sources, &dir),
     }
 }
 

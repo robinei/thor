@@ -121,7 +121,9 @@ Helpers that exist but are bypassed:
 - [ ] The keymap views' wildcard imports (`ui/views/keymaps/mod.rs:39-43`): explicit.
 - [ ] UI: the confirm dialog written twice (`keymaps/mod.rs:196-222`); layout literals named or helped
       (`Column::para`), shared gaps in `style`.
-- [ ] Dev tooling out of the device binary: `--snapshot`, demo data and the dev commands behind a feature.
+- [x] Dev tooling out of the device binary: `--snapshot` and the demo library behind a `dev` feature (checked
+      by `tools/check.sh`). `--library`, `--tray`, `--fetch-metadata` and `--mangohud-env` stay: diagnostics
+      worth having on the device (`docs/runners.md` points at `--tray`).
 - [ ] Rendering: a comment on whole-screen redraw and the shm copy (or drawing straight into shm).
 - [ ] The `Library` arena's `Entry`: browsed and video fields in sub-structs.
 

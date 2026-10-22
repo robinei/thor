@@ -30,7 +30,9 @@ pub enum Command {
     /// clamshell_system::meta) without the UI, printing what was found; a running ClamShell shows it from
     /// its next start.
     FetchMetadata,
-    /// `--snapshot DIR`: draw both screens at the Thor's size into PNG files, no Wayland needed.
+    /// `--snapshot DIR`: draw both screens at the Thor's size into PNG files, no Wayland needed (built
+    /// with the `dev` feature).
+    #[cfg(any(test, feature = "dev"))]
     Snapshot(PathBuf),
     /// `ctl COMMAND...`: send a command to the running ClamShell (`volume up`, `screenshot`, ...; see
     /// [`crate::control`]).
@@ -45,7 +47,7 @@ used by ClamShell itself:
   --wayland-filter     Waydroid's Wayland filter
   --clipboard get|set  the clipboard's text (Waydroid's clipboard sharing)
 for development:
-  --snapshot DIR       both screens' views drawn into DIR
+  --snapshot DIR       both screens' views drawn into DIR (built with --features dev)
   --library            the library as it reads, written out
   --tray               the tray icons there are, written out
   --fetch-metadata     the missing covers and details fetched
@@ -57,6 +59,7 @@ pub fn parse(args: &[String]) -> Option<Command> {
         [] => Command::Run,
         [flag, file] if flag == "--run" => Command::RunJob(file.into()),
         [flag, appid] if flag == "--follow-steam" => Command::FollowSteam(appid.parse().ok()?),
+        #[cfg(any(test, feature = "dev"))]
         [flag, dir] if flag == "--snapshot" => Command::Snapshot(dir.into()),
         [flag] if flag == "--mangohud-env" => Command::MangohudEnv,
         [flag] if flag == "--library" => Command::Library,
