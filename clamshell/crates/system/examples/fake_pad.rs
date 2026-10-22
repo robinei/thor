@@ -1,33 +1,35 @@
 //! Development: a fake Xbox-style controller for testing the controller path without one.
 //!
 //! Without arguments it creates the pad, waits for ClamShell to grab it, pushes the left stick fully
-//! right for 0.5 s and down for 0.25 s (no buttons: they would click whatever is under the pointer), and
-//! reports what came out: the virtual mouse's motion and the virtual pad's stick.
+//! right for 0.5 s and down for 0.25 s, and reports what came out: the virtual mouse's motion and the
+//! virtual pad's stick. It presses no buttons, since they would click whatever is under the pointer.
 //!
 //!     cargo run -p clamshell-system --example fake_pad &
 //!     CLAMSHELL_GAMEPAD="clamshell fake pad" [CLAMSHELL_PAD_MOUSE=1] cargo run
 //!
-//! With `--control PATH` it creates the pad and then does what lines read from PATH (a named pipe, made
-//! if missing; `-` for standard input) say, until `quit` or until it is killed (which unplugs the pad):
+//! With `--control PATH` it creates the pad and then follows the command lines read from PATH, until
+//! `quit` or until it is killed, which unplugs the pad. PATH is a named pipe, made if missing, or `-`
+//! for standard input. The commands are:
 //!
-//! - `press BUTTON`, `release BUTTON`, `tap BUTTON [MS]` (pressed for MS, default 80): a, b, x, y, lb,
-//!   rb, view, menu, home, ls, rs, back, ayn (on its own device, as the Thor's GPIO keys)
-//! - `dpad up|down|left|right|none`: the D-pad (a hat), held until the next `dpad`
+//! - `press BUTTON`, `release BUTTON`, `tap BUTTON [MS]` (pressed for MS, default 80). The buttons are
+//!   a, b, x, y, lb, rb, view, menu, home, ls, rs, back, and ayn, which is on its own device like the
+//!   Thor's GPIO keys.
+//! - `dpad up|down|left|right|none`: the D-pad, a hat, held until the next `dpad`
 //! - `stick left|right X Y`: a stick at X, Y (-1.0 to 1.0, y down), held until changed
 //! - `trigger left|right V`: a trigger at V (0.0 to 1.0)
-//! - `gyro X Y Z`: the gyro turning at X, Y, Z degrees per second (pitch, yaw, roll: ABS_RX, RY, RZ),
-//!   held until changed (`gyro 0 0 0`)
+//! - `gyro X Y Z`: the gyro turning at X, Y, Z degrees per second as pitch, yaw and roll (ABS_RX, RY,
+//!   RZ), held until changed (`gyro 0 0 0`)
 //! - `sleep MS`
 //! - `quit`
 //!
-//! Each line is answered on standard error. `tools/vm/vm.py pad` runs it in the virtual Thor. Controlled, it
-//! has rumble (FF_RUMBLE): it answers effect uploads and says on standard error what it is asked to play
-//! (`rumble STRONG WEAK`, `rumble stop`).
+//! Each line is answered on standard error. `tools/vm/vm.py pad` runs it in the virtual Thor. In this
+//! mode the pad has rumble (FF_RUMBLE). It answers effect uploads and prints on standard error what it
+//! is asked to play (`rumble STRONG WEAK`, `rumble stop`).
 //!
-//! Beside the pad it makes a motion sensor as the kernel's controller drivers do ("clamshell fake pad
-//! Motion Sensors": INPUT_PROP_ACCELEROMETER, the accelerometer on ABS_X/Y/Z, the gyro on ABS_RX/RY/RZ
-//! with its resolution, units per degree per second, and MSC_TIMESTAMP), reporting at 250 Hz; and, as
-//! the Thor has, "gpio-keys-ayn" with the AYN button's key (KEY_F24).
+//! Beside the pad it makes a motion sensor the way the kernel's controller drivers do, named "clamshell
+//! fake pad Motion Sensors". It has INPUT_PROP_ACCELEROMETER, the accelerometer on ABS_X/Y/Z, the gyro on
+//! ABS_RX/RY/RZ with its resolution in units per degree per second, and MSC_TIMESTAMP, and it reports at
+//! 250 Hz. Like the Thor, it also has "gpio-keys-ayn" with the AYN button's key (KEY_F24).
 
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
@@ -53,8 +55,8 @@ const ACCEL_RES: i32 = 8192;
 /// How often the motion sensor reports.
 const MOTION_EVERY: Duration = Duration::from_millis(4);
 
-/// The buttons by name, as an Xbox controller's (Linux's xpad codes), and the Thor's Back button (its
-/// code as InputPlumber has it, until the device test).
+/// The buttons by name, with an Xbox controller's codes as Linux's xpad gives them, and the Thor's Back
+/// button. Back's code is the one InputPlumber uses, until it is tested on the device.
 const BUTTONS: [(&str, KeyCode); 12] = [
     ("a", KeyCode::BTN_SOUTH),
     ("b", KeyCode::BTN_EAST),
@@ -70,7 +72,7 @@ const BUTTONS: [(&str, KeyCode); 12] = [
     ("back", KeyCode::BTN_BACK),
 ];
 
-/// The Thor's AYN button: on its GPIO keys, not on the pad.
+/// The Thor's AYN button, which is on its GPIO keys rather than on the pad.
 const AYN: (&str, KeyCode) = ("ayn", KeyCode::KEY_F24);
 
 fn make_ayn_keys() -> io::Result<VirtualDevice> {
@@ -98,7 +100,7 @@ fn make_pad() -> io::Result<VirtualDevice> {
     make_pad_with(false)
 }
 
-/// The pad, with rumble if `rumble` (then someone must answer its effect uploads: [`serve_rumble`]).
+/// The pad, with rumble if `rumble`. Then something must answer its effect uploads ([`serve_rumble`]).
 fn make_pad_with(rumble: bool) -> io::Result<VirtualDevice> {
     let stick_axis = |code| UinputAbsSetup::new(code, AbsInfo::new(0, -STICK_MAX - 1, STICK_MAX, 16, 128, 0));
     let trigger = |code| UinputAbsSetup::new(code, AbsInfo::new(0, 0, TRIGGER_MAX, 0, 0, 0));
@@ -189,8 +191,8 @@ fn make_motion() -> io::Result<VirtualDevice> {
         .build()
 }
 
-/// The gyro's rate as last set (degrees per second), reported every [`MOTION_EVERY`] with gravity
-/// straight down, as a handheld held level.
+/// The gyro's rate as last set, in degrees per second. It is reported every [`MOTION_EVERY`] with gravity
+/// straight down, as for a handheld held level.
 type Gyro = Arc<Mutex<[f32; 3]>>;
 
 fn report_motion(mut device: VirtualDevice, gyro: Gyro) {
@@ -222,7 +224,8 @@ fn main() -> io::Result<()> {
     }
 }
 
-/// Reads commands from `path` (made as a named pipe if missing; reopened after each writer) or stdin.
+/// Reads commands from `path` or stdin. `path` is made as a named pipe if missing, and reopened after
+/// each writer.
 fn controlled(path: &str) -> io::Result<()> {
     let pad = Arc::new(Mutex::new(make_pad_with(true)?));
     let gyro = Gyro::default();
@@ -254,7 +257,7 @@ fn controlled(path: &str) -> io::Result<()> {
     }
 }
 
-/// The fake controller: its pad (shared with the thread answering its rumble), and its gyro's rate.
+/// The fake controller: its pad, shared with the thread answering its rumble, and its gyro's rate.
 struct Fake {
     pad: Arc<Mutex<VirtualDevice>>,
     gyro: Gyro,
@@ -262,7 +265,7 @@ struct Fake {
     ayn: VirtualDevice,
 }
 
-/// Carries out one command line; false for `quit`.
+/// Carries out one command line. Returns false for `quit`.
 fn run_line(pad: &mut Fake, line: &str) -> bool {
     let words: Vec<&str> = line.split_whitespace().collect();
     if words.is_empty() {

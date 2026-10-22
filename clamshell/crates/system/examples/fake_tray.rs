@@ -1,8 +1,9 @@
 //! Development: a fake program with a tray icon (StatusNotifierItem and its dbusmenu menu), for testing
-//! ClamShell's tray without one. It registers with the watcher (ClamShell, in the device's session) and
-//! says on standard output what it is asked: `activate`, `clicked ID`. Activated, it opens a window: a
-//! terminal (foot) as a process of its own, as a program's window would be. Its menu: Open (1), a submenu
-//! Recent (2) with First (3) and Second (4), Disabled (5, greyed), Exit (6, which ends it).
+//! ClamShell's tray without a real one. It registers with the watcher, which is ClamShell in the device's
+//! session, and prints on standard output what it is asked: `activate` or `clicked ID`. When activated it
+//! opens a window, a terminal (foot) in a process of its own, as a program's window would be. Its menu
+//! has Open (1), a submenu Recent (2) with First (3) and Second (4), Disabled (5, greyed out), and Exit
+//! (6, which ends it).
 //!
 //!     cargo run -p clamshell-system --example fake_tray
 
@@ -12,14 +13,14 @@ use std::time::Duration;
 
 use clamshell_system::os::dbus::{self, Bus, Message, Path, PropMap, Value, value};
 
-/// A menu node: id, properties, children (in variants).
+/// A menu node: id, properties, and children wrapped in variants.
 fn node(id: i32, label: &str, extra: Vec<(&str, Value)>, children: Vec<Value>) -> Value {
     let mut props = PropMap::from([("label".to_owned(), value(label.to_owned()))]);
     props.extend(extra.into_iter().map(|(k, v)| (k.to_owned(), v)));
     value((id, props, children))
 }
 
-/// The menu's layout: (revision, (id, properties, children)).
+/// The menu's layout as (revision, (id, properties, children)).
 fn layout() -> (u32, (i32, PropMap, Vec<Value>)) {
     let recent =
         node(2, "_Recent", vec![("children-display", value("submenu".to_owned()))], vec![node(3, "First", vec![], vec![]), node(4, "Second", vec![], vec![])]);
