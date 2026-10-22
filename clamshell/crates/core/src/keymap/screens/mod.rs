@@ -23,7 +23,7 @@
 use std::sync::Arc;
 
 use crate::bottom::editor::{Editor, Editors, KeymapName, Purpose};
-use crate::bottom::keyboard::{Key, Stroke};
+use crate::bottom::keyboard::{Key, Keyboard, Stroke};
 use crate::effect::{Effect, Save};
 use crate::event::KeymapEvent;
 use crate::id::{KeymapId, Target};
@@ -555,13 +555,13 @@ impl Keymapping {
     }
 
     /// Goes back one screen: from a keymap's screens to the picker, from an input's screens to its
-    /// keymap's, and from the picker to the settings. Returns whether it left the capture screen, whose
-    /// modifiers held are then dropped.
-    pub(crate) fn back(&mut self) -> bool {
+    /// keymap's, and from the picker to the settings. Leaving the capture screen drops the `keyboard`'s
+    /// modifiers held.
+    pub(crate) fn back(&mut self, keyboard: &mut Keyboard) {
         // A layer clear waiting for confirmation is cancelled instead.
         if matches!(self.open, Some(Screen::LayerMenu { .. })) && self.edit.clearing {
             self.edit.clearing = false;
-            return false;
+            return;
         }
         let capture = matches!(self.open, Some(Screen::Capture { .. }));
         self.open = match self.open {
@@ -574,7 +574,9 @@ impl Keymapping {
             Some(Screen::LayerMenu { id, .. }) => Some(Screen::LayerPicker(id)),
             Some(Screen::Capture { id, .. }) => Some(Screen::Edit(id)),
         };
-        capture
+        if capture {
+            keyboard.take_modifiers();
+        }
     }
 
     /// Whether the selected input has a hold or double binding in force in the layer shown. Its press then
@@ -748,6 +750,14 @@ impl Keymapping {
         let binding = kept.map_or_else(fresh, |k| k.retarget(input, output));
         self.bind(id, input, Some(binding), out);
         self.open = Some(Screen::Edit(id));
+    }
+
+    /// Capture was pressed: the `keyboard`'s modifiers armed or held are the chord, on the capture screen.
+    pub(crate) fn capture(&mut self, keyboard: &mut Keyboard, out: &mut Out) {
+        if matches!(self.open, Some(Screen::Capture { .. })) {
+            let chord = keyboard.take_modifiers();
+            self.captured(chord, out);
+        }
     }
 
     /// A key typed while a chord is wanted. It is the chord for the input, or the next of a stick's four

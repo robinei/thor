@@ -12,7 +12,7 @@ use crate::bottom::screen::Power;
 use crate::device::Device;
 use crate::device::buttons::DeviceKey;
 use crate::device::idle::Idle;
-use crate::keymap::screens::{KeymapCx, Keymapping, Screen};
+use crate::keymap::screens::{KeymapCx, Keymapping};
 use crate::kit::debounce::Debounce;
 use crate::levels::slider::Control;
 use crate::nav::lists::Scrolls;
@@ -243,7 +243,7 @@ impl State {
             }
             // On a screen that listens for input, Home leaves it. Home is never taken as an input.
             Event::Home if self.listening() => {
-                self.keymap_back();
+                self.keymapping.back(&mut self.keyboard);
                 out.mark(Dirty::BOTTOM);
             }
             // When the Device view is in shelf's place, Home goes back to shelf.
@@ -1160,7 +1160,7 @@ impl State {
     /// The keymaps' screens' buttons. Back goes back a screen; the others are the screen's.
     fn on_keymap(&mut self, id: KeymapId, long: bool, out: &mut Out) {
         if id == KeymapId::Back {
-            self.keymap_back();
+            self.keymapping.back(&mut self.keyboard);
             return;
         }
         let cx = self.keymap_cx();
@@ -1180,13 +1180,6 @@ impl State {
         }
     }
 
-    /// Goes back one screen. Leaving the capture screen drops the modifiers held.
-    fn keymap_back(&mut self) {
-        if self.keymapping.back() {
-            self.keyboard.take_modifiers();
-        }
-    }
-
     /// What the keymaps' screens ask of the settings and the keyboard.
     fn keymap_event(&mut self, event: KeymapEvent, out: &mut Out) {
         match event {
@@ -1202,12 +1195,7 @@ impl State {
                 self.prefs.forget_keymap(id);
                 self.saved_and_applied(before, out);
             }
-            KeymapEvent::Capture => {
-                if matches!(self.keymapping.screen(), Some(Screen::Capture { .. })) {
-                    let chord = self.keyboard.take_modifiers();
-                    self.keymapping.captured(chord, out);
-                }
-            }
+            KeymapEvent::Capture => self.keymapping.capture(&mut self.keyboard, out),
         }
     }
 
