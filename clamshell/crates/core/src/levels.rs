@@ -385,12 +385,6 @@ impl Levels {
         }
         vec![Effect::Sound(Sound::Output(id))]
     }
-
-    /// The tab they belong to closed: no level row is being set. (The bar's slider isn't the tab's: a
-    /// finger sliding on the bar slides on while another opens a tab; it ends when that finger lifts.)
-    pub(crate) fn leave(&mut self) {
-        self.release();
-    }
 }
 
 /// The apps playing as a list's rows (found again by their PipeWire id).

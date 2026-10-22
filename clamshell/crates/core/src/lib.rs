@@ -236,12 +236,10 @@ impl State {
         s.pins_dropped = s.drop_gone_pins();
         s.follow_pausable_runners();
         s.pointer.focus = s.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Game(g)));
-        if init.setup {
-            s.pointer.focus = Some(Id::Device(device::DeviceId::Wifi));
-        }
         s.device.calibrations = init.sticks;
         if init.setup {
             s.device.open = true;
+            s.pointer.focus = Some(Id::Device(device::DeviceId::Wifi));
         }
         if let Some(tab) = init.start_tab {
             s.bottom.tab = tab;
@@ -1005,7 +1003,8 @@ impl State {
         self.bottom.tab = tab;
         self.dock.menu = None;
         self.dock.moving = None;
-        self.levels.leave();
+        // No level row of the tab left is being set any more.
+        self.levels.release();
         // (The time tab opens on its main page again.)
         self.bottom.time_page = TimePage::Main;
         vec![]

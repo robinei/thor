@@ -235,14 +235,6 @@ impl Lists {
 
 pub(crate) static EMPTY: Scroll = Scroll { offset: 0.0, visible: None, anchor: None };
 
-impl ListEvent {
-    pub fn list(self) -> ListId {
-        match self {
-            ListEvent::Scroll(list, _) | ListEvent::Visible(list, _) => list,
-        }
-    }
-}
-
 /// What the UI says about a list.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ListEvent {
@@ -250,6 +242,14 @@ pub enum ListEvent {
     Scroll(ListId, f32),
     /// The list shows this many rows (from the layout).
     Visible(ListId, f32),
+}
+
+impl ListEvent {
+    pub fn list(self) -> ListId {
+        match self {
+            ListEvent::Scroll(list, _) | ListEvent::Visible(list, _) => list,
+        }
+    }
 }
 
 impl State {

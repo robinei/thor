@@ -223,7 +223,7 @@ impl State {
         };
         let app_id = app_id_of(g).filter(|_| command.is_none());
         let (launch, key) = (command.unwrap_or_else(|| g.launch.clone()), g.key.clone());
-        let (secs, n) = self.session.new_name(self.unix_secs);
+        let (secs, n) = (self.unix_secs, self.session.next_instance());
         let instance = Instance::Run { key, secs, n };
         let settings = self.settings_of(&game);
         let env = self.env_of(&game);

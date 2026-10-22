@@ -230,9 +230,7 @@ impl State {
         }
         effects
     }
-}
 
-impl State {
     /// The `awake` command of the runner of a window shown, if it has one.
     fn awake_command(&self) -> Option<std::sync::Arc<[String]>> {
         let session = &self.session;

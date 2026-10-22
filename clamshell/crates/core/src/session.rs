@@ -116,11 +116,11 @@ impl Session {
         self.windows.iter().filter(move |w| self.running_of(w).is_some_and(|r| &*r.id == id))
     }
 
-    /// The start time and counter for a new instance's name.
-    pub(crate) fn new_name(&mut self, now: u64) -> (u64, u64) {
+    /// The counter for a new instance's name (see [`crate::instance::Instance::Run`]).
+    pub(crate) fn next_instance(&mut self) -> u64 {
         let n = self.next_instance;
         self.next_instance += 1;
-        (now, n)
+        n
     }
 
     pub(crate) fn set_windows(&mut self, windows: Vec<Window>) {

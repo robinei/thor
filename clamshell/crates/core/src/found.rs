@@ -27,7 +27,7 @@ impl State {
     /// A found program's process (and those it started) moved into a scope of ours, as a launch of
     /// entry `key`'s; once systemd lists that, it runs as one (see [`State::follow_units`]).
     pub(crate) fn adopt(&mut self, key: &str, pid: u32) -> Effect {
-        let (secs, n) = self.session.new_name(self.unix_secs);
+        let (secs, n) = (self.unix_secs, self.session.next_instance());
         Effect::Adopt { instance: Instance::Run { key: key.to_owned(), secs, n }, pid }
     }
 

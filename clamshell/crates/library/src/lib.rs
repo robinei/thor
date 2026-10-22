@@ -367,9 +367,7 @@ impl Library {
     pub fn has(&self, id: &str) -> bool {
         self.entries.iter().any(|g| &*g.id == id) || self.away.iter().any(|p| id.starts_with(p.as_str()))
     }
-}
 
-impl Library {
     /// Rebuilds Recent (the last entries played, apps left out) and Favourites, where declared, the tabs
     /// in their order; either is left out while empty.
     pub fn rebuild_derived(&mut self) {

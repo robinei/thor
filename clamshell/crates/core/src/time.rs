@@ -200,18 +200,14 @@ impl State {
     }
 
     /// Back one page: from a region's zones to the regions (that region shown), from those to the main
-    /// page; whether there was one to go back from.
-    pub(crate) fn time_back(&mut self) -> bool {
+    /// page.
+    pub(crate) fn time_back(&mut self) {
         match self.bottom.time_page {
-            TimePage::Main => false,
-            TimePage::Regions => {
-                self.bottom.time_page = TimePage::Main;
-                true
-            }
+            TimePage::Main => {}
+            TimePage::Regions => self.bottom.time_page = TimePage::Main,
             TimePage::Region(i) => {
                 self.bottom.time_page = TimePage::Regions;
                 self.show_time_row(usize::from(i));
-                true
             }
         }
     }
