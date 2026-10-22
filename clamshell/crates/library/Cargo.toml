@@ -3,6 +3,10 @@ name = "clamshell-library"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "ClamShell's library model: entries, collections, sorting and Steam's files"
 
 # No dependencies: the state (clamshell-core) builds on this model.
 [dependencies]

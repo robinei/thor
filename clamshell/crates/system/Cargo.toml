@@ -3,6 +3,10 @@ name = "clamshell-system"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "ClamShell's system threads: D-Bus, sway, the controller, sensors, files and launches"
 
 [dependencies]
 jiff.workspace = true

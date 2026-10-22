@@ -7,7 +7,12 @@ resolver = "3"
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+# (The toolchain it is built and tested with; older ones aren't tried.)
+rust-version = "1.95"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/robinei/thor"
+# (Built into the Thor's packages, not published as crates.)
+publish = false
 
 [workspace.dependencies]
 clamshell-core = { path = "crates/core" }
@@ -51,6 +56,10 @@ name = "clamshell"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "ClamShell: a two-screen handheld shell for the AYN Thor (shelf, the second screen, input and power)"
 default-run = "clamshell"
 
 [dependencies]

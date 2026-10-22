@@ -3,6 +3,10 @@ name = "clamshell-ui"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "ClamShell's drawing: both screens on Wayland, immediate mode with tiny-skia"
 
 [dependencies]
 resvg.workspace = true
