@@ -287,7 +287,13 @@ pub fn place(place: &str) -> (&str, &str) {
 
 /// The config at `file`; none if it is missing, or if it doesn't parse (then what is wrong with it).
 pub fn read_config(file: &Path) -> (Config, Option<String>) {
-    let Ok(text) = fs::read_to_string(file) else {
+    let Ok(text) = fs::read_to_string(file).inspect_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            log::debug!("library: {}: {e}", file.display());
+        } else {
+            log::warn!("library: {}: {e}", file.display());
+        }
+    }) else {
         return (Config::default(), None);
     };
     match serde_json::from_str(&text) {
@@ -302,8 +308,12 @@ pub fn read_config(file: &Path) -> (Config, Option<String>) {
 /// A scan's entries: appended to `games` (groups before their items, each file opened as `open` says, a
 /// group by its first entry's runner), the indices of its top-level ones returned.
 pub fn scan(source: &Scan, home: Option<&Path>, games: &mut Vec<Entry>, open: &Open) -> Vec<usize> {
-    let Ok(dir) = expand_dir(&source.dir, home) else {
-        return Vec::new();
+    let dir = match expand_dir(&source.dir, home) {
+        Ok(dir) => dir,
+        Err(name) => {
+            log::warn!("library: {}: ${name} isn't set", source.id);
+            return Vec::new();
+        }
     };
     if !dir.is_dir() {
         log::info!("library: {}: no dir {}", source.id, dir.display());
@@ -377,8 +387,10 @@ fn matches(dir: &Path, parts: &[&str], folders: bool) -> Vec<PathBuf> {
 
 /// A folder's names and paths, sorted as titles are.
 fn listing(dir: &Path) -> Vec<(String, PathBuf)> {
-    let mut entries: Vec<(String, PathBuf)> =
-        fs::read_dir(dir).map(|d| d.flatten().filter_map(|e| Some((e.file_name().to_str()?.to_owned(), e.path()))).collect()).unwrap_or_default();
+    let mut entries: Vec<(String, PathBuf)> = fs::read_dir(dir)
+        .inspect_err(|e| log::debug!("library: {}: {e}", dir.display()))
+        .map(|d| d.flatten().filter_map(|e| Some((e.file_name().to_str()?.to_owned(), e.path()))).collect())
+        .unwrap_or_default();
     entries.sort_by_cached_key(|(name, _)| (sort::key(name), name.clone()));
     entries
 }
@@ -473,8 +485,10 @@ fn art_beside(file: &Path) -> Option<PathBuf> {
 
 pub(crate) fn folder_art(folder: &Path) -> Option<PathBuf> {
     // (By name in any case: `Cover.jpg` too.)
-    let files: Vec<(String, PathBuf)> =
-        fs::read_dir(folder).map(|d| d.flatten().filter_map(|e| Some((e.file_name().to_str()?.to_lowercase(), e.path()))).collect()).unwrap_or_default();
+    let files: Vec<(String, PathBuf)> = fs::read_dir(folder)
+        .inspect_err(|e| log::debug!("library: {}: {e}", folder.display()))
+        .map(|d| d.flatten().filter_map(|e| Some((e.file_name().to_str()?.to_lowercase(), e.path()))).collect())
+        .unwrap_or_default();
     FOLDER_ART
         .iter()
         .flat_map(|name| IMAGES.iter().map(move |ext| format!("{name}.{ext}")))

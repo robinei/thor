@@ -30,8 +30,9 @@ impl Shared {
 pub fn duration(file: &Path) -> Option<u32> {
     let mut args: Vec<&OsStr> = ["-n", "19", "ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0"].map(OsStr::new).into();
     args.push(file.as_os_str());
-    let out = command::run("nice", &args, None, PROBE_LIMIT).ok()?;
-    let seconds: f64 = String::from_utf8_lossy(&out.stdout).trim().parse().ok()?;
+    let out = command::run("nice", &args, None, PROBE_LIMIT).inspect_err(|e| log::debug!("probe: {}: {e}", file.display())).ok()?;
+    let seconds: f64 =
+        String::from_utf8_lossy(&out.stdout).trim().parse().inspect_err(|e| log::debug!("probe: {}: no length: {e} ({})", file.display(), out.status)).ok()?;
     (seconds > 0.0).then_some(seconds.round() as u32)
 }
 
@@ -47,8 +48,10 @@ const FRAMES_LOOKED_AT: u32 = 60;
 /// [`FRAMES_LOOKED_AT`] keyframes from `at` seconds on, the most representative (ffmpeg's `thumbnail`
 /// filter; keyframes only, so it is quick). Whether it worked.
 pub fn frame(file: &Path, at: u32, out: &Path) -> bool {
-    if let Some(dir) = out.parent() {
-        let _ = std::fs::create_dir_all(dir);
+    if let Some(dir) = out.parent()
+        && let Err(e) = std::fs::create_dir_all(dir)
+    {
+        log::debug!("probe: {}: {e}", dir.display());
     }
     let part = out.with_extension("part.jpg");
     let (choose, at) = (format!("scale=640:-2,thumbnail={FRAMES_LOOKED_AT}"), at.to_string());
@@ -56,6 +59,16 @@ pub fn frame(file: &Path, at: u32, out: &Path) -> bool {
     args.push(file.as_os_str());
     args.extend(["-vf", &choose, "-frames:v", "1", "-fps_mode", "vfr", "-q:v", "4"].map(OsStr::new));
     args.push(part.as_os_str());
-    let ok = command::run("nice", &args, None, FRAME_LIMIT).is_ok_and(|ran| ran.status.success());
-    ok && std::fs::rename(&part, out).is_ok()
+    let ok = match command::run("nice", &args, None, FRAME_LIMIT) {
+        Ok(ran) if ran.status.success() => true,
+        Ok(ran) => {
+            log::debug!("probe: a frame of {}: ffmpeg {}", file.display(), ran.status);
+            false
+        }
+        Err(e) => {
+            log::debug!("probe: a frame of {}: {e}", file.display());
+            false
+        }
+    };
+    ok && std::fs::rename(&part, out).inspect_err(|e| log::warn!("probe: {}: {e}", out.display())).is_ok()
 }

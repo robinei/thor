@@ -61,7 +61,17 @@ pub fn entries(dirs: &[PathBuf]) -> Vec<Desktop> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for dir in dirs {
-        let mut files: Vec<PathBuf> = fs::read_dir(dir.join("applications")).map(|d| d.flatten().map(|e| e.path()).collect()).unwrap_or_default();
+        let apps = dir.join("applications");
+        let mut files: Vec<PathBuf> = fs::read_dir(&apps)
+            .inspect_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    log::debug!("desktop: {}: {e}", apps.display());
+                } else {
+                    log::warn!("desktop: {}: {e}", apps.display());
+                }
+            })
+            .map(|d| d.flatten().map(|e| e.path()).collect())
+            .unwrap_or_default();
         files.sort();
         for path in files {
             let Some(id) = path.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_suffix(".desktop")).map(str::to_owned) else {
@@ -71,7 +81,13 @@ pub fn entries(dirs: &[PathBuf]) -> Vec<Desktop> {
             if !seen.insert(id.clone()) {
                 continue;
             }
-            let Ok(text) = fs::read_to_string(&path) else {
+            let Ok(text) = fs::read_to_string(&path).inspect_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    log::debug!("desktop: {}: {e}", path.display());
+                } else {
+                    log::warn!("desktop: {}: {e}", path.display());
+                }
+            }) else {
                 continue;
             };
             let entry = parse(&text);
@@ -99,7 +115,7 @@ pub fn entries(dirs: &[PathBuf]) -> Vec<Desktop> {
 
 /// The command of the desktop file at `path` (an app's, opened from the Files tab), if it has one.
 pub fn command(path: &Path) -> Option<clamshell_library::Launch> {
-    let entry = parse(&fs::read_to_string(path).ok()?);
+    let entry = parse(&fs::read_to_string(path).inspect_err(|e| log::debug!("desktop: {}: {e}", path.display())).ok()?);
     let argv = exec_args(&entry.exec);
     (!argv.is_empty()).then(|| clamshell_library::Launch::Program { argv, workdir: (!entry.path.is_empty()).then(|| PathBuf::from(&entry.path)) })
 }

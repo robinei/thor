@@ -16,7 +16,14 @@ pub fn default_root(home: &Path) -> Option<PathBuf> {
 /// The installed games of every Steam library folder.
 pub fn games(root: &Path) -> Vec<Entry> {
     let mut libraries = vec![root.to_path_buf()];
-    if let Ok(text) = fs::read_to_string(root.join("steamapps/libraryfolders.vdf")) {
+    let folders = root.join("steamapps/libraryfolders.vdf");
+    if let Ok(text) = fs::read_to_string(&folders).inspect_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            log::debug!("steam: {}: {e}", folders.display());
+        } else {
+            log::warn!("steam: {}: {e}", folders.display());
+        }
+    }) {
         for path in steam::library_folders(&parse_vdf(&text)) {
             if !libraries.contains(&path) {
                 libraries.push(path);
@@ -25,7 +32,14 @@ pub fn games(root: &Path) -> Vec<Entry> {
     }
     let mut games = Vec::new();
     for lib in libraries {
-        let Ok(entries) = fs::read_dir(lib.join("steamapps")) else {
+        let apps = lib.join("steamapps");
+        let Ok(entries) = fs::read_dir(&apps).inspect_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                log::debug!("steam: {}: {e}", apps.display());
+            } else {
+                log::warn!("steam: {}: {e}", apps.display());
+            }
+        }) else {
             continue;
         };
         let mut manifests: Vec<PathBuf> = entries
@@ -35,7 +49,7 @@ pub fn games(root: &Path) -> Vec<Entry> {
             .collect();
         manifests.sort();
         for m in manifests {
-            let Ok(text) = fs::read_to_string(&m) else {
+            let Ok(text) = fs::read_to_string(&m).inspect_err(|e| log::warn!("steam: {}: {e}", m.display())) else {
                 continue;
             };
             if let Some((appid, name)) = steam::manifest(&parse_vdf(&text)) {
@@ -57,7 +71,8 @@ fn art(cache: &Path, appid: u32) -> Option<PathBuf> {
     if let Some(p) = flat.into_iter().find(|p| p.is_file()) {
         return Some(p);
     }
-    let mut subdirs: Vec<PathBuf> = fs::read_dir(&dir).ok()?.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+    let mut subdirs: Vec<PathBuf> =
+        fs::read_dir(&dir).inspect_err(|e| log::debug!("steam: {}: {e}", dir.display())).ok()?.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
     subdirs.sort();
     ["library_capsule.jpg", "library_600x900.jpg", "library_header.jpg", "header.jpg"]
         .iter()

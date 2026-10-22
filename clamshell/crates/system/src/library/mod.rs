@@ -357,8 +357,10 @@ impl Builder<'_> {
             Err(name) => return self.problems.push(format!("{place}: ${name} isn't set")),
         };
         // (The Trash's folder may not be made yet.)
-        if root.trash {
-            let _ = std::fs::create_dir_all(&dir);
+        if root.trash
+            && let Err(e) = std::fs::create_dir_all(&dir)
+        {
+            log::warn!("library: {}: {e}", dir.display());
         }
         let kind = if root.trash { BrowseKind::Trash } else { BrowseKind::Root };
         self.browsed_root(&place, browsed_root(&format!("{}{place}", ids::BROWSE), dir, kind));

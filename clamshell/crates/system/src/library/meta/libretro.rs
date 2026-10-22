@@ -46,7 +46,7 @@ impl Shared {
     /// libretro's database of `system`: its No-Intro list's names, and the developers and years, by
     /// checksum; fetched once (empty where it couldn't be).
     pub(super) fn database(&self, system: &str) -> Arc<Database> {
-        let Ok(mut databases) = self.databases.lock() else {
+        let Ok(mut databases) = self.databases.lock().inspect_err(|e| log::warn!("meta: libretro's databases: {e}")) else {
             return Arc::default();
         };
         if let Some(d) = databases.get(system) {
@@ -151,7 +151,7 @@ pub(super) fn checksum(file: &Path) -> Option<u32> {
     if file.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
         return zip_tail(file).and_then(|(tail, base)| zip_crc(&tail, base));
     }
-    if std::fs::metadata(file).ok()?.len() > CHECKSUM_MAX || !file.is_file() {
+    if std::fs::metadata(file).inspect_err(|e| log::debug!("checksum of {}: {e}", file.display())).ok()?.len() > CHECKSUM_MAX || !file.is_file() {
         return None;
     }
     let crc = || -> std::io::Result<u32> {
@@ -173,12 +173,13 @@ pub(super) fn checksum(file: &Path) -> Option<u32> {
 /// it starts.
 pub(super) fn zip_tail(file: &Path) -> Option<(Vec<u8>, usize)> {
     use std::io::{Read, Seek, SeekFrom};
-    let mut f = std::fs::File::open(file).ok()?;
-    let len = f.metadata().ok()?.len();
+    let failed = |e: &std::io::Error| log::debug!("checksum of {}: {e}", file.display());
+    let mut f = std::fs::File::open(file).inspect_err(failed).ok()?;
+    let len = f.metadata().inspect_err(failed).ok()?.len();
     let base = len.saturating_sub(1 << 20);
-    f.seek(SeekFrom::Start(base)).ok()?;
+    f.seek(SeekFrom::Start(base)).inspect_err(failed).ok()?;
     let mut tail = Vec::new();
-    f.read_to_end(&mut tail).ok()?;
+    f.read_to_end(&mut tail).inspect_err(failed).ok()?;
     Some((tail, usize::try_from(base).ok()?))
 }
 

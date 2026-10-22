@@ -60,7 +60,17 @@ impl Cache {
 
     /// The files whose names end in `suffix`, read.
     fn read_all<T: DeserializeOwned>(&self, suffix: &str) -> Vec<(PathBuf, T)> {
-        let entries = fs::read_dir(&self.dir).into_iter().flatten().flatten();
+        let entries = fs::read_dir(&self.dir)
+            .inspect_err(|e| {
+                if e.kind() == io::ErrorKind::NotFound {
+                    log::debug!("meta: {}: {e}", self.dir.display());
+                } else {
+                    log::warn!("meta: {}: {e}", self.dir.display());
+                }
+            })
+            .into_iter()
+            .flatten()
+            .flatten();
         entries.map(|e| e.path()).filter(|p| p.to_str().is_some_and(|p| p.ends_with(suffix))).filter_map(|p| Some((p.clone(), read_json(&p)?))).collect()
     }
 
@@ -87,7 +97,7 @@ impl Cache {
     /// The misses (fetched, nothing found) forgotten: fetched again. How many.
     pub fn forget_misses(&self) -> usize {
         let misses = self.read_all::<MetaFile>("-meta.json").into_iter().filter(|(_, m)| m.meta == Meta::default());
-        misses.filter(|(path, _)| fs::remove_file(path).is_ok()).count()
+        misses.filter(|(path, _)| fs::remove_file(path).inspect_err(|e| log::warn!("meta: removing {}: {e}", path.display())).is_ok()).count()
     }
 }
 
