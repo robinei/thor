@@ -5,6 +5,7 @@ use crate::State;
 use crate::bottom::Tab;
 use crate::device::idle::Stage;
 use crate::effect::{Effect, Watch};
+use crate::out::Out;
 
 /// The watches in force.
 #[derive(Debug, Clone, Default)]
@@ -40,24 +41,22 @@ impl Watches {
     /// Starts and stops watches for `wanted`. The bar's status is watched while the screens are on, the
     /// account while the Device view is open and the UI is up, and the tab's watch while the tab can be
     /// seen and the UI is up.
-    pub(crate) fn follow(&mut self, wanted: Wanted) -> Vec<Effect> {
-        let mut effects = Vec::new();
+    pub(crate) fn follow(&mut self, wanted: Wanted, out: &mut Out) {
         let screens_off = wanted.screens_off;
         if screens_off != std::mem::replace(&mut self.status_off, screens_off) {
-            effects.push(Effect::Watch(Watch::Status, !screens_off));
+            out.effects.push(Effect::Watch(Watch::Status, !screens_off));
         }
         let seen = self.ui_up && wanted.bottom_seen && !screens_off;
         let account = self.ui_up && wanted.device_open;
         if account != std::mem::replace(&mut self.account, account) {
-            effects.push(Effect::Watch(Watch::Account, account));
+            out.effects.push(Effect::Watch(Watch::Account, account));
         }
         let tab = wanted.tab.filter(|_| seen);
         if tab == self.tab {
-            return effects;
+            return;
         }
         let was = std::mem::replace(&mut self.tab, tab);
-        effects.extend(was.map(|w| Effect::Watch(w, false)).into_iter().chain(tab.map(|w| Effect::Watch(w, true))));
-        effects
+        out.effects.extend(was.map(|w| Effect::Watch(w, false)).into_iter().chain(tab.map(|w| Effect::Watch(w, true))));
     }
 }
 
@@ -66,7 +65,7 @@ impl State {
     /// tab watches. It can be seen when ClamShell's view is on the bottom screen, that screen is on, and
     /// the screens aren't off for idle. The dock with an entry's menu open watches the battery tab's
     /// readings, to show what the entry costs.
-    pub(crate) fn follow_watch(&mut self) -> Vec<Effect> {
+    pub(crate) fn follow_watch(&mut self, out: &mut Out) {
         let tab = match self.bottom.tab() {
             Tab::Dock if self.dock.menu.is_some() => Some(Watch::Battery),
             tab => tab.watch(),
@@ -77,6 +76,6 @@ impl State {
             tab,
             device_open: self.device.is_open(),
         };
-        self.watches.follow(wanted)
+        self.watches.follow(wanted, out);
     }
 }

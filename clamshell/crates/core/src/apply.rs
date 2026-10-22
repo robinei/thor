@@ -29,7 +29,7 @@ impl State {
         out.effects.extend(self.follow_shown());
         out.effects.extend(self.follow_browse());
         self.follow_idle(&mut out);
-        out.effects.extend(self.follow_watch());
+        self.follow_watch(&mut out);
         let (changed, applied) = self.follow_program();
         out.effects.extend(applied);
         // This comes after the program in force is settled, since it reads that program's setting and
@@ -37,7 +37,7 @@ impl State {
         let power = self.bottom.follow_power(self.power(), self.clock.mono());
         if !power.is_empty() {
             out.effects.extend(power);
-            out.effects.extend(self.follow_watch());
+            self.follow_watch(&mut out);
         }
         if changed && self.follow_pad_mouse() {
             out.mark(Dirty::BOTH);

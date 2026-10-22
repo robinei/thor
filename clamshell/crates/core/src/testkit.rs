@@ -36,7 +36,7 @@ pub fn state() -> State {
 pub fn state_with(library: Library) -> State {
     let mut s = State::new(Init { library, ..Init::default() });
     s.watches.ui_started();
-    let _ = s.follow_watch();
+    s.follow_watch(&mut crate::out::Out::default());
     s
 }
 
