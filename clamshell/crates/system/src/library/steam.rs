@@ -72,9 +72,8 @@ mod tests {
 
     #[test]
     fn games_of_every_library_folder_with_their_art() {
-        let root = std::env::temp_dir().join(format!("clamshell-steam-{}", std::process::id()));
+        let root = clamshell_core::testdir::TempDir::new("steam");
         let other = root.join("other");
-        let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("steamapps")).unwrap();
         fs::create_dir_all(other.join("steamapps")).unwrap();
         fs::create_dir_all(root.join("appcache/librarycache/20/abc")).unwrap();
@@ -88,6 +87,5 @@ mod tests {
         let found: Vec<(&str, bool)> = games.iter().map(|g| (&*g.id, g.box_front.is_some())).collect();
         assert_eq!(found, vec![("steam:10", false), ("steam:20", true)]);
         assert_eq!(games[1].launch, Launch::Steam { appid: 20 });
-        let _ = fs::remove_dir_all(&root);
     }
 }

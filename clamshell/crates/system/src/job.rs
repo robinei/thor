@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn a_job_round_trips_and_runs_in_its_scope() {
-        let dir = std::env::temp_dir().join(format!("clamshell-jobs-{}", std::process::id()));
+        let dir = clamshell_core::testdir::TempDir::new("jobs");
         let job = Job {
             unit: format!("clamshell-run-jobtest-{}-0", std::process::id()),
             workspace: "clamshell-run-jobtest".into(),
@@ -170,7 +170,6 @@ mod tests {
         let path = write(&dir, &job).unwrap();
         let back: Job = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(back, job);
-        let _ = std::fs::remove_dir_all(&dir);
         let cmd = command(&job).unwrap();
         let args: Vec<&str> = cmd.get_args().filter_map(|a| a.to_str()).collect();
         assert_eq!(cmd.get_program(), "systemd-run");

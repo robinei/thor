@@ -676,8 +676,7 @@ mod tests {
 
     #[test]
     fn folders_come_first_and_steam_can_have_its_own() {
-        let root = std::env::temp_dir().join(format!("clamshell-steam-group-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = clamshell_core::testdir::TempDir::new("steam-group");
         let steam = root.join("steam");
         std::fs::create_dir_all(steam.join("steamapps")).unwrap();
         std::fs::write(steam.join("steamapps/libraryfolders.vdf"), format!("\"libraryfolders\" {{ \"0\" {{ \"path\" \"{}\" }} }}", steam.display())).unwrap();
@@ -714,13 +713,11 @@ mod tests {
         assert_eq!(titles(&folder("Steam").items), ["Text", "Celeste"], "Arma hidden");
         assert_eq!(titles(&folder("Text").items), ["Zork"]);
         assert_eq!(folder("Zork").runner.as_ref().map(|r| &*r.key), Some("runner:steam"), "Steam's games: Steam's");
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn sources_name_their_runner_and_metadata_and_wait_for_their_card() {
-        let root = std::env::temp_dir().join(format!("clamshell-named-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = clamshell_core::testdir::TempDir::new("named");
         let apps = root.join("data/applications");
         std::fs::create_dir_all(&apps).unwrap();
         std::fs::write(apps.join("celeste.desktop"), "[Desktop Entry]\nType=Application\nName=Celeste\nExec=celeste\nCategories=Game;\n").unwrap();
@@ -748,7 +745,6 @@ mod tests {
         assert!(loaded.wanted.iter().any(|w| w.how == How::Steam(10)), "Steam's store, as it says");
         assert!(!loaded.wanted.iter().any(|w| w.how == How::SteamGridDb), "not without the key");
         assert!(lib.problems.iter().any(|p| p == "sd: its card or stick isn't in") && lib.away.contains(&"sd:".to_owned()), "away, not gone");
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -760,8 +756,7 @@ mod tests {
         assert!(rule(r#"{ "categories": "Emu*" }"#).matches("x", "RetroArch", &cats(&["Game", "Emulator"])));
         assert!(!rule(r#"{ "id": "*lutris*", "name": "Steam" }"#).matches("net.lutris.Lutris", "Lutris", &[]), "all of them");
         assert!(rule("{}").matches("any", "Any", &[]), "nothing to match: every entry");
-        let root = std::env::temp_dir().join(format!("clamshell-rules-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = clamshell_core::testdir::TempDir::new("rules");
         let apps = root.join("data/applications");
         std::fs::create_dir_all(&apps).unwrap();
         let write = |id: &str, name: &str, cats: &str| {
@@ -790,13 +785,11 @@ mod tests {
         assert_eq!(tab("Apps"), Some(vec!["Foot".to_owned()]), "Uninstall Foo hidden; the rest taken by the last");
         let entry = |title: &str| lib.entries.iter().find(|g| g.title == title).unwrap();
         assert!(entry("Foot").app && !entry("Celeste").app, "Apps says recent: false");
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn runners_fill_folders_in_a_tab_each_with_its_own_launch() {
-        let root = std::env::temp_dir().join(format!("clamshell-folders-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = clamshell_core::testdir::TempDir::new("folders");
         for f in ["snes/Zelda.sfc", "snes/Mario.sfc", "snes/cover.png", "gba/Metroid.gba", "pc/Doom.sh"] {
             let p = root.join(f);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
@@ -846,6 +839,5 @@ mod tests {
         assert_eq!(handhelds.id.as_ref(), "folder:Games/Handhelds", "one not declared: its path");
         assert!(matches!(&lib.entries[gba.items[0]].launch, Launch::Program { argv, .. } if argv[0] == "mgba"));
         assert_eq!(lib.groups_of(gba.items[0]), [tab.entries[0], handhelds.items[0]]);
-        let _ = std::fs::remove_dir_all(&root);
     }
 }

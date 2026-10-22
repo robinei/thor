@@ -135,8 +135,7 @@ mod tests {
 
     #[test]
     fn a_place_by_the_path_or_the_name_in_the_folder_mpv_conf_names() {
-        let root = std::env::temp_dir().join(format!("clamshell-mpv-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = clamshell_core::testdir::TempDir::new("mpv");
         let (config, state) = (root.join("config"), root.join("state"));
         std::fs::create_dir_all(config.join("mpv")).unwrap();
         std::fs::write(config.join("mpv/mpv.conf"), "save-position-on-quit=yes\nwatch-later-dir=~~state/places\n").unwrap();
@@ -151,6 +150,5 @@ mod tests {
         std::fs::create_dir_all(&dirs[0]).unwrap();
         std::fs::write(dirs[0].join(md5_hex(b"/videos/Film.mkv")), "start=60.5\n").unwrap();
         assert_eq!(position(&dirs, film).map(|(s, _)| s), Some(60), "by its path first");
-        let _ = std::fs::remove_dir_all(&root);
     }
 }

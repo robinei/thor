@@ -182,8 +182,7 @@ mod tests {
 
     #[test]
     fn the_systems_battery_not_a_devices() {
-        let class = std::env::temp_dir().join(format!("clamshell-sys-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&class);
+        let class = clamshell_core::testdir::TempDir::new("sys");
         for (name, kind, scope) in [("AC", "Mains", None), ("hid-headset-battery", "Battery", Some("Device")), ("BAT0", "Battery", Some("System"))] {
             fs::create_dir_all(class.join(name)).unwrap();
             fs::write(class.join(name).join("type"), format!("{kind}\n")).unwrap();
@@ -194,7 +193,6 @@ mod tests {
         assert_eq!(system_battery_in(&class), Some(class.join("BAT0")));
         assert_eq!(read::<u32>(class.join("BAT0/type")), None);
         assert_eq!(read::<String>(class.join("BAT0/type")).as_deref(), Some("Battery"));
-        let _ = fs::remove_dir_all(&class);
     }
 
     #[test]

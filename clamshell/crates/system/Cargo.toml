@@ -18,5 +18,8 @@ libc.workspace = true
 wayland-client.workspace = true
 wayland-protocols.workspace = true
 
+[dev-dependencies]
+clamshell-core = { workspace = true, features = ["test-support"] }
+
 [lints]
 workspace = true

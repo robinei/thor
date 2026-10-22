@@ -137,7 +137,8 @@ Helpers that exist but are bypassed:
 - [x] Test helpers shared: core's testkit (shelf's window, the notice, window effects; `played` was `end`),
       the view tests' frame drawing (`draw_bottom`). (`no_alloc`'s and the snapshots' small event helpers
       stay apart: they are in different crates' tests.)
-- [ ] One test `TempDir` with `Drop` for the ~20 hand-made temp dirs (system).
+- [x] One test `TempDir` with `Drop` (core's `testdir`, the `test-support` feature) for the hand-made temp
+      dirs in the system, fan and UI tests; the fan's and the lid's tests had left hundreds behind.
 - [ ] The sensor hub's parser against captured bytes, not its own encoder (on the device: a fixture).
 - [ ] The no-alloc test's gaps: Time and Touchpad tabs, the file name editors, the battery, dock and
       tray menus, an open group, a video; the menus without per-frame `Vec`/`format!`.

@@ -137,17 +137,15 @@ mod tests {
 
     #[test]
     fn backlights_by_name_and_the_first_ones_level() {
-        let dir = std::env::temp_dir().join(format!("clamshell-backlights-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = clamshell_core::testdir::TempDir::new("backlights");
         for (name, now) in [("b", 10), ("a", 128)] {
             std::fs::create_dir_all(dir.join(name)).unwrap();
             std::fs::write(dir.join(name).join("max_brightness"), "255\n").unwrap();
             std::fs::write(dir.join(name).join("brightness"), format!("{now}\n")).unwrap();
         }
-        let backlights = Backlights::new(dir.clone());
+        let backlights = Backlights::new(dir.to_path_buf());
         assert_eq!(backlights.names(), vec!["a", "b"]);
         assert_eq!(backlights.level(), Some(50));
         assert_eq!(Backlights::new(dir.join("none")).level(), None);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

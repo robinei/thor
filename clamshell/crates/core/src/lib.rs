@@ -57,6 +57,8 @@ pub mod slider;
 pub mod sticks;
 mod sys;
 mod tab;
+#[cfg(feature = "test-support")]
+pub mod testdir;
 pub mod time;
 pub mod touch;
 pub mod tray;

@@ -524,10 +524,8 @@ mod tests {
     use clamshell_core::keymap::{Binding, Button, Input, Output, PadOut};
     use clamshell_core::levels::Share;
 
-    fn dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("clamshell-store-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        dir
+    fn dir(name: &str) -> clamshell_core::testdir::TempDir {
+        clamshell_core::testdir::TempDir::new(&format!("store-{name}"))
     }
 
     #[test]
@@ -541,7 +539,6 @@ mod tests {
         let store = Store::open(&dir);
         assert_eq!(store.favourites(), HashSet::from(["b".to_owned()]));
         assert_eq!(store.plays().get("snes:Zelda.sfc"), Some(&Plays { count: 1, seconds: 30, last: 130 }));
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -601,7 +598,6 @@ mod tests {
         assert!(!store.twelve_hour());
         store.save(&Save::TwelveHour(true)).unwrap();
         assert!(store.twelve_hour());
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -631,7 +627,6 @@ mod tests {
         assert!(!dir.join(format!("settings/entry-{}.json", key_of(&zelda))).exists());
         assert_eq!(fs::metadata(&all).unwrap().modified().unwrap(), written, "unchanged: not written");
         assert_eq!(Store::open(&dir).settings(), settings);
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -647,7 +642,6 @@ mod tests {
         assert_eq!(s.global.get(Setting::FpsCap), Setting::FpsCap.default_value());
         assert_eq!(s.of_in("x", &[]).get(Setting::Power), 2);
         assert_eq!(store.plays().get("a").map(|p| p.count), Some(1), "a line cut short is skipped");
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -668,6 +662,5 @@ mod tests {
         assert_eq!(probes.get("ep"), Some(&Probe { seconds: Some(2700), frame: Some("/c/ep-frame.jpg".into()) }));
         assert_eq!(probes.get("odd").map(|p| p.seconds), Some(None));
         assert!(dir.join(format!("{}-meta.json", key_of("x"))).exists());
-        let _ = fs::remove_dir_all(&dir);
     }
 }

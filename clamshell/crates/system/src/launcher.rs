@@ -395,8 +395,7 @@ mod tests {
         if !std::env::var_os("XDG_RUNTIME_DIR").is_some_and(|d| std::path::Path::new(&d).join("systemd/private").exists()) {
             return;
         }
-        let dir = std::env::temp_dir().join(format!("clamshell-launch-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = clamshell_core::testdir::TempDir::new("launch");
         let script = dir.join("game.sh");
         std::fs::write(&script, "#!/bin/sh\nsleep 1\npwd > ran-in\n").unwrap();
         std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
@@ -404,7 +403,7 @@ mod tests {
         let (tx, events) = mpsc::channel();
         let launcher = spawn(config(), tx).unwrap();
         let id: Arc<str> = script.to_string_lossy().into();
-        let launch = Launch::Program { argv: vec![script.to_string_lossy().into()], workdir: Some(dir.clone()) };
+        let launch = Launch::Program { argv: vec![script.to_string_lossy().into()], workdir: Some(dir.to_path_buf()) };
         let instance = Instance::Run { key: "test_1".into(), secs: u64::from(std::process::id()), n: 0 };
         launcher.send(Command::Launch(Request { game: id, instance, launch, env: vec![] }));
         drop(launcher);
@@ -414,7 +413,6 @@ mod tests {
         assert_eq!(events, vec![]);
         std::thread::sleep(Duration::from_secs(2));
         assert_eq!(std::fs::read_to_string(dir.join("ran-in")).unwrap().trim(), dir.to_string_lossy(), "in its own dir");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

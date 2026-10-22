@@ -690,8 +690,7 @@ mod tests {
 
     #[test]
     fn files_and_folders_at_the_top_first_pattern_first() {
-        let root = std::env::temp_dir().join(format!("clamshell-content-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let root = clamshell_core::testdir::TempDir::new("content");
         touch(
             &root,
             &["Zelda.sfc", "Zelda.png", "Mario.smc", "notes.txt", ".hidden.sfc", "FF7/FF7.m3u", "FF7/FF7 (Disc 1).cue", "FF7/cover.jpg", "Empty/readme"],
@@ -706,13 +705,11 @@ mod tests {
         assert_eq!(games[2].box_front, Some(root.join("FF7/cover.jpg")), "its folder's art");
         let path = root.join("FF7/FF7.m3u");
         assert_eq!(games[2].launch, Launch::Program { argv: vec!["emu".into(), path.to_string_lossy().into()], workdir: Some(root.join("FF7")) });
-        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn a_folder_with_items_is_a_group_of_groups() {
-        let root = std::env::temp_dir().join(format!("clamshell-series-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let root = clamshell_core::testdir::TempDir::new("series");
         touch(
             &root,
             &[
@@ -741,7 +738,6 @@ mod tests {
         assert_eq!(episode.box_front, None, "a video: its frame, not the series' art");
         assert_eq!(episode.parent, Some(show.items[0]));
         assert!(games[tops[0]].is_group(), "a film's folder too");
-        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -755,8 +751,7 @@ mod tests {
         assert_eq!(episode_title("S03E07-08 Two Parter", 3).as_deref(), Some("7–8. Two Parter"));
         assert_eq!(episode_title("S02E03 Wrong season", 1), None, "another season's: as named");
         assert_eq!(episode_title("Sunset Boulevard", 1), None);
-        let root = std::env::temp_dir().join(format!("clamshell-seasons-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let root = clamshell_core::testdir::TempDir::new("seasons");
         touch(&root, &["Show/Cover.jpg", "Show/Season 1/017 S01E18 Part (Part 1).mkv", "Show/Season 1/S01E02 Two.mkv", "Show/Specials/001 S00E01 Pilot.mkv"]);
         let s = Scan { dir: root.to_string_lossy().into_owned(), ..source(r#"{ "place": "TV", "id": "tv", "dir": "", "match": ["*/"], "items": ["*.mkv"] }"#) };
         let mut games = Vec::new();
@@ -767,7 +762,6 @@ mod tests {
         assert_eq!(titles(&show.items), ["Season 1", "Specials"]);
         assert_eq!(titles(&games[show.items[0]].items), ["2. Two", "18. Part (Part 1)"], "by number");
         assert_eq!(titles(&games[show.items[1]].items), ["1. Pilot"]);
-        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

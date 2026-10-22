@@ -794,8 +794,7 @@ mod tests {
 
     #[test]
     fn lists_are_kept_fetched_again_when_old_and_used_old_when_offline() {
-        let dir = std::env::temp_dir().join(format!("clamshell-lists-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = clamshell_core::testdir::TempDir::new("lists");
         let file = dir.join("Named_Boxarts - Nintendo - SNES.html");
         let day = std::time::Duration::from_secs(86_400);
         assert_eq!(kept(&file, day, || None), None, "nothing kept, nothing fetched");
@@ -804,7 +803,6 @@ mod tests {
         let now = std::time::Duration::ZERO;
         assert_eq!(kept(&file, now, || Some(b"two".to_vec())).as_deref(), Some(&b"two"[..]), "old: fetched again");
         assert_eq!(kept(&file, now, || None).as_deref(), Some(&b"two"[..]), "the fetch failing: the old one");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

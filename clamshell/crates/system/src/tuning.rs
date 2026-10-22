@@ -387,7 +387,7 @@ mod tests {
 
     #[test]
     fn a_games_config_file_carries_its_cap_and_hud() {
-        let dir = std::env::temp_dir().join(format!("clamshell-tuning-{}", std::process::id()));
+        let dir = clamshell_core::testdir::TempDir::new("tuning");
         let a = mangohud_config(&dir, "steam:1", 40, Hud::Off).unwrap();
         let text = fs::read_to_string(&a).unwrap();
         assert!(text.contains("fps_limit=40\n") && text.contains("alpha=0\n"));
@@ -396,6 +396,5 @@ mod tests {
         let text = fs::read_to_string(&a).unwrap();
         assert!(text.contains("fps_limit=0\n") && text.contains("fps_only\n") && !text.contains("alpha"));
         assert_ne!(mangohud_config(&dir, "steam:2", 0, Hud::Off).unwrap(), a);
-        let _ = fs::remove_dir_all(&dir);
     }
 }

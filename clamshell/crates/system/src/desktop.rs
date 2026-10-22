@@ -216,7 +216,7 @@ mod tests {
 
     #[test]
     fn installed_apps_and_games_are_entries_the_users_first_hidden_ones_left_out() {
-        let base = std::env::temp_dir().join(format!("clamshell-desktop-entries-{}", std::process::id()));
+        let base = clamshell_core::testdir::TempDir::new("desktop-entries");
         let (user, system) = (base.join("user"), base.join("system"));
         let write = |dir: &Path, id: &str, text: &str| {
             fs::create_dir_all(dir.join("applications")).unwrap();
@@ -244,7 +244,6 @@ mod tests {
         assert_eq!(another, [true, false, false], "an app opens another, a game doesn't, nor one main window's");
         assert_eq!(entries[0].launch, launch(&["firefox", "--private"], None));
         assert_eq!(entries[1].launch, launch(&["Celeste"], Some("/opt/celeste")));
-        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]

@@ -691,11 +691,8 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
 
-    fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("clamshell-files-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    fn scratch(name: &str) -> clamshell_core::testdir::TempDir {
+        clamshell_core::testdir::TempDir::new(&format!("files-{name}"))
     }
 
     #[test]
@@ -738,7 +735,6 @@ mod tests {
         assert_eq!(by("b.jpg").box_front.as_deref(), Some(dir.join("b.jpg").as_path()), "itself");
         assert_eq!((by("a.SFC").box_front.as_ref(), by("a.SFC").glyph.as_deref()), (None, Some("file")));
         assert_eq!(by("tool.desktop").runner.as_ref().map(|r| &*r.name), Some("Desktop"));
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -755,7 +751,6 @@ mod tests {
         paste(&dir.join("from"), &dir.join("to"), true, &tx).unwrap();
         assert_eq!(fs::read_to_string(dir.join("to/from/sub/f.txt")).unwrap(), "hello");
         assert!(!dir.join("from").exists(), "cut: moved");
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -780,7 +775,6 @@ mod tests {
         let to = restore(&trash_dir.join("files/a b.txt")).unwrap();
         assert_eq!(to, home.join("docs/a b.txt").canonicalize().unwrap());
         assert!(!trash_dir.join("info/a b.txt.trashinfo").exists());
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

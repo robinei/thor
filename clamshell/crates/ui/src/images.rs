@@ -167,8 +167,7 @@ mod tests {
 
     #[test]
     fn scales_to_fit_and_premultiplies() {
-        let dir = std::env::temp_dir().join(format!("clamshell-img-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = clamshell_core::testdir::TempDir::new("img");
         let path = dir.join("half.png");
         // 60x90, half-transparent red.
         image::RgbaImage::from_pixel(60, 90, image::Rgba([255, 0, 0, 128])).save(&path).unwrap();
@@ -182,7 +181,6 @@ mod tests {
         let p = load(&svg, 64, 64, false).expect("rendered");
         assert_eq!((p.width(), p.height()), (64, 32));
         assert_eq!(p.pixel(10, 10).map(|px| (px.blue(), px.alpha())), Some((255, 255)));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
