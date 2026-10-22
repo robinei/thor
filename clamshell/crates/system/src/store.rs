@@ -643,7 +643,7 @@ mod tests {
         let mut store = Store::open(&dir);
         let s = store.settings();
         assert_eq!(s.global.get(Setting::FpsCap), Setting::FpsCap.default_value());
-        assert_eq!(s.of("x").get(Setting::Power), 2);
+        assert_eq!(s.of_in("x", &[]).get(Setting::Power), 2);
         assert_eq!(store.plays().get("a").map(|p| p.count), Some(1), "a line cut short is skipped");
         let _ = fs::remove_dir_all(&dir);
     }

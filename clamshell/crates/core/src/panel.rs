@@ -351,12 +351,12 @@ mod tests {
         };
         assert_eq!(saved, s.settings(), "saved whole");
         assert_eq!(saved.overrides_of("zelda-lttp").get(Setting::Power), Some(2));
-        let zelda = s.settings().of("zelda-lttp");
+        let zelda = s.settings_of("zelda-lttp");
         assert_eq!((zelda.get(Setting::Power), zelda.get(Setting::FpsCap)), (2, 60));
-        assert_eq!(s.settings().of("ff6").get(Setting::Power), 1);
+        assert_eq!(s.settings_of("ff6").get(Setting::Power), 1);
         assert_eq!((s.tile_origin(Setting::Power), s.tile_origin(Setting::FpsCap)), (TileOrigin::Own, TileOrigin::Inherited));
         let fresh = state_with(saved);
-        assert_eq!(fresh.settings().of("zelda-lttp"), zelda);
+        assert_eq!(fresh.settings_of("zelda-lttp"), zelda);
         assert_eq!(fresh.settings().global, s.settings().global);
         // A long press drops one override; Reset all of them.
         taps(&mut s, Setting::Rumble, 1);
@@ -461,9 +461,9 @@ mod tests {
         let fx = key(&mut s, Key::Named(Named::Enter));
         assert!(matches!(fx.first(), Some(Effect::Save(Save::Settings(t))) if t.env_text(Some("zelda-lttp")) == "dxv=1"), "{fx:?}");
         assert_eq!(s.bottom().editor(), None);
-        assert_eq!(s.settings().env_of("zelda-lttp"), vec![("dxv".to_owned(), "1".to_owned())]);
+        assert_eq!(s.env_of("zelda-lttp"), vec![("dxv".to_owned(), "1".to_owned())]);
         let fresh = state_with(s.settings());
-        assert_eq!(fresh.settings().env_of("zelda-lttp"), s.settings().env_of("zelda-lttp"));
+        assert_eq!(fresh.env_of("zelda-lttp"), s.env_of("zelda-lttp"));
     }
 
     #[test]

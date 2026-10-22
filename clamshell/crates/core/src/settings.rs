@@ -362,12 +362,6 @@ pub struct Settings {
 }
 
 impl Settings {
-    /// The settings `game` (an entry, or a level: a runner's key) runs with alone: the global ones and its
-    /// overrides.
-    pub fn of(&self, game: &str) -> Values {
-        self.of_in(game, &[])
-    }
-
     /// The settings `game` runs with below `levels` (its runner's: see [`crate::runner_key`]): the global
     /// ones, each level's overrides over them, then its own.
     pub fn of_in(&self, game: &str, levels: &[&str]) -> Values {
@@ -415,11 +409,6 @@ impl Settings {
             }
             None => self.global_env = text,
         }
-    }
-
-    /// The environment a game gets alone: the global variables, then its own.
-    pub fn env_of(&self, game: &str) -> Vec<(String, String)> {
-        self.env_in(game, &[])
     }
 
     /// The environment a game below `levels` gets: the global variables, each level's, then its own
@@ -487,9 +476,9 @@ mod tests {
         s.set(Some(&zelda), Setting::Power, Some(2));
         s.set(Some(&zelda), Setting::ChargeLimit, Some(80));
         s.set_env(Some("ff6".into()), " A=1 ");
-        assert_eq!(s.of("zelda").get(Setting::Power), 2);
+        assert_eq!(s.of_in("zelda", &[]).get(Setting::Power), 2);
         assert_eq!(s.global.get(Setting::ChargeLimit), 80, "global-only settings go global");
-        assert_eq!(s.env_of("ff6"), vec![("A".to_owned(), "1".to_owned())]);
+        assert_eq!(s.env_in("ff6", &[]), vec![("A".to_owned(), "1".to_owned())]);
         assert!(Setting::FpsCap.accepts(40) && !Setting::FpsCap.accepts(33) && Setting::Keymap.accepts(7));
         // Below levels: the first one's, the next one's over it, its own over both.
         s.set(Some(&"runner:SNES".into()), Setting::FpsCap, Some(30));
@@ -502,6 +491,6 @@ mod tests {
         assert_eq!(s.env_in("ff6", &["runner:SNES"]), vars(&[("A", "2"), ("B", "1"), ("A", "1")]), "the level's, then its own");
         s.reset("zelda");
         assert!(!s.has_own("zelda"));
-        assert_eq!(s.of("zelda"), s.global);
+        assert_eq!(s.of_in("zelda", &[]), s.global);
     }
 }
