@@ -8,8 +8,7 @@ use crate::mutation::{EntryAct, Mutation};
 use crate::resume::SAVE_AFTER;
 use crate::settings::MouseAtLaunch;
 use crate::{
-    BtId, Dirty, Effect, Event, Hold, Id, Level, Library, ListId, PadRoute, PointerEvent, Reading, Save, SettingsId, ShelfId, State, Tab, WifiId,
-    WindowCommand, device,
+    BtId, Dirty, Effect, Event, Hold, Id, Level, Library, ListId, PadRoute, PointerEvent, Reading, Save, SettingsId, ShelfId, State, Tab, WifiId, WindowCommand,
 };
 
 impl State {
@@ -181,9 +180,9 @@ impl State {
                 self.on_screenshot(result);
                 (Dirty::BOTTOM, vec![])
             }
-            Event::Sticks(event) => (Dirty::TOP, self.sticks_event(event)),
+            Event::Sticks(event) => (Dirty::TOP, self.device.sticks_event(event).into_iter().collect()),
             Event::RefreshCalibrated(result) => {
-                self.on_refresh(result);
+                self.device.refresh_done(result);
                 // The tool turned the bottom screen off while it ran and then restored it. Set it to what
                 // ClamShell wants.
                 (Dirty::TOP, vec![Effect::Window(WindowCommand::BottomPower(!self.bottom_off()))])
@@ -193,7 +192,8 @@ impl State {
                 (Dirty::BOTTOM, vec![])
             }
             Event::AccountChanged(result) => {
-                self.on_account_changed(result);
+                // What the helper did, or why it failed, shown for a moment.
+                self.notify(crate::bottom::notice::NoticeKind::Account(result));
                 (Dirty::BOTTOM, vec![])
             }
             Event::Quit => (Dirty::NONE, vec![Effect::Save(Save::Resume(self.resume())), Effect::Quit]),
@@ -251,6 +251,8 @@ impl State {
                 Mutation::Effect(e) => effects.push(e),
                 Mutation::Notify(what) => self.notify(what),
                 Mutation::OpenEditor(editor) => self.bottom.open_editor(editor),
+                Mutation::Tab(tab) => effects.extend(self.choose_tab(tab)),
+                Mutation::FocusShelf => self.focus_shelf(),
                 Mutation::Act(id, EntryAct::Quit) => effects.extend(self.quit(&id)),
                 Mutation::Act(id, EntryAct::ForceKill) => effects.extend(self.force_kill(&id)),
             }
@@ -305,13 +307,6 @@ impl State {
             }
         };
         (if self.bottom.pointing == before { Dirty::NONE } else { Dirty::BOTTOM }, effects)
-    }
-
-    /// Progress or the end of a stick calibration. A finished calibration is saved.
-    fn sticks_event(&mut self, event: device::SticksEvent) -> Vec<Effect> {
-        let done = matches!(event, device::SticksEvent::Done(_, Some(_)));
-        self.on_sticks(event);
-        if done { vec![self.sticks_saved()] } else { vec![] }
     }
 
     /// The clock ticked. Once a minute, the bar's clock and both screens' burn-in orbit move on. Changes
@@ -370,8 +365,7 @@ impl State {
             Reading::Time(time) => self.sys.read_time(time),
             Reading::Account(account) => {
                 // The account is shown in the Device view, on the main screen.
-                let changed = replace(&mut self.sys.account, account);
-                return if changed && self.device.open { Dirty::TOP } else { Dirty::NONE };
+                return if self.device.read_account(account) { Dirty::TOP } else { Dirty::NONE };
             }
         };
         if changed && shown { Dirty::BOTTOM } else { Dirty::NONE }
@@ -477,7 +471,10 @@ impl State {
                 None => (Dirty::NONE, vec![]),
             },
             Id::Time(id) => self.sys.on_time(id, self.lists.get_mut(ListId::Time)),
-            Id::Device(id) => (Dirty::BOTH, self.on_device(id)),
+            Id::Device(id) => {
+                let mutations = self.device.tap(id);
+                (Dirty::BOTH, self.settle(mutations))
+            }
             Id::Battery(id) => {
                 let mutations = self.sys.on_battery(id, &self.session);
                 (Dirty::BOTTOM, self.settle(mutations))

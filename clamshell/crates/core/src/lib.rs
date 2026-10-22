@@ -168,8 +168,6 @@ pub struct State {
     shown: Option<shelf::ShelfView>,
     /// Pins of entries that no longer exist were dropped at start. The dock is saved once the UI is up.
     pins_dropped: bool,
-    /// ClamShell's first start (see [`Init::first_start`]).
-    first_start: bool,
     /// The clipboard and confirmation for file actions, and the folder being browsed (see
     /// [`crate::shelf::files`]).
     files: crate::shelf::files::Files,
@@ -190,7 +188,7 @@ impl State {
             dock: init.dock,
             autostart: init.autostart,
             device_session: init.device_session,
-            first_start: init.first_start,
+            device: device::Device::new(init.sticks, init.first_start),
             ..State::default()
         };
         if let Some(resume) = &init.resume {
@@ -200,9 +198,7 @@ impl State {
         s.pins_dropped = s.drop_gone_pins();
         s.follow_pausable_runners();
         s.pointer.focus = s.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
-        s.device.calibrations = init.sticks;
         if init.first_start {
-            s.device.open = true;
             s.pointer.focus = Some(Id::Device(crate::DeviceId::Wifi));
         }
         if let Some(tab) = init.start_tab {

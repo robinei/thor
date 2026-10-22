@@ -45,7 +45,7 @@ const BOTTOM_DIM: f32 = 2.0 / 3.0;
 /// starts black (see `render`).
 pub fn top(f: &mut Frame, screen: Rect) {
     f.body = screen;
-    match f.s.top_view() {
+    match f.s.device().top_view() {
         clamshell_core::device::TopView::Shelf => f.out.list_rows = Some(shelf::draw(f, screen)),
         clamshell_core::device::TopView::Device => device::draw(f, screen),
     }

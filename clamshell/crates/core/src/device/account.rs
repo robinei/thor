@@ -6,9 +6,10 @@
 //! The account is read while the Device view is open and after each change. Off the device there is no
 //! helper, and all of it shows as unavailable.
 
-use crate::State;
-use crate::bottom::notice::NoticeKind;
+use crate::bottom::editor::{Editor, Purpose};
+use crate::effect::Effect;
 use crate::kit::secret::Secret;
+use crate::mutation::Mutation;
 
 /// The account as the helper read it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -41,19 +42,14 @@ pub enum PasswordStep {
     New { current: Option<Secret> },
 }
 
-impl State {
-    pub fn account(&self) -> Account {
-        self.sys.account
-    }
-
-    /// Whether this is ClamShell's first start, which opens the Device view ([`crate::device`]).
-    pub fn first_start(&self) -> bool {
-        self.first_start
-    }
-
-    /// A change requested of the helper is done, with what it did, or failed, with the reason. It is
-    /// shown for a moment.
-    pub(crate) fn on_account_changed(&mut self, result: Result<String, String>) {
-        self.notify(NoticeKind::Account(result));
+/// The password editor was saved with `text`. After the current password it asks for the new one, and
+/// after the new one it sets the password.
+pub(crate) fn password_typed(step: PasswordStep, text: String) -> Mutation {
+    match step {
+        PasswordStep::Current => {
+            let step = PasswordStep::New { current: Some(Secret(text)) };
+            Mutation::OpenEditor(Editor { purpose: Purpose::AccountPassword(step), text: String::new() })
+        }
+        PasswordStep::New { current } => Mutation::Effect(Effect::Account(AccountCommand::Password { current, new: Secret(text) })),
     }
 }

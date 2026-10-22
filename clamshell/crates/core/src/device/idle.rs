@@ -11,9 +11,11 @@
 //! never on a desktop that runs ClamShell for testing. A program in front doesn't hold sleep off. One
 //! that should, such as a video player, asks the compositor to keep the screen on.
 
-use crate::State;
+use std::sync::Arc;
+
 use crate::effect::Effect;
 use crate::settings::{Setting, Values};
+use crate::{Levels, Session, State};
 
 /// The compositor reports no input after this many seconds without any.
 pub const NOTIFY_AFTER: u64 = 10;
@@ -194,35 +196,32 @@ impl Idle {
     }
 }
 
-impl State {
-    /// Updates idle for how things are now. The stage moves on to dimmed, screens off or sleep, or back
-    /// on any input, and the screens get what they need for it.
-    pub(crate) fn follow_idle(&mut self) -> Vec<Effect> {
-        // Sleep only in the device's own session. A program in front doesn't hold it off; one playing a
-        // video asks the compositor to keep the screen on.
-        let may_sleep = self.device_session;
-        let policy = Policy::of(&self.settings.global, may_sleep);
-        let now = self.clock.mono();
+impl Idle {
+    /// Updates idle for how things are now, at `now`. The stage moves on to dimmed, screens off or
+    /// sleep, or back on any input, and the screens get what they need for it. `refreshing` is a refresh
+    /// rate calibration running, and `awake` the shown app's runner's command that says whether it keeps
+    /// the screen on (see [`Session::awake_command`]).
+    pub(crate) fn follow(&mut self, now: u64, policy: Policy, refreshing: bool, awake: Option<Arc<[String]>>, levels: &Levels) -> Vec<Effect> {
         let mut effects = vec![];
         // While the top screen's refresh rate is being calibrated, it is measured on the screen, so the
         // screen is kept on.
-        if self.device.refresh == crate::device::Refresh::Running {
-            self.idle.own_input(now);
+        if refreshing {
+            self.own_input(now);
         }
         // An app shown that keeps the screen on without the compositor hearing it, as Android's do.
-        if let Some(awake) = self.awake_command()
-            && self.idle.ask_awake(now, policy)
+        if let Some(awake) = awake
+            && self.ask_awake(now, policy)
         {
             effects.push(Effect::AskAwake(awake.to_vec()));
         }
-        let wanted = self.idle.wanted(now, policy);
-        if wanted == self.idle.stage() {
+        let wanted = self.wanted(now, policy);
+        if wanted == self.stage {
             return effects;
         }
-        let was = self.idle.set(wanted, now);
+        let was = self.set(wanted, now);
         // Brightness goes down while dimmed or darker, and comes back when awake.
         if (was >= Stage::Dimmed) != (wanted >= Stage::Dimmed) {
-            effects.extend(if wanted >= Stage::Dimmed { self.levels.dimmed_effect() } else { self.levels.undimmed_effect() });
+            effects.extend(if wanted >= Stage::Dimmed { levels.dimmed_effect() } else { levels.undimmed_effect() });
         }
         if (was >= Stage::Off) != (wanted >= Stage::Off) {
             effects.push(Effect::Screens(wanted < Stage::Off));
@@ -232,14 +231,26 @@ impl State {
         }
         effects
     }
+}
 
+impl Session {
     /// The `awake` command of the runner of a shown window, if it has one.
-    fn awake_command(&self) -> Option<std::sync::Arc<[String]>> {
-        let session = &self.session;
-        session.windows.iter().filter(|w| w.visible).find_map(|w| {
-            let runner = session.running_of(w)?.entry.as_ref()?.runner.as_ref()?;
+    pub(crate) fn awake_command(&self) -> Option<Arc<[String]>> {
+        self.windows.iter().filter(|w| w.visible).find_map(|w| {
+            let runner = self.running_of(w)?.entry.as_ref()?.runner.as_ref()?;
             (!runner.awake.is_empty()).then(|| runner.awake.clone())
         })
+    }
+}
+
+impl State {
+    /// Idle follows how things are now (see [`Idle::follow`]).
+    pub(crate) fn follow_idle(&mut self) -> Vec<Effect> {
+        // Sleep only in the device's own session. A program in front doesn't hold it off; one playing a
+        // video asks the compositor to keep the screen on.
+        let policy = Policy::of(&self.settings.global, self.device_session);
+        let refreshing = *self.device.refresh() == crate::device::Refresh::Running;
+        self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), &self.levels)
     }
 }
 

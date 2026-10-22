@@ -22,9 +22,10 @@ use crate::bottom::Tab;
 use crate::bottom::editor::{Editor, Purpose};
 use crate::bottom::notice::NoticeKind;
 use crate::effect::{Effect, Save, WindowCommand};
-use crate::kit::secret::Secret;
+use crate::kit::replace;
+use crate::mutation::Mutation;
 use crate::{Id, ShelfId};
-use account::{AccountCommand, PasswordStep};
+use account::{Account, AccountCommand, PasswordStep};
 use sticks::{Calibrations, Progress, Sticks};
 
 /// What the main screen shows of ClamShell's own.
@@ -48,17 +49,42 @@ pub enum Refresh {
 /// The Device view's own state.
 #[derive(Debug, Clone, Default)]
 pub struct Device {
-    pub(crate) open: bool,
+    open: bool,
     /// How far a running stick calibration has got.
-    pub(crate) sticks: Option<Progress>,
+    sticks: Option<Progress>,
     /// The last stick calibration failed. Cleared when another starts.
-    pub(crate) sticks_failed: bool,
-    pub(crate) refresh: Refresh,
+    sticks_failed: bool,
+    refresh: Refresh,
     /// The stick calibrations by controller. They are saved, and the pad thread has them too.
-    pub(crate) calibrations: Calibrations,
+    calibrations: Calibrations,
+    /// ClamShell's first start (see [`crate::Init::first_start`]).
+    first_start: bool,
+    /// The account, as last read (see [`account`]).
+    account: Account,
+}
+
+/// What the pad thread reports about a stick calibration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SticksEvent {
+    Progress(Progress),
+    /// Done, with the controller's name and its sticks, or `None` if it was given up.
+    Done(String, Option<Sticks>),
 }
 
 impl Device {
+    /// The view as ClamShell starts. It is open at the first start.
+    pub(crate) fn new(calibrations: Calibrations, first_start: bool) -> Device {
+        Device { open: first_start, calibrations, first_start, ..Device::default() }
+    }
+
+    pub fn top_view(&self) -> TopView {
+        if self.open { TopView::Device } else { TopView::Shelf }
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.open
+    }
+
     pub fn sticks(&self) -> Option<&Progress> {
         self.sticks.as_ref()
     }
@@ -79,21 +105,94 @@ impl Device {
     pub fn calibrations(&self) -> &Calibrations {
         &self.calibrations
     }
-}
 
-/// What the pad thread reports about a stick calibration.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SticksEvent {
-    Progress(Progress),
-    /// Done, with the controller's name and its sticks, or `None` if it was given up.
-    Done(String, Option<Sticks>),
+    /// Whether this is ClamShell's first start, which opens the Device view.
+    pub fn first_start(&self) -> bool {
+        self.first_start
+    }
+
+    pub fn account(&self) -> Account {
+        self.account
+    }
+
+    pub(crate) fn open(&mut self) {
+        self.open = true;
+    }
+
+    pub(crate) fn close(&mut self) {
+        self.open = false;
+    }
+
+    /// A reading of the account. Returns whether the view shows a change.
+    pub(crate) fn read_account(&mut self, account: Account) -> bool {
+        replace(&mut self.account, account) && self.open
+    }
+
+    /// A tap on one of the Device view's targets.
+    pub(crate) fn tap(&mut self, id: DeviceId) -> Vec<Mutation> {
+        let account = self.account;
+        match id {
+            DeviceId::Wifi => vec![Mutation::Tab(Tab::Wifi)],
+            DeviceId::Zone => vec![Mutation::Tab(Tab::Time)],
+            // Typed in the editor on the second screen's keyboard.
+            DeviceId::Password if account.available => {
+                let step = if account.password { PasswordStep::Current } else { PasswordStep::New { current: None } };
+                vec![Mutation::OpenEditor(Editor { purpose: Purpose::AccountPassword(step), text: String::new() }), Mutation::Tab(Tab::Keyboard)]
+            }
+            // Remote login needs a password to log in with.
+            DeviceId::Ssh if account.available && account.password => vec![Mutation::Effect(Effect::Account(AccountCommand::Ssh(!account.ssh)))],
+            DeviceId::Password | DeviceId::Ssh => vec![],
+            DeviceId::Sticks if self.sticks.is_none() => {
+                self.sticks_failed = false;
+                vec![Mutation::Effect(Effect::CalibrateSticks)]
+            }
+            DeviceId::Sticks => vec![],
+            DeviceId::Gyro => vec![Mutation::Notify(NoticeKind::Gyro(None)), Mutation::Effect(Effect::CalibrateGyro)],
+            DeviceId::Refresh if self.refresh != Refresh::Running => {
+                self.refresh = Refresh::Running;
+                vec![Mutation::Effect(Effect::CalibrateRefresh)]
+            }
+            DeviceId::Refresh => vec![],
+            // The first time, Done ends the first start for good. Shelf shows next, with the default tab
+            // below.
+            DeviceId::Done if self.first_start => {
+                self.first_start = false;
+                self.close();
+                vec![Mutation::Effect(Effect::Save(Save::FirstStartDone)), Mutation::FocusShelf, Mutation::Tab(Tab::default())]
+            }
+            DeviceId::Done | DeviceId::Close => {
+                self.close();
+                vec![Mutation::FocusShelf]
+            }
+        }
+    }
+
+    /// A report from the pad thread on a stick calibration. Progress is shown. A result is kept, and the
+    /// pad thread already uses it. A failure is shown. Returns the calibrations to save after one that
+    /// worked.
+    pub(crate) fn sticks_event(&mut self, event: SticksEvent) -> Option<Effect> {
+        match event {
+            SticksEvent::Progress(p) => {
+                self.sticks = Some(p);
+                None
+            }
+            SticksEvent::Done(name, result) => {
+                self.sticks = None;
+                self.sticks_failed = result.is_none();
+                let sticks = result?;
+                self.calibrations.insert(name, sticks);
+                Some(Effect::Save(Save::Sticks(self.calibrations.clone())))
+            }
+        }
+    }
+
+    /// The refresh rate calibration ended, with its output.
+    pub(crate) fn refresh_done(&mut self, result: Result<String, String>) {
+        self.refresh = Refresh::Done(result);
+    }
 }
 
 impl State {
-    pub fn top_view(&self) -> TopView {
-        if self.device.open { TopView::Device } else { TopView::Shelf }
-    }
-
     pub fn device(&self) -> &Device {
         &self.device
     }
@@ -101,96 +200,21 @@ impl State {
     /// Opens the Device view on the main screen, bringing shelf's window to the front, with the pad's
     /// focus on its first row. The account is read while it is open ([`State::follow_watch`]).
     pub(crate) fn open_device(&mut self) -> Vec<Effect> {
-        self.device.open = true;
+        self.device.open();
         self.pointer.focus = Some(Id::Device(DeviceId::Wifi));
         vec![Effect::Window(WindowCommand::ShowShelf)]
     }
 
     /// Goes back to shelf, with the focus on its selection.
     pub(crate) fn close_device(&mut self) -> Vec<Effect> {
-        self.device.open = false;
-        self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
+        self.device.close();
+        self.focus_shelf();
         vec![]
     }
 
-    /// A tap on one of the Device view's targets.
-    pub(crate) fn on_device(&mut self, id: DeviceId) -> Vec<Effect> {
-        let account = self.sys.account;
-        match id {
-            DeviceId::Wifi => self.choose_tab(Tab::Wifi),
-            DeviceId::Zone => self.choose_tab(Tab::Time),
-            // Typed in the editor on the second screen's keyboard.
-            DeviceId::Password if account.available => {
-                let step = if account.password { PasswordStep::Current } else { PasswordStep::New { current: None } };
-                self.bottom.open_editor(Editor { purpose: Purpose::AccountPassword(step), text: String::new() });
-                self.choose_tab(Tab::Keyboard)
-            }
-            // Remote login needs a password to log in with.
-            DeviceId::Ssh if account.available && account.password => vec![Effect::Account(AccountCommand::Ssh(!account.ssh))],
-            DeviceId::Password | DeviceId::Ssh => vec![],
-            DeviceId::Sticks if self.device.sticks.is_none() => {
-                self.device.sticks_failed = false;
-                vec![Effect::CalibrateSticks]
-            }
-            DeviceId::Sticks => vec![],
-            DeviceId::Gyro => {
-                self.notify(NoticeKind::Gyro(None));
-                vec![Effect::CalibrateGyro]
-            }
-            DeviceId::Refresh if self.device.refresh != Refresh::Running => {
-                self.device.refresh = Refresh::Running;
-                vec![Effect::CalibrateRefresh]
-            }
-            DeviceId::Refresh => vec![],
-            // The first time, Done ends the first start for good. Shelf shows next, with the default tab
-            // below.
-            DeviceId::Done if self.first_start => {
-                self.first_start = false;
-                let mut effects = vec![Effect::Save(Save::FirstStartDone)];
-                effects.extend(self.close_device());
-                effects.extend(self.choose_tab(Tab::default()));
-                effects
-            }
-            DeviceId::Done | DeviceId::Close => self.close_device(),
-        }
-    }
-
-    /// A report from the pad thread on a stick calibration. Progress is shown. A result is kept for
-    /// saving, and the pad thread already uses it. A failure is shown.
-    pub(crate) fn on_sticks(&mut self, event: SticksEvent) {
-        match event {
-            SticksEvent::Progress(p) => self.device.sticks = Some(p),
-            SticksEvent::Done(name, result) => {
-                self.device.sticks = None;
-                self.device.sticks_failed = result.is_none();
-                if let Some(sticks) = result {
-                    self.device.calibrations.insert(name, sticks);
-                }
-            }
-        }
-    }
-
-    /// The calibrations to save after a stick calibration that worked.
-    pub(crate) fn sticks_saved(&self) -> Effect {
-        Effect::Save(Save::Sticks(self.device.calibrations.clone()))
-    }
-
-    /// The refresh rate calibration ended, with its output.
-    pub(crate) fn on_refresh(&mut self, result: Result<String, String>) {
-        self.device.refresh = Refresh::Done(result);
-    }
-
-    /// The password editor was saved. After the current password it asks for the new one, and after the
-    /// new one it sets the password.
-    pub(crate) fn password_typed(&mut self, step: PasswordStep, text: String) -> Vec<Effect> {
-        match step {
-            PasswordStep::Current => {
-                let step = PasswordStep::New { current: Some(Secret(text)) };
-                self.bottom.open_editor(Editor { purpose: Purpose::AccountPassword(step), text: String::new() });
-                vec![]
-            }
-            PasswordStep::New { current } => vec![Effect::Account(AccountCommand::Password { current, new: Secret(text) })],
-        }
+    /// The focus goes to shelf's selection.
+    pub(crate) fn focus_shelf(&mut self) {
+        self.pointer.focus = self.shelf.selected().cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
     }
 }
 
@@ -219,22 +243,22 @@ mod tests {
     #[test]
     fn the_first_start_opens_the_device_view_and_done_ends_it_for_good() {
         let mut s = State::new(Init { first_start: true, ..init() });
-        assert_eq!(s.top_view(), TopView::Device, "the first start opens it");
+        assert_eq!(s.device().top_view(), TopView::Device, "the first start opens it");
         let effects = tap(&mut s, DeviceId::Done);
         assert!(effects.contains(&Effect::Save(Save::FirstStartDone)));
-        assert_eq!(s.top_view(), TopView::Shelf);
-        assert!(!s.first_start());
+        assert_eq!(s.device().top_view(), TopView::Shelf);
+        assert!(!s.device().first_start());
     }
 
     #[test]
     fn the_device_entry_opens_it_and_close_goes_back_to_shelf() {
         let mut s = State::new(init());
         let effects = s.open_device();
-        assert_eq!(s.top_view(), TopView::Device);
+        assert_eq!(s.device().top_view(), TopView::Device);
         assert_eq!(effects, vec![Effect::Window(WindowCommand::ShowShelf)], "shelf's window in front");
         assert_eq!(s.pointer.focus, Some(Id::Device(DeviceId::Wifi)));
         let effects = tap(&mut s, DeviceId::Close);
-        assert_eq!(s.top_view(), TopView::Shelf);
+        assert_eq!(s.device().top_view(), TopView::Shelf);
         assert!(!effects.contains(&Effect::Save(Save::FirstStartDone)), "not the first start: nothing saved");
     }
 

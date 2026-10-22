@@ -43,7 +43,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     let heading = f.text(Text::Heading);
     f.c.text_fit(area.top_line(heading), heading, Tone::Normal, "Device", Keep::Start);
     // At the first start, a line saying what the view is for.
-    if s.first_start() {
+    if s.device().first_start() {
         let intro = "First start: set these up now, or later from Tools, Device";
         f.c.text_fit(area.top_line(small).shifted(0.0, heading * 1.5), small, Tone::Dim, intro, Keep::Start);
     }
@@ -71,7 +71,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     };
     f.button(Id::Device(DeviceId::Zone), zone, Look::ROW, |f| widgets::value_row(f, zone, size, "Time zone", &name, true));
 
-    let account = s.account();
+    let account = s.device().account();
     let password = col.take(row_h);
     if account.available {
         let value = if account.password { "Set" } else { "Not set" };
@@ -110,7 +110,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     col.skip(row_h * 0.3);
     let end = col.take(row_h);
     let inner = Rect::new(end.x + size * 0.4, end.y, end.w - size * 0.8, end.h);
-    if s.first_start() {
+    if s.device().first_start() {
         f.text_button(Id::Device(DeviceId::Done), inner, size, Tone::Fn, "Done", Align::Start);
     } else {
         f.text_button(Id::Device(DeviceId::Close), inner, size, Tone::Fn, "Close", Align::Start);

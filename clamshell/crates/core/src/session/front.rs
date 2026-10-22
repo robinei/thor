@@ -34,7 +34,7 @@ impl State {
             return vec![Effect::Window(WindowCommand::ShowShelf)];
         }
         // When the Device view is in shelf's place, Home goes back to shelf.
-        if self.device.open {
+        if self.device.is_open() {
             return self.close_device();
         }
         // Only workspaces with a window on the main screen count; a window moved down leaves its workspace

@@ -45,8 +45,6 @@ pub struct Sys {
     battery: Battery,
     /// The time zone and the ones to choose from, as last read.
     time: TimeZones,
-    /// The account, as last read (see [`crate::device::account`]).
-    pub(crate) account: crate::device::account::Account,
     /// The lowest of [`WARN_AT`] warned about since the battery last charged.
     warned: Option<u8>,
     /// The battery tab row whose menu is open (see [`battery`]).

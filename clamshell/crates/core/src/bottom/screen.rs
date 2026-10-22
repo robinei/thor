@@ -201,7 +201,7 @@ impl State {
     fn bottom_idle_wanted(&self) -> bool {
         let untouched = self.bottom_idle_for() >= DIM_AFTER + OFF_AFTER;
         self.sys.status().discharging
-            && self.device.refresh != crate::device::Refresh::Running
+            && *self.device.refresh() != crate::device::Refresh::Running
             && self.in_force().choice::<BottomWhenIdle>() != BottomWhenIdle::On
             && !self.bottom_shows_windows()
             && self.bottom.editor().is_none()

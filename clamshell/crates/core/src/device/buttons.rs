@@ -1,12 +1,12 @@
 //! The device's own buttons and what they do: volume and brightness up and down, mute, a screenshot, and
 //! the Home combinations. Each one says what happened in a notice (see [`crate::bottom::notice`]).
 
-use crate::State;
 use crate::bottom::notice::NoticeKind;
 use crate::effect::{Effect, WindowCommand};
 use crate::levels::Level;
 use crate::levels::slider::Control;
 use crate::session::windows::{SHELF_APP_ID, Window};
+use crate::{Session, State};
 
 /// A hardware key, or the same key requested through the control pipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,19 +58,9 @@ impl State {
         self.levels.change(self.clock.mono(), |l| l.step(level, direction))
     }
 
-    /// The window Home with B acts on. It is the one in front on the top screen, other than shelf's. If
-    /// there is none, it is the one in view on the bottom screen while it shows the windows moved there.
-    fn home_b_window(&self) -> Option<&Window> {
-        let windows = &self.session.windows;
-        windows
-            .iter()
-            .find(|w| w.focused && !w.down && w.app_id != SHELF_APP_ID)
-            .or_else(|| self.bottom_shows_windows().then(|| windows.iter().filter(|w| w.down).max_by_key(|w| w.visible)).flatten())
-    }
-
-    /// Home with B, released at once, asks that window (see [`State::home_b_window`]) to close.
+    /// Home with B, released at once, asks that window (see [`Session::home_b_window`]) to close.
     pub(crate) fn close_front_window(&self) -> Vec<Effect> {
-        match self.home_b_window() {
+        match self.session.home_b_window(self.bottom_shows_windows()) {
             Some(w) => vec![Effect::Window(WindowCommand::Close(vec![w.id]))],
             None => vec![],
         }
@@ -79,7 +69,7 @@ impl State {
     /// Home with B, held, quits that window's entry, as Quit in its menu would. Any other window is just
     /// closed.
     pub(crate) fn quit_front(&mut self) -> Vec<Effect> {
-        let Some(w) = self.home_b_window() else {
+        let Some(w) = self.session.home_b_window(self.bottom_shows_windows()) else {
             return vec![];
         };
         let (id, entry) = (w.id, self.session.running_of(w).map(|r| r.id.clone()));
@@ -92,6 +82,19 @@ impl State {
     /// The screenshot was taken, with its file, or failed.
     pub(crate) fn on_screenshot(&mut self, result: Result<String, String>) {
         self.notify(NoticeKind::Screenshot(result));
+    }
+}
+
+impl Session {
+    /// The window Home with B acts on. It is the one in front on the top screen, other than shelf's. If
+    /// there is none, it is the one in view on the bottom screen while it shows the windows moved there
+    /// (`shows_windows`).
+    pub(crate) fn home_b_window(&self, shows_windows: bool) -> Option<&Window> {
+        let windows = &self.windows;
+        windows
+            .iter()
+            .find(|w| w.focused && !w.down && w.app_id != SHELF_APP_ID)
+            .or_else(|| shows_windows.then(|| windows.iter().filter(|w| w.down).max_by_key(|w| w.visible)).flatten())
     }
 }
 

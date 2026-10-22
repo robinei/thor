@@ -218,7 +218,7 @@ impl State {
             tab => tab.watch(),
         };
         // The account is watched while the Device view is open and the UI is up.
-        let account = self.ui_up && self.device.open;
+        let account = self.ui_up && self.device.is_open();
         if account != std::mem::replace(&mut self.account_watched, account) {
             effects.push(Effect::Watch(Watch::Account, account));
         }

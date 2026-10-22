@@ -151,7 +151,10 @@ impl crate::State {
             Purpose::Password { ssid } => vec![self.radios.join(ssid, Some(editor.text))],
             Purpose::KeymapName(action) => self.named_keymap(action, &editor.text),
             Purpose::FileName(purpose) => self.file_named(purpose, &editor.text),
-            Purpose::AccountPassword(step) => self.password_typed(step, editor.text),
+            Purpose::AccountPassword(step) => {
+                let m = crate::device::account::password_typed(step, editor.text);
+                self.settle(vec![m])
+            }
         }
     }
 }

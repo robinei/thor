@@ -72,7 +72,7 @@ and the UI change with the code they call; doc links to moved methods are fixed 
       `Sys` and `Levels`.
 - [x] 5. Sys: private fields and getters; `spender_menu`, `twelve_hour`, `time_page` in; the time tab's
       rules (taking the Time list's scroll) and the battery tab's.
-- [ ] 6. Device and Idle: `first_start`, `account` in; taps, sticks, refresh; `Idle::follow`.
+- [x] 6. Device and Idle: `first_start`, `account` in; taps, sticks, refresh; `Idle::follow`.
 - [ ] 7. `Watches`.
 - [ ] 8. Bottom: notices, screen rules (`Power`), window rules and `sent_down`, tabs, clipboard, pointing,
       text input, the editor (`Bottom::edit`, State's `editor_done`); `Pointer` methods; `Keyboard::hold`.

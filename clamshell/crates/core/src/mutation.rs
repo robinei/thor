@@ -3,9 +3,9 @@
 
 use std::sync::Arc;
 
-use crate::Effect;
 use crate::bottom::editor::Editor;
 use crate::bottom::notice::NoticeKind;
+use crate::{Effect, Tab};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Mutation {
@@ -15,6 +15,10 @@ pub(crate) enum Mutation {
     Notify(NoticeKind),
     /// An editor opened in its tab.
     OpenEditor(Editor),
+    /// The user chose a tab.
+    Tab(Tab),
+    /// The focus goes to shelf's selection.
+    FocusShelf,
     /// Something done to an entry, by its id.
     Act(Arc<str>, EntryAct),
 }
