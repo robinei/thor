@@ -10,6 +10,7 @@ use crate::account::{AccountCommand, PasswordStep};
 use crate::editor::{Editor, Purpose};
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::hardware::NoticeKind;
+use crate::secret::Secret;
 use crate::sticks::{Calibrations, Progress, Sticks};
 use crate::tab::Tab;
 use crate::{Id, ShelfId};
@@ -191,11 +192,11 @@ impl State {
     pub(crate) fn password_typed(&mut self, step: PasswordStep, text: String) -> Vec<Effect> {
         match step {
             PasswordStep::Current => {
-                let step = PasswordStep::New { current: Some(crate::account::Secret(text)) };
+                let step = PasswordStep::New { current: Some(Secret(text)) };
                 self.bottom.open_editor(Editor { purpose: Purpose::AccountPassword(step), text: String::new() });
                 vec![]
             }
-            PasswordStep::New { current } => vec![Effect::Account(AccountCommand::Password { current, new: crate::account::Secret(text) })],
+            PasswordStep::New { current } => vec![Effect::Account(AccountCommand::Password { current, new: Secret(text) })],
         }
     }
 }

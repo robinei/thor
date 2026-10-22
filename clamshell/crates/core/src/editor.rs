@@ -3,6 +3,7 @@
 //! words. Its keys, Save and Cancel, and the clipboard pasted into it, are the state's here; what a saved
 //! text does is its purpose's (the settings, Wi-Fi, keymaps, files).
 
+use std::fmt;
 use std::sync::Arc;
 
 use crate::effect::{Effect, Save};
@@ -10,10 +11,19 @@ use crate::id::EditorId;
 use crate::keyboard::{self, Key, Named, Stroke};
 
 /// What the editor edits, and the text so far.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Editor {
     pub purpose: Purpose,
     pub text: String,
+}
+
+impl fmt::Debug for Editor {
+    /// A password typed is kept out of logs, as a [`crate::secret::Secret`] is.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let password = matches!(self.purpose, Purpose::Password { .. } | Purpose::AccountPassword(_));
+        let text: &dyn fmt::Debug = if password { &"…" } else { &self.text };
+        f.debug_struct("Editor").field("purpose", &self.purpose).field("text", text).finish()
+    }
 }
 
 impl Editor {
@@ -229,6 +239,16 @@ mod tests {
 
     fn stroke(key: Key, shift: bool) -> Stroke {
         Stroke { key, shift, ctrl: false, alt: false, logo: false }
+    }
+
+    #[test]
+    fn a_password_being_typed_stays_out_of_logs() {
+        let e = Editor { purpose: Purpose::Password { ssid: "home".into() }, text: "hunter22".into() };
+        assert!(!format!("{e:?}").contains("hunter22"));
+        let e = Editor { purpose: Purpose::Env { game: None }, text: "A=1".into() };
+        assert!(format!("{e:?}").contains("A=1"), "the rest is shown");
+        let connect = crate::wifi::Command::Connect { ssid: "home".into(), password: Some(crate::secret::Secret("hunter22".into())) };
+        assert!(!format!("{connect:?}").contains("hunter22"));
     }
 
     #[test]

@@ -10,6 +10,7 @@ use crate::id::WifiId;
 use crate::items::ItemKey;
 use crate::radios::RadioStatus;
 use crate::scroll::Rows;
+use crate::secret::Secret;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Network {
@@ -120,7 +121,7 @@ pub enum Command {
     /// The radio on or off.
     Enable(bool),
     /// Join a network: its saved connection, or a new one (with this password, if it needs one).
-    Connect { ssid: String, password: Option<String> },
+    Connect { ssid: String, password: Option<Secret> },
     /// Drop a network's saved connections (which also disconnects it).
     Forget(String),
 }
@@ -194,7 +195,7 @@ impl State {
     pub(crate) fn join(&mut self, ssid: String, password: Option<String>) -> Vec<Effect> {
         self.radios.wifi.connecting = Some(ssid.clone());
         self.radios.wifi.error = None;
-        vec![Effect::Wifi(Command::Connect { ssid, password })]
+        vec![Effect::Wifi(Command::Connect { ssid, password: password.map(Secret) })]
     }
 }
 
@@ -228,7 +229,8 @@ mod tests {
         tap(&mut s, Id::Tab(Tab::Wifi));
         let networks = vec![net("home", 70, true, true, false), net("cafe", 90, false, false, false), net("new", 60, true, false, false)];
         read(&mut s, Reading::Wifi(Wifi { device: true, enabled: true, networks, ..Wifi::default() }));
-        let connect = |ssid: &str, password: Option<&str>| vec![Effect::Wifi(Command::Connect { ssid: ssid.into(), password: password.map(Into::into) })];
+        let connect =
+            |ssid: &str, password: Option<&str>| vec![Effect::Wifi(Command::Connect { ssid: ssid.into(), password: password.map(|p| Secret(p.into())) })];
         let network = |i| ListId::Wifi.row(i);
         assert_eq!(tap(&mut s, network(0)), connect("home", None), "saved");
         assert_eq!(s.radios().wifi.connecting.as_deref(), Some("home"));

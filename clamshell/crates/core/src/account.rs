@@ -4,10 +4,9 @@
 //! read while the Device view is open and after each change. Off the device (no helper) all of it shows
 //! as unavailable.
 
-use std::fmt;
-
 use crate::State;
 use crate::hardware::NoticeKind;
+use crate::secret::Secret;
 
 /// The account as the helper read it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -18,16 +17,6 @@ pub struct Account {
     pub password: bool,
     /// Remote login (sshd) is on.
     pub ssh: bool,
-}
-
-/// A password: kept out of logs (effects and events are logged as they go).
-#[derive(Clone, PartialEq, Eq)]
-pub struct Secret(pub String);
-
-impl fmt::Debug for Secret {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Secret(…)")
-    }
 }
 
 /// What the helper is asked to do.

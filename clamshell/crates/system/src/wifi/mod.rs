@@ -349,7 +349,7 @@ impl<S: Sink> WifiThread<S> {
                     (_, password) => {
                         let aps = s.access_points(&device)?;
                         let ap = aps.iter().filter(|ap| ap.ssid == ssid).max_by_key(|ap| ap.strength);
-                        let settings = new_connection(&ssid, password.as_deref(), ap);
+                        let settings = new_connection(&ssid, password.as_ref().map(|p| p.0.as_str()), ap);
                         let ap_path = ap.map_or(root, |ap| ap.path.clone());
                         let (path, active): (Path<'static>, Path<'static>) =
                             s.call(nm::PATH, nm::MANAGER, "AddAndActivateConnection", (settings, device.clone(), ap_path))?;

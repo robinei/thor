@@ -123,10 +123,7 @@ impl Handles {
             Effect::Sound(sound) => self.sound.send(sound.clone()),
             Effect::Brightness { level, shares } => self.brightness.send(brightness::Command { level: *level, shares: shares.clone() }),
             Effect::Wifi(command) => {
-                // (The password stays out of the log.)
-                if let clamshell_core::wifi::Command::Connect { ssid, .. } = command {
-                    log::info!("wifi: join {ssid}");
-                }
+                log::info!("effect: {effect:?}");
                 self.wifi.send(wifi::Request::Do(command.clone()));
             }
             Effect::Bluetooth(command) => {

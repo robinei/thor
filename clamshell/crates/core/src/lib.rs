@@ -42,6 +42,7 @@ mod radios;
 mod resume;
 mod running;
 pub mod scroll;
+pub mod secret;
 mod session;
 pub mod settings;
 mod shelf;
