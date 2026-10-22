@@ -338,7 +338,7 @@ impl Builder<'_> {
             self.away.push(format!("{}:", source.id));
         }
         let scan = content::Scan { patterns, dir: dir.to_string_lossy().into_owned(), on: None, ..source.clone() };
-        let entries = content::scan(&scan, home, &mut self.games, &open);
+        let entries = content::scan(&scan, &mut self.games, &open);
         if let Some(how) = self.how(&source.id, source.metadata.as_deref()) {
             // libretro has games, not folders of them.
             let games = &self.games;

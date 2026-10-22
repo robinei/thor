@@ -346,16 +346,11 @@ pub fn read_config(file: &Path) -> (Config, Option<String>) {
     }
 }
 
-/// Scans `source` and appends its entries to `games`, groups before their items. Each file opens as `open`
-/// says, and a group with its first entry's runner. Returns the indices of the top-level entries.
-pub fn scan(source: &Scan, home: Option<&Path>, games: &mut Vec<Entry>, open: &Open) -> Vec<usize> {
-    let dir = match expand_dir(&source.dir, home) {
-        Ok(dir) => dir,
-        Err(name) => {
-            log::warn!("library: {}: ${name} isn't set", source.id);
-            return Vec::new();
-        }
-    };
+/// Scans `source` and appends its entries to `games`, groups before their items. Its dir is a path as is,
+/// already expanded by the caller. Each file opens as `open` says, and a group with its first entry's
+/// runner. Returns the indices of the top-level entries.
+pub fn scan(source: &Scan, games: &mut Vec<Entry>, open: &Open) -> Vec<usize> {
+    let dir = PathBuf::from(&source.dir);
     if !dir.is_dir() {
         log::info!("library: {}: no dir {}", source.id, dir.display());
         return Vec::new();
@@ -643,13 +638,23 @@ mod tests {
         let s = source(r#"{ "place": "Games", "id": "g", "dir": "~/x", "match": ["*.sfc", "*.smc", "*/*.m3u", "*/*.cue"] }"#);
         let mut games = Vec::new();
         let s = Scan { dir: root.to_string_lossy().into_owned(), ..s };
-        let tops = scan(&s, None, &mut games, &by("emu"));
+        let tops = scan(&s, &mut games, &by("emu"));
         let found: Vec<(&str, &str)> = tops.iter().map(|&i| (&*games[i].id, games[i].title.as_str())).collect();
         assert_eq!(found, vec![("g:Zelda.sfc", "Zelda"), ("g:Mario.smc", "Mario"), ("g:FF7/FF7.m3u", "FF7")]);
         assert_eq!(games[0].box_front, Some(root.join("Zelda.png")));
         assert_eq!(games[2].box_front, Some(root.join("FF7/cover.jpg")), "its folder's art");
         let path = root.join("FF7/FF7.m3u");
         assert_eq!(games[2].launch, Launch::Program { argv: vec!["emu".into(), path.to_string_lossy().into()], workdir: Some(root.join("FF7")) });
+    }
+
+    #[test]
+    fn a_dir_with_a_dollar_sign_is_scanned_as_it_is() {
+        let root = clamshell_core::kit::testdir::TempDir::new("dollar");
+        touch(&root, &["$NOT_SET/Zelda.sfc"]);
+        let s = source(r#"{ "place": "Games", "id": "g", "dir": "~/x", "match": ["*.sfc"] }"#);
+        let s = Scan { dir: root.join("$NOT_SET").to_string_lossy().into_owned(), ..s };
+        let mut games = Vec::new();
+        assert_eq!(scan(&s, &mut games, &by("emu")).len(), 1);
     }
 
     #[test]
@@ -670,7 +675,7 @@ mod tests {
         let s = source(r#"{ "place": "TV", "id": "tv", "dir": "", "match": ["*/"], "items": ["*.mkv"] }"#);
         let s = Scan { dir: root.to_string_lossy().into_owned(), ..s };
         let mut games = Vec::new();
-        let tops = scan(&s, None, &mut games, &by("mpv"));
+        let tops = scan(&s, &mut games, &by("mpv"));
         let titles = |ids: &[usize]| ids.iter().map(|&i| games[i].title.clone()).collect::<Vec<_>>();
         assert_eq!(titles(&tops), vec!["Film", "Show"]);
         let show = &games[tops[1]];
@@ -691,7 +696,7 @@ mod tests {
         touch(&root, &["Show/Cover.jpg", "Show/Season 1/017 S01E18 Part (Part 1).mkv", "Show/Season 1/S01E02 Two.mkv", "Show/Specials/001 S00E01 Pilot.mkv"]);
         let s = Scan { dir: root.to_string_lossy().into_owned(), ..source(r#"{ "place": "TV", "id": "tv", "dir": "", "match": ["*/"], "items": ["*.mkv"] }"#) };
         let mut games = Vec::new();
-        let tops = scan(&s, None, &mut games, &by("mpv"));
+        let tops = scan(&s, &mut games, &by("mpv"));
         let show = &games[tops[0]];
         assert_eq!(show.box_front, Some(root.join("Show/Cover.jpg")), "Cover.jpg");
         let titles = |ids: &[usize]| ids.iter().map(|&i| games[i].title.clone()).collect::<Vec<_>>();

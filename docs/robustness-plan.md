@@ -61,7 +61,7 @@ Open, as they change behaviour:
       working until a restart).
 - [x] The fan daemon takes an unreadable `pwm1` as 0, which feeds the curve.
 - [x] Emptying the Trash says "Emptied the Trash" when some entries couldn't be removed.
-- [ ] `content::scan` expands a source's dir a second time after its caller did.
+- [x] `content::scan` expands a source's dir a second time after its caller did.
 
 ## 4. Comments a person would write
 
