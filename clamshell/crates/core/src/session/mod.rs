@@ -16,6 +16,7 @@ pub mod windows;
 use std::sync::Arc;
 
 use crate::effect::{Effect, WindowCommand};
+use crate::out::Out;
 use instance::Instance;
 use running::{Front, Launching, Running};
 use windows::{SHELF_APP_ID, Window};
@@ -191,35 +192,32 @@ impl Session {
     /// If a window appears within [`REOPEN_SECS`] on the workspace whose window in front closed, shows
     /// that workspace again. This is for a program that replaces its first window, such as a splash
     /// screen, or Waydroid on a cold start.
-    pub(crate) fn show_reopened(&mut self, now: u64) -> Vec<Effect> {
+    pub(crate) fn show_reopened(&mut self, now: u64, out: &mut Out) {
         let Some((ws, at)) = self.closed_front.take() else {
-            return vec![];
+            return;
         };
         if now > at + REOPEN_SECS {
-            return vec![];
+            return;
         }
         if self.windows.iter().any(|w| w.workspace == ws && !w.down) {
-            return vec![Effect::Window(WindowCommand::Focus(ws))];
+            out.effects.push(Effect::Window(WindowCommand::Focus(ws)));
+            return;
         }
         self.closed_front = Some((ws, at));
-        vec![]
     }
 
     /// Shows the workspace of the launch just started, once its own first window is there. The entry's
     /// workspace may already have windows of its other launches. An entry known by its app id has no scope
     /// of ours, so any of its windows counts.
-    pub(crate) fn show_pending(&mut self) -> Vec<Effect> {
+    pub(crate) fn show_pending(&mut self, out: &mut Out) {
         let arrived = self.pending_show.as_ref().is_some_and(|i| {
             let unit = i.unit();
             let outside = self.running.iter().find(|r| Some(r.key.as_str()) == i.key()).is_some_and(Running::outside);
             self.windows.iter().any(|w| i.on(&w.workspace) && (outside || w.unit == unit))
         });
         match self.pending_show.take() {
-            Some(instance) if arrived => vec![Effect::Window(WindowCommand::Focus(instance.workspace()))],
-            other => {
-                self.pending_show = other;
-                vec![]
-            }
+            Some(instance) if arrived => out.effects.push(Effect::Window(WindowCommand::Focus(instance.workspace()))),
+            other => self.pending_show = other,
         }
     }
 }

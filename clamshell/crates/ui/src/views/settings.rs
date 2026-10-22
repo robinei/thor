@@ -84,7 +84,7 @@ pub(super) fn draw(f: &mut Frame) {
     let items = tabs.map(|(scope, name)| (Id::Settings(SettingsId::Scope(scope)), None, name, scope == shown));
     let tabs_area = Rect::new(bar.x - inner, bar.y, bar.w + inner, bar.h);
     let tabs_end = widgets::tabs(f, tabs_area, f.text(Text::Heading), inner, bar.w * TAB_MAX, items);
-    let running = context.is_some_and(|g| s.program_in_force() == Some(&g.id));
+    let running = context.is_some_and(|g| s.session().program() == Some(&g.id));
     let note = match (game.is_some().then_some(()), running) {
         (Some(_), true) => "applies now",
         (Some(_), false) => "applies at launch",

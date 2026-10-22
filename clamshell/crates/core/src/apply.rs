@@ -30,8 +30,10 @@ impl State {
         self.shelf.follow_browse(self.session.running_entries(), &mut out);
         self.follow_idle(&mut out);
         self.follow_watch(&mut out);
-        let (changed, applied) = self.follow_program();
-        out.effects.extend(applied);
+        let changed = self.session.follow_program();
+        if changed {
+            out.effects.push(Effect::Apply { entry: self.session.program().cloned(), settings: self.in_force() });
+        }
         // This comes after the program in force is settled, since it reads that program's setting and
         // darkness. If it changed anything, the watch is followed again.
         if self.bottom.follow_power(self.power(), self.clock.mono(), &mut out) {
@@ -84,10 +86,10 @@ impl State {
         let by_windows = self.follow_windows(&known);
         self.bottom.follow_window_rules(&self.session, out);
         out.effects.extend(self.follow_background());
-        out.effects.extend(self.session.show_pending());
-        out.effects.extend(self.session.show_reopened(self.clock.mono()));
+        self.session.show_pending(out);
+        self.session.show_reopened(self.clock.mono(), out);
         out.effects.extend(self.follow_quitting());
-        out.effects.extend(self.follow_closed(was));
+        self.session.follow_closed(was, self.clock.mono(), out);
         // After handling the front one closing, so that a window just taken by a browsed file is shown
         // over it.
         out.effects.extend(by_windows);
@@ -167,7 +169,9 @@ impl State {
                 self.keymap_back();
                 out.mark(Dirty::BOTTOM);
             }
-            Event::Home => out.effects.extend(self.home()),
+            // When the Device view is in shelf's place, Home goes back to shelf.
+            Event::Home if self.session.shelf_in_front() && self.device.is_open() => self.close_device(),
+            Event::Home => self.session.home(out),
             Event::Listened(input) => {
                 out.mark(Dirty::BOTTOM);
                 self.keymapping.listened(input, self.pad.route() == PadRoute::Listen, out);

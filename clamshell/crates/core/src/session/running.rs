@@ -224,7 +224,9 @@ impl State {
         if let Some(Launch::Tool(tool)) = self.shelf.entry(&game).map(|g| &g.launch) {
             // The Device view is ClamShell's own, on the main screen.
             if *tool == clamshell_library::Tool::Device {
-                return self.open_device();
+                let mut out = crate::out::Out::default();
+                self.open_device(&mut out);
+                return out.effects;
             }
             return vec![Effect::Tool(*tool)];
         }

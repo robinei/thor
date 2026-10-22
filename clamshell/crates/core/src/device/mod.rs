@@ -205,17 +205,16 @@ impl State {
 
     /// Opens the Device view on the main screen, bringing shelf's window to the front, with the pad's
     /// focus on its first row. The account is read while it is open ([`State::follow_watch`]).
-    pub(crate) fn open_device(&mut self) -> Vec<Effect> {
+    pub(crate) fn open_device(&mut self, out: &mut Out) {
         self.device.open();
         self.pointer.focus_on(Id::Device(DeviceId::Wifi));
-        vec![Effect::Window(WindowCommand::ShowShelf)]
+        out.effects.push(Effect::Window(WindowCommand::ShowShelf));
     }
 
     /// Goes back to shelf, with the focus on its selection.
-    pub(crate) fn close_device(&mut self) -> Vec<Effect> {
+    pub(crate) fn close_device(&mut self) {
         self.device.close();
         self.pointer.focus_shelf(self.shelf.selected());
-        vec![]
     }
 }
 
@@ -254,7 +253,9 @@ mod tests {
     #[test]
     fn the_device_entry_opens_it_and_close_goes_back_to_shelf() {
         let mut s = State::new(init());
-        let effects = s.open_device();
+        let mut out = crate::out::Out::default();
+        s.open_device(&mut out);
+        let effects = out.effects;
         assert_eq!(s.device().top_view(), TopView::Device);
         assert_eq!(effects, vec![Effect::Window(WindowCommand::ShowShelf)], "shelf's window in front");
         assert_eq!(s.pointer().focus(), Some(&Id::Device(DeviceId::Wifi)));
@@ -266,7 +267,7 @@ mod tests {
     #[test]
     fn the_password_is_typed_below_the_current_one_first() {
         let mut s = State::new(init());
-        s.open_device();
+        s.open_device(&mut crate::out::Out::default());
         assert!(tap(&mut s, DeviceId::Password).is_empty(), "unavailable off the device");
         available(&mut s, true);
         tap(&mut s, DeviceId::Password);

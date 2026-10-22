@@ -74,7 +74,7 @@ fn entry_tile(f: &mut Frame, r: Rect, i: usize, id: &std::sync::Arc<str>, severa
         return;
     };
     let running = s.session().running(id).is_some();
-    let in_force = several && s.program_in_force() == Some(id);
+    let in_force = several && s.session().program() == Some(id);
     let moving = s.dock().moving() == Some(id);
     let caption_tone = if moving { Tone::Accent } else { Tone::Normal };
     let note = if s.suspended(id) { "Suspended" } else { "" };

@@ -1,50 +1,49 @@
 //! What is in front: the Home button, and what takes a closed window's place, which is what was in front
 //! before it.
 
-use crate::{Effect, Instance, Running, State, WindowCommand};
+use crate::out::Out;
+use crate::{Effect, Instance, Running, Session, WindowCommand};
 
-impl State {
+impl Session {
     /// Runs after the windows changed. If the window in front, on workspace `was`, closed and nothing of
     /// its workspace is left, goes back to what was in front before it, with shelf as the last resort;
     /// otherwise sway would leave the empty workspace in front. The workspace is remembered in case a
-    /// window appears on it soon after (see [`crate::Session::show_reopened`]).
-    pub(crate) fn follow_closed(&mut self, was: Option<String>) -> Vec<Effect> {
-        let windows = &self.session.windows;
-        let Some(was) = was else { return vec![] };
+    /// window appears on it soon after (see [`Session::show_reopened`]).
+    pub(crate) fn follow_closed(&mut self, was: Option<String>, now: u64, out: &mut Out) {
+        let windows = &self.windows;
+        let Some(was) = was else { return };
         if windows.iter().any(|w| w.focused || w.workspace == was) {
-            return vec![];
+            return;
         }
         let shown = |ws: &String| windows.iter().any(|w| w.workspace == *ws && !w.down);
-        let effects = match self.session.recent.iter().find(|ws| shown(ws)) {
-            Some(ws) if !Instance::Shelf.is(ws) => vec![Effect::Window(WindowCommand::Focus(ws.clone()))],
-            _ => vec![Effect::Window(WindowCommand::ShowShelf)],
-        };
-        self.session.closed_front = Some((was, self.clock.mono()));
-        effects
+        out.effects.push(match self.recent.iter().find(|ws| shown(ws)) {
+            Some(ws) if !Instance::Shelf.is(ws) => Effect::Window(WindowCommand::Focus(ws.clone())),
+            _ => Effect::Window(WindowCommand::ShowShelf),
+        });
+        self.closed_front = Some((was, now));
+    }
+
+    /// Whether shelf is in front on the main screen, as it is before the compositor reports a window.
+    pub(crate) fn shelf_in_front(&self) -> bool {
+        self.windows.iter().find(|w| w.focused).is_none_or(|w| w.app_id == crate::session::windows::SHELF_APP_ID)
     }
 
     /// The Home button. From anything it goes to shelf. From shelf it goes back to what was in front
     /// before, or, without that history because the compositor hasn't reported any, to the program in
-    /// force.
-    pub(crate) fn home(&mut self) -> Vec<Effect> {
-        let session = &self.session;
-        let front = session.windows.iter().find(|w| w.focused);
-        let shelf_in_front = front.is_none_or(|w| w.app_id == crate::session::windows::SHELF_APP_ID);
-        if !shelf_in_front {
-            return vec![Effect::Window(WindowCommand::ShowShelf)];
-        }
-        // When the Device view is in shelf's place, Home goes back to shelf.
-        if self.device.is_open() {
-            return self.close_device();
+    /// force. (When the Device view is in shelf's place, Home closes it instead: see
+    /// [`crate::State::close_device`].)
+    pub(crate) fn home(&self, out: &mut Out) {
+        if !self.shelf_in_front() {
+            out.effects.push(Effect::Window(WindowCommand::ShowShelf));
+            return;
         }
         // Only workspaces with a window on the main screen count; a window moved down leaves its workspace
         // empty.
-        let shown = |ws: &String| session.windows.iter().any(|w| w.workspace == *ws && !w.down);
-        let before = session.recent.iter().find(|ws| !Instance::Shelf.is(ws) && shown(ws)).cloned();
-        let game = session.program.as_deref().and_then(|id| session.running(id)).map(Running::workspace).filter(shown);
-        match before.or(game) {
-            Some(workspace) => vec![Effect::Window(WindowCommand::Focus(workspace))],
-            None => vec![],
+        let shown = |ws: &String| self.windows.iter().any(|w| w.workspace == *ws && !w.down);
+        let before = self.recent.iter().find(|ws| !Instance::Shelf.is(ws) && shown(ws)).cloned();
+        let game = self.program.as_deref().and_then(|id| self.running(id)).map(Running::workspace).filter(shown);
+        if let Some(workspace) = before.or(game) {
+            out.effects.push(Effect::Window(WindowCommand::Focus(workspace)));
         }
     }
 }

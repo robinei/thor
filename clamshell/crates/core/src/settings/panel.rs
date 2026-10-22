@@ -11,7 +11,6 @@ use crate::effect::{Effect, Save};
 use crate::id::SettingsId;
 use crate::keymap::screens::{Keymapping, PickerRow};
 use crate::out::Out;
-use crate::session::program::Program;
 use crate::session::running::Front;
 use crate::settings::{Setting, Settings, Values};
 
@@ -98,6 +97,13 @@ impl Prefs {
     pub(crate) fn settings_mut(&mut self) -> &mut Settings {
         &mut self.settings
     }
+}
+
+/// A program as the settings panel shows it: its entry's id and name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Program<'a> {
+    pub id: Arc<str>,
+    pub title: &'a str,
 }
 
 /// The settings panel as it is now: the item in context, the levels it offers, what it edits, and the
@@ -277,12 +283,12 @@ impl State {
     pub fn panel(&self) -> Panel<'_> {
         let id = match self.session.front() {
             Front::Program => {
-                self.session.windows.iter().find(|w| w.focused && !w.down).and_then(|w| self.program_of(w)).or_else(|| self.session.program.clone())
+                self.session.windows.iter().find(|w| w.focused && !w.down).and_then(|w| self.session.owner_of(w)).or_else(|| self.session.program.clone())
             }
             Front::Shelf => self.shelf.selected().cloned().map(|id| self.shelf.entry_of_file(&id).unwrap_or(id)),
             Front::Other => None,
         };
-        let context = id.and_then(|id| self.program(&id));
+        let context = id.and_then(|id| self.entry(&id).map(|g| Program { id, title: &g.title }));
         let entry = context.as_ref().and_then(|item| self.entry(&item.id));
         let levels = match (&context, entry) {
             (Some(item), Some(g)) => match &g.runner {
