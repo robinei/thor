@@ -1,18 +1,20 @@
-//! A scrolled list's place ([`Scroll`]): how far it is scrolled, in rows (so touch and the pad agree
-//! whatever the layout), how many rows show, and the item at its top, to keep there when the list changes
-//! ([`ItemKey`], as its feature names its rows: [`Rows`]). Which lists there are and what their rows do
-//! is `nav::lists`'.
+//! The place of a scrolled list ([`Scroll`]). It holds how far the list is scrolled, how many rows show,
+//! and the item at the top. Scrolling is counted in rows so that touch and the pad agree whatever the
+//! layout. The item at the top stays there when the list changes; it is identified by an [`ItemKey`],
+//! which the list's feature gives for its rows through [`Rows`].
+//!
+//! Which lists there are and what their rows do is in `nav::lists`.
 
-/// What a list item is: a network's SSID, a device's address, a game's workspace, a collection's name,
-/// a backlight's name; a PipeWire object's id.
+/// What identifies a list item: a network's SSID, a device's address, a game's workspace, a collection's
+/// name, a backlight's name, or a PipeWire object's id.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ItemKey {
     Name(String),
     Number(u32),
 }
 
-/// A list's rows as the lists see them: its feature's, or just how many (rows not found again by a key
-/// when they change, as a keymap's layers on the screen showing them).
+/// A list's rows: either the feature's own [`Rows`], or just a count. A count is for rows that can't be
+/// found again by a key when they change, such as a keymap's layers on the screen that shows them.
 pub(crate) enum RowsOf<'a> {
     Of(&'a dyn Rows),
     Count(usize),
@@ -41,8 +43,8 @@ impl RowsOf<'_> {
     }
 }
 
-/// A list's rows as its feature has them: how many, and what each is, to find it again after the list
-/// changed. A list whose rows have no key doesn't keep its place by item.
+/// A list's rows as its feature has them: how many there are, and a key for each so it can be found
+/// again after the list changes. A list whose rows have no key doesn't keep its place by item.
 pub(crate) trait Rows {
     fn len(&self) -> usize;
 
@@ -55,9 +57,9 @@ pub(crate) trait Rows {
     }
 }
 
-/// One list's place: the offset in rows (fractions while a finger drags it), how many rows fit on
-/// screen (as last drawn; none known yet: nothing scrolls), and the item at the top with the fraction
-/// of it scrolled past, to keep it there when the list changes.
+/// One list's place. The offset is in rows and is fractional while a finger drags the list. The number
+/// of rows that fit on screen is as last drawn; until it is known, nothing scrolls. The anchor is the
+/// item at the top and the fraction of it scrolled past, to keep it there when the list changes.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Scroll {
     offset: f32,
@@ -75,12 +77,12 @@ impl Scroll {
         self.visible
     }
 
-    /// The furthest the list scrolls with `len` rows: its last row at the bottom.
+    /// The furthest the list scrolls with `len` rows, which puts its last row at the bottom.
     pub fn max_offset(&self, len: usize) -> f32 {
         self.visible.map_or(0.0, |v| (len as f32 - v).max(0.0))
     }
 
-    /// The offset kept within the list's ends; whether it changed.
+    /// Keeps the offset within the list's ends. Returns whether it changed.
     fn clamp(&mut self, len: usize) -> bool {
         let clamped = self.offset.clamp(0.0, self.max_offset(len));
         let changed = clamped != self.offset;
@@ -88,7 +90,7 @@ impl Scroll {
         changed
     }
 
-    /// Scrolled by `rows` (positive: further down the list), within its ends; whether it moved.
+    /// Scrolls by `rows` within the list's ends; positive is further down. Returns whether it moved.
     pub fn scroll_by(&mut self, rows: f32, len: usize) -> bool {
         let before = self.offset;
         self.offset += rows;
@@ -96,7 +98,7 @@ impl Scroll {
         self.offset != before
     }
 
-    /// Scrolled just enough to show row `i` whole; whether it moved.
+    /// Scrolls just enough to show row `i` whole. Returns whether it moved.
     pub fn show(&mut self, i: usize, len: usize) -> bool {
         let Some(visible) = self.visible else {
             return false;
@@ -112,7 +114,7 @@ impl Scroll {
         self.offset != before
     }
 
-    /// How many rows the UI shows; whether that changed.
+    /// Sets how many rows the UI shows. Returns whether that changed.
     pub fn set_visible(&mut self, rows: f32, len: usize) -> bool {
         if self.visible == Some(rows) {
             return false;
@@ -138,13 +140,14 @@ impl Scroll {
         self.anchor = key.map(|k| (k, fraction));
     }
 
-    /// The item to keep at the top, unless the view is at the very top (where new rows show).
+    /// The item to keep at the top. There is none when the view is at the very top, so that new rows
+    /// added there show.
     pub(crate) fn anchored(&self) -> Option<&ItemKey> {
         self.anchor.as_ref().filter(|_| self.offset > 0.0).map(|(k, _)| k)
     }
 
-    /// After the list changed: the [`Scroll::anchored`] item, now row `found`, kept where it was, and the
-    /// view within the list's ends (`len` rows); whether it moved.
+    /// After the list changes, puts the [`Scroll::anchored`] item, now at row `found`, back where it was,
+    /// and keeps the view within the list's ends (`len` rows). Returns whether it moved.
     pub(crate) fn follow(&mut self, found: Option<usize>, len: usize) -> bool {
         let before = self.offset;
         if let (Some(i), Some((_, fraction))) = (found, &self.anchor) {
@@ -154,7 +157,7 @@ impl Scroll {
         self.offset != before
     }
 
-    /// Whether scrolling by `rows` would move it (a fling stops at the ends).
+    /// Whether scrolling by `rows` would move the list. A fling stops at the ends.
     pub fn can_scroll(&self, rows: f32, len: usize) -> bool {
         (rows > 0.0 && self.offset < self.max_offset(len)) || (rows < 0.0 && self.offset > 0.0)
     }

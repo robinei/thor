@@ -1,11 +1,11 @@
-//! [`names!`]: a fieldless enum's variants listed once, with each one's name (its word in files and the
-//! control pipe) and, where it has one, its label (how it reads on screen).
+//! [`names!`] lists a fieldless enum's variants once, giving each a name and optionally a label. The
+//! name is its word in files and on the control pipe; the label is how it reads on screen.
 
-/// Gives a fieldless enum, from one list of its variants (in the order of `ALL`), each with its name and
-/// optionally its label:
+/// From one list of a fieldless enum's variants, each with its name and optionally its label, gives the
+/// enum:
 ///
 /// - `ALL`: every variant, in the list's order;
-/// - `name()`: its word in files and the control pipe;
+/// - `name()`: its word in files and on the control pipe;
 /// - `from_name(word)`: the first variant with that name;
 /// - `label()`: how it reads on screen, when the list gives labels.
 ///
@@ -32,7 +32,7 @@ macro_rules! names {
             /// Every one, in order.
             pub const ALL: [Self; $crate::kit::names::names!(@count $($v)*)] = [$(Self::$v),*];
 
-            /// Its word in files and the control pipe.
+            /// Its word in files and on the control pipe.
             pub fn name(self) -> &'static str {
                 match self {
                     $(Self::$v => $name,)*

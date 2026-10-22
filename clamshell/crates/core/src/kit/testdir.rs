@@ -1,13 +1,13 @@
-//! [`TempDir`]: a folder for a test (the `test-support` feature).
+//! [`TempDir`]: a folder for a test, available with the `test-support` feature.
 
 use std::path::{Path, PathBuf};
 
-/// A new, empty folder under the system's temp dir, removed when dropped (when the test fails too).
+/// A new, empty folder under the system's temp dir. It is removed when dropped, also when the test fails.
 pub struct TempDir(PathBuf);
 
 impl TempDir {
-    /// Named after `name` and the process, so tests running at once don't share one. (A test's helper:
-    /// failing to make the folder fails the test.)
+    /// Named after `name` and the process, so tests running at the same time don't share one. As a test
+    /// helper, it fails the test if it can't make the folder.
     #[allow(clippy::panic)]
     pub fn new(name: &str) -> TempDir {
         let path = std::env::temp_dir().join(format!("clamshell-{name}-{}", std::process::id()));

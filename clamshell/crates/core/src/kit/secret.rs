@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-/// A password: kept out of logs (effects and events are logged as they go).
+/// A password, kept out of logs because effects and events are logged as they happen.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Secret(pub String);
 
