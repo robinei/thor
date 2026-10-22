@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::process::Command;
 use std::sync::mpsc::{Receiver, Sender};
 
-use tiny_skia::{Color, LineCap, LineJoin, Paint, Path, PathBuilder, Pixmap, PremultipliedColorU8, Stroke, Transform};
+use tiny_skia::{Color, LineCap, LineJoin, Paint, Path, PathBuilder, Pixmap, PixmapMut, PremultipliedColorU8, Stroke, Transform};
 
 use crate::icons::{self, Icon};
 
@@ -389,7 +389,7 @@ impl DrawCache {
 }
 
 pub struct Canvas<'a> {
-    pixmap: &'a mut Pixmap,
+    pixmap: PixmapMut<'a>,
     scale: f32,
     /// Whole buffer pixels everything is moved by (burn-in orbit).
     offset: (f32, f32),
@@ -399,7 +399,7 @@ pub struct Canvas<'a> {
 }
 
 impl<'a> Canvas<'a> {
-    pub fn new(pixmap: &'a mut Pixmap, scale: f32, cache: &'a mut DrawCache) -> Self {
+    pub fn new(pixmap: PixmapMut<'a>, scale: f32, cache: &'a mut DrawCache) -> Self {
         let clip = (0, 0, pixmap.width() as i32, pixmap.height() as i32);
         Canvas { pixmap, scale, offset: (0.0, 0.0), clip, cache }
     }
@@ -556,7 +556,7 @@ impl<'a> Canvas<'a> {
             {
                 let logical = side as f32 / self.scale;
                 let clip = (0, 0, side as i32, side as i32);
-                let mut c = Canvas { pixmap: &mut mask, scale: self.scale, offset: (0.0, 0.0), clip, cache: &mut *self.cache };
+                let mut c = Canvas { pixmap: mask.as_mut(), scale: self.scale, offset: (0.0, 0.0), clip, cache: &mut *self.cache };
                 icons::draw(&mut c, icon, Rect::new(0.0, 0.0, logical, logical), Color::WHITE);
             }
             let coverage = mask.data().chunks_exact(4).filter_map(|px| px.get(3).copied()).collect();
@@ -566,7 +566,7 @@ impl<'a> Canvas<'a> {
         let x = (self.px(cx) - side as f32 / 2.0).round() as i32;
         let y = (self.py(cy) - side as f32 / 2.0).round() as i32;
         if let Some(coverage) = self.cache.icons.get(&key) {
-            blend_mask(self.pixmap, self.clip, x, y, side as usize, coverage, color.into().premultiply().to_color_u8());
+            blend_mask(&mut self.pixmap, self.clip, x, y, side as usize, coverage, color.into().premultiply().to_color_u8());
         }
     }
 
@@ -675,7 +675,7 @@ impl<'a> Canvas<'a> {
             };
             let gx = (pen + metrics.xmin as f32).round() as i32;
             let gy = (baseline - metrics.height as f32 - metrics.ymin as f32) as i32;
-            blend_mask(self.pixmap, self.clip, gx, gy, metrics.width, coverage, color);
+            blend_mask(&mut self.pixmap, self.clip, gx, gy, metrics.width, coverage, color);
             pen += metrics.advance_width;
         }
         (pen - start) / self.scale
@@ -812,7 +812,7 @@ impl<'a> Canvas<'a> {
 
 /// Blends a glyph's coverage (`width` bytes per row) in `color` onto the pixmap at (x, y), source-over,
 /// premultiplied; within `clip` (x0, y0, x1, y1, inside the pixmap).
-fn blend_mask(pixmap: &mut Pixmap, clip: (i32, i32, i32, i32), x: i32, y: i32, width: usize, coverage: &[u8], color: PremultipliedColorU8) {
+fn blend_mask(pixmap: &mut PixmapMut, clip: (i32, i32, i32, i32), x: i32, y: i32, width: usize, coverage: &[u8], color: PremultipliedColorU8) {
     if width == 0 {
         return;
     }
@@ -984,7 +984,7 @@ mod tests {
     fn text_is_cut_to_fit() {
         let mut cache = DrawCache::load();
         let mut pixmap = Pixmap::new(400, 50).unwrap();
-        let mut c = Canvas::new(&mut pixmap, 1.0, &mut cache);
+        let mut c = Canvas::new(pixmap.as_mut(), 1.0, &mut cache);
         let text = "A Link to the Past";
         let full = c.text_width(20.0, text);
         let width = full * 0.6;

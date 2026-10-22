@@ -60,7 +60,7 @@ use draw::DrawCache;
 use focus::PadPress;
 use input::{Action, End, Input, Source};
 use nav::Dir;
-use render::{Picture, Placement};
+use render::{Placement, Retained};
 use screens::Screens;
 use view::View;
 
@@ -108,6 +108,10 @@ pub fn run(state: State, config: Config, start: impl FnOnce(EventSender), on_eff
     // the app, so it exists before its views.)
     queue.roundtrip(&mut app)?;
     queue.roundtrip(&mut app)?;
+    // (Frames are drawn straight into shm buffers in tiny-skia's byte order, which sway takes.)
+    if !app.shm.formats().contains(&smithay_client_toolkit::reexports::client::protocol::wl_shm::Format::Abgr8888) {
+        return Err("the compositor doesn't take ABGR8888 shm buffers (sway does)".into());
+    }
     if let Some(seat) = app.seat_state.seats().next() {
         app.text_input.seat(&seat, &qh);
         app.display.seat(&seat, &qh);
@@ -215,10 +219,11 @@ impl BottomKind {
 /// For checking layouts and for automated tests. Returns what a live frame would tell the state (shelf's
 /// rows, the lists' rows).
 pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, path: &std::path::Path) -> Result<Vec<Event>, Error> {
-    let mut picture = Picture::default();
     let at = Placement { size_px: (size.0 * scale, size.1 * scale), scale, drift: (0, 0) };
-    let rendered = render::render(&mut picture, at, screen, state, &mut DrawCache::load(), &mut images::Images::synchronous())?;
-    picture.pixmap.ok_or("no picture")?.save_png(path)?;
+    let mut pixmap = tiny_skia::Pixmap::new(at.size_px.0, at.size_px.1).ok_or("no pixmap")?;
+    let mut retained = Retained::default();
+    let rendered = render::render(pixmap.as_mut(), &mut retained, at, screen, state, &mut DrawCache::load(), &mut images::Images::synchronous())?;
+    pixmap.save_png(path)?;
     Ok(frame_events(state, &rendered))
 }
 
@@ -415,13 +420,11 @@ impl App {
         if let Some(view) = self.views.iter_mut().find(|(s, _)| *s == Screen::Bottom).and_then(|(_, v)| v.as_mut()) {
             view.set_behind(behind);
         }
-        // (The compositor takes tiny-skia's own byte order: copied as it is.)
-        let rgba = self.shm.formats().contains(&smithay_client_toolkit::reexports::client::protocol::wl_shm::Format::Abgr8888);
         for (screen, view) in self.views.iter_mut() {
             let Some(view) = view.as_mut().filter(|v| v.due()) else {
                 continue;
             };
-            match view.draw(&mut self.pool, &mut self.fonts, &self.state, &mut self.images, &self.qh, rgba) {
+            match view.draw(&mut self.pool, &mut self.fonts, &self.state, &mut self.images, &self.qh) {
                 Ok(None) => {}
                 Ok(Some(rendered)) => {
                     drew = true;
@@ -502,7 +505,7 @@ impl App {
         let Some(view) = self.view_mut(surface) else {
             return;
         };
-        let found = view.picture.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).cloned();
+        let found = view.retained.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).cloned();
         // (Nothing there, below the second screen's bar: the blank, which may point.)
         let bottom = view.screen == Screen::Bottom;
         if bottom {
@@ -533,7 +536,7 @@ impl App {
         let Some(view) = self.view_mut(surface) else {
             return;
         };
-        let list = view.picture.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).and_then(|t| t.list);
+        let list = view.retained.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).and_then(|t| t.list);
         if let Some(list) = list {
             self.handle(ListEvent::Scroll(list.list, notches as f32).into());
         }

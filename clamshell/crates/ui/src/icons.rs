@@ -740,7 +740,7 @@ mod tests {
         let mut cache = DrawCache::load();
         for icon in every() {
             let mut pixmap = Pixmap::new(48, 48).expect("pixmap");
-            Canvas::new(&mut pixmap, 1.0, &mut cache).icon(icon, Rect::new(0.0, 0.0, 48.0, 48.0), Color::WHITE);
+            Canvas::new(pixmap.as_mut(), 1.0, &mut cache).icon(icon, Rect::new(0.0, 0.0, 48.0, 48.0), Color::WHITE);
             let covered = pixmap.data().chunks_exact(4).filter(|px| px.get(3).is_some_and(|&a| a > 0)).count();
             assert!(covered > 20, "{icon:?}: {covered} pixels");
         }

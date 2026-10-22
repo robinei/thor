@@ -21,11 +21,12 @@ use smithay_client_toolkit::{
     },
     shm::slot::{Buffer, SlotPool},
 };
+use tiny_skia::PixmapMut;
 
 use crate::draw::{DrawCache, Rect};
 use crate::focus::Drawn;
 use crate::images::Images;
-use crate::render::{self, Picture, Placement};
+use crate::render::{self, Placement, Retained};
 use crate::screens::{Screen, Screens};
 use crate::toolkit::{FrameOut, Target};
 use crate::{App, Error};
@@ -55,8 +56,8 @@ pub(crate) struct View {
     pub(crate) dirty: bool,
     /// A frame was committed and its callback hasn't come yet: wait, then draw the latest state once.
     pub(crate) frame_pending: bool,
-    /// The last frame: its picture and what can be tapped or focused in it.
-    pub(crate) picture: Picture,
+    /// What the last frame left: what can be tapped or focused in it.
+    pub(crate) retained: Retained,
     /// The second screen's area below the bar in the last frame (logical pixels).
     pub(crate) body: Option<Rect>,
     /// shm buffers, reused once the compositor releases them (two in turn, a third if it holds both).
@@ -76,7 +77,7 @@ impl View {
             configured: false,
             dirty: true,
             frame_pending: false,
-            picture: Picture::default(),
+            retained: Retained::default(),
             body: None,
             buffers: Vec::new(),
             behind: false,
@@ -155,8 +156,13 @@ impl View {
         Placement { size_px: (self.size.0 * scale, self.size.1 * scale), scale, drift: render::orbit(unix_secs) }
     }
 
-    /// Draws a frame of `state` and hands it to the compositor (unless every buffer is busy: then the
-    /// view stays dirty, and a buffer's release wakes the loop to draw again).
+    /// Draws a frame of `state` straight into a free shm buffer and commits it, asking for a frame
+    /// callback. With every buffer still read by the compositor, nothing is drawn: the view stays dirty,
+    /// and a buffer's release wakes the loop to draw again.
+    ///
+    /// The buffer is ABGR8888, tiny-skia's byte order (RGBA in memory, premultiplied), so it is drawn
+    /// into as it is. The whole buffer is drawn and damaged: the burn-in orbit moves everything every
+    /// minute anyway, and drawing whole frames keeps the views free of damage tracking.
     pub(crate) fn draw(
         &mut self,
         pool: &mut SlotPool,
@@ -164,39 +170,11 @@ impl View {
         state: &State,
         images: &mut Images,
         qh: &QueueHandle<App>,
-        rgba: bool,
     ) -> Result<Option<FrameOut>, Error> {
         let at = self.placement(state.unix_secs());
-        // (Every buffer of its size still read by the compositor: drawn when one is released.)
         let (w, h) = (i32::try_from(at.size_px.0)?, i32::try_from(at.size_px.1)?);
-        if self.buffers.len() >= 3 && self.buffers.iter().all(|b| b.height() == h && b.stride() == w * 4 && b.canvas(pool).is_none()) {
+        let Some(index) = free_buffer(&mut self.buffers, pool, w, h)? else {
             return Ok(None);
-        }
-        let rendered = render::render(&mut self.picture, at, self.screen, state, fonts, images)?;
-        if self.present(pool, qh, rgba)? {
-            self.dirty = false;
-            self.frame_pending = true;
-        }
-        Ok(Some(rendered))
-    }
-
-    /// Copies the picture into a free buffer and commits it, asking for a frame callback. False when no
-    /// buffer is free. `rgba`: the compositor takes ABGR8888 (tiny-skia's byte order).
-    ///
-    /// The picture is drawn into a pixmap of its own and copied, rather than drawn into the buffer: the
-    /// same drawing makes the snapshots (see `render`), and a compositor that takes only ARGB8888 gets each
-    /// pixel's red and blue swapped on the way. The copy is about 8 MB for the main screen at the Thor's
-    /// size, a millisecond or two, and a frame is drawn only when something changed. The whole buffer is
-    /// damaged: the burn-in orbit moves everything every minute anyway, and drawing whole frames keeps
-    /// the views free of damage tracking.
-    fn present(&mut self, pool: &mut SlotPool, qh: &QueueHandle<App>, rgba: bool) -> Result<bool, Error> {
-        let Some(pixmap) = self.picture.pixmap.as_ref() else {
-            return Ok(false);
-        };
-        let (w, h) = (i32::try_from(pixmap.width())?, i32::try_from(pixmap.height())?);
-        let format = if rgba { wl_shm::Format::Abgr8888 } else { wl_shm::Format::Argb8888 };
-        let Some(index) = free_buffer(&mut self.buffers, pool, w, h, format)? else {
-            return Ok(false);
         };
         let Some(buffer) = self.buffers.get(index) else {
             return Err("buffer index".into());
@@ -204,32 +182,24 @@ impl View {
         let Some(bytes) = buffer.canvas(pool) else {
             return Err("buffer busy".into());
         };
-        // tiny-skia is RGBA in memory (premultiplied): ABGR8888 as it is (sway takes it); else ARGB8888,
-        // BGRA in memory (little-endian), every pixel's red and blue swapped (KWin's nested session).
-        if rgba {
-            if let Some(dst) = bytes.get_mut(..pixmap.data().len()) {
-                dst.copy_from_slice(pixmap.data());
-            }
-        } else {
-            for (dst, src) in bytes.chunks_exact_mut(4).zip(pixmap.data().chunks_exact(4)) {
-                if let ([b, g, r, a], [sr, sg, sb, sa]) = (dst, src) {
-                    (*b, *g, *r, *a) = (*sb, *sg, *sr, *sa);
-                }
-            }
-        }
+        let len = at.size_px.0 as usize * at.size_px.1 as usize * 4;
+        let pixmap = bytes.get_mut(..len).and_then(|b| PixmapMut::from_bytes(b, at.size_px.0, at.size_px.1)).ok_or("buffer size")?;
+        let rendered = render::render(pixmap, &mut self.retained, at, self.screen, state, fonts, images)?;
         let surface = self.shell.surface();
         surface.set_buffer_scale(self.scale.max(1));
         surface.damage_buffer(0, 0, w, h);
         surface.frame(qh, FrameCallbackData(surface.clone()));
         buffer.attach_to(surface)?;
         surface.commit();
-        Ok(true)
+        self.dirty = false;
+        self.frame_pending = true;
+        Ok(Some(rendered))
     }
 }
 
 /// A `w` x `h` buffer the compositor isn't reading: one kept, or a new one if fewer than three are kept;
 /// `None` when all three are busy.
-fn free_buffer(buffers: &mut Vec<Buffer>, pool: &mut SlotPool, w: i32, h: i32, format: wl_shm::Format) -> Result<Option<usize>, Error> {
+fn free_buffer(buffers: &mut Vec<Buffer>, pool: &mut SlotPool, w: i32, h: i32) -> Result<Option<usize>, Error> {
     buffers.retain(|b| b.height() == h && b.stride() == w * 4);
     if let Some(i) = buffers.iter().position(|b| b.canvas(pool).is_some()) {
         return Ok(Some(i));
@@ -237,14 +207,14 @@ fn free_buffer(buffers: &mut Vec<Buffer>, pool: &mut SlotPool, w: i32, h: i32, f
     if buffers.len() >= 3 {
         return Ok(None);
     }
-    let (buffer, _) = pool.create_buffer(w, h, w * 4, format)?;
+    let (buffer, _) = pool.create_buffer(w, h, w * 4, wl_shm::Format::Abgr8888)?;
     buffers.push(buffer);
     Ok(Some(buffers.len() - 1))
 }
 
 impl Drawn for Screens<Option<View>> {
     fn targets(&self, screen: Screen) -> &[Target] {
-        self[screen].as_ref().map_or(&[], |v| &v.picture.targets)
+        self[screen].as_ref().map_or(&[], |v| &v.retained.targets)
     }
 
     fn size(&self, screen: Screen) -> (f32, f32) {

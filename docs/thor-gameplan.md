@@ -527,7 +527,8 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       layer armed or toggled on, and off: `Buzz` in `pad/rumble.rs`, 40 ms at 40000 on the light motor,
       30000 on the heavy one) felt, and not confused with a game's.
 - [ ] Drawing cost: how long a full redraw of each screen takes on the device's CPU (our own drawing, no
-      GPU; on a 5900X 0.6 ms for the top screen, 0.2-0.35 ms for the bottom; the image and mask blends
+      GPU; `cargo test --release -p clamshell-ui frame_times -- --ignored --nocapture`; on a 5900X, drawn
+      straight into the buffer, 0.6 ms for the top screen, 0.12-0.35 ms for the bottom; the image and mask blends
       vectorise for NEON, checked in the aarch64 build: `ld4`/`st4` per channel, `umull`/`umlal`, `ushr`)
       and what the second screen costs in power while a game runs (a slider held, a list flung, the
       keymap edit screen with its labels).

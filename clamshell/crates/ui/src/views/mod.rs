@@ -108,7 +108,7 @@ mod tests {
     fn draw_bottom(state: &State, (w, h): (u32, u32), cache: &mut DrawCache) -> (Vec<Target>, crate::toolkit::FrameOut) {
         let mut pixmap = Pixmap::new(w, h).expect("pixmap");
         let mut targets = Vec::new();
-        let mut canvas = Canvas::new(&mut pixmap, 1.0, cache);
+        let mut canvas = Canvas::new(pixmap.as_mut(), 1.0, cache);
         let (mut images, mut scratch) = (Images::synchronous(), Scratch::default());
         let mut f = Frame::new(&mut canvas, state, &mut images, &mut scratch, &mut targets);
         bottom(&mut f, Rect::new(0.0, 0.0, w as f32, h as f32));

@@ -19,7 +19,7 @@ use clamshell_core::{
 
 use crate::Screen;
 use crate::draw::DrawCache;
-use crate::render::{Picture, Placement, render};
+use crate::render::{Placement, Retained, render};
 
 thread_local! {
     static ALLOCS: Cell<usize> = const { Cell::new(0) };
@@ -95,7 +95,8 @@ fn account() -> Account {
 fn warm_frames_do_not_allocate() {
     let mut cache = DrawCache::load();
     let mut images = crate::images::Images::synchronous();
-    let (mut top, mut bottom) = (Picture::default(), Picture::default());
+    let (mut top, mut bottom) = (Retained::default(), Retained::default());
+    let (mut top_px, mut bottom_px) = (tiny_skia::Pixmap::new(1920, 1080).expect("pixmap"), tiny_skia::Pixmap::new(1240, 1080).expect("pixmap"));
     let top_at = Placement { size_px: (1920, 1080), scale: 1, drift: (1, -2) };
     let bottom_at = Placement { size_px: (1240, 1080), scale: 1, drift: (-3, 0) };
 
@@ -403,8 +404,8 @@ fn warm_frames_do_not_allocate() {
         }
         for round in 0..3 {
             let before = allocs();
-            render(&mut top, top_at, Screen::Top, &state, &mut cache, &mut images).expect("top");
-            render(&mut bottom, bottom_at, Screen::Bottom, &state, &mut cache, &mut images).expect("bottom");
+            render(top_px.as_mut(), &mut top, top_at, Screen::Top, &state, &mut cache, &mut images).expect("top");
+            render(bottom_px.as_mut(), &mut bottom, bottom_at, Screen::Bottom, &state, &mut cache, &mut images).expect("bottom");
             let n = allocs() - before;
             // The first rounds fill the glyph cache and size the vectors.
             if round == 2 {
