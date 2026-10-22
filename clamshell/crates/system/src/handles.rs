@@ -77,7 +77,7 @@ impl Handles {
             Effect::Launch { entry: game, instance, launch, settings, env } => {
                 log::info!("launching {game}");
                 // MangoHud's first, so a game's own variables can still override it.
-                let mut game_env = self.tuning.apply(settings, Some(game)).map(|config| crate::power::tuning::mangohud_env(&config)).unwrap_or_default();
+                let mut game_env = self.tuning.apply(settings, Some(game)).map(|config| crate::readings::mangohud::env(&config)).unwrap_or_default();
                 game_env.extend(env.iter().cloned());
                 // (First: a game's own may override it.)
                 game_env.splice(0..0, self.pad_taken.env());

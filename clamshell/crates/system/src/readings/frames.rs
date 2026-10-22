@@ -1,7 +1,7 @@
 //! A running game's frame rate and frame time, from MangoHud.
 //!
 //! MangoHud measures inside the game (Vulkan layer, or OpenGL through its wrapper). Games are started
-//! with a MangoHud config file (tuning::mangohud_config) that makes its overlay fully transparent and
+//! with a MangoHud config file ([`super::mangohud::config`]) that makes its overlay fully transparent and
 //! logs a CSV row every 500 ms to a folder in RAM; this thread follows the newest log and reports its
 //! latest frame rate and frame time. (MangoHud's `no_display` would hide the overlay too, but stops the
 //! measuring with it.) A new log starts whenever MangoHud reloads its config (an FPS cap change).
@@ -22,6 +22,7 @@ use rustix::event::{PollFd, PollFlags};
 use rustix::fs::inotify;
 
 use crate::os::worker::{self, Changed};
+use crate::readings::mangohud;
 use crate::{Closed, Sink};
 
 /// A log not written for this long belongs to a game that has ended (MangoHud logs every 500 ms,
@@ -29,37 +30,6 @@ use crate::{Closed, Sink};
 const STALE: Duration = Duration::from_secs(3);
 /// Ended games' logs are removed after this.
 const KEEP: Duration = Duration::from_secs(600);
-
-/// Reads a growing MangoHud CSV: finds the fps and frametime columns from the header row, and keeps
-/// the latest values. Pure.
-#[derive(Debug, Default)]
-struct Tail {
-    columns: Option<(usize, usize)>,
-    partial: String,
-}
-
-impl Tail {
-    /// Feeds newly appended text; returns the latest (fps, frame time in ms) it contained, if any.
-    pub fn feed(&mut self, chunk: &str) -> Option<(f32, f32)> {
-        self.partial.push_str(chunk);
-        let mut latest = None;
-        while let Some(end) = self.partial.find('\n') {
-            let line: String = self.partial.drain(..=end).collect();
-            let fields: Vec<&str> = line.trim().split(',').collect();
-            let fps = fields.iter().position(|f| *f == "fps");
-            let frametime = fields.iter().position(|f| *f == "frametime");
-            if let (Some(a), Some(b)) = (fps, frametime) {
-                self.columns = Some((a, b));
-            } else if let Some((a, b)) = self.columns {
-                let num = |i: usize| fields.get(i).and_then(|f| f.parse::<f32>().ok());
-                if let (Some(fps), Some(ms)) = (num(a), num(b)) {
-                    latest = Some((fps, ms));
-                }
-            }
-        }
-        latest
-    }
-}
 
 /// Follows the logs in `dir` (MangoHud's folder, [`crate::paths::Paths::mangohud`]).
 pub fn spawn(dir: PathBuf, sink: impl Sink) -> io::Result<()> {
@@ -76,7 +46,7 @@ fn follow(dir: &Path, sink: &impl Sink) -> Result<(), Closed> {
     let flags = inotify::WatchFlags::CREATE | inotify::WatchFlags::MODIFY | inotify::WatchFlags::MOVED_TO;
     let notify = notify.filter(|fd| inotify::add_watch(fd, dir, flags).map_err(|e| log::warn!("frames: {}: {e}", dir.display())).is_ok());
     // The log followed: its path, how far it has been read, and its columns.
-    let mut current: Option<(PathBuf, u64, Tail)> = None;
+    let mut current: Option<(PathBuf, u64, mangohud::Tail)> = None;
     let mut last = None;
     // No frame rate to begin with: the state has none either.
     let mut sent = Changed::starting(None);
@@ -89,7 +59,7 @@ fn follow(dir: &Path, sink: &impl Sink) -> Result<(), Closed> {
         }
         let newest = newest_fresh_log(dir);
         if newest.as_ref() != current.as_ref().map(|(p, _, _)| p) {
-            current = newest.map(|p| (p, 0, Tail::default()));
+            current = newest.map(|p| (p, 0, mangohud::Tail::default()));
         }
         // Without a new row the last reading stands; without a log there is none.
         last = match current.as_mut() {
@@ -145,33 +115,4 @@ fn read_new(path: &Path, offset: &mut u64) -> Option<String> {
     let n = file.read_to_string(&mut text).ok()?;
     *offset += n as u64;
     Some(text)
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod tests {
-    use super::*;
-
-    const HEAD: &str = "os,cpu,gpu\nCachyOS,AMD,AMD\nfps,frametime,cpu_load\n";
-
-    #[test]
-    fn reads_the_latest_row_by_column_name() {
-        let mut t = Tail::default();
-        assert_eq!(t.feed(HEAD), None);
-        assert_eq!(t.feed("160.4,6.23,1.2\n159.6,6.26,1.4\n"), Some((159.6, 6.26)));
-    }
-
-    #[test]
-    fn a_row_split_across_reads_is_joined() {
-        let mut t = Tail::default();
-        t.feed(HEAD);
-        assert_eq!(t.feed("59.9,16."), None);
-        assert_eq!(t.feed("7,3.0\n"), Some((59.9, 16.7)));
-    }
-
-    #[test]
-    fn rows_before_the_header_are_ignored() {
-        let mut t = Tail::default();
-        assert_eq!(t.feed("1,2,3\n"), None);
-    }
 }

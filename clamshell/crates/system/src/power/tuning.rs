@@ -19,12 +19,13 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use clamshell_core::settings::fan;
-use clamshell_core::settings::{Cores, Hud, PowerProfile};
+use clamshell_core::settings::{Cores, PowerProfile};
 use clamshell_core::settings::{Setting, Values};
 
 use crate::input::pad;
 use crate::os::sys;
 use crate::os::worker::{self, Next, Quiet, Worker};
+use crate::readings::mangohud;
 
 /// A profile's share of each frequency range.
 fn fraction(power: PowerProfile) -> f64 {
@@ -198,7 +199,7 @@ impl Tuning {
         self.hardware.send(*v);
         self.pad.send(pad::Command::Rumble(v.choice()));
         let game = game?;
-        mangohud_config(&self.mangohud, game, v.get(Setting::FpsCap), v.choice()).map_err(|e| log::warn!("MangoHud config: {e}")).ok()
+        mangohud::config(&self.mangohud, game, v.get(Setting::FpsCap), v.choice()).map_err(|e| log::warn!("MangoHud config: {e}")).ok()
     }
 }
 
@@ -328,28 +329,6 @@ fn oem_switches() -> Option<PathBuf> {
     sys::entries("/sys/bus/auxiliary/devices").into_iter().find(|d| d.join("retroid_charge_now").exists())
 }
 
-/// The MangoHud config file for a game (in `dir`), written with its frame rate cap (0: none) and HUD
-/// (0: invisible, 1: the frame rate only, 2: the full overlay), logging for the FPS tile. Rewritten in
-/// place, which MangoHud picks up live.
-pub fn mangohud_config(dir: &Path, game: &str, fps_cap: u16, hud: Hud) -> io::Result<PathBuf> {
-    fs::create_dir_all(dir)?;
-    // (Named by the entry's key, as its scopes, workspace and art are.)
-    let path = dir.join(format!("{}.conf", clamshell_library::key_of(game)));
-    let overlay = match hud {
-        Hud::Off => "alpha=0\nbackground_alpha=0\n",
-        Hud::Fps => "fps_only\n",
-        Hud::Full => "",
-    };
-    let text = format!("{overlay}autostart_log=1\nlog_interval=500\noutput_folder={}\nfps_limit={fps_cap}\n", dir.display());
-    fs::write(&path, text)?;
-    Ok(path)
-}
-
-/// The environment that loads MangoHud with this config file.
-pub fn mangohud_env(config: &Path) -> Vec<(String, String)> {
-    vec![("MANGOHUD".into(), "1".into()), ("MANGOHUD_CONFIGFILE".into(), config.display().to_string())]
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -383,18 +362,5 @@ mod tests {
         assert_eq!(big_cpus(&[(4_000_000, vec![0, 1]), (4_000_000, vec![2, 3])]), Vec::<u32>::new(), "all alike");
         assert_eq!(big_cpus(&[(1, vec![1]), (2, vec![0, 2])]), vec![2], "never CPU 0");
         assert_eq!(big_cpus(&[]), Vec::<u32>::new());
-    }
-
-    #[test]
-    fn a_games_config_file_carries_its_cap_and_hud() {
-        let dir = clamshell_core::kit::testdir::TempDir::new("tuning");
-        let a = mangohud_config(&dir, "steam:1", 40, Hud::Off).unwrap();
-        let text = fs::read_to_string(&a).unwrap();
-        assert!(text.contains("fps_limit=40\n") && text.contains("alpha=0\n"));
-        let again = mangohud_config(&dir, "steam:1", 0, Hud::Fps).unwrap();
-        assert_eq!(a, again, "the same file, rewritten");
-        let text = fs::read_to_string(&a).unwrap();
-        assert!(text.contains("fps_limit=0\n") && text.contains("fps_only\n") && !text.contains("alpha"));
-        assert_ne!(mangohud_config(&dir, "steam:2", 0, Hud::Off).unwrap(), a);
     }
 }

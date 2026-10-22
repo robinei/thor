@@ -3,5 +3,6 @@
 
 pub mod battery;
 pub mod frames;
+pub mod mangohud;
 pub mod metrics;
 pub mod status;

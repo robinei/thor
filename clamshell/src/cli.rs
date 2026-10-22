@@ -24,7 +24,7 @@ pub enum Command {
     ClipboardGet,
     ClipboardSet,
     /// `--wayland-filter`: a Wayland proxy for Waydroid beside the compositor's socket (see
-    /// clamshell_system::wayland_filter).
+    /// clamshell_system::waydroid).
     WaylandFilter,
     /// `--fetch-metadata`: fetch what the library wants (covers, screenshots, ...; see
     /// clamshell_system::library::meta) without the UI, printing what was found; a running ClamShell shows it from

@@ -20,7 +20,7 @@ pub mod session;
 pub mod store;
 pub mod sway;
 pub mod time;
-pub mod wayland_filter;
+pub mod waydroid;
 
 use std::sync::mpsc;
 

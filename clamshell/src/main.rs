@@ -25,7 +25,7 @@ use clamshell_system::launch::job;
 use clamshell_system::library::meta;
 use clamshell_system::library::{self, Sources};
 use clamshell_system::paths::Paths;
-use clamshell_system::power::tuning;
+use clamshell_system::readings::mangohud;
 use clamshell_system::store::Store;
 use clamshell_ui::Config;
 
@@ -67,8 +67,8 @@ fn carry_out(command: Command) -> Result<(), String> {
             Ok(())
         }
         Command::MangohudEnv => {
-            let config = tuning::mangohud_config(&paths.mangohud, "default", 0, Hud::Off).map_err(|e| format!("MangoHud config: {e}"))?;
-            for (k, v) in tuning::mangohud_env(&config) {
+            let config = mangohud::config(&paths.mangohud, "default", 0, Hud::Off).map_err(|e| format!("MangoHud config: {e}"))?;
+            for (k, v) in mangohud::env(&config) {
                 println!("{k}={v}");
             }
             Ok(())
@@ -79,7 +79,7 @@ fn carry_out(command: Command) -> Result<(), String> {
         }
         Command::WaylandFilter => {
             let runtime = paths.mangohud.parent().map_or_else(|| paths.mangohud.clone(), std::path::Path::to_path_buf);
-            clamshell_system::wayland_filter::run(runtime, paths.mangohud.clone()).map_err(|e| format!("wayland filter: {e}"))
+            clamshell_system::waydroid::run(runtime, paths.mangohud.clone()).map_err(|e| format!("wayland filter: {e}"))
         }
         Command::ClipboardGet => {
             let text = clamshell_system::session::clipboard::get().map_err(|e| format!("clipboard: {e}"))?;

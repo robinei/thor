@@ -24,8 +24,7 @@
 //! the compositor deletes them (`wl_display.delete_id`).
 
 use std::collections::{HashMap, HashSet};
-use std::fs::{File, OpenOptions};
-use std::io::{self, IoSlice, IoSliceMut, Write};
+use std::io::{self, IoSlice, IoSliceMut};
 use std::mem::MaybeUninit;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -36,6 +35,7 @@ use std::time::{Duration, Instant};
 use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, SendAncillaryBuffer, SendAncillaryMessage, SendFlags};
 
 use crate::os::worker;
+use crate::readings::mangohud;
 
 /// The display object's id, and the opcodes read.
 const DISPLAY: u32 = 1;
@@ -319,7 +319,7 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path, 
         (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => return log::warn!("wayland filter: {e}"),
     };
     let (requests, rates) = (objects.clone(), objects.clone());
-    let mut log = FrameLog { dir: frames.to_path_buf(), files: HashMap::new() };
+    let mut log = mangohud::FrameLog::new(frames);
     // Which end closed first (true: the compositor's).
     let first: Arc<OnceLock<bool>> = Arc::default();
     let first2 = first.clone();
@@ -358,32 +358,6 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path, 
     if let Err(e) = events_relay {
         log::warn!("wayland filter: {e}");
         let _ = kept.shutdown(std::net::Shutdown::Both);
-    }
-}
-
-/// The frame rate logs, MangoHud's way (see the module's doc): a file per app, its header first.
-struct FrameLog {
-    dir: PathBuf,
-    files: HashMap<String, File>,
-}
-
-impl FrameLog {
-    fn row(&mut self, app: &str, fps: f32) {
-        let name = format!("android-{}.csv", app.replace(['/', ' '], "_"));
-        if !self.files.contains_key(&name) {
-            let _ = std::fs::create_dir_all(&self.dir);
-            match OpenOptions::new().create(true).truncate(true).write(true).open(self.dir.join(&name)) {
-                Ok(mut f) => {
-                    let _ = f.write_all(b"fps,frametime\n");
-                    self.files.insert(name.clone(), f);
-                }
-                Err(e) => return log::debug!("wayland filter: {name}: {e}"),
-            }
-        }
-        if let Some(f) = self.files.get_mut(&name) {
-            let frame_ms = if fps > 0.0 { 1000.0 / fps } else { 0.0 };
-            let _ = writeln!(f, "{fps:.1},{frame_ms:.2}");
-        }
     }
 }
 
