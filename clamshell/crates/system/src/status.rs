@@ -9,7 +9,7 @@ use std::time::Duration;
 use clamshell_core::{Event, Reading, Status};
 
 use crate::audio::mixer;
-use crate::brightness::Backlights;
+use crate::display::brightness::Backlights;
 use crate::os::worker::{Changed, Shown, Worker};
 use crate::os::{command, sys};
 use crate::{Closed, Sink};

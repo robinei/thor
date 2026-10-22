@@ -10,7 +10,7 @@ use clamshell_core::levels::{Audio, AudioOutput, Stream};
 use clamshell_core::{Event, Reading};
 use serde_json::Value;
 
-use crate::brightness::Backlights;
+use crate::display::brightness::Backlights;
 use crate::os::worker::{self, Changed, Next, Worker};
 use crate::{Closed, Sink};
 
