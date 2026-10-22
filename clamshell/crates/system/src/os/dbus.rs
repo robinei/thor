@@ -249,7 +249,9 @@ impl Bus {
                     let name = ::dbus::strings::ErrorName::from("org.freedesktop.DBus.Error.UnknownMethod");
                     message.error(&name, c"not served here")
                 });
-                let _ = self.channel.send(reply);
+                if self.channel.send(reply).is_err() {
+                    log::warn!("dbus: couldn't send the reply to {}", message.member().as_deref().unwrap_or("a call"));
+                }
                 self.channel.flush();
             }
             MessageType::Signal => {

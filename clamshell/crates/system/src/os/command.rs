@@ -43,23 +43,26 @@ pub fn run<S: AsRef<OsStr>>(program: &str, args: &[S], input: Option<&[u8]>, lim
         stdin.write_all(input).map_err(|e| format!("{program}: {e}"))?;
     }
     // Read as they come (a full pipe would stall it), each on a thread of its own.
-    let stdout = drain(child.stdout.take());
-    let stderr = drain(child.stderr.take());
+    let stdout = drain(program, child.stdout.take());
+    let stderr = drain(program, child.stderr.take());
     let deadline = Instant::now() + limit;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
             Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                if let Err(e) = child.kill().and_then(|()| child.wait().map(drop)) {
+                    log::debug!("{program}: stopping it: {e}");
+                }
                 return Err(format!("{program} {}: no answer in {} s, stopped", shown(args), limit.as_secs()));
             }
             Err(e) => return Err(format!("{program}: {e}")),
         }
     };
     let ended = Instant::now() + DRAIN;
-    let collect = |rx: mpsc::Receiver<Vec<u8>>| rx.recv_timeout(ended.saturating_duration_since(Instant::now())).unwrap_or_default();
+    let collect = |rx: mpsc::Receiver<Vec<u8>>| {
+        rx.recv_timeout(ended.saturating_duration_since(Instant::now())).inspect_err(|e| log::debug!("{program}: its output: {e}")).unwrap_or_default()
+    };
     Ok(Ran { status, stdout: collect(stdout), stderr: collect(stderr) })
 }
 
@@ -69,15 +72,23 @@ fn shown<S: AsRef<OsStr>>(args: &[S]) -> String {
 }
 
 /// A pipe read to its end on a thread of its own; what it held, through the channel.
-fn drain(pipe: Option<impl Read + Send + 'static>) -> mpsc::Receiver<Vec<u8>> {
+fn drain(program: &str, pipe: Option<impl Read + Send + 'static>) -> mpsc::Receiver<Vec<u8>> {
     let (tx, rx) = mpsc::channel();
     // (A thread that can't start drops its sender: the output reads as empty.)
     if let Some(mut pipe) = pipe {
-        let _ = crate::os::worker::detached("output", move || {
+        let name = program.to_owned();
+        let started = crate::os::worker::detached("output", move || {
             let mut out = Vec::new();
-            let _ = pipe.read_to_end(&mut out);
-            let _ = tx.send(out);
+            if let Err(e) = pipe.read_to_end(&mut out) {
+                log::warn!("{name}: reading its output: {e}");
+            }
+            if tx.send(out).is_err() {
+                log::debug!("{name}: its output came after it was given up");
+            }
         });
+        if let Err(e) = started {
+            log::warn!("{program}: reading its output: {e}");
+        }
     }
     rx
 }

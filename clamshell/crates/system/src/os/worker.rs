@@ -62,14 +62,20 @@ impl Bell {
     }
 
     pub fn ring(&self) {
-        let _ = rustix::io::write(&*self.0, &1u64.to_ne_bytes());
+        if let Err(e) = rustix::io::write(&*self.0, &1u64.to_ne_bytes()) {
+            log::warn!("ringing a thread's bell: {e}");
+        }
     }
 
     /// Resets the bell, however often it rang. The bell carries no message: whatever rang it is waiting
     /// in the command channel, or is for the ringer to say.
     pub fn clear(&self) {
         let mut count = [0u8; 8];
-        let _ = rustix::io::read(&*self.0, &mut count);
+        if let Err(e) = rustix::io::read(&*self.0, &mut count)
+            && e != rustix::io::Errno::AGAIN
+        {
+            log::warn!("clearing a thread's bell: {e}");
+        }
     }
 }
 

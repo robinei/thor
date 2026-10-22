@@ -36,8 +36,12 @@ pub fn gpu_ns(dir: &Path) -> u64 {
         for pid in sys::text(d.join("cgroup.procs")).unwrap_or_default().lines() {
             clients.extend(drm::clients(&Path::new("/proc").join(pid)));
         }
-        if let Ok(entries) = std::fs::read_dir(&d) {
-            dirs.extend(entries.flatten().filter(|e| e.file_type().is_ok_and(|t| t.is_dir())).map(|e| e.path()));
+        match std::fs::read_dir(&d) {
+            Ok(entries) => {
+                let entries = entries.filter_map(|e| e.inspect_err(|e| log::trace!("reading {}: {e}", d.display())).ok());
+                dirs.extend(entries.filter(|e| e.file_type().is_ok_and(|t| t.is_dir())).map(|e| e.path()));
+            }
+            Err(e) => log::trace!("reading {}: {e}", d.display()),
         }
     }
     clients.values().sum()

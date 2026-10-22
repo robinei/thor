@@ -36,10 +36,15 @@ fn parse_fdinfo(text: &str) -> Option<(u64, u64)> {
 /// several file descriptors counts once. Only our user's processes can be read.
 pub fn clients(process: &Path) -> HashMap<u64, u64> {
     let mut clients = HashMap::new();
-    let Ok(fds) = fs::read_dir(process.join("fd")) else {
-        return clients;
+    let dir = process.join("fd");
+    let fds = match fs::read_dir(&dir) {
+        Ok(fds) => fds,
+        Err(e) => {
+            log::trace!("reading {}: {e}", dir.display());
+            return clients;
+        }
     };
-    for fd in fds.flatten() {
+    for fd in fds.filter_map(|fd| fd.inspect_err(|e| log::trace!("reading {}: {e}", dir.display())).ok()) {
         if !fs::read_link(fd.path()).is_ok_and(|t| t.starts_with("/dev/dri")) {
             continue;
         }
