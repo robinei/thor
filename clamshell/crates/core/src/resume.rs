@@ -1,6 +1,6 @@
-//! Coming back to the same place after a restart: shelf's current collection and each collection's open
-//! groups and selected entry, and the second screen's tab; and the screens' brightness. Both are
-//! written once changes have stopped for a moment.
+//! Coming back to the same place after a restart. This covers shelf's current collection, each
+//! collection's open groups and selected entry, and the second screen's tab, and also the screens'
+//! brightness. Both are written once changes have stopped for a moment.
 
 use crate::State;
 use crate::bottom::Tab;
@@ -23,9 +23,10 @@ pub(crate) struct Saves {
 pub struct Resume {
     /// Shelf's current collection, by name.
     pub collection: String,
-    /// The second screen's tab, by its name: the one chosen (not the keyboard a text field brought up).
+    /// The second screen's tab, by name. This is the tab that was chosen, not the keyboard a text field
+    /// brought up.
     pub tab: String,
-    /// Each collection's place: its name, then its open groups' ids and its selected entry's id.
+    /// Each collection's place: its name, then the ids of its open groups and of its selected entry.
     pub places: Vec<(String, Vec<String>)>,
 }
 
@@ -39,9 +40,9 @@ impl State {
         }
     }
 
-    /// Goes back to the place `resume` saved (collections and entries that are gone are skipped).
+    /// Goes back to the place `resume` saved. Collections and entries that are gone are skipped.
     pub(crate) fn restore(&mut self, resume: &Resume) {
-        // Any tab but the touchpad, where every touch moves the pointer, so it opens only on request.
+        // Any tab but the touchpad. There every touch moves the pointer, so it opens only on request.
         // What a tab watches starts with Event::Start.
         if let Some(tab) = Tab::from_name(&resume.tab).filter(|t| *t != Tab::Touchpad) {
             self.bottom.tab = tab;

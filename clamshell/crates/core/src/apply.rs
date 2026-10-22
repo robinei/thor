@@ -1,5 +1,5 @@
-//! Applying an event: which feature's rules it goes to, and what follows from it everywhere after, in
-//! the order each step needs the ones before settled.
+//! Applying an event: which feature's rules handle it, and then everything that follows from it
+//! elsewhere. The follow-up steps run in an order where each one finds the steps it depends on settled.
 
 use crate::bottom::keyboard::Key;
 use crate::kit::replace;
@@ -11,9 +11,9 @@ use crate::{
 };
 
 impl State {
-    /// Applies one event; returns which screens changed and what must happen outside. After the event
-    /// itself, what follows from it everywhere: the pad mouse follows the game in front, the pad goes
-    /// where it is wanted, and idle moves on (or back).
+    /// Applies one event and returns which screens changed and what must happen outside. After the event
+    /// itself, everything that follows from it is applied: the pad mouse follows the game in front, the
+    /// pad is routed to where it is wanted, and idle moves on or back.
     pub fn apply(&mut self, event: Event) -> (Dirty, Vec<Effect>) {
         let session_input = matches!(event, Event::Tick { .. } | Event::Windows(_) | Event::Units(_) | Event::Tray(_) | Event::Launch(_) | Event::Library(_));
         let (mut dirty, mut effects) = self.apply_event(event);
@@ -33,7 +33,8 @@ impl State {
         effects.extend(self.follow_watch());
         let (changed, applied) = self.follow_program();
         effects.extend(applied);
-        // (After the program in force: its setting, its darkness; the watch again if it changed.)
+        // This comes after the program in force is settled, since it reads that program's setting and
+        // darkness. If it changed anything, the watch is followed again.
         let power = self.follow_bottom_power();
         if !power.is_empty() {
             effects.extend(power);
@@ -53,22 +54,22 @@ impl State {
         (dirty, effects)
     }
 
-    /// After any change of what the session follows (the windows, systemd's scopes, the tray, the
-    /// launcher's word, the library) and every second: everything that follows from it, in this order
-    /// (each step reads what the ones before settled):
+    /// Runs after any change to what the session follows (the windows, systemd's scopes, the tray, the
+    /// launcher's messages, the library), and every second. It applies everything that follows, in this
+    /// order, since each step reads what the earlier ones settled:
     ///
-    /// 1. systemd's scopes: entries found running, found ones promoted to launches, ours ended
-    ///    ([`State::follow_units`]); the first time, the entries to start with ClamShell started;
-    /// 2. the windows: entries started or ended by them, windows moved to their entries, programs found
-    ///    by them ([`State::follow_windows`]; `known`: the windows the last pass saw); rules sending
-    ///    windows down;
-    /// 3. In the background: entries paused, thawed or ended by their setting (reads 1 and 2);
-    /// 4. what is shown: a launch's first window, a workspace whose window came back, the one in front
-    ///    closed (back to what was before);
-    /// 5. entries quitting ended once their windows are gone (reads 1–3);
-    /// 6. the dock: running entries on it, ended ones off.
+    /// 1. systemd's scopes: entries found running, found ones promoted to launches, and ours ended
+    ///    ([`State::follow_units`]). The first time, the entries to start with ClamShell are started.
+    /// 2. The windows: entries started or ended by them, windows moved to their entries, and programs
+    ///    found by them ([`State::follow_windows`]; `known` is the set of windows the last pass saw).
+    ///    Then the rules that send windows down.
+    /// 3. In the background: entries paused, thawed or ended by their setting. This reads 1 and 2.
+    /// 4. What is shown: a launch's first window, a workspace whose window came back, and going back to
+    ///    what was before when the one in front closed.
+    /// 5. Quitting entries are ended once their windows are gone. This reads 1 to 3.
+    /// 6. The dock: running entries are added to it and ended ones removed.
     ///
-    /// Each step does nothing when nothing changed for it. Whether the running entries changed.
+    /// A step does nothing when nothing changed for it. Returns whether the running entries changed.
     fn reconcile(&mut self) -> (bool, Vec<Effect>) {
         let before: Vec<std::sync::Arc<str>> = self.session.running.iter().map(|r| r.id.clone()).collect();
         let known = std::mem::take(&mut self.session.followed_windows);
@@ -84,7 +85,8 @@ impl State {
         effects.extend(self.session.show_reopened(self.mono_secs));
         effects.extend(self.follow_quitting());
         effects.extend(self.follow_closed(was));
-        // (After the one in front closing: a window just taken by a browsed file is shown over it.)
+        // After handling the front one closing, so that a window just taken by a browsed file is shown
+        // over it.
         effects.extend(by_windows);
         let docked = self.follow_dock();
         self.session.followed_windows = self.session.windows.iter().map(|w| w.id).collect();
@@ -93,14 +95,14 @@ impl State {
         (docked || !after.eq(before.iter()), effects)
     }
 
-    /// The program in force changed: the pad mouse on if it wants it (Setting::PadMouse), off again if it
-    /// was the program's. Whether it changed.
+    /// Called when the program in force changed. Turns the pad mouse on if the program wants it
+    /// (Setting::PadMouse), and off again if the program had turned it on. Returns whether it changed.
     fn follow_pad_mouse(&mut self) -> bool {
         let wanted = self.session.program.is_some() && self.in_force().choice::<MouseAtLaunch>() == MouseAtLaunch::On;
         self.pad.follow_game(wanted)
     }
 
-    /// Where the pad goes, as things are now; the new route, if it changed.
+    /// Works out where the pad goes as things are now. Returns the new route if it changed.
     pub(crate) fn reconcile_pad(&mut self) -> Option<PadRoute> {
         let listening = self.listening();
         let moving = self.dock.moving.is_some() && self.bottom.tab == Tab::Dock;
@@ -138,7 +140,7 @@ impl State {
                 (Dirty::BOTTOM, vec![])
             }
             Event::Start => (Dirty::BOTH, self.ui_started()),
-            // On a screen that listens, Home leaves it (it is never an input).
+            // On a screen that listens for input, Home leaves it. Home is never taken as an input.
             Event::Home if self.listening() => {
                 self.keymap_back();
                 (Dirty::BOTTOM, vec![])
@@ -149,11 +151,12 @@ impl State {
                 self.pad.switch();
                 (Dirty::NONE, vec![])
             }
-            // (Never applied: the UI handles the pad's navigation itself.)
+            // Never applied here: the UI handles pad navigation itself.
             Event::Pad(_) => (Dirty::NONE, vec![]),
             Event::TextInput(active) => self.text_input_changed(active),
             Event::Pointing(pointing) => self.pointing(pointing),
-            // Sleep may have reset what the settings set (frequency caps, cores): again.
+            // Sleep may have reset what the settings set, such as frequency caps and cores, so apply them
+            // again.
             Event::Resumed => {
                 self.idle.resumed(self.mono_secs);
                 (Dirty::NONE, vec![Effect::Apply { entry: self.session.program.clone(), settings: self.in_force() }])
@@ -179,7 +182,8 @@ impl State {
             Event::Sticks(event) => (Dirty::TOP, self.sticks_event(event)),
             Event::RefreshCalibrated(result) => {
                 self.on_refresh(result);
-                // (The tool turned the bottom screen off meanwhile and back as it was: as ClamShell has it.)
+                // The tool turned the bottom screen off while it ran and then restored it. Set it to what
+                // ClamShell wants.
                 (Dirty::TOP, vec![Effect::Window(WindowCommand::BottomPower(!self.bottom_off()))])
             }
             Event::GyroCalibrated(ok) => {
@@ -194,7 +198,7 @@ impl State {
         }
     }
 
-    /// A reading from a system thread: the battery warned about after a status reading.
+    /// A reading from a system thread. After a status reading, the battery warning is checked.
     fn reading_came(&mut self, reading: Reading) -> (Dirty, Vec<Effect>) {
         let status = matches!(reading, Reading::Status(_));
         let dirty = self.on_reading(reading);
@@ -202,8 +206,8 @@ impl State {
         (if self.follow_lists() { Dirty::BOTTOM } else { dirty }, effects)
     }
 
-    /// A touch or the pad's focus: the pad's focus, or a press, on the second screen's targets means it
-    /// is in use.
+    /// A touch or a pad focus change. Focusing or pressing a target on the second screen counts as using
+    /// that screen.
     fn pointer_event(&mut self, e: PointerEvent) -> (Dirty, Vec<Effect>) {
         let used = match &e {
             PointerEvent::Focus(id) | PointerEvent::Activate(id) | PointerEvent::LongPress(id) | PointerEvent::Down(id) => id.screen() == Dirty::BOTTOM,
@@ -214,8 +218,9 @@ impl State {
         (dirty.or(lit), effects)
     }
 
-    /// The library read anew: problems it didn't have before said once, shelf reloaded, and what
-    /// follows from its entries (runners' pauses and keymaps, landing rules, pins of entries gone).
+    /// The library was read again. New problems are reported once and shelf is reloaded. Then what
+    /// depends on its entries is updated: runners' pauses and keymaps, landing rules, and pins of entries
+    /// that are gone.
     fn library_read(&mut self, library: Library) -> Vec<Effect> {
         let problems = &library.problems;
         if !problems.is_empty() && *problems != self.shelf.library().problems {
@@ -235,9 +240,9 @@ impl State {
         effects
     }
 
-    /// The UI is up: what was waiting for it (pins dropped at start saved, the brightness, the pad's
-    /// route, the keymaps, the down rules). The open tab's watch starts from now (see
-    /// [`State::follow_watch`]).
+    /// The UI is up. Sends what was waiting for it: the dock if pins were dropped at start, the
+    /// brightness, the pad's route, the keymaps and the down rules. The open tab's watch starts from now
+    /// (see [`State::follow_watch`]).
     fn ui_started(&mut self) -> Vec<Effect> {
         self.ui_up = true;
         let mut effects: Vec<Effect> = Vec::new();
@@ -268,7 +273,7 @@ impl State {
         (dirty, effects)
     }
 
-    /// The touchpad tab's contacts: passed on as the pointer's, or none.
+    /// Contacts on the touchpad tab, passed on to the pointer, or none.
     fn pointing(&mut self, pointing: crate::bottom::touch::Pointing) -> (Dirty, Vec<Effect>) {
         let before = self.bottom.pointing;
         let effects = match pointing {
@@ -284,18 +289,18 @@ impl State {
         (if self.bottom.pointing == before { Dirty::NONE } else { Dirty::BOTTOM }, effects)
     }
 
-    /// A stick calibration's progress or end; a calibration made is saved.
+    /// Progress or the end of a stick calibration. A finished calibration is saved.
     fn sticks_event(&mut self, event: device::SticksEvent) -> Vec<Effect> {
         let done = matches!(event, device::SticksEvent::Done(_, Some(_)));
         self.on_sticks(event);
         if done { vec![self.sticks_saved()] } else { vec![] }
     }
 
-    /// The clock: once a minute the bar's clock and both screens' burn-in orbit step; starts systemd
-    /// never listed are forgotten; what changed is saved once changes have stopped for a moment.
+    /// The clock ticked. Once a minute, the bar's clock and both screens' burn-in orbit move on. Changes
+    /// are saved once they have stopped for a moment.
     fn tick(&mut self, unix_secs: u64, mono_secs: u64) -> (Dirty, Vec<Effect>) {
         let minute_changed = unix_secs / 60 != self.unix_secs / 60;
-        // The clock's first word: what idle heard before it was dated 0. Count from now.
+        // The first tick. Anything idle heard before it was timed at 0, so count from now.
         if self.unix_secs == 0 {
             self.idle.resumed(mono_secs);
         }
@@ -319,7 +324,7 @@ impl State {
         (dirty, effects)
     }
 
-    /// A reading of the system: kept, and redrawn if it changed what the second screen shows.
+    /// A reading of the system. It is stored, and the second screen is redrawn if it shows what changed.
     fn on_reading(&mut self, reading: Reading) -> Dirty {
         let shown = self.bottom.tab.shows(&reading);
         let changed = match reading {
@@ -329,7 +334,7 @@ impl State {
                 let running = self.session.running.iter_mut().find(|r| r.id == entry);
                 running.and_then(|r| r.entry.as_mut()).is_some_and(|g| replace(&mut g.icon, Some(path)))
             }
-            // (The graphs move on with every reading.)
+            // The graphs move on with every reading.
             Reading::Metrics(metrics) => {
                 self.sys.read_metrics(metrics);
                 true
@@ -345,7 +350,7 @@ impl State {
             Reading::Backlights(backlights) => self.levels.read_backlights(backlights),
             Reading::Time(time) => replace(&mut self.sys.time, time),
             Reading::Account(account) => {
-                // (The Device view shows it, on the main screen.)
+                // The account is shown in the Device view, on the main screen.
                 let changed = replace(&mut self.sys.account, account);
                 return if changed && self.device.open { Dirty::TOP } else { Dirty::NONE };
             }
@@ -353,8 +358,8 @@ impl State {
         if changed && shown { Dirty::BOTTOM } else { Dirty::NONE }
     }
 
-    /// A status reading: the volume, mute and brightness go to the levels (where the finger's value
-    /// wins while it is on one). Whether what the bar shows changed.
+    /// A status reading. The volume, mute and brightness go to the levels, where a finger on a slider
+    /// wins over the reading. Returns whether what the bar shows changed.
     fn read_status(&mut self, status: Status) -> bool {
         let shown = |s: &State| Status { volume: s.levels.volume(), muted: s.levels.muted(), ..s.sys.status };
         let before = shown(self);
@@ -364,7 +369,7 @@ impl State {
     }
 
     fn on_pointer(&mut self, event: PointerEvent) -> (Dirty, Vec<Effect>) {
-        // Input that reached ClamShell itself (the pad driving the screens).
+        // Input that reached ClamShell itself, such as the pad driving the screens.
         self.idle.own_input(self.mono_secs);
         match event {
             PointerEvent::Focus(id) => {
@@ -374,7 +379,7 @@ impl State {
                 (Dirty::BOTH, vec![])
             }
             PointerEvent::HideFocus => (if self.pointer.hide_focus() { Dirty::BOTH } else { Dirty::NONE }, vec![]),
-            // (A press that woke the screens only woke them.)
+            // A press that woke the screens does nothing else.
             PointerEvent::Activate(_) | PointerEvent::LongPress(_) if self.idle.swallows_press(self.mono_secs) => (Dirty::NONE, vec![]),
             PointerEvent::Activate(id) => self.activate(&id, false),
             PointerEvent::LongPress(id) => self.activate(&id, true),
@@ -405,8 +410,8 @@ impl State {
         }
     }
 
-    /// A tap (or long press) on `id`, as the press that came down on it meant it: it gets the focus,
-    /// and its subsystem acts on it.
+    /// A tap or long press on `id`, resolved to what the press landed on. It gets the focus, and its
+    /// subsystem acts on it.
     fn activate(&mut self, id: &Id, long: bool) -> (Dirty, Vec<Effect>) {
         // The list item the press came down on is gone.
         let Some(id) = self.resolve(id) else {
@@ -414,8 +419,9 @@ impl State {
         };
         self.pointer.focus = Some(id.clone());
         match id {
-            // Held on the selected entry with the pad (its focus showing): the pad to its actions, the
-            // first focused (up and down go through them, A does one, B goes back to the list).
+            // A hold on the selected entry with the pad, while its focus is showing, moves the pad to the
+            // entry's actions and focuses the first. Up and down go through them, A runs one, and B goes
+            // back to the list.
             Id::Shelf(ShelfId::Entry(game)) if long && self.pointer.show_focus && self.shelf.selected() == Some(&game) => {
                 if let Some(first) = self.actions().as_slice().first() {
                     self.pointer.focus = Some(Id::Shelf(first.id()));
@@ -433,12 +439,12 @@ impl State {
             Id::Row { list, i, part } => (list.screens(), self.on_row(list, usize::from(i), part, long)),
             Id::Keymap(id) => (Dirty::BOTTOM, self.on_keymap(id, long)),
             Id::Tab(tab) => (Dirty::BOTH, self.choose_tab(tab)),
-            // A tap opens the tab (a slide is the UI's: it doesn't end in a tap).
+            // A tap opens the tab. Slides are handled by the UI and don't end in a tap.
             Id::Control(control) if !long => {
                 let tab = match control {
                     Control::Volume => Tab::Volume,
                     Control::Brightness => Tab::Brightness,
-                    // (A keymap's parameter is held or slid, not tapped.)
+                    // A keymap parameter is held or slid, not tapped.
                     Control::Param(_) => return (Dirty::NONE, vec![]),
                 };
                 (Dirty::BOTH, self.choose_tab(tab))
@@ -446,8 +452,8 @@ impl State {
             Id::Control(_) | Id::Level(_) | Id::List(_) | Id::Blank => (Dirty::NONE, vec![]),
             Id::Key(pos) => {
                 let stroke = self.keyboard.press(pos, long);
-                // Into the editor while it is open; with shelf in front, to finding an entry; else to the
-                // focused app.
+                // The key goes to the editor while it is open, to finding an entry while shelf is in
+                // front, and otherwise to the focused app.
                 let effects = match stroke {
                     Some(stroke) if self.bottom.editor().is_some() => self.edit(stroke),
                     Some(stroke) if self.capturing() => self.captured(State::chord(stroke)),

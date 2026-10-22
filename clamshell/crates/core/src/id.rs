@@ -1,8 +1,11 @@
-//! Stable ids of everything that can be focused or tapped, on either screen, grouped by what they belong
-//! to: [`Id`], and an enum per screen of its targets (`ShelfId`, `DockId`, `KeymapId`, ...). These name
-//! targets, not the things they act on (a keymap's own id is its number, a `u16`). Focus is kept by id, so
-//! it survives redraws and layout changes; list items are named by position (so drawing needs no
-//! allocation) and resolved by what they are when pressed (see [`crate::nav::items`]).
+//! Stable ids for everything that can be focused or tapped on either screen. [`Id`] groups them by what
+//! they belong to, with an enum of targets per screen (`ShelfId`, `DockId`, `KeymapId`, ...). These ids
+//! name targets, not the things the targets act on; a keymap's own id, for example, is its number, a
+//! `u16`.
+//!
+//! Focus is kept by id, so it survives redraws and layout changes. List items are named by position, so
+//! drawing needs no allocation, and are resolved to what they are when pressed (see
+//! [`crate::nav::items`]).
 
 use std::sync::Arc;
 
@@ -23,46 +26,46 @@ pub enum Id {
     Dock(DockId),
     /// The settings tab.
     Settings(SettingsId),
-    /// The editor's buttons (the environment, a Wi-Fi password).
+    /// The editor's buttons, for the environment or a Wi-Fi password.
     Editor(EditorId),
     Wifi(WifiId),
     Bluetooth(BtId),
     /// The volume tab's buttons.
     Audio(AudioId),
-    /// A level row in the volume or brightness tab: the finger sets it.
+    /// A level row in the volume or brightness tab, set by a finger.
     Level(Level),
     /// An on-screen keyboard key, by position.
     Key(KeyPos),
     /// A tab's icon in the bar.
     Tab(Tab),
-    /// Volume or brightness in the bar: a tap opens its tab, a hold or a slide brings up its slider.
+    /// Volume or brightness in the bar. A tap opens its tab, and a hold or a slide brings up its slider.
     Control(Control),
     /// The pad mouse toggle.
     PadMouse,
-    /// A row of a scrolled list, by position: the row, or one of its controls.
+    /// A row of a scrolled list by position, or one of the row's controls.
     Row {
         list: crate::nav::lists::ListId,
         i: u16,
         part: crate::nav::lists::RowPart,
     },
-    /// The keymaps' screens' buttons (see [`crate::keymap::screens`]).
+    /// Buttons on the keymap screens (see [`crate::keymap::screens`]).
     Keymap(KeymapId),
-    /// A scrolled list's area, under its rows: a finger on it (between rows) drags the list; a tap does
+    /// A scrolled list's area, under its rows. A finger on it between rows drags the list, and a tap does
     /// nothing.
     List(crate::nav::lists::ListId),
-    /// The dark second screen (while a game runs): a tap anywhere lights it.
+    /// The darkened second screen while a game runs. A tap anywhere lights it.
     Wake,
-    /// The second screen below the bar where there is nothing: a tap does nothing, a finger moving
-    /// points (see [`crate::bottom::touch`]).
+    /// Empty space on the second screen below the bar. A tap does nothing, and a moving finger points
+    /// (see [`crate::bottom::touch`]).
     Blank,
-    /// The time tab's (see [`crate::status::time`]).
+    /// The time tab's targets (see [`crate::status::time`]).
     Time(TimeId),
-    /// The Device view's (see [`crate::device`]).
+    /// The Device view's targets (see [`crate::device`]).
     Device(DeviceId),
     /// The battery tab's list of what is using the machine (see [`crate::status::battery`]).
     Battery(BatteryId),
-    /// The bar's button for the front program's windows on the bottom screen, hidden by ClamShell's view:
-    /// they are shown.
+    /// The bar's button that shows the front program's windows on the bottom screen when ClamShell's
+    /// view is hiding them.
     BottomWindows,
 }
 
@@ -72,16 +75,17 @@ pub enum ShelfId {
     /// A collection, by position.
     Collection(u16),
     Launch,
-    /// Out of the open group (back to the list it is in).
+    /// Leaves the open group, back to the list it is in.
     Up,
-    /// The details' actions: the selected entry a favourite or not, pinned to the dock or not.
+    /// Actions in the details: make the selected entry a favourite or not, and pin it to the dock or not.
     Favourite,
     Pin,
-    /// A folder's next video played (see [`crate::Library::to_continue`]).
+    /// Plays a folder's next video (see [`crate::Library::to_continue`]).
     Continue,
-    /// The selected entry (or the entries selected) added to what its runner plays (see [`crate::session::enqueue`]).
+    /// Adds the selected entry, or the selected entries, to what its runner plays (see
+    /// [`crate::session::enqueue`]).
     Enqueue,
-    /// A browsed entry's file action, or the folder open's (see [`crate::shelf::files`]).
+    /// A file action on a browsed entry or on the open folder (see [`crate::shelf::files`]).
     File(crate::shelf::files::FileAction),
 }
 
@@ -89,8 +93,8 @@ pub enum ShelfId {
 pub enum DockId {
     /// An entry on the dock, by position.
     Entry(u16),
-    /// The menu a long press opens (see [`crate::session::dock`]): another launch, the window in view closed,
-    /// pinned or unpinned, moved, quit, force killed, back to the dock.
+    /// The menu a long press opens (see [`crate::session::dock`]). Its items: open another, close the
+    /// window in view, pin or unpin, move, quit, force kill, and back to the dock.
     OpenAnother,
     CloseWindow,
     Pin,
@@ -98,34 +102,35 @@ pub enum DockId {
     Quit,
     ForceKill,
     Back,
-    /// The corner mark of the tile at this position: its program's tray menu (see [`crate::session::tray`]).
+    /// The corner mark of the tile at this position, which opens its program's tray menu (see
+    /// [`crate::session::tray`]).
     Tray(u16),
-    /// Its long-press menu's Menu: the same.
+    /// Menu in the long-press menu, which opens the same tray menu.
     TrayMenu,
-    /// Its long-press menu's Start with ClamShell, or Don't (see [`crate::session::autostart`]).
+    /// Start with ClamShell, or Don't, in the long-press menu (see [`crate::session::autostart`]).
     Autostart,
-    /// Its long-press menu's Suspend, or Resume (see [`crate::session::background`]).
+    /// Suspend or Resume in the long-press menu (see [`crate::session::background`]).
     Suspend,
-    /// An entry of that menu, by its id there.
+    /// An entry of the tray menu, by its id there.
     TrayEntry(i32),
-    /// Move mode: the entry one place (or row) along; done.
+    /// In move mode, moves the entry one place or row along. `Done` ends move mode.
     Step(crate::keymap::Dir),
     Done,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SettingsId {
-    /// A tile: a tap steps to the next value, a long press goes back to the default.
+    /// A tile. A tap steps to the next value, and a long press goes back to the default.
     Tile(Setting),
     /// The environment variables tile.
     Env,
     /// The panel's scope tabs.
     Scope(Scope),
-    /// Drops the game in context's overrides.
+    /// Drops the overrides of the game in context.
     Reset,
 }
 
-/// The keymaps' screens' buttons (the picker's rows are [`Id::Row`]s of [`crate::ListId::Keymaps`]).
+/// Buttons on the keymap screens. The picker's rows are [`Id::Row`]s of [`crate::ListId::Keymaps`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeymapId {
     /// Back one screen.
@@ -137,73 +142,75 @@ pub enum KeymapId {
     Rename,
     Duplicate,
     Delete,
-    /// Deleting a keymap games use, after all.
+    /// Confirms deleting a keymap that games use.
     ConfirmDelete,
-    /// A game's own keymap made from the one in force there (the picker's row, the edit screen's action
-    /// while a shared keymap is edited).
+    /// Makes a game its own keymap from the one in force for it. This is a row in the picker, and an
+    /// action on the edit screen while a shared keymap is being edited.
     MakeOwn,
-    /// A game's own keymap's menu: the named keymaps to save it over, or as a new one.
+    /// In the menu of a game's own keymap: save it over a named keymap, or as a new one.
     SaveAs,
-    /// Saving over a named keymap, after all.
+    /// Confirms saving over a named keymap.
     ConfirmSave,
-    /// A game's own keymap's menu: the keymaps to load into it.
+    /// In the menu of a game's own keymap: the keymaps to load into it.
     LoadFrom,
-    /// An input on the edit screen: a tap selects it (its panel), a tap on the selected one opens the way
-    /// it is mapped now; a long press sets it back (in the layer shown). While a control is being picked,
-    /// the one picked.
+    /// An input on the edit screen. A tap selects it and shows its panel, and a tap on the selected one
+    /// opens the way it is mapped now. A long press resets it in the layer shown. While a control is being
+    /// picked, this is the control picked.
     Input(crate::keymap::Input),
-    /// The edit screen shows and edits this layer (a long press: its menu).
+    /// Makes the edit screen show and edit this layer. A long press opens the layer's menu.
     Layer(crate::keymap::Layer),
-    /// The edit screen's Undo: the keymap as it was before its last change.
+    /// Undo on the edit screen, which puts the keymap back as it was before its last change.
     Undo,
-    /// A layer's Edit, in the list of layers: its menu.
+    /// A layer's Edit in the list of layers, which opens its menu.
     EditLayer(crate::keymap::Layer),
-    /// A layer's menu: its Once switch.
+    /// The Once switch in a layer's menu.
     LayerOnce,
-    /// The edit screen's layer button: the list of the keymap's layers (to show one, add one, or a
-    /// long press: its menu).
+    /// The edit screen's layer button. It opens the list of the keymap's layers, to show one or add one,
+    /// or with a long press to open a layer's menu.
     LayerPicker,
-    /// A layer's menu: rename it, delete it.
+    /// Rename and delete in a layer's menu.
     RenameLayer,
     DeleteLayer,
-    /// The layers' list (a layer as a target): this layer, or a new one.
+    /// In the list of layers chosen as a target: this layer, or a new one.
     ToLayer(crate::keymap::Layer),
     NewLayer,
-    /// The panel shows and edits the selected input's binding of this actuation (press, hold, double).
+    /// Makes the panel show and edit the selected input's binding for this actuation: press, hold or
+    /// double.
     Actuation(crate::keymap::Actuation),
-    /// "No changes": the layer shown is cleared, once confirmed.
+    /// "No changes", which clears the layer shown once confirmed.
     Clear,
     ConfirmClear,
-    /// A way to remap the selected input (the panel's icons), or what it maps to.
+    /// A way to remap the selected input, from the panel's icons, or what it maps to.
     Target(Target),
-    /// A switch among the selected input's parameters (an inversion), flipped.
+    /// Flips a switch among the selected input's parameters, such as an inversion.
     Toggle(crate::keymap::Param),
-    /// The panel's "Active" row of the gyro: the choice of what holds it on opens.
+    /// The gyro panel's "Active" row, which opens the choice of what holds the gyro on.
     Holds,
-    /// The gyro calibrated from its next second (the device held still).
+    /// Calibrates the gyro from its next second of readings, with the device held still.
     Calibrate,
-    /// What holds the gyro on (none: always on).
+    /// What holds the gyro on. None means it is always on.
     Hold(Option<crate::keymap::Input>),
-    /// The modifiers alone as the chord (Shift as a key).
+    /// Takes the modifiers alone as the chord, for example Shift as a key.
     Done,
 }
 
-/// What the selected input is remapped to: a way to choose it (the panel's icons: one closes as soon as
-/// something is chosen, Back gives up), or the output itself.
+/// What the selected input is remapped to. It is either a way to choose the output, from the panel's
+/// icons, or the output itself. A chooser closes as soon as something is chosen, and Back gives up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Target {
-    /// No binding: in Base, as on the pad (the gyro: off); in another layer, as the layers below it.
+    /// No binding. In Base, the input works as on the pad, and the gyro is off. In another layer, it works
+    /// as in the layers below.
     Default,
-    /// A control picked on the pad's drawing, tapped or pressed on the pad: a button, a trigger, a stick,
-    /// the D-pad.
+    /// A control picked on the pad's drawing by tapping it or pressing it on the pad: a button, a trigger,
+    /// a stick or the D-pad.
     Pick,
     /// A key chord typed on the keyboard.
     Key,
-    /// Four keys typed in turn (a stick).
+    /// Four keys typed in turn, for a stick.
     Keys,
-    /// A part of the mouse picked on its drawing: a button, the wheel.
+    /// A part of the mouse picked on its drawing: a button or the wheel.
     MouseParts,
-    /// A layer of the keymap, from the list of them (on while the binding is).
+    /// A layer of the keymap, picked from the list. The layer is on while the binding is held.
     Layers,
     /// An output chosen directly.
     To(crate::keymap::Output),
@@ -236,8 +243,8 @@ pub enum AudioId {
 }
 
 impl Id {
-    /// Which screens a press on it redraws: shelf's targets are on the main screen, and the second
-    /// screen's settings tab follows shelf's selection; everything else is on the second screen.
+    /// Which screens a press on this target redraws. Shelf's targets are on the main screen, and the
+    /// second screen's settings tab follows shelf's selection. Everything else is on the second screen.
     pub(crate) fn screen(&self) -> Dirty {
         match self {
             Id::Shelf(_) => Dirty::BOTH,
@@ -249,41 +256,42 @@ impl Id {
 /// The time tab's targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TimeId {
-    /// The header's way back: from a region's zones to the regions, from those to the main page.
+    /// The header's back button. It goes from a region's zones to the regions, and from those to the main
+    /// page.
     Back,
-    /// The time zone's row: the regions.
+    /// The time zone row, which opens the regions.
     Zone,
     /// Whether the network sets the clock.
     Ntp,
-    /// 12 hours or 24.
+    /// 12-hour or 24-hour clocks.
     TwelveHour,
-    /// A field one up (`true`) or down, while the clock is set by hand.
+    /// Steps a field up (`true`) or down, while the clock is set by hand.
     Step(ClockField, bool),
 }
 
 /// The Device view's targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DeviceId {
-    /// Wi-Fi's row: the Wi-Fi tab.
+    /// The Wi-Fi row, which opens the Wi-Fi tab.
     Wifi,
-    /// The time zone's row: the time tab.
+    /// The time zone row, which opens the time tab.
     Zone,
     Password,
     Ssh,
-    /// The sticks calibrated.
+    /// Calibrates the sticks.
     Sticks,
-    /// The gyro calibrated.
+    /// Calibrates the gyro.
     Gyro,
-    /// The top screen's refresh rate calibrated.
+    /// Calibrates the top screen's refresh rate.
     Refresh,
-    /// The first start's setup done.
+    /// Finishes the first-start setup.
     Done,
     /// Back to shelf.
     Close,
 }
 
-/// A choice in the menu of a row of the list (a tap on it opens it): Quit or Force kill what it is, or
-/// back to the list.
+/// The battery tab's list of what is using the machine. A tap on a row opens its menu, which offers
+/// Quit, Force kill, or back to the list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BatteryId {
     /// The list's row, by position.
@@ -296,8 +304,8 @@ pub enum BatteryId {
 /// What holding a target does once the press lasts beyond a tap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Hold {
-    /// Activate now and again at the repeat rate until released (keyboard keys).
+    /// Activate now and again at the repeat rate until released, as keyboard keys do.
     Repeat,
-    /// One long press, then nothing on release (locks a modifier).
+    /// One long press, then nothing on release. This locks a modifier.
     Long,
 }

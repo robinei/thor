@@ -15,8 +15,8 @@ use crate::settings::Values;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
-    /// Start this entry (its launch command or Steam id, and its file) with these settings and extra
-    /// environment, in a scope and on a workspace of its own.
+    /// Start this entry, by its launch command or Steam id and its file, with these settings and extra
+    /// environment. It runs in its own scope and on its own workspace.
     Launch {
         entry: Arc<str>,
         instance: Instance,
@@ -24,93 +24,95 @@ pub enum Effect {
         env: Vec<(String, String)>,
         launch: Launch,
     },
-    /// The settings in force changed: the running entry's (`entry`), or the global ones while none runs
-    /// (also when one ends). Apply them now.
+    /// The settings in force changed. They are the running entry's (`entry`), or the global ones while
+    /// nothing runs, including when an entry ends. Apply them now.
     Apply {
         entry: Option<Arc<str>>,
         settings: Values,
     },
-    /// The keymap in force changed (the game's, or all games'; Default: id 0, no bindings): the pad
-    /// remaps by it.
+    /// The keymap in force changed, and the pad remaps by it. It is the game's own keymap or the one for
+    /// all games. The Default keymap has id 0 and no bindings.
     Keymap(crate::keymap::Keymap),
     /// Write one of ClamShell's files.
     Save(Save),
-    /// A key press for the focused app (virtual keyboard).
+    /// A key press for the focused app, through the virtual keyboard.
     Key(Stroke),
-    /// Fingers pointing (one touch frame's), for the virtual touchpad.
+    /// The fingers pointing in one touch frame, for the virtual touchpad.
     Touchpad(Vec<crate::bottom::touch::Contact>),
     /// Where the controller's input goes now.
     PadRoute(PadRoute),
-    /// The compositor: show, close or move windows.
+    /// Ask the compositor to show, close or move windows.
     Window(WindowCommand),
-    /// End an entry's slice (all its launches): stopped (systemd asks its processes to end, then kills
-    /// what is left after its timeout), or with `force` killed at once.
+    /// End an entry's slice, which holds all its launches. Normally it is stopped: systemd asks its
+    /// processes to end, then kills what is left after its timeout. With `force` it is killed at once.
     EndRun {
         key: String,
         force: bool,
     },
-    /// A runner's command: its `stop`, for an entry that runs in another program's processes; its
+    /// Run one of a runner's commands: `stop`, for an entry that runs in another program's processes, or
     /// `pause` or `resume` (see [`crate::session::background`]).
     RunnerCommand(Vec<String>),
-    /// A runner's `awake` command: whether its app shown keeps the screen on (then
-    /// [`crate::device::idle::IdleEvent::KeptAwake`]).
+    /// Run a runner's `awake` command, which says whether its app on screen keeps the screen on. The
+    /// answer comes back as [`crate::device::idle::IdleEvent::KeptAwake`].
     AskAwake(Vec<String>),
-    /// An entry's slice (all its launches' processes) frozen, or thawed (see [`crate::session::background`]).
+    /// Freeze or thaw an entry's slice, which holds all its launches' processes (see
+    /// [`crate::session::background`]).
     Freeze {
         slice: String,
         frozen: bool,
     },
-    /// A picture for entry `entry` (found by its window, no desktop file): its app id looked up in the
-    /// icon themes (see [`crate::Reading::Icon`]).
+    /// Find an icon for `entry`, which was found by its window and has no desktop file, by looking up its
+    /// app id in the icon themes (see [`crate::Reading::Icon`]).
     FindIcon {
         entry: Arc<str>,
         app_id: String,
     },
-    /// A program not started by ClamShell (found by its tray icon): its process and those it started
-    /// moved into `instance`'s scope (in its entry's slice), as a launch of the entry's; not one a systemd
-    /// service runs (it is the service's).
+    /// Adopt a program not started by ClamShell, found by its tray icon. Its process and the ones it
+    /// started are moved into `instance`'s scope, in the entry's slice, as a launch of that entry. Not
+    /// used for a program run by a systemd service, which belongs to the service.
     Adopt {
         instance: Instance,
         pid: u32,
     },
-    /// Processes asked to end (SIGTERM), or killed: a program not started by ClamShell (found by its tray
-    /// icon and not moved into a scope of ours, or in the battery tab's list).
+    /// Ask processes to end (SIGTERM), or kill them with `force`. This is for a program not started by
+    /// ClamShell: one found by its tray icon and not moved into a scope of ours, or one in the battery
+    /// tab's list.
     EndProcesses {
         pids: Vec<u32>,
         force: bool,
     },
-    /// Ask the tray thread: a program shown, or its menu's entry clicked.
+    /// Ask the tray thread to show a program or to click an entry in its menu.
     Tray(crate::session::tray::TrayCommand),
     /// Write these lines to the control socket of entry `key`'s launch (see [`crate::session::enqueue`]).
     Enqueue {
         key: String,
         lines: Vec<String>,
     },
-    /// The browse thread: a folder to list and watch, or the files in use.
+    /// Tell the browse thread a folder to list and watch, or the files in use.
     Browse(crate::shelf::files::BrowseCommand),
-    /// A file operation (the files thread).
+    /// A file operation, for the files thread.
     Files(crate::shelf::files::FileOp),
-    /// One of ClamShell's own tools (the Tools tab): `rescan` (the library read again), `refetch` (what
-    /// metadata wasn't found tried again, then a rescan).
+    /// Run one of ClamShell's own tools from the Tools tab. `rescan` reads the library again. `refetch`
+    /// tries again for metadata that wasn't found, then rescans.
     Tool(clamshell_library::Tool),
-    /// What shelf shows (the selected entry first): fetch their metadata before the rest.
+    /// The entries shelf shows, the selected one first. Fetch their metadata before the rest.
     FetchFirst(Vec<Arc<str>>),
-    /// Where mpv left video `file` (`entry`'s), read as its play ended (then
-    /// [`crate::LaunchEvent::Position`]).
+    /// Read where mpv left the video `file` of `entry` when it stopped playing. The answer comes back as
+    /// [`crate::LaunchEvent::Position`].
     ReadPosition {
         entry: Arc<str>,
         file: std::path::PathBuf,
     },
-    /// A play, recorded (clamshell-system's `store`).
+    /// Record a play (clamshell-system's `store`).
     RecordPlay {
         entry: Arc<str>,
         start: u64,
         duration: u64,
     },
-    /// Output volume and mute, an app's, the output.
+    /// Set the output volume and mute, an app's volume and mute, or the output.
     Sound(Sound),
-    /// The screens' brightness: each backlight to `level` times its share (both 0-100; a backlight
-    /// without one: 100).
+    /// Set the screens' brightness. Each backlight is set to `level` times its share. Both are 0-100, and
+    /// a backlight without a share counts as 100.
     Brightness {
         level: u8,
         shares: Vec<Share>,
@@ -119,36 +121,36 @@ pub enum Effect {
     Bluetooth(bluetooth::Command),
     /// Start (true) or stop reading something for a tab while it is open.
     Watch(Watch, bool),
-    /// The screens on or off (idle; the UI asks the compositor).
+    /// Turn the screens on or off, for idle. The UI asks the compositor.
     Screens(bool),
-    /// Sleep (idle, in the device's session): suspend, then hibernate where the system can.
+    /// Sleep, for idle in the device's session. Suspends, then hibernates where the system can.
     Sleep,
-    /// Both screens to a file; the result comes back as [`crate::Event::Screenshot`].
+    /// Save both screens to a file. The result comes back as [`crate::Event::Screenshot`].
     Screenshot,
-    /// Ask the account's helper (see [`crate::device::account`]); a change is reported, then the account read
-    /// again.
+    /// Ask the account helper to do something (see [`crate::device::account`]). A change is reported and
+    /// the account is then read again.
     Account(crate::device::account::AccountCommand),
-    /// Set the system's time zone (tzdata's name); the time zones are read again after.
+    /// Set the system's time zone by its tzdata name. The time zones are read again afterwards.
     SetTimeZone(String),
-    /// The system's clock set by the network (NTP), or not; read again after.
+    /// Turn network time (NTP) on or off. The time is read again afterwards.
     SetNtp(bool),
-    /// The system's clock moved by a step of one of its fields, as the local time has it (a month on
-    /// from the 31st: the month's last day); read again after.
+    /// Step one field of the system's clock, in local time. A month on from the 31st lands on the last
+    /// day of that month. The time is read again afterwards.
     StepClock(crate::status::time::ClockField, i8),
-    /// A desktop notification (on the main screen, over a game: the notification daemon's), urgent ones
-    /// staying until dismissed.
+    /// A desktop notification, shown by the notification daemon on the main screen, over a game. Urgent
+    /// ones stay until dismissed.
     Notify {
         summary: String,
         body: String,
         urgent: bool,
     },
-    /// Calibrate the gyro from its next second (the device held still); the result comes back as
-    /// [`crate::Event::GyroCalibrated`].
+    /// Calibrate the gyro from its next second of readings, with the device held still. The result comes
+    /// back as [`crate::Event::GyroCalibrated`].
     CalibrateGyro,
-    /// Calibrate the sticks (the pad thread: [`crate::device::sticks::Calibrator`]); its progress and end come
-    /// back as [`crate::Event::Sticks`].
+    /// Calibrate the sticks, on the pad thread ([`crate::device::sticks::Calibrator`]). Progress and the
+    /// end come back as [`crate::Event::Sticks`].
     CalibrateSticks,
-    /// Calibrate the top screen's refresh rate (thor-panel-calibration); the end comes back as
+    /// Calibrate the top screen's refresh rate with thor-panel-calibration. The end comes back as
     /// [`crate::Event::RefreshCalibrated`].
     CalibrateRefresh,
     Quit,
@@ -169,16 +171,16 @@ pub enum Watch {
     Battery,
     /// The time zone and the ones to choose from.
     Time,
-    /// The account (see [`crate::device::account`]), and the time zone (the Device view shows both).
+    /// The account (see [`crate::device::account`]) and the time zone, which the Device view both shows.
     Account,
-    /// The system's metrics (read more often while shown).
+    /// The system's metrics, read more often while shown.
     Metrics,
-    /// The bar's status (battery, Wi-Fi, volume): watched while the screens are on, then only the
-    /// battery now and then.
+    /// The bar's status: battery, Wi-Fi and volume. Watched while the screens are on. While they are off,
+    /// only the battery is read now and then.
     Status,
 }
 
-/// What ClamShell keeps (clamshell-system's `store`): each saved whole.
+/// What ClamShell stores (clamshell-system's `store`). Each is saved whole.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Save {
     /// The entries' settings and environment.
@@ -196,9 +198,10 @@ pub enum Save {
     Dock(Vec<std::sync::Arc<str>>),
     /// The entries started with ClamShell (see [`crate::session::autostart`]).
     Autostart(Vec<std::sync::Arc<str>>),
-    /// Clocks on a 12-hour dial, or 24-hour.
+    /// Whether clocks use 12-hour format rather than 24-hour.
     TwelveHour(bool),
-    /// The first start is over (the Device view closed with Done): it doesn't open by itself again.
+    /// The first start is over, because the Device view was closed with Done. It doesn't open by itself
+    /// again.
     FirstStartDone,
     /// The sticks' calibrations, by controller.
     Sticks(crate::device::sticks::Calibrations),
@@ -207,27 +210,28 @@ pub enum Save {
 /// What the compositor is asked to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WindowCommand {
-    /// Show this workspace: an entry's, or (Home going back) whatever was in front.
+    /// Show this workspace. It is an entry's, or, when Home goes back, whatever was in front.
     Focus(String),
-    /// Ask these windows to close (as their own close buttons would).
+    /// Ask these windows to close, as their own close buttons would.
     Close(Vec<i64>),
-    /// Move these windows to this workspace (an entry's known by app id, from where they landed).
+    /// Move these windows to this workspace. Used for an entry known by app id, to move its windows from
+    /// where they landed.
     Move { windows: Vec<i64>, to: String },
     /// Bring shelf's window to the front.
     ShowShelf,
-    /// A window to the bottom screen (marked there, so it stays), shown there; the top screen keeps the
-    /// keyboard.
+    /// Move a window to the bottom screen and show it there. It is marked so it stays there. The top
+    /// screen keeps the keyboard.
     Down(i64),
-    /// A window moved down back to the top screen: to its workspace (or the one in front).
+    /// Move a window that was moved down back to the top screen, to its workspace or the one in front.
     Up { window: i64, to: Option<Instance> },
-    /// The bottom screen shows this window moved there; the top screen keeps the keyboard.
+    /// Show on the bottom screen this window that was moved there. The top screen keeps the keyboard.
     ShowDown(i64),
-    /// The bottom screen's output on or off.
+    /// Turn the bottom screen's output on or off.
     BottomPower(bool),
-    /// The windows that go to the bottom screen as they open (all of them: the rules in force).
+    /// The windows that go to the bottom screen as they open. This is the full set of rules in force.
     DownRules(Vec<crate::bottom::screen::DownRule>),
-    /// The app ids whose windows land on the landing workspace as they open (all of them), to be moved
-    /// to their entry's (see [`crate::session::running::app_id_of`]).
+    /// The full set of app ids whose windows open on the landing workspace, to be moved to their entry's
+    /// workspace from there (see [`crate::session::running::app_id_of`]).
     LandRules(Vec<std::sync::Arc<str>>),
 }
 
@@ -244,7 +248,7 @@ impl Dirty {
     pub const BOTTOM: Dirty = Dirty { top: false, bottom: true };
     pub const NONE: Dirty = Dirty { top: false, bottom: false };
 
-    /// Either's screens.
+    /// The screens dirty in either.
     pub fn or(self, other: Dirty) -> Dirty {
         Dirty { top: self.top || other.top, bottom: self.bottom || other.bottom }
     }

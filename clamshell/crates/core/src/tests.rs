@@ -1,4 +1,5 @@
-//! The state's tests across features: launches starting and ending, the library's problems, the start, the tick.
+//! Tests of the state that span features: launches starting and ending, the library's problems, the
+//! start and the tick.
 
 use crate::testkit::*;
 use crate::*;
@@ -20,9 +21,9 @@ fn orders(events: &[Event]) -> Vec<Vec<Event>> {
     all
 }
 
-/// The session's inputs coming in any order (systemd's list, the compositor's windows: separate
-/// threads) end in the same state: the reconcile after each reads what is there,
-/// not which came last.
+/// The session's inputs, systemd's list and the compositor's windows, come from separate threads in any
+/// order. They end in the same state, because the reconcile after each reads what is there, not which
+/// came last.
 #[test]
 fn a_launchs_start_and_end_come_to_the_same_in_any_order() {
     let shape = |s: &State| {
@@ -42,7 +43,7 @@ fn a_launchs_start_and_end_come_to_the_same_in_any_order() {
             _ => None,
         })
     };
-    // (No launch: the shapes below say so.)
+    // If there is no launch, the shapes below show it.
     let probe = start_end(&mut state()).unwrap_or(Instance::Shelf);
     let window = Window { unit: probe.unit(), visible: true, ..win(5, "zelda3", &probe.workspace(), true) };
     let starts = [Event::Units(vec![probe.clone()]), Event::Windows(vec![window])];
@@ -99,7 +100,7 @@ fn a_launch_that_ends_without_a_window_didnt_start() {
     launch(&mut s, "zelda-lttp");
     crate::testkit::end(&mut s, "zelda-lttp");
     assert!(matches!(notice(&s), Some(crate::bottom::notice::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
-    // One that showed a window and ended: nothing said.
+    // A launch that showed a window and then ended gets no notice.
     let mut s = state();
     let zelda = launch(&mut s, "zelda-lttp");
     s.apply(Event::Windows(vec![Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) }]));
