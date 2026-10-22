@@ -1,5 +1,5 @@
-//! sway's IPC socket (`SWAYSOCK`; the i3 protocol: "i3-ipc", payload length, message type, JSON), with
-//! its replies parsed.
+//! sway's IPC socket (`SWAYSOCK`), with its replies parsed. It speaks the i3 protocol: "i3-ipc", the
+//! payload length, the message type, then JSON.
 
 use std::fmt;
 use std::io::{self, Read, Write};
@@ -23,7 +23,7 @@ enum Request {
     GetTree = 4,
 }
 
-/// The events we subscribe to (their type without [`EVENT_BIT`]).
+/// The events we subscribe to, as their type without [`EVENT_BIT`].
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventKind {
@@ -75,7 +75,7 @@ pub struct Outcome {
     pub error: Option<String>,
 }
 
-/// Whether every command of a RUN_COMMAND succeeded; the first error if not.
+/// The first error if a command of a RUN_COMMAND failed, or `None` if every command succeeded.
 pub fn refused(outcomes: &[Outcome]) -> Option<String> {
     outcomes.iter().find(|o| !o.success).map(|o| o.error.clone().unwrap_or_default())
 }
@@ -97,13 +97,14 @@ pub struct Node {
     pub name: Option<String>,
     /// A window's process.
     pub pid: Option<u32>,
-    /// A Wayland window's app id (X11 windows have a class instead).
+    /// A Wayland window's app id. X11 windows have a class instead.
     pub app_id: Option<String>,
     pub window_properties: Option<WindowProperties>,
     pub focused: bool,
-    /// Marks on it (ours: [`super::commands::DOWN_MARK`] on a window moved to the bottom screen).
+    /// Marks on the node. Ours is [`super::commands::DOWN_MARK`], on a window moved to the bottom screen.
     pub marks: Vec<String>,
-    /// A window's: in view (the tab shown, on a workspace shown); none for other nodes.
+    /// Whether a window is in view, meaning its tab is shown on a workspace that is shown. None for other
+    /// nodes.
     pub visible: Option<bool>,
     pub nodes: Vec<Node>,
     pub floating_nodes: Vec<Node>,
@@ -116,7 +117,7 @@ pub struct WindowProperties {
 }
 
 impl Node {
-    /// Its children, tiled then floating.
+    /// The node's children, tiled then floating.
     pub fn children(&self) -> impl Iterator<Item = &Node> {
         self.nodes.iter().chain(&self.floating_nodes)
     }
@@ -142,7 +143,7 @@ impl Ipc {
         self.stream.write_all(&message)
     }
 
-    /// One message: its type and payload.
+    /// Reads one message and returns its type and payload.
     fn receive(&mut self) -> Result<(u32, Vec<u8>), Error> {
         let mut header = [0u8; 14];
         self.stream.read_exact(&mut header)?;
@@ -155,7 +156,7 @@ impl Ipc {
         Ok((kind, payload))
     }
 
-    /// A request and its reply (events that come first are skipped).
+    /// Sends a request and returns its reply. Events that come first are skipped.
     fn ask<T: DeserializeOwned>(&mut self, request: Request, payload: &str) -> Result<T, Error> {
         self.send(request as u32, payload)?;
         loop {
@@ -166,12 +167,12 @@ impl Ipc {
         }
     }
 
-    /// Runs commands (`;`-separated); how each went.
+    /// Runs `;`-separated commands and returns how each went.
     pub fn command(&mut self, text: &str) -> Result<Vec<Outcome>, Error> {
         self.ask(Request::RunCommand, text)
     }
 
-    /// Subscribes to an event; its events then come on this connection.
+    /// Subscribes to an event. Its events then come on this connection.
     pub fn subscribe(&mut self, event: &str) -> Result<(), Error> {
         let outcome: Outcome = self.ask(Request::Subscribe, &serde_json::to_string(&[event])?)?;
         if outcome.success { Ok(()) } else { Err(Error::Refused(format!("the {event} events"))) }
@@ -185,7 +186,7 @@ impl Ipc {
         self.ask(Request::GetTree, "")
     }
 
-    /// Waits for the next event; its kind, if one we know.
+    /// Waits for the next event and returns its kind, if it is one we know.
     pub fn next_event(&mut self) -> Result<Option<EventKind>, Error> {
         let (kind, _) = self.receive()?;
         if kind & EVENT_BIT == 0 {

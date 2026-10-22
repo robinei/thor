@@ -1,5 +1,5 @@
-//! sway's tree as the state sees it (the windows, with the systemd unit of their process), and what to
-//! ask sway after a window change. Pure: no IPC here.
+//! sway's tree as the state sees it, which is the windows with the systemd unit of their process, and
+//! what to ask sway after a window change. There is no IPC here.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -11,8 +11,8 @@ use clamshell_core::session::windows::Window;
 use super::commands;
 use super::ipc::Node;
 
-/// The windows in a tree: leaf containers with a process, with their workspace. `unit` gives a pid's
-/// systemd unit.
+/// The windows in a tree: the leaf containers that have a process, with their workspace. `unit` gives a
+/// pid's systemd unit and ancestry.
 pub fn windows(tree: &Node, unit: &mut impl FnMut(u32) -> (Option<String>, Vec<u32>)) -> Vec<Window> {
     let mut out = Vec::new();
     collect(tree, "", unit, &mut out);
@@ -25,7 +25,7 @@ fn collect(node: &Node, workspace: &str, unit: &mut impl FnMut(u32) -> (Option<S
         _ => workspace,
     };
     if let (Some(pid), "con" | "floating_con") = (node.pid, node.kind.as_str()) {
-        // Wayland windows have an app id; X11 ones a class.
+        // Wayland windows have an app id, and X11 ones have a class.
         let app_id = node.app_id.as_deref().or_else(|| node.window_properties.as_ref().and_then(|p| p.class.as_deref())).unwrap_or("");
         let (unit, pids) = unit(pid);
         out.push(Window {
@@ -45,28 +45,29 @@ fn collect(node: &Node, workspace: &str, unit: &mut impl FnMut(u32) -> (Option<S
     }
 }
 
-/// What to ask sway after a change of windows (`down`: the down rules in force): each window of one of our
-/// instances that isn't on its instance's workspace moved there (asked once per window and workspace,
-/// `tried`: a window sway won't move isn't asked again at its every event), and shelf's window shown when it
-/// is moved home (as the program starts). A workspace in front that empties (its last window closed or moved
-/// down) stays, black: Home or the dock goes on from there. `top`: the main screen's output.
+/// What to ask sway after the windows change. Each window of one of our instances that isn't on its
+/// instance's workspace is moved there. Each move is asked once per window and workspace, recorded in
+/// `tried`, so a window sway won't move isn't asked again at every event. Shelf's window is shown when it
+/// is moved home, as the program starts. A workspace in front that empties, because its last window
+/// closed or moved down, stays, black, and Home or the dock goes on from there. `top` is the main screen's
+/// output and `down` the down rules in force.
 pub fn reconcile(windows: &[Window], top: Option<&str>, down: &[DownRule], land: &[Arc<str>], tried: &mut HashSet<(i64, String)>) -> Vec<String> {
     let mut out = Vec::new();
     let bottom = Instance::Bottom.name();
     for w in windows {
-        // Moved to the bottom screen by us, or by a down rule as it opened: left there.
+        // A window moved to the bottom screen by us, or by a down rule as it opened, is left there.
         if w.down || (w.workspace == bottom && down.iter().any(|r| r.matches(w))) {
             continue;
         }
-        // Landed on the bottom screen by itself (a tap there focuses its output): to its home, or the
-        // main screen.
+        // A window that landed on the bottom screen by itself, because a tap there focuses its output,
+        // goes to the main screen. One with a home goes there instead, below.
         if w.workspace == bottom && w.home().is_none() {
             if tried.insert((w.id, String::new())) {
                 out.push(commands::to_top(w.id, top));
             }
             continue;
         }
-        // Known by its app id (a Steam game's, in Steam's scope): ClamShell places it, by that.
+        // A window known by its app id, such as a Steam game's in Steam's scope, is placed by ClamShell.
         if land.iter().any(|id| **id == *w.app_id) {
             continue;
         }
@@ -125,7 +126,7 @@ mod tests {
     #[test]
     fn a_window_known_by_its_app_id_is_left_to_clamshell() {
         let mut tried = HashSet::new();
-        // A Steam game's, in the scope of Steam's entry: not moved to Steam's workspace.
+        // A Steam game's window, in the scope of Steam's entry, isn't moved to Steam's workspace.
         let game = window(7, "steam_app_620", Some("clamshell-run-desktop_steam-1-0.scope"), "clamshell-game");
         assert!(reconcile(std::slice::from_ref(&game), Some("DSI-2"), &[], &["steam_app_620".into()], &mut tried).is_empty());
         assert_eq!(reconcile(&[game], Some("DSI-2"), &[], &[], &mut tried).len(), 1, "unknown: by its scope");
@@ -133,7 +134,7 @@ mod tests {
 
     #[test]
     fn windows_of_our_instances_go_home_once() {
-        // (An entry's launches share its workspace.)
+        // An entry's launches share its workspace.
         let late = window(4, "late", Some("clamshell-run-spawner_1-1-0.scope"), "1");
         let home = window(5, "first", Some("clamshell-run-spawner_1-1-0.scope"), "clamshell-run-spawner_1");
         let second = window(7, "second", Some("clamshell-run-spawner_1-1-1.scope"), "clamshell-run-spawner_1");

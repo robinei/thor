@@ -1,5 +1,5 @@
-//! The sway commands we send, as text. `top` is the main screen's output, where our workspaces live
-//! (`None` until known: then nothing is pinned to an output).
+//! The sway commands we send, as text. `top` is the main screen's output, where our workspaces live. It
+//! is `None` until known, and then nothing is pinned to an output.
 
 use std::path::Path;
 
@@ -9,20 +9,21 @@ use clamshell_core::session::windows::SHELF_APP_ID;
 
 use super::ipc::Error;
 
-/// Our workspaces live on the main screen: assigned there before they are created (else a tap on the
-/// second screen, which focuses its output, would put them behind the launcher).
+/// Our workspaces live on the main screen. They are assigned there before they are created. Otherwise a
+/// tap on the second screen, which focuses its output, would put them behind the launcher.
 fn pin(name: &str, top: Option<&str>) -> String {
     top.map_or_else(String::new, |top| format!("workspace \"{name}\" output \"{top}\"; "))
 }
 
-/// Shows a workspace (creating it if new), on the main screen.
+/// Shows a workspace on the main screen, creating it if new.
 pub fn show(name: &str, top: Option<&str>) -> String {
     let focus = top.map_or_else(String::new, |top| format!("focus output \"{top}\"; "));
     format!("{}{focus}workspace \"{name}\"", pin(name, top))
 }
 
-/// Starts a job for a workspace (on the main screen) without showing it: shown for the `exec`, and
-/// back at once, in one command (nothing is drawn in between); sway keeps the target by name.
+/// Starts a job for a workspace on the main screen without showing it. The workspace is shown for the
+/// `exec` and switched back at once in one command, so nothing is drawn in between. sway keeps the target
+/// workspace by name.
 pub fn launch(workspace: &str, job: &Path, exe: &Path, top: Option<&str>) -> Result<String, Error> {
     let (exe, job) = (exe.to_string_lossy(), job.to_string_lossy());
     if exe.contains(['"', '\\']) || job.contains(['"', '\\']) {
@@ -31,18 +32,18 @@ pub fn launch(workspace: &str, job: &Path, exe: &Path, top: Option<&str>) -> Res
     Ok(format!("{}workspace \"{workspace}\"; exec \"{exe}\" --run \"{job}\"; workspace back_and_forth", pin(workspace, top)))
 }
 
-/// Moves windows to a workspace (on the main screen), without showing it.
+/// Moves windows to a workspace on the main screen, without showing it.
 pub fn move_windows(windows: &[i64], workspace: &str, top: Option<&str>) -> String {
     let moves: Vec<String> = windows.iter().map(|id| format!("[con_id={id}] move container to workspace \"{workspace}\"")).collect();
     format!("{}{}", pin(workspace, top), moves.join("; "))
 }
 
-/// The mark on a window we moved to the bottom screen, before its id (sway's marks are unique to a
-/// window): reconciling leaves it there.
+/// The mark on a window we moved to the bottom screen, followed by the window's id because sway's marks
+/// are unique to a window. Reconciling leaves a marked window there.
 pub const DOWN_MARK: &str = "clamshell-down";
 
-/// A window to the bottom screen's workspace, marked so it stays, in tabs with the others there, shown
-/// there; then the main screen has the keyboard again.
+/// Moves a window to the bottom screen's workspace and shows it there, tabbed with the others. It is
+/// marked so it stays. Afterwards the main screen has the keyboard again.
 pub fn down(window: i64, top: Option<&str>) -> String {
     let bottom = Instance::Bottom.name();
     format!(
@@ -51,14 +52,15 @@ pub fn down(window: i64, top: Option<&str>) -> String {
     )
 }
 
-/// The bottom screen shows a window moved there (its tab focused); the main screen keeps the keyboard.
+/// Shows a window that was moved to the bottom screen by focusing its tab. The main screen keeps the
+/// keyboard.
 pub fn show_down(window: i64, top: Option<&str>) -> String {
     let back = top.map_or_else(String::new, |top| format!("; focus output \"{top}\""));
     format!("[con_id={window}] focus{back}")
 }
 
-/// A window moved down back to a workspace of the main screen (its instance's), or to the main screen,
-/// unmarked, and focused.
+/// Moves a window that was moved down back to its instance's workspace on the main screen, or else to the
+/// main screen. It is unmarked and focused.
 pub fn up(window: i64, workspace: Option<&str>, top: Option<&str>) -> String {
     let to = match (workspace, top) {
         (Some(ws), _) => format!("{}[con_id={window}] move container to workspace \"{ws}\"", pin(ws, top)),
@@ -68,31 +70,31 @@ pub fn up(window: i64, workspace: Option<&str>, top: Option<&str>) -> String {
     format!("[con_id={window}] unmark {DOWN_MARK}-{window}; {to}; [con_id={window}] focus")
 }
 
-/// A window that landed on the bottom screen by itself, to the main screen.
+/// Moves a window that landed on the bottom screen by itself to the main screen.
 pub fn to_top(window: i64, top: Option<&str>) -> String {
     top.map_or_else(String::new, |top| format!("[con_id={window}] move container to output \"{top}\", focus"))
 }
 
-/// What a down rule's switch is set to while it is off: no output has the name, so its move fails and the
-/// window stays where it opened.
+/// What a down rule's switch is set to while it is off. No output has this name, so the rule's move fails
+/// and the window stays where it opened.
 const DOWN_OFF: &str = "clamshell-down-off";
 
-/// A down rule's switch (a sway variable): by what it matches, so defining it again (sway restarted, or
-/// ClamShell) reuses the same one.
+/// A down rule's switch, which is a sway variable. Its name comes from what the rule matches, so defining
+/// the rule again after sway or ClamShell restarts reuses the same switch.
 fn down_switch(rule: &DownRule) -> String {
     let text = format!("{}\0{}", rule.app_id, rule.title.as_deref().unwrap_or("\0"));
     let hash = clamshell_library::hash::fnv1a64(text.as_bytes());
     format!("$clamshell_down_{hash:016x}")
 }
 
-/// A pattern matching `text` exactly (PCRE's `\Q...\E`, in a sway string); none for text sway's quoting
-/// can't carry (a backslash).
+/// A pattern matching `text` exactly, using PCRE's `\Q...\E` inside a sway string. Returns none for text
+/// that sway's quoting can't carry, which is text with a backslash.
 fn literal(text: &str) -> Option<String> {
     (!text.contains('\\')).then(|| format!("^\\Q{}\\E$", text.replace('"', "\\\"")))
 }
 
-/// A down rule defined in sway: its switch off, and the rule that moves a matching window, as it opens
-/// (before it is drawn), to the output its switch names. None if it can't be said in sway's terms.
+/// Defines a down rule in sway. Its switch is set to off, and the rule moves a matching window as it
+/// opens, before it is drawn, to the output its switch names. None if it can't be said in sway's terms.
 pub fn define_down_rule(rule: &DownRule) -> Option<String> {
     let app_id = literal(&rule.app_id)?;
     let title = match &rule.title {
@@ -103,14 +105,14 @@ pub fn define_down_rule(rule: &DownRule) -> Option<String> {
     Some(format!("set {switch} {DOWN_OFF}; for_window [app_id=\"{app_id}\"{title}] move container to output ${switch}"))
 }
 
-/// A defined down rule switched on (its windows to the `bottom` output) or off.
+/// Switches a defined down rule on, sending its windows to the `bottom` output, or off.
 pub fn switch_down_rule(rule: &DownRule, on: bool, bottom: &str) -> String {
     format!("set {} {}", down_switch(rule), if on { bottom } else { DOWN_OFF })
 }
 
-/// The landing rules for windows with app id `app_id` (as it is, or an X11 window's class): they open on
-/// the landing workspace, from which ClamShell moves them to their entry's. None if sway's quoting can't
-/// carry it.
+/// The landing rules for windows with app id `app_id`, matched as an app id or as an X11 window's class.
+/// The windows open on the landing workspace, and ClamShell moves them from there to their entry's
+/// workspace. None if sway's quoting can't carry the app id.
 pub fn define_land_rule(app_id: &str) -> Option<String> {
     let id = literal(app_id)?;
     let landing = Instance::Landing.name();
@@ -119,7 +121,7 @@ pub fn define_land_rule(app_id: &str) -> Option<String> {
     ))
 }
 
-/// The bottom screen's output on or off.
+/// Turns the bottom screen's output on or off.
 pub fn power(bottom: &str, on: bool) -> String {
     format!("output \"{bottom}\" power {}", if on { "on" } else { "off" })
 }
@@ -129,11 +131,11 @@ pub fn close(window: i64) -> String {
     format!("[con_id={window}] kill")
 }
 
-/// sway's rules for our windows, given once when we connect (and again on reconnecting; sway keeps
-/// them until it restarts): what depends on the running machine (the outputs' names). How the session
-/// behaves otherwise (borders, focus, tabs) is `clamshell/sway/clamshell.conf`, which every machine's
-/// config includes. Then shelf's window, if already open, is put in its place and shown. `bottom`: the
-/// second screen's output.
+/// sway's rules for our windows, given when we connect and again on reconnecting. sway keeps them until
+/// it restarts. These are the rules that depend on the running machine, namely the outputs' names. The
+/// rest of how the session behaves, such as borders, focus and tabs, is in `clamshell/sway/clamshell.conf`,
+/// which every machine's config includes. Last, shelf's window is put in its place and shown, if it is
+/// already open. `bottom` is the second screen's output.
 pub fn rules(top: Option<&str>, bottom: &str) -> Vec<String> {
     let (shelf, landing) = (Instance::Shelf.name(), Instance::Landing.name());
     // The second screen's workspace: windows opening there go to the main screen.
@@ -141,8 +143,8 @@ pub fn rules(top: Option<&str>, bottom: &str) -> Vec<String> {
     let mut rules = vec![format!("for_window [app_id=\"^{SHELF_APP_ID}$\"] move container to workspace \"{shelf}\"")];
     if let Some(top) = top {
         rules.push(format!("{}{}", pin(&shelf, Some(top)), pin(&landing, Some(top)).trim_end_matches("; ")));
-        // (A window landing there by itself goes to the main screen: see `windows::reconcile`, which knows
-        // the windows moved there on purpose.)
+        // A window that lands there by itself is sent to the main screen by `windows::reconcile`, which
+        // knows which windows were moved there on purpose.
         rules.push(format!("workspace \"{second}\" output \"{bottom}\"; focus output \"{bottom}\"; workspace \"{second}\"; focus output \"{top}\""));
     }
     rules.push(format!("[app_id=\"^{SHELF_APP_ID}$\"] move container to workspace \"{shelf}\"; {}", show(&shelf, top)));
