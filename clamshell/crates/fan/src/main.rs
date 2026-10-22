@@ -83,7 +83,13 @@ fn tick(root: &Path, d: &mut Daemon) -> Option<String> {
     let mode = d.mode.unwrap_or(Mode::Auto);
     let changed = d.said != Some(mode);
     d.said = Some(mode);
-    let now: Duty = text(&dir.join("pwm1")).and_then(|t| t.parse().ok()).unwrap_or(0);
+    let now: Duty = match fs::read_to_string(dir.join("pwm1")).map_err(|e| e.to_string()).and_then(|t| t.trim().parse().map_err(|e| format!("{t:?}: {e}"))) {
+        Ok(duty) => duty,
+        Err(e) => {
+            problem.get_or_insert(format!("{}: pwm1: {e}", dir.display()));
+            0
+        }
+    };
     d.temp = curve::smooth(d.temp, curve::temperature(readings(root)));
     let duty = curve::next(mode, d.temp, now);
     if duty != now
