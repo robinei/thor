@@ -58,8 +58,7 @@ pub enum PadInput {
     Trigger(i32),
     /// View/Select: focus to the other screen.
     Switch,
-    /// The Back button (the keymaps' layer key in a game): back one screen (see
-    /// [`crate::State::pad_back`]).
+    /// The Back button: back one screen (see [`crate::State::pad_back`]).
     Back,
 }
 

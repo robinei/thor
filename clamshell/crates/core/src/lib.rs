@@ -59,7 +59,7 @@ pub mod windows;
 use keyboard::{Key, Keyboard};
 pub use resume::Resume;
 use resume::{SAVE_AFTER, Saves};
-use settings::Settings;
+use settings::{MouseAtLaunch, Settings};
 use slider::Control;
 
 pub use dock::{Dock, DockItem};
@@ -83,36 +83,6 @@ pub use tab::{Bottom, Tab};
 pub use time::{ClockField, TimeId, TimePage, TimeRow, TimeZones};
 
 pub use clamshell_library::{BrowseKind, Browsed, Collection, Entry, Launch, Library, Meta, RunnerOf, runner_key};
-
-/// A game's power profile: how fast CPU and GPU may run (frequency caps; the Thor has no TDP setting).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum PowerProfile {
-    Battery,
-    #[default]
-    Balanced,
-    Performance,
-}
-
-impl PowerProfile {
-    pub const ALL: [PowerProfile; 3] = [PowerProfile::Battery, PowerProfile::Balanced, PowerProfile::Performance];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            PowerProfile::Battery => "Battery",
-            PowerProfile::Balanced => "Balanced",
-            PowerProfile::Performance => "Performance",
-        }
-    }
-
-    /// The power profile a [`Setting::Power`] value stands for.
-    pub fn from_value(v: u16) -> PowerProfile {
-        match v {
-            0 => PowerProfile::Battery,
-            1 => PowerProfile::Balanced,
-            _ => PowerProfile::Performance,
-        }
-    }
-}
 
 /// What the state starts from: what was read from disk and the environment.
 #[derive(Debug, Default)]
@@ -430,7 +400,7 @@ impl State {
     /// The program in force changed: the pad mouse on if it wants it (Setting::PadMouse), off again if it
     /// was the program's. Whether it changed.
     fn follow_pad_mouse(&mut self) -> bool {
-        let wanted = self.session.program.is_some() && self.in_force().pad_mouse();
+        let wanted = self.session.program.is_some() && self.in_force().choice::<MouseAtLaunch>() == MouseAtLaunch::On;
         self.pad.follow_game(wanted)
     }
 

@@ -40,23 +40,17 @@ const SMOOTHING: f32 = 0.5;
 const AUTO: [(f32, Duty); 6] = [(55.0, 51), (72.0, 77), (78.0, 102), (84.0, 153), (90.0, 204), (96.0, 255)];
 const QUIET: [(f32, Duty); 5] = [(60.0, 51), (78.0, 77), (85.0, 102), (90.0, 153), (95.0, 204)];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mode {
-    Auto,
-    Quiet,
-    Max,
-}
+crate::settings::choices!(
+    /// The fan's curve: [`crate::settings::Setting::Fan`].
+    Mode for Fan, default Auto {
+        Auto = 0, "Fan auto", Stock;
+        Quiet = 1, "Fan quiet", Changes;
+        Max = 2, "Fan max", Costs;
+    }
+);
 
 impl Mode {
-    /// [`crate::settings::Setting::Fan`]'s value: 0 auto, 1 quiet, 2 max.
-    pub fn of(value: u16) -> Mode {
-        match value {
-            0 => Mode::Auto,
-            1 => Mode::Quiet,
-            _ => Mode::Max,
-        }
-    }
-
+    /// Its word in the mode file.
     pub fn name(self) -> &'static str {
         match self {
             Mode::Auto => "auto",
@@ -133,6 +127,7 @@ mod tests {
 
     #[test]
     fn modes_by_setting_and_by_name() {
+        use crate::settings::Choice;
         assert_eq!(Mode::of(0), Mode::Auto);
         assert_eq!(Mode::of(1), Mode::Quiet);
         assert_eq!(Mode::of(2), Mode::Max);

@@ -19,6 +19,7 @@ use crate::State;
 use crate::effect::{Dirty, Effect, Save, WindowCommand};
 use crate::hardware::NoticeKind;
 use crate::instance::Instance;
+use crate::settings::BottomWhenIdle;
 use crate::windows::Window;
 
 /// A window that goes to the bottom screen when its entry opens it: the entry's (by its id), with this
@@ -124,7 +125,7 @@ impl State {
     /// The second screen is dark: a program is in force that wants it so, and it hasn't been tapped
     /// since.
     pub fn bottom_dark(&self) -> bool {
-        self.session.program.is_some() && self.in_force().bottom_dark() && !self.bottom.woken
+        self.session.program.is_some() && self.in_force().choice::<BottomWhenIdle>() == BottomWhenIdle::DarkInGame && !self.bottom.woken
     }
 
     /// Whether the second screen is drawn dimmed: ClamShell's view on it (not windows moved there, which
@@ -179,7 +180,7 @@ impl State {
         let untouched = self.bottom_idle_for() >= DIM_AFTER + OFF_AFTER;
         self.sys.status.discharging
             && self.device.refresh != crate::device::Refresh::Running
-            && self.in_force().bottom_idle_off()
+            && self.in_force().choice::<BottomWhenIdle>() != BottomWhenIdle::On
             && !self.bottom_shows_windows()
             && self.bottom.editor().is_none()
             && (self.bottom_dark() || untouched)
@@ -328,7 +329,7 @@ mod tests {
     use crate::Event;
     use crate::hardware::DeviceKey;
     use crate::running::{Origin, Running};
-    use crate::settings::Setting;
+    use crate::settings::{Choice, Setting};
     use crate::testkit::state;
 
     fn win(id: i64, unit: &str, title: &str, focused: bool, down: bool) -> Window {
@@ -526,11 +527,11 @@ mod tests {
         s.apply(Event::tick(1000));
         assert_eq!(power(&s.apply(Event::tick(1000 + DIM_AFTER + OFF_AFTER)).1), None, "on the charger: only dimmed");
         // Unplugged now, set to Screen on: still only dimmed.
-        s.settings.global.set(Setting::BottomScreen, 0);
+        s.settings.global.set(Setting::BottomScreen, BottomWhenIdle::On.value());
         on_battery(&mut s, true);
         assert_eq!(power(&s.apply(Event::tick(1001 + DIM_AFTER + OFF_AFTER)).1), None);
         // The default again: off; the charger plugged in: on.
-        s.settings.global.set(Setting::BottomScreen, 2);
+        s.settings.global.set(Setting::BottomScreen, BottomWhenIdle::OffWhenIdle.value());
         assert_eq!(power(&s.apply(Event::tick(1002 + DIM_AFTER + OFF_AFTER)).1), Some(false));
         assert_eq!(power(&on_battery(&mut s, false)), Some(true), "the charger: on again");
     }
@@ -539,7 +540,7 @@ mod tests {
     fn dark_for_a_game_on_battery_it_goes_off_and_a_tap_wakes_it() {
         let mut s = state();
         on_battery(&mut s, true);
-        s.settings.global.set(Setting::BottomScreen, 1);
+        s.settings.global.set(Setting::BottomScreen, BottomWhenIdle::DarkInGame.value());
         crate::testkit::start(&mut s, "zelda-lttp");
         assert!(s.bottom_dark());
         assert!(s.bottom_off(), "dark on battery: off at once");

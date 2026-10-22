@@ -8,6 +8,7 @@
 use std::io;
 use std::time::{Duration, Instant};
 
+use clamshell_core::settings::RumbleStrength;
 use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
 use evdev::{EventSummary, FFEffect, FFEffectCode, FFEffectData, FFEffectKind, FFReplay, FFTrigger, InputEvent, UInputCode};
@@ -133,9 +134,15 @@ impl Effects {
     }
 }
 
-/// A strength scaled by the Rumble setting (0 off, 1 low, 2 mid, 3 full).
-pub fn scale(v: u16, setting: u16) -> u16 {
-    (u32::from(v) * u32::from(setting.min(3)) / 3) as u16
+/// A strength scaled by the Rumble setting.
+pub fn scale(v: u16, setting: RumbleStrength) -> u16 {
+    let thirds = match setting {
+        RumbleStrength::Off => 0,
+        RumbleStrength::Low => 1,
+        RumbleStrength::Mid => 2,
+        RumbleStrength::Full => 3,
+    };
+    (u32::from(v) * thirds / 3) as u16
 }
 
 /// The real controller's rumble: one FF_RUMBLE effect uploaded when it is taken over, changed and played
@@ -214,6 +221,7 @@ mod tests {
             },
         );
         assert_eq!(e.level(t0), (0, 0));
-        assert_eq!((scale(60_000, 0), scale(60_000, 1), scale(60_000, 3)), (0, 20_000, 60_000));
+        use RumbleStrength::{Full, Low, Off};
+        assert_eq!((scale(60_000, Off), scale(60_000, Low), scale(60_000, Full)), (0, 20_000, 60_000));
     }
 }

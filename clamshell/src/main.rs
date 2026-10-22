@@ -57,7 +57,7 @@ fn main() -> ExitCode {
             log::error!("{}: {}", file.display(), job::run(&file));
             ExitCode::FAILURE
         }
-        Command::MangohudEnv => match tuning::mangohud_config(&paths.mangohud, "default", 0, 0) {
+        Command::MangohudEnv => match tuning::mangohud_config(&paths.mangohud, "default", 0, clamshell_core::settings::Hud::Off) {
             Ok(config) => {
                 for (k, v) in tuning::mangohud_env(&config) {
                     println!("{k}={v}");

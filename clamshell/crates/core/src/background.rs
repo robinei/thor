@@ -244,7 +244,7 @@ mod tests {
     use super::*;
     use crate::Event;
     use crate::effect::WindowCommand;
-    use crate::settings::Setting;
+    use crate::settings::{Choice, Setting};
     use crate::testkit::*;
     use crate::windows::Window;
 
@@ -257,7 +257,7 @@ mod tests {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
         let key = zelda.key().unwrap().to_owned();
-        s.settings.set(Some(&"zelda-lttp".into()), Setting::Background, Some(1));
+        s.settings.set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Pauses.value()));
         let window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), visible) };
         s.apply(Event::tick(100));
         s.apply(Event::Windows(vec![window(true)]));
@@ -302,7 +302,7 @@ mod tests {
         let mut library = clamshell_library::demo::library();
         library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap().runner = Some(runner.clone());
         let mut s = State::new(crate::Init { library, ..init() });
-        s.settings.set(Some(&runner.key), Setting::Background, Some(1));
+        s.settings.set(Some(&runner.key), Setting::Background, Some(InBackground::Pauses.value()));
         let (pause, resume) = (Effect::RunnerCommand(vec!["pause".into()]), Effect::RunnerCommand(vec!["resume".into()]));
         // Nothing of it running: paused after the grace.
         s.apply(Event::tick(100));
@@ -335,7 +335,7 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         let key = zelda.key().unwrap().to_owned();
         // Runs hidden (zelda isn't a game here, or set so): only Suspend pauses it.
-        s.settings.set(Some(&"zelda-lttp".into()), Setting::Background, Some(0));
+        s.settings.set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Runs.value()));
         let window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), visible) };
         s.apply(Event::tick(100));
         s.apply(Event::Windows(vec![window(true)]));
@@ -366,7 +366,7 @@ mod tests {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
         let key = zelda.key().unwrap().to_owned();
-        s.settings.set(Some(&"zelda-lttp".into()), Setting::Background, Some(1));
+        s.settings.set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Pauses.value()));
         let window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), visible) };
         s.apply(Event::tick(100));
         s.apply(Event::Windows(vec![window(false)]));
@@ -396,7 +396,7 @@ mod tests {
         assert!(fx.contains(&freeze(&key, true)), "a game: {fx:?}");
         assert!(!fx.contains(&freeze(foot.key().unwrap(), true)), "an app: {fx:?}");
         // All set to run: the game runs too.
-        s.settings.set(None, Setting::Background, Some(0));
+        s.settings.set(None, Setting::Background, Some(InBackground::Runs.value()));
         assert!(s.apply(Event::tick(101 + GRACE)).1.contains(&freeze(&key, false)));
         assert_eq!(s.background_of("zelda-lttp"), InBackground::Runs);
     }
@@ -406,7 +406,7 @@ mod tests {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
         let key = zelda.key().unwrap().to_owned();
-        s.settings.set(Some(&"zelda-lttp".into()), Setting::Background, Some(2));
+        s.settings.set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Quits.value()));
         // No window yet (starting): left.
         assert!(!s.apply(Event::Windows(vec![])).1.iter().any(|e| matches!(e, Effect::EndRun { .. })));
         s.apply(Event::Windows(vec![Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), true) }]));

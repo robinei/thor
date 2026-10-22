@@ -86,10 +86,9 @@ Helpers that exist but are bypassed:
 
 ## 3. Structure
 
-- [ ] Typed enum settings (Power, Fan, BottomScreen, Background…) through one trait or `names!`, one
-      value-to-enum name, no hand-written `ALL`/label tables where `names!` serves (`lib.rs:95-113`,
-      `fan.rs:50-76`, `settings.rs:67-94,197,217-219,291-298`, `ClockField`, `Modifier`,
-      `FileAction::label`, `ListId::ALL`).
+- [x] Typed enum settings (Power, Fan, BottomScreen, Background…): one `Choice` trait and `choices!` macro,
+      each variant's value, label and impact in one table. (`ClockField`, `Modifier`, `FileAction::label`,
+      `ListId::ALL` stay plain arrays and matches: nothing is repeated there.)
 - [ ] Keymap parameters in one table: `Binding::to` from `Param::default_for` (`keymap/mod.rs:58-119`,
       `param.rs`); `Target` vs `Output`, `Stroke` vs `Chord` merged where they mirror.
 - [ ] `State`: notices out of `hardware.rs` into `notice.rs`; Home combos into `hardware.rs`; the keymap

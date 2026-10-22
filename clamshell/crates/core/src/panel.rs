@@ -52,7 +52,7 @@ impl State {
     /// default) said for it, paused if it is a game (see [`State::is_games`]), else run.
     pub fn background_of(&self, id: &str) -> crate::settings::InBackground {
         use crate::settings::InBackground;
-        match self.settings_of(id).background() {
+        match self.settings_of(id).choice::<InBackground>() {
             InBackground::PausesGames if self.is_games(id) => InBackground::Pauses,
             InBackground::PausesGames => InBackground::Runs,
             b => b,
@@ -241,7 +241,7 @@ impl State {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use crate::keyboard::{Key, Named, find};
-    use crate::settings::{self, Setting};
+    use crate::settings::{self, Choice, PowerProfile, Setting};
     use crate::testkit::*;
     use crate::*;
     use clamshell_library::runner_key;
@@ -271,7 +271,7 @@ mod tests {
         }
         let mut settings = settings::Settings::default();
         settings.set(Some(&runner_key("video")), Setting::FpsCap, Some(30));
-        settings.set(Some(&"tv:Cosmos".into()), Setting::Power, Some(0));
+        settings.set(Some(&"tv:Cosmos".into()), Setting::Power, Some(PowerProfile::Battery.value()));
         settings.set_env(Some(runner_key("video")), "MPV=1");
         let mut s = State::new(Init { library, settings, ..init() });
         let episode: std::sync::Arc<str> = "tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv".into();

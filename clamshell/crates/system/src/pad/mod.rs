@@ -36,6 +36,7 @@ use clamshell_core::Event;
 use clamshell_core::PadRoute;
 use clamshell_core::device::SticksEvent;
 use clamshell_core::keymap::Keymap;
+use clamshell_core::settings::RumbleStrength;
 use rustix::event::{PollFd, PollFlags, Timespec};
 
 use crate::input::device::{DeviceSpec, Grabbed};
@@ -61,7 +62,7 @@ pub enum Command {
     /// Calibrate the gyro from its next samples.
     CalibrateGyro,
     /// The Rumble setting in force: 0 off, 1 low, 2 mid, 3 full.
-    Rumble(u16),
+    Rumble(RumbleStrength),
     /// /dev/input changed: a missing controller is looked for again (the supervisor tries again after
     /// any command).
     Look,
@@ -118,7 +119,7 @@ pub fn spawn(spec: DeviceSpec, taken: Taken, sink: impl Sink) -> io::Result<Work
             keymap: Keymap::default(),
             devices: None,
             effects: Effects::default(),
-            rumble_setting: 3,
+            rumble_setting: RumbleStrength::default(),
             buzz: None,
             sticks: Default::default(),
         };
@@ -165,7 +166,7 @@ struct PadThread<S> {
     devices: Option<VirtualDevices>,
     /// Games' rumble effects on the virtual pad, and the Rumble setting.
     effects: Effects,
-    rumble_setting: u16,
+    rumble_setting: RumbleStrength,
     /// The keymap's buzz playing, until when.
     buzz: Option<(Buzz, Instant)>,
     /// The sticks' calibrations, by controller.

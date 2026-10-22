@@ -18,8 +18,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use clamshell_core::PowerProfile;
 use clamshell_core::fan;
+use clamshell_core::settings::{Cores, Hud, PowerProfile};
 use clamshell_core::settings::{Setting, Values};
 
 use crate::pad;
@@ -196,9 +196,9 @@ impl Tuning {
     /// path is returned for its launch.
     pub fn apply(&self, v: &Values, game: Option<&str>) -> Option<PathBuf> {
         self.hardware.send(*v);
-        self.pad.send(pad::Command::Rumble(v.get(Setting::Rumble)));
+        self.pad.send(pad::Command::Rumble(v.choice()));
         let game = game?;
-        mangohud_config(&self.mangohud, game, v.get(Setting::FpsCap), v.get(Setting::Hud)).map_err(|e| log::warn!("MangoHud config: {e}")).ok()
+        mangohud_config(&self.mangohud, game, v.get(Setting::FpsCap), v.choice()).map_err(|e| log::warn!("MangoHud config: {e}")).ok()
     }
 }
 
@@ -206,12 +206,12 @@ impl Tuning {
 /// caps where set), the big cores, the charge limit.
 /// `known`: the policies as last read (see the module doc).
 fn apply_hardware(v: &Values, known: &mut Vec<Policy>, charge: &mut Charge, quiet: &mut Quiet) {
-    let power = PowerProfile::from_value(v.get(Setting::Power));
+    let power: PowerProfile = v.choice();
     // Cores first, so the caps reach the policies that stay online; twice, as a CPU of a cluster not
     // known yet comes online to be read, and may then belong offline.
     for _ in 0..2 {
         remember(known, policies());
-        set_cores(v.big_cores(), known, quiet);
+        set_cores(v.choice::<Cores>() == Cores::All, known, quiet);
     }
     let policies = policies();
     let f = share(power, v.get(Setting::CpuMax));
@@ -234,7 +234,7 @@ fn apply_hardware(v: &Values, known: &mut Vec<Policy>, charge: &mut Charge, quie
     // The fan's mode, for the fan daemon (where it runs: the file is there). One write of the whole
     // value: the file can't be replaced (/run isn't the session's), and the daemon takes an empty read,
     // between the truncation and the write, for no change.
-    let mode = fan::Mode::of(v.get(Setting::Fan)).name();
+    let mode = v.choice::<fan::Mode>().name();
     if sys::text(fan::MODE_FILE).is_some_and(|now| now.trim() != mode)
         && let Err(e) = fs::write(fan::MODE_FILE, mode)
     {
@@ -331,14 +331,14 @@ fn oem_switches() -> Option<PathBuf> {
 /// The MangoHud config file for a game (in `dir`), written with its frame rate cap (0: none) and HUD
 /// (0: invisible, 1: the frame rate only, 2: the full overlay), logging for the FPS tile. Rewritten in
 /// place, which MangoHud picks up live.
-pub fn mangohud_config(dir: &Path, game: &str, fps_cap: u16, hud: u16) -> io::Result<PathBuf> {
+pub fn mangohud_config(dir: &Path, game: &str, fps_cap: u16, hud: Hud) -> io::Result<PathBuf> {
     fs::create_dir_all(dir)?;
     // (Named by the entry's key, as its scopes, workspace and art are.)
     let path = dir.join(format!("{}.conf", clamshell_library::key_of(game)));
     let overlay = match hud {
-        0 => "alpha=0\nbackground_alpha=0\n",
-        1 => "fps_only\n",
-        _ => "",
+        Hud::Off => "alpha=0\nbackground_alpha=0\n",
+        Hud::Fps => "fps_only\n",
+        Hud::Full => "",
     };
     let text = format!("{overlay}autostart_log=1\nlog_interval=500\noutput_folder={}\nfps_limit={fps_cap}\n", dir.display());
     fs::write(&path, text)?;
@@ -388,14 +388,14 @@ mod tests {
     #[test]
     fn a_games_config_file_carries_its_cap_and_hud() {
         let dir = std::env::temp_dir().join(format!("clamshell-tuning-{}", std::process::id()));
-        let a = mangohud_config(&dir, "steam:1", 40, 0).unwrap();
+        let a = mangohud_config(&dir, "steam:1", 40, Hud::Off).unwrap();
         let text = fs::read_to_string(&a).unwrap();
         assert!(text.contains("fps_limit=40\n") && text.contains("alpha=0\n"));
-        let again = mangohud_config(&dir, "steam:1", 0, 1).unwrap();
+        let again = mangohud_config(&dir, "steam:1", 0, Hud::Fps).unwrap();
         assert_eq!(a, again, "the same file, rewritten");
         let text = fs::read_to_string(&a).unwrap();
         assert!(text.contains("fps_limit=0\n") && text.contains("fps_only\n") && !text.contains("alpha"));
-        assert_ne!(mangohud_config(&dir, "steam:2", 0, 0).unwrap(), a);
+        assert_ne!(mangohud_config(&dir, "steam:2", 0, Hud::Off).unwrap(), a);
         let _ = fs::remove_dir_all(&dir);
     }
 }

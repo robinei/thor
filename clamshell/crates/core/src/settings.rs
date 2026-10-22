@@ -52,46 +52,183 @@ pub enum Setting {
     Background,
 }
 
-/// [`Setting::Background`]'s values (see [`crate::background`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InBackground {
-    Runs,
-    /// Paused (frozen) once hidden for the grace.
-    Pauses,
-    /// Ended once its last window has closed.
-    Quits,
-    /// The default: Pauses for a game, else Runs (see [`crate::State::background_of`]).
-    PausesGames,
+/// A setting whose values are named choices: an enum, each variant stored as its value (see [`Values`]).
+/// Defined by [`choices!`], which gives each variant its value, its label and what it does.
+pub trait Choice: Copy + PartialEq + 'static {
+    const SETTING: Setting;
+    /// Its values, labels and impacts, in the order a tap steps through them.
+    const TABLE: Table;
+
+    fn value(self) -> u16;
+
+    /// The choice `value` stands for (a value not offered: the default).
+    fn of(value: u16) -> Self;
 }
 
-impl InBackground {
-    pub const fn value(self) -> u16 {
-        match self {
-            InBackground::Runs => 0,
-            InBackground::Pauses => 1,
-            InBackground::Quits => 2,
-            InBackground::PausesGames => 3,
-        }
+/// A choice setting's values as data: what [`Setting`]'s tables read for it.
+pub struct Table {
+    pub values: &'static [u16],
+    labels: &'static [&'static str],
+    impacts: &'static [Impact],
+    default: u16,
+}
+
+impl Table {
+    pub const fn new(values: &'static [u16], labels: &'static [&'static str], impacts: &'static [Impact], default: u16) -> Table {
+        Table { values, labels, impacts, default }
     }
 
-    pub fn of(value: u16) -> InBackground {
-        match value {
-            1 => InBackground::Pauses,
-            2 => InBackground::Quits,
-            3 => InBackground::PausesGames,
-            _ => InBackground::Runs,
-        }
+    fn at(&self, value: u16) -> Option<usize> {
+        self.values.iter().position(|&v| v == value)
     }
 
-    fn label(self) -> &'static str {
-        match self {
-            InBackground::Runs => "Runs hidden",
-            InBackground::Pauses => "Pauses hidden",
-            InBackground::Quits => "Quits closed",
-            InBackground::PausesGames => "Pauses games",
-        }
+    fn label(&self, value: u16) -> &'static str {
+        self.at(value).or_else(|| self.at(self.default)).and_then(|i| self.labels.get(i)).copied().unwrap_or_default()
+    }
+
+    fn impact(&self, value: u16) -> Impact {
+        self.at(value).and_then(|i| self.impacts.get(i)).copied().unwrap_or(Impact::Stock)
     }
 }
+
+/// Defines a [`Choice`]: the enum, its default, and per variant (in tap order) its stored value, its
+/// label and its [`Impact`].
+macro_rules! choices {
+    ($(#[$doc:meta])* $ty:ident for $setting:ident, default $default:ident {
+        $($(#[$vdoc:meta])* $v:ident = $value:literal, $label:literal, $impact:ident;)*
+    }) => {
+        $(#[$doc])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum $ty {
+            $($(#[$vdoc])* $v,)*
+        }
+
+        impl Default for $ty {
+            fn default() -> Self {
+                $ty::$default
+            }
+        }
+
+        impl $ty {
+            pub fn label(self) -> &'static str {
+                match self {
+                    $($ty::$v => $label,)*
+                }
+            }
+        }
+
+        impl $crate::settings::Choice for $ty {
+            const SETTING: $crate::settings::Setting = $crate::settings::Setting::$setting;
+            const TABLE: $crate::settings::Table = $crate::settings::Table::new(
+                &[$($value),*],
+                &[$($label),*],
+                &[$($crate::settings::Impact::$impact),*],
+                $ty::$default.value_const(),
+            );
+
+            fn value(self) -> u16 {
+                self.value_const()
+            }
+
+            fn of(value: u16) -> Self {
+                match value {
+                    $($value => $ty::$v,)*
+                    _ => $ty::$default,
+                }
+            }
+        }
+
+        impl $ty {
+            const fn value_const(self) -> u16 {
+                match self {
+                    $($ty::$v => $value,)*
+                }
+            }
+        }
+    };
+}
+
+pub(crate) use choices;
+
+choices!(
+    /// [`Setting::Power`]: how fast CPU and GPU may run (frequency caps; the Thor has no TDP setting).
+    PowerProfile for Power, default Balanced {
+        Battery = 0, "Battery", Saves;
+        Balanced = 1, "Balanced", Stock;
+        Performance = 2, "Performance", Costs;
+    }
+);
+
+choices!(
+    /// [`Setting::Hud`]: MangoHud's overlay.
+    Hud for Hud, default Off {
+        Off = 0, "HUD off", Stock;
+        Fps = 1, "HUD FPS", Changes;
+        Full = 2, "Full HUD", Changes;
+    }
+);
+
+choices!(
+    /// [`Setting::Upscale`]: rendering below the screen's resolution through gamescope.
+    Upscale for Upscale, default Native {
+        Native = 0, "Native", Stock;
+        Fsr720 = 1, "FSR 720p", Saves;
+        Fsr540 = 2, "FSR 540p", Saves;
+        Integer = 3, "Integer", Changes;
+    }
+);
+
+choices!(
+    /// [`Setting::BottomScreen`]: the second screen while it isn't used (see [`crate::bottom_screen`]).
+    BottomWhenIdle for BottomScreen, default OffWhenIdle {
+        /// Off on battery when idle (dimmed first).
+        OffWhenIdle = 2, "Off when idle", Stock;
+        /// On, dimmed when untouched.
+        On = 0, "Screen on", Costs;
+        /// Dark while a game is in force (until tapped), and off on battery.
+        DarkInGame = 1, "Dark in game", Saves;
+    }
+);
+
+choices!(
+    /// [`Setting::BigCores`]: whether the big CPU cores are on.
+    Cores for BigCores, default All {
+        Little = 0, "Little cores", Saves;
+        All = 1, "All cores", Stock;
+    }
+);
+
+choices!(
+    /// [`Setting::PadMouse`]: the pad mouse at launch.
+    MouseAtLaunch for PadMouse, default Off {
+        Off = 0, "Mouse off", Stock;
+        On = 1, "Mouse on", Changes;
+    }
+);
+
+choices!(
+    /// [`Setting::Rumble`]: how strongly the controller rumbles.
+    RumbleStrength for Rumble, default Full {
+        Off = 0, "Rumble off", Changes;
+        Low = 1, "Rumble low", Changes;
+        Mid = 2, "Rumble mid", Changes;
+        Full = 3, "Rumble full", Stock;
+    }
+);
+
+choices!(
+    /// [`Setting::Background`]: what a program does while none of its windows is shown (see
+    /// [`crate::background`]).
+    InBackground for Background, default PausesGames {
+        /// The default: Pauses for a game, else Runs (see [`crate::State::background_of`]).
+        PausesGames = 3, "Pauses games", Stock;
+        Runs = 0, "Runs hidden", Costs;
+        /// Paused (frozen) once hidden for the grace.
+        Pauses = 1, "Pauses hidden", Saves;
+        /// Ended once its last window has closed.
+        Quits = 2, "Quits closed", Saves;
+    }
+);
 
 pub const COUNT: usize = 17;
 
@@ -138,36 +275,49 @@ impl Setting {
         self == Setting::Keymap || self.choices().contains(&value)
     }
 
+    /// Its values as a [`Choice`]'s table, if they are named choices.
+    fn table(self) -> Option<&'static Table> {
+        match self {
+            Setting::Power => Some(&PowerProfile::TABLE),
+            Setting::Hud => Some(&Hud::TABLE),
+            Setting::Upscale => Some(&Upscale::TABLE),
+            Setting::BottomScreen => Some(&BottomWhenIdle::TABLE),
+            Setting::BigCores => Some(&Cores::TABLE),
+            Setting::Fan => Some(&crate::fan::Mode::TABLE),
+            Setting::PadMouse => Some(&MouseAtLaunch::TABLE),
+            Setting::Rumble => Some(&RumbleStrength::TABLE),
+            Setting::Background => Some(&InBackground::TABLE),
+            Setting::FpsCap | Setting::Refresh | Setting::Keymap | Setting::CpuMax | Setting::GpuMax => None,
+            Setting::ChargeLimit | Setting::ScreenOff | Setting::Sleep => None,
+        }
+    }
+
     /// The values a tap steps through, in order.
     pub fn choices(self) -> &'static [u16] {
+        if let Some(table) = self.table() {
+            return table.values;
+        }
         match self {
-            Setting::Power | Setting::Hud | Setting::Fan => &[0, 1, 2],
-            Setting::Background => {
-                &const { [InBackground::PausesGames.value(), InBackground::Runs.value(), InBackground::Pauses.value(), InBackground::Quits.value()] }
-            }
             Setting::FpsCap => &[0, 30, 40, 45, 60, 90, 120],
             Setting::Refresh => &[0, 60, 90, 120],
-            Setting::Upscale | Setting::Rumble => &[0, 1, 2, 3],
-            Setting::BottomScreen => &[2, 0, 1],
-            Setting::BigCores | Setting::PadMouse => &[0, 1],
             // (The others are the keymaps there are.)
             Setting::Keymap => &[0],
             Setting::CpuMax | Setting::GpuMax => &[0, 40, 50, 60, 70, 80, 90, 100],
             Setting::ChargeLimit => &[100, 90, 80, 0],
             Setting::ScreenOff => &[1, 2, 5, 10, 0],
             Setting::Sleep => &[5, 15, 30, 60, 0],
+            _ => &[],
         }
     }
 
     pub fn default_value(self) -> u16 {
+        if let Some(table) = self.table() {
+            return table.default;
+        }
         match self {
-            Setting::Power | Setting::BigCores => 1,
-            Setting::Rumble => 3,
             Setting::ChargeLimit => 100,
             Setting::ScreenOff => 5,
-            Setting::BottomScreen => 2,
             Setting::Sleep => 15,
-            Setting::Background => InBackground::PausesGames.value(),
             _ => 0,
         }
     }
@@ -190,16 +340,17 @@ impl Setting {
 
     /// What `value` does.
     pub fn impact(self, value: u16) -> Impact {
+        if let Some(table) = self.table() {
+            return table.impact(value);
+        }
         if value == self.default_value() {
             return Impact::Stock;
         }
         match (self, value) {
-            (Setting::Power, 2) | (Setting::Refresh, 120) | (Setting::Fan, 2) | (Setting::Background, 0) | (Setting::BottomScreen, 0) => Impact::Costs,
-            (Setting::CpuMax | Setting::GpuMax, 100) => Impact::Costs,
+            (Setting::Refresh, 120) | (Setting::CpuMax | Setting::GpuMax, 100) => Impact::Costs,
             // Never, or later than by default, costs power; sooner saves it.
             (Setting::ScreenOff | Setting::Sleep, v) if v == 0 || v > self.default_value() => Impact::Costs,
-            (Setting::Upscale, 3) | (Setting::Fan, _) => Impact::Changes,
-            (Setting::Hud | Setting::PadMouse | Setting::Keymap | Setting::Rumble, _) => Impact::Changes,
+            (Setting::Keymap, _) => Impact::Changes,
             _ => Impact::Saves,
         }
     }
@@ -213,43 +364,22 @@ impl Setting {
 
     /// How `value` reads on its tile, written to `buf`.
     pub fn describe(self, value: u16, buf: &mut impl Write) {
+        if let Some(table) = self.table() {
+            let _ = buf.write_str(table.label(value));
+            return;
+        }
         let text = match (self, value) {
-            (Setting::Power, 0) => "Battery",
-            (Setting::Power, 1) => "Balanced",
-            (Setting::Power, _) => "Performance",
             (Setting::FpsCap, 0) => "No cap",
             (Setting::Refresh, 0) => "Hz as is",
-            (Setting::Hud, 0) => "HUD off",
-            (Setting::Hud, 1) => "HUD FPS",
-            (Setting::Hud, _) => "Full HUD",
-            (Setting::Upscale, 0) => "Native",
-            (Setting::Upscale, 1) => "FSR 720p",
-            (Setting::Upscale, 2) => "FSR 540p",
-            (Setting::Upscale, _) => "Integer",
-            (Setting::BottomScreen, 0) => "Screen on",
-            (Setting::BottomScreen, 1) => "Dark in game",
-            (Setting::BottomScreen, _) => "Off when idle",
-            (Setting::BigCores, 0) => "Little cores",
-            (Setting::BigCores, _) => "All cores",
-            (Setting::Fan, 0) => "Fan auto",
-            (Setting::Fan, 1) => "Fan quiet",
-            (Setting::Fan, _) => "Fan max",
-            (Setting::PadMouse, 0) => "Mouse off",
-            (Setting::PadMouse, _) => "Mouse on",
             (Setting::Keymap, 0) => "Default",
             // (The tile shows the keymap's name.)
             (Setting::Keymap, v) => return number(buf, "Keymap ", v, ""),
-            (Setting::Rumble, 0) => "Rumble off",
-            (Setting::Rumble, 1) => "Rumble low",
-            (Setting::Rumble, 2) => "Rumble mid",
-            (Setting::Rumble, _) => "Rumble full",
             (Setting::CpuMax, 0) => "CPU auto",
             (Setting::GpuMax, 0) => "GPU auto",
             (Setting::ChargeLimit, 100) => "Charge full",
             (Setting::ChargeLimit, 0) => "Bypass",
             (Setting::ScreenOff, 0) => "Always on",
             (Setting::Sleep, 0) => "No sleep",
-            (Setting::Background, v) => InBackground::of(v).label(),
             // Numbers: the value with its unit.
             (Setting::FpsCap, v) => return number(buf, "", v, " fps"),
             (Setting::Refresh, v) => return number(buf, "", v, " Hz"),
@@ -258,6 +388,8 @@ impl Setting {
             (Setting::ChargeLimit, v) => return number(buf, "Charge to ", v, " %"),
             (Setting::ScreenOff, v) => return number(buf, "Off after ", v, " min"),
             (Setting::Sleep, v) => return number(buf, "Sleep after ", v, " min"),
+            // (Named choices: their table, above.)
+            _ => "",
         };
         let _ = buf.write_str(text);
     }
@@ -282,29 +414,9 @@ impl Values {
         self.0.get(s.index()).copied().unwrap_or_else(|| s.default_value())
     }
 
-    // The settings that are a choice of two, or of named values, by what they mean.
-
-    pub fn background(&self) -> InBackground {
-        InBackground::of(self.get(Setting::Background))
-    }
-
-    /// The bottom screen dark while a game is in force.
-    pub fn bottom_dark(&self) -> bool {
-        self.get(Setting::BottomScreen) == 1
-    }
-
-    /// The bottom screen powered off on battery when idle (or dark): all but "Screen on".
-    pub fn bottom_idle_off(&self) -> bool {
-        self.get(Setting::BottomScreen) != 0
-    }
-
-    pub fn pad_mouse(&self) -> bool {
-        self.get(Setting::PadMouse) == 1
-    }
-
-    /// All cores on (else the big ones off).
-    pub fn big_cores(&self) -> bool {
-        self.get(Setting::BigCores) != 0
+    /// A setting whose values are named choices, as its [`Choice`].
+    pub fn choice<C: Choice>(&self) -> C {
+        C::of(self.get(C::SETTING))
     }
 
     pub fn set(&mut self, s: Setting, value: u16) {
