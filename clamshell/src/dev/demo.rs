@@ -1,5 +1,5 @@
 //! Made-up readings for the snapshots: a status with every bar icon, Wi-Fi networks, Bluetooth devices,
-//! audio, a day of battery and a minute of metrics, running instances and their windows.
+//! audio, a day of battery, a minute of metrics, and running instances with their windows.
 
 use clamshell_core::levels::{Audio, AudioOutput, Stream};
 use clamshell_core::radios::bluetooth::{self, Bluetooth, Kind};
@@ -9,28 +9,28 @@ use clamshell_core::status::battery::{Battery, Charge, Group, Spender};
 use clamshell_core::status::metrics::Metrics;
 use clamshell_core::{Event, Id, Instance, PointerEvent, Reading, Status, Tab};
 
-/// Every bar icon shows.
+/// A status that shows every bar icon.
 pub const STATUS: Status =
     Status { battery: Some(72), charging: true, discharging: false, wifi: Some(80), volume: Some(60), muted: false, brightness: Some(70) };
 
 /// Low battery, no Wi-Fi, muted.
 pub const STATUS_LOW: Status = Status { battery: Some(9), charging: false, discharging: true, wifi: None, volume: Some(40), muted: true, brightness: None };
 
-/// A launch of entry `id` (the `n`th thing started).
+/// A launch of entry `id`, the `n`th thing started.
 pub fn run(id: &str, n: u64) -> Instance {
     Instance::Run { key: clamshell_library::key_of(id), secs: 1, n }
 }
 
-/// A window of a launch, on its entry's workspace (`down`: moved to the bottom screen).
+/// A window of a launch, on its entry's workspace, or moved to the bottom screen if `down` is set.
 fn window_of(id: i64, app_id: &str, launch: &Instance, focused: bool, down: bool) -> Window {
     let workspace = if down { Instance::Bottom.name() } else { launch.workspace() };
     Window { id, app_id: app_id.into(), focused, unit: launch.unit(), workspace, down, ..Window::default() }
 }
 
-/// The game running, two terminals and a browser, and their windows (the second terminal's in front).
+/// A game, two terminals and a browser running, with their windows. The second terminal is in front.
 pub fn running() -> Vec<Event> {
     let (game, t1, t2, web) = (run("zelda-lttp", 0), run("desktop:foot", 1), run("desktop:foot", 2), run("desktop:firefox", 3));
-    // (Their scopes, as systemd lists them: they run.)
+    // Their scopes as systemd lists them, which marks them as running.
     vec![
         Event::Units(vec![game.clone(), t1.clone(), t2.clone(), web.clone()]),
         Event::Windows(vec![
@@ -42,7 +42,7 @@ pub fn running() -> Vec<Event> {
     ]
 }
 
-/// [`running`]'s windows, the terminal in front with a second window moved to the bottom screen.
+/// The terminal in front from [`running`], with a second window of it moved to the bottom screen.
 pub fn window_below() -> Vec<Event> {
     let t2 = run("desktop:foot", 2);
     vec![Event::Windows(vec![window_of(8, "foot", &t2, true, false), window_of(10, "foot", &t2, false, true)])]
@@ -66,7 +66,7 @@ pub fn wifi() -> Wifi {
     }
 }
 
-/// Many networks (a city street): more than the list shows.
+/// Many networks, as on a city street: more than the list shows.
 pub fn wifi_crowded() -> Wifi {
     let mut wifi = wifi();
     let more = [
@@ -128,8 +128,8 @@ pub fn audio() -> Audio {
     }
 }
 
-/// A made-up day of charge (down while playing, charging overnight) and a busy moment, then the battery
-/// tab.
+/// A made-up day of charge, falling while playing and charging overnight, and a busy moment's spenders.
+/// The battery tab is opened.
 pub fn battery(now: u64) -> Vec<Event> {
     let mut level = 64.0f32;
     let history = (0..96u64)
@@ -156,15 +156,15 @@ pub fn battery(now: u64) -> Vec<Event> {
     ]
 }
 
-/// A sticks' calibration midway: the centres taken, the left stick turned up and right so far, the right
-/// stick resting.
+/// A stick calibration halfway through. The centres are taken, the left stick has been turned up and
+/// right so far, and the right stick is resting.
 pub fn sticks_progress() -> clamshell_core::device::sticks::Progress {
     use clamshell_core::device::sticks::{Phase, Progress, StickAxis};
     let axis = |low, high| StickAxis { low, centre: 0, high };
     Progress { phase: Phase::Turn, now: [620, -540, 10, -5], seen: [axis(-80, 760), axis(-700, 60), axis(-10, 15), axis(-8, 6)], min: -1024, max: 1024 }
 }
 
-/// The time zones as timedated lists them (a sample), Europe/Oslo in force.
+/// A sample of the time zones as timedated lists them, with Europe/Oslo set.
 pub fn time_zones() -> clamshell_core::TimeZones {
     let zones = [
         "Africa/Cairo",
@@ -194,7 +194,7 @@ pub fn time_zones() -> clamshell_core::TimeZones {
     clamshell_core::TimeZones { current: Some("Europe/Oslo".into()), zones: zones.map(String::from).to_vec(), ntp: Some(true), synced: true, error: None }
 }
 
-/// A minute of made-up readings, then the sysinfo tab.
+/// A minute of made-up readings, with the sysinfo tab opened.
 pub fn metrics() -> Vec<Event> {
     let mut events: Vec<Event> = (0..60u32)
         .map(|i| {

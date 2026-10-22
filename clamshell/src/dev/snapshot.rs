@@ -1,8 +1,8 @@
-//! `--snapshot DIR`: both screens drawn at the Thor's size into PNG files, without Wayland. The shots are
-//! shelf, the second screen and every tab, each drawn after the events that lead to it, in groups that each
-//! start from a fresh state. They are taken at a fixed time (unless CLAMSHELL_SNAPSHOT_NOW is set), so they
-//! come out the same on every run. The test below keeps hashes of their pixels (tests/snapshots.txt) to
-//! catch changes in what is drawn.
+//! `--snapshot DIR` draws both screens at the Thor's size into PNG files, without Wayland. The shots cover
+//! shelf, the second screen and every tab. Each is drawn after the events that lead to it, in groups that
+//! each start from a fresh state. They are taken at a fixed time unless CLAMSHELL_SNAPSHOT_NOW is set, so
+//! they come out the same on every run. The test below keeps hashes of their pixels in tests/snapshots.txt
+//! to catch changes in what is drawn.
 
 use std::fmt;
 use std::path::Path;
@@ -23,12 +23,12 @@ use clamshell_ui::Screen;
 use crate::control::{self, ParseError};
 use crate::dev::demo;
 
-/// The time snapshots are taken at, unless asked for the current one.
+/// The time the snapshots are taken at, unless the current time is asked for.
 pub const FIXED_NOW: u64 = 1_760_000_000;
 
-/// `--snapshot DIR`: the demo library's snapshots, or the real library's with
-/// CLAMSHELL_SNAPSHOT_LIBRARY=real; at [`FIXED_NOW`], or the time they are taken with
-/// CLAMSHELL_SNAPSHOT_NOW set.
+/// `--snapshot DIR`: draws the snapshots of the demo library, or of the real library if
+/// CLAMSHELL_SNAPSHOT_LIBRARY=real. They are taken at [`FIXED_NOW`], or at the current time if
+/// CLAMSHELL_SNAPSHOT_NOW is set.
 pub fn command(sources: &clamshell_system::library::Sources, dir: &Path) -> Result<(), String> {
     let real = std::env::var("CLAMSHELL_SNAPSHOT_LIBRARY").is_ok_and(|v| v == "real");
     let library = if real { clamshell_system::library::load(sources).library } else { clamshell_library::demo::library() };
@@ -36,7 +36,7 @@ pub fn command(sources: &clamshell_system::library::Sources, dir: &Path) -> Resu
     render(&|| state(library.clone()), now, dir).map_err(|e| e.to_string())
 }
 
-/// One file: the screen drawn, after these events.
+/// One file: the screen drawn after the events in `before`.
 pub struct Shot {
     pub name: &'static str,
     pub screen: Screen,
@@ -55,7 +55,7 @@ fn size(screen: Screen) -> (u32, u32) {
 pub enum Error {
     /// A key the scenario presses isn't on the keyboard.
     Keyboard(ParseError),
-    /// A file couldn't be drawn (why).
+    /// A file couldn't be drawn: the file and the reason.
     Render(String, String),
     /// A group's thread panicked.
     Panicked,
@@ -77,7 +77,8 @@ impl From<ParseError> for Error {
     }
 }
 
-/// Shelf's Tools collection opened and its Device entry run (selected, then activated): the Device view.
+/// Opens shelf's Tools collection and runs its Device entry by selecting and then activating it. This
+/// shows the Device view.
 fn open_device() -> Vec<Event> {
     let library = clamshell_library::demo::library();
     let tools = state(library).shelf().library().collections.iter().position(|c| c.name == "Tools").unwrap_or(0);
@@ -85,16 +86,17 @@ fn open_device() -> Vec<Event> {
     vec![tap(Id::Shelf(ShelfId::Collection(u16::try_from(tools).unwrap_or(0)))), device(), device()]
 }
 
-/// The state snapshots start from: a library, its apps pinned to the dock, nothing else remembered.
+/// The state the snapshots start from: a library with its apps pinned to the dock, and nothing else
+/// remembered.
 pub fn state(library: Library) -> State {
     let dock = Dock::pinned(vec!["desktop:steam".into(), "desktop:foot".into(), "desktop:firefox".into()]);
     State::new(Init { library, dock, keymaps: clamshell_core::keymap::Keymaps::initial(), ..Init::default() })
 }
 
-/// A play of `game` from `start` for `duration` seconds, as the launcher reports one, the clock at `now`
-/// again after.
+/// A play of `game` from `start` for `duration` seconds, as the launcher reports one. The clock is set
+/// back to `now` afterwards.
 fn a_play(game: &str, start: u64, duration: u64, now: u64) -> Vec<Event> {
-    // (Its window there while it plays, as a game's is.)
+    // The game has a window on its workspace while it plays, as a real game would.
     let workspace = clamshell_core::Instance::workspace_of(&clamshell_library::key_of(game));
     let window = clamshell_core::session::windows::Window {
         id: 900,
@@ -122,21 +124,21 @@ fn key(k: Key) -> Result<Event, ParseError> {
     control::key(k).map(tap)
 }
 
-/// A button of the keymaps' screens.
+/// A tap on a button of the keymaps' screens.
 fn km(id: KeymapId) -> Event {
     tap(Id::Keymap(id))
 }
 
-/// An input on the keymap edit screen selected (its panel's ways then remap it).
+/// Selects an input on the keymap edit screen. The panel's ways to remap then apply to it.
 fn select(input: Input) -> Vec<Event> {
     vec![km(KeymapId::Input(input))]
 }
 
-/// The selected input's parameter slid by `by` of half the Thor's second screen, the finger lifted if
-/// `lift`.
+/// Slides the selected input's parameter by `by` times half the width of the Thor's second screen. The
+/// finger is lifted if `lift` is set.
 fn slide(param: Param, by: f32, lift: bool) -> Vec<Event> {
     let control = clamshell_core::Control::Param(param);
-    // (Along the screen-wide track, as touch gives it: a finger down in the panel, mid-screen.)
+    // The slide runs along the screen-wide track, as touch reports it, starting mid-screen in the panel.
     let (x, width) = (620.0, 1240.0);
     let mut events = vec![Slide::Start { control, x, width }.into(), Slide::To { x: x + by * width * 0.5 }.into()];
     if lift {
@@ -145,7 +147,7 @@ fn slide(param: Param, by: f32, lift: bool) -> Vec<Event> {
     events
 }
 
-/// The settings' keymap tile: the picker.
+/// A tap on the settings' keymap tile, which opens the picker.
 fn keymap_tile() -> Event {
     tap(Id::Settings(SettingsId::Tile(Setting::Keymap)))
 }
@@ -159,18 +161,18 @@ fn taps(setting: Setting, n: usize) -> impl Iterator<Item = Event> {
     (0..n).map(move |_| tap(Id::Settings(SettingsId::Tile(setting))))
 }
 
-/// A group of shots: from a fresh state, `start`'s events (a named starting state, see below), then each
-/// shot after the events that lead to it, building on the group's earlier ones. Groups don't share
-/// state, so a change shows in the shots of the groups it touches.
+/// A group of shots. It starts from a fresh state with `start`'s events applied, then takes each shot
+/// after the events that lead to it, building on the group's earlier shots. Groups don't share state, so
+/// a change shows in the shots of the groups it touches.
 pub struct Group {
     pub start: Vec<Event>,
     pub shots: Vec<Shot>,
 }
 
-/// A keymap named FPS made on the settings' keymap screens, on its edit screen with A selected: A to
-/// Ctrl+X, L1 to right click (held Esc, twice Tab), the left stick to WASD, the right stick's up to the
-/// wheel, the gyro to the pointer while L2 is held, Select to M, the D-pad's left to 1, B to the pad's
-/// Y, R1 with turbo, the right stick's deadzone tuned.
+/// A keymap named FPS, made on the settings' keymap screens and left on its edit screen with A selected.
+/// It maps A to Ctrl+X; L1 to right click, Esc when held and Tab when pressed twice; the left stick to
+/// WASD; the right stick's up to the wheel; the gyro to the pointer while L2 is held; Select to M; the
+/// D-pad's left to 1; and B to the pad's Y. R1 has turbo and the right stick's deadzone is tuned.
 fn fps_keymap() -> Result<Vec<Event>, ParseError> {
     Ok([
         vec![tab(Tab::Settings), keymap_tile(), km(KeymapId::New)],
@@ -204,7 +206,8 @@ fn fps_keymap() -> Result<Vec<Event>, ParseError> {
     .concat())
 }
 
-/// [`fps_keymap`] with a layer named aim (A in it to Y), shown, L1 selected (as in Base there).
+/// [`fps_keymap`] with a layer named aim that maps A to Y. The layer is shown with L1 selected, which is
+/// as in Base there.
 fn fps_with_layer() -> Result<Vec<Event>, ParseError> {
     Ok([
         fps_keymap()?,
@@ -242,7 +245,8 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                         .collect(),
                 ),
                 shot("top-switch.png", Top, vec![ff6(), ff6()]),
-                // A held on the selected entry with the pad: on its actions, A and B said at the bottom.
+                // A held on the selected entry with the pad opens its actions, with A and B shown at the
+                // bottom.
                 shot(
                     "top-actions.png",
                     Top,
@@ -254,8 +258,8 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 ),
             ],
         ),
-        // A series selected in shelf, then open: its first season's episodes, the first played. (Shelf's rows
-        // as a frame would have reported them before the taps.)
+        // A series selected in shelf and then opened, showing its first season's episodes with the first one
+        // played. The start sets shelf's rows as a frame would have reported them before the taps.
         group(
             vec![ShelfEvent::Rows(8).into()],
             vec![
@@ -269,12 +273,12 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                         .chain([ShelfEvent::ListStep(2).into()])
                         .collect(),
                 ),
-                // Recent: the episode played, its series and season before its title.
+                // Recent shows the played episode with its series and season before its title.
                 shot("top-recent.png", Top, vec![tap(Id::Shelf(ShelfId::Collection(0)))]),
             ],
         ),
         group(vec![], vec![shot("bottom.png", Bottom, vec![])]),
-        // The settings, a game running.
+        // The settings while a game runs.
         group(
             vec![ff6(), ff6()],
             vec![
@@ -311,7 +315,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot("status-low.png", Bottom, vec![tap(Id::Editor(EditorId::Save)), Reading::Status(demo::STATUS_LOW).into()]),
             ],
         ),
-        // A new keymap named.
+        // Naming a new keymap.
         group(
             vec![ff6(), ff6(), tab(Tab::Settings)],
             vec![
@@ -362,7 +366,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot("keymap-layer-list.png", Bottom, vec![km(KeymapId::LayerPicker)]),
             ],
         ),
-        // Its ways to remap and the gyro (Back to the layer, as a layer key).
+        // Its ways to remap and the gyro, with Back mapped to the layer as a layer key.
         group(
             [
                 fps_with_layer()?,
@@ -404,8 +408,8 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 ),
             ],
         ),
-        // A game's own keymap: made from FPS (chosen for it), its menu, kept while FPS is chosen again; FPS's
-        // edit screen, used by games.
+        // A game's own keymap, made from FPS after FPS is chosen for the game. Then its menu, the own keymap
+        // kept while FPS is chosen again, and FPS's edit screen while games use it.
         group(
             [vec![ff6(), ff6()], fps_keymap()?, vec![km(KeymapId::Back), tap(ListId::Keymaps.row(3)), keymap_tile()]].concat(),
             vec![
@@ -446,8 +450,9 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot("time-europe.png", Bottom, vec![PointerEvent::Activate(ListId::Time.row(7)).into()]),
             ],
         ),
-        // The Device view (the Tools' Device entry, from shelf): off the device (no helper), then with an
-        // account without a password, a sticks' calibration going, and the password typed below (as dots).
+        // The Device view, opened from the Tools' Device entry in shelf. First off the device, where there is
+        // no helper. Then with an account without a password, a stick calibration in progress, and the
+        // password typed on the bottom screen, shown as dots.
         group(
             vec![ShelfEvent::Rows(8).into()],
             vec![
@@ -527,10 +532,11 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
     ])
 }
 
-/// Draws the scenario into `dir`, each group from a fresh state (`fresh`), each file written as its
-/// shot comes.
+/// Draws the scenario into `dir`. Each group starts from a fresh state made by `fresh`, and each file is
+/// written as soon as its shot is drawn.
 pub fn render(fresh: &(dyn Fn() -> State + Sync), now: u64, dir: &Path) -> Result<(), Error> {
-    // (The groups are independent: each on a thread of its own; within one, shot after shot.)
+    // The groups are independent, so each runs on a thread of its own. Within a group the shots are drawn
+    // in order.
     let groups = shots(now)?;
     let results: Vec<Result<(), Error>> = std::thread::scope(|scope| {
         let threads: Vec<_> = groups.into_iter().map(|group| scope.spawn(move || render_group(fresh(), group, now, dir))).collect();
@@ -546,8 +552,7 @@ fn render_group(mut state: State, Group { start, shots }: Group, now: u64, dir: 
     for event in start {
         state.apply(event);
     }
-    // The notice the setup left ("Starting …" for its launches) is cleared: the clock moves past it, and
-    // back.
+    // Clear the notice the setup left ("Starting …" for its launches) by moving the clock past it and back.
     state.apply(Event::tick(now + 5));
     state.apply(Event::tick(now));
     for Shot { name, screen, before } in shots {
@@ -555,7 +560,7 @@ fn render_group(mut state: State, Group { start, shots }: Group, now: u64, dir: 
             state.apply(event);
         }
         let path = dir.join(name);
-        // What a live frame reports (shelf's rows, the lists' rows) keeps the selections on screen.
+        // Applying what a live frame reports (shelf's rows, the lists' rows) keeps the selections on screen.
         let events = clamshell_ui::snapshot(&state, screen, size(screen), 1, &path).map_err(|e| Error::Render(path.display().to_string(), e.to_string()))?;
         for event in events {
             state.apply(event);
@@ -577,7 +582,8 @@ mod tests {
     const HEADER: &str = "# FNV-1a hashes of the snapshots' sizes and pixels (src/dev/snapshot.rs). After a change meant to change\n\
                           # what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots\n";
 
-    /// A PNG's size and pixels hashed (not its bytes: they change with the encoder, the pixels don't).
+    /// Hashes a PNG's size and pixels. The file's bytes are not hashed because they change with the
+    /// encoder, while the pixels don't.
     fn pixels_hash(path: &std::path::Path) -> String {
         let image = image::open(path).unwrap().to_rgba8();
         let mut bytes = Vec::with_capacity(8 + image.as_raw().len());
@@ -587,9 +593,9 @@ mod tests {
         format!("{:016x}", clamshell_library::hash::fnv1a64(&bytes))
     }
 
-    /// The snapshots, drawn and hashed, against the reference hashes; on a difference, the files drawn are
-    /// left for a look. After a change meant to change what is drawn (look at the files:
-    /// `cargo run --features dev -- --snapshot DIR`), write the new hashes with
+    /// Draws and hashes the snapshots and compares them with the reference hashes. If any differ, the
+    /// drawn files are left to look at. After a change that is meant to change what is drawn, check the
+    /// files (`cargo run --features dev -- --snapshot DIR`) and then write the new hashes with
     /// `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots`.
     #[test]
     fn snapshots_match_their_reference() {
