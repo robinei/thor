@@ -10,8 +10,8 @@ use std::fmt;
 use std::os::fd::BorrowedFd;
 use std::time::{Duration, Instant};
 
-use ::dbus::arg::{AppendAll, Arg, Get, ReadAll};
-pub use ::dbus::arg::{PropMap, RefArg, Variant};
+pub use ::dbus::arg::{AppendAll, PropMap, RefArg, Variant};
+use ::dbus::arg::{Arg, Get, ReadAll};
 use ::dbus::channel::{BusType, Channel};
 pub use ::dbus::message::MessageType;
 pub use ::dbus::{Message, Path};
@@ -57,6 +57,15 @@ impl Error {
     /// connection is made again.
     pub fn is_bus_failure(&self) -> bool {
         matches!(self, Error::Bus(_))
+    }
+
+    /// The part worth showing a person: the service's own message if it gave one.
+    pub fn message(&self) -> &str {
+        match self {
+            Error::Method { message, .. } if !message.is_empty() => message,
+            Error::Method { name, .. } => name,
+            Error::Bus(e) | Error::Reply(e) => e,
+        }
     }
 
     /// Whether the service isn't on the bus at all (not installed, or not running).

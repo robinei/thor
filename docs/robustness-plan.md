@@ -8,7 +8,7 @@ fallbacks) and 9 (the comment style). Each step is a commit or a few that pass `
 The `dbus` crate is already used; these tools are front ends to services it can call directly, with typed
 replies and real errors.
 
-- [ ] `timedatectl` → `org.freedesktop.timedate1` (`Timezone`, `NTP`; `SetTimezone`, `SetNTP`).
+- [x] `timedatectl` → `org.freedesktop.timedate1` (`Timezone`, `NTP`; `SetTimezone`, `SetNTP`).
 - [ ] `udisksctl` → `org.freedesktop.UDisks2` (`Filesystem.Mount`/`Unmount`, `Drive.PowerOff`).
 - [ ] `systemd-run` and `systemctl` → `org.freedesktop.systemd1` (`StartTransientUnit`, `StopUnit`, the
       unit's `FreezerState`).

@@ -94,7 +94,7 @@ fn carry_out(command: Command, screenshots: Option<&PathBuf>, shown: &mut u32, s
             sink.send(Event::Reading(Reading::Time(timedated::read_time(error))))
         }
         Command::SetNtp(on) => {
-            let error = timedated::timedatectl(&["set-ntp", if on { "true" } else { "false" }]).err();
+            let error = timedated::set_ntp(on).err();
             sink.send(Event::Reading(Reading::Time(timedated::read_time(error))))
         }
         Command::StepClock(field, by) => {
