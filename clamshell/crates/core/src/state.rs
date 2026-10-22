@@ -203,7 +203,13 @@ impl State {
             }
             Event::Pointer(e) => self.on_pointer(e, out),
             Event::Slide(slide) => self.on_slide(slide, out),
-            Event::Level(e) => self.on_level(e, out),
+            // A level row set is the one the finger landed on, and nothing once it is gone.
+            Event::Level(LevelEvent::Set(level, value)) => {
+                if let Some(level) = self.lists().resolve_level(level) {
+                    self.levels.on_event(LevelEvent::Set(level, value), self.clock.mono(), out);
+                }
+            }
+            Event::Level(e) => self.levels.on_event(e, self.clock.mono(), out),
             Event::Shelf(e) => self.shelf.on_event(e, &mut self.pointer, out),
             Event::Launch(e) => self.on_launch_event(e, out),
             Event::Windows(windows) => {
@@ -1028,25 +1034,6 @@ impl State {
                 self.levels.slide_end();
                 out.mark(Dirty::BOTTOM);
                 self.keymapping.param_slide_end(out);
-            }
-        }
-    }
-
-    fn on_level(&mut self, event: LevelEvent, out: &mut Out) {
-        match event {
-            LevelEvent::Set(level, value) => {
-                let Some(level) = self.lists().resolve_level(level) else {
-                    return;
-                };
-                let before = self.levels.level(level);
-                self.levels.change(self.clock.mono(), |l| l.set(level, value, out));
-                if self.levels.level(level) != before {
-                    out.mark(Dirty::BOTTOM);
-                }
-            }
-            LevelEvent::Step(level, direction) => {
-                out.mark(Dirty::BOTTOM);
-                self.levels.change(self.clock.mono(), |l| l.step(level, direction, out));
             }
         }
     }

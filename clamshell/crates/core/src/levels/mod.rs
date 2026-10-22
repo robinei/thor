@@ -15,7 +15,6 @@
 
 pub mod slider;
 
-use crate::AudioId;
 use crate::effect::{Effect, Save};
 use crate::id::Id;
 use crate::kit::debounce::Debounce;
@@ -23,6 +22,7 @@ use crate::kit::list::{ItemKey, Rows};
 use crate::nav::lists::{ListId, RowPart};
 use crate::out::Out;
 use crate::resume::SAVE_AFTER;
+use crate::{AudioId, Dirty, LevelEvent};
 use slider::{Control, Slider};
 
 /// A level row.
@@ -391,6 +391,24 @@ impl Levels {
                     }
                     out.effects.extend(self.brightness_effect());
                 }
+            }
+        }
+    }
+
+    /// A level row set by the finger on it, or stepped by the pad, at `now`. A set row is redrawn if its
+    /// level changed, a stepped one always.
+    pub(crate) fn on_event(&mut self, event: LevelEvent, now: u64, out: &mut Out) {
+        match event {
+            LevelEvent::Set(level, value) => {
+                let before = self.level(level);
+                self.change(now, |l| l.set(level, value, out));
+                if self.level(level) != before {
+                    out.mark(Dirty::BOTTOM);
+                }
+            }
+            LevelEvent::Step(level, direction) => {
+                out.mark(Dirty::BOTTOM);
+                self.change(now, |l| l.step(level, direction, out));
             }
         }
     }
