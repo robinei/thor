@@ -1,12 +1,12 @@
-//! Where the controller's input goes. Something claims the pad by what is in front: shelf, or the program
-//! (a game or an app, alike: as a game's pad, through its keymap), or typing into an app while the
-//! keyboard tab is open; the pad mouse, while on, claims it over all of them. The second screen gets it when nothing claims it, and View moves it there (and back) from the
-//! pad mouse or typing. A game keeps it (View is the game's button there): only a switch from outside
-//! the pad (`clamshell ctl pad switch`) moves it to the second screen, and
-//! View there back. While a dock entry is being moved, the second screen has it (the D-pad moves it). When the claimant changes,
-//! the pad goes to the new one, except that a pad in use on the second screen (its focus ring showing)
-//! with nothing claiming it before stays there (the keyboard coming up under it is typed on with the
-//! pad).
+//! Where the controller's input goes. Something claims the pad by what is in front: shelf, or the program (a
+//! game or an app, alike: as a game's pad, through its keymap), or typing into an app while the keyboard tab
+//! is open; the pad mouse, while on, claims it over all of them. The second screen gets it when nothing
+//! claims it, and View moves it there (and back) from the pad mouse or typing. A game keeps it (View is the
+//! game's button there): only a switch from outside the pad (`clamshell ctl pad switch`) moves it to the
+//! second screen, and View there back. While a dock entry is being moved, the second screen has it (the D-pad
+//! moves it). When the claimant changes, the pad goes to the new one, except that a pad in use on the second
+//! screen (its focus ring showing) with nothing claiming it before stays there (the keyboard coming up under
+//! it is typed on with the pad).
 //!
 //! The pad mouse is the user's switch, or follows the program in force (its Setting::PadMouse): turned
 //! on for a program that wants it, off again when another (or none) is in force, unless the user

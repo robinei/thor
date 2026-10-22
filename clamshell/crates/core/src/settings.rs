@@ -282,7 +282,8 @@ impl Values {
         self.0.get(s.index()).copied().unwrap_or_else(|| s.default_value())
     }
 
-    /// The settings that are a choice of two, or of named values, by what they mean.
+    // The settings that are a choice of two, or of named values, by what they mean.
+
     pub fn background(&self) -> InBackground {
         InBackground::of(self.get(Setting::Background))
     }

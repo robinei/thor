@@ -434,9 +434,10 @@ impl Library {
         }
     }
 
-    /// What a group's Continue plays: of the videos in it (mpv's, all the way down, in order), the one
-    /// played or watched last (see [`Entry::last_watched`]) unless it was watched to its end, then the one after it; the first if none was played; none when
-    /// the last was watched to the end, or it holds no videos (a folder of games).
+    /// What a group's Continue plays: of the videos in it (mpv's, all the way down, in order), the one played
+    /// or watched last (see [`Entry::last_watched`]) unless it was watched to its end, then the one after it;
+    /// the first if none was played; none when the last was watched to the end, or it holds no videos (a
+    /// folder of games).
     pub fn to_continue(&self, group: usize) -> Option<usize> {
         let mut leaves = Vec::new();
         let mut stack: Vec<usize> = self.entries.get(group)?.items.iter().rev().copied().collect();

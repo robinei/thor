@@ -2,17 +2,17 @@
 //! pure state machine: it is told what happens (down, moved, up, a timer fired) and answers with what to
 //! do: events for the state, and timers to arm or disarm (the caller runs them on its event loop).
 //!
-//! A press is a tap (it acts on release, if that is still on its target) until its hold timer fires: then it is held (keys repeat, the
-//! rest get one long press) and the release only lifts it. A finger on volume or brightness may become
-//! a slide (held there briefly, or moved sideways): the slider comes up under it and follows it. A finger
-//! on a level row sets it where it is, and follows it. A finger on a scrolled list that moves up or down
-//! past [`DRAG_START`] drags the list instead (the row under it is let go without a tap); let go while
-//! moving, the list flings on, slowing down, until it stops or reaches an end. Last, a finger that would
-//! still tap on the second screen ([`points`]) and moves past [`POINT_START`] ([`BLANK_POINT_START`] on
-//! nothing, where there is no tap to keep) points (see clamshell-core's
-//! `touch`): it and the other fingers tapping there are let go without a tap and become the touchpad's,
-//! as are fingers that come down there while it points, until none has been on it for [`POINT_IDLE`].
-//! Positions are in the surface's logical pixels; the target's track says what they mean.
+//! A press is a tap (it acts on release, if that is still on its target) until its hold timer fires: then it
+//! is held (keys repeat, the rest get one long press) and the release only lifts it. A finger on volume or
+//! brightness may become a slide (held there briefly, or moved sideways): the slider comes up under it and
+//! follows it. A finger on a level row sets it where it is, and follows it. A finger on a scrolled list that
+//! moves up or down past [`DRAG_START`] drags the list instead (the row under it is let go without a tap);
+//! let go while moving, the list flings on, slowing down, until it stops or reaches an end. Last, a finger
+//! that would still tap on the second screen ([`points`]) and moves past [`POINT_START`]
+//! ([`BLANK_POINT_START`] on nothing, where there is no tap to keep) points (see clamshell-core's `touch`):
+//! it and the other fingers tapping there are let go without a tap and become the touchpad's, as are fingers
+//! that come down there while it points, until none has been on it for [`POINT_IDLE`]. Positions are in the
+//! surface's logical pixels; the target's track says what they mean.
 
 use std::time::{Duration, Instant};
 

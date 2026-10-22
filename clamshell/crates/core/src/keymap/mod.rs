@@ -1,14 +1,13 @@
 //! Keymaps: remappings of the controller (a game's or all games' setting,
-//! [`crate::settings::Setting::Keymap`], is a keymap's id; 0 is Default, no remapping). A keymap is
-//! named, and shared by the games that choose it, or a game's own: unnamed, offered to that game alone
-//! (kept while another is chosen, until deleted), made from the keymap in force there. Bindings move
-//! between the two by copying: a named keymap (or Default) loaded into a game's own, a game's own saved as
-//! a new named keymap or over one. Each maps some of
-//! the pad's inputs ([`Input`]) to something else ([`Output`]); an input without a binding does what it
-//! does on the pad. What an input may map to depends on its kind ([`Kind`]): a button to a pad button, a
-//! key chord, a mouse button or a wheel step; a stick to a stick, the mouse pointer, four keys or the
-//! D-pad; a trigger to a trigger or, past a threshold, anything a button maps to; the gyro to the mouse
-//! pointer or a stick, always or while a chosen button is held.
+//! [`crate::settings::Setting::Keymap`], is a keymap's id; 0 is Default, no remapping). A keymap is named,
+//! and shared by the games that choose it, or a game's own: unnamed, offered to that game alone (kept while
+//! another is chosen, until deleted), made from the keymap in force there. Bindings move between the two by
+//! copying: a named keymap (or Default) loaded into a game's own, a game's own saved as a new named keymap or
+//! over one. Each maps some of the pad's inputs ([`Input`]) to something else ([`Output`]); an input without
+//! a binding does what it does on the pad. What an input may map to depends on its kind ([`Kind`]): a button
+//! to a pad button, a key chord, a mouse button or a wheel step; a stick to a stick, the mouse pointer, four
+//! keys or the D-pad; a trigger to a trigger or, past a threshold, anything a button maps to; the gyro to the
+//! mouse pointer or a stick, always or while a chosen button is held.
 //!
 //! A keymap has layers ([`Layer`]): Base, and any number added. A binding turns a layer on
 //! ([`Output::Layer`]) while held, until pressed again, or for one input. An input with no binding in a

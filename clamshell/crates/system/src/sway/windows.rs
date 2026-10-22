@@ -45,11 +45,11 @@ fn collect(node: &Node, workspace: &str, unit: &mut impl FnMut(u32) -> (Option<S
     }
 }
 
-/// What to ask sway after a change of windows (`down`: the down rules in force): each window of one of our instances that isn't on its
-/// instance's workspace moved there (asked once per window and workspace, `tried`: a window sway won't
-/// move isn't asked again at its every event), and shelf's window shown when it is moved home (as the
-/// program starts). A workspace in front that empties (its last window closed or moved down) stays, black:
-/// Home or the dock goes on from there. `top`: the main screen's output.
+/// What to ask sway after a change of windows (`down`: the down rules in force): each window of one of our
+/// instances that isn't on its instance's workspace moved there (asked once per window and workspace,
+/// `tried`: a window sway won't move isn't asked again at its every event), and shelf's window shown when it
+/// is moved home (as the program starts). A workspace in front that empties (its last window closed or moved
+/// down) stays, black: Home or the dock goes on from there. `top`: the main screen's output.
 pub fn reconcile(windows: &[Window], top: Option<&str>, down: &[DownRule], land: &[Arc<str>], tried: &mut HashSet<(i64, String)>) -> Vec<String> {
     let mut out = Vec::new();
     let bottom = Instance::Bottom.name();

@@ -12,11 +12,13 @@
 //!   ],
 //!   "runners": [
 //!     { "type": "desktop", "id": "desktop", "name": "Desktop", "match": ["*.desktop"] },
-//!     { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"], "launch": ["retroarch", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"] },
+//!     { "id": "snes", "name": "SNES", "match": ["*.sfc", "*.smc"],
+//!       "launch": ["retroarch", "-L", "/usr/lib/libretro/snes9x_libretro.so", "{path}"] },
 //!     { "id": "other", "name": "Other files", "match": ["*"], "launch": ["xdg-open", "{path}"] }
 //!   ],
 //!   "sources": [
-//!     { "type": "dir", "id": "snes", "dir": "~/Games/snes", "place": "@snes", "runner": "snes", "match": ["*.sfc", "*.zip"], "metadata": "libretro:..." },
+//!     { "type": "dir", "id": "snes", "dir": "~/Games/snes", "place": "@snes", "runner": "snes",
+//!       "match": ["*.sfc", "*.zip"], "metadata": "libretro:..." },
 //!     { "type": "desktop", "categories": "Game", "place": "@games" },
 //!     { "type": "desktop", "place": "@apps" },
 //!     { "type": "browse", "dir": "~", "place": "@files/Home" }
@@ -53,10 +55,10 @@
 //! - `browse`: a dir listed as it is opened, not scanned (no metadata, not in Recent), its own folder at
 //!   its `place` (its last part the folder's title); `trash`: the Trash's `files` dir.
 //! - `desktop`, `steam`: the desktop files' apps and games, Steam's installed games (opened by a runner of
-//!   that type). Each source of the type takes, in order, those left that it matches (see [`Rule`]: by
-//!   id, name, a desktop file's categories; globs, any case; none: all), putting them at its `place`, or
-//!   leaving them out (`hide`); what none takes is left out. `runner`: the runner of the type that opens
-//!   them (else the first); `metadata`: `steamgriddb`, a Steam source's `steam`. A desktop file's id is its name without
+//!   that type). Each source of the type takes, in order, those left that it matches (see [`Rule`]: by id,
+//!   name, a desktop file's categories; globs, any case; none: all), putting them at its `place`, or leaving
+//!   them out (`hide`); what none takes is left out. `runner`: the runner of the type that opens them (else
+//!   the first); `metadata`: `steamgriddb`, a Steam source's `steam`. A desktop file's id is its name without
 //!   `.desktop`, a Steam game's its app id. `{ "type": "desktop", "id": "net.lutris.*", "place": "@apps" }`,
 //!   `{ "type": "desktop", "categories": "Game", "place": "@games" }`, `{ "type": "desktop", "id":
 //!   "*uninstall*", "hide": true }`, `{ "type": "desktop", "place": "@apps" }` (the rest).

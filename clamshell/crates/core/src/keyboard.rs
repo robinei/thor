@@ -96,13 +96,12 @@ const fn n(k: Named) -> Key {
     Key::Named(k)
 }
 
-/// The layout: US letters and digits in their usual places, every row 10 units so keys use the full
-/// width. The most typed punctuation sits after the space bar, nearest the thumbs (; , . / and with Shift
-/// : < > ?); the rest has its own row on top with Esc, Tab and Caps Lock, - and = at its right as on a PC.
-/// Fn: F1-F10
-/// on the digits, F11 and F12 at the top right (on - and =), arrows on w/a/s/d under the left hand, and
-/// under the right a PC's six-key block with its outer columns swapped: PgUp, Home, Insert on i/o/p over
-/// PgDn, End, Delete on k/l/Backspace.
+/// The layout: US letters and digits in their usual places, every row 10 units so keys use the full width.
+/// The most typed punctuation sits after the space bar, nearest the thumbs (; , . / and with Shift : < > ?);
+/// the rest has its own row on top with Esc, Tab and Caps Lock, - and = at its right as on a PC. Fn: F1-F10
+/// on the digits, F11 and F12 at the top right (on - and =), arrows on w/a/s/d under the left hand, and under
+/// the right a PC's six-key block with its outer columns swapped: PgUp, Home, Insert on i/o/p over PgDn, End,
+/// Delete on k/l/Backspace.
 pub const LAYOUT: &[&[Slot]] = &[
     &[
         named(Named::Esc, 1.0),

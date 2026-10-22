@@ -1,11 +1,11 @@
 //! Idle: with no input for a while, the screens dim, then go off, then the device sleeps; any input
 //! brings them back. Times are global settings ([`Setting::ScreenOff`], [`Setting::Sleep`]).
 //!
-//! Input is read from the input devices themselves (a system thread reads every one, without taking it
-//! away from anyone), plus what reaches ClamShell another way (the pad driving the
-//! screens). The compositor's word is an extra where it gives it (the standard
-//! Wayland idle protocol): an app that asks it to keep the screen on, a video player, holds idle off. If
-//! neither the devices nor the compositor can be heard, nothing goes idle.
+//! Input is read from the input devices themselves (a system thread reads every one, without taking it away
+//! from anyone), plus what reaches ClamShell another way (the pad driving the screens). The compositor's word
+//! is an extra where it gives it (the standard Wayland idle protocol): an app that asks it to keep the screen
+//! on, a video player, holds idle off. If neither the devices nor the compositor can be heard, nothing goes
+//! idle.
 //!
 //! Sleep is only where the program may (the device's own session: never a desktop that runs ClamShell
 //! for testing). A program in front doesn't hold it off; one that should (a video player) asks the

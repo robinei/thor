@@ -1,18 +1,17 @@
-//! The controller path: the real Xbox-style controller is grabbed for good, and games get a virtual Xbox
-//! 360 pad that is always there. Where its events go is the state's choice ([`PadRoute`], see
-//! [`route`]): the game, through the keymap in force ([`remap`]: the virtual pad, keys and mouse
-//! buttons on the virtual mouse's keyboard, the pointer; a stick's or trigger's tuning, such as its
-//! deadzone, is the keymap's); the pad mouse ([`mouse`]); ClamShell's screens ([`navigator`]); typing into an app
-//! ([`typing`]); or a keymap's edit screen listening ([`listen`]). The gyro comes from a motion sensor
-//! next to the controller ([`motion`]). Away from the game the virtual pad shows a neutral controller,
-//! so games never see it disappear. The home button (BTN_MODE) is ours: it goes to the program as
-//! [`Event::Home`]; held, then the Back button with a game in front, it is the game's Guide (see
-//! [`route`]). The Back button ([`remap::BACK_KEY`]) is a keymap's input in the game, back on
-//! ClamShell's screens; the AYN button ([`remap::AYN_KEY`], on the Thor's GPIO keys, read alongside the
-//! controller: [`device::AynKey`]) a keymap's input in the game too, Guide as on the pad. The virtual
-//! devices outlive the controller: unplugged (or failing), the pad stays, at rest, until one is back.
-//! Games' rumble on the virtual pad reaches the real controller's motors while the game has the pad
-//! ([`rumble`]), scaled by the Rumble setting.
+//! The controller path: the real Xbox-style controller is grabbed for good, and games get a virtual Xbox 360
+//! pad that is always there. Where its events go is the state's choice ([`PadRoute`], see [`route`]): the
+//! game, through the keymap in force ([`remap`]: the virtual pad, keys and mouse buttons on the virtual
+//! mouse's keyboard, the pointer; a stick's or trigger's tuning, such as its deadzone, is the keymap's); the
+//! pad mouse ([`mouse`]); ClamShell's screens ([`navigator`]); typing into an app ([`typing`]); or a keymap's
+//! edit screen listening ([`listen`]). The gyro comes from a motion sensor next to the controller
+//! ([`motion`]). Away from the game the virtual pad shows a neutral controller, so games never see it
+//! disappear. The home button (BTN_MODE) is ours: it goes to the program as [`Event::Home`]; held, then the
+//! Back button with a game in front, it is the game's Guide (see [`route`]). The Back button
+//! ([`remap::BACK_KEY`]) is a keymap's input in the game, back on ClamShell's screens; the AYN button
+//! ([`remap::AYN_KEY`], on the Thor's GPIO keys, read alongside the controller: [`device::AynKey`]) a
+//! keymap's input in the game too, Guide as on the pad. The virtual devices outlive the controller: unplugged
+//! (or failing), the pad stays, at rest, until one is back. Games' rumble on the virtual pad reaches the real
+//! controller's motors while the game has the pad ([`rumble`]), scaled by the Rumble setting.
 
 mod calibrate;
 mod device;

@@ -275,9 +275,9 @@ pub(crate) fn back(s: &State) -> Option<Event> {
     (in_shelf && s.shelf().group().is_some()).then(|| PointerEvent::Activate(Id::Shelf(ShelfId::Up)).into())
 }
 
-/// On a desktop, keys stand in for the pad: arrows move focus, Enter/Space is A (press, hold), Tab is
-/// View, Backspace B, Q and E the shoulders, Home and End the triggers, F is Y, P is X, C is Start. (Not on the device: there what reaches shelf's
-/// window is typing.)
+/// On a desktop, keys stand in for the pad: arrows move focus, Enter/Space is A (press, hold), Tab is View,
+/// Backspace B, Q and E the shoulders, Home and End the triggers, F is Y, P is X, C is Start. (Not on the
+/// device: there what reaches shelf's window is typing.)
 const DESKTOP_KEYS: [(Keysym, PadInput); 16] = [
     (Keysym::Left, PadInput::Left),
     (Keysym::Right, PadInput::Right),

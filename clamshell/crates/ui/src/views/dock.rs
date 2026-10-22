@@ -1,11 +1,10 @@
 //! The dock: its entries (pinned, then running; see `core`'s `dock`) as a grid of tiles on black, each its
 //! picture (box art, or an app's icon) over its name, scrolled by rows when there are more than fit. A
 //! running entry in colour (the program in force marked by a dot when several run), a stopped one grey.
-//! A tap starts it or shows it; a long press opens its menu in the dock's place: Open another, Close
-//! window, Pin or Unpin, Move, Quit, Force kill (a stopped one: Unpin, Move). While one moves, it is
-//! named in the accent colour and the D-pad moves it. A tile with a tray icon (see `core`'s `tray`) has a
-//! mark in its top left corner, three bars, which opens its program's menu in the same place (Menu in
-//! its long-press menu too).
+//! A tap starts it or shows it; a long press opens its menu in the dock's place (see [`draw_menu`]). While
+//! one moves, it is named in the accent colour and the D-pad moves it. A tile with a tray icon (see
+//! `core`'s `tray`) has a mark in its top left corner, three bars, which opens its program's menu in the
+//! same place (Menu in its long-press menu too).
 
 use clamshell_core::dock::DOCK_COLUMNS;
 use clamshell_core::tray::TrayEntry;
@@ -22,8 +21,9 @@ use crate::toolkit::widgets::{self, CAPTION_Y, HeaderRight, TileFace, TileShape}
 const MIN_ROWS: usize = 4;
 /// Gap between tiles, of the area's height.
 const GAP: f32 = 0.014;
-/// A tile's picture area: its top, of the tile's height; the room it leaves above the caption.
 const TILE: TileShape = TileShape { icon: 0.42, icon_y: 0.1, cut: Some(8.0) };
+/// A tile's picture: its top, and the room it leaves above the caption, of the tile's height; its corners'
+/// radius.
 const ART_TOP: f32 = 0.06;
 const ART_ROOM: f32 = 0.03;
 const ART_RADIUS: f32 = 4.0;
@@ -105,11 +105,9 @@ fn tray_mark(f: &mut Frame, tile: Rect, i: usize) {
     });
 }
 
-/// An entry's menu, from a long press on its tile: running, Open another, Close window (if it has one),
-/// Menu (if it has a tray icon), Pin or Unpin, Start with ClamShell (or Don't), Move, Suspend (or
-/// Resume: shown), Quit, Force kill;
-/// stopped, those but the first and the last two. The back
-/// arrow returns to the dock. Its tray menu instead, if that is open.
+/// An entry's menu, from a long press on its tile, with the items that apply: Open another, Close window,
+/// Menu (its tray icon's), Pin or Unpin, Start with ClamShell (or Don't), Move, Suspend or Resume, and while
+/// it runs Quit and Force kill. The back arrow returns to the dock. If its tray menu is open, that instead.
 fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
     let s = f.s;
     if let Some((tray, entries)) = s.tray_page().filter(|_| s.dock().tray_open()) {

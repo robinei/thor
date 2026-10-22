@@ -3,11 +3,11 @@
 //! reloads when it changes).
 //!
 //! These write `scaling_max_freq` of each cpufreq policy, `max_freq` of the GPU's devfreq device, CPUs'
-//! `online`, the battery's `charge_control_end_threshold` and `constant_charge_current` (see [`Hold`]), and the fan
-//! daemon's mode file, which needs write access to them (on the device: the `power` group's, given by
-//! thor-system's udev rule `73-thor-power.rules`, the mode file by clamshell's tmpfiles entry). The
-//! hardware is set on a thread of its own ([`spawn`]): taking cores offline can take a while, and drawing
-//! mustn't wait for it.
+//! `online`, the battery's `charge_control_end_threshold` and `constant_charge_current` (see [`Hold`]), and
+//! the fan daemon's mode file, which needs write access to them (on the device: the `power` group's, given by
+//! thor-system's udev rule `73-thor-power.rules`, the mode file by clamshell's tmpfiles entry). The hardware
+//! is set on a thread of its own ([`spawn`]): taking cores offline can take a while, and drawing mustn't wait
+//! for it.
 //!
 //! A cluster whose cores are all offline can't be read (its cpufreq policy's files say EBUSY): the
 //! thread remembers each cluster from when it could, and brings a CPU it knows nothing of online to read
@@ -70,17 +70,17 @@ const CHARGE_AGAIN: Duration = Duration::from_secs(30);
 /// Held at the limit by the charge current, charging starts again this many percent below it (Kettle's).
 const CHARGE_RESUME: u64 = 5;
 
-/// How a charge limit is held (`CLAMSHELL_CHARGE_LIMIT`, read at start; Bypass is always the current
-/// at 0). `Current`, the default: by the charge current, 0 from the limit until the level is
-/// [`CHARGE_RESUME`] below it, so the charger powers the device and the battery is left alone (Kettle's
-/// kettle-powerd, measured on a Thor: SM8550's battery firmware never answers the end threshold's
-/// request, but takes the current, Armada's patch 0903). `threshold`: the battery firmware's own end
-/// threshold, for trying on firmware that takes it (Armada's patch 0904 makes a refused write fail).
-/// `firmware`: the battery firmware's own switches, which AYN's and Retroid's Android drivers write
-/// (PB-OS's kernel patch, linux-thor's; untried on a Thor): its 80 % limit (`retroid_limit_capacity`)
-/// for 80, running from USB with the battery left alone (`retroid_charge_now` 0, and the current at 0
-/// too) for Bypass, the charge current for 90 (the firmware has no other level); written again at every look, as the firmware may
-/// drop them when the charger is plugged in again. Without the switches: as `Current`.
+/// How a charge limit is held (`CLAMSHELL_CHARGE_LIMIT`, read at start; Bypass is always the current at 0).
+/// `Current`, the default: by the charge current, 0 from the limit until the level is [`CHARGE_RESUME`] below
+/// it, so the charger powers the device and the battery is left alone (Kettle's kettle-powerd, measured on a
+/// Thor: SM8550's battery firmware never answers the end threshold's request, but takes the current, Armada's
+/// patch 0903). `threshold`: the battery firmware's own end threshold, for trying on firmware that takes it
+/// (Armada's patch 0904 makes a refused write fail). `firmware`: the battery firmware's own switches, which
+/// AYN's and Retroid's Android drivers write (PB-OS's kernel patch, linux-thor's; untried on a Thor): its
+/// 80 % limit (`retroid_limit_capacity`) for 80, running from USB with the battery left alone
+/// (`retroid_charge_now` 0, and the current at 0 too) for Bypass, the charge current for 90 (the firmware has
+/// no other level); written again at every look, as the firmware may drop them when the charger is plugged in
+/// again. Without the switches: as `Current`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Hold {
     Current,

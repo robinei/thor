@@ -1,6 +1,6 @@
 //! ClamShell: shelf, the second screen, the bar, input and power policy in one process with one state.
 //! This is the program around them: the command line ([`cli`]), the environment ([`config`]), starting
-//! the system threads ([`wiring`]), the test pipe ([`control`]) and the snapshots ([`snapshot`]).
+//! the system threads ([`wiring`]), the control pipe ([`control`]) and the snapshots ([`snapshot`]).
 
 mod cli;
 mod config;

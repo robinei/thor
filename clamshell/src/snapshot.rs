@@ -1,7 +1,7 @@
-//! `--snapshot DIR`: both screens drawn at the Thor's size into PNG files, without Wayland: shelf, the
-//! second screen and every tab, each after the events that lead to it, in groups that each start fresh. At a fixed time (unless
-//! CLAMSHELL_SNAPSHOT_NOW is set), so the files compare byte for byte across runs; the test below keeps
-//! their hashes (tests/snapshots.txt) to catch changes in what is drawn.
+//! `--snapshot DIR`: both screens drawn at the Thor's size into PNG files, without Wayland: shelf, the second
+//! screen and every tab, each after the events that lead to it, in groups that each start fresh. At a fixed
+//! time (unless CLAMSHELL_SNAPSHOT_NOW is set), so the files compare byte for byte across runs; the test
+//! below keeps their hashes (tests/snapshots.txt) to catch changes in what is drawn.
 
 use std::fmt;
 use std::path::Path;
@@ -236,8 +236,8 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 ),
             ],
         ),
-        // A series selected in shelf, then open: its first season's episodes, the first played. (Shelf's rows as a frame
-        // would have reported them before the taps.)
+        // A series selected in shelf, then open: its first season's episodes, the first played. (Shelf's rows
+        // as a frame would have reported them before the taps.)
         group(
             vec![ShelfEvent::Rows(8).into()],
             vec![

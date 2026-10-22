@@ -370,8 +370,8 @@ pub(crate) enum HeaderRight<'a> {
     Action(Id, &'a str),
 }
 
-/// A screen's header, at the top of the content area: a back arrow (`back`, its target) on the left, the title (from the
-/// left after it, or centred), and on the right an action. Returns the area below it.
+/// A screen's header, at the top of the content area: a back arrow (`back`, its target) on the left, the
+/// title (from the left after it, or centred), and on the right an action. Returns the area below it.
 pub(crate) fn header(f: &mut Frame, back: Option<Id>, title: &str, centred: bool, right: HeaderRight) -> Rect {
     let pad = f.pad();
     let mut area = style::content(f.body());

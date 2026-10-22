@@ -6,17 +6,18 @@
 //! leaving the game, losing the controller or changing the keymap mid-press never leaves anything down.
 //! Chords press their modifiers before their key and let them go after it.
 //!
-//! Without a binding an input does what it does on the pad; the controller's events this doesn't know
-//! (other buttons and axes) pass through as they are. A binding to a layer of the keymap turns it on
-//! while it is on (held, or toggled): the bindings come from the layers on, the newest first, then Base;
-//! the binding that turned a layer on stays as it was until it goes off, whatever the layer makes of its
-//! input ([`Activation`]). A Once layer turned on by a tap stays armed until the first input it maps has
-//! acted (a toggled one too, its toggle going off with it); its binding pressed again turns it off
-//! ([`Span`]). A hold to a layer is decided at once when an input that layer maps is pressed, so a quick
-//! chord acts in the layer. A layer that stays on (armed, toggled) buzzes the controller as it comes on
-//! and as it goes off ([`Buzz`]). The Thor's Back button ([`BACK_KEY`]) is an input like the others (nothing
-//! in the game as on the pad), and so is its AYN button ([`AYN_KEY`]; Guide in the game as on the pad). A stick's and a trigger's tuning (deadzone, full point, curve,
-//! inversion) applies to its values before they are mapped, to the input as on the pad as well.
+//! Without a binding an input does what it does on the pad; the controller's events this doesn't know (other
+//! buttons and axes) pass through as they are. A binding to a layer of the keymap turns it on while it is on
+//! (held, or toggled): the bindings come from the layers on, the newest first, then Base; the binding that
+//! turned a layer on stays as it was until it goes off, whatever the layer makes of its input
+//! ([`Activation`]). A Once layer turned on by a tap stays armed until the first input it maps has acted (a
+//! toggled one too, its toggle going off with it); its binding pressed again turns it off ([`Span`]). A hold
+//! to a layer is decided at once when an input that layer maps is pressed, so a quick chord acts in the
+//! layer. A layer that stays on (armed, toggled) buzzes the controller as it comes on and as it goes off
+//! ([`Buzz`]). The Thor's Back button ([`BACK_KEY`]) is an input like the others (nothing in the game as on
+//! the pad), and so is its AYN button ([`AYN_KEY`]; Guide in the game as on the pad). A stick's and a
+//! trigger's tuning (deadzone, full point, curve, inversion) applies to its values before they are mapped, to
+//! the input as on the pad as well.
 //!
 //! A button (or a D-pad or stick direction) with a hold's or a double's binding goes through a little
 //! state machine ([`Phase`]): held past the hold's time it is a hold; let go sooner and pressed again

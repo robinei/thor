@@ -1,9 +1,9 @@
 //! Reads the system's metrics for the sysinfo mode once a second while they can be seen (the sysinfo or
 //! battery tab open, ClamShell's view on the bottom screen, the screens on), every five seconds otherwise
-//! (the graphs' history kept, coarser): CPU load (total and per core) and
-//! frequency, GPU load and frequency, temperatures, memory, battery power. Every source is optional:
-//! what a machine lacks stays `None`. Sources: /proc/stat, /proc/meminfo, cpufreq, hwmon and thermal
-//! zones, amdgpu (desktop) or devfreq (Adreno on the Thor), the battery's power supply.
+//! (the graphs' history kept, coarser): CPU load (total and per core) and frequency, GPU load and frequency,
+//! temperatures, memory, battery power. Every source is optional: what a machine lacks stays `None`. Sources:
+//! /proc/stat, /proc/meminfo, cpufreq, hwmon and thermal zones, amdgpu (desktop) or devfreq (Adreno on the
+//! Thor), the battery's power supply.
 //!
 //! GPU load: amdgpu's busy file where there is one; otherwise (Adreno on the Thor) the GPU time of every
 //! DRM client over the second (see [`crate::drm`]).

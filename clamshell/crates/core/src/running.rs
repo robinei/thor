@@ -15,10 +15,11 @@
 //! launch of ours appearing within [`HANDOFF`] is moved to its workspace, and it has ended when that
 //! window has closed (or when none came).
 //!
-//! In shelf, activating a running entry shows it, a stopped one starts. Quit asks an entry's windows to
-//! close and, once none is left and it still runs, ends it: its slice stopped, or (Steam's) the processes
-//! under Steam's launcher for it, and its runner's `stop` command run; Force kill ends it at once. What is in front (shelf, a running entry,
-//! another window) decides where the pad goes, what Home does and what the settings page edits.
+//! In shelf, activating a running entry shows it, a stopped one starts. Quit asks an entry's windows to close
+//! and, once none is left and it still runs, ends it: its slice stopped, or (Steam's) the processes under
+//! Steam's launcher for it, and its runner's `stop` command run; Force kill ends it at once. What is in front
+//! (shelf, a running entry, another window) decides where the pad goes, what Home does and what the settings
+//! page edits.
 
 use std::sync::Arc;
 

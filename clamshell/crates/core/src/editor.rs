@@ -1,7 +1,7 @@
 //! The editor: a line of text typed on the on-screen keyboard (Enter saves, Esc cancels), for a game's
-//! environment, a Wi-Fi password, a keymap's name or a file's; and environment variables as text, `KEY=value` words.
-//! Its keys, Save and Cancel, and the clipboard pasted into it, are the state's here; what a saved text
-//! does is its purpose's (the settings, Wi-Fi, keymaps, files).
+//! environment, a Wi-Fi password, a keymap's name or a file's; and environment variables as text, `KEY=value`
+//! words. Its keys, Save and Cancel, and the clipboard pasted into it, are the state's here; what a saved
+//! text does is its purpose's (the settings, Wi-Fi, keymaps, files).
 
 use std::sync::Arc;
 
@@ -17,13 +17,13 @@ pub struct Editor {
 }
 
 impl Editor {
-    /// The tab it belongs to (opened from): a Wi-Fi password's, Wi-Fi; the rest, the settings'.
+    /// The tab it shows on: Wi-Fi for a network's password, Settings for the environment and a keymap's
+    /// name, and Keyboard for the account password and a file's name.
     pub fn tab(&self) -> crate::Tab {
         match self.purpose {
             Purpose::Password { .. } => crate::Tab::Wifi,
-            Purpose::AccountPassword(_) => crate::Tab::Keyboard,
+            Purpose::AccountPassword(_) | Purpose::FileName(_) => crate::Tab::Keyboard,
             Purpose::Env { .. } | Purpose::KeymapName(_) => crate::Tab::Settings,
-            Purpose::FileName(_) => crate::Tab::Keyboard,
         }
     }
 }

@@ -55,12 +55,12 @@ impl Rect {
         Rect::new(x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0))
     }
 
-    /// Moved by `dx`, `dy`.
     /// Wider by `dx` on each side (into the margins, as a list's rows reach for their pressed look).
     pub fn widened(&self, dx: f32) -> Rect {
         Rect::new(self.x - dx, self.y, self.w + 2.0 * dx, self.h)
     }
 
+    /// Moved by `dx`, `dy`.
     pub fn shifted(&self, dx: f32, dy: f32) -> Rect {
         Rect::new(self.x + dx, self.y + dy, self.w, self.h)
     }

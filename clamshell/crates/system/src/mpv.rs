@@ -1,12 +1,11 @@
-//! Where mpv left a video, and how long a video is. With `save-position-on-quit`, mpv keeps the place
-//! of a video quit before its end in a file of its watch_later folder, named by the MD5 (in capitals)
-//! of the video's path, or of its file name alone with `ignore-path-in-watch-later-config`; the line
-//! `start=<seconds>` is the place. A video watched to its end has none. Both names are looked for (the
-//! path's first), in the folder mpv.conf names (`watch-later-dir`) and in mpv's own
-//! (~/.local/state/mpv/watch_later, older ~/.config/mpv/watch_later). The length is ffprobe's; a frame
-//! to show for it, ffmpeg's (both at the lowest priority: a game started meanwhile comes first): of the
-//! keyframes from a point on, the most representative (its `thumbnail`
-//! filter), so not a dark scene, a fade or a title card.
+//! Where mpv left a video, and how long a video is. With `save-position-on-quit`, mpv keeps the place of a
+//! video quit before its end in a file of its watch_later folder, named by the MD5 (in capitals) of the
+//! video's path, or of its file name alone with `ignore-path-in-watch-later-config`; the line
+//! `start=<seconds>` is the place. A video watched to its end has none. Both names are looked for (the path's
+//! first), in the folder mpv.conf names (`watch-later-dir`) and in mpv's own (~/.local/state/mpv/watch_later,
+//! older ~/.config/mpv/watch_later). The length is ffprobe's; a frame to show for it, ffmpeg's (both at the
+//! lowest priority: a game started meanwhile comes first): of the keyframes from a point on, the most
+//! representative (its `thumbnail` filter), so not a dark scene, a fade or a title card.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

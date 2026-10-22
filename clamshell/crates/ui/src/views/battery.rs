@@ -1,11 +1,10 @@
 //! The battery tab: the level and what it is doing (drain, time left) on top, beside the tiles of the
-//! battery's settings (the charge limit, when the screens go off and the device sleeps without input),
-//! drawn and stepped as in the settings grid; the charge over the last day (UPower's history; charging in
-//! green); then what is using the
-//! machine now, the busiest first, then those idle that hold much memory, as many as fit: each a bar of
-//! its share of the work, its CPU, GPU and memory. The battery reports only its total drain, so programs
-//! are ranked by work, not watts. A row (not the system's) opens its menu in the tab's place: Quit, Force
-//! kill.
+//! battery's settings (the charge limit, when the screens go off and the device sleeps without input), drawn
+//! and stepped as in the settings grid; the charge over the last day (UPower's history; charging in green);
+//! then what is using the machine now, the busiest first, then those idle that hold much memory, as many as
+//! fit: each a bar of its share of the work, its CPU, GPU and memory. The battery reports only its total
+//! drain, so programs are ranked by work, not watts. A row (not the system's) opens its menu in the tab's
+//! place: Quit, Force kill.
 
 use clamshell_core::battery::{BatteryId, Group};
 use clamshell_core::settings::Setting;

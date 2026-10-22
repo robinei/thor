@@ -1,10 +1,8 @@
-//! The compositor's windows, as the dock and the games need them. A dock app instance is a systemd scope
-//! we started, its windows on its app's workspace (see [`Instance`]): every window of its processes (a
-//! second window, a program started from its terminal) belongs there, a tab beside the app's other
-//! instances' windows.
-//! Games are the same: each running game shelf started has a scope and a workspace of that name; an entry
-//! that runs in another program's processes (Steam's games, Waydroid's apps) gets a workspace of its own
-//! too, its windows found by their app id (see [`crate::running`]).
+//! The compositor's windows, as the dock and the running entries need them. Each launch of a library entry
+//! is a systemd scope we started, and every window of its processes (a second window, a program started
+//! from its terminal) goes on the entry's workspace, as a tab (see [`Instance`]). An entry that runs in
+//! another program's processes (Steam's games, Waydroid's apps) gets a workspace of its own too, its
+//! windows found by their app id (see [`crate::running`]).
 
 use crate::instance::Instance;
 

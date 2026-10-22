@@ -1,13 +1,13 @@
 //! The keymaps' screens, over the settings tab (see `core`'s `keymap_screens`): the picker (a scrolled list:
-//! for a game its own keymap, or Make own keymap; Default, then the named keymaps, each with who uses it
-//! and an Edit button; New), a keymap's menu, deleting one in use, the keymaps to load into a game's own
-//! and to save it as (the picker's rows without the own one, Edit and the mark; saving: a new one first),
-//! saving over a named one, the edit screen (one layer of the keymap, named at the top right, a button to the list of
-//! layers; Close at the top left; the pad's controls drawn in two clusters at the sides, as they sit
+//! for a game its own keymap, or Make own keymap; Default, then the named keymaps, each with who uses it and
+//! an Edit button; New), a keymap's menu, deleting one in use, the keymaps to load into a game's own and to
+//! save it as (the picker's rows without the own one, Edit and the mark; saving: a new one first), saving
+//! over a named one, the edit screen (one layer of the keymap, named at the top right, a button to the list
+//! of layers; Close at the top left; the pad's controls drawn in two clusters at the sides, as they sit
 //! beside the screen, each the layer changes with a label; between the label columns, the whole height, a
 //! panel for the selected input: the ways to remap it as icons, its parameters), the layers' lists and a
-//! layer's menu, the same while a control is picked on it, what holds the gyro on, a part of the mouse
-//! on its drawing, and a key chord typed on the keyboard.
+//! layer's menu, the same while a control is picked on it, what holds the gyro on, a part of the mouse on its
+//! drawing, and a key chord typed on the keyboard.
 //!
 //! On black like the rest: the pad's parts are thin dim outlines; blue is what a keymap maps to something
 //! else, grey what it only tunes.

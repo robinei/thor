@@ -1,9 +1,8 @@
 //! Our launches as systemd sees them: the user manager's scopes named `clamshell-run-*` (D-Bus,
-//! org.freedesktop.systemd1), listed at start and again whenever it signals a
-//! unit of ours coming, starting or going. This is the truth for what runs: a scope lives as long as any
-//! of its processes, whatever its windows do, and survives a restart of ClamShell. A session's sway
-//! ending stops them all (the device's uwsm, the desktop's nested sway's unit: their slices are stopped
-//! after it).
+//! org.freedesktop.systemd1), listed at start and again whenever it signals a unit of ours coming, starting
+//! or going. This is the truth for what runs: a scope lives as long as any of its processes, whatever its
+//! windows do, and survives a restart of ClamShell. A session's sway ending stops them all (the device's
+//! uwsm, the desktop's nested sway's unit: their slices are stopped after it).
 
 use std::convert::Infallible;
 use std::fmt;

@@ -94,8 +94,6 @@ impl ListId {
     }
 }
 
-/// A list's rows as its feature has them: how many, and what each is (to find it again after the list
-/// changed; none: its place isn't kept by item).
 /// A list's rows as the lists see them: its feature's, or just how many (rows not found again by a key
 /// when they change, as a keymap's layers on the screen showing them).
 pub(crate) enum RowsOf<'a> {
@@ -126,6 +124,8 @@ impl RowsOf<'_> {
     }
 }
 
+/// A list's rows as its feature has them: how many, and what each is, to find it again after the list
+/// changed. A list whose rows have no key doesn't keep its place by item.
 pub(crate) trait Rows {
     fn len(&self) -> usize;
 

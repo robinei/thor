@@ -35,8 +35,8 @@ pub fn start_time(pid: u32) -> Option<u64> {
     stat.rsplit_once(')')?.1.split_whitespace().nth(22 - 3)?.parse().ok()
 }
 
-/// The windows' and tray icons' processes as last seen (their start times): what ClamShell acts on by a process id
-/// (adopting it, ending it) is checked to be the same process still.
+/// The windows' and tray icons' processes as last seen (their start times): what ClamShell acts on by a
+/// process id (adopting it, ending it) is checked to be the same process still.
 static SEEN: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<u32, u64>>> = std::sync::LazyLock::new(Default::default);
 
 /// Process `pid` seen (a window's, a tray icon's): its start time, remembered.

@@ -1,10 +1,10 @@
 //! Settings: a grid of tiles on black, one per setting, each an icon over its value. A tap steps to the
-//! next value, a long press goes back to the default. The icon's colour says what the value does: grey
-//! the stock value, green saves power, amber costs power, blue changes how the game looks or plays. Two
-//! scopes, as tabs along the top: All games (the defaults) and the game in context (the running one,
-//! else shelf's selection), whose own choices override the defaults one by one: those tiles carry a dot,
-//! the rest show the default's value dimmed. Changes reach a running game at once. The environment tile opens an editor
-//! over the on-screen keyboard. On All games, the last tile opens the device's setup (see `setup`).
+//! next value, and a long press goes back to the default. The icon's colour says what the value does:
+//! grey for the stock value, green when it saves power, amber when it costs power, blue when it changes
+//! how the game looks or plays. Two scopes sit as tabs along the top: All games (the defaults) and the
+//! game in context (the running one, else shelf's selection). A game's own choices override the defaults
+//! one by one; those tiles carry a dot, and the rest show the default's value dimmed. Changes reach a
+//! running game at once. The environment tile opens an editor over the on-screen keyboard.
 
 use clamshell_core::editor::{Editor, KeymapName, Purpose};
 use clamshell_core::settings::{Impact, Setting};

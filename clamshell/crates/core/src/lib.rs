@@ -304,7 +304,6 @@ impl State {
         self.unix_secs
     }
 
-    /// A game of the library, by its id; one that runs and left it (its file deleted), as it was.
     /// Whether the dock menu offers Open another for `id`: it runs, and another launch of it makes sense
     /// (see [`crate::Entry::another`]).
     pub fn opens_another(&self, id: &str) -> bool {
@@ -312,6 +311,7 @@ impl State {
         self.session.running(id).is_some() && self.game(id).is_some_and(|g| g.another && !g.runner.as_ref().is_some_and(|r| r.handover))
     }
 
+    /// A library entry by its id, or one that runs after leaving the library (its file deleted), as it was.
     pub fn game(&self, id: &str) -> Option<&Entry> {
         self.shelf.game(id).or_else(|| self.session.running(id).and_then(|r| r.entry.as_deref()))
     }
@@ -995,9 +995,8 @@ impl State {
         self.set_tab(tab)
     }
 
-    /// Changes the second screen's tab (its watch follows: see [`State::follow_watch`]); a level being
-    /// set ends. What the tab left had
-    /// open (an editor, the keymaps' screens) stays for coming back to.
+    /// Changes the second screen's tab (its watch follows: see [`State::follow_watch`]); a level being set
+    /// ends. What the tab left had open (an editor, the keymaps' screens) stays for coming back to.
     fn set_tab(&mut self, tab: Tab) -> Vec<Effect> {
         if tab == self.bottom.tab {
             return vec![];

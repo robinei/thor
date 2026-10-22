@@ -1,6 +1,6 @@
 //! The system as the bar, the sysinfo tab and the battery tab show it: the last status reading, the
-//! metrics with a minute of history, the battery's history and what spends it, and whether touchpad mode
-//! works. The volume and brightness readings in the status feed [`crate::levels::Levels`], which shows
+//! metrics with a minute of history, the battery's history and what spends it, the time zones and the
+//! account. The volume and brightness readings in the status feed [`crate::levels::Levels`], which shows
 //! them.
 
 use crate::battery::Battery;

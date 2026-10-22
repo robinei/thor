@@ -1,13 +1,13 @@
-//! The names ClamShell gives sway workspaces, systemd scopes and slices. A launch of a library entry (a
-//! game, an app: alike) is a scope we started (`clamshell-run-<key>-<secs>-<n>.scope`) in the entry's
-//! slice (`app-graphical-clamshell-run-<key>.slice`, in the session's app slice; Quit and Force kill end it); all the entry's windows are on its
-//! workspace (`clamshell-run-<key>`), as tabs. `<key>` is the entry's ([`clamshell_library::key_of`]:
-//! letters, digits and `_`). An entry that runs in another program's processes (a game in Steam's, an
-//! Android app in Waydroid's) isn't in a scope of ours, but its windows go to its entry's workspace too.
-//! Shelf's window has `clamshell-shelf`, the second screen `clamshell-bottom`; those entries' windows land
-//! on `clamshell-game` (sway rules by their app ids put them there).
-//! `<secs>-<n>` is the start time and a counter, so names are unique across restarts and sort in the
-//! order things were started.
+//! The names ClamShell gives sway workspaces, systemd scopes and slices. A launch of a library entry (a game,
+//! an app: alike) is a scope we started (`clamshell-run-<key>-<secs>-<n>.scope`) in the entry's slice
+//! (`app-graphical-clamshell-run-<key>.slice`, in the session's app slice; Quit and Force kill end it); all
+//! the entry's windows are on its workspace (`clamshell-run-<key>`), as tabs. `<key>` is the entry's
+//! ([`clamshell_library::key_of`]: letters, digits and `_`). An entry that runs in another program's
+//! processes (a game in Steam's, an Android app in Waydroid's) isn't in a scope of ours, but its windows go
+//! to its entry's workspace too. Shelf's window has `clamshell-shelf`, the second screen `clamshell-bottom`;
+//! those entries' windows land on `clamshell-game` (sway rules by their app ids put them there). `<secs>-<n>`
+//! is the start time and a counter, so names are unique across restarts and sort in the order things were
+//! started.
 
 use std::fmt::{self, Write};
 use std::str::FromStr;

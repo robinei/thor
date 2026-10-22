@@ -3,15 +3,14 @@
 //! on a few threads (curl), their images kept in the art cache (~/.cache/clamshell/art), what was found
 //! kept beside them (also what wasn't: see [`crate::store::Cache`]) and sent to the state as it arrives.
 //!
-//! - A content dir's games (`"metadata": "libretro:<system>"` in library.json, the system as libretro
-//!   names its folder): box art and a screenshot from libretro's thumbnails, and the developer and year
-//!   from libretro's database. The game is found by its file's checksum (CRC32: a zip's from its
-//!   directory, a file up to 64 MB read whole) in the database's No-Intro list, else by name: the entry's title
-//!   as libretro names the game, or the same once case, bracketed tags (`(USA)`), "the" and punctuation
-//!   are left out, `and` and `&` alike, and Roman numerals read as numbers, or (where only one game fits) the same but for
-//!   libretro's subtitle after ` - `; of several releases, the USA one, then World, then Europe. (A
-//!   subtitle of the title's own isn't left out: "Front Mission - Gun Hazard" is another game than
-//!   "Front Mission".)
+//! - A content dir's games (`"metadata": "libretro:<system>"` in library.json, the system as libretro names
+//!   its folder): box art and a screenshot from libretro's thumbnails, and the developer and year from
+//!   libretro's database. The game is found by its file's checksum (CRC32: a zip's from its directory, a file
+//!   up to 64 MB read whole) in the database's No-Intro list, else by name: the entry's title as libretro
+//!   names the game, or the same once case, bracketed tags (`(USA)`), "the" and punctuation are left out,
+//!   `and` and `&` alike, and Roman numerals read as numbers, or (where only one game fits) the same but for
+//!   libretro's subtitle after ` - `; of several releases, the USA one, then World, then Europe. (A subtitle
+//!   of the title's own isn't left out: "Front Mission - Gun Hazard" is another game than "Front Mission".)
 //! - A content dir's films or series (`"tmdb:movie"`, `"tmdb:tv"`): poster, backdrop, overview and year
 //!   from TMDB, by title (a `(1980)` at its end the year, tried first: a series may be dated from another
 //!   year than its pilot's); needs `keys.tmdb` in library.json.

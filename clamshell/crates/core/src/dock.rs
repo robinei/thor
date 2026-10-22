@@ -1,9 +1,9 @@
-//! The dock: the entries pinned there, in the user's order (saved), and those running,
-//! added at the end as they start and gone again when they stop (unless pinned). A pinned entry not
-//! running shows dimmed; a tap starts it. A tap on a running one shows its workspace (all its windows on
-//! the bottom screen: shows them there). A long press opens its menu: Open another (another launch,
-//! another tab; an app's only, see [`crate::Entry::another`]), Close window (the one in view), Pin or Unpin, Move (the D-pad moves it, A or B ends),
-//! Quit and Force kill; a stopped one's: Unpin and Move. A running entry with a tray icon (see
+//! The dock: the entries pinned there, in the user's order (saved), and those running, added at the end as
+//! they start and gone again when they stop (unless pinned). A pinned entry not running shows dimmed; a tap
+//! starts it. A tap on a running one shows its workspace (all its windows on the bottom screen: shows them
+//! there). A long press opens its menu: Open another (another launch, another tab; an app's only, see
+//! [`crate::Entry::another`]), Close window (the one in view), Pin or Unpin, Move (the D-pad moves it, A or B
+//! ends), Quit and Force kill; a stopped one's: Unpin and Move. A running entry with a tray icon (see
 //! [`crate::tray`]) has Menu: its program's own menu, as a page of the same kind (a submenu another).
 
 use std::sync::Arc;

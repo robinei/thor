@@ -9,9 +9,8 @@
 //!     a screen with nothing set has none;
 //!   - `keymaps/<name>.json`: a keymap each, named as it is (an entry's or a runner level's own: as its
 //!     settings screen's file); no folder: the initial ones;
-//!   - `window-rules.json`, `dock.json`, `autostart.json`,
-//!     `favourites.json`, `resume.json` (where shelf and the second screen were), `sticks.json` (the sticks'
-//!     calibrations, by controller), `brightness.json`,
+//!   - `window-rules.json`, `dock.json`, `autostart.json`, `favourites.json`, `resume.json` (where shelf and
+//!     the second screen were), `sticks.json` (the sticks' calibrations, by controller), `brightness.json`,
 //!     `clock.json`, `setup.json` (the setup done: see `clamshell_core::account`).
 //! - `plays.jsonl`: an entry's plays, a line each (its id, start in seconds since the epoch, duration in
 //!   seconds), appended; a line cut short is skipped.

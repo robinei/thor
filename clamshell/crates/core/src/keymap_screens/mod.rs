@@ -1,17 +1,16 @@
-//! The keymaps' screens on the second screen, over the settings tab: the picker (for a game: its own
-//! keymap, or the row that makes one from the keymap in force; then Default, then the named keymaps
-//! with how many games use each, and New), a keymap's menu (Edit, Rename, Duplicate, Delete, deleting one
-//! in use after a confirmation; a game's own, which stays while another is chosen: Edit, Load from (Default
-//! or a named keymap copied into it, then its edit screen, where Undo goes back), Save as (a copy, as a new
-//! named keymap or over one, which asks first), Delete), and the edit screen: the pad's inputs in one layer of the
-//! keymap ([`EditView`]; the layer button opens the list of layers: show one, add one, a long press for
-//! rename, clear and delete); an input chosen by touch or by pressing it on the pad, which listens
-//! meanwhile, is selected into a panel with the ways to remap it that fit its kind ([`ways`]) and its
-//! parameters. A way to remap opens what it needs, which closes as soon as something is chosen (Back gives
-//! up): a control picked on the pad's drawing (tapped, or pressed on the pad), a key chord or a stick's
-//! four keys typed on the keyboard, a part of the mouse on its drawing; the pointer, nothing and "as
-//! before" apply at once. Names are typed in the editor. Also the keymap in force, sent to the pad
-//! whenever it changes.
+//! The keymaps' screens on the second screen, over the settings tab: the picker (for a game: its own keymap,
+//! or the row that makes one from the keymap in force; then Default, then the named keymaps with how many
+//! games use each, and New), a keymap's menu (Edit, Rename, Duplicate, Delete, deleting one in use after a
+//! confirmation; a game's own, which stays while another is chosen: Edit, Load from (Default or a named
+//! keymap copied into it, then its edit screen, where Undo goes back), Save as (a copy, as a new named keymap
+//! or over one, which asks first), Delete), and the edit screen: the pad's inputs in one layer of the keymap
+//! ([`EditView`]; the layer button opens the list of layers: show one, add one, a long press for rename,
+//! clear and delete); an input chosen by touch or by pressing it on the pad, which listens meanwhile, is
+//! selected into a panel with the ways to remap it that fit its kind ([`ways`]) and its parameters. A way to
+//! remap opens what it needs, which closes as soon as something is chosen (Back gives up): a control picked
+//! on the pad's drawing (tapped, or pressed on the pad), a key chord or a stick's four keys typed on the
+//! keyboard, a part of the mouse on its drawing; the pointer, nothing and "as before" apply at once. Names
+//! are typed in the editor. Also the keymap in force, sent to the pad whenever it changes.
 
 use crate::State;
 use crate::editor::{Editor, KeymapName, Purpose};

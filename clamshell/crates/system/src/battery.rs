@@ -1,10 +1,10 @@
-//! The battery tab's readings, while it is open: the charge over the last day from UPower (system bus;
-//! it records the battery's level as it changes), and what is using the machine now: CPU time per process
+//! The battery tab's readings, while it is open: the charge over the last day from UPower (system bus; it
+//! records the battery's level as it changes), and what is using the machine now: CPU time per process
 //! (`/proc/<pid>/stat`) and GPU time per DRM client (see [`crate::drm`]; only our user's processes are
 //! readable), and the memory each has resident, grouped by our scopes (an app instance, the game), else
-//! (Waydroid's container) by Android app, else by program name for our user's processes, else as the
-//! system. Sampled every two seconds, sent as
-//! [`Reading::Battery`]: those doing work, the busiest first, then those idle that hold much memory.
+//! (Waydroid's container) by Android app, else by program name for our user's processes, else as the system.
+//! Sampled every two seconds, sent as [`Reading::Battery`]: those doing work, the busiest first, then those
+//! idle that hold much memory.
 
 use std::collections::HashMap;
 use std::fmt;

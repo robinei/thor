@@ -5,8 +5,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Paths {
-    /// The library's content dirs (~/.config/clamshell/library.json, see
-    /// [`crate::library::content`]).
+    /// The library's content dirs (~/.config/clamshell/library.json, see [`crate::library::content`]).
     pub library: Option<PathBuf>,
     /// What ClamShell keeps (see [`crate::store`]): ~/.local/share/clamshell.
     pub state_dir: Option<PathBuf>,

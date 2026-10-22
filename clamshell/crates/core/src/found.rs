@@ -1,8 +1,8 @@
-//! Programs ClamShell didn't start, found by a window of theirs that is no entry's (or by a tray icon:
-//! see [`crate::tray`]): anything with a window is on the dock. Each runs as an entry
-//! ([`Origin::Found`]): the library's desktop entry named as the window's app id, else one of its own
-//! (`window:<app id>`, its picture looked up by the app id in the icon themes, else the UI's app glyph); its windows (those with its app id, or of its process) go to its workspace,
-//! shown there if one was in front.
+//! Programs ClamShell didn't start, found by a window of theirs that is no entry's (or by a tray icon: see
+//! [`crate::tray`]): anything with a window is on the dock. Each runs as an entry ([`Origin::Found`]): the
+//! library's desktop entry named as the window's app id, else one of its own (`window:<app id>`, its picture
+//! looked up by the app id in the icon themes, else the UI's app glyph); its windows (those with its app id,
+//! or of its process) go to its workspace, shown there if one was in front.
 //!
 //! Its process (and those it started) is moved into a scope of ours, as a launch of the entry's
 //! ([`State::adopt`]): then it is paused, quit and killed by its slice. Not a process that also has

@@ -1,10 +1,10 @@
-//! What can be done to what shelf's details show (see docs/runners.md), each from one source: opening
-//! from its runner (A) and Enqueue (a runner that takes more while it plays), Continue from its content (a
-//! folder of videos: Start), the file actions from its
-//! place (a browsed dir: see [`crate::files`]), Favourite (Y) and Pin (X) from an identity that outlives a
-//! rescan (not a browsed file's). Where the identity's are missing, Y and X take the place's Copy and
-//! Paste, Start its Select. The details draw these rows in order; the pad's buttons act on them. Holding A
-//! on the selected entry takes the pad to the rows themselves (see [`State::in_actions`]).
+//! What can be done to what shelf's details show (see docs/runners.md), each from one source: opening from
+//! its runner (A) and Enqueue (a runner that takes more while it plays), Continue from its content (a folder
+//! of videos: Start), the file actions from its place (a browsed dir: see [`crate::files`]), Favourite (Y)
+//! and Pin (X) from an identity that outlives a rescan (not a browsed file's). Where the identity's are
+//! missing, Y and X take the place's Copy and Paste, Start its Select. The details draw these rows in order;
+//! the pad's buttons act on them. Holding A on the selected entry takes the pad to the rows themselves (see
+//! [`State::in_actions`]).
 
 use crate::files::FileAction;
 use crate::{Effect, ShelfId, State};

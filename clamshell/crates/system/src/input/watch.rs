@@ -1,12 +1,12 @@
 //! Watching the input devices: every one is read (not grabbed, so the compositor and logind still get
-//! everything), for two things. Input on any of them, for idle (sent at most every [`ACTIVITY_EVERY`]
-//! while there is some): keys, buttons, relative motion, and absolute axes that moved a real distance (a
-//! resting stick's jitter isn't input). And, in the device's own session, the device's hardware keys:
-//! volume, mute and brightness on small button devices (gpio-keys, a headset's buttons), never on a
-//! full keyboard, whose keys are the desktop's business; and the lid, for the power key's wakeup
-//! ([`crate::lid`]). Devices that come and go are picked up as
-//! /dev/input changes (inotify; without it, within [`RESCAN_EVERY`]). Grabbed devices (the controller) say nothing here;
-//! their input reaches the state through their own paths and the virtual devices they feed.
+//! everything), for two things. Input on any of them, for idle (sent at most every [`ACTIVITY_EVERY`] while
+//! there is some): keys, buttons, relative motion, and absolute axes that moved a real distance (a resting
+//! stick's jitter isn't input). And, in the device's own session, the device's hardware keys: volume, mute
+//! and brightness on small button devices (gpio-keys, a headset's buttons), never on a full keyboard, whose
+//! keys are the desktop's business; and the lid, for the power key's wakeup ([`crate::lid`]). Devices that
+//! come and go are picked up as /dev/input changes (inotify; without it, within [`RESCAN_EVERY`]). Grabbed
+//! devices (the controller) say nothing here; their input reaches the state through their own paths and the
+//! virtual devices they feed.
 
 use std::collections::HashMap;
 use std::io;

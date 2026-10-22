@@ -1,9 +1,9 @@
 //! What every system thread is made of. A thread is spawned with its command channel made inside
-//! ([`Worker::spawn`]); it waits for the next command or for its period ([`next`]), or, if it waits on
-//! files (a device, inotify), for those and its [`Bell`] together, which its commands ring; it sends a reading
-//! only when it changed ([`Changed`]); a thread that talks to a service (a bus, a socket, a device)
-//! connects, runs while the service is up, and is supervised: tried again every `retry` while the
-//! service is down ([`supervise`]).
+//! ([`Worker::spawn`]); it waits for the next command or for its period ([`next`]), or, if it waits on files
+//! (a device, inotify), for those and its [`Bell`] together, which its commands ring; it sends a reading only
+//! when it changed ([`Changed`]); a thread that talks to a service (a bus, a socket, a device) connects, runs
+//! while the service is up, and is supervised: tried again every `retry` while the service is down
+//! ([`supervise`]).
 //!
 //! The rule for commands while a service is down: what a command sets (watching, a route) is kept and
 //! applies once the service is back; what it asks to be done is refused at once ("unavailable"), never
