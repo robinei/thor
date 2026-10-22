@@ -91,15 +91,19 @@ and the UI change with the code they call; doc links to moved methods are fixed 
 - [x] 12. Prefs and the `Panel` view.
 - [ ] 13. Session: fields in; session-only rules; units, windows, found, tray, background; `launch` and
       `reconcile`; dock with `EntryAct`; enqueue.
-- [ ] 13b. `Wanted`: the outside's desired state computed from the final state after each event (watches,
-      screens and dim, second screen power, Apply for the program in force, keymap `(id, version)`, pad
-      route, fetch-first, browsed folder, files in use as a hash, window rules version) and one diff
-      against what was last sent, in a fixed order matching today's tests; a resend mask for Start,
-      Resumed, RefreshCalibrated, Library/Fetching. Before it, `apply` keeps a short settle order
-      (reconcile, idle stage, program, pad mouse, pad claimant). Replaces `follow_watch`, `follow_power`,
-      `follow_keymap`, `follow_shown`, `follow_browse`, `follow_dim` and their last-sent fields; session's
-      reconcile and the event-driven rules stay. Prepared by step 9 (files in use hashed, no `shown`) and
-      step 11 (`Keymaps` version counter, `keymap_sent` as `(id, version)`).
+- [ ] 13b. `apply` in three phases: handle, settle, sync. "Reconcile" and "follow-ups" stop being separate.
+      - Settle: one ordered list of steps that bring core's state up to date with what happened, using
+        history (units and launches, autostart, windows and entries, window rules, background, show
+        pending/reopened, quitting, the front closing, the dock, the idle stage, the program in force,
+        pad mouse, pad claimant). They may emit one-off commands (launch, freeze, move, kill, sleep).
+        Each step skips cheaply when its inputs didn't change (version counters, e.g. a session
+        version) instead of the gate on the event's type; "what was there before" lists reuse buffers.
+      - Sync: `wanted(&State) -> Wanted` (a small allocation-free struct: watches, screens and dim,
+        second screen power, Apply for the program in force, keymap `(id, version)`, pad route,
+        fetch-first, browsed folder, files in use as a hash, window rules version) diffed against what
+        was last sent, emitting in one fixed order that matches today's tests; a resend mask for Start,
+        Resumed, RefreshCalibrated, Library/Fetching. Replaces `follow_watch`, `follow_power`,
+        `follow_keymap`, `follow_shown`, `follow_browse`, `follow_dim` and their last-sent fields.
 - [ ] 14. Fields private everywhere; `#[cfg(test)]` helpers where tests poked fields.
 - [ ] 15. `state.rs`: the one `impl State`, `apply.rs` folded in.
 

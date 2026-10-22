@@ -247,7 +247,7 @@ impl State {
     pub(crate) fn follow_idle(&mut self, out: &mut Out) {
         // Sleep only in the device's own session. A program in front doesn't hold it off; one playing a
         // video asks the compositor to keep the screen on.
-        let policy = Policy::of(&self.prefs.settings().global, self.device_session);
+        let policy = Policy::of(&self.prefs.settings().global, self.session.device_session());
         let refreshing = *self.device.refresh() == crate::device::Refresh::Running;
         self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), &self.levels, out);
     }

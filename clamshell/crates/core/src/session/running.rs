@@ -456,7 +456,7 @@ impl State {
         let with: Vec<Arc<str>> =
             session.running.iter().filter(|r| taken == Some(&r.id) || session.windows_of(&r.id).next().is_some()).map(|r| r.id.clone()).collect();
         let mut ended = Vec::new();
-        let icons: Vec<Arc<str>> = self.tray.iter().map(|t| t.key.clone()).collect();
+        let icons: Vec<Arc<str>> = self.session.tray.iter().map(|t| t.key.clone()).collect();
         // Entries with a scope listed have a launch of theirs running.
         let launched: Vec<String> = session.running.iter().filter(|r| session.has_units(&r.key)).map(|r| r.key.clone()).collect();
         self.session.running.retain_mut(|r| {

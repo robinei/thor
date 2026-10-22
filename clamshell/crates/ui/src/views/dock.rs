@@ -129,7 +129,7 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
         if s.tray_of(entry).is_some() { item(DockId::TrayMenu, "Menu", Tone::Fn) } else { None },
         if pinnable { item(DockId::Pin, if pinned { "Unpin" } else { "Pin" }, Tone::Fn) } else { None },
         if pinnable {
-            item(DockId::Autostart, if s.autostarts(entry) { "Don't start with ClamShell" } else { "Start with ClamShell" }, Tone::Fn)
+            item(DockId::Autostart, if s.session().autostarts(entry) { "Don't start with ClamShell" } else { "Start with ClamShell" }, Tone::Fn)
         } else {
             None
         },

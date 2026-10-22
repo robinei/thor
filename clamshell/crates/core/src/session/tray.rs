@@ -70,10 +70,10 @@ impl State {
     /// Takes the tray icons after any change. Programs not started by ClamShell run as entries found by
     /// their icons, and end with them, or with their last window if one is still open.
     pub(crate) fn set_tray(&mut self, items: Vec<TrayItem>) -> Option<Vec<Effect>> {
-        if self.tray == items {
+        if self.session.tray == items {
             return None;
         }
-        self.tray = items;
+        self.session.tray = items;
         Some(self.follow_tray())
     }
 
@@ -82,12 +82,12 @@ impl State {
     /// session. In a desktop's session the programs are the desktop's, and ClamShell is a guest there that
     /// manages only what it started.
     pub(crate) fn follow_tray(&mut self) -> Vec<Effect> {
-        if !self.device_session {
+        if !self.session.device_session {
             return vec![];
         }
         let now = self.clock.mono();
         let mut new = Vec::new();
-        for t in &self.tray {
+        for t in &self.session.tray {
             let ours = t.unit.as_deref().and_then(Instance::from_unit).is_some();
             let Some(pid) = t.pid.filter(|_| !ours) else {
                 continue;
@@ -121,7 +121,7 @@ impl State {
     pub fn tray_of(&self, entry: &str) -> Option<&TrayItem> {
         let r = self.session.running(entry)?;
         let in_scope = |t: &&TrayItem| t.unit.as_deref().and_then(Instance::from_unit).is_some_and(|i| i.key() == Some(r.key.as_str()));
-        self.tray.iter().find(|t| r.tray().is_some_and(|k| *k == t.key) || in_scope(t))
+        self.session.tray.iter().find(|t| r.tray().is_some_and(|k| *k == t.key) || in_scope(t))
     }
 
     /// The open menu page, if there is one: the entry's tray icon and the entries of the open submenu.

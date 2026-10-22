@@ -6,33 +6,37 @@
 
 use std::sync::Arc;
 
-use crate::State;
 use crate::effect::{Effect, Save};
+use crate::out::Out;
+use crate::{Session, State};
 
-impl State {
+impl Session {
     /// Whether `id` starts with ClamShell.
     pub fn autostarts(&self, id: &str) -> bool {
         self.autostart.iter().any(|a| &**a == id)
     }
 
     /// Starts `id` with ClamShell, or stops doing so, and saves the choice.
-    pub(crate) fn toggle_autostart(&mut self, id: Arc<str>) -> Vec<Effect> {
+    pub(crate) fn toggle_autostart(&mut self, id: Arc<str>, out: &mut Out) {
         match self.autostart.iter().position(|a| *a == id) {
             Some(i) => {
                 self.autostart.remove(i);
             }
             None => self.autostart.push(id),
         }
-        vec![Effect::Save(Save::Autostart(self.autostart.clone()))]
+        out.effects.push(Effect::Save(Save::Autostart(self.autostart.clone())));
     }
+}
 
+impl State {
     /// The first time what runs is known, launches the entries to start that don't run, without showing
     /// them.
     pub(crate) fn start_autostart(&mut self) -> Vec<Effect> {
-        if std::mem::replace(&mut self.autostarted, true) {
+        if std::mem::replace(&mut self.session.autostarted, true) {
             return vec![];
         }
-        let ids: Vec<Arc<str>> = self.autostart.iter().filter(|id| self.shelf.library().has(id) && self.session.running(id).is_none()).cloned().collect();
+        let ids: Vec<Arc<str>> =
+            self.session.autostart.iter().filter(|id| self.shelf.library().has(id) && self.session.running(id).is_none()).cloned().collect();
         let mut effects = Vec::new();
         for id in ids {
             let shown = self.session.pending_show.clone();
@@ -62,7 +66,9 @@ mod tests {
         assert!(s.session().pending_show.is_none(), "not shown");
         assert_eq!(launches(&s.apply(Event::Units(vec![])).1), 0, "once");
         // Choosing in the dock menu saves the list.
-        assert_eq!(s.toggle_autostart("zelda-lttp".into()), vec![Effect::Save(Save::Autostart(vec!["desktop:firefox".into(), "gone".into()]))]);
-        assert!(!s.autostarts("zelda-lttp"));
+        let mut out = crate::out::Out::default();
+        s.session.toggle_autostart("zelda-lttp".into(), &mut out);
+        assert_eq!(out.effects, vec![Effect::Save(Save::Autostart(vec!["desktop:firefox".into(), "gone".into()]))]);
+        assert!(!s.session().autostarts("zelda-lttp"));
     }
 }

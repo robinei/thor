@@ -53,6 +53,16 @@ pub struct Session {
     /// main screen. They tell which windows are new and when the one in front closes.
     pub(crate) followed_windows: Vec<i64>,
     pub(crate) followed_front: Option<String>,
+    /// Programs' tray icons (see [`crate::session::tray`]).
+    pub(crate) tray: Vec<tray::TrayItem>,
+    /// Programs paused or ended while hidden (see [`crate::session::background`]).
+    pub(crate) background: background::Background,
+    /// The entries started with ClamShell, and whether they have been started yet (see
+    /// [`crate::session::autostart`]).
+    pub(crate) autostart: Vec<Arc<str>>,
+    pub(crate) autostarted: bool,
+    /// ClamShell is the device's own session (see [`crate::Init::device_session`]).
+    pub(crate) device_session: bool,
 }
 
 /// An entry quitting. Its windows are asked to close, and once none is left it is ended if it still runs,
@@ -66,6 +76,15 @@ pub(crate) struct Quitting {
 }
 
 impl Session {
+    pub(crate) fn new(autostart: Vec<Arc<str>>, device_session: bool) -> Session {
+        Session { autostart, device_session, ..Session::default() }
+    }
+
+    /// Whether ClamShell is the device's own session (see [`crate::Init::device_session`]).
+    pub(crate) fn device_session(&self) -> bool {
+        self.device_session
+    }
+
     /// Whether systemd lists a scope of the entry with `key`.
     pub(crate) fn has_units(&self, key: &str) -> bool {
         self.units.iter().any(|u| u.key() == Some(key))

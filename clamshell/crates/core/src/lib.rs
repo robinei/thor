@@ -124,17 +124,9 @@ pub struct State {
     bottom: Bottom,
     session: Session,
     dock: Dock,
-    /// Programs' tray icons (see [`crate::session::tray`]).
-    tray: Vec<crate::session::tray::TrayItem>,
     watches: watch::Watches,
     /// The Device view on the main screen (see [`device`]).
     device: device::Device,
-    /// Programs paused or ended while hidden (see [`crate::session::background`]).
-    background: crate::session::background::Background,
-    /// The entries started with ClamShell, and whether they have been started yet (see
-    /// [`crate::session::autostart`]).
-    autostart: Vec<std::sync::Arc<str>>,
-    autostarted: bool,
     levels: Levels,
     radios: Radios,
     pad: Pad,
@@ -151,10 +143,6 @@ pub struct State {
     /// moment. Shelf and the bottom screen say when they changed; `apply` touches this at its end.
     resume: kit::debounce::Debounce,
     idle: crate::device::idle::Idle,
-    /// ClamShell is the device's own session (see [`Init::device_session`]).
-    device_session: bool,
-    /// Pins of entries that no longer exist were dropped at start. The dock is saved once the UI is up.
-    pins_dropped: bool,
 }
 
 impl State {
@@ -166,17 +154,15 @@ impl State {
             bottom: Bottom::new(init.window_rules),
             sys: Sys::new(init.twelve_hour),
             levels: Levels::new(init.brightness),
+            session: Session::new(init.autostart, init.device_session),
             dock: init.dock,
-            autostart: init.autostart,
-            device_session: init.device_session,
             device: device::Device::new(init.sticks, init.first_start),
             ..State::default()
         };
         if let Some(resume) = &init.resume {
             s.restore(resume);
         }
-        // Saved once the UI is up.
-        s.pins_dropped = s.drop_gone_pins();
+        s.dock.drop_gone_at_start(s.shelf.library(), &s.session);
         s.follow_pausable_runners();
         s.pointer.focus_shelf(s.shelf.selected());
         if init.first_start {

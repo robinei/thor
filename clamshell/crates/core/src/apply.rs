@@ -300,7 +300,7 @@ impl State {
         self.follow_pausable_runners();
         out.effects.extend(self.follow_runner_keymaps());
         out.effects.push(self.land_rules());
-        if self.drop_gone_pins() {
+        if self.dock.drop_gone(self.shelf.library(), &self.session) {
             out.effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
         }
     }
@@ -310,7 +310,7 @@ impl State {
     /// (see [`State::follow_watch`]).
     fn ui_started(&mut self, out: &mut Out) {
         self.watches.ui_started();
-        if std::mem::take(&mut self.pins_dropped) {
+        if self.dock.take_unsaved() {
             out.effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
         }
         out.effects.extend(self.levels.brightness_effect());

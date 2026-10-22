@@ -126,11 +126,13 @@ impl State {
         let now = self.clock.mono();
         let mut effects = Vec::new();
         let mut end = Vec::new();
+        // Taken out while the session is read, and put back before quitting.
+        let mut background = std::mem::take(&mut self.session.background);
         let session = &self.session;
         // Launches of ours, including a Steam game's, which is in its launch's own scope since it started.
         let ours: Vec<&crate::session::running::Running> = session.running.iter().filter(|r| r.origin == Origin::Ours).collect();
         let keys: Vec<Arc<str>> = ours.iter().map(|r| Arc::from(r.key.as_str())).collect();
-        self.background.entries.keep(&keys);
+        background.entries.keep(&keys);
         for (r, key) in ours.into_iter().zip(&keys) {
             let mine: Vec<&crate::session::windows::Window> = session.windows_of(&r.id).collect();
             let shown = mine.iter().any(|w| w.visible);
@@ -141,8 +143,8 @@ impl State {
             let quitting = session.is_quitting(&r.id);
             let hidden = setting == InBackground::Pauses && !shown && !mine.is_empty() && !quitting;
             // A suspended entry stays frozen until shown.
-            let in_use = if self.background.entries.is_held(key) { shown } else { !hidden };
-            if let Some(frozen) = self.background.entries.follow(key, in_use, now) {
+            let in_use = if background.entries.is_held(key) { shown } else { !hidden };
+            if let Some(frozen) = background.entries.follow(key, in_use, now) {
                 effects.push(Effect::Freeze { slice: Instance::slice_of(key), frozen });
             }
             // Quits closed ends it once it has had a window and has none left.
@@ -150,6 +152,7 @@ impl State {
                 end.push(r.id.clone());
             }
         }
+        self.session.background = background;
         for id in end {
             effects.extend(self.quit(&id));
         }
@@ -165,7 +168,7 @@ impl State {
                 runners.push(r.clone());
             }
         }
-        self.background.runners = runners;
+        self.session.background.runners = runners;
     }
 
     /// Pauses each runner whose entries are paused together, when it is set to Pauses hidden and none of
@@ -175,13 +178,13 @@ impl State {
     fn follow_runner_pauses(&mut self) -> Vec<Effect> {
         let now = self.clock.mono();
         let mut effects = Vec::new();
-        for runner in &self.background.runners {
+        for runner in &self.session.background.runners {
             let pauses = self.background_of(&runner.key) == InBackground::Pauses;
             let session = &self.session;
             let of_runner = |r: &crate::session::running::Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| o.key == runner.key);
             let shown = session.windows.iter().filter(|w| w.visible).any(|w| session.running_of(w).is_some_and(of_runner));
             let starting = session.running.iter().filter(|r| of_runner(r)).any(|r| !r.found() && !r.seen);
-            match self.background.runner_pauses.follow(&runner.key, !pauses || shown || starting, now) {
+            match self.session.background.runner_pauses.follow(&runner.key, !pauses || shown || starting, now) {
                 Some(true) => effects.push(Effect::RunnerCommand(runner.pause.to_vec())),
                 Some(false) => effects.push(Effect::RunnerCommand(runner.resume.to_vec())),
                 None => {}
@@ -193,14 +196,14 @@ impl State {
     /// Resumes the runner of entry `id` before the entry is launched or shown, if the runner is paused.
     pub(crate) fn resume_runner_of(&mut self, id: &str) -> Option<Effect> {
         let runner = self.entry(id)?.runner.as_ref()?;
-        let resume = runner.resume.to_vec();
-        self.background.runner_pauses.resume(&runner.key.clone()).then_some(Effect::RunnerCommand(resume))
+        let (key, resume) = (runner.key.clone(), runner.resume.to_vec());
+        self.session.background.runner_pauses.resume(&key).then_some(Effect::RunnerCommand(resume))
     }
 
     /// Thaws an entry, if it is paused, before it is asked anything: to close, to end or to be shown.
     pub(crate) fn thaw(&mut self, id: &str) -> Option<Effect> {
         let key = self.session.running(id)?.key.clone();
-        self.background.entries.resume(&key).then(|| Effect::Freeze { slice: Instance::slice_of(&key), frozen: false })
+        self.session.background.entries.resume(&key).then(|| Effect::Freeze { slice: Instance::slice_of(&key), frozen: false })
     }
 
     /// Whether entry `id` can be suspended: it runs in a slice of ours, and isn't suspended.
@@ -209,7 +212,7 @@ impl State {
     }
 
     pub fn suspended(&self, id: &str) -> bool {
-        self.session.running(id).is_some_and(|r| self.background.entries.is_held(&r.key))
+        self.session.running(id).is_some_and(|r| self.session.background.entries.is_held(&r.key))
     }
 
     /// Suspends entry `id`: freezes it now (see the module's doc) and hides its windows if one is shown.
@@ -224,7 +227,7 @@ impl State {
         if self.session.windows_of(id).any(|w| w.visible) {
             effects.push(Effect::Window(crate::effect::WindowCommand::ShowShelf));
         }
-        if self.background.entries.hold(&key) {
+        if self.session.background.entries.hold(&key) {
             effects.push(Effect::Freeze { slice: Instance::slice_of(&key), frozen: true });
         }
         effects
@@ -233,13 +236,13 @@ impl State {
     /// Holds our slices found frozen at start, by key, as suspended, leaving them frozen.
     pub(crate) fn found_frozen(&mut self, keys: Vec<Arc<str>>) {
         for key in keys {
-            self.background.entries.hold(&key);
+            self.session.background.entries.hold(&key);
         }
     }
 
     /// Whether an entry is paused, that is frozen while hidden.
     pub fn paused(&self, id: &str) -> bool {
-        self.session.running(id).is_some_and(|r| self.background.entries.is_paused(&r.key))
+        self.session.running(id).is_some_and(|r| self.session.background.entries.is_paused(&r.key))
     }
 }
 

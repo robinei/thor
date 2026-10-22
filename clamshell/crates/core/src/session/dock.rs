@@ -45,6 +45,8 @@ pub struct Dock {
     /// Set when the menu shows its entry's tray menu instead of its own. It holds the submenus open in it;
     /// empty is the top.
     pub(crate) tray: Option<Vec<i32>>,
+    /// Pins of entries that no longer exist were dropped at start. The dock is saved once the UI is up.
+    unsaved: bool,
 }
 
 impl Dock {
@@ -84,6 +86,25 @@ impl Dock {
 
     fn position(&self, id: &str) -> Option<usize> {
         self.items.iter().position(|i| &*i.id == id)
+    }
+
+    /// Drops the pins of entries the library doesn't have, and whose source isn't away, unless they run.
+    /// Returns whether any were dropped.
+    pub(crate) fn drop_gone(&mut self, library: &crate::Library, session: &crate::Session) -> bool {
+        let before = self.items.len();
+        self.items.retain(|i| library.has(&i.id) || session.running(&i.id).is_some());
+        self.items.len() != before
+    }
+
+    /// Drops the pins of entries gone at start (see [`Dock::drop_gone`]). The dock is then saved once the
+    /// UI is up.
+    pub(crate) fn drop_gone_at_start(&mut self, library: &crate::Library, session: &crate::Session) {
+        self.unsaved = self.drop_gone(library, session);
+    }
+
+    /// Whether pins were dropped at start and not saved yet. Clears it.
+    pub(crate) fn take_unsaved(&mut self) -> bool {
+        std::mem::take(&mut self.unsaved)
     }
 }
 
@@ -184,7 +205,10 @@ impl State {
             DockId::OpenAnother => vec![],
             DockId::CloseWindow => self.entry_window(&entry).map(|w| vec![Effect::Window(WindowCommand::Close(vec![w]))]).unwrap_or_default(),
             DockId::Pin => self.toggle_pin(entry),
-            DockId::Autostart => self.toggle_autostart(entry),
+            DockId::Autostart => {
+                self.session.toggle_autostart(entry, out);
+                vec![]
+            }
             DockId::Suspend if self.suspended(&entry) => self.show_running(&entry),
             DockId::Suspend => self.suspend(&entry),
             DockId::Move => {
@@ -196,15 +220,6 @@ impl State {
             _ => vec![],
         };
         out.effects.extend(effects);
-    }
-
-    /// Drops the pins of entries the library doesn't have, and whose source isn't away, unless they run.
-    /// Returns whether any were dropped.
-    pub(crate) fn drop_gone_pins(&mut self) -> bool {
-        let before = self.dock.items.len();
-        let (library, session) = (self.shelf.library(), &self.session);
-        self.dock.items.retain(|i| library.has(&i.id) || session.running(&i.id).is_some());
-        self.dock.items.len() != before
     }
 
     /// Pins `entry` to the dock, at the end if it isn't there, or unpins it, which removes it unless it
