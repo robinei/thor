@@ -32,7 +32,7 @@ use clamshell_core::{Event, Meta};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::store::Cache;
+use crate::store::{self, Cache};
 use crate::{Sink, worker};
 
 /// Fetches at once.
@@ -530,8 +530,8 @@ fn get_json(url: &str, headers: &[&str]) -> Option<Value> {
     serde_json::from_slice(&get(url, headers)?).ok()
 }
 
-/// `file`'s contents if it is younger than `max_age`; else `fetch`ed and kept in it (written whole, then
-/// renamed into place), or (the fetch failing) its older contents, if any.
+/// `file`'s contents if it is younger than `max_age`; else `fetch`ed and kept in it (see
+/// [`store::write_file`]), or (the fetch failing) its older contents, if any.
 fn kept(file: &Path, max_age: std::time::Duration, fetch: impl FnOnce() -> Option<Vec<u8>>) -> Option<Vec<u8>> {
     let age = std::fs::metadata(file).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
     if age.is_some_and(|a| a < max_age)
@@ -541,11 +541,7 @@ fn kept(file: &Path, max_age: std::time::Duration, fetch: impl FnOnce() -> Optio
     }
     match fetch().filter(|b| !b.is_empty()) {
         Some(body) => {
-            if let Some(dir) = file.parent() {
-                let _ = std::fs::create_dir_all(dir);
-            }
-            let part = file.with_extension("part");
-            if let Err(e) = std::fs::write(&part, &body).and_then(|()| std::fs::rename(&part, file)) {
+            if let Err(e) = store::write_file(file, &body) {
                 log::warn!("meta: {}: {e}", file.display());
             }
             Some(body)
@@ -554,16 +550,12 @@ fn kept(file: &Path, max_age: std::time::Duration, fetch: impl FnOnce() -> Optio
     }
 }
 
-/// `url` into `file` (written whole, then renamed into place); whether it worked.
+/// `url` into `file` (see [`store::write_file`]); whether it worked.
 fn download(url: &str, headers: &[&str], file: &Path) -> bool {
     let Some(body) = get(url, headers).filter(|b| !b.is_empty()) else {
         return false;
     };
-    if let Some(dir) = file.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let part = file.with_extension("part");
-    std::fs::write(&part, body).and_then(|()| std::fs::rename(&part, file)).map_err(|e| log::warn!("meta: {}: {e}", file.display())).is_ok()
+    store::write_file(file, &body).map_err(|e| log::warn!("meta: {}: {e}", file.display())).is_ok()
 }
 
 /// An image URL's extension (jpg, png or webp), jpg where it says none of them.
