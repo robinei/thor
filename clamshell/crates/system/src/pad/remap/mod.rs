@@ -233,6 +233,48 @@ struct InputState {
     toggles: [bool; Actuation::ALL.len()],
 }
 
+/// What the bindings make of the inputs, gathered before the pad's axes are worked out: the outputs
+/// besides the pad's axes, and the pad's sticks (offsets from the middle), triggers (0-1) and D-pad (up,
+/// down, left, right).
+#[derive(Default)]
+struct Gathered {
+    w: Wanted,
+    sticks: [(f32, f32); 2],
+    triggers: [f32; 2],
+    dpad: [bool; 4],
+}
+
+impl Gathered {
+    /// `input`'s binding to `output`, something on or off, while `on`.
+    fn digital(&mut self, input: Input, on: bool, output: &Output, snap: &PadSnapshot) {
+        if !on {
+            return;
+        }
+        match output {
+            Output::Pad(PadOut::Button(b)) => match (b.is_back(), input) {
+                // A back button as itself: the code it came with.
+                (true, Input::Button(own)) if own == *b => self.w.pad_keys.extend(button_codes(*b).iter().filter(|&&c| snap.held(c))),
+                (true, _) => {}
+                (false, _) => self.w.pad_keys.extend(pad_code(*b)),
+            },
+            Output::Pad(PadOut::Dpad(d)) => {
+                if let Some(slot) = self.dpad.get_mut(*d as usize) {
+                    *slot = true;
+                }
+            }
+            Output::Pad(PadOut::Trigger(s)) => {
+                if let Some(t) = self.triggers.get_mut(*s as usize) {
+                    *t = 1.0;
+                }
+            }
+            Output::Key(chord) => chord_down(&mut self.w.keys, chord),
+            Output::Mouse(m) => self.w.keys.push(mouse_code(*m)),
+            Output::Wheel(d) => self.w.wheels.push((input, *d)),
+            _ => {}
+        }
+    }
+}
+
 /// The controller's codes for a button (the back buttons go by several names).
 fn button_codes(b: Button) -> &'static [KeyCode] {
     match b {
@@ -870,50 +912,25 @@ impl Remap {
 
     /// What every output should be for the controller in `snap` at `now`.
     fn wanted(&self, snap: &PadSnapshot, now: Instant) -> Wanted {
-        let mut w = Wanted::default();
-        let mut sticks = [(0.0f32, 0.0f32); 2];
-        let mut triggers = [0.0f32; 2];
-        let mut dpad = [false; 4];
-        let digital = |w: &mut Wanted, input: Input, on: bool, output: &Output, triggers: &mut [f32; 2], dpad: &mut [bool; 4]| {
-            if !on {
-                return;
-            }
-            match output {
-                Output::Pad(PadOut::Button(b)) => match (b.is_back(), input) {
-                    // A back button as itself: the code it came with.
-                    (true, Input::Button(own)) if own == *b => w.pad_keys.extend(button_codes(*b).iter().filter(|&&c| snap.held(c))),
-                    (true, _) => {}
-                    (false, _) => w.pad_keys.extend(pad_code(*b)),
-                },
-                Output::Pad(PadOut::Dpad(d)) => {
-                    if let Some(slot) = dpad.get_mut(*d as usize) {
-                        *slot = true;
-                    }
-                }
-                Output::Pad(PadOut::Trigger(s)) => {
-                    if let Some(t) = triggers.get_mut(*s as usize) {
-                        *t = 1.0;
-                    }
-                }
-                Output::Key(chord) => chord_down(&mut w.keys, chord),
-                Output::Mouse(m) => w.keys.push(mouse_code(*m)),
-                Output::Wheel(d) => w.wheels.push((input, *d)),
-                _ => {}
-            }
-        };
+        let mut g = self.gather(snap, now);
+        self.gyro_to_stick(snap, &mut g.sticks);
+        self.pad_axes(g, snap)
+    }
+
+    /// What the bindings make of each input now.
+    fn gather(&self, snap: &PadSnapshot, now: Instant) -> Gathered {
+        let mut g = Gathered::default();
         for input in Input::all() {
             let Some(b) = self.binding(input) else {
                 continue;
             };
             match input {
                 Input::Button(_) | Input::Dpad(_) | Input::StickDir(..) => {
-                    let on = self.on(input, Actuation::Press, &b, now);
-                    digital(&mut w, input, on, &b.output, &mut triggers, &mut dpad);
+                    g.digital(input, self.on(input, Actuation::Press, &b, now), &b.output, snap);
                     // Its hold and double, if it has them.
                     for act in [Actuation::Hold, Actuation::Double] {
                         if let Some(other) = self.find(input, act) {
-                            let on = self.on(input, act, other, now);
-                            digital(&mut w, input, on, &other.output, &mut triggers, &mut dpad);
+                            g.digital(input, self.on(input, act, other, now), &other.output, snap);
                         }
                     }
                 }
@@ -921,16 +938,15 @@ impl Remap {
                     let v = self.trigger(s, snap);
                     match b.output {
                         Output::Trigger(to) => {
-                            if let Some(t) = triggers.get_mut(to as usize) {
+                            if let Some(t) = g.triggers.get_mut(to as usize) {
                                 *t = t.max(v);
                             }
                         }
-                        ref o => digital(&mut w, input, self.on(input, Actuation::Press, &b, now), o, &mut triggers, &mut dpad),
+                        ref o => g.digital(input, self.on(input, Actuation::Press, &b, now), o, snap),
                     }
                     // Its full pull, a second stage beside the pull.
                     if let Some(full) = self.find(input, Actuation::FullPull) {
-                        let on = self.on(input, Actuation::FullPull, full, now);
-                        digital(&mut w, input, on, &full.output, &mut triggers, &mut dpad);
+                        g.digital(input, self.on(input, Actuation::FullPull, full, now), &full.output, snap);
                     }
                 }
                 Input::Stick(s) => {
@@ -938,23 +954,21 @@ impl Remap {
                     let half = self.stick_middle().1;
                     match b.output {
                         Output::Stick(to) => {
-                            if let Some(t) = sticks.get_mut(to as usize) {
+                            if let Some(t) = g.sticks.get_mut(to as usize) {
                                 *t = (t.0 + x, t.1 + y);
                             }
                         }
                         // (Tuned already: its deadzone and curve are the binding's.)
-                        Output::Pointer if (x, y) != (0.0, 0.0) => w.pointer.push(((x / half, y / half), b.speed)),
+                        Output::Pointer if (x, y) != (0.0, 0.0) => g.w.pointer.push(((x / half, y / half), b.speed)),
                         Output::Dpad => {
                             for d in Dir::ALL {
-                                let on = self.digital(Input::StickDir(s, d), snap);
-                                digital(&mut w, input, on, &Output::Pad(PadOut::Dpad(d)), &mut triggers, &mut dpad);
+                                g.digital(input, self.digital(Input::StickDir(s, d), snap), &Output::Pad(PadOut::Dpad(d)), snap);
                             }
                         }
                         Output::Keys(keys) => {
                             // Up, left, down, right.
                             for (d, chord) in [Dir::Up, Dir::Left, Dir::Down, Dir::Right].into_iter().zip(keys) {
-                                let on = self.digital(Input::StickDir(s, d), snap);
-                                digital(&mut w, input, on, &Output::Key(chord), &mut triggers, &mut dpad);
+                                g.digital(input, self.digital(Input::StickDir(s, d), snap), &Output::Key(chord), snap);
                             }
                         }
                         _ => {}
@@ -963,6 +977,11 @@ impl Remap {
                 Input::Gyro => {}
             }
         }
+        g
+    }
+
+    /// The gyro bound to a stick, while it acts: its turn added to that stick.
+    fn gyro_to_stick(&self, snap: &PadSnapshot, sticks: &mut [(f32, f32); 2]) {
         if let Some(b) = self.gyro_binding(snap)
             && let Output::Stick(to) = b.output
             && let Some(t) = sticks.get_mut(to as usize)
@@ -974,14 +993,17 @@ impl Remap {
             let (vx, vy) = stick_from(-x * gain / full, -y * gain / full, b.stick_min);
             *t = (t.0 + vx * half, t.1 + vy * half);
         }
-        // The pad's axes from the outputs: sticks, triggers, the D-pad.
+    }
+
+    /// The pad's axes from what was gathered: its sticks, triggers and D-pad. A stick or trigger as
+    /// itself keeps the controller's exact values.
+    fn pad_axes(&self, g: Gathered, snap: &PadSnapshot) -> Wanted {
+        let Gathered { mut w, sticks, triggers, dpad } = g;
         let stick = self.ranges.stick;
         let mid = self.stick_middle().0;
         let raw = |v: f32| (mid + v.round() as i32).clamp(stick.min, stick.max);
         for (s, (x, y)) in Side::ALL.into_iter().zip(sticks) {
             let (ax, ay) = stick_axes(s);
-
-            // A stick as itself keeps its exact values.
             let plain = self.get(Input::Stick(s)).is_none_or(|b| b.output == Output::Stick(s) && !b.shapes());
             let own = plain && self.get(Input::Gyro).is_none_or(|g| g.output != Output::Stick(s));
             let other = Side::ALL.into_iter().filter(|o| *o != s).any(|o| self.get(Input::Stick(o)).is_some_and(|b| b.output == Output::Stick(s)));
