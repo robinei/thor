@@ -48,7 +48,7 @@ pub(super) fn trash(path: &Path, home: Option<&Path>) -> Result<(), String> {
     loop {
         let candidate = if n == 1 { name.clone() } else { format!("{name}.{n}") };
         let record = info.join(format!("{candidate}.trashinfo"));
-        let text = format!("[Trash Info]\nPath={}\nDeletionDate={}\n", text::percent_encode(&recorded.to_string_lossy(), b"/"), deletion_date());
+        let text = format!("[Trash Info]\nPath={}\nDeletionDate={}\n", text::percent_encode_path(&recorded.to_string_lossy()), deletion_date());
         match fs::OpenOptions::new().write(true).create_new(true).open(&record) {
             Ok(mut f) if files.join(&candidate).symlink_metadata().is_err() => {
                 f.write_all(text.as_bytes()).map_err(|e| format!("{}: {e}", record.display()))?;

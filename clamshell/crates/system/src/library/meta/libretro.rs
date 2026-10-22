@@ -32,7 +32,7 @@ impl Shared {
             let Some(name) = name.or_else(|| by_name().filter(|n| tried.as_ref() != Some(n))) else {
                 continue;
             };
-            let url = |kind: &str| format!("{LIBRETRO}/{}/{kind}/{}.png", text::percent_encode(system, b""), text::percent_encode(&name, b""));
+            let url = |kind: &str| format!("{LIBRETRO}/{}/{kind}/{}.png", text::percent_encode(system), text::percent_encode(&name));
             meta.cover = (!w.art).then(|| self.image(w, "cover", &url("Named_Boxarts"))).flatten();
             meta.details.shot = self.image(w, "shot", &url("Named_Snaps"));
             if meta.cover.is_some() || meta.details.shot.is_some() {
@@ -53,7 +53,7 @@ impl Shared {
             return d.clone();
         }
         let dat = |dir: &str| {
-            let url = format!("{DATABASE}/{dir}/{}.dat", text::percent_encode(system, b""));
+            let url = format!("{DATABASE}/{dir}/{}.dat", text::percent_encode(system));
             self.list(&format!("{dir} - {system}.dat"), &url).unwrap_or_default()
         };
         let mut d = Database::default();
@@ -85,7 +85,7 @@ impl Shared {
         if let Some(l) = listings.get(&id) {
             return l.clone();
         }
-        let page = self.list(&format!("{kind} - {system}.html"), &format!("{LIBRETRO}/{}/{kind}/", text::percent_encode(system, b"")));
+        let page = self.list(&format!("{kind} - {system}.html"), &format!("{LIBRETRO}/{}/{kind}/", text::percent_encode(system)));
         let names = page.map(|p| Arc::new(hrefs(&p).filter_map(|h| h.strip_suffix(".png").map(Name::new)).collect::<Vec<_>>()));
         if names.is_none() {
             log::warn!("meta: libretro has no {id}");

@@ -15,6 +15,7 @@ serde.workspace = true
 dbus.workspace = true
 crc32fast.workspace = true
 md5.workspace = true
+percent-encoding.workspace = true
 evdev.workspace = true
 rustix.workspace = true
 clamshell-core.workspace = true

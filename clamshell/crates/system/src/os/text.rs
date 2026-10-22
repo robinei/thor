@@ -1,39 +1,26 @@
-//! Text as other programs and formats escape it: percent-encoding (URLs, the trash's records) and the
-//! octal and hex escapes of the kernel's tables and udev's names.
+//! Text as other programs and formats escape it: percent-encoding for URLs and the trash's records,
+//! and the octal and hex escapes in the kernel's tables and udev's names.
 
-/// `text` percent-encoded: everything but ASCII letters, digits, `-._~` and the bytes in `keep` (`/` for
-/// a path).
-pub fn percent_encode(text: &str, keep: &[u8]) -> String {
-    let mut out = String::with_capacity(text.len());
-    for b in text.bytes() {
-        if b.is_ascii_alphanumeric() || b"-._~".contains(&b) || keep.contains(&b) {
-            out.push(char::from(b));
-        } else {
-            out.push_str(&format!("%{b:02X}"));
-        }
-    }
-    out
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
+
+/// What stays as it is in a URL's part: letters, digits and `-._~`.
+const COMPONENT: &AsciiSet = &NON_ALPHANUMERIC.remove(b'-').remove(b'.').remove(b'_').remove(b'~');
+/// The same, and `/` between a path's parts.
+const PATH: &AsciiSet = &COMPONENT.remove(b'/');
+
+/// `text` percent-encoded as one part of a URL.
+pub fn percent_encode(text: &str) -> String {
+    utf8_percent_encode(text, COMPONENT).to_string()
 }
 
-/// Percent-encoding undone (a `%` not followed by two hex digits is kept as it is).
+/// A path percent-encoded, its slashes kept.
+pub fn percent_encode_path(text: &str) -> String {
+    utf8_percent_encode(text, PATH).to_string()
+}
+
+/// Percent-encoding undone. A `%` not followed by two hex digits stays as it is.
 pub fn percent_decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while let Some(&b) = bytes.get(i) {
-        let hex = bytes.get(i + 1..i + 3).and_then(|h| std::str::from_utf8(h).ok()).and_then(|h| u8::from_str_radix(h, 16).ok());
-        match (b, hex) {
-            (b'%', Some(h)) => {
-                out.push(h);
-                i += 3;
-            }
-            _ => {
-                out.push(b);
-                i += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
+    percent_decode_str(text).decode_utf8_lossy().into_owned()
 }
 
 /// `\040` (mounts) and `\x20` (udev's names) as the characters they stand for.
@@ -72,10 +59,10 @@ mod tests {
 
     #[test]
     fn percent_encoding() {
-        assert_eq!(percent_encode("Nintendo - SNES/A&B.png", b""), "Nintendo%20-%20SNES%2FA%26B.png");
-        assert_eq!(percent_encode("/a b/ø.txt", b"/"), "/a%20b/%C3%B8.txt");
+        assert_eq!(percent_encode("Nintendo - SNES/A&B.png"), "Nintendo%20-%20SNES%2FA%26B.png");
+        assert_eq!(percent_encode_path("/a b/ø.txt"), "/a%20b/%C3%B8.txt");
         assert_eq!(percent_decode("A%20B%26C.png"), "A B&C.png");
-        assert_eq!(percent_decode(&percent_encode("/a b/ø%.txt", b"/")), "/a b/ø%.txt");
+        assert_eq!(percent_decode(&percent_encode_path("/a b/ø%.txt")), "/a b/ø%.txt");
         assert_eq!(percent_decode("100%"), "100%");
     }
 

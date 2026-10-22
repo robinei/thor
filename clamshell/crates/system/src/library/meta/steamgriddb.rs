@@ -12,7 +12,7 @@ impl Shared {
         };
         let auth = format!("Authorization: Bearer {key}");
         let api = "https://www.steamgriddb.com/api/v2";
-        let game = http::get_json(&format!("{api}/search/autocomplete/{}", text::percent_encode(&w.title, b"")), &[&auth])
+        let game = http::get_json(&format!("{api}/search/autocomplete/{}", text::percent_encode(&w.title)), &[&auth])
             .and_then(|v| v.get("data")?.get(0)?.get("id")?.as_u64());
         let grid = game.and_then(|g| http::get_json(&format!("{api}/grids/game/{g}?dimensions=600x900"), &[&auth]));
         let url = grid.and_then(|v| v.get("data")?.get(0)?.get("url")?.as_str().map(str::to_owned));

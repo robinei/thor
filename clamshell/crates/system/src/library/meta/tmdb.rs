@@ -18,12 +18,12 @@ impl Shared {
         let bearer = key.starts_with("eyJ").then(|| format!("Authorization: Bearer {key}"));
         let headers: Vec<&str> = bearer.iter().map(String::as_str).collect();
         let search = |year: Option<u16>| {
-            let mut url = format!("https://api.themoviedb.org/3/search/{kind}?include_adult=false&query={}", text::percent_encode(title, b""));
+            let mut url = format!("https://api.themoviedb.org/3/search/{kind}?include_adult=false&query={}", text::percent_encode(title));
             if let Some(y) = year {
                 url.push_str(&format!("&{}={y}", if kind == "tv" { "first_air_date_year" } else { "year" }));
             }
             if bearer.is_none() {
-                url.push_str(&format!("&api_key={}", text::percent_encode(key, b"")));
+                url.push_str(&format!("&api_key={}", text::percent_encode(key)));
             }
             http::get_json(&url, &headers).and_then(|v| v.get("results")?.get(0).cloned())
         };
