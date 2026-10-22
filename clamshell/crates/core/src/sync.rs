@@ -83,7 +83,8 @@ pub(crate) struct Sent {
 }
 
 impl Default for Sent {
-    /// As at start: no program's settings applied, the bottom screen on and the bar's status watched.
+    /// As at start: the global settings taken as applied, the bottom screen on and the bar's status
+    /// watched.
     fn default() -> Sent {
         Sent {
             shown: None,
@@ -229,7 +230,7 @@ impl Sent {
     /// since the screens set it when they come back.
     fn bottom_power(&mut self, w: &Wanted, out: &mut Out) {
         let was = self.bottom_on.replace(w.bottom_on);
-        if was == Some(w.bottom_on) || was.is_some() && w.stage >= Stage::Off {
+        if was == Some(w.bottom_on) || (was.is_some() && w.stage >= Stage::Off) {
             return;
         }
         out.effects.push(Effect::Window(WindowCommand::BottomPower(w.bottom_on)));

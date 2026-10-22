@@ -53,8 +53,9 @@ passes (session; keymap and settings; shelf, nav and bottom; the rest and State 
   out of it first.
 - **What stays in State's impl:** construction; area accessors; `apply`/`apply_event`/`activate`/
   `on_pointer`/`tick`/`ui_started`/`library_read`; `launch` (shelf, device, settings, session
-  and the resume save); `reconcile` (its order kept exactly); `choose_tab`/`left_tab`; `in_force`,
-  `settings_of`, `panel`; `follow_watch`, `follow_runner_keymaps`, `power()` for bottom; the cross-area
+  and the resume save); `settle` (its order kept exactly); `choose_tab`/`left_tab`; `in_force`,
+  `settings_of`, `panel`; `wanted`/`sync` (the diff itself is on `Sent`, in `sync.rs`),
+  `follow_runner_keymaps`, `power()` for bottom; the cross-area
   queries the UI uses (`entry`, `rows`, `scroll`, `list_len`, `bottom_dark`, `pad_back`); `item_key`,
   `find_item`, `resolve`; `editor_done`. Estimated 650-800 lines with docs, in `state.rs`; `lib.rs` keeps
   the crate doc, modules, re-exports and `Init`.
@@ -91,7 +92,7 @@ and the UI change with the code they call; doc links to moved methods are fixed 
 - [x] 12. Prefs and the `Panel` view.
 - [x] 13. Session: fields in; session-only rules; units, windows, found, tray, background; `launch` and
       `reconcile`; dock with `EntryAct`; enqueue.
-- [ ] 13b. `apply` in three phases: handle, settle, sync. "Reconcile" and "follow-ups" stop being separate.
+- [x] 13b. `apply` in three phases: handle, settle, sync. "Reconcile" and "follow-ups" stop being separate.
       - Settle: one ordered list of steps that bring core's state up to date with what happened, using
         history (units and launches, autostart, windows and entries, window rules, background, show
         pending/reopened, quitting, the front closing, the dock, the idle stage, the program in force,
@@ -112,7 +113,7 @@ and the UI change with the code they call; doc links to moved methods are fixed 
 - Effect order: tests compare exact vectors (watch effects on a tab change, a launch's resume effect
   first, keymap Choose before `Save::Keymaps`, Deleted after). Queued events keep order by construction
   (handled after the effects pushed before them); the areas must push in today's order.
-- `apply`'s order of follow steps, and `reconcile`'s (steam launches before window following).
+- `settle`'s order of steps (steam launches before window following), and `Sent::sync`'s order.
 - `before = in_force()` taken before a settings change; `tick`'s first-tick resume before the clock moves.
 - `bottom().dimmed()` read from the cached field: only valid because `follow_bottom_dim` runs on every
   apply after the event.
