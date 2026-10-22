@@ -441,7 +441,7 @@ impl State {
             }
             Id::Dock(id) => {
                 out.mark(Dirty::BOTTOM);
-                out.effects.extend(self.on_dock(id, long));
+                self.on_dock(id, long, out);
             }
             Id::Settings(id) => {
                 out.mark(if matches!(id, SettingsId::Tile(_) | SettingsId::Reset) { Dirty::BOTH } else { Dirty::BOTTOM });

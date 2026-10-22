@@ -21,6 +21,7 @@ use crate::State;
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::id::DockId;
 use crate::keymap::Dir;
+use crate::out::Out;
 use crate::session::windows::Window;
 
 /// The dock's tiles in a row.
@@ -117,72 +118,68 @@ impl State {
     }
 
     /// A tap or long press on a dock tile, a choice in its menu, which then closes, or a step in move mode.
-    pub(crate) fn on_dock(&mut self, id: DockId, long: bool) -> Vec<Effect> {
+    pub(crate) fn on_dock(&mut self, id: DockId, long: bool, out: &mut Out) {
         match id {
             DockId::Entry(i) => {
                 let Some(entry) = self.dock.items.get(usize::from(i)).map(|item| item.id.clone()) else {
-                    return vec![];
+                    return;
                 };
                 if long {
                     self.dock.menu = Some(entry);
                     self.dock.tray = None;
-                    return vec![];
+                    return;
                 }
-                self.tap_entry(entry)
+                self.tap_entry(entry, out);
             }
             DockId::Tray(i) => {
                 if let Some(entry) = self.dock.items.get(usize::from(i)).map(|item| item.id.clone()) {
                     self.dock.menu = Some(entry);
                     self.dock.tray = Some(vec![]);
                 }
-                vec![]
             }
             DockId::TrayMenu => {
                 if self.dock.menu.is_some() {
                     self.dock.tray = Some(vec![]);
                 }
-                vec![]
             }
-            DockId::TrayEntry(id) => self.tray_choice(id),
+            DockId::TrayEntry(id) => out.effects.extend(self.tray_choice(id)),
             // Back in a submenu goes to the menu above it.
             DockId::Back if self.dock.tray.as_ref().is_some_and(|path| !path.is_empty()) => {
                 if let Some(path) = &mut self.dock.tray {
                     path.pop();
                 }
-                vec![]
             }
-            DockId::Step(dir) => self.step(dir),
+            DockId::Step(dir) => self.step(dir, out),
             DockId::Done => {
                 self.dock.moving = None;
                 self.follow_dock();
-                vec![]
             }
             choice => {
                 self.dock.tray = None;
-                let Some(entry) = self.dock.menu.take() else {
-                    return vec![];
-                };
-                self.menu_choice(choice, entry)
+                if let Some(entry) = self.dock.menu.take() {
+                    self.menu_choice(choice, entry, out);
+                }
             }
         }
     }
 
     /// A tap on a dock entry. A stopped entry starts. A running one is shown, on the bottom screen if all
     /// its windows are there.
-    fn tap_entry(&mut self, entry: Arc<str>) -> Vec<Effect> {
+    fn tap_entry(&mut self, entry: Arc<str>, out: &mut Out) {
         if self.session.running(&entry).is_none() {
-            return self.play(entry);
+            out.effects.extend(self.play(entry));
+            return;
         }
         let below = |w: &&Window| w.down;
         let down = self.session.windows_of(&entry).all(|w| w.down).then(|| self.session.windows_of(&entry).find(below).map(|w| w.id)).flatten();
         match down {
-            Some(window) => self.bottom.show_program_down(window),
-            None => self.show_running(&entry),
+            Some(window) => out.effects.extend(self.bottom.show_program_down(window)),
+            None => out.effects.extend(self.show_running(&entry)),
         }
     }
 
-    fn menu_choice(&mut self, choice: DockId, entry: Arc<str>) -> Vec<Effect> {
-        match choice {
+    fn menu_choice(&mut self, choice: DockId, entry: Arc<str>, out: &mut Out) {
+        let effects = match choice {
             DockId::OpenAnother if self.opens_another(&entry) => self.launch(entry),
             DockId::OpenAnother => vec![],
             DockId::CloseWindow => self.entry_window(&entry).map(|w| vec![Effect::Window(WindowCommand::Close(vec![w]))]).unwrap_or_default(),
@@ -197,7 +194,8 @@ impl State {
             DockId::Quit => self.quit(&entry),
             DockId::ForceKill => self.force_kill(&entry),
             _ => vec![],
-        }
+        };
+        out.effects.extend(effects);
     }
 
     /// Drops the pins of entries the library doesn't have, and whose source isn't away, unless they run.
@@ -221,9 +219,9 @@ impl State {
     }
 
     /// In move mode, moves the entry one place left or right, or one row up or down, and saves the order.
-    fn step(&mut self, dir: Dir) -> Vec<Effect> {
+    fn step(&mut self, dir: Dir, out: &mut Out) {
         let Some(at) = self.dock.moving.as_ref().and_then(|id| self.dock.position(id)) else {
-            return vec![];
+            return;
         };
         let last = self.dock.items.len().saturating_sub(1);
         let to = match dir {
@@ -233,11 +231,11 @@ impl State {
             Dir::Down => (at + DOCK_COLUMNS).min(last),
         };
         if to == at {
-            return vec![];
+            return;
         }
         let item = self.dock.items.remove(at);
         self.dock.items.insert(to, item);
-        vec![Effect::Save(Save::Dock(self.dock.pinned_ids()))]
+        out.effects.push(Effect::Save(Save::Dock(self.dock.pinned_ids())));
     }
 }
 
