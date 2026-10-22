@@ -1,12 +1,14 @@
-//! The scrolled lists: shelf's games on the main screen; on the second screen Wi-Fi's networks,
-//! Bluetooth's devices, the apps playing, the backlights. Each keeps its place ([`Scroll`]; shelf keeps
-//! one per collection). The pad's focus on a row scrolls just enough to show it; a list that changes under
-//! the view keeps the row at its top where it is (a network vanishing above doesn't move the rows under
-//! the finger), unless the view is at the very top, where new rows show.
+//! The scrolled lists: shelf's games on the main screen, and on the second screen the Wi-Fi networks,
+//! the Bluetooth devices, the apps playing and the backlights, among others. Each keeps its own scroll
+//! position ([`Scroll`]), and shelf keeps one per collection.
 //!
-//! A list's rows are targets of one kind ([`Id::Row`]); what a row is, how many there are and what a tap
-//! on one does is its feature's ([`crate::kit::list::Rows`], [`State::on_row`]): this module only says
-//! which feature a list is.
+//! When the pad's focus moves to a row, the list scrolls just enough to show it. When a list changes
+//! under the view, the row at the top of the view stays where it is, so a network vanishing above
+//! doesn't move the rows under the finger. The exception is a view at the very top, where new rows show.
+//!
+//! A list's rows are all targets of one kind ([`Id::Row`]). What a row is, how many there are and what a
+//! tap on one does are up to the list's feature ([`crate::kit::list::Rows`], [`State::on_row`]). This
+//! module only maps each list to its feature.
 
 use crate::State;
 use crate::effect::Effect;
@@ -16,21 +18,21 @@ use crate::kit::list::{EMPTY, RowsOf, Scroll};
 /// A scrolled list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ListId {
-    /// Shelf's games (the current collection's).
+    /// Shelf's games, from the current collection.
     Shelf,
     Wifi,
     Bluetooth,
-    /// The apps playing (the volume tab).
+    /// The apps playing, in the volume tab.
     Streams,
     Backlights,
-    /// The keymap picker's: Default, then the keymaps.
+    /// The keymap picker: Default, then the keymaps.
     Keymaps,
-    /// A keymap's layers: to show one (all, then New layer), or as a target (all but Base, then New
-    /// layer).
+    /// A keymap's layers. To pick one to show, it lists all of them, then New layer. To pick one as a
+    /// target, it lists all but Base, then New layer.
     Layers,
     /// The time tab's regions, or a region's zones.
     Time,
-    /// The dock: its rows of tiles ([`crate::session::dock::DOCK_COLUMNS`] a row).
+    /// The dock's rows of tiles, [`crate::session::dock::DOCK_COLUMNS`] to a row.
     Dock,
 }
 
@@ -38,11 +40,11 @@ pub enum ListId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RowPart {
     Main,
-    /// Its level's track (the apps playing, the backlights).
+    /// The row's level track, for the apps playing and the backlights.
     Level,
-    /// Its mute button (the apps playing).
+    /// The row's mute button, for the apps playing.
     Mute,
-    /// Its Edit button (the keymaps).
+    /// The row's Edit button, for the keymaps.
     Edit,
 }
 
@@ -60,7 +62,8 @@ impl ListId {
         Id::Row { list: self, i, part: RowPart::Main }
     }
 
-    /// The list and row a target is in, if it is a row's (a dock tile's: its row of tiles).
+    /// The list and row a target is in, if it belongs to a row. For a dock tile, this is its row of
+    /// tiles.
     pub fn of(id: &Id) -> Option<(ListId, usize)> {
         match id {
             Id::Row { list, i, .. } => Some((*list, usize::from(*i))),
@@ -69,8 +72,8 @@ impl ListId {
         }
     }
 
-    /// `id` (a row's target) for row `i` instead: the same part a row up or down (a dock tile: the same
-    /// column, or the row's last tile; `dock_len`: how many tiles there are).
+    /// The same part as the row target `id`, but in row `i`, for moving up or down. A dock tile moves to
+    /// the same column, or to the row's last tile. `dock_len` is how many tiles there are.
     pub fn sibling(id: &Id, i: u16, dock_len: usize) -> Option<Id> {
         match id {
             Id::Row { list, part, .. } => Some(Id::Row { list: *list, i, part: *part }),
@@ -83,7 +86,7 @@ impl ListId {
         }
     }
 
-    /// Whether it rests on whole rows (shelf: a drag or fling ends settling on one).
+    /// Whether the list rests on whole rows. Shelf does: a drag or fling ends by settling on a row.
     pub fn whole_rows(self) -> bool {
         self == ListId::Shelf
     }
@@ -94,7 +97,7 @@ impl ListId {
     }
 }
 
-/// Every list's place.
+/// The scroll position of every list.
 #[derive(Debug, Clone, Default)]
 pub struct Lists {
     scrolls: [Scroll; ListId::COUNT],
@@ -102,7 +105,7 @@ pub struct Lists {
 
 impl Lists {
     pub fn get(&self, list: ListId) -> &Scroll {
-        // (The array has a place for every list.)
+        // The array has an entry for every list.
         self.scrolls.get(list.index()).unwrap_or(&EMPTY)
     }
 
@@ -114,9 +117,9 @@ impl Lists {
 /// What the UI says about a list.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ListEvent {
-    /// A finger, a fling or the wheel moved it by this many rows (positive: down the list).
+    /// A finger, a fling or the wheel moved the list by this many rows. Positive is down the list.
     Scroll(ListId, f32),
-    /// The list shows this many rows (from the layout).
+    /// The list shows this many rows, from the layout.
     Visible(ListId, f32),
 }
 
@@ -133,7 +136,7 @@ impl State {
         &self.lists
     }
 
-    /// Each list's rows: its feature's.
+    /// A list's rows, from its feature.
     pub(crate) fn rows(&self, list: ListId) -> RowsOf<'_> {
         match list {
             ListId::Shelf => RowsOf::Of(&self.shelf),
@@ -148,7 +151,7 @@ impl State {
         }
     }
 
-    /// A tap or long press on a row: its feature's.
+    /// A tap or long press on a row, handled by the list's feature.
     pub(crate) fn on_row(&mut self, list: ListId, i: usize, part: RowPart, long: bool) -> Vec<Effect> {
         match list {
             ListId::Wifi => self.tap_network(i, long),
@@ -157,14 +160,14 @@ impl State {
             ListId::Keymaps => self.on_keymap_row(i, part, long),
             ListId::Layers => self.on_layer_row(i, part, long),
             ListId::Time => self.on_time_row(i),
-            // (Its tiles are targets of their own.)
+            // Its tiles are targets of their own.
             ListId::Dock => vec![],
-            // (A shelf game's row is its game's target; a backlight's row is only its level.)
+            // A shelf game's row is its game's target, and a backlight's row is only its level.
             ListId::Shelf | ListId::Backlights => vec![],
         }
     }
 
-    /// Where `list` is scrolled (shelf: the current collection's place).
+    /// Where `list` is scrolled. For shelf, this is the current collection's position.
     pub fn scroll(&self, list: ListId) -> &Scroll {
         match list {
             ListId::Shelf => self.shelf.scroll(),
@@ -194,7 +197,7 @@ impl State {
         self.scroll(list).can_scroll(rows, self.list_len(list))
     }
 
-    /// A list scrolled or laid out; whether it moved.
+    /// A list scrolled or was laid out. Returns whether it moved.
     pub(crate) fn on_list(&mut self, event: ListEvent) -> bool {
         let (list, moved) = match event {
             ListEvent::Scroll(list, rows) => {
@@ -212,7 +215,7 @@ impl State {
         moved
     }
 
-    /// The pad's focus came to `id`: if it is a list's row, the list shows it.
+    /// The pad's focus moved to `id`. If it is a list row, the list scrolls to show it.
     pub(crate) fn show_focused(&mut self, id: &Id) {
         let Some((list, i)) = ListId::of(id) else {
             return;
@@ -231,8 +234,8 @@ impl State {
         }
     }
 
-    /// After the lists' contents may have changed: each scrolled list keeps its top item where it is
-    /// (while that item is still there), and stays within its ends. Whether any moved.
+    /// Runs after the lists' contents may have changed. Each scrolled list keeps its top item where it
+    /// is, while that item is still there, and stays within its ends. Returns whether any moved.
     pub(crate) fn follow_lists(&mut self) -> bool {
         let mut moved = false;
         for list in ListId::ALL {
@@ -268,13 +271,13 @@ mod tests {
         networks(&mut s, &["a", "b", "c", "d", "e", "f", "g", "h"]);
         s.apply(ListEvent::Visible(ListId::Wifi, 3.0).into());
         s.apply(ListEvent::Scroll(ListId::Wifi, 2.5).into());
-        // "a" vanishes above the view: "c" stays at its top, half scrolled past.
+        // "a" vanishes above the view, and "c" stays at the top, half scrolled past.
         networks(&mut s, &["b", "c", "d", "e", "f", "g", "h"]);
         assert_eq!(s.lists().get(ListId::Wifi).offset(), 1.5);
-        // The top one gone too: the offset stays, within the ends.
+        // With the top one gone too, the offset stays, within the ends.
         networks(&mut s, &["b", "d", "e"]);
         assert_eq!(s.lists().get(ListId::Wifi).offset(), 0.0);
-        // At the very top, a new network above shows.
+        // At the very top, a new network above is shown.
         networks(&mut s, &["b", "d", "e", "f", "g"]);
         networks(&mut s, &["new", "b", "d", "e", "f", "g"]);
         assert_eq!(s.lists().get(ListId::Wifi).offset(), 0.0);

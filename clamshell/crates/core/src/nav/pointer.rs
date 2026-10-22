@@ -1,12 +1,12 @@
-//! Focus and presses: the target the pad's focus is on (its ring shown only while navigating with the
-//! pad), and the target a finger, the mouse or the pad's A is pressing (drawn lit), with what list item
-//! the press came down on (see [`crate::nav::items`]).
+//! Focus and presses. This holds the target the pad's focus is on, whose ring is shown only while
+//! navigating with the pad, and the target a finger, the mouse or the pad's A is pressing, which is drawn
+//! lit. For a press it also holds which list item the press came down on (see [`crate::nav::items`]).
 
 use crate::id::Id;
 use crate::kit::list::ItemKey;
 
-/// A press on a list item, by what the item is (not where), so a list that changes under the finger
-/// doesn't redirect it.
+/// A press on a list item, kept by what the item is rather than where it is, so a list that changes
+/// under the finger doesn't redirect it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Press {
     pub id: Id,
@@ -41,7 +41,7 @@ impl Pointer {
         self.show_focus && self.focus.as_ref() == Some(id)
     }
 
-    /// Hides the focus ring; whether it was shown.
+    /// Hides the focus ring. Returns whether it was shown.
     pub(crate) fn hide_focus(&mut self) -> bool {
         std::mem::replace(&mut self.show_focus, false)
     }

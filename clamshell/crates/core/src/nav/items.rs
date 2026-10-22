@@ -1,8 +1,8 @@
-//! List items by what they are, not where. Taps, long presses and level rows name list items by their
-//! position (so drawing needs no allocation), but a list can change under a finger: a scan re-sorts the
-//! networks, a device connects and moves up, an app stops playing, a game ends. A press remembers what
-//! its item is when it comes down ([`ItemKey`]), and acts on that item wherever it is by then, or not at
-//! all once it is gone.
+//! List items by what they are, not where they are. Taps, long presses and level rows name list items by
+//! position, so drawing needs no allocation. But a list can change under a finger: a scan re-sorts the
+//! networks, a device connects and moves up, an app stops playing, a game ends. So a press remembers
+//! what its item is when it comes down ([`ItemKey`]), and acts on that item wherever it is by then, or
+//! not at all once it is gone.
 
 use crate::State;
 use crate::id::{AudioId, DockId, Id, ShelfId};
@@ -11,7 +11,7 @@ use crate::levels::Level;
 use crate::nav::pointer::Press;
 
 impl State {
-    /// What the item `id` points at is, if `id` is a list item.
+    /// The key of the item `id` points at, if `id` is a list item.
     pub(crate) fn item_key(&self, id: &Id) -> Option<ItemKey> {
         let at = |i: &u16| usize::from(*i);
         match id {
@@ -39,8 +39,8 @@ impl State {
         }
     }
 
-    /// `id` as the press that came down on it meant it: the same item where it is now, `None` once it
-    /// is gone. Ids that aren't list items, or weren't pressed, stand as they are.
+    /// `id` resolved to the item the press landed on: the same item where it is now, or `None` once it
+    /// is gone. Ids that aren't list items, or weren't pressed, are returned as they are.
     pub(crate) fn resolve(&self, id: &Id) -> Option<Id> {
         match &self.pointer.press {
             Some(Press { id: pressed, item }) if pressed == id => self.find_item(id, item),
@@ -48,7 +48,7 @@ impl State {
         }
     }
 
-    /// A level row as the finger on it meant it (see [`State::resolve`]).
+    /// A level row resolved to the one the finger landed on (see [`State::resolve`]).
     pub(crate) fn resolve_level(&self, level: Level) -> Option<Level> {
         self.resolve(&level.id()).as_ref().and_then(Level::of)
     }
@@ -76,7 +76,7 @@ mod tests {
         read(&mut s, bt(vec![device("pad", true, false), device("buds", true, true)]));
         assert_eq!(long(&mut s, pad.clone()), vec![Effect::Bluetooth(Command::Forget("00:pad".into()))]);
         s.apply(PointerEvent::Up(pad).into());
-        // Gone meanwhile: nothing.
+        // If it is gone in the meantime, nothing happens.
         let first = ListId::Bluetooth.row(0);
         s.apply(PointerEvent::Down(first.clone()).into());
         read(&mut s, bt(vec![device("buds", true, true)]));
