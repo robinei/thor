@@ -52,7 +52,7 @@ passes (session; keymap and settings; shelf, nav and bottom; the rest and State 
   prefs and keymapping (what it edits, its levels, the tiles' values). Mutating handlers take owned values
   out of it first.
 - **What stays in State's impl:** construction; area accessors; `apply`/`apply_event`/`activate`/
-  `on_pointer`/`tick`/`ui_started`/`library_read`; `settle`; `launch` (shelf, device, settings, session
+  `on_pointer`/`tick`/`ui_started`/`library_read`; `launch` (shelf, device, settings, session
   and the resume save); `reconcile` (its order kept exactly); `choose_tab`/`left_tab`; `in_force`,
   `settings_of`, `panel`; `follow_watch`, `follow_runner_keymaps`, `power()` for bottom; the cross-area
   queries the UI uses (`entry`, `rows`, `scroll`, `list_len`, `bottom_dark`, `pad_back`); `item_key`,
@@ -81,7 +81,7 @@ and the UI change with the code they call; doc links to moved methods are fixed 
 - [x] 7. `Watches`.
 - [x] 8. Bottom: notices, screen rules (`Power`), window rules and `sent_down`, tabs, clipboard, pointing,
       text input, the editor (`Bottom::edit`, State's `editor_done`); `Pointer` methods; `Keyboard::hold`.
-- [ ] 8b. `Out`, and `Mutation` folded into `Event`: rules push into `&mut Out` instead of returning
+- [x] 8b. `Out`, and `Mutation` folded into `Event`: rules push into `&mut Out` instead of returning
       effect lists; `Tab` and entry acts as `Event` variants.
 - [ ] 9. Shelf: `Files`, `fetching`, `shown` in; files and rules and actions onto `Shelf`; the unsaved
       flag and the resume debounce on State.
@@ -97,8 +97,8 @@ and the UI change with the code they call; doc links to moved methods are fixed 
 ## Risks to watch
 
 - Effect order: tests compare exact vectors (watch effects on a tab change, a launch's resume effect
-  first, keymap Choose before `Save::Keymaps`, Deleted after). `settle` keeps order by construction; the
-  areas must emit in today's order.
+  first, keymap Choose before `Save::Keymaps`, Deleted after). Queued events keep order by construction
+  (handled after the effects pushed before them); the areas must push in today's order.
 - `apply`'s order of follow steps, and `reconcile`'s (steam launches before window following).
 - `before = in_force()` taken before a settings change; `tick`'s first-tick resume before the clock moves.
 - `bottom().dimmed()` read from the cached field: only valid because `follow_bottom_dim` runs on every
