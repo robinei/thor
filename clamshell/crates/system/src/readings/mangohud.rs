@@ -52,7 +52,7 @@ impl Tail {
             if let (Some(a), Some(b)) = (fps, frametime) {
                 self.columns = Some((a, b));
             } else if let Some((a, b)) = self.columns {
-                let num = |i: usize| fields.get(i).and_then(|f| f.parse::<f32>().ok());
+                let num = |i: usize| fields.get(i).and_then(|f| f.parse::<f32>().inspect_err(|e| log::debug!("frames: {f:?}: {e}")).ok());
                 if let (Some(fps), Some(ms)) = (num(a), num(b)) {
                     latest = Some((fps, ms));
                 }
@@ -78,10 +78,14 @@ impl FrameLog {
     pub fn row(&mut self, app: &str, fps: f32) {
         let name = format!("android-{}.csv", app.replace(['/', ' '], "_"));
         if !self.files.contains_key(&name) {
-            let _ = std::fs::create_dir_all(&self.dir);
+            if let Err(e) = std::fs::create_dir_all(&self.dir) {
+                log::debug!("frame log: {}: {e}", self.dir.display());
+            }
             match OpenOptions::new().create(true).truncate(true).write(true).open(self.dir.join(&name)) {
                 Ok(mut f) => {
-                    let _ = f.write_all(b"fps,frametime\n");
+                    if let Err(e) = f.write_all(b"fps,frametime\n") {
+                        log::debug!("frame log: {name}: {e}");
+                    }
                     self.files.insert(name.clone(), f);
                 }
                 Err(e) => return log::debug!("frame log: {name}: {e}"),
@@ -89,7 +93,9 @@ impl FrameLog {
         }
         if let Some(f) = self.files.get_mut(&name) {
             let frame_ms = if fps > 0.0 { 1000.0 / fps } else { 0.0 };
-            let _ = writeln!(f, "{fps:.1},{frame_ms:.2}");
+            if let Err(e) = writeln!(f, "{fps:.1},{frame_ms:.2}") {
+                log::debug!("frame log: {name}: {e}");
+            }
         }
     }
 }

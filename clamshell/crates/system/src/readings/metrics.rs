@@ -74,7 +74,8 @@ fn parse_proc_stat(text: &str) -> CpuTimes {
     text.lines()
         .filter(|l| l.starts_with("cpu"))
         .map(|l| {
-            let fields: Vec<u64> = l.split_whitespace().skip(1).filter_map(|f| f.parse().ok()).collect();
+            let fields: Vec<u64> =
+                l.split_whitespace().skip(1).filter_map(|f| f.parse().inspect_err(|e| log::debug!("metrics: /proc/stat: {f:?}: {e}")).ok()).collect();
             let total: u64 = fields.iter().sum();
             let idle = fields.get(3).copied().unwrap_or(0) + fields.get(4).copied().unwrap_or(0);
             (total.saturating_sub(idle), total)
@@ -90,7 +91,11 @@ fn load((busy0, total0): (u64, u64), (busy1, total1): (u64, u64)) -> Option<f32>
 /// MemTotal, MemAvailable, SwapTotal, SwapFree from /proc/meminfo, in bytes.
 fn parse_meminfo(text: &str) -> (u64, u64, u64, u64) {
     let field = |name: &str| {
-        text.lines().find(|l| l.starts_with(name)).and_then(|l| l.split_whitespace().nth(1)).and_then(|v| v.parse::<u64>().ok()).map_or(0, |kb| kb * 1024)
+        text.lines()
+            .find(|l| l.starts_with(name))
+            .and_then(|l| l.split_whitespace().nth(1))
+            .and_then(|v| v.parse::<u64>().inspect_err(|e| log::debug!("metrics: /proc/meminfo: {name} {v:?}: {e}")).ok())
+            .map_or(0, |kb| kb * 1024)
     };
     (field("MemTotal:"), field("MemAvailable:"), field("SwapTotal:"), field("SwapFree:"))
 }
@@ -99,7 +104,7 @@ fn parse_meminfo(text: &str) -> (u64, u64, u64, u64) {
 fn parse_dpm_clock(text: &str) -> Option<u32> {
     let line = text.lines().find(|l| l.trim_end().ends_with('*'))?;
     let clock = line.split_whitespace().find(|w| w.to_ascii_lowercase().ends_with("mhz"))?;
-    clock.get(..clock.len() - 3)?.parse().ok()
+    clock.get(..clock.len() - 3)?.parse().inspect_err(|e| log::debug!("metrics: pp_dpm_sclk: {clock:?}: {e}")).ok()
 }
 
 fn read(previous: &CpuTimes, now: &CpuTimes) -> Metrics {

@@ -77,7 +77,9 @@ fn follow(dir: &Path, sink: &impl Sink) -> Result<(), Closed> {
 fn wait(fd: &OwnedFd, timeout: Option<Duration>) {
     let timeout = timeout.map(crate::os::sys::timespec);
     let mut fds = [PollFd::new(fd, PollFlags::IN)];
-    let _ = rustix::event::poll(&mut fds, timeout.as_ref());
+    if let Err(e) = rustix::event::poll(&mut fds, timeout.as_ref()) {
+        log::debug!("frames: waiting for inotify: {e}");
+    }
     let mut buf = [MaybeUninit::uninit(); 4096];
     let mut reader = inotify::Reader::new(fd, &mut buf);
     while reader.next().is_ok() {}
@@ -87,19 +89,22 @@ fn wait(fd: &OwnedFd, timeout: Option<Duration>) {
 fn newest_fresh_log(dir: &Path) -> Option<PathBuf> {
     let now = SystemTime::now();
     let mut newest: Option<(SystemTime, PathBuf)> = None;
-    for entry in fs::read_dir(dir).ok()?.flatten() {
+    let entries = fs::read_dir(dir).inspect_err(|e| log::debug!("frames: reading {}: {e}", dir.display())).ok()?;
+    for entry in entries.filter_map(|e| e.inspect_err(|e| log::debug!("frames: reading {}: {e}", dir.display())).ok()) {
         let path = entry.path();
         // MangoHud also writes a `<game>_summary.csv` when a log ends.
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if !name.ends_with(".csv") || name.ends_with("_summary.csv") {
             continue;
         }
-        let Some(modified) = entry.metadata().ok().and_then(|m| m.modified().ok()) else {
+        let Some(modified) = entry.metadata().and_then(|m| m.modified()).inspect_err(|e| log::debug!("frames: {}: {e}", path.display())).ok() else {
             continue;
         };
         let age = now.duration_since(modified).unwrap_or_default();
         if age > KEEP {
-            let _ = fs::remove_file(&path);
+            if let Err(e) = fs::remove_file(&path) {
+                log::debug!("frames: removing {}: {e}", path.display());
+            }
         } else if newest.as_ref().is_none_or(|(t, _)| modified > *t) {
             newest = Some((modified, path));
         }
@@ -109,10 +114,11 @@ fn newest_fresh_log(dir: &Path) -> Option<PathBuf> {
 
 /// What was appended to `path` since `offset` (advanced past it).
 fn read_new(path: &Path, offset: &mut u64) -> Option<String> {
-    let mut file = fs::File::open(path).ok()?;
-    file.seek(SeekFrom::Start(*offset)).ok()?;
+    let said = |e: &io::Error| log::debug!("frames: reading {}: {e}", path.display());
+    let mut file = fs::File::open(path).inspect_err(said).ok()?;
+    file.seek(SeekFrom::Start(*offset)).inspect_err(said).ok()?;
     let mut text = String::new();
-    let n = file.read_to_string(&mut text).ok()?;
+    let n = file.read_to_string(&mut text).inspect_err(said).ok()?;
     *offset += n as u64;
     Some(text)
 }

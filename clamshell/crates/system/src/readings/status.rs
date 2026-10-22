@@ -70,7 +70,8 @@ fn read_battery() -> Option<(Option<u8>, bool, bool)> {
 /// connected). Quality is out of 70 on most drivers.
 fn parse_wireless(text: &str) -> Option<u8> {
     let line = text.lines().nth(2)?;
-    let quality: f32 = line.split_whitespace().nth(2)?.trim_end_matches('.').parse().ok()?;
+    let field = line.split_whitespace().nth(2)?;
+    let quality: f32 = field.trim_end_matches('.').parse().inspect_err(|e| log::debug!("status: /proc/net/wireless: {field:?}: {e}")).ok()?;
     Some((quality / 70.0 * 100.0).clamp(0.0, 100.0) as u8)
 }
 
