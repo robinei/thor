@@ -629,7 +629,7 @@ mod tests {
         assert_eq!((dirty, s.shelf().cursor()), (Dirty::BOTH, Cursor { index: 0, top: 2.5 }));
         s.apply(ListEvent::Scroll(ListId::Shelf, 100.0).into());
         assert_eq!(s.shelf().cursor().top, 4.0, "the last game on the last row");
-        let can_scroll = |rows| s.scroll(ListId::Shelf).can_scroll(rows, s.list_len(ListId::Shelf));
+        let can_scroll = |rows| s.lists().scroll(ListId::Shelf).can_scroll(rows, s.lists().len(ListId::Shelf));
         assert!(!can_scroll(1.0) && can_scroll(-1.0));
         s.apply(ShelfEvent::ListStep(1).into());
         assert_eq!(s.shelf().cursor(), Cursor { index: 1, top: 1.0 }, "the selection on screen again");

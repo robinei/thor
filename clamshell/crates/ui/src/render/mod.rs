@@ -115,7 +115,7 @@ pub(crate) fn render(
 pub(crate) fn list_changes(state: &State, out: &FrameOut) -> impl Iterator<Item = Event> {
     ListId::ALL.into_iter().filter_map(move |list| {
         let rows = out.lists.get(list.index()).copied().flatten()?;
-        let known = state.scroll(list).visible().is_some_and(|v| (v - rows).abs() < 1e-3);
+        let known = state.lists().scroll(list).visible().is_some_and(|v| (v - rows).abs() < 1e-3);
         (!known).then(|| ListEvent::Visible(list, rows).into())
     })
 }

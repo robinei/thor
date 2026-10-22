@@ -10,8 +10,10 @@
 //! tap on one does are up to the list's feature ([`crate::kit::list::Rows`], [`crate::State::on_row`]). This
 //! module only maps each list to its feature.
 
-use crate::id::Id;
-use crate::kit::list::{EMPTY, Scroll};
+use crate::id::{AudioId, DockId, Id, ShelfId};
+use crate::keymap::screens::Keymapping;
+use crate::kit::list::{EMPTY, ItemKey, RowsOf, Scroll};
+use crate::{Dock, Level, Levels, Panel, Pointer, Prefs, Radios, Session, Shelf, Sys};
 
 /// A scrolled list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -95,20 +97,108 @@ impl ListId {
     }
 }
 
-/// The scroll position of every list.
+/// The scroll position of every list but shelf, which keeps one per collection.
 #[derive(Debug, Clone, Default)]
-pub struct Lists {
+pub(crate) struct Scrolls {
     scrolls: [Scroll; ListId::COUNT],
 }
 
-impl Lists {
-    pub fn get(&self, list: ListId) -> &Scroll {
+impl Scrolls {
+    pub(crate) fn get(&self, list: ListId) -> &Scroll {
         // The array has an entry for every list.
         self.scrolls.get(list.index()).unwrap_or(&EMPTY)
     }
 
     pub(crate) fn get_mut(&mut self, list: ListId) -> Option<&mut Scroll> {
         self.scrolls.get_mut(list.index())
+    }
+}
+
+/// The lists as they are now: each one's rows, from its feature, and where it is scrolled. Built by
+/// [`crate::State::lists`] from the areas.
+#[derive(Clone, Copy)]
+pub struct Lists<'a> {
+    pub(crate) scrolls: &'a Scrolls,
+    pub(crate) shelf: &'a Shelf,
+    pub(crate) session: &'a Session,
+    pub(crate) prefs: &'a Prefs,
+    pub(crate) keymapping: &'a Keymapping,
+    pub(crate) radios: &'a Radios,
+    pub(crate) levels: &'a Levels,
+    pub(crate) sys: &'a Sys,
+    pub(crate) dock: &'a Dock,
+    pub(crate) pointer: &'a Pointer,
+}
+
+impl<'a> Lists<'a> {
+    /// Where `list` is scrolled. For shelf, this is the current collection's position.
+    pub fn scroll(&self, list: ListId) -> &'a Scroll {
+        match list {
+            ListId::Shelf => self.shelf.scroll(),
+            _ => self.scrolls.get(list),
+        }
+    }
+
+    /// How many rows `list` has now.
+    pub fn len(&self, list: ListId) -> usize {
+        self.rows(list).len()
+    }
+
+    /// A list's rows, from its feature.
+    pub(crate) fn rows(&self, list: ListId) -> RowsOf<'a> {
+        match list {
+            ListId::Shelf => RowsOf::Of(self.shelf),
+            ListId::Wifi => RowsOf::Of(self.radios.wifi()),
+            ListId::Bluetooth => RowsOf::Of(self.radios.bluetooth()),
+            ListId::Streams => RowsOf::Of(self.levels.audio()),
+            ListId::Backlights => RowsOf::Of(self.levels.backlight_rows()),
+            ListId::Keymaps => RowsOf::Count(Panel::new(self.session, self.shelf, self.prefs, self.keymapping).keymap_rows_len()),
+            ListId::Layers => RowsOf::Count(self.keymapping.layer_rows()),
+            ListId::Time => RowsOf::Count(self.sys.time_rows()),
+            ListId::Dock => RowsOf::Count(self.dock.items().len().div_ceil(crate::session::dock::DOCK_COLUMNS)),
+        }
+    }
+
+    /// The key of the item `id` points at, if `id` is a list item.
+    pub(crate) fn item_key(&self, id: &Id) -> Option<ItemKey> {
+        let at = |i: &u16| usize::from(*i);
+        match id {
+            Id::Row { list, i, .. } => self.rows(*list).key(at(i)),
+            Id::Dock(DockId::Entry(i)) => self.dock.items().get(at(i)).map(|e| ItemKey::Name(e.id.to_string())),
+            Id::Shelf(ShelfId::Collection(i)) => self.shelf.library().collections.get(at(i)).map(|c| ItemKey::Name(c.name.clone())),
+            Id::Audio(AudioId::Output(i)) => self.levels.audio().outputs.get(at(i)).map(|o| ItemKey::Number(o.id)),
+            _ => None,
+        }
+    }
+
+    /// Where the item with `key` is now, as an id of the same kind as `id`.
+    fn find_item(&self, id: &Id, key: &ItemKey) -> Option<Id> {
+        let index = |p: Option<usize>| p.and_then(|p| u16::try_from(p).ok());
+        match (id, key) {
+            (Id::Row { list, part, .. }, key) => index(self.rows(*list).find(key)).map(|i| Id::Row { list: *list, i, part: *part }),
+            (Id::Dock(DockId::Entry(_)), ItemKey::Name(n)) => index(self.dock.items().iter().position(|e| *e.id == **n)).map(|i| Id::Dock(DockId::Entry(i))),
+            (Id::Shelf(ShelfId::Collection(_)), ItemKey::Name(n)) => {
+                index(self.shelf.library().collections.iter().position(|x| x.name == *n)).map(|i| Id::Shelf(ShelfId::Collection(i)))
+            }
+            (Id::Audio(AudioId::Output(_)), ItemKey::Number(n)) => {
+                index(self.levels.audio().outputs.iter().position(|x| x.id == *n)).map(|i| Id::Audio(AudioId::Output(i)))
+            }
+            _ => None,
+        }
+    }
+
+    /// `id` resolved to the item the press landed on: the same item where it is now, or `None` once it
+    /// is gone. Ids that aren't list items, or weren't pressed, are returned as they are.
+    pub(crate) fn resolve(&self, id: &Id) -> Option<Id> {
+        match self.pointer.pressed_item(id) {
+            Some(item) => self.find_item(id, item),
+            None => Some(id.clone()),
+        }
+    }
+
+    /// A level row resolved to the one the finger landed on (see [`Lists::resolve`]).
+    pub(crate) fn resolve_level(&self, level: Level) -> Option<Level> {
+        self.resolve(&level.id()).as_ref().and_then(Level::of)
     }
 }
 
@@ -153,14 +243,14 @@ mod tests {
         s.apply(ListEvent::Scroll(ListId::Wifi, 2.5).into());
         // "a" vanishes above the view, and "c" stays at the top, half scrolled past.
         networks(&mut s, &["b", "c", "d", "e", "f", "g", "h"]);
-        assert_eq!(s.lists().get(ListId::Wifi).offset(), 1.5);
+        assert_eq!(s.lists().scroll(ListId::Wifi).offset(), 1.5);
         // With the top one gone too, the offset stays, within the ends.
         networks(&mut s, &["b", "d", "e"]);
-        assert_eq!(s.lists().get(ListId::Wifi).offset(), 0.0);
+        assert_eq!(s.lists().scroll(ListId::Wifi).offset(), 0.0);
         // At the very top, a new network above is shown.
         networks(&mut s, &["b", "d", "e", "f", "g"]);
         networks(&mut s, &["new", "b", "d", "e", "f", "g"]);
-        assert_eq!(s.lists().get(ListId::Wifi).offset(), 0.0);
+        assert_eq!(s.lists().scroll(ListId::Wifi).offset(), 0.0);
     }
 
     #[test]
@@ -169,9 +259,9 @@ mod tests {
         networks(&mut s, &["a", "b", "c", "d", "e", "f"]);
         s.apply(ListEvent::Visible(ListId::Wifi, 2.0).into());
         let (dirty, _) = s.apply(PointerEvent::Focus(ListId::Wifi.row(4)).into());
-        assert_eq!((dirty, s.lists().get(ListId::Wifi).offset()), (Dirty::BOTH, 3.0));
+        assert_eq!((dirty, s.lists().scroll(ListId::Wifi).offset()), (Dirty::BOTH, 3.0));
         s.apply(PointerEvent::Focus(ListId::Wifi.row(0)).into());
-        assert_eq!(s.lists().get(ListId::Wifi).offset(), 0.0);
+        assert_eq!(s.lists().scroll(ListId::Wifi).offset(), 0.0);
     }
 
     #[test]

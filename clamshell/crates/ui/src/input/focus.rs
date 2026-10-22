@@ -147,7 +147,7 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
         && let Some((list, i)) = ListId::of(focus)
         && drawn_on(d, None, focus)
     {
-        let next = if dir == Dir::Up { i.checked_sub(1) } else { Some(i + 1).filter(|&n| n < s.list_len(list)) };
+        let next = if dir == Dir::Up { i.checked_sub(1) } else { Some(i + 1).filter(|&n| n < s.lists().len(list)) };
         if let Some(id) = next.and_then(|n| u16::try_from(n).ok()).and_then(|n| ListId::sibling(focus, n, s.dock().items().len())) {
             return Some(PointerEvent::Focus(id).into());
         }

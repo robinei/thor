@@ -174,7 +174,7 @@ fn zones(f: &mut Frame) {
     if let Some(error) = &zones.error {
         list.hint(f, error);
     }
-    let rows = list.scrolled(f, ListId::Time, s.list_len(ListId::Time));
+    let rows = list.scrolled(f, ListId::Time, s.lists().len(ListId::Time));
     for i in rows.shown() {
         let Some(row) = s.sys().time_row(i) else {
             continue;

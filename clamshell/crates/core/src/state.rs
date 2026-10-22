@@ -14,17 +14,17 @@ use crate::device::buttons::DeviceKey;
 use crate::device::idle::Idle;
 use crate::keymap::screens::{KeymapCx, Keymapping, Screen};
 use crate::kit::debounce::Debounce;
-use crate::kit::list::{ItemKey, RowsOf};
 use crate::levels::slider::Control;
+use crate::nav::lists::Scrolls;
 use crate::out::Out;
 use crate::resume::SAVE_AFTER;
 use crate::session::running::OwnView;
 use crate::settings::{BottomWhenIdle, MouseAtLaunch, Setting, Values};
 use crate::sync::{Resend, Sent, Wanted};
 use crate::{
-    AudioId, BtId, Clock, Dirty, Dock, DockId, EditorId, Effect, Entry, EntryAct, Event, Id, Init, KeymapEvent, KeymapId, Launch, LaunchEvent, Level,
-    LevelEvent, Levels, Library, ListEvent, ListId, Lists, Pad, PadRoute, Panel, Pointer, PointerEvent, Prefs, Radios, Reading, Resume, RowPart, Save, Scroll,
-    Session, SettingsId, Shelf, ShelfId, Slide, Sys, Tab, Watch, WifiId, WindowCommand,
+    BtId, Clock, Dirty, Dock, EditorId, Effect, Entry, EntryAct, Event, Id, Init, KeymapEvent, KeymapId, Launch, LaunchEvent, Level, LevelEvent, Levels,
+    Library, ListEvent, ListId, Lists, Pad, PadRoute, Panel, Pointer, PointerEvent, Prefs, Radios, Reading, Resume, RowPart, Save, Scroll, Session, SettingsId,
+    Shelf, ShelfId, Slide, Sys, Tab, Watch, WifiId, WindowCommand,
 };
 
 /// Everything ClamShell knows, as its areas (see the [crate docs](crate)).
@@ -46,7 +46,8 @@ pub struct State {
     keyboard: Keyboard,
     /// The keymaps and their screens (see [`crate::keymap::screens`]).
     keymapping: Keymapping,
-    lists: Lists,
+    /// Where the lists but shelf are scrolled.
+    scrolls: Scrolls,
     clock: Clock,
     /// Where shelf and the second screen are ([`State::resume`]), saved once they stop changing for a
     /// moment. Shelf and the bottom screen say when they changed; `apply` touches this at its end.
@@ -148,8 +149,20 @@ impl State {
         &self.keymapping
     }
 
-    pub fn lists(&self) -> &Lists {
-        &self.lists
+    /// The lists, their rows and where each is scrolled (see [`Lists`]).
+    pub fn lists(&self) -> Lists<'_> {
+        Lists {
+            scrolls: &self.scrolls,
+            shelf: &self.shelf,
+            session: &self.session,
+            prefs: &self.prefs,
+            keymapping: &self.keymapping,
+            radios: &self.radios,
+            levels: &self.levels,
+            sys: &self.sys,
+            dock: &self.dock,
+            pointer: &self.pointer,
+        }
     }
 
     pub fn idle(&self) -> &crate::device::idle::Idle {
@@ -635,7 +648,7 @@ impl State {
                 if let Id::Key(pos) = id {
                     self.keyboard.down(pos);
                 }
-                let item = self.item_key(&id);
+                let item = self.lists().item_key(&id);
                 self.pointer.down(id, item);
             }
             PointerEvent::Up(id) => {
@@ -655,7 +668,7 @@ impl State {
     /// subsystem acts on it.
     fn activate(&mut self, id: &Id, long: bool, out: &mut Out) {
         // The list item the press came down on is gone.
-        let Some(id) = self.resolve(id) else {
+        let Some(id) = self.lists().resolve(id) else {
             out.mark(Dirty::BOTTOM);
             return;
         };
@@ -754,7 +767,7 @@ impl State {
                     self.bottom.show_program_down(window, out);
                 }
             }
-            Id::Time(id) => self.sys.on_time(id, self.lists.get_mut(ListId::Time), out),
+            Id::Time(id) => self.sys.on_time(id, self.scrolls.get_mut(ListId::Time), out),
             Id::Device(id) => {
                 out.mark(Dirty::BOTH);
                 self.device.tap(id, self.clock.mono(), &mut self.bottom, &mut self.pointer, self.shelf.selected(), out);
@@ -858,41 +871,13 @@ impl State {
         KeymapCx { game: panel.editing().map(|g| g.id.clone()), chosen: panel.keymap_chosen(), now: self.clock.mono() }
     }
 
-    // Lists and their items.
-
-    /// A list's rows, from its feature.
-    fn rows(&self, list: ListId) -> RowsOf<'_> {
-        match list {
-            ListId::Shelf => RowsOf::Of(&self.shelf),
-            ListId::Wifi => RowsOf::Of(self.radios.wifi()),
-            ListId::Bluetooth => RowsOf::Of(self.radios.bluetooth()),
-            ListId::Streams => RowsOf::Of(self.levels.audio()),
-            ListId::Backlights => RowsOf::Of(self.levels.backlight_rows()),
-            ListId::Keymaps => RowsOf::Count(self.panel().keymap_rows_len()),
-            ListId::Layers => RowsOf::Count(self.keymapping.layer_rows()),
-            ListId::Time => RowsOf::Count(self.sys.time_rows()),
-            ListId::Dock => RowsOf::Count(self.dock.items().len().div_ceil(crate::session::dock::DOCK_COLUMNS)),
-        }
-    }
-
-    /// Where `list` is scrolled. For shelf, this is the current collection's position.
-    pub fn scroll(&self, list: ListId) -> &Scroll {
-        match list {
-            ListId::Shelf => self.shelf.scroll(),
-            _ => self.lists.get(list),
-        }
-    }
+    // Lists.
 
     fn scroll_mut(&mut self, list: ListId) -> Option<&mut Scroll> {
         match list {
             ListId::Shelf => self.shelf.scroll_mut(),
-            _ => self.lists.get_mut(list),
+            _ => self.scrolls.get_mut(list),
         }
-    }
-
-    /// How many rows `list` has now.
-    pub fn list_len(&self, list: ListId) -> usize {
-        self.rows(list).len()
     }
 
     /// A list scrolled or was laid out. Returns whether it moved.
@@ -911,7 +896,7 @@ impl State {
             ListId::Streams => self.levels.on_stream(i, part, out),
             ListId::Keymaps => self.on_keymap_row(i, part, long, out),
             ListId::Layers => self.on_layer_row(i, part, long, out),
-            ListId::Time => self.sys.on_time_row(i, self.lists.get_mut(ListId::Time), out),
+            ListId::Time => self.sys.on_time_row(i, self.scrolls.get_mut(ListId::Time), out),
             // Its tiles are targets of their own.
             ListId::Dock => {}
             // A shelf game's row is its game's target, and a backlight's row is only its level.
@@ -929,11 +914,12 @@ impl State {
     /// Moves `list` by `f`, given its scroll and how many rows it has. If it moved, the item now at the top
     /// of its view is remembered, to keep there when the list changes. Returns whether it moved.
     fn move_list(&mut self, list: ListId, f: impl FnOnce(&mut Scroll, usize) -> bool) -> bool {
-        let len = self.list_len(list);
+        let len = self.lists().len(list);
         if !self.scroll_mut(list).is_some_and(|s| f(s, len)) {
             return false;
         }
-        let key = self.rows(list).key(self.scroll(list).top());
+        let lists = self.lists();
+        let key = lists.rows(list).key(lists.scroll(list).top());
         if let Some(s) = self.scroll_mut(list) {
             s.anchor(key);
         }
@@ -945,55 +931,14 @@ impl State {
     fn follow_lists(&mut self) -> bool {
         let mut moved = false;
         for list in ListId::ALL {
-            let len = self.list_len(list);
-            let found = self.scroll(list).anchored().and_then(|key| self.rows(list).find(key));
+            let lists = self.lists();
+            let len = lists.len(list);
+            let found = lists.scroll(list).anchored().and_then(|key| lists.rows(list).find(key));
             if let Some(s) = self.scroll_mut(list) {
                 moved |= s.follow(found, len);
             }
         }
         moved
-    }
-
-    /// The key of the item `id` points at, if `id` is a list item.
-    fn item_key(&self, id: &Id) -> Option<ItemKey> {
-        let at = |i: &u16| usize::from(*i);
-        match id {
-            Id::Row { list, i, .. } => self.rows(*list).key(at(i)),
-            Id::Dock(DockId::Entry(i)) => self.dock.items().get(at(i)).map(|e| ItemKey::Name(e.id.to_string())),
-            Id::Shelf(ShelfId::Collection(i)) => self.shelf.library().collections.get(at(i)).map(|c| ItemKey::Name(c.name.clone())),
-            Id::Audio(AudioId::Output(i)) => self.levels.audio().outputs.get(at(i)).map(|o| ItemKey::Number(o.id)),
-            _ => None,
-        }
-    }
-
-    /// Where the item with `key` is now, as an id of the same kind as `id`.
-    fn find_item(&self, id: &Id, key: &ItemKey) -> Option<Id> {
-        let index = |p: Option<usize>| p.and_then(|p| u16::try_from(p).ok());
-        match (id, key) {
-            (Id::Row { list, part, .. }, key) => index(self.rows(*list).find(key)).map(|i| Id::Row { list: *list, i, part: *part }),
-            (Id::Dock(DockId::Entry(_)), ItemKey::Name(n)) => index(self.dock.items().iter().position(|e| *e.id == **n)).map(|i| Id::Dock(DockId::Entry(i))),
-            (Id::Shelf(ShelfId::Collection(_)), ItemKey::Name(n)) => {
-                index(self.shelf.library().collections.iter().position(|x| x.name == *n)).map(|i| Id::Shelf(ShelfId::Collection(i)))
-            }
-            (Id::Audio(AudioId::Output(_)), ItemKey::Number(n)) => {
-                index(self.levels.audio().outputs.iter().position(|x| x.id == *n)).map(|i| Id::Audio(AudioId::Output(i)))
-            }
-            _ => None,
-        }
-    }
-
-    /// `id` resolved to the item the press landed on: the same item where it is now, or `None` once it
-    /// is gone. Ids that aren't list items, or weren't pressed, are returned as they are.
-    fn resolve(&self, id: &Id) -> Option<Id> {
-        match self.pointer.pressed_item(id) {
-            Some(item) => self.find_item(id, item),
-            None => Some(id.clone()),
-        }
-    }
-
-    /// A level row resolved to the one the finger landed on (see [`State::resolve`]).
-    fn resolve_level(&self, level: Level) -> Option<Level> {
-        self.resolve(&level.id()).as_ref().and_then(Level::of)
     }
 
     // Tabs, the editor and the device's keys.
@@ -1105,7 +1050,7 @@ impl State {
     fn on_level(&mut self, event: LevelEvent, out: &mut Out) {
         match event {
             LevelEvent::Set(level, value) => {
-                let Some(level) = self.resolve_level(level) else {
+                let Some(level) = self.lists().resolve_level(level) else {
                     return;
                 };
                 let before = self.levels.level(level);

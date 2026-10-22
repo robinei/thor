@@ -88,7 +88,7 @@ impl Fling {
         let motion = if released && speed.abs() >= START {
             Motion::Speed(speed)
         } else if list.list.whole_rows() {
-            Motion::SettleOn(state.scroll(list.list).offset().round())
+            Motion::SettleOn(state.lists().scroll(list.list).offset().round())
         } else {
             return None;
         };
@@ -104,12 +104,12 @@ impl Fling {
         let dt = now.duration_since(self.at).as_secs_f32();
         self.at = now;
         let list = self.list;
-        let offset = state.scroll(list).offset();
+        let offset = state.lists().scroll(list).offset();
         match &mut self.motion {
             Motion::Speed(speed) => {
                 let rows = *speed * dt;
                 *speed *= (-FRICTION * dt).exp();
-                let done = speed.abs() < STOP || !state.scroll(list).can_scroll(rows, state.list_len(list));
+                let done = speed.abs() < STOP || !state.lists().scroll(list).can_scroll(rows, state.lists().len(list));
                 if done && list.whole_rows() {
                     self.motion = Motion::SettleOn((offset + rows).round());
                     return (rows, true);
@@ -119,7 +119,7 @@ impl Fling {
             Motion::SettleOn(to) => {
                 let left = *to - offset;
                 // At an end the list can't reach the row, so it is done.
-                if left.abs() <= SETTLED || !state.scroll(list).can_scroll(left, state.list_len(list)) {
+                if left.abs() <= SETTLED || !state.lists().scroll(list).can_scroll(left, state.lists().len(list)) {
                     (left, false)
                 } else {
                     (left * (SETTLE_RATE * dt).min(1.0), true)

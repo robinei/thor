@@ -573,14 +573,14 @@ mod tests {
         assert!(up.contains(&Action::Arm(Source::Touch(1), Timer::Fling, FLING_EVERY)), "{up:?}");
         let mut at = 35;
         let mut steps = 0;
-        let mut last = state.scroll(ListId::Wifi).offset();
+        let mut last = state.lists().scroll(ListId::Wifi).offset();
         let mut gaps = vec![];
         loop {
             at += 16;
             steps += 1;
             let fx = input.timer(Source::Touch(1), Timer::Fling, &state, ms(at));
             let more = run(&mut state, &fx);
-            let now = state.scroll(ListId::Wifi).offset();
+            let now = state.lists().scroll(ListId::Wifi).offset();
             gaps.push(now - last);
             last = now;
             if !more || steps > 1000 {
@@ -589,7 +589,7 @@ mod tests {
         }
         assert!(steps < 1000, "it ends");
         assert!(gaps.windows(2).take(10).all(|w| w[1] <= w[0] + 1e-4), "slowing down: {gaps:?}");
-        assert_eq!(state.scroll(ListId::Wifi).offset(), 15.0, "at the end: {gaps:?}");
+        assert_eq!(state.lists().scroll(ListId::Wifi).offset(), 15.0, "at the end: {gaps:?}");
         // A touch stops a fling.
         input.touch(Source::Touch(1), &wifi, (5.0, 400.0), ms(at));
         let fx = input.moved(Source::Touch(1), (5.0, 500.0), ms(at + 10));
@@ -611,7 +611,7 @@ mod tests {
         input.touch(Source::Touch(1), &game, (5.0, 400.0), t);
         let fx = input.moved(Source::Touch(1), (5.0, 260.0), ms(500));
         run(&mut state, &fx);
-        assert_eq!(state.scroll(ListId::Shelf).offset(), 1.4);
+        assert_eq!(state.lists().scroll(ListId::Shelf).offset(), 1.4);
         let up = input.up(Source::Touch(1), End::Release, &state, ms(2000));
         assert!(run(&mut state, &up), "settling");
         let mut at = 2000;
@@ -622,7 +622,7 @@ mod tests {
             }
             at += 16;
         }
-        assert_eq!(state.scroll(ListId::Shelf).offset(), 1.0, "the nearest row");
+        assert_eq!(state.lists().scroll(ListId::Shelf).offset(), 1.0, "the nearest row");
         assert!(at < 2500, "a short animation: {} ms", at - 2000);
     }
 

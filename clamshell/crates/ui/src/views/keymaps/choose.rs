@@ -36,7 +36,7 @@ pub(super) fn layer_list(f: &mut Frame, area: Rect, id: u16, current: impl Fn(La
     let s = f.s;
     let keymap = s.keymapping().keymaps().get(id);
     let list = ListArea::new(f, area, f.body().h * ROW_H);
-    let rows = list.scrolled(f, ListId::Layers, s.list_len(ListId::Layers));
+    let rows = list.scrolled(f, ListId::Layers, s.lists().len(ListId::Layers));
     for i in rows.shown() {
         let at = |part| Id::Row { list: ListId::Layers, i: i as u16, part };
         let layer = s.keymapping().layer_row(i);

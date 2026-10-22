@@ -59,7 +59,7 @@ fn the_picker_chooses_a_keymap_for_the_scope_edited() {
     let mut s = State::new(Init { keymaps: Keymaps::initial(), ..init() });
     picker(&mut s);
     assert_eq!(s.keymapping().screen(), Some(Screen::List));
-    assert_eq!(s.list_len(ListId::Keymaps), 3, "the game's own (made from it), Default, Nintendo layout");
+    assert_eq!(s.lists().len(ListId::Keymaps), 3, "the game's own (made from it), Default, Nintendo layout");
     tap(&mut s, row(2));
     assert_eq!(s.keymapping().screen(), None, "chosen: the picker closes");
     assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(1));
@@ -391,10 +391,10 @@ fn the_layer_lists_rows_show_choose_and_add_layers() {
     let row = |i: u16, part| Id::Row { list: ListId::Layers, i, part };
     // The list for showing a layer has Base, aim and New layer. On another screen it is empty.
     keymap(&mut s, KeymapId::Back);
-    assert_eq!(s.list_len(ListId::Layers), 0);
+    assert_eq!(s.lists().len(ListId::Layers), 0);
     tap(&mut s, Id::Row { list: ListId::Keymaps, i: 2, part: RowPart::Edit });
     keymap(&mut s, KeymapId::LayerPicker);
-    assert_eq!((s.list_len(ListId::Layers), s.keymapping().layer_row(1), s.keymapping().layer_row(2)), (3, Some(aim), None));
+    assert_eq!((s.lists().len(ListId::Layers), s.keymapping().layer_row(1), s.keymapping().layer_row(2)), (3, Some(aim), None));
     tap(&mut s, row(1, RowPart::Main));
     assert_eq!((s.keymapping().screen(), s.keymapping().edit().layer), (Some(Screen::Edit(1)), aim));
     keymap(&mut s, KeymapId::LayerPicker);
@@ -411,7 +411,7 @@ fn the_layer_lists_rows_show_choose_and_add_layers() {
     tap(&mut s, row(0, RowPart::Main));
     open(&mut s, Input::Button(Button::Back));
     keymap(&mut s, KeymapId::Target(Target::Layers));
-    assert_eq!((s.list_len(ListId::Layers), s.keymapping().layer_row(0), s.keymapping().layer_row(1)), (2, Some(aim), None));
+    assert_eq!((s.lists().len(ListId::Layers), s.keymapping().layer_row(0), s.keymapping().layer_row(1)), (2, Some(aim), None));
     tap(&mut s, row(0, RowPart::Main));
     assert_eq!(s.keymapping().keymaps().get(1).unwrap().get(Input::Button(Button::Back)).map(|b| b.output), Some(Output::Layer(aim)));
     assert_eq!(s.keymapping().screen(), Some(Screen::Edit(1)), "chosen: closed");
@@ -643,7 +643,7 @@ fn a_games_own_keymap_is_saved_as_a_new_named_one_or_over_one() {
     long(&mut s, row(0));
     keymap(&mut s, KeymapId::SaveAs);
     assert_eq!(s.keymapping().screen(), Some(Screen::SaveAs(own)));
-    assert_eq!((s.panel().keymap_row(0), s.list_len(ListId::Keymaps)), (Some(PickerRow::New), 2), "a new one, Nintendo layout");
+    assert_eq!((s.panel().keymap_row(0), s.lists().len(ListId::Keymaps)), (Some(PickerRow::New), 2), "a new one, Nintendo layout");
     tap(&mut s, row(0));
     type_text(&mut s, "zelda");
     tap(&mut s, Id::Editor(EditorId::Save));
@@ -680,7 +680,7 @@ fn a_named_keymap_is_loaded_into_a_games_own_and_undo_goes_back() {
     long(&mut s, row(0));
     keymap(&mut s, KeymapId::LoadFrom);
     assert_eq!(s.keymapping().screen(), Some(Screen::Load(own)));
-    assert_eq!((s.panel().keymap_row(0), s.list_len(ListId::Keymaps)), (Some(PickerRow::Default), 2), "Default, Nintendo layout");
+    assert_eq!((s.panel().keymap_row(0), s.lists().len(ListId::Keymaps)), (Some(PickerRow::Default), 2), "Default, Nintendo layout");
     let fx = tap(&mut s, row(1));
     assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))), "{fx:?}");
     assert_eq!(s.keymapping().screen(), Some(Screen::Edit(own)));

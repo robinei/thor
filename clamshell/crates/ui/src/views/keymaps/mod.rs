@@ -139,7 +139,7 @@ fn list(f: &mut Frame, listing: Listing) {
     let list = ListArea::new(f, area, f.body().h * ROW_H);
     list.hint(f, hint);
     let chosen = panel.keymap_chosen();
-    let rows = list.scrolled(f, ListId::Keymaps, s.list_len(ListId::Keymaps));
+    let rows = list.scrolled(f, ListId::Keymaps, s.lists().len(ListId::Keymaps));
     for i in rows.shown() {
         let Some(row) = panel.keymap_row(i) else {
             continue;
