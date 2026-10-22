@@ -53,12 +53,15 @@ impl Watched {
         if device.properties().contains(PropType::ACCELEROMETER) {
             return None;
         }
-        let flags = rustix::fs::fcntl_getfl(&device).ok()?;
-        rustix::fs::fcntl_setfl(&device, flags | rustix::fs::OFlags::NONBLOCK).ok()?;
+        let nonblocking = rustix::fs::fcntl_getfl(&device).and_then(|f| rustix::fs::fcntl_setfl(&device, f | rustix::fs::OFlags::NONBLOCK));
+        if let Err(e) = nonblocking {
+            log::debug!("input watch: {}: {e}", path.display());
+            return None;
+        }
         let keys = device.supported_keys();
         let has = |k: KeyCode| keys.is_some_and(|set| set.contains(k));
         let hardware_keys = (has(KeyCode::KEY_VOLUMEUP) || has(KeyCode::KEY_BRIGHTNESSUP)) && !has(KeyCode::KEY_A);
-        let state = device.get_abs_state().ok();
+        let state = device.get_abs_state().inspect_err(|e| log::debug!("input watch: {}: axes: {e}", path.display())).ok();
         let axes = device
             .supported_absolute_axes()
             .map(|set| {
@@ -113,8 +116,10 @@ fn device_key(raw: Raw) -> Option<DeviceKey> {
 /// An inotify watch of /dev/input, non-blocking: a device's node coming, and udev giving it its
 /// permissions (both say look again). The pad thread watches with one of its own.
 pub fn devices_watch() -> Option<rustix::fd::OwnedFd> {
-    let fd = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).ok()?;
-    inotify::add_watch(&fd, "/dev/input", inotify::WatchFlags::CREATE | inotify::WatchFlags::ATTRIB | inotify::WatchFlags::MOVED_TO).ok()?;
+    let fd = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).inspect_err(|e| log::warn!("inotify: {e}")).ok()?;
+    inotify::add_watch(&fd, "/dev/input", inotify::WatchFlags::CREATE | inotify::WatchFlags::ATTRIB | inotify::WatchFlags::MOVED_TO)
+        .inspect_err(|e| log::warn!("inotify: watching /dev/input: {e}"))
+        .ok()?;
     Some(fd)
 }
 
@@ -144,7 +149,7 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
                 {
                     log::debug!("input watch: {}{}", w.device.name().unwrap_or("?"), if w.hardware_keys { " (hardware keys)" } else { "" });
                     if take_keys && w.lid {
-                        lid::closed(w.device.get_switch_state().is_ok_and(|on| on.contains(SwitchCode::SW_LID)));
+                        lid::closed(lid_switch(&w));
                     }
                     devices.push(w);
                 }
@@ -168,7 +173,10 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
                 Ok(events) => raws.extend(events.map(Raw::from)),
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
                 // Unplugged.
-                Err(_) => return false,
+                Err(e) => {
+                    log::debug!("input watch: {}: {e}", d.path.display());
+                    return false;
+                }
             }
             for &raw in &raws {
                 input |= d.is_input(raw);
@@ -180,7 +188,7 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
                 }
                 // (Events dropped, the lid's among them perhaps: as it is now.)
                 if take_keys && d.lid && raw.kind == EventType::SYNCHRONIZATION && raw.code == SynchronizationCode::SYN_DROPPED.0 {
-                    lid::closed(d.device.get_switch_state().is_ok_and(|on| on.contains(SwitchCode::SW_LID)));
+                    lid::closed(lid_switch(d));
                 }
             }
             true
@@ -195,6 +203,14 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
     }
 }
 
+/// Whether the lid's switch on `w` is closed (unreadable: open).
+fn lid_switch(w: &Watched) -> bool {
+    w.device
+        .get_switch_state()
+        .inspect_err(|e| log::warn!("input watch: {}: the lid switch: {e}", w.path.display()))
+        .is_ok_and(|on| on.contains(SwitchCode::SW_LID))
+}
+
 /// Waits until a device has events or /dev/input changed (`notify`; without it, at most
 /// [`RESCAN_EVERY`]); whether to look for devices again.
 fn wait(devices: &[Watched], notify: Option<&OwnedFd>) -> bool {
@@ -204,12 +220,16 @@ fn wait(devices: &[Watched], notify: Option<&OwnedFd>) -> bool {
         if fds.is_empty() {
             std::thread::sleep(RESCAN_EVERY);
         } else {
-            let _ = rustix::event::poll(&mut fds, Some(&timeout));
+            if let Err(e) = rustix::event::poll(&mut fds, Some(&timeout)) {
+                log::debug!("input watch: polling: {e}");
+            }
         }
         return false;
     };
     fds.push(PollFd::new(notify, PollFlags::IN));
-    let _ = rustix::event::poll(&mut fds, None);
+    if let Err(e) = rustix::event::poll(&mut fds, None) {
+        log::debug!("input watch: polling: {e}");
+    }
     let changed = fds.last().is_some_and(|f| f.revents().contains(PollFlags::IN));
     if changed {
         let mut buf = [std::mem::MaybeUninit::uninit(); 4096];
