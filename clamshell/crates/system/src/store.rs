@@ -383,21 +383,14 @@ pub struct Cache {
     dir: PathBuf,
 }
 
+/// A `<key>-meta.json`: what was fetched about an entry, from where and when.
 #[derive(Serialize, Deserialize)]
 struct MetaFile {
     id: String,
     source: String,
     fetched: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    cover: Option<PathBuf>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    shot: Option<PathBuf>,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    summary: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    year: Option<u16>,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    developer: String,
+    #[serde(flatten)]
+    meta: Meta,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -422,27 +415,12 @@ impl Cache {
 
     /// What was fetched about each entry: from where, when, and what.
     pub fn metas(&self) -> HashMap<String, Fetched> {
-        self.read_all::<MetaFile>("-meta.json")
-            .into_iter()
-            .map(|(_, m)| {
-                let meta = Meta { cover: m.cover, shot: m.shot, summary: m.summary, year: m.year, developer: m.developer, duration: None };
-                (m.id, Fetched { source: m.source, at: m.fetched, meta })
-            })
-            .collect()
+        self.read_all::<MetaFile>("-meta.json").into_iter().map(|(_, m)| (m.id, Fetched { source: m.source, at: m.fetched, meta: m.meta })).collect()
     }
 
     /// What was fetched about `id` (nothing: a miss), from `source`, at `at`.
     pub fn save_meta(&self, id: &str, source: &str, at: u64, meta: &Meta) -> io::Result<()> {
-        let file = MetaFile {
-            id: id.to_owned(),
-            source: source.to_owned(),
-            fetched: at,
-            cover: meta.cover.clone(),
-            shot: meta.shot.clone(),
-            summary: meta.summary.clone(),
-            year: meta.year,
-            developer: meta.developer.clone(),
-        };
+        let file = MetaFile { id: id.to_owned(), source: source.to_owned(), fetched: at, meta: meta.clone() };
         write_json(&self.dir.join(format!("{}-meta.json", key_of(id))), &file)
     }
 
@@ -457,10 +435,7 @@ impl Cache {
 
     /// The misses (fetched, nothing found) forgotten: fetched again. How many.
     pub fn forget_misses(&self) -> usize {
-        let misses = self
-            .read_all::<MetaFile>("-meta.json")
-            .into_iter()
-            .filter(|(_, m)| m.cover.is_none() && m.shot.is_none() && m.summary.is_empty() && m.year.is_none() && m.developer.is_empty());
+        let misses = self.read_all::<MetaFile>("-meta.json").into_iter().filter(|(_, m)| m.meta == Meta::default());
         misses.filter(|(path, _)| fs::remove_file(path).is_ok()).count()
     }
 }
@@ -648,7 +623,8 @@ mod tests {
     fn the_cache_keeps_a_file_per_entry() {
         let dir = dir("cache");
         let cache = Cache::open(&dir);
-        let meta = Meta { cover: Some("/c/x-cover.png".into()), year: Some(1994), summary: "S".into(), ..Meta::default() };
+        let details = clamshell_library::Details { year: Some(1994), summary: "S".into(), ..Default::default() };
+        let meta = Meta { cover: Some("/c/x-cover.png".into()), details, ..Meta::default() };
         cache.save_meta("x", "libretro:SNES", 5, &meta).unwrap();
         cache.save_meta("y", "steam:1", 6, &Meta::default()).unwrap();
         let metas = cache.metas();

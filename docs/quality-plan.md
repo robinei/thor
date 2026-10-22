@@ -127,9 +127,11 @@ Helpers that exist but are bypassed:
 - [x] Dev tooling out of the device binary: `--snapshot` and the demo library behind a `dev` feature (checked
       by `tools/check.sh`). `--library`, `--tray`, `--fetch-metadata` and `--mangohud-env` stay: diagnostics
       worth having on the device (`docs/runners.md` points at `--tray`).
-- [x] Rendering: why the picture is drawn whole and copied into shared memory, said on `View::present`.
-- [x] The `Library` arena's `Entry`: its fetched details (`Details`, merged from `Meta` in one method) and a
-      video's playback (`Playback`) in sub-structs beside `Browsed`; 26 fields to 21.
+- [x] Rendering: frames drawn straight into the compositor's shm buffer (ABGR8888, which sway takes), a
+      snapshot into its own pixmap; `frame_times` measures it (on a 5900X the copy had cost 0.08-0.13 ms).
+- [x] The `Library` arena's `Entry`: its fetched details (`Details`) and a video's playback (`Playback`) in
+      sub-structs beside `Browsed`; 26 fields to 21. `Meta` carries a `Details` too, merged whole, and is
+      what the cache's files hold (serde behind the library's `serde` feature).
 
 ## 4. Tests
 

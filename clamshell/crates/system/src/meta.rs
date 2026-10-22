@@ -27,6 +27,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use clamshell_core::{Event, Meta};
+use clamshell_library::Details;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -174,7 +175,7 @@ pub fn spawn(fetch: Fetch, queue: &Queue, sink: impl Sink + Clone) -> std::io::R
             while let Some(w) = queue.next() {
                 let meta = shared.fetch(&w);
                 let saved = match &w.how {
-                    How::Duration => cache.save_probe(&w.id, meta.duration, meta.shot.as_deref()),
+                    How::Duration => cache.save_probe(&w.id, meta.duration, meta.details.shot.as_deref()),
                     _ => cache.save_meta(&w.id, &w.how.source(), now(), &meta),
                 };
                 if let Err(e) = saved {
@@ -229,7 +230,7 @@ impl Shared {
         let duration = crate::mpv::duration(file);
         let out = self.art.join(format!("{}-frame.jpg", w.key));
         let shot = duration.filter(|d| crate::mpv::frame(file, d / 4, &out)).map(|_| out);
-        Meta { duration, shot, ..Meta::default() }
+        Meta { duration, details: Details { shot, ..Details::default() }, ..Meta::default() }
     }
 
     /// One of libretro's lists (`name` in the lists' folder, next to the art cache), from `url`: kept on
@@ -253,7 +254,8 @@ impl Shared {
         let known = crc.and_then(|c| database.names.get(&c));
         let by_name = || self.listing(system, "Named_Boxarts").and_then(|names| best_match(&w.title, &names).map(str::to_owned));
         let get = |c: Option<u32>, of: &HashMap<u32, String>| c.and_then(|c| of.get(&c)).cloned().unwrap_or_default();
-        let mut meta = Meta { year: crc.and_then(|c| database.years.get(&c)).copied(), developer: get(crc, &database.developers), ..Meta::default() };
+        let details = Details { year: crc.and_then(|c| database.years.get(&c)).copied(), developer: get(crc, &database.developers), ..Details::default() };
+        let mut meta = Meta { details, ..Meta::default() };
         // The checksum's name, else (none, or no pictures under it) the title's.
         let mut tried = None;
         for name in [known.map(|n| thumbnail_name(n)), None] {
@@ -262,8 +264,8 @@ impl Shared {
             };
             let url = |kind: &str| format!("{LIBRETRO}/{}/{kind}/{}.png", encode(system), encode(&name));
             meta.cover = (!w.art).then(|| self.image(w, "cover", &url("Named_Boxarts"))).flatten();
-            meta.shot = self.image(w, "shot", &url("Named_Snaps"));
-            if meta.cover.is_some() || meta.shot.is_some() {
+            meta.details.shot = self.image(w, "shot", &url("Named_Snaps"));
+            if meta.cover.is_some() || meta.details.shot.is_some() {
                 break;
             }
             tried = Some(name);
@@ -348,10 +350,12 @@ impl Shared {
         let date = path("first_air_date").or_else(|| path("release_date")).unwrap_or_default();
         Meta {
             cover: path("poster_path").filter(|_| !w.art).and_then(|p| self.image(w, "cover", &format!("https://image.tmdb.org/t/p/w500{p}"))),
-            shot: path("backdrop_path").and_then(|p| self.image(w, "shot", &format!("https://image.tmdb.org/t/p/w780{p}"))),
-            summary: path("overview").unwrap_or_default(),
-            year: year_in(&date),
-            developer: String::new(),
+            details: Details {
+                shot: path("backdrop_path").and_then(|p| self.image(w, "shot", &format!("https://image.tmdb.org/t/p/w780{p}"))),
+                summary: path("overview").unwrap_or_default(),
+                year: year_in(&date),
+                developer: String::new(),
+            },
             duration: None,
         }
     }
@@ -366,10 +370,12 @@ impl Shared {
         let cover = format!("https://shared.steamstatic.com/store_item_assets/steam/apps/{appid}/library_600x900.jpg");
         Meta {
             cover: (!w.art).then(|| self.image(w, "cover", &cover)).flatten(),
-            shot: shot.and_then(|url| self.image(w, "shot", &url)),
-            summary: text(data.get("short_description")),
-            year: year_in(&text(data.get("release_date").and_then(|r| r.get("date")))),
-            developer: text(data.get("developers").and_then(|d| d.get(0))),
+            details: Details {
+                shot: shot.and_then(|url| self.image(w, "shot", &url)),
+                summary: text(data.get("short_description")),
+                year: year_in(&text(data.get("release_date").and_then(|r| r.get("date")))),
+                developer: text(data.get("developers").and_then(|d| d.get(0))),
+            },
             duration: None,
         }
     }

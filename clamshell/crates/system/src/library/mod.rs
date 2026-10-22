@@ -629,7 +629,10 @@ fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &Sources) -> V
         let want = match fetched {
             None => true,
             Some(f) => {
-                f.source != how.source() || gone(&f.meta.cover) || gone(&f.meta.shot) || (f.meta == Meta::default() && now.saturating_sub(f.at) > RETRY_MISS)
+                f.source != how.source()
+                    || gone(&f.meta.cover)
+                    || gone(&f.meta.details.shot)
+                    || (f.meta == Meta::default() && now.saturating_sub(f.at) > RETRY_MISS)
             }
         };
         if want {

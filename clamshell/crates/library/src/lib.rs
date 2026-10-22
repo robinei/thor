@@ -107,27 +107,32 @@ pub struct Entry {
 /// What was fetched about an entry (see [`Meta`]): a screenshot (a film's backdrop), what it is about, the
 /// year it came out, who made it.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Details {
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub shot: Option<PathBuf>,
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "String::is_empty"))]
     pub summary: String,
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub year: Option<u16>,
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "String::is_empty"))]
     pub developer: String,
 }
 
 impl Details {
-    /// What `meta` found, over these: each detail it has.
-    pub fn merge(&mut self, meta: &Meta) {
-        if meta.shot.is_some() {
-            self.shot.clone_from(&meta.shot);
+    /// `found` over these: each detail it has.
+    pub fn merge(&mut self, found: &Details) {
+        if found.shot.is_some() {
+            self.shot.clone_from(&found.shot);
         }
-        if !meta.summary.is_empty() {
-            self.summary.clone_from(&meta.summary);
+        if !found.summary.is_empty() {
+            self.summary.clone_from(&found.summary);
         }
-        if meta.year.is_some() {
-            self.year = meta.year;
+        if found.year.is_some() {
+            self.year = found.year;
         }
-        if !meta.developer.is_empty() {
-            self.developer.clone_from(&meta.developer);
+        if !found.developer.is_empty() {
+            self.developer.clone_from(&found.developer);
         }
     }
 }
@@ -302,16 +307,17 @@ impl RunnerOf {
 /// How far into a video counts as watched (the credits left).
 pub const DONE: f64 = 0.9;
 
-/// What was fetched about an entry (clamshell-system's `meta`): its cover, a screenshot, what it is
-/// about, the year it came out, who made it; each if found.
+/// What was fetched about an entry (clamshell-system's `meta`), each part if found: its cover, its
+/// details, and a video's length.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Meta {
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub cover: Option<PathBuf>,
-    pub shot: Option<PathBuf>,
-    pub summary: String,
-    pub year: Option<u16>,
-    pub developer: String,
-    /// A video's length (seconds).
+    #[cfg_attr(feature = "serde", serde(flatten))]
+    pub details: Details,
+    /// A video's length (seconds; probed, not fetched, and kept apart: see clamshell-system's `store`).
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub duration: Option<u32>,
 }
 
@@ -443,7 +449,7 @@ impl Library {
             }
         }
         if let Some(g) = self.entries.get_mut(i) {
-            g.details.merge(meta);
+            g.details.merge(&meta.details);
             if meta.duration.is_some() {
                 g.playback.duration = meta.duration;
             }
@@ -684,7 +690,8 @@ mod tests {
         let season = lib.entries[tv].items[0];
         let (first, second) = (lib.entries[season].items[0], lib.entries[season].items[1]);
         lib.entries[second].box_front = Some("own.jpg".into());
-        let meta = Meta { cover: Some("poster.jpg".into()), summary: "Space.".into(), year: Some(1980), ..Meta::default() };
+        let details = Details { summary: "Space.".into(), year: Some(1980), ..Details::default() };
+        let meta = Meta { cover: Some("poster.jpg".into()), details, ..Meta::default() };
         lib.apply_meta(tv, &meta);
         assert_eq!(lib.entries[season].box_front.as_deref(), Some(std::path::Path::new("poster.jpg")), "a season");
         assert_eq!(lib.entries[first].box_front, None, "an episode: its frame is its picture");

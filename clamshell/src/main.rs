@@ -120,10 +120,10 @@ fn fetch_metadata(paths: &Paths, sources: &Sources) -> Result<(), String> {
             let has = |b: bool, what: &'static str| if b { what } else { "" };
             let found = [
                 has(meta.cover.is_some(), "cover"),
-                has(meta.shot.is_some(), "screenshot"),
-                has(!meta.summary.is_empty(), "summary"),
-                has(meta.year.is_some(), "year"),
-                has(!meta.developer.is_empty(), "developer"),
+                has(meta.details.shot.is_some(), "screenshot"),
+                has(!meta.details.summary.is_empty(), "summary"),
+                has(meta.details.year.is_some(), "year"),
+                has(!meta.details.developer.is_empty(), "developer"),
             ];
             let found: Vec<&str> = found.into_iter().filter(|f| !f.is_empty()).collect();
             println!("{}: {}", titles.get(&id).map_or(&*id, String::as_str), found.join(", "));

@@ -16,7 +16,7 @@ dbus.workspace = true
 evdev.workspace = true
 rustix.workspace = true
 clamshell-core.workspace = true
-clamshell-library.workspace = true
+clamshell-library = { workspace = true, features = ["serde"] }
 log.workspace = true
 libc.workspace = true
 wayland-client.workspace = true
