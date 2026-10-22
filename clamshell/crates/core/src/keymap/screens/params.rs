@@ -43,6 +43,7 @@ impl State {
     pub(super) fn set_tuned(&mut self, id: u16, input: Input, b: Binding) -> bool {
         let EditView { layer, act, .. } = self.keymap_screens.edit;
         let plain = layer == Layer::BASE && act == Actuation::Press && as_on_the_pad(input).map(|o| Binding::of(input, o)) == Some(b);
+        debug_assert!(self.keymaps.get(id).is_some(), "keymap {id}, being edited, is there");
         self.keymaps.get_mut(id).is_some_and(|k| k.set_of(layer, input, act, (!plain).then_some(b)))
     }
 

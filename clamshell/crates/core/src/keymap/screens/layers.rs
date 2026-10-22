@@ -23,6 +23,7 @@ impl State {
             Some(Screen::Layers { id, .. }) => (id, false),
             _ => return 0,
         };
+        debug_assert!(self.keymaps.get(id).is_some(), "keymap {id}, whose layers are listed, is there");
         let n = self.keymaps.get(id).map_or(0, |k| k.layers().count());
         if all { n + 1 } else { n }
     }

@@ -362,6 +362,7 @@ impl State {
         let Some(screen) = self.keymap_screens.open else {
             return vec![];
         };
+        debug_assert!(screen.keymap().is_none_or(|k| self.keymaps.get(k).is_some()), "the keymap of the screen open is there: {screen:?}");
         if id == KeymapId::Back {
             self.keymap_back();
             return vec![];
@@ -701,6 +702,7 @@ impl State {
     /// layers below, and a hold or double does nothing.
     fn bind(&mut self, id: u16, input: Input, binding: Option<Binding>) -> Vec<Effect> {
         let EditView { layer, act, .. } = self.keymap_screens.edit;
+        debug_assert!(self.keymaps.get(id).is_some(), "keymap {id}, being edited, is there");
         let changed = self.keymaps.get_mut(id).is_some_and(|k| k.set_of(layer, input, act, binding));
         self.saved_if(changed)
     }
