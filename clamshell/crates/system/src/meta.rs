@@ -493,12 +493,27 @@ fn zip_crc(zip: &[u8], base: usize) -> Option<u32> {
 
 /// CRC32 (as zip and No-Intro have it).
 fn crc32(data: &[u8]) -> u32 {
-    let mut table = [0u32; 256];
-    for (i, t) in (0u32..).zip(table.iter_mut()) {
-        *t = (0..8).fold(i, |c, _| if c & 1 == 1 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 });
-    }
-    !data.iter().fold(!0u32, |c, &b| table.get(usize::from((c as u8) ^ b)).copied().unwrap_or(0) ^ (c >> 8))
+    !data.iter().fold(!0u32, |c, &b| CRC32_TABLE.get(usize::from((c as u8) ^ b)).copied().unwrap_or(0) ^ (c >> 8))
 }
+
+/// CRC-32's table (the reflected polynomial 0xEDB88320), built at compile time.
+// (Indexing in a const can't panic at run time: out of bounds, it fails the build.)
+#[allow(clippy::indexing_slicing)]
+const CRC32_TABLE: [u32; 256] = {
+    let mut table = [0u32; 256];
+    let mut i = 0;
+    while i < 256 {
+        let mut c = i as u32;
+        let mut k = 0;
+        while k < 8 {
+            c = if c & 1 == 1 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
+            k += 1;
+        }
+        table[i] = c;
+        i += 1;
+    }
+    table
+};
 
 /// The body of `url` (a GET, redirects followed), if it answered 2xx.
 fn get(url: &str, headers: &[&str]) -> Option<Vec<u8>> {

@@ -16,7 +16,7 @@ use super::listen::Listener;
 use super::motion::{Sample, interval};
 use super::mouse::PadMouse;
 use super::navigator::Navigator;
-use super::remap::{self, Remap, is_back_key, mouse_codes};
+use super::remap::{self, BACK_KEY, Remap, mouse_codes};
 use super::typing::Typing;
 use crate::input::{Press, Range, Raw};
 
@@ -363,7 +363,7 @@ impl PadRouter {
                     if code == KeyCode::BTN_EAST && self.closing.take().is_some() {
                         out.events.push(Event::Device(DeviceKey::CloseWindow));
                     }
-                    if is_back_key(code) && self.home == Home::Guide {
+                    if code == BACK_KEY && self.home == Home::Guide {
                         self.guide(false, out);
                         self.home = Home::Held { combined: true };
                     }
@@ -372,7 +372,7 @@ impl PadRouter {
             }
             // Home, then Back: Guide while both are held (a game in front); Back isn't the keymap's
             // then.
-            Some((code, Press::Down)) if held && is_back_key(code) => {
+            Some((code, Press::Down)) if held && code == BACK_KEY => {
                 self.taken.push(code);
                 if self.route == PadRoute::Game {
                     self.home = Home::Guide;
@@ -424,7 +424,7 @@ impl PadRouter {
         // The Back button away from the game: back on ClamShell's screens, nothing with the pad mouse or
         // typing; while a keymap's edit screen listens, an input like the others (to remap it).
         if let Some((code, press)) = key
-            && is_back_key(code)
+            && code == BACK_KEY
             && matches!(self.route, PadRoute::Ui | PadRoute::Mouse | PadRoute::Keys)
         {
             if press == Press::Down && self.route == PadRoute::Ui {

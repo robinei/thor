@@ -198,11 +198,6 @@ pub const BACK_KEY: KeyCode = KeyCode::BTN_BACK;
 /// The Thor's AYN button's code (on its own device: see [`super::device::AynKey`]).
 pub const AYN_KEY: KeyCode = KeyCode::KEY_F24;
 
-/// Whether a code is the Back button's.
-pub fn is_back_key(code: KeyCode) -> bool {
-    code == BACK_KEY
-}
-
 /// A binding to a layer that is on: whose (an input's actuation), the binding as it was when it came on
 /// (kept while on, whatever the layers since make of that input), how it is on, and the first input the
 /// layer maps that acted while it was (a Once layer's end).
@@ -508,10 +503,10 @@ impl Remap {
             if !matches!(a.phase, Phase::Deciding(_)) {
                 continue;
             }
-            let Some(b) = self.find(a.input, Actuation::Hold).filter(|b| matches!(b.output, Output::Layer(_))) else {
-                continue;
-            };
-            let Output::Layer(layer) = b.output else {
+            let Some((b, layer)) = self.find(a.input, Actuation::Hold).and_then(|b| match b.output {
+                Output::Layer(layer) => Some((b, layer)),
+                _ => None,
+            }) else {
                 continue;
             };
             let new_press = |i: Input| {

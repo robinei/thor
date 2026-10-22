@@ -7,7 +7,7 @@ use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
 use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, FFEffectCode, InputEvent, InputId, KeyCode, RelativeAxisCode, UinputAbsSetup};
 
-use super::remap::{AYN_KEY, is_back_key};
+use super::remap::{AYN_KEY, BACK_KEY};
 use super::route::{Axis, PadSnapshot, Ranges, mouse_device_keys};
 use crate::input::device::{self, DeviceSpec};
 use crate::input::{Press, Range, Raw, keyset};
@@ -188,7 +188,7 @@ const DPAD_KEYS: [KeyCode; 4] = [KeyCode::BTN_DPAD_UP, KeyCode::BTN_DPAD_DOWN, K
 /// Back) though the controller has none.
 fn pad_keys(caps: &Capabilities) -> impl Iterator<Item = KeyCode> + '_ {
     let guide = (!caps.keys.contains(&KeyCode::BTN_MODE)).then_some(KeyCode::BTN_MODE);
-    caps.keys.iter().copied().filter(|&k| !is_back_key(k) && !DPAD_KEYS.contains(&k)).chain(guide)
+    caps.keys.iter().copied().filter(|&k| k != BACK_KEY && !DPAD_KEYS.contains(&k)).chain(guide)
 }
 
 /// The real pad's axes the virtual one has: all, and the D-pad's hat though the controller has none.
