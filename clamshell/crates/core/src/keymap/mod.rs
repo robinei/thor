@@ -29,6 +29,7 @@ use std::fmt::{self, Write};
 
 use crate::bottom::keyboard::{Key, Named};
 use crate::kit::names::names;
+use crate::kit::replace;
 
 mod inputs;
 mod outputs;
@@ -515,21 +516,35 @@ pub fn nintendo(id: u16) -> Keymap {
     k
 }
 
-/// Every keymap, by id.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Every keymap, by id. Each change counts, and a keymap's version is the count at its last change, so
+/// that a keymap can be compared with one sent earlier by its id and version alone.
+#[derive(Debug, Clone, Default)]
 pub struct Keymaps {
     list: Vec<Keymap>,
+    /// The changes so far.
+    changes: u64,
+    /// The keymaps changed since they were read, with the count at their last change.
+    versions: Vec<(u16, u64)>,
 }
+
+/// Equal when the keymaps are; their versions don't count.
+impl PartialEq for Keymaps {
+    fn eq(&self, other: &Keymaps) -> bool {
+        self.list == other.list
+    }
+}
+
+impl Eq for Keymaps {}
 
 impl Keymaps {
     /// These keymaps, as saved.
     pub fn from_list(list: Vec<Keymap>) -> Keymaps {
-        Keymaps { list }
+        Keymaps { list, ..Keymaps::default() }
     }
 
     /// The keymaps there are before any were saved: the Nintendo layout.
     pub fn initial() -> Keymaps {
-        Keymaps { list: vec![nintendo(1)] }
+        Keymaps::from_list(vec![nintendo(1)])
     }
 
     pub fn list(&self) -> &[Keymap] {
@@ -540,8 +555,41 @@ impl Keymaps {
         self.list.iter().find(|k| k.id == id)
     }
 
+    /// Keymap `id` to change. It counts as changed whether or not it is.
     pub fn get_mut(&mut self, id: u16) -> Option<&mut Keymap> {
+        self.changed(id);
         self.list.iter_mut().find(|k| k.id == id)
+    }
+
+    /// Changes keymap `id` with `f`, which returns whether it changed anything. Returns that, and false if
+    /// the keymap isn't there.
+    pub fn edit(&mut self, id: u16, f: impl FnOnce(&mut Keymap) -> bool) -> bool {
+        let changed = self.list.iter_mut().find(|k| k.id == id).is_some_and(f);
+        if changed {
+            self.changed(id);
+        }
+        changed
+    }
+
+    /// Puts `keymap` in place of the keymap with its id, if there is one.
+    pub fn replace(&mut self, keymap: Keymap) {
+        self.edit(keymap.id, |k| replace(k, keymap));
+    }
+
+    /// Keymap `id`'s version: the count of changes at its last change, or 0 if it hasn't changed since the
+    /// keymaps were read.
+    pub fn version(&self, id: u16) -> u64 {
+        self.versions.iter().find(|(k, _)| *k == id).map_or(0, |(_, v)| *v)
+    }
+
+    /// Counts a change to keymap `id`.
+    fn changed(&mut self, id: u16) {
+        self.changes += 1;
+        let version = self.changes;
+        match self.versions.iter_mut().find(|(k, _)| *k == id) {
+            Some((_, v)) => *v = version,
+            None => self.versions.push((id, version)),
+        }
     }
 
     /// The named keymaps (those any game may choose).
@@ -570,15 +618,17 @@ impl Keymaps {
             own.layers = from.layers.clone();
         }
         self.list.push(own);
+        self.changed(id);
         Some(id)
     }
 
     /// Makes `owner`'s own keymap with `preset`'s bindings (see [`preset`]) and returns its id.
     pub fn make_own_from(&mut self, preset: &Keymap, owner: &std::sync::Arc<str>) -> Option<u16> {
         let id = self.make_own(0, owner)?;
-        if let Some(own) = self.get_mut(id) {
+        self.edit(id, |own| {
             own.layers = preset.layers.clone();
-        }
+            true
+        });
         Some(id)
     }
 
@@ -586,7 +636,11 @@ impl Keymaps {
     /// no longer exists, `to` is left with no bindings. Returns whether `to` is there.
     pub fn copy_into(&mut self, to: u16, from: u16) -> bool {
         let layers = self.get(from).map_or_else(|| Keymap::new(0, "").layers, |k| k.layers.clone());
-        self.get_mut(to).map(|k| k.layers = layers).is_some()
+        if self.get(to).is_none() {
+            return false;
+        }
+        self.edit(to, |k| replace(&mut k.layers, layers));
+        true
     }
 
     /// A name no keymap has: `name`, or else `name` with a number after it. It is cleaned up the way the
@@ -606,6 +660,7 @@ impl Keymaps {
         let id = self.next_id()?;
         let name = self.unique_name(name);
         self.list.push(Keymap::new(id, &name));
+        self.changed(id);
         Some(id)
     }
 
@@ -613,9 +668,7 @@ impl Keymaps {
     pub fn duplicate(&mut self, id: u16, name: &str) -> Option<u16> {
         let layers = self.get(id).map(|k| k.layers.clone())?;
         let copy = self.add(name)?;
-        if let Some(k) = self.get_mut(copy) {
-            k.layers = layers;
-        }
+        self.edit(copy, |k| replace(&mut k.layers, layers));
         Some(copy)
     }
 
@@ -625,12 +678,17 @@ impl Keymaps {
             return true;
         }
         let name = self.unique_name(name);
-        self.get_mut(id).map(|k| k.name = name).is_some()
+        if self.get(id).is_none() {
+            return false;
+        }
+        self.edit(id, |k| replace(&mut k.name, name));
+        true
     }
 
     pub fn remove(&mut self, id: u16) -> bool {
         let before = self.list.len();
         self.list.retain(|k| k.id != id);
+        self.versions.retain(|(k, _)| *k != id);
         self.list.len() != before
     }
 }

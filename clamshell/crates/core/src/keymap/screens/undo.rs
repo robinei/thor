@@ -50,9 +50,7 @@ impl State {
             return vec![];
         };
         undo.last = Some(before.clone());
-        if let Some(k) = self.keymaps.get_mut(id) {
-            *k = before;
-        }
+        self.keymaps.replace(before);
         let view = &mut self.keymap_screens.edit;
         if self.keymaps.get(id).is_none_or(|k| k.layer_name(view.layer).is_none()) {
             view.layer = Layer::BASE;

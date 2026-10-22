@@ -526,7 +526,7 @@ impl State {
                 vec![]
             }
             KeymapId::LayerOnce => {
-                let changed = self.keymaps.get_mut(k).is_some_and(|km| {
+                let changed = self.keymaps.edit(k, |km| {
                     let once = !km.layer_once(layer);
                     km.set_layer_once(layer, once)
                 });
@@ -537,7 +537,7 @@ impl State {
                 if self.keymap_screens.edit.layer == layer {
                     self.keymap_screens.edit.layer = Layer::BASE;
                 }
-                let changed = self.keymaps.get_mut(k).is_some_and(|km| km.remove_layer(layer));
+                let changed = self.keymaps.edit(k, |km| km.remove_layer(layer));
                 self.saved_if(changed)
             }
             KeymapId::Clear => {
@@ -547,7 +547,7 @@ impl State {
             KeymapId::ConfirmClear => {
                 self.keymap_screens.edit.clearing = false;
                 self.keymap_screens.open = Some(Screen::LayerPicker(k));
-                let changed = self.keymaps.get_mut(k).is_some_and(|km| km.clear(layer));
+                let changed = self.keymaps.edit(k, |km| km.clear(layer));
                 self.saved_if(changed)
             }
             _ => vec![],
@@ -655,7 +655,11 @@ impl State {
                 self.keymap_screens.open = Some(Screen::List);
             }
             KeymapName::NewLayer(id, for_input) => {
-                let layer = self.keymaps.get_mut(id).and_then(|k| k.add_layer(name));
+                let mut layer = None;
+                self.keymaps.edit(id, |k| {
+                    layer = k.add_layer(name);
+                    layer.is_some()
+                });
                 self.keymap_screens.open = Some(Screen::Edit(id));
                 match (layer, for_input) {
                     // Made from the list of layers for an input: the input maps to the new layer, in the
@@ -672,7 +676,7 @@ impl State {
                 }
             }
             KeymapName::RenameLayer(id, layer) => {
-                self.keymaps.get_mut(id).map(|k| k.rename_layer(layer, name));
+                self.keymaps.edit(id, |k| k.layer_name(layer).is_some_and(|n| n != name.trim()) && k.rename_layer(layer, name));
                 self.keymap_screens.open = Some(Screen::LayerPicker(id));
             }
         }
@@ -703,7 +707,7 @@ impl State {
     fn bind(&mut self, id: u16, input: Input, binding: Option<Binding>) -> Vec<Effect> {
         let EditView { layer, act, .. } = self.keymap_screens.edit;
         debug_assert!(self.keymaps.get(id).is_some(), "keymap {id}, being edited, is there");
-        let changed = self.keymaps.get_mut(id).is_some_and(|k| k.set_of(layer, input, act, binding));
+        let changed = self.keymaps.edit(id, |k| k.set_of(layer, input, act, binding));
         self.saved_if(changed)
     }
 

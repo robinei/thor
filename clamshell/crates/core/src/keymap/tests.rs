@@ -73,7 +73,7 @@ fn layers_are_named_targets() {
     assert!(k.set_in(aim, a, Some(Binding::to(Output::Key(Chord::of(Key::Char('y')))))));
     assert_eq!(k.lookup(a, &[aim]).map(|b| b.output), Some(Output::Key(Chord::of(Key::Char('y')))));
     assert_eq!(k.lookup(a, &[]), None, "Base: as on the pad");
-    let maps = Keymaps { list: vec![k.clone()] };
+    let maps = Keymaps::from_list(vec![k.clone()]);
     assert_eq!(round_trip(&maps), maps);
     // Removing a layer drops its bindings and the bindings to it.
     assert!(k.remove_layer(aim));
@@ -118,7 +118,7 @@ fn parameters_stay_in_range_and_apply_by_target() {
     };
     let mut k = Keymap::new(1, "g");
     k.set(Input::Gyro, Some(b));
-    let maps = Keymaps { list: vec![k] };
+    let maps = Keymaps::from_list(vec![k]);
     assert_eq!(round_trip(&maps), maps);
     assert_eq!(ps(Input::Gyro, Output::Nothing), vec![], "off");
     assert_eq!(
@@ -144,7 +144,7 @@ fn holds_doubles_turbo_and_toggle_are_kept() {
     assert!(k.set_of(aim, a, Actuation::Hold, Some(Binding::to(Output::Key(Chord::of(Key::Named(Named::Tab)))))));
     assert_eq!(k.lookup_of(a, Actuation::Hold, &[aim]).map(|b| b.output), Some(Output::Key(Chord::of(Key::Named(Named::Tab)))));
     assert_eq!(k.lookup_of(a, Actuation::Double, &[aim]).map(|b| b.toggle), Some(true), "falls through");
-    let maps = Keymaps { list: vec![k] };
+    let maps = Keymaps::from_list(vec![k]);
     assert_eq!(round_trip(&maps), maps);
     assert!(!maps.list.first().unwrap().is_empty(aim));
     // How values are shown: turbo off or a rate, and a hold's time.
@@ -263,4 +263,25 @@ fn inputs_by_name() {
     }
     assert_eq!(Input::all().count(), 16 + 4 + 10 + 2 + 1);
     assert_eq!(PadOut::all().count(), 17);
+}
+
+#[test]
+fn a_keymaps_version_moves_only_when_it_changes() {
+    let mut maps = Keymaps::initial();
+    assert_eq!(maps.version(1), 0, "as read");
+    let a = Input::Button(Button::A);
+    assert!(!maps.edit(1, |k| k.set(a, k.get(a).copied())), "set to what it was");
+    assert_eq!(maps.version(1), 0);
+    let two = maps.add("Two").unwrap();
+    let after_add = maps.version(two);
+    assert!(maps.edit(1, |k| k.set(a, None)));
+    let one = maps.version(1);
+    assert!(one > after_add);
+    assert!(maps.rename(two, "Two"));
+    assert!(maps.copy_into(two, 0));
+    assert_eq!((maps.version(1), maps.version(two)), (one, after_add), "renamed to its name, and emptied while empty");
+    let before = maps.get(1).cloned().unwrap();
+    maps.replace(before.clone());
+    assert_eq!(maps.version(1), one, "put back as it is");
+    assert_eq!(round_trip(&maps), maps, "versions aren't compared");
 }
