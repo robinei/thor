@@ -80,8 +80,11 @@ impl State {
         let known = std::mem::take(&mut self.session.followed_windows);
         let was = self.session.followed_front.take();
         out.effects.extend(self.follow_units());
-        if self.session.units_known {
-            out.effects.extend(self.start_autostart());
+        let mut due = Vec::new();
+        self.session.autostart_due(self.shelf.library(), &mut due);
+        // They start in the background, so what was going to be shown still is.
+        for id in due {
+            self.launch(id, None, false, out);
         }
         let by_windows = self.follow_windows(&known);
         self.bottom.follow_window_rules(&self.session, out);
@@ -237,7 +240,7 @@ impl State {
             Event::Entry(id, act) => {
                 out.mark(Dirty::BOTTOM);
                 match act {
-                    EntryAct::Play => out.effects.extend(self.play(id)),
+                    EntryAct::Play => self.play(id, out),
                     EntryAct::TogglePin => out.effects.extend(self.toggle_pin(id)),
                     EntryAct::Enqueue => out.effects.extend(self.enqueue(&id)),
                     EntryAct::Quit => self.session.quit(&id, self.shelf.library(), out),

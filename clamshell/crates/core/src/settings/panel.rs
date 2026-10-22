@@ -228,11 +228,6 @@ impl State {
         self.prefs.settings.of_in(id, self.runner_of(id).as_slice())
     }
 
-    /// The environment entry `id` gets: the global variables, then its runner's, then its own.
-    pub fn env_of(&self, id: &str) -> Vec<(String, String)> {
-        self.prefs.settings.env_in(id, self.runner_of(id).as_slice())
-    }
-
     /// For runners that come with one of ClamShell's keymaps (see [`crate::Library::runner_keymaps`]) and
     /// have no keymap chosen and none of their own: makes that keymap their own, chooses it, and saves.
     pub(crate) fn follow_runner_keymaps(&mut self) -> Vec<Effect> {
@@ -370,7 +365,7 @@ mod tests {
         settings.set_env(Some(runner_key("video")), "MPV=1");
         let mut s = State::new(Init { library, settings, ..init() });
         let episode: std::sync::Arc<str> = "tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv".into();
-        let fx = s.launch(episode.clone());
+        let fx = launch_now(&mut s, &episode);
         let launch = fx.iter().find_map(|e| match e {
             Effect::Launch { settings, env, .. } => Some((settings.get(Setting::FpsCap), settings.get(Setting::Power), env.clone())),
             _ => None,
@@ -551,9 +546,14 @@ mod tests {
         let fx = key(&mut s, Key::Named(Named::Enter));
         assert!(matches!(fx.first(), Some(Effect::Save(Save::Settings(t))) if t.env_text(Some("zelda-lttp")) == "dxv=1"), "{fx:?}");
         assert_eq!(s.bottom().editor(), None);
-        assert_eq!(s.env_of("zelda-lttp"), vec![("dxv".to_owned(), "1".to_owned())]);
+        // What a launch of it gets: the variables of all games, its runner's and its own.
+        let env_of = |s: &State| {
+            let runner = s.entry("zelda-lttp").and_then(|g| g.runner.as_ref()).map(|r| &*r.key);
+            s.prefs().settings().env_in("zelda-lttp", runner.as_slice())
+        };
+        assert_eq!(env_of(&s), vec![("dxv".to_owned(), "1".to_owned())]);
         let fresh = state_with(s.prefs().settings());
-        assert_eq!(fresh.env_of("zelda-lttp"), s.env_of("zelda-lttp"));
+        assert_eq!(env_of(&fresh), env_of(&s));
     }
 
     #[test]

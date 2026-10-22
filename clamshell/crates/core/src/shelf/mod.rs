@@ -694,7 +694,7 @@ mod tests {
     #[test]
     fn a_group_started_from_elsewhere_opens_in_shelf() {
         let mut s = state();
-        let fx = s.launch("tv:Cosmos/Season 1".into());
+        let fx = launch_now(&mut s, "tv:Cosmos/Season 1");
         assert_eq!(fx, vec![Effect::Window(WindowCommand::ShowShelf)]);
         assert_eq!(s.shelf().collection().map(|c| c.name.as_str()), Some("TV"));
         assert_eq!(s.shelf().group().map(|g| &*g.id), Some("tv:Cosmos/Season 1"));

@@ -303,7 +303,7 @@ mod tests {
         let t = 101 + 2 * GRACE;
         s.apply(Event::tick(t));
         assert!(s.session().paused("zelda-lttp"));
-        assert_eq!(s.show_running("zelda-lttp"), vec![freeze(&key, false), Effect::Window(WindowCommand::Focus(zelda.workspace()))]);
+        assert_eq!(show(&mut s, "zelda-lttp"), vec![freeze(&key, false), Effect::Window(WindowCommand::Focus(zelda.workspace()))]);
         // It is paused again after being hidden for the grace period anew. Quitting thaws it, so that it
         // can answer its window's closing.
         s.apply(Event::tick(t + 1));
@@ -338,7 +338,7 @@ mod tests {
         assert!(s.apply(Event::tick(100 + GRACE)).1.contains(&pause));
         assert!(!s.apply(Event::tick(101 + GRACE)).1.contains(&pause), "once");
         // Launching resumes it first.
-        let fx = s.launch("desktop:firefox".into());
+        let fx = launch_now(&mut s, "desktop:firefox");
         assert_eq!(fx.first(), Some(&resume), "{fx:?}");
         crate::testkit::start(&mut s, "desktop:firefox");
         // While starting, first as its launch and then handed over with no window yet, it isn't paused.
@@ -378,7 +378,7 @@ mod tests {
         assert!(!s.apply(Event::tick(100 + 3 * GRACE)).1.contains(&freeze(&key, true)));
         assert!(s.session().paused("zelda-lttp"));
         // Resume, in its menu, shows and thaws it.
-        let fx = s.show_running("zelda-lttp");
+        let fx = show(&mut s, "zelda-lttp");
         assert!(fx.contains(&freeze(&key, false)) && !s.session().suspended("zelda-lttp"), "{fx:?}");
         s.apply(Event::tick(100 + 4 * GRACE));
         assert!(!s.session().paused("zelda-lttp"), "runs hidden again");
@@ -413,7 +413,7 @@ mod tests {
     fn games_pause_by_default_apps_run_and_all_says_so_for_both() {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
-        let fx = s.launch("desktop:foot".into());
+        let fx = launch_now(&mut s, "desktop:foot");
         let foot = fx.iter().find_map(|e| if let Effect::Launch { instance, .. } = e { Some(instance.clone()) } else { None }).unwrap();
         crate::testkit::start(&mut s, "desktop:foot");
         let key = zelda.key().unwrap().to_owned();

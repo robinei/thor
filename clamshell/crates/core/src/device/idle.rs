@@ -359,7 +359,7 @@ mod tests {
         let mut s = State::new(crate::Init { library, ..crate::testkit::init() });
         s.apply(Event::tick(1000));
         s.apply(Event::Idle(IdleEvent::Watching(true)));
-        s.launch("desktop:firefox".into());
+        crate::testkit::launch_now(&mut s, "desktop:firefox");
         crate::testkit::start(&mut s, "desktop:firefox");
         crate::testkit::end(&mut s, "desktop:firefox");
         let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));

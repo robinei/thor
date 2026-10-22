@@ -217,7 +217,7 @@ mod tests {
         firefox.runner = Some(clamshell_library::RunnerOf { handover: true, ..clamshell_library::RunnerOf::new("android", "Android", true) });
         let mut s = state_with(library);
         let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
-        s.launch("desktop:firefox".into());
+        launch_now(&mut s, "desktop:firefox");
         crate::testkit::start(&mut s, "desktop:firefox");
         crate::testkit::end(&mut s, "desktop:firefox");
         s.apply(Event::Windows(vec![win(6, "firefox", &ws, true)]));

@@ -27,10 +27,11 @@ use std::sync::Arc;
 
 use clamshell_library::{Launch, ids};
 
+use crate::bottom::notice::{Notice, NoticeKind};
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::out::Out;
 use crate::session::instance::{Instance, STEAM_APP_PREFIX};
-use crate::{Entry, Library, Session, State};
+use crate::{Clock, Entry, Library, Session, State};
 
 /// What is in front on the main screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -172,101 +173,65 @@ fn handed_over_app(g: &Entry) -> Option<&str> {
 impl State {
     /// Shelf's action on its selected entry, or a tap on a stopped dock entry: shows the entry if it runs,
     /// or else starts it. A group isn't started; it is shown open in shelf.
-    pub(crate) fn play(&mut self, game: Arc<str>) -> Vec<Effect> {
+    pub(crate) fn play(&mut self, game: Arc<str>, out: &mut Out) {
         // A browsed file that is also a library entry plays as that entry.
         let game = self.shelf.entry_of_file(&game).unwrap_or(game);
         if self.session.running(&game).is_some() {
-            return self.show_running(&game);
+            self.session.show(&game, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out);
+            return;
         }
         let title = self.shelf.entry(&game).map(|g| g.title.clone());
-        let effects = self.launch(game);
+        let mark = out.effects.len();
+        self.launch(game, None, true, out);
         // The notice comes at once, since a start may take a while: Android's first start, a Steam
         // game's, or Proton's setup.
-        if let Some(title) = title.filter(|_| effects.iter().any(|e| matches!(e, Effect::Launch { .. }))) {
+        if let Some(title) = title.filter(|_| out.effects.iter().skip(mark).any(|e| matches!(e, Effect::Launch { .. }))) {
             self.bottom.notify(crate::bottom::notice::NoticeKind::Starting(title), self.clock.mono());
         }
-        effects
-    }
-
-    /// Shows running entry `id`: its workspace, if a window of it is there to see. Otherwise what is in
-    /// front stays, and a notice says it has no window. It may run without one, not have shown one yet, or
-    /// have lost its display, in which case its dock menu's Quit ends it. It never shows an empty screen.
-    pub(crate) fn show_running(&mut self, id: &str) -> Vec<Effect> {
-        let session = &self.session;
-        let Some(r) = session.running(id) else {
-            return vec![];
-        };
-        if session.windows_of(&r.id).next().is_some() {
-            let focus = Effect::Window(WindowCommand::Focus(r.workspace()));
-            // If it or its runner is paused, it is thawed first, so that it draws as it is shown.
-            let mut out = Out::default();
-            self.session.thaw(id, &mut out);
-            self.session.resume_runner_of(id, self.shelf.library(), &mut out);
-            out.effects.push(focus);
-            return out.effects;
-        }
-        let title = r.entry.as_ref().map_or_else(|| id.to_owned(), |g| g.title.clone());
-        // With no window but a tray icon, the program is asked to show itself, as for Steam started
-        // silently.
-        let mut out = Out::default();
-        if self.session.activate_tray(id, &self.clock, &mut out) {
-            return out.effects;
-        }
-        self.bottom.notify(crate::bottom::notice::NoticeKind::NoWindow(title), self.clock.mono());
-        vec![]
     }
 
     /// Launches `game`, again in another tab if it runs, unless a launch of it is starting. An entry that
     /// runs in another program's processes is shown instead, since Steam doesn't start a game twice and
-    /// Android doesn't start an app twice.
-    pub(crate) fn launch(&mut self, game: Arc<str>) -> Vec<Effect> {
-        self.launch_with(game, None)
-    }
-
-    /// Launches `game` as [`State::launch`] does, but by `command` instead of its own if given. A group
-    /// can then be launched too.
-    pub(crate) fn launch_with(&mut self, game: Arc<str>, command: Option<Launch>) -> Vec<Effect> {
+    /// Android doesn't start an app twice. It runs `command` instead of its own if given, and a group can
+    /// then be launched too. The launch is `shown` once its first window appears, or else started in the
+    /// background.
+    pub(crate) fn launch(&mut self, game: Arc<str>, command: Option<Launch>, shown: bool, out: &mut Out) {
         if let Some(Launch::Tool(tool)) = self.shelf.entry(&game).map(|g| &g.launch) {
             // The Device view is ClamShell's own, on the main screen.
             if *tool == clamshell_library::Tool::Device {
-                let mut out = crate::out::Out::default();
-                self.open_device(&mut out);
-                return out.effects;
+                self.open_device(out);
+            } else {
+                out.effects.push(Effect::Tool(*tool));
             }
-            return vec![Effect::Tool(*tool)];
+            return;
         }
         if command.is_none() && self.shelf.entry(&game).is_some_and(crate::Entry::is_group) {
-            if !self.shelf.reveal(&game) {
-                return vec![];
+            if self.shelf.reveal(&game) {
+                self.shelf.moved(&mut self.pointer);
+                out.effects.push(Effect::Window(WindowCommand::ShowShelf));
             }
-            self.shelf.moved(&mut self.pointer);
-            return vec![Effect::Window(WindowCommand::ShowShelf)];
+            return;
         }
-        let session = &self.session;
-        if session.launching.iter().any(|l| l.entry == game) {
-            return vec![];
+        if self.session.is_launching(&game) {
+            return;
         }
-        if session.running(&game).is_some_and(|r| r.app_id.is_some()) {
-            return self.show_running(&game);
+        if self.session.running(&game).is_some_and(|r| r.app_id.is_some()) {
+            self.session.show(&game, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out);
+            return;
         }
         let Some(g) = self.shelf.entry(&game) else {
-            return vec![];
+            return;
         };
         let app_id = app_id_of(g).filter(|_| command.is_none());
         let (launch, key) = (command.unwrap_or_else(|| g.launch.clone()), g.key.clone());
-        let (secs, n) = (self.clock.unix(), self.session.next_instance());
-        let instance = Instance::Run { key, secs, n };
-        let settings = self.settings_of(&game);
-        let env = self.env_of(&game);
+        let runner = g.runner.as_ref().map(|r| &*r.key);
+        let settings = self.prefs.settings().of_in(&game, runner.as_slice());
+        let env = self.prefs.settings().env_in(&game, runner.as_slice());
         // If its runner, and so its container, is paused, it is resumed first.
-        let mut resumed = Out::default();
-        self.session.resume_runner_of(&game, self.shelf.library(), &mut resumed);
-        self.session.launching.push(Launching { entry: game.clone(), instance: instance.clone(), app_id });
-        // Shown once its first window appears.
-        self.session.pending_show = Some(instance.clone());
-        let mut effects = resumed.effects;
-        effects.extend([Effect::Save(Save::Resume(self.resume())), Effect::Launch { entry: game, instance, settings, env, launch }]);
-        effects
+        self.session.resume_runner_of(&game, self.shelf.library(), out);
+        let instance = self.session.begin_launch(game.clone(), key, app_id, &self.clock, shown);
+        out.effects.push(Effect::Save(Save::Resume(self.resume())));
+        out.effects.push(Effect::Launch { entry: game, instance, settings, env, launch });
     }
 
     /// Our launches' entries run while systemd lists a scope of theirs. A Steam game's scope holds its
@@ -401,7 +366,11 @@ impl State {
             self.bottom.unwake();
         }
         self.session.running.extend(new);
-        steam.into_iter().flat_map(|game| self.launch(game)).collect()
+        let mut out = Out::default();
+        for game in steam {
+            self.launch(game, None, true, &mut out);
+        }
+        out.effects
     }
 
     /// Moves windows found by app id or by process to their entry's workspace.
@@ -573,6 +542,46 @@ impl State {
 }
 
 impl Session {
+    /// Shows running entry `id`: its workspace, if a window of it is there to see. Otherwise what is in
+    /// front stays, and a notice says it has no window. It may run without one, not have shown one yet, or
+    /// have lost its display, in which case its dock menu's Quit ends it. It never shows an empty screen.
+    pub(crate) fn show(&mut self, id: &str, clock: &Clock, library: &Library, notice: &mut Option<Notice>, out: &mut Out) {
+        let Some(r) = self.running(id) else {
+            return;
+        };
+        if self.windows_of(&r.id).next().is_some() {
+            let focus = Effect::Window(WindowCommand::Focus(r.workspace()));
+            // If it or its runner is paused, it is thawed first, so that it draws as it is shown.
+            self.thaw(id, out);
+            self.resume_runner_of(id, library, out);
+            out.effects.push(focus);
+            return;
+        }
+        let title = r.entry.as_ref().map_or_else(|| id.to_owned(), |g| g.title.clone());
+        // With no window but a tray icon, the program is asked to show itself, as for Steam started
+        // silently.
+        if self.activate_tray(id, clock, out) {
+            return;
+        }
+        *notice = Some(Notice::new(NoticeKind::NoWindow(title), clock.mono()));
+    }
+
+    /// Whether a launch of entry `id` was asked for and hasn't started.
+    pub(crate) fn is_launching(&self, id: &str) -> bool {
+        self.launching.iter().any(|l| &*l.entry == id)
+    }
+
+    /// Records a launch of `entry`, whose key is `key`, asked for now, and returns its instance. If it is
+    /// `shown`, its workspace is shown once its first window appears.
+    pub(crate) fn begin_launch(&mut self, entry: Arc<str>, key: String, app_id: Option<Arc<str>>, clock: &Clock, shown: bool) -> Instance {
+        let instance = Instance::Run { key, secs: clock.unix(), n: self.next_instance() };
+        self.launching.push(Launching { entry, instance: instance.clone(), app_id });
+        if shown {
+            self.pending_show = Some(instance.clone());
+        }
+        instance
+    }
+
     /// Quit: asks the entry's windows to close. Once none is left, it is ended if it still runs, or its
     /// runner's stop is run if it ended with them (see [`Session::follow_quitting`]). A window such as
     /// "save changes?" keeps it until it is answered.
@@ -727,7 +736,7 @@ mod tests {
         s.apply(Event::Windows(vec![win(3, "game", &workspace, false)]));
         assert_eq!(tap(&mut s, Id::Shelf(ShelfId::Launch)), vec![Effect::Window(WindowCommand::Focus(workspace))], "running: shown");
         // Another launch, as from the dock's Open another, runs it twice until both end.
-        assert!(launches(&s.launch(first.clone()), &first));
+        assert!(launches(&launch_now(&mut s, &first), &first));
         crate::testkit::start(&mut s, &first);
         // The first launch's scope is gone and the second's is listed.
         let second: Vec<Instance> = s.session.units.iter().skip(1).cloned().collect();
@@ -918,7 +927,7 @@ mod tests {
         s.apply(Event::Windows(vec![shelf.clone()]));
         let ws = Instance::workspace_of(&key("desktop:firefox"));
         assert!(matches!(&s.land_rules(), Effect::Window(WindowCommand::LandRules(ids)) if ids.iter().any(|i| &**i == "firefox")), "its windows land");
-        assert!(launches(&s.launch("desktop:firefox".into()), "desktop:firefox"));
+        assert!(launches(&launch_now(&mut s, "desktop:firefox"), "desktop:firefox"));
         crate::testkit::start(&mut s, "desktop:firefox");
         // Its launch handed the app over to the Waydroid session and ended.
         crate::testkit::end(&mut s, "desktop:firefox");
@@ -928,7 +937,7 @@ mod tests {
         assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![6], to: ws.clone() })), "{fx:?}");
         let moved = Window { workspace: ws.clone(), ..app.clone() };
         s.apply(Event::Windows(vec![shelf.clone(), moved.clone()]));
-        assert!(!launches(&s.launch("desktop:firefox".into()), "desktop:firefox"), "it runs once: shown");
+        assert!(!launches(&launch_now(&mut s, "desktop:firefox"), "desktop:firefox"), "it runs once: shown");
         s.apply(Event::tick(400));
         assert!(s.session().running("desktop:firefox").is_some(), "runs while its window is open");
         let fx = force_kill(&mut s, "desktop:firefox");
@@ -955,7 +964,7 @@ mod tests {
         assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 9, to: None })), "{fx:?}");
         // An entry of another runner ends with its launch.
         let mut s = state();
-        s.launch("desktop:firefox".into());
+        launch_now(&mut s, "desktop:firefox");
         crate::testkit::start(&mut s, "desktop:firefox");
         crate::testkit::end(&mut s, "desktop:firefox");
         assert!(s.session().running("desktop:firefox").is_none());

@@ -60,10 +60,15 @@ impl State {
                 vec![Effect::Enqueue { key, lines }]
             }
             // A file alone is opened as A opens it, which includes resuming where it was left.
-            None if alone => self.play(entry),
             None => {
-                let entry = self.shelf.entry_of_file(&entry).unwrap_or(entry);
-                self.launch_with(entry, Some(runner.command_for(&files)))
+                let mut out = crate::out::Out::default();
+                if alone {
+                    self.play(entry, &mut out);
+                } else {
+                    let entry = self.shelf.entry_of_file(&entry).unwrap_or(entry);
+                    self.launch(entry, Some(runner.command_for(&files)), true, &mut out);
+                }
+                out.effects
             }
         }
     }

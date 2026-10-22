@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::effect::{Effect, Save};
 use crate::out::Out;
-use crate::{Session, State};
+use crate::{Library, Session};
 
 impl Session {
     /// Whether `id` starts with ClamShell.
@@ -26,25 +26,14 @@ impl Session {
         }
         out.effects.push(Effect::Save(Save::Autostart(self.autostart.clone())));
     }
-}
 
-impl State {
-    /// The first time what runs is known, launches the entries to start that don't run, without showing
-    /// them.
-    pub(crate) fn start_autostart(&mut self) -> Vec<Effect> {
-        if std::mem::replace(&mut self.session.autostarted, true) {
-            return vec![];
+    /// The first time what runs is known, adds to `due` the entries to start that the library has and
+    /// that don't run. They are launched without being shown.
+    pub(crate) fn autostart_due(&mut self, library: &Library, due: &mut Vec<Arc<str>>) {
+        if !self.units_known || std::mem::replace(&mut self.autostarted, true) {
+            return;
         }
-        let ids: Vec<Arc<str>> =
-            self.session.autostart.iter().filter(|id| self.shelf.library().has(id) && self.session.running(id).is_none()).cloned().collect();
-        let mut effects = Vec::new();
-        for id in ids {
-            let shown = self.session.pending_show.clone();
-            effects.extend(self.launch(id));
-            // They start in the background, so what was going to be shown still is.
-            self.session.pending_show = shown;
-        }
-        effects
+        due.extend(self.autostart.iter().filter(|id| library.has(id) && self.running(id).is_none()).cloned());
     }
 }
 
@@ -52,7 +41,7 @@ impl State {
 mod tests {
     use super::*;
     use crate::testkit::*;
-    use crate::{Event, Init, Instance};
+    use crate::{Event, Init, Instance, State};
 
     #[test]
     fn chosen_entries_start_once_what_runs_is_known_unless_they_run() {

@@ -188,20 +188,23 @@ impl State {
     /// its windows are there.
     fn tap_entry(&mut self, entry: Arc<str>, out: &mut Out) {
         if self.session.running(&entry).is_none() {
-            out.effects.extend(self.play(entry));
+            self.play(entry, out);
             return;
         }
         let below = |w: &&Window| w.down;
         let down = self.session.windows_of(&entry).all(|w| w.down).then(|| self.session.windows_of(&entry).find(below).map(|w| w.id)).flatten();
         match down {
             Some(window) => self.bottom.show_program_down(window, out),
-            None => out.effects.extend(self.show_running(&entry)),
+            None => self.session.show(&entry, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out),
         }
     }
 
     fn menu_choice(&mut self, choice: DockId, entry: Arc<str>, out: &mut Out) {
         let effects = match choice {
-            DockId::OpenAnother if self.opens_another(&entry) => self.launch(entry),
+            DockId::OpenAnother if self.opens_another(&entry) => {
+                self.launch(entry, None, true, out);
+                vec![]
+            }
             DockId::OpenAnother => vec![],
             DockId::CloseWindow => self.entry_window(&entry).map(|w| vec![Effect::Window(WindowCommand::Close(vec![w]))]).unwrap_or_default(),
             DockId::Pin => self.toggle_pin(entry),
@@ -209,7 +212,10 @@ impl State {
                 self.session.toggle_autostart(entry, out);
                 vec![]
             }
-            DockId::Suspend if self.session.suspended(&entry) => self.show_running(&entry),
+            DockId::Suspend if self.session.suspended(&entry) => {
+                self.session.show(&entry, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out);
+                vec![]
+            }
             DockId::Suspend => {
                 self.session.suspend(&entry, out);
                 vec![]

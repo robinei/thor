@@ -113,3 +113,17 @@ pub fn force_kill(s: &mut State, id: &str) -> Vec<Effect> {
     s.session.force_kill(id, s.shelf.library(), &mut out);
     out.effects
 }
+
+/// Launches entry `id` again, as the dock's Open another does, with what that does at once.
+pub fn launch_now(s: &mut State, id: &str) -> Vec<Effect> {
+    let mut out = crate::out::Out::default();
+    s.launch(id.into(), None, true, &mut out);
+    out.effects
+}
+
+/// Shows running entry `id`, as a tap on its dock tile does, with what that does at once.
+pub fn show(s: &mut State, id: &str) -> Vec<Effect> {
+    let mut out = crate::out::Out::default();
+    s.session.show(id, &s.clock, s.shelf.library(), s.bottom.notice_mut(), &mut out);
+    out.effects
+}
