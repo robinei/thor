@@ -106,7 +106,7 @@ impl Taken {
 /// Owns the controller whenever one is connected (`spec`: CLAMSHELL_GAMEPAD), with its ids in `taken`.
 /// Without one it looks again when /dev/input changes, and every [`RETRY`] besides.
 pub fn spawn(spec: DeviceSpec, taken: Taken, sink: impl Sink) -> io::Result<Worker<Command>> {
-    let watched = devices_watch();
+    let watched = crate::input::watch::devices_watch();
     let retry = if watched.is_some() { RETRY } else { RETRY_UNWATCHED };
     let worker = Worker::spawn_belled("pad", move |commands, bell| {
         let mut pad = PadThread {
@@ -143,14 +143,6 @@ pub fn spawn(spec: DeviceSpec, taken: Taken, sink: impl Sink) -> io::Result<Work
         })?;
     }
     Ok(worker)
-}
-
-/// An inotify watch of /dev/input: a device's node coming, and udev giving it its permissions.
-fn devices_watch() -> Option<rustix::fd::OwnedFd> {
-    use rustix::fs::inotify;
-    let fd = inotify::init(inotify::CreateFlags::CLOEXEC | inotify::CreateFlags::NONBLOCK).ok()?;
-    inotify::add_watch(&fd, "/dev/input", inotify::WatchFlags::CREATE | inotify::WatchFlags::ATTRIB | inotify::WatchFlags::MOVED_TO).ok()?;
-    Some(fd)
 }
 
 /// What the pad thread keeps across the controller's comings and goings.

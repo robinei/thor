@@ -7,8 +7,8 @@ use crate::keyboard::VirtualKeyboard;
 use crate::paths::Paths;
 use crate::store::{Write, Writer};
 use crate::tuning::Tuning;
-use crate::worker::{self, Worker};
-use crate::{battery, bluetooth, brightness, launcher, mixer, pad, sway, touchpad, wifi};
+use crate::worker::{self, Shown, Worker};
+use crate::{bluetooth, brightness, launcher, mixer, pad, sway, touchpad, wifi};
 
 /// The threads (and the one device) that effects go to.
 pub struct Handles {
@@ -25,11 +25,11 @@ pub struct Handles {
     pub wifi: Worker<wifi::Request>,
     pub bluetooth: Worker<bluetooth::Request>,
     pub tray: Worker<clamshell_core::tray::TrayCommand>,
-    pub metrics: Worker<bool>,
+    pub metrics: Worker<Shown>,
     /// The bar's status, read often while the screens are on.
-    pub status: Worker<bool>,
+    pub status: Worker<Shown>,
     pub icons: Worker<(std::sync::Arc<str>, String)>,
-    pub battery: Worker<battery::Command>,
+    pub battery: Worker<Shown>,
     pub pad: Worker<pad::Command>,
     /// The controller the pad thread grabbed: SDL programs launched are told to ignore it.
     pub pad_taken: pad::Taken,
@@ -165,11 +165,11 @@ impl Handles {
             Watch::Bluetooth => self.bluetooth.send(bluetooth::Request::Watch(on)),
             // (The battery tab shows the metrics too.)
             Watch::Battery => {
-                self.battery.send(if on { battery::Command::Start } else { battery::Command::Stop });
-                self.metrics.send(on);
+                self.battery.send(Shown(on));
+                self.metrics.send(Shown(on));
             }
-            Watch::Metrics => self.metrics.send(on),
-            Watch::Status => self.status.send(on),
+            Watch::Metrics => self.metrics.send(Shown(on)),
+            Watch::Status => self.status.send(Shown(on)),
             // (Read once as the tab opens: it changes only by the tab.)
             Watch::Time if on => self.system.send(crate::device::Command::ReadTime),
             Watch::Time => {}

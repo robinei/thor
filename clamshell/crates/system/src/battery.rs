@@ -15,7 +15,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::dbus::{self, Bus, Kept, Path};
-use crate::worker::{self, Next, Worker};
+use crate::worker::{self, Next, Shown, Worker};
 use crate::{Closed, Sink, cgroup, drm, sys};
 use clamshell_core::battery::{Battery, Charge, Group, Spender};
 use clamshell_core::{Event, Instance, Reading};
@@ -45,13 +45,6 @@ enum ChargeState {
 const UPOWER: &str = "org.freedesktop.UPower";
 const UPOWER_DEVICE: &str = "org.freedesktop.UPower.Device";
 
-/// Sampling starts when the battery tab opens and stops when it closes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Command {
-    Start,
-    Stop,
-}
-
 #[derive(Debug)]
 enum Error {
     Bus(dbus::Error),
@@ -73,7 +66,8 @@ impl From<dbus::Error> for Error {
     }
 }
 
-pub fn spawn(sink: impl Sink) -> io::Result<Worker<Command>> {
+/// The battery thread: it samples what spends the battery while the battery tab is shown.
+pub fn spawn(sink: impl Sink) -> io::Result<Worker<Shown>> {
     Worker::spawn("battery", move |commands| {
         let _ = sample(&commands, &sink);
     })
@@ -81,7 +75,7 @@ pub fn spawn(sink: impl Sink) -> io::Result<Worker<Command>> {
 
 /// Samples every two seconds while started (the history once a minute), until the commands or the UI
 /// go.
-fn sample(commands: &Receiver<Command>, sink: &impl Sink) -> Result<(), Closed> {
+fn sample(commands: &Receiver<Shown>, sink: &impl Sink) -> Result<(), Closed> {
     let mut sampling = false;
     let mut sampler = Sampler::default();
     let mut battery = Battery::default();
@@ -89,8 +83,8 @@ fn sample(commands: &Receiver<Command>, sink: &impl Sink) -> Result<(), Closed> 
     let mut upower = Kept::system();
     loop {
         match worker::next(commands, sampling.then_some(SAMPLE_EVERY)) {
-            Next::Command(command) => {
-                sampling = command == Command::Start;
+            Next::Command(Shown(shown)) => {
+                sampling = shown;
                 sampler = Sampler::default();
                 last_history = None;
                 battery.spenders.clear();

@@ -68,6 +68,11 @@ impl Bell {
     }
 }
 
+/// A reader thread's command: whether what it reads is shown (read often while it is; seldom, or not at
+/// all, while it isn't).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Shown(pub bool);
+
 /// A command reached no thread.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Gone;

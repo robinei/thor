@@ -9,7 +9,7 @@ use std::time::Duration;
 use clamshell_core::{Event, Reading, Status};
 
 use crate::brightness::Backlights;
-use crate::worker::{Changed, Worker};
+use crate::worker::{Changed, Shown, Worker};
 use crate::{Closed, Sink, command, mixer, sys};
 
 /// How often the status is read: battery and Wi-Fi change slowly; a volume changed elsewhere (not with
@@ -19,13 +19,13 @@ const EVERY: Duration = Duration::from_secs(5);
 const UNSEEN_EVERY: Duration = Duration::from_secs(60);
 
 /// The status thread; its commands: whether the screens are on (see [`clamshell_core::Watch::Status`]).
-pub fn spawn(backlights: Backlights, sink: impl Sink) -> io::Result<Worker<bool>> {
+pub fn spawn(backlights: Backlights, sink: impl Sink) -> io::Result<Worker<Shown>> {
     Worker::spawn("status", move |seen| {
         let _ = follow(&backlights, &sink, &seen);
     })
 }
 
-fn follow(backlights: &Backlights, sink: &impl Sink, commands: &Receiver<bool>) -> Result<(), Closed> {
+fn follow(backlights: &Backlights, sink: &impl Sink, commands: &Receiver<Shown>) -> Result<(), Closed> {
     let mut last = Changed::default();
     let mut seen = true;
     // (Unseen: the rest as last read, the battery read anew.)
@@ -40,7 +40,7 @@ fn follow(backlights: &Backlights, sink: &impl Sink, commands: &Receiver<bool>) 
             sink.send(Event::Reading(Reading::Status(changed)))?;
         }
         match commands.recv_timeout(if seen { EVERY } else { UNSEEN_EVERY }) {
-            Ok(on) => seen = on,
+            Ok(Shown(on)) => seen = on,
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return Ok(()),
         }

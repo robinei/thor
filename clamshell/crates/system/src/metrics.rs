@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use clamshell_core::metrics::{MAX_CORES, Metrics};
 use clamshell_core::{Event, Reading};
 
-use crate::worker::{Next, Worker};
+use crate::worker::{Next, Shown, Worker};
 use crate::{Closed, Sink, drm, sys, worker};
 
 /// How often the metrics are read while they can be seen, and otherwise: the graphs keep their history,
@@ -24,7 +24,7 @@ const SHOWN_EVERY: Duration = Duration::from_secs(1);
 const HIDDEN_EVERY: Duration = Duration::from_secs(5);
 
 /// The metrics thread; its commands: whether the metrics can be seen (read at once as they can).
-pub fn spawn(sink: impl Sink) -> io::Result<Worker<bool>> {
+pub fn spawn(sink: impl Sink) -> io::Result<Worker<Shown>> {
     Worker::spawn("metrics", move |commands| {
         let _ = follow(&sink, &commands);
     })
@@ -32,13 +32,13 @@ pub fn spawn(sink: impl Sink) -> io::Result<Worker<bool>> {
 
 /// Reads and sends the metrics every second while seen, every five seconds otherwise, until the UI is
 /// gone.
-fn follow(sink: &impl Sink, commands: &Receiver<bool>) -> Result<(), Closed> {
+fn follow(sink: &impl Sink, commands: &Receiver<Shown>) -> Result<(), Closed> {
     let mut previous = read_cpu_times();
     let mut gpu_previous = drm::total_ns().map(|t| (t, Instant::now()));
     let mut shown = false;
     loop {
         match worker::next(commands, Some(if shown { SHOWN_EVERY } else { HIDDEN_EVERY })) {
-            Next::Command(now_shown) => shown = now_shown,
+            Next::Command(Shown(now_shown)) => shown = now_shown,
             Next::Elapsed => {}
             Next::Disconnected => return Ok(()),
         }

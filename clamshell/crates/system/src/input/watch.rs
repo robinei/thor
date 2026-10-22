@@ -109,6 +109,14 @@ fn device_key(raw: Raw) -> Option<DeviceKey> {
     })
 }
 
+/// An inotify watch of /dev/input, non-blocking: a device's node coming, and udev giving it its
+/// permissions (both say look again). The pad thread watches with one of its own.
+pub fn devices_watch() -> Option<rustix::fd::OwnedFd> {
+    let fd = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).ok()?;
+    inotify::add_watch(&fd, "/dev/input", inotify::WatchFlags::CREATE | inotify::WatchFlags::ATTRIB | inotify::WatchFlags::MOVED_TO).ok()?;
+    Some(fd)
+}
+
 /// Starts watching. `hardware_keys`: take the device's hardware keys (its own session only).
 pub fn spawn(hardware_keys: bool, sink: impl Sink) -> io::Result<()> {
     worker::detached("input watch", move || {
@@ -124,10 +132,7 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
     let mut reported: Option<Instant> = None;
     let mut watching = None;
     let mut raws = Vec::new();
-    // (A device's node comes, then udev gives it its permissions: both say look again.)
-    let notify = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC)
-        .ok()
-        .filter(|fd| inotify::add_watch(fd, "/dev/input", inotify::WatchFlags::CREATE | inotify::WatchFlags::ATTRIB | inotify::WatchFlags::MOVED_TO).is_ok());
+    let notify = devices_watch();
     let mut look = true;
     loop {
         if look || (notify.is_none() && scanned.is_none_or(|t| t.elapsed() >= RESCAN_EVERY)) {

@@ -115,9 +115,11 @@ Helpers that exist but are bypassed:
       `remap::wanted`, `PadThread::route_events` (the rumble mixing a pure, tested function), `main`
       (one error path).
 - [x] The system thread: Account and AskAwake off it (as CalibrateRefresh); `?` on `Closed`.
-- [ ] One way each: bus reconnection (`dbus::Kept` for both buses, `units.rs:76`), mutex poisoning,
-      thread spawning (`worker`), the Unix-seconds clock (7 copies), `Duration`→`Timespec` (4 copies),
-      the /dev/input watch (two watchers), reader on/off commands and `Command`/`Request` names.
+- [x] One way each: bus reconnection (`dbus::Kept` for both buses), mutex poisoning (`crate::lock`), thread
+      spawning (`worker::detached`; the store's writer keeps its own, joined on drop), the Unix-seconds
+      clock (`unix_secs`), `Duration`→`Timespec` (`sys::timespec`), the /dev/input watch's construction
+      (`devices_watch`; the pad and input threads keep a watch each), reader commands (`Shown`). Wi-Fi's and
+      Bluetooth's `Request` stays: it wraps core's `Command` with the watch.
 - [ ] The keymap views' wildcard imports (`ui/views/keymaps/mod.rs:39-43`): explicit.
 - [ ] UI: the confirm dialog written twice (`keymaps/mod.rs:196-222`); layout literals named or helped
       (`Column::para`), shared gaps in `style`.
