@@ -37,7 +37,7 @@ use smithay_client_toolkit::{
     },
 };
 
-use crate::App;
+use super::App;
 
 /// An output's mode as the compositor lists it.
 struct Mode {

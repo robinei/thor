@@ -19,7 +19,7 @@ use smithay_client_toolkit::{
     },
 };
 
-use crate::App;
+use super::App;
 
 /// How long a field must stay let go before the keyboard goes back.
 const SETTLE: Duration = Duration::from_millis(400);

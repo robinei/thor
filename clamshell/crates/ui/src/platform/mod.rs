@@ -1,0 +1,216 @@
+//! The Wayland side: the app's event loop, its views (a surface each, drawn into shm buffers), the
+//! compositor's events ([`handlers`]), idle and output power ([`display`]), the input method
+//! ([`text_input`]) and systemd's notifications ([`notify`]).
+
+mod app;
+mod display;
+mod handlers;
+mod notify;
+mod routing;
+mod text_input;
+mod view;
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+use clamshell_core::bottom::touch::TouchLayout;
+use clamshell_core::{Dirty, Effect, Event, Id, State};
+use smithay_client_toolkit::{
+    compositor::CompositorState,
+    output::OutputState,
+    reexports::{
+        calloop::{EventLoop, LoopHandle, RegistrationToken, channel},
+        calloop_wayland_source::WaylandSource,
+        client::{
+            Connection, QueueHandle,
+            globals::{GlobalList, registry_queue_init},
+            protocol::{wl_keyboard, wl_pointer, wl_touch},
+        },
+    },
+    registry::RegistryState,
+    seat::SeatState,
+    shell::{wlr_layer::LayerShell, xdg::XdgShell},
+    shm::{Shm, slot::SlotPool},
+};
+
+use crate::gfx::DrawCache;
+use crate::input::{Input, Source};
+use crate::screens::Screens;
+use crate::{Config, Error, EventSender, gfx, input};
+use view::View;
+
+/// Runs the UI until quit. `start` gets a sender for the system threads; `on_effect` carries out what the
+/// state asks for (launching games, ...).
+pub fn run(state: State, config: Config, start: impl FnOnce(EventSender), on_effect: impl FnMut(&Effect) + 'static) -> Result<(), Error> {
+    let conn = Connection::connect_to_env()?;
+    let (globals, mut queue) = registry_queue_init::<App>(&conn)?;
+    let qh = queue.handle();
+    let shells = Shells::bind(&globals, &qh)?;
+    let mut event_loop: EventLoop<App> = EventLoop::try_new()?;
+    let images = install_images(&event_loop.handle())?;
+    let mut app = App::new(&globals, &qh, state, &config, images, event_loop.handle(), Box::new(on_effect))?;
+
+    // Learn the outputs and their names before placing the bottom view. (These roundtrips dispatch into
+    // the app, so it exists before its views.)
+    queue.roundtrip(&mut app)?;
+    queue.roundtrip(&mut app)?;
+    // (Frames are drawn straight into shm buffers in tiny-skia's byte order, which sway takes.)
+    if !app.shm.formats().contains(&smithay_client_toolkit::reexports::client::protocol::wl_shm::Format::Abgr8888) {
+        return Err("the compositor doesn't take ABGR8888 shm buffers (sway does)".into());
+    }
+    if let Some(seat) = app.seat_state.seats().next() {
+        app.text_input.seat(&seat, &qh);
+        app.display.seat(&seat, &qh);
+    }
+    app.place_views(&shells, &qh, &config);
+
+    WaylandSource::new(conn.clone(), queue).insert(event_loop.handle()).map_err(|e| e.error)?;
+    let (sender, receiver) = channel::channel();
+    event_loop
+        .handle()
+        .insert_source(receiver, |event, _, app: &mut App| {
+            if let channel::Event::Msg(event) = event {
+                app.handle(event);
+            }
+        })
+        .map_err(|e| e.error)?;
+    start(EventSender(sender));
+    // What the state in force needs now that everything runs (the tab's watch, brightness, the pad).
+    app.handle(Event::Start);
+
+    // (systemd told it is up once the screens are drawn, and that the loop turns: see notify.)
+    let mut notifier = notify::Notifier::new();
+    while !app.exit {
+        event_loop.dispatch(None, &mut app)?;
+        app.redraw_dirty();
+        notifier.turned();
+    }
+    Ok(())
+}
+
+/// The shells the views are made with.
+struct Shells {
+    compositor: CompositorState,
+    xdg: XdgShell,
+    layer: Option<LayerShell>,
+}
+
+impl Shells {
+    fn bind(globals: &GlobalList, qh: &QueueHandle<App>) -> Result<Shells, Error> {
+        Ok(Shells { compositor: CompositorState::bind(globals, qh)?, xdg: XdgShell::bind(globals, qh)?, layer: LayerShell::bind(globals, qh).ok() })
+    }
+}
+
+/// Images: requests to a decoding thread, results back through the event loop.
+fn install_images(handle: &LoopHandle<'static, App>) -> Result<crate::gfx::images::Images, Error> {
+    let (requests, worker) = std::sync::mpsc::channel();
+    let (done, results) = channel::channel();
+    crate::gfx::images::spawn_worker(worker, move |key, pixmap| done.send((key, pixmap)).is_ok())?;
+    handle
+        .insert_source(results, |event, _, app: &mut App| {
+            if let channel::Event::Msg((key, pixmap)) = event {
+                app.images.arrived(key, pixmap);
+                app.mark(Dirty::BOTH);
+            }
+        })
+        .map_err(|e| e.error)?;
+    Ok(crate::gfx::images::Images::new(requests))
+}
+
+/// Fonts for characters the built-in one lacks: found on a thread, back through the event loop.
+fn install_fonts(handle: &LoopHandle<'static, App>) -> Result<DrawCache, Error> {
+    let (requests, finder) = std::sync::mpsc::channel();
+    let (done, results) = channel::channel();
+    gfx::spawn_font_finder(finder, move |found| done.send(found).is_ok())?;
+    handle
+        .insert_source(results, |event, _, app: &mut App| {
+            if let channel::Event::Msg(found) = event {
+                app.fonts.found(found);
+                app.mark(Dirty::BOTH);
+            }
+        })
+        .map_err(|e| e.error)?;
+    Ok(DrawCache::with_finder(requests))
+}
+
+/// How the bottom view is shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BottomKind {
+    /// A layer surface over the second screen's output (the device).
+    Output,
+    /// A layer surface in a desktop's corner, which never takes the keyboard focus.
+    Panel,
+    /// An ordinary window.
+    Window,
+}
+
+impl BottomKind {
+    /// From whether the second screen's output exists, whether the compositor has layer shell, and
+    /// whether a panel was asked for.
+    fn choose(output: bool, layer_shell: bool, panel: bool) -> BottomKind {
+        match (output, layer_shell) {
+            (true, true) => BottomKind::Output,
+            (false, true) if panel => BottomKind::Panel,
+            _ => BottomKind::Window,
+        }
+    }
+
+    /// Keys stand in for the pad everywhere but on the device (there, keys reaching shelf are typing).
+    fn desktop_keys(self) -> bool {
+        self != BottomKind::Output
+    }
+}
+
+pub(crate) struct App {
+    registry_state: RegistryState,
+    seat_state: SeatState,
+    output_state: OutputState,
+    shm: Shm,
+    pool: SlotPool,
+    qh: QueueHandle<App>,
+    /// Made once the outputs are known (see `run`).
+    views: Screens<Option<View>>,
+    state: State,
+    fonts: DrawCache,
+    keyboard: Option<wl_keyboard::WlKeyboard>,
+    pointer: Option<wl_pointer::WlPointer>,
+    /// The compositor's cursor shapes, and our pointer's (the arrow over our surfaces: without it sway
+    /// shows none there).
+    cursor_shapes: Option<smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager>,
+    pub(crate) cursor: Option<smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::WpCursorShapeDeviceV1>,
+    touch: Option<wl_touch::WlTouch>,
+    touch_layout: Arc<Mutex<TouchLayout>>,
+    images: crate::gfx::images::Images,
+    input: Input,
+    /// The presses' running timers.
+    timers: HashMap<(Source, input::Timer), RegistrationToken>,
+    /// The compositor's event times as instants (when a finger moved, not when it was handled).
+    clock: input::EventClock,
+    /// Fingers pointing in the touch frame being handled: sent on together once it is.
+    contacts: Vec<clamshell_core::bottom::touch::Contact>,
+    /// Where the pad's focus was on each screen, for View switching back to it.
+    focus_memory: Screens<Option<Id>>,
+    /// Keys stand in for the pad (a desktop; not on the device, where keys reaching shelf are typing).
+    desktop_keys: bool,
+    text_input: text_input::TextInput,
+    /// The compositor's idle report, the screens' power and the main screen's refresh rate.
+    display: display::Display,
+    loop_handle: LoopHandle<'static, App>,
+    on_effect: Box<dyn FnMut(&Effect)>,
+    exit: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_bottom_view_goes_on_the_second_screen_when_there_is_one() {
+        assert_eq!(BottomKind::choose(true, true, false), BottomKind::Output);
+        assert_eq!(BottomKind::choose(true, true, true), BottomKind::Output);
+        assert_eq!(BottomKind::choose(false, true, true), BottomKind::Panel);
+        assert_eq!(BottomKind::choose(false, true, false), BottomKind::Window);
+        assert_eq!(BottomKind::choose(true, false, true), BottomKind::Window);
+        assert!(!BottomKind::Output.desktop_keys() && BottomKind::Panel.desktop_keys() && BottomKind::Window.desktop_keys());
+    }
+}

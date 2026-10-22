@@ -26,7 +26,7 @@ use smithay_client_toolkit::{
     shm::{Shm, ShmHandler},
 };
 
-use crate::App;
+use super::App;
 use crate::input::{End, Source};
 
 impl CompositorHandler for App {

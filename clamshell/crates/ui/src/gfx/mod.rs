@@ -11,7 +11,7 @@ pub mod images;
 pub mod text;
 
 pub use canvas::{Canvas, DrawCache};
-pub use color::{Rgb, rgb};
-pub use fonts::{Face, Found, spawn_font_finder};
+pub use color::Rgb;
+pub use fonts::spawn_font_finder;
 pub use geom::{Align, Column, Rect, Span};
 pub use text::{Keep, LINE, WRAP_LINE};

@@ -175,7 +175,9 @@ impl Canvas<'_> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::gfx::{DrawCache, Face, rgb, spawn_font_finder};
+    use crate::gfx::DrawCache;
+    use crate::gfx::color::rgb;
+    use crate::gfx::fonts::{Face, spawn_font_finder};
     use std::process::Command;
     use tiny_skia::Pixmap;
 
