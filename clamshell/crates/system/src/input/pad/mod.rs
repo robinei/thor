@@ -216,13 +216,17 @@ impl<S: Sink> PadThread<S> {
             // (No controller, no gyro: nothing to close or find; a controller with one takes these in
             // route_events.)
             Command::Sleep(Ack(done)) => {
-                let _ = done.send(());
+                if done.send(()).is_err() {
+                    log::debug!("pad: sleep no longer waits for the pad");
+                }
             }
             Command::Woke => {}
             // (No controller: nothing to calibrate.)
             Command::CalibrateSticks => {
                 log::info!("pad: no controller to calibrate the sticks of");
-                let _ = self.sink.send(Event::Sticks(SticksEvent::Done(String::new(), None)));
+                if self.sink.send(Event::Sticks(SticksEvent::Done(String::new(), None))).is_err() {
+                    log::debug!("pad: the UI is gone");
+                }
             }
             Command::Sticks(all) => self.sticks = all,
         }
@@ -298,11 +302,13 @@ impl<S: Sink> Service for PadThread<S> {
         let mut router = PadRouter::new(c.ranges, std::mem::take(&mut c.snapshot), self.route, self.keymap.clone(), &mut out);
         let result = self.route_events(&mut c, &mut router, &mut out, commands);
         // (A calibration going when the controller went: given up, said so, so the state doesn't wait on it.)
-        if c.sticks.calibrating() {
-            let _ = self.sink.send(Event::Sticks(SticksEvent::Done(c.name.clone(), None)));
+        if c.sticks.calibrating() && self.sink.send(Event::Sticks(SticksEvent::Done(c.name.clone(), None))).is_err() {
+            log::debug!("pad: the UI is gone");
         }
-        if let Some(r) = c.rumble.as_mut() {
-            let _ = r.set(0, 0);
+        if let Some(r) = c.rumble.as_mut()
+            && let Err(e) = r.set(0, 0)
+        {
+            log::debug!("pad: stopping the rumble of {}: {e}", c.name);
         }
         // Gone (or failing): what the route held on the keyboard and mouse is let go.
         router.lose(&mut out);
@@ -470,7 +476,9 @@ impl<S: Sink> PadThread<S> {
                     if c.motion.take().is_some() {
                         log::info!("pad: the gyro closed for sleep");
                     }
-                    let _ = done.send(());
+                    if done.send(()).is_err() {
+                        log::debug!("pad: sleep no longer waits for the pad");
+                    }
                 }
                 Ok(Command::Woke) => {
                     if c.motion.is_none() {

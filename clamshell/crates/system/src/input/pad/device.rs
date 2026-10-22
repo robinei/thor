@@ -144,11 +144,18 @@ impl VirtualDevices {
 /// Linux calls BTN_NORTH; PB-OS found rsinput's top one sending BTN_WEST, BTN_Y) rather than by their
 /// place, as Linux has it (BTN_WEST the left one, BTN_NORTH the top one) and ClamShell does.
 pub fn letter_codes(name: &str, phys: &str) -> bool {
-    let Ok(inputs) = std::fs::read_dir("/sys/class/input") else {
-        return false;
+    let inputs = match std::fs::read_dir("/sys/class/input") {
+        Ok(inputs) => inputs,
+        Err(e) => {
+            log::warn!("pad: reading /sys/class/input: {e}");
+            return false;
+        }
     };
-    let read = |p: std::path::PathBuf| std::fs::read_to_string(p).map(|s| s.trim().to_owned()).unwrap_or_default();
-    inputs.flatten().map(|e| e.path().join("device")).any(|dev| {
+    let read = |p: std::path::PathBuf| {
+        std::fs::read_to_string(&p).map(|s| s.trim().to_owned()).inspect_err(|e| log::trace!("pad: reading {}: {e}", p.display())).unwrap_or_default()
+    };
+    let entries = inputs.filter_map(|e| e.inspect_err(|e| log::debug!("pad: reading /sys/class/input: {e}")).ok());
+    entries.map(|e| e.path().join("device")).any(|dev| {
         read(dev.join("name")) == name
             && read(dev.join("phys")) == phys
             && std::fs::read_link(dev.join("device/driver")).is_ok_and(|d| d.file_name().is_some_and(|n| n == "xpad" || n == "rsinput"))

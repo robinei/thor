@@ -70,7 +70,9 @@ impl SensorHub {
     /// The Thor's sensor hub (by its device tree; elsewhere none): waits for the hub's service, which
     /// may come later than this (thor-sensors' hexagonrpcd).
     pub fn find() -> Option<SensorHub> {
-        let compatible = std::fs::read("/sys/firmware/devicetree/base/compatible").ok()?;
+        let compatible = std::fs::read("/sys/firmware/devicetree/base/compatible")
+            .inspect_err(|e| log::debug!("pad: reading /sys/firmware/devicetree/base/compatible: {e}"))
+            .ok()?;
         if !compatible.split(|&b| b == 0).any(|c| c == b"ayn,thor") {
             return None;
         }
