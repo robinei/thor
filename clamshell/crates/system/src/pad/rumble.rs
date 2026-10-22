@@ -134,6 +134,16 @@ impl Effects {
     }
 }
 
+/// The motors' strengths (strong, weak): games' `effects` while `in_game` (the game has the pad), and the
+/// keymap's `buzz`, the stronger of the two each, at the Rumble setting's strength.
+pub fn mix(effects: (u16, u16), in_game: bool, buzz: Option<(u16, u16)>, setting: RumbleStrength) -> (u16, u16) {
+    let (mut strong, mut weak) = if in_game { effects } else { (0, 0) };
+    if let Some((s, w)) = buzz {
+        (strong, weak) = (strong.max(s), weak.max(w));
+    }
+    (scale(strong, setting), scale(weak, setting))
+}
+
 /// A strength scaled by the Rumble setting.
 pub fn scale(v: u16, setting: RumbleStrength) -> u16 {
     let thirds = match setting {
@@ -223,5 +233,17 @@ mod tests {
         assert_eq!(e.level(t0), (0, 0));
         use RumbleStrength::{Full, Low, Off};
         assert_eq!((scale(60_000, Off), scale(60_000, Low), scale(60_000, Full)), (0, 20_000, 60_000));
+    }
+
+    #[test]
+    fn games_rumble_only_in_game_and_buzzes_always_at_the_settings_strength() {
+        use RumbleStrength::{Full, Low, Off};
+        let games = (60_000, 30_000);
+        assert_eq!(mix(games, true, None, Full), games);
+        assert_eq!(mix(games, false, None, Full), (0, 0), "the pad away from the game");
+        assert_eq!(mix(games, false, Some((9_000, 3_000)), Full), (9_000, 3_000), "a buzz whatever has the pad");
+        assert_eq!(mix(games, true, Some((40_000, 45_000)), Full), (60_000, 45_000), "the stronger of each");
+        assert_eq!(mix(games, true, None, Low), (20_000, 10_000));
+        assert_eq!(mix(games, true, Some((9_000, 3_000)), Off), (0, 0));
     }
 }

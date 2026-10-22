@@ -468,10 +468,7 @@ impl PadRouter {
             Some(m) => m.tick(now, out),
             None => self.remap.tick(now, &self.snapshot, out),
         };
-        match (next, self.closing) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        }
+        [next, self.closing].into_iter().flatten().min()
     }
 
     /// The virtual pad's Guide button down or up.

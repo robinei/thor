@@ -39,6 +39,7 @@ use clamshell_core::keymap::Keymap;
 use clamshell_core::settings::RumbleStrength;
 use rustix::event::{PollFd, PollFlags, Timespec};
 
+use crate::input::Raw;
 use crate::input::device::{DeviceSpec, Grabbed};
 use crate::worker::{self, Bell, Ended, Next, Service, Worker, lost_on};
 use crate::{Closed, Sink};
@@ -376,6 +377,41 @@ fn timespec(t: Duration) -> Timespec {
 }
 
 /// Waits (up to `timeout`, if given) for the controller's, the gyro's, the AYN button's or the virtual
+/// The controller's events and gyro samples since the last read, into `raws` and `samples`: events the
+/// kernel dropped replaced by the controller as it is now, the letters swapped where the controller has
+/// them the other way, the sticks through their calibration, the AYN button's. A gyro or AYN button that
+/// fails is left out; the controller goes on.
+fn read_controller(c: &mut Controller, router: &mut PadRouter, raws: &mut Vec<Raw>, samples: &mut Vec<Sample>) -> io::Result<()> {
+    let from = raws.len();
+    if c.grabbed.fetch(raws)? {
+        raws.truncate(from);
+        // (The axes raw: sticks.take below corrects what resync gives, as any event.)
+        let (mut down, axes) = c.grabbed.state()?;
+        if c.letters {
+            down.iter_mut().for_each(|k| *k = device::swap_key(*k));
+        }
+        router.resync(&down, &axes, raws);
+        log::info!("pad: the controller's events overran; caught up with it as it is");
+    } else if c.letters {
+        device::swap_xy(raws.get_mut(from..).unwrap_or_default());
+    }
+    // (The sticks through their calibration; while one goes, its alone.)
+    c.sticks.take(raws);
+    if let Some(a) = c.ayn.as_mut()
+        && let Err(e) = a.fetch(raws)
+    {
+        log::warn!("pad: AYN button: {e}");
+        c.ayn = None;
+    }
+    if let Some(m) = c.motion.as_mut()
+        && let Err(e) = m.fetch(samples)
+    {
+        log::warn!("pad: gyro: {e}");
+        c.motion = None;
+    }
+    Ok(())
+}
+
 /// pad's (rumble) events, or a command (the bell).
 fn wait(
     pad: &Grabbed,
@@ -408,73 +444,19 @@ fn wait(
 impl<S: Sink> PadThread<S> {
     /// Routes the controller's (and the gyro's) events until it is gone (or the program is).
     fn route_events(&mut self, c: &mut Controller, router: &mut PadRouter, out: &mut Out, commands: &Receiver<Command>) -> Result<(), Ended<io::Error>> {
-        let Controller { grabbed, motion, ayn, rumble, letters, name, phys, sticks, .. } = c;
         let mut raws = Vec::new();
         let mut samples: Vec<Sample> = Vec::new();
         let mut wake = None;
         loop {
-            loop {
-                match commands.try_recv() {
-                    // (The gyro closed before sleep, its stream with it, and found again after.)
-                    Ok(Command::Sleep(Ack(done))) => {
-                        if motion.take().is_some() {
-                            log::info!("pad: the gyro closed for sleep");
-                        }
-                        let _ = done.send(());
-                    }
-                    Ok(Command::Woke) => {
-                        if motion.is_none() {
-                            *motion = find_motion(name, phys);
-                        }
-                    }
-                    Ok(Command::CalibrateSticks) => {
-                        log::info!("pad: calibrating the sticks");
-                        sticks.calibrate(Instant::now());
-                    }
-                    Ok(Command::Sticks(all)) => {
-                        sticks.sticks = all.get(name.as_str()).copied();
-                        self.sticks = all;
-                    }
-                    Ok(command) => self.apply(command, Some((router, out))),
-                    Err(TryRecvError::Empty) => break,
-                    Err(TryRecvError::Disconnected) => return Ok(()),
-                }
+            if !self.take_commands(c, router, out, commands) {
+                return Ok(());
             }
             self.emit(out)?;
             // Wake for events, commands, and when the mapping wants a tick.
             let wait_for = wake.map(|at: Instant| at.saturating_duration_since(Instant::now()));
             let virtual_pad = self.devices.as_ref().map(|d| d.pad.as_fd());
-            wait(grabbed, motion.as_deref(), ayn.as_ref(), virtual_pad, &self.bell, wait_for)?;
-            let from = raws.len();
-            if grabbed.fetch(&mut raws)? {
-                // (Events were dropped: what was read is replaced by the controller as it is now.)
-                raws.truncate(from);
-                // (The axes raw: sticks.take below corrects what resync gives, as any event.)
-                let (mut down, axes) = grabbed.state()?;
-                if *letters {
-                    down.iter_mut().for_each(|k| *k = device::swap_key(*k));
-                }
-                router.resync(&down, &axes, &mut raws);
-                log::info!("pad: the controller's events overran; caught up with it as it is");
-            } else if *letters {
-                device::swap_xy(raws.get_mut(from..).unwrap_or_default());
-            }
-            // (The sticks through their calibration; while one goes, its alone.)
-            sticks.take(&mut raws);
-            if let Some(a) = ayn.as_mut()
-                && let Err(e) = a.fetch(&mut raws)
-            {
-                // (Left out if it fails; the controller goes on.)
-                log::warn!("pad: AYN button: {e}");
-                *ayn = None;
-            }
-            if let Some(m) = motion.as_mut()
-                && let Err(e) = m.fetch(&mut samples)
-            {
-                // (A gyro that fails is left out; the controller goes on.)
-                log::warn!("pad: gyro: {e}");
-                *motion = None;
-            }
+            wait(&c.grabbed, c.motion.as_deref(), c.ayn.as_ref(), virtual_pad, &self.bell, wait_for)?;
+            read_controller(c, router, &mut raws, &mut samples)?;
             let now = Instant::now();
             for raw in raws.drain(..) {
                 router.event(raw, now, out);
@@ -482,46 +464,80 @@ impl<S: Sink> PadThread<S> {
             for sample in samples.drain(..) {
                 router.motion(sample, out);
             }
-            wake = router.tick(now, out);
+            let ticked = router.tick(now, out);
             // A calibration going: fed, its progress and end told, looked at again soon.
-            let (said, again) = sticks.step(now);
-            match said {
-                Some(calibrate::Said::Progress(p)) => self.sink.send(Event::Sticks(SticksEvent::Progress(p)))?,
-                Some(calibrate::Said::Done(result)) => {
-                    log::info!("pad: the sticks {}", if result.is_some() { "calibrated" } else { "not calibrated (given up)" });
-                    if let Some(s) = result {
-                        self.sticks.insert(name.clone(), s);
-                    }
-                    self.sink.send(Event::Sticks(SticksEvent::Done(name.clone(), result)))?;
-                }
-                None => {}
-            }
-            wake = match (wake, again) {
-                (Some(a), Some(b)) => Some(a.min(b)),
-                (a, b) => a.or(b),
-            };
+            let (said, again) = c.sticks.step(now);
+            self.calibration_said(said, &c.name)?;
             // Games' rumble, on the controller while the game has the pad, with the keymap's buzzes.
-            self.serve_effects(now);
-            if let Some(buzz) = out.buzz.take() {
-                self.buzz = Some((buzz, now + Buzz::LENGTH));
-            }
-            self.buzz = self.buzz.filter(|(_, until)| now < *until);
-            // (Effects that ended are let go whatever the route, so the next end is never past.)
-            let level = self.effects.level(now);
-            let (mut strong, mut weak) = if self.route == PadRoute::Game { level } else { (0, 0) };
-            if let Some((buzz, _)) = self.buzz {
-                let (s, w) = buzz.level();
-                (strong, weak) = (strong.max(s), weak.max(w));
-            }
-            let setting = self.rumble_setting;
-            if let Some(r) = rumble.as_mut()
-                && let Err(e) = r.set(rumble::scale(strong, setting), rumble::scale(weak, setting))
-            {
-                log::warn!("pad: rumble: {e}");
-                *rumble = None;
-            }
-            wake = [wake, self.effects.next_end(), self.buzz.map(|(_, until)| until)].into_iter().flatten().min();
+            self.rumble(&mut c.rumble, out, now);
+            wake = [ticked, again, self.effects.next_end(), self.buzz.map(|(_, until)| until)].into_iter().flatten().min();
             self.emit(out)?;
+        }
+    }
+
+    /// The commands waiting, carried out (the controller's own here, the rest by [`PadThread::apply`]);
+    /// false once the commands' sender is gone.
+    fn take_commands(&mut self, c: &mut Controller, router: &mut PadRouter, out: &mut Out, commands: &Receiver<Command>) -> bool {
+        loop {
+            match commands.try_recv() {
+                // (The gyro closed before sleep, its stream with it, and found again after.)
+                Ok(Command::Sleep(Ack(done))) => {
+                    if c.motion.take().is_some() {
+                        log::info!("pad: the gyro closed for sleep");
+                    }
+                    let _ = done.send(());
+                }
+                Ok(Command::Woke) => {
+                    if c.motion.is_none() {
+                        c.motion = find_motion(&c.name, &c.phys);
+                    }
+                }
+                Ok(Command::CalibrateSticks) => {
+                    log::info!("pad: calibrating the sticks");
+                    c.sticks.calibrate(Instant::now());
+                }
+                Ok(Command::Sticks(all)) => {
+                    c.sticks.sticks = all.get(c.name.as_str()).copied();
+                    self.sticks = all;
+                }
+                Ok(command) => self.apply(command, Some((router, out))),
+                Err(TryRecvError::Empty) => return true,
+                Err(TryRecvError::Disconnected) => return false,
+            }
+        }
+    }
+
+    /// What a stick calibration said, sent on; a calibration made is kept for the controller.
+    fn calibration_said(&mut self, said: Option<calibrate::Said>, name: &str) -> Result<(), Closed> {
+        match said {
+            Some(calibrate::Said::Progress(p)) => self.sink.send(Event::Sticks(SticksEvent::Progress(p))),
+            Some(calibrate::Said::Done(result)) => {
+                log::info!("pad: the sticks {}", if result.is_some() { "calibrated" } else { "not calibrated (given up)" });
+                if let Some(s) = result {
+                    self.sticks.insert(name.to_owned(), s);
+                }
+                self.sink.send(Event::Sticks(SticksEvent::Done(name.to_owned(), result)))
+            }
+            None => Ok(()),
+        }
+    }
+
+    /// The controller's motors: games' rumble while the game has the pad, and the keymap's buzzes, at
+    /// the Rumble setting's strength. A controller whose rumble fails is left without.
+    fn rumble(&mut self, rumble: &mut Option<Rumble>, out: &mut Out, now: Instant) {
+        self.serve_effects(now);
+        if let Some(buzz) = out.buzz.take() {
+            self.buzz = Some((buzz, now + Buzz::LENGTH));
+        }
+        self.buzz = self.buzz.filter(|(_, until)| now < *until);
+        // (Effects that ended are let go whatever the route, so the next end is never past.)
+        let games = self.effects.level(now);
+        let (strong, weak) = rumble::mix(games, self.route == PadRoute::Game, self.buzz.map(|(b, _)| b.level()), self.rumble_setting);
+        if let Some(r) = rumble.as_mut()
+            && let Err(e) = r.set(strong, weak)
+        {
+            log::warn!("pad: rumble: {e}");
+            *rumble = None;
         }
     }
 
