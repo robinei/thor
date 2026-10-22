@@ -21,8 +21,8 @@ pub fn unix_secs() -> u64 {
     unix_secs_at(SystemTime::now())
 }
 
-/// Seconds on a monotonic clock, counted from the first call (the program's start); stopped while the
-/// system sleeps.
+/// Seconds on a monotonic clock, counted from the first call, which is at the program's start. The clock
+/// stops while the system sleeps.
 pub fn mono_secs() -> u64 {
     static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
     START.get_or_init(std::time::Instant::now).elapsed().as_secs()

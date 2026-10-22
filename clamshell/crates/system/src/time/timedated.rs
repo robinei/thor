@@ -33,7 +33,8 @@ pub fn read_time(error: Option<String>) -> TimeZones {
     }
 }
 
-/// Calls `method` with `args` (and `interactive` false); the service's message if it failed.
+/// Calls `method` with `args`, which end with `interactive` false. Returns the service's message if it
+/// failed.
 fn call(method: &str, args: impl dbus::AppendAll) -> Result<(), String> {
     let result = Bus::system().and_then(|mut bus| bus.call::<()>(DEST, PATH, IFACE, method, args));
     match result {
@@ -70,7 +71,8 @@ pub fn step_clock(field: clamshell_core::ClockField, by: i8) -> Result<(), Strin
     call("SetTime", (then.timestamp().as_microsecond(), false, false))
 }
 
-/// Sets the system's time zone; the service's message if it failed (polkit refusing, an unknown zone).
+/// Sets the system's time zone. Returns the service's message if it failed, as when polkit refuses or the
+/// zone is unknown.
 pub fn set_time_zone(zone: &str) -> Result<(), String> {
     call("SetTimezone", (zone, false))
 }

@@ -1,7 +1,7 @@
-//! Waking from sleep, seen from the clocks: CLOCK_BOOTTIME counts time asleep, CLOCK_MONOTONIC doesn't,
-//! so their difference grows by however long the system slept. The clock thread checks it every second.
-//! (No D-Bus: logind's PrepareForSleep(false) didn't reach us after a resume in testing, and this also
-//! sees sleep that didn't go through logind.)
+//! Noticing a wake from sleep through the clocks. CLOCK_BOOTTIME counts time asleep and CLOCK_MONOTONIC
+//! doesn't, so their difference grows by however long the system slept. The clock thread checks it every
+//! second. D-Bus isn't used, because logind's PrepareForSleep(false) didn't reach us after a resume in
+//! testing, and this also sees sleep that didn't go through logind.
 
 use std::time::Duration;
 
@@ -13,7 +13,7 @@ pub fn slept() -> Duration {
     as_duration(clock_gettime(ClockId::Boottime)).saturating_sub(as_duration(clock_gettime(ClockId::Monotonic)))
 }
 
-/// Sleep shorter than this isn't counted (the two clocks are read one after the other).
+/// Sleep shorter than this isn't counted, since the two clocks are read one after the other.
 const AT_LEAST: Duration = Duration::from_secs(1);
 
 /// Notices a sleep between two checks.
@@ -27,7 +27,7 @@ impl Watch {
         Watch { last: slept }
     }
 
-    /// With the time slept so far: whether the system slept since the last check.
+    /// Whether the system slept since the last check, given the time slept so far.
     pub fn woke(&mut self, slept: Duration) -> bool {
         let woke = slept >= self.last + AT_LEAST;
         if woke || slept < self.last {

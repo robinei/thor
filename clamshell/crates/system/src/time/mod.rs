@@ -1,5 +1,5 @@
-//! Time: the clock's ticks, waking from sleep seen from the clocks, and the time zone and clock as
-//! timedated sets them.
+//! Time: the clock's ticks, noticing a wake from sleep through the clocks, and setting the time zone and
+//! clock through timedated.
 
 pub mod clock;
 pub(crate) mod timedated;

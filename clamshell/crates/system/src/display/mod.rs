@@ -1,4 +1,4 @@
-//! The screens: their backlights, screenshots, and the top screen's refresh rates calibrated.
+//! The screens: their backlights, screenshots, and calibrating the top screen's refresh rates.
 
 pub(crate) mod brightness;
 pub(crate) mod refresh;

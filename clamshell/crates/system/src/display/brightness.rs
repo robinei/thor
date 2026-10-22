@@ -1,6 +1,7 @@
-//! The screens' brightness: each backlight set to the level times its share, through logind (which lets
-//! the session's user set it without root), else straight to sysfs. On a thread of its own, so a stuck
-//! PipeWire (the sound thread) doesn't hold it up; while a finger slides, only the latest level is set.
+//! The screens' brightness. Each backlight is set to the level times its share, through logind, which
+//! lets the session's user set it without root, or else directly in sysfs. It runs on a thread of its
+//! own, so a stuck PipeWire in the sound thread doesn't hold it up. While a finger slides, only the
+//! latest level is set.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -11,8 +12,8 @@ use crate::os::dbus::Kept;
 use crate::os::sys;
 use crate::os::worker::{self, Quiet, Worker};
 
-/// The backlights: the devices of a sysfs class directory (/sys/class/backlight, or another laid out the
-/// same way for tests and desktops without one).
+/// The backlights: the devices of a sysfs class directory. That is /sys/class/backlight, or another
+/// directory laid out the same way for tests and for desktops without one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Backlights {
     dir: PathBuf,
@@ -32,7 +33,7 @@ impl Backlights {
         self.devices().iter().filter_map(|dir| Some(dir.file_name()?.to_str()?.to_owned())).collect()
     }
 
-    /// The first backlight's brightness, 0-100; `None` without a backlight.
+    /// The first backlight's brightness, 0-100, or `None` without a backlight.
     pub fn level(&self) -> Option<u8> {
         let dir = self.devices().into_iter().next()?;
         let max = sys::read::<u32>(dir.join("max_brightness"))?.max(1);
@@ -41,20 +42,22 @@ impl Backlights {
     }
 }
 
-/// Each backlight to `level` times its share (by name; 100 when not listed), both 0-100.
+/// Sets each backlight to `level` times its share, both 0-100. Shares are by backlight name, and a
+/// backlight not listed has a share of 100.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Command {
     pub level: u8,
     pub shares: Vec<Share>,
 }
 
-/// A level times a share (both 0-100) as a backlight's raw value: never 0, which turns some panels off.
+/// A level times a share, both 0-100, as a backlight's raw value. It is never 0, which turns some panels
+/// off.
 fn raw(level: u8, share: u8, max: u32) -> u32 {
     let share = f64::from(level.min(100)) / 100.0 * f64::from(share.min(100)) / 100.0;
     ((f64::from(max) * share).round() as u32).clamp(1, max.max(1))
 }
 
-/// The thread that sets the brightness; only the latest command of those waiting is carried out.
+/// Starts the thread that sets the brightness. Only the latest of the waiting commands is carried out.
 pub fn spawn(backlights: Backlights) -> io::Result<Worker<Command>> {
     let mut setter = Setter::default();
     worker::spawn_coalescing(
@@ -70,8 +73,8 @@ pub fn spawn(backlights: Backlights) -> io::Result<Worker<Command>> {
     )
 }
 
-/// Sets backlights: through logind's session (its connection kept, made again after the bus fails),
-/// else by writing sysfs (which needs write access).
+/// Sets backlights through logind's session, or else by writing sysfs, which needs write access. The
+/// logind connection is kept, and made again after the bus fails.
 struct Setter {
     logind: Kept,
     bus: Quiet,

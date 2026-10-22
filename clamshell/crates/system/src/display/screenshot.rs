@@ -1,10 +1,11 @@
-//! Screenshots of both screens: grim, through the compositor's screen capture.
+//! Screenshots of both screens, taken by grim through the compositor's screen capture.
 
 use std::path::PathBuf;
 
 use crate::os::command;
 
-/// Both screens (as the compositor lays them out) into one PNG named by the time; its path, or why not.
+/// Saves both screens, as the compositor lays them out, into one PNG named by the time. Returns its path,
+/// or why it failed.
 pub fn screenshot(dir: Option<&PathBuf>) -> Result<String, String> {
     let dir = dir.ok_or("no folder for screenshots (no HOME)")?;
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;

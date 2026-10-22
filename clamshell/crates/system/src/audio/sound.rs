@@ -1,6 +1,7 @@
-//! Sound, set from the bar's volume slider and the volume tab: the output's volume and mute, an app's
-//! volume and mute, and which output plays, through PipeWire's `wpctl`. On a thread of its own; while a
-//! finger slides, requests come faster than wpctl runs, and only the latest of each kind is carried out.
+//! Setting the sound from the bar's volume slider and the volume tab: the output's volume and mute, an
+//! app's volume and mute, and which output plays, through PipeWire's `wpctl`. It runs on a thread of its
+//! own. While a finger slides, requests come faster than wpctl runs, so only the latest of each kind is
+//! carried out.
 
 use std::io;
 
@@ -9,7 +10,7 @@ use clamshell_core::Sound;
 use crate::os::command;
 use crate::os::worker::{self, Worker};
 
-/// Which commands replace each other: the same setting of the same thing.
+/// Which commands replace each other: those for the same setting of the same thing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {
     Volume,
@@ -29,7 +30,7 @@ fn kind(sound: &Sound) -> Kind {
     }
 }
 
-/// The wpctl arguments that carry it out.
+/// The wpctl arguments that carry out `sound`.
 fn wpctl_args(sound: &Sound) -> Vec<String> {
     const SINK: &str = "@DEFAULT_AUDIO_SINK@";
     let flag = |on: bool| if on { "1" } else { "0" }.to_owned();
@@ -42,7 +43,7 @@ fn wpctl_args(sound: &Sound) -> Vec<String> {
     }
 }
 
-/// The thread that sets the sound (failures are logged by [`command`]).
+/// Starts the thread that sets the sound. Failures are logged by [`command`].
 pub fn spawn() -> io::Result<Worker<Sound>> {
     worker::spawn_coalescing("sound", kind, |sound| {
         let args = wpctl_args(&sound);

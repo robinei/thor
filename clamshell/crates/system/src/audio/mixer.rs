@@ -1,6 +1,6 @@
-//! What the volume and brightness tabs show, read every second while one is open: PipeWire's outputs
-//! and the apps playing (`pw-dump`), and the backlights' names. Setting them is the sound and brightness
-//! threads'.
+//! What the volume and brightness tabs show, read every second while one is open: PipeWire's outputs and
+//! the apps playing, from `pw-dump`, and the backlights' names. Setting them is done by the sound and
+//! brightness threads.
 
 use std::io;
 use std::sync::mpsc::Receiver;
@@ -14,7 +14,7 @@ use crate::display::brightness::Backlights;
 use crate::os::worker::{self, Changed, Next, Worker};
 use crate::{Closed, Sink};
 
-/// What to read: each while its tab is open.
+/// What to read. Each is read while its tab is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     Audio(bool),
@@ -29,7 +29,8 @@ pub fn spawn(backlights: Backlights, sink: impl Sink) -> io::Result<Worker<Comma
     })
 }
 
-/// Reads what is watched every second and sends it when it changed, until the commands or the UI go.
+/// Reads what is watched every second and sends it when it changed, until the command channel or the UI
+/// is gone.
 fn follow(backlights: &Backlights, commands: &Receiver<Command>, sink: &impl Sink) -> Result<(), Closed> {
     let (mut audio, mut lights) = (false, false);
     let (mut last_audio, mut last_lights) = (Changed::default(), Changed::default());
@@ -41,7 +42,7 @@ fn follow(backlights: &Backlights, commands: &Receiver<Command>, sink: &impl Sin
             sink.send(Event::Reading(Reading::Backlights(read)))?;
         }
         match worker::next(commands, (audio || lights).then_some(READ_EVERY)) {
-            // Read again when opened: what changed meanwhile goes through.
+            // Send a fresh reading when a tab opens, so changes made meanwhile go through.
             Next::Command(Command::Audio(on)) => {
                 audio = on;
                 last_audio.forget();
@@ -84,8 +85,7 @@ fn at<'v>(v: &'v Value, pointer: &str) -> &'v Value {
     v.pointer(pointer).unwrap_or(&NULL)
 }
 
-/// A volume as wpctl shows it: the cube root of PipeWire's linear
-/// channel volumes (their average).
+/// A volume as wpctl shows it: the cube root of the average of PipeWire's linear channel volumes.
 fn percent(volumes: &[Value]) -> u8 {
     let values: Vec<f64> = volumes.iter().filter_map(Value::as_f64).collect();
     if values.is_empty() {
@@ -105,7 +105,7 @@ fn default_sink(objects: &[Value]) -> Option<&str> {
         .and_then(|m| at(m, "/value/name").as_str())
 }
 
-/// A node's volume and mute, from the Props entry that has them (there may be several).
+/// A node's volume and mute, from the Props entries that have them. There may be several entries.
 fn volume_of(node: &Value) -> (Option<u8>, bool) {
     let params = at(node, "/info/params/Props").as_array().map(Vec::as_slice).unwrap_or_default();
     let volume = params.iter().find_map(|p| at(p, "/channelVolumes").as_array()).map(|v| percent(v));
@@ -193,8 +193,8 @@ mod tests {
 
 #[cfg(test)]
 mod live {
-    /// With PipeWire running (a desktop): prints what the volume tab would show; nothing is changed (run
-    /// by hand: `--ignored --nocapture`).
+    /// With PipeWire running, as on a desktop, prints what the volume tab would show. Nothing is changed.
+    /// Run it by hand with `--ignored --nocapture`.
     #[test]
     #[ignore = "needs PipeWire"]
     fn reads_pipewire() {
