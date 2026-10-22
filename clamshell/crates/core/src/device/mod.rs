@@ -23,7 +23,6 @@ use crate::bottom::editor::{Editor, Purpose};
 use crate::bottom::notice::NoticeKind;
 use crate::bottom::{Bottom, Tab};
 use crate::effect::{Effect, Save, WindowCommand};
-use crate::kit::replace;
 use crate::out::Out;
 use crate::{Event, Id, Pointer};
 use account::{Account, AccountCommand, PasswordStep};
@@ -130,9 +129,9 @@ impl Device {
         pointer.focus_shelf(selected);
     }
 
-    /// A reading of the account. Returns whether the view shows a change.
-    pub(crate) fn read_account(&mut self, account: Account) -> bool {
-        replace(&mut self.account, account) && self.open
+    /// A reading of the account.
+    pub(crate) fn read_account(&mut self, account: Account) {
+        self.account = account;
     }
 
     /// A tap on one of the Device view's targets at `now`. Closing it gives the focus back to shelf's

@@ -8,7 +8,6 @@ pub mod metrics;
 pub mod time;
 
 use crate::effect::Effect;
-use crate::kit::replace;
 use crate::out::Out;
 use battery::{Battery, Group};
 use metrics::{History, Metrics};
@@ -83,23 +82,19 @@ impl Sys {
         &self.time
     }
 
-    /// A reading of the battery's history and what is using the machine. Returns whether it changed.
-    pub(crate) fn read_battery(&mut self, battery: Battery) -> bool {
-        replace(&mut self.battery, battery)
+    /// A reading of the battery's history and what is using the machine.
+    pub(crate) fn read_battery(&mut self, battery: Battery) {
+        self.battery = battery;
     }
 
-    /// A reading of the time zones. Returns whether it changed.
-    pub(crate) fn read_time(&mut self, time: TimeZones) -> bool {
-        replace(&mut self.time, time)
+    /// A reading of the time zones.
+    pub(crate) fn read_time(&mut self, time: TimeZones) {
+        self.time = time;
     }
 
-    /// A status reading. Returns whether it changed, leaving out the volume and mute: what the bar shows
-    /// of those comes from the levels.
-    pub(crate) fn read_status(&mut self, status: Status) -> bool {
-        let shown = |s: Status| Status { volume: None, muted: false, ..s };
-        let changed = shown(status) != shown(self.status);
+    /// A status reading. What the bar shows of the volume and mute comes from the levels.
+    pub(crate) fn read_status(&mut self, status: Status) {
         self.status = status;
-        changed
     }
 
     /// Runs after a status reading. Gives a warning when the battery has fallen to one of [`WARN_AT`],

@@ -279,14 +279,11 @@ impl Levels {
         Effect::Brightness { level, shares: self.brightness.shares.clone() }
     }
 
-    /// A status reading of the volume, mute and brightness. Returns whether the volume or mute shown
-    /// changed, which a finger on the level may keep from changing.
-    pub(crate) fn read(&mut self, volume: Option<u8>, muted: bool, brightness: Option<u8>) -> bool {
-        let before = (self.volume(), self.muted());
+    /// A status reading of the volume, mute and brightness. A finger on the level keeps what it shows.
+    pub(crate) fn read(&mut self, volume: Option<u8>, muted: bool, brightness: Option<u8>) {
         self.volume.reading(volume);
         self.muted.reading(muted);
         self.read_brightness = brightness;
-        (self.volume(), self.muted()) != before
     }
 
     /// Changes the levels with `change` at `now`. A changed brightness is saved a moment later.
@@ -322,8 +319,7 @@ impl Levels {
     }
 
     /// New readings of the outputs and streams. A stream the finger is on keeps the finger's value.
-    /// Returns whether anything shown changed.
-    pub(crate) fn read_audio(&mut self, mut audio: Audio) -> bool {
+    pub(crate) fn read_audio(&mut self, mut audio: Audio) {
         if let Some(Level::Stream(i)) = self.holding
             && let (Some(mine), Some(read)) = (self.audio.streams.get(usize::from(i)), audio.streams.get_mut(usize::from(i)))
             && mine.id == read.id
@@ -331,11 +327,11 @@ impl Levels {
             read.volume = mine.volume;
             read.muted = mine.muted;
         }
-        crate::kit::replace(&mut self.audio, audio)
+        self.audio = audio;
     }
 
-    pub(crate) fn read_backlights(&mut self, backlights: Vec<String>) -> bool {
-        crate::kit::replace(&mut self.backlights.0, backlights)
+    pub(crate) fn read_backlights(&mut self, backlights: Vec<String>) {
+        self.backlights.0 = backlights;
     }
 
     /// The finger is on `level`. What it sets is kept over readings until it lifts.

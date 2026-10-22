@@ -7,8 +7,6 @@ pub mod wifi;
 use bluetooth::Bluetooth;
 use wifi::Wifi;
 
-use crate::kit::replace;
-
 #[derive(Debug, Clone, Default)]
 pub struct Radios {
     wifi: Wifi,
@@ -24,14 +22,14 @@ impl Radios {
         &self.bluetooth
     }
 
-    /// A reading of Wi-Fi. Returns whether it changed.
-    pub(crate) fn read_wifi(&mut self, wifi: Wifi) -> bool {
-        replace(&mut self.wifi, wifi)
+    /// A reading of Wi-Fi.
+    pub(crate) fn read_wifi(&mut self, wifi: Wifi) {
+        self.wifi = wifi;
     }
 
-    /// A reading of Bluetooth. Returns whether it changed.
-    pub(crate) fn read_bluetooth(&mut self, bluetooth: Bluetooth) -> bool {
-        replace(&mut self.bluetooth, bluetooth)
+    /// A reading of Bluetooth.
+    pub(crate) fn read_bluetooth(&mut self, bluetooth: Bluetooth) {
+        self.bluetooth = bluetooth;
     }
 }
 

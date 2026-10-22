@@ -48,24 +48,23 @@ impl Keymapping {
     }
 
     /// The parameter's slider moved. The binding follows at once, so the pad gets the keymap as it
-    /// changes, and it is saved when the finger lifts. Returns whether it changed.
-    pub(crate) fn param_slide_to(&mut self, x: f32) -> bool {
+    /// changes, and it is saved when the finger lifts.
+    pub(crate) fn param_slide_to(&mut self, x: f32) {
         let Some(slider) = self.edit.slider else {
-            return false;
+            return;
         };
         let Control::Param(param) = slider.control else {
-            return false;
+            return;
         };
         let Some((id, input, mut b)) = self.param_binding(param) else {
-            return false;
+            return;
         };
         param.set(&mut b, slider.value_at(x));
         let value = param.get(&b);
-        if value == slider.value {
-            return false;
+        if value != slider.value {
+            self.edit.slider = Some(Slider { value, moved: true, ..slider });
+            self.set_tuned(id, input, b);
         }
-        self.edit.slider = Some(Slider { value, moved: true, ..slider });
-        self.set_tuned(id, input, b)
     }
 
     /// The finger lifted. The keymaps are saved if the slider changed anything.

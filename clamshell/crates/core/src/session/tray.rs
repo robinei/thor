@@ -70,16 +70,13 @@ pub enum TrayCommand {
 
 impl Session {
     /// Takes the tray icons after any change. Programs not started by ClamShell run as entries found by
-    /// their icons, and end with them, or with their last window if one is still open. Returns whether
-    /// they changed.
-    pub(crate) fn set_tray(&mut self, items: Vec<TrayItem>, clock: &Clock, library: &Library, out: &mut Out) -> bool {
+    /// their icons, and end with them, or with their last window if one is still open.
+    pub(crate) fn set_tray(&mut self, items: Vec<TrayItem>, clock: &Clock, library: &Library, out: &mut Out) {
         self.changed();
-        if self.tray == items {
-            return false;
+        if self.tray != items {
+            self.tray = items;
+            self.follow_tray(clock, library, out);
         }
-        self.tray = items;
-        self.follow_tray(clock, library, out);
-        true
     }
 
     /// Makes entries found by tray icons: one for each icon of a program not started by ClamShell, whose

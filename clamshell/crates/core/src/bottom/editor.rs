@@ -145,9 +145,9 @@ impl crate::Bottom {
         }
     }
 
-    /// A reading of the system clipboard's text. Returns whether it changed.
-    pub(crate) fn read_clipboard(&mut self, text: Option<Arc<str>>) -> bool {
-        crate::kit::replace(&mut self.clipboard, text)
+    /// A reading of the system clipboard's text.
+    pub(crate) fn read_clipboard(&mut self, text: Option<Arc<str>>) {
+        self.clipboard = text;
     }
 }
 

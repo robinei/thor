@@ -60,12 +60,10 @@ impl crate::Bottom {
         &mut self.notice
     }
 
-    /// Removes the notice if it has timed out at `now`. Returns whether it did.
-    pub(crate) fn expire_notice(&mut self, now: u64) -> bool {
-        let expired = self.notice.as_ref().is_some_and(|n| now >= n.until);
-        if expired {
+    /// Removes the notice if it has timed out at `now`.
+    pub(crate) fn expire_notice(&mut self, now: u64) {
+        if self.notice.as_ref().is_some_and(|n| now >= n.until) {
             self.notice = None;
         }
-        expired
     }
 }

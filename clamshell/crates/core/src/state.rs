@@ -427,10 +427,10 @@ impl State {
     }
 
     /// Called when the program in force changed. Turns the pad mouse on if the program wants it
-    /// (Setting::PadMouse), and off again if the program had turned it on. Returns whether it changed.
-    fn follow_pad_mouse(&mut self) -> bool {
+    /// (Setting::PadMouse), and off again if the program had turned it on.
+    fn follow_pad_mouse(&mut self) {
         let wanted = self.session.program().is_some() && self.in_force().choice::<MouseAtLaunch>() == MouseAtLaunch::On;
-        self.pad.follow_game(wanted)
+        self.pad.follow_game(wanted);
     }
 
     /// Works out where the pad goes as things are now. Returns the new route if it changed.
@@ -506,35 +506,17 @@ impl State {
                 self.levels.read(status.volume, status.muted, status.brightness);
                 self.sys.read_status(status);
             }
-            Reading::Clipboard(text) => {
-                self.bottom.read_clipboard(text);
-            }
-            Reading::Icon { entry, path } => {
-                self.session.set_icon(&entry, path);
-            }
+            Reading::Clipboard(text) => self.bottom.read_clipboard(text),
+            Reading::Icon { entry, path } => self.session.set_icon(&entry, path),
             Reading::Metrics(metrics) => self.sys.read_metrics(metrics),
             Reading::Frames { fps, frame_ms } => self.sys.frames(fps, frame_ms),
-            Reading::Wifi(wifi) => {
-                self.radios.read_wifi(wifi);
-            }
-            Reading::Bluetooth(bluetooth) => {
-                self.radios.read_bluetooth(bluetooth);
-            }
-            Reading::Battery(battery) => {
-                self.sys.read_battery(battery);
-            }
-            Reading::Audio(audio) => {
-                self.levels.read_audio(audio);
-            }
-            Reading::Backlights(backlights) => {
-                self.levels.read_backlights(backlights);
-            }
-            Reading::Time(time) => {
-                self.sys.read_time(time);
-            }
-            Reading::Account(account) => {
-                self.device.read_account(account);
-            }
+            Reading::Wifi(wifi) => self.radios.read_wifi(wifi),
+            Reading::Bluetooth(bluetooth) => self.radios.read_bluetooth(bluetooth),
+            Reading::Battery(battery) => self.sys.read_battery(battery),
+            Reading::Audio(audio) => self.levels.read_audio(audio),
+            Reading::Backlights(backlights) => self.levels.read_backlights(backlights),
+            Reading::Time(time) => self.sys.read_time(time),
+            Reading::Account(account) => self.device.read_account(account),
         }
         if status {
             self.sys.battery_warning(out);
@@ -818,8 +800,8 @@ impl State {
         }
     }
 
-    /// A list scrolled or was laid out. Returns whether it moved.
-    fn on_list(&mut self, event: ListEvent) -> bool {
+    /// A list scrolled or was laid out.
+    fn on_list(&mut self, event: ListEvent) {
         match event {
             ListEvent::Scroll(list, rows) => self.move_list(list, |s, len| s.scroll_by(rows, len)),
             ListEvent::Visible(list, rows) => self.move_list(list, |s, len| s.set_visible(rows, len)),
@@ -850,18 +832,17 @@ impl State {
     }
 
     /// Moves `list` by `f`, given its scroll and how many rows it has. If it moved, the item now at the top
-    /// of its view is remembered, to keep there when the list changes. Returns whether it moved.
-    fn move_list(&mut self, list: ListId, f: impl FnOnce(&mut Scroll, usize) -> bool) -> bool {
+    /// of its view is remembered, to keep there when the list changes.
+    fn move_list(&mut self, list: ListId, f: impl FnOnce(&mut Scroll, usize) -> bool) {
         let len = self.lists().len(list);
         if !self.scroll_mut(list).is_some_and(|s| f(s, len)) {
-            return false;
+            return;
         }
         let lists = self.lists();
         let key = lists.rows(list).key(lists.scroll(list).top());
         if let Some(s) = self.scroll_mut(list) {
             s.anchor(key);
         }
-        true
     }
 
     /// Runs after the lists' contents may have changed. Each scrolled list keeps its top item where it

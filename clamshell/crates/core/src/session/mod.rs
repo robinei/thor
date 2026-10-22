@@ -209,11 +209,11 @@ impl Session {
             .or_else(|| shows_windows.then(|| windows.iter().filter(|w| w.down).max_by_key(|w| w.visible)).flatten())
     }
 
-    /// Sets the icon of found entry `entry`, once it was found (see [`Effect::FindIcon`]). Returns whether
-    /// it changed.
-    pub(crate) fn set_icon(&mut self, entry: &str, path: std::path::PathBuf) -> bool {
-        let running = self.running.iter_mut().find(|r| &*r.id == entry);
-        running.and_then(|r| r.entry.as_mut()).is_some_and(|g| crate::kit::replace(&mut g.icon, Some(path)))
+    /// Sets the icon of found entry `entry`, once it was found (see [`Effect::FindIcon`]).
+    pub(crate) fn set_icon(&mut self, entry: &str, path: std::path::PathBuf) {
+        if let Some(g) = self.running.iter_mut().find(|r| &*r.id == entry).and_then(|r| r.entry.as_mut()) {
+            g.icon = Some(path);
+        }
     }
 
     /// Has `running` run in scope `unit`, as if it had started and systemd listed the scope.
