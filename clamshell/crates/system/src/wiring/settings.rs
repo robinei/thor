@@ -8,8 +8,8 @@ use crate::input::pad;
 use crate::os::worker::Worker;
 use crate::readings::mangohud;
 
-/// Where the settings in force go: the hardware thread, the pad's keymap, and a
-/// game's MangoHud config (in `mangohud`).
+/// Where the settings in force go: the hardware thread, the pad, and a game's MangoHud config in
+/// `mangohud`.
 #[derive(Clone)]
 pub struct Tuning {
     pub hardware: Worker<Values>,
@@ -18,19 +18,19 @@ pub struct Tuning {
 }
 
 impl Tuning {
-    /// The keymap in force, for the pad.
+    /// Sends the keymap in force to the pad.
     pub fn keymap(&self, keymap: &clamshell_core::keymap::Keymap) {
         self.pad.send(pad::Command::Keymap(Box::new(keymap.clone())));
     }
 
-    /// The gyro calibrated from its next second.
+    /// Calibrates the gyro from its next second of readings.
     pub fn calibrate_gyro(&self) {
         self.pad.send(pad::Command::CalibrateGyro);
     }
 
-    /// Applies the settings in force (`game`'s, or the global ones without a game): the hardware, and
-    /// for a game its MangoHud config (written, and reloaded live if it runs), whose
-    /// path is returned for its launch.
+    /// Applies the settings in force, `game`'s or the global ones without a game, to the hardware and the
+    /// pad's rumble. For a game it also writes its MangoHud config, which is reloaded live if the game
+    /// runs, and returns the config's path for its launch.
     pub fn apply(&self, v: &Values, game: Option<&str>) -> Option<PathBuf> {
         self.hardware.send(*v);
         self.pad.send(pad::Command::Rumble(v.choice()));

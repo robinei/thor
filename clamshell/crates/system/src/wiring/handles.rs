@@ -1,4 +1,4 @@
-//! Carrying out the state's effects: each goes to the thread or the device it is for.
+//! Carrying out the state's effects. Each effect goes to the thread or the device it is for.
 
 use clamshell_core::{Effect, Instance, Watch, WindowCommand};
 
@@ -15,15 +15,16 @@ use crate::paths::Paths;
 use crate::store::{Write, Writer};
 use crate::sway;
 
-/// The threads (and the one device) that effects go to.
+/// The threads, and the one device, that effects go to.
 pub struct Handles {
     pub paths: Paths,
-    /// Where saves go; `None` without a state dir, or its thread (then nothing is kept).
+    /// Where saves go. `None` if there is no state dir or its thread couldn't start, and then nothing is
+    /// kept.
     pub store: Option<Writer>,
-    /// What waits for its metadata.
+    /// The entries waiting for their metadata.
     pub fetching: crate::library::meta::Queue,
-    /// Reads the library again (and fetches what it wants), on a thread; `true`: the metadata misses
-    /// forgotten first.
+    /// Reads the library again on a thread, and fetches what it wants. With `true` the metadata misses
+    /// are forgotten first.
     pub rescan: Box<dyn Fn(bool)>,
     pub touchpad: Worker<touchpad::Command>,
     pub mixer: Worker<mixer::Command>,
@@ -36,21 +37,21 @@ pub struct Handles {
     pub icons: Worker<(std::sync::Arc<str>, String)>,
     pub battery: Worker<Shown>,
     pub pad: Worker<pad::Command>,
-    /// The controller the pad thread grabbed: SDL programs launched are told to ignore it.
+    /// The controller the pad thread grabbed. Launched SDL programs are told to ignore it.
     pub pad_taken: pad::Taken,
     pub launcher: Worker<launcher::Command>,
-    /// Under sway: windows and launches.
+    /// Windows and launches, under sway.
     pub sway: Option<Worker<sway::Command>>,
     pub jobs: Runner,
     pub sound: Worker<clamshell_core::Sound>,
     pub brightness: Worker<brightness::Command>,
     pub tuning: Tuning,
-    /// Screenshots and sleep.
+    /// Screenshots, sleep and the other device-wide commands (see [`crate::device`]).
     pub system: Worker<crate::device::Command>,
-    /// Lists (and watches) the browsed folder open; does the file operations.
+    /// Lists and watches the folder open in the browser.
     pub browse: Worker<clamshell_core::shelf::files::BrowseCommand>,
     pub files: Worker<clamshell_core::shelf::files::FileOp>,
-    /// The on-screen keyboard types through it; `None` if it couldn't be made.
+    /// The on-screen keyboard types through it. `None` if it couldn't be made.
     pub keyboard: Option<VirtualKeyboard>,
 }
 
@@ -79,9 +80,10 @@ impl Handles {
                 // MangoHud's first, so a game's own variables can still override it.
                 let mut game_env = self.tuning.apply(settings, Some(game)).map(|config| crate::readings::mangohud::env(&config)).unwrap_or_default();
                 game_env.extend(env.iter().cloned());
-                // (First: a game's own may override it.)
+                // The variables for the grabbed controller go first, so a game's own may override them.
                 game_env.splice(0..0, self.pad_taken.env());
-                // Its own workspace, shown when its first window appears (the state asks for that).
+                // The game gets its own workspace, which is shown when its first window appears. The state
+                // asks for that.
                 self.launcher.send(launcher::Command::Launch(launcher::Request {
                     game: game.clone(),
                     instance: instance.clone(),
@@ -112,7 +114,7 @@ impl Handles {
                 log::info!("effect: {effect:?}");
                 let socket = self.paths.socket(key);
                 let lines = lines.clone();
-                // (Off the main thread: a player slow to read waits nothing here.)
+                // Off the main thread, so a player slow to read holds nothing up here.
                 let started = worker::detached("enqueue", move || {
                     if let Err(e) = crate::launch::mpv::enqueue(&socket, &lines) {
                         log::warn!("enqueue to {}: {e}", socket.display());
@@ -156,7 +158,7 @@ impl Handles {
             Effect::Notify { summary, body, urgent } => {
                 self.system.send(crate::device::Command::Notify { summary: summary.clone(), body: body.clone(), urgent: *urgent })
             }
-            // (The UI handles quitting and the screens' power: they are its Wayland business.)
+            // The UI handles quitting and the screens' power, since they are its Wayland business.
             Effect::Quit | Effect::Screens(_) => {}
         }
     }
@@ -168,17 +170,17 @@ impl Handles {
             Watch::Backlights => self.mixer.send(mixer::Command::Backlights(on)),
             Watch::Wifi => self.wifi.send(wifi::Request::Watch(on)),
             Watch::Bluetooth => self.bluetooth.send(bluetooth::Request::Watch(on)),
-            // (The battery tab shows the metrics too.)
+            // The battery tab shows the metrics too.
             Watch::Battery => {
                 self.battery.send(Shown(on));
                 self.metrics.send(Shown(on));
             }
             Watch::Metrics => self.metrics.send(Shown(on)),
             Watch::Status => self.status.send(Shown(on)),
-            // (Read once as the tab opens: it changes only by the tab.)
+            // Read once as the tab opens, since it changes only through the tab.
             Watch::Time if on => self.system.send(crate::device::Command::ReadTime),
             Watch::Time => {}
-            // (The Device view: the account, and the time zone it shows.)
+            // The Device view shows the account and the time zone.
             Watch::Account if on => {
                 self.system.send(crate::device::Command::Account(clamshell_core::device::account::AccountCommand::Read));
                 self.system.send(crate::device::Command::ReadTime);
