@@ -83,7 +83,7 @@ and the UI change with the code they call; doc links to moved methods are fixed 
       text input, the editor (`Bottom::edit`, State's `editor_done`); `Pointer` methods; `Keyboard::hold`.
 - [x] 8b. `Out`, and `Mutation` folded into `Event`: rules push into `&mut Out` instead of returning
       effect lists; `Tab` and entry acts as `Event` variants.
-- [ ] 9. Shelf: `Files`, `fetching`, `shown` in; files and rules and actions onto `Shelf`; the unsaved
+- [x] 9. Shelf: `Files`, `fetching`, `shown` in; files and rules and actions onto `Shelf`; the unsaved
       flag and the resume debounce on State.
 - [ ] 10. Lists: `move_list`; drop `list_offset`, `list_can_scroll`, `anchor`.
 - [ ] 11. Keymapping: data methods on `Settings`; the struct; getters and editing; the handlers pushing into
@@ -91,6 +91,15 @@ and the UI change with the code they call; doc links to moved methods are fixed 
 - [ ] 12. Prefs and the `Panel` view.
 - [ ] 13. Session: fields in; session-only rules; units, windows, found, tray, background; `launch` and
       `reconcile`; dock with `EntryAct`; enqueue.
+- [ ] 13b. `Wanted`: the outside's desired state computed from the final state after each event (watches,
+      screens and dim, second screen power, Apply for the program in force, keymap `(id, version)`, pad
+      route, fetch-first, browsed folder, files in use as a hash, window rules version) and one diff
+      against what was last sent, in a fixed order matching today's tests; a resend mask for Start,
+      Resumed, RefreshCalibrated, Library/Fetching. Before it, `apply` keeps a short settle order
+      (reconcile, idle stage, program, pad mouse, pad claimant). Replaces `follow_watch`, `follow_power`,
+      `follow_keymap`, `follow_shown`, `follow_browse`, `follow_dim` and their last-sent fields; session's
+      reconcile and the event-driven rules stay. Prepared by step 9 (files in use hashed, no `shown`) and
+      step 11 (`Keymaps` version counter, `keymap_sent` as `(id, version)`).
 - [ ] 14. Fields private everywhere; `#[cfg(test)]` helpers where tests poked fields.
 - [ ] 15. `state.rs`: the one `impl State`, `apply.rs` folded in.
 

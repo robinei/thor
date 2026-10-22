@@ -151,8 +151,9 @@ pub struct Files {
     hidden: bool,
     /// The folder listed and watched, as last asked for.
     browsing: Option<Browse>,
-    /// The files in use, as last told to the browse thread (see [`BrowseCommand::InUse`]).
-    in_use: Vec<PathBuf>,
+    /// A hash of the files in use, as last told to the browse thread (see [`BrowseCommand::InUse`]); 0
+    /// for none.
+    in_use: u64,
 }
 
 impl Files {
@@ -435,10 +436,19 @@ impl Shelf {
         let open = self.group().and_then(|g| g.browsed_dir()).map(std::path::Path::new);
         let copied = self.files.clip.iter().flat_map(|c| c.entries.iter().map(|(p, _)| p.as_path()));
         let running = running.iter().filter_map(|r| r.entry.as_ref()?.file.as_deref());
-        if !open.into_iter().chain(copied.clone()).chain(running.clone()).eq(self.files.in_use.iter().map(PathBuf::as_path)) {
-            let in_use: Vec<PathBuf> = open.into_iter().chain(copied).chain(running).map(PathBuf::from).collect();
-            self.files.in_use.clone_from(&in_use);
-            out.effects.push(Effect::Browse(BrowseCommand::InUse(in_use)));
+        let in_use = open.into_iter().chain(copied).chain(running);
+        // Compared by a hash, so that nothing is collected while they stay the same. None is 0, as at
+        // start.
+        let mut hasher = std::hash::DefaultHasher::new();
+        let mut any = false;
+        for path in in_use.clone() {
+            std::hash::Hash::hash(path, &mut hasher);
+            any = true;
+        }
+        let hash = if any { std::hash::Hasher::finish(&hasher) } else { 0 };
+        if hash != self.files.in_use {
+            out.effects.push(Effect::Browse(BrowseCommand::InUse(in_use.map(PathBuf::from).collect())));
+            self.files.in_use = hash;
         }
     }
 
