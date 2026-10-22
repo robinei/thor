@@ -267,8 +267,8 @@ fn known_videos(entries: &mut [Entry], store: Option<&crate::store::Cache>) -> V
         };
         match probes.get(&*g.id).filter(|p| p.frame.as_ref().is_none_or(|f| f.exists())) {
             Some(p) => {
-                g.duration = p.seconds;
-                g.shot.clone_from(&p.frame);
+                g.playback.duration = p.seconds;
+                g.details.shot.clone_from(&p.frame);
                 // (A video's frame is its picture, not the file glyph.)
                 g.glyph = None;
             }

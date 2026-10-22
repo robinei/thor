@@ -128,7 +128,8 @@ Helpers that exist but are bypassed:
       by `tools/check.sh`). `--library`, `--tray`, `--fetch-metadata` and `--mangohud-env` stay: diagnostics
       worth having on the device (`docs/runners.md` points at `--tray`).
 - [x] Rendering: why the picture is drawn whole and copied into shared memory, said on `View::present`.
-- [ ] The `Library` arena's `Entry`: browsed and video fields in sub-structs.
+- [x] The `Library` arena's `Entry`: its fetched details (`Details`, merged from `Meta` in one method) and a
+      video's playback (`Playback`) in sub-structs beside `Browsed`; 26 fields to 21.
 
 ## 4. Tests
 

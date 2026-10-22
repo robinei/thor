@@ -76,18 +76,10 @@ pub struct Entry {
     /// One of the UI's own icons by name (`folder`, `file`, `gamepad`), drawn where there is no picture
     /// (a browsed entry's; a folder's from library.json's places).
     pub glyph: Option<Arc<str>>,
-    /// Fetched (see [`Meta`]): a screenshot (a film's backdrop), what it is about, the year it came out,
-    /// who made it.
-    pub shot: Option<PathBuf>,
-    pub summary: String,
-    pub year: Option<u16>,
-    pub developer: String,
-    /// A video mpv plays: where mpv was when last quit (seconds; none: not started, or watched to the
-    /// end), and how long it is (seconds, once read).
-    pub position: Option<u32>,
-    pub duration: Option<u32>,
-    /// When mpv kept that place (seconds since the epoch): it was watched then, maybe outside ClamShell.
-    pub position_at: u64,
+    /// What was fetched about it (see [`Meta`]).
+    pub details: Details,
+    /// A video mpv plays: where it was left and how long it is.
+    pub playback: Playback,
     /// An app, not a game or a film: Recent leaves it out.
     pub app: bool,
     /// Another launch of it while it runs makes sense (the dock menu's Open another): an app from a
@@ -110,6 +102,44 @@ pub struct Entry {
     /// a browsed file's, Desktop for a desktop file's app or game, Steam for Steam's games. None for
     /// ClamShell's own tools.
     pub runner: Option<RunnerOf>,
+}
+
+/// What was fetched about an entry (see [`Meta`]): a screenshot (a film's backdrop), what it is about, the
+/// year it came out, who made it.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Details {
+    pub shot: Option<PathBuf>,
+    pub summary: String,
+    pub year: Option<u16>,
+    pub developer: String,
+}
+
+impl Details {
+    /// What `meta` found, over these: each detail it has.
+    pub fn merge(&mut self, meta: &Meta) {
+        if meta.shot.is_some() {
+            self.shot.clone_from(&meta.shot);
+        }
+        if !meta.summary.is_empty() {
+            self.summary.clone_from(&meta.summary);
+        }
+        if meta.year.is_some() {
+            self.year = meta.year;
+        }
+        if !meta.developer.is_empty() {
+            self.developer.clone_from(&meta.developer);
+        }
+    }
+}
+
+/// A video's playback: where mpv was when last quit (seconds; none: not started, or watched to the end),
+/// when it kept that place (seconds since the epoch: it was watched then, maybe outside ClamShell), and
+/// how long the video is (seconds, once read).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Playback {
+    pub position: Option<u32>,
+    pub at: u64,
+    pub duration: Option<u32>,
 }
 
 /// A file or folder of a browsed dir (library.json's `browse`, removable storage): not scanned, but listed
@@ -161,13 +191,8 @@ impl Entry {
             icon: None,
             glyph: None,
             playlist: None,
-            shot: None,
-            summary: String::new(),
-            year: None,
-            developer: String::new(),
-            position: None,
-            duration: None,
-            position_at: 0,
+            details: Details::default(),
+            playback: Playback::default(),
             app: false,
             another: false,
             items: Vec::new(),
@@ -201,12 +226,12 @@ impl Entry {
     /// When it was last played or watched (seconds since the epoch): through ClamShell, or where mpv kept
     /// its place.
     pub fn last_watched(&self) -> u64 {
-        self.plays.last.max(self.position_at)
+        self.plays.last.max(self.playback.at)
     }
 
     /// Watched: played and left at the end (mpv keeps no place), or quit near it (past [`DONE`]).
     pub fn watched(&self) -> bool {
-        match (self.position, self.duration) {
+        match (self.playback.position, self.playback.duration) {
             (None, _) => self.plays.count > 0,
             (Some(at), Some(length)) => length > 0 && f64::from(at) >= f64::from(length) * DONE,
             (Some(_), None) => false,
@@ -418,20 +443,9 @@ impl Library {
             }
         }
         if let Some(g) = self.entries.get_mut(i) {
-            if meta.shot.is_some() {
-                g.shot.clone_from(&meta.shot);
-            }
-            if !meta.summary.is_empty() {
-                g.summary.clone_from(&meta.summary);
-            }
-            if meta.year.is_some() {
-                g.year = meta.year;
-            }
-            if !meta.developer.is_empty() {
-                g.developer.clone_from(&meta.developer);
-            }
+            g.details.merge(meta);
             if meta.duration.is_some() {
-                g.duration = meta.duration;
+                g.playback.duration = meta.duration;
             }
         }
     }
@@ -451,7 +465,7 @@ impl Library {
                 None => {}
             }
         }
-        let played = |i: &usize| self.entries.get(*i).is_some_and(|g| g.plays.count > 0 || g.position.is_some());
+        let played = |i: &usize| self.entries.get(*i).is_some_and(|g| g.plays.count > 0 || g.playback.position.is_some());
         let Some(at) =
             leaves.iter().enumerate().filter(|(_, i)| played(i)).max_by_key(|(_, i)| self.entries.get(**i).map_or(0, Entry::last_watched)).map(|(n, _)| n)
         else {
@@ -641,7 +655,7 @@ mod tests {
         assert_eq!(lib.entries[season].box_front.as_deref(), Some(std::path::Path::new("poster.jpg")), "a season");
         assert_eq!(lib.entries[first].box_front, None, "an episode: its frame is its picture");
         assert_eq!(lib.entries[second].box_front.as_deref(), Some(std::path::Path::new("own.jpg")));
-        assert_eq!((lib.entries[tv].summary.as_str(), lib.entries[tv].year), ("Space.", Some(1980)));
+        assert_eq!((lib.entries[tv].details.summary.as_str(), lib.entries[tv].details.year), ("Space.", Some(1980)));
     }
 
     #[test]
@@ -652,25 +666,25 @@ mod tests {
         let s2 = lib.entries[tv].items[1];
         let (e1, e2, e10) = (lib.entries[s1].items[0], lib.entries[s1].items[1], lib.entries[s1].items[2]);
         let s2e1 = lib.entries[s2].items[0];
-        lib.entries[e2].position = None;
+        lib.entries[e2].playback.position = None;
         assert_eq!(lib.to_continue(tv), Some(e1), "none played: the first");
         // The first watched to the end (mpv kept no place): the next.
         lib.entries[e1].plays.add(100, 2700);
         assert_eq!(lib.to_continue(tv), Some(e2));
         // The second left halfway: it again.
         lib.entries[e2].plays.add(5000, 600);
-        lib.entries[e2].position = Some(1200);
-        lib.entries[e2].duration = Some(2700);
+        lib.entries[e2].playback.position = Some(1200);
+        lib.entries[e2].playback.duration = Some(2700);
         assert_eq!(lib.to_continue(tv), Some(e2));
         // Quit in its credits: watched, so the one after (across seasons too).
-        lib.entries[e2].position = Some(2600);
+        lib.entries[e2].playback.position = Some(2600);
         assert_eq!(lib.to_continue(tv), Some(e10));
         lib.entries[e10].plays.add(9000, 2700);
         assert_eq!(lib.to_continue(tv), Some(s2e1));
         assert_eq!(lib.to_continue(s1), None, "the season watched");
         // Places mpv kept outside ClamShell: the one kept last wins over plays before it.
-        lib.entries[e1].position = Some(100);
-        lib.entries[e1].position_at = 20_000;
+        lib.entries[e1].playback.position = Some(100);
+        lib.entries[e1].playback.at = 20_000;
         assert_eq!(lib.to_continue(tv), Some(e1), "watched last, in mpv");
         let games = lib.collections.iter().find(|c| c.name == "Games").unwrap().entries.clone();
         lib.entries.push(Entry { items: games, ..Entry::new("folder:Games/All", "All") });

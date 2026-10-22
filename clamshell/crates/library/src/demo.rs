@@ -1,7 +1,7 @@
 //! A demo library, for tests and snapshots (the `demo` feature): placeholder games, apps and a series,
 //! none of which launch anything real.
 
-use crate::{Collection, Entry, Launch, Library, OwnTab, Tool};
+use crate::{Collection, Details, Entry, Launch, Library, OwnTab, Playback, Tool};
 
 /// Placeholder games.
 pub fn games() -> Vec<Entry> {
@@ -19,9 +19,12 @@ pub fn games() -> Vec<Entry> {
         // As fetched metadata gives it.
         "zelda-lttp" => Entry {
             color,
-            developer: "Nintendo".into(),
-            year: Some(1991),
-            summary: "Link sets out across Hyrule and the Dark World to free the descendants of the Seven Sages from the wizard Agahnim.".into(),
+            details: Details {
+                developer: "Nintendo".into(),
+                year: Some(1991),
+                summary: "Link sets out across Hyrule and the Dark World to free the descendants of the Seven Sages from the wizard Agahnim.".into(),
+                shot: None,
+            },
             ..Entry::new(id, title)
         },
         _ => Entry { color, ..Entry::new(id, title) },
@@ -60,8 +63,7 @@ pub fn library() -> Library {
                 color: 0x305a78,
                 launch,
                 file: Some(path.into()),
-                duration: Some(2640),
-                position,
+                playback: Playback { position, duration: Some(2640), at: 0 },
                 ..Entry::new(&file, episode)
             });
             if let Some(season) = games.get_mut(s) {
@@ -75,7 +77,12 @@ pub fn library() -> Library {
     // ClamShell's own tools, as a library.json with a Tools place has them.
     let tools = games.len();
     let summary = "Calibrates the controller's sticks and gyro and the top screen's refresh rate; sets the password and remote login.";
-    games.push(Entry { launch: Launch::Tool(Tool::Device), app: true, summary: summary.into(), ..Entry::new("tool:device", "Device") });
+    games.push(Entry {
+        launch: Launch::Tool(Tool::Device),
+        app: true,
+        details: Details { summary: summary.into(), ..Details::default() },
+        ..Entry::new("tool:device", "Device")
+    });
     let collections = vec![
         Collection::with_icon("Games", "gamepad", (0..n).collect()),
         Collection::new("More", ["ff6", "metroid-zm"].iter().filter_map(|id| games.iter().position(|g| &*g.id == *id)).collect()),

@@ -249,7 +249,7 @@ fn greyed(color: u32) -> u32 {
 
 /// An entry's picture: its box art; without art or an icon, its screenshot (a video's frame).
 pub(crate) fn picture(game: &Entry) -> Option<(&std::path::Path, Slot)> {
-    match (&game.box_front, &game.icon, &game.shot) {
+    match (&game.box_front, &game.icon, &game.details.shot) {
         (Some(art), _, _) => Some((art, Slot::Art)),
         (None, None, Some(shot)) => Some((shot, Slot::Shot)),
         _ => None,
@@ -289,7 +289,7 @@ pub(crate) fn progress(c: &mut Canvas, r: Rect, fraction: f32) {
 pub(crate) fn shot(c: &mut Canvas, images: &mut Images, game: &Entry, r: Rect) {
     let scale = c.scale();
     let (pw, ph) = ((r.w * scale).round() as u32, (r.h * scale).round() as u32);
-    if let Some(img) = game.shot.as_deref().and_then(|path| images.get(&game.id, Slot::Shot, path, pw, ph)) {
+    if let Some(img) = game.details.shot.as_deref().and_then(|path| images.get(&game.id, Slot::Shot, path, pw, ph)) {
         c.image(img, r.x, r.y + r.h - img.height() as f32 / scale);
     }
 }

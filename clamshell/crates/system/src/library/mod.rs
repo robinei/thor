@@ -9,7 +9,7 @@ pub mod steam;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use clamshell_library::{BrowseKind, Browsed, Collection, Entry, Launch, Library, Meta, Tool, ids};
+use clamshell_library::{BrowseKind, Browsed, Collection, Details, Entry, Launch, Library, Meta, Tool, ids};
 
 use crate::meta::{How, Keys, RETRY_MISS, Wanted};
 
@@ -183,7 +183,7 @@ fn first_frame(library: &Library, i: usize) -> Option<PathBuf> {
     let g = library.entries.get(i)?;
     g.items.iter().find_map(|&item| match library.entries.get(item) {
         Some(e) if e.is_group() => first_frame(library, item),
-        Some(e) => e.shot.clone().filter(|_| e.mpv_file().is_some()),
+        Some(e) => e.details.shot.clone().filter(|_| e.mpv_file().is_some()),
         None => None,
     })
 }
@@ -585,7 +585,7 @@ impl Builder<'_> {
                     summary.push_str(p);
                 }
             }
-            self.games.push(Entry { launch: Launch::Tool(tool), app: true, summary, ..Entry::new(id, title) });
+            self.games.push(Entry { launch: Launch::Tool(tool), app: true, details: Details { summary, ..Details::default() }, ..Entry::new(id, title) });
         }
         self.collections.push(Collection { icon: tab.icon, ..Collection::new(&tab.name, (first..self.games.len()).collect()) });
     }
@@ -644,13 +644,13 @@ fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &Sources) -> V
             continue;
         };
         let kept = crate::mpv::position(&sources.watch_later, &file);
-        (g.position, g.position_at) = (kept.map(|(s, _)| s), kept.map_or(0, |(_, at)| at));
+        (g.playback.position, g.playback.at) = (kept.map(|(s, _)| s), kept.map_or(0, |(_, at)| at));
         let probe = probes.get(&*g.id).filter(|p| p.frame.as_ref().is_none_or(|f| f.exists()));
         match probe {
             Some(p) => {
-                g.duration = p.seconds;
-                if g.shot.is_none() {
-                    g.shot.clone_from(&p.frame);
+                g.playback.duration = p.seconds;
+                if g.details.shot.is_none() {
+                    g.details.shot.clone_from(&p.frame);
                 }
             }
             None => wanted.push(Wanted { id: g.id.clone(), key: g.key.clone(), title: g.title.clone(), file: Some(file), how: How::Duration, art: true }),
@@ -658,12 +658,12 @@ fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &Sources) -> V
     }
     // A folder of videos without art: the frame of its first video that has one.
     for i in 0..library.entries.len() {
-        let bare = library.entries.get(i).is_some_and(|g| g.is_group() && g.box_front.is_none() && g.shot.is_none());
+        let bare = library.entries.get(i).is_some_and(|g| g.is_group() && g.box_front.is_none() && g.details.shot.is_none());
         if bare
             && let Some(frame) = first_frame(library, i)
             && let Some(g) = library.entries.get_mut(i)
         {
-            g.shot = Some(frame);
+            g.details.shot = Some(frame);
         }
     }
     wanted

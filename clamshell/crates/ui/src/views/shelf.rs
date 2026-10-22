@@ -237,8 +237,8 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
     }
 
     // A video: how far into it, and how long it is.
-    if let Some(at) = game.position.filter(|_| game.mpv_file().is_some()) {
-        let minutes = Fmt::<48>::of(format_args!("{}", Minutes(at, game.duration)));
+    if let Some(at) = game.playback.position.filter(|_| game.mpv_file().is_some()) {
+        let minutes = Fmt::<48>::of(format_args!("{}", Minutes(at, game.playback.duration)));
         let bar_w = (text_w * 0.45).min(detail * 9.0);
         if let Some(fraction) = watched_fraction(game) {
             let bar = Rect::new(tx, col.y() + detail * 0.42, bar_w, (detail * 0.22).max(3.0));
@@ -268,7 +268,7 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
     // A screenshot: under a landscape box, as wide; else at the bottom of the text. What it is about in as
     // many lines as fit above that.
     // (Its screenshot as its picture already: not twice.)
-    let shot = match (game.shot.is_some() && !widgets::wide_picture(game), landscape) {
+    let shot = match (game.details.shot.is_some() && !widgets::wide_picture(game), landscape) {
         (false, _) => None,
         (true, true) => {
             let y = cover.y + cover.h + pad;
@@ -286,8 +286,8 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
     };
     let (top, size) = (col.y() + pad * 0.2, h * SUMMARY);
     let lines = ((bottom - top) / (size * WRAP_LINE)).floor().max(0.0) as usize;
-    if !game.summary.is_empty() && lines > 0 {
-        f.c.wrap(Span { x: tx, y: top, w: text_w }, size, Tone::Normal, &game.summary, lines.min(12));
+    if !game.details.summary.is_empty() && lines > 0 {
+        f.c.wrap(Span { x: tx, y: top, w: text_w }, size, Tone::Normal, &game.details.summary, lines.min(12));
     }
     if let Some(r) = shot.filter(|r| r.h > pad) {
         widgets::shot(f.c, f.images, game, r);
@@ -386,7 +386,7 @@ fn actions(f: &mut Frame, game: &Entry, r: Rect, action_h: f32, pad: f32) -> f32
 
 /// How far into a video, of its length, if both are known.
 fn watched_fraction(game: &Entry) -> Option<f32> {
-    let (at, length) = (game.position?, game.duration?);
+    let (at, length) = (game.playback.position?, game.playback.duration?);
     (length > 0).then(|| at as f32 / length as f32)
 }
 
@@ -454,7 +454,7 @@ struct Maker<'a>(&'a Entry);
 impl Display for Maker<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let game = self.0;
-        match (game.developer.as_str(), game.year) {
+        match (game.details.developer.as_str(), game.details.year) {
             ("", Some(y)) => write!(f, "{y}"),
             ("", None) => Ok(()),
             (d, Some(y)) => write!(f, "{d} · {y}"),
