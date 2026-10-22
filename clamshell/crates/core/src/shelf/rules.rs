@@ -5,12 +5,20 @@ use crate::bottom::keyboard::{self, Key};
 use crate::out::Out;
 use crate::shelf::actions::Shortcut;
 use crate::shelf::{Shelf, ShelfView};
-use crate::{Dirty, Effect, EntryAct, Event, Pointer, Save, ShelfEvent, ShelfId};
+use crate::{Dirty, Effect, EntryAct, Event, Id, Pointer, Save, ShelfEvent, ShelfId};
 
 impl Shelf {
-    /// Shelf's targets.
-    pub(crate) fn on_target(&mut self, id: ShelfId, pointer: &mut Pointer, out: &mut Out) {
+    /// A tap, or a long press if `long`, on one of shelf's targets.
+    pub(crate) fn on_target(&mut self, id: ShelfId, long: bool, pointer: &mut Pointer, out: &mut Out) {
         match id {
+            // A hold on the selected entry with the pad, while its focus is showing, moves the pad to the
+            // entry's actions and focuses the first. Up and down go through them, A runs one, and B goes
+            // back to the list.
+            ShelfId::Entry(game) if long && pointer.show_focus() && self.selected() == Some(&game) => {
+                if let Some(first) = self.actions().as_slice().first() {
+                    pointer.focus_on(Id::Shelf(first.id()));
+                }
+            }
             ShelfId::Entry(game) => {
                 // Activating the selected entry again opens it if it is a group, or else plays it by
                 // starting it or switching to it.

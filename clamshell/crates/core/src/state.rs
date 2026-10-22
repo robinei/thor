@@ -24,7 +24,7 @@ use crate::sync::{Resend, Sent, Wanted};
 use crate::{
     BtId, Clock, Dirty, Dock, EditorId, Effect, Entry, EntryAct, Event, Id, Init, KeymapEvent, KeymapId, Launch, LaunchEvent, Level, LevelEvent, Levels,
     Library, ListEvent, ListId, Lists, Pad, PadRoute, Panel, Pointer, PointerEvent, Prefs, Radios, Reading, Resume, RowPart, Save, Scroll, Session, SettingsId,
-    Shelf, ShelfId, Slide, Sys, Tab, Watch, WifiId, WindowCommand,
+    Shelf, Slide, Sys, Tab, Watch, WifiId, WindowCommand,
 };
 
 /// Everything ClamShell knows, as its areas (see the [crate docs](crate)).
@@ -668,18 +668,9 @@ impl State {
         };
         self.pointer.focus_on(id.clone());
         match id {
-            // A hold on the selected entry with the pad, while its focus is showing, moves the pad to the
-            // entry's actions and focuses the first. Up and down go through them, A runs one, and B goes
-            // back to the list.
-            Id::Shelf(ShelfId::Entry(game)) if long && self.pointer.show_focus() && self.shelf.selected() == Some(&game) => {
-                if let Some(first) = self.shelf.actions().as_slice().first() {
-                    self.pointer.focus_on(Id::Shelf(first.id()));
-                }
-                out.mark(Dirty::BOTH);
-            }
             Id::Shelf(id) => {
                 out.mark(Dirty::BOTH);
-                self.shelf.on_target(id, &mut self.pointer, out);
+                self.shelf.on_target(id, long, &mut self.pointer, out);
             }
             Id::Dock(id) => {
                 out.mark(Dirty::BOTTOM);
