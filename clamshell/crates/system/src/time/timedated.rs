@@ -33,24 +33,24 @@ pub fn read_time(error: Option<String>) -> TimeZones {
     }
 }
 
-/// Calls `method` with `args`, which end with `interactive` false. Returns the service's message if it
-/// failed.
-fn call(method: &str, args: impl dbus::AppendAll) -> Result<(), String> {
+/// Calls `method` with `args`, which end with `interactive` false; `what` names the value for the log.
+/// Returns the service's message if it failed.
+fn call(method: &str, what: &dyn std::fmt::Display, args: impl dbus::AppendAll) -> Result<(), String> {
     let result = Bus::system().and_then(|mut bus| bus.call::<()>(DEST, PATH, IFACE, method, args));
     match result {
         Ok(()) => {
-            log::info!("timedated {method}");
+            log::info!("timedated {method} {what}");
             Ok(())
         }
         Err(e) => {
-            log::warn!("timedated {method}: {e}");
+            log::warn!("timedated {method} {what}: {e}");
             Err(format!("Couldn't: {}", e.message()))
         }
     }
 }
 
 pub fn set_ntp(on: bool) -> Result<(), String> {
-    call("SetNTP", (on, false))
+    call("SetNTP", &on, (on, false))
 }
 
 /// Moves the clock one step of `field` forward (`by` 1) or back (-1) in local time. A month on from the
@@ -68,13 +68,13 @@ pub fn step_clock(field: clamshell_core::ClockField, by: i8) -> Result<(), Strin
     };
     let then = now.checked_add(span).map_err(|e| format!("Couldn't: {e}"))?;
     // SetTime takes microseconds since the epoch, and whether that is relative to now.
-    call("SetTime", (then.timestamp().as_microsecond(), false, false))
+    call("SetTime", &then, (then.timestamp().as_microsecond(), false, false))
 }
 
 /// Sets the system's time zone. Returns the service's message if it failed, as when polkit refuses or the
 /// zone is unknown.
 pub fn set_time_zone(zone: &str) -> Result<(), String> {
-    call("SetTimezone", (zone, false))
+    call("SetTimezone", &zone, (zone, false))
 }
 
 #[cfg(test)]

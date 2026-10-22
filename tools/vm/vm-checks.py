@@ -433,7 +433,7 @@ class Checks:
         time.sleep(0.5)
         since = now()
         self.i.tap(300, TIME_FIRST_Y)
-        self.check("  the time zone's row, Asia, then its first zone, sets it", until(lambda: zone().startswith("Asia/")) and logged(since, "set-timezone Asia/", 2),
+        self.check("  the time zone's row, Asia, then its first zone, sets it", until(lambda: zone().startswith("Asia/")) and logged(since, "SetTimezone Asia/", 2),
                    f"time zone {zone()!r}")
         # From a region's zones, back to the regions: Africa's first zone.
         control("tap time-zone")
