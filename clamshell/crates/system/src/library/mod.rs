@@ -647,7 +647,7 @@ fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &Sources) -> V
         let Some(file) = g.mpv_file().map(std::path::Path::to_path_buf) else {
             continue;
         };
-        let kept = crate::mpv::position(&sources.watch_later, &file);
+        let kept = crate::launch::mpv::position(&sources.watch_later, &file);
         (g.playback.position, g.playback.at) = (kept.map(|(s, _)| s), kept.map_or(0, |(_, at)| at));
         let probe = probes.get(&*g.id).filter(|p| p.frame.as_ref().is_none_or(|f| f.exists()));
         match probe {

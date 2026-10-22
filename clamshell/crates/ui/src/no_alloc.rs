@@ -11,11 +11,14 @@ use clamshell_core::device::SticksEvent;
 use clamshell_core::device::account::Account;
 use clamshell_core::device::sticks::Calibrator;
 use clamshell_core::keymap::{Button, Input, Keymaps, Layer, Param, Side};
+use clamshell_core::radios::{bluetooth, wifi};
+use clamshell_core::session::tray;
 use clamshell_core::session::windows::Window;
 use clamshell_core::settings::Setting;
+use clamshell_core::status::battery;
 use clamshell_core::{
     DockId, EditorId, Event, Id, Init, Instance, KeymapId, ListEvent, ListId, PointerEvent, Reading, RowPart, Scope, SettingsId, ShelfEvent, ShelfId, Slide,
-    State, Status, Tab, Target, TimeZones, levels, radios::bluetooth, radios::wifi, session::tray, status::battery,
+    State, Status, Tab, Target, TimeZones, levels,
 };
 
 use crate::Screen;

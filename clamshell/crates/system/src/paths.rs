@@ -11,9 +11,9 @@ pub struct Paths {
     pub state_dir: Option<PathBuf>,
     /// Fetched covers and screenshots (see [`crate::library::meta`]): ~/.cache/clamshell/art.
     pub art: Option<PathBuf>,
-    /// Where mpv keeps the places of videos quit before their end (see [`crate::mpv`]).
+    /// Where mpv keeps the places of videos quit before their end (see [`crate::launch::mpv`]).
     pub watch_later: Vec<PathBuf>,
-    /// Launches handed to sway's exec ($XDG_RUNTIME_DIR/clamshell/jobs, see [`crate::job`]).
+    /// Launches handed to sway's exec ($XDG_RUNTIME_DIR/clamshell/jobs, see [`crate::launch::job`]).
     pub jobs: PathBuf,
     /// MangoHud's config files and frame logs, in RAM ($XDG_RUNTIME_DIR/clamshell/mangohud).
     pub mangohud: PathBuf,
@@ -65,7 +65,7 @@ impl Paths {
         let data = base.xdg(base.data_home.as_ref(), ".local/share");
         let state_dir = data.map(|d| d.join("clamshell"));
         let art = base.xdg(base.cache_home.as_ref(), ".cache").map(|c| c.join("clamshell/art"));
-        let watch_later = crate::mpv::watch_later_dirs(config.as_deref(), base.xdg(base.state_home.as_ref(), ".local/state").as_deref());
+        let watch_later = crate::launch::mpv::watch_later_dirs(config.as_deref(), base.xdg(base.state_home.as_ref(), ".local/state").as_deref());
         Paths {
             jobs: base.runtime.clone().unwrap_or_else(std::env::temp_dir).join("clamshell/jobs"),
             mangohud: base.runtime.clone().unwrap_or_else(|| PathBuf::from("/tmp")).join("clamshell/mangohud"),

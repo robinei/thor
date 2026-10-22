@@ -16,7 +16,8 @@ use clamshell_core::status::metrics::{MAX_CORES, Metrics};
 use clamshell_core::{Event, Reading};
 
 use crate::os::worker::{Next, Shown, Worker};
-use crate::{Closed, Sink, os::drm, os::sys, os::worker};
+use crate::os::{drm, sys, worker};
+use crate::{Closed, Sink};
 
 /// How often the metrics are read while they can be seen, and otherwise: the graphs keep their history,
 /// coarser, at less cost.

@@ -36,8 +36,9 @@ use std::time::Duration;
 use clamshell_core::Event;
 use clamshell_core::bottom::screen::DownRule;
 
+use crate::os::cgroup;
 use crate::os::worker::{self, Ended, Service, Worker, lost_on};
-use crate::{Closed, Sink, os::cgroup};
+use crate::{Closed, Sink};
 use ipc::{EventKind, Ipc};
 
 pub use ipc::Error;
@@ -53,7 +54,7 @@ lost_on!(Error: io::Error, serde_json::Error);
 pub enum Command {
     /// Show (and create, if new) a workspace.
     Workspace(String),
-    /// Run a job (see [`crate::job`]) for this workspace, without showing it.
+    /// Run a job (see [`crate::launch::job`]) for this workspace, without showing it.
     Launch { workspace: String, job: PathBuf },
     /// Ask a window to close (as its close button would).
     Close(i64),

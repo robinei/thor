@@ -99,7 +99,7 @@ impl Mounts {
             let used = in_use.iter().any(|p| *p == archive || p.starts_with(dir));
             if !used {
                 log::info!("archives: {} unmounted", archive.display());
-                if let Err(e) = crate::units::end(&unit_of(archive), false) {
+                if let Err(e) = crate::launch::scopes::end(&unit_of(archive), false) {
                     log::warn!("archives: {}: {e}", archive.display());
                     detach(dir);
                 }

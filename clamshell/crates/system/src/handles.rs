@@ -3,12 +3,14 @@
 use clamshell_core::{Effect, Instance, Watch, WindowCommand};
 
 use crate::input::keyboard::VirtualKeyboard;
-use crate::job::Runner;
+use crate::input::{pad, touchpad};
+use crate::launch::job::Runner;
+use crate::launch::launcher;
 use crate::os::worker::{self, Shown, Worker};
 use crate::paths::Paths;
 use crate::store::{Write, Writer};
 use crate::tuning::Tuning;
-use crate::{bluetooth, brightness, input::pad, input::touchpad, launcher, mixer, sway, wifi};
+use crate::{bluetooth, brightness, mixer, sway, wifi};
 
 /// The threads (and the one device) that effects go to.
 pub struct Handles {
@@ -137,7 +139,7 @@ impl Handles {
             Effect::Adopt { instance, pid } => launcher::adopt(instance.clone(), *pid),
             Effect::FindIcon { entry, app_id } => self.icons.send((entry.clone(), app_id.clone())),
             Effect::EndProcesses { pids, force } => launcher::end_processes(pids, *force),
-            Effect::Freeze { slice, frozen } => crate::units::freeze(slice.clone(), *frozen),
+            Effect::Freeze { slice, frozen } => crate::launch::scopes::freeze(slice.clone(), *frozen),
             Effect::Tray(command) => self.tray.send(command.clone()),
             Effect::Screenshot => self.system.send(crate::device::Command::Screenshot),
             Effect::AskAwake(argv) => self.system.send(crate::device::Command::AskAwake(argv.clone())),

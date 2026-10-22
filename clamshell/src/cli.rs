@@ -7,7 +7,7 @@ pub enum Command {
     /// No arguments: run the session (the UI and every system thread).
     Run,
     /// `--run FILE`: become a launched job's program (sway's exec starts us this way; see
-    /// clamshell_system::job).
+    /// clamshell_system::launch::job).
     RunJob(PathBuf),
     /// `--follow-steam <id>`: in a Steam game's launch scope, Steam's launcher for it moved in as long as
     /// it runs (see clamshell-system's `launcher`).

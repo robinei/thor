@@ -10,7 +10,8 @@ use clamshell_core::{Event, Reading, Status};
 
 use crate::brightness::Backlights;
 use crate::os::worker::{Changed, Shown, Worker};
-use crate::{Closed, Sink, mixer, os::command, os::sys};
+use crate::os::{command, sys};
+use crate::{Closed, Sink, mixer};
 
 /// How often the status is read: battery and Wi-Fi change slowly; a volume changed elsewhere (not with
 /// ClamShell's own controls, which show it at once) shows within this.

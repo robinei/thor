@@ -18,9 +18,10 @@ use std::time::Duration;
 use clamshell_core::Event;
 use clamshell_core::session::tray::{TrayCommand, TrayEntry, TrayItem};
 
+use crate::os::cgroup;
 use crate::os::dbus::{self, Bus, Message, PropMap, Props, RefArg, Value, Variant, value};
 use crate::os::worker::{self, Bell, Changed, Ended, Service, Worker, lost_on};
-use crate::{Closed, Sink, os::cgroup};
+use crate::{Closed, Sink};
 
 const WATCHER: &str = "org.kde.StatusNotifierWatcher";
 const WATCHER_PATH: &str = "/StatusNotifierWatcher";

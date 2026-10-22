@@ -15,7 +15,8 @@ use clamshell_core::device::idle::IdleEvent;
 use clamshell_core::{Event, Reading, TimeZones};
 
 use crate::os::worker::Worker;
-use crate::{Closed, Sink, os::command, os::dbus};
+use crate::os::{command, dbus};
+use crate::{Closed, Sink};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {

@@ -1,5 +1,5 @@
 //! Starting entries (games, apps, films). Each launch is started and left: whether it runs, and when it
-//! has ended, systemd's list of our scopes says (see [`crate::units`] and clamshell-core's `running`);
+//! has ended, systemd's list of our scopes says (see [`crate::launch::scopes`] and clamshell-core's `running`);
 //! the launcher reports only a launch that couldn't start (its scope never came). Starting runs on a
 //! thread of its own, so launches start side by side.
 //!
@@ -30,9 +30,11 @@ use std::time::{Duration, Instant};
 use clamshell_core::{Event, Instance, Launch, LaunchEvent};
 use rustix::process::{Pid, Signal};
 
-use crate::job::{self, Job, Runner, Started};
+use crate::Sink;
+use crate::launch::job::{self, Job, Runner, Started};
+use crate::launch::scopes;
 use crate::os::worker::{self, Worker};
-use crate::{Sink, os::cgroup, os::sys, units};
+use crate::os::{cgroup, sys};
 
 /// How long sway may take to start a game (its scope to appear).
 const GAME_START: Duration = Duration::from_secs(30);
@@ -77,7 +79,7 @@ pub struct Config {
 pub enum Error {
     Io(io::Error),
     Job(job::Error),
-    Units(units::Error),
+    Units(scopes::Error),
     NoCommand,
     /// The instance has no scope to follow the game by (only apps' and games' instances have one).
     NoScope,
@@ -109,8 +111,8 @@ impl From<job::Error> for Error {
     }
 }
 
-impl From<units::Error> for Error {
-    fn from(e: units::Error) -> Self {
+impl From<scopes::Error> for Error {
+    fn from(e: scopes::Error) -> Self {
         Error::Units(e)
     }
 }
@@ -127,7 +129,7 @@ pub fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worker<Comma
                     }
                 }
                 Command::ReadPosition { game, file } => {
-                    let position = crate::mpv::position(&config.watch_later, &file).map(|(s, _)| s);
+                    let position = crate::launch::mpv::position(&config.watch_later, &file).map(|(s, _)| s);
                     let _ = sink.send(Event::Launch(LaunchEvent::Position { entry: game, position }));
                 }
             });
@@ -141,7 +143,7 @@ pub fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worker<Comma
 /// Starts the game a request is for: done once its scope is there.
 fn start(config: &Config, request: &Request) -> Result<(), Error> {
     if let Some(slice) = request.instance.slice() {
-        units::thaw_slice(&slice);
+        scopes::thaw_slice(&slice);
     }
     match &request.launch {
         Launch::Program { argv, .. } if argv.is_empty() => Err(Error::EmptyCommand),
@@ -178,7 +180,7 @@ fn started(started: Started, request: &Request) -> Result<(), Error> {
         job::reap(child);
     }
     let unit = request.instance.unit().ok_or(Error::NoScope)?;
-    units::appear(&unit, GAME_START)?;
+    scopes::appear(&unit, GAME_START)?;
     Ok(())
 }
 
@@ -248,7 +250,7 @@ fn gather(marker: &str, unit: &str, slice: Option<&str>, launchers: &[u32]) {
     if pids.is_empty() {
         return;
     }
-    match crate::units::adopt(unit, slice, &pids) {
+    match scopes::adopt(unit, slice, &pids) {
         Ok(()) => log::info!("launcher: Steam's {marker} in {unit} ({} processes)", pids.len()),
         Err(e) => log::warn!("launcher: Steam's {marker}: its own scope: {e}"),
     }
@@ -288,7 +290,7 @@ pub fn end_run(key: &str, force: bool) {
     let slice = Instance::slice_of(key);
     let ended = worker::detached("end", move || {
         log::info!("{slice}: {}", if force { "force kill" } else { "stop" });
-        if let Err(e) = crate::units::end(&slice, force) {
+        if let Err(e) = scopes::end(&slice, force) {
             log::warn!("{slice}: {e}");
         }
     });
@@ -315,7 +317,7 @@ pub fn adopt(instance: Instance, pid: u32) {
             return;
         }
         let pids = with_descendants(&[pid], &parents());
-        match units::adopt(&unit, instance.slice().as_deref(), &pids) {
+        match scopes::adopt(&unit, instance.slice().as_deref(), &pids) {
             Ok(()) => log::info!("adopt: process {pid} from {group} in {unit} ({} processes)", pids.len()),
             Err(e) => log::warn!("adopt: process {pid}: {e}"),
         }

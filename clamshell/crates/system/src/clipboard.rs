@@ -35,7 +35,8 @@ use wayland_protocols::ext::data_control::v1::client::ext_data_control_manager_v
 use wayland_protocols::ext::data_control::v1::client::ext_data_control_offer_v1::{self, ExtDataControlOfferV1};
 use wayland_protocols::ext::data_control::v1::client::ext_data_control_source_v1::{self, ExtDataControlSourceV1};
 
-use crate::{Sink, os::worker};
+use crate::Sink;
+use crate::os::worker;
 
 /// The text types offered, and taken in this order of preference.
 const TEXT: [&str; 5] = ["text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "TEXT", "STRING"];

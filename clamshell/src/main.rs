@@ -20,11 +20,12 @@ use std::sync::Arc;
 use clamshell_core::keymap::Keymaps;
 use clamshell_core::settings::Hud;
 use clamshell_core::{Init, Library, State};
+use clamshell_system::launch::job;
 use clamshell_system::library::meta;
 use clamshell_system::library::{self, Sources};
 use clamshell_system::paths::Paths;
 use clamshell_system::store::Store;
-use clamshell_system::{Handles, job, tuning};
+use clamshell_system::{Handles, tuning};
 use clamshell_ui::Config;
 
 use cli::Command;
@@ -61,7 +62,7 @@ fn carry_out(command: Command) -> Result<(), String> {
         }
         Command::Ctl(words) => control::send(env.control.as_ref().or(paths.control.as_ref()), &words.join(" ")).map_err(|e| format!("ctl: {e}")),
         Command::FollowSteam(appid) => {
-            clamshell_system::launcher::follow_steam(appid);
+            clamshell_system::launch::launcher::follow_steam(appid);
             Ok(())
         }
         Command::MangohudEnv => {

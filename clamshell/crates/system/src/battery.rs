@@ -16,7 +16,8 @@ use std::time::{Duration, Instant};
 
 use crate::os::dbus::{self, Bus, Kept, Path};
 use crate::os::worker::{self, Next, Shown, Worker};
-use crate::{Closed, Sink, os::cgroup, os::drm, os::sys};
+use crate::os::{cgroup, drm, sys};
+use crate::{Closed, Sink};
 use clamshell_core::status::battery::{Battery, Charge, Group, Spender};
 use clamshell_core::{Event, Instance, Reading};
 

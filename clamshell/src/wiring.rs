@@ -8,7 +8,9 @@ use clamshell_core::bottom::touch::TouchLayout;
 use clamshell_core::settings::Values;
 use clamshell_system::brightness::Backlights;
 use clamshell_system::input::keyboard::VirtualKeyboard;
-use clamshell_system::job::Runner;
+use clamshell_system::input::{pad, touchpad};
+use clamshell_system::launch::job::Runner;
+use clamshell_system::launch::{launcher, scopes};
 use clamshell_system::library::meta;
 use clamshell_system::library::meta::cache::Cache;
 use clamshell_system::library::{self, Sources};
@@ -16,10 +18,7 @@ use clamshell_system::os::worker::Worker;
 use clamshell_system::paths::Paths;
 use clamshell_system::store::{Store, Writer};
 use clamshell_system::tuning::Tuning;
-use clamshell_system::{
-    Closed, Handles, Sink, battery, bluetooth, brightness, clock, frames, input::pad, input::touchpad, launcher, metrics, mixer, sound, status, sway, tuning,
-    units, wifi,
-};
+use clamshell_system::{Closed, Handles, Sink, battery, bluetooth, brightness, clock, frames, metrics, mixer, sound, status, sway, tuning, wifi};
 use clamshell_ui::EventSender;
 
 use crate::config::Env;
@@ -114,7 +113,7 @@ pub fn start(
         log::error!("sway thread: {e}");
         env.sway.as_ref().map(|_| Worker::gone("sway commands"))
     });
-    detached("units", units::spawn(sink.clone()));
+    detached("units", scopes::spawn(sink.clone()));
     // Games start from the launcher (each on a thread of its own, so several run side by side); plays go
     // to the database.
     let jobs = Runner { jobs: paths.jobs.clone(), sway: sway.clone() };

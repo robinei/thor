@@ -23,9 +23,10 @@ use std::os::fd::OwnedFd;
 use rustix::event::{PollFd, PollFlags};
 use rustix::fs::inotify;
 
+use crate::lid;
 use crate::os::evdev::{Press, Range, Raw};
+use crate::os::worker;
 use crate::{Closed, Sink};
-use crate::{lid, os::worker};
 
 /// Input is reported at most this often.
 const ACTIVITY_EVERY: Duration = Duration::from_secs(3);
