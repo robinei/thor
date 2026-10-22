@@ -18,13 +18,15 @@ passes (session; keymap and settings; shelf, nav and bottom; the rest and State 
 - **A change with one owner is a method call on that owner.** An area rule that needs another area
   changed, where that area alone owns the change (a notice, waking the second screen, the keyboard's
   modifiers), gets it as a `&mut` parameter, as narrow as practical (`&mut Notice`, not `&mut Bottom`).
-- **`Mutation` only for what State coordinates.** Requests that touch several areas are returned in
-  `Vec<Mutation>` and applied by `State::settle(Vec<Mutation>) -> Vec<Effect>` in order, effects
-  interleaved as today: entry acts (`Act(EntryAct)`: play, launch, show, show down, quit, force kill,
-  suspend, toggle autostart, enqueue), tab changes, keymap choose/delete/capture, recorded plays, and
-  `Effect(Effect)` where an effect must keep its place among them. This replaces the per-area enums the
-  research proposed (`DeviceTap`, `BatteryTap`, `WifiTap`, `PanelFollow`, `KeymapFollow`, `DockOut`,
-  shelf's `Then`, session's `Out`).
+- **Requests State coordinates are events.** What needs several areas (entry acts: play, launch, show,
+  show down, quit, force kill, suspend, toggle autostart, enqueue; a tab change; keymap choose/delete/
+  capture; a recorded play) is an `Event` variant, so outside code can send the same commands. A rule
+  queues such an event; State handles it with `apply_event` (the follow-up steps run once, at the end of
+  the outer `apply`). There is no separate `Mutation` type.
+- **One output buffer per event.** `apply` creates an `Out { effects: Vec<Effect>, events: Vec<Event>,
+  dirty: Dirty }` and passes `&mut Out` down; rules push effects in the order things happen and queue
+  events. After a rule returns, State handles the queued events in order, so their effects follow those
+  pushed before them. `apply` returns `out.dirty` and `out.effects`. Rules no longer return `Vec<Effect>`.
 - **`Clock`** `{ unix, mono }` replaces `unix_secs`/`mono_secs`, with `read()` and `unix_at(mono)`.
   Session rules take `clock` and `&Library`. Settings in force are not in it: they change during an
   event and are passed where needed.
@@ -79,11 +81,13 @@ and the UI change with the code they call; doc links to moved methods are fixed 
 - [x] 7. `Watches`.
 - [x] 8. Bottom: notices, screen rules (`Power`), window rules and `sent_down`, tabs, clipboard, pointing,
       text input, the editor (`Bottom::edit`, State's `editor_done`); `Pointer` methods; `Keyboard::hold`.
+- [ ] 8b. `Out`, and `Mutation` folded into `Event`: rules push into `&mut Out` instead of returning
+      effect lists; `Tab` and entry acts as `Event` variants.
 - [ ] 9. Shelf: `Files`, `fetching`, `shown` in; files and rules and actions onto `Shelf`; the unsaved
       flag and the resume debounce on State.
 - [ ] 10. Lists: `move_list`; drop `list_offset`, `list_can_scroll`, `anchor`.
-- [ ] 11. Keymapping: data methods on `Settings`; the struct; getters and editing; the handlers with
-      `Mutation`.
+- [ ] 11. Keymapping: data methods on `Settings`; the struct; getters and editing; the handlers pushing into
+      `Out` (choose/delete/capture as events).
 - [ ] 12. Prefs and the `Panel` view.
 - [ ] 13. Session: fields in; session-only rules; units, windows, found, tray, background; `launch` and
       `reconcile`; dock with `EntryAct`; enqueue.
