@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn the_systems_battery_not_a_devices() {
-        let class = clamshell_core::testdir::TempDir::new("sys");
+        let class = clamshell_core::kit::testdir::TempDir::new("sys");
         for (name, kind, scope) in [("AC", "Mains", None), ("hid-headset-battery", "Battery", Some("Device")), ("BAT0", "Battery", Some("System"))] {
             fs::create_dir_all(class.join(name)).unwrap();
             fs::write(class.join(name).join("type"), format!("{kind}\n")).unwrap();

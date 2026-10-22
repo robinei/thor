@@ -2,7 +2,7 @@
 //! to: [`Id`], and an enum per screen of its targets (`ShelfId`, `DockId`, `KeymapId`, ...). These name
 //! targets, not the things they act on (a keymap's own id is its number, a `u16`). Focus is kept by id, so
 //! it survives redraws and layout changes; list items are named by position (so drawing needs no
-//! allocation) and resolved by what they are when pressed (see [`crate::items`]).
+//! allocation) and resolved by what they are when pressed (see [`crate::nav::items`]).
 
 use std::sync::Arc;
 
@@ -40,15 +40,15 @@ pub enum Id {
     PadMouse,
     /// A row of a scrolled list, by position: the row, or one of its controls.
     Row {
-        list: crate::scroll::ListId,
+        list: crate::nav::lists::ListId,
         i: u16,
-        part: crate::scroll::RowPart,
+        part: crate::nav::lists::RowPart,
     },
     /// The keymaps' screens' buttons (see [`crate::keymap_screens`]).
     Keymap(KeymapId),
     /// A scrolled list's area, under its rows: a finger on it (between rows) drags the list; a tap does
     /// nothing.
-    List(crate::scroll::ListId),
+    List(crate::nav::lists::ListId),
     /// The dark second screen (while a game runs): a tap anywhere lights it.
     Wake,
     /// The second screen below the bar where there is nothing: a tap does nothing, a finger moving

@@ -6,16 +6,9 @@
 
 use crate::State;
 use crate::id::{AudioId, DockId, Id, ShelfId};
+use crate::kit::list::ItemKey;
 use crate::levels::Level;
-use crate::pointer::Press;
-
-/// What a list item is: a network's SSID, a device's address, a game's workspace, a collection's name,
-/// a backlight's name; a PipeWire object's id.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ItemKey {
-    Name(String),
-    Number(u32),
-}
+use crate::nav::pointer::Press;
 
 impl State {
     /// What the item `id` points at is, if `id` is a list item.

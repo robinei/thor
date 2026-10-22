@@ -22,7 +22,7 @@
 use std::fmt::{self, Write};
 
 use crate::keyboard::{Key, Named};
-use crate::names::names;
+use crate::kit::names::names;
 
 mod inputs;
 mod outputs;

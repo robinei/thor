@@ -15,8 +15,9 @@
 use crate::State;
 use crate::effect::Effect;
 use crate::id::Id;
-use crate::items::ItemKey;
-use crate::scroll::{ListId, RowPart, Rows};
+use crate::kit::list::ItemKey;
+use crate::kit::list::Rows;
+use crate::nav::lists::{ListId, RowPart};
 use crate::slider::{Control, Slider};
 
 /// A level row.
@@ -285,11 +286,11 @@ impl Levels {
             read.volume = mine.volume;
             read.muted = mine.muted;
         }
-        crate::replace(&mut self.audio, audio)
+        crate::kit::replace(&mut self.audio, audio)
     }
 
     pub(crate) fn read_backlights(&mut self, backlights: Vec<String>) -> bool {
-        crate::replace(&mut self.backlights.0, backlights)
+        crate::kit::replace(&mut self.backlights.0, backlights)
     }
 
     /// The finger is on `level`: what it sets is held over readings until it lifts.

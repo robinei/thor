@@ -8,7 +8,7 @@
 
 use crate::State;
 use crate::effect::{Dirty, Effect, Save};
-use crate::scroll::ListId;
+use crate::nav::lists::ListId;
 
 /// The time zone as the system has it, and the ones to choose from (tzdata's names, "Europe/Oslo"); and
 /// whether the network sets the clock.

@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn a_place_by_the_path_or_the_name_in_the_folder_mpv_conf_names() {
-        let root = clamshell_core::testdir::TempDir::new("mpv");
+        let root = clamshell_core::kit::testdir::TempDir::new("mpv");
         let (config, state) = (root.join("config"), root.join("state"));
         std::fs::create_dir_all(config.join("mpv")).unwrap();
         std::fs::write(config.join("mpv/mpv.conf"), "save-position-on-quit=yes\nwatch-later-dir=~~state/places\n").unwrap();

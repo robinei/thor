@@ -691,8 +691,8 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
 
-    fn scratch(name: &str) -> clamshell_core::testdir::TempDir {
-        clamshell_core::testdir::TempDir::new(&format!("files-{name}"))
+    fn scratch(name: &str) -> clamshell_core::kit::testdir::TempDir {
+        clamshell_core::kit::testdir::TempDir::new(&format!("files-{name}"))
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //! input mapped to an output.
 
 use super::*;
-use crate::names::names;
+use crate::kit::names::names;
 
 /// A binding's parameters beside its output: values set with a slider (0 to 100 on its track), and
 /// switches ([`Param::switch`]).

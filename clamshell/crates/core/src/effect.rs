@@ -9,7 +9,7 @@ use crate::bluetooth;
 use crate::instance::Instance;
 use crate::keyboard::Stroke;
 use crate::levels::{Share, Sound};
-use crate::pad::PadRoute;
+use crate::nav::pad::PadRoute;
 use crate::settings::Values;
 use crate::wifi;
 

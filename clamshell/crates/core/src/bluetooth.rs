@@ -6,9 +6,9 @@
 use crate::State;
 use crate::effect::Effect;
 use crate::id::BtId;
-use crate::items::ItemKey;
+use crate::kit::list::ItemKey;
+use crate::kit::list::Rows;
 use crate::radios::RadioStatus;
-use crate::scroll::Rows;
 
 /// What kind of device it is (from BlueZ's icon name), for its icon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

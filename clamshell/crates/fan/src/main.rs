@@ -138,8 +138,8 @@ mod tests {
     use super::*;
 
     /// A machine's /sys and /run in a temporary directory.
-    fn machine(name: &str) -> clamshell_core::testdir::TempDir {
-        let root = clamshell_core::testdir::TempDir::new(&format!("fan-{name}"));
+    fn machine(name: &str) -> clamshell_core::kit::testdir::TempDir {
+        let root = clamshell_core::kit::testdir::TempDir::new(&format!("fan-{name}"));
         for (dir, kind, temp) in [("thermal_zone0", "cpuss0", 72_000), ("thermal_zone1", "gpuss-0", 61_000), ("thermal_zone2", "pm8550_tz", 99_000)] {
             let zone = root.join("sys/class/thermal").join(dir);
             fs::create_dir_all(&zone).unwrap();

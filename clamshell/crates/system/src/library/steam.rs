@@ -72,7 +72,7 @@ mod tests {
 
     #[test]
     fn games_of_every_library_folder_with_their_art() {
-        let root = clamshell_core::testdir::TempDir::new("steam");
+        let root = clamshell_core::kit::testdir::TempDir::new("steam");
         let other = root.join("other");
         fs::create_dir_all(root.join("steamapps")).unwrap();
         fs::create_dir_all(other.join("steamapps")).unwrap();

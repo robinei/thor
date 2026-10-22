@@ -33,23 +33,19 @@ pub mod hardware;
 mod id;
 pub mod idle;
 pub mod instance;
-mod items;
 pub mod keyboard;
 pub mod keymap;
 pub mod keymap_screens;
+pub mod kit;
 pub mod levels;
 pub mod metrics;
-mod names;
+pub mod nav;
 pub mod notice;
-mod pad;
 mod panel;
-mod pointer;
 pub mod program;
 mod radios;
 mod resume;
 mod running;
-pub mod scroll;
-pub mod secret;
 mod session;
 pub mod settings;
 mod shelf;
@@ -57,8 +53,6 @@ pub mod slider;
 pub mod sticks;
 mod sys;
 mod tab;
-#[cfg(feature = "test-support")]
-pub mod testdir;
 pub mod time;
 pub mod touch;
 pub mod tray;
@@ -66,11 +60,16 @@ pub mod wifi;
 pub mod windows;
 
 use keyboard::{Key, Keyboard};
+use kit::replace;
 pub use resume::Resume;
 use resume::{SAVE_AFTER, Saves};
 use settings::{MouseAtLaunch, Settings};
 use slider::Control;
 
+pub use crate::kit::list::Scroll;
+pub use crate::nav::lists::{ListEvent, ListId, Lists, RowPart};
+pub use crate::nav::pad::{Claimant, Pad, PadInput, PadMouse, PadRoute};
+pub use crate::nav::pointer::Pointer;
 pub use dock::{Dock, DockItem};
 pub use editor::{Editor, count_env, parse_env};
 pub use effect::{Dirty, Effect, Save, Watch, WindowCommand};
@@ -78,13 +77,10 @@ pub use event::{Event, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEven
 pub use id::{AudioId, BtId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, WifiId};
 pub use instance::Instance;
 pub use levels::{Brightness, Level, Levels, Sound};
-pub use pad::{Claimant, Pad, PadInput, PadMouse, PadRoute};
 pub use panel::{Scope, TileOrigin};
-pub use pointer::Pointer;
 pub use program::Program;
 pub use radios::{RadioStatus, Radios};
 pub use running::{Front, Launching, Origin, Running};
-pub use scroll::{ListEvent, ListId, Lists, RowPart, Scroll};
 pub use session::Session;
 pub use shelf::{Cursor, Shelf};
 pub use sys::{Status, Sys};
@@ -189,13 +185,6 @@ pub struct State {
     /// The text on the system's clipboard, for the editor's Ctrl+V (files copied in the Files tab are its
     /// own, above).
     clipboard: Option<std::sync::Arc<str>>,
-}
-
-/// Replaces `slot` with `value`; whether that changed it.
-pub(crate) fn replace<T: PartialEq>(slot: &mut T, value: T) -> bool {
-    let changed = *slot != value;
-    *slot = value;
-    changed
 }
 
 impl State {
@@ -699,7 +688,7 @@ impl State {
                 if let Id::Key(pos) = id {
                     self.keyboard.down(pos);
                 }
-                self.pointer.press = self.item_key(&id).map(|item| pointer::Press { id: id.clone(), item });
+                self.pointer.press = self.item_key(&id).map(|item| crate::nav::pointer::Press { id: id.clone(), item });
                 self.pointer.pressed = Some(id);
                 (dirty, vec![])
             }

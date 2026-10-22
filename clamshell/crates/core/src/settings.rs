@@ -8,7 +8,7 @@ use std::fmt::Write;
 use std::sync::Arc;
 
 use crate::editor::parse_env;
-use crate::names::names;
+use crate::kit::names::names;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Setting {

@@ -167,7 +167,7 @@ mod tests {
 
     #[test]
     fn scales_to_fit_and_premultiplies() {
-        let dir = clamshell_core::testdir::TempDir::new("img");
+        let dir = clamshell_core::kit::testdir::TempDir::new("img");
         let path = dir.join("half.png");
         // 60x90, half-transparent red.
         image::RgbaImage::from_pixel(60, 90, image::Rgba([255, 0, 0, 128])).save(&path).unwrap();

@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn a_job_round_trips_and_runs_in_its_scope() {
-        let dir = clamshell_core::testdir::TempDir::new("jobs");
+        let dir = clamshell_core::kit::testdir::TempDir::new("jobs");
         let job = Job {
             unit: format!("clamshell-run-jobtest-{}-0", std::process::id()),
             workspace: "clamshell-run-jobtest".into(),

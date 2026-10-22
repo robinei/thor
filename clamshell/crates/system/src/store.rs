@@ -499,8 +499,8 @@ mod tests {
     use clamshell_core::keymap::{Binding, Button, Input, Output, PadOut};
     use clamshell_core::levels::Share;
 
-    fn dir(name: &str) -> clamshell_core::testdir::TempDir {
-        clamshell_core::testdir::TempDir::new(&format!("store-{name}"))
+    fn dir(name: &str) -> clamshell_core::kit::testdir::TempDir {
+        clamshell_core::kit::testdir::TempDir::new(&format!("store-{name}"))
     }
 
     #[test]

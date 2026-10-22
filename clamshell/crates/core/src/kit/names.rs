@@ -14,7 +14,7 @@
 /// ```
 macro_rules! names {
     ($ty:ident { $($v:ident: $name:literal, $label:literal;)* }) => {
-        $crate::names::names!(@common $ty { $($v: $name;)* });
+        $crate::kit::names::names!(@common $ty { $($v: $name;)* });
         impl $ty {
             /// How it reads on screen.
             pub fn label(self) -> &'static str {
@@ -25,12 +25,12 @@ macro_rules! names {
         }
     };
     ($ty:ident { $($v:ident: $name:literal;)* }) => {
-        $crate::names::names!(@common $ty { $($v: $name;)* });
+        $crate::kit::names::names!(@common $ty { $($v: $name;)* });
     };
     (@common $ty:ident { $($v:ident: $name:literal;)* }) => {
         impl $ty {
             /// Every one, in order.
-            pub const ALL: [Self; $crate::names::names!(@count $($v)*)] = [$(Self::$v),*];
+            pub const ALL: [Self; $crate::kit::names::names!(@count $($v)*)] = [$(Self::$v),*];
 
             /// Its word in files and the control pipe.
             pub fn name(self) -> &'static str {
@@ -46,7 +46,7 @@ macro_rules! names {
         }
     };
     (@count) => { 0usize };
-    (@count $head:ident $($tail:ident)*) => { 1usize + $crate::names::names!(@count $($tail)*) };
+    (@count $head:ident $($tail:ident)*) => { 1usize + $crate::kit::names::names!(@count $($tail)*) };
 }
 
 pub(crate) use names;

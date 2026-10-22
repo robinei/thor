@@ -47,7 +47,7 @@ mod tests {
 
     #[test]
     fn the_power_keys_wakeup_follows_the_lid() {
-        let input = clamshell_core::testdir::TempDir::new("lid");
+        let input = clamshell_core::kit::testdir::TempDir::new("lid");
         for (dev, name) in [("input0", "pm8941_pwrkey"), ("input1", "gpio-keys"), ("input2", "pm8941_resin")] {
             let power = input.join(dev).join("device/power");
             fs::create_dir_all(&power).unwrap();

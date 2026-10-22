@@ -690,7 +690,7 @@ mod tests {
 
     #[test]
     fn files_and_folders_at_the_top_first_pattern_first() {
-        let root = clamshell_core::testdir::TempDir::new("content");
+        let root = clamshell_core::kit::testdir::TempDir::new("content");
         touch(
             &root,
             &["Zelda.sfc", "Zelda.png", "Mario.smc", "notes.txt", ".hidden.sfc", "FF7/FF7.m3u", "FF7/FF7 (Disc 1).cue", "FF7/cover.jpg", "Empty/readme"],
@@ -709,7 +709,7 @@ mod tests {
 
     #[test]
     fn a_folder_with_items_is_a_group_of_groups() {
-        let root = clamshell_core::testdir::TempDir::new("series");
+        let root = clamshell_core::kit::testdir::TempDir::new("series");
         touch(
             &root,
             &[
@@ -751,7 +751,7 @@ mod tests {
         assert_eq!(episode_title("S03E07-08 Two Parter", 3).as_deref(), Some("7–8. Two Parter"));
         assert_eq!(episode_title("S02E03 Wrong season", 1), None, "another season's: as named");
         assert_eq!(episode_title("Sunset Boulevard", 1), None);
-        let root = clamshell_core::testdir::TempDir::new("seasons");
+        let root = clamshell_core::kit::testdir::TempDir::new("seasons");
         touch(&root, &["Show/Cover.jpg", "Show/Season 1/017 S01E18 Part (Part 1).mkv", "Show/Season 1/S01E02 Two.mkv", "Show/Specials/001 S00E01 Pilot.mkv"]);
         let s = Scan { dir: root.to_string_lossy().into_owned(), ..source(r#"{ "place": "TV", "id": "tv", "dir": "", "match": ["*/"], "items": ["*.mkv"] }"#) };
         let mut games = Vec::new();

@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use crate::scroll::{Rows, Scroll};
+use crate::kit::list::{Rows, Scroll};
 use crate::{Collection, Entry, Library};
 
 /// A list's place: the selected entry's position, and the rows scrolled past (whole rows at rest;
@@ -116,7 +116,7 @@ impl Shelf {
 
     /// The current list's scroll.
     pub(crate) fn scroll(&self) -> &Scroll {
-        self.place().map_or(&crate::scroll::EMPTY, |p| &p.scroll)
+        self.place().map_or(&crate::kit::list::EMPTY, |p| &p.scroll)
     }
 
     pub(crate) fn scroll_mut(&mut self) -> Option<&mut Scroll> {

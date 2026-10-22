@@ -394,7 +394,7 @@ mod tests {
         let (w, h) = (1240u32, 1080u32);
         for (tab, first, second) in [
             (Tab::Wifi, Id::Wifi(WifiId::Power), ListId::Wifi.row(0)),
-            (Tab::Volume, Id::Level(Level::Volume), Id::Row { list: ListId::Streams, i: 0, part: clamshell_core::scroll::RowPart::Level }),
+            (Tab::Volume, Id::Level(Level::Volume), Id::Row { list: ListId::Streams, i: 0, part: clamshell_core::nav::lists::RowPart::Level }),
         ] {
             let mut state = demo();
             let networks = (0..4).map(|i| Network { ssid: format!("net {i}"), ..Network::default() }).collect();

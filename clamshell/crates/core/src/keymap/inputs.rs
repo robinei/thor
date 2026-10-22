@@ -2,7 +2,7 @@
 //! game's pad's own outputs (PadOut).
 
 use super::*;
-use crate::names::names;
+use crate::kit::names::names;
 
 /// A face, shoulder, menu, stick-click or back button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]

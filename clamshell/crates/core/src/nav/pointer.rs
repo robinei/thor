@@ -1,9 +1,9 @@
 //! Focus and presses: the target the pad's focus is on (its ring shown only while navigating with the
 //! pad), and the target a finger, the mouse or the pad's A is pressing (drawn lit), with what list item
-//! the press came down on (see [`crate::items`]).
+//! the press came down on (see [`crate::nav::items`]).
 
 use crate::id::Id;
-use crate::items::ItemKey;
+use crate::kit::list::ItemKey;
 
 /// A press on a list item, by what the item is (not where), so a list that changes under the finger
 /// doesn't redirect it.

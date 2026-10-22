@@ -7,10 +7,10 @@ use crate::State;
 use crate::editor::{Editor, Purpose};
 use crate::effect::Effect;
 use crate::id::WifiId;
-use crate::items::ItemKey;
+use crate::kit::list::ItemKey;
+use crate::kit::list::Rows;
+use crate::kit::secret::Secret;
 use crate::radios::RadioStatus;
-use crate::scroll::Rows;
-use crate::secret::Secret;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Network {

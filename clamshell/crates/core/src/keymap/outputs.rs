@@ -1,7 +1,7 @@
 //! What an input may be mapped to (Output): a key chord, a mouse button, the pad's own, a layer, ...
 
 use super::*;
-use crate::names::names;
+use crate::kit::names::names;
 
 /// A key with the modifiers held for it; or the modifiers alone (no key: Shift as a key of its own).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]

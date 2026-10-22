@@ -796,7 +796,7 @@ mod tests {
 
     #[test]
     fn lists_are_kept_fetched_again_when_old_and_used_old_when_offline() {
-        let dir = clamshell_core::testdir::TempDir::new("lists");
+        let dir = clamshell_core::kit::testdir::TempDir::new("lists");
         let file = dir.join("Named_Boxarts - Nintendo - SNES.html");
         let day = std::time::Duration::from_secs(86_400);
         assert_eq!(kept(&file, day, || None), None, "nothing kept, nothing fetched");

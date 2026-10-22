@@ -387,7 +387,7 @@ mod tests {
 
     #[test]
     fn a_games_config_file_carries_its_cap_and_hud() {
-        let dir = clamshell_core::testdir::TempDir::new("tuning");
+        let dir = clamshell_core::kit::testdir::TempDir::new("tuning");
         let a = mangohud_config(&dir, "steam:1", 40, Hud::Off).unwrap();
         let text = fs::read_to_string(&a).unwrap();
         assert!(text.contains("fps_limit=40\n") && text.contains("alpha=0\n"));

@@ -3,32 +3,11 @@
 //! written once changes have stopped for a moment.
 
 use crate::State;
+use crate::kit::debounce::Debounce;
 use crate::tab::Tab;
 
 /// Seconds after the last change before it is saved.
 pub(crate) const SAVE_AFTER: u64 = 2;
-
-/// A change waiting to be saved: since when (the monotonic clock's seconds), if any.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) struct Debounce {
-    since: Option<u64>,
-}
-
-impl Debounce {
-    /// Something changed at `now`: saved once nothing has for a moment.
-    pub(crate) fn touch(&mut self, now: u64) {
-        self.since = Some(now);
-    }
-
-    /// Whether it is time to save (`after` seconds since the last change); then it is no longer due.
-    pub(crate) fn due(&mut self, now: u64, after: u64) -> bool {
-        let due = self.since.is_some_and(|since| now >= since + after);
-        if due {
-            self.since = None;
-        }
-        due
-    }
-}
 
 /// What waits to be saved.
 #[derive(Debug, Clone, Copy, Default)]

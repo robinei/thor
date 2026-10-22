@@ -18,7 +18,7 @@ pub struct Editor {
 }
 
 impl fmt::Debug for Editor {
-    /// A password typed is kept out of logs, as a [`crate::secret::Secret`] is.
+    /// A password typed is kept out of logs, as a [`crate::kit::secret::Secret`] is.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let password = matches!(self.purpose, Purpose::Password { .. } | Purpose::AccountPassword(_));
         let text: &dyn fmt::Debug = if password { &"…" } else { &self.text };
@@ -208,7 +208,7 @@ mod tests {
         assert!(!format!("{e:?}").contains("hunter22"));
         let e = Editor { purpose: Purpose::Env { entry: None }, text: "A=1".into() };
         assert!(format!("{e:?}").contains("A=1"), "the rest is shown");
-        let connect = crate::wifi::Command::Connect { ssid: "home".into(), password: Some(crate::secret::Secret("hunter22".into())) };
+        let connect = crate::wifi::Command::Connect { ssid: "home".into(), password: Some(crate::kit::secret::Secret("hunter22".into())) };
         assert!(!format!("{connect:?}").contains("hunter22"));
     }
 

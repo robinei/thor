@@ -679,7 +679,7 @@ mod tests {
 
     #[test]
     fn folders_come_first_and_steam_can_have_its_own() {
-        let root = clamshell_core::testdir::TempDir::new("steam-group");
+        let root = clamshell_core::kit::testdir::TempDir::new("steam-group");
         let steam = root.join("steam");
         std::fs::create_dir_all(steam.join("steamapps")).unwrap();
         std::fs::write(steam.join("steamapps/libraryfolders.vdf"), format!("\"libraryfolders\" {{ \"0\" {{ \"path\" \"{}\" }} }}", steam.display())).unwrap();
@@ -720,7 +720,7 @@ mod tests {
 
     #[test]
     fn sources_name_their_runner_and_metadata_and_wait_for_their_card() {
-        let root = clamshell_core::testdir::TempDir::new("named");
+        let root = clamshell_core::kit::testdir::TempDir::new("named");
         let apps = root.join("data/applications");
         std::fs::create_dir_all(&apps).unwrap();
         std::fs::write(apps.join("celeste.desktop"), "[Desktop Entry]\nType=Application\nName=Celeste\nExec=celeste\nCategories=Game;\n").unwrap();
@@ -759,7 +759,7 @@ mod tests {
         assert!(rule(r#"{ "categories": "Emu*" }"#).matches("x", "RetroArch", &cats(&["Game", "Emulator"])));
         assert!(!rule(r#"{ "id": "*lutris*", "name": "Steam" }"#).matches("net.lutris.Lutris", "Lutris", &[]), "all of them");
         assert!(rule("{}").matches("any", "Any", &[]), "nothing to match: every entry");
-        let root = clamshell_core::testdir::TempDir::new("rules");
+        let root = clamshell_core::kit::testdir::TempDir::new("rules");
         let apps = root.join("data/applications");
         std::fs::create_dir_all(&apps).unwrap();
         let write = |id: &str, name: &str, cats: &str| {
@@ -792,7 +792,7 @@ mod tests {
 
     #[test]
     fn runners_fill_folders_in_a_tab_each_with_its_own_launch() {
-        let root = clamshell_core::testdir::TempDir::new("folders");
+        let root = clamshell_core::kit::testdir::TempDir::new("folders");
         for f in ["snes/Zelda.sfc", "snes/Mario.sfc", "snes/cover.png", "gba/Metroid.gba", "pc/Doom.sh"] {
             let p = root.join(f);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();

@@ -1,18 +1,17 @@
-//! Scrolled lists: shelf's games on the main screen; on the second screen Wi-Fi's networks, Bluetooth's
-//! devices, the apps playing, the backlights. Each keeps how far it is scrolled, in rows (so touch and the
-//! pad agree whatever the layout), and how many rows the UI last showed of it ([`Scroll`]; shelf keeps one
-//! per collection). The pad's focus on a row scrolls just enough to show it; a list that changes under
+//! The scrolled lists: shelf's games on the main screen; on the second screen Wi-Fi's networks,
+//! Bluetooth's devices, the apps playing, the backlights. Each keeps its place ([`Scroll`]; shelf keeps
+//! one per collection). The pad's focus on a row scrolls just enough to show it; a list that changes under
 //! the view keeps the row at its top where it is (a network vanishing above doesn't move the rows under
 //! the finger), unless the view is at the very top, where new rows show.
 //!
 //! A list's rows are targets of one kind ([`Id::Row`]); what a row is, how many there are and what a tap
-//! on one does is its feature's ([`Rows`], [`State::on_row`]): this module only says which feature a
-//! list is.
+//! on one does is its feature's ([`crate::kit::list::Rows`], [`State::on_row`]): this module only says
+//! which feature a list is.
 
 use crate::State;
 use crate::effect::Effect;
 use crate::id::Id;
-use crate::items::ItemKey;
+use crate::kit::list::{EMPTY, RowsOf, Scroll};
 
 /// A scrolled list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -94,128 +93,6 @@ impl ListId {
     }
 }
 
-/// A list's rows as the lists see them: its feature's, or just how many (rows not found again by a key
-/// when they change, as a keymap's layers on the screen showing them).
-pub(crate) enum RowsOf<'a> {
-    Of(&'a dyn Rows),
-    Count(usize),
-}
-
-impl RowsOf<'_> {
-    fn len(&self) -> usize {
-        match self {
-            RowsOf::Of(r) => r.len(),
-            RowsOf::Count(n) => *n,
-        }
-    }
-
-    pub(crate) fn key(&self, i: usize) -> Option<ItemKey> {
-        match self {
-            RowsOf::Of(r) => r.key(i),
-            RowsOf::Count(_) => None,
-        }
-    }
-
-    pub(crate) fn find(&self, key: &ItemKey) -> Option<usize> {
-        match self {
-            RowsOf::Of(r) => r.find(key),
-            RowsOf::Count(_) => None,
-        }
-    }
-}
-
-/// A list's rows as its feature has them: how many, and what each is, to find it again after the list
-/// changed. A list whose rows have no key doesn't keep its place by item.
-pub(crate) trait Rows {
-    fn len(&self) -> usize;
-
-    fn key(&self, _i: usize) -> Option<ItemKey> {
-        None
-    }
-
-    fn find(&self, _key: &ItemKey) -> Option<usize> {
-        None
-    }
-}
-
-/// One list's place: the offset in rows (fractions while a finger drags it), how many rows fit on
-/// screen (as last drawn; none known yet: nothing scrolls), and the item at the top with the fraction
-/// of it scrolled past, to keep it there when the list changes.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct Scroll {
-    offset: f32,
-    visible: Option<f32>,
-    anchor: Option<(ItemKey, f32)>,
-}
-
-impl Scroll {
-    pub fn offset(&self) -> f32 {
-        self.offset
-    }
-
-    /// How many rows show, as last drawn.
-    pub fn visible(&self) -> Option<f32> {
-        self.visible
-    }
-
-    /// The furthest the list scrolls with `len` rows: its last row at the bottom.
-    pub fn max_offset(&self, len: usize) -> f32 {
-        self.visible.map_or(0.0, |v| (len as f32 - v).max(0.0))
-    }
-
-    /// The offset kept within the list's ends; whether it changed.
-    fn clamp(&mut self, len: usize) -> bool {
-        let clamped = self.offset.clamp(0.0, self.max_offset(len));
-        let changed = clamped != self.offset;
-        self.offset = clamped;
-        changed
-    }
-
-    /// Scrolled by `rows` (positive: further down the list), within its ends; whether it moved.
-    pub fn scroll_by(&mut self, rows: f32, len: usize) -> bool {
-        let before = self.offset;
-        self.offset += rows;
-        self.clamp(len);
-        self.offset != before
-    }
-
-    /// Scrolled just enough to show row `i` whole; whether it moved.
-    pub fn show(&mut self, i: usize, len: usize) -> bool {
-        let Some(visible) = self.visible else {
-            return false;
-        };
-        let before = self.offset;
-        let i = i as f32;
-        if i < self.offset {
-            self.offset = i;
-        } else if i + 1.0 > self.offset + visible {
-            self.offset = i + 1.0 - visible;
-        }
-        self.clamp(len);
-        self.offset != before
-    }
-
-    /// How many rows the UI shows; whether that changed.
-    pub fn set_visible(&mut self, rows: f32, len: usize) -> bool {
-        if self.visible == Some(rows) {
-            return false;
-        }
-        self.visible = Some(rows);
-        self.clamp(len);
-        true
-    }
-
-    /// Whether the list has more rows than show.
-    pub fn overflows(&self, len: usize) -> bool {
-        self.max_offset(len) > 0.0
-    }
-
-    /// Whether scrolling by `rows` would move it (a fling stops at the ends).
-    pub fn can_scroll(&self, rows: f32, len: usize) -> bool {
-        (rows > 0.0 && self.offset < self.max_offset(len)) || (rows < 0.0 && self.offset > 0.0)
-    }
-}
-
 /// Every list's place.
 #[derive(Debug, Clone, Default)]
 pub struct Lists {
@@ -232,8 +109,6 @@ impl Lists {
         self.scrolls.get_mut(list.index())
     }
 }
-
-pub(crate) static EMPTY: Scroll = Scroll { offset: 0.0, visible: None, anchor: None };
 
 /// What the UI says about a list.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -349,11 +224,9 @@ impl State {
 
     /// Remembers which item is at the top of `list`'s view.
     fn anchor(&mut self, list: ListId) {
-        let offset = self.scroll(list).offset;
-        let top = offset.floor();
-        let key = self.rows(list).key(top as usize);
+        let key = self.rows(list).key(self.scroll(list).top());
         if let Some(s) = self.scroll_mut(list) {
-            s.anchor = key.map(|k| (k, offset - top));
+            s.anchor(key);
         }
     }
 
@@ -363,19 +236,9 @@ impl State {
         let mut moved = false;
         for list in ListId::ALL {
             let len = self.list_len(list);
-            let scroll = self.scroll(list);
-            let found = match &scroll.anchor {
-                // At the very top it stays there: new rows show.
-                Some((key, fraction)) if scroll.offset > 0.0 => self.rows(list).find(key).map(|i| i as f32 + fraction),
-                _ => None,
-            };
+            let found = self.scroll(list).anchored().and_then(|key| self.rows(list).find(key));
             if let Some(s) = self.scroll_mut(list) {
-                let before = s.offset;
-                if let Some(offset) = found {
-                    s.offset = offset;
-                }
-                s.clamp(len);
-                moved |= s.offset != before;
+                moved |= s.follow(found, len);
             }
         }
         moved
@@ -389,44 +252,6 @@ mod tests {
     use crate::testkit::*;
     use crate::wifi::{Network, Wifi};
     use crate::*;
-
-    fn scroll(visible: f32) -> Scroll {
-        Scroll { visible: Some(visible), ..Scroll::default() }
-    }
-
-    #[test]
-    fn the_offset_stays_within_the_ends() {
-        let mut s = scroll(4.5);
-        assert!(!s.scroll_by(-1.0, 10), "at the top already");
-        assert!(s.scroll_by(3.25, 10));
-        assert_eq!(s.offset(), 3.25);
-        s.scroll_by(100.0, 10);
-        assert_eq!(s.offset(), 5.5, "the last row at the bottom");
-        assert!(s.can_scroll(-1.0, 10) && !s.can_scroll(1.0, 10));
-        // Fewer rows than fit: nothing scrolls.
-        let mut short = scroll(4.5);
-        assert!(!short.scroll_by(2.0, 3) && !short.overflows(3));
-        // Not laid out yet: nothing scrolls either.
-        assert!(!Scroll::default().scroll_by(1.0, 10));
-        // Fewer rows fit now: the offset comes back within the ends.
-        s.set_visible(8.0, 10);
-        assert_eq!(s.offset(), 2.0);
-    }
-
-    #[test]
-    fn showing_a_row_scrolls_just_enough() {
-        let mut s = scroll(4.0);
-        assert!(!s.show(3, 10), "already shown");
-        assert!(s.show(4, 10));
-        assert_eq!(s.offset(), 1.0, "its bottom at the view's bottom");
-        assert!(s.show(9, 10));
-        assert_eq!(s.offset(), 6.0);
-        assert!(s.show(2, 10));
-        assert_eq!(s.offset(), 2.0, "its top at the view's top");
-        s.scroll_by(0.5, 10);
-        assert!(s.show(2, 10), "a row partly scrolled past comes back whole");
-        assert_eq!(s.offset(), 2.0);
-    }
 
     fn network(ssid: &str) -> Network {
         Network { ssid: ssid.into(), strength: 50, ..Network::default() }
