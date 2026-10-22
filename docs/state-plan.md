@@ -129,7 +129,8 @@ and the UI change with the code they call; doc links to moved methods are fixed 
       to by range; images carry a generation so a load changes the command), reused so recording doesn't
       allocate once warm. After every `apply`, each visible screen is recorded and compared with its last
       recording (two slice compares); only a changed one is played into the shm buffer and committed.
-      `Dirty` and every `out.mark(..)` go. Later: damage regions from the differing commands. Start with a
+      `Dirty` and every `out.mark(..)` go. Later, only if measurements on the device call for it: one damage rectangle, the bounds of the
+      commands between the first and last difference (no region algebra). Start with a
       prototype on one screen measuring record + compare against a full draw. Floats in commands are a
       `Px(f32)` compared and hashed by `to_bits()` (layout is deterministic, so bit-equal means the same
       drawing; a NaN equals itself; output is unchanged); the burn-in orbit offset is part of the recording.
