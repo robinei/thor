@@ -1,7 +1,7 @@
 //! The control pipe itself: writing a command to it (`clamshell ctl`) and the thread that reads them.
 
 use std::io::BufRead;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clamshell_system::Sink;
 use clamshell_system::os::worker;
@@ -23,22 +23,32 @@ pub fn send(path: Option<&PathBuf>, line: &str) -> std::io::Result<()> {
     writeln!(pipe, "{line}")
 }
 
-/// Reads commands from the pipe at `path`, one per line, and sends their events. The pipe is created if it
-/// doesn't exist.
-pub fn spawn(path: PathBuf, sink: impl Sink) {
+/// How long to wait before trying a pipe that couldn't be opened again.
+const RETRY: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Creates the pipe at `path` if it doesn't exist.
+fn create(path: &Path) {
     if !path.exists()
-        && let Err(e) = rustix::fs::mknodat(rustix::fs::CWD, &path, rustix::fs::FileType::Fifo, rustix::fs::Mode::from_raw_mode(0o600), 0)
+        && let Err(e) = rustix::fs::mknodat(rustix::fs::CWD, path, rustix::fs::FileType::Fifo, rustix::fs::Mode::from_raw_mode(0o600), 0)
     {
         log::warn!("control: {}: {e}", path.display());
     }
+}
+
+/// Reads commands from the pipe at `path`, one per line, and sends their events. The pipe is created if it
+/// doesn't exist, and created again if it is deleted.
+pub fn spawn(path: PathBuf, sink: impl Sink) {
+    create(&path);
     let spawned = worker::detached("control", move || {
         // Each writer closes the pipe after its line, so it is opened again for the next one.
         loop {
             let file = match std::fs::File::open(&path) {
                 Ok(file) => file,
                 Err(e) => {
-                    log::warn!("control: {}: {e}", path.display());
-                    return;
+                    log::warn!("control: {}: {e}; trying again", path.display());
+                    std::thread::sleep(RETRY);
+                    create(&path);
+                    continue;
                 }
             };
             for line in std::io::BufReader::new(file).lines().map_while(|l| l.inspect_err(|e| log::warn!("control: reading {}: {e}", path.display())).ok()) {
