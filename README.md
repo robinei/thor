@@ -14,6 +14,17 @@ is used. The interface is made for two small screens, a controller and touch, ra
 monitor: the top screen holds the games and the program in front, and the second screen holds the
 controls, the on-screen keyboard and touchpad, and windows moved down to it.
 
+Not aims (decided, so they are not reopened by accident):
+
+- More than one on-screen keyboard layout. It is a PC-style US layout with an Fn layer, which covers
+  what is typed on the device (searches, passwords, names); other languages are for a physical keyboard,
+  which keeps its own layout.
+- Compositors other than sway. Placing windows, the second screen and following launches use sway's IPC,
+  and other compositors offer no common way.
+- More than one virtual controller for games. Games see one Xbox 360 pad; remapping and the gyro are
+  ClamShell's keymaps.
+- Reading older ClamShell formats. Nobody else runs it yet, so formats change outright.
+
 This README is kept short while things change. How each part behaves is in its module's documentation
 (`cargo doc --open --document-private-items` in `clamshell/`) and in its tests.
 
