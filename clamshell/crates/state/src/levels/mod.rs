@@ -369,6 +369,10 @@ impl Levels {
             }
             Level::Stream(i) => {
                 if let Some(s) = self.audio.streams.get_mut(usize::from(i)) {
+                    // Turning it up or down unmutes, as the output volume does.
+                    if s.muted {
+                        out.effects.push(Effect::Sound(Sound::StreamMute(s.id, false)));
+                    }
                     s.volume = value;
                     s.muted = false;
                     out.effects.push(Effect::Sound(Sound::StreamVolume(s.id, value)));
@@ -512,6 +516,21 @@ mod tests {
         assert_eq!(tap(&mut s, Id::Audio(AudioId::Output(1))), vec![Effect::Sound(Sound::Output(51))]);
         assert_eq!(tap(&mut s, Id::Audio(AudioId::Output(1))), vec![], "already there");
         assert_eq!(tap(&mut s, Id::Tab(Tab::Brightness)), vec![Effect::Watch(Watch::Audio, false), Effect::Watch(Watch::Backlights, true)]);
+    }
+
+    #[test]
+    fn setting_a_muted_streams_level_unmutes_it() {
+        let mut s = state();
+        tap(&mut s, Id::Tab(Tab::Volume));
+        let mut muted = audio();
+        if let Some(stream) = muted.streams.first_mut() {
+            stream.muted = true;
+        }
+        read(&mut s, Reading::Audio(muted));
+        // Unmuted first, then set, as for the output volume.
+        assert_eq!(set(&mut s, Level::Stream(0), 30), vec![Effect::Sound(Sound::StreamMute(80, false)), Effect::Sound(Sound::StreamVolume(80, 30))]);
+        assert!(s.levels().audio().streams.first().is_some_and(|stream| !stream.muted));
+        assert_eq!(set(&mut s, Level::Stream(0), 40), vec![Effect::Sound(Sound::StreamVolume(80, 40))], "unmuted already");
     }
 
     #[test]
