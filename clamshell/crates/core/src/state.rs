@@ -380,9 +380,6 @@ impl State {
     fn settle(&mut self, out: &mut Out) {
         if self.session.version() != self.settled.session {
             self.settled.session = self.session.version();
-            let mut before = std::mem::take(&mut self.settled.running);
-            before.clear();
-            before.extend(self.session.running_entries().iter().map(|r| r.id.clone()));
             if self.session.follow_units(&self.clock, &mut self.shelf, self.bottom.notice_mut(), out) {
                 self.bottom.unwake();
             }
@@ -416,7 +413,6 @@ impl State {
             self.window_effects = windows.effects;
             self.dock.follow(&self.session);
             self.session.followed();
-            self.settled.running = before;
         }
         self.bottom.follow_dim(&self.session, &self.clock);
         self.shelf.follow_folder();
@@ -1138,13 +1134,11 @@ impl State {
 pub(crate) struct Settled {
     /// The session's version (see [`crate::Session::version`]).
     session: u64,
-    /// The running entries' ids before the session's steps, kept so that the list is reused.
-    running: Vec<std::sync::Arc<str>>,
 }
 
 impl Settled {
     /// As at start: the session's steps run on the first change to what it follows.
     pub(crate) fn new(session: &crate::Session) -> Settled {
-        Settled { session: session.version(), running: Vec::new() }
+        Settled { session: session.version() }
     }
 }
