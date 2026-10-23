@@ -8,7 +8,7 @@ what to try first.
 ## 1. Summary
 
 - **It is feasible and well-trodden.** Smithay (Rust) runs daily-driver compositors (niri, COSMIC). An MVP
-  for ClamShell is about **6,000-7,000 new lines and 2,900 deleted**, roughly 2.5-4 months of focused work
+  for ClamShell is about **7,000-8,500 new lines and 2,900 deleted**, roughly 2.5-4 months of focused work
   to daily use, then a tail of per-app quirks (Steam, Proton).
 - **The hardware favours it.** The Thor's kernel carries ROCKNIX's inline-rotation patch: a game's
   compressed (UBWC) buffer can be scanned out **rotated** onto the portrait-native panels, with no GPU
@@ -283,7 +283,7 @@ Before writing the backend, on the device (a day or two):
 | Screenshot, idle-inhibit, clipboard, session | ~400 | low |
 | The state's window model | ~1,000 code, ~2,000 test lines changed | high (the logic risk) |
 | Packages, calibration, self-test, VM suite | ~300 | low |
-| **New** | **~6,000-7,000** | |
+| **New** | **~7,000-8,500** | |
 | **Deleted in the MVP** | **~2,900** (sway module, the Wayland client host, the uinput keyboard, grim, the nested-sway test, configs, restart adoption, settle's window steps) | |
 
 For comparison: niri reached its first alpha in about 3.5 months at 12.9k lines, written from scratch;
