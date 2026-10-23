@@ -101,9 +101,7 @@ pub(crate) fn record(retained: &mut Retained, at: Placement, screen: Screen, sta
         }
         f.finish()
     };
-    if screen == Screen::Top {
-        images.end_frame();
-    }
+    images.end_frame(screen);
     let (sx, sy) = (offset.0 as f32 / scale as f32, offset.1 as f32 / scale as f32);
     for target in &mut retained.targets {
         target.rect.x += sx;

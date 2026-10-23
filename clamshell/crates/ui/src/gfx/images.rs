@@ -3,7 +3,8 @@
 //! [`Image`].
 //!
 //! The view asks for what it draws. An image that isn't loaded is requested once and drawn as a
-//! placeholder until it arrives. When the cache goes over its budget, images not drawn lately are dropped.
+//! placeholder until it arrives. When the cache goes over its budget, the images drawn least recently on
+//! either screen are dropped, but never one the latest frame of a screen drew.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -12,7 +13,10 @@ use std::sync::mpsc::{Receiver, Sender};
 
 use tiny_skia::{IntSize, Pixmap};
 
-/// Bytes of decoded images kept before the ones not drawn lately are dropped.
+use crate::Screen;
+use crate::screens::Screens;
+
+/// Bytes of decoded images kept before the ones drawn least recently are dropped.
 const BUDGET: usize = 96 << 20;
 
 /// An image at one size: the entry's id, which of its images it is, and the box it is fitted into, in
@@ -47,7 +51,10 @@ pub struct Request {
 struct Entry {
     /// `None` if the file couldn't be read. It is not asked for again.
     pixmap: Option<Pixmap>,
+    /// The frame it was last drawn in, counting the frames of both screens.
     used: u64,
+    /// Whether each screen's latest frame drew it.
+    in_latest: Screens<bool>,
     /// Which load this is, so that a recording made before an image was loaded or reloaded differs from
     /// one made after.
     generation: u32,
@@ -79,6 +86,7 @@ pub struct Images {
     pending: HashSet<Key>,
     /// Where requests go. `None` decodes at once, which snapshots use.
     worker: Option<Sender<Request>>,
+    /// The frame being recorded, counting the frames of both screens.
     frame: u64,
     generation: u32,
 }
@@ -130,7 +138,7 @@ impl Images {
 
     fn insert(&mut self, key: Key, pixmap: Option<Pixmap>) {
         self.generation = self.generation.wrapping_add(1);
-        let entry = Entry { pixmap, used: self.frame, generation: self.generation };
+        let entry = Entry { pixmap, used: self.frame, in_latest: Screens::default(), generation: self.generation };
         match self.index.get(&key).copied().or_else(|| self.entries.iter().position(Option::is_none)) {
             Some(i) => {
                 if let Some(slot) = self.entries.get_mut(i) {
@@ -151,19 +159,26 @@ impl Images {
         self.insert(key, pixmap);
     }
 
-    /// Called after a frame. If the cache is over budget, drops the images that weren't drawn in it.
-    pub fn end_frame(&mut self) {
-        let bytes: usize = self.entries.iter().flatten().filter_map(|e| e.pixmap.as_ref()).map(|p| p.data().len()).sum();
-        if bytes > BUDGET {
-            let frame = self.frame;
-            for slot in &mut self.entries {
-                if slot.as_ref().is_some_and(|e| e.used != frame) {
-                    *slot = None;
-                }
-            }
-            let entries = &self.entries;
-            self.index.retain(|_, i| entries.get(*i).is_some_and(Option::is_some));
+    /// Called after a frame of `screen`. While the cache is over budget, drops the image drawn least
+    /// recently, unless the latest frame of either screen drew it.
+    pub fn end_frame(&mut self, screen: Screen) {
+        let frame = self.frame;
+        let mut bytes = 0;
+        for entry in self.entries.iter_mut().flatten() {
+            entry.in_latest[screen] = entry.used == frame;
+            bytes += entry.pixmap.as_ref().map_or(0, |p| p.data().len());
         }
+        while bytes > BUDGET {
+            let oldest = self
+                .entries
+                .iter_mut()
+                .filter(|slot| slot.as_ref().is_some_and(|e| e.pixmap.is_some() && !e.in_latest.top && !e.in_latest.bottom))
+                .min_by_key(|slot| slot.as_ref().map_or(u64::MAX, |e| e.used));
+            let Some(slot) = oldest else { break };
+            bytes -= slot.take().and_then(|e| e.pixmap).map_or(0, |p| p.data().len());
+        }
+        let entries = &self.entries;
+        self.index.retain(|_, i| entries.get(*i).is_some_and(Option::is_some));
         self.frame += 1;
     }
 }
@@ -257,5 +272,41 @@ mod tests {
         assert!(images.get(&id, Slot::Art, Path::new("/x.png"), 10, 10).is_none());
         assert!(images.get(&id, Slot::Art, Path::new("/x.png"), 10, 10).is_none());
         assert_eq!(rx.try_iter().count(), 1);
+    }
+
+    #[test]
+    fn eviction_drops_the_least_recently_drawn_and_keeps_both_screens_latest() {
+        let mut images = Images::synchronous();
+        // A pixmap of a quarter of the budget.
+        let side = ((BUDGET / 4 / 4) as f64).sqrt() as u32;
+        let image = |n: usize| Key { id: format!("{n}").into(), slot: Slot::Art, w: side, h: side };
+        let draw = |images: &mut Images, n: usize| {
+            let key = image(n);
+            if !images.index.contains_key(&key) {
+                images.insert(key.clone(), Pixmap::new(side, side));
+            }
+            let entry = images.index.get(&key).and_then(|&i| images.entries.get_mut(i)).and_then(Option::as_mut).unwrap();
+            entry.used = images.frame;
+        };
+        let kept = |images: &Images| (0..6).filter(|&n| images.index.contains_key(&image(n))).collect::<Vec<_>>();
+        // The bottom shows 0 and 1, the top 2.
+        draw(&mut images, 0);
+        draw(&mut images, 1);
+        images.end_frame(Screen::Bottom);
+        draw(&mut images, 2);
+        images.end_frame(Screen::Top);
+        // The top draws 3, then 4 and 5: over budget, and only 2 and 3 are no screen's latest.
+        draw(&mut images, 3);
+        images.end_frame(Screen::Top);
+        assert_eq!(kept(&images), [0, 1, 2, 3]);
+        draw(&mut images, 4);
+        draw(&mut images, 5);
+        images.end_frame(Screen::Top);
+        assert_eq!(kept(&images), [0, 1, 4, 5], "the bottom's images stay while it shows them");
+        // The bottom draws 1 and 2 again: 0 is no screen's latest any more and the oldest, so it goes.
+        draw(&mut images, 1);
+        draw(&mut images, 2);
+        images.end_frame(Screen::Bottom);
+        assert_eq!(kept(&images), [1, 2, 4, 5]);
     }
 }

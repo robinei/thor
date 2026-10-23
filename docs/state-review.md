@@ -55,7 +55,7 @@ The weak spots are at the seams.
 
 - [x] `Settled.running` is rebuilt every session pass and never read, a leftover from `Dirty`.
       (`state.rs:373-375, 410`.)
-- [ ] Image eviction runs only after a top frame and drops anything not drawn in that frame, so the
+- [x] Image eviction runs only after a top frame and drops anything not drawn in that frame, so the
       bottom's images can be evicted while shown and decoded again. Older than the refactor. Least
       recently used across both screens. (`gfx/images.rs:155`, `render/mod.rs:104`.)
 - [ ] Rare, older: the screens going off and the bottom going off in the same apply leaves the bottom lit.
