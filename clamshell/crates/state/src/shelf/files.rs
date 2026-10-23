@@ -370,6 +370,8 @@ impl Shelf {
                 out.effects.extend(clip.entries.into_iter().map(|(path, _)| Effect::Files(FileOp::Paste { path, into: into.clone(), cut: clip.cut })));
                 return;
             }
+            // With nothing to copy, the clip stays as it was.
+            (FileAction::Copy | FileAction::Cut, _) if targets.is_empty() => return,
             (FileAction::Copy | FileAction::Cut, _) => {
                 self.files.clip = Some(Clip { entries: targets, cut: action == FileAction::Cut });
                 self.files.selected.clear();
@@ -404,13 +406,16 @@ impl Shelf {
         out.effects.push(Effect::Files(op));
     }
 
-    /// What the files thread said. A notice says how an operation ended.
+    /// What the files thread said. A listing drops the selected entries that are gone. A notice says how
+    /// an operation ended.
     pub(crate) fn on_files(&mut self, event: FilesEvent, pointer: &mut Pointer, notice: &mut NoticeSlot, now: u64, out: &mut Out) {
         match event {
             FilesEvent::Listed { folder, entries } => {
                 if self.listed(folder, entries) {
                     self.moved(pointer);
                 }
+                let library = &self.library;
+                self.files.selected.retain(|id| library.entry(id).is_some());
             }
             FilesEvent::Busy { what, fraction } => self.files.busy = Some(Busy { what, fraction }),
             FilesEvent::Done(result) => {
@@ -615,6 +620,21 @@ mod tests {
         // Hidden files lists the folder again with them.
         let fx = tap(&mut s, Id::Shelf(ShelfId::File(FileAction::ShowHidden)));
         assert!(matches!(fx.as_slice(), [Effect::Browse(BrowseCommand::Open(Some(Browse { hidden: true, .. })))]), "{fx:?}");
+    }
+
+    #[test]
+    fn a_listing_drops_the_selected_entries_that_are_gone() {
+        let mut s = files_state();
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        let ab = ["a", "b"].map(|n| entry(&format!("browse:Home/{n}"), false, BrowseKind::Plain)).to_vec();
+        listed(&mut s, "browse:Home", ab.clone());
+        s.applied(ShelfEvent::Continue.into());
+        assert_eq!(s.shelf().files().selected().len(), 1);
+        // a is deleted elsewhere: the selection is empty, and Copy copies the entry the details show.
+        listed(&mut s, "browse:Home", ab[1..].to_vec());
+        assert!(s.shelf().files().selected().is_empty());
+        s.applied(ShelfEvent::ToggleFavourite.into());
+        assert_eq!(s.shelf().files().clip().map(|c| c.entries.iter().map(|(_, n)| n.as_str()).collect::<Vec<_>>()), Some(vec!["b"]));
     }
 
     #[test]

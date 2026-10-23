@@ -245,7 +245,7 @@ State: `clip`, `selected`, `armed`, `busy`, `hidden`, the listings.
 | Delete / Empty Trash arm, then confirm on the same target | `deleting_asks_first` |
 | another action or the details changing disarms | GAP |
 | Select toggles; Trash/Restore/Delete act on the selection and clear it | `selected_entries_are_what_the_actions_act_on` |
-| Copy/Cut set the clip; with only stale selected ids the clip is empty and Paste does nothing (S27) | `copy_then_paste_into_the_folder_open` (copy) |
+| Copy/Cut set the clip, and with nothing to copy do nothing; a listing drops the selected ids that are gone | `copy_then_paste_into_the_folder_open` (copy), `a_listing_drops_the_selected_entries_that_are_gone`; nothing to copy can't be reached once gone ids are dropped |
 | Paste; a cut clip is cleared before the move finishes (S28) | copy tested; cut GAP |
 | Rename, New folder, Extract → editor on the keyboard; Save gives the operation, Cancel goes back | `renaming_types_on_the_keyboard_and_goes_back`, `an_archive_is_a_folder_…`; New folder, Cancel GAP |
 | Open in, Eject, Mounts (rescan) | GAP |
@@ -420,7 +420,7 @@ Shelf, files, radios, levels, status:
 - S24. A long press on the selected entry by touch plays it (`shelf/rules.rs:17`). Fixed: state/shelf: a long press on the selected entry opens its actions by touch too.
 - S25. A relayout (favourite, play) doesn't move the pointer's focus with the selection (`rules.rs:141`). Fixed: state/shelf: a relayout moves the focus with the selection.
 - S26. A Library read drops the typed filter. Fixed: state/shelf: a library read keeps what is typed.
-- S27. Copy/Cut with only stale selected entries makes an empty clip that Paste offers and ignores (`files.rs:316`).
+- S27. Copy/Cut with only stale selected entries makes an empty clip that Paste offers and ignores (`files.rs:316`). Fixed: state/files: a listing drops selected entries that are gone.
 - S28. A cut clip is cleared before the move finishes, so after a failed move it is gone.
 - S29. `busy` clears at the first of several operations' Done (`files.rs:415`); without a Done it never clears.
 - S30. A Wi-Fi or Bluetooth reading wipes the local error and busy mark, even one older than the command.
