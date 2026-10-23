@@ -10,6 +10,43 @@ left to test on it.
 This README is kept short while things change. How each part behaves is in its module's documentation
 (`cargo doc --open --document-private-items` in `clamshell/`) and in its tests.
 
+## How it is made
+
+Most of the code is written by Claude (Anthropic's model) in Claude Code sessions, with its author
+deciding the design, reviewing the work and setting the rules it follows (`AGENTS.md`). A commit's
+`Claude-Session` line names the session it came from. What holds the code to account is checkable:
+
+- every commit passes `tools/check.sh` (formatting, clippy, the tests, the docs), on CI too;
+- the snapshot test pins each screen's pixels, the pad's focus moves and the effects of scripted
+  scenarios, and a randomized test checks the state's invariants after every event;
+- `docs/state-machines.md` describes each feature's states and transitions, with the test that pins each
+  one, and records the decisions taken on what looked wrong, with what would make us revisit them;
+- reviews by agents new to the code, and their findings, are kept in `docs/`.
+
+## Architecture
+
+ClamShell is one process with one state, in the style of the Elm architecture. Every input becomes an
+`Event`; `State::apply` changes the state and returns `Effect`s; threads carry those out and report back
+with events; the UI draws from the state.
+
+```
+input, readings, windows ─▶ Event ─▶ State::apply ─┬─▶ the UI redraws only what changed
+                               ▲                    └─▶ Effects ─▶ system threads (sway, systemd, D-Bus, …)
+                               └───────────────────────────────── results as events ◀┘
+```
+
+- **The state** does no I/O. It is made of areas (shelf, session, the second screen, radios, settings,
+  ...) that own their data; `State` coordinates them. An event is handled, the state is settled (what
+  depends on history: launches, windows, idle), and what the outside should have is compared with what it
+  was last sent, so only differences go out.
+- **The UI** records each screen's drawing as a list of commands after every event and redraws only the
+  rectangle where the list changed; an idle tick costs about 0.02 ms and commits nothing.
+- **Throughout:** no panics (denied by the lints), no silent failures (logged), and no allocation when
+  handling an event or drawing a frame (enforced by tests).
+
+`docs/architecture.md` explains it in full, with what checks each part; `docs/state-machines.md` describes
+each feature's states and transitions and the test that pins each.
+
 ## ClamShell
 
 `clamshell/` is one process with one in-memory state for shelf (the game list on the top screen), the
@@ -136,7 +173,7 @@ E the shoulders, F is Y, P is X.
 
 Arch Linux ARM and the Thor's own packages (`packages/`: `thor`, the metapackage that is the whole
 system, and what it holds: `linux-thor`, `thor-system`, `thor-session`, `clamshell`, `thor-ucm`,
-`thor-keyring`; and `thor-firmware`, which is never published), kept current with
+`thor-sensors`, `thor-keyring`; and `thor-firmware`, which is never published), kept current with
 `pacman -Syu` from the repository `[thor]`, the GitHub release `packages`. What each holds:
 `docs/thor-gameplan.md`, "Our image and packages". On the device, `.claude/commands/maintain.md` is the
 playbook for a maintenance pass with Claude Code, which the dock's Maintenance app starts: news,
