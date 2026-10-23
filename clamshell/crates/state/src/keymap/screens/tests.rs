@@ -726,3 +726,82 @@ fn a_named_keymap_is_loaded_into_a_games_own_and_undo_goes_back() {
     keymap(&mut s, KeymapId::Undo);
     assert_eq!(s.keymapping().keymaps().get(own).unwrap().bindings().len(), 0, "undone");
 }
+
+/// Calibrate in the gyro's panel calibrates it, with the notice to hold still.
+#[test]
+fn calibrate_on_the_edit_screen_calibrates_the_gyro() {
+    let mut s = edit_screen();
+    let fx = keymap(&mut s, KeymapId::Calibrate);
+    assert!(fx.contains(&Effect::CalibrateGyro), "{fx:?}");
+    assert_eq!(notice(&s), Some(crate::bottom::notice::NoticeKind::Gyro(None)));
+}
+
+/// Make own on a shared keymap's edit screen makes the game's own keymap from it, chosen for the game and
+/// open for editing, the settings saved before the keymaps. On the game's own keymap it does nothing.
+#[test]
+fn make_own_on_a_shared_keymaps_edit_screen() {
+    let mut s = edit_screen();
+    assert_eq!(s.keymapping().screen(), Some(Screen::Edit(1)));
+    let fx = keymap(&mut s, KeymapId::MakeOwn);
+    let own = s.keymapping().keymaps().own_of("zelda-lttp").unwrap().id;
+    assert_eq!(s.keymapping().screen(), Some(Screen::Edit(own)));
+    assert_eq!(s.keymapping().keymaps().get(own).unwrap().bindings().len(), 4, "Nintendo layout's bindings");
+    assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(own));
+    let saves: Vec<&str> = fx
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Save(Save::Settings(_)) => Some("settings"),
+            Effect::Save(Save::Keymaps(_)) => Some("keymaps"),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(saves, ["settings", "keymaps"], "{fx:?}");
+    let count = s.keymapping().keymaps().list().len();
+    assert_eq!(keymap(&mut s, KeymapId::MakeOwn), vec![]);
+    assert_eq!(s.keymapping().keymaps().list().len(), count, "no second own keymap");
+}
+
+/// Back from a game's own keymap's Load goes to its menu, and from the pickers of a way to map an input
+/// to the edit screen.
+#[test]
+fn back_goes_up_from_load_and_the_pickers() {
+    let mut s = State::new(Init { keymaps: Keymaps::initial(), ..init() });
+    picker(&mut s);
+    tap(&mut s, row(0));
+    let own = s.keymapping().keymaps().own_of("zelda-lttp").unwrap().id;
+    keymap(&mut s, KeymapId::Back);
+    long(&mut s, row(0));
+    keymap(&mut s, KeymapId::LoadFrom);
+    assert_eq!(s.keymapping().screen(), Some(Screen::Load(own)));
+    keymap(&mut s, KeymapId::Back);
+    assert_eq!(s.keymapping().screen(), Some(Screen::Menu(own)));
+    keymap(&mut s, KeymapId::Edit);
+    for (input, target) in [(Input::Button(Button::A), Target::Pick), (Input::Button(Button::A), Target::MouseParts)] {
+        open(&mut s, input);
+        keymap(&mut s, KeymapId::Target(target));
+        assert_ne!(s.keymapping().screen(), Some(Screen::Edit(own)), "{target:?} opens its picker");
+        keymap(&mut s, KeymapId::Back);
+        assert_eq!(s.keymapping().screen(), Some(Screen::Edit(own)), "back from {target:?}");
+    }
+    open(&mut s, Input::Gyro);
+    keymap(&mut s, KeymapId::Target(Target::To(Output::Pointer)));
+    keymap(&mut s, KeymapId::Holds);
+    assert_eq!(s.keymapping().screen(), Some(Screen::Holds { id: own, input: Input::Gyro }));
+    keymap(&mut s, KeymapId::Back);
+    assert_eq!(s.keymapping().screen(), Some(Screen::Edit(own)));
+}
+
+/// An empty name, or one of spaces, makes nothing and saves nothing; the editor closes on the screen it
+/// came from.
+#[test]
+fn an_empty_name_makes_nothing() {
+    let mut s = State::new(Init { keymaps: Keymaps::initial(), ..init() });
+    picker(&mut s);
+    let count = s.keymapping().keymaps().list().len();
+    keymap(&mut s, KeymapId::New);
+    type_text(&mut s, "  ");
+    let fx = tap(&mut s, Id::Editor(EditorId::Save));
+    assert!(!fx.iter().any(|e| matches!(e, Effect::Save(_))), "{fx:?}");
+    assert_eq!(s.keymapping().keymaps().list().len(), count);
+    assert_eq!((s.keymapping().screen(), s.bottom().editor()), (Some(Screen::List), None));
+}

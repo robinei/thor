@@ -337,3 +337,50 @@ fn a_library_read_while_fetching_asks_for_shelfs_view_first_again() {
     let fx = s.applied(Event::Library(Box::new(clamshell_library::demo::library())));
     assert!(!fx.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "not fetching: {fx:?}");
 }
+
+/// A library read again updates what depends on its entries: sway's landing rules for the entries known
+/// by app id, and the runners paused together, which a runner new in the library then is.
+#[test]
+fn a_library_read_updates_the_landing_rules_and_the_runners_paused_together() {
+    let mut s = state();
+    s.applied(Event::tick(100));
+    let runner = clamshell_library::RunnerOf {
+        handover: true,
+        pause: vec!["pause".to_owned()].into(),
+        resume: vec!["resume".to_owned()].into(),
+        ..clamshell_library::RunnerOf::new("android", "Android", true)
+    };
+    s.settings_mut().set(Some(&runner.key), Setting::Background, Some(crate::settings::Choice::value(crate::settings::InBackground::Pauses)));
+    let mut library = clamshell_library::demo::library();
+    for g in library.entries.iter_mut() {
+        match &*g.id {
+            "ff6" => g.launch = clamshell_library::Launch::Steam { appid: 620 },
+            "desktop:firefox" => g.runner = Some(runner.clone()),
+            _ => {}
+        }
+    }
+    let fx = s.applied(Event::Library(Box::new(library)));
+    let land = Effect::Window(WindowCommand::LandRules(vec!["steam_app_620".into(), "firefox".into()]));
+    assert!(fx.contains(&land), "{fx:?}");
+    let pause = Effect::RunnerCommand(vec!["pause".into()]);
+    assert!(!s.applied(Event::tick(100 + crate::session::background::GRACE - 1)).contains(&pause));
+    assert!(s.applied(Event::tick(100 + crate::session::background::GRACE)).contains(&pause), "the new runner is paused together");
+}
+
+/// A video's play, once recorded, asks where mpv left it; the answer is kept as the entry's place.
+#[test]
+fn a_video_ended_asks_where_it_was_left() {
+    let episode = "tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv";
+    let mut s = state();
+    s.applied(Event::tick(100));
+    launch_now(&mut s, episode);
+    start(&mut s, episode);
+    s.applied(Event::tick(400));
+    let fx = end(&mut s, episode);
+    let file = std::path::PathBuf::from("/videos/Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv");
+    let at = fx.iter().position(|e| matches!(e, Effect::RecordPlay { entry, duration: 300, .. } if &**entry == episode));
+    let read = fx.iter().position(|e| *e == Effect::ReadPosition { entry: episode.into(), file: file.clone() });
+    assert!(at.is_some() && read == at.map(|i| i + 1), "the play, then the position: {fx:?}");
+    s.applied(LaunchEvent::Position { entry: episode.into(), position: Some(700) }.into());
+    assert_eq!(s.shelf().entry(episode).map(|g| g.playback.position), Some(Some(700)));
+}

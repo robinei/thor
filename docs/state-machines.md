@@ -220,7 +220,7 @@ Overwrite, Delete; Undo per keymap since the edit screen opened.
 | Own → made, settings saved then keymaps | `making_a_games_own_keymap_saves_the_settings_then_the_keymaps` |
 | Menu: rename, duplicate, load into own, save as, delete (asks if in use; settings forget it: all games back to Default if it was theirs, and who chose it chooses Default) | `rename_duplicate_and_delete_…`, `a_named_keymap_is_loaded_…`, `a_games_own_keymap_is_saved_…`; settings `forgetting_a_keymap_sets_who_chose_it_to_default` |
 | Edit: select, bind, map to (pick, capture, mouse, layers), toggles, slides, undo, layers | `a_new_keymap_is_named_edited_and_mapped`, `targets_offered_fit_the_input`, `the_hold_and_double_tabs_…`, `parameters_slide_…`, layer tests, `undo_goes_back_…` |
-| Calibrate from Edit; MakeOwn from Edit; Back from Load and the pickers; an empty name | GAP |
+| Calibrate from Edit; MakeOwn from Edit; Back from Load and the pickers; an empty name | `calibrate_on_the_edit_screen_calibrates_the_gyro`, `make_own_on_a_shared_keymaps_edit_screen`, `back_goes_up_from_load_and_the_pickers`, `an_empty_name_makes_nothing` |
 | Listened only while the route is Listen | `the_keymap_screens_stay_with_their_tab_and_listen_only_in_view` |
 
 ## Shelf (shelf/)
@@ -232,13 +232,13 @@ Overwrite, Delete; Undo per keymap since the edit screen opened.
 | tap on an entry not in the list does nothing, the focus included | `a_tap_on_an_entry_not_in_the_list_does_nothing` |
 | long press on the selected entry, by touch or pad: its actions open, the focus ring on the first | `a_held_on_the_selected_entry_opens_its_actions` |
 | typing filters; Enter activates; Clear | `typing_with_shelf_in_front_finds_entries_…` |
-| favourite on/off: relayout by name and id, `Save(Favourites)`; a focus in the list follows the selection | `a_favourite_shows_in_its_collection_…`, `a_favourite_removed_moves_the_focus_with_the_selection`; the Favourites tab vanishing GAP |
-| a play recorded: relayout (a focus in the list follows the selection: GAP), `RecordPlay`, `ReadPosition` for videos | tests `a_launchs_start_and_end…` (count only) |
+| favourite on/off: relayout by name and id, `Save(Favourites)`; a focus in the list follows the selection | `a_favourite_shows_in_its_collection_…`, `a_favourite_removed_moves_the_focus_with_the_selection`, `the_favourites_tab_goes_with_its_last_entry` |
+| a play recorded: relayout (a focus in the list follows the selection), `RecordPlay`, `ReadPosition` for videos | tests `a_launchs_start_and_end…`, `a_video_ended_asks_where_it_was_left`; shelf `a_play_recorded_keeps_shelfs_place_and_focus` |
 | a relayout closes a group no longer in its collection (Recent, Favourites) | `a_group_that_leaves_its_collection_is_closed_there` |
 | a group launched from elsewhere: its collection's places reset, the path opened, `ShowShelf` | `a_group_started_from_elsewhere_opens_in_shelf` |
-| Library read: places restored by name and id, with what is typed in each list | `listings_outlive_the_library_read_again`, `a_library_read_keeps_what_is_typed`; selection gone GAP |
-| Continue, Meta, Position | `continue_plays_on_where_the_series_was_left`; Meta GAP |
-| actions and button shortcuts (Y, X, Start) | `an_entrys_actions_come_from_…`, `copy_then_paste_…`, `selected_entries_are_what_the_actions_act_on`; shortcuts off in the actions mode GAP |
+| Library read: places restored by name and id, with what is typed in each list | `listings_outlive_the_library_read_again`, `a_library_read_keeps_what_is_typed`; the selection gone: the list's first, `a_library_read_without_the_selected_entry_selects_the_first` |
+| Continue, Meta, Position | `continue_plays_on_where_the_series_was_left`, `fetched_metadata_goes_to_its_entry`, tests `a_video_ended_asks_where_it_was_left` |
+| actions and button shortcuts (Y, X, Start) | `an_entrys_actions_come_from_…`, `copy_then_paste_…`, `selected_entries_are_what_the_actions_act_on`, `the_shortcuts_are_off_on_the_actions` |
 
 ### Files tab (shelf/files.rs)
 
@@ -341,7 +341,7 @@ only when the mute changed (not while the volume is unknown):
 |---|---|---|---|
 | shelf play, Continue, Open in, Pin | queued `Event::Entry` | session, dock | shelf tests |
 | launch of a group / the Device tool | `Session::launch` returns what to do instead | shelf, Device view | `a_group_started_…`, device tests |
-| plays ended | settle fills a reused buffer, then `shelf.record_play` | shelf | tests (count only) |
+| plays ended | settle fills a reused buffer, then `shelf.record_play` | shelf | tests `a_launchs_start_and_end…`; shelf `a_play_recorded_keeps_shelfs_place_and_focus` |
 | a game starting | settle returns it | bottom (`unwake`) | `dark_for_a_game_…` |
 | notices | `&mut NoticeSlot` | bottom | per area |
 | settings in force | parameters to launch and background; sync Apply | session, system | settings tests |
@@ -352,7 +352,7 @@ only when the mute changed (not while the volume is unknown):
 | tabs | sync watches; `left_tab` closes the dock menu, releases levels, resets the time page, closes the battery menu | dock, levels, status | per tab; `leaving_the_tab_resets_it_to_its_main_page` |
 | keymap chosen/deleted/made own | queued `KeymapEvent` → prefs | settings | keymap tests |
 | device view, files, keymaps naming | queued `EditOnKeyboard` / editors | bottom | per area |
-| Library read | problems notice, shelf reload, pausable runners, runner keymaps, land rules, dock pins, FetchFirst | bottom, session, keymap, settings, dock | partly |
+| Library read | problems notice, shelf reload, pausable runners, runner keymaps, land rules, dock pins, FetchFirst | bottom, session, keymap, settings, dock | tests `new_library_problems_are_said_once`, `a_library_read_updates_the_landing_rules_and_the_runners_paused_together`, `a_library_read_while_fetching_asks_for_shelfs_view_first_again`; shelf `listings_outlive_…`, `a_library_read_keeps_what_is_typed`; settings `a_runner_gets_its_keymap_once`; dock `pins_of_entries_gone_…` |
 | battery tab quit | queued `Event::Entry` | session | `a_rows_menu_quits_…` |
 | any event | settle `follow_lists` | every scroll | `a_list_changed_by_any_event_…` |
 

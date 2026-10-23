@@ -780,6 +780,88 @@ mod tests {
         assert!(s.resume().places.contains(&("Favourites".to_owned(), vec!["metroid-zm".to_owned()])), "{:?}", s.resume().places);
     }
 
+    /// The last favourite removed while Favourites is shown: the collection goes, shelf shows the first
+    /// collection, and the selection and the focus stay on the entry.
+    #[test]
+    fn the_favourites_tab_goes_with_its_last_entry() {
+        let mut s = state();
+        s.applied(ShelfEvent::ListStep(2).into());
+        s.applied(ShelfEvent::ToggleFavourite.into());
+        let favourites = s.shelf().library().collections.iter().position(|c| c.name == "Favourites").unwrap();
+        tap(&mut s, Id::Shelf(ShelfId::Collection(favourites as u16)));
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("mk-ds"));
+        s.applied(ShelfEvent::ToggleFavourite.into());
+        assert!(!s.shelf().library().collections.iter().any(|c| c.name == "Favourites"));
+        assert_eq!((s.shelf().current(), s.shelf().collection().map(|c| c.name.as_str())), (0, Some("Games")));
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("mk-ds"));
+        assert_eq!(s.pointer().focus(), Some(&entry("mk-ds")));
+    }
+
+    /// A library read without the selected entry starts its list over from the top, and the focus goes
+    /// with the selection.
+    #[test]
+    fn a_library_read_without_the_selected_entry_selects_the_first() {
+        let mut s = state();
+        s.applied(ShelfEvent::ListStep(2).into());
+        let mut library = clamshell_library::demo::library();
+        library.entries.retain(|g| &*g.id != "mk-ds");
+        library.collections = vec![crate::Collection::new("Games", (0..6).collect())];
+        s.applied(Event::Library(Box::new(library)));
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("zelda-lttp"));
+        assert_eq!(s.shelf().cursor().index, 0);
+        assert_eq!(s.pointer().focus(), Some(&entry("zelda-lttp")));
+    }
+
+    /// A play recorded adds the entry to Recent, which comes in, while shelf stays where it was: the same
+    /// collection and selection, and the focus on it. Shown in Recent, another entry's play reorders the
+    /// list under the selection, which stays on its entry.
+    #[test]
+    fn a_play_recorded_keeps_shelfs_place_and_focus() {
+        let mut s = state();
+        s.applied(Event::tick(1000));
+        launch(&mut s, "zelda-lttp");
+        s.applied(Event::tick(1100));
+        let fx = end(&mut s, "zelda-lttp");
+        assert!(fx.iter().any(|e| matches!(e, Effect::RecordPlay { entry, duration: 100, .. } if &**entry == "zelda-lttp")), "{fx:?}");
+        let recent = s.shelf().library().collections.iter().position(|c| c.name == "Recent").unwrap();
+        assert_eq!(s.shelf().collection().map(|c| c.name.as_str()), Some("Games"));
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("zelda-lttp"));
+        assert_eq!(s.pointer().focus(), Some(&entry("zelda-lttp")));
+        s.applied(ShelfEvent::ListStep(1).into());
+        launch(&mut s, "metroid-zm");
+        s.applied(Event::tick(1200));
+        end(&mut s, "metroid-zm");
+        tap(&mut s, Id::Shelf(ShelfId::Collection(recent as u16)));
+        s.applied(ShelfEvent::ListStep(1).into());
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("zelda-lttp"), "metroid first, then zelda");
+        // (Launched from elsewhere, since shelf shows Recent.)
+        launch_now(&mut s, "ff6");
+        start(&mut s, "ff6");
+        s.applied(Event::tick(1300));
+        end(&mut s, "ff6");
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("zelda-lttp"), "now third");
+        assert_eq!(s.shelf().cursor().index, 2);
+        assert_eq!(s.pointer().focus(), Some(&entry("zelda-lttp")));
+    }
+
+    /// What the metadata thread fetched goes to its entry: the details and the cover. An id the library
+    /// doesn't have is ignored.
+    #[test]
+    fn fetched_metadata_goes_to_its_entry() {
+        let mut s = state();
+        let meta = crate::Meta {
+            cover: Some("/covers/ff6.png".into()),
+            details: clamshell_library::Details { developer: "Square".into(), ..Default::default() },
+            duration: None,
+        };
+        s.applied(Event::Meta { id: "ff6".into(), meta: meta.clone() });
+        let ff6 = s.shelf().entry("ff6").unwrap();
+        assert_eq!((ff6.details.developer.as_str(), ff6.box_front.as_deref()), ("Square", Some(std::path::Path::new("/covers/ff6.png"))));
+        let before = s.shelf().library().clone();
+        s.applied(Event::Meta { id: "nothing-such".into(), meta });
+        assert_eq!(s.shelf().library(), &before);
+    }
+
     #[test]
     fn a_library_read_keeps_what_is_typed() {
         use crate::bottom::keyboard::{Key, find};

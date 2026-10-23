@@ -175,6 +175,24 @@ mod tests {
         s.applied(Event::tick(1));
     }
 
+    /// While the pad is on the details' actions, the face buttons' shortcuts are off; with the focus back
+    /// on the entry they work again.
+    #[test]
+    fn the_shortcuts_are_off_on_the_actions() {
+        use crate::PointerEvent;
+        let mut s = state();
+        let g = entry("zelda-lttp");
+        s.applied(PointerEvent::Focus(g.clone()).into());
+        s.applied(PointerEvent::LongPress(g.clone()).into());
+        assert!(s.shelf().in_actions(s.pointer()));
+        assert_eq!(s.shelf().shortcut(Shortcut::Y, s.pointer()), None);
+        assert_eq!(s.applied(ShelfEvent::ToggleFavourite.into()), vec![], "Y does nothing");
+        assert_eq!(s.applied(ShelfEvent::TogglePin.into()), vec![], "nor X");
+        s.applied(PointerEvent::Focus(g).into());
+        assert!(!s.shelf().in_actions(s.pointer()));
+        assert_eq!(s.applied(ShelfEvent::ToggleFavourite.into()), vec![Effect::Save(crate::Save::Favourites(vec!["zelda-lttp".into()]))]);
+    }
+
     #[test]
     fn a_held_on_the_selected_entry_opens_its_actions() {
         use crate::PointerEvent;
