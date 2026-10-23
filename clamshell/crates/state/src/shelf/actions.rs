@@ -8,8 +8,8 @@
 //!   have.
 //!
 //! Where Favourite and Pin are missing, Y and X take the place's Copy and Paste, and Start takes its
-//! Select. The details draw these rows in order, and the pad's buttons act on them. Holding A on the
-//! selected entry takes the pad to the rows themselves (see [`Shelf::in_actions`]).
+//! Select. The details draw these rows in order, and the pad's buttons act on them. Holding the selected
+//! entry, by touch or with A, takes the focus to the rows themselves (see [`Shelf::in_actions`]).
 
 use crate::out::Out;
 use crate::shelf::Shelf;
@@ -111,7 +111,7 @@ impl Shelf {
         actions
     }
 
-    /// Whether the pad is on the details' actions, which holding A on the selected entry does. This is a
+    /// Whether the focus is on the details' actions, which holding the selected entry does. This is a
     /// mode of its own: the face buttons' shortcuts are off, the focus stays on the actions, A confirms
     /// and B goes back.
     pub fn in_actions(&self, pointer: &Pointer) -> bool {
@@ -176,16 +176,18 @@ mod tests {
     }
 
     #[test]
-    fn a_held_on_the_selected_entry_takes_the_pad_to_its_actions() {
+    fn a_held_on_the_selected_entry_opens_its_actions() {
         use crate::PointerEvent;
         let mut s = state();
         let g = Id::Shelf(ShelfId::Entry(s.shelf().selected().cloned().unwrap_or_else(|| "?".into())));
-        // By touch, with no focus shown, nothing happens.
-        s.applied(PointerEvent::LongPress(g.clone()).into());
-        assert_eq!(s.pointer().focus(), Some(&g));
-        // With the pad, the focus goes to the first action.
+        // By touch, with no focus shown, the actions open: nothing plays, and the ring is on the first.
+        assert!(!s.pointer().show_focus());
+        assert_eq!(s.applied(PointerEvent::LongPress(g.clone()).into()), vec![], "not played");
+        assert!(s.pointer().focused(&Id::Shelf(ShelfId::Launch)));
+        assert!(s.shelf().in_actions(s.pointer()));
+        // With the pad, the same.
         s.applied(PointerEvent::Focus(g.clone()).into());
         s.applied(PointerEvent::LongPress(g).into());
-        assert_eq!(s.pointer().focus(), Some(&Id::Shelf(ShelfId::Launch)));
+        assert!(s.pointer().focused(&Id::Shelf(ShelfId::Launch)));
     }
 }

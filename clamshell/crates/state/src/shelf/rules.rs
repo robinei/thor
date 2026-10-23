@@ -11,12 +11,13 @@ impl Shelf {
     /// A tap, or a long press if `long`, on one of shelf's targets.
     pub(crate) fn on_target(&mut self, id: ShelfId, long: bool, pointer: &mut Pointer, out: &mut Out) {
         match id {
-            // A hold on the selected entry with the pad, while its focus is showing, moves the pad to the
-            // entry's actions and focuses the first. Up and down go through them, A runs one, and B goes
-            // back to the list.
-            ShelfId::Entry(entry) if long && pointer.show_focus() && self.selected() == Some(&entry) => {
+            // A hold on the selected entry, by touch or with the pad, opens the entry's actions: the
+            // focus ring shows on the first. Up and down go through them, A runs one, and B goes back to
+            // the list.
+            ShelfId::Entry(entry) if long && self.selected() == Some(&entry) => {
                 if let Some(first) = self.actions().as_slice().first() {
                     pointer.focus_on(Id::Shelf(first.id()));
+                    pointer.show();
                 }
             }
             ShelfId::Entry(entry) => {
