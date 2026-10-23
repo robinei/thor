@@ -93,7 +93,7 @@ fn line(runner: &RunnerOf, file: &std::path::Path) -> Option<String> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::testkit::{state_with, tap};
+    use crate::testkit::{Applied, state_with, tap};
     use crate::{Collection, Entry, Id, Launch, Library, ShelfId, State};
 
     fn music() -> RunnerOf {
@@ -133,6 +133,44 @@ mod tests {
         let key = s.session().running("album").unwrap().key.clone();
         let line = r#"{"command": ["loadfile", "/m/single.mp3", "append-play"]}"#.to_owned();
         assert_eq!(fx, vec![Effect::Enqueue { key, lines: vec![line] }], "added to the album playing");
+    }
+
+    /// A file alone with nothing playing is played as A plays it, by its own launch, not the runner's
+    /// command for it.
+    #[test]
+    fn a_file_alone_with_nothing_playing_plays_as_itself() {
+        let mut s = music_state();
+        tap(&mut s, Id::Shelf(ShelfId::Entry("single".into())));
+        let fx = tap(&mut s, Id::Shelf(ShelfId::Enqueue));
+        let launch = fx.iter().find_map(|e| match e {
+            Effect::Launch { entry, launch, .. } => Some((entry.to_string(), launch.clone())),
+            _ => None,
+        });
+        let own = s.shelf().entry("single").map(|g| g.launch.clone());
+        assert_eq!(launch, own.map(|l| ("single".to_owned(), l)), "{fx:?}");
+        assert!(matches!(s.bottom().notice().map(|n| &n.what), Some(NoticeKind::Starting(_))));
+    }
+
+    /// With two launches of the runner, what is enqueued goes to the one most recently in front.
+    #[test]
+    fn enqueue_goes_to_the_launch_most_recently_in_front() {
+        let mut s = music_state();
+        let fx = tap(&mut s, Id::Shelf(ShelfId::Enqueue));
+        assert!(fx.iter().any(|e| matches!(e, Effect::Launch { .. })));
+        crate::testkit::start(&mut s, "album");
+        tap(&mut s, Id::Shelf(ShelfId::Entry("single".into())));
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        crate::testkit::start(&mut s, "single");
+        let key = |s: &State, id: &str| s.session().running(id).unwrap().key.clone();
+        let (album, single) = (key(&s, "album"), key(&s, "single"));
+        let window = |id: i64, key: &str, focused: bool| crate::testkit::win(id, "mpv", &crate::Instance::workspace_of(key), focused);
+        s.applied(crate::Event::Windows(vec![window(1, &album, true), window(2, &single, false)]));
+        s.applied(crate::Event::Windows(vec![window(1, &album, false), window(2, &single, true)]));
+        let fx = tap(&mut s, Id::Shelf(ShelfId::Enqueue));
+        assert!(matches!(fx.as_slice(), [Effect::Enqueue { key, .. }] if *key == single), "{fx:?}");
+        s.applied(crate::Event::Windows(vec![window(1, &album, true), window(2, &single, false)]));
+        let fx = tap(&mut s, Id::Shelf(ShelfId::Enqueue));
+        assert!(matches!(fx.as_slice(), [Effect::Enqueue { key, .. }] if *key == album), "{fx:?}");
     }
 
     #[test]

@@ -405,6 +405,55 @@ mod tests {
         assert_eq!(s.dock().moving(), None);
     }
 
+    /// Move mode's other steps: a row is four tiles, and a step past either end stops at it.
+    #[test]
+    fn move_mode_steps_left_and_by_rows() {
+        let ids = ["zelda-lttp", "metroid-zm", "mk-ds", "ff6", "dark-souls", "hades"];
+        let mut s = State::new(Init { dock: crate::session::dock::Dock::pinned(ids.iter().map(|&i| i.into()).collect()), ..init() });
+        long(&mut s, dock(5));
+        tap(&mut s, Id::Dock(DockId::Move));
+        let order = |fx: &[Effect]| match fx {
+            [Effect::Save(Save::Dock(ids))] => ids.iter().map(|i| i.to_string()).collect::<Vec<_>>(),
+            _ => vec![format!("{fx:?}")],
+        };
+        let step = |s: &mut State, dir| tap(s, Id::Dock(DockId::Step(dir)));
+        assert_eq!(order(&step(&mut s, keymap::Dir::Up)), ["zelda-lttp", "hades", "metroid-zm", "mk-ds", "ff6", "dark-souls"], "a row up");
+        assert_eq!(order(&step(&mut s, keymap::Dir::Up)), ["hades", "zelda-lttp", "metroid-zm", "mk-ds", "ff6", "dark-souls"], "past the start: first");
+        assert_eq!(step(&mut s, keymap::Dir::Left), vec![], "first");
+        assert_eq!(step(&mut s, keymap::Dir::Up), vec![]);
+        assert_eq!(order(&step(&mut s, keymap::Dir::Down)), ["zelda-lttp", "metroid-zm", "mk-ds", "ff6", "hades", "dark-souls"], "a row down");
+        assert_eq!(order(&step(&mut s, keymap::Dir::Down)), ["zelda-lttp", "metroid-zm", "mk-ds", "ff6", "dark-souls", "hades"], "past the end: last");
+    }
+
+    /// The menu's Start with ClamShell toggles and saves the entries started; Suspend freezes a running
+    /// entry and shelf comes in front, and on a suspended one it is Resume, which shows it thawed.
+    #[test]
+    fn the_menus_autostart_and_suspend() {
+        let mut s = state();
+        tap(&mut s, Id::Tab(crate::Tab::Dock));
+        let zelda = launch(&mut s, "zelda-lttp");
+        let w = Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) };
+        s.applied(Event::Windows(vec![w.clone()]));
+        long(&mut s, dock(0));
+        assert_eq!(tap(&mut s, Id::Dock(DockId::Autostart)), vec![Effect::Save(Save::Autostart(vec!["zelda-lttp".into()])), closed()]);
+        long(&mut s, dock(0));
+        assert_eq!(tap(&mut s, Id::Dock(DockId::Autostart)), vec![Effect::Save(Save::Autostart(vec![])), closed()]);
+        long(&mut s, dock(0));
+        let slice = Instance::slice_of(&clamshell_library::key_of("zelda-lttp"));
+        let fx = tap(&mut s, Id::Dock(DockId::Suspend));
+        assert_eq!(
+            fx,
+            vec![Effect::Window(WindowCommand::ShowShelf), Effect::Freeze { slice: slice.clone(), frozen: true }, closed()],
+            "shelf in front, then frozen"
+        );
+        assert!(s.session().suspended("zelda-lttp"));
+        s.applied(Event::Windows(vec![shelf_window(true), Window { focused: false, visible: false, ..w }]));
+        long(&mut s, dock(0));
+        let fx = tap(&mut s, Id::Dock(DockId::Suspend));
+        assert!(fx.contains(&Effect::Freeze { slice, frozen: false }) && fx.contains(&focus(&zelda)), "resumed and shown: {fx:?}");
+        assert!(!s.session().suspended("zelda-lttp"));
+    }
+
     #[test]
     fn the_menu_opens_another_closes_a_window_quits_and_force_kills() {
         let mut s = state();

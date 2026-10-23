@@ -16,13 +16,13 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | From | Event / condition | To | Effects | Test |
 |---|---|---|---|---|
 | Idle | Play of the Device tool | Idle | the Device view opens | device `the_device_entry_opens_it_…` |
-| Idle | Play of another tool | Idle | `Tool` | GAP |
+| Idle | Play of another tool | Idle | `Tool` | running `play_of_a_tool_asks_for_it_and_of_an_unknown_id_does_nothing` |
 | Idle | Play of a group | Idle | shelf reveals it, `ShowShelf` | dock `shelf_pins_and_unpins_any_entry_…` |
-| Idle | Play of an id not in the library | Idle | nothing | GAP |
+| Idle | Play of an id not in the library | Idle | nothing | same |
 | Idle | Play, OpenAnother, autostart, a Steam game found by app id | Launching | runner resumed if paused; `Save(Resume)`; `Launch`; `pending_show` if in front; Starting notice (from Play) | tests `a_launch_says_it_is_starting`; background `a_runner_paused_together…` |
 | Launching | the same launched again | Launching | nothing | running `an_entry_runs_its_plays_count_…` |
 | Launching | `Units` lists its instance | Running(Ours) | second screen may go dark again | running `a_launch_runs_while_a_scope_…`; tests `…start_and_end_come_to_the_same_in_any_order` |
-| Launching | LaunchFailed, browsed file or app-id launch | Running(Windows, unseen, until now+15 s) | — | running `a_file_handed_to_another_program_…` (browsed); app id GAP |
+| Launching | LaunchFailed, browsed file or app-id launch | Running(Windows, unseen, until now+15 s) | — | running `a_file_handed_to_another_program_…` (browsed); `a_failed_launch_known_by_app_id_waits_for_its_window` |
 | Launching | LaunchFailed otherwise | Idle | NotStarted notice | tests `a_launch_that_didnt_start_says_so` |
 | Launching | no answer from the launcher in 30 s | Idle | NotStarted notice; `pending_show` cleared | running `a_launch_never_answered_is_given_up` |
 | Idle | LaunchFailed of no launch waiting (a late answer to one given up) | Idle | nothing | running `a_launch_failure_after_it_was_given_up_says_nothing` |
@@ -46,7 +46,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Quitting | no longer runs | removed | runner stop (once) | same |
 | Quitting | its windows still there 10 s after they were asked to close (a close refused) | Running, not quitting: paused hidden again, not ended when its windows close later | — | running `a_quit_refused_is_given_up` |
 | Running | ForceKill | removed from quitting | thaw, EndRun{force} or EndProcesses{force} | same |
-| not running | Quit / ForceKill | unchanged | nothing | GAP |
+| not running | Quit / ForceKill | unchanged | nothing | running `quit_and_force_kill_of_an_entry_not_running_do_nothing` |
 
 ### Front and Home
 
@@ -57,7 +57,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | settle: `pending_show` and its window arrived | Focus, cleared | tests `a_launchs_first_window_is_shown_before_…` |
 | Home, shelf not in front | ShowShelf | front `home_goes_to_shelf_…` |
 | Home, shelf in front | Focus the most recent other workspace (Device view open: close it first) | front tests; device `home_closes_the_device_view_first` |
-| settle: program in force | the focused top window's owner, else the kept one if it runs, else the last running | running `the_settings_follow_the_front`; fallbacks GAP |
+| settle: program in force | the focused top window's owner, else the kept one if it runs, else the last running | running `the_settings_follow_the_front`, `the_program_in_force_falls_back_to_the_last_started` |
 
 ### Background (per entry and per runner)
 
@@ -86,7 +86,8 @@ Freeze and RunnerCommand have no acknowledgement; the state assumes they worked.
   Test: autostart `chosen_entries_start_once_…`.
 - Enqueue: to the runner's running instance whose workspace was in front most recently; without one, a
   single file plays and several launch together; the file selection is cleared. Test: enqueue
-  `enqueue_plays_with_nothing_playing_then_adds_…`; target by recency and single file GAP.
+  `enqueue_plays_with_nothing_playing_then_adds_…`, `enqueue_goes_to_the_launch_most_recently_in_front`,
+  `a_file_alone_with_nothing_playing_plays_as_itself`.
 
 ### Dock (session/dock.rs)
 
@@ -99,10 +100,10 @@ State: `items{id, pinned}`, `menu`, `tray` (submenu path), `moving`, `unsaved`.
 | closed | tap, running, all windows down | — | queued Show, which shows them on the bottom screen | running `show_of_an_entry_whose_windows_are_all_below_…` |
 | closed | tap, running | — | queued Show | dock tests |
 | closed | long press | menu open | Battery watched (sync) | dock tests |
-| menu | a choice | closed | OpenAnother, Autostart, Suspend, Quit, ForceKill queued; CloseWindow; Pin with `Save(Dock)`; Move starts moving | dock `the_menu_opens_another_…`; Autostart/Suspend via the menu GAP |
+| menu | a choice | closed | OpenAnother, Autostart, Suspend, Quit, ForceKill queued; CloseWindow; Pin with `Save(Dock)`; Move starts moving | dock `the_menu_opens_another_…`, `the_menus_autostart_and_suspend` |
 | menu | TrayMenu, a submenu, Back | tray path pushed / popped; Back at the top goes to the entry's menu | Tray Click on a leaf | tray test; dock `back_at_the_top_of_the_tray_menu_goes_to_the_entrys_menu` |
 | menu | its entry leaves the dock | closed, tray path cleared | — | dock `the_menu_and_the_move_end_with_their_entry` |
-| moving | Step | reordered, clamped | `Save(Dock)` if moved | dock `move_mode_reorders_…` (Right only; others GAP) |
+| moving | Step | reordered, clamped | `Save(Dock)` if moved | dock `move_mode_reorders_…`, `move_mode_steps_left_and_by_rows` |
 | moving | Done | closed | — | same |
 | moving | long press | move ended, menu open | Battery watched (sync) | dock `a_long_press_while_moving_ends_the_move` |
 | any | tab left | menu, tray path and move closed | — | dock `back_at_the_top_of_the_tray_menu_goes_to_the_entrys_menu` |

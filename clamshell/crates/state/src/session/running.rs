@@ -934,6 +934,52 @@ mod tests {
         assert_eq!(s.session().running_of(&window).map(|r| &*r.id), Some("ff6"));
     }
 
+    /// Another tool than the Device view is asked of the system; an id the library doesn't have plays
+    /// nothing.
+    #[test]
+    fn play_of_a_tool_asks_for_it_and_of_an_unknown_id_does_nothing() {
+        let mut library = clamshell_library::demo::library();
+        library.entries.push(Entry { launch: Launch::Tool(clamshell_library::Tool::Rescan), ..Entry::new("tool:rescan", "Rescan") });
+        let mut s = state_with(library);
+        let fx = s.applied(Event::Entry("tool:rescan".into(), EntryAct::Play));
+        assert_eq!(fx, vec![Effect::Tool(clamshell_library::Tool::Rescan)]);
+        assert!(!s.session().is_launching("tool:rescan") && s.session().running("tool:rescan").is_none());
+        assert_eq!(s.applied(Event::Entry("nothing-such".into(), EntryAct::Play)), vec![]);
+        assert!(s.session().launching().is_empty());
+        assert_eq!(notice(&s), None);
+    }
+
+    /// A Steam game's launch that failed may still come by its window, as when Steam started it anyway:
+    /// it waits [`HANDOFF`] for one, which then makes it run, and without one it is gone with no play.
+    #[test]
+    fn a_failed_launch_known_by_app_id_waits_for_its_window() {
+        let mut s = steam_ff6();
+        s.ui_up();
+        s.applied(Event::tick(1000));
+        tap(&mut s, entry("ff6"));
+        tap(&mut s, entry("ff6"));
+        s.applied(LaunchEvent::LaunchFailed("ff6".into()).into());
+        let ff6 = s.session().running("ff6").unwrap();
+        assert_eq!(ff6.origin, Origin::Windows { since: 1000, until: 1000 + HANDOFF });
+        assert_eq!(notice(&s).map(|n| matches!(n, crate::bottom::notice::NoticeKind::NotStarted(_))), Some(false), "not said to have failed");
+        let landing = Instance::Landing.name();
+        s.applied(Event::tick(1010));
+        let fx = s.applied(Event::Windows(vec![win(7, "steam_app_620", &landing, true)]));
+        assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![7], to: Instance::workspace_of(&key("ff6")) })), "{fx:?}");
+        s.applied(Event::tick(1100));
+        assert!(s.session().running("ff6").is_some(), "runs by its window");
+        let fx = s.applied(Event::Windows(vec![]));
+        assert!(fx.contains(&Effect::RecordPlay { entry: "ff6".into(), start: 1000, duration: 100 }), "{fx:?}");
+        // Without a window it is gone once the wait is over, with no play.
+        tap(&mut s, entry("ff6"));
+        s.applied(LaunchEvent::LaunchFailed("ff6".into()).into());
+        s.applied(Event::tick(1100 + HANDOFF));
+        assert!(s.session().running("ff6").is_some());
+        let fx = s.applied(Event::tick(1101 + HANDOFF));
+        assert!(s.session().running("ff6").is_none());
+        assert!(!fx.iter().any(|e| matches!(e, Effect::RecordPlay { .. })), "{fx:?}");
+    }
+
     /// A Steam game whose launch's scope ends while its window is open, long after it started, runs on by
     /// its window. Its play, recorded when the window closes, is from its launch.
     #[test]
@@ -953,6 +999,40 @@ mod tests {
         let fx = s.applied(Event::Windows(vec![]));
         assert!(fx.contains(&Effect::RecordPlay { entry: "ff6".into(), start: 1000, duration: 900 }), "{fx:?}");
         assert!(s.session().running("ff6").is_none());
+    }
+
+    /// Quit or force kill of an entry that doesn't run does nothing, and leaves nothing quitting.
+    #[test]
+    fn quit_and_force_kill_of_an_entry_not_running_do_nothing() {
+        let mut s = state();
+        assert_eq!(s.applied(Event::Entry("zelda-lttp".into(), EntryAct::Quit)), vec![]);
+        assert!(!s.session().is_quitting("zelda-lttp"));
+        assert_eq!(s.applied(Event::Entry("zelda-lttp".into(), EntryAct::ForceKill)), vec![]);
+    }
+
+    /// The program in force is the focused window's owner; with shelf or another window in front it is
+    /// kept while it runs; once it ends, the entry started last that runs takes over, then none.
+    #[test]
+    fn the_program_in_force_falls_back_to_the_last_started() {
+        let mut s = state();
+        s.applied(Event::tick(1000));
+        let zelda = launch(&mut s, "zelda-lttp");
+        let ff6 = launch(&mut s, "ff6");
+        let program = |s: &State| s.session().program().map(|p| p.to_string());
+        let zelda_window = |focused| Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), focused) };
+        let ff6_window = Window { unit: ff6.unit(), ..win(4, "ff6", &ff6.workspace(), false) };
+        s.applied(Event::Windows(vec![zelda_window(true), ff6_window.clone()]));
+        assert_eq!(program(&s).as_deref(), Some("zelda-lttp"), "in front");
+        s.applied(Event::Windows(vec![shelf_window(true), zelda_window(false), ff6_window.clone()]));
+        assert_eq!(program(&s).as_deref(), Some("zelda-lttp"), "kept with shelf in front");
+        s.applied(Event::Windows(vec![foot(), zelda_window(false), ff6_window.clone()]));
+        assert_eq!(program(&s).as_deref(), Some("zelda-lttp"), "kept with another window in front");
+        s.applied(Event::Windows(vec![foot(), ff6_window]));
+        crate::testkit::end(&mut s, "zelda-lttp");
+        assert_eq!(program(&s).as_deref(), Some("ff6"), "the last started that runs");
+        s.applied(Event::Windows(vec![foot()]));
+        crate::testkit::end(&mut s, "ff6");
+        assert_eq!(program(&s), None);
     }
 
     /// A Files tab with a file of its own and one that is a library entry's (zelda's).
