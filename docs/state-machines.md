@@ -39,7 +39,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Running(Windows, unseen) | past `until` | Idle, no play | — | running `a_file_handed_…` |
 | Running(Windows, seen) | no windows left | Idle | `RecordPlay` from `since` | running `an_app_handed_over_…` |
 | Running | Show / Play | same | thaw, runner resumed, Focus; else tray Activate and `pending_show`; else NoWindow notice | background `pauses_hidden_thawed_…`; dock `running_entries_join_the_dock…` |
-| Running | Show when every window is moved down | same | focuses an empty top workspace (S5) | GAP |
+| Running | Show when every window is moved down | same | thaw, runner resumed; the bottom screen shows them (`ShowDown`) | running `show_of_an_entry_whose_windows_are_all_below_shows_them_there` |
 | Running | Quit | Quitting | thaw, Close(windows) | running `quit_closes_the_windows_then_ends_…` |
 | Quitting | windows gone, still runs | Quitting(ended) | EndRun, or EndProcesses (found, own pid) | same |
 | Quitting | no longer runs | removed | runner stop (once) | same |
@@ -95,7 +95,7 @@ State: `items{id, pinned}`, `menu`, `tray` (submenu path), `moving`, `unsaved`.
 |---|---|---|---|---|
 | — | settle | unpinned items not running dropped, new running ones appended | — | dock `running_entries_join_the_dock…` |
 | closed | tap on an entry not running | — | queued Play | same |
-| closed | tap, running, all windows down | — | the bottom screen shows them | GAP |
+| closed | tap, running, all windows down | — | queued Show, which shows them on the bottom screen | running `show_of_an_entry_whose_windows_are_all_below_…` |
 | closed | tap, running | — | queued Show | dock tests |
 | closed | long press | menu open | Battery watched (sync) | dock tests |
 | menu | a choice | closed | OpenAnother, Autostart, Suspend, Quit, ForceKill queued; CloseWindow; Pin with `Save(Dock)`; Move starts moving | dock `the_menu_opens_another_…`; Autostart/Suspend via the menu GAP |
@@ -383,7 +383,7 @@ Session and dock:
   can't be quit, and a Frozen hold for it is dropped so its slice stays frozen. Fixed: state/session: a found program's scope is found again after a restart.
 - S3. After a tray program's scope is adopted, its tray menu is missing until the tray thread re-reads the
   icons (`tray.rs:122`). Fixed: state/session: a tray icon stays with its adopted program and gives no pid.
-- S5. Show when every window is moved down focuses an empty top workspace (`running.rs:488`).
+- S5. Show when every window is moved down focuses an empty top workspace (`running.rs:488`). Fixed: state/session: Show of an entry whose windows are all below shows them there.
 - S6. A quit the program refuses (a "save changes?" cancelled) stays quitting indefinitely: never paused,
   and ended when its windows later close (`running.rs:566-631`).
 - S7. A window-found entry without its own process gets a tray icon's pid; Quit then signals it (`tray.rs:111`).

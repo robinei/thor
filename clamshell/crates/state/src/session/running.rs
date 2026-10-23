@@ -512,28 +512,31 @@ pub(crate) fn land_rules(library: &Library) -> Effect {
 }
 
 impl Session {
-    /// Shows running entry `id`: its workspace, if a window of it is there to see. Otherwise what is in
-    /// front stays, and a notice says it has no window. It may run without one, not have shown one yet, or
-    /// have lost its display, in which case its dock menu's Quit ends it. It never shows an empty screen.
-    pub(crate) fn show(&mut self, id: &str, clock: &Clock, library: &Library, notice: &mut NoticeSlot, out: &mut Out) {
-        let Some(r) = self.running(id) else {
-            return;
-        };
+    /// Shows running entry `id`: its workspace, if a window of it is there to see. If all its windows are
+    /// on the bottom screen, the first of them is returned, for the bottom screen to show. Otherwise what
+    /// is in front stays, and a notice says it has no window. It may run without one, not have shown one
+    /// yet, or have lost its display, in which case its dock menu's Quit ends it. It never shows an empty
+    /// screen.
+    pub(crate) fn show(&mut self, id: &str, clock: &Clock, library: &Library, notice: &mut NoticeSlot, out: &mut Out) -> Option<i64> {
+        let r = self.running(id)?;
         if self.windows_of(&r.id).next().is_some() {
+            let down = self.windows_of(&r.id).all(|w| w.down).then(|| self.windows_of(&r.id).next().map(|w| w.id)).flatten();
             let focus = Effect::Window(WindowCommand::Focus(r.workspace()));
             // If it or its runner is paused, it is thawed first, so that it draws as it is shown.
             self.thaw(id, out);
             self.resume_runner_of(id, library, out);
-            out.effects.push(focus);
-            return;
+            if down.is_none() {
+                out.effects.push(focus);
+            }
+            return down;
         }
         let title = r.entry.as_ref().map_or_else(|| id.to_owned(), |g| g.title.clone());
         // With no window but a tray icon, the program is asked to show itself, as for Steam started
         // silently.
-        if self.activate_tray(id, clock, out) {
-            return;
+        if !self.activate_tray(id, clock, out) {
+            notice.show(NoticeKind::NoWindow(title), clock.mono());
         }
-        notice.show(NoticeKind::NoWindow(title), clock.mono());
+        None
     }
 
     /// Whether a launch of entry `id` was asked for and hasn't started.
@@ -1004,6 +1007,26 @@ mod tests {
         assert!(s.session().running("zelda-lttp").is_none());
         assert!(fx.contains(&Effect::RecordPlay { entry: "zelda-lttp".into(), start: 100, duration: 300 }), "once: {fx:?}");
         assert!(!s.applied(Event::Units(vec![])).iter().any(|e| matches!(e, Effect::RecordPlay { .. })), "once");
+    }
+
+    /// Show, as from shelf, of an entry whose windows are all on the bottom screen shows them there, as a
+    /// tap on its dock tile does, and doesn't focus its empty workspace on the main screen.
+    #[test]
+    fn show_of_an_entry_whose_windows_are_all_below_shows_them_there() {
+        let mut s = state();
+        let zelda = launch(&mut s, "zelda-lttp");
+        s.applied(Event::Windows(vec![shelf_window(true), Window { unit: zelda.unit(), down: true, ..win(3, "zelda3", &zelda.workspace(), false) }]));
+        assert_eq!(show(&mut s, "zelda-lttp"), vec![Effect::Window(WindowCommand::ShowDown(3))]);
+        assert!(s.bottom().shows_windows(s.session()));
+        assert_eq!(window_effects(tap(&mut s, Id::Dock(DockId::Entry(0)))), vec![Effect::Window(WindowCommand::ShowDown(3))], "the dock tile's tap: the same");
+        // With a window of it on the main screen, that is shown.
+        let windows = vec![
+            shelf_window(true),
+            Window { unit: zelda.unit(), down: true, ..win(3, "zelda3", &zelda.workspace(), false) },
+            Window { unit: zelda.unit(), ..win(4, "zelda3", &zelda.workspace(), false) },
+        ];
+        s.applied(Event::Windows(windows));
+        assert_eq!(show(&mut s, "zelda-lttp"), vec![focus(&zelda)]);
     }
 
     #[test]

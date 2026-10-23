@@ -667,7 +667,7 @@ impl State {
     fn on_entry(&mut self, id: Arc<str>, act: EntryAct, out: &mut Out) {
         match act {
             EntryAct::Play => self.play(id, out),
-            EntryAct::Show => self.session.show(&id, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out),
+            EntryAct::Show => self.show(&id, out),
             EntryAct::OpenAnother => self.open_another(id, out),
             EntryAct::Suspend => self.session.suspend(&id, out),
             EntryAct::ToggleAutostart => self.session.toggle_autostart(id, out),
@@ -743,9 +743,7 @@ impl State {
                 self.shelf.on_target(id, long, &mut self.pointer, out);
             }
             Id::Dock(id) => {
-                if let Some(window) = self.dock.on(id, long, &self.session, out) {
-                    self.bottom.show_program_down(window, out);
-                }
+                self.dock.on(id, long, &self.session, out);
             }
             Id::Settings(id) => {
                 self.on_settings(id, long, out);
@@ -1106,7 +1104,7 @@ impl State {
         // A browsed file that is also a library entry plays as that entry.
         let entry = self.shelf.entry_of_file(&entry).unwrap_or(entry);
         if self.session.running(&entry).is_some() {
-            self.session.show(&entry, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out);
+            self.show(&entry, out);
             return;
         }
         let title = self.shelf.entry(&entry).map(|g| g.title.clone());
@@ -1116,6 +1114,13 @@ impl State {
         // game's, or Proton's setup.
         if let Some(title) = title.filter(|_| out.effects.iter().skip(mark).any(|e| matches!(e, Effect::Launch { .. }))) {
             self.bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Starting(title), self.clock.mono());
+        }
+    }
+
+    /// Shows running entry `id` (see [`Session::show`]), on the bottom screen if all its windows are there.
+    fn show(&mut self, id: &str, out: &mut Out) {
+        if let Some(window) = self.session.show(id, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out) {
+            self.bottom.show_program_down(window, out);
         }
     }
 
@@ -1137,7 +1142,7 @@ impl State {
                 self.shelf.moved(&mut self.pointer);
                 out.effects.push(Effect::Window(WindowCommand::ShowShelf));
             }
-            Some(Instead::Show) => self.session.show(&entry, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out),
+            Some(Instead::Show) => self.show(&entry, out),
             Some(Instead::Group) | None => {}
         }
     }

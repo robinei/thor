@@ -22,7 +22,6 @@ use crate::id::DockId;
 use crate::keymap::Dir;
 use crate::out::Out;
 use crate::session::tray::{TrayCommand, TrayEntry, TrayItem};
-use crate::session::windows::Window;
 use crate::{EntryAct, Event, Session};
 
 /// The dock's tiles in a row.
@@ -140,18 +139,18 @@ impl Dock {
     }
 
     /// A tap or long press on a dock tile, a choice in its menu, which then closes, or a step in move mode.
-    /// Returns the window to show on the bottom screen when a tap shows an entry whose windows are all
-    /// there, since the bottom screen shows it.
-    pub(crate) fn on(&mut self, id: DockId, long: bool, session: &Session, out: &mut Out) -> Option<i64> {
+    pub(crate) fn on(&mut self, id: DockId, long: bool, session: &Session, out: &mut Out) {
         match id {
             DockId::Entry(i) => {
-                let entry = self.items.get(usize::from(i)).map(|item| item.id.clone())?;
+                let Some(entry) = self.items.get(usize::from(i)).map(|item| item.id.clone()) else {
+                    return;
+                };
                 if long {
                     self.menu = Some(entry);
                     self.tray = None;
-                    return None;
+                    return;
                 }
-                return tap(entry, session, out);
+                tap(entry, session, out);
             }
             DockId::Tray(i) => {
                 if let Some(entry) = self.items.get(usize::from(i)).map(|item| item.id.clone()) {
@@ -183,7 +182,6 @@ impl Dock {
                 }
             }
         }
-        None
     }
 
     fn menu_choice(&mut self, choice: DockId, entry: Arc<str>, session: &Session, out: &mut Out) {
@@ -277,19 +275,10 @@ impl Dock {
     }
 }
 
-/// A tap on a dock entry. A stopped entry starts. A running one is shown, on the bottom screen if all its
-/// windows are there: that window is returned.
-fn tap(entry: Arc<str>, session: &Session, out: &mut Out) -> Option<i64> {
-    if session.running(&entry).is_none() {
-        out.events.push(Event::Entry(entry, EntryAct::Play));
-        return None;
-    }
-    let below = |w: &&Window| w.down;
-    let down = session.windows_of(&entry).all(|w| w.down).then(|| session.windows_of(&entry).find(below).map(|w| w.id)).flatten();
-    if down.is_none() {
-        out.events.push(Event::Entry(entry, EntryAct::Show));
-    }
-    down
+/// A tap on a dock entry. A stopped entry starts. A running one is shown (see [`Session::show`]).
+fn tap(entry: Arc<str>, session: &Session, out: &mut Out) {
+    let act = if session.running(&entry).is_some() { EntryAct::Show } else { EntryAct::Play };
+    out.events.push(Event::Entry(entry, act));
 }
 
 impl Session {
