@@ -80,12 +80,15 @@ pub struct Frame<'f, 'c> {
     /// The area the screen's content goes in; on the second screen, the area below the bar. Sizes are
     /// fractions of its height (see [`Frame::pad`], [`Frame::text`]).
     pub(crate) body: Rect,
+    /// The target pressed, where the item it came down on is now (see `Lists::pressed`).
+    pressed: Option<Id>,
 }
 
 impl<'f, 'c> Frame<'f, 'c> {
     pub fn new(c: &'f mut Canvas<'c>, s: &'f State, images: &'f mut Images, scratch: &'f mut Scratch, targets: &'f mut Vec<Target>) -> Self {
         targets.clear();
-        Frame { c, s, images, scratch, targets, out: FrameOut::default(), body: Rect::new(0.0, 0.0, 0.0, 0.0) }
+        let pressed = s.lists().pressed();
+        Frame { c, s, images, scratch, targets, out: FrameOut::default(), body: Rect::new(0.0, 0.0, 0.0, 0.0), pressed }
     }
 
     /// The area the screen's content goes in.
@@ -130,10 +133,11 @@ impl<'f, 'c> Frame<'f, 'c> {
         self.targets.push(Target { rect, id, track: None, list: None, item });
     }
 
-    /// Whether `id` is held down by a finger or the pad's A. A control whose slider is up doesn't count,
-    /// since the finger is then on the slider rather than the button.
+    /// Whether `id` is held down by a finger or the pad's A. A list item is lit where the item pressed is
+    /// now. A control whose slider is up doesn't count, since the finger is then on the slider rather
+    /// than the button.
     pub(crate) fn pressed(&self, id: &Id) -> bool {
-        self.s.pointer().pressed() == Some(id) && !self.sliding(id)
+        self.pressed.as_ref() == Some(id) && !self.sliding(id)
     }
 
     /// Whether `id` is a control whose held slider is up, such as the bar's or a keymap parameter's.

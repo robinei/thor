@@ -29,7 +29,7 @@ The weak spots are at the seams.
 - [x] **The UI reorders effects across re-entrant events.** `App::handle` applies an event, then
       `run_actions` can emit another, whose nested `handle` carries out its effects before the outer
       event's. Emitted events should wait until the effects are done. (`ui/platform/app.rs`.)
-- [ ] **The pressed highlight and the keyed action can land on different rows** when a list re-sorts
+- [x] **The pressed highlight and the keyed action can land on different rows** when a list re-sorts
       between the frame and the press: the press acts on the item drawn there, the highlight follows the
       position. (`nav/pointer.rs:52`.) Cosmetic.
 

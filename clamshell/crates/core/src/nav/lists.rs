@@ -194,6 +194,12 @@ impl<'a> Lists<'a> {
         }
     }
 
+    /// The target pressed, resolved to where the item the press came down on is now (see
+    /// [`Lists::resolve`]), so that the item lit is the one a tap acts on.
+    pub fn pressed(&self) -> Option<Id> {
+        self.pointer.pressed().and_then(|id| self.resolve(id))
+    }
+
     /// A level row resolved to the one the finger landed on (see [`Lists::resolve`]).
     pub(crate) fn resolve_level(&self, level: Level) -> Option<Level> {
         self.resolve(&level.id()).as_ref().and_then(Level::of)
@@ -267,6 +273,20 @@ mod tests {
         }
         assert_eq!(s.lists().len(ListId::Dock), 1);
         assert_eq!(s.lists().scroll(ListId::Dock).offset(), 0.0);
+    }
+
+    /// A row pressed stays lit as the list changes under the finger, where the tap would act.
+    #[test]
+    fn the_pressed_item_is_lit_where_it_is_now() {
+        let mut s = state();
+        networks(&mut s, &["a", "b", "c"]);
+        let row = ListId::Wifi.row(2);
+        let item = s.lists().item_key(&row);
+        s.applied(PointerEvent::Down(row, item).into());
+        networks(&mut s, &["b", "c"]);
+        assert_eq!(s.lists().pressed(), Some(ListId::Wifi.row(1)));
+        networks(&mut s, &["b"]);
+        assert_eq!(s.lists().pressed(), None, "gone");
     }
 
     #[test]
