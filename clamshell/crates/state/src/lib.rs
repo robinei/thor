@@ -362,7 +362,7 @@ impl State {
             Event::Frozen(keys) => self.session.found_frozen(keys),
             Event::Paste => self.bottom.paste(),
             Event::Screenshot(result) => self.bottom.notice_mut().show(NoticeKind::Screenshot(result), now),
-            Event::Sticks(event) => self.device.sticks_event(event, out),
+            Event::Sticks(event) => self.device.sticks_event(event, now, out),
             Event::RefreshCalibrated(result) => self.refresh_calibrated(result),
             Event::CalibrateGyro => self.calibrate_gyro(out),
             Event::GyroCalibrated(ok) => self.bottom.notice_mut().show(NoticeKind::Gyro(Some(ok)), now),
@@ -815,7 +815,7 @@ impl State {
             }
             Id::Time(id) => self.sys.on_time(id, self.scrolls.get_mut(ListId::Time), out),
             Id::Device(id) => {
-                self.device.tap(id, &mut self.pointer, self.shelf.selected(), out);
+                self.device.tap(id, self.clock.mono(), &mut self.pointer, self.shelf.selected(), out);
             }
             Id::Battery(id) => {
                 self.sys.on_battery(id, &self.session, out);

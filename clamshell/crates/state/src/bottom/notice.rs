@@ -8,7 +8,7 @@ use crate::levels::slider::Control;
 const NOTICE_FOR: u64 = 2;
 
 /// How long the gyro's "hold still" shows at most, in seconds. Its answer replaces it before then.
-const GYRO_FOR: u64 = 30;
+const GYRO_FOR: u64 = crate::device::ANSWER_WAIT;
 
 /// A notice under the bar, until it times out.
 #[derive(Debug, Clone, PartialEq, Eq)]

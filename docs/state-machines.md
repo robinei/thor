@@ -185,8 +185,8 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 | Home with the view open → closed | GAP |
 | Wifi / Zone rows → their tab | GAP |
 | Password → editor for the current then the new password → `Account(Password)` | `the_password_is_typed_below_the_current_one_first` |
-| Ssh with a password → `Account(Ssh)`; further taps do nothing until AccountChanged | `remote_login_needs_a_password`, `remote_login_waits_for_its_answer_before_another_tap` |
-| Sticks → `CalibrateSticks`; progress; done saves or fails; further taps do nothing until done | `a_sticks_calibration_shows_its_progress_…`, `the_sticks_calibration_waits_for_its_end_before_another_tap` |
+| Ssh with a password → `Account(Ssh)`; further taps do nothing until AccountChanged, at most 30 s | `remote_login_needs_a_password`, `remote_login_waits_for_its_answer_before_another_tap`, `remote_login_is_asked_again_after_30_s_without_an_answer` |
+| Sticks → `CalibrateSticks`; progress; done saves or fails; further taps do nothing until done, or 30 s without progress | `a_sticks_calibration_shows_its_progress_…`, `the_sticks_calibration_waits_for_its_end_before_another_tap`, `the_sticks_calibration_is_asked_again_after_30_s_without_word` |
 | Gyro → notice + `CalibrateGyro`; result notice; without one the notice goes after 30 s | `the_gyros_hold_still_shows_until_it_answers_at_most_30_s` |
 | Refresh → `CalibrateRefresh` once at a time; result → BottomPower resent | `the_refresh_calibration_runs_once_at_a_time_…`; the resend GAP |
 
@@ -466,17 +466,20 @@ with what would make us change our minds.
 - S10, S11, S12. An editor opened on the keyboard goes back where it came from when it closes, whatever
   its purpose; a text field losing focus doesn't switch away from an open editor; a second editor for
   the keyboard while one is open there is refused with a notice, so nothing typed is lost. **Revisit**
-  if refusing turns out to block something the user expects to interrupt (the account password).
+  if refusing turns out to block something the user expects to interrupt (the account password). S12
+  added a notice kind for it, KeyboardBusy.
 - S13. Leaving the capture screen any way drops the modifiers armed there.
 - S14. The gyro's notice stays until the calibration answers, at most 30 s.
 - S15. Showing the windows below turns the screen on if it was off by hand.
 - S16. Kept: a screen dark for a game wakes only on the Wake target, so a stray touch mid-game doesn't
   light it. **Revisit** after using it on the device.
 - S17, S18. The sticks calibration and the remote-login toggle wait for their answer before taking
-  another tap.
+  another tap, at most 30 s (for the sticks, 30 s since the last progress), as the gyro's notice does, so
+  a dead thread or helper can't block them for good.
 - S19. Implement the documented exception: the pad switched to the second screen stays there when the
   claimant changes, until View is pressed or shelf comes to the front. **Revisit** if it feels sticky
-  on the device.
+  on the device. Applied literally, this includes the pad mouse: the pad stays on the second screen when
+  the mouse turns on (by hand or by a game), so the mouse does nothing until View.
 - S20. Back at the top of the tray menu goes back to the entry's menu.
 - S21. The dock menu closes when its entry leaves the dock; a move ends when its item goes; `close`
   clears the tray path; a long press while moving ends the move first.

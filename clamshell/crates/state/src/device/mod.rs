@@ -49,8 +49,10 @@ pub enum Refresh {
 #[derive(Debug, Clone, Default)]
 pub struct Device {
     open: bool,
-    /// A stick calibration was asked for and hasn't ended. Another isn't asked for until it has.
-    sticks_running: bool,
+    /// When a stick calibration was asked for or last reported progress (monotonic seconds), until it
+    /// ends. Another isn't asked for until it has, or until [`ANSWER_WAIT`] has passed with no word from
+    /// the pad thread, in case it died.
+    sticks_asked: Option<u64>,
     /// How far a running stick calibration has got.
     sticks: Option<Progress>,
     /// The last stick calibration failed. Cleared when another starts.
@@ -62,8 +64,18 @@ pub struct Device {
     first_start: bool,
     /// The account, as last read (see [`account`]).
     account: Account,
-    /// Remote login was turned on or off and the helper hasn't answered. Another tap waits for it.
-    ssh_asked: bool,
+    /// When remote login was turned on or off (monotonic seconds), until the helper answers. Another tap
+    /// waits for the answer, or for [`ANSWER_WAIT`] to pass without one.
+    ssh_asked: Option<u64>,
+}
+
+/// How long a request of the Device view waits for its answer, in seconds, before another tap may ask
+/// again: the sticks' calibration, remote login, and the gyro's notice to hold still.
+pub const ANSWER_WAIT: u64 = 30;
+
+/// Whether a request made at `asked` still waits for its answer at `now`.
+fn waits(asked: Option<u64>, now: u64) -> bool {
+    asked.is_some_and(|at| now < at + ANSWER_WAIT)
 }
 
 /// What the pad thread reports about a stick calibration.
@@ -139,12 +151,13 @@ impl Device {
 
     /// The account helper answered a change. Its reading follows.
     pub(crate) fn account_changed(&mut self) {
-        self.ssh_asked = false;
+        self.ssh_asked = None;
     }
 
-    /// A tap on one of the Device view's targets. Closing it gives the focus back to shelf's
-    /// selection (`selected`). A tab to open is queued as an event, since State changes tabs.
-    pub(crate) fn tap(&mut self, id: DeviceId, pointer: &mut Pointer, selected: Option<&Arc<str>>, out: &mut Out) {
+    /// A tap on one of the Device view's targets at `now` (monotonic seconds). Closing it gives the focus
+    /// back to shelf's selection (`selected`). A tab to open is queued as an event, since State changes
+    /// tabs.
+    pub(crate) fn tap(&mut self, id: DeviceId, now: u64, pointer: &mut Pointer, selected: Option<&Arc<str>>, out: &mut Out) {
         let account = self.account;
         match id {
             DeviceId::Wifi => out.events.push(Event::ChooseTab(Tab::Wifi)),
@@ -156,13 +169,14 @@ impl Device {
             }
             // Remote login needs a password to log in with.
             // One change at a time: the next tap reads the account the answer brings.
-            DeviceId::Ssh if account.available && account.password && !self.ssh_asked => {
-                self.ssh_asked = true;
+            DeviceId::Ssh if account.available && account.password && !waits(self.ssh_asked, now) => {
+                self.ssh_asked = Some(now);
                 out.effects.push(Effect::Account(AccountCommand::Ssh(!account.ssh)));
             }
             DeviceId::Password | DeviceId::Ssh => {}
-            DeviceId::Sticks if !self.sticks_running => {
-                self.sticks_running = true;
+            DeviceId::Sticks if !waits(self.sticks_asked, now) => {
+                self.sticks_asked = Some(now);
+                self.sticks = None;
                 self.sticks_failed = false;
                 out.effects.push(Effect::CalibrateSticks);
             }
@@ -185,13 +199,16 @@ impl Device {
         }
     }
 
-    /// A report from the pad thread on a stick calibration. Progress is shown. A result is kept, and the
+    /// A report from the pad thread on a stick calibration at `now`. Progress is shown. A result is kept, and the
     /// pad thread already uses it. A failure is shown. The calibrations are saved after one that worked.
-    pub(crate) fn sticks_event(&mut self, event: SticksEvent, out: &mut Out) {
+    pub(crate) fn sticks_event(&mut self, event: SticksEvent, now: u64, out: &mut Out) {
         match event {
-            SticksEvent::Progress(p) => self.sticks = Some(p),
+            SticksEvent::Progress(p) => {
+                self.sticks = Some(p);
+                self.sticks_asked = Some(now);
+            }
             SticksEvent::Done(name, result) => {
-                self.sticks_running = false;
+                self.sticks_asked = None;
                 self.sticks = None;
                 self.sticks_failed = result.is_none();
                 if let Some(sticks) = result {
@@ -332,6 +349,40 @@ mod tests {
         assert!(tap(&mut s, DeviceId::Sticks).is_empty(), "before the first progress too");
         s.applied(Event::Sticks(SticksEvent::Done("pad".into(), None)));
         assert_eq!(tap(&mut s, DeviceId::Sticks), vec![Effect::CalibrateSticks], "ended: again");
+    }
+
+    /// A pad thread that died mid-calibration doesn't block the sticks for good: with no word from it for
+    /// [`ANSWER_WAIT`], a tap asks again. Progress counts as word, so a slow calibration isn't asked twice.
+    #[test]
+    fn the_sticks_calibration_is_asked_again_after_30_s_without_word() {
+        let mut s = State::new(init());
+        s.applied(Event::tick(1000));
+        assert_eq!(tap(&mut s, DeviceId::Sticks), vec![Effect::CalibrateSticks]);
+        s.applied(Event::tick(1020));
+        let rest = crate::device::sticks::StickAxis { low: 0, centre: 0, high: 0 };
+        let p = Progress { phase: crate::device::sticks::Phase::Turn, now: [0; 4], seen: [rest; 4], min: -1024, max: 1024 };
+        s.applied(Event::Sticks(SticksEvent::Progress(p)));
+        s.applied(Event::tick(1049));
+        assert!(tap(&mut s, DeviceId::Sticks).is_empty(), "29 s since its progress: still waiting");
+        s.applied(Event::tick(1050));
+        assert_eq!(tap(&mut s, DeviceId::Sticks), vec![Effect::CalibrateSticks], "30 s without word: asked again");
+        assert!(s.device().sticks().is_none(), "the old progress is dropped");
+        assert!(tap(&mut s, DeviceId::Sticks).is_empty(), "and that one waits in turn");
+    }
+
+    /// A helper that never answers doesn't block remote login for good: after [`ANSWER_WAIT`] a tap asks
+    /// again.
+    #[test]
+    fn remote_login_is_asked_again_after_30_s_without_an_answer() {
+        let mut s = State::new(init());
+        s.applied(Event::tick(1000));
+        available(&mut s, true);
+        assert_eq!(tap(&mut s, DeviceId::Ssh), vec![Effect::Account(AccountCommand::Ssh(true))]);
+        s.applied(Event::tick(1029));
+        assert!(tap(&mut s, DeviceId::Ssh).is_empty(), "29 s: still waiting");
+        s.applied(Event::tick(1030));
+        assert_eq!(tap(&mut s, DeviceId::Ssh), vec![Effect::Account(AccountCommand::Ssh(true))], "30 s: asked again");
+        assert!(tap(&mut s, DeviceId::Ssh).is_empty(), "and that one waits in turn");
     }
 
     #[test]
