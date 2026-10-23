@@ -25,6 +25,8 @@ use crate::server::{ClientState, Process, Server};
 struct Client {
     sizes: Vec<(i32, i32)>,
     touches: Vec<TouchRecord>,
+    keys: Vec<(u32, bool)>,
+    text: Vec<keyboard_tests::TextRecord>,
 }
 
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Client {
@@ -381,3 +383,6 @@ fn touching_a_home_arrow_switches_once_and_consumes_home_release() {
     server.core.handle(Event::HomeTap);
     assert_eq!(server.core.state().session().top_window().map(|w| w.id), Some(2));
 }
+
+#[path = "keyboard_tests.rs"]
+mod keyboard_tests;

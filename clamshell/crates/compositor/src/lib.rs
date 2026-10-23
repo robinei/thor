@@ -3,6 +3,7 @@
 mod geometry;
 mod handlers;
 mod input;
+mod keyboard;
 mod nested;
 mod render;
 mod server;

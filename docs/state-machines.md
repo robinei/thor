@@ -678,3 +678,24 @@ cancellation, hiding a touched client, and ignored late events.
 `touching_a_home_arrow_switches_once_and_consumes_home_release` checks that an arrow contact switches
 once and consumes Home release. Physical touchscreen input remains a nested-host/device check; no
 libinput backend is enabled yet.
+
+### Compositor text input and on-screen keys (compositor/keyboard)
+
+Text-input-v3 enable/commit from the focused client sends TextInput(true) through Core; disable,
+destruction of the active text input, or a keyboard focus change sends TextInput(false). State owns
+raising and restoring the keyboard tab, including its existing editor guards. The compositor acts as
+the seat's input method; no external input-method process is required.
+
+A printable OSK stroke without Ctrl/Alt/Super commits its shifted character to the active text input,
+followed by done with the client's commit serial. Without active text input it becomes a seat key
+press/release. Shortcuts and named keys always use seat events: modifiers down, key down/up, modifiers
+up in reverse order. A separate keyboard source preserves physically held keys when OSK modifiers are
+released. Injected keys bypass nested development shortcuts. Unsupported keys and strokes without
+keyboard focus do nothing. Bottom UI interactions retain the client's keyboard focus; the shelf can
+claim it. UI editors continue to consume their own strokes in state.
+
+`the_bottom_keyboard_commits_text_and_sends_shortcuts_without_stealing_focus` exchanges real
+wl_keyboard and text-input-v3 messages over a socket pair. It pins commit strings and serials,
+modifier order, native key fallback before enable and after disable, physical Shift retention, F12
+delivery, the state-to-effect route, tab restoration and silence after focus loss. The touch protocol
+test continues to pin the two-screen routing. Real toolkit activation is checked in nested mode.

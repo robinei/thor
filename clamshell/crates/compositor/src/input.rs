@@ -89,7 +89,9 @@ impl Server {
                         if let Some(hit) = hit {
                             self.core.handle(WindowEvent::Activate(hit.window).into());
                         } else if let Some((screen, position)) = self.ui_under() {
-                            self.core.handle(WindowEvent::KeyboardFocus(None).into());
+                            if screen == Screen::Top {
+                                self.core.handle(WindowEvent::KeyboardFocus(None).into());
+                            }
                             if event.button_code() == 0x110 {
                                 self.core.press(Source::Mouse, screen, position, event.time().millis());
                             }

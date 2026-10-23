@@ -48,7 +48,9 @@ impl Server {
                 Target::Ignored
             }
         } else if let Some((screen, local)) = self.ui_at(position) {
-            self.core.handle(WindowEvent::KeyboardFocus(None).into());
+            if screen == Screen::Top {
+                self.core.handle(WindowEvent::KeyboardFocus(None).into());
+            }
             self.core.press(Source::Touch(slot.into()), screen, local, time.millis());
             Target::Ui(screen)
         } else {

@@ -17,10 +17,12 @@ use smithay::{
     utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Transform},
     wayland::{
         compositor::{CompositorClientState, CompositorState, with_states},
+        input_method::InputMethodSeat,
         output::OutputManagerState,
         selection::data_device::DataDeviceState,
         shell::xdg::{SurfaceCachedState, ToplevelSurface, XdgShellState, XdgToplevelSurfaceData},
         shm::ShmState,
+        text_input::{TextInputManagerState, TextInputSeat},
     },
 };
 
@@ -55,6 +57,7 @@ pub(crate) struct Server {
     pub pointer_buttons: Vec<u32>,
     pub arrow_pressed: bool,
     pub keyboard_home: bool,
+    pub keyboard_source: smithay::input::keyboard::KeyboardSource,
     pub touches: [Option<crate::touch::Contact>; 32],
     pub touch_pending: bool,
     pub size: (i32, i32),
@@ -81,6 +84,9 @@ impl Server {
         seat.add_keyboard(Default::default(), 200, 25)?;
         seat.add_pointer();
         seat.add_touch();
+        seat.input_method();
+        seat.text_input().set_compositor_input_method(true);
+        TextInputManagerState::new::<Self>(&dh);
         let outputs = ["ClamShell-Top", "ClamShell-Bottom"].map(|name| {
             let output = Output::new(
                 name.into(),
@@ -113,6 +119,7 @@ impl Server {
             pointer_buttons: Vec::new(),
             arrow_pressed: false,
             keyboard_home: false,
+            keyboard_source: smithay::input::keyboard::KeyboardSource::new_auxiliary(),
             touches: std::array::from_fn(|_| None),
             touch_pending: false,
             size: (1580, 540),
@@ -266,6 +273,7 @@ impl Server {
         if let Some(keyboard) = self.seat.get_keyboard()
             && keyboard.current_focus() != surface
         {
+            self.core.handle(clamshell_state::Event::TextInput(false));
             keyboard.set_focus(self, surface, SERIAL_COUNTER.next_serial());
         }
     }
@@ -283,7 +291,7 @@ impl Server {
                     }
                 }
                 Effect::Window(_) | Effect::Outputs { .. } | Effect::Refresh(_) => {}
-                Effect::Key(_) => log::debug!("nested compositor: on-screen keyboard injection is not implemented yet"),
+                Effect::Key(ref stroke) => self.stroke(stroke),
                 Effect::Launch { ref env, .. } => {
                     let mut launch = effect.clone();
                     if let Effect::Launch { env: target, .. } = &mut launch {
