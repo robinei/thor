@@ -529,6 +529,24 @@ mod tests {
     }
 
     #[test]
+    fn off_by_itself_as_the_screens_go_off_it_goes_off_with_them_and_stays_off() {
+        use crate::device::idle::IdleEvent;
+        let mut s = state();
+        on_battery(&mut s, true);
+        s.applied(Event::tick(1000));
+        s.applied(Event::Idle(IdleEvent::Watching(true)));
+        s.applied(Event::tick(1060));
+        s.applied(Event::BottomTouched);
+        // The screens go off for idle after 5 minutes, and the bottom one by itself 4 minutes after the
+        // touch, at the same time.
+        let fx = s.applied(Event::tick(1060 + DIM_AFTER + OFF_AFTER));
+        assert!(s.bottom().off());
+        assert!(fx.contains(&Effect::Screens { on: false, bottom: true }), "{fx:?}");
+        let fx = s.applied(Event::Idle(IdleEvent::DeviceInput));
+        assert!(fx.contains(&Effect::Screens { on: true, bottom: false }), "{fx:?}");
+    }
+
+    #[test]
     fn the_wall_clock_set_back_does_not_keep_it_on() {
         let mut s = state();
         on_battery(&mut s, true);

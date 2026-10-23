@@ -126,13 +126,11 @@ impl App {
         for effect in &self.effects {
             match effect {
                 Effect::Quit => self.exit = true,
-                // The compositor controls the screens' power, and we ask it through Wayland. A bottom
-                // screen turned off with Home+Start is left out, so turning the screens on again leaves
-                // it off.
-                Effect::Screens(on) => {
-                    let bottom_off = self.state.bottom().off().then(|| self.display.bottom_output().to_owned());
+                // The compositor controls the screens' power, and we ask it through Wayland.
+                Effect::Screens { on, bottom } => {
+                    let left_out = (!bottom).then(|| self.display.bottom_output().to_owned());
                     let outputs: Vec<_> =
-                        self.output_state.outputs().filter(|o| bottom_off.is_none() || self.output_state.info(o).and_then(|i| i.name) != bottom_off).collect();
+                        self.output_state.outputs().filter(|o| left_out.is_none() || self.output_state.info(o).and_then(|i| i.name) != left_out).collect();
                     self.display.power(*on, outputs.into_iter(), &self.qh);
                 }
                 other => {

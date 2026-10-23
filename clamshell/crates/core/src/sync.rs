@@ -213,7 +213,8 @@ impl Sent {
             out.effects.extend(if w.stage >= Stage::Dimmed { w.levels.dimmed_effect() } else { w.levels.undimmed_effect() });
         }
         if (was >= Stage::Off) != (w.stage >= Stage::Off) {
-            out.effects.push(Effect::Screens(w.stage < Stage::Off));
+            let on = w.stage < Stage::Off;
+            out.effects.push(Effect::Screens { on, bottom: !on || w.bottom_on });
         }
         if w.stage == Stage::Asleep {
             out.effects.push(Effect::Sleep);
@@ -229,8 +230,8 @@ impl Sent {
         out.effects.push(Effect::Apply { entry: w.program.cloned(), settings: w.settings });
     }
 
-    /// The bottom screen is turned off and on. While both screens are off for idle it is left as it is,
-    /// since the screens set it when they come back.
+    /// The bottom screen is turned off and on. While both screens are off for idle it is left as it is:
+    /// it went off with them, and they set it when they come back.
     fn bottom_power(&mut self, w: &Wanted, out: &mut Out) {
         let was = self.bottom_on.replace(w.bottom_on);
         if was == Some(w.bottom_on) || (was.is_some() && w.stage >= Stage::Off) {

@@ -297,12 +297,12 @@ mod tests {
         assert_eq!(brightness(&s.applied(Event::tick(1270))), Some(20), "dimmed to a third");
         assert_eq!(
             s.applied(Event::tick(1300)),
-            vec![Effect::Screens(false), Effect::Watch(crate::Watch::Status, false), Effect::Watch(crate::Watch::Metrics, false)]
+            vec![Effect::Screens { on: false, bottom: true }, Effect::Watch(crate::Watch::Status, false), Effect::Watch(crate::Watch::Metrics, false)]
         );
         assert!(!s.applied(Event::tick(1900)).contains(&Effect::Sleep), "not the device's session");
         // On input the screens come back at their brightness, and the press that woke them does nothing.
         let fx = s.applied(Event::Idle(IdleEvent::DeviceInput));
-        assert!(fx.contains(&Effect::Screens(true)) && brightness(&fx) == Some(60), "{fx:?}");
+        assert!(fx.contains(&Effect::Screens { on: true, bottom: true }) && brightness(&fx) == Some(60), "{fx:?}");
         assert!(fx.contains(&Effect::Watch(crate::Watch::Metrics, true)), "watched again: {fx:?}");
         assert!(fx.contains(&Effect::Watch(crate::Watch::Status, true)), "the bar's status too: {fx:?}");
         // In the device's session it sleeps.
@@ -364,7 +364,7 @@ mod tests {
         // Busy, such as with a download: it doesn't sleep, the screens stay off, and sleep is tried again
         // after the retry time.
         let fx = s.applied(Event::Idle(IdleEvent::Busy));
-        assert!(!fx.contains(&Effect::Screens(true)), "{fx:?}");
+        assert!(!fx.contains(&Effect::Screens { on: true, bottom: true }), "{fx:?}");
         assert_eq!(s.idle().stage(), Stage::Off);
         assert!(!s.applied(Event::tick(1900 + SLEEP_RETRY - 1)).contains(&Effect::Sleep));
         assert!(s.applied(Event::tick(1900 + SLEEP_RETRY)).contains(&Effect::Sleep));
@@ -378,7 +378,7 @@ mod tests {
         s.applied(Event::Idle(IdleEvent::Watching(true)));
         s.applied(Event::Idle(IdleEvent::CompositorQuiet));
         let fx = s.applied(Event::tick(1_792_060_000));
-        assert!(!fx.contains(&Effect::Screens(false)), "not off at once: {fx:?}");
+        assert!(!fx.contains(&Effect::Screens { on: false, bottom: true }), "not off at once: {fx:?}");
         assert_eq!(s.idle().stage(), Stage::Awake);
     }
 
@@ -390,7 +390,7 @@ mod tests {
         s.applied(Event::Idle(IdleEvent::Watching(true)));
         // The clock is set a day forward, by hand or by NTP, and it is neither asleep nor off.
         let fx = s.applied(Event::Tick { unix_secs: 1000 + 86_400, mono_secs: 1001 });
-        assert!(!fx.contains(&Effect::Sleep) && !fx.contains(&Effect::Screens(false)), "{fx:?}");
+        assert!(!fx.contains(&Effect::Sleep) && !fx.contains(&Effect::Screens { on: false, bottom: true }), "{fx:?}");
         assert_eq!(s.idle().stage(), Stage::Awake);
         // Set back again, idle still counts on.
         assert!(s.applied(Event::Tick { unix_secs: 500, mono_secs: 1900 }).contains(&Effect::Sleep));

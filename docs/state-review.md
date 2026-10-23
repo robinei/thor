@@ -58,7 +58,7 @@ The weak spots are at the seams.
 - [x] Image eviction runs only after a top frame and drops anything not drawn in that frame, so the
       bottom's images can be evicted while shown and decoded again. Older than the refactor. Least
       recently used across both screens. (`gfx/images.rs:155`, `render/mod.rs:104`.)
-- [ ] Rare, older: the screens going off and the bottom going off in the same apply leaves the bottom lit.
+- [x] Rare, older: the screens going off and the bottom going off in the same apply leaves the bottom lit.
       (`ui/platform/app.rs:122`, `sync.rs:233`.)
 
 ## Hygiene
@@ -74,7 +74,9 @@ The weak spots are at the seams.
       `Session::launch`'s nine parameters.
 - [ ] Two names for one thing: game and entry; `shown` for three things; `follow_*` for settle steps and
       helpers. The crate doc still says rules mark screens (`lib.rs:29`).
-- [ ] The UI applies rules core could state: `Effect::Screens` reads `bottom().off()` when carried out;
-      which screens are hidden is decided from session state in the UI.
+- [x] The UI applies rules core could state: `Effect::Screens` reads `bottom().off()` when carried out;
+      which screens are hidden is decided from session state in the UI. (`Effect::Screens` now says
+      whether the bottom screen is among them. The hidden view is only the bottom one on its own output
+      while `bottom().off()`, which needs the UI's own placement, so it stays there.)
 - [ ] The damaged-vs-whole test doesn't catch bounds 2px too tight on text: the scenarios don't cover
       anti-aliasing margins.

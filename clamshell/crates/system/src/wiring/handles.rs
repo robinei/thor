@@ -159,7 +159,7 @@ impl Handles {
                 self.system.send(crate::device::Command::Notify { summary: summary.clone(), body: body.clone(), urgent: *urgent })
             }
             // The UI handles quitting and the screens' power, since they are its Wayland business.
-            Effect::Quit | Effect::Screens(_) => {}
+            Effect::Quit | Effect::Screens { .. } => {}
         }
     }
 
