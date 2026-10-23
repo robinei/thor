@@ -104,17 +104,28 @@ input through it. No window floats or is moved by hand.
   default follows the entry: fit for games, centred for apps.
 - A touch on black around a window does nothing.
 
-**Switching between a group's windows** (needed even in the MVP: a dialog that can't be closed would
-otherwise hide its parent):
+**Windows on the two screens** (the model, the same under sway and the compositor; no focus or mode):
 
-- **Home + right stick left / right** shows the previous / next window in the front group (the chords
-  below).
-- **The second screen shows that there are more**, never the top: a row of small grey dots under the front
-  entry's dock tile, one per window of its group, the shown one brighter, absent when there is only one;
-  a short notice when switching ("Find, 2 of 2"); and the entry's dock menu lists its windows to pick one
-  by touch.
-- A new dialog still takes the front of its group (it usually needs an answer); Home + right stick goes back.
-- The count is derived from the state's windows, not stored.
+1. **Every window lives on one screen** and stays there until moved, whichever program is active.
+2. **Each screen shows one window**, its front one; the second screen can show ClamShell's own view
+   instead (Home + right stick press).
+3. **Moving needs no focus:** Home + right stick down moves the window shown on the top screen down; up
+   moves the second screen's front window up (even while ClamShell's view is shown there). With nothing to
+   move, the flick does nothing. The moved window becomes the front of its new screen.
+4. **Activating a program** (shelf, the dock, a launch) brings its most recent window on each screen to the
+   front of that screen; a screen where it has no window is left as it is. So a game on top and a video
+   below stay as placed when either is activated, and the opposite arrangement works the same way: no
+   pinning is needed, since activation never pulls a window to another screen.
+5. **While Home is held, arrows at a screen's edges** appear where the program shown there has another
+   window on that screen; touching one switches to it. On the top screen Home + right stick left / right
+   does the same. Nothing else is shown.
+6. **When a screen's shown window closes**, the screen shows that program's next window there, else what
+   was in front before: on top eventually shelf, below ClamShell's view.
+
+The dock and shelf switch programs, on both screens; the arrows switch a program's windows on one screen;
+placement is the user's. Keyboard focus follows what was touched last, and pad input returns it to the top
+screen. A new dialog becomes the front of its screen (it usually needs an answer); the arrows go back to
+its parent. The dock's menu for an entry still lists its windows, to pick one by touch.
 
 **The Home chords.** Home is on the left of the Thor, Select too; Start, Back and the right stick are on
 the right; the AYN button is in the middle. Every chord is Home under the left thumb with the right thumb or
@@ -123,8 +134,8 @@ an index finger, never two buttons under one thumb:
 | Chord | Action |
 |---|---|
 | Home | shelf |
-| Home + right stick up / down | the window to the top / second screen (was Home+Up/Down) |
-| Home + right stick left / right | previous / next window in the group |
+| Home + right stick down / up | the top screen's window down / the second screen's front window up (was Home+Down/Up) |
+| Home + right stick left / right | previous / next window of the program shown on the top screen |
 | Home + right stick press | the second screen: ClamShell's view or the windows moved there (was Home+Select) |
 | Home+B | close the window in front; held, quit the program |
 | Home+R1 | screenshot |
@@ -133,8 +144,8 @@ an index finger, never two buttons under one thumb:
 A flick acts once: past about 70% in one direction (the axis further out), re-armed below about 30%; a
 stick already off-centre when Home goes down must come back first. While Home is held the right stick goes
 to ClamShell, and the game is sent a centred stick. The AYN button, reachable alone, is the candidate for
-opening a Home menu on the second screen later. These chords don't depend on the compositor: under sway,
-switching windows switches tabs.
+opening a Home menu on the second screen later. These chords and the model above don't depend on the
+compositor: under sway, switching windows switches tabs.
 
 **Later, considered:** dialogs whose parent should stay visible (find and replace, tool palettes, live
 previews) lose context in the MVP; switching between a dialog and its parent from the second screen covers
