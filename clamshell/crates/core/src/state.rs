@@ -1029,32 +1029,21 @@ impl State {
             }
             SettingsId::Scope(scope) => self.prefs.set_scope(scope),
             SettingsId::Reset => {
-                let before = self.in_force();
                 if let Some(id) = self.panel().editing().map(|g| g.id.clone()) {
                     self.prefs.reset(&id);
                 }
-                self.saved_and_applied(before, out);
+                out.effects.push(self.prefs.save_effect());
             }
         }
     }
 
     /// Changes `setting` where the panel edits, in the game's overrides or the global settings. It is set
-    /// to `value`, or back to the default for `None`. The change is saved, and applied at once if the
-    /// settings in force changed.
+    /// to `value`, or back to the default for `None`. The change is saved, and applied after the event
+    /// if the settings in force changed (see [`crate::sync`]).
     fn change(&mut self, setting: Setting, value: Option<u16>, out: &mut Out) {
-        let before = self.in_force();
         let game = self.panel().editing().map(|g| g.id.clone());
         self.prefs.set(game.as_ref(), setting, value);
-        self.saved_and_applied(before, out);
-    }
-
-    /// Saves the settings, and applies the settings in force after the event if they changed from
-    /// `before`.
-    fn saved_and_applied(&mut self, before: Values, out: &mut Out) {
         out.effects.push(self.prefs.save_effect());
-        if self.in_force() != before {
-            self.sent.resend(crate::sync::Resend::Settings);
-        }
     }
 
     /// The keymaps' screens' buttons. Back goes back a screen; the others are the screen's.
@@ -1090,10 +1079,8 @@ impl State {
                 out.effects.push(self.keymapping.save());
             }
             KeymapEvent::Deleted(id) => {
-                // The settings in force never depend on the keymaps, so this is as before the delete.
-                let before = self.in_force();
                 self.prefs.forget_keymap(id);
-                self.saved_and_applied(before, out);
+                out.effects.push(self.prefs.save_effect());
             }
             KeymapEvent::Capture => self.keymapping.capture(&mut self.keyboard, out),
         }

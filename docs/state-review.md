@@ -39,7 +39,7 @@ The weak spots are at the seams.
       Steam launches with them, after the later steps; deleting it passes every test; the step order in the
       doc doesn't match the code (quitting runs before closed). A buffer of its own for the window effects,
       appended at the right point, and a test. (`state.rs:386-407`.)
-- [ ] **Settings sync has a back door.** `Sent` compares only the program, so every change to the settings
+- [x] **Settings sync has a back door.** `Sent` compares only the program, so every change to the settings
       in force must remember `Resend::Settings`; `follow_runner_keymaps` doesn't. `Values` is `Copy +
       PartialEq`: diff it and drop `Resend::Settings`. (`sync.rs`, `state.rs:1048`.)
 - [ ] **Order rules documented but not pinned.** These mutations passed the whole suite: swapping

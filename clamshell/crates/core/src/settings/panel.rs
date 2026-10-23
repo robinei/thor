@@ -335,6 +335,29 @@ mod tests {
         assert!(!fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))));
     }
 
+    /// The settings in force changed by a runner's keymap given to it, not by the panel, are applied too.
+    #[test]
+    fn a_runners_keymap_given_while_its_item_runs_is_applied() {
+        let mut library = clamshell_library::demo::library();
+        for g in library.entries.iter_mut() {
+            g.runner = Some(clamshell_library::RunnerOf::new("text", "Text", false));
+        }
+        let mut s = started(Init { library, ..init() });
+        let zelda = launch(&mut s, "zelda-lttp").workspace();
+        s.applied(Event::Windows(vec![win(3, "zelda3", &zelda, true)]));
+        assert_eq!(s.session().program().map(|p| &**p), Some("zelda-lttp"));
+        let mut library = s.shelf().library().clone();
+        library.runner_keymaps = vec![(runner_key("text"), "viewer".into())];
+        let fx = s.applied(Event::Library(Box::new(library)));
+        let own = s.keymapping().keymaps().own_of("runner:text").map(|k| k.id);
+        assert!(own.is_some());
+        let applied = fx.iter().find_map(|e| match e {
+            Effect::Apply { entry, settings } => Some((entry.as_deref(), settings.get(Setting::Keymap))),
+            _ => None,
+        });
+        assert_eq!(applied, Some((Some("zelda-lttp"), own.unwrap_or_default())), "{fx:?}");
+    }
+
     #[test]
     fn games_override_the_global_settings() {
         let mut s = state();

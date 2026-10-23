@@ -60,8 +60,8 @@ pub(crate) struct Sent {
     in_use: u64,
     /// The idle stage the screens were last set for.
     stage: Stage,
-    /// The program whose settings were applied last, or None to apply them again.
-    program: Option<Option<Arc<str>>>,
+    /// The program in force and its settings as they were applied last, or None to apply them again.
+    applied: Option<(Option<Arc<str>>, Values)>,
     /// The bottom screen's power, or None to set it again.
     bottom_on: Option<bool>,
     /// The UI is up (it has sent Start). Before that, no tab or account is watched.
@@ -82,15 +82,15 @@ pub(crate) struct Sent {
 }
 
 impl Default for Sent {
-    /// As at start: the global settings taken as applied, the bottom screen on and the bar's status
-    /// watched.
+    /// As at start: the bottom screen on and the bar's status watched. The settings in force are taken as
+    /// applied by [`Sent::new`].
     fn default() -> Sent {
         Sent {
             shown: None,
             browsing: None,
             in_use: 0,
             stage: Stage::Awake,
-            program: Some(None),
+            applied: None,
             bottom_on: Some(true),
             ui_up: false,
             status_off: false,
@@ -115,8 +115,6 @@ pub(crate) enum Resend {
     /// Back from sleep, which may have reset what the settings set, such as frequency caps and cores: they
     /// are applied again.
     Resumed,
-    /// The settings in force were changed: they are applied.
-    Settings,
     /// The refresh rate calibration turned the bottom screen off while it ran and then restored it: it is
     /// set to what ClamShell wants.
     RefreshCalibrated,
@@ -128,7 +126,7 @@ impl Sent {
         match why {
             Resend::Start => (self.keymap, self.route) = (None, None),
             Resend::Shown => self.shown = None,
-            Resend::Resumed | Resend::Settings => self.program = None,
+            Resend::Resumed => self.applied = None,
             Resend::RefreshCalibrated => self.bottom_on = None,
         }
     }
@@ -136,6 +134,7 @@ impl Sent {
     /// As at start, where the pad is taken to have what `w` says.
     pub(crate) fn new(w: &Wanted) -> Sent {
         Sent {
+            applied: Some((w.program.cloned(), w.settings)),
             keymap: Some(w.keymap),
             route: Some(w.route),
             #[cfg(debug_assertions)]
@@ -217,12 +216,12 @@ impl Sent {
         }
     }
 
-    /// The settings in force are applied when the program in force changes, and when they are changed.
+    /// The settings in force are applied when the program in force changes, and when they change.
     fn settings(&mut self, w: &Wanted, out: &mut Out) {
-        if self.program.as_ref().is_some_and(|p| p.as_ref() == w.program) {
+        if self.applied.as_ref().is_some_and(|(program, settings)| program.as_ref() == w.program && *settings == w.settings) {
             return;
         }
-        self.program = Some(w.program.cloned());
+        self.applied = Some((w.program.cloned(), w.settings));
         out.effects.push(Effect::Apply { entry: w.program.cloned(), settings: w.settings });
     }
 
