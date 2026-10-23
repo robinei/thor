@@ -114,7 +114,16 @@ impl App {
     fn outputs(&mut self, top: bool, bottom: bool) {
         let was = std::mem::replace(&mut self.outputs, (top, bottom));
         if top != was.0 {
-            self.display.power(top, self.output_state.outputs(), &self.qh);
+            let bottom_name = self.display.bottom_output().to_owned();
+            let outputs: Vec<_> = self
+                .output_state
+                .outputs()
+                .map(|o| {
+                    let is_bottom = self.output_state.info(&o).and_then(|i| i.name).as_deref() == Some(bottom_name.as_str());
+                    (o, is_bottom)
+                })
+                .collect();
+            self.display.power(top, bottom, outputs.into_iter(), &self.qh);
         }
         if (top && bottom != was.1) || (top, bottom) == was {
             (self.on_effect)(&Effect::Outputs { top, bottom });

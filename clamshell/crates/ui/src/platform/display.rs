@@ -65,7 +65,8 @@ pub(crate) struct Display {
     notification: Option<ExtIdleNotificationV1>,
     power: Option<ZwlrOutputPowerManagerV1>,
     /// The power controls of the outputs we turned off, used to turn them on again.
-    off: Vec<ZwlrOutputPowerV1>,
+    /// The screens this turned off, each marked whether it is the bottom one.
+    off: Vec<(bool, ZwlrOutputPowerV1)>,
     manager: Option<ZwlrOutputManagerV1>,
     heads: Vec<Head>,
     /// The output configuration's serial, from the manager's `done`.
@@ -102,23 +103,39 @@ impl Display {
         }
     }
 
-    /// Turns the screens on or off. Turning on affects only the screens this turned off.
-    pub(crate) fn power(&mut self, on: bool, outputs: impl Iterator<Item = WlOutput>, qh: &QueueHandle<App>) {
+    /// The bottom screen's output name.
+    pub(crate) fn bottom_output(&self) -> &str {
+        &self.bottom_output
+    }
+
+    /// Turns the screens on or off, each output given with whether it is the bottom one. Turning on
+    /// affects only the screens this turned off, and leaves the bottom one off unless `bottom` says it
+    /// is on.
+    pub(crate) fn power(&mut self, on: bool, bottom: bool, outputs: impl Iterator<Item = (WlOutput, bool)>, qh: &QueueHandle<App>) {
         log::info!("screens {}", if on { "on" } else { "off" });
         if on {
-            for power in self.off.drain(..) {
+            let mut kept = std::mem::take(&mut self.off);
+            kept.retain(|(is_bottom, power)| {
+                if *is_bottom && !bottom {
+                    return true;
+                }
                 power.set_mode(zwlr_output_power_v1::Mode::On);
                 power.destroy();
-            }
+                false
+            });
+            self.off = kept;
             return;
         }
         let Some(manager) = &self.power else {
             return;
         };
-        for output in outputs {
+        for (output, is_bottom) in outputs {
+            if self.off.iter().any(|(b, _)| *b == is_bottom) {
+                continue;
+            }
             let power = manager.get_output_power(&output, qh, Data);
             power.set_mode(zwlr_output_power_v1::Mode::Off);
-            self.off.push(power);
+            self.off.push((is_bottom, power));
         }
     }
 
@@ -224,7 +241,7 @@ impl Dispatch2<ZwlrOutputPowerV1, App> for Data {
     fn event(&self, app: &mut App, power: &ZwlrOutputPowerV1, event: zwlr_output_power_v1::Event, _: &Connection, _: &QueueHandle<App>) {
         // The output went away or another client controls its power, so let go of it.
         if let zwlr_output_power_v1::Event::Failed = event {
-            app.display.off.retain(|p| p != power);
+            app.display.off.retain(|(_, p)| p != power);
             power.destroy();
         }
     }
