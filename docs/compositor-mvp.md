@@ -86,6 +86,26 @@ screen capture for other clients, layer-shell for third-party clients, multi-sea
 - Phase 1 replaces the window snapshot event in the state and its tests with lifecycle changes and
   updates the state-machines document's launch, front and second-screen contracts.
 
+### Windows that aren't fullscreen
+
+The state decides each window's presentation from what the window says about itself (the compositor
+reports its parent, size limits and window type with `Opened` and `Changed`); the compositor computes the
+geometry and maps input through it. No window floats or is moved by hand: each has one fixed position.
+
+- **Most windows** accept any size and are fullscreen.
+- **Dialogs** (a parent, or X11 `WM_TRANSIENT_FOR`) are drawn at their own size, centred over their parent,
+  as part of its group, never a tab of their own; one larger than the screen is told the screen's size.
+  - Modal (the xdg-dialog protocol's modal flag, or `_NET_WM_STATE_MODAL`): the parent is dimmed and
+    takes no input; the dialog stays in front until it closes.
+  - Non-modal, and dialogs that don't say: the parent is not dimmed and a tap gives it focus; the dialog
+    stays above its parent, and a tap on it takes focus back.
+- **Windows that can't change size** (minimum and maximum equal, or an X11 splash or utility window) are
+  centred at their own size on black, sharp at 1:1; one too big for the screen is scaled down to fit.
+- **Windows that ignore their size** (mostly games rendering a fixed windowed resolution) are scaled to fit,
+  keeping their aspect, with black bars: on the device the scaling pipes can do it without the GPU. The
+  default follows the entry: fit for games, centred for apps; a per-entry setting can override it later.
+- A touch on black around a window does nothing.
+
 ### Drawing
 
 - Each screen keeps one tiny-skia pixmap, always holding the latest frame, and a texture; on a drawn frame
@@ -262,7 +282,8 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
      Pixel references are unchanged. Focus references now keep the pad on shelf when a scope has no
      window; trace changes record lifecycle inputs and selection at window arrival rather than scope
      arrival. Phase 2 can begin.
-2. **The compositor, nested and headless,** implementing the same model synchronously: xdg-shell, Xwayland
+2. **The compositor, nested and headless,** implementing the same model synchronously, with the
+   presentation of windows that aren't fullscreen (section 3): xdg-shell, Xwayland
    with the X11 adapter, input routing, the on-screen keyboard through text-input, the clipboard,
    screenshots, idle-inhibit. Developed with `clamshell --nested` on the desktop (real Steam and Proton on
    x86), tested headless under `cargo test`. sway stays the session's compositor.
