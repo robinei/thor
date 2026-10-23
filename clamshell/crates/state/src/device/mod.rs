@@ -269,6 +269,67 @@ mod tests {
         assert!(!effects.contains(&Effect::Save(Save::FirstStartDone)), "not the first start: nothing saved");
     }
 
+    /// The first start opens the view with the pad's focus on its first row, and Done goes to shelf's
+    /// selection with the default tab below, whatever tab the setup left open.
+    #[test]
+    fn the_first_start_begins_on_wifi_and_done_leaves_shelf_and_the_default_tab() {
+        let mut s = State::new(Init { first_start: true, ..init() });
+        assert_eq!(s.pointer().focus(), Some(&Id::Device(DeviceId::Wifi)));
+        tap(&mut s, DeviceId::Wifi);
+        assert_eq!(s.bottom().tab(), Tab::Wifi);
+        tap(&mut s, DeviceId::Done);
+        assert_eq!(s.bottom().tab(), Tab::default());
+        assert_eq!(s.pointer().focus(), Some(&crate::testkit::entry("zelda-lttp")));
+    }
+
+    /// The Wi-Fi and time zone rows open their tabs below, whose readings are then watched.
+    #[test]
+    fn the_wifi_and_zone_rows_open_their_tabs() {
+        let mut s = state();
+        launch_now(&mut s, "tool:device");
+        let fx = tap(&mut s, DeviceId::Wifi);
+        assert_eq!(s.bottom().tab(), Tab::Wifi);
+        assert!(fx.contains(&Effect::Watch(crate::Watch::Wifi, true)), "{fx:?}");
+        let fx = tap(&mut s, DeviceId::Zone);
+        assert_eq!(s.bottom().tab(), Tab::Time);
+        assert!(fx.contains(&Effect::Watch(crate::Watch::Wifi, false)) && fx.contains(&Effect::Watch(crate::Watch::Time, true)), "{fx:?}");
+        assert_eq!(s.device().top_view(), TopView::Device, "the view stays open");
+    }
+
+    /// Home with the view in shelf's place closes it, back to shelf, and only the next Home goes to the
+    /// program that runs.
+    #[test]
+    fn home_closes_the_device_view_first() {
+        let mut s = state();
+        s.applied(Event::tick(1000));
+        let zelda = launch(&mut s, "zelda-lttp");
+        let zelda_window = |focused| crate::testkit::win(3, "zelda3", &zelda.workspace(), focused);
+        s.applied(Event::Windows(vec![shelf_window(false), zelda_window(true)]));
+        launch_now(&mut s, "tool:device");
+        s.applied(Event::Windows(vec![shelf_window(true), zelda_window(false)]));
+        assert_eq!(s.device().top_view(), TopView::Device);
+        let fx = s.applied(Event::Home);
+        assert!(window_effects(fx).is_empty(), "nothing shown but shelf");
+        assert_eq!(s.device().top_view(), TopView::Shelf);
+        assert_eq!(s.pointer().focus(), Some(&crate::testkit::entry("zelda-lttp")), "the focus on shelf's selection");
+        assert_eq!(window_effects(s.applied(Event::Home)), [focus(&zelda)]);
+    }
+
+    /// The account is read while the view is open, from when the UI is up: an open view at the first
+    /// start is watched from Start.
+    #[test]
+    fn the_account_is_watched_while_the_view_is_open() {
+        let mut s = State::new(Init { first_start: true, ..init() });
+        assert!(!s.applied(Event::tick(1)).contains(&Effect::Watch(crate::Watch::Account, true)), "the UI isn't up");
+        assert!(s.applied(Event::Start).contains(&Effect::Watch(crate::Watch::Account, true)));
+        assert!(tap(&mut s, DeviceId::Done).contains(&Effect::Watch(crate::Watch::Account, false)));
+        // Opened again from shelf, and closed by Home.
+        s.applied(Event::Windows(vec![shelf_window(true)]));
+        let fx = s.applied(Event::Entry("tool:device".into(), crate::EntryAct::Play));
+        assert!(fx.contains(&Effect::Watch(crate::Watch::Account, true)), "{fx:?}");
+        assert!(s.applied(Event::Home).contains(&Effect::Watch(crate::Watch::Account, false)));
+    }
+
     #[test]
     fn the_password_is_typed_below_the_current_one_first() {
         let mut s = State::new(init());

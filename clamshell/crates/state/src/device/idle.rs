@@ -396,6 +396,28 @@ mod tests {
         assert!(s.applied(Event::Tick { unix_secs: 500, mono_secs: 1900 }).contains(&Effect::Sleep));
     }
 
+    /// At State level: a tap on dark screens wakes them and does nothing else, as does one within a
+    /// second of their coming back; a tap after that acts.
+    #[test]
+    fn a_tap_on_dark_screens_wakes_them_and_does_nothing_else() {
+        use crate::Event;
+        use crate::testkit::{entry, state, tap};
+        let mut s = state();
+        s.applied(Event::tick(1000));
+        s.applied(Event::Idle(IdleEvent::Watching(true)));
+        s.applied(Event::tick(1300));
+        assert_eq!(s.idle().stage(), Stage::Off);
+        let fx = tap(&mut s, entry("metroid-zm"));
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("zelda-lttp"), "not selected");
+        assert!(fx.contains(&Effect::Screens { on: true, bottom: true }), "woken: {fx:?}");
+        s.applied(Event::tick(1301));
+        tap(&mut s, entry("metroid-zm"));
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("zelda-lttp"), "within a second of waking");
+        s.applied(Event::tick(1302));
+        tap(&mut s, entry("metroid-zm"));
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("metroid-zm"), "then it acts");
+    }
+
     #[test]
     fn back_from_sleep_counts_from_the_wake() {
         let mut idle = Idle::default();

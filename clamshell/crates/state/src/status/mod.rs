@@ -162,6 +162,26 @@ mod tests {
         assert!(warns(&mut s, 5, true), "again after the charger");
     }
 
+    /// The warning says the level and what to do; the one at 5 % is urgent, so it stays over a game. A fall
+    /// past both at once warns once, urgently.
+    #[test]
+    fn the_battery_warning_says_the_level_and_is_urgent_at_5() {
+        let mut s = state();
+        let notify = |s: &mut State, battery: Option<u8>| {
+            let fx = s.applied(Reading::Status(Status { battery, discharging: true, ..Status::default() }).into());
+            fx.into_iter().filter(|e| matches!(e, Effect::Notify { .. })).collect::<Vec<_>>()
+        };
+        let body = "Plug in the charger: at 3 % the device hibernates.".to_owned();
+        assert_eq!(notify(&mut s, Some(11)), []);
+        assert_eq!(notify(&mut s, None), [], "no battery");
+        assert_eq!(notify(&mut s, Some(10)), [Effect::Notify { summary: "Battery at 10 %".into(), body: body.clone(), urgent: false }]);
+        assert_eq!(notify(&mut s, Some(5)), [Effect::Notify { summary: "Battery at 5 %".into(), body: body.clone(), urgent: true }]);
+        assert_eq!(notify(&mut s, Some(4)), [], "once");
+        let mut s = state();
+        assert_eq!(notify(&mut s, Some(4)), [Effect::Notify { summary: "Battery at 4 %".into(), body, urgent: true }], "past both at once");
+        assert_eq!(notify(&mut s, Some(9)), [], "a higher reading while discharging doesn't warn again");
+    }
+
     #[test]
     fn the_frame_rate_is_kept_apart_from_the_metrics() {
         let mut s = state();

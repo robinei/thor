@@ -56,7 +56,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | settle: within 2 s a window reappears there | Focus it | front `a_window_in_front_replaced_at_once_…` |
 | settle: `pending_show` and its window arrived | Focus, cleared | tests `a_launchs_first_window_is_shown_before_…` |
 | Home, shelf not in front | ShowShelf | front `home_goes_to_shelf_…` |
-| Home, shelf in front | Focus the most recent other workspace (Device view open: close it first) | front tests; Device view case GAP |
+| Home, shelf in front | Focus the most recent other workspace (Device view open: close it first) | front tests; device `home_closes_the_device_view_first` |
 | settle: program in force | the focused top window's owner, else the kept one if it runs, else the last running | running `the_settings_follow_the_front`; fallbacks GAP |
 
 ### Background (per entry and per runner)
@@ -169,8 +169,8 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 |---|---|
 | Awake → Dimmed → Off → Asleep by time; effects through sync: dim brightness, `Screens{on: false}`, status watch off, `Sleep` | `the_state_dims_turns_the_screens_off_and_back_and_sleeps_only_when_allowed` |
 | any input, KeptAwake, Resumed or a running refresh → Awake: undim, `Screens{on: true}` | same; `off_by_itself_as_the_screens_go_off_…` |
-| Resumed at State level (stage, and Apply resent) | GAP |
-| a press on dark screens, or within 1 s of waking, is swallowed | idle unit test only; State level GAP |
+| Resumed at State level (stage, and Apply resent) | tests `back_from_sleep_applies_the_settings_again_and_wakes_the_screens` |
+| a press on dark screens, or within 1 s of waking, is swallowed | idle `a_press_on_dark_screens_only_wakes_them`, `a_tap_on_dark_screens_wakes_them_and_does_nothing_else` |
 | Busy → sleep postponed 5 min | `a_busy_machine_sleeps_later` |
 | compositor input/quiet; watching off | `the_compositor_holds_idle_off_…`; watching on→off GAP |
 | AskAwake 10 s before dimming, once, with the shown app's command | `an_app_shown_that_keeps_the_screen_on_…` |
@@ -181,15 +181,16 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 
 | Transition | Test |
 |---|---|
-| first start → open, focus on Wi-Fi; Done → closed, `Save(FirstStartDone)`, the Sysinfo tab | `the_first_start_opens_the_device_view_…` (focus and tab GAP) |
+| first start → open, focus on Wi-Fi; Done → closed, `Save(FirstStartDone)`, the Sysinfo tab | `the_first_start_opens_the_device_view_…`, `the_first_start_begins_on_wifi_and_done_leaves_shelf_and_the_default_tab` |
 | the Device tool → open; Close or Done → closed, focus to shelf | `the_device_entry_opens_it_and_close_goes_back_to_shelf` |
-| Home with the view open → closed | GAP |
-| Wifi / Zone rows → their tab | GAP |
+| Home with the view open → closed, focus to shelf's selection; the next Home goes to the program | `home_closes_the_device_view_first` |
+| open while the UI is up → `Watch(Account)` on; closed → off | `the_account_is_watched_while_the_view_is_open` |
+| Wifi / Zone rows → their tab, its watch | `the_wifi_and_zone_rows_open_their_tabs` |
 | Password → editor for the current then the new password → `Account(Password)` | `the_password_is_typed_below_the_current_one_first` |
 | Ssh with a password → `Account(Ssh)`; further taps do nothing until AccountChanged, at most 30 s | `remote_login_needs_a_password`, `remote_login_waits_for_its_answer_before_another_tap`, `remote_login_is_asked_again_after_30_s_without_an_answer` |
 | Sticks → `CalibrateSticks`; progress; done saves or fails; further taps do nothing until done, or 30 s without progress | `a_sticks_calibration_shows_its_progress_…`, `the_sticks_calibration_waits_for_its_end_before_another_tap`, `the_sticks_calibration_is_asked_again_after_30_s_without_word` |
 | Gyro → notice + `CalibrateGyro`; result notice; without one the notice goes after 30 s | `the_gyros_hold_still_shows_until_it_answers_at_most_30_s` |
-| Refresh → `CalibrateRefresh` once at a time; result → BottomPower resent | `the_refresh_calibration_runs_once_at_a_time_…`; the resend GAP |
+| Refresh → `CalibrateRefresh` once at a time; result → BottomPower resent | `the_refresh_calibration_runs_once_at_a_time_…`; tests `a_refresh_calibration_ending_sets_the_bottom_screens_power_again` |
 
 ## Pad route and pointer (nav/pad.rs, nav/pointer.rs)
 
@@ -257,7 +258,8 @@ State: `clip`, `selected`, `armed`, `busy`, `hidden`, the listings.
 ### Fetch priority and resume
 
 - While metadata is fetched, each change of shelf's view sends `FetchFirst`; Fetching and Library resend
-  it. Test: tests `while_metadata_is_fetched_shelfs_view_goes_first`; the Library resend GAP.
+  it. Test: tests `while_metadata_is_fetched_shelfs_view_goes_first`,
+  `a_library_read_while_fetching_asks_for_shelfs_view_first_again`.
 - A folder listing that changes the entries in the list counts as a change of the view. Test: files
   `a_listing_that_changes_the_entries_shown_asks_for_their_metadata_first`.
 - Shelf or tab changes touch the resume debounce; a tick 2 s later saves it; Quit saves at once. Tests:
@@ -270,8 +272,9 @@ State: `clip`, `selected`, `armed`, `busy`, `hidden`, the listings.
 `Scroll{offset, visible, anchor}` per list. Scrolling anchors on the top row's item; settle keeps
 anchored lists on their item and every list within its ends; Focus scrolls just enough. Tests:
 `rows_under_the_view_stay_when_the_list_changes`, `a_list_changed_by_any_event_stays_within_its_ends`,
-`the_pads_focus_on_a_row_shows_it`. Presses resolve by item key: rows tested; dock, collections and audio
-outputs GAP.
+`the_pads_focus_on_a_row_shows_it`. Presses resolve by item key: rows tested; items
+`a_dock_press_acts_on_the_entry_it_came_down_on`, `a_collection_press_acts_on_the_collection_it_came_down_on`,
+`an_output_press_chooses_the_output_it_came_down_on`.
 
 ## Settings (settings/)
 
@@ -307,12 +310,14 @@ the slider tests. Setting a muted stream's level unmutes it, as the output volum
 `setting_a_muted_streams_level_unmutes_it`. Dimming takes a third of the brightness, at least 1 but
 never more than it was: `dimming_never_raises_the_brightness`. The Mute key shows the volume's notice
 only when the mute changed (not while the volume is unknown):
-`the_mute_key_shows_the_level_only_when_it_changes_something`. Brightness sent at Start GAP.
+`the_mute_key_shows_the_level_only_when_it_changes_something`. Brightness sent at Start: tests
+`the_ui_starting_sends_the_brightness_the_down_rules_the_keymap_and_the_route`.
 
 ## Status (status/)
 
 - Battery warning: a notification at 10 % and at 5 % while discharging, each once until it stops
-  discharging; none on the charger in bypass mode. Test: `the_battery_warns_only_while_discharging`.
+  discharging; none on the charger in bypass mode; urgent at 5 %. Tests: `the_battery_warns_only_while_discharging`,
+  `the_battery_warning_says_the_level_and_is_urgent_at_5`.
 - Spender menu: opens on an endable row; Quit/ForceKill end a process or queue the entry's act. Test:
   `a_rows_menu_quits_or_kills_what_it_is`. It closes when the tab is left or its row is gone:
   `a_rows_menu_closes_when_the_tab_is_left_or_the_row_goes`.
@@ -323,10 +328,10 @@ only when the mute changed (not while the volume is unknown):
 
 | Resend | Raised by | Re-sends | Test |
 |---|---|---|---|
-| Start | `Event::Start` | keymap, pad route (and Start sends dock save, brightness, DownRules) | watches tested; keymap, route, DownRules GAP |
-| Resumed | `Event::Resumed` | Apply | GAP |
-| RefreshCalibrated | `Event::RefreshCalibrated` | BottomPower | GAP |
-| FetchFirst | Fetching, Library | FetchFirst | Fetching tested; Library GAP |
+| Start | `Event::Start` | keymap, pad route (and Start sends dock save, brightness, DownRules) | watches tested; tests `the_ui_starting_sends_the_brightness_the_down_rules_the_keymap_and_the_route` |
+| Resumed | `Event::Resumed` | Apply | tests `back_from_sleep_applies_the_settings_again_and_wakes_the_screens` |
+| RefreshCalibrated | `Event::RefreshCalibrated` | BottomPower | tests `a_refresh_calibration_ending_sets_the_bottom_screens_power_again` |
+| FetchFirst | Fetching, Library | FetchFirst | tests `while_metadata_is_fetched_shelfs_view_goes_first`, `a_library_read_while_fetching_asks_for_shelfs_view_first_again` |
 
 ## Interactions
 

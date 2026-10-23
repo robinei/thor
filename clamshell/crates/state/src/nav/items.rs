@@ -9,7 +9,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::levels::{Audio, Level, Stream};
+    use crate::levels::{Audio, AudioOutput, Level, Stream};
     use crate::radios::bluetooth::{Bluetooth, Command, Device, Kind};
     use crate::testkit::*;
     use crate::*;
@@ -48,6 +48,79 @@ mod tests {
         read(&mut s, bt(vec![device("pad", true, true), device("buds", true, false)]));
         s.applied(PointerEvent::Down(first.clone(), drawn).into());
         assert_eq!(long(&mut s, first), vec![Effect::Bluetooth(Command::Forget("00:buds".into()))]);
+    }
+
+    /// A dock tile pressed acts on its entry wherever it is by then: here the one before it ended and left
+    /// the dock. Once its own entry is gone, the press does nothing.
+    #[test]
+    fn a_dock_press_acts_on_the_entry_it_came_down_on() {
+        let mut s = state();
+        s.applied(Event::tick(1000));
+        let zelda = launch(&mut s, "zelda-lttp");
+        let ff6 = launch(&mut s, "ff6");
+        let windows = |zelda_open: bool| {
+            let mut w = vec![win(4, "ff6", &ff6.workspace(), false)];
+            if zelda_open {
+                w.push(win(3, "zelda3", &zelda.workspace(), true));
+            }
+            Event::Windows(w)
+        };
+        s.applied(windows(true));
+        let tile = Id::Dock(DockId::Entry(1));
+        assert_eq!(s.dock().items().get(1).map(|i| &*i.id), Some("ff6"));
+        s.applied(PointerEvent::Down(tile.clone(), None).into());
+        s.applied(windows(false));
+        end(&mut s, "zelda-lttp");
+        assert_eq!(s.dock().items().first().map(|i| &*i.id), Some("ff6"), "moved up");
+        assert_eq!(window_effects(tap(&mut s, tile.clone())), [focus(&ff6)]);
+        s.applied(PointerEvent::Up(tile.clone()).into());
+        let first = Id::Dock(DockId::Entry(0));
+        s.applied(PointerEvent::Down(first.clone(), None).into());
+        s.applied(Event::Windows(vec![]));
+        end(&mut s, "ff6");
+        assert!(s.dock().items().is_empty());
+        assert_eq!(tap(&mut s, first), [], "gone");
+    }
+
+    /// A collection pressed is the one chosen, though a library read moved it.
+    #[test]
+    fn a_collection_press_acts_on_the_collection_it_came_down_on() {
+        let mut s = state();
+        let more = Id::Shelf(ShelfId::Collection(1));
+        assert_eq!(s.shelf().library().collections.get(1).map(|c| c.name.as_str()), Some("More"));
+        s.applied(PointerEvent::Down(more.clone(), None).into());
+        let mut library = clamshell_library::demo::library();
+        library.collections.reverse();
+        s.applied(Event::Library(Box::new(library)));
+        tap(&mut s, more.clone());
+        assert_eq!(s.shelf().collection().map(|c| c.name.as_str()), Some("More"));
+        s.applied(PointerEvent::Up(more.clone()).into());
+        // Gone by the time it is let go: nothing, though another collection is at its place.
+        let tools = Id::Shelf(ShelfId::Collection(0));
+        s.applied(PointerEvent::Down(tools.clone(), None).into());
+        let mut library = clamshell_library::demo::library();
+        library.collections.reverse();
+        library.collections.retain(|c| c.name != "Tools");
+        s.applied(Event::Library(Box::new(library)));
+        assert_eq!(s.shelf().collection().map(|c| c.name.as_str()), Some("More"));
+        tap(&mut s, tools);
+        assert_eq!(s.shelf().collection().map(|c| c.name.as_str()), Some("More"), "not Apps, now first");
+    }
+
+    /// An audio output pressed is the one chosen, though a reading re-sorted the outputs.
+    #[test]
+    fn an_output_press_chooses_the_output_it_came_down_on() {
+        let mut s = state();
+        let output = |id, name: &str, default| AudioOutput { id, name: name.into(), default };
+        read(&mut s, Reading::Audio(Audio { outputs: vec![output(1, "speakers", true), output(2, "buds", false)], streams: vec![] }));
+        let second = Id::Audio(AudioId::Output(1));
+        s.applied(PointerEvent::Down(second.clone(), None).into());
+        read(&mut s, Reading::Audio(Audio { outputs: vec![output(2, "buds", false), output(1, "speakers", true)], streams: vec![] }));
+        assert_eq!(tap(&mut s, second.clone()), [Effect::Sound(Sound::Output(2))]);
+        s.applied(PointerEvent::Up(second.clone()).into());
+        s.applied(PointerEvent::Down(second.clone(), None).into());
+        read(&mut s, Reading::Audio(Audio { outputs: vec![output(2, "buds", true)], streams: vec![] }));
+        assert_eq!(tap(&mut s, second), [], "gone");
     }
 
     #[test]

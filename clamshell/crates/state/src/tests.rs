@@ -260,3 +260,80 @@ fn the_background_is_followed_before_the_quitting() {
         .collect();
     assert_eq!(kinds, ["thaw zelda", "end ff6"], "{fx:?}");
 }
+
+/// The UI starting sends what was waiting for it, in this order: the brightness as it was left, the down
+/// rules for sway, then after the event the keymap in force and the pad's route (keymap before route, as
+/// [`crate::sync::Sent::sync`] says). The pad thread starts with neither, so both are sent though the
+/// state took them as sent when it was built.
+#[test]
+fn the_ui_starting_sends_the_brightness_the_down_rules_the_keymap_and_the_route() {
+    use crate::bottom::screen::{DownRule, WindowRule, WindowRules};
+    let rule = WindowRule { owner: "zelda-lttp".into(), app_id: "zelda3".into(), title: None };
+    let brightness = Brightness { level: Some(40), shares: Vec::new() };
+    let keymaps = crate::keymap::Keymaps::initial();
+    let mut s = State::new(Init { keymaps: keymaps.clone(), window_rules: WindowRules::from_list(vec![rule]), brightness, ..init() });
+    s.settings_mut().global.set(Setting::Keymap, 1);
+    s.applied(Event::tick(1000));
+    let keymap = s.keymapping().in_force(1);
+    let fx = s.applied(Event::Start);
+    let sent: Vec<&Effect> = fx.iter().filter(|e| !matches!(e, Effect::Watch(..))).collect();
+    assert_eq!(
+        sent,
+        [
+            &Effect::Brightness { level: 40, shares: Vec::new() },
+            &Effect::Window(WindowCommand::DownRules(vec![DownRule { app_id: "zelda3".into(), title: None }])),
+            &Effect::Keymap(keymap),
+            &Effect::PadRoute(PadRoute::Ui),
+        ],
+        "{fx:?}"
+    );
+    let fx = s.applied(Event::Start);
+    assert!(fx.contains(&Effect::PadRoute(PadRoute::Ui)), "sent again at another start: {fx:?}");
+}
+
+/// Back from sleep, which may have reset what the settings set, the settings in force are applied again
+/// though they didn't change; idle counts from the wake, so the screens come back on at their brightness.
+#[test]
+fn back_from_sleep_applies_the_settings_again_and_wakes_the_screens() {
+    let mut s = State::new(Init { device_session: true, ..init() });
+    s.ui_up();
+    s.applied(Reading::Status(Status { brightness: Some(60), ..Status::default() }).into());
+    s.applied(Event::tick(1000));
+    s.applied(Event::Idle(crate::device::idle::IdleEvent::Watching(true)));
+    assert!(s.applied(Event::tick(1900)).contains(&Effect::Sleep));
+    let fx = s.applied(Event::Resumed);
+    let global = s.prefs().settings().global;
+    assert_eq!(s.idle().stage(), crate::device::idle::Stage::Awake);
+    assert!(fx.contains(&Effect::Apply { entry: None, settings: global }), "{fx:?}");
+    assert!(fx.contains(&Effect::Screens { on: true, bottom: true }), "{fx:?}");
+    assert!(fx.iter().any(|e| matches!(e, Effect::Brightness { level: 60, .. })), "undimmed: {fx:?}");
+    assert!(!s.applied(Event::Resumed).iter().any(|e| matches!(e, Effect::Screens { .. })), "awake already: the screens aren't sent again");
+}
+
+/// The refresh rate calibration turns the bottom screen off while it runs and restores it as it found it.
+/// When it ends, the bottom screen is set to what ClamShell wants, here off, as it was turned by hand.
+#[test]
+fn a_refresh_calibration_ending_sets_the_bottom_screens_power_again() {
+    let mut s = state();
+    s.applied(Event::tick(1000));
+    let fx = s.applied(Event::Device(crate::device::buttons::DeviceKey::BottomPower));
+    assert!(fx.contains(&Effect::Window(WindowCommand::BottomPower(false))), "{fx:?}");
+    s.applied(PointerEvent::Activate(Id::Device(DeviceId::Refresh)).into());
+    let fx = s.applied(Event::RefreshCalibrated(Ok("done".into())));
+    assert!(fx.contains(&Effect::Window(WindowCommand::BottomPower(false))), "{fx:?}");
+    assert!(!s.applied(Event::tick(1001)).iter().any(|e| matches!(e, Effect::Window(WindowCommand::BottomPower(_)))), "once");
+}
+
+/// While metadata is fetched, a library read again asks for shelf's entries shown first again, since the
+/// metadata thread starts over with the new library.
+#[test]
+fn a_library_read_while_fetching_asks_for_shelfs_view_first_again() {
+    let mut s = state();
+    let first = Effect::FetchFirst(vec!["zelda-lttp".into(), "metroid-zm".into()]);
+    assert_eq!(s.applied(Event::Fetching(true)), std::slice::from_ref(&first));
+    let fx = s.applied(Event::Library(Box::new(clamshell_library::demo::library())));
+    assert!(fx.contains(&first), "the same view, asked for again: {fx:?}");
+    s.applied(Event::Fetching(false));
+    let fx = s.applied(Event::Library(Box::new(clamshell_library::demo::library())));
+    assert!(!fx.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "not fetching: {fx:?}");
+}
