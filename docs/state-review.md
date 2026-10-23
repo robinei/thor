@@ -69,7 +69,7 @@ The weak spots are at the seams.
 - [x] One path each: notices (`bottom.notify` vs `*notice = Some(..)` in five places), the keymap setting
       (the Choose event vs `prefs.set`), the editor on the keyboard (`EditOnKeyboard` vs opening it and
       choosing the tab, which doesn't set `raised_from`).
-- [ ] `apply_event` holds rules beside dispatch (Home's guards, level resolution, Quit); boolean
+- [x] `apply_event` holds rules beside dispatch (Home's guards, level resolution, Quit); boolean
       parameters without names (`launch(id, None, true, ..)`, `activate(&id, false, ..)`);
       `Session::launch`'s nine parameters.
 - [ ] Two names for one thing: game and entry; `shown` for three things; `follow_*` for settle steps and

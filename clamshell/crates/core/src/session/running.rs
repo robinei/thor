@@ -444,12 +444,30 @@ impl Session {
     }
 }
 
-/// What a launch leaves to ClamShell's own views: the Device view on the main screen, or a group, shown
-/// open in shelf.
+/// A launch asked for: the entry, the command to run instead of its own, if any, and how it starts.
+#[derive(Debug, Clone)]
+pub(crate) struct LaunchRequest {
+    pub(crate) entry: Arc<str>,
+    pub(crate) command: Option<Launch>,
+    pub(crate) start: Start,
+}
+
+/// How a launch starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OwnView {
+pub(crate) enum Start {
+    /// Its workspace is shown once its first window appears.
+    Front,
+    /// In the background, so that what was going to be shown still is.
+    Background,
+}
+
+/// What State does in place of a launch: open the Device view on the main screen, show a group open in
+/// shelf, or show the entry, which runs already.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Instead {
     Device,
     Group,
+    Show,
 }
 
 /// The app ids of the library's entries known by them, for sway's rules. Their windows land on a
@@ -489,55 +507,43 @@ impl Session {
         self.launching.iter().any(|l| &*l.entry == id)
     }
 
-    /// Records a launch of `entry`, whose key is `key`, asked for now, and returns its instance. If it is
-    /// `shown`, its workspace is shown once its first window appears.
-    pub(crate) fn begin_launch(&mut self, entry: Arc<str>, key: String, app_id: Option<Arc<str>>, clock: &Clock, shown: bool) -> Instance {
+    /// Records a launch of `entry`, whose key is `key`, asked for now, and returns its instance. Started in
+    /// front, its workspace is shown once its first window appears.
+    fn begin_launch(&mut self, entry: Arc<str>, key: String, app_id: Option<Arc<str>>, clock: &Clock, start: Start) -> Instance {
         let instance = Instance::Run { key, secs: clock.unix(), n: self.next_instance() };
         self.launching.push(Launching { entry, instance: instance.clone(), app_id });
-        if shown {
+        if start == Start::Front {
             self.pending_show = Some(instance.clone());
         }
         instance
     }
 
-    /// Launches `game`, again in another tab if it runs, unless a launch of it is starting. An entry that
-    /// runs in another program's processes is shown instead, since Steam doesn't start a game twice and
-    /// Android doesn't start an app twice. It runs `command` instead of its own if given, and a group can
-    /// then be launched too. The launch is `shown` once its first window appears, or else started in the
-    /// background. Before it starts, where shelf and the second screen (its tab `tab`) are is saved.
+    /// Launches the entry `request` names, again in another tab if it runs, unless a launch of it is
+    /// starting. It runs the request's command instead of its own if given, and a group can then be
+    /// launched too. Before it starts, where shelf and the second screen (its tab `tab`) are is saved.
     ///
-    /// The Device view and a group aren't launched: they are returned, for State to show.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn launch(
-        &mut self,
-        game: Arc<str>,
-        command: Option<Launch>,
-        shown: bool,
-        shelf: &Shelf,
-        tab: Tab,
-        settings: &Settings,
-        clock: &Clock,
-        notice: &mut NoticeSlot,
-        out: &mut Out,
-    ) -> Option<OwnView> {
+    /// What isn't launched is returned, for State to do instead: the Device view and a group are shown,
+    /// and so is an entry that runs in another program's processes, since Steam doesn't start a game
+    /// twice and Android doesn't start an app twice.
+    pub(crate) fn launch(&mut self, request: LaunchRequest, shelf: &Shelf, tab: Tab, settings: &Settings, clock: &Clock, out: &mut Out) -> Option<Instead> {
+        let LaunchRequest { entry: game, command, start } = request;
         let library = shelf.library();
         if let Some(Launch::Tool(tool)) = library.entry(&game).map(|g| &g.launch) {
             // The Device view is ClamShell's own, on the main screen.
             if *tool == clamshell_library::Tool::Device {
-                return Some(OwnView::Device);
+                return Some(Instead::Device);
             }
             out.effects.push(Effect::Tool(*tool));
             return None;
         }
         if command.is_none() && library.entry(&game).is_some_and(Entry::is_group) {
-            return Some(OwnView::Group);
+            return Some(Instead::Group);
         }
         if self.is_launching(&game) {
             return None;
         }
         if self.running(&game).is_some_and(|r| r.app_id.is_some()) {
-            self.show(&game, clock, library, notice, out);
-            return None;
+            return Some(Instead::Show);
         }
         let g = library.entry(&game)?;
         let app_id = app_id_of(g).filter(|_| command.is_none());
@@ -548,7 +554,7 @@ impl Session {
         settings.env_in(&game, runner.as_slice(), &mut env);
         // If its runner, and so its container, is paused, it is resumed first.
         self.resume_runner_of(&game, library, out);
-        let instance = self.begin_launch(game.clone(), key, app_id, clock, shown);
+        let instance = self.begin_launch(game.clone(), key, app_id, clock, start);
         out.effects.push(Effect::Save(Save::Resume(Resume::at(shelf, tab))));
         out.effects.push(Effect::Launch { entry: game, instance, settings: values, env, launch });
         None

@@ -18,7 +18,7 @@ use crate::levels::slider::Control;
 use crate::nav::lists::Scrolls;
 use crate::out::Out;
 use crate::resume::SAVE_AFTER;
-use crate::session::running::OwnView;
+use crate::session::running::{Instead, LaunchRequest, Start};
 use crate::settings::{BottomWhenIdle, MouseAtLaunch, Setting, Values};
 use crate::sync::{Resend, Sent, Wanted};
 use crate::{
@@ -26,6 +26,13 @@ use crate::{
     ListEvent, ListId, Lists, Pad, PadRoute, Panel, Pointer, PointerEvent, Prefs, Radios, Reading, Resume, RowPart, Save, Scroll, Session, SettingsId, Shelf,
     Slide, Sys, Tab, Watch, WifiId, WindowCommand,
 };
+
+/// How a target was pressed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Press {
+    Tap,
+    Long,
+}
 
 /// Everything ClamShell knows, as its areas (see the [crate docs](crate)).
 #[derive(Debug, Default)]
@@ -301,9 +308,8 @@ impl State {
         self.record_plays(out);
         let mut due = Vec::new();
         self.session.autostart_due(self.shelf.library(), &mut due);
-        // They start in the background, so what was going to be shown still is.
         for id in due {
-            self.launch(id, None, false, out);
+            self.launch(id, None, Start::Background, out);
         }
         // The windows' effects go after those of the steps that follow them, below.
         let mut windows = Out { effects: std::mem::take(&mut self.window_effects), events: Vec::new() };
@@ -313,7 +319,7 @@ impl State {
         }
         // Before following the windows, which leaves a starting launch's windows where they are.
         for id in steam {
-            self.launch(id, None, true, &mut windows);
+            self.launch(id, None, Start::Front, &mut windows);
         }
         self.session.follow_windows(&self.clock, self.shelf.library(), &mut self.plays, &mut windows);
         self.record_plays(&mut windows);
@@ -580,8 +586,8 @@ impl State {
             }
             // A press that woke the screens does nothing else.
             PointerEvent::Activate(_) | PointerEvent::LongPress(_) if self.idle.swallows_press(self.clock.mono()) => {}
-            PointerEvent::Activate(id) => self.activate(&id, false, out),
-            PointerEvent::LongPress(id) => self.activate(&id, true, out),
+            PointerEvent::Activate(id) => self.activate(&id, Press::Tap, out),
+            PointerEvent::LongPress(id) => self.activate(&id, Press::Long, out),
             PointerEvent::Down(id, item) => {
                 if let Id::Key(pos) = id {
                     self.keyboard.down(pos);
@@ -603,7 +609,8 @@ impl State {
 
     /// A tap or long press on `id`, resolved to what the press landed on. It gets the focus, and its
     /// subsystem acts on it.
-    fn activate(&mut self, id: &Id, long: bool, out: &mut Out) {
+    fn activate(&mut self, id: &Id, press: Press, out: &mut Out) {
+        let long = press == Press::Long;
         // The list item the press came down on is gone.
         let Some(id) = self.lists().resolve(id) else {
             return;
@@ -979,7 +986,7 @@ impl State {
         }
         let title = self.shelf.entry(&game).map(|g| g.title.clone());
         let mark = out.effects.len();
-        self.launch(game, None, true, out);
+        self.launch(game, None, Start::Front, out);
         // The notice comes at once, since a start may take a while: Android's first start, a Steam
         // game's, or Proton's setup.
         if let Some(title) = title.filter(|_| out.effects.iter().skip(mark).any(|e| matches!(e, Effect::Launch { .. }))) {
@@ -990,21 +997,23 @@ impl State {
     /// The dock menu's Open another: launches `id` again, if that is offered (see [`State::opens_another`]).
     fn open_another(&mut self, id: Arc<str>, out: &mut Out) {
         if self.opens_another(&id) {
-            self.launch(id, None, true, out);
+            self.launch(id, None, Start::Front, out);
         }
     }
 
-    /// Launches `game` (see [`Session::launch`]). The Device view is opened, and a group shown open in
-    /// shelf.
-    pub(crate) fn launch(&mut self, game: Arc<str>, command: Option<Launch>, shown: bool, out: &mut Out) {
+    /// Launches `game` (see [`Session::launch`]), or does what the session says instead: the Device view
+    /// is opened, a group shown open in shelf, or a running entry shown.
+    pub(crate) fn launch(&mut self, game: Arc<str>, command: Option<Launch>, start: Start, out: &mut Out) {
         let tab = self.bottom.chosen_tab();
-        match self.session.launch(game.clone(), command, shown, &self.shelf, tab, self.prefs.settings(), &self.clock, self.bottom.notice_mut(), out) {
-            Some(OwnView::Device) => self.device.open(&mut self.pointer, out),
-            Some(OwnView::Group) if self.shelf.reveal(&game) => {
+        let request = LaunchRequest { entry: game.clone(), command, start };
+        match self.session.launch(request, &self.shelf, tab, self.prefs.settings(), &self.clock, out) {
+            Some(Instead::Device) => self.device.open(&mut self.pointer, out),
+            Some(Instead::Group) if self.shelf.reveal(&game) => {
                 self.shelf.moved(&mut self.pointer);
                 out.effects.push(Effect::Window(WindowCommand::ShowShelf));
             }
-            Some(OwnView::Group) | None => {}
+            Some(Instead::Show) => self.session.show(&game, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out),
+            Some(Instead::Group) | None => {}
         }
     }
 
@@ -1022,7 +1031,7 @@ impl State {
             self.play(enqueued.entry, out);
         } else {
             let entry = self.shelf.entry_of_file(&enqueued.entry).unwrap_or(enqueued.entry);
-            self.launch(entry, Some(enqueued.runner.command_for(&enqueued.files)), true, out);
+            self.launch(entry, Some(enqueued.runner.command_for(&enqueued.files)), Start::Front, out);
         }
     }
 
