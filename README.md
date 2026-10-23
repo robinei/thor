@@ -62,9 +62,10 @@ on-screen keyboard), and the games' settings and keymaps. Rust, a Cargo workspac
 | `crates/fan` | the fan daemon `clamshell-fan`: a system service on the device, the fan's speed from the temperatures in the mode the Fan setting picks (its curves in `crates/fan/src/curve.rs`); and its library `clamshell_fan_mode`, the modes as ClamShell writes them, which clamshell-state uses |
 | `src/` | the program around them: the command line, the environment, the threads, the control pipe, the snapshots |
 
-No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are denied outside tests.
-Where a lookup can't fail by construction it falls back quietly; where a bug could reach the fallback, a
-`debug_assert!` catches it in tests.
+No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are denied outside tests. A
+failure that is handled by falling back (a file that can't be read, a service's error) is logged. A
+lookup that can't fail (an index the code itself made) still needs a fallback the lints accept, which
+never runs; where a bug could make it run, a `debug_assert!` catches it in tests.
 
 Beside the workspace are the configuration files the packages install with it: `sway/` (ClamShell's part
 of sway's config), `foot/`, `mako/`, `mpv/` and `retroarch/` (those programs' settings for the device),
