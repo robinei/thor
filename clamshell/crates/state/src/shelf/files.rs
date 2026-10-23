@@ -6,6 +6,7 @@
 //! What is done on disk goes out as [`FileOp`]s, and the listings come back as they change. Deleting and
 //! emptying the Trash ask first: the action has to be pressed again.
 
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -130,8 +131,12 @@ pub enum FilesEvent {
     /// A paste under way: what it is doing, such as `Copying Film.mkv`, and how far through its bytes it
     /// is.
     Busy { what: String, fraction: f32 },
-    /// An operation ended: what was done, or what went wrong.
+    /// An operation ended: what was done, or what went wrong. Each operation sent ends in one, in the
+    /// order they were sent.
     Done(Result<String, String>),
+    /// Something went wrong outside an operation, such as an archive that couldn't be mounted to be
+    /// listed.
+    Failed(String),
     /// A removable filesystem was mounted or unmounted.
     Mounts,
 }
@@ -145,8 +150,11 @@ pub struct Files {
     selected: Vec<Arc<str>>,
     /// An action waiting to be confirmed by being pressed again.
     armed: Option<Armed>,
-    /// An operation under way.
+    /// The progress of the operation under way, while any runs.
     busy: Option<Busy>,
+    /// The operations sent and not yet done, oldest first: for a cut entry's paste, the entry's file,
+    /// which leaves the clip once it is moved.
+    running: VecDeque<Option<PathBuf>>,
     /// Whether hidden files show.
     hidden: bool,
     /// The folder the selection is in.
@@ -164,7 +172,7 @@ impl Files {
         &self.selected
     }
 
-    /// An operation under way.
+    /// The progress of an operation under way.
     pub fn busy(&self) -> Option<&Busy> {
         self.busy.as_ref()
     }
@@ -361,13 +369,13 @@ impl Shelf {
                 return;
             }
             (FileAction::Paste, _) => {
+                // A cut entry stays in the clip until it is moved.
                 let (Some(clip), Some(into)) = (self.files.clip.clone(), self.open_dir()) else {
                     return;
                 };
-                if clip.cut {
-                    self.files.clip = None;
+                for (path, _) in clip.entries {
+                    self.run_file_op(FileOp::Paste { path, into: into.clone(), cut: clip.cut }, out);
                 }
-                out.effects.extend(clip.entries.into_iter().map(|(path, _)| Effect::Files(FileOp::Paste { path, into: into.clone(), cut: clip.cut })));
                 return;
             }
             // With nothing to copy, the clip stays as it was.
@@ -384,7 +392,9 @@ impl Shelf {
                     FileAction::Restore => FileOp::Restore,
                     _ => FileOp::Delete,
                 };
-                out.effects.extend(targets.into_iter().map(|(path, _)| Effect::Files(op(path))));
+                for (path, _) in targets {
+                    self.run_file_op(op(path), out);
+                }
                 return;
             }
             (FileAction::NewFolder, _) => {
@@ -403,6 +413,16 @@ impl Shelf {
             (FileAction::Rename, Some(path)) => return name_file(FileName::Rename(path), name, out),
             (FileAction::EmptyTrash, Some(path)) => FileOp::EmptyTrash(path),
         };
+        self.run_file_op(op, out);
+    }
+
+    /// Sends `op` to the files thread, and counts it as running until it is done.
+    pub(crate) fn run_file_op(&mut self, op: FileOp, out: &mut Out) {
+        let cut = match &op {
+            FileOp::Paste { path, cut: true, .. } => Some(path.clone()),
+            _ => None,
+        };
+        self.files.running.push_back(cut);
         out.effects.push(Effect::Files(op));
     }
 
@@ -419,9 +439,21 @@ impl Shelf {
             }
             FilesEvent::Busy { what, fraction } => self.files.busy = Some(Busy { what, fraction }),
             FilesEvent::Done(result) => {
-                self.files.busy = None;
+                // The oldest operation ended. A cut entry that was moved leaves the clip.
+                if let (Some(Some(moved)), Ok(_)) = (self.files.running.pop_front(), &result)
+                    && let Some(clip) = self.files.clip.as_mut().filter(|c| c.cut)
+                {
+                    clip.entries.retain(|(path, _)| *path != moved);
+                    if clip.entries.is_empty() {
+                        self.files.clip = None;
+                    }
+                }
+                if self.files.running.is_empty() {
+                    self.files.busy = None;
+                }
                 notice.show(NoticeKind::Files(result), now);
             }
+            FilesEvent::Failed(e) => notice.show(NoticeKind::Files(Err(e)), now),
             // Removable storage's groups, and sources on it, come and go when the library is read again.
             FilesEvent::Mounts => out.effects.push(Effect::Tool(clamshell_library::Tool::Rescan)),
         }
@@ -635,6 +667,45 @@ mod tests {
         assert!(s.shelf().files().selected().is_empty());
         s.applied(ShelfEvent::ToggleFavourite.into());
         assert_eq!(s.shelf().files().clip().map(|c| c.entries.iter().map(|(_, n)| n.as_str()).collect::<Vec<_>>()), Some(vec!["b"]));
+    }
+
+    #[test]
+    fn a_cut_entry_stays_in_the_clip_until_it_is_moved() {
+        let mut s = files_state();
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        listed(&mut s, "browse:Home", vec![entry("browse:Home/Films", true, BrowseKind::Plain), entry("browse:Home/a.txt", false, BrowseKind::Plain)]);
+        s.applied(ShelfEvent::ListStep(1).into());
+        tap(&mut s, Id::Shelf(ShelfId::File(FileAction::Cut)));
+        s.applied(ShelfEvent::ListStep(-1).into());
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        let paste = vec![Effect::Files(FileOp::Paste { path: "/Home/a.txt".into(), into: "/Home/Films".into(), cut: true })];
+        assert_eq!(tap(&mut s, Id::Shelf(ShelfId::File(FileAction::Paste))), paste);
+        assert!(s.shelf().files().clip().is_some(), "not moved yet");
+        // The move fails: the entry is still cut, to paste again.
+        s.applied(Event::Files(FilesEvent::Done(Err("no room".into()))));
+        assert!(s.shelf().files().clip().is_some(), "failed: still cut");
+        assert_eq!(tap(&mut s, Id::Shelf(ShelfId::File(FileAction::Paste))), paste);
+        s.applied(Event::Files(FilesEvent::Done(Ok("Moved a.txt".into()))));
+        assert_eq!(s.shelf().files().clip(), None, "moved");
+    }
+
+    #[test]
+    fn busy_lasts_while_any_operation_runs() {
+        let mut s = files_state();
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        let two = ["a", "b"].map(|n| entry(&format!("browse:Home/{n}"), false, BrowseKind::Plain)).to_vec();
+        listed(&mut s, "browse:Home", two);
+        tap(&mut s, Id::Shelf(ShelfId::File(FileAction::Trash)));
+        s.applied(ShelfEvent::ListStep(1).into());
+        tap(&mut s, Id::Shelf(ShelfId::File(FileAction::Trash)));
+        s.applied(Event::Files(FilesEvent::Busy { what: "Trashing a".into(), fraction: 0.5 }));
+        s.applied(Event::Files(FilesEvent::Done(Ok("Moved a to the Trash".into()))));
+        assert!(s.shelf().files().busy().is_some(), "b runs still");
+        // Something that went wrong outside an operation doesn't count as one ending.
+        s.applied(Event::Files(FilesEvent::Failed("can't mount".into())));
+        assert!(s.shelf().files().busy().is_some());
+        s.applied(Event::Files(FilesEvent::Done(Ok("Moved b to the Trash".into()))));
+        assert_eq!(s.shelf().files().busy(), None);
     }
 
     #[test]

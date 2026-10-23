@@ -88,7 +88,7 @@ pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Br
                     // empty and the user is told why.
                     let dir = match b.dir.is_file() {
                         true => archives.mount(&b.dir).unwrap_or_else(|e| {
-                            let _ = sink.send(Event::Files(FilesEvent::Done(Err(e))));
+                            let _ = sink.send(Event::Files(FilesEvent::Failed(e)));
                             PathBuf::new()
                         }),
                         false => b.dir.clone(),

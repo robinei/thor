@@ -1040,7 +1040,11 @@ impl State {
             }
             (Done::Save, Purpose::Password { ssid }) => self.radios.join(ssid, Some(editor.text), out),
             (Done::Save, Purpose::KeymapName(action)) => self.keymapping.named(action, &editor.text, out),
-            (Done::Save, Purpose::FileName(purpose)) => out.effects.extend(crate::shelf::files::named(purpose, &editor.text).map(Effect::Files)),
+            (Done::Save, Purpose::FileName(purpose)) => {
+                if let Some(op) = crate::shelf::files::named(purpose, &editor.text) {
+                    self.shelf.run_file_op(op, out);
+                }
+            }
             (Done::Save, Purpose::AccountPassword(step)) => crate::device::account::password_typed(step, editor.text, self.bottom.editors_mut(), out),
         }
         if on_keyboard && self.bottom.editor().is_none() {
