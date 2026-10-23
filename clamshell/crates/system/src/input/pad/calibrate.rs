@@ -1,4 +1,5 @@
-//! The sticks' calibration in the pad thread (see `clamshell_core::device::sticks`).
+//! The sticks' calibration in the pad thread (see `clamshell_core::device::sticks`; the calibration itself
+//! is [`super::calibrator`]).
 //!
 //! The controller's raw stick values are corrected through its calibration as they come in
 //! ([`Sticks::correct`]), before the router or anything else reads them. A value past an extreme widens
@@ -10,9 +11,10 @@
 
 use std::time::{Duration, Instant};
 
-use clamshell_core::device::sticks::{AXES, Calibrator, Step, Sticks};
+use clamshell_core::device::sticks::{AXES, Sticks};
 use evdev::AbsoluteAxisCode;
 
+use super::calibrator::{Calibrator, Step};
 use super::route::PadSnapshot;
 use crate::os::evdev::{Range, Raw};
 

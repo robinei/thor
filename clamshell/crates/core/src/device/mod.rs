@@ -265,7 +265,8 @@ mod tests {
     fn a_sticks_calibration_shows_its_progress_and_keeps_its_result() {
         let mut s = State::new(init());
         assert_eq!(tap(&mut s, DeviceId::Sticks), vec![Effect::CalibrateSticks]);
-        let p = crate::device::sticks::Calibrator::new(-1024, 1024).progress();
+        let rest = crate::device::sticks::StickAxis { low: 0, centre: 0, high: 0 };
+        let p = Progress { phase: crate::device::sticks::Phase::LetGo, now: [0; 4], seen: [rest; 4], min: -1024, max: 1024 };
         s.applied(Event::Sticks(SticksEvent::Progress(p)));
         assert!(s.device().sticks().is_some());
         assert!(tap(&mut s, DeviceId::Sticks).is_empty(), "one at a time");

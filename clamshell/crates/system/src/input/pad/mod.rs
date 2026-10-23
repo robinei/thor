@@ -25,6 +25,7 @@
 //! while the game has the pad ([`rumble`]), scaled by the Rumble setting.
 
 mod calibrate;
+mod calibrator;
 mod device;
 mod listen;
 pub(crate) mod motion;

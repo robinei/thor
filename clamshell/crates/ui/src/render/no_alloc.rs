@@ -10,7 +10,7 @@ use clamshell_core::DeviceId;
 use clamshell_core::bottom::keyboard::{self, Key, Modifier};
 use clamshell_core::device::SticksEvent;
 use clamshell_core::device::account::Account;
-use clamshell_core::device::sticks::Calibrator;
+use clamshell_core::device::sticks::{Phase, Progress, StickAxis};
 use clamshell_core::keymap::{Button, Input, Keymaps, Layer, Param, Side};
 use clamshell_core::radios::{bluetooth, wifi};
 use clamshell_core::session::tray;
@@ -71,6 +71,12 @@ fn device() -> Vec<Event> {
     let tools = library.collections.iter().position(|c| c.name == "Tools").unwrap_or(0);
     let entry = || tap(Id::Shelf(ShelfId::Entry("tool:device".into())));
     vec![tap(Id::Shelf(ShelfId::Collection(u16::try_from(tools).unwrap_or(0)))), entry(), entry()]
+}
+
+/// A sticks calibration as it starts, waiting for the sticks to be let go.
+fn calibrating() -> Progress {
+    let rest = StickAxis { low: 0, centre: 0, high: 0 };
+    Progress { phase: Phase::LetGo, now: [0; 4], seen: [rest; 4], min: -1024, max: 1024 }
 }
 
 fn tap(id: Id) -> Event {
@@ -314,10 +320,7 @@ fn warm_frames_do_not_allocate() {
             "device, the password",
             [device(), vec![Event::Reading(Reading::Account(account())), tap(Id::Device(DeviceId::Password)), key(Key::Char('a'))]].concat(),
         ),
-        (
-            "device, the sticks calibrating",
-            [device(), vec![tap(Id::Device(DeviceId::Sticks)), Event::Sticks(SticksEvent::Progress(Calibrator::new(-1024, 1024).progress()))]].concat(),
-        ),
+        ("device, the sticks calibrating", [device(), vec![tap(Id::Device(DeviceId::Sticks)), Event::Sticks(SticksEvent::Progress(calibrating()))]].concat()),
         ("keyboard, Fn", vec![tap(Id::Tab(Tab::Keyboard)), key(Key::Mod(Modifier::Fn))]),
         ("touchpad", vec![tap(Id::Tab(Tab::Touchpad))]),
         (

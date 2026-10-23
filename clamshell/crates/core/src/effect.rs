@@ -151,8 +151,8 @@ pub enum Effect {
     /// Calibrate the gyro from its next second of readings, with the device held still. The result comes
     /// back as [`crate::Event::GyroCalibrated`].
     CalibrateGyro,
-    /// Calibrate the sticks, on the pad thread ([`crate::device::sticks::Calibrator`]). Progress and the
-    /// end come back as [`crate::Event::Sticks`].
+    /// Calibrate the sticks, on the pad thread (`clamshell_system`'s `input::pad::calibrator`). Progress
+    /// and the end come back as [`crate::Event::Sticks`].
     CalibrateSticks,
     /// Calibrate the top screen's refresh rate with thor-panel-calibration. The end comes back as
     /// [`crate::Event::RefreshCalibrated`].
