@@ -14,17 +14,17 @@ impl Shelf {
             // A hold on the selected entry with the pad, while its focus is showing, moves the pad to the
             // entry's actions and focuses the first. Up and down go through them, A runs one, and B goes
             // back to the list.
-            ShelfId::Entry(game) if long && pointer.show_focus() && self.selected() == Some(&game) => {
+            ShelfId::Entry(entry) if long && pointer.show_focus() && self.selected() == Some(&entry) => {
                 if let Some(first) = self.actions().as_slice().first() {
                     pointer.focus_on(Id::Shelf(first.id()));
                 }
             }
-            ShelfId::Entry(game) => {
+            ShelfId::Entry(entry) => {
                 // Activating the selected entry again opens it if it is a group, or else plays it by
                 // starting it or switching to it.
-                if self.selected() == Some(&game) {
+                if self.selected() == Some(&entry) {
                     self.activate(pointer, out);
-                } else if self.select(&game) {
+                } else if self.select(&entry) {
                     self.unsaved = true;
                 }
             }

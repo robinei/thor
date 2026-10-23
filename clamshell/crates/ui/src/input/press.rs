@@ -607,8 +607,8 @@ mod tests {
         let mut input = Input::default();
         let t = t0();
         let ms = |n| t + Duration::from_millis(n);
-        let game = Target { list: Some(InList { list: ListId::Shelf, row_h: 100.0 }), ..row(ListId::Shelf, 0) };
-        input.touch(Source::Touch(1), &game, (5.0, 400.0), t);
+        let entry = Target { list: Some(InList { list: ListId::Shelf, row_h: 100.0 }), ..row(ListId::Shelf, 0) };
+        input.touch(Source::Touch(1), &entry, (5.0, 400.0), t);
         let fx = input.moved(Source::Touch(1), (5.0, 260.0), ms(500));
         run(&mut state, &fx);
         assert_eq!(state.lists().scroll(ListId::Shelf).offset(), 1.4);
@@ -785,8 +785,8 @@ mod tests {
         assert_eq!(points(&moved), vec![(finger, ContactPhase::Down)]);
         input.up(finger, End::Release, &state, t);
         // No pointing on shelf, on the main screen, nor with the mouse.
-        let game = target(Id::Shelf(clamshell_core::ShelfId::Entry("g".into())), None);
-        input.touch(Source::Touch(2), &game, (0.0, 0.0), t);
+        let entry = target(Id::Shelf(clamshell_core::ShelfId::Entry("g".into())), None);
+        input.touch(Source::Touch(2), &entry, (0.0, 0.0), t);
         assert!(points(&input.moved(Source::Touch(2), (100.0, 0.0), t)).is_empty());
         input.touch(Source::Mouse, &tab_free(), (0.0, 0.0), t);
         assert!(points(&input.moved(Source::Mouse, (100.0, 0.0), t)).is_empty());

@@ -100,7 +100,7 @@ fn remap_title(input: Input) -> Fmt<64> {
 /// Who uses a keymap, in words.
 fn users(f: &Frame, id: u16) -> Fmt<48> {
     let u = f.s.prefs().settings().keymap_users(id);
-    match (u.all_games, u.games) {
+    match (u.all_entries, u.entries) {
         (true, 0) => Fmt::of(format_args!("All games")),
         (true, n) => Fmt::of(format_args!("All games, {n} {}", if n == 1 { "game" } else { "games" })),
         (false, 0) => Fmt::of(format_args!("Not used")),
@@ -124,7 +124,7 @@ fn list(f: &mut Frame, listing: Listing) {
     let s = f.s;
     let panel = s.panel();
     let scope = match (panel.scope(), panel.editing()) {
-        (Scope::Runner | Scope::Content, Some(game)) => game.title,
+        (Scope::Runner | Scope::Content, Some(entry)) => entry.title,
         _ => "all",
     };
     let (area, hint) = match listing {

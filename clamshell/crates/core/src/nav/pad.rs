@@ -200,7 +200,7 @@ mod tests {
     #[test]
     fn the_pad_mouse_follows_the_game_in_front_unless_switched_by_hand() {
         let mut s = state();
-        tap(&mut s, game("zelda-lttp"));
+        tap(&mut s, entry("zelda-lttp"));
         tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Content)));
         tap(&mut s, Id::Settings(SettingsId::Tile(crate::settings::Setting::PadMouse)));
         crate::testkit::start(&mut s, "zelda-lttp");
@@ -269,7 +269,7 @@ mod tests {
     #[test]
     fn the_focus_ring_hides_when_the_pad_leaves_the_screens() {
         let mut s = state();
-        s.applied(PointerEvent::Focus(game("zelda-lttp")).into());
+        s.applied(PointerEvent::Focus(entry("zelda-lttp")).into());
         assert!(s.pointer().show_focus());
         crate::testkit::start(&mut s, "zelda-lttp");
         assert!(!s.pointer().show_focus());

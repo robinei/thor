@@ -256,16 +256,16 @@ impl Shelf {
         (!matches!(b.kind, BrowseKind::Trash | BrowseKind::Trashed) && !b.locked).then(|| g.browsed_dir().map(PathBuf::from)).flatten()
     }
 
-    /// The runner that archive `game` opens in, for Open in. It is the runner of its library entry, as
+    /// The runner that archive `entry` opens in, for Open in. It is the runner of its library entry, as
     /// for a ROM's zip that a scan found, or else the one its name matches.
-    pub fn opened_in<'a>(&'a self, game: &'a Entry) -> Option<&'a clamshell_library::RunnerOf> {
-        let entry = self.entry_of_file(&game.id).and_then(|id| self.entry(&id));
-        entry.and_then(|e| e.runner.as_ref()).or(game.runner.as_ref())
+    pub fn opened_in<'a>(&'a self, entry: &'a Entry) -> Option<&'a clamshell_library::RunnerOf> {
+        let of_file = self.entry_of_file(&entry.id).and_then(|id| self.entry(&id));
+        of_file.and_then(|e| e.runner.as_ref()).or(entry.runner.as_ref())
     }
 
-    /// Whether entry `game` is in a folder where nothing can be changed, such as an archive's.
-    fn in_locked(&self, game: &Entry) -> bool {
-        let parent = game.parent.and_then(|p| self.library().entries.get(p));
+    /// Whether `entry` is in a folder where nothing can be changed, such as an archive's.
+    fn in_locked(&self, entry: &Entry) -> bool {
+        let parent = entry.parent.and_then(|p| self.library().entries.get(p));
         parent.and_then(|p| p.browsed.as_ref()).is_some_and(|b| b.locked)
     }
 
@@ -275,13 +275,13 @@ impl Shelf {
     pub fn file_actions(&self) -> Actions {
         use FileAction::*;
         let mut actions = Actions::default();
-        let Some((game, selected)) = self.file_target() else {
+        let Some((entry, selected)) = self.file_target() else {
             return actions;
         };
-        let Some(b) = game.browsed.as_ref() else {
+        let Some(b) = entry.browsed.as_ref() else {
             return actions;
         };
-        let locked = self.in_locked(game);
+        let locked = self.in_locked(entry);
         let own: &[FileAction] = match (&b.kind, selected) {
             (_, false) | (BrowseKind::Root, true) => &[],
             // Inside an archive, entries can only be copied out.
@@ -293,7 +293,7 @@ impl Shelf {
             (BrowseKind::Trash, true) => &[EmptyTrash],
         };
         // An archive that a runner opens, such as a ROM's zip.
-        if selected && b.archive && self.opened_in(game).is_some() {
+        if selected && b.archive && self.opened_in(entry).is_some() {
             actions.push(Action::File(OpenIn));
         }
         for &a in own {
@@ -332,11 +332,11 @@ impl Shelf {
         if !self.file_actions().contains(&Action::File(action)) {
             return;
         }
-        let Some((game, _)) = self.file_target() else {
+        let Some((entry, _)) = self.file_target() else {
             return;
         };
-        let (id, path, kind) = (game.id.clone(), game.file.clone(), game.browsed.as_ref().map(|b| b.kind.clone()));
-        let name = game.title.clone();
+        let (id, path, kind) = (entry.id.clone(), entry.file.clone(), entry.browsed.as_ref().map(|b| b.kind.clone()));
+        let name = entry.title.clone();
         if action.confirms() && !self.file_armed(action) {
             self.files.armed = Some(Armed { action, entry: id });
             return;
@@ -476,8 +476,8 @@ mod tests {
     fn files_state() -> State {
         let mut trash = entry("browse:Trash", true, BrowseKind::Trash);
         trash.file = Some("/t/files".into());
-        let games = vec![entry("browse:Home", true, BrowseKind::Root), trash];
-        state_with(Library { collections: vec![Collection::new("Files", vec![0, 1])], entries: games, ..Library::default() })
+        let entries = vec![entry("browse:Home", true, BrowseKind::Root), trash];
+        state_with(Library { collections: vec![Collection::new("Files", vec![0, 1])], entries, ..Library::default() })
     }
 
     /// The effects in `fx` that set the folder to list and watch.

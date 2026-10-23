@@ -93,11 +93,11 @@ pub fn state(library: Library) -> State {
     State::new(Init { library, dock, keymaps: clamshell_core::keymap::Keymaps::initial(), ..Init::default() })
 }
 
-/// A play of `game` from `start` for `duration` seconds, as the launcher reports one. The clock is set
+/// A play of `entry` from `start` for `duration` seconds, as the launcher reports one. The clock is set
 /// back to `now` afterwards.
-fn a_play(game: &str, start: u64, duration: u64, now: u64) -> Vec<Event> {
+fn a_play(entry: &str, start: u64, duration: u64, now: u64) -> Vec<Event> {
     // The game has a window on its workspace while it plays, as a real game would.
-    let workspace = clamshell_core::Instance::workspace_of(&clamshell_library::key_of(game));
+    let workspace = clamshell_core::Instance::workspace_of(&clamshell_library::key_of(entry));
     let window = clamshell_core::session::windows::Window {
         id: 900,
         app_id: "game".into(),
@@ -107,7 +107,7 @@ fn a_play(game: &str, start: u64, duration: u64, now: u64) -> Vec<Event> {
     };
     vec![
         Event::tick(start),
-        Event::Units(vec![clamshell_core::Instance::Run { key: clamshell_library::key_of(game), secs: start, n: 0 }]),
+        Event::Units(vec![clamshell_core::Instance::Run { key: clamshell_library::key_of(entry), secs: start, n: 0 }]),
         Event::Windows(vec![window]),
         Event::tick(start + duration),
         Event::Units(vec![]),

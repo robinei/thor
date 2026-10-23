@@ -201,8 +201,8 @@ impl Shelf {
     /// to `found`.
     fn found(&self, c: usize, filter: &str, found: &mut Vec<usize>) {
         let filter = filter.to_lowercase();
-        let games = &self.library.entries;
-        found.extend(self.whole_list_of(c).iter().copied().filter(|&i| games.get(i).is_some_and(|g| g.title.to_lowercase().starts_with(&filter))));
+        let entries = &self.library.entries;
+        found.extend(self.whole_list_of(c).iter().copied().filter(|&i| entries.get(i).is_some_and(|g| g.title.to_lowercase().starts_with(&filter))));
     }
 
     /// Finds every list's entries again by what is typed in it, after the library changed under them.
@@ -239,9 +239,9 @@ impl Shelf {
         self.entry_at(self.cursor().index)
     }
 
-    /// Where `game` is in collection `c`'s list.
-    fn position_in(&self, c: usize, game: &str) -> Option<usize> {
-        self.list_of(c).iter().position(|&i| self.library.entries.get(i).is_some_and(|g| &*g.id == game))
+    /// Where `entry` is in collection `c`'s list.
+    fn position_in(&self, c: usize, entry: &str) -> Option<usize> {
+        self.list_of(c).iter().position(|&i| self.library.entries.get(i).is_some_and(|g| &*g.id == entry))
     }
 
     /// Shelf went to another collection or list. The place is saved, and a focus in shelf's list follows
@@ -281,9 +281,9 @@ impl Shelf {
         self.sync()
     }
 
-    /// Selects `game` in the current list, if it is there. Returns whether the selection changed.
-    pub(crate) fn select(&mut self, game: &str) -> bool {
-        let position = self.position_in(self.current, game);
+    /// Selects `entry` in the current list, if it is there. Returns whether the selection changed.
+    pub(crate) fn select(&mut self, entry: &str) -> bool {
+        let position = self.position_in(self.current, entry);
         if let (Some(i), Some(p)) = (position, self.place_mut()) {
             p.index = i;
         }
@@ -515,29 +515,29 @@ impl Shelf {
         }))
     }
 
-    /// Counts a play of `game`, which has ended. Returns whether the selection changed.
-    pub(crate) fn add_play(&mut self, game: &str, start: u64, duration: u64) -> bool {
+    /// Counts a play of `entry`, which has ended. Returns whether the selection changed.
+    pub(crate) fn add_play(&mut self, entry: &str, start: u64, duration: u64) -> bool {
         self.relayout(|lib| {
-            if let Some(g) = lib.entries.iter_mut().find(|g| &*g.id == game) {
+            if let Some(g) = lib.entries.iter_mut().find(|g| &*g.id == entry) {
                 g.plays.add(start, duration);
             }
             lib.rebuild_derived();
         })
     }
 
-    /// Counts and records a play of `game` from `start` (monotonic seconds, as in [`crate::Event::Tick`])
+    /// Counts and records a play of `entry` from `start` (monotonic seconds, as in [`crate::Event::Tick`])
     /// until now, dated by the wall clock. For a video, it also reads where mpv left it, which mpv wrote as
     /// it quit.
-    pub(crate) fn record_play(&mut self, game: Arc<str>, start: u64, clock: &crate::Clock, out: &mut crate::out::Out) {
+    pub(crate) fn record_play(&mut self, entry: Arc<str>, start: u64, clock: &crate::Clock, out: &mut crate::out::Out) {
         let duration = clock.mono().saturating_sub(start);
         let start = clock.unix_at(start);
-        if self.add_play(&game, start, duration) {
+        if self.add_play(&entry, start, duration) {
             self.unsaved = true;
         }
-        let file = self.entry(&game).and_then(|g| g.mpv_file()).map(std::path::Path::to_path_buf);
-        out.effects.push(crate::Effect::RecordPlay { entry: game.clone(), start, duration });
+        let file = self.entry(&entry).and_then(|g| g.mpv_file()).map(std::path::Path::to_path_buf);
+        out.effects.push(crate::Effect::RecordPlay { entry: entry.clone(), start, duration });
         if let Some(file) = file {
-            out.effects.push(crate::Effect::ReadPosition { entry: game, file });
+            out.effects.push(crate::Effect::ReadPosition { entry, file });
         }
     }
 
@@ -611,7 +611,7 @@ mod tests {
         s.applied(ShelfEvent::ListStep(4).into());
         assert_eq!(s.shelf().cursor(), Cursor { index: 4, top: 2.0 });
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("dark-souls"));
-        assert_eq!(s.pointer().focus(), Some(&game("dark-souls")));
+        assert_eq!(s.pointer().focus(), Some(&entry("dark-souls")));
         s.applied(ShelfEvent::ListStep(-100).into());
         assert_eq!(s.shelf().cursor(), Cursor { index: 0, top: 0.0 });
         s.applied(ShelfEvent::ListStep(100).into());
@@ -688,7 +688,7 @@ mod tests {
     fn a_group_opens_and_back_goes_out_to_it() {
         let mut s = state();
         tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
-        assert_eq!(tap(&mut s, game("tv:Cosmos")), vec![], "selected already: opened, nothing launched");
+        assert_eq!(tap(&mut s, entry("tv:Cosmos")), vec![], "selected already: opened, nothing launched");
         assert_eq!(s.shelf().group().map(|g| g.title.as_str()), Some("Cosmos"));
         let titles = |s: &State| s.shelf().list().iter().map(|&i| s.shelf().library().entries[i].title.clone()).collect::<Vec<_>>();
         assert_eq!(titles(&s), vec!["Season 1", "Season 2"]);
@@ -696,7 +696,7 @@ mod tests {
         tap(&mut s, Id::Shelf(ShelfId::Launch));
         assert_eq!(titles(&s), vec!["1. Standing Up in the Milky Way"]);
         let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
-        assert!(fx.iter().any(|e| matches!(e, Effect::Launch { entry: game, .. } if game.ends_with("Milky Way.mkv"))), "an episode plays: {fx:?}");
+        assert!(fx.iter().any(|e| matches!(e, Effect::Launch { entry, .. } if entry.ends_with("Milky Way.mkv"))), "an episode plays: {fx:?}");
         tap(&mut s, Id::Shelf(ShelfId::Up));
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("tv:Cosmos/Season 2"), "back where it was");
         tap(&mut s, Id::Shelf(ShelfId::Up));
@@ -733,7 +733,7 @@ mod tests {
         let first = "tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv";
         let launched = |fx: &[Effect]| {
             fx.iter().find_map(|e| match e {
-                Effect::Launch { entry: game, .. } => Some(game.to_string()),
+                Effect::Launch { entry, .. } => Some(entry.to_string()),
                 _ => None,
             })
         };
@@ -756,11 +756,11 @@ mod tests {
     #[test]
     fn selecting_then_activating_again_launches() {
         let mut s = state();
-        assert!(tap(&mut s, game("ff6")).is_empty());
-        let fx = tap(&mut s, game("ff6"));
+        assert!(tap(&mut s, entry("ff6")).is_empty());
+        let fx = tap(&mut s, entry("ff6"));
         assert!(
             fx.iter().any(
-                |e| matches!(e, Effect::Launch { entry: game, settings, env, launch: Launch::None, .. } if &**game == "ff6" && *settings == Values::default() && env.is_empty())
+                |e| matches!(e, Effect::Launch { entry, settings, env, launch: Launch::None, .. } if &**entry == "ff6" && *settings == Values::default() && env.is_empty())
             ),
             "{fx:?}"
         );

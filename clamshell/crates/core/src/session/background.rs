@@ -130,7 +130,7 @@ impl Session {
     pub fn background_of(&self, id: &str, library: &Library, settings: &Settings) -> InBackground {
         let entry = self.entry(library, id);
         let runner = entry.and_then(|g| g.runner.as_ref()).map(|r| &*r.key);
-        let games = || match entry {
+        let is_game = || match entry {
             Some(g) => g.is_game(),
             None => {
                 let mut of_runner = library.entries.iter().filter(|g| g.runner.as_ref().is_some_and(|r| &*r.key == id)).peekable();
@@ -138,7 +138,7 @@ impl Session {
             }
         };
         match settings.of_in(id, runner.as_slice()).choice::<InBackground>() {
-            InBackground::PausesGames if games() => InBackground::Pauses,
+            InBackground::PausesGames if is_game() => InBackground::Pauses,
             InBackground::PausesGames => InBackground::Runs,
             b => b,
         }

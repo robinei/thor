@@ -33,15 +33,15 @@ const GAME_START: Duration = Duration::from_secs(30);
 /// What the launcher is asked.
 pub enum Command {
     Launch(Request),
-    /// Read where mpv left video `file` of entry `game`, and send it as `LaunchEvent::Position`.
+    /// Read where mpv left video `file` of `entry`, and send it as `LaunchEvent::Position`.
     ReadPosition {
-        game: Arc<str>,
+        entry: Arc<str>,
         file: PathBuf,
     },
 }
 
 pub struct Request {
-    pub game: Arc<str>,
+    pub entry: Arc<str>,
     /// The launch's scope and workspace, from the state.
     pub instance: Instance,
     pub launch: Launch,
@@ -109,13 +109,13 @@ pub fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worker<Comma
             let started = worker::detached("launch", move || match command {
                 Command::Launch(request) => {
                     if let Err(e) = start(&config, &request) {
-                        log::warn!("launcher: {}: {e}", request.game);
-                        let _ = sink.send(Event::Launch(LaunchEvent::LaunchFailed(request.game.clone())));
+                        log::warn!("launcher: {}: {e}", request.entry);
+                        let _ = sink.send(Event::Launch(LaunchEvent::LaunchFailed(request.entry.clone())));
                     }
                 }
-                Command::ReadPosition { game, file } => {
+                Command::ReadPosition { entry, file } => {
                     let position = crate::launch::mpv::position(&config.watch_later, &file).map(|(s, _)| s);
-                    let _ = sink.send(Event::Launch(LaunchEvent::Position { entry: game, position }));
+                    let _ = sink.send(Event::Launch(LaunchEvent::Position { entry, position }));
                 }
             });
             if let Err(e) = started {
@@ -296,7 +296,7 @@ mod tests {
         let id: Arc<str> = script.to_string_lossy().into();
         let launch = Launch::Program { argv: vec![script.to_string_lossy().into()], workdir: Some(dir.to_path_buf()) };
         let instance = Instance::Run { key: "test_1".into(), secs: u64::from(std::process::id()), n: 0 };
-        launcher.send(Command::Launch(Request { game: id, instance, launch, env: vec![] }));
+        launcher.send(Command::Launch(Request { entry: id, instance, launch, env: vec![] }));
         drop(launcher);
 
         // Its scope appeared, so nothing is sent. Whether it runs and ends is for systemd's list to say.
@@ -311,7 +311,7 @@ mod tests {
         let (tx, events) = mpsc::channel();
         let launcher = spawn(config(), tx).unwrap();
         let instance = Instance::Run { key: "test_1".into(), secs: u64::from(std::process::id()), n: 1 };
-        launcher.send(Command::Launch(Request { game: "x".into(), instance, launch: Launch::program(vec![]), env: vec![] }));
+        launcher.send(Command::Launch(Request { entry: "x".into(), instance, launch: Launch::program(vec![]), env: vec![] }));
         drop(launcher);
         assert_eq!(events.iter().collect::<Vec<_>>(), vec![Event::Launch(LaunchEvent::LaunchFailed("x".into()))]);
     }

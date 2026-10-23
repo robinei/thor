@@ -96,7 +96,7 @@ impl Session {
             if self.running.iter().any(|r| r.tray().is_some_and(|k| *k == t.key)) {
                 continue;
             }
-            let game = found_entry(library, &t.id, || {
+            let entry = found_entry(library, &t.id, || {
                 let title = if t.title.is_empty() { &t.id } else { &t.title };
                 // It is named by the icon's own id, which is the same each time the program runs, so that
                 // a pin or a setting stays with it. Without an id, the icon's D-Bus name is used.
@@ -105,14 +105,14 @@ impl Session {
             });
             // Its entry runs already. If it was found another way, by a window, the icon becomes that
             // entry's. If it is a launch of ours, the icon is already its own.
-            if let Some(r) = self.running.iter_mut().find(|r| r.id == game.id) {
+            if let Some(r) = self.running.iter_mut().find(|r| r.id == entry.id) {
                 if let Origin::Found { pid: found_pid, tray } = &mut r.origin {
                     *tray = Some(t.key.clone());
                     *found_pid = found_pid.or(Some(pid));
                 }
                 continue;
             }
-            new.push(Running::of(&game, Origin::Found { pid: Some(pid), tray: Some(t.key.clone()) }, now));
+            new.push(Running::of(&entry, Origin::Found { pid: Some(pid), tray: Some(t.key.clone()) }, now));
         }
         self.start_found(new, &[], clock, out);
     }

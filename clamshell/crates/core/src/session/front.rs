@@ -41,8 +41,8 @@ impl Session {
         // empty.
         let shown = |ws: &String| self.windows.iter().any(|w| w.workspace == *ws && !w.down);
         let before = self.recent.iter().find(|ws| !Instance::Shelf.is(ws) && shown(ws)).cloned();
-        let game = self.program.as_deref().and_then(|id| self.running(id)).map(Running::workspace).filter(shown);
-        if let Some(workspace) = before.or(game) {
+        let entry = self.program.as_deref().and_then(|id| self.running(id)).map(Running::workspace).filter(shown);
+        if let Some(workspace) = before.or(entry) {
             out.effects.push(Effect::Window(WindowCommand::Focus(workspace)));
         }
     }

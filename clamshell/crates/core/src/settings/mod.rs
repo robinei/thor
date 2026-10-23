@@ -483,22 +483,22 @@ pub struct Settings {
 }
 
 impl Settings {
-    /// The settings `game` runs with, below `levels`, such as its runner's (see [`crate::runner_key`]).
+    /// The settings `entry` runs with, below `levels`, such as its runner's (see [`crate::runner_key`]).
     /// These are the global ones, with each level's overrides on top, then the game's own.
-    pub fn of_in(&self, game: &str, levels: &[&str]) -> Values {
+    pub fn of_in(&self, entry: &str, levels: &[&str]) -> Values {
         let inherited = levels.iter().fold(self.global, |values, f| self.overrides_of(f).over(&values));
-        self.overrides_of(game).over(&inherited)
+        self.overrides_of(entry).over(&inherited)
     }
 
-    pub fn overrides_of(&self, game: &str) -> Overrides {
-        self.overrides.get(game).copied().unwrap_or_default()
+    pub fn overrides_of(&self, entry: &str) -> Overrides {
+        self.overrides.get(entry).copied().unwrap_or_default()
     }
 
-    /// Sets `setting` for `game` to `value`. With no game, or for a global-only setting, it is set for all
+    /// Sets `setting` for `entry` to `value`. With no game, or for a global-only setting, it is set for all
     /// games. With no value it goes back to the default: the global value for a game, or the stock value
     /// for all games.
-    pub fn set(&mut self, game: Option<&Arc<str>>, setting: Setting, value: Option<u16>) {
-        match game {
+    pub fn set(&mut self, entry: Option<&Arc<str>>, setting: Setting, value: Option<u16>) {
+        match entry {
             Some(id) if !setting.global_only() => {
                 let mut o = self.overrides_of(id);
                 o.set(setting, value);
@@ -513,16 +513,16 @@ impl Settings {
     }
 
     /// A game's own environment text, or with `None`, the one for all games.
-    pub fn env_text(&self, game: Option<&str>) -> &str {
-        match game {
+    pub fn env_text(&self, entry: Option<&str>) -> &str {
+        match entry {
             Some(id) => self.env.get(id).map_or("", |e| e.as_str()),
             None => &self.global_env,
         }
     }
 
-    pub fn set_env(&mut self, game: Option<Arc<str>>, text: &str) {
+    pub fn set_env(&mut self, entry: Option<Arc<str>>, text: &str) {
         let text = text.trim().to_owned();
-        match game {
+        match entry {
             Some(id) if text.is_empty() => {
                 self.env.remove(&id);
             }
@@ -535,30 +535,30 @@ impl Settings {
 
     /// Appends the environment a game below `levels` gets to `vars`: the global variables, then each
     /// level's, then its own. Later ones win.
-    pub fn env_in(&self, game: &str, levels: &[&str], vars: &mut Vec<(String, String)>) {
+    pub fn env_in(&self, entry: &str, levels: &[&str], vars: &mut Vec<(String, String)>) {
         parse_env(&self.global_env, vars);
         for f in levels {
             parse_env(self.env_text(Some(f)), vars);
         }
-        parse_env(self.env_text(Some(game)), vars);
+        parse_env(self.env_text(Some(entry)), vars);
     }
 
     /// Drops a game's overrides and environment.
-    pub fn reset(&mut self, game: &str) {
-        self.overrides.remove(game);
-        self.env.remove(game);
+    pub fn reset(&mut self, entry: &str) {
+        self.overrides.remove(entry);
+        self.env.remove(entry);
     }
 
     /// Whether a game has anything of its own.
-    pub fn has_own(&self, game: &str) -> bool {
-        self.overrides.contains_key(game) || self.env.contains_key(game)
+    pub fn has_own(&self, entry: &str) -> bool {
+        self.overrides.contains_key(entry) || self.env.contains_key(entry)
     }
 
     /// Who uses keymap `id`: all games, if it is the global choice, and the games that chose it.
     pub fn keymap_users(&self, id: u16) -> crate::keymap::screens::Users {
-        let all_games = self.global.get(Setting::Keymap) == id;
-        let games = self.overrides.values().filter(|o| o.get(Setting::Keymap) == Some(id)).count();
-        crate::keymap::screens::Users { all_games, games }
+        let all_entries = self.global.get(Setting::Keymap) == id;
+        let entries = self.overrides.values().filter(|o| o.get(Setting::Keymap) == Some(id)).count();
+        crate::keymap::screens::Users { all_entries, entries }
     }
 
     /// Keymap `id` is gone. The games that used it, and all games if it was theirs, go back to Default.
@@ -566,12 +566,12 @@ impl Settings {
         if self.global.get(Setting::Keymap) == id {
             self.global.set(Setting::Keymap, 0);
         }
-        let games: Vec<_> = self.overrides.iter().filter(|(_, o)| o.get(Setting::Keymap) == Some(id)).map(|(g, _)| g.clone()).collect();
+        let entries: Vec<_> = self.overrides.iter().filter(|(_, o)| o.get(Setting::Keymap) == Some(id)).map(|(g, _)| g.clone()).collect();
         let global = self.global.get(Setting::Keymap);
-        for game in games {
+        for entry in entries {
             // The game gets Default as its own choice, unless all games use Default anyway, in which case
             // its own choice is cleared.
-            self.set(Some(&game), Setting::Keymap, (global != 0).then_some(0));
+            self.set(Some(&entry), Setting::Keymap, (global != 0).then_some(0));
         }
     }
 }
@@ -620,9 +620,9 @@ mod tests {
         s.set_env(Some("ff6".into()), " A=1 ");
         assert_eq!(s.of_in("zelda", &[]).get(Setting::Power), 2);
         assert_eq!(s.global.get(Setting::ChargeLimit), 80, "global-only settings go global");
-        let env_in = |s: &Settings, game: &str, levels: &[&str]| {
+        let env_in = |s: &Settings, entry: &str, levels: &[&str]| {
             let mut vars = Vec::new();
-            s.env_in(game, levels, &mut vars);
+            s.env_in(entry, levels, &mut vars);
             vars
         };
         assert_eq!(env_in(&s, "ff6", &[]), vec![("A".to_owned(), "1".to_owned())]);

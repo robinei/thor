@@ -88,20 +88,20 @@ impl Shelf {
     /// The details' actions, in order (see the module's doc).
     pub fn actions(&self) -> Actions {
         let mut actions = Actions::default();
-        let Some((game, selected)) = self.file_target() else {
+        let Some((entry, selected)) = self.file_target() else {
             return actions;
         };
         if selected {
             actions.push(Action::Open);
         }
-        let next = self.selected_index().filter(|_| selected && game.is_group()).and_then(|g| self.library().to_continue(g));
+        let next = self.selected_index().filter(|_| selected && entry.is_group()).and_then(|g| self.library().to_continue(g));
         if next.is_some() {
             actions.push(Action::Continue);
         }
-        if selected && game.runner.as_ref().is_some_and(|r| r.enqueue.is_some()) {
+        if selected && entry.runner.as_ref().is_some_and(|r| r.enqueue.is_some()) {
             actions.push(Action::Enqueue);
         }
-        if selected && game.browsed.is_none() {
+        if selected && entry.browsed.is_none() {
             actions.push(Action::Favourite);
             actions.push(Action::Pin);
         }

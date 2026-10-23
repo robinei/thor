@@ -154,7 +154,7 @@ pub struct Keymapping {
 /// keymap chosen for its scope.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct KeymapCx {
-    pub(crate) game: Option<Arc<str>>,
+    pub(crate) entry: Option<Arc<str>>,
     pub(crate) chosen: u16,
 }
 
@@ -186,13 +186,13 @@ pub enum PickerRow<'a> {
 /// own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Users {
-    pub all_games: bool,
-    pub games: usize,
+    pub all_entries: bool,
+    pub entries: usize,
 }
 
 impl Users {
     pub fn any(self) -> bool {
-        self.all_games || self.games > 0
+        self.all_entries || self.entries > 0
     }
 }
 
@@ -246,28 +246,28 @@ impl Keymapping {
         matches!(self.shown(tab), Some(Screen::Capture { .. })) && !editor_open
     }
 
-    /// The picker's rows. Usually they are, for `game`, its own keymap or the row that makes one, then
+    /// The picker's rows. Usually they are, for `entry`, its own keymap or the row that makes one, then
     /// Default and the named keymaps. When loading into a game's own keymap they are Default and the named
     /// keymaps; when saving it, a new keymap and the named keymaps.
-    fn rows<'a>(&'a self, game: Option<&str>) -> impl Iterator<Item = PickerRow<'a>> + use<'a> {
+    fn rows<'a>(&'a self, entry: Option<&str>) -> impl Iterator<Item = PickerRow<'a>> + use<'a> {
         let (loading, saving) = match self.open {
             Some(Screen::Load(_)) => (true, false),
             Some(Screen::SaveAs(_)) => (false, true),
             _ => (false, false),
         };
-        let own = game.filter(|_| !loading && !saving).map(|g| PickerRow::Own(self.keymaps.own_of(g)));
+        let own = entry.filter(|_| !loading && !saving).map(|g| PickerRow::Own(self.keymaps.own_of(g)));
         let new = saving.then_some(PickerRow::New);
         let default = (!saving).then_some(PickerRow::Default);
         own.into_iter().chain(new).chain(default).chain(self.keymaps.named().map(PickerRow::Named))
     }
 
-    pub(crate) fn rows_len(&self, game: Option<&str>) -> usize {
-        self.rows(game).count()
+    pub(crate) fn rows_len(&self, entry: Option<&str>) -> usize {
+        self.rows(entry).count()
     }
 
-    /// Row `i` of the picker, with the settings panel editing `game`.
-    pub(crate) fn row(&self, i: usize, game: Option<&str>) -> Option<PickerRow<'_>> {
-        self.rows(game).nth(i)
+    /// Row `i` of the picker, with the settings panel editing `entry`.
+    pub(crate) fn row(&self, i: usize, entry: Option<&str>) -> Option<PickerRow<'_>> {
+        self.rows(entry).nth(i)
     }
 
     /// Whether keymap `id` is a game's own.
@@ -275,9 +275,9 @@ impl Keymapping {
         self.keymaps.get(id).is_some_and(|k| k.owner.is_some())
     }
 
-    /// Whether `game`, the one the settings panel edits, has no keymap of its own and so can make one.
-    pub(crate) fn can_make_own(&self, game: Option<&str>) -> bool {
-        game.is_some_and(|g| self.keymaps.own_of(g).is_none())
+    /// Whether `entry`, the one the settings panel edits, has no keymap of its own and so can make one.
+    pub(crate) fn can_make_own(&self, entry: Option<&str>) -> bool {
+        entry.is_some_and(|g| self.keymaps.own_of(g).is_none())
     }
 
     /// A keymap's name. It is "Own keymap" for a game's own, and "Default" for none or for one that is
@@ -335,10 +335,10 @@ impl Keymapping {
     /// press opens the keymap's menu, and its Edit button opens its edit screen. The game's row, when the
     /// game has no keymap of its own, makes one.
     pub(crate) fn on_row(&mut self, i: usize, part: RowPart, long: bool, cx: &KeymapCx, editors: &mut Editors, out: &mut Out) {
-        let game = cx.game.as_deref();
+        let entry = cx.entry.as_deref();
         match self.open {
             Some(Screen::Load(own)) => {
-                match self.row(i, game) {
+                match self.row(i, entry) {
                     Some(PickerRow::Default) if !long => self.load_into(own, 0, out),
                     Some(PickerRow::Named(k)) if !long => self.load_into(own, k.id, out),
                     _ => {}
@@ -346,7 +346,7 @@ impl Keymapping {
                 return;
             }
             Some(Screen::SaveAs(own)) => {
-                match self.row(i, game) {
+                match self.row(i, entry) {
                     Some(PickerRow::New) if !long => name_keymap(editors, KeymapName::SaveAs(own), String::new()),
                     Some(PickerRow::Named(k)) if !long => self.open = Some(Screen::Overwrite { own, to: k.id }),
                     _ => {}
@@ -355,7 +355,7 @@ impl Keymapping {
             }
             _ => {}
         }
-        let (id, keymap) = match self.row(i, game) {
+        let (id, keymap) = match self.row(i, entry) {
             None | Some(PickerRow::New) => return,
             Some(PickerRow::Own(None)) => return self.make_own(cx.chosen, cx, out),
             Some(PickerRow::Default) => (0, false),
@@ -384,10 +384,10 @@ impl Keymapping {
     /// Gives the game the panel edits, if it has none, its own keymap as a copy of keymap `from`. Its edit
     /// screen opens, and State chooses it for the game and saves the keymaps.
     fn make_own(&mut self, from: u16, cx: &KeymapCx, out: &mut Out) {
-        let Some(game) = cx.game.as_ref().filter(|g| self.keymaps.own_of(g).is_none()) else {
+        let Some(entry) = cx.entry.as_ref().filter(|g| self.keymaps.own_of(g).is_none()) else {
             return;
         };
-        let Some(own) = self.keymaps.make_own(from, game) else {
+        let Some(own) = self.keymaps.make_own(from, entry) else {
             return;
         };
         self.open_edit(own);

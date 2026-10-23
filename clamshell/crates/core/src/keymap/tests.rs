@@ -52,11 +52,11 @@ fn keymaps_round_trip() {
 #[test]
 fn a_games_own_keymap_round_trips() {
     let mut maps = Keymaps::initial();
-    let game: std::sync::Arc<str> = "zelda-lttp".into();
-    let own = maps.make_own(1, &game).unwrap();
+    let entry: std::sync::Arc<str> = "zelda-lttp".into();
+    let own = maps.make_own(1, &entry).unwrap();
     assert_eq!(maps.get(own).map(|k| (k.name.as_str(), k.bindings().len())), Some(("", 4)), "a copy of Nintendo layout");
     assert_eq!(round_trip(&maps), maps);
-    assert_eq!(round_trip(&maps).get(own).and_then(|k| k.owner.clone()), Some(game));
+    assert_eq!(round_trip(&maps).get(own).and_then(|k| k.owner.clone()), Some(entry));
     assert_eq!(maps.named().count(), 1, "not among the named");
     assert_eq!(maps.own_of("zelda-lttp").map(|k| k.id), Some(own));
 }

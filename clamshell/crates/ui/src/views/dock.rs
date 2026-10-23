@@ -70,7 +70,7 @@ pub(super) fn draw(f: &mut Frame) {
 /// An entry's tile: its picture over its name, in colour while it runs and grey otherwise.
 fn entry_tile(f: &mut Frame, r: Rect, i: usize, id: &std::sync::Arc<str>, several: bool) {
     let s = f.s;
-    let Some(game) = s.entry(id) else {
+    let Some(entry) = s.entry(id) else {
         return;
     };
     let running = s.session().running(id).is_some();
@@ -78,9 +78,9 @@ fn entry_tile(f: &mut Frame, r: Rect, i: usize, id: &std::sync::Arc<str>, severa
     let moving = s.dock().moving() == Some(id);
     let caption_tone = if moving { Tone::Accent } else { Tone::Normal };
     let note = if s.session().suspended(id) { "Suspended" } else { "" };
-    let face = TileFace { caption: &game.title, caption_tone, dot: in_force.then_some(Tone::Go), note };
+    let face = TileFace { caption: &entry.title, caption_tone, dot: in_force.then_some(Tone::Go), note };
     // For a file, the picture of the app showing it, if its window says which app that is.
-    let picture = s.session().app_showing(id, s.shelf().library()).unwrap_or(game);
+    let picture = s.session().app_showing(id, s.shelf().library()).unwrap_or(entry);
     widgets::tile(f, Id::Dock(DockId::Entry(i as u16)), r, &TILE, face, |f, r| {
         // Above the caption: portrait box art or a square icon.
         let h = r.h * (CAPTION_Y - ART_TOP - ART_ROOM);

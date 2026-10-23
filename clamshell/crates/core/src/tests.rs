@@ -37,8 +37,8 @@ fn a_launchs_start_and_end_come_to_the_same_in_any_order() {
     let mut plays = Vec::new();
     let start_end = |s: &mut State| {
         s.applied(Event::tick(1000));
-        let fx = tap(s, game("zelda-lttp"));
-        let fx: Vec<Effect> = fx.into_iter().chain(tap(s, game("zelda-lttp"))).collect();
+        let fx = tap(s, entry("zelda-lttp"));
+        let fx: Vec<Effect> = fx.into_iter().chain(tap(s, entry("zelda-lttp"))).collect();
         fx.iter().find_map(|e| match e {
             Effect::Launch { instance, .. } => Some(instance.clone()),
             _ => None,
@@ -113,8 +113,8 @@ fn a_launch_that_ends_without_a_window_didnt_start() {
 #[test]
 fn a_launch_that_didnt_start_says_so() {
     let mut s = state();
-    tap(&mut s, game("zelda-lttp"));
-    tap(&mut s, game("zelda-lttp"));
+    tap(&mut s, entry("zelda-lttp"));
+    tap(&mut s, entry("zelda-lttp"));
     s.applied(Event::Launch(LaunchEvent::LaunchFailed("zelda-lttp".into())));
     let notice = s.bottom().notice().map(|n| n.what.clone());
     assert!(matches!(&notice, Some(crate::bottom::notice::NoticeKind::NotStarted(t)) if t == "A Link to the Past"), "{notice:?}");
@@ -125,7 +125,7 @@ fn a_launch_that_didnt_start_says_so() {
 fn starts_with_first_game_selected_and_focused() {
     let s = state();
     assert_eq!(s.shelf().selected().map(|g| &**g), Some("zelda-lttp"));
-    assert_eq!(s.pointer().focus(), Some(&game("zelda-lttp")));
+    assert_eq!(s.pointer().focus(), Some(&entry("zelda-lttp")));
 }
 
 #[test]
@@ -184,8 +184,8 @@ fn a_game_coming_in_front_gets_its_settings_then_its_keymap_then_the_pad() {
     let mut s = started(Init { keymaps: crate::keymap::Keymaps::initial(), ..init() });
     s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Keymap, Some(1));
     s.applied(Event::tick(1000));
-    tap(&mut s, game("zelda-lttp"));
-    tap(&mut s, game("zelda-lttp"));
+    tap(&mut s, entry("zelda-lttp"));
+    tap(&mut s, entry("zelda-lttp"));
     let fx = start(&mut s, "zelda-lttp");
     let sent: Vec<&str> = fx
         .iter()

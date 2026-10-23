@@ -70,7 +70,7 @@ pub(super) fn draw(f: &mut Frame) {
     let s = f.s;
     let panel = s.panel();
     let context = panel.context();
-    let game = panel.editing();
+    let entry = panel.editing();
     let shown = panel.scope_shown();
     let pad = f.pad();
     let mut grid = style::content(body);
@@ -85,7 +85,7 @@ pub(super) fn draw(f: &mut Frame) {
     let tabs_area = Rect::new(bar.x - inner, bar.y, bar.w + inner, bar.h);
     let tabs_end = widgets::tabs(f, tabs_area, f.text(Text::Heading), inner, bar.w * TAB_MAX, items);
     let running = context.is_some_and(|g| s.session().program() == Some(&g.id));
-    let note = match (game.is_some().then_some(()), running) {
+    let note = match (entry.is_some().then_some(()), running) {
         (Some(_), true) => "applies now",
         (Some(_), false) => "applies at launch",
         (None, _) => "defaults",
@@ -98,7 +98,7 @@ pub(super) fn draw(f: &mut Frame) {
 
     // The grid below.
     let grid = Rect::new(grid.x, grid.y + pad * 0.6, grid.w, grid.h - pad * 0.6);
-    let last = game.is_some().then_some(Tile::Reset);
+    let last = entry.is_some().then_some(Tile::Reset);
     for (i, tile) in GRID.into_iter().chain(last).enumerate() {
         draw_tile(f, grid.cell(COLUMNS, ROWS, f.body().h * style::TILE_GAP, i), tile);
     }
@@ -131,7 +131,7 @@ fn note(later: bool, no_effect: bool) -> &'static str {
 
 fn face(s: &State, tile: Tile) -> Face {
     let p = s.panel();
-    let game = p.editing().map(|g| g.id.clone());
+    let entry = p.editing().map(|g| g.id.clone());
     match tile {
         Tile::Setting(setting) => {
             let value = p.tile_value(setting);
@@ -155,15 +155,15 @@ fn face(s: &State, tile: Tile) -> Face {
             }
         }
         Tile::Env => {
-            let count = clamshell_core::settings::env::count_env(s.prefs().settings().env_text(game.as_deref()));
+            let count = clamshell_core::settings::env::count_env(s.prefs().settings().env_text(entry.as_deref()));
             let impact = if count > 0 { Impact::Changes } else { Impact::Stock };
-            let origin = if game.is_some() && count > 0 { TileOrigin::Own } else { TileOrigin::Global };
+            let origin = if entry.is_some() && count > 0 { TileOrigin::Own } else { TileOrigin::Global };
             let value = Fmt::of(format_args!("{}", Variables(count)));
             let off = p.handed_over();
             Face { id: Id::Settings(SettingsId::Env), icon: Icon::Env, value, impact, origin, active: !off, note: note(false, off) }
         }
         Tile::Reset => {
-            let any = game.as_ref().is_some_and(|g| s.prefs().settings().has_own(g));
+            let any = entry.as_ref().is_some_and(|g| s.prefs().settings().has_own(g));
             let value = Fmt::of(format_args!("{}", if any { "Reset" } else { "Nothing to reset" }));
             Face { id: Id::Settings(SettingsId::Reset), icon: Icon::Reset, value, impact: Impact::Stock, origin: TileOrigin::Global, active: any, note: "" }
         }
@@ -201,8 +201,8 @@ fn draw_tile(f: &mut Frame, r: Rect, tile: Tile) {
 fn editor(f: &mut Frame) {
     let s = f.s;
     let title = match s.bottom().editor() {
-        Some(Editor { purpose: Purpose::Env { entry: game }, .. }) => {
-            let title = match game {
+        Some(Editor { purpose: Purpose::Env { entry }, .. }) => {
+            let title = match entry {
                 Some(id) => s.entry(id).map_or("this game", |g| g.title.as_str()),
                 None => "all games",
             };

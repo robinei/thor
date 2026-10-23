@@ -338,13 +338,13 @@ mod tests {
         State::new(Init { library: clamshell_library::demo::library(), ..Init::default() })
     }
 
-    fn game(s: &State, i: usize) -> Id {
+    fn entry(s: &State, i: usize) -> Id {
         Id::Shelf(ShelfId::Entry(s.shelf().entry_at(i).map(|g| g.id.clone()).unwrap_or_else(|| "?".into())))
     }
 
     fn drawn(s: &State) -> Fake {
         Fake(Screens {
-            top: vec![t(0.0, 0.0, game(s, 0)), t(0.0, 20.0, game(s, 1))],
+            top: vec![t(0.0, 0.0, entry(s, 0)), t(0.0, 20.0, entry(s, 1))],
             bottom: vec![
                 t(0.0, 0.0, Id::Tab(Tab::Settings)),
                 t(50.0, 0.0, Id::Tab(Tab::Sysinfo)),
@@ -362,7 +362,7 @@ mod tests {
         let mut s = state();
         let d = drawn(&s);
         let mut memory = Screens::default();
-        let g = game(&s, 1);
+        let g = entry(&s, 1);
         focus(&mut s, g);
         // Nothing is remembered below, so the focus goes to the second screen's open tab.
         let to_bottom = switch_screen(&s, &d, &mut memory);
@@ -371,12 +371,12 @@ mod tests {
         focus(&mut s, tile.clone());
         assert_eq!(scope(&s), PadScope::BothScreens);
         // Back up, to the game it was on.
-        assert_eq!(switch_screen(&s, &d, &mut memory), Some(PointerEvent::Focus(game(&s, 1)).into()));
-        let g = game(&s, 0);
+        assert_eq!(switch_screen(&s, &d, &mut memory), Some(PointerEvent::Focus(entry(&s, 1)).into()));
+        let g = entry(&s, 0);
         focus(&mut s, g);
         // Down again, to the tile it was on.
         assert_eq!(switch_screen(&s, &d, &mut memory), Some(PointerEvent::Focus(tile).into()));
-        assert_eq!(memory.top, Some(game(&s, 0)));
+        assert_eq!(memory.top, Some(entry(&s, 0)));
     }
 
     #[test]
@@ -387,14 +387,14 @@ mod tests {
         // Focused on something no longer drawn, A brings the focus back first. The remembered tab isn't
         // drawn either, so the focus goes to the open tab.
         focus(&mut s, Id::Settings(SettingsId::Env));
-        assert_eq!(press(&s, &d, &memory), Some(PadPress::Focus(PointerEvent::Focus(game(&s, 0)).into())));
+        assert_eq!(press(&s, &d, &memory), Some(PadPress::Focus(PointerEvent::Focus(entry(&s, 0)).into())));
         assert_eq!(focus_bottom(&s, &d, &memory), PointerEvent::Focus(Id::Tab(s.bottom().tab())).into());
         // A drawn target is pressed.
         focus(&mut s, Id::Tab(Tab::Sysinfo));
         assert_eq!(press(&s, &d, &memory), Some(PadPress::Press(Id::Tab(Tab::Sysinfo))));
         // Moving from a lost focus starts at the first target.
         focus(&mut s, Id::Settings(SettingsId::Env));
-        assert_eq!(navigate(&s, &d, &memory, Dir::Right), Some(PointerEvent::Focus(game(&s, 0)).into()));
+        assert_eq!(navigate(&s, &d, &memory, Dir::Right), Some(PointerEvent::Focus(entry(&s, 0)).into()));
     }
 
     #[test]
@@ -402,14 +402,14 @@ mod tests {
         let mut s = state();
         let d = drawn(&s);
         let memory = Screens::default();
-        let g = game(&s, 0);
+        let g = entry(&s, 0);
         focus(&mut s, g);
         assert_eq!(scope(&s), PadScope::ShelfList);
         assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(ShelfEvent::ListStep(1).into()));
         assert_eq!(navigate(&s, &d, &memory, Dir::Right), Some(ShelfEvent::CollectionStep(1).into()));
         let len = s.shelf().collection().map_or(0, |c| c.entries.len());
         s.apply(ShelfEvent::ListStep(len as i32).into(), &mut Vec::new());
-        let last = game(&s, len - 1);
+        let last = entry(&s, len - 1);
         focus(&mut s, last.clone());
         // Past the last game, the focus moves by direction on to the second screen.
         let mut d = drawn(&s);
@@ -428,7 +428,7 @@ mod tests {
         let next = Tab::ALL[(at + 1) % Tab::ALL.len()];
         let icon = crate::views::bar::tab_target(next);
         assert_eq!(shoulder(&s, &d, 1), vec![PointerEvent::Activate(Id::Tab(next)).into(), PointerEvent::Focus(icon).into()], "its icon in the bar focused");
-        let g = game(&s, 0);
+        let g = entry(&s, 0);
         focus(&mut s, g);
         let page = s.shelf().rows() as i32;
         assert_eq!(shoulder(&s, &d, -1), vec![ShelfEvent::ListStep(-page).into()], "in shelf: a page");
@@ -459,7 +459,7 @@ mod tests {
         let mut d = drawn(&s);
         // Shelf's actions, right beside and below the last game shown.
         d.0.top.extend([t(60.0, 20.0, Id::Shelf(ShelfId::Launch)), t(60.0, 35.0, Id::Shelf(ShelfId::Favourite))]);
-        let last = game(&s, 1);
+        let last = entry(&s, 1);
         focus(&mut s, last.clone());
         let memory = Screens::default();
         for dir in [Dir::Down, Dir::Right] {
@@ -472,7 +472,7 @@ mod tests {
     fn b_on_shelfs_actions_goes_back_to_the_entry() {
         let mut s = state();
         focus(&mut s, Id::Shelf(ShelfId::Launch));
-        let g = game(&s, s.shelf().cursor().index);
+        let g = entry(&s, s.shelf().cursor().index);
         assert_eq!(back(&s), Some(PointerEvent::Focus(g).into()));
     }
 
@@ -480,7 +480,7 @@ mod tests {
     fn y_x_and_start_act_on_shelf_only_while_the_pad_is_there() {
         let mut s = state();
         let d = drawn(&s);
-        let g = game(&s, 0);
+        let g = entry(&s, 0);
         focus(&mut s, g);
         assert_eq!(shortcut(&s, &d, PadInput::Y), vec![ShelfEvent::ToggleFavourite.into()]);
         focus(&mut s, Id::Tab(Tab::Sysinfo));

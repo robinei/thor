@@ -597,9 +597,9 @@ impl Keymaps {
         self.list.iter().filter(|k| k.owner.is_none())
     }
 
-    /// `game`'s own keymap, if it has one.
-    pub fn own_of(&self, game: &str) -> Option<&Keymap> {
-        self.list.iter().find(|k| k.owner.as_deref() == Some(game))
+    /// `entry`'s own keymap, if it has one.
+    pub fn own_of(&self, entry: &str) -> Option<&Keymap> {
+        self.list.iter().find(|k| k.owner.as_deref() == Some(entry))
     }
 
     /// The id for a new keymap: one past the highest, so an id is never taken twice while the highest
@@ -608,12 +608,12 @@ impl Keymaps {
         self.list.iter().map(|k| k.id).max().unwrap_or(0).checked_add(1)
     }
 
-    /// Makes `game`'s own keymap as a copy of keymap `from` and returns its id. If `from` is Default or no
+    /// Makes `entry`'s own keymap as a copy of keymap `from` and returns its id. If `from` is Default or no
     /// longer exists, the new keymap is empty.
-    pub fn make_own(&mut self, from: u16, game: &std::sync::Arc<str>) -> Option<u16> {
+    pub fn make_own(&mut self, from: u16, entry: &std::sync::Arc<str>) -> Option<u16> {
         let id = self.next_id()?;
         let mut own = Keymap::new(id, "");
-        own.owner = Some(game.clone());
+        own.owner = Some(entry.clone());
         if let Some(from) = self.get(from) {
             own.layers = from.layers.clone();
         }

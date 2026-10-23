@@ -557,9 +557,9 @@ impl State {
 
     fn on_launch_event(&mut self, event: LaunchEvent) {
         match event {
-            LaunchEvent::Position { entry: game, position } => self.shelf.set_position(&game, position, self.clock.unix()),
+            LaunchEvent::Position { entry, position } => self.shelf.set_position(&entry, position, self.clock.unix()),
             // A launch that never started doesn't change what runs, but it is no longer starting.
-            LaunchEvent::LaunchFailed(game) => self.session.launch_failed(game, self.shelf.library(), &self.clock, self.bottom.notice_mut()),
+            LaunchEvent::LaunchFailed(entry) => self.session.launch_failed(entry, self.shelf.library(), &self.clock, self.bottom.notice_mut()),
         }
     }
 
@@ -786,7 +786,7 @@ impl State {
     /// What the keymaps' screens read from the settings panel (see [`KeymapCx`]).
     fn keymap_cx(&self) -> KeymapCx {
         let panel = self.panel();
-        KeymapCx { game: panel.editing().map(|g| g.id.clone()), chosen: panel.keymap_chosen() }
+        KeymapCx { entry: panel.editing().map(|g| g.id.clone()), chosen: panel.keymap_chosen() }
     }
 
     // Lists.
@@ -907,8 +907,8 @@ impl State {
             // The keyboard goes back to the tab it came up from.
             (Done::Cancel, Purpose::FileName(_)) => self.back_from_keyboard(),
             (Done::Cancel, _) => {}
-            (Done::Save, Purpose::Env { entry: game }) => {
-                self.prefs.set_env(game, &editor.text);
+            (Done::Save, Purpose::Env { entry }) => {
+                self.prefs.set_env(entry, &editor.text);
                 out.effects.push(self.prefs.save_effect());
             }
             (Done::Save, Purpose::Password { ssid }) => self.radios.join(ssid, Some(editor.text), out),
@@ -977,16 +977,16 @@ impl State {
 
     /// Shelf's action on its selected entry, or a tap on a stopped dock entry: shows the entry if it runs,
     /// or else starts it. A group isn't started; it is shown open in shelf.
-    fn play(&mut self, game: Arc<str>, out: &mut Out) {
+    fn play(&mut self, entry: Arc<str>, out: &mut Out) {
         // A browsed file that is also a library entry plays as that entry.
-        let game = self.shelf.entry_of_file(&game).unwrap_or(game);
-        if self.session.running(&game).is_some() {
-            self.session.show(&game, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out);
+        let entry = self.shelf.entry_of_file(&entry).unwrap_or(entry);
+        if self.session.running(&entry).is_some() {
+            self.session.show(&entry, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out);
             return;
         }
-        let title = self.shelf.entry(&game).map(|g| g.title.clone());
+        let title = self.shelf.entry(&entry).map(|g| g.title.clone());
         let mark = out.effects.len();
-        self.launch(game, None, Start::Front, out);
+        self.launch(entry, None, Start::Front, out);
         // The notice comes at once, since a start may take a while: Android's first start, a Steam
         // game's, or Proton's setup.
         if let Some(title) = title.filter(|_| out.effects.iter().skip(mark).any(|e| matches!(e, Effect::Launch { .. }))) {
@@ -1001,18 +1001,18 @@ impl State {
         }
     }
 
-    /// Launches `game` (see [`Session::launch`]), or does what the session says instead: the Device view
+    /// Launches `entry` (see [`Session::launch`]), or does what the session says instead: the Device view
     /// is opened, a group shown open in shelf, or a running entry shown.
-    pub(crate) fn launch(&mut self, game: Arc<str>, command: Option<Launch>, start: Start, out: &mut Out) {
+    pub(crate) fn launch(&mut self, entry: Arc<str>, command: Option<Launch>, start: Start, out: &mut Out) {
         let tab = self.bottom.chosen_tab();
-        let request = LaunchRequest { entry: game.clone(), command, start };
+        let request = LaunchRequest { entry: entry.clone(), command, start };
         match self.session.launch(request, &self.shelf, tab, self.prefs.settings(), &self.clock, out) {
             Some(Instead::Device) => self.device.open(&mut self.pointer, out),
-            Some(Instead::Group) if self.shelf.reveal(&game) => {
+            Some(Instead::Group) if self.shelf.reveal(&entry) => {
                 self.shelf.moved(&mut self.pointer);
                 out.effects.push(Effect::Window(WindowCommand::ShowShelf));
             }
-            Some(Instead::Show) => self.session.show(&game, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out),
+            Some(Instead::Show) => self.session.show(&entry, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out),
             Some(Instead::Group) | None => {}
         }
     }
@@ -1046,8 +1046,8 @@ impl State {
                 self.change(setting, value, out);
             }
             SettingsId::Env => {
-                let game = self.panel().editing().map(|g| g.id.clone());
-                self.prefs.open_env_editor(game, self.bottom.editors_mut());
+                let entry = self.panel().editing().map(|g| g.id.clone());
+                self.prefs.open_env_editor(entry, self.bottom.editors_mut());
             }
             SettingsId::Scope(scope) => self.prefs.set_scope(scope),
             SettingsId::Reset => {
@@ -1063,15 +1063,15 @@ impl State {
     /// to `value`, or back to the default for `None`. The change is saved, and applied after the event
     /// if the settings in force changed (see [`crate::sync`]).
     fn change(&mut self, setting: Setting, value: Option<u16>, out: &mut Out) {
-        let game = self.panel().editing().map(|g| g.id.clone());
-        self.prefs.set(game.as_ref(), setting, value);
+        let entry = self.panel().editing().map(|g| g.id.clone());
+        self.prefs.set(entry.as_ref(), setting, value);
         out.effects.push(self.prefs.save_effect());
     }
 
     /// Chooses keymap `id` where the panel edits, and saves the settings.
     fn choose_keymap(&mut self, id: u16, out: &mut Out) {
-        let game = self.panel().editing().map(|g| g.id.clone());
-        self.prefs.choose_keymap(game.as_ref(), id);
+        let entry = self.panel().editing().map(|g| g.id.clone());
+        self.prefs.choose_keymap(entry.as_ref(), id);
         out.effects.push(self.prefs.save_effect());
     }
 

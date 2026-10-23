@@ -43,10 +43,10 @@ impl Shelf {
     /// What Enqueue adds from what the details show, if its runner takes more while it runs. The selected
     /// files are taken: the selection is cleared.
     pub(crate) fn take_enqueued(&mut self) -> Option<Enqueued> {
-        let Some((game, true)) = self.file_target() else {
+        let Some((target, true)) = self.file_target() else {
             return None;
         };
-        let runner = game.runner.clone().filter(|r| r.enqueue.is_some())?;
+        let runner = target.runner.clone().filter(|r| r.enqueue.is_some())?;
         let library = self.library();
         let index_of = |id: &str| library.entries.iter().position(|g| &*g.id == id);
         // While there is a selection, its entries are queued in the order picked, and the open folder is
@@ -54,13 +54,13 @@ impl Shelf {
         let picked = self.files().selected();
         let (entry, ids): (Arc<str>, Vec<Arc<str>>) = match self.group().filter(|_| !picked.is_empty()) {
             Some(folder) => (folder.id.clone(), picked.to_vec()),
-            None => (game.id.clone(), vec![game.id.clone()]),
+            None => (target.id.clone(), vec![target.id.clone()]),
         };
         let files: Vec<PathBuf> = ids.iter().filter_map(|id| index_of(id)).flat_map(|i| library.queue_files(i, &runner.key)).collect();
         if files.is_empty() {
             return None;
         }
-        let alone = entry == game.id && !game.is_group();
+        let alone = entry == target.id && !target.is_group();
         self.clear_file_selection();
         Some(Enqueued { entry, alone, runner, files })
     }
@@ -111,8 +111,8 @@ mod tests {
         let (mut a, mut b) = (song("a", "/m/Album/a.mp3"), song("b", "/m/Album/b.mp3"));
         (a.parent, b.parent) = (Some(0), Some(0));
         let album = Entry { runner: Some(music()), ..album };
-        let games = vec![album, a, b, song("single", "/m/single.mp3")];
-        state_with(Library { collections: vec![Collection::new("Music", vec![0, 3])], entries: games, ..Library::default() })
+        let entries = vec![album, a, b, song("single", "/m/single.mp3")];
+        state_with(Library { collections: vec![Collection::new("Music", vec![0, 3])], entries, ..Library::default() })
     }
 
     #[test]
@@ -122,7 +122,7 @@ mod tests {
         assert!(s.shelf().actions().contains(&crate::shelf::actions::Action::Enqueue));
         let fx = tap(&mut s, Id::Shelf(ShelfId::Enqueue));
         let launch = fx.iter().find_map(|e| match e {
-            Effect::Launch { entry: game, launch, .. } => Some((game.to_string(), launch.clone())),
+            Effect::Launch { entry, launch, .. } => Some((entry.to_string(), launch.clone())),
             _ => None,
         });
         let argv = ["mpv", "--input-ipc-server={socket}", "/m/Album/a.mp3", "/m/Album/b.mp3"].map(String::from).to_vec();

@@ -111,8 +111,8 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     }
     // The selected entry. In an empty browsed folder, the folder itself, for its actions (paste, new
     // folder).
-    if let Some((game, _)) = s.shelf().file_target().filter(|(g, selected)| *selected || g.browsed.is_some()) {
-        selected(f, game, screen, list, pad);
+    if let Some((entry, _)) = s.shelf().file_target().filter(|(g, selected)| *selected || g.browsed.is_some()) {
+        selected(f, entry, screen, list, pad);
     }
     rows
 }
@@ -125,7 +125,7 @@ fn group_header(f: &mut Frame, group: &Entry, r: Rect, pad: f32) {
         let arrow = Rect::new(r.x, r.y, r.h, r.h);
         f.c.icon(Icon::ArrowLeft, arrow.square_center(r.h * 0.4), Tone::Normal);
         let title = Rect::new(r.x + r.h + pad * 0.2, r.y, r.w - r.h - pad * 0.2, r.h);
-        let path = Fmt::<192>::of(format_args!("{}", Groups { s, game: group, own: true, between: " › " }));
+        let path = Fmt::<192>::of(format_args!("{}", Groups { s, entry: group, own: true, between: " › " }));
         f.c.text_fit(title, r.h * HEADER_TEXT, Tone::High, &path, Keep::End);
     });
 }
@@ -138,7 +138,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
     let cursor = s.shelf().cursor();
     let scrolled = Scrolled::begin(f, ListId::Shelf, list, row_h, len);
     for position in scrolled.shown() {
-        let Some(game) = s.shelf().entry_at(position) else {
+        let Some(entry) = s.shelf().entry_at(position) else {
             break;
         };
         let at = scrolled.row(position);
@@ -147,7 +147,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         // A watched video, to its end or into its credits, is dimmer.
         let tone = if selected {
             Tone::High
-        } else if game.mpv_file().is_some() && game.watched() {
+        } else if entry.mpv_file().is_some() && entry.watched() {
             Tone::Dim
         } else {
             Tone::Normal
@@ -156,19 +156,19 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         // Every row's picture is a square, cropped to fill it, so that the titles line up.
         let thumb_h = r.h * THUMB;
         let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * ROW_ASPECT, thumb_h);
-        f.button(Id::Shelf(ShelfId::Entry(game.id.clone())), r, look, |f| {
-            widgets::thumb(f.c, f.images, game, thumb, THUMB_RADIUS, false);
+        f.button(Id::Shelf(ShelfId::Entry(entry.id.clone())), r, look, |f| {
+            widgets::thumb(f.c, f.images, entry, thumb, THUMB_RADIUS, false);
             // The marks at the row's right end, from right to left: a folder's chevron, running (dim
             // while paused), on the dock, and favourite.
             let mark = r.h * MARK;
             let mut right = r.x + r.w - pad * 0.5;
-            let paused = s.session().paused(&game.id) || s.session().suspended(&game.id);
+            let paused = s.session().paused(&entry.id) || s.session().suspended(&entry.id);
             let marks = [
-                (game.is_group(), Icon::Chevron, Tone::Normal),
-                (s.session().running(&game.id).is_some(), Icon::Dot, if paused { Tone::Dim } else { Tone::Go }),
-                (s.shelf().files().selected().contains(&game.id), Icon::Check, Tone::Accent),
-                (s.dock().is_pinned(&game.id), Icon::for_tab(Tab::Dock), Tone::Normal),
-                (game.favourite, Icon::Star, Tone::Accent),
+                (entry.is_group(), Icon::Chevron, Tone::Normal),
+                (s.session().running(&entry.id).is_some(), Icon::Dot, if paused { Tone::Dim } else { Tone::Go }),
+                (s.shelf().files().selected().contains(&entry.id), Icon::Check, Tone::Accent),
+                (s.dock().is_pinned(&entry.id), Icon::for_tab(Tab::Dock), Tone::Normal),
+                (entry.favourite, Icon::Star, Tone::Accent),
             ];
             for (on, icon, mark_tone) in marks {
                 if on {
@@ -181,15 +181,15 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
             let title = Rect::new(tx, r.y, right - tx - pad * 0.3, r.h);
             // Outside its folder, as in Recent or Favourites, the folders it is in go before its title.
             let open = s.shelf().group().map(|g| &g.id);
-            let in_view = game.parent.and_then(|p| s.shelf().library().entries.get(p)).is_none_or(|p| Some(&p.id) == open);
+            let in_view = entry.parent.and_then(|p| s.shelf().library().entries.get(p)).is_none_or(|p| Some(&p.id) == open);
             if in_view {
-                f.c.text_fit(title, row_h * ROW_TEXT, tone, &game.title, Keep::Start);
+                f.c.text_fit(title, row_h * ROW_TEXT, tone, &entry.title, Keep::Start);
             } else {
-                let path = Fmt::<256>::of(format_args!("{}", Groups { s, game, own: true, between: " · " }));
+                let path = Fmt::<256>::of(format_args!("{}", Groups { s, entry, own: true, between: " · " }));
                 f.c.text_fit(title, row_h * ROW_TEXT, tone, &path, Keep::Start);
             }
             // For a video under way, how far in it is, under its title.
-            if let Some(fraction) = watched_fraction(game).filter(|_| !game.watched()) {
+            if let Some(fraction) = watched_fraction(entry).filter(|_| !entry.watched()) {
                 let bar = Rect::new(tx, r.y + r.h * 0.8, (title.w * 0.6).min(row_h * 4.0), (r.h * 0.05).max(2.0));
                 widgets::progress(f.c, bar, fraction);
             }
@@ -202,12 +202,12 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
 /// the title, the groups it is in, who made it and when, what playing it does now, whether it is a
 /// favourite and on the dock, the play time, and as much of its summary as fits. A screenshot goes at the
 /// bottom of the text, or under landscape box art at the same width.
-fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
+fn selected(f: &mut Frame, entry: &Entry, screen: Rect, list: Rect, pad: f32) {
     let s = f.s;
     let h = screen.h;
     let x0 = screen.w * LIST_W + pad;
     let room = Rect::new(x0, list.y, (screen.w - pad - x0) * COVER_W, list.h * ART_H);
-    let cover = widgets::cover(f.c, f.images, game, room, RADIUS_L, BOX_ASPECT);
+    let cover = widgets::cover(f.c, f.images, entry, room, RADIUS_L, BOX_ASPECT);
     let landscape = cover.w > cover.h;
     let tx = if landscape { room.x + room.w } else { cover.x + cover.w } + pad * 1.2;
     let text_w = screen.w - pad - tx;
@@ -217,54 +217,54 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
         col.skip(f.c.wrap(Span { x: tx, y: col.y(), w: text_w }, size, tone, text, lines) + pad * PARA_GAP);
     };
     let detail = h * DETAIL;
-    para(f, &mut col, h * TITLE, Tone::High, &game.title, 3);
+    para(f, &mut col, h * TITLE, Tone::High, &entry.title, 3);
 
     // The groups it is in (a series, a season), and who made it and when.
-    if game.parent.is_some() {
-        let groups = Fmt::<192>::of(format_args!("{}", Groups { s, game, own: false, between: " · " }));
+    if entry.parent.is_some() {
+        let groups = Fmt::<192>::of(format_args!("{}", Groups { s, entry, own: false, between: " · " }));
         para(f, &mut col, detail, Tone::Normal, &groups, 2);
     }
-    let maker = Fmt::<128>::of(format_args!("{}", Maker(game)));
+    let maker = Fmt::<128>::of(format_args!("{}", Maker(entry)));
     if !maker.is_empty() {
         para(f, &mut col, detail, Tone::Dim, &maker, 2);
     }
 
     // A browsed file: its size and when it was changed.
-    if let Some(b) = game.browsed.as_ref().filter(|b| !b.folder && b.modified > 0) {
+    if let Some(b) = entry.browsed.as_ref().filter(|b| !b.folder && b.modified > 0) {
         let days = s.clock().unix().saturating_sub(b.modified) / 86_400;
         let facts = Fmt::<64>::of(format_args!("{}{}", Bytes(b.size.unwrap_or(0)), DaysAgo(days)));
         para(f, &mut col, detail, Tone::Dim, &facts, 1);
     }
 
     // A folder: what is in it. Not for a browsed folder, since what is known of it may be out of date.
-    if game.is_group() && game.browsed.is_none() {
-        let inside = Fmt::<64>::of(format_args!("{}", Inside(s, game)));
+    if entry.is_group() && entry.browsed.is_none() {
+        let inside = Fmt::<64>::of(format_args!("{}", Inside(s, entry)));
         para(f, &mut col, detail, Tone::Normal, &inside, 2);
     }
 
     // A video: how far in it is, and how long it is.
-    if let Some(at) = game.playback.position.filter(|_| game.mpv_file().is_some()) {
-        let minutes = Fmt::<48>::of(format_args!("{}", Minutes(at, game.playback.duration)));
+    if let Some(at) = entry.playback.position.filter(|_| entry.mpv_file().is_some()) {
+        let minutes = Fmt::<48>::of(format_args!("{}", Minutes(at, entry.playback.duration)));
         let bar_w = (text_w * 0.45).min(detail * 9.0);
-        if let Some(fraction) = watched_fraction(game) {
+        if let Some(fraction) = watched_fraction(entry) {
             let bar = Rect::new(tx, col.y() + detail * 0.42, bar_w, (detail * 0.22).max(3.0));
             widgets::progress(f.c, bar, fraction);
         }
-        let x = if watched_fraction(game).is_some() { tx + bar_w + pad * 0.6 } else { tx };
+        let x = if watched_fraction(entry).is_some() { tx + bar_w + pad * 0.6 } else { tx };
         f.c.text(x, col.y(), detail, Tone::Normal, &minutes);
         col.skip(detail * WRAP_LINE + pad * PARA_GAP);
-    } else if game.mpv_file().is_some() && game.watched() {
+    } else if entry.mpv_file().is_some() && entry.watched() {
         para(f, &mut col, detail, Tone::Dim, "Watched", 1);
     }
 
     // Its actions (see clamshell-core's `actions`), each a row to tap, with its button.
     let action_h = detail * ACTION;
-    let rows = actions(f, game, Rect::new(tx, col.y(), text_w, list.y + list.h - col.y()), action_h, pad);
+    let rows = actions(f, entry, Rect::new(tx, col.y(), text_w, list.y + list.h - col.y()), action_h, pad);
     col.skip(rows);
     col.skip(pad * 0.3);
 
     // The play time.
-    let plays = game.plays;
+    let plays = entry.plays;
     if plays.count > 0 {
         let days = s.clock().unix().saturating_sub(plays.last) / 86_400;
         let played = Fmt::<64>::of(format_args!("{}{}", PlayTime(plays.seconds), DaysAgo(days)));
@@ -273,7 +273,7 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
 
     // A screenshot goes under landscape box art at the same width, or else at the bottom of the text. The
     // summary takes as many lines as fit above that. There is no screenshot if it is already the picture.
-    let shot = match (game.details.shot.is_some() && !widgets::wide_picture(game), landscape) {
+    let shot = match (entry.details.shot.is_some() && !widgets::wide_picture(entry), landscape) {
         (false, _) => None,
         (true, true) => {
             let y = cover.y + cover.h + pad;
@@ -291,11 +291,11 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
     };
     let (top, size) = (col.y() + pad * 0.2, h * SUMMARY);
     let lines = ((bottom - top) / (size * WRAP_LINE)).floor().max(0.0) as usize;
-    if !game.details.summary.is_empty() && lines > 0 {
-        f.c.wrap(Span { x: tx, y: top, w: text_w }, size, Tone::Normal, &game.details.summary, lines.min(12));
+    if !entry.details.summary.is_empty() && lines > 0 {
+        f.c.wrap(Span { x: tx, y: top, w: text_w }, size, Tone::Normal, &entry.details.summary, lines.min(12));
     }
     if let Some(r) = shot.filter(|r| r.h > pad) {
-        widgets::shot(f.c, f.images, game, r);
+        widgets::shot(f.c, f.images, entry, r);
     }
 }
 
@@ -303,7 +303,7 @@ fn selected(f: &mut Frame, game: &Entry, screen: Rect, list: Rect, pad: f32) {
 /// height. A opens (plays, or shows it running), Start continues a folder of videos, and Y and X toggle
 /// favourite and on the dock, or Copy and Paste for a browsed file. Then come the file actions, where
 /// Delete and Empty Trash ask to be pressed again, and how far a paste under way has got.
-fn actions(f: &mut Frame, game: &Entry, r: Rect, action_h: f32, pad: f32) -> f32 {
+fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f32 {
     use clamshell_core::shelf::actions::{Action, Shortcut};
     use clamshell_core::shelf::files::FileAction;
     let s = f.s;
@@ -323,19 +323,19 @@ fn actions(f: &mut Frame, game: &Entry, r: Rect, action_h: f32, pad: f32) -> f32
             _ if shortcut(Shortcut::X) == Some(action) => "X",
             _ => "",
         };
-        let running = s.session().running(&game.id).is_some();
+        let running = s.session().running(&entry.id).is_some();
         let (label, tone) = match action {
-            Action::Open if game.is_group() => (Fmt::<192>::of(format_args!("Open")), Tone::Normal),
+            Action::Open if entry.is_group() => (Fmt::<192>::of(format_args!("Open")), Tone::Normal),
             Action::Open if running => (Fmt::of(format_args!("Running · show it")), Tone::Go),
-            Action::Open if matches!(game.launch, clamshell_core::Launch::Tool(_)) => (Fmt::of(format_args!("Run")), Tone::Normal),
-            Action::Open if game.browsed.is_some() => (Fmt::of(format_args!("Open")), Tone::Normal),
+            Action::Open if matches!(entry.launch, clamshell_core::Launch::Tool(_)) => (Fmt::of(format_args!("Run")), Tone::Normal),
+            Action::Open if entry.browsed.is_some() => (Fmt::of(format_args!("Open")), Tone::Normal),
             Action::Open => (Fmt::of(format_args!("Play")), Tone::Normal),
             Action::Continue => {
                 // The position within it is mpv's.
                 let library = s.shelf().library();
-                let next = library.entries.iter().position(|g| g.id == game.id).and_then(|g| library.to_continue(g)).and_then(|i| library.entries.get(i));
+                let next = library.entries.iter().position(|g| g.id == entry.id).and_then(|g| library.to_continue(g)).and_then(|i| library.entries.get(i));
                 match next {
-                    Some(n) => (Fmt::of(format_args!("Play · {}", Within(s, n, game))), Tone::Go),
+                    Some(n) => (Fmt::of(format_args!("Play · {}", Within(s, n, entry))), Tone::Go),
                     None => (Fmt::of(format_args!("Play")), Tone::Go),
                 }
             }
@@ -343,9 +343,9 @@ fn actions(f: &mut Frame, game: &Entry, r: Rect, action_h: f32, pad: f32) -> f32
                 (Fmt::of(format_args!("Enqueue · {} selected", s.shelf().files().selected().len())), Tone::Normal)
             }
             Action::Enqueue => (Fmt::of(format_args!("Enqueue")), Tone::Normal),
-            Action::Favourite if game.favourite => (Fmt::of(format_args!("Favourite")), Tone::Accent),
+            Action::Favourite if entry.favourite => (Fmt::of(format_args!("Favourite")), Tone::Accent),
             Action::Favourite => (Fmt::of(format_args!("Not a favourite")), Tone::Dim),
-            Action::Pin if s.dock().is_pinned(&game.id) => (Fmt::of(format_args!("On the dock")), Tone::Normal),
+            Action::Pin if s.dock().is_pinned(&entry.id) => (Fmt::of(format_args!("On the dock")), Tone::Normal),
             Action::Pin => (Fmt::of(format_args!("Not on the dock")), Tone::Dim),
             Action::File(a) if s.shelf().file_armed(a) => (Fmt::of(format_args!("{} · press again", a.label())), Tone::Accent),
             Action::File(a) => {
@@ -355,14 +355,14 @@ fn actions(f: &mut Frame, game: &Entry, r: Rect, action_h: f32, pad: f32) -> f32
                 let label = match (a, clip) {
                     (FileAction::Paste, Some(clip)) if clip.entries.len() > 1 => Fmt::of(format_args!("Paste · {} entries", clip.entries.len())),
                     (FileAction::Paste, Some(clip)) => Fmt::of(format_args!("Paste · {}", clip.entries.first().map_or("", |(_, n)| n.as_str()))),
-                    (FileAction::Select, _) if files.selected().contains(&game.id) => Fmt::of(format_args!("Selected · {selected}")),
+                    (FileAction::Select, _) if files.selected().contains(&entry.id) => Fmt::of(format_args!("Selected · {selected}")),
                     (FileAction::ShowHidden, _) => Fmt::of(format_args!("{} hidden files", if files.hidden() { "Hide" } else { "Show" })),
-                    (FileAction::OpenIn, _) => Fmt::of(format_args!("Open in {}", s.shelf().opened_in(game).map_or("", |r| &*r.name))),
+                    (FileAction::OpenIn, _) => Fmt::of(format_args!("Open in {}", s.shelf().opened_in(entry).map_or("", |r| &*r.name))),
                     (FileAction::Copy | FileAction::Cut | FileAction::Trash | FileAction::Restore | FileAction::Delete, _) if selected > 0 => {
                         Fmt::of(format_args!("{} · {selected} selected", a.label()))
                     }
                     (FileAction::Copy | FileAction::Cut, Some(clip))
-                        if clip.entries.iter().any(|(p, _)| Some(p) == game.file.as_ref()) && (a == FileAction::Cut) == clip.cut =>
+                        if clip.entries.iter().any(|(p, _)| Some(p) == entry.file.as_ref()) && (a == FileAction::Cut) == clip.cut =>
                     {
                         Fmt::of(format_args!("{} · {}", a.label(), if clip.cut { "cut" } else { "copied" }))
                     }
@@ -395,8 +395,8 @@ fn actions(f: &mut Frame, game: &Entry, r: Rect, action_h: f32, pad: f32) -> f32
 }
 
 /// How far into a video, as a fraction of its length, if both are known.
-fn watched_fraction(game: &Entry) -> Option<f32> {
-    let (at, length) = (game.playback.position?, game.playback.duration?);
+fn watched_fraction(entry: &Entry) -> Option<f32> {
+    let (at, length) = (entry.playback.position?, entry.playback.duration?);
     (length > 0).then(|| at as f32 / length as f32)
 }
 
@@ -418,21 +418,21 @@ struct Within<'a>(&'a State, &'a Entry, &'a Entry);
 
 impl Display for Within<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let games = &self.0.shelf().library().entries;
+        let entries = &self.0.shelf().library().entries;
         // The folders from the entry up to the folder, collected bottom up and written top down.
         let mut chain = [None; 8];
         let mut at = self.1.parent;
         let mut n = 0;
         while let (Some(i), Some(slot)) = (at, chain.get_mut(n)) {
-            if games.get(i).is_some_and(|g| g.id == self.2.id) {
+            if entries.get(i).is_some_and(|g| g.id == self.2.id) {
                 break;
             }
             *slot = Some(i);
             n += 1;
-            at = games.get(i).and_then(|g| g.parent);
+            at = entries.get(i).and_then(|g| g.parent);
         }
         for i in chain.iter().take(n).rev().flatten() {
-            write!(f, "{} · ", games.get(*i).map_or("", |g| g.title.as_str()))?;
+            write!(f, "{} · ", entries.get(*i).map_or("", |g| g.title.as_str()))?;
         }
         f.write_str(&self.1.title)
     }
@@ -443,8 +443,8 @@ struct Inside<'a>(&'a State, &'a Entry);
 
 impl Display for Inside<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let games = &self.0.shelf().library().entries;
-        let folders = self.1.items.iter().filter(|&&i| games.get(i).is_some_and(Entry::is_group)).count();
+        let all = &self.0.shelf().library().entries;
+        let folders = self.1.items.iter().filter(|&&i| all.get(i).is_some_and(Entry::is_group)).count();
         let entries = self.1.items.len() - folders;
         let plural = |n: usize| if n == 1 { "" } else { "s" };
         if folders > 0 {
@@ -463,8 +463,8 @@ struct Maker<'a>(&'a Entry);
 
 impl Display for Maker<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let game = self.0;
-        match (game.details.developer.as_str(), game.details.year) {
+        let entry = self.0;
+        match (entry.details.developer.as_str(), entry.details.year) {
             ("", Some(y)) => write!(f, "{y}"),
             ("", None) => Ok(()),
             (d, Some(y)) => write!(f, "{d} · {y}"),
@@ -477,34 +477,34 @@ impl Display for Maker<'_> {
 /// title comes last if `own` is set.
 struct Groups<'a> {
     s: &'a State,
-    game: &'a Entry,
+    entry: &'a Entry,
     own: bool,
     between: &'a str,
 }
 
 impl Display for Groups<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let games = &self.s.shelf().library().entries;
+        let entries = &self.s.shelf().library().entries;
         // At most a few levels, walked from the entry up and written from the top down.
         let mut chain = [None; 8];
-        let mut at = self.game.parent;
+        let mut at = self.entry.parent;
         let mut n = 0;
         while let (Some(i), Some(slot)) = (at, chain.get_mut(n)) {
             *slot = Some(i);
             n += 1;
-            at = games.get(i).and_then(|g| g.parent);
+            at = entries.get(i).and_then(|g| g.parent);
         }
         for (k, i) in chain.iter().take(n).rev().flatten().enumerate() {
             if k > 0 {
                 f.write_str(self.between)?;
             }
-            f.write_str(games.get(*i).map_or("", |g| g.title.as_str()))?;
+            f.write_str(entries.get(*i).map_or("", |g| g.title.as_str()))?;
         }
         if self.own {
             if n > 0 {
                 f.write_str(self.between)?;
             }
-            f.write_str(&self.game.title)?;
+            f.write_str(&self.entry.title)?;
         }
         Ok(())
     }

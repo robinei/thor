@@ -58,15 +58,15 @@ impl Session {
             if app_id.is_none() && !own {
                 continue;
             }
-            let game = found_entry(library, &w.app_id, || {
+            let entry = found_entry(library, &w.app_id, || {
                 let name = app_id.as_deref().map_or_else(|| pid.to_string(), str::to_owned);
                 let title = if w.app_id.is_empty() { &w.title } else { &w.app_id };
                 Entry { app: true, ..Entry::new(&format!("{}{name}", ids::WINDOW), title) }
             });
-            if self.running(&game.id).is_some() {
+            if self.running(&entry.id).is_some() {
                 continue;
             }
-            new.push(Running { app_id, seen: true, ..Running::of(&game, Origin::Found { pid: own.then_some(pid), tray: None }, now) });
+            new.push(Running { app_id, seen: true, ..Running::of(&entry, Origin::Found { pid: own.then_some(pid), tray: None }, now) });
         }
         self.start_found(new, taken, clock, out);
     }

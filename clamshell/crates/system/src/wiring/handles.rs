@@ -75,24 +75,24 @@ impl Handles {
                 }
                 None => log::info!("effect: {effect:?} (no virtual keyboard)"),
             },
-            Effect::Launch { entry: game, instance, launch, settings, env } => {
-                log::info!("launching {game}");
+            Effect::Launch { entry, instance, launch, settings, env } => {
+                log::info!("launching {entry}");
                 // MangoHud's first, so a game's own variables can still override it.
-                let mut game_env = self.tuning.apply(settings, Some(game)).map(|config| crate::readings::mangohud::env(&config)).unwrap_or_default();
+                let mut game_env = self.tuning.apply(settings, Some(entry)).map(|config| crate::readings::mangohud::env(&config)).unwrap_or_default();
                 game_env.extend(env.iter().cloned());
                 // The variables for the grabbed controller go first, so a game's own may override them.
                 game_env.splice(0..0, self.pad_taken.env());
                 // The game gets its own workspace, which is shown when its first window appears. The state
                 // asks for that.
                 self.launcher.send(launcher::Command::Launch(launcher::Request {
-                    game: game.clone(),
+                    entry: entry.clone(),
                     instance: instance.clone(),
                     launch: launch.clone(),
                     env: game_env,
                 }));
             }
-            Effect::Apply { entry: game, settings } => {
-                self.tuning.apply(settings, game.as_deref());
+            Effect::Apply { entry, settings } => {
+                self.tuning.apply(settings, entry.as_deref());
             }
             Effect::Keymap(keymap) => self.tuning.keymap(keymap),
             Effect::CalibrateGyro => self.tuning.calibrate_gyro(),
@@ -103,10 +103,10 @@ impl Handles {
             }
             Effect::FetchFirst(ids) => self.fetching.first(ids),
             Effect::Tool(tool) => (self.rescan)(*tool == clamshell_library::Tool::Refetch),
-            Effect::ReadPosition { entry: game, file } => self.launcher.send(launcher::Command::ReadPosition { game: game.clone(), file: file.clone() }),
-            Effect::RecordPlay { entry: game, start, duration } => {
+            Effect::ReadPosition { entry, file } => self.launcher.send(launcher::Command::ReadPosition { entry: entry.clone(), file: file.clone() }),
+            Effect::RecordPlay { entry, start, duration } => {
                 if let Some(store) = &self.store {
-                    store.send(Write::Play { id: game.clone(), start: *start, duration: *duration });
+                    store.send(Write::Play { id: entry.clone(), start: *start, duration: *duration });
                 }
             }
             Effect::Window(command) => self.window(command),

@@ -68,7 +68,7 @@ pub fn foot() -> Window {
 }
 
 /// A game in shelf's list.
-pub fn game(id: &str) -> Id {
+pub fn entry(id: &str) -> Id {
     Id::Shelf(ShelfId::Entry(id.into()))
 }
 
@@ -105,11 +105,11 @@ pub fn focus(instance: &Instance) -> Effect {
     Effect::Window(WindowCommand::Focus(instance.workspace()))
 }
 
-/// Launches `game` from shelf and has it start. Returns its instance.
+/// Launches `entry` from shelf and has it start. Returns its instance.
 pub fn launch(s: &mut State, id: &str) -> Instance {
     // Select it if it isn't selected, then play it. The launch is in the effects of one of the two taps.
-    let mut fx = tap(s, game(id));
-    fx.extend(tap(s, game(id)));
+    let mut fx = tap(s, entry(id));
+    fx.extend(tap(s, entry(id)));
     let instance = fx.iter().find_map(|e| match e {
         Effect::Launch { instance, .. } => Some(instance.clone()),
         _ => None,

@@ -61,9 +61,9 @@ impl Prefs {
         self.scope = scope;
     }
 
-    /// Sets `setting` for `game`, or for all games (see [`Settings::set`]).
-    pub(crate) fn set(&mut self, game: Option<&Arc<str>>, setting: Setting, value: Option<u16>) {
-        self.settings.set(game, setting, value);
+    /// Sets `setting` for `entry`, or for all games (see [`Settings::set`]).
+    pub(crate) fn set(&mut self, entry: Option<&Arc<str>>, setting: Setting, value: Option<u16>) {
+        self.settings.set(entry, setting, value);
     }
 
     /// Chooses keymap `id` for `entry`, or for all entries. Every choice of a keymap is set here: the
@@ -73,12 +73,12 @@ impl Prefs {
     }
 
     /// Drops a game's overrides and environment (see [`Settings::reset`]).
-    pub(crate) fn reset(&mut self, game: &str) {
-        self.settings.reset(game);
+    pub(crate) fn reset(&mut self, entry: &str) {
+        self.settings.reset(entry);
     }
 
-    pub(crate) fn set_env(&mut self, game: Option<Arc<str>>, text: &str) {
-        self.settings.set_env(game, text);
+    pub(crate) fn set_env(&mut self, entry: Option<Arc<str>>, text: &str) {
+        self.settings.set_env(entry, text);
     }
 
     /// Keymap `id` is gone (see [`Settings::forget_keymap`]).
@@ -86,10 +86,10 @@ impl Prefs {
         self.settings.forget_keymap(id);
     }
 
-    /// Opens the editor on `game`'s environment variables, or with none, those for all games.
-    pub(crate) fn open_env_editor(&self, game: Option<Arc<str>>, editors: &mut Editors) {
-        let text = self.settings.env_text(game.as_deref()).to_owned();
-        editors.open(Editor { purpose: Purpose::Env { entry: game }, text });
+    /// Opens the editor on `entry`'s environment variables, or with none, those for all games.
+    pub(crate) fn open_env_editor(&self, entry: Option<Arc<str>>, editors: &mut Editors) {
+        let text = self.settings.env_text(entry.as_deref()).to_owned();
+        editors.open(Editor { purpose: Purpose::Env { entry }, text });
     }
 
     pub(crate) fn save_effect(&self) -> Effect {
@@ -225,22 +225,22 @@ impl<'a> Panel<'a> {
         self.tile_value(Setting::Keymap)
     }
 
-    fn game(&self) -> Option<&str> {
+    fn entry(&self) -> Option<&str> {
         self.editing.as_ref().map(|g| &*g.id)
     }
 
     /// Row `i` of the keymaps' picker, for what the panel edits.
     pub fn keymap_row(&self, i: usize) -> Option<PickerRow<'a>> {
-        self.keymapping.row(i, self.game())
+        self.keymapping.row(i, self.entry())
     }
 
     pub(crate) fn keymap_rows_len(&self) -> usize {
-        self.keymapping.rows_len(self.game())
+        self.keymapping.rows_len(self.entry())
     }
 
     /// Whether the panel edits a game that has no keymap of its own and so can make one.
     pub fn keymap_can_make_own(&self) -> bool {
-        self.keymapping.can_make_own(self.game())
+        self.keymapping.can_make_own(self.entry())
     }
 }
 
@@ -414,7 +414,7 @@ mod tests {
     fn a_running_game_takes_changes_at_once() {
         let mut s = state();
         crate::testkit::start(&mut s, "zelda-lttp");
-        tap(&mut s, game("ff6"));
+        tap(&mut s, entry("ff6"));
         // The running game is the context, not the selection.
         let fx = taps(&mut s, Setting::FpsCap, 1);
         assert!(fx.iter().any(|e| matches!(e, Effect::Apply { entry: Some(g), settings } if &**g == "zelda-lttp" && settings.get(Setting::FpsCap) == 30)));
