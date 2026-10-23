@@ -1,8 +1,8 @@
 //! `--snapshot DIR` draws both screens at the Thor's size into PNG files, without Wayland. The shots cover
 //! shelf, the second screen and every tab. Each is drawn after the events that lead to it, in groups that
 //! each start from a fresh state. They are taken at a fixed time unless CLAMSHELL_SNAPSHOT_NOW is set, so
-//! they come out the same on every run. The test below keeps hashes of their pixels in tests/snapshots.txt
-//! to catch changes in what is drawn.
+//! they come out the same on every run. The test below keeps two references in tests/: hashes of the
+//! shots' pixels (snapshots.txt), and the effects of the events on the way (trace.txt, see trace.rs).
 
 use std::fmt;
 use std::path::Path;
@@ -551,7 +551,7 @@ pub fn render(fresh: &(dyn Fn() -> State + Sync), now: u64, dir: &Path) -> Resul
 
 /// One group's shots, in order, from `state`.
 fn render_group(state: State, group: Group, now: u64, dir: &Path) -> Result<(), Error> {
-    walk_group(state, group, now, |state, name, screen| {
+    walk_group(state, group, now, &mut |state: &State, _: &[Event], name: &str, screen| {
         let path = dir.join(name);
         let events = clamshell_ui::snapshot(state, screen, size(screen), 1, &path).map_err(|e| Error::Render(path.display().to_string(), e.to_string()))?;
         log::info!("wrote {}", path.display());
@@ -559,47 +559,83 @@ fn render_group(state: State, group: Group, now: u64, dir: &Path) -> Result<(), 
     })
 }
 
-/// Brings `state` to each of the group's shots in turn and calls `shot` with it, the shot's name and its
-/// screen. `shot` returns what the frame reports, which is applied, as a live frame's report is: shelf's
-/// rows and the lists' rows keep the selections on screen.
-fn walk_group(
-    mut state: State,
-    Group { start, shots }: Group,
-    now: u64,
-    mut shot: impl FnMut(&State, &str, Screen) -> Result<Vec<Event>, Error>,
-) -> Result<(), Error> {
-    state.apply(Event::tick(now), &mut Vec::new());
-    state.apply(Event::Reading(Reading::Status(demo::STATUS)), &mut Vec::new());
-    // The demo's time zone, so the clock reads the same whatever zone the machine is in.
-    state.apply(Event::Reading(Reading::Time(demo::time_zones())), &mut Vec::new());
-    for event in start {
-        state.apply(event, &mut Vec::new());
+/// What [`walk_group`] shows along the way.
+pub trait Visit {
+    /// `event` was applied and asked for `effects`.
+    fn applied(&mut self, _event: &Event, _effects: &[clamshell_state::Effect]) {}
+
+    /// The state is at the shot `name` of `screen`, after the events in `log` applied to a fresh state.
+    /// Returns what the frame reports, which is applied next, as a live frame's report is: shelf's rows
+    /// and the lists' rows keep the selections on screen.
+    fn shot(&mut self, state: &State, log: &[Event], name: &str, screen: Screen) -> Result<Vec<Event>, Error>;
+}
+
+impl<F: FnMut(&State, &[Event], &str, Screen) -> Result<Vec<Event>, Error>> Visit for F {
+    fn shot(&mut self, state: &State, log: &[Event], name: &str, screen: Screen) -> Result<Vec<Event>, Error> {
+        self(state, log, name, screen)
+    }
+}
+
+/// The events that set a group up before its own: the clock, the UI's start (as when it comes up), the
+/// bar's status and the demo's time zone, so the clock reads the same whatever zone the machine is in.
+fn setup(now: u64) -> [Event; 4] {
+    [Event::tick(now), Event::Start, Event::Reading(Reading::Status(demo::STATUS)), Event::Reading(Reading::Time(demo::time_zones()))]
+}
+
+/// Brings `state` to each of the group's shots in turn and shows `visit` each event applied and each
+/// shot.
+fn walk_group(state: State, Group { start, shots }: Group, now: u64, visit: &mut impl Visit) -> Result<(), Error> {
+    let mut walk = Walk { state, log: Vec::new(), effects: Vec::new() };
+    for event in setup(now).into_iter().chain(start) {
+        walk.apply(event, visit);
     }
     // Clear the notice the setup left ("Starting …" for its launches) by moving the clock past it and back.
-    state.apply(Event::tick(now + 5), &mut Vec::new());
-    state.apply(Event::tick(now), &mut Vec::new());
+    walk.apply(Event::tick(now + 5), visit);
+    walk.apply(Event::tick(now), visit);
     for Shot { name, screen, before } in shots {
         for event in before {
-            state.apply(event, &mut Vec::new());
+            walk.apply(event, visit);
         }
-        for event in shot(&state, name, screen)? {
-            state.apply(event, &mut Vec::new());
+        for event in visit.shot(&walk.state, &walk.log, name, screen)? {
+            walk.apply(event, visit);
         }
     }
     Ok(())
 }
 
+/// A group's state on the way, with the events applied to it so far.
+struct Walk {
+    state: State,
+    log: Vec<Event>,
+    effects: Vec<clamshell_state::Effect>,
+}
+
+impl Walk {
+    fn apply(&mut self, event: Event, visit: &mut impl Visit) {
+        self.effects.clear();
+        self.state.apply(event.clone(), &mut self.effects);
+        visit.applied(&event, &self.effects);
+        self.log.push(event);
+    }
+}
+
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
+    use crate::dev::trace;
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::fmt::Write as _;
     use std::path::PathBuf;
 
-    /// The reference hashes, one `name hash` line per file.
-    const REFERENCE: &str = "tests/snapshots.txt";
-    const HEADER: &str = "# FNV-1a hashes of the snapshots' sizes and pixels (src/dev/snapshot.rs). After a change meant to change\n\
-                          # what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots\n";
+    /// The references: the shots' pixel hashes, one `name hash` line per file, and the effects of the
+    /// events on the way.
+    const PIXELS: &str = "tests/snapshots.txt";
+    const TRACE: &str = "tests/trace.txt";
+    const PIXELS_HEADER: &str = "# FNV-1a hashes of the snapshots' sizes and pixels (src/dev/snapshot.rs). After a change meant to change\n\
+                                 # what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots";
+    const TRACE_HEADER: &str = "# The effects of the snapshot scenario's events (src/dev/trace.rs), group by group: each event that\n\
+                                # had effects, then its effects. \"-- name\" is where a shot is taken.";
 
     /// Hashes a PNG's size and pixels. The file's bytes are not hashed because they change with the
     /// encoder, while the pixels don't.
@@ -624,7 +660,7 @@ mod tests {
                 scope.spawn(move || {
                     let frames = |screen| (clamshell_ui::Frames::new(screen, size(screen)).unwrap(), clamshell_ui::Frames::new(screen, size(screen)).unwrap());
                     let (mut top, mut bottom) = (frames(Screen::Top), frames(Screen::Bottom));
-                    walk_group(state(clamshell_library::demo::library()), group, FIXED_NOW, |state, name, screen| {
+                    walk_group(state(clamshell_library::demo::library()), group, FIXED_NOW, &mut |state: &State, _: &[Event], name: &str, screen| {
                         let (damaged, whole) = if screen == Screen::Top { (&mut top.0, &mut top.1) } else { (&mut bottom.0, &mut bottom.1) };
                         let (pixels, events) = damaged.draw(state);
                         assert!(pixels == whole.whole(state).unwrap(), "{name}: drawn frame after frame, it differs from the whole frame");
@@ -636,41 +672,165 @@ mod tests {
         });
     }
 
-    /// Draws and hashes the snapshots and compares them with the reference hashes. If any differ, the
-    /// drawn files are left to look at. After a change that is meant to change what is drawn, check the
-    /// files (`cargo run --features dev -- --snapshot DIR`) and then write the new hashes with
+    /// One group walked: its shots drawn into the directory, and its trace.
+    struct Checked<'a> {
+        dir: &'a std::path::Path,
+        trace: String,
+    }
+
+    impl Visit for Checked<'_> {
+        fn applied(&mut self, event: &Event, effects: &[clamshell_state::Effect]) {
+            if effects.is_empty() {
+                return;
+            }
+            let _ = writeln!(self.trace, "{}", trace::event(event));
+            for effect in effects {
+                let _ = writeln!(self.trace, "  {}", trace::effect(effect));
+            }
+        }
+
+        fn shot(&mut self, state: &State, _: &[Event], name: &str, screen: Screen) -> Result<Vec<Event>, Error> {
+            let _ = writeln!(self.trace, "-- {name}");
+            let path = self.dir.join(name);
+            clamshell_ui::snapshot(state, screen, size(screen), 1, &path).map_err(|e| Error::Render(name.into(), e.to_string()))
+        }
+    }
+
+    /// Lines of `old` and `new` that differ, `-` for removed and `+` for added, in order.
+    fn diff(old: &str, new: &str) -> String {
+        let (a, b): (Vec<&str>, Vec<&str>) = (old.lines().collect(), new.lines().collect());
+        // The longest common subsequence's lengths, from the ends.
+        let mut lcs = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+        for i in (0..a.len()).rev() {
+            for j in (0..b.len()).rev() {
+                lcs[i][j] = if a[i] == b[j] { lcs[i + 1][j + 1] + 1 } else { lcs[i + 1][j].max(lcs[i][j + 1]) };
+            }
+        }
+        let (mut i, mut j, mut out) = (0, 0, String::new());
+        while i < a.len() || j < b.len() {
+            if i < a.len() && j < b.len() && a[i] == b[j] {
+                (i, j) = (i + 1, j + 1);
+            } else if i < a.len() && (j == b.len() || lcs[i + 1][j] >= lcs[i][j + 1]) {
+                let _ = writeln!(out, "- {}", a[i]);
+                i += 1;
+            } else {
+                let _ = writeln!(out, "+ {}", b[j]);
+                j += 1;
+            }
+        }
+        out
+    }
+
+    /// The blocks of a reference, by the line each starts with (`== ...`).
+    fn blocks(text: &str) -> BTreeMap<String, String> {
+        let mut out = BTreeMap::new();
+        let mut current: Option<(String, String)> = None;
+        for line in text.lines().filter(|l| !l.starts_with('#')) {
+            if line.starts_with("== ") {
+                out.extend(current.take());
+                current = Some((line.to_owned(), String::new()));
+            }
+            if let Some((_, block)) = &mut current {
+                block.push_str(line);
+                block.push('\n');
+            }
+        }
+        out.extend(current);
+        out
+    }
+
+    /// The `== ` line of a block.
+    fn head(block: &str) -> String {
+        block.lines().next().unwrap_or_default().to_owned()
+    }
+
+    /// Compares `text`'s blocks with the reference's, by their `== ` lines. Returns the blocks that
+    /// differ with their text diffs.
+    fn differences(reference: &str, blocks_now: &[String]) -> Vec<(String, String)> {
+        let before = blocks(reference);
+        let now: BTreeMap<String, &String> = blocks_now.iter().map(|b| (head(b), b)).collect();
+        let mut out = Vec::new();
+        for b in blocks_now {
+            let old = before.get(&head(b)).map_or("", String::as_str);
+            if old != b.as_str() {
+                out.push((head(b), diff(old, b)));
+            }
+        }
+        for (h, old) in &before {
+            if !now.contains_key(h) {
+                out.push((h.clone(), diff(old, "")));
+            }
+        }
+        out
+    }
+
+    /// Draws the snapshots and compares them with the references: their pixels' hashes and the effects of
+    /// the events on the way. On a difference the drawn files are left to look at. After a change meant
+    /// to make a difference, look at these and at the printed diff, then write the new references with
     /// `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots`.
     #[test]
-    fn snapshots_match_their_reference() {
+    fn snapshots_match_their_references() {
         let base = std::env::temp_dir().join(format!("clamshell-snapshots-{}", std::process::id()));
         let dir = base.join("shots");
         std::fs::create_dir_all(&dir).unwrap();
-        render(&|| state(clamshell_library::demo::library()), FIXED_NOW, &dir).unwrap();
+        let groups = shots(FIXED_NOW).unwrap();
+        let traces: Vec<String> = std::thread::scope(|scope| {
+            let threads: Vec<_> = groups
+                .into_iter()
+                .map(|group| {
+                    let dir = &dir;
+                    scope.spawn(move || {
+                        let first = group.shots.first().map_or("", |s| s.name);
+                        let mut checked = Checked { dir, trace: format!("== group {first}\n") };
+                        walk_group(state(clamshell_library::demo::library()), group, FIXED_NOW, &mut checked).unwrap();
+                        checked.trace
+                    })
+                })
+                .collect();
+            threads.into_iter().map(|t| t.join().unwrap()).collect()
+        });
+
         let mut hashes = BTreeMap::new();
         for entry in std::fs::read_dir(&dir).unwrap().flatten() {
             hashes.insert(entry.file_name().to_string_lossy().into_owned(), pixels_hash(&entry.path()));
         }
-        let text: String = std::iter::once(HEADER.to_owned()).chain(hashes.iter().map(|(name, hash)| format!("{name} {hash}\n"))).collect();
-        let reference = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(REFERENCE);
+        let pixels: String = std::iter::once(format!("{PIXELS_HEADER}\n")).chain(hashes.iter().map(|(name, hash)| format!("{name} {hash}\n"))).collect();
+        let trace = format!("{TRACE_HEADER}\n{}", traces.concat());
+
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let mut report = String::new();
         if std::env::var_os("CLAMSHELL_UPDATE_SNAPSHOTS").is_some() {
-            std::fs::write(&reference, text).unwrap();
-            let _ = std::fs::remove_dir_all(&base);
-            return;
+            std::fs::write(root.join(PIXELS), pixels).unwrap();
+            std::fs::write(root.join(TRACE), trace).unwrap();
+        } else {
+            let read = |path: &str| std::fs::read_to_string(root.join(path)).unwrap_or_default();
+            let expected: BTreeMap<String, String> =
+                read(PIXELS).lines().filter(|l| !l.starts_with('#')).filter_map(|l| l.split_once(' ').map(|(n, h)| (n.to_owned(), h.to_owned()))).collect();
+            let changed: BTreeSet<&String> = hashes.keys().chain(expected.keys()).filter(|n| hashes.get(*n) != expected.get(*n)).collect();
+            if !changed.is_empty() {
+                let _ = writeln!(report, "the pixels changed ({PIXELS}):");
+                for name in changed {
+                    let _ = writeln!(report, "  {}", dir.join(name).display());
+                }
+            }
+            let trace_diff = differences(&read(TRACE), &traces);
+            if !trace_diff.is_empty() {
+                let _ = writeln!(report, "the effects changed ({TRACE}):");
+                for (h, d) in &trace_diff {
+                    let _ = writeln!(report, "{h}\n{d}");
+                }
+            }
+            if !report.is_empty() {
+                let _ = writeln!(
+                    report,
+                    "Look at the images and the diffs. If every difference follows from the intended change, update the references with \
+                     CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots; otherwise it is a bug."
+                );
+            }
         }
-        let expected: BTreeMap<String, String> = std::fs::read_to_string(&reference)
-            .expect("tests/snapshots.txt")
-            .lines()
-            .filter(|l| !l.starts_with('#'))
-            .filter_map(|l| l.split_once(' ').map(|(n, h)| (n.to_owned(), h.to_owned())))
-            .collect();
-        let changed: std::collections::BTreeSet<&String> = hashes.keys().chain(expected.keys()).filter(|n| hashes.get(*n) != expected.get(*n)).collect();
-        if changed.is_empty() {
+        if report.is_empty() {
             let _ = std::fs::remove_dir_all(&base);
         }
-        assert!(
-            changed.is_empty(),
-            "snapshots changed: {changed:?} (drawn into {}); if meant, update with `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots`",
-            dir.display()
-        );
+        assert!(report.is_empty(), "drawn into {}\n{report}", dir.display());
     }
 }

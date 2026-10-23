@@ -1,0 +1,676 @@
+# The effects of the snapshot scenario's events (src/dev/trace.rs), group by group: each event that
+# had effects, then its effects. "-- name" is where a shot is taken.
+== group top.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+-- top.png
+-- top-tab2.png
+-- top-tab2-down.png
+-- top-back.png
+Units [zelda_lttp_650a1e]
+  Apply settings of zelda-lttp
+  PadRoute Game
+Units []
+  RecordPlay zelda-lttp from 1759900000 for 15660s
+  Apply settings of all
+  PadRoute Ui
+Shelf(ToggleFavourite)
+  Save Favourites(["zelda-lttp"])
+Shelf(TogglePin)
+  Save Dock(["desktop:steam", "desktop:foot", "desktop:firefox", "zelda-lttp"])
+Units [zelda_lttp_650a1e]
+  Apply settings of zelda-lttp
+  PadRoute Game
+-- top-played.png
+Pointer(Activate(Shelf(Entry("ff6"))))
+  Save Resume
+  Launch ff6 as ff6_09d141
+-- top-switch.png
+-- top-actions.png
+== group top-folder.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+-- top-folder.png
+Units [1__the_shores_of_030fb1]
+  Browse in use 1 files
+  Apply settings of tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv
+  PadRoute Game
+Units []
+  RecordPlay tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv from 1759900000 for 3600s
+  ReadPosition tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv
+  Browse in use 0 files
+  Apply settings of all
+  PadRoute Ui
+-- top-group.png
+-- top-recent.png
+== group bottom.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+-- bottom.png
+== group settings-running.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Shelf(Entry("ff6"))))
+  Save Resume
+  Launch ff6 as ff6_09d141
+Tick 1760000005
+  Save Resume
+Pointer(Activate(Tab(Settings)))
+  Watch Metrics off
+Pointer(Activate(Settings(Tile(FpsCap))))
+  Save Settings
+Pointer(Activate(Settings(Tile(FpsCap))))
+  Save Settings
+Pointer(Activate(Settings(Tile(FpsCap))))
+  Save Settings
+Pointer(Activate(Settings(Tile(FpsCap))))
+  Save Settings
+Pointer(Activate(Row { list: Keymaps, i: 2, part: Main }))
+  Save Settings
+Pointer(Activate(Settings(Tile(Hud))))
+  Save Settings
+-- settings-running.png
+Pointer(Activate(Settings(Tile(Power))))
+  Save Settings
+  Apply settings of all
+Pointer(Activate(Settings(Tile(Rumble))))
+  Save Settings
+  Apply settings of all
+Pointer(Activate(Settings(Tile(Rumble))))
+  Save Settings
+  Apply settings of all
+Pointer(Activate(Settings(Tile(ChargeLimit))))
+  Save Settings
+  Apply settings of all
+Pointer(Activate(Settings(Tile(ChargeLimit))))
+  Save Settings
+  Apply settings of all
+-- settings-global.png
+Units [zelda_lttp_650a1e]
+  Apply settings of zelda-lttp
+  PadRoute Game
+Units []
+  RecordPlay zelda-lttp from 1759999940 for 60s
+  Apply settings of all
+  PadRoute Ui
+-- settings.png
+-- settings-env.png
+Pointer(Activate(Editor(Save)))
+  Save Settings
+Reading Status
+  Notify "Battery at 9 %"
+-- status-low.png
+== group keymap-name.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Shelf(Entry("ff6"))))
+  Save Resume
+  Launch ff6 as ff6_09d141
+Pointer(Activate(Tab(Settings)))
+  Watch Metrics off
+Tick 1760000005
+  Save Resume
+-- keymap-name.png
+Pointer(Activate(Editor(Save)))
+  Save Keymaps
+  PadRoute Listen
+-- keymap-edit-new.png
+== group keymap-edit.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Tab(Settings)))
+  Watch Metrics off
+Pointer(Activate(Editor(Save)))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 4, col: 2 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(To(Mouse(Right))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(Keys))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 3, col: 2 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(To(Wheel(Up))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(To(Pointer)))))
+  Save Keymaps
+Pointer(Activate(Keymap(Hold(Some(Trigger(Left))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 4, col: 7 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 1, col: 0 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(To(Pad(Button(Y)))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 0, col: 0 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 0, col: 1 })))
+  Save Keymaps
+  PadRoute Listen
+Slide(End)
+  Save Keymaps
+Slide(End)
+  Save Keymaps
+Tick 1760000005
+  Save Resume
+-- keymap-edit.png
+-- keymap-edit-hold.png
+Pointer(Activate(Keymap(Target(MouseParts))))
+  PadRoute Ui
+Pointer(Activate(Keymap(Target(To(Mouse(Left))))))
+  Save Keymaps
+  PadRoute Listen
+-- keymap-edit-trigger.png
+-- keymap-edit-stick.png
+-- keymap-edit-slider.png
+== group keymap-edit-back.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Tab(Settings)))
+  Watch Metrics off
+Pointer(Activate(Editor(Save)))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 4, col: 2 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(To(Mouse(Right))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(Keys))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 3, col: 2 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(To(Wheel(Up))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(To(Pointer)))))
+  Save Keymaps
+Pointer(Activate(Keymap(Hold(Some(Trigger(Left))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 4, col: 7 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 1, col: 0 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(To(Pad(Button(Y)))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 0, col: 0 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 0, col: 1 })))
+  Save Keymaps
+  PadRoute Listen
+Slide(End)
+  Save Keymaps
+Slide(End)
+  Save Keymaps
+Pointer(Activate(Keymap(LayerPicker)))
+  PadRoute Ui
+Pointer(Activate(Editor(Save)))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 2, col: 5 })))
+  Save Keymaps
+  PadRoute Listen
+Tick 1760000005
+  Save Resume
+-- keymap-edit-back.png
+Pointer(Activate(Keymap(LayerPicker)))
+  PadRoute Ui
+-- keymap-layer-picker.png
+Pointer(Activate(Keymap(LayerOnce)))
+  Save Keymaps
+-- keymap-layer-menu.png
+-- keymap-layer-clear.png
+Pointer(Activate(Keymap(Layer(Layer(0)))))
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Layers))))
+  PadRoute Ui
+-- keymap-layers.png
+Pointer(Activate(Keymap(ToLayer(Layer(1)))))
+  Save Keymaps
+  PadRoute Listen
+-- keymap-edit-layer-key.png
+Pointer(Activate(Keymap(LayerPicker)))
+  PadRoute Ui
+-- keymap-layer-list.png
+== group keymap-mouse.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Tab(Settings)))
+  Watch Metrics off
+Pointer(Activate(Editor(Save)))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 4, col: 2 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(To(Mouse(Right))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(Keys))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 3, col: 2 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(To(Wheel(Up))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(To(Pointer)))))
+  Save Keymaps
+Pointer(Activate(Keymap(Hold(Some(Trigger(Left))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 4, col: 7 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 1, col: 0 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(To(Pad(Button(Y)))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 0, col: 0 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 0, col: 1 })))
+  Save Keymaps
+  PadRoute Listen
+Slide(End)
+  Save Keymaps
+Slide(End)
+  Save Keymaps
+Pointer(Activate(Keymap(LayerPicker)))
+  PadRoute Ui
+Pointer(Activate(Editor(Save)))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 2, col: 5 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(LayerPicker)))
+  PadRoute Ui
+Pointer(Activate(Keymap(Layer(Layer(0)))))
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Layers))))
+  PadRoute Ui
+Pointer(Activate(Keymap(ToLayer(Layer(1)))))
+  Save Keymaps
+  PadRoute Listen
+Tick 1760000005
+  Save Resume
+Pointer(Activate(Keymap(Target(MouseParts))))
+  PadRoute Ui
+-- keymap-mouse.png
+Pointer(Activate(Keymap(Back)))
+  PadRoute Listen
+-- keymap-edit-gyro.png
+Slide(End)
+  Save Keymaps
+Pointer(Activate(Keymap(Toggle(Twist))))
+  Save Keymaps
+-- keymap-edit-gyro-accel.png
+-- keymap-holds.png
+-- keymap-edit-rstick.png
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+-- keymap-capture.png
+Pointer(Activate(Keymap(Back)))
+  PadRoute Listen
+-- keymap-pick.png
+== group keymaps.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Shelf(Entry("ff6"))))
+  Save Resume
+  Launch ff6 as ff6_09d141
+Pointer(Activate(Tab(Settings)))
+  Watch Metrics off
+Pointer(Activate(Editor(Save)))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 4, col: 2 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(To(Mouse(Right))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(Keys))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 3, col: 2 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(To(Wheel(Up))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(To(Pointer)))))
+  Save Keymaps
+Pointer(Activate(Keymap(Hold(Some(Trigger(Left))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 4, col: 7 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 1, col: 0 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(To(Pad(Button(Y)))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 0, col: 0 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 0, col: 1 })))
+  Save Keymaps
+  PadRoute Listen
+Slide(End)
+  Save Keymaps
+Slide(End)
+  Save Keymaps
+Pointer(Activate(Keymap(Back)))
+  PadRoute Ui
+Tick 1760000005
+  Save Resume
+-- keymaps.png
+-- keymap-menu.png
+Pointer(Activate(Row { list: Keymaps, i: 3, part: Main }))
+  Save Settings
+-- keymap-delete.png
+== group keymaps-chosen.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Shelf(Entry("ff6"))))
+  Save Resume
+  Launch ff6 as ff6_09d141
+Pointer(Activate(Tab(Settings)))
+  Watch Metrics off
+Pointer(Activate(Editor(Save)))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 4, col: 2 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(To(Mouse(Right))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(Keys))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 3, col: 2 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(To(Wheel(Up))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(To(Pointer)))))
+  Save Keymaps
+Pointer(Activate(Keymap(Hold(Some(Trigger(Left))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 4, col: 7 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 1, col: 0 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(To(Pad(Button(Y)))))))
+  Save Keymaps
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 0, col: 0 })))
+  Save Keymaps
+  PadRoute Listen
+Pointer(Activate(Keymap(Target(Key))))
+  PadRoute Ui
+Pointer(Activate(Key(KeyPos { row: 0, col: 1 })))
+  Save Keymaps
+  PadRoute Listen
+Slide(End)
+  Save Keymaps
+Slide(End)
+  Save Keymaps
+Pointer(Activate(Keymap(Back)))
+  PadRoute Ui
+Pointer(Activate(Row { list: Keymaps, i: 3, part: Main }))
+  Save Settings
+Tick 1760000005
+  Save Resume
+-- keymaps-chosen.png
+Pointer(Activate(Row { list: Keymaps, i: 3, part: Edit }))
+  PadRoute Listen
+-- keymap-edit-shared.png
+Pointer(Activate(Keymap(MakeOwn)))
+  Save Settings
+  Save Keymaps
+Pointer(Activate(Keymap(Back)))
+  PadRoute Ui
+-- keymap-own.png
+-- keymap-own-menu.png
+Pointer(Activate(Row { list: Keymaps, i: 3, part: Main }))
+  Save Settings
+-- keymap-own-kept.png
+-- keymap-load.png
+-- keymap-save.png
+-- keymap-replace.png
+Pointer(Activate(Keymap(Edit)))
+  PadRoute Listen
+-- keymap-edit-own.png
+== group launcher.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Tab(Dock)))
+  Watch Metrics off
+-- launcher.png
+Units [zelda_lttp_650a1e, foot_666b83, foot_666b83, firefox_16b084]
+  Apply settings of desktop:firefox
+  PadRoute Game
+Windows [retroarch on clamshell-run-zelda_lttp_650a1e, foot on clamshell-run-foot_666b83, foot on clamshell-run-foot_666b83, firefox on clamshell-run-firefox_16b084]
+  Apply settings of desktop:foot
+-- launcher-running.png
+-- bar-window-below.png
+Pointer(LongPress(Dock(Entry(1))))
+  Watch Battery on
+-- dock-menu.png
+== group wifi.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Tab(Wifi)))
+  Watch Metrics off
+  Watch Wifi on
+-- wifi.png
+-- wifi-crowded.png
+-- wifi-scrolled.png
+== group battery.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Units [zelda_lttp_650a1e]
+  Apply settings of zelda-lttp
+  PadRoute Game
+Pointer(Activate(Tab(Battery)))
+  Watch Metrics off
+  Watch Battery on
+-- battery.png
+== group time.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Tab(Time)))
+  Watch Metrics off
+  Watch Time on
+-- time.png
+-- time-zones.png
+-- time-europe.png
+== group device-unavailable.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Shelf(Entry("tool:device"))))
+  Window ShowShelf
+  Watch Account on
+Pointer(Activate(Shelf(Entry("tool:device"))))
+  Window ShowShelf
+-- device-unavailable.png
+-- device.png
+Pointer(Activate(Device(Sticks)))
+  CalibrateSticks
+-- device-sticks.png
+Pointer(Activate(Device(Password)))
+  Watch Metrics off
+-- device-password.png
+== group time-by-hand.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Tab(Time)))
+  Watch Metrics off
+  Watch Time on
+Pointer(Activate(Time(TwelveHour)))
+  Save TwelveHour(true)
+-- time-by-hand.png
+== group bluetooth.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Tab(Bluetooth)))
+  Watch Metrics off
+  Watch Bluetooth on
+-- bluetooth.png
+== group volume.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Tab(Volume)))
+  Watch Metrics off
+  Watch Audio on
+-- volume.png
+== group brightness.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Tab(Brightness)))
+  Watch Metrics off
+  Watch Backlights on
+Level(Set(Backlight(1), 65))
+  Brightness 70 over 1 shares
+-- brightness.png
+== group slider.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Tab(Dock)))
+  Watch Metrics off
+Slide(To { x: 700.0 })
+  Sound(Volume(83))
+-- slider.png
+-- keyboard.png
+-- keyboard-fn.png
+-- keyboard-mods.png
+-- keyboard-caps.png
+Pointer(Activate(PadMouse))
+  PadRoute Mouse
+-- touchpad.png
+Pointer(Activate(Tab(Sysinfo)))
+  Watch Metrics on
+-- sysinfo.png
+Pointer(Activate(Tab(Keyboard)))
+  Watch Metrics off
+-- keyboard-back.png
+-- keyboard-pressed.png

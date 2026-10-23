@@ -3,3 +3,5 @@
 
 pub(crate) mod demo;
 pub(crate) mod snapshot;
+#[cfg(test)]
+mod trace;
