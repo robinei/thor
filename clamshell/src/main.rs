@@ -46,6 +46,17 @@ fn carry_out(command: Command) -> Result<(), String> {
     let sources = Sources::new(&paths, env.base.home.as_deref(), env.steam);
     match command {
         Command::Run => session::run(&env, paths, &sources),
+        Command::Nested => {
+            #[cfg(feature = "compositor")]
+            {
+                let mut env = env;
+                env.sway = None;
+                env.device_session = false;
+                session::run_nested(&env, paths, &sources)
+            }
+            #[cfg(not(feature = "compositor"))]
+            Err("--nested requires a build with --features compositor".into())
+        }
         // `job::run` returns only if the job's program couldn't take over.
         Command::RunJob(file) => Err(format!("{}: {}", file.display(), job::run(&file))),
         Command::Ctl(words) if words == ["help"] => {

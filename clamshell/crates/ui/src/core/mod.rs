@@ -293,6 +293,12 @@ impl Core {
         (self.screens[screen].size, self.screens[screen].scale)
     }
 
+    /// The area below the bottom bar in the last recording, in logical pixels. A compositor uses the
+    /// same layout for client windows as the view and its input targets do.
+    pub fn content_bounds(&self, screen: Screen) -> Option<Bounds> {
+        self.screens[screen].body.map(|r| Bounds::new(r.x.ceil() as i32, r.y.ceil() as i32, (r.x + r.w).floor() as i32, (r.y + r.h).floor() as i32))
+    }
+
     /// Whether `screen` may have changed since it was last recorded.
     pub fn stale(&self, screen: Screen) -> bool {
         self.screens[screen].stale

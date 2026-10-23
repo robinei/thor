@@ -66,7 +66,7 @@ pub fn run(state: State, config: Config, start: impl FnOnce(EventSender), on_eff
     app.place_views(&shells, &qh, &config);
 
     WaylandSource::new(conn.clone(), queue).insert(event_loop.handle()).map_err(|e| e.error)?;
-    let (sender, receiver) = channel::channel();
+    let (sender, receiver) = EventSender::channel();
     event_loop
         .handle()
         .insert_source(receiver, |event, _, app: &mut App| {
@@ -75,7 +75,7 @@ pub fn run(state: State, config: Config, start: impl FnOnce(EventSender), on_eff
             }
         })
         .map_err(|e| e.error)?;
-    start(EventSender(sender));
+    start(sender);
     // Now that everything runs, start what the current state needs, such as the tab's watch, brightness
     // and the pad.
     app.core.handle(Event::Start);

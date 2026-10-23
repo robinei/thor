@@ -19,6 +19,7 @@ clamshell-state = { path = "crates/state" }
 clamshell-system = { path = "crates/system" }
 clamshell-library = { path = "crates/library" }
 clamshell-ui = { path = "crates/ui" }
+clamshell-compositor = { path = "crates/compositor" }
 clamshell-fan = { path = "crates/fan" }
 smithay-client-toolkit = "0.21"
 wayland-client = "0.31"
@@ -72,6 +73,7 @@ clamshell-state.workspace = true
 clamshell-system.workspace = true
 clamshell-library.workspace = true
 clamshell-ui.workspace = true
+clamshell-compositor = { workspace = true, optional = true }
 log.workspace = true
 env_logger.workspace = true
 rustix.workspace = true
@@ -84,6 +86,7 @@ image.workspace = true
 [features]
 # `--snapshot` and the demo library it draws: for development, not the device's build.
 dev = ["clamshell-library/demo"]
+compositor = ["dep:clamshell-compositor"]
 
 [lints]
 workspace = true

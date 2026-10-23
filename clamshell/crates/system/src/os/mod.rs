@@ -14,6 +14,8 @@
 //! - the XDG data directories and icon themes ([`xdg`]).
 
 pub(crate) mod cgroup;
+pub use cgroup::unit_of;
+pub use sys::lineage;
 pub(crate) mod command;
 pub mod dbus;
 pub(crate) mod drm;

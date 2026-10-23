@@ -64,6 +64,12 @@ pub struct Config {
 pub struct EventSender(channel::Sender<Event>);
 
 impl EventSender {
+    /// A host's channel for events from system threads.
+    pub fn channel() -> (Self, channel::Channel<Event>) {
+        let (sender, receiver) = channel::channel();
+        (Self(sender), receiver)
+    }
+
     /// False once the UI has exited.
     pub fn send(&self, event: Event) -> bool {
         self.0.send(event).is_ok()

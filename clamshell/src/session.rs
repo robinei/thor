@@ -50,6 +50,15 @@ pub(crate) fn saved(paths: &Paths) -> Init {
 
 /// Runs the session: the state from what was saved, the UI, and the system threads.
 pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources) -> Result<(), String> {
+    run_host(env, paths, sources, false)
+}
+
+#[cfg(feature = "compositor")]
+pub(crate) fn run_nested(env: &Env, paths: Paths, sources: &Sources) -> Result<(), String> {
+    run_host(env, paths, sources, true)
+}
+
+fn run_host(env: &Env, paths: Paths, sources: &Sources, nested: bool) -> Result<(), String> {
     let loaded = library::load(sources);
     // Metadata to fetch once the threads run, if there is somewhere to keep it.
     let fetch = paths.art.clone().map(|art| meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art });
@@ -75,16 +84,22 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources) -> Result<(), Stri
     // after that.
     let handles: Rc<RefCell<Option<Handles>>> = Rc::default();
     let started = handles.clone();
-    let result = clamshell_ui::run(
-        state,
-        config,
-        move |sender| *started.borrow_mut() = Some(start(env, &paths, sources, layout, &global, fetch, sender)),
-        move |effect| {
-            if let Some(handles) = handles.borrow_mut().as_mut() {
-                handles.dispatch(effect);
-            }
-        },
-    );
+    let start = move |sender| *started.borrow_mut() = Some(start(env, &paths, sources, layout, &global, fetch, sender));
+    let on_effect = move |effect: &clamshell_state::Effect| {
+        if let Some(handles) = handles.borrow_mut().as_mut() {
+            handles.dispatch(effect);
+        }
+    };
+    #[cfg(feature = "compositor")]
+    if nested {
+        return clamshell_compositor::run(state, config, start, on_effect, |pid| clamshell_compositor::Process {
+            unit: clamshell_system::os::unit_of(pid),
+            pids: clamshell_system::os::lineage(pid),
+        })
+        .map_err(|e| e.to_string());
+    }
+    let _ = nested;
+    let result = clamshell_ui::run(state, config, start, on_effect);
     result.map_err(|e| e.to_string())
 }
 

@@ -1,0 +1,23 @@
+[package]
+name = "clamshell-compositor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "ClamShell's in-process compositor, developed nested on the desktop"
+
+[dependencies]
+clamshell-state.workspace = true
+clamshell-ui.workspace = true
+smithay = { git = "https://github.com/Smithay/smithay", rev = "24647fc8d00131eb7f388efed26e35ea316b0018", default-features = false, features = ["backend_winit", "desktop", "wayland_frontend"] }
+tiny-skia.workspace = true
+log.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+wayland-client.workspace = true
+
+[lints]
+workspace = true
