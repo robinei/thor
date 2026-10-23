@@ -62,8 +62,9 @@ pub(crate) struct Pauses {
 enum Why {
     /// Out of use for the grace period, with In the background set to Pauses hidden.
     Hidden,
-    /// Held until shown: suspended, or found frozen at start.
-    Held,
+    /// Held until shown: suspended, or found frozen at start. One suspended while shown is shown again
+    /// only once it has been seen hidden (`hidden`), since its windows are hidden after it is frozen.
+    Held { hidden: bool },
 }
 
 impl Pauses {
@@ -97,13 +98,22 @@ impl Pauses {
         was
     }
 
-    /// Holds `key` paused from now on, when suspended or found frozen. Returns whether it wasn't paused
-    /// before, and so is to be frozen.
-    fn hold(&mut self, key: &str) -> bool {
+    /// Holds `key` paused from now on, when suspended or found frozen, `hidden` if none of its windows is
+    /// shown. Returns whether it wasn't paused before, and so is to be frozen.
+    fn hold(&mut self, key: &str, hidden: bool) -> bool {
         let was = self.is_paused(key);
         self.paused.retain(|(k, _)| &**k != key);
-        self.paused.push((key.into(), Why::Held));
+        self.paused.push((key.into(), Why::Held { hidden }));
         !was
+    }
+
+    /// Whether held `key`, `shown` now, is in use: shown after having been seen hidden.
+    fn held_in_use(&mut self, key: &str, shown: bool) -> bool {
+        let Some((_, Why::Held { hidden })) = self.paused.iter_mut().find(|(k, _)| &**k == key) else {
+            return shown;
+        };
+        *hidden |= !shown;
+        shown && *hidden
     }
 
     fn is_paused(&self, key: &str) -> bool {
@@ -111,7 +121,7 @@ impl Pauses {
     }
 
     fn is_held(&self, key: &str) -> bool {
-        self.paused.iter().any(|(k, why)| &**k == key && *why == Why::Held)
+        self.paused.iter().any(|(k, why)| &**k == key && matches!(why, Why::Held { .. }))
     }
 
     /// Keeps following only the keys `kept` holds. The others' entries ended, so they are forgotten, not
@@ -164,8 +174,8 @@ impl Session {
             // Stop.
             let quitting = self.is_quitting(&r.id);
             let hidden = setting == InBackground::Pauses && !shown && has && !quitting;
-            // A suspended entry stays frozen until shown.
-            let in_use = if self.background.entries.is_held(&r.key) { shown } else { !hidden };
+            // A suspended entry stays frozen until shown, after its windows were hidden.
+            let in_use = if self.background.entries.is_held(&r.key) { self.background.entries.held_in_use(&r.key, shown) } else { !hidden };
             if let Some(frozen) = self.background.entries.follow(&r.key, in_use, now) {
                 out.effects.push(Effect::Freeze { slice: Instance::slice_of(&r.key), frozen });
             }
@@ -244,13 +254,14 @@ impl Session {
         if !self.suspendable(id) {
             return;
         }
-        if self.windows_of(id).any(|w| w.visible) {
+        let shown = self.windows_of(id).any(|w| w.visible);
+        if shown {
             out.effects.push(Effect::Window(crate::effect::WindowCommand::ShowShelf));
         }
         let Some(r) = self.running.iter().find(|r| &*r.id == id) else {
             return;
         };
-        if self.background.entries.hold(&r.key) {
+        if self.background.entries.hold(&r.key, !shown) {
             out.effects.push(Effect::Freeze { slice: Instance::slice_of(&r.key), frozen: true });
         }
     }
@@ -258,7 +269,7 @@ impl Session {
     /// Holds our slices found frozen at start, by key, as suspended, leaving them frozen.
     pub(crate) fn found_frozen(&mut self, keys: Vec<Arc<str>>) {
         for key in keys {
-            self.background.entries.hold(&key);
+            self.background.entries.hold(&key, true);
         }
     }
 
@@ -394,8 +405,10 @@ mod tests {
         s.applied(Event::tick(100));
         s.applied(Event::Windows(vec![window(true)]));
         assert!(s.session().suspendable("zelda-lttp"));
-        let fx = s.handle(Event::Entry("zelda-lttp".into(), crate::EntryAct::Suspend));
+        // Applied whole: its window is still shown when the event's steps follow, which doesn't thaw it.
+        let fx = s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::Suspend));
         assert!(fx.contains(&freeze(&key, true)) && fx.contains(&Effect::Window(crate::effect::WindowCommand::ShowShelf)), "{fx:?}");
+        assert!(!fx.contains(&freeze(&key, false)), "{fx:?}");
         assert!(s.session().suspended("zelda-lttp") && !s.session().suspendable("zelda-lttp"));
         // Hidden, it stays frozen and isn't frozen twice.
         s.applied(Event::Windows(vec![window(false)]));

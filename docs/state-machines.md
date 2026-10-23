@@ -67,8 +67,8 @@ State: `Pauses{unused, paused: Hidden | Held}`.
 |---|---|---|---|---|
 | Running | set to pause, windows, none visible, not quitting, 10 s | Paused(Hidden) | Freeze on | background `pauses_hidden_…` |
 | Paused(Hidden) | shown, no windows, quitting, setting changed | Running | Freeze off | background tests, `a_paused_game_set_to_run_hidden_is_thawed_at_once` |
-| any | Suspend | Held | ShowShelf if visible; Freeze on | background `a_suspended_entry_stays_frozen_…` |
-| Held | shown, Show, Quit, ForceKill | Running | Freeze off | same |
+| any | Suspend | Held | ShowShelf if visible; Freeze on | background `a_suspended_entry_stays_frozen_…`; dock `the_menus_autostart_and_suspend` |
+| Held | shown after its windows were seen hidden (one suspended in view stays frozen while its window is still shown), Show, Quit, ForceKill | Running | Freeze off | same |
 | — | `Frozen(keys)` at start | Held (kept while the scope is listed, until its entry runs) | — | same; found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
 | Running | set to quit when closed, seen, no windows | Quitting | as Quit | background `quits_closed_ends_once_…` |
 | runner | none shown, launching or starting for 10 s | runner paused | RunnerCommand(pause) | background `a_runner_paused_together…`, `a_runner_isnt_paused_while_a_launch_waits_for_its_scope` |
@@ -453,6 +453,10 @@ Shelf, files, radios, levels, status:
   runs on by its windows, but its play is then recorded from when the scope ended, not from its launch
   (`running.rs` `follow_ours`); found by the test filling the GAP. Fixed: state/session: a play that goes
   on by its windows counts from its launch.
+- S40. Suspend of an entry in view (the usual case, from the dock below it) freezes it and thaws it in the
+  same event, since its window is still shown when the event's steps follow and a held entry counts as
+  in use when shown; the existing test handled the event without its steps. Fixed: state/session: a
+  suspended entry stays frozen until shown after it was hidden.
 
 ## Decisions on the suspects (2026-10-23)
 
@@ -515,3 +519,5 @@ with what would make us change our minds.
 - S38. The resume record keeps every collection's place, clamped to its list.
 - S39. A launch that goes on by its windows (app id or browsed file) keeps its launch's start as the
   play's start.
+- S40. A suspended entry counts as shown again only once its windows have been seen hidden; one found
+  frozen at start counts as hidden already.
