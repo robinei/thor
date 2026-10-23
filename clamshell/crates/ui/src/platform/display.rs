@@ -102,11 +102,6 @@ impl Display {
         }
     }
 
-    /// The second screen's output's name.
-    pub(crate) fn bottom_output(&self) -> &str {
-        &self.bottom_output
-    }
-
     /// Turns the screens on or off. Turning on affects only the screens this turned off.
     pub(crate) fn power(&mut self, on: bool, outputs: impl Iterator<Item = WlOutput>, qh: &QueueHandle<App>) {
         log::info!("screens {}", if on { "on" } else { "off" });

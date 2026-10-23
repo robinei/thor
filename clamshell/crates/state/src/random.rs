@@ -192,6 +192,11 @@ struct Sent {
     apply: Option<(Option<Arc<str>>, crate::settings::Values)>,
     status: bool,
     account: bool,
+    /// The last Outputs.
+    outputs: (bool, bool),
+    /// The last Refresh, and the refresh rate of the last Launch or Apply, which it follows.
+    refresh: u16,
+    refresh_wanted: u16,
     /// Each slice's last Freeze.
     frozen: HashMap<String, bool>,
     /// Keys ended (not forced) since their last quit or launch.
@@ -622,7 +627,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
 /// Sync run again: what it sends now (invariant 1 wants nothing).
 fn sync_again(s: &mut State) -> Vec<Effect> {
     let mut out = Out::default();
-    s.sync(&mut out);
+    s.sync(&mut out, 0);
     out.effects
 }
 
@@ -651,7 +656,12 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
             Effect::Apply { entry, settings } => sent.apply = Some((entry.clone(), *settings)),
             Effect::Watch(Watch::Status, on) => sent.status = *on,
             Effect::Watch(Watch::Account, on) => sent.account = *on,
+            Effect::Outputs { top, bottom } => sent.outputs = (*top, *bottom),
+            Effect::Refresh(hz) => sent.refresh = *hz,
             _ => {}
+        }
+        if let Effect::Launch { settings, .. } | Effect::Apply { settings, .. } = e {
+            sent.refresh_wanted = settings.get(Setting::Refresh);
         }
     }
     if started {
@@ -662,6 +672,9 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
     }
     let screens_on = s.idle().stage() < Stage::Off;
     ensure!(sent.status == screens_on, "2: status watched {}, screens on {screens_on}", sent.status);
+    let outputs = (screens_on, !s.bottom().off());
+    ensure!(sent.outputs == outputs, "2: outputs sent {:?}, state {outputs:?}", sent.outputs);
+    ensure!(sent.refresh == sent.refresh_wanted, "2: refresh sent {}, last launched or applied {}", sent.refresh, sent.refresh_wanted);
     let apply = (s.session().program().cloned(), s.in_force());
     ensure!(sent.apply.as_ref() == Some(&apply), "2: applied {:?}, in force {:?}", sent.apply, apply);
 
@@ -850,7 +863,15 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
     let mut rng = Rng(seed);
     let init = Init { library: library(), keymaps: crate::keymap::Keymaps::initial(), device_session: true, first_start: rng.one_in(3), ..Init::default() };
     let mut s = State::new(init);
-    let mut sent = Sent { apply: Some((s.session().program().cloned(), s.in_force())), status: true, ..Sent::default() };
+    let refresh = s.in_force().get(Setting::Refresh);
+    let mut sent = Sent {
+        apply: Some((s.session().program().cloned(), s.in_force())),
+        status: true,
+        outputs: (true, true),
+        refresh,
+        refresh_wanted: refresh,
+        ..Sent::default()
+    };
     let mut world = World::new();
     let mut clock = 1000;
     let mut history: Vec<String> = Vec::new();

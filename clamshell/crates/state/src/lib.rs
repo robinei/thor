@@ -315,9 +315,10 @@ impl State {
     /// ([`State::sync`]).
     pub fn apply(&mut self, event: Event, effects: &mut Vec<Effect>) {
         let mut out = Out { effects: std::mem::take(effects), events: std::mem::take(&mut self.queue) };
+        let mark = out.effects.len();
         self.apply_event(event, &mut out);
         self.settle(&mut out);
-        self.sync(&mut out);
+        self.sync(&mut out, mark);
         // Both are taken, so neither is left marked.
         if self.shelf.take_unsaved() | self.bottom.take_unsaved() {
             self.resume.touch(self.clock.mono());
@@ -519,6 +520,7 @@ impl State {
             levels: &self.levels,
             program: self.session.program(),
             settings,
+            launched: None,
             bottom_on: !self.bottom.off(),
             bottom_seen: !self.bottom.shows_windows(&self.session) && !self.bottom.off(),
             tab,
@@ -529,10 +531,14 @@ impl State {
         }
     }
 
-    /// Sends the outside what differs from what it was last sent.
-    fn sync(&mut self, out: &mut Out) {
+    /// Sends the outside what differs from what it was last sent. The event's effects start at `mark`.
+    fn sync(&mut self, out: &mut Out, mark: usize) {
         let mut sent = std::mem::take(&mut self.sent);
-        sent.sync(&self.wanted(), out);
+        let launched = out.effects.get(mark..).unwrap_or_default().iter().rev().find_map(|e| match e {
+            Effect::Launch { settings, .. } => Some(settings.get(Setting::Refresh)),
+            _ => None,
+        });
+        sent.sync(&Wanted { launched, ..self.wanted() }, out);
         self.sent = sent;
     }
 
@@ -1265,7 +1271,7 @@ impl State {
     #[cfg(test)]
     pub(crate) fn ui_up(&mut self) {
         self.sent.ui_started();
-        self.sync(&mut Out::default());
+        self.sync(&mut Out::default(), 0);
     }
 
     /// Handles `event` without the steps that follow it, and returns the effects it pushed.

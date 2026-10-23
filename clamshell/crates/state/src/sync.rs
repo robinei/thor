@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::device::idle::Stage;
-use crate::effect::{Effect, Watch, WindowCommand};
+use crate::effect::{Effect, Watch};
 use crate::keymap::screens::Keymapping;
 use crate::out::Out;
 use crate::settings::{Setting, Values};
@@ -34,6 +34,8 @@ pub(crate) struct Wanted<'a> {
     /// The program in force and the settings in force (see [`crate::State::in_force`]).
     pub(crate) program: Option<&'a Arc<str>>,
     pub(crate) settings: Values,
+    /// The refresh rate of the last entry launched by the event being handled, if one was.
+    pub(crate) launched: Option<u16>,
     /// The bottom screen is on (see [`crate::Bottom::off`]).
     pub(crate) bottom_on: bool,
     /// ClamShell's view is on the bottom screen, and that screen is on.
@@ -62,8 +64,11 @@ pub(crate) struct Sent {
     stage: Stage,
     /// The program in force and its settings as they were applied last, or None to apply them again.
     applied: Option<(Option<Arc<str>>, Values)>,
-    /// The bottom screen's power, or None to set it again.
-    bottom_on: Option<bool>,
+    /// The screens' power as `Effect::Outputs` has it (whether they are on, and the bottom one while
+    /// they are), or None to set it again.
+    outputs: Option<(bool, bool)>,
+    /// The main screen's refresh rate.
+    refresh: u16,
     /// The UI is up (it has sent Start). Before that, no tab or account is watched.
     ui_up: bool,
     /// The bar's status isn't watched, since the screens are off (see [`Watch::Status`]).
@@ -91,7 +96,8 @@ impl Default for Sent {
             in_use: 0,
             stage: Stage::Awake,
             applied: None,
-            bottom_on: Some(true),
+            outputs: Some((true, true)),
+            refresh: 0,
             ui_up: false,
             status_off: false,
             account: false,
@@ -127,7 +133,7 @@ impl Sent {
             Resend::Start => (self.keymap, self.route) = (None, None),
             Resend::FetchFirst => self.fetch_view = None,
             Resend::Resumed => self.applied = None,
-            Resend::RefreshCalibrated => self.bottom_on = None,
+            Resend::RefreshCalibrated => self.outputs = None,
         }
     }
 
@@ -135,6 +141,7 @@ impl Sent {
     pub(crate) fn new(w: &Wanted) -> Sent {
         Sent {
             applied: Some((w.program.cloned(), w.settings)),
+            refresh: w.settings.get(Setting::Refresh),
             keymap: Some(w.keymap),
             route: Some(w.route),
             #[cfg(debug_assertions)]
@@ -148,8 +155,8 @@ impl Sent {
         self.ui_up = true;
     }
 
-    /// Sends what differs from `w`, in this order. Nothing outside depends on the settings coming before
-    /// the keymap. The keymap comes before the route: when a game comes in front, the pad thread then
+    /// Sends what differs from `w`, in this order. The screens go off before the device sleeps. Nothing
+    /// outside depends on the settings coming before the keymap. The keymap comes before the route: when a game comes in front, the pad thread then
     /// takes the game's keymap while it doesn't have the pad yet, and on getting it presses what that
     /// keymap makes of the buttons held, rather than entering the game with the old keymap and swapping
     /// it there (see the system crate's `PadRouter::set_route` and `set_keymap`).
@@ -157,8 +164,8 @@ impl Sent {
         self.fetch_first(w, out);
         self.browse(w, out);
         self.idle(w, out);
-        self.settings(w, out);
-        self.bottom_power(w, out);
+        let applied = self.settings(w, out);
+        self.refresh(w, applied, out);
         self.watches(w, out);
         self.keymap(w, out);
         self.pad_route(w, out);
@@ -203,41 +210,47 @@ impl Sent {
     }
 
     /// The screens for the idle stage: brightness goes down while dimmed or darker and comes back when
-    /// awake, the screens go off and come back, and the device sleeps.
+    /// awake, the screens' power follows (see [`Sent::outputs`]), and the device sleeps.
     fn idle(&mut self, w: &Wanted, out: &mut Out) {
         let was = std::mem::replace(&mut self.stage, w.stage);
-        if was == w.stage {
-            return;
-        }
-        if (was >= Stage::Dimmed) != (w.stage >= Stage::Dimmed) {
+        if was != w.stage && (was >= Stage::Dimmed) != (w.stage >= Stage::Dimmed) {
             out.effects.extend(if w.stage >= Stage::Dimmed { w.levels.dimmed_effect() } else { w.levels.undimmed_effect() });
         }
-        if (was >= Stage::Off) != (w.stage >= Stage::Off) {
-            let on = w.stage < Stage::Off;
-            out.effects.push(Effect::Screens { on, bottom: !on || w.bottom_on });
-        }
-        if w.stage == Stage::Asleep {
+        self.outputs(w, out);
+        if was != w.stage && w.stage == Stage::Asleep {
             out.effects.push(Effect::Sleep);
         }
     }
 
+    /// The screens are on while idle hasn't turned them off, and the bottom one as it is set (see
+    /// [`crate::Bottom::off`]), when either changes. The UI tells a change of the bottom one alone from
+    /// idle by what it was sent last.
+    fn outputs(&mut self, w: &Wanted, out: &mut Out) {
+        let outputs = (w.stage < Stage::Off, w.bottom_on);
+        if self.outputs.replace(outputs) != Some(outputs) {
+            out.effects.push(Effect::Outputs { top: outputs.0, bottom: outputs.1 });
+        }
+    }
+
     /// The settings in force are applied when the program in force changes, and when they change.
-    fn settings(&mut self, w: &Wanted, out: &mut Out) {
+    /// Returns whether they were.
+    fn settings(&mut self, w: &Wanted, out: &mut Out) -> bool {
         if self.applied.as_ref().is_some_and(|(program, settings)| program.as_ref() == w.program && *settings == w.settings) {
-            return;
+            return false;
         }
         self.applied = Some((w.program.cloned(), w.settings));
         out.effects.push(Effect::Apply { entry: w.program.cloned(), settings: w.settings });
+        true
     }
 
-    /// The bottom screen is turned off and on. While both screens are off for idle it is left as it is:
-    /// it went off with them, and they set it when they come back.
-    fn bottom_power(&mut self, w: &Wanted, out: &mut Out) {
-        let was = self.bottom_on.replace(w.bottom_on);
-        if was == Some(w.bottom_on) || (was.is_some() && w.stage >= Stage::Off) {
-            return;
+    /// The main screen's refresh rate follows the settings of the last entry launched, from its launch,
+    /// and the settings in force when they are applied, whichever came last.
+    fn refresh(&mut self, w: &Wanted, applied: bool, out: &mut Out) {
+        let hz = if applied { Some(w.settings.get(Setting::Refresh)) } else { w.launched };
+        if let Some(hz) = hz.filter(|&hz| hz != self.refresh) {
+            self.refresh = hz;
+            out.effects.push(Effect::Refresh(hz));
         }
-        out.effects.push(Effect::Window(WindowCommand::BottomPower(w.bottom_on)));
     }
 
     /// The bar's status is watched while the screens are on, the account while the Device view is open

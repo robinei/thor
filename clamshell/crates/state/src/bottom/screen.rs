@@ -216,7 +216,7 @@ impl Bottom {
 
     /// Runs after any event. Turns the bottom screen off or on by itself as [`Bottom::idle_wanted`] says.
     /// A touch, the pad's focus, a window moved down or the charger turn it on again. The screen is told
-    /// after the event (see [`crate::sync::Sent::bottom_power`]).
+    /// after the event (see [`crate::sync::Sent::outputs`]).
     pub(crate) fn follow_power(&mut self, p: Power, now: u64) {
         self.screen.idle_off = self.idle_wanted(p, now);
     }
@@ -512,7 +512,7 @@ mod tests {
 
     fn power(fx: &[Effect]) -> Option<bool> {
         fx.iter().find_map(|e| match e {
-            Effect::Window(WindowCommand::BottomPower(on)) => Some(*on),
+            Effect::Outputs { top: true, bottom } => Some(*bottom),
             _ => None,
         })
     }
@@ -542,9 +542,9 @@ mod tests {
         // touch, at the same time.
         let fx = s.applied(Event::tick(1060 + DIM_AFTER + OFF_AFTER));
         assert!(s.bottom().off());
-        assert!(fx.contains(&Effect::Screens { on: false, bottom: true }), "{fx:?}");
+        assert!(fx.contains(&Effect::Outputs { top: false, bottom: false }), "{fx:?}");
         let fx = s.applied(Event::Idle(IdleEvent::DeviceInput));
-        assert!(fx.contains(&Effect::Screens { on: true, bottom: false }), "{fx:?}");
+        assert!(fx.contains(&Effect::Outputs { top: true, bottom: false }), "{fx:?}");
     }
 
     #[test]
@@ -648,12 +648,12 @@ mod tests {
     #[test]
     fn the_bottom_screen_turns_off_and_on() {
         let mut s = emulator();
-        let off = vec![Effect::Window(WindowCommand::BottomPower(false)), Effect::Watch(crate::Watch::Metrics, false)];
+        let off = vec![Effect::Outputs { top: true, bottom: false }, Effect::Watch(crate::Watch::Metrics, false)];
         assert_eq!(key(&mut s, DeviceKey::BottomPower), off, "nothing seen: not watched");
         assert!(s.bottom().off());
         // A window moved down turns it on again.
         let fx = key(&mut s, DeviceKey::WindowDown);
-        assert!(fx.contains(&Effect::Window(WindowCommand::BottomPower(true))), "{fx:?}");
+        assert!(fx.contains(&Effect::Outputs { top: true, bottom: true }), "{fx:?}");
         assert!(!s.bottom().off());
     }
 

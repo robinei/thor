@@ -169,8 +169,8 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 
 | Transition | Test |
 |---|---|
-| Awake → Dimmed → Off → Asleep by time; effects through sync: dim brightness, `Screens{on: false}`, status watch off, `Sleep` | `the_state_dims_turns_the_screens_off_and_back_and_sleeps_only_when_allowed` |
-| any input, KeptAwake, Resumed or a running refresh → Awake: undim, `Screens{on: true}` | same; `off_by_itself_as_the_screens_go_off_…` |
+| Awake → Dimmed → Off → Asleep by time; effects through sync: dim brightness, `Outputs{top: false}`, status watch off, `Sleep` (after `Outputs`) | `the_state_dims_turns_the_screens_off_and_back_and_sleeps_only_when_allowed` |
+| any input, KeptAwake, Resumed or a running refresh → Awake: undim, `Outputs{top: true}` | same; `off_by_itself_as_the_screens_go_off_…` |
 | Resumed at State level (stage, and Apply resent) | tests `back_from_sleep_applies_the_settings_again_and_wakes_the_screens` |
 | a press on dark screens, or within 1 s of waking, is swallowed | idle `a_press_on_dark_screens_only_wakes_them`, `a_tap_on_dark_screens_wakes_them_and_does_nothing_else` |
 | Busy → sleep postponed 5 min | `a_busy_machine_sleeps_later` |
@@ -192,7 +192,7 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 | Ssh with a password → `Account(Ssh)`; further taps do nothing until AccountChanged, at most 30 s | `remote_login_needs_a_password`, `remote_login_waits_for_its_answer_before_another_tap`, `remote_login_is_asked_again_after_30_s_without_an_answer` |
 | Sticks → `CalibrateSticks`; progress; done saves or fails; further taps do nothing until done, or 30 s without progress | `a_sticks_calibration_shows_its_progress_…`, `the_sticks_calibration_waits_for_its_end_before_another_tap`, `the_sticks_calibration_is_asked_again_after_30_s_without_word` |
 | Gyro → notice + `CalibrateGyro`; result notice; without one the notice goes after 30 s | `the_gyros_hold_still_shows_until_it_answers_at_most_30_s` |
-| Refresh → `CalibrateRefresh` once at a time; result → BottomPower resent | `the_refresh_calibration_runs_once_at_a_time_…`; tests `a_refresh_calibration_ending_sets_the_bottom_screens_power_again` |
+| Refresh → `CalibrateRefresh` once at a time; result → `Outputs` resent | `the_refresh_calibration_runs_once_at_a_time_…`; tests `a_refresh_calibration_ending_sets_the_bottom_screens_power_again` |
 
 ## Pad route and pointer (nav/pad.rs, nav/pointer.rs)
 
@@ -332,7 +332,7 @@ only when the mute changed (not while the volume is unknown):
 |---|---|---|---|
 | Start | `Event::Start` | keymap, pad route (and Start sends dock save, brightness, DownRules) | watches tested; tests `the_ui_starting_sends_the_brightness_the_down_rules_the_keymap_and_the_route` |
 | Resumed | `Event::Resumed` | Apply | tests `back_from_sleep_applies_the_settings_again_and_wakes_the_screens` |
-| RefreshCalibrated | `Event::RefreshCalibrated` | BottomPower | tests `a_refresh_calibration_ending_sets_the_bottom_screens_power_again` |
+| RefreshCalibrated | `Event::RefreshCalibrated` | Outputs | tests `a_refresh_calibration_ending_sets_the_bottom_screens_power_again` |
 | FetchFirst | Fetching, Library | FetchFirst | tests `while_metadata_is_fetched_shelfs_view_goes_first`, `a_library_read_while_fetching_asks_for_shelfs_view_first_again` |
 
 ## Interactions
@@ -345,10 +345,12 @@ only when the mute changed (not while the volume is unknown):
 | a game starting | settle returns it | bottom (`unwake`) | `dark_for_a_game_…` |
 | notices | `&mut NoticeSlot` | bottom | per area |
 | settings in force | parameters to launch and background; sync Apply | session, system | settings tests |
+| refresh rate | sync `Refresh(hz)`: a launch's rate from its launch, the settings in force's when applied, whichever came last; sent when it changes | UI | tests `the_refresh_rate_follows_a_launch_at_once_then_the_settings_in_force` |
+| screens' power | sync `Outputs{top, bottom}`: top is the screens on (idle), bottom the second screen as set; sent when either changes or on a resend. The UI turns the screens off and on over Wayland for idle and passes a change of the bottom one alone (or a resend) to sway; how it is carried out is checked on the device | UI, system | tests `the_screens_power_is_sent_when_it_changes`, idle and screen tests |
 | program in force | settle → pad mouse; sync Apply, Keymap, PadRoute (keymap before route: the pad thread takes the game's keymap before it has the pad) | pad, system | `a_game_coming_in_front_gets_its_settings_then_its_keymap_then_the_pad` |
 | front, tab, listening, dock move | `reconcile_pad` | pad | pad tests |
 | windows down, program, battery, refresh, editor | `power()` for the bottom screen | bottom | screen tests |
-| idle stage | sync: dim and Screens; status watch | levels, system | idle test |
+| idle stage | sync: dim and Outputs; status watch | levels, system | idle test |
 | tabs | sync watches; `left_tab` closes the dock menu, releases levels, resets the time page, closes the battery menu | dock, levels, status | per tab; `leaving_the_tab_resets_it_to_its_main_page` |
 | keymap chosen/deleted/made own | queued `KeymapEvent` → prefs | settings | keymap tests |
 | device view, files, keymaps naming | queued `EditOnKeyboard` / editors | bottom | per area |
@@ -369,7 +371,8 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
 1. **Sync converges:** running sync again emits nothing.
 2. **What was sent mirrors the state:** the last PadRoute is `pad().route()`; the last Keymap is the
    keymap in force; Status is watched iff the screens are on; Account iff the UI is up and the Device
-   view is open; the last Apply is `(program, in_force)`.
+   view is open; the last Apply is `(program, in_force)`; the last Outputs is (screens on, bottom on);
+   the last Refresh is the rate of the last Launch or Apply.
 3. **Pad route:** consistent with claimant, listening and dock move; reconciling again changes nothing;
    the focus ring shows only when the route is Ui, or after a hold on shelf's selected entry opened its
    actions with the pad elsewhere, until the next touch hides it (the ring is what shows the actions are

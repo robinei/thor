@@ -120,13 +120,19 @@ pub enum Effect {
     Bluetooth(bluetooth::Command),
     /// Start (true) or stop reading something for a tab while it is open.
     Watch(Watch, bool),
-    /// Turn the screens on or off, for idle. The UI asks the compositor. They go off together; `bottom`
-    /// says whether the bottom screen is among them, which it isn't when they come on while it is turned
-    /// off (see [`crate::Bottom::off`]).
-    Screens {
-        on: bool,
+    /// The screens' power, sent when it changes and when it is to be set again (the same value twice
+    /// means set it again). `top` is whether the screens are on, which idle turns off together; `bottom`
+    /// is whether the second screen is on while they are (see [`crate::Bottom::off`]). The UI carries it
+    /// out: under sway it turns the screens off and on for idle over Wayland, and passes on a change of
+    /// the second screen's alone, which the system crate asks sway for.
+    Outputs {
+        top: bool,
         bottom: bool,
     },
+    /// The main screen's refresh rate in Hz, where 0 means the rate it had at start. It follows the
+    /// settings in force, and a launch's settings from the moment it starts, so the rate changes before
+    /// the game's window shows. The UI sets it.
+    Refresh(u16),
     /// Sleep, for idle in the device's session. Suspends, then hibernates where the system can.
     Sleep,
     /// Save both screens to a file. The result comes back as [`crate::Event::Screenshot`].
@@ -230,8 +236,6 @@ pub enum WindowCommand {
     Up { window: i64, to: Option<Instance> },
     /// Show on the bottom screen this window that was moved there. The top screen keeps the keyboard.
     ShowDown(i64),
-    /// Turn the bottom screen's output on or off.
-    BottomPower(bool),
     /// The windows that go to the bottom screen as they open. This is the full set of rules in force.
     DownRules(Vec<crate::bottom::screen::DownRule>),
     /// The full set of app ids whose windows open on the landing workspace, to be moved to their entry's

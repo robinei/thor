@@ -158,8 +158,16 @@ impl Handles {
             Effect::Notify { summary, body, urgent } => {
                 self.system.send(crate::device::Command::Notify { summary: summary.clone(), body: body.clone(), urgent: *urgent })
             }
-            // The UI handles quitting and the screens' power, since they are its Wayland business.
-            Effect::Quit | Effect::Screens { .. } => {}
+            // The UI passes on only a change of the bottom screen's power alone, or one to set again, which
+            // goes through sway (see the effect).
+            Effect::Outputs { bottom, .. } => {
+                if let Some(sway) = &self.sway {
+                    sway.send(sway::Command::Power(*bottom));
+                }
+            }
+            // The UI handles quitting and the rest of the screens' power and refresh rate, since they are
+            // its Wayland business.
+            Effect::Quit | Effect::Refresh(_) => {}
         }
     }
 
@@ -201,7 +209,6 @@ impl Handles {
             WindowCommand::Down(id) => sway.send(sway::Command::Down(*id)),
             WindowCommand::Up { window, to } => sway.send(sway::Command::Up { window: *window, workspace: to.as_ref().map(Instance::workspace) }),
             WindowCommand::ShowDown(id) => sway.send(sway::Command::ShowDown(*id)),
-            WindowCommand::BottomPower(on) => sway.send(sway::Command::Power(*on)),
             WindowCommand::DownRules(rules) => sway.send(sway::Command::DownRules(rules.clone())),
             WindowCommand::LandRules(ids) => sway.send(sway::Command::LandRules(ids.clone())),
         }

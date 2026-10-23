@@ -71,6 +71,7 @@ impl App {
             on_effect,
             effects: Vec::new(),
             queue: EventQueue::default(),
+            outputs: (true, true),
             exit: false,
         })
     }
@@ -128,27 +129,33 @@ impl App {
         self.changed();
         let released = self.input.pad_route(self.state.pad().route(), &self.state);
         self.run_actions(released);
-        for effect in &self.effects {
+        // Taken while carried out, and put back to be reused.
+        let mut effects = std::mem::take(&mut self.effects);
+        for effect in &effects {
             match effect {
                 Effect::Quit => self.exit = true,
-                // The compositor controls the screens' power, and we ask it through Wayland.
-                Effect::Screens { on, bottom } => {
-                    let left_out = (!bottom).then(|| self.display.bottom_output().to_owned());
-                    let outputs: Vec<_> =
-                        self.output_state.outputs().filter(|o| left_out.is_none() || self.output_state.info(o).and_then(|i| i.name) != left_out).collect();
-                    self.display.power(*on, outputs.into_iter(), &self.qh);
-                }
-                other => {
-                    // The main screen's refresh rate follows the settings in force. It is also set
-                    // through Wayland.
-                    if let Effect::Apply { settings, .. } | Effect::Launch { settings, .. } = other {
-                        self.display.refresh(settings.get(clamshell_state::settings::Setting::Refresh), &self.qh);
-                    }
-                    (self.on_effect)(other)
-                }
+                Effect::Outputs { top, bottom } => self.outputs(*top, *bottom),
+                // The main screen's refresh rate is set through Wayland.
+                Effect::Refresh(hz) => self.display.refresh(*hz, &self.qh),
+                other => (self.on_effect)(other),
             }
         }
-        self.effects.clear();
+        effects.clear();
+        self.effects = effects;
+    }
+
+    /// Sets the screens' power (see `Effect::Outputs`). The compositor turns them off and on for idle,
+    /// asked through Wayland; on coming back, it turns on those it turned off. The bottom screen alone
+    /// goes through sway, whose `output power` the system crate sends, when it changes while they are on
+    /// or is to be set again.
+    fn outputs(&mut self, top: bool, bottom: bool) {
+        let was = std::mem::replace(&mut self.outputs, (top, bottom));
+        if top != was.0 {
+            self.display.power(top, self.output_state.outputs(), &self.qh);
+        }
+        if (top && bottom != was.1) || (top, bottom) == was {
+            (self.on_effect)(&Effect::Outputs { top, bottom });
+        }
     }
 
     pub(super) fn handle_all(&mut self, events: impl IntoIterator<Item = Event>) {

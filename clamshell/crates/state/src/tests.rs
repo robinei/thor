@@ -305,9 +305,9 @@ fn back_from_sleep_applies_the_settings_again_and_wakes_the_screens() {
     let global = s.prefs().settings().global;
     assert_eq!(s.idle().stage(), crate::device::idle::Stage::Awake);
     assert!(fx.contains(&Effect::Apply { entry: None, settings: global }), "{fx:?}");
-    assert!(fx.contains(&Effect::Screens { on: true, bottom: true }), "{fx:?}");
+    assert!(fx.contains(&Effect::Outputs { top: true, bottom: true }), "{fx:?}");
     assert!(fx.iter().any(|e| matches!(e, Effect::Brightness { level: 60, .. })), "undimmed: {fx:?}");
-    assert!(!s.applied(Event::Resumed).iter().any(|e| matches!(e, Effect::Screens { .. })), "awake already: the screens aren't sent again");
+    assert!(!s.applied(Event::Resumed).iter().any(|e| matches!(e, Effect::Outputs { .. })), "awake already: the screens aren't sent again");
 }
 
 /// The refresh rate calibration turns the bottom screen off while it runs and restores it as it found it.
@@ -317,11 +317,46 @@ fn a_refresh_calibration_ending_sets_the_bottom_screens_power_again() {
     let mut s = state();
     s.applied(Event::tick(1000));
     let fx = s.applied(Event::Device(crate::device::buttons::DeviceKey::BottomPower));
-    assert!(fx.contains(&Effect::Window(WindowCommand::BottomPower(false))), "{fx:?}");
+    assert!(fx.contains(&Effect::Outputs { top: true, bottom: false }), "{fx:?}");
     s.applied(PointerEvent::Activate(Id::Device(DeviceId::Refresh)).into());
     let fx = s.applied(Event::RefreshCalibrated(Ok("done".into())));
-    assert!(fx.contains(&Effect::Window(WindowCommand::BottomPower(false))), "{fx:?}");
-    assert!(!s.applied(Event::tick(1001)).iter().any(|e| matches!(e, Effect::Window(WindowCommand::BottomPower(_)))), "once");
+    assert!(fx.contains(&Effect::Outputs { top: true, bottom: false }), "{fx:?}");
+    assert!(!s.applied(Event::tick(1001)).iter().any(|e| matches!(e, Effect::Outputs { .. })), "once");
+}
+
+/// The main screen's refresh rate goes to a game's as it launches, so that the switch, which blanks the
+/// screen for a moment, is over before its window shows. Then it follows the settings in force, and it is
+/// sent only when it changes.
+#[test]
+fn the_refresh_rate_follows_a_launch_at_once_then_the_settings_in_force() {
+    let mut settings = crate::settings::Settings::default();
+    settings.set(Some(&"zelda-lttp".into()), Setting::Refresh, Some(60));
+    let mut s = State::new(Init { settings, ..init() });
+    s.ui_up();
+    let refresh = |fx: &[Effect]| fx.iter().filter_map(|e| if let Effect::Refresh(hz) = e { Some(*hz) } else { None }).collect::<Vec<_>>();
+    let mut fx = tap(&mut s, entry("zelda-lttp"));
+    fx.extend(tap(&mut s, entry("zelda-lttp")));
+    assert!(fx.iter().any(|e| matches!(e, Effect::Launch { .. })), "{fx:?}");
+    assert_eq!(refresh(&fx), [60], "at the launch: {fx:?}");
+    let fx = crate::testkit::start(&mut s, "zelda-lttp");
+    assert!(fx.iter().any(|e| matches!(e, Effect::Apply { .. })) && refresh(&fx).is_empty(), "in force, at the same rate: {fx:?}");
+    assert_eq!(refresh(&crate::testkit::end(&mut s, "zelda-lttp")), [0], "ended: the global rate, as is");
+}
+
+/// The screens' power is sent when it changes: the bottom one alone while they are on, and both for idle,
+/// with the bottom one as it is set.
+#[test]
+fn the_screens_power_is_sent_when_it_changes() {
+    use crate::device::idle::IdleEvent;
+    let mut s = state();
+    s.applied(Event::tick(1000));
+    s.applied(Event::Idle(IdleEvent::Watching(true)));
+    let outputs = |fx: &[Effect]| fx.iter().filter(|e| matches!(e, Effect::Outputs { .. })).cloned().collect::<Vec<_>>();
+    let key = |s: &mut State| s.applied(Event::Device(crate::device::buttons::DeviceKey::BottomPower));
+    assert_eq!(outputs(&key(&mut s)), [Effect::Outputs { top: true, bottom: false }], "the bottom one by hand");
+    assert_eq!(outputs(&s.applied(Event::tick(1300))), [Effect::Outputs { top: false, bottom: false }], "off for idle");
+    assert_eq!(outputs(&s.applied(Event::Idle(IdleEvent::DeviceInput))), [Effect::Outputs { top: true, bottom: false }], "back, the bottom one still off");
+    assert!(outputs(&s.applied(Event::tick(1301))).is_empty(), "once");
 }
 
 /// While metadata is fetched, a library read again asks for shelf's entries shown first again, since the

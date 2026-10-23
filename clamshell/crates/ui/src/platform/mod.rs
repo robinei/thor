@@ -218,6 +218,8 @@ pub(crate) struct App {
     effects: Vec<Effect>,
     /// The events waiting while another is handled.
     queue: app::EventQueue,
+    /// The screens' power as last set (see `App::outputs`).
+    outputs: (bool, bool),
     exit: bool,
 }
 
