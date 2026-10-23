@@ -21,6 +21,36 @@ plan (`docs/thor-gameplan.md`).
 - **The look:** black background, grey text (never full white on static elements), colour only with
   meaning (amber focus, green launch), no boxes or separators where alignment suffices, line icons.
 
+## How ClamShell runs
+
+```
+input (touch, pointer, keys, pad) ─▶ Event ─┐
+readings, ticks, windows, units ─▶ Event ───┤
+                                            ▼
+                        State::apply(event, &mut effects)      crates/state: handle, settle, sync
+                                   │
+                 ┌─────────────────┴──────────────────┐
+                 ▼                                    ▼
+      UI records each visible screen         effects ─▶ Handles::dispatch ─▶ a system thread
+      compares with the last recording       (crates/system/src/wiring)       carries it out
+      draws and damages only what changed                                     and reports back
+      keeps the frame's targets for input                                     with Events
+```
+
+- **The UI** (crates/ui) owns `State` and runs the event loop: Wayland input becomes events through the
+  last frame's targets (each recording the item it showed), events from the system threads arrive on a
+  channel, and every event goes through `State::apply`. Views are functions of `&State`; the canvas
+  records commands, and a screen is drawn only where its recording changed.
+- **The system crate** has a thread per concern (sway, the launcher and systemd, the pad, Wi-Fi,
+  Bluetooth, sound, the store, files, ...). Each takes its own commands on a channel (`os::worker`; a
+  thread that polls devices is also woken by an eventfd bell) and sends events back through a `Sink`. No
+  thread touches `State`.
+- **The binary** (`clamshell/src`) starts the threads, builds `Handles`, and gives the UI the closure that
+  passes effects to it, so the UI and the system crate don't depend on each other. The UI carries out
+  only what is its own: the screens' power and refresh rate over Wayland, and quitting.
+- So the cycle is event → apply → effects → threads → events. A new feature adds events and effects to
+  the state crate, a rule there, and the thread or view that carries them out.
+
 ## The state (crates/state)
 
 - `State` (lib.rs) holds the areas (shelf, session, bottom, radios, ...) and coordinates them, in one
@@ -31,9 +61,7 @@ plan (`docs/thor-gameplan.md`).
 - `apply` runs handle, settle, sync. Settle holds what depends on history, as an ordered list; sync
   diffs what the outside should have (`Wanted`) against what it was last sent. What can be computed from
   state is computed, not stored and kept in step.
-- Outside code reads areas through `State`'s accessors and changes state only through events. The system
-  crate carries out effects on its threads and reports back with events; the UI records each screen after
-  an event and draws only what changed.
+- Outside code reads areas through `State`'s accessors and changes state only through events.
 - No allocation on the per-event path or in drawing a frame (`crates/state/tests/apply_alloc.rs` and the
   UI's no-alloc test hold this). No function in the state crate returns a `Vec`: append to one passed in.
 
