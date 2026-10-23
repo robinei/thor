@@ -230,6 +230,7 @@ Overwrite, Delete; Undo per keymap since the edit screen opened.
 | typing filters; Enter activates; Clear | `typing_with_shelf_in_front_finds_entries_…` |
 | favourite on/off: relayout by name and id, `Save(Favourites)`; a focus in the list follows the selection | `a_favourite_shows_in_its_collection_…`, `a_favourite_removed_moves_the_focus_with_the_selection`; the Favourites tab vanishing GAP |
 | a play recorded: relayout (a focus in the list follows the selection: GAP), `RecordPlay`, `ReadPosition` for videos | tests `a_launchs_start_and_end…` (count only) |
+| a relayout closes a group no longer in its collection (Recent, Favourites) | `a_group_that_leaves_its_collection_is_closed_there` |
 | a group launched from elsewhere: its collection's places reset, the path opened, `ShowShelf` | `a_group_started_from_elsewhere_opens_in_shelf` |
 | Library read: places restored by name and id, the typed filter dropped (S26) | `listings_outlive_the_library_read_again`; selection gone and filter GAP |
 | Continue, Meta, Position | `continue_plays_on_where_the_series_was_left`; Meta GAP |
@@ -425,7 +426,7 @@ Shelf, files, radios, levels, status:
 - S32. Dimming at brightness 0 raises it to 1 (`levels/mod.rs:264`).
 - S33. The battery warning fires on the charger in bypass mode (`status/mod.rs:103`).
 - S34. The battery tab's spender menu stays open across tabs and after its row is gone.
-- S35. A relayout doesn't close a group that left a derived collection (Recent, Favourites).
+- S35. A relayout doesn't close a group that left a derived collection (Recent, Favourites). Fixed: state/shelf: a relayout closes a group no longer in its collection.
 - S36. A folder listing that changes the entries but not shelf's view isn't asked for metadata first.
 - S37. The Mute key shows its notice when the volume is unknown and nothing changes (`lib.rs:1058`).
 - S38. The resume record can leave out a collection whose stored place is past its list after a relayout

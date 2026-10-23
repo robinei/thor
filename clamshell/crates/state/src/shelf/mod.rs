@@ -408,8 +408,9 @@ impl Shelf {
     }
 
     /// Changes the library, for favourites or plays, keeping the current collection, each collection's
-    /// place and the selected entry. These are kept by name, since derived collections may come or go.
-    /// Returns whether the selection changed.
+    /// place and the selected entry. These are kept by name, since derived collections may come or go. A
+    /// group that left its collection, such as one no longer a favourite, is closed. Returns whether the
+    /// selection changed.
     pub(crate) fn relayout(&mut self, change: impl FnOnce(&mut Library)) -> bool {
         let names: Vec<String> = self.library.collections.iter().map(|c| c.name.clone()).collect();
         let current_name = names.get(self.current).cloned();
@@ -421,6 +422,7 @@ impl Shelf {
         self.navs =
             self.library.collections.iter().map(|c| names.iter().position(|n| *n == c.name).and_then(|i| old.get(i).cloned()).unwrap_or_default()).collect();
         self.current = current_name.and_then(|n| self.library.collections.iter().position(|c| c.name == n)).unwrap_or(0);
+        self.close_gone();
         self.refind();
         if let Some(id) = &selected {
             self.select(id);
@@ -684,6 +686,30 @@ mod tests {
         let other = s.shelf().selected().cloned().unwrap();
         assert_ne!(other, first);
         assert_eq!(s.pointer().focus(), Some(&Id::Shelf(ShelfId::Entry(other))));
+    }
+
+    #[test]
+    fn a_group_that_leaves_its_collection_is_closed_there() {
+        let mut s = state();
+        let go = |s: &mut State, name: &str| {
+            let c = s.shelf().library().collections.iter().position(|c| c.name == name).unwrap() as u16;
+            tap(s, Id::Shelf(ShelfId::Collection(c)));
+        };
+        // Metroid and Cosmos are favourites, and Cosmos is open in Favourites.
+        s.applied(ShelfEvent::ListStep(1).into());
+        s.applied(ShelfEvent::ToggleFavourite.into());
+        go(&mut s, "TV");
+        s.applied(ShelfEvent::ToggleFavourite.into());
+        go(&mut s, "Favourites");
+        tap(&mut s, entry("tv:Cosmos"));
+        tap(&mut s, entry("tv:Cosmos"));
+        assert_eq!(s.shelf().group().map(|g| &*g.id), Some("tv:Cosmos"));
+        // Cosmos is no longer a favourite: Favourites shows its own list again.
+        go(&mut s, "TV");
+        s.applied(ShelfEvent::ToggleFavourite.into());
+        go(&mut s, "Favourites");
+        assert_eq!(s.shelf().group(), None);
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("metroid-zm"));
     }
 
     #[test]
