@@ -1,7 +1,7 @@
 //! The one-shot commands that print and exit: the tray's icons and menus (`--tray`), the library
 //! (`--library`), and metadata fetched for it (`--fetch`).
 
-use clamshell_core::Library;
+use clamshell_state::Library;
 use clamshell_system::library::meta;
 use clamshell_system::library::{self, Sources};
 use clamshell_system::paths::Paths;
@@ -17,7 +17,7 @@ pub(crate) fn print_tray() -> Result<(), String> {
 }
 
 /// Prints a tray menu's entries, indented by `depth` (`--tray`).
-fn print_tray_menu(entries: &[clamshell_core::session::tray::TrayEntry], depth: usize) {
+fn print_tray_menu(entries: &[clamshell_state::session::tray::TrayEntry], depth: usize) {
     for e in entries {
         let state = match (e.enabled, e.checked) {
             (false, _) => " (disabled)",
@@ -40,7 +40,7 @@ pub(crate) fn fetch_metadata(paths: &Paths, sources: &Sources) -> Result<(), Str
     meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art }, &meta::Queue::default(), tx).map_err(|e| e.to_string())?;
     // The channel ends when the fetch threads are done and drop their senders.
     for event in rx {
-        if let clamshell_core::Event::Meta { id, meta } = event {
+        if let clamshell_state::Event::Meta { id, meta } = event {
             let has = |b: bool, what: &'static str| if b { what } else { "" };
             let found = [
                 has(meta.cover.is_some(), "cover"),

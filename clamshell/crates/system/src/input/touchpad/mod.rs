@@ -1,4 +1,4 @@
-//! The second screen as a touchpad (see clamshell-core's `touch`). The fingers the UI says are pointing,
+//! The second screen as a touchpad (see clamshell-state's `touch`). The fingers the UI says are pointing,
 //! on any tab, or any finger in the touchpad tab, go to a virtual touchpad. sway's libinput then does
 //! what it does for a laptop touchpad: pointer motion with acceleration, tap to click, two-finger scroll,
 //! tap and drag, and palm detection, all configurable with `input` lines. Our part is only the
@@ -13,7 +13,7 @@ mod pointing;
 use std::io;
 use std::sync::{Arc, Mutex};
 
-use clamshell_core::bottom::touch::{Contact, TouchLayout};
+use clamshell_state::bottom::touch::{Contact, TouchLayout};
 
 use crate::os::evdev::Rect;
 use crate::os::worker::{self, Next, Worker};

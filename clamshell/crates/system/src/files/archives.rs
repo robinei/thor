@@ -1,4 +1,4 @@
-//! Archives browsed as folders (see clamshell-core's `files`). When its folder is opened, an archive is
+//! Archives browsed as folders (see clamshell-state's `files`). When its folder is opened, an archive is
 //! mounted read-only with ratarmount, a FUSE filesystem for zip, 7z, rar, tar and compressed tars. Its
 //! entries are then files like any others, which can be opened or copied out. It is unmounted once
 //! nothing uses it: the open folder isn't in it, and no copied entry or running launch's file is in it.

@@ -9,9 +9,9 @@
 //! bar, which stays visible under it. The slider is a track with the current level under the finger, and
 //! the level as a number beside it.
 
-use clamshell_core::bottom::notice::NoticeKind;
-use clamshell_core::levels::slider::{Control, Slider};
-use clamshell_core::{Id, State, Tab};
+use clamshell_state::bottom::notice::NoticeKind;
+use clamshell_state::levels::slider::{Control, Slider};
+use clamshell_state::{Id, State, Tab};
 
 use crate::gfx::icons::Icon;
 use crate::gfx::{Align, Rect};

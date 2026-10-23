@@ -8,8 +8,8 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use clamshell_core::bottom::touch::TouchLayout;
-use clamshell_core::settings::Values;
+use clamshell_state::bottom::touch::TouchLayout;
+use clamshell_state::settings::Values;
 
 pub use handles::Handles;
 pub use settings::Tuning;
@@ -77,7 +77,7 @@ fn rescanner<S: Sink + Clone>(sources: Sources, paths: Paths, queue: meta::Queue
                 }
                 let loaded = library::load(&sources);
                 log::info!("rescan: {} entries", loaded.library.entries.len());
-                if sink.send(clamshell_core::Event::Library(Box::new(loaded.library))).is_err() {
+                if sink.send(clamshell_state::Event::Library(Box::new(loaded.library))).is_err() {
                     return;
                 }
                 if let Some(art) = paths.art.clone() {

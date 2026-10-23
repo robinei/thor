@@ -6,9 +6,9 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use clamshell_core::device::account::AccountCommand;
-use clamshell_core::device::idle::IdleEvent;
-use clamshell_core::{Event, Reading};
+use clamshell_state::device::account::AccountCommand;
+use clamshell_state::device::idle::IdleEvent;
+use clamshell_state::{Event, Reading};
 
 use crate::display::{refresh, screenshot};
 use crate::os::command;
@@ -33,12 +33,12 @@ pub enum Command {
     /// Whether the network sets the clock (NTP).
     SetNtp(bool),
     /// Moves one field of the clock a step forward or back, in local time.
-    StepClock(clamshell_core::ClockField, i8),
+    StepClock(clamshell_state::ClockField, i8),
     /// Runs a runner's `awake` command. If it succeeds, the shown app keeps the screen on.
     AskAwake(Vec<String>),
     /// Reads or changes the account. After a change, the result is sent and then the account is read
     /// again.
-    Account(clamshell_core::device::account::AccountCommand),
+    Account(clamshell_state::device::account::AccountCommand),
     /// Calibrates the top screen's refresh rate with thor-panel-calibration and sends back the result. It
     /// runs on a thread of its own because it takes a couple of minutes.
     CalibrateRefresh,

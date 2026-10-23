@@ -6,8 +6,8 @@ use std::io;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-use clamshell_core::levels::{Audio, AudioOutput, Stream};
-use clamshell_core::{Event, Reading};
+use clamshell_state::levels::{Audio, AudioOutput, Stream};
+use clamshell_state::{Event, Reading};
 use serde_json::Value;
 
 use crate::display::brightness::Backlights;

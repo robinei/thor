@@ -11,7 +11,7 @@ pub(crate) mod scroll;
 pub(crate) mod style;
 pub(crate) mod widgets;
 
-use clamshell_core::{Id, ItemKey, ListId, State};
+use clamshell_state::{Id, ItemKey, ListId, State};
 
 use crate::gfx::images::Images;
 use crate::gfx::{Canvas, Rect};
@@ -60,7 +60,7 @@ impl Track {
 pub struct FrameOut {
     /// How many rows the shelf's list on the main screen shows. The state keeps the selection within them.
     pub list_rows: Option<usize>,
-    /// The area below the bar on the second screen, where a finger may point (see clamshell-core's
+    /// The area below the bar on the second screen, where a finger may point (see clamshell-state's
     /// `touch`).
     pub touchpad_area: Option<Rect>,
     /// How many rows each scrolled list drawn shows, indexed by [`ListId::index`]. The state keeps the
@@ -145,7 +145,7 @@ impl<'f, 'c> Frame<'f, 'c> {
         let Id::Control(control) = id else {
             return false;
         };
-        let up = |s: Option<clamshell_core::levels::slider::Slider>| s.is_some_and(|s| s.control == *control);
+        let up = |s: Option<clamshell_state::levels::slider::Slider>| s.is_some_and(|s| s.control == *control);
         up(self.s.levels().slider().copied()) || up(self.s.keymapping().edit().slider)
     }
 

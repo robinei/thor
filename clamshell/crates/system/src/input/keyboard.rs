@@ -6,7 +6,7 @@
 
 use std::io;
 
-use clamshell_core::bottom::keyboard::{Key, Named, Stroke};
+use clamshell_state::bottom::keyboard::{Key, Named, Stroke};
 use evdev::uinput::VirtualDevice;
 use evdev::{InputEvent, KeyCode};
 
@@ -135,7 +135,7 @@ pub fn events(stroke: &Stroke) -> Vec<(KeyCode, Press)> {
 pub const MODIFIERS: [KeyCode; 4] = [KeyCode::KEY_LEFTCTRL, KeyCode::KEY_LEFTALT, KeyCode::KEY_LEFTMETA, KeyCode::KEY_LEFTSHIFT];
 
 /// The keys of a keymap's chord: its modifiers, and its key if it has one.
-pub fn chord_keys(chord: &clamshell_core::keymap::Chord) -> (Vec<KeyCode>, Option<KeyCode>) {
+pub fn chord_keys(chord: &clamshell_state::keymap::Chord) -> (Vec<KeyCode>, Option<KeyCode>) {
     let mods = [chord.ctrl, chord.alt, chord.logo, chord.shift].into_iter().zip(MODIFIERS).filter_map(|(on, k)| on.then_some(k)).collect();
     let key = chord.key.and_then(|key| key_of(&Stroke { key, shift: false, ctrl: false, alt: false, logo: false }));
     (mods, key)

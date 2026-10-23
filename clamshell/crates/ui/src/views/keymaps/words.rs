@@ -3,7 +3,7 @@
 
 use std::fmt::Write;
 
-use clamshell_core::keymap::{Actuation, Binding, Button, Change, Input, Keymap, Layer, Output, PadOut, Param, Side, change};
+use clamshell_state::keymap::{Actuation, Binding, Button, Change, Input, Keymap, Layer, Output, PadOut, Param, Side, change};
 
 use crate::toolkit::format::Fmt;
 use crate::toolkit::style::Tone;
@@ -35,7 +35,7 @@ pub(super) fn described(input: Input, b: &Binding, keymap: Option<&Keymap>) -> (
 /// tuned says `Tuned`.
 pub(super) fn summary(input: Input, b: &Binding, keymap: Option<&Keymap>) -> Fmt<48> {
     let mut text = Fmt::<48>::new();
-    let mapped = Some(b.output) != clamshell_core::keymap::as_on_the_pad(input);
+    let mapped = Some(b.output) != clamshell_state::keymap::as_on_the_pad(input);
     match (mapped, b.turbo, b.toggle) {
         (true, ..) => {
             let _ = write!(text, "{}", mapping(*b, keymap).as_str());

@@ -1,7 +1,7 @@
 //! Pad navigation. Focus moves by direction between the targets on both screens, as if the bottom screen
 //! were directly below the top one (see [`step`]).
 
-use clamshell_core::Id;
+use clamshell_state::Id;
 
 use crate::Screen;
 use crate::gfx::Rect;
@@ -66,9 +66,9 @@ pub fn step(targets: &[NavTarget], current: Option<&Id>, dir: Dir) -> Option<Id>
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use clamshell_core::Tab;
-    use clamshell_core::settings::Setting;
-    use clamshell_core::{SettingsId, ShelfId};
+    use clamshell_state::Tab;
+    use clamshell_state::settings::Setting;
+    use clamshell_state::{SettingsId, ShelfId};
 
     fn t(screen: Screen, x: f32, y: f32, id: Id) -> NavTarget {
         NavTarget { screen, rect: Rect::new(x, y, 0.1, 0.1), id }
@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn right_goes_to_the_next_in_the_row_not_one_alongside_far_above() {
-        use clamshell_core::DockId;
+        use clamshell_state::DockId;
         let r = |x: f32, y: f32, w: f32, h: f32, id: Id| NavTarget { screen: Screen::Bottom, rect: Rect::new(x, y, w, h), id };
         let l = vec![
             // The bar: tabs along the top, one just right of the dock icon's left edge.

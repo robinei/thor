@@ -11,7 +11,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use clamshell_core::device::account::{Account, AccountCommand};
+use clamshell_state::device::account::{Account, AccountCommand};
 
 use crate::os::command;
 

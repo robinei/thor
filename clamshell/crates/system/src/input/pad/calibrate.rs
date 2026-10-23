@@ -1,4 +1,4 @@
-//! The sticks' calibration in the pad thread (see `clamshell_core::device::sticks`; the calibration itself
+//! The sticks' calibration in the pad thread (see `clamshell_state::device::sticks`; the calibration itself
 //! is [`super::calibrator`]).
 //!
 //! The controller's raw stick values are corrected through its calibration as they come in
@@ -11,7 +11,7 @@
 
 use std::time::{Duration, Instant};
 
-use clamshell_core::device::sticks::{AXES, Sticks};
+use clamshell_state::device::sticks::{AXES, Sticks};
 use evdev::AbsoluteAxisCode;
 
 use super::calibrator::{Calibrator, Step};
@@ -48,7 +48,7 @@ struct Calibrating {
 
 /// What a calibration said.
 pub enum Said {
-    Progress(clamshell_core::device::sticks::Progress),
+    Progress(clamshell_state::device::sticks::Progress),
     Done(Option<Sticks>),
 }
 
@@ -132,7 +132,7 @@ impl StickState {
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use clamshell_core::device::sticks::StickAxis;
+    use clamshell_state::device::sticks::StickAxis;
 
     fn state(sticks: Option<Sticks>) -> StickState {
         let axes = STICK_AXES.iter().map(|&code| super::super::route::Axis { code, value: 0, rest: 0 }).collect();

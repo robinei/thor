@@ -5,7 +5,7 @@ use std::io;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use clamshell_core::Event;
+use clamshell_state::Event;
 
 use crate::os::worker;
 use crate::time::wake;

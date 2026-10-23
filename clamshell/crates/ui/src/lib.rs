@@ -28,8 +28,8 @@ pub use screens::Screen;
 
 use std::sync::{Arc, Mutex};
 
-use clamshell_core::bottom::touch::TouchLayout;
-use clamshell_core::{Event, State};
+use clamshell_state::bottom::touch::TouchLayout;
+use clamshell_state::{Event, State};
 use smithay_client_toolkit::reexports::calloop::channel;
 
 use gfx::DrawCache;

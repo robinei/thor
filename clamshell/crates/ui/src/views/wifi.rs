@@ -5,9 +5,9 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use clamshell_core::bottom::editor::{Editor, Purpose};
-use clamshell_core::radios::wifi::{NetState, Problem, Wifi};
-use clamshell_core::{Id, ListId, RadioStatus, WifiId};
+use clamshell_state::bottom::editor::{Editor, Purpose};
+use clamshell_state::radios::wifi::{NetState, Problem, Wifi};
+use clamshell_state::{Id, ListId, RadioStatus, WifiId};
 
 use super::radio;
 use crate::gfx::icons::Icon;

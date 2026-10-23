@@ -5,7 +5,7 @@
 //! The area itself is a target under the rows, so a finger between rows drags the list too. Every target
 //! drawn in it is cut to the area and marked as being in the list (see [`InList`]).
 
-use clamshell_core::{Id, ListId};
+use clamshell_state::{Id, ListId};
 
 use super::Frame;
 use super::style::Tone;

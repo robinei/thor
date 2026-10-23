@@ -10,7 +10,7 @@ description = "ClamShell's drawing: both screens on Wayland, immediate mode with
 
 [dependencies]
 resvg.workspace = true
-clamshell-core.workspace = true
+clamshell-state.workspace = true
 smithay-client-toolkit.workspace = true
 jiff.workspace = true
 tiny-skia.workspace = true

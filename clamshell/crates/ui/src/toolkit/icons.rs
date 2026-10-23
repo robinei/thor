@@ -1,9 +1,9 @@
 //! Which icon stands for one of the state's things: a tab, a Wi-Fi signal, a setting, a Bluetooth device.
 
-use clamshell_core::Tab;
-use clamshell_core::radios::bluetooth::Kind;
-use clamshell_core::radios::wifi::signal_bars;
-use clamshell_core::settings::Setting;
+use clamshell_state::Tab;
+use clamshell_state::radios::bluetooth::Kind;
+use clamshell_state::radios::wifi::signal_bars;
+use clamshell_state::settings::Setting;
 
 use crate::gfx::icons::Icon;
 

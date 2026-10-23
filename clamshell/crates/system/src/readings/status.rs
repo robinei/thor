@@ -6,7 +6,7 @@ use std::io;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::Duration;
 
-use clamshell_core::{Event, Reading, Status};
+use clamshell_state::{Event, Reading, Status};
 
 use crate::audio::mixer;
 use crate::display::brightness::Backlights;
@@ -21,7 +21,7 @@ const EVERY: Duration = Duration::from_secs(5);
 const UNSEEN_EVERY: Duration = Duration::from_secs(60);
 
 /// Starts the status thread. Its commands say whether the screens are on (see
-/// [`clamshell_core::Watch::Status`]).
+/// [`clamshell_state::Watch::Status`]).
 pub fn spawn(backlights: Backlights, sink: impl Sink) -> io::Result<Worker<Shown>> {
     Worker::spawn("status", move |seen| {
         let _ = follow(&backlights, &sink, &seen);

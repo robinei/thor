@@ -7,8 +7,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use clamshell_core::Meta;
 use clamshell_library::key_of;
+use clamshell_state::Meta;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 

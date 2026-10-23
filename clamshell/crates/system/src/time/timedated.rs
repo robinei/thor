@@ -2,7 +2,7 @@
 //! the system bus. Changing them needs polkit's permission, which the image gives the session's user, so
 //! the calls never ask for a password.
 
-use clamshell_core::TimeZones;
+use clamshell_state::TimeZones;
 
 use crate::os::dbus::{self, Bus, Props};
 
@@ -55,8 +55,8 @@ pub fn set_ntp(on: bool) -> Result<(), String> {
 
 /// Moves the clock one step of `field` forward (`by` 1) or back (-1) in local time. A month on from the
 /// 31st lands on the next month's last day.
-pub fn step_clock(field: clamshell_core::ClockField, by: i8) -> Result<(), String> {
-    use clamshell_core::ClockField;
+pub fn step_clock(field: clamshell_state::ClockField, by: i8) -> Result<(), String> {
+    use clamshell_state::ClockField;
     let now = jiff::Zoned::now();
     let by = i64::from(by);
     let span = match field {

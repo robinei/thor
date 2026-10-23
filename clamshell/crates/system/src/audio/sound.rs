@@ -5,7 +5,7 @@
 
 use std::io;
 
-use clamshell_core::Sound;
+use clamshell_state::Sound;
 
 use crate::os::command;
 use crate::os::worker::{self, Worker};

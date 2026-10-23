@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use clamshell_core::{Event, Reading};
+use clamshell_state::{Event, Reading};
 use wayland_client::globals::{GlobalListContents, registry_queue_init};
 use wayland_client::protocol::{wl_registry, wl_seat};
 use wayland_client::{Connection, Dispatch, EventQueue, QueueHandle, event_created_child};

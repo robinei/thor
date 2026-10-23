@@ -16,8 +16,8 @@ use std::io;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
-use clamshell_core::radios::wifi::{self, Command, Network, Problem, Wifi};
-use clamshell_core::{Event, Reading};
+use clamshell_state::radios::wifi::{self, Command, Network, Problem, Wifi};
+use clamshell_state::{Event, Reading};
 
 use crate::os::dbus::{self, Bus, Path, Props, Value, value};
 use crate::os::worker::{self, Changed, Ended, Next, Service, Worker, lost_on};

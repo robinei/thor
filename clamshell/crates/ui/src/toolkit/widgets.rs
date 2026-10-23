@@ -3,7 +3,7 @@
 //! status row (for a network or a device), a tile (an icon over a caption), a game's box art, and
 //! centred text.
 
-use clamshell_core::{Entry, Id};
+use clamshell_state::{Entry, Id};
 
 use super::scroll::Scrolled;
 use super::style::{self, Look, SURFACE_HI, Text, Tone};
@@ -62,7 +62,7 @@ pub(crate) const SHADE_ALPHA: f32 = 0.85;
 /// fields are the slider, the x its track's positions count from, the height of its middle, its size
 /// (the height of the bar or the row), the room its card may use, and what the card says.
 pub(crate) struct HeldSlider<'a> {
-    pub slider: &'a clamshell_core::levels::slider::Slider,
+    pub slider: &'a clamshell_state::levels::slider::Slider,
     pub x0: f32,
     pub cy: f32,
     pub h: f32,
@@ -612,7 +612,7 @@ impl ListArea {
     }
 
     /// Begins the list of `len` rows above the hint line (see [`Scrolled`]).
-    pub fn scrolled(&self, f: &mut Frame, list: clamshell_core::ListId, len: usize) -> Scrolled {
+    pub fn scrolled(&self, f: &mut Frame, list: clamshell_state::ListId, len: usize) -> Scrolled {
         let view = Rect::new(self.area.x, self.area.y, self.area.w, self.area.h - hint_h(f) - self.pad * 0.3).widened(self.pad * 0.5);
         Scrolled::begin(f, list, view, self.row_h, len)
     }

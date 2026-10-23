@@ -42,7 +42,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use clamshell_core::{Event, Meta};
+use clamshell_state::{Event, Meta};
 use serde::Deserialize;
 
 use cache::Cache;

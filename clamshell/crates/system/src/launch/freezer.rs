@@ -239,7 +239,7 @@ mod live {
     #[allow(clippy::unwrap_used)]
     fn a_freeze_waits_while_the_slice_works_without_drawing() {
         let id = std::process::id();
-        let slice = format!("{}busytest_{id}.slice", clamshell_core::session::instance::SLICE_PREFIX);
+        let slice = format!("{}busytest_{id}.slice", clamshell_state::session::instance::SLICE_PREFIX);
         let state = || {
             let out = Command::new("systemctl").args(["--user", "show", "-p", "FreezerState", "--value", &slice]).output().unwrap();
             String::from_utf8(out.stdout).unwrap().trim().to_owned()

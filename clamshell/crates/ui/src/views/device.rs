@@ -1,4 +1,4 @@
-//! The Device view, shown on the main screen in place of the shelf (see `clamshell_core::device`). It
+//! The Device view, shown on the main screen in place of the shelf (see `clamshell_state::device`). It
 //! has one row per setting, styled like the time tab's rows: Wi-Fi (opens its tab), the time zone (opens
 //! the time tab), the password (typed in the second screen's editor and shown as dots there), remote
 //! login, calibrating the sticks and the gyro, and calibrating the top screen's refresh rate. The last
@@ -10,12 +10,12 @@
 
 use std::fmt::{self, Display, Formatter, Write};
 
-use clamshell_core::DeviceId;
-use clamshell_core::Id;
-use clamshell_core::bottom::editor::{Editor, Purpose};
-use clamshell_core::device::Refresh;
-use clamshell_core::device::account::PasswordStep;
-use clamshell_core::device::sticks::{Phase, Progress, StickAxis};
+use clamshell_state::DeviceId;
+use clamshell_state::Id;
+use clamshell_state::bottom::editor::{Editor, Purpose};
+use clamshell_state::device::Refresh;
+use clamshell_state::device::account::PasswordStep;
+use clamshell_state::device::sticks::{Phase, Progress, StickAxis};
 
 use super::time::Name;
 use crate::gfx::{Align, Column, Keep, Rect};
@@ -161,8 +161,8 @@ pub(super) fn draw_password(f: &mut Frame) {
         PasswordStep::New { current: None } => ("A password, for sudo and remote login (8 characters at least)", "Set"),
     };
     let dots = Fmt::<256>::of(format_args!("{}", Dots(text.chars().count())));
-    let cancel = (Id::Editor(clamshell_core::EditorId::Cancel), "Cancel");
-    super::editor::field(f, title, &dots, cancel, (Id::Editor(clamshell_core::EditorId::Save), save));
+    let cancel = (Id::Editor(clamshell_state::EditorId::Cancel), "Cancel");
+    super::editor::field(f, title, &dots, cancel, (Id::Editor(clamshell_state::EditorId::Save), save));
 }
 
 /// A password as dots, one per character.

@@ -8,7 +8,7 @@ repository.workspace = true
 publish.workspace = true
 description = "ClamShell's library model: entries, collections, sorting and Steam's files"
 
-# No dependencies of its own: the state (clamshell-core) builds on this model. (serde only for the
+# No dependencies of its own: the state (clamshell-state) builds on this model. (serde only for the
 # metadata cache's files, with the `serde` feature.)
 [dependencies]
 serde = { workspace = true, optional = true }

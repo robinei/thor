@@ -7,7 +7,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use clamshell_core::settings::Hud;
+use clamshell_state::settings::Hud;
 
 /// Writes the MangoHud config file for a game in `dir`, with its frame rate cap (0 for none) and HUD
 /// (invisible, the frame rate only, or the full overlay), and logging for the FPS tile. The file is

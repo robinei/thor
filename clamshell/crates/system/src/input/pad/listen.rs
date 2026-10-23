@@ -5,8 +5,8 @@
 
 use std::time::Instant;
 
-use clamshell_core::Event;
-use clamshell_core::keymap::{Dir, Input, Side};
+use clamshell_state::Event;
+use clamshell_state::keymap::{Dir, Input, Side};
 use evdev::AbsoluteAxisCode;
 
 use super::remap::{HALF, button_of, stick_axes, trigger_axis};
@@ -89,7 +89,7 @@ impl Mapping for Listener {
 mod tests {
     use super::*;
     use crate::os::evdev::Range;
-    use clamshell_core::keymap::Button;
+    use clamshell_state::keymap::Button;
     use evdev::KeyCode;
 
     #[test]

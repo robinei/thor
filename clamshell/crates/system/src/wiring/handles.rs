@@ -1,6 +1,6 @@
 //! Carrying out the state's effects. Each effect goes to the thread or the device it is for.
 
-use clamshell_core::{Effect, Instance, Watch, WindowCommand};
+use clamshell_state::{Effect, Instance, Watch, WindowCommand};
 
 use super::Tuning;
 use crate::audio::mixer;
@@ -30,7 +30,7 @@ pub struct Handles {
     pub mixer: Worker<mixer::Command>,
     pub wifi: Worker<wifi::Request>,
     pub bluetooth: Worker<bluetooth::Request>,
-    pub tray: Worker<clamshell_core::session::tray::TrayCommand>,
+    pub tray: Worker<clamshell_state::session::tray::TrayCommand>,
     pub metrics: Worker<Shown>,
     /// The bar's status, read often while the screens are on.
     pub status: Worker<Shown>,
@@ -43,14 +43,14 @@ pub struct Handles {
     /// Windows and launches, under sway.
     pub sway: Option<Worker<sway::Command>>,
     pub jobs: Runner,
-    pub sound: Worker<clamshell_core::Sound>,
+    pub sound: Worker<clamshell_state::Sound>,
     pub brightness: Worker<brightness::Command>,
     pub tuning: Tuning,
     /// Screenshots, sleep and the other device-wide commands (see [`crate::device`]).
     pub system: Worker<crate::device::Command>,
     /// Lists and watches the folder open in the browser.
-    pub browse: Worker<clamshell_core::shelf::files::BrowseCommand>,
-    pub files: Worker<clamshell_core::shelf::files::FileOp>,
+    pub browse: Worker<clamshell_state::shelf::files::BrowseCommand>,
+    pub files: Worker<clamshell_state::shelf::files::FileOp>,
     /// The on-screen keyboard types through it. `None` if it couldn't be made.
     pub keyboard: Option<VirtualKeyboard>,
 }
@@ -182,7 +182,7 @@ impl Handles {
             Watch::Time => {}
             // The Device view shows the account and the time zone.
             Watch::Account if on => {
-                self.system.send(crate::device::Command::Account(clamshell_core::device::account::AccountCommand::Read));
+                self.system.send(crate::device::Command::Account(clamshell_state::device::account::AccountCommand::Read));
                 self.system.send(crate::device::Command::ReadTime);
             }
             Watch::Account => {}

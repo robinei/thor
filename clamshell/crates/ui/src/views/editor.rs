@@ -4,7 +4,7 @@
 //! the field; Enter saves, Esc cancels and Ctrl+V pastes the clipboard's text. Typing a key chord for a
 //! keymap uses the same layout ([`field`]).
 
-use clamshell_core::{EditorId, Id};
+use clamshell_state::{EditorId, Id};
 
 use super::keyboard;
 use crate::gfx::{Align, Keep, LINE, Rect};

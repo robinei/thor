@@ -4,9 +4,9 @@
 
 use std::fmt::Write;
 
-use clamshell_core::bottom::keyboard::Modifier;
-use clamshell_core::keymap::{Chord, Dir, Input, Layer, MouseButton, Output};
-use clamshell_core::{Id, KeymapId, ListId, RowPart, Target};
+use clamshell_state::bottom::keyboard::Modifier;
+use clamshell_state::keymap::{Chord, Dir, Input, Layer, MouseButton, Output};
+use clamshell_state::{Id, KeymapId, ListId, RowPart, Target};
 
 use crate::gfx::icons::Icon;
 use crate::gfx::{Align, Keep, LINE, Rect};

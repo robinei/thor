@@ -18,7 +18,7 @@ md5.workspace = true
 percent-encoding.workspace = true
 evdev.workspace = true
 rustix.workspace = true
-clamshell-core.workspace = true
+clamshell-state.workspace = true
 clamshell-library = { workspace = true, features = ["serde"] }
 log.workspace = true
 libc.workspace = true

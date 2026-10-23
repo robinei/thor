@@ -1,7 +1,7 @@
 //! Steam's store: a game's description, developer, year and first screenshot, by its app id.
 
-use clamshell_core::Meta;
 use clamshell_library::Details;
+use clamshell_state::Meta;
 use serde_json::Value;
 
 use super::titles::{entities, year_in};

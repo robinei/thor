@@ -13,9 +13,9 @@ mod words;
 
 use std::fmt;
 
-use clamshell_core::Control;
-use clamshell_core::keymap::Param;
-use clamshell_core::{Event, PointerEvent};
+use clamshell_state::Control;
+use clamshell_state::keymap::Param;
+use clamshell_state::{Event, PointerEvent};
 
 pub use pipe::{send, spawn};
 pub use words::type_text;
@@ -141,10 +141,10 @@ pub fn parse(line: &str) -> Result<Vec<Event>, ParseError> {
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use clamshell_core::bottom::keyboard::{Key, Modifier};
-    use clamshell_core::keymap::{Actuation, Dir, Input, Layer, MouseButton, Output, PadOut, Side};
-    use clamshell_core::levels::Level;
-    use clamshell_core::{BtId, DockId, EditorId, Id, KeymapId, LevelEvent, ListId, PadInput, RowPart, ShelfEvent, ShelfId, Slide, Tab, Target, WifiId};
+    use clamshell_state::bottom::keyboard::{Key, Modifier};
+    use clamshell_state::keymap::{Actuation, Dir, Input, Layer, MouseButton, Output, PadOut, Side};
+    use clamshell_state::levels::Level;
+    use clamshell_state::{BtId, DockId, EditorId, Id, KeymapId, LevelEvent, ListId, PadInput, RowPart, ShelfEvent, ShelfId, Slide, Tab, Target, WifiId};
 
     fn activate(id: Id) -> Vec<Event> {
         vec![PointerEvent::Activate(id).into()]
@@ -157,11 +157,11 @@ mod tests {
         assert_eq!(parse("tap dock-menu open-another"), Ok(activate(Id::Dock(DockId::OpenAnother))));
         assert_eq!(parse("tap dock-tray 2"), Ok(activate(Id::Dock(DockId::Tray(2)))));
         assert_eq!(parse("tap tray-entry 6"), Ok(activate(Id::Dock(DockId::TrayEntry(6)))));
-        assert_eq!(parse("tap dock-step right"), Ok(activate(Id::Dock(DockId::Step(clamshell_core::keymap::Dir::Right)))));
+        assert_eq!(parse("tap dock-step right"), Ok(activate(Id::Dock(DockId::Step(clamshell_state::keymap::Dir::Right)))));
         assert_eq!(parse("tap launch"), Ok(activate(Id::Shelf(ShelfId::Launch))));
         assert_eq!(parse("tap collection 1"), Ok(activate(Id::Shelf(ShelfId::Collection(1)))));
         assert_eq!(parse("tap up"), Ok(activate(Id::Shelf(ShelfId::Up))));
-        assert_eq!(parse("tap file new-folder"), Ok(activate(Id::Shelf(ShelfId::File(clamshell_core::shelf::files::FileAction::NewFolder)))));
+        assert_eq!(parse("tap file new-folder"), Ok(activate(Id::Shelf(ShelfId::File(clamshell_state::shelf::files::FileAction::NewFolder)))));
         assert_eq!(parse("tap network 2"), Ok(activate(ListId::Wifi.row(2))));
         assert_eq!(parse("long network 0"), Ok(vec![PointerEvent::LongPress(ListId::Wifi.row(0)).into()]));
         assert_eq!(parse("tap wifi-power"), Ok(activate(Id::Wifi(WifiId::Power))));
@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn the_keymaps_screens() {
-        use clamshell_core::keymap::Button;
+        use clamshell_state::keymap::Button;
         let km = |id| activate(Id::Keymap(id));
         assert_eq!(parse("tap keymap 1"), Ok(activate(ListId::Keymaps.row(1))));
         assert_eq!(parse("long keymap 2"), Ok(vec![PointerEvent::LongPress(ListId::Keymaps.row(2)).into()]));

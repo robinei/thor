@@ -11,8 +11,8 @@ use std::os::unix::fs::MetadataExt;
 use std::thread;
 use std::time::Instant;
 
-use clamshell_core::Instance;
-use clamshell_core::status::battery::{Group, Spender};
+use clamshell_state::Instance;
+use clamshell_state::status::battery::{Group, Spender};
 
 use crate::os::{cgroup, drm, sys};
 

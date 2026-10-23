@@ -13,7 +13,7 @@
 
 use std::fmt::{self, Display, Formatter, Write};
 
-use clamshell_core::{ClockField, Id, ListId, TimeId, TimePage, TimeRow};
+use clamshell_state::{ClockField, Id, ListId, TimeId, TimePage, TimeRow};
 
 use crate::gfx::icons::Icon;
 use crate::gfx::{Column, Rect};

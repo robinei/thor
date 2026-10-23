@@ -47,7 +47,7 @@ pub struct Library {
     /// Slots in `entries` free for the next listing to use. They were held by entries that left a
     /// listing, and by everything inside those.
     pub free: Vec<usize>,
-    /// Runners, by key, that come with one of ClamShell's keymaps, by name (see clamshell-core's
+    /// Runners, by key, that come with one of ClamShell's keymaps, by name (see clamshell-state's
     /// `keymap::preset`). The runner uses that keymap until another is chosen for it.
     pub runner_keymaps: Vec<(Arc<str>, String)>,
     /// The order of the tabs, by name; tabs not named come after, in their existing order. `recent` and

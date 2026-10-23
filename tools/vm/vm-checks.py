@@ -148,7 +148,7 @@ def plays():
 
 
 def saved_keymaps():
-    """The keymaps as saved (a file each in keymaps/), by id: each as JSON (clamshell-core's Keymap)."""
+    """The keymaps as saved (a file each in keymaps/), by id: each as JSON (clamshell-state's Keymap)."""
     out = sh(f"cat {DATA}/keymaps/*.json 2>/dev/null")
     decoder, keymaps, at = json.JSONDecoder(), [], 0
     while out[at:].strip():

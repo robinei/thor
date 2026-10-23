@@ -5,19 +5,19 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
-use clamshell_core::Control;
-use clamshell_core::DeviceId;
-use clamshell_core::bottom::keyboard::{self, Key, Modifier};
-use clamshell_core::device::SticksEvent;
-use clamshell_core::device::account::Account;
-use clamshell_core::device::sticks::{Phase, Progress, StickAxis};
-use clamshell_core::keymap::{Button, Input, Keymaps, Layer, Param, Side};
-use clamshell_core::radios::{bluetooth, wifi};
-use clamshell_core::session::tray;
-use clamshell_core::session::windows::Window;
-use clamshell_core::settings::Setting;
-use clamshell_core::status::battery;
-use clamshell_core::{
+use clamshell_state::Control;
+use clamshell_state::DeviceId;
+use clamshell_state::bottom::keyboard::{self, Key, Modifier};
+use clamshell_state::device::SticksEvent;
+use clamshell_state::device::account::Account;
+use clamshell_state::device::sticks::{Phase, Progress, StickAxis};
+use clamshell_state::keymap::{Button, Input, Keymaps, Layer, Param, Side};
+use clamshell_state::radios::{bluetooth, wifi};
+use clamshell_state::session::tray;
+use clamshell_state::session::windows::Window;
+use clamshell_state::settings::Setting;
+use clamshell_state::status::battery;
+use clamshell_state::{
     DockId, EditorId, Event, Id, Init, Instance, KeymapId, ListEvent, ListId, PointerEvent, Reading, RowPart, Scope, SettingsId, ShelfEvent, ShelfId, Slide,
     State, Status, Tab, Target, TimeZones, levels,
 };
@@ -397,7 +397,7 @@ fn warm_frames_do_not_allocate() {
                     }],
                     has_history: false,
                 })),
-                tap(Id::Battery(clamshell_core::BatteryId::Spender(0))),
+                tap(Id::Battery(clamshell_state::BatteryId::Spender(0))),
             ],
         ),
         (

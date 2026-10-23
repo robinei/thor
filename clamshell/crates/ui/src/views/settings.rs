@@ -8,9 +8,9 @@
 //! Those tiles carry a dot, and the rest show the default's value dimmed. Changes reach a running game at
 //! once. The environment tile opens an editor over the on-screen keyboard.
 
-use clamshell_core::bottom::editor::{Editor, KeymapName, Purpose};
-use clamshell_core::settings::{Impact, Setting};
-use clamshell_core::{Id, Scope, SettingsId, State, TileOrigin};
+use clamshell_state::bottom::editor::{Editor, KeymapName, Purpose};
+use clamshell_state::settings::{Impact, Setting};
+use clamshell_state::{Id, Scope, SettingsId, State, TileOrigin};
 
 use crate::gfx::icons::Icon;
 use crate::gfx::{Align, Rect, Rgb};
@@ -155,7 +155,7 @@ fn face(s: &State, tile: Tile) -> Face {
             }
         }
         Tile::Env => {
-            let count = clamshell_core::settings::env::count_env(s.prefs().settings().env_text(entry.as_deref()));
+            let count = clamshell_state::settings::env::count_env(s.prefs().settings().env_text(entry.as_deref()));
             let impact = if count > 0 { Impact::Changes } else { Impact::Stock };
             let origin = if entry.is_some() && count > 0 { TileOrigin::Own } else { TileOrigin::Global };
             let value = Fmt::of(format_args!("{}", Variables(count)));

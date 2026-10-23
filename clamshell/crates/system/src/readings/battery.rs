@@ -11,8 +11,8 @@ use super::usage::Sampler;
 use crate::os::dbus::{self, Bus, Kept, Path};
 use crate::os::worker::{self, Next, Shown, Worker};
 use crate::{Closed, Sink};
-use clamshell_core::status::battery::{Battery, Charge};
-use clamshell_core::{Event, Reading};
+use clamshell_state::status::battery::{Battery, Charge};
+use clamshell_state::{Event, Reading};
 
 const SAMPLE_EVERY: Duration = Duration::from_secs(2);
 const HISTORY_EVERY: Duration = Duration::from_secs(60);

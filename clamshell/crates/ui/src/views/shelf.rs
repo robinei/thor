@@ -6,7 +6,7 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use clamshell_core::{Entry, Id, Launch, ListId, ShelfId, State, Tab};
+use clamshell_state::{Entry, Id, Launch, ListId, ShelfId, State, Tab};
 
 use crate::gfx::icons::Icon;
 use crate::gfx::{Column, Keep, Rect, Span, WRAP_LINE};
@@ -257,7 +257,7 @@ fn selected(f: &mut Frame, entry: &Entry, screen: Rect, list: Rect, pad: f32) {
         para(f, &mut col, detail, Tone::Dim, "Watched", 1);
     }
 
-    // Its actions (see clamshell-core's `actions`), each a row to tap, with its button.
+    // Its actions (see clamshell-state's `actions`), each a row to tap, with its button.
     let action_h = detail * ACTION;
     let rows = actions(f, entry, Rect::new(tx, col.y(), text_w, list.y + list.h - col.y()), action_h, pad);
     col.skip(rows);
@@ -304,8 +304,8 @@ fn selected(f: &mut Frame, entry: &Entry, screen: Rect, list: Rect, pad: f32) {
 /// favourite and on the dock, or Copy and Paste for a browsed file. Then come the file actions, where
 /// Delete and Empty Trash ask to be pressed again, and how far a paste under way has got.
 fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f32 {
-    use clamshell_core::shelf::actions::{Action, Shortcut};
-    use clamshell_core::shelf::files::FileAction;
+    use clamshell_state::shelf::actions::{Action, Shortcut};
+    use clamshell_state::shelf::files::FileAction;
     let s = f.s;
     let mut y = r.y;
     // A row is fourteen times the details' text size wide. Continue's row, which names the next video,
@@ -327,7 +327,7 @@ fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f3
         let (label, tone) = match action {
             Action::Open if entry.is_group() => (Fmt::<192>::of(format_args!("Open")), Tone::Normal),
             Action::Open if running => (Fmt::of(format_args!("Running · show it")), Tone::Go),
-            Action::Open if matches!(entry.launch, clamshell_core::Launch::Tool(_)) => (Fmt::of(format_args!("Run")), Tone::Normal),
+            Action::Open if matches!(entry.launch, clamshell_state::Launch::Tool(_)) => (Fmt::of(format_args!("Run")), Tone::Normal),
             Action::Open if entry.browsed.is_some() => (Fmt::of(format_args!("Open")), Tone::Normal),
             Action::Open => (Fmt::of(format_args!("Play")), Tone::Normal),
             Action::Continue => {
@@ -375,7 +375,7 @@ fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f3
         widgets::key_action(f, Id::Shelf(action.id()), Rect::new(r.x, y, row_w, action_h), key, &label, tone, in_actions);
         y += action_h + pad * 0.15;
     }
-    if let Some(clamshell_core::shelf::files::Busy { what, fraction }) = s.shelf().files().busy() {
+    if let Some(clamshell_state::shelf::files::Busy { what, fraction }) = s.shelf().files().busy() {
         y += pad * 0.3;
         let size = action_h * 0.62;
         f.c.text_fit(Rect::new(r.x, y, r.w, size * 1.4), size, Tone::Normal, what, Keep::Start);

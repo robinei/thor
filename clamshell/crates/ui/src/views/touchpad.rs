@@ -1,5 +1,5 @@
 //! The touchpad tab: the empty area below the bar, where touches always move the pointer (see
-//! clamshell-core's `touch`). It is black, with a faint cross through the middle to show where it is.
+//! clamshell-state's `touch`). It is black, with a faint cross through the middle to show where it is.
 
 use crate::gfx::Rgb;
 use crate::toolkit::Frame;

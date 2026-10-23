@@ -6,7 +6,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use clamshell_core::levels::Share;
+use clamshell_state::levels::Share;
 
 use crate::os::dbus::Kept;
 use crate::os::sys;

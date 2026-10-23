@@ -1,7 +1,7 @@
 //! The Wayland protocol handlers: configures and frame callbacks for the views, and the seats with their
 //! keyboard, pointer and touch, whose events are passed on to the input side.
 
-use clamshell_core::{Event, ShelfEvent};
+use clamshell_state::{Event, ShelfEvent};
 use smithay_client_toolkit::{
     compositor::CompositorHandler,
     delegate_registry,

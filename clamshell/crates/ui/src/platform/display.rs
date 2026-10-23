@@ -9,8 +9,8 @@
 
 use std::sync::Arc;
 
-use clamshell_core::Event;
-use clamshell_core::device::idle::{IdleEvent, NOTIFY_AFTER};
+use clamshell_state::Event;
+use clamshell_state::device::idle::{IdleEvent, NOTIFY_AFTER};
 use smithay_client_toolkit::{
     dispatch2::Dispatch2,
     reexports::{

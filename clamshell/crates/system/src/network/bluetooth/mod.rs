@@ -16,8 +16,8 @@ use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use clamshell_core::radios::bluetooth::{self, Action, Bluetooth, Command, Device, Kind, Problem, Reason};
-use clamshell_core::{Event, Reading};
+use clamshell_state::radios::bluetooth::{self, Action, Bluetooth, Command, Device, Kind, Problem, Reason};
+use clamshell_state::{Event, Reading};
 
 use crate::os::dbus::{self, Bus, Path, Props};
 use crate::os::worker::{self, Changed, Ended, Next, Service, Worker, lost_on};

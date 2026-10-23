@@ -5,10 +5,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use clamshell_core::bottom::touch::TouchLayout;
-use clamshell_core::keymap::Keymaps;
-use clamshell_core::settings::Values;
-use clamshell_core::{Init, State};
+use clamshell_state::bottom::touch::TouchLayout;
+use clamshell_state::keymap::Keymaps;
+use clamshell_state::settings::Values;
+use clamshell_state::{Init, State};
 use clamshell_system::library::{self, Sources, meta};
 use clamshell_system::paths::Paths;
 use clamshell_system::store::Store;
@@ -28,7 +28,7 @@ pub(crate) fn saved(paths: &Paths) -> Init {
     let mut store = Store::open(dir);
     let keymaps = store.keymaps().unwrap_or_else(|| {
         let initial = Keymaps::initial();
-        if let Err(e) = store.save(&clamshell_core::Save::Keymaps(initial.clone())) {
+        if let Err(e) = store.save(&clamshell_state::Save::Keymaps(initial.clone())) {
             log::warn!("store: keymaps: {e}");
         }
         initial
@@ -93,7 +93,7 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources) -> Result<(), Stri
 pub struct UiSink(pub EventSender);
 
 impl Sink for UiSink {
-    fn send(&self, event: clamshell_core::Event) -> Result<(), Closed> {
+    fn send(&self, event: clamshell_state::Event) -> Result<(), Closed> {
         if self.0.send(event) { Ok(()) } else { Err(Closed) }
     }
 }

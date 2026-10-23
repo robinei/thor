@@ -16,7 +16,7 @@
 //! one of the D-pad, of a stick's directions, or of the face buttons), it first goes straight up above
 //! its group.
 
-use clamshell_core::keymap::{Button, Dir, Input, Side};
+use clamshell_state::keymap::{Button, Dir, Input, Side};
 
 use crate::gfx::Rect;
 

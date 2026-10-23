@@ -6,9 +6,9 @@
 //! in shelf's list up and down step through the games. With anything else in front, it stays on the
 //! second screen.
 
-use clamshell_core::bottom::keyboard;
-use clamshell_core::levels::Level;
-use clamshell_core::{DockId, EditorId, Event, Id, LevelEvent, ListId, PadInput, PointerEvent, ShelfEvent, ShelfId, State, Tab};
+use clamshell_state::bottom::keyboard;
+use clamshell_state::levels::Level;
+use clamshell_state::{DockId, EditorId, Event, Id, LevelEvent, ListId, PadInput, PointerEvent, ShelfEvent, ShelfId, State, Tab};
 use smithay_client_toolkit::seat::keyboard::Keysym;
 
 use crate::gfx::Rect;
@@ -217,7 +217,7 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
 
 /// Whether the pad is on shelf, rather than on a view shown in its place.
 fn on_shelf(s: &State, d: &impl Drawn) -> bool {
-    s.pad().on_top() && focus_screen(s, d) == Screen::Top && s.device().top_view() == clamshell_core::device::TopView::Shelf
+    s.pad().on_top() && focus_screen(s, d) == Screen::Top && s.device().top_view() == clamshell_state::device::TopView::Shelf
 }
 
 /// L2 and R2 go to shelf's first or last entry.
@@ -232,7 +232,7 @@ pub(crate) fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     vec![]
 }
 
-/// Y, X and Start run the details' actions while the pad is on shelf (see clamshell-core's `actions`).
+/// Y, X and Start run the details' actions while the pad is on shelf (see clamshell-state's `actions`).
 /// For an entry these are favourite, on the dock and Continue; for a browsed file, Copy, Paste and
 /// Select. On the second screen with the keyboard open, for typing with the pad, X is Backspace.
 /// Elsewhere they do nothing.
@@ -260,15 +260,15 @@ pub(crate) fn back(s: &State) -> Option<Event> {
     if s.bottom().editor().is_some() {
         return Some(PointerEvent::Activate(Id::Editor(EditorId::Cancel)).into());
     }
-    if s.bottom().tab() == Tab::Time && s.sys().time_page() != clamshell_core::TimePage::Main {
-        return Some(PointerEvent::Activate(Id::Time(clamshell_core::TimeId::Back)).into());
+    if s.bottom().tab() == Tab::Time && s.sys().time_page() != clamshell_state::TimePage::Main {
+        return Some(PointerEvent::Activate(Id::Time(clamshell_state::TimeId::Back)).into());
     }
     if s.keymapping().screen().is_some() {
-        return Some(PointerEvent::Activate(Id::Keymap(clamshell_core::KeymapId::Back)).into());
+        return Some(PointerEvent::Activate(Id::Keymap(clamshell_state::KeymapId::Back)).into());
     }
     // The Device view in shelf's place goes back to shelf.
-    if s.device().top_view() == clamshell_core::device::TopView::Device {
-        return Some(PointerEvent::Activate(Id::Device(clamshell_core::DeviceId::Close)).into());
+    if s.device().top_view() == clamshell_state::device::TopView::Device {
+        return Some(PointerEvent::Activate(Id::Device(clamshell_state::DeviceId::Close)).into());
     }
     // On shelf's actions, which holding A led to, go back to the entry in the list.
     if matches!(s.pointer().focus(), Some(Id::Shelf(id)) if !matches!(id, ShelfId::Entry(_) | ShelfId::Collection(_) | ShelfId::Up)) {
@@ -277,7 +277,7 @@ pub(crate) fn back(s: &State) -> Option<Event> {
     // In shelf, clear what was typed to find an entry, or else leave the open group.
     let in_shelf = matches!(s.pointer().focus(), Some(Id::Shelf(_)));
     if in_shelf && !s.shelf().filter().is_empty() {
-        return Some(clamshell_core::ShelfEvent::ClearFilter.into());
+        return Some(clamshell_state::ShelfEvent::ClearFilter.into());
     }
     (in_shelf && s.shelf().group().is_some()).then(|| PointerEvent::Activate(Id::Shelf(ShelfId::Up)).into())
 }
@@ -314,8 +314,8 @@ pub(crate) fn desktop_key(sym: Keysym) -> Option<PadInput> {
 #[allow(clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use clamshell_core::settings::Setting;
-    use clamshell_core::{Init, SettingsId};
+    use clamshell_state::settings::Setting;
+    use clamshell_state::{Init, SettingsId};
 
     /// Targets on each screen, with both screens 100 by 100.
     struct Fake(Screens<Vec<Target>>);
@@ -450,7 +450,7 @@ mod tests {
         assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(Id::Shelf(ShelfId::Pin)).into()), "not down to the second screen");
         assert_eq!(shoulder(&s, &d, 1), vec![]);
         assert_eq!(shortcut(&s, &d, PadInput::Y), vec![ShelfEvent::ToggleFavourite.into()], "sent, but the state has no shortcut there");
-        assert_eq!(s.shelf().shortcut(clamshell_core::shelf::actions::Shortcut::Y, s.pointer()), None);
+        assert_eq!(s.shelf().shortcut(clamshell_state::shelf::actions::Shortcut::Y, s.pointer()), None);
     }
 
     #[test]
@@ -496,8 +496,8 @@ mod tests {
 
     #[test]
     fn up_and_down_in_a_list_go_to_the_next_row_shown_or_not() {
-        use clamshell_core::Reading;
-        use clamshell_core::radios::wifi::{Network, Wifi};
+        use clamshell_state::Reading;
+        use clamshell_state::radios::wifi::{Network, Wifi};
         let mut s = state();
         let networks = (0..10).map(|i| Network { ssid: format!("n{i}"), ..Network::default() }).collect();
         s.apply(Reading::Wifi(Wifi { present: true, on: true, networks, ..Wifi::default() }).into(), &mut Vec::new());

@@ -1,23 +1,23 @@
 //! `State::apply` allocates nothing for the events that come all the time, once the state is warm: ticks,
 //! readings, the windows and scopes listed again, presses and the pad's focus. The counts are printed
-//! (`cargo test -p clamshell-core --test apply_alloc -- --nocapture`), and with CLAMSHELL_ALLOC_TRACE set,
+//! (`cargo test -p clamshell-state --test apply_alloc -- --nocapture`), and with CLAMSHELL_ALLOC_TRACE set,
 //! where each allocation came from.
 #![allow(clippy::unwrap_used, unsafe_code)]
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
-use clamshell_core::radios::wifi::{Network, Wifi};
-use clamshell_core::session::windows::Window;
-use clamshell_core::status::metrics::Metrics;
-use clamshell_core::{Effect, EntryAct, Event, Id, Init, Instance, ListEvent, ListId, PointerEvent, Reading, State, Status, Tab};
+use clamshell_state::radios::wifi::{Network, Wifi};
+use clamshell_state::session::windows::Window;
+use clamshell_state::status::metrics::Metrics;
+use clamshell_state::{Effect, EntryAct, Event, Id, Init, Instance, ListEvent, ListId, PointerEvent, Reading, State, Status, Tab};
 
 thread_local! {
     static ALLOCS: Cell<usize> = const { Cell::new(0) };
     static TRACE: Cell<bool> = const { Cell::new(false) };
 }
 
-/// With CLAMSHELL_ALLOC_TRACE set, where each counted allocation came from (core's frames only).
+/// With CLAMSHELL_ALLOC_TRACE set, where each counted allocation came from (this crate's frames only).
 fn trace() {
     if TRACE.with(Cell::get) {
         return;
@@ -28,7 +28,7 @@ fn trace() {
         return;
     }
     let bt = std::backtrace::Backtrace::force_capture().to_string();
-    let frames: Vec<&str> = bt.lines().filter(|l| l.contains("clamshell_core::") && !l.contains("apply_alloc")).map(str::trim).take(8).collect();
+    let frames: Vec<&str> = bt.lines().filter(|l| l.contains("clamshell_state::") && !l.contains("apply_alloc")).map(str::trim).take(8).collect();
     eprintln!("  alloc at: {}", frames.join(" <- "));
     TRACE.with(|t| t.set(false));
 }

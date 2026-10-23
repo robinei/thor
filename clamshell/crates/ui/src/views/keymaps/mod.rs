@@ -1,4 +1,4 @@
-//! The keymap screens, drawn over the settings tab. Their rules are on [`clamshell_core::keymap::screens::Keymapping`].
+//! The keymap screens, drawn over the settings tab. Their rules are on [`clamshell_state::keymap::screens::Keymapping`].
 //!
 //! - The picker, a scrolled list. For a game it starts with its own keymap or Make own keymap. Then come
 //!   Default, the named keymaps (each with who uses it and an Edit button), and New.
@@ -17,9 +17,9 @@
 //! Colours follow the rest of the UI on black. The pad's parts are thin dim outlines, blue marks what a
 //! keymap maps to something else, and grey marks what it only tunes.
 
-use clamshell_core::keymap::Input;
-use clamshell_core::keymap::screens::{PickerRow, Screen, holds, picked};
-use clamshell_core::{Id, KeymapId, ListId, RowPart, Scope};
+use clamshell_state::keymap::Input;
+use clamshell_state::keymap::screens::{PickerRow, Screen, holds, picked};
+use clamshell_state::{Id, KeymapId, ListId, RowPart, Scope};
 
 use crate::gfx::{Rect, Rgb, Span};
 use crate::toolkit::format::Fmt;

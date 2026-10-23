@@ -3,8 +3,8 @@
 
 use std::sync::Mutex;
 
-use clamshell_core::State;
-use clamshell_core::bottom::touch::TouchLayout;
+use clamshell_state::State;
+use clamshell_state::bottom::touch::TouchLayout;
 use smithay_client_toolkit::{
     compositor::{CompositorState, FrameCallbackData},
     reexports::client::{

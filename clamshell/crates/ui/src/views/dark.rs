@@ -1,7 +1,7 @@
 //! The second screen when it is dark, while a game that asks for this is running. Nothing is drawn, and
 //! a tap anywhere lights it again.
 
-use clamshell_core::Id;
+use clamshell_state::Id;
 
 use crate::gfx::Rect;
 use crate::toolkit::Frame;

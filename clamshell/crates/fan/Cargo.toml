@@ -9,7 +9,7 @@ publish.workspace = true
 description = "The AYN Thor's fan daemon: a curve from the hottest sensors, with a safe fallback"
 
 # The daemon (src/main.rs) and a library (src/lib.rs) with the fan's mode as ClamShell writes it, which
-# clamshell-core builds on. Neither has dependencies. (The library has a name of its own, so that `cargo doc`
+# clamshell-state builds on. Neither has dependencies. (The library has a name of its own, so that `cargo doc`
 # documents the daemon too.)
 [lib]
 name = "clamshell_fan_mode"

@@ -15,8 +15,8 @@ use std::io;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
-use clamshell_core::status::metrics::{MAX_CORES, Metrics};
-use clamshell_core::{Event, Reading};
+use clamshell_state::status::metrics::{MAX_CORES, Metrics};
+use clamshell_state::{Event, Reading};
 
 use crate::os::worker::{Next, Shown, Worker};
 use crate::os::{drm, sys, worker};

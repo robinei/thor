@@ -8,8 +8,8 @@
 //! A level row is set to where the finger is on its track and follows the finger as it moves. The pad's
 //! left and right step it.
 
-use clamshell_core::levels::Level;
-use clamshell_core::{AudioId, Id, ListId, RowPart};
+use clamshell_state::levels::Level;
+use clamshell_state::{AudioId, Id, ListId, RowPart};
 
 use crate::gfx::icons::Icon;
 use crate::gfx::{Align, Column, Keep, Rect};
@@ -209,7 +209,7 @@ pub(super) fn draw_brightness(f: &mut Frame) {
         let mut row = rows.row(i);
         let name = row.take_left(name_w);
         let percent = row.take_right(percent_w);
-        f.c.text_fit(Rect::new(name.x, name.y, name_w - z.pad, name.h), z.text, Tone::Normal, clamshell_core::levels::backlight_label(backlight), Keep::Start);
+        f.c.text_fit(Rect::new(name.x, name.y, name_w - z.pad, name.h), z.text, Tone::Normal, clamshell_state::levels::backlight_label(backlight), Keep::Start);
         let level_id = Level::Backlight(i as u16);
         level(f, level_id, row, false);
         number(f, percent, s.levels().level(level_id), " %", z.text);

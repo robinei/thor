@@ -41,7 +41,7 @@ pub mod wiring;
 
 use std::sync::mpsc;
 
-use clamshell_core::Event;
+use clamshell_state::Event;
 
 pub use os::worker::Closed;
 pub use wiring::Handles;

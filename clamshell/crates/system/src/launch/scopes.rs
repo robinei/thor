@@ -13,7 +13,7 @@ use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use clamshell_core::{Event, Instance};
+use clamshell_state::{Event, Instance};
 
 use crate::os::dbus::{self, Bus, Message, Path, value};
 use crate::os::worker::{self, Changed, Ended, Service, lost_on};
@@ -120,14 +120,14 @@ impl<S: Sink> Service for Units<S> {
         bus.add_match(&format!("type='signal',sender='{SYSTEMD}',path='{MANAGER_PATH}',interface='{MANAGER}'"))?;
         call::<()>(&mut bus, "Subscribe", ())?;
         if !std::mem::replace(&mut self.looked, true) {
-            let slices = units(&mut bus, &[&format!("{}*.slice", clamshell_core::session::instance::SLICE_PREFIX)])?;
+            let slices = units(&mut bus, &[&format!("{}*.slice", clamshell_state::session::instance::SLICE_PREFIX)])?;
             let frozen = slices.into_iter().filter(|row| {
                 bus.get::<String>(SYSTEMD, &row.6, "org.freedesktop.systemd1.Unit", "FreezerState")
                     .inspect_err(|e| log::warn!("units: {}'s freezer state: {e}", row.0))
                     .is_ok_and(|s| s == "frozen")
             });
             self.frozen = Some(
-                frozen.filter_map(|row| Some(row.0.strip_prefix(clamshell_core::session::instance::SLICE_PREFIX)?.strip_suffix(".slice")?.into())).collect(),
+                frozen.filter_map(|row| Some(row.0.strip_prefix(clamshell_state::session::instance::SLICE_PREFIX)?.strip_suffix(".slice")?.into())).collect(),
             );
         }
         Ok(bus)

@@ -1,7 +1,7 @@
 //! The layout the Wi-Fi and Bluetooth tabs share. A header shows what the radio is doing on the left and
 //! its switch on the right. Below it is a scrolled list of rows (networks or devices) above a hint line.
 
-use clamshell_core::Id;
+use clamshell_state::Id;
 
 use crate::gfx::{Keep, Rect};
 use crate::toolkit::style::{self, Text, Tone};

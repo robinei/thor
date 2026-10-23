@@ -8,7 +8,7 @@
 
 use std::time::{Duration, Instant};
 
-use clamshell_core::{ListId, State};
+use clamshell_state::{ListId, State};
 
 use crate::toolkit::scroll::InList;
 

@@ -2,8 +2,8 @@ use super::*;
 use crate::input::pad::motion::Sample;
 use crate::input::pad::route::{Axis, PadRouter};
 use crate::os::evdev::Range;
-use clamshell_core::PadRoute;
-use clamshell_core::bottom::keyboard::{Key, Named};
+use clamshell_state::PadRoute;
+use clamshell_state::bottom::keyboard::{Key, Named};
 
 const STICK_MAX: i32 = 32767;
 
@@ -81,7 +81,7 @@ fn ctrl(c: char) -> Chord {
 
 #[test]
 fn a_button_to_another_button() {
-    let (mut r, mut out) = router(clamshell_core::keymap::nintendo(1), PadRoute::Game);
+    let (mut r, mut out) = router(clamshell_state::keymap::nintendo(1), PadRoute::Game);
     press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
     assert_eq!(held(&out.pad), vec![KeyCode::BTN_EAST], "A is B");
     press(&mut r, KeyCode::BTN_TL, true, &mut out);
@@ -316,7 +316,7 @@ fn only_the_game_route_is_remapped_and_nothing_stays_down() {
     ]);
     let (mut r, mut out) = router(k.clone(), PadRoute::Ui);
     press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
-    assert!(held(&out.mouse).is_empty() && out.events.contains(&clamshell_core::Event::Pad(clamshell_core::PadInput::A(true))), "the screens' A");
+    assert!(held(&out.mouse).is_empty() && out.events.contains(&clamshell_state::Event::Pad(clamshell_state::PadInput::A(true))), "the screens' A");
     // Going into the game with A held, its chord goes down, and so do B and X.
     r.set_route(PadRoute::Game, &mut out);
     press(&mut r, KeyCode::BTN_EAST, true, &mut out);
@@ -516,7 +516,7 @@ fn a_toggled_once_layer_goes_off_with_its_toggle_once_used() {
 /// timers have run out nothing stays down, and the only keys ever down are ones some binding sends.
 #[test]
 fn random_presses_over_every_kind_of_layer_leave_nothing_down() {
-    use clamshell_core::keymap::Layer;
+    use clamshell_state::keymap::Layer;
     let key = |c: Chord| to(Output::Key(c));
     let mut k = keymap(&[]);
     let menu = k.add_layer("menu").unwrap();
@@ -725,7 +725,7 @@ fn a_stick_on_the_pointer_moves_as_before_by_default_and_without_a_deadzone_at_0
     assert!((slight - 140.0).abs() < 5.0, "no deadzone, linear: a tenth of the speed: {slight}");
 }
 
-const DEFAULT_SPEED_FOR_TEST: u8 = clamshell_core::keymap::DEFAULT_SPEED;
+const DEFAULT_SPEED_FOR_TEST: u8 = clamshell_state::keymap::DEFAULT_SPEED;
 
 /// A button down or up at `t`.
 fn press_at(r: &mut PadRouter, code: KeyCode, down: bool, t: Instant, out: &mut Out) {
@@ -740,7 +740,7 @@ fn ms(n: u64) -> Duration {
 /// A keymap with A as X when pressed, plus `act`'s binding.
 fn with(act: Actuation, b: Binding) -> Keymap {
     let mut k = keymap(&[(Input::Button(Button::A), to(Output::Key(Chord::of(Key::Char('x')))))]);
-    assert!(k.set_of(clamshell_core::keymap::Layer::BASE, Input::Button(Button::A), act, Some(b)));
+    assert!(k.set_of(clamshell_state::keymap::Layer::BASE, Input::Button(Button::A), act, Some(b)));
     k
 }
 
@@ -811,7 +811,7 @@ fn a_double_and_a_single_press_with_a_double() {
 fn a_trigger_pulls_and_clicks_at_full_pull() {
     let mut k = keymap(&[]);
     let full = Binding { threshold: 95, ..to(Output::Mouse(MouseButton::Left)) };
-    assert!(k.set_of(clamshell_core::keymap::Layer::BASE, Input::Trigger(Side::Right), Actuation::FullPull, Some(full)));
+    assert!(k.set_of(clamshell_state::keymap::Layer::BASE, Input::Trigger(Side::Right), Actuation::FullPull, Some(full)));
     let (mut r, mut out) = router(k, PadRoute::Game);
     axis(&mut r, AbsoluteAxisCode::ABS_RZ, 500, &mut out);
     assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_RZ), Some(500), "the pull as it is");
@@ -858,8 +858,8 @@ fn a_parameter_slid_applies_at_once() {
     let (mut r, mut out) = router(Keymap::default(), PadRoute::Game);
     axis(&mut r, AbsoluteAxisCode::ABS_X, STICK_MAX / 2, &mut out);
     assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_X), Some(STICK_MAX / 2));
-    // The slider sends the keymap as it moves (see core's keymap::screens), and the stick held still
-    // follows.
+    // The slider sends the keymap as it moves (see clamshell-state's keymap::screens), and the stick held
+    // still follows.
     for dz in [10, 30, 50] {
         r.set_keymap(keymap(&[(Input::Stick(Side::Left), Binding { deadzone: dz, ..own })]), &mut out);
     }

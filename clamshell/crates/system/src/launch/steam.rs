@@ -18,7 +18,7 @@ use std::process::{Command as Process, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use clamshell_core::Instance;
+use clamshell_state::Instance;
 
 use super::job::{self, Job, Started};
 use super::launcher::{Config, Error, Request, parents, started, with_descendants};

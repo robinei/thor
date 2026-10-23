@@ -18,9 +18,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use clamshell_core::settings::fan;
-use clamshell_core::settings::{Cores, PowerProfile};
-use clamshell_core::settings::{Setting, Values};
+use clamshell_state::settings::fan;
+use clamshell_state::settings::{Cores, PowerProfile};
+use clamshell_state::settings::{Setting, Values};
 
 use crate::os::sys;
 use crate::os::worker::{self, Next, Quiet, Worker};

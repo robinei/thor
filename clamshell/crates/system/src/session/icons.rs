@@ -6,7 +6,7 @@
 use std::io;
 use std::sync::Arc;
 
-use clamshell_core::{Event, Reading};
+use clamshell_state::{Event, Reading};
 
 use crate::Sink;
 use crate::os::worker::Worker;

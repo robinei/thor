@@ -7,14 +7,14 @@
 use std::fmt;
 use std::path::Path;
 
-use clamshell_core::Control;
-use clamshell_core::DeviceId;
-use clamshell_core::bottom::keyboard::{Key, Modifier, Named};
-use clamshell_core::device::SticksEvent;
-use clamshell_core::keymap::{Actuation, Button, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
-use clamshell_core::levels::Level;
-use clamshell_core::settings::Setting;
-use clamshell_core::{
+use clamshell_state::Control;
+use clamshell_state::DeviceId;
+use clamshell_state::bottom::keyboard::{Key, Modifier, Named};
+use clamshell_state::device::SticksEvent;
+use clamshell_state::keymap::{Actuation, Button, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
+use clamshell_state::levels::Level;
+use clamshell_state::settings::Setting;
+use clamshell_state::{
     Dock, EditorId, Event, Id, Init, KeymapId, LevelEvent, Library, ListEvent, ListId, PointerEvent, Reading, Scope, SettingsId, ShelfEvent, ShelfId, Slide,
     State, Status, Tab, Target, TimeId,
 };
@@ -90,24 +90,24 @@ fn open_device() -> Vec<Event> {
 /// remembered.
 pub fn state(library: Library) -> State {
     let dock = Dock::pinned(vec!["desktop:steam".into(), "desktop:foot".into(), "desktop:firefox".into()]);
-    State::new(Init { library, dock, keymaps: clamshell_core::keymap::Keymaps::initial(), ..Init::default() })
+    State::new(Init { library, dock, keymaps: clamshell_state::keymap::Keymaps::initial(), ..Init::default() })
 }
 
 /// A play of `entry` from `start` for `duration` seconds, as the launcher reports one. The clock is set
 /// back to `now` afterwards.
 fn a_play(entry: &str, start: u64, duration: u64, now: u64) -> Vec<Event> {
     // The game has a window on its workspace while it plays, as a real game would.
-    let workspace = clamshell_core::Instance::workspace_of(&clamshell_library::key_of(entry));
-    let window = clamshell_core::session::windows::Window {
+    let workspace = clamshell_state::Instance::workspace_of(&clamshell_library::key_of(entry));
+    let window = clamshell_state::session::windows::Window {
         id: 900,
         app_id: "game".into(),
         workspace,
         visible: true,
-        ..clamshell_core::session::windows::Window::default()
+        ..clamshell_state::session::windows::Window::default()
     };
     vec![
         Event::tick(start),
-        Event::Units(vec![clamshell_core::Instance::Run { key: clamshell_library::key_of(entry), secs: start, n: 0 }]),
+        Event::Units(vec![clamshell_state::Instance::Run { key: clamshell_library::key_of(entry), secs: start, n: 0 }]),
         Event::Windows(vec![window]),
         Event::tick(start + duration),
         Event::Units(vec![]),
@@ -137,7 +137,7 @@ fn select(input: Input) -> Vec<Event> {
 /// Slides the selected input's parameter by `by` times half the width of the Thor's second screen. The
 /// finger is lifted if `lift` is set.
 fn slide(param: Param, by: f32, lift: bool) -> Vec<Event> {
-    let control = clamshell_core::Control::Param(param);
+    let control = clamshell_state::Control::Param(param);
     // The slide runs along the screen-wide track, as touch reports it, starting mid-screen in the panel.
     let (x, width) = (620.0, 1240.0);
     let mut events = vec![Slide::Start { control, x, width }.into(), Slide::To { x: x + by * width * 0.5 }.into()];
@@ -414,7 +414,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
             [vec![ff6(), ff6()], fps_keymap()?, vec![km(KeymapId::Back), tap(ListId::Keymaps.row(3)), keymap_tile()]].concat(),
             vec![
                 shot("keymaps-chosen.png", Bottom, vec![]),
-                shot("keymap-edit-shared.png", Bottom, vec![tap(Id::Row { list: ListId::Keymaps, i: 3, part: clamshell_core::RowPart::Edit })]),
+                shot("keymap-edit-shared.png", Bottom, vec![tap(Id::Row { list: ListId::Keymaps, i: 3, part: clamshell_state::RowPart::Edit })]),
                 shot("keymap-own.png", Bottom, vec![km(KeymapId::MakeOwn), km(KeymapId::Back)]),
                 shot("keymap-own-menu.png", Bottom, vec![PointerEvent::LongPress(ListId::Keymaps.row(0)).into()]),
                 shot("keymap-own-kept.png", Bottom, vec![km(KeymapId::Back), tap(ListId::Keymaps.row(3)), keymap_tile()]),
@@ -430,7 +430,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot("launcher.png", Bottom, vec![tab(Tab::Dock), PointerEvent::HideFocus.into()]),
                 shot("launcher-running.png", Bottom, demo::running()),
                 shot("bar-window-below.png", Bottom, demo::window_below()),
-                shot("dock-menu.png", Bottom, vec![demo::running().remove(0), PointerEvent::LongPress(Id::Dock(clamshell_core::DockId::Entry(1))).into()]),
+                shot("dock-menu.png", Bottom, vec![demo::running().remove(0), PointerEvent::LongPress(Id::Dock(clamshell_state::DockId::Entry(1))).into()]),
             ],
         ),
         group(
@@ -460,7 +460,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot(
                     "device.png",
                     Top,
-                    vec![Reading::Account(clamshell_core::device::account::Account { available: true, password: false, ssh: false }).into()],
+                    vec![Reading::Account(clamshell_state::device::account::Account { available: true, password: false, ssh: false }).into()],
                 ),
                 shot("device-sticks.png", Top, vec![tap(Id::Device(DeviceId::Sticks)), Event::Sticks(SticksEvent::Progress(demo::sticks_progress()))]),
                 shot("device-password.png", Bottom, [tap(Id::Device(DeviceId::Password))].into_iter().chain(control::type_text("secret")?).collect()),
@@ -474,7 +474,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 Bottom,
                 vec![
                     tab(Tab::Time),
-                    Reading::Time(clamshell_core::TimeZones { ntp: Some(false), ..demo::time_zones() }).into(),
+                    Reading::Time(clamshell_state::TimeZones { ntp: Some(false), ..demo::time_zones() }).into(),
                     PointerEvent::Activate(Id::Time(TimeId::TwelveHour)).into(),
                 ],
             )],

@@ -1,17 +1,17 @@
 //! The tables of commands and targets, a row each with its words, what it does and what it makes. Also
 //! the names of the pad buttons, keys, and keymap inputs and outputs that the commands take.
 
-use clamshell_core::Control;
-use clamshell_core::bottom::keyboard::{self, Key, Modifier, Named};
-use clamshell_core::device::buttons::DeviceKey;
-use clamshell_core::keymap::{Actuation, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
-use clamshell_core::levels::Level;
-use clamshell_core::settings::Setting;
-use clamshell_core::{
+use clamshell_state::Control;
+use clamshell_state::bottom::keyboard::{self, Key, Modifier, Named};
+use clamshell_state::device::buttons::DeviceKey;
+use clamshell_state::keymap::{Actuation, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
+use clamshell_state::levels::Level;
+use clamshell_state::settings::Setting;
+use clamshell_state::{
     BtId, DockId, EditorId, Event, Id, KeymapId, LevelEvent, ListId, PadInput, PointerEvent, RowPart, SettingsId, ShelfEvent, ShelfId, Slide, Tab, Target,
     WifiId,
 };
-use clamshell_core::{ClockField, Scope, TimeId};
+use clamshell_state::{ClockField, Scope, TimeId};
 
 use super::{Form, ParseError, arg, control, form, name_err, number};
 
@@ -101,10 +101,10 @@ pub const TARGETS: &[Form<Id>] = &[
         },
     ),
     form("spender N", "the battery tab's row N of what is using the machine: its menu", |a| {
-        Ok(Id::Battery(clamshell_core::BatteryId::Spender(number(arg(a, 0))?)))
+        Ok(Id::Battery(clamshell_state::BatteryId::Spender(number(arg(a, 0))?)))
     }),
     form("spender-menu ACTION", "a battery tab row's menu: quit, force-kill, back", |a| {
-        use clamshell_core::BatteryId;
+        use clamshell_state::BatteryId;
         Ok(Id::Battery(match arg(a, 0) {
             "quit" => BatteryId::Quit,
             "force-kill" => BatteryId::ForceKill,
@@ -114,10 +114,10 @@ pub const TARGETS: &[Form<Id>] = &[
     }),
     form("dock-step DIR", "moving a dock entry: one place (left, right) or row (up, down) along", |a| {
         Ok(Id::Dock(DockId::Step(match arg(a, 0) {
-            "left" => clamshell_core::keymap::Dir::Left,
-            "right" => clamshell_core::keymap::Dir::Right,
-            "up" => clamshell_core::keymap::Dir::Up,
-            "down" => clamshell_core::keymap::Dir::Down,
+            "left" => clamshell_state::keymap::Dir::Left,
+            "right" => clamshell_state::keymap::Dir::Right,
+            "up" => clamshell_state::keymap::Dir::Up,
+            "down" => clamshell_state::keymap::Dir::Down,
             other => return Err(name_err(other)),
         })))
     }),
@@ -130,7 +130,7 @@ pub const TARGETS: &[Form<Id>] = &[
         "file ACTION",
         "a browsed entry's file action: copy, cut, rename, trash, restore, delete, empty-trash, eject, select, paste, new-folder, show-hidden, extract, open-in",
         |a| {
-            use clamshell_core::shelf::files::FileAction;
+            use clamshell_state::shelf::files::FileAction;
             Ok(Id::Shelf(ShelfId::File(match arg(a, 0) {
                 "copy" => FileAction::Copy,
                 "cut" => FileAction::Cut,

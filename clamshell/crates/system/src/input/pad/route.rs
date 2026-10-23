@@ -4,13 +4,13 @@
 //! events go in, and events for the virtual devices and the state come out, so switching routes is
 //! tested here. Whatever a mapping holds down is let go when the pad leaves it.
 
-use clamshell_core::device::buttons::DeviceKey;
+use clamshell_state::device::buttons::DeviceKey;
 use std::time::Instant;
 
-use clamshell_core::{Event, PadInput, PadRoute};
+use clamshell_state::{Event, PadInput, PadRoute};
 use evdev::{AbsoluteAxisCode, KeyCode};
 
-use clamshell_core::keymap::Keymap;
+use clamshell_state::keymap::Keymap;
 
 use super::listen::Listener;
 use super::motion::{Sample, interval};
@@ -755,7 +755,7 @@ mod tests {
         out.pad.clear();
         r.event(key(BACK, Press::Down), Instant::now(), &mut out);
         r.event(Raw::REPORT, Instant::now(), &mut out);
-        assert_eq!(out.events, vec![Event::Listened(clamshell_core::keymap::Input::Button(clamshell_core::keymap::Button::Back))]);
+        assert_eq!(out.events, vec![Event::Listened(clamshell_state::keymap::Input::Button(clamshell_state::keymap::Button::Back))]);
         let (mut r, mut out) = router(PadRoute::Mouse);
         out = Out { pad: vec![], ..out };
         r.event(key(BACK, Press::Down), Instant::now(), &mut out);

@@ -1,7 +1,7 @@
 //! The sysinfo tab: six tiles (CPU, GPU, FPS, power, memory, cores), each a label, one large value, a
 //! detail line and a minute of history as bars. Values the machine doesn't have show a dash.
 
-use clamshell_core::status::metrics::{HISTORY, Ring};
+use clamshell_state::status::metrics::{HISTORY, Ring};
 
 use crate::gfx::{Canvas, Rect, Rgb};
 use crate::toolkit::Frame;

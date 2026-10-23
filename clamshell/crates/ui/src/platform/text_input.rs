@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use clamshell_core::Event;
+use clamshell_state::Event;
 use smithay_client_toolkit::{
     dispatch2::Dispatch2,
     reexports::{

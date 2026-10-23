@@ -8,10 +8,10 @@
 //! The battery reports only its total drain, so programs are ranked by work, not watts. Tapping a row,
 //! other than the system's, opens its menu in place of the tab, with Quit and Force kill.
 
-use clamshell_core::BatteryId;
-use clamshell_core::settings::Setting;
-use clamshell_core::status::battery::Group;
-use clamshell_core::{Id, State};
+use clamshell_state::BatteryId;
+use clamshell_state::settings::Setting;
+use clamshell_state::status::battery::Group;
+use clamshell_state::{Id, State};
 
 use crate::gfx::{Align, Keep, LINE, Rect};
 use crate::toolkit::Frame;

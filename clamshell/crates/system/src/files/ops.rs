@@ -6,8 +6,8 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use clamshell_core::Event;
-use clamshell_core::shelf::files::{FileOp, FilesEvent};
+use clamshell_state::Event;
+use clamshell_state::shelf::files::{FileOp, FilesEvent};
 
 use super::trash::{restore, trash, trash_info};
 use crate::Sink;

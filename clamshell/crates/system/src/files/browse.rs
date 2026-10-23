@@ -7,8 +7,8 @@ use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::TryRecvError;
 
-use clamshell_core::shelf::files::{Browse, BrowseCommand, FilesEvent};
-use clamshell_core::{Browsed, Entry, Event};
+use clamshell_state::shelf::files::{Browse, BrowseCommand, FilesEvent};
+use clamshell_state::{Browsed, Entry, Event};
 use rustix::fs::inotify;
 
 use super::mounts::media_mounts;
@@ -327,7 +327,7 @@ mod tests {
         assert_eq!(&*games[0].id, "browse:Files/Home/Zelda");
         assert!(games[0].is_group());
         let argv = |g: &Entry| match &g.launch {
-            clamshell_core::Launch::Program { argv, .. } => argv.clone(),
+            clamshell_state::Launch::Program { argv, .. } => argv.clone(),
             _ => vec![],
         };
         assert_eq!(argv(&games[1])[0], "retroarch", "by the runner's pattern, any case");

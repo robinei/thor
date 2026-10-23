@@ -1,13 +1,13 @@
 //! Made-up readings for the snapshots: a status with every bar icon, Wi-Fi networks, Bluetooth devices,
 //! audio, a day of battery, a minute of metrics, and running instances with their windows.
 
-use clamshell_core::levels::{Audio, AudioOutput, Stream};
-use clamshell_core::radios::bluetooth::{self, Bluetooth, Kind};
-use clamshell_core::radios::wifi::{Network, Wifi};
-use clamshell_core::session::windows::Window;
-use clamshell_core::status::battery::{Battery, Charge, Group, Spender};
-use clamshell_core::status::metrics::Metrics;
-use clamshell_core::{Event, Id, Instance, PointerEvent, Reading, Status, Tab};
+use clamshell_state::levels::{Audio, AudioOutput, Stream};
+use clamshell_state::radios::bluetooth::{self, Bluetooth, Kind};
+use clamshell_state::radios::wifi::{Network, Wifi};
+use clamshell_state::session::windows::Window;
+use clamshell_state::status::battery::{Battery, Charge, Group, Spender};
+use clamshell_state::status::metrics::Metrics;
+use clamshell_state::{Event, Id, Instance, PointerEvent, Reading, Status, Tab};
 
 /// A status that shows every bar icon.
 pub const STATUS: Status =
@@ -158,14 +158,14 @@ pub fn battery(now: u64) -> Vec<Event> {
 
 /// A stick calibration halfway through. The centres are taken, the left stick has been turned up and
 /// right so far, and the right stick is resting.
-pub fn sticks_progress() -> clamshell_core::device::sticks::Progress {
-    use clamshell_core::device::sticks::{Phase, Progress, StickAxis};
+pub fn sticks_progress() -> clamshell_state::device::sticks::Progress {
+    use clamshell_state::device::sticks::{Phase, Progress, StickAxis};
     let axis = |low, high| StickAxis { low, centre: 0, high };
     Progress { phase: Phase::Turn, now: [620, -540, 10, -5], seen: [axis(-80, 760), axis(-700, 60), axis(-10, 15), axis(-8, 6)], min: -1024, max: 1024 }
 }
 
 /// A sample of the time zones as timedated lists them, with Europe/Oslo set.
-pub fn time_zones() -> clamshell_core::TimeZones {
+pub fn time_zones() -> clamshell_state::TimeZones {
     let zones = [
         "Africa/Cairo",
         "Africa/Lagos",
@@ -191,7 +191,7 @@ pub fn time_zones() -> clamshell_core::TimeZones {
         "Pacific/Auckland",
         "UTC",
     ];
-    clamshell_core::TimeZones { current: Some("Europe/Oslo".into()), zones: zones.map(String::from).to_vec(), ntp: Some(true), synced: true, error: None }
+    clamshell_state::TimeZones { current: Some("Europe/Oslo".into()), zones: zones.map(String::from).to_vec(), ntp: Some(true), synced: true, error: None }
 }
 
 /// A minute of made-up readings, with the sysinfo tab opened.

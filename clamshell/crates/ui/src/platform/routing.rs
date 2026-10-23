@@ -1,6 +1,6 @@
 //! Routes input to the pure machines: presses, the wheel, pointer motion and releases, the pad and keys.
 
-use clamshell_core::{Event, Id, ListEvent, PadInput, PointerEvent, State};
+use clamshell_state::{Event, Id, ListEvent, PadInput, PointerEvent, State};
 use smithay_client_toolkit::{reexports::client::protocol::wl_surface::WlSurface, seat::keyboard::Keysym};
 
 use crate::Screen;
@@ -90,15 +90,15 @@ impl App {
     ///   thread sends View from there too.
     pub(super) fn pad(&mut self, input: PadInput) {
         // While a dock entry is being moved, the D-pad moves it and A or B ends the move.
-        if self.state.dock().moving().is_some() && self.state.bottom().tab() == clamshell_core::Tab::Dock {
-            let step = |dir| Some(clamshell_core::DockId::Step(dir));
-            use clamshell_core::keymap::Dir as Step;
+        if self.state.dock().moving().is_some() && self.state.bottom().tab() == clamshell_state::Tab::Dock {
+            let step = |dir| Some(clamshell_state::DockId::Step(dir));
+            use clamshell_state::keymap::Dir as Step;
             let id = match input {
                 PadInput::Up => step(Step::Up),
                 PadInput::Down => step(Step::Down),
                 PadInput::Left => step(Step::Left),
                 PadInput::Right => step(Step::Right),
-                PadInput::A(true) | PadInput::B => Some(clamshell_core::DockId::Done),
+                PadInput::A(true) | PadInput::B => Some(clamshell_state::DockId::Done),
                 _ => None,
             };
             if let Some(id) = id {
@@ -137,7 +137,7 @@ impl App {
             // Move the pad between the second screen and whatever else wants it. When it comes back to
             // the screen, the focus returns to where it was.
             PadInput::Switch => {
-                let on_ui = |s: &State| s.pad().route() == clamshell_core::PadRoute::Ui;
+                let on_ui = |s: &State| s.pad().route() == clamshell_state::PadRoute::Ui;
                 if on_ui(&self.state) {
                     self.focus_memory.bottom = self.state.pointer().focus().cloned();
                 }

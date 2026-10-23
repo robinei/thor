@@ -13,8 +13,8 @@ mod session;
 
 use std::process::ExitCode;
 
-use clamshell_core::settings::Hud;
-use clamshell_core::{Init, State};
+use clamshell_state::settings::Hud;
+use clamshell_state::{Init, State};
 use clamshell_system::launch::job;
 use clamshell_system::library::{self, Sources};
 use clamshell_system::paths::Paths;

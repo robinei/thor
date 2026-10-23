@@ -1,6 +1,6 @@
 //! Starting entries: games, apps, films. Each launch is started and then left alone. Whether it runs,
 //! and when it has ended, comes from systemd's list of our scopes (see [`crate::launch::scopes`] and
-//! clamshell-core's `running`). The launcher reports only a launch that couldn't start because its scope
+//! clamshell-state's `running`). The launcher reports only a launch that couldn't start because its scope
 //! never appeared. Each start runs on a thread of its own, so launches start side by side.
 //!
 //! - A program, with its arguments filled in by the library, runs in its own systemd scope (`systemd-run
@@ -18,7 +18,7 @@ use std::process::{Command as Process, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 
-use clamshell_core::{Event, Instance, Launch, LaunchEvent};
+use clamshell_state::{Event, Instance, Launch, LaunchEvent};
 use rustix::process::{Pid, Signal};
 
 use crate::Sink;
@@ -140,7 +140,7 @@ fn start(config: &Config, request: &Request) -> Result<(), Error> {
 
 /// Starts `argv` as the request's instance, in `workdir` or else the home dir.
 fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir: Option<PathBuf>) -> Result<(), Error> {
-    // `{socket}` is the entry's control socket. See clamshell_core::session::enqueue.
+    // `{socket}` is the entry's control socket. See clamshell_state::session::enqueue.
     let argv = match &request.instance {
         Instance::Run { key, .. } if argv.iter().any(|a| a.contains("{socket}")) => {
             std::fs::create_dir_all(&config.sockets)?;

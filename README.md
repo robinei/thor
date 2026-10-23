@@ -18,11 +18,11 @@ on-screen keyboard), and the games' settings and keymaps. Rust, a Cargo workspac
 
 | Crate | What |
 |---|---|
-| `crates/core` | the state and its rules: events in, dirty screens and effects out; no I/O |
+| `crates/state` | the state and its rules: events in, dirty screens and effects out; no I/O |
 | `crates/system` | threads that watch the system and send events, and carry out effects (sway, systemd, NetworkManager, BlueZ, evdev/uinput, sysfs); the game library from disk |
 | `crates/library` | the library's model (entries, groups, tabs), sorting, name patterns, and the parts of Steam's formats that need no disk |
 | `crates/ui` | Wayland, CPU drawing (tiny-skia, fontdue), the views, pad navigation; the font built in (Noto Sans, SIL Open Font License 1.1: `crates/ui/fonts/OFL.txt`) |
-| `crates/fan` | the fan daemon `clamshell-fan`: a system service on the device, the fan's speed from the temperatures in the mode the Fan setting picks (its curves in `crates/fan/src/curve.rs`); and its library `clamshell_fan_mode`, the modes as ClamShell writes them, which core uses |
+| `crates/fan` | the fan daemon `clamshell-fan`: a system service on the device, the fan's speed from the temperatures in the mode the Fan setting picks (its curves in `crates/fan/src/curve.rs`); and its library `clamshell_fan_mode`, the modes as ClamShell writes them, which clamshell-state uses |
 | `src/` | the program around them: the command line, the environment, the threads, the control pipe, the snapshots |
 
 No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are denied outside tests.

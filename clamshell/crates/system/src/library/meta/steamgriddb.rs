@@ -1,6 +1,6 @@
 //! SteamGridDB: a cover by name for games from desktop files. Needs `keys.steamgriddb`.
 
-use clamshell_core::Meta;
+use clamshell_state::Meta;
 
 use super::{Shared, Wanted};
 use crate::os::{http, text};

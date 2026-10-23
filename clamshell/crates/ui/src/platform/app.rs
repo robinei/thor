@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use clamshell_core::{Effect, Event, ShelfEvent, State};
+use clamshell_state::{Effect, Event, ShelfEvent, State};
 use smithay_client_toolkit::{
     output::OutputState,
     reexports::{
@@ -137,7 +137,7 @@ impl App {
                     // The main screen's refresh rate follows the settings in force. It is also set
                     // through Wayland.
                     if let Effect::Apply { settings, .. } | Effect::Launch { settings, .. } = other {
-                        self.display.refresh(settings.get(clamshell_core::settings::Setting::Refresh), &self.qh);
+                        self.display.refresh(settings.get(clamshell_state::settings::Setting::Refresh), &self.qh);
                     }
                     (self.on_effect)(other)
                 }
@@ -233,14 +233,14 @@ impl App {
                 // Positions are in the second screen's pixels, and a finger's slot comes from its touch id.
                 Action::Point(Source::Touch(id), phase, (x, y)) => {
                     let scale = self.views.bottom.as_ref().map_or(1, |v| v.scale.max(1)) as f32;
-                    let slot = id.rem_euclid(clamshell_core::bottom::touch::SLOTS) as u8;
-                    let contact = clamshell_core::bottom::touch::Contact { slot, phase, x: (x * scale).round() as i32, y: (y * scale).round() as i32 };
+                    let slot = id.rem_euclid(clamshell_state::bottom::touch::SLOTS) as u8;
+                    let contact = clamshell_state::bottom::touch::Contact { slot, phase, x: (x * scale).round() as i32, y: (y * scale).round() as i32 };
                     // A touch frame's events come in one go. Once they are handled, the frame's contacts
                     // are sent on together.
                     if self.contacts.is_empty() {
                         self.loop_handle.insert_idle(|app| {
                             let contacts = std::mem::take(&mut app.contacts);
-                            app.handle(clamshell_core::bottom::touch::Pointing::Contacts(contacts).into());
+                            app.handle(clamshell_state::bottom::touch::Pointing::Contacts(contacts).into());
                         });
                     }
                     self.contacts.push(contact);

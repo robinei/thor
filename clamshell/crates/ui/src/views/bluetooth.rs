@@ -5,8 +5,8 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use clamshell_core::radios::bluetooth::{Action, Bluetooth, DeviceState, Problem, Reason};
-use clamshell_core::{BtId, Id, ListId, RadioStatus};
+use clamshell_state::radios::bluetooth::{Action, Bluetooth, DeviceState, Problem, Reason};
+use clamshell_state::{BtId, Id, ListId, RadioStatus};
 
 use super::radio;
 use crate::gfx::icons::Icon;

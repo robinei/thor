@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use clamshell_core::Meta;
 use clamshell_library::Details;
+use clamshell_state::Meta;
 
 use super::titles::{Name, best_match, developer};
 use super::{Shared, Wanted};

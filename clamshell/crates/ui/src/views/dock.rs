@@ -1,16 +1,16 @@
-//! The dock: its entries, pinned first and then running ones (see `core`'s `dock`), as a grid of tiles on
-//! black. Each tile shows the entry's picture (box art or an app's icon) over its name. The grid scrolls
-//! by rows when there are more entries than fit. A running entry is in colour and a stopped one grey.
+//! The dock: its entries, pinned first and then running ones (see clamshell-state's `dock`), as a grid of
+//! tiles on black. Each tile shows the entry's picture (box art or an app's icon) over its name. The grid
+//! scrolls by rows when there are more entries than fit. A running entry is in colour and a stopped one grey.
 //! When several are running, the one in front has a dot.
 //!
 //! A tap starts an entry or brings it forward. A long press opens its menu in place of the dock (see
-//! [`draw_menu`]). While an entry is being moved, its name is in the accent colour and the D-pad moves
-//! it. A tile with a tray icon (see `core`'s `tray`) has a mark of three bars in its top left corner.
+//! [`draw_menu`]). While an entry is being moved, its name is in the accent colour and the D-pad moves it. A
+//! tile with a tray icon (see clamshell-state's `tray`) has a mark of three bars in its top left corner.
 //! Tapping the mark opens the program's tray menu in the same place, as Menu in the long-press menu does.
 
-use clamshell_core::session::dock::DOCK_COLUMNS;
-use clamshell_core::session::tray::TrayEntry;
-use clamshell_core::{DockId, Id, ListId};
+use clamshell_state::session::dock::DOCK_COLUMNS;
+use clamshell_state::session::tray::TrayEntry;
+use clamshell_state::{DockId, Id, ListId};
 
 use crate::gfx::{Keep, Rect};
 use crate::toolkit::Frame;
@@ -146,7 +146,7 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
     ];
     let mut area = widgets::header(f, Some(Id::Dock(DockId::Back)), title, false, HeaderRight::None);
     // What it currently costs, once that has been read (see the battery tab).
-    if let Some(clamshell_core::status::battery::Cost { cpu, gpu, memory }) = s.session().running(entry).and_then(|r| s.sys().cost_of(r)) {
+    if let Some(clamshell_state::status::battery::Cost { cpu, gpu, memory }) = s.session().running(entry).and_then(|r| s.sys().cost_of(r)) {
         let size = f.text(Text::Small);
         let line = area.take_top(size * 2.0);
         let cost = Fmt::<64>::of(format_args!("{} · CPU {} · GPU {}", Bytes(memory), Share(cpu), MaybeShare(gpu)));

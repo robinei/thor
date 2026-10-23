@@ -15,7 +15,7 @@
 //! until it stops or reaches an end.
 //!
 //! Last, a finger on the second screen that would still tap ([`points`]) starts pointing when it moves
-//! past [`POINT_START`] (see clamshell-core's `touch`). On nothing, where there is no tap to keep, the
+//! past [`POINT_START`] (see clamshell-state's `touch`). On nothing, where there is no tap to keep, the
 //! distance is [`BLANK_POINT_START`]. That finger and the other fingers tapping there are let go without
 //! a tap and go to the touchpad. So do fingers that come down there while it points, until no finger has
 //! been on it for [`POINT_IDLE`].
@@ -24,10 +24,10 @@
 
 use std::time::{Duration, Instant};
 
-use clamshell_core::bottom::touch::{ContactPhase, Pointing};
-use clamshell_core::levels::Level;
-use clamshell_core::levels::slider::{Control, SLIDE_AFTER, SLIDE_MOVE};
-use clamshell_core::{Event, Hold, Id, LevelEvent, ListEvent, PadRoute, PointerEvent, Slide, State};
+use clamshell_state::bottom::touch::{ContactPhase, Pointing};
+use clamshell_state::levels::Level;
+use clamshell_state::levels::slider::{Control, SLIDE_AFTER, SLIDE_MOVE};
+use clamshell_state::{Event, Hold, Id, LevelEvent, ListEvent, PadRoute, PointerEvent, Slide, State};
 
 use crate::gfx::Rect;
 use crate::input::fling::{FLING_EVERY, Fling, Trail};
@@ -455,8 +455,8 @@ impl Input {
 #[allow(clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use clamshell_core::bottom::keyboard::{self, Key, KeyPos};
-    use clamshell_core::{Init, ListId, Tab};
+    use clamshell_state::bottom::keyboard::{self, Key, KeyPos};
+    use clamshell_state::{Init, ListId, Tab};
 
     fn t0() -> Instant {
         *START.get_or_init(Instant::now)
@@ -514,10 +514,10 @@ mod tests {
 
     /// A state with `n` networks, of which the Wi-Fi list shows 5.
     fn networks(n: usize) -> State {
-        use clamshell_core::radios::wifi::{Network, Wifi};
+        use clamshell_state::radios::wifi::{Network, Wifi};
         let mut s = State::new(Init::default());
         let networks = (0..n).map(|i| Network { ssid: format!("n{i}"), ..Network::default() }).collect();
-        s.apply(Event::Reading(clamshell_core::Reading::Wifi(Wifi { present: true, on: true, networks, ..Wifi::default() })), &mut Vec::new());
+        s.apply(Event::Reading(clamshell_state::Reading::Wifi(Wifi { present: true, on: true, networks, ..Wifi::default() })), &mut Vec::new());
         s.apply(ListEvent::Visible(ListId::Wifi, 5.0).into(), &mut Vec::new());
         s
     }
@@ -603,7 +603,7 @@ mod tests {
     #[test]
     fn shelf_settles_on_a_whole_row() {
         let mut state = State::new(Init { library: clamshell_library::demo::library(), ..Init::default() });
-        state.apply(clamshell_core::ShelfEvent::Rows(3).into(), &mut Vec::new());
+        state.apply(clamshell_state::ShelfEvent::Rows(3).into(), &mut Vec::new());
         let mut input = Input::default();
         let t = t0();
         let ms = |n| t + Duration::from_millis(n);
@@ -667,7 +667,7 @@ mod tests {
 
     #[test]
     fn a_keymap_parameter_slides_at_once() {
-        use clamshell_core::keymap::Param;
+        use clamshell_state::keymap::Param;
         let control = Control::Param(Param::Speed);
         let row = Target { id: Id::Control(control), ..volume() };
         let mut input = Input::default();
@@ -785,7 +785,7 @@ mod tests {
         assert_eq!(points(&moved), vec![(finger, ContactPhase::Down)]);
         input.up(finger, End::Release, &state, t);
         // No pointing on shelf, on the main screen, nor with the mouse.
-        let entry = target(Id::Shelf(clamshell_core::ShelfId::Entry("g".into())), None);
+        let entry = target(Id::Shelf(clamshell_state::ShelfId::Entry("g".into())), None);
         input.touch(Source::Touch(2), &entry, (0.0, 0.0), t);
         assert!(points(&input.moved(Source::Touch(2), (100.0, 0.0), t)).is_empty());
         input.touch(Source::Mouse, &tab_free(), (0.0, 0.0), t);

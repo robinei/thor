@@ -2,10 +2,10 @@
 //! the ways to remap it, and its parameters as rows, switches and held sliders. There is also a version
 //! of the panel for while a control is being picked.
 
-use clamshell_core::keymap::screens::{EditView, way_of, ways};
-use clamshell_core::keymap::{Actuation, Binding, Change, Input, Keymap, Kind, Layer, Output, Param, change, params_of};
-use clamshell_core::levels::slider::{Control, Slider};
-use clamshell_core::{Id, KeymapId, Target};
+use clamshell_state::keymap::screens::{EditView, way_of, ways};
+use clamshell_state::keymap::{Actuation, Binding, Change, Input, Keymap, Kind, Layer, Output, Param, change, params_of};
+use clamshell_state::levels::slider::{Control, Slider};
+use clamshell_state::{Id, KeymapId, Target};
 
 use crate::gfx::icons::Icon;
 use crate::gfx::{Align, Column, Keep, LINE, Rect};

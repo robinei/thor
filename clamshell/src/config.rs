@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use clamshell_core::Tab;
+use clamshell_state::Tab;
 use clamshell_system::os::evdev::device::DeviceSpec;
 use clamshell_system::paths::Base;
 

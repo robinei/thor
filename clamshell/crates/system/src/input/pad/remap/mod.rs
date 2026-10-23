@@ -35,7 +35,7 @@
 
 use std::time::{Duration, Instant};
 
-use clamshell_core::keymap::{Actuation, Binding, Button, Chord, Dir, Input, Keymap, Kind, Layer, MouseButton, Output, PadOut, Side};
+use clamshell_state::keymap::{Actuation, Binding, Button, Chord, Dir, Input, Keymap, Kind, Layer, MouseButton, Output, PadOut, Side};
 use evdev::{AbsoluteAxisCode, KeyCode, RelativeAxisCode};
 
 use super::motion::Rate;

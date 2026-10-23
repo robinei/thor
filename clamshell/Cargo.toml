@@ -15,7 +15,7 @@ repository = "https://github.com/robinei/thor"
 publish = false
 
 [workspace.dependencies]
-clamshell-core = { path = "crates/core" }
+clamshell-state = { path = "crates/state" }
 clamshell-system = { path = "crates/system" }
 clamshell-library = { path = "crates/library" }
 clamshell-ui = { path = "crates/ui" }
@@ -68,7 +68,7 @@ description = "ClamShell: a two-screen handheld shell for the AYN Thor (shelf, t
 default-run = "clamshell"
 
 [dependencies]
-clamshell-core.workspace = true
+clamshell-state.workspace = true
 clamshell-system.workspace = true
 clamshell-library.workspace = true
 clamshell-ui.workspace = true

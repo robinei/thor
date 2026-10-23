@@ -1,10 +1,10 @@
-//! The keyboard tab: the PC-style layout from `core`, drawn as black cells without gaps. Each key shows
-//! its main function, with its Shift character small above and its Fn function small below in blue. The
+//! The keyboard tab: the PC-style layout from clamshell-state, drawn as black cells without gaps. Each key
+//! shows its main function, with its Shift character small above and its Fn function small below in blue. The
 //! active layer's function moves to the middle, also while a modifier is only held. Modifiers that are on
 //! (armed or held) are amber, and Caps Lock has a light in its corner. Backspace is red and Enter amber.
 
-use clamshell_core::Id;
-use clamshell_core::bottom::keyboard::{self, Key, KeyPos, Keyboard, LAYOUT, Modifier, Named, Slot};
+use clamshell_state::Id;
+use clamshell_state::bottom::keyboard::{self, Key, KeyPos, Keyboard, LAYOUT, Modifier, Named, Slot};
 
 use crate::gfx::icons::Icon;
 use crate::gfx::{Align, Canvas, Rect};

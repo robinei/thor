@@ -13,8 +13,8 @@ mod view;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use clamshell_core::bottom::touch::TouchLayout;
-use clamshell_core::{Effect, Event, Id, State};
+use clamshell_state::bottom::touch::TouchLayout;
+use clamshell_state::{Effect, Event, Id, State};
 use smithay_client_toolkit::{
     compositor::CompositorState,
     output::OutputState,
@@ -204,7 +204,7 @@ pub(crate) struct App {
     clock: input::EventClock,
     /// Fingers pointing in the touch frame being handled. They are sent on together once the whole frame
     /// has been handled.
-    contacts: Vec<clamshell_core::bottom::touch::Contact>,
+    contacts: Vec<clamshell_state::bottom::touch::Contact>,
     /// Where the pad's focus was on each screen, so View can switch back to it.
     focus_memory: Screens<Option<Id>>,
     /// How the bottom view is shown (see `App::place_views`).
@@ -239,10 +239,10 @@ mod tests {
     /// while a program's window is in front, so neither freezes where it can be seen.
     #[test]
     fn only_the_second_screens_own_output_hides_a_view() {
-        use clamshell_core::device::buttons::DeviceKey;
-        use clamshell_core::session::instance::Instance;
-        use clamshell_core::session::windows::Window;
-        let mut state = State::new(clamshell_core::Init { library: clamshell_library::demo::library(), ..clamshell_core::Init::default() });
+        use clamshell_state::device::buttons::DeviceKey;
+        use clamshell_state::session::instance::Instance;
+        use clamshell_state::session::windows::Window;
+        let mut state = State::new(clamshell_state::Init { library: clamshell_library::demo::library(), ..clamshell_state::Init::default() });
         let mut effects = Vec::new();
         let key = state.shelf().library().entries.first().map(|g| g.key.clone()).unwrap_or_default();
         let run = Instance::Run { key, secs: 1, n: 1 };

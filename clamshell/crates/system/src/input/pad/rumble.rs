@@ -10,7 +10,7 @@
 use std::io;
 use std::time::{Duration, Instant};
 
-use clamshell_core::settings::RumbleStrength;
+use clamshell_state::settings::RumbleStrength;
 use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
 use evdev::{EventSummary, FFEffect, FFEffectCode, FFEffectData, FFEffectKind, FFReplay, FFTrigger, InputEvent, UInputCode};

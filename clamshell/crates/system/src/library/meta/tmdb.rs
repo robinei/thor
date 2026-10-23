@@ -1,7 +1,7 @@
 //! TMDB: posters, backdrops, overviews and years for films and series, by title. Needs `keys.tmdb`.
 
-use clamshell_core::Meta;
 use clamshell_library::Details;
+use clamshell_state::Meta;
 use serde_json::Value;
 
 use super::titles::{title_and_year, year_in};

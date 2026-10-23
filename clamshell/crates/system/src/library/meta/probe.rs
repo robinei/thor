@@ -7,8 +7,8 @@ use std::ffi::OsStr;
 use std::path::Path;
 use std::time::Duration;
 
-use clamshell_core::Meta;
 use clamshell_library::Details;
+use clamshell_state::Meta;
 
 use super::{Shared, Wanted};
 use crate::os::command;

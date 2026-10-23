@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use clamshell_core::settings::{Setting, Values};
+use clamshell_state::settings::{Setting, Values};
 
 use crate::input::pad;
 use crate::os::worker::Worker;
@@ -19,7 +19,7 @@ pub struct Tuning {
 
 impl Tuning {
     /// Sends the keymap in force to the pad.
-    pub fn keymap(&self, keymap: &clamshell_core::keymap::Keymap) {
+    pub fn keymap(&self, keymap: &clamshell_state::keymap::Keymap) {
         self.pad.send(pad::Command::Keymap(Box::new(keymap.clone())));
     }
 

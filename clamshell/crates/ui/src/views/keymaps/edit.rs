@@ -3,8 +3,8 @@
 
 use std::fmt::Write;
 
-use clamshell_core::keymap::{Actuation, Binding, Button, Change, Dir, Input, Keymap, Layer, Side, change};
-use clamshell_core::{Id, KeymapId};
+use clamshell_state::keymap::{Actuation, Binding, Button, Change, Dir, Input, Keymap, Layer, Side, change};
+use clamshell_state::{Id, KeymapId};
 
 use crate::gfx::icons::Icon;
 use crate::gfx::{Align, Keep, LINE, Rect};

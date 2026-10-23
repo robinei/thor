@@ -17,7 +17,7 @@
 #[allow(unsafe_code, clippy::unwrap_used, clippy::expect_used)]
 mod no_alloc;
 
-use clamshell_core::{Event, ListEvent, ListId, ShelfEvent, State};
+use clamshell_state::{Event, ListEvent, ListId, ShelfEvent, State};
 use tiny_skia::PixmapMut;
 
 use crate::gfx::images::Images;
@@ -248,7 +248,7 @@ mod frame_times {
     //! `cargo test --release -p clamshell-ui frame_times -- --ignored --nocapture`.
 
     use super::*;
-    use clamshell_core::{Event, Id, Init, PointerEvent, Tab};
+    use clamshell_state::{Event, Id, Init, PointerEvent, Tab};
     use std::time::{Duration, Instant};
 
     fn state(events: Vec<Event>) -> State {

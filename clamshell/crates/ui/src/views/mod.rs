@@ -28,9 +28,9 @@ mod time;
 mod touchpad;
 mod wifi;
 
-use clamshell_core::Tab;
-use clamshell_core::bottom::editor::Purpose;
-use clamshell_core::shelf::files::FileName;
+use clamshell_state::Tab;
+use clamshell_state::bottom::editor::Purpose;
+use clamshell_state::shelf::files::FileName;
 
 use crate::gfx::Rect;
 use crate::toolkit::Frame;
@@ -46,8 +46,8 @@ const BOTTOM_DIM: f32 = 2.0 / 3.0;
 pub fn top(f: &mut Frame, screen: Rect) {
     f.body = screen;
     match f.s.device().top_view() {
-        clamshell_core::device::TopView::Shelf => f.out.list_rows = Some(shelf::draw(f, screen)),
-        clamshell_core::device::TopView::Device => device::draw(f, screen),
+        clamshell_state::device::TopView::Shelf => f.out.list_rows = Some(shelf::draw(f, screen)),
+        clamshell_state::device::TopView::Device => device::draw(f, screen),
     }
 }
 
@@ -105,7 +105,7 @@ mod tests {
     use crate::gfx::record::Recording;
     use crate::gfx::{Canvas, DrawCache};
     use crate::toolkit::{Scratch, Target};
-    use clamshell_core::{Event, Id, Init, Reading, State, Status};
+    use clamshell_state::{Event, Id, Init, Reading, State, Status};
 
     /// Draws the second screen for `state` at `w` x `h`. Returns what can be tapped in it and what the
     /// frame reports.
@@ -137,8 +137,8 @@ mod tests {
         if matches!(a, Id::List(_)) || matches!(b, Id::List(_)) {
             return true;
         }
-        use clamshell_core::KeymapId::Input as K;
-        use clamshell_core::keymap::{Button, Input, Side};
+        use clamshell_state::KeymapId::Input as K;
+        use clamshell_state::keymap::{Button, Input, Side};
         // A stick's click sits on its cap.
         let click = |a: &Id, b: &Id| {
             matches!(
@@ -148,11 +148,12 @@ mod tests {
             )
         };
         // The mouse's wheel and its turns sit on its buttons.
-        use clamshell_core::Target;
-        use clamshell_core::keymap::{MouseButton, Output};
-        let button = |id: &Id| matches!(id, Id::Keymap(clamshell_core::KeymapId::Target(Target::To(Output::Mouse(MouseButton::Left | MouseButton::Right)))));
-        let wheel =
-            |id: &Id| matches!(id, Id::Keymap(clamshell_core::KeymapId::Target(Target::To(Output::Mouse(MouseButton::Middle)) | Target::To(Output::Wheel(_)))));
+        use clamshell_state::Target;
+        use clamshell_state::keymap::{MouseButton, Output};
+        let button = |id: &Id| matches!(id, Id::Keymap(clamshell_state::KeymapId::Target(Target::To(Output::Mouse(MouseButton::Left | MouseButton::Right)))));
+        let wheel = |id: &Id| {
+            matches!(id, Id::Keymap(clamshell_state::KeymapId::Target(Target::To(Output::Mouse(MouseButton::Middle)) | Target::To(Output::Wheel(_)))))
+        };
         click(a, b) || (button(a) && wheel(b)) || (wheel(a) && button(b)) || click(b, a)
     }
 
@@ -165,18 +166,18 @@ mod tests {
     /// the Thor's screen and a narrow one. Targets stay within the area and none overlap except on purpose.
     #[test]
     fn the_keymap_screens_lay_out() {
-        use clamshell_core::keymap::{Button, Input, Keymaps, Layer, Output, Param, Side};
-        use clamshell_core::settings::Setting;
-        use clamshell_core::{KeymapId, ListId, PointerEvent, SettingsId, Target};
+        use clamshell_state::keymap::{Button, Input, Keymaps, Layer, Output, Param, Side};
+        use clamshell_state::settings::Setting;
+        use clamshell_state::{KeymapId, ListId, PointerEvent, SettingsId, Target};
         let tap = |id| Event::Pointer(PointerEvent::Activate(id));
         let km = |id| tap(Id::Keymap(id));
         let pick = |input| vec![km(KeymapId::Input(input))];
         let slide = |param, lift: bool| {
-            let control = clamshell_core::Control::Param(param);
+            let control = clamshell_state::Control::Param(param);
             let mut v =
-                vec![Event::Slide(clamshell_core::Slide::Start { control, x: 100.0, width: 300.0 }), Event::Slide(clamshell_core::Slide::To { x: 160.0 })];
+                vec![Event::Slide(clamshell_state::Slide::Start { control, x: 100.0, width: 300.0 }), Event::Slide(clamshell_state::Slide::To { x: 160.0 })];
             if lift {
-                v.push(Event::Slide(clamshell_core::Slide::End));
+                v.push(Event::Slide(clamshell_state::Slide::End));
             }
             v
         };
@@ -187,7 +188,7 @@ mod tests {
             (
                 "delete",
                 vec![
-                    tap(Id::Editor(clamshell_core::EditorId::Cancel)),
+                    tap(Id::Editor(clamshell_state::EditorId::Cancel)),
                     km(KeymapId::Back),
                     tap(ListId::Keymaps.row(2)),
                     tap(Id::Settings(SettingsId::Tile(Setting::Keymap))),
@@ -195,7 +196,7 @@ mod tests {
                     km(KeymapId::Delete),
                 ],
             ),
-            ("edit", vec![km(KeymapId::Back), tap(Id::Row { list: ListId::Keymaps, i: 2, part: clamshell_core::RowPart::Edit })]),
+            ("edit", vec![km(KeymapId::Back), tap(Id::Row { list: ListId::Keymaps, i: 2, part: clamshell_state::RowPart::Edit })]),
             ("edit, a button selected", vec![km(KeymapId::Input(Input::Button(Button::A)))]),
             ("the mouse", vec![km(KeymapId::Target(Target::MouseParts))]),
             ("capture", [vec![km(KeymapId::Back)], pick(Input::Trigger(Side::Left)), vec![km(KeymapId::Target(Target::Key))]].concat()),
@@ -236,7 +237,10 @@ mod tests {
                     // columns are clear of the clusters.
                     let l = keymaps::edit_layout(body);
                     for t in targets.iter().filter(|t| {
-                        matches!(t.id, Id::Control(clamshell_core::Control::Param(_)) | Id::Keymap(KeymapId::Target(_) | KeymapId::Toggle(_) | KeymapId::Holds))
+                        matches!(
+                            t.id,
+                            Id::Control(clamshell_state::Control::Param(_)) | Id::Keymap(KeymapId::Target(_) | KeymapId::Toggle(_) | KeymapId::Holds)
+                        )
                     }) {
                         assert!(
                             t.rect.x >= l.strip.x - 0.5 && t.rect.right() <= l.strip.right() + 0.5,
@@ -283,10 +287,10 @@ mod tests {
     /// list's area, every target stays within the area below the bar, and none overlap except on purpose.
     #[test]
     fn long_lists_scroll_within_their_area() {
-        use clamshell_core::levels::{Audio, Stream};
-        use clamshell_core::radios::bluetooth::{Bluetooth, Device, Kind};
-        use clamshell_core::radios::wifi::{Network, Wifi};
-        use clamshell_core::{ListEvent, ListId};
+        use clamshell_state::levels::{Audio, Stream};
+        use clamshell_state::radios::bluetooth::{Bluetooth, Device, Kind};
+        use clamshell_state::radios::wifi::{Network, Wifi};
+        use clamshell_state::{ListEvent, ListId};
         let mut cache = DrawCache::load();
         let readings = [
             Reading::Wifi(Wifi {
@@ -318,7 +322,7 @@ mod tests {
                     for r in &readings {
                         state.apply(Event::Reading(r.clone()), &mut Vec::new());
                     }
-                    state.apply(Event::Pointer(clamshell_core::PointerEvent::Activate(Id::Tab(tab))), &mut Vec::new());
+                    state.apply(Event::Pointer(clamshell_state::PointerEvent::Activate(Id::Tab(tab))), &mut Vec::new());
                     let (_, out) = draw_bottom(&state, (w, h), &mut cache);
                     let visible = out.lists[list.index()].expect("the list reports its rows");
                     state.apply(ListEvent::Visible(list, visible).into(), &mut Vec::new());
@@ -331,9 +335,9 @@ mod tests {
                         visible > 1.0 && (visible - area.h / targets.iter().find_map(|t| t.list).map_or(1.0, |l| l.row_h)).abs() < 1e-3,
                         "{case}: {visible}"
                     );
-                    let rows: Vec<&Target> = targets.iter().filter(|t| clamshell_core::ListId::of(&t.id).is_some_and(|(l, _)| l == list)).collect();
+                    let rows: Vec<&Target> = targets.iter().filter(|t| clamshell_state::ListId::of(&t.id).is_some_and(|(l, _)| l == list)).collect();
                     assert!(!rows.is_empty(), "{case}: rows drawn");
-                    let first = rows.iter().filter_map(|t| clamshell_core::ListId::of(&t.id)).map(|(_, i)| i).min();
+                    let first = rows.iter().filter_map(|t| clamshell_state::ListId::of(&t.id)).map(|(_, i)| i).min();
                     assert_eq!(first, Some(scrolled as usize), "{case}: the first row shown");
                     for (i, a) in targets.iter().enumerate() {
                         assert!(a.rect.w > 0.0 && a.rect.h > 0.0, "{case}: {:?} has no size", a.id);
@@ -363,7 +367,7 @@ mod tests {
             for tab in Tab::ALL {
                 for (w, h) in [(620u32, 540u32), (1240, 1080), (300, 540)] {
                     let mut state = if with_data { demo() } else { State::new(Init::default()) };
-                    state.apply(Event::Pointer(clamshell_core::PointerEvent::Activate(Id::Tab(tab))), &mut Vec::new());
+                    state.apply(Event::Pointer(clamshell_state::PointerEvent::Activate(Id::Tab(tab))), &mut Vec::new());
                     let (targets, out) = draw_bottom(&state, (w, h), &mut cache);
                     let screen = Rect::new(0.0, 0.0, w as f32, h as f32);
                     let body = out.touchpad_area.expect("the area below the bar");
@@ -391,21 +395,21 @@ mod tests {
     #[test]
     fn down_from_the_bar_reaches_the_tabs_first_line() {
         use crate::input::nav::{Dir, NavTarget, step};
-        use clamshell_core::levels::{Audio, Level, Stream};
-        use clamshell_core::radios::wifi::{Network, Wifi};
-        use clamshell_core::{ListId, WifiId};
+        use clamshell_state::levels::{Audio, Level, Stream};
+        use clamshell_state::radios::wifi::{Network, Wifi};
+        use clamshell_state::{ListId, WifiId};
         let mut cache = DrawCache::load();
         let (w, h) = (1240u32, 1080u32);
         for (tab, first, second) in [
             (Tab::Wifi, Id::Wifi(WifiId::Power), ListId::Wifi.row(0)),
-            (Tab::Volume, Id::Level(Level::Volume), Id::Row { list: ListId::Streams, i: 0, part: clamshell_core::nav::lists::RowPart::Level }),
+            (Tab::Volume, Id::Level(Level::Volume), Id::Row { list: ListId::Streams, i: 0, part: clamshell_state::nav::lists::RowPart::Level }),
         ] {
             let mut state = demo();
             let networks = (0..4).map(|i| Network { ssid: format!("net {i}"), ..Network::default() }).collect();
             state.apply(Event::Reading(Reading::Wifi(Wifi { present: true, on: true, networks, ..Wifi::default() })), &mut Vec::new());
             let streams = (0..3).map(|i| Stream { id: i, app: format!("app {i}"), title: String::new(), volume: 50, muted: false }).collect();
             state.apply(Event::Reading(Reading::Audio(Audio { outputs: vec![], streams })), &mut Vec::new());
-            state.apply(Event::Pointer(clamshell_core::PointerEvent::Activate(Id::Tab(tab))), &mut Vec::new());
+            state.apply(Event::Pointer(clamshell_state::PointerEvent::Activate(Id::Tab(tab))), &mut Vec::new());
             let (targets, _) = draw_bottom(&state, (w, h), &mut cache);
             let all: Vec<NavTarget> = targets
                 .iter()
@@ -427,13 +431,13 @@ mod tests {
     #[test]
     fn a_tap_acts_on_the_item_drawn_under_it() {
         use crate::input::{End, Input, Source};
-        use clamshell_core::radios::bluetooth::{Bluetooth, Command, Device, Kind};
-        use clamshell_core::{Effect, ListId, Tab};
+        use clamshell_state::radios::bluetooth::{Bluetooth, Command, Device, Kind};
+        use clamshell_state::{Effect, ListId, Tab};
         let device = |name: &str, connected| Device { address: format!("00:{name}"), name: name.into(), kind: Kind::Other, paired: true, connected };
         let bt = |devices| Event::Reading(Reading::Bluetooth(Bluetooth { present: true, on: true, devices, ..Bluetooth::default() }));
         let mut state = demo();
         state.apply(bt(vec![device("buds", false), device("pad", false)]), &mut Vec::new());
-        state.apply(Event::Pointer(clamshell_core::PointerEvent::Activate(Id::Tab(Tab::Bluetooth))), &mut Vec::new());
+        state.apply(Event::Pointer(clamshell_state::PointerEvent::Activate(Id::Tab(Tab::Bluetooth))), &mut Vec::new());
         let (targets, _) = draw_bottom(&state, (1240, 1080), &mut DrawCache::load());
         let first = targets.iter().rev().find(|t| t.id == ListId::Bluetooth.row(0)).expect("the first device");
         // The pad connects and sorts first before the finger comes down where the buds were drawn.

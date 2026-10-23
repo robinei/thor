@@ -13,7 +13,7 @@
 //!   - `window-rules.json`, `dock.json`, `autostart.json`, `favourites.json`, `resume.json` (where shelf
 //!     and the second screen were), `sticks.json` (the sticks' calibrations, by controller),
 //!     `brightness.json`, `clock.json`, and `first-start.json` (whether the first start is over, see
-//!     `clamshell_core::device`).
+//!     `clamshell_state::device`).
 //! - `plays.jsonl` has one line per play: the entry's id, the start in seconds since the epoch and the
 //!   duration in seconds. Lines are appended, and a line cut short is skipped.
 //!
@@ -31,12 +31,12 @@ use std::sync::Arc;
 use std::sync::mpsc::{self, Sender};
 use std::thread::JoinHandle;
 
-use clamshell_core::bottom::screen::{WindowRule, WindowRules};
-use clamshell_core::keymap::{Keymap, Keymaps};
-use clamshell_core::levels::Brightness;
-use clamshell_core::settings::{Setting, Settings};
-use clamshell_core::{Dock, Resume, Save};
 use clamshell_library::{Plays, key_of};
+use clamshell_state::bottom::screen::{WindowRule, WindowRules};
+use clamshell_state::keymap::{Keymap, Keymaps};
+use clamshell_state::levels::Brightness;
+use clamshell_state::settings::{Setting, Settings};
+use clamshell_state::{Dock, Resume, Save};
 use serde::de::DeserializeOwned;
 
 use crate::os::fs::{read_json, write_json};
@@ -284,7 +284,7 @@ impl Store {
     }
 
     /// The sticks' calibrations, by controller.
-    pub fn sticks(&self) -> clamshell_core::device::sticks::Calibrations {
+    pub fn sticks(&self) -> clamshell_state::device::sticks::Calibrations {
         read_json(&self.file("sticks.json")).unwrap_or_default()
     }
 
@@ -410,8 +410,8 @@ impl Drop for Writer {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use clamshell_core::keymap::{Binding, Button, Input, Output, PadOut};
-    use clamshell_core::levels::Share;
+    use clamshell_state::keymap::{Binding, Button, Input, Output, PadOut};
+    use clamshell_state::levels::Share;
 
     #[test]
     fn the_writer_writes_in_order_and_finishes_before_it_is_gone() {

@@ -1,9 +1,9 @@
 //! Calibrating the sticks. The sticks are let go, and a still second gives the centres. Then they are
 //! turned around their edges until every axis has gone far each way, and then let go again. If that
 //! doesn't happen in time, the calibration is given up. The result is a
-//! `clamshell_core::device::sticks::Sticks`.
+//! `clamshell_state::device::sticks::Sticks`.
 
-use clamshell_core::device::sticks::{AXES, Phase, Progress, StickAxis, Sticks};
+use clamshell_state::device::sticks::{AXES, Phase, Progress, StickAxis, Sticks};
 
 /// The sticks count as still when every axis has stayed within this fraction of half the controller's
 /// range since the last move. That is 40 counts on the Thor's ±1024.

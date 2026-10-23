@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use clamshell_core::{Event, PadInput};
+use clamshell_state::{Event, PadInput};
 use evdev::{AbsoluteAxisCode, KeyCode};
 
 use super::route::{Mapping, Out};

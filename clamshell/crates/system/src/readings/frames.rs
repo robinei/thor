@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
-use clamshell_core::{Event, Reading};
+use clamshell_state::{Event, Reading};
 use rustix::event::{PollFd, PollFlags};
 use rustix::fs::inotify;
 

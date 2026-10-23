@@ -4,9 +4,9 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use clamshell_core::bottom::screen::DownRule;
-use clamshell_core::session::instance::Instance;
-use clamshell_core::session::windows::Window;
+use clamshell_state::bottom::screen::DownRule;
+use clamshell_state::session::instance::Instance;
+use clamshell_state::session::windows::Window;
 
 use super::commands;
 use super::ipc::Node;
@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn shelf_is_shown_when_its_window_goes_home() {
-        let shelf = window(1, clamshell_core::session::windows::SHELF_APP_ID, None, "1");
+        let shelf = window(1, clamshell_state::session::windows::SHELF_APP_ID, None, "1");
         let mut tried = HashSet::new();
         let asked = reconcile(&[shelf], None, &[], &[], &mut tried);
         assert_eq!(asked, vec![r#"[con_id=1] move container to workspace "clamshell-shelf"; workspace "clamshell-shelf""#.to_owned()]);

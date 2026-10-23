@@ -1,5 +1,5 @@
 [package]
-name = "clamshell-core"
+name = "clamshell-state"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
