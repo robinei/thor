@@ -26,7 +26,9 @@ what to try first.
 
 **In ClamShell's process**, on Smithay. Windows are state; a new window is placed before it is shown.
 ClamShell exiting or restarting closes the session's apps: accepted. (The README's "a restart loses
-nothing" stops being true when this lands.)
+nothing" stops being true when this lands. It also means updating ClamShell ends the session: a
+`pacman -Syu` must not restart it while a game runs. The new version is installed and takes over at the
+next login or an explicit restart of the session, which the maintenance playbook says.)
 
 In the MVP:
 
@@ -229,8 +231,16 @@ Before writing the backend, on the device (a day or two):
 
 ## 6. Phases (the product works at each step)
 
-0. **Prepare under sway, no Smithay:** extract the UI core; route by screen; add the unified `Outputs`
-   effect. Behaviour unchanged.
+0. **Prepare under sway, no Smithay.** Behaviour unchanged; worth doing whatever is decided about the rest.
+   - [ ] `ui::Core`: the state, the event queue, the input machines, timers as deadlines (not
+         `LoopHandle<App>` timers), each screen recorded and drawn into a pixmap; `ui::platform` reduced to
+         the Wayland host around it.
+   - [ ] Input routed by `Screen`, not by `WlSurface`.
+   - [ ] `Effect::Outputs { top, bottom }` and `Effect::Refresh(hz)` computed by sync, replacing
+         `Effect::Screens`, `BottomPower` and the refresh read out of `Apply`/`Launch` in `app.rs`.
+
+   Done when the pixel and focus references are unchanged, the trace differs only by those effects, the
+   no-alloc tests pass, and the nested-sway test and the VM suite pass.
 1. **Compositor crate, nested and headless,** hosting the core. A temporary adapter (about 300 lines)
    presents its windows as today's window snapshot and carries out today's window commands, so the state is
    untouched while the compositor matures. `clamshell --nested` on the desktop; the device stays on sway.
