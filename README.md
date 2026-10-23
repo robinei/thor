@@ -23,6 +23,11 @@ Not aims (decided, so they are not reopened by accident):
   and other compositors offer no common way.
 - More than one virtual controller for games. Games see one Xbox 360 pad; remapping and the gyro are
   ClamShell's keymaps.
+- Themes, for now. There is one look, made for the OLED screens: black, grey text, colour only where it
+  means something.
+- Animations, for now. Screens change at once, without transitions (a flung list still scrolls on and
+  slows); every frame drawn costs power, and an interface that answers immediately needs no transition
+  to show what happened.
 - Reading older ClamShell formats. Nobody else runs it yet, so formats change outright.
 
 This README is kept short while things change. How each part behaves is in its module's documentation
