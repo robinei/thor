@@ -117,9 +117,11 @@ while moving opens the menu with the move still on).
 | the same tab again → nothing saved | resume `choosing_the_tab_in_front_saves_nothing` |
 | `TextInput(true)`, no editor on the tab → Keyboard, `raised_from` = the tab | `a_text_field_brings_up_the_keyboard_and_back` and siblings |
 | `TextInput(true)` with Keyboard shown or an editor on the tab → nothing | settings `a_text_field_doesnt_take_the_screen_…` |
-| `TextInput(false)` with `raised_from` → back to it, even with an editor open on Keyboard (S11) | same; the editor case GAP |
-| `EditOnKeyboard(e)` → editor opened (replacing one on Keyboard, S12), raised from the tab | device `the_password_is_typed_below_…`, `renaming_types_on_the_keyboard_and_goes_back` |
-| editor Save/Cancel for a file name → back from the keyboard; for the account password it stays on Keyboard (S10) | renaming test (Save); Cancel GAP |
+| `TextInput(false)` with `raised_from` → back to it | same |
+| `TextInput(false)` with an editor open on Keyboard → nothing, `raised_from` kept | `a_text_field_done_leaves_an_editor_on_the_keyboard_open` |
+| `EditOnKeyboard(e)` → editor opened, raised from the tab | device `the_password_is_typed_below_…`, `renaming_types_on_the_keyboard_and_goes_back` |
+| `EditOnKeyboard(e)` with an editor on Keyboard → refused, KeyboardBusy notice | `a_second_editor_for_the_keyboard_is_refused_and_what_is_typed_stays` |
+| an editor on Keyboard saved or cancelled → back from the keyboard, unless another took its place (the new password after the current one) | renaming test (Save); device `the_password_editor_goes_back_where_it_came_from`; file name Cancel GAP |
 | Pointing contacts → pointing, `Touchpad` effect; idle → off | `it_points_until_idle_…` |
 
 Editor: one per tab; Char appends, Backspace pops, Enter saves, Esc cancels, Ctrl+V and Paste insert the
@@ -388,9 +390,9 @@ Session and dock:
 
 Second screen, device, pad, keymaps:
 - S10. After the account password editor saves or cancels, the screen stays on Keyboard (`lib.rs:1025`),
-  against `Event::EditOnKeyboard`'s doc.
-- S11. A text field losing focus goes back from Keyboard even while an editor is open there (`bottom/mod.rs:204`).
-- S12. Opening the password editor while naming a file drops the name typed (`bottom/editor.rs:117`).
+  against `Event::EditOnKeyboard`'s doc. Fixed: state/bottom: one editor on the keyboard, which goes back when it closes.
+- S11. A text field losing focus goes back from Keyboard even while an editor is open there (`bottom/mod.rs:204`). Fixed: state/bottom: one editor on the keyboard, which goes back when it closes.
+- S12. Opening the password editor while naming a file drops the name typed (`bottom/editor.rs:117`). Fixed: state/bottom: one editor on the keyboard, which goes back when it closes.
 - S13. Modifiers armed on the capture screen survive leaving it by tab or Home (`keymap/screens/mod.rs:573`).
 - S14. The gyro's "hold still" notice expires after 2 s whatever the calibration does.
 - S15. Showing the program's windows below (dock tap, BottomWindows) while the screen is off by hand shows

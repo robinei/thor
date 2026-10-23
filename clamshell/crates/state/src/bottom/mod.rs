@@ -17,7 +17,7 @@ use crate::effect::Watch;
 use crate::kit::names::names;
 use crate::out::Out;
 use editor::{Editor, Editors};
-use notice::{Notice, NoticeSlot};
+use notice::{Notice, NoticeKind, NoticeSlot};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Tab {
@@ -202,6 +202,10 @@ impl Bottom {
                 self.set_tab(Tab::Keyboard)
             }
         } else {
+            // An editor open on the keyboard keeps it, and goes back when it closes.
+            if self.editor().is_some() {
+                return false;
+            }
             match self.raised_from.take() {
                 Some(tab) if self.tab == Tab::Keyboard => self.set_tab(tab),
                 _ => false,
@@ -210,8 +214,13 @@ impl Bottom {
     }
 
     /// Opens `editor` on the keyboard tab, which goes back to the tab it came up from when the editing is
-    /// done (see [`Bottom::back_from_keyboard`]). Returns whether the tab changed.
-    pub(crate) fn open_on_keyboard(&mut self, editor: Editor) -> bool {
+    /// done (see [`Bottom::back_from_keyboard`]). While another editor is open there, it is refused with a
+    /// notice at `now`, so what was typed there isn't lost. Returns whether the tab changed.
+    pub(crate) fn open_on_keyboard(&mut self, editor: Editor, now: u64) -> bool {
+        if self.editors.on(Tab::Keyboard).is_some() {
+            self.notice.show(NoticeKind::KeyboardBusy, now);
+            return false;
+        }
         self.editors.open(editor);
         if self.tab != Tab::Keyboard {
             self.raised_from = Some(self.tab);
@@ -287,6 +296,47 @@ mod tests {
         s.applied(Event::TextInput(true));
         s.applied(Event::TextInput(false));
         assert_eq!(s.bottom().tab(), Tab::Keyboard);
+    }
+
+    fn rename(text: &str) -> Editor {
+        let purpose = crate::bottom::editor::Purpose::FileName(crate::shelf::files::FileName::Rename("/a/b".into()));
+        Editor { purpose, text: text.to_owned() }
+    }
+
+    fn password() -> Editor {
+        let step = crate::device::account::PasswordStep::New { current: None };
+        Editor { purpose: crate::bottom::editor::Purpose::AccountPassword(step), text: String::new() }
+    }
+
+    #[test]
+    fn a_text_field_done_leaves_an_editor_on_the_keyboard_open() {
+        let mut s = state();
+        tap(&mut s, Id::Tab(Tab::Dock));
+        s.applied(Event::Windows(vec![foot()]));
+        s.applied(Event::TextInput(true));
+        s.applied(Event::EditOnKeyboard(rename("b")));
+        s.applied(Event::TextInput(false));
+        assert_eq!(s.bottom().tab(), Tab::Keyboard, "the editor stays in view");
+        assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some("b"));
+        s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Editor(EditorId::Cancel))));
+        assert_eq!(s.bottom().tab(), Tab::Dock, "the editor closing goes back where the keyboard came from");
+    }
+
+    #[test]
+    fn a_second_editor_for_the_keyboard_is_refused_and_what_is_typed_stays() {
+        let mut s = state();
+        tap(&mut s, Id::Tab(Tab::Dock));
+        s.applied(Event::EditOnKeyboard(rename("new name")));
+        s.applied(Event::EditOnKeyboard(password()));
+        assert_eq!(notice(&s), Some(crate::bottom::notice::NoticeKind::KeyboardBusy));
+        assert_eq!(s.bottom().editor(), Some(&rename("new name")), "the name typed is kept");
+        assert_eq!(s.bottom().chosen_tab(), Tab::Dock, "still raised from where it came");
+        // Not even while another tab is shown.
+        tap(&mut s, Id::Tab(Tab::Wifi));
+        s.applied(Event::EditOnKeyboard(password()));
+        assert_eq!(s.bottom().tab(), Tab::Wifi);
+        tap(&mut s, Id::Tab(Tab::Keyboard));
+        assert_eq!(s.bottom().editor(), Some(&rename("new name")));
     }
 
     #[test]

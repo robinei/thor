@@ -253,6 +253,23 @@ mod tests {
     }
 
     #[test]
+    fn the_password_editor_goes_back_where_it_came_from() {
+        let mut s = State::new(init());
+        launch_now(&mut s, "tool:device");
+        available(&mut s, true);
+        s.applied(Event::ChooseTab(Tab::Dock));
+        tap(&mut s, DeviceId::Password);
+        s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Editor(EditorId::Cancel))));
+        assert_eq!(s.bottom().tab(), Tab::Dock, "cancelled");
+        tap(&mut s, DeviceId::Password);
+        type_and_save(&mut s, "old");
+        assert_eq!(s.bottom().tab(), Tab::Keyboard, "the new one is asked for");
+        type_and_save(&mut s, "newpassword");
+        assert_eq!(s.bottom().tab(), Tab::Dock, "set");
+        assert!(s.bottom().editor().is_none());
+    }
+
+    #[test]
     fn remote_login_needs_a_password() {
         let mut s = State::new(init());
         available(&mut s, false);

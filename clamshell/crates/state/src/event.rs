@@ -117,7 +117,8 @@ pub enum Event {
     /// plays (see [`crate::session::enqueue`]). It is about shelf's selection, so it names no entry.
     Enqueue,
     /// Opens `editor` on the keyboard tab, as for a file's name. When the editor closes, the screen goes
-    /// back to the tab the keyboard came up from.
+    /// back to the tab the keyboard came up from. While another editor is open there, it is refused with
+    /// a notice.
     EditOnKeyboard(crate::Editor),
     Quit,
 }

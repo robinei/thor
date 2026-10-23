@@ -37,6 +37,8 @@ pub enum NoticeKind {
     /// An account change is done, with what was done, or failed, with the reason (see
     /// [`crate::device::account`]).
     Account(Result<String, String>),
+    /// An editor for the keyboard tab was refused, since another is open there.
+    KeyboardBusy,
     /// The library was read again and has problems. Holds the first one and how many there are. All of
     /// them are listed under Rescan library on the Tools tab.
     Problems(String, usize),
