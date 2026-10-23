@@ -157,7 +157,9 @@ From the kernel the Thor runs (Armada at d2bcf6f with its patches) and Mesa:
   copies into the swapchain image, writes it rotated (VKD3D-Proton likewise). Then the buffer matches the
   panel, scans out with no plane rotation, linear or UBWC, on a pipe that needn't scale, leaving the
   scaling pipes free. It needs Wine's Wayland driver: an X11 window under Xwayland can't set a buffer
-  transform. The compositor supports both ways; plane rotation covers what isn't patched.
+  transform. **Order:** plane rotation first (no patches to Mesa or DXVK, so it covers native, Proton and
+  emulated games alike); the pre-rotation patches only if measurements show a gap (games not getting UBWC,
+  or pipes running short).
 - **Timing:** no async (tearing) page flips; explicit sync supported. Armada patches 0078 and 0108 fix
   flip timestamps for command- and video-mode panels.
 - **Power:** disabling a CRTC runs the panel's power-down. The bottom panel's driver lacks a guard against

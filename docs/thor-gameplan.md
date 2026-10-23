@@ -544,7 +544,8 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       `docs/compositor-mvp.md` section 4): Armada's patch 0066 (ROCKNIX) gives the VIG planes 90°/270°
       rotation for UBWC buffers only, 8888 and 2101010 formats, height up to 1088; a rotated fullscreen
       plane on the top panel takes two of the four VIG pipes. A compositor of ClamShell's own would use it
-      (Smithay tries it); sway doesn't.
+      (Smithay tries it); sway doesn't. That is the preferred way, needing no app patches; the
+      pre-rotation patches below become the fallback for what it doesn't cover.
       If the pass costs enough (a few hundred mW at 120 Hz, not tens), the way without plane rotation:
       games render portrait themselves. wlroots' scene scans out a buffer whose buffer transform matches
       the output's, and tells clients the transform it prefers (`wl_surface.preferred_buffer_transform`;
