@@ -32,7 +32,7 @@ Where a lookup can't fail by construction it falls back quietly; where a bug cou
 Beside the workspace are the configuration files the packages install with it: `sway/` (ClamShell's part
 of sway's config), `foot/`, `mako/`, `mpv/` and `retroarch/` (those programs' settings for the device),
 and `android/` (the Waydroid session's script and its clipboard bridge). `tests/` holds the nested sway
-test and the snapshots' reference hashes.
+test and the snapshots' references.
 
 ## The library
 
@@ -113,11 +113,19 @@ E the shoulders, F is Y, P is X.
 - `tools/check.sh`: formatting, clippy with warnings as errors (the `dev` build too), the tests (the
   snapshots among them), and the documentation; about a minute. Every commit passes it:
   `git config core.hooksPath tools/hooks` makes it the pre-commit hook.
-- Snapshots: the tests draw every screen and compare hashes of their pixels with
-  `clamshell/tests/snapshots.txt`; on a difference the files drawn are kept and the failure says where.
-  After a change meant to change what is drawn, look at the files (`cargo run --features dev --
-  --snapshot DIR`), then write the new hashes with `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell
-  snapshots`.
+- Snapshots: the tests walk a scenario through every screen (`clamshell/src/dev/snapshot.rs`) and
+  compare three references in `clamshell/tests/`: `snapshots.txt`, hashes of each screen's pixels;
+  `focus.txt`, where the pad's focus goes on each screen (where it starts, what B does, and up, down,
+  left and right from each target), worked out by the UI's own pad functions; and `trace.txt`, the
+  effects of the scenario's events, one line each. The focus is also held to rules: every target
+  reachable from where the pad starts, no target the focus can't leave, no move onto a target that
+  isn't shown, and up and down step through shelf's list. On a difference the failure prints the text
+  diff and the paths of the screens drawn, with the pad's moves drawn over a screen whose focus
+  changed. Look at those images and the diff; update the references (`CLAMSHELL_UPDATE_SNAPSHOTS=1
+  cargo test -p clamshell snapshots`) only if every difference follows from the intended change, and
+  say in the commit what changed and why. A change meant to keep behaviour (a refactor, a rename)
+  leaves the trace untouched, so any trace difference there is a regression; an unexpected difference
+  is a bug.
 - `clamshell/tests/nested-sway.sh` (after `cargo build --release`): a headless sway with ClamShell in it,
   driven through the control pipe; about a minute.
 - `tools/vm/vm-test.sh`: the VM suite end to end, about twenty minutes; before pushing. The virtual Thor is

@@ -93,7 +93,13 @@ updates that document in the same change, and:
 - `tools/check.sh` (fmt, clippy for debug, dev and release builds, all tests including the snapshots,
   rustdoc) runs as the pre-commit hook; every commit passes it. A plain `cargo test` in `clamshell/`
   runs only the binary's tests: use `--workspace` or the script.
-- A change meant to change what is drawn: look at the snapshots (README), then update their hashes.
+- The snapshot test keeps three references in `clamshell/tests/`: the screens' pixel hashes
+  (`snapshots.txt`), where the pad's focus goes on each (`focus.txt`), and the scenario's effects
+  (`trace.txt`). All are written by `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots`.
+  On a difference, look at the current images (with the focus overlay) and the text diff. Update only
+  if every difference follows from the intended change, and say what and why in the commit. A
+  behaviour-preserving change (refactor, rename) leaves the trace untouched, so a trace diff there is a
+  regression; an unexpected difference is a bug.
 - Sway behaviour: `clamshell/tests/nested-sway.sh`. `tools/nested-session.sh` runs ClamShell as on the
   device, in a nested sway on the desktop.
 - The VM suite (`tools/vm/vm-test.sh`, about twenty minutes) is the exception, for what nothing else can
