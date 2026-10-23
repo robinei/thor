@@ -71,6 +71,10 @@ pub struct Shelf {
     fetching: bool,
 }
 
+/// A level of a collection's place kept across a library read: the entry selected in its list (the
+/// group opened from it, for all but the last), and what is typed in it.
+type KeptLevel = (Option<Arc<str>>, String);
+
 /// What shelf's list shows: the collection, the open group, the first row shown, how many rows, and the
 /// selected position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -432,12 +436,12 @@ impl Shelf {
     }
 
     /// Takes the library read again. The listings of browsed folders that are still there are applied to
-    /// it again, and each collection's place is kept by name and ids, with the scroll starting from the
-    /// top. Returns whether the selection changed.
+    /// it again, and each collection's place is kept by name and ids, with what is typed in each list and
+    /// the scroll starting from the top. Returns whether the selection changed.
     pub(crate) fn reload(&mut self, library: Library) -> bool {
         let before = self.selected.clone();
         let mut places = Vec::new();
-        self.places(&mut places);
+        self.kept_places(&mut places);
         let current = self.collection().map(|c| c.name.clone());
         let (rows, unsaved, fetching) = (self.rows, self.unsaved, self.fetching);
         let listings = std::mem::take(&mut self.listings);
@@ -451,12 +455,56 @@ impl Shelf {
                 self.listings.push((folder, entries));
             }
         }
-        for (name, ids) in &places {
-            let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
-            self.restore_selection(name, &ids);
+        for (name, levels) in &places {
+            self.restore_place(name, levels);
         }
         self.restore_current(current.as_deref().unwrap_or(""));
         self.selected != before
+    }
+
+    /// Appends each collection's place to `places`, to be kept across a library read: its name, and for
+    /// its list and each open group's, the entry selected in it and what is typed in it.
+    fn kept_places(&self, places: &mut Vec<(String, Vec<KeptLevel>)>) {
+        for (c, coll) in self.library.collections.iter().enumerate() {
+            let Some(nav) = self.navs.get(c) else {
+                continue;
+            };
+            let id = |i: Option<&usize>| i.and_then(|&i| self.library.entries.get(i)).map(|g| g.id.clone());
+            let levels = nav
+                .places
+                .iter()
+                .enumerate()
+                .map(|(k, p)| {
+                    let at = nav.open.get(k).or_else(|| self.list_of(c).get(p.index));
+                    (id(at), p.filter.clone())
+                })
+                .collect();
+            places.push((coll.name.clone(), levels));
+        }
+    }
+
+    /// In the collection named `name`, types what each level had typed, selects its entry and opens it,
+    /// down to the last level, whose entry is selected. If an entry is gone, it stops there.
+    fn restore_place(&mut self, name: &str, levels: &[KeptLevel]) {
+        let Some(c) = self.library.collections.iter().position(|c| c.name == name) else {
+            return;
+        };
+        let current = std::mem::replace(&mut self.current, c);
+        for (k, (id, filter)) in levels.iter().enumerate() {
+            if !filter.is_empty() {
+                self.set_filter(filter.clone());
+            }
+            let Some(p) = id.as_ref().and_then(|id| self.position_in(c, id)) else {
+                break;
+            };
+            if let Some(place) = self.place_mut() {
+                place.index = p;
+            }
+            if k + 1 < levels.len() && !self.open() {
+                break;
+            }
+        }
+        self.current = current;
     }
 
     /// Takes browsed folder `folder`'s entries as they are now (see [`Library::set_listing`]). The
@@ -576,22 +624,8 @@ impl Shelf {
     /// In the collection named `name`, opens the groups that `ids` names except the last, then selects the
     /// last. If one of them is gone, it stops there.
     pub(crate) fn restore_selection(&mut self, name: &str, ids: &[&str]) {
-        let Some(c) = self.library.collections.iter().position(|c| c.name == name) else {
-            return;
-        };
-        let current = std::mem::replace(&mut self.current, c);
-        for (i, id) in ids.iter().enumerate() {
-            let Some(p) = self.position_in(c, id) else {
-                break;
-            };
-            if let Some(place) = self.place_mut() {
-                place.index = p;
-            }
-            if i + 1 < ids.len() && !self.open() {
-                break;
-            }
-        }
-        self.current = current;
+        let levels: Vec<KeptLevel> = ids.iter().map(|&id| (Some(id.into()), String::new())).collect();
+        self.restore_place(name, &levels);
     }
 
     /// Makes the collection named `name` the current one, if there is one.
@@ -734,6 +768,21 @@ mod tests {
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("mk-ds"));
         s.applied(ShelfEvent::ToggleFavourite.into());
         assert!(s.resume().places.contains(&("Favourites".to_owned(), vec!["metroid-zm".to_owned()])), "{:?}", s.resume().places);
+    }
+
+    #[test]
+    fn a_library_read_keeps_what_is_typed() {
+        use crate::bottom::keyboard::{Key, find};
+        let mut s = state();
+        tap(&mut s, Id::Tab(crate::Tab::Keyboard));
+        tap(&mut s, Id::Key(find(Key::Char('m')).unwrap()));
+        s.applied(ShelfEvent::ListStep(1).into());
+        let (list, selected) = (s.shelf().list().to_vec(), s.shelf().selected().cloned());
+        assert_eq!(selected.as_deref(), Some("mk-ds"));
+        s.applied(Event::Library(Box::new(clamshell_library::demo::library())));
+        assert_eq!(s.shelf().filter(), "m");
+        assert_eq!(s.shelf().list(), list.as_slice());
+        assert_eq!(s.shelf().selected().cloned(), selected);
     }
 
     #[test]

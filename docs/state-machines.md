@@ -232,7 +232,7 @@ Overwrite, Delete; Undo per keymap since the edit screen opened.
 | a play recorded: relayout (a focus in the list follows the selection: GAP), `RecordPlay`, `ReadPosition` for videos | tests `a_launchs_start_and_end…` (count only) |
 | a relayout closes a group no longer in its collection (Recent, Favourites) | `a_group_that_leaves_its_collection_is_closed_there` |
 | a group launched from elsewhere: its collection's places reset, the path opened, `ShowShelf` | `a_group_started_from_elsewhere_opens_in_shelf` |
-| Library read: places restored by name and id, the typed filter dropped (S26) | `listings_outlive_the_library_read_again`; selection gone and filter GAP |
+| Library read: places restored by name and id, with what is typed in each list | `listings_outlive_the_library_read_again`, `a_library_read_keeps_what_is_typed`; selection gone GAP |
 | Continue, Meta, Position | `continue_plays_on_where_the_series_was_left`; Meta GAP |
 | actions and button shortcuts (Y, X, Start) | `an_entrys_actions_come_from_…`, `copy_then_paste_…`, `selected_entries_are_what_the_actions_act_on`; shortcuts off in the actions mode GAP |
 
@@ -419,7 +419,7 @@ Shelf, files, radios, levels, status:
 - S23. A tap on an entry not in the list leaves the focus on it. Fixed: state/shelf: a tap on an entry not in the list does nothing.
 - S24. A long press on the selected entry by touch plays it (`shelf/rules.rs:17`). Fixed: state/shelf: a long press on the selected entry opens its actions by touch too.
 - S25. A relayout (favourite, play) doesn't move the pointer's focus with the selection (`rules.rs:141`). Fixed: state/shelf: a relayout moves the focus with the selection.
-- S26. A Library read drops the typed filter.
+- S26. A Library read drops the typed filter. Fixed: state/shelf: a library read keeps what is typed.
 - S27. Copy/Cut with only stale selected entries makes an empty clip that Paste offers and ignores (`files.rs:316`).
 - S28. A cut clip is cleared before the move finishes, so after a failed move it is gone.
 - S29. `busy` clears at the first of several operations' Done (`files.rs:415`); without a Done it never clears.
