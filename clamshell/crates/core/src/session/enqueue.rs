@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use clamshell_library::RunnerOf;
 
-use crate::bottom::notice::{Notice, NoticeKind};
+use crate::bottom::notice::{NoticeKind, NoticeSlot};
 use crate::out::Out;
 use crate::session::running::Running;
 use crate::{Effect, Session, Shelf};
@@ -69,13 +69,13 @@ impl Shelf {
 impl Session {
     /// Adds what is `enqueued` to the running launch of its runner that was most recently in front (see
     /// [`Session::enqueue_target`]), saying so in a notice. Returns whether there was one.
-    pub(crate) fn enqueue(&self, enqueued: &Enqueued, notice: &mut Option<Notice>, now: u64, out: &mut Out) -> bool {
+    pub(crate) fn enqueue(&self, enqueued: &Enqueued, notice: &mut NoticeSlot, now: u64, out: &mut Out) -> bool {
         let Some(r) = self.enqueue_target(&enqueued.runner.key) else {
             return false;
         };
         let (key, title) = (r.key.clone(), r.entry.as_ref().map_or_else(String::new, |g| g.title.clone()));
         let lines = enqueued.files.iter().filter_map(|f| line(&enqueued.runner, f)).collect();
-        *notice = Some(Notice::new(NoticeKind::Enqueued(enqueued.files.len(), title), now));
+        notice.show(NoticeKind::Enqueued(enqueued.files.len(), title), now);
         out.effects.push(Effect::Enqueue { key, lines });
         true
     }

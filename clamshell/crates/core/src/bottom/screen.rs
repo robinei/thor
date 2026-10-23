@@ -281,7 +281,7 @@ impl Bottom {
     /// A rule was added or forgotten. That is shown in a notice, and the rules are saved and given to
     /// sway.
     fn window_rules_changed(&mut self, added: bool, now: u64, out: &mut Out) {
-        self.notify(NoticeKind::BottomRule(added), now);
+        self.notice.show(NoticeKind::BottomRule(added), now);
         out.effects.push(Effect::Save(Save::WindowRules(self.window_rules.clone())));
         out.effects.push(self.window_rules.effect());
     }

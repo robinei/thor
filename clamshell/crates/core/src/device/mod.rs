@@ -156,7 +156,7 @@ impl Device {
             }
             DeviceId::Sticks => {}
             DeviceId::Gyro => {
-                bottom.notify(NoticeKind::Gyro(None), now);
+                bottom.notice_mut().show(NoticeKind::Gyro(None), now);
                 out.effects.push(Effect::CalibrateGyro);
             }
             DeviceId::Refresh if self.refresh != Refresh::Running => {

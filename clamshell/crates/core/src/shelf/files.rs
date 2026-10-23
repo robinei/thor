@@ -12,7 +12,7 @@ use std::sync::Arc;
 use clamshell_library::BrowseKind;
 
 use crate::bottom::editor::{Editor, Purpose};
-use crate::bottom::notice::{Notice, NoticeKind};
+use crate::bottom::notice::{NoticeKind, NoticeSlot};
 use crate::effect::Effect;
 use crate::out::Out;
 use crate::shelf::Shelf;
@@ -405,7 +405,7 @@ impl Shelf {
     }
 
     /// What the files thread said. A notice says how an operation ended.
-    pub(crate) fn on_files(&mut self, event: FilesEvent, pointer: &mut Pointer, notice: &mut Option<Notice>, now: u64, out: &mut Out) {
+    pub(crate) fn on_files(&mut self, event: FilesEvent, pointer: &mut Pointer, notice: &mut NoticeSlot, now: u64, out: &mut Out) {
         match event {
             FilesEvent::Listed { folder, entries } => {
                 if self.listed(folder, entries) {
@@ -415,7 +415,7 @@ impl Shelf {
             FilesEvent::Busy { what, fraction } => self.files.busy = Some(Busy { what, fraction }),
             FilesEvent::Done(result) => {
                 self.files.busy = None;
-                *notice = Some(Notice::new(NoticeKind::Files(result), now));
+                notice.show(NoticeKind::Files(result), now);
             }
             // Removable storage's groups, and sources on it, come and go when the library is read again.
             FilesEvent::Mounts => out.effects.push(Effect::Tool(clamshell_library::Tool::Rescan)),

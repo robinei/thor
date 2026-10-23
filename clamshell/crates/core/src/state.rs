@@ -278,7 +278,7 @@ impl State {
                 self.bottom.paste();
             }
             Event::Screenshot(result) => {
-                self.bottom.notify(crate::bottom::notice::NoticeKind::Screenshot(result), self.clock.mono());
+                self.bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Screenshot(result), self.clock.mono());
             }
             Event::Sticks(event) => {
                 self.device.sticks_event(event, out);
@@ -288,11 +288,11 @@ impl State {
                 self.sent.resend(Resend::RefreshCalibrated);
             }
             Event::GyroCalibrated(ok) => {
-                self.bottom.notify(crate::bottom::notice::NoticeKind::Gyro(Some(ok)), self.clock.mono());
+                self.bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Gyro(Some(ok)), self.clock.mono());
             }
             Event::AccountChanged(result) => {
                 // What the helper did, or why it failed, shown for a moment.
-                self.bottom.notify(crate::bottom::notice::NoticeKind::Account(result), self.clock.mono());
+                self.bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Account(result), self.clock.mono());
             }
             Event::ChooseTab(tab) => {
                 self.choose_tab(tab);
@@ -526,7 +526,7 @@ impl State {
         let problems = &library.problems;
         if !problems.is_empty() && *problems != self.shelf.library().problems {
             let first = problems.first().cloned().unwrap_or_default();
-            self.bottom.notify(crate::bottom::notice::NoticeKind::Problems(first, problems.len()), self.clock.mono());
+            self.bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Problems(first, problems.len()), self.clock.mono());
         }
         if self.shelf.reload(library) {
             self.shelf.moved(&mut self.pointer);
@@ -911,7 +911,7 @@ impl State {
             DeviceKey::BrightnessUp => (Level::Brightness, 1),
             DeviceKey::BrightnessDown => (Level::Brightness, -1),
             DeviceKey::Mute => {
-                self.bottom.notify(NoticeKind::Level(Control::Volume), self.clock.mono());
+                self.bottom.notice_mut().show(NoticeKind::Level(Control::Volume), self.clock.mono());
                 return self.levels.toggle_mute(out);
             }
             DeviceKey::Screenshot => return out.effects.push(Effect::Screenshot),
@@ -923,7 +923,7 @@ impl State {
             DeviceKey::WindowUp => return self.bottom.window_up(&self.session, self.clock.mono(), out),
         };
         let control = if level == Level::Volume { Control::Volume } else { Control::Brightness };
-        self.bottom.notify(NoticeKind::Level(control), self.clock.mono());
+        self.bottom.notice_mut().show(NoticeKind::Level(control), self.clock.mono());
         self.levels.change(self.clock.mono(), |l| l.step(level, direction, out));
     }
 
@@ -965,7 +965,7 @@ impl State {
         // The notice comes at once, since a start may take a while: Android's first start, a Steam
         // game's, or Proton's setup.
         if let Some(title) = title.filter(|_| out.effects.iter().skip(mark).any(|e| matches!(e, Effect::Launch { .. }))) {
-            self.bottom.notify(crate::bottom::notice::NoticeKind::Starting(title), self.clock.mono());
+            self.bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Starting(title), self.clock.mono());
         }
     }
 

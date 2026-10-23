@@ -493,7 +493,7 @@ impl Keymapping {
                 }
             }
             KeymapId::Calibrate => {
-                bottom.notify(crate::bottom::notice::NoticeKind::Gyro(None), cx.now);
+                bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Gyro(None), cx.now);
                 out.effects.push(Effect::CalibrateGyro);
             }
             KeymapId::Holds => {

@@ -42,28 +42,36 @@ pub enum NoticeKind {
     Problems(String, usize),
 }
 
-impl Notice {
-    /// A notice shown from `now`.
-    pub(crate) fn new(what: NoticeKind, now: u64) -> Notice {
-        Notice { what, until: now + NOTICE_FOR }
+/// The notice showing, if any. A rule shows one with [`NoticeSlot::show`], the one way to show one.
+#[derive(Debug, Clone, Default)]
+pub struct NoticeSlot(Option<Notice>);
+
+impl NoticeSlot {
+    /// Shows `what` from `now`, in place of any notice showing.
+    pub(crate) fn show(&mut self, what: NoticeKind, now: u64) {
+        self.0 = Some(Notice { what, until: now + NOTICE_FOR });
+    }
+
+    pub fn get(&self) -> Option<&Notice> {
+        self.0.as_ref()
+    }
+
+    /// Removes the notice if it has timed out at `now`.
+    fn expire(&mut self, now: u64) {
+        if self.0.as_ref().is_some_and(|n| now >= n.until) {
+            self.0 = None;
+        }
     }
 }
 
 impl crate::Bottom {
-    /// Shows `what` from `now`, in place of any notice showing.
-    pub(crate) fn notify(&mut self, what: NoticeKind, now: u64) {
-        self.notice = Some(Notice::new(what, now));
-    }
-
-    /// The notice, for another area's rule to show one.
-    pub(crate) fn notice_mut(&mut self) -> &mut Option<Notice> {
+    /// The notice, for a rule to show one.
+    pub(crate) fn notice_mut(&mut self) -> &mut NoticeSlot {
         &mut self.notice
     }
 
     /// Removes the notice if it has timed out at `now`.
     pub(crate) fn expire_notice(&mut self, now: u64) {
-        if self.notice.as_ref().is_some_and(|n| now >= n.until) {
-            self.notice = None;
-        }
+        self.notice.expire(now);
     }
 }

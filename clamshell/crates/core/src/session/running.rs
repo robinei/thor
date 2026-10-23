@@ -27,7 +27,7 @@ use std::sync::Arc;
 use clamshell_library::{Launch, ids};
 
 use crate::bottom::Tab;
-use crate::bottom::notice::{Notice, NoticeKind};
+use crate::bottom::notice::{NoticeKind, NoticeSlot};
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::out::Out;
 use crate::session::instance::{Instance, STEAM_APP_PREFIX};
@@ -177,7 +177,7 @@ impl Session {
     /// in the scope's name. An entry found by its tray icon whose process is now in a scope of ours runs as
     /// a launch. Then the entries whose launches have ended are handled (see [`Session::follow_ours`]).
     /// Returns whether a launch of ours started, which may let a second screen tapped awake go dark again.
-    pub(crate) fn follow_units(&mut self, clock: &Clock, shelf: &mut Shelf, notice: &mut Option<Notice>, out: &mut Out) -> bool {
+    pub(crate) fn follow_units(&mut self, clock: &Clock, shelf: &mut Shelf, notice: &mut NoticeSlot, out: &mut Out) -> bool {
         let (now, unix) = (clock.mono(), clock.unix());
         // The entries of launches whose scope is there run as launches of ours, including one that was
         // handed over to its windows and launched again.
@@ -236,7 +236,7 @@ impl Session {
     /// scopes listed too. Once there are none, an entry known by its app id whose windows are open or may
     /// still come, or a browsed file's entry soon after it started, runs on by its windows (see
     /// [`Origin::Windows`]). The rest have ended, and their play is recorded.
-    fn follow_ours(&mut self, clock: &Clock, shelf: &mut Shelf, notice: &mut Option<Notice>, out: &mut Out) {
+    fn follow_ours(&mut self, clock: &Clock, shelf: &mut Shelf, notice: &mut NoticeSlot, out: &mut Out) {
         let now = clock.mono();
         let mut ended = Vec::new();
         let mut handed = Vec::new();
@@ -262,7 +262,7 @@ impl Session {
             }
         }
         for title in unstarted {
-            *notice = Some(Notice::new(NoticeKind::NotStarted(title), now));
+            notice.show(NoticeKind::NotStarted(title), now);
         }
         for (id, origin, has) in handed {
             if let Some(r) = self.running.iter_mut().find(|r| r.id == id) {
@@ -278,7 +278,7 @@ impl Session {
 
     /// A launch that never started, its scope gone before it was seen. A browsed file's launch, or one
     /// known by its app id, waits for its window (see [`Origin::Windows`]).
-    pub(crate) fn launch_failed(&mut self, game: Arc<str>, library: &Library, clock: &Clock, notice: &mut Option<Notice>) {
+    pub(crate) fn launch_failed(&mut self, game: Arc<str>, library: &Library, clock: &Clock, notice: &mut NoticeSlot) {
         let app_id = match self.launching.iter().position(|l| l.entry == game) {
             Some(i) => self.launching.remove(i).app_id,
             None => None,
@@ -287,7 +287,7 @@ impl Session {
             // There is nothing to wait for, so it didn't start, and a notice says so.
             let title = library.entry(&game).map_or_else(|| game.to_string(), |g| g.title.clone());
             if self.running(&game).is_none() {
-                *notice = Some(Notice::new(NoticeKind::NotStarted(title), clock.mono()));
+                notice.show(NoticeKind::NotStarted(title), clock.mono());
             }
             return;
         };
@@ -466,7 +466,7 @@ impl Session {
     /// Shows running entry `id`: its workspace, if a window of it is there to see. Otherwise what is in
     /// front stays, and a notice says it has no window. It may run without one, not have shown one yet, or
     /// have lost its display, in which case its dock menu's Quit ends it. It never shows an empty screen.
-    pub(crate) fn show(&mut self, id: &str, clock: &Clock, library: &Library, notice: &mut Option<Notice>, out: &mut Out) {
+    pub(crate) fn show(&mut self, id: &str, clock: &Clock, library: &Library, notice: &mut NoticeSlot, out: &mut Out) {
         let Some(r) = self.running(id) else {
             return;
         };
@@ -484,7 +484,7 @@ impl Session {
         if self.activate_tray(id, clock, out) {
             return;
         }
-        *notice = Some(Notice::new(NoticeKind::NoWindow(title), clock.mono()));
+        notice.show(NoticeKind::NoWindow(title), clock.mono());
     }
 
     /// Whether a launch of entry `id` was asked for and hasn't started.
@@ -520,7 +520,7 @@ impl Session {
         tab: Tab,
         settings: &Settings,
         clock: &Clock,
-        notice: &mut Option<Notice>,
+        notice: &mut NoticeSlot,
         out: &mut Out,
     ) -> Option<OwnView> {
         let library = shelf.library();

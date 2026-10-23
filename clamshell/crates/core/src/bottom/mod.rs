@@ -17,7 +17,7 @@ use crate::effect::Watch;
 use crate::kit::names::names;
 use crate::out::Out;
 use editor::{Editor, Editors};
-use notice::Notice;
+use notice::{Notice, NoticeSlot};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Tab {
@@ -96,7 +96,7 @@ pub struct Bottom {
     sent_down: Vec<i64>,
     /// What a key just did, such as change a level or take a screenshot, shown under the bar for a
     /// moment.
-    notice: Option<Notice>,
+    notice: NoticeSlot,
     /// Whether the area below the bar is pointing (see [`crate::bottom::touch`]).
     pointing: bool,
     /// The text on the system clipboard, for Ctrl+V in the editor. Files copied in the Files tab use their
@@ -142,7 +142,7 @@ impl Bottom {
     }
 
     pub fn notice(&self) -> Option<&Notice> {
-        self.notice.as_ref()
+        self.notice.get()
     }
 
     pub fn window_rules(&self) -> &screen::WindowRules {
