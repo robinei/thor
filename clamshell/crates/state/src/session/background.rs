@@ -175,7 +175,7 @@ impl Session {
             }
         }
         for id in end {
-            self.quit(&id, library, out);
+            self.quit(&id, now, library, out);
         }
         self.follow_runner_pauses(now, library, settings, out);
     }

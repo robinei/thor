@@ -43,7 +43,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Running | Quit | Quitting | thaw, Close(windows) | running `quit_closes_the_windows_then_ends_…` |
 | Quitting | windows gone, still runs | Quitting(ended) | EndRun, or EndProcesses (found, own pid) | same |
 | Quitting | no longer runs | removed | runner stop (once) | same |
-| Quitting | a close refused by the program | Quitting without end (S6) | — | GAP |
+| Quitting | its windows still there 10 s after they were asked to close (a close refused) | Running, not quitting: paused hidden again, not ended when its windows close later | — | running `a_quit_refused_is_given_up` |
 | Running | ForceKill | removed from quitting | thaw, EndRun{force} or EndProcesses{force} | same |
 | not running | Quit / ForceKill | unchanged | nothing | GAP |
 
@@ -385,7 +385,7 @@ Session and dock:
   icons (`tray.rs:122`). Fixed: state/session: a tray icon stays with its adopted program and gives no pid.
 - S5. Show when every window is moved down focuses an empty top workspace (`running.rs:488`). Fixed: state/session: Show of an entry whose windows are all below shows them there.
 - S6. A quit the program refuses (a "save changes?" cancelled) stays quitting indefinitely: never paused,
-  and ended when its windows later close (`running.rs:566-631`).
+  and ended when its windows later close (`running.rs:566-631`). Fixed: state/session: a quit whose windows stay 10 s is given up.
 - S7. A window-found entry without its own process gets a tray icon's pid; Quit then signals it (`tray.rs:111`).
   Fixed: state/session: a tray icon stays with its adopted program and gives no pid.
 - S8. A runner paused again while a launch waits more than 10 s for its scope (`background.rs:447`).

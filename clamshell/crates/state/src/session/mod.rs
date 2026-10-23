@@ -75,14 +75,15 @@ fn entry_in<'a>(library: &'a Library, running: &'a [Running], id: &str) -> Optio
     library.entry(id).or_else(|| running.iter().find(|r| &*r.id == id).and_then(|r| r.entry.as_deref()))
 }
 
-/// An entry quitting. Its windows are asked to close, and once none is left it is ended if it still runs,
-/// which sets `ended`. `stop` is its runner's stop, for an entry known by its app id that ends with its
-/// windows.
+/// An entry quitting. Its windows are asked to close at `asked`, in monotonic seconds, and once none is
+/// left it is ended if it still runs, which sets `ended`. `stop` is its runner's stop, for an entry known
+/// by its app id that ends with its windows.
 #[derive(Debug, Clone)]
 pub(crate) struct Quitting {
     entry: Arc<str>,
     ended: bool,
     stop: Option<Effect>,
+    asked: u64,
 }
 
 impl Session {

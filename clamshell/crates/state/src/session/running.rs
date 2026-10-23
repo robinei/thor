@@ -67,6 +67,9 @@ pub enum Origin {
     Windows { since: u64, until: u64 },
 }
 
+/// How long a quit waits for the windows to close, in seconds, before it is given up.
+pub const QUIT_WAIT: u64 = 10;
+
 /// How long a launch that handed over waits for its window, in seconds.
 pub const HANDOFF: u64 = 15;
 
@@ -597,20 +600,20 @@ impl Session {
         None
     }
 
-    /// Quit: asks the entry's windows to close. Once none is left, it is ended if it still runs, or its
-    /// runner's stop is run if it ended with them (see [`Session::follow_quitting`]). A window such as
-    /// "save changes?" keeps it until it is answered.
-    pub(crate) fn quit(&mut self, entry: &Arc<str>, library: &Library, out: &mut Out) {
+    /// Quit, at `now`: asks the entry's windows to close. Once none is left, it is ended if it still runs,
+    /// or its runner's stop is run if it ended with them (see [`Session::follow_quitting`]). A window such
+    /// as "save changes?" keeps it until it is answered, for up to [`QUIT_WAIT`].
+    pub(crate) fn quit(&mut self, entry: &Arc<str>, now: u64, library: &Library, out: &mut Out) {
         // If it is paused, it is thawed so that it can answer its windows' closing.
         self.thaw(entry, out);
         let windows: Vec<i64> = self.windows_of(entry).map(|w| w.id).collect();
         let stop = self.stop_of(entry, library);
         self.quitting.retain(|q| q.entry != *entry);
-        self.quitting.push(crate::session::Quitting { entry: entry.clone(), ended: false, stop });
+        self.quitting.push(crate::session::Quitting { entry: entry.clone(), ended: false, stop, asked: now });
         if !windows.is_empty() {
             out.effects.push(Effect::Window(WindowCommand::Close(windows)));
         }
-        self.follow_quitting(library, out);
+        self.follow_quitting(now, library, out);
     }
 
     /// Force kill: ends the entry at once.
@@ -648,8 +651,9 @@ impl Session {
 
     /// Follows the entries quitting. One whose windows are all gone while it still runs is ended, once. One
     /// that no longer runs is done, and if it ended with its windows before being ended, its runner's stop
-    /// is run.
-    pub(crate) fn follow_quitting(&mut self, library: &Library, out: &mut Out) {
+    /// is run. One whose windows are still there [`QUIT_WAIT`] after they were asked to close, because the
+    /// program refused, as with "save changes?" cancelled, runs on as before.
+    pub(crate) fn follow_quitting(&mut self, now: u64, library: &Library, out: &mut Out) {
         let mut quitting = std::mem::take(&mut self.quitting);
         quitting.retain_mut(|q| {
             let runs = self.running(&q.entry).is_some();
@@ -664,6 +668,7 @@ impl Session {
                 self.end(&q.entry, false, library, out);
             }
         }
+        quitting.retain(|q| q.ended || now < q.asked + QUIT_WAIT);
         self.quitting = quitting;
     }
 }
@@ -775,6 +780,33 @@ mod tests {
         let fx = s.applied(Event::Windows(vec![]));
         assert!(fx.contains(&Effect::EndRun { key: key("zelda-lttp"), force: false }), "{fx:?}");
         assert_eq!(force_kill(&mut s, "zelda-lttp"), vec![Effect::EndRun { key: key("zelda-lttp"), force: true }]);
+    }
+
+    /// A quit the program refuses, its "save changes?" answered with cancel, is given up once its windows
+    /// are still there [`super::QUIT_WAIT`] after they were asked to close: the entry runs on, is paused
+    /// hidden again, and isn't ended when its windows close later.
+    #[test]
+    fn a_quit_refused_is_given_up() {
+        use crate::settings::Choice;
+        let mut s = state();
+        let zelda = launch(&mut s, "zelda-lttp");
+        let key = key("zelda-lttp");
+        s.settings_mut().set(Some(&"zelda-lttp".into()), crate::settings::Setting::Background, Some(crate::settings::InBackground::Pauses.value()));
+        let window = |visible| Window { unit: zelda.unit(), visible, ..win(1, "zelda3", &zelda.workspace(), visible) };
+        s.applied(Event::tick(100));
+        s.applied(Event::Windows(vec![window(true)]));
+        quit(&mut s, "zelda-lttp");
+        s.applied(Event::Windows(vec![window(false)]));
+        s.applied(Event::tick(100 + super::QUIT_WAIT - 1));
+        assert!(s.session().is_quitting("zelda-lttp"), "still waiting");
+        s.applied(Event::tick(100 + super::QUIT_WAIT));
+        assert!(!s.session().is_quitting("zelda-lttp"), "given up");
+        s.applied(Event::tick(101 + super::QUIT_WAIT));
+        let fx = s.applied(Event::tick(101 + super::QUIT_WAIT + crate::session::background::GRACE));
+        assert!(fx.contains(&Effect::Freeze { slice: Instance::slice_of(&key), frozen: true }), "paused hidden again: {fx:?}");
+        let fx = s.applied(Event::Windows(vec![]));
+        assert!(!fx.iter().any(|e| matches!(e, Effect::EndRun { .. })), "{fx:?}");
+        assert!(s.session().running("zelda-lttp").is_some());
     }
 
     #[test]

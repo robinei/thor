@@ -449,7 +449,7 @@ impl State {
         self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
         self.session.show_pending(out);
         self.session.show_reopened(self.clock.mono(), out);
-        self.session.follow_quitting(self.shelf.library(), out);
+        self.session.follow_quitting(self.clock.mono(), self.shelf.library(), out);
         self.session.follow_closed(self.clock.mono(), out);
         // After handling the front one closing, so that a window just taken by a browsed file is shown
         // over it.
@@ -672,7 +672,7 @@ impl State {
             EntryAct::Suspend => self.session.suspend(&id, out),
             EntryAct::ToggleAutostart => self.session.toggle_autostart(id, out),
             EntryAct::TogglePin => self.dock.toggle_pin(id, &self.session, out),
-            EntryAct::Quit => self.session.quit(&id, self.shelf.library(), out),
+            EntryAct::Quit => self.session.quit(&id, self.clock.mono(), self.shelf.library(), out),
             EntryAct::ForceKill => self.session.force_kill(&id, self.shelf.library(), out),
         }
     }
