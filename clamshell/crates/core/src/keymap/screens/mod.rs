@@ -320,7 +320,7 @@ impl Keymapping {
         }
         for (key, preset) in &wanting {
             if let Some(id) = self.keymaps.make_own_from(preset, key) {
-                prefs.set(Some(key), crate::settings::Setting::Keymap, Some(id));
+                prefs.choose_keymap(Some(key), id);
             }
         }
         out.effects.push(self.save_effect());

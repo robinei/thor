@@ -66,7 +66,7 @@ The weak spots are at the seams.
 - [ ] Areas reach further than the crate doc says: `dock.on`, `device.tap` and `keymapping.on` take all of
       `&mut Bottom` (they need the editors and the notice); `follow_units`/`follow_windows` take
       `&mut Shelf` only to record plays.
-- [ ] One path each: notices (`bottom.notify` vs `*notice = Some(..)` in five places), the keymap setting
+- [x] One path each: notices (`bottom.notify` vs `*notice = Some(..)` in five places), the keymap setting
       (the Choose event vs `prefs.set`), the editor on the keyboard (`EditOnKeyboard` vs opening it and
       choosing the tab, which doesn't set `raised_from`).
 - [ ] `apply_event` holds rules beside dispatch (Home's guards, level resolution, Quit); boolean

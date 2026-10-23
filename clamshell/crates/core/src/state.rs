@@ -1034,6 +1034,13 @@ impl State {
         out.effects.push(self.prefs.save_effect());
     }
 
+    /// Chooses keymap `id` where the panel edits, and saves the settings.
+    fn choose_keymap(&mut self, id: u16, out: &mut Out) {
+        let game = self.panel().editing().map(|g| g.id.clone());
+        self.prefs.choose_keymap(game.as_ref(), id);
+        out.effects.push(self.prefs.save_effect());
+    }
+
     /// The keymaps' screens' buttons. Back goes back a screen; the others are the screen's.
     fn on_keymap(&mut self, id: KeymapId, long: bool, out: &mut Out) {
         if id == KeymapId::Back {
@@ -1060,10 +1067,10 @@ impl State {
     /// What the keymaps' screens ask of the settings and the keyboard.
     fn keymap_event(&mut self, event: KeymapEvent, out: &mut Out) {
         match event {
-            KeymapEvent::Choose(id) => self.change(Setting::Keymap, Some(id), out),
+            KeymapEvent::Choose(id) => self.choose_keymap(id, out),
             // The settings are saved before the keymaps.
             KeymapEvent::MadeOwn(id) => {
-                self.change(Setting::Keymap, Some(id), out);
+                self.choose_keymap(id, out);
                 out.effects.push(self.keymapping.save());
             }
             KeymapEvent::Deleted(id) => {

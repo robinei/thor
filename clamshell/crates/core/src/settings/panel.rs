@@ -66,6 +66,12 @@ impl Prefs {
         self.settings.set(game, setting, value);
     }
 
+    /// Chooses keymap `id` for `entry`, or for all entries. Every choice of a keymap is set here: the
+    /// picker's, an entry's own keymap just made, and a runner's own keymap from the library.
+    pub(crate) fn choose_keymap(&mut self, entry: Option<&Arc<str>>, id: u16) {
+        self.settings.set(entry, Setting::Keymap, Some(id));
+    }
+
     /// Drops a game's overrides and environment (see [`Settings::reset`]).
     pub(crate) fn reset(&mut self, game: &str) {
         self.settings.reset(game);
