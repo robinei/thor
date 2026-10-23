@@ -270,6 +270,25 @@ mod tests {
     }
 
     #[test]
+    fn the_gyros_hold_still_shows_until_it_answers_at_most_30_s() {
+        use crate::bottom::notice::NoticeKind;
+        let mut s = State::new(init());
+        s.applied(Event::tick(1000));
+        assert_eq!(tap(&mut s, DeviceId::Gyro), vec![Effect::CalibrateGyro]);
+        s.applied(Event::tick(1010));
+        assert_eq!(notice(&s), Some(NoticeKind::Gyro(None)), "still calibrating");
+        s.applied(Event::GyroCalibrated(true));
+        assert_eq!(notice(&s), Some(NoticeKind::Gyro(Some(true))));
+        s.applied(Event::tick(1012));
+        assert_eq!(notice(&s), None, "the answer shows as any notice");
+        tap(&mut s, DeviceId::Gyro);
+        s.applied(Event::tick(1041));
+        assert_eq!(notice(&s), Some(NoticeKind::Gyro(None)));
+        s.applied(Event::tick(1042));
+        assert_eq!(notice(&s), None, "no answer: gone after 30 s");
+    }
+
+    #[test]
     fn remote_login_needs_a_password() {
         let mut s = State::new(init());
         available(&mut s, false);

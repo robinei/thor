@@ -1,10 +1,14 @@
 //! The short notice under the bar that says what just happened, such as a level changed by a key, a
-//! screenshot saved, a launch starting or a file operation done. One shows at a time, for [`NOTICE_FOR`].
+//! screenshot saved, a launch starting or a file operation done. One shows at a time, for [`NOTICE_FOR`],
+//! except the gyro's "hold still", which shows until the calibration answers, for at most [`GYRO_FOR`].
 
 use crate::levels::slider::Control;
 
 /// How long a notice shows, in seconds.
 const NOTICE_FOR: u64 = 2;
+
+/// How long the gyro's "hold still" shows at most, in seconds. Its answer replaces it before then.
+const GYRO_FOR: u64 = 30;
 
 /// A notice under the bar, until it times out.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,7 +55,8 @@ pub struct NoticeSlot(Option<Notice>);
 impl NoticeSlot {
     /// Shows `what` from `now`, in place of any notice showing.
     pub(crate) fn show(&mut self, what: NoticeKind, now: u64) {
-        self.0 = Some(Notice { what, until: now + NOTICE_FOR });
+        let lasts = if what == NoticeKind::Gyro(None) { GYRO_FOR } else { NOTICE_FOR };
+        self.0 = Some(Notice { what, until: now + lasts });
     }
 
     pub fn get(&self) -> Option<&Notice> {

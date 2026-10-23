@@ -138,7 +138,8 @@ modifiers armed on the capture screen survive leaving it other than by Back (S13
 
 `show(kind, now)` replaces any notice; a tick after 2 s removes it. Tests: `keys_step_the_levels_and_show_
 them_for_a_moment`, `a_screenshot_is_asked_for_…`, `a_window_moved_down_…`. BottomRule(false), Gyro and
-Account notices GAP. The gyro's "hold still" notice expires after 2 s whatever the calibration does (S14).
+Account notices GAP. The gyro's "hold still" notice stays until the calibration answers, at most 30 s:
+`the_gyros_hold_still_shows_until_it_answers_at_most_30_s`.
 
 ### View, power and dim (bottom/screen.rs)
 
@@ -184,7 +185,7 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 | Password → editor for the current then the new password → `Account(Password)` | `the_password_is_typed_below_the_current_one_first` |
 | Ssh with a password → `Account(Ssh)` (no pending state: two taps send it twice, S18) | `remote_login_needs_a_password` |
 | Sticks → `CalibrateSticks`; progress; done saves or fails (two taps before the first progress start it twice, S17) | `a_sticks_calibration_shows_its_progress_…` |
-| Gyro → notice + `CalibrateGyro`; result notice | GAP |
+| Gyro → notice + `CalibrateGyro`; result notice; without one the notice goes after 30 s | `the_gyros_hold_still_shows_until_it_answers_at_most_30_s` |
 | Refresh → `CalibrateRefresh` once at a time; result → BottomPower resent | `the_refresh_calibration_runs_once_at_a_time_…`; the resend GAP |
 
 ## Pad route and pointer (nav/pad.rs, nav/pointer.rs)
@@ -394,7 +395,7 @@ Second screen, device, pad, keymaps:
 - S11. A text field losing focus goes back from Keyboard even while an editor is open there (`bottom/mod.rs:204`). Fixed: state/bottom: one editor on the keyboard, which goes back when it closes.
 - S12. Opening the password editor while naming a file drops the name typed (`bottom/editor.rs:117`). Fixed: state/bottom: one editor on the keyboard, which goes back when it closes.
 - S13. Modifiers armed on the capture screen survive leaving it by tab or Home (`keymap/screens/mod.rs:573`).
-- S14. The gyro's "hold still" notice expires after 2 s whatever the calibration does.
+- S14. The gyro's "hold still" notice expires after 2 s whatever the calibration does. Fixed: state/bottom: the gyro's hold still shows until it answers.
 - S15. Showing the program's windows below (dock tap, BottomWindows) while the screen is off by hand shows
   them on a dark panel (`bottom/screen.rs:310`). Fixed: state/bottom: showing the windows below turns the screen on.
 - S16. A screen dark for a game wakes only on the Wake tap, not a touch or pad focus, and not when the tap
