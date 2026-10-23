@@ -137,8 +137,8 @@ modifiers armed on the capture screen survive leaving it other than by Back (S13
 ### Notice
 
 `show(kind, now)` replaces any notice; a tick after 2 s removes it. Tests: `keys_step_the_levels_and_show_
-them_for_a_moment`, `a_screenshot_is_asked_for_…`, `a_window_moved_down_…`. BottomRule(false), Gyro and
-Account notices GAP. The gyro's "hold still" notice stays until the calibration answers, at most 30 s:
+them_for_a_moment`, `a_screenshot_is_asked_for_…`, `a_window_moved_down_…`. BottomRule(false) and Account
+notices GAP. The gyro's "hold still" notice stays until the calibration answers, at most 30 s:
 `the_gyros_hold_still_shows_until_it_answers_at_most_30_s`.
 
 ### View, power and dim (bottom/screen.rs)
@@ -183,8 +183,8 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 | Home with the view open → closed | GAP |
 | Wifi / Zone rows → their tab | GAP |
 | Password → editor for the current then the new password → `Account(Password)` | `the_password_is_typed_below_the_current_one_first` |
-| Ssh with a password → `Account(Ssh)` (no pending state: two taps send it twice, S18) | `remote_login_needs_a_password` |
-| Sticks → `CalibrateSticks`; progress; done saves or fails (two taps before the first progress start it twice, S17) | `a_sticks_calibration_shows_its_progress_…` |
+| Ssh with a password → `Account(Ssh)`; further taps do nothing until AccountChanged | `remote_login_needs_a_password`, `remote_login_waits_for_its_answer_before_another_tap` |
+| Sticks → `CalibrateSticks`; progress; done saves or fails; further taps do nothing until done | `a_sticks_calibration_shows_its_progress_…`, `the_sticks_calibration_waits_for_its_end_before_another_tap` |
 | Gyro → notice + `CalibrateGyro`; result notice; without one the notice goes after 30 s | `the_gyros_hold_still_shows_until_it_answers_at_most_30_s` |
 | Refresh → `CalibrateRefresh` once at a time; result → BottomPower resent | `the_refresh_calibration_runs_once_at_a_time_…`; the resend GAP |
 
@@ -400,8 +400,8 @@ Second screen, device, pad, keymaps:
   them on a dark panel (`bottom/screen.rs:310`). Fixed: state/bottom: showing the windows below turns the screen on.
 - S16. A screen dark for a game wakes only on the Wake tap, not a touch or pad focus, and not when the tap
   is swallowed by idle (`screen.rs:154, 214`).
-- S17. Two taps on Sticks before the first progress start the calibration twice (`device/mod.rs:151`).
-- S18. Two taps on Ssh send it twice (`device/mod.rs:149`).
+- S17. Two taps on Sticks before the first progress start the calibration twice (`device/mod.rs:151`). Fixed: state/device: sticks and remote login wait for their answer.
+- S18. Two taps on Ssh send it twice (`device/mod.rs:149`). Fixed: state/device: sticks and remote login wait for their answer.
 - S19. The pad switched to the second screen goes back when the claimant changes (the keyboard coming
   up): the documented exception never applies (`nav/pad.rs:150`).
 - S22. Forgetting a keymap that was set globally leaves games that chose it on their runner's keymap, not

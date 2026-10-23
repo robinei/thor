@@ -49,6 +49,8 @@ pub enum Refresh {
 #[derive(Debug, Clone, Default)]
 pub struct Device {
     open: bool,
+    /// A stick calibration was asked for and hasn't ended. Another isn't asked for until it has.
+    sticks_running: bool,
     /// How far a running stick calibration has got.
     sticks: Option<Progress>,
     /// The last stick calibration failed. Cleared when another starts.
@@ -60,6 +62,8 @@ pub struct Device {
     first_start: bool,
     /// The account, as last read (see [`account`]).
     account: Account,
+    /// Remote login was turned on or off and the helper hasn't answered. Another tap waits for it.
+    ssh_asked: bool,
 }
 
 /// What the pad thread reports about a stick calibration.
@@ -133,6 +137,11 @@ impl Device {
         self.account = account;
     }
 
+    /// The account helper answered a change. Its reading follows.
+    pub(crate) fn account_changed(&mut self) {
+        self.ssh_asked = false;
+    }
+
     /// A tap on one of the Device view's targets. Closing it gives the focus back to shelf's
     /// selection (`selected`). A tab to open is queued as an event, since State changes tabs.
     pub(crate) fn tap(&mut self, id: DeviceId, pointer: &mut Pointer, selected: Option<&Arc<str>>, out: &mut Out) {
@@ -146,9 +155,14 @@ impl Device {
                 out.events.push(Event::EditOnKeyboard(Editor { purpose: Purpose::AccountPassword(step), text: String::new() }));
             }
             // Remote login needs a password to log in with.
-            DeviceId::Ssh if account.available && account.password => out.effects.push(Effect::Account(AccountCommand::Ssh(!account.ssh))),
+            // One change at a time: the next tap reads the account the answer brings.
+            DeviceId::Ssh if account.available && account.password && !self.ssh_asked => {
+                self.ssh_asked = true;
+                out.effects.push(Effect::Account(AccountCommand::Ssh(!account.ssh)));
+            }
             DeviceId::Password | DeviceId::Ssh => {}
-            DeviceId::Sticks if self.sticks.is_none() => {
+            DeviceId::Sticks if !self.sticks_running => {
+                self.sticks_running = true;
                 self.sticks_failed = false;
                 out.effects.push(Effect::CalibrateSticks);
             }
@@ -177,6 +191,7 @@ impl Device {
         match event {
             SticksEvent::Progress(p) => self.sticks = Some(p),
             SticksEvent::Done(name, result) => {
+                self.sticks_running = false;
                 self.sticks = None;
                 self.sticks_failed = result.is_none();
                 if let Some(sticks) = result {
@@ -295,6 +310,28 @@ mod tests {
         assert!(tap(&mut s, DeviceId::Ssh).is_empty());
         available(&mut s, true);
         assert_eq!(tap(&mut s, DeviceId::Ssh), vec![Effect::Account(AccountCommand::Ssh(true))]);
+    }
+
+    #[test]
+    fn remote_login_waits_for_its_answer_before_another_tap() {
+        let mut s = State::new(init());
+        available(&mut s, true);
+        assert_eq!(tap(&mut s, DeviceId::Ssh), vec![Effect::Account(AccountCommand::Ssh(true))]);
+        assert!(tap(&mut s, DeviceId::Ssh).is_empty(), "not sent twice");
+        s.applied(Event::AccountChanged(Ok("Remote login on".into())));
+        s.applied(Event::Reading(Reading::Account(crate::device::account::Account { available: true, password: true, ssh: true })));
+        assert_eq!(tap(&mut s, DeviceId::Ssh), vec![Effect::Account(AccountCommand::Ssh(false))], "answered: off again");
+        s.applied(Event::AccountChanged(Err("failed".into())));
+        assert_eq!(tap(&mut s, DeviceId::Ssh), vec![Effect::Account(AccountCommand::Ssh(false))], "a failure answers too");
+    }
+
+    #[test]
+    fn the_sticks_calibration_waits_for_its_end_before_another_tap() {
+        let mut s = State::new(init());
+        assert_eq!(tap(&mut s, DeviceId::Sticks), vec![Effect::CalibrateSticks]);
+        assert!(tap(&mut s, DeviceId::Sticks).is_empty(), "before the first progress too");
+        s.applied(Event::Sticks(SticksEvent::Done("pad".into(), None)));
+        assert_eq!(tap(&mut s, DeviceId::Sticks), vec![Effect::CalibrateSticks], "ended: again");
     }
 
     #[test]

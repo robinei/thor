@@ -367,7 +367,10 @@ impl State {
             Event::CalibrateGyro => self.calibrate_gyro(out),
             Event::GyroCalibrated(ok) => self.bottom.notice_mut().show(NoticeKind::Gyro(Some(ok)), now),
             // What the helper did, or why it failed, shown for a moment.
-            Event::AccountChanged(result) => self.bottom.notice_mut().show(NoticeKind::Account(result), now),
+            Event::AccountChanged(result) => {
+                self.device.account_changed();
+                self.bottom.notice_mut().show(NoticeKind::Account(result), now);
+            }
             Event::ChooseTab(tab) => self.choose_tab(tab),
             Event::Entry(id, act) => self.on_entry(id, act, out),
             Event::Enqueue => self.enqueue(out),
