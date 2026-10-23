@@ -460,6 +460,11 @@ Shelf, files, radios, levels, status:
   in use when shown; the existing test handled the event without its steps. Fixed: state/session: a
   suspended entry stays frozen until shown after it was hidden.
 
+Found by the randomized event-sequence test (`random.rs`):
+- S50. A launch given up that starts late isn't followed while another launch of the entry waits: its
+  scope is skipped (`running.rs`, `follow_units`), so its windows are taken for a program found by them,
+  with its scope listed. Fixed: state/session: a scope listed runs its entry while another launch waits.
+
 ## Decisions on the suspects (2026-10-23)
 
 Decided without a design discussion, to get them fixed. **Revisit** marks the ones that might need it,
@@ -523,3 +528,5 @@ with what would make us change our minds.
   play's start.
 - S40. A suspended entry counts as shown again only once its windows have been seen hidden; one found
   frozen at start counts as hidden already.
+- S50. A scope listed runs its entry whatever launch of it waits; the waiting launch joins it when its
+  own scope comes.

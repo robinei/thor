@@ -241,7 +241,9 @@ impl Session {
             let Some(key) = unit.key() else {
                 continue;
             };
-            if self.running.iter().any(|r| r.key == key) || self.launching.iter().any(|l| l.instance.key() == Some(key)) {
+            // A launch of the entry waiting doesn't hold it off: this scope is another launch's, such as
+            // one given up that started late, and the entry runs.
+            if self.running.iter().any(|r| r.key == key) {
                 continue;
             }
             let first = units.iter().filter_map(|u| match u {
@@ -844,6 +846,34 @@ mod tests {
         assert!(matches!(notice(&s), Some(crate::bottom::notice::NoticeKind::NotStarted(t)) if t == "A Link to the Past"), "{:?}", notice(&s));
         assert_eq!(s.session().pending_show(), None);
         assert!(launches(&tap(&mut s, entry("zelda-lttp")), "zelda-lttp"), "launched again");
+    }
+
+    /// A launch given up that starts after all runs as a launch of ours, though another launch of the
+    /// entry waits meanwhile; until then its windows would be taken for a program found by them, with its
+    /// scope listed.
+    #[test]
+    fn a_launch_given_up_that_starts_late_runs_beside_the_one_waiting() {
+        let mut s = state();
+        s.applied(Event::tick(100));
+        let instance = |fx: &[Effect]| {
+            fx.iter().find_map(|e| match e {
+                Effect::Launch { instance, .. } => Some(instance.clone()),
+                _ => None,
+            })
+        };
+        let first = instance(&launch_now(&mut s, "desktop:foot")).unwrap();
+        s.applied(Event::tick(100 + super::LAUNCH_WAIT));
+        assert!(!s.session().is_launching("desktop:foot"), "given up");
+        let second = instance(&launch_now(&mut s, "desktop:foot")).unwrap();
+        s.applied(Event::Units(vec![first.clone()]));
+        let running = s.session().running("desktop:foot").map(|r| r.origin.clone());
+        assert_eq!(running, Some(Origin::Ours), "runs by the scope that started late");
+        let fx = s.applied(Event::Windows(vec![Window { unit: first.unit(), ..win(5, "foot", &first.workspace(), true) }]));
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Adopt { .. })), "its window is its own: {fx:?}");
+        assert!(s.session().is_launching("desktop:foot"));
+        s.applied(Event::Units(vec![first, second]));
+        assert!(!s.session().is_launching("desktop:foot"));
+        assert_eq!(s.session().running_entries().iter().filter(|r| &*r.id == "desktop:foot").count(), 1);
     }
 
     /// The launcher's failure coming after the launch was given up doesn't say "didn't start" a second
