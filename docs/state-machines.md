@@ -652,4 +652,29 @@ themselves. Tests: `compositor_opening_focus_respects_launch_intent_and_shown_pr
 policy tests, metadata-change and Home-tap tests in session/windows, and the randomized state test.
 The headless compositor protocol test checks first configure, fixed-size child placement and close;
 geometry tests check native sizing, fitting and inverse coordinates. `tests/nested-compositor.py` checks
-real client pixels across top, bottom, return and Home. Touch and the remaining protocols are pending.
+real client pixels across top, bottom, return and Home. The remaining protocols are pending.
+
+### Compositor touch routing (compositor/touch)
+
+A contact starts on a client surface, a UI screen, a Home arrow, or black. Client contacts retain their
+surface and inverse geometry from down until up; each slot has its own target, so both screens can be
+touched simultaneously. Motion across screens keeps that target. UI contacts use the existing Core
+press/move/release path on their initial screen. Arrows switch once on down and consume the contact;
+black stays ignored even when the finger moves over a client. Unknown motion/up events do nothing.
+Tracking is bounded to 32 simultaneous contacts; additional downs are ignored. Reusing an active slot
+cancels the previous sequence before accepting the new down.
+
+Cancel, loss of host focus, resize, or a client being hidden/unmapped/removed cancels the active sequence
+and clears UI presses. Late up/motion after cancellation does nothing. The pinned Smithay cancellation
+path only visits slots pending since its last frame; the adapter repeats active client positions before
+cancel so stationary fingers also receive cancellation. Winit reports physical window coordinates and
+has no touch frames; the nested adapter finishes each down/motion/up as a frame. These host details stay
+outside the contact routing, which the DRM/libinput backend can call after output mapping.
+
+`touch_contacts_keep_independent_surfaces_and_native_coordinates` uses real wl_touch traffic over a
+socket pair. It pins independent surfaces, native and scaled coordinates, cross-screen dragging,
+black margins and bottom-bar exclusion, cancellation after a completed frame, new contacts after
+cancellation, hiding a touched client, and ignored late events.
+`touching_a_home_arrow_switches_once_and_consumes_home_release` checks that an arrow contact switches
+once and consumes Home release. Physical touchscreen input remains a nested-host/device check; no
+libinput backend is enabled yet.

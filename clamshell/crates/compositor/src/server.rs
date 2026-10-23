@@ -55,6 +55,8 @@ pub(crate) struct Server {
     pub pointer_buttons: Vec<u32>,
     pub arrow_pressed: bool,
     pub keyboard_home: bool,
+    pub touches: [Option<crate::touch::Contact>; 32],
+    pub touch_pending: bool,
     pub size: (i32, i32),
     pub top_width: i32,
     pub exit: bool,
@@ -78,6 +80,7 @@ impl Server {
         let mut seat = seats.new_wl_seat(&dh, "clamshell");
         seat.add_keyboard(Default::default(), 200, 25)?;
         seat.add_pointer();
+        seat.add_touch();
         let outputs = ["ClamShell-Top", "ClamShell-Bottom"].map(|name| {
             let output = Output::new(
                 name.into(),
@@ -110,6 +113,8 @@ impl Server {
             pointer_buttons: Vec::new(),
             arrow_pressed: false,
             keyboard_home: false,
+            touches: std::array::from_fn(|_| None),
+            touch_pending: false,
             size: (1580, 540),
             top_width: 960,
             exit: false,
@@ -124,6 +129,7 @@ impl Server {
     }
 
     pub fn resize(&mut self, (width, height): (i32, i32)) {
+        self.touch_cancel();
         self.size = (width.max(4), height.max(4));
         self.top_width = (self.size.0 * 960 / 1580).max(2);
         for (screen, output, x, w) in
@@ -220,6 +226,7 @@ impl Server {
     }
 
     pub fn sync_windows(&mut self) {
+        self.cancel_hidden_touches();
         let focus = self.core.state().session().keyboard_focus();
         for client in &self.windows {
             let Some(window) = self.core.state().session().window(client.id) else { continue };

@@ -158,6 +158,9 @@ impl SeatHandler for Server {
     fn seat_state(&mut self) -> &mut SeatState<Self> {
         &mut self.seats
     }
+    fn touch_down_grab(&mut self, start: smithay::input::touch::GrabStartData<Self>) -> impl smithay::input::touch::TouchGrab<Self> {
+        crate::touch::ContactGrab::new(start)
+    }
     fn cursor_image(&mut self, _: &Seat<Self>, _: smithay::input::pointer::CursorImageStatus) {}
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
         set_data_device_focus(&self.dh, seat, focused.and_then(|s| self.dh.get_client(s.id()).ok()));

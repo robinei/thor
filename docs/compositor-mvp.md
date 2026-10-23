@@ -397,7 +397,8 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    configures fixed-size clients, centres native-sized windows, fits games, and uses the same transform
    for rendering and pointer coordinates. Home-held arrows use the shared state selection rule.
    A socket-pair protocol test checks configure/lifecycle behavior; `tests/nested-compositor.py` checks
-   real EGL rendering, down/up and Home under a headless sway host. Xwayland, touch, text-input,
+   real EGL rendering, down/up and Home under a headless sway host. Touch routing keeps each contact on its initial surface and inverse transform,
+   including simultaneous contacts on different screens. Xwayland, text-input,
    screenshot requests, idle-inhibit and the full clipboard remain to implement. The current host puts
    the logical screens side by side for desktop testing.
 3. **The generic DRM backend, on the VM:** udev, DRM, GBM, GLES, libseat, libinput, two outputs, power,

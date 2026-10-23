@@ -5,8 +5,9 @@ use clamshell_state::{Event as StateEvent, WindowEvent, device::buttons::DeviceK
 use clamshell_ui::{End, Screen, Source};
 use smithay::{
     backend::input::{
-        AbsolutePositionEvent, Axis, ButtonState, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
+        AbsolutePositionEvent, Axis, ButtonState, Event, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, TouchEvent,
     },
+    backend::winit::WinitInput,
     input::{
         keyboard::FilterResult,
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
@@ -23,7 +24,7 @@ pub(crate) struct Hit {
 }
 
 impl Server {
-    pub fn input<I: InputBackend>(&mut self, event: InputEvent<I>) {
+    pub fn input(&mut self, event: InputEvent<WinitInput>) {
         match event {
             InputEvent::Keyboard { event, .. } => {
                 if let Some(keyboard) = self.seat.get_keyboard() {
@@ -130,6 +131,22 @@ impl Server {
                     self.core.wheel(screen, position, vertical.signum() as i32);
                 }
             }
+            // Winit gives physical window coordinates and no touch frame events. These are the
+            // same coordinates as our nested framebuffer; finish each host event as one frame.
+            InputEvent::TouchDown { event } => {
+                self.touch_down(event.slot(), (event.x(), event.y()).into(), event.time());
+                self.touch_frame();
+            }
+            InputEvent::TouchMotion { event } => {
+                self.touch_motion(event.slot(), (event.x(), event.y()).into(), event.time());
+                self.touch_frame();
+            }
+            InputEvent::TouchUp { event } => {
+                self.touch_up(event.slot(), event.time());
+                self.touch_frame();
+            }
+            InputEvent::TouchCancel { .. } => self.touch_cancel(),
+            InputEvent::TouchFrame { .. } => self.touch_frame(),
             _ => {}
         }
     }
@@ -150,20 +167,24 @@ impl Server {
     }
 
     fn ui_under(&self) -> Option<(Screen, (f64, f64))> {
-        let (screen, position) = self.ui_position();
+        self.ui_at(self.pointer)
+    }
+
+    pub(crate) fn ui_at(&self, point: Point<f64, Logical>) -> Option<(Screen, (f64, f64))> {
+        let (screen, position) = self.screen_position(point);
         let session = self.core.state().session();
         match screen {
             Screen::Top if session.top_window().is_some() => None,
-            Screen::Bottom if self.core.state().bottom().shows_windows(session) && self.pointer.y >= self.area(true).loc.y as f64 => None,
+            Screen::Bottom if self.core.state().bottom().shows_windows(session) && point.y >= self.area(true).loc.y as f64 => None,
             _ => Some((screen, position)),
         }
     }
 
     fn ui_position(&self) -> (Screen, (f64, f64)) {
-        if self.pointer.x < self.top_width as f64 {
-            (Screen::Top, (self.pointer.x, self.pointer.y))
-        } else {
-            (Screen::Bottom, (self.pointer.x - self.top_width as f64, self.pointer.y))
-        }
+        self.screen_position(self.pointer)
+    }
+
+    fn screen_position(&self, point: Point<f64, Logical>) -> (Screen, (f64, f64)) {
+        if point.x < self.top_width as f64 { (Screen::Top, (point.x, point.y)) } else { (Screen::Bottom, (point.x - self.top_width as f64, point.y)) }
     }
 }

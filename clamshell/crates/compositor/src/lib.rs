@@ -6,6 +6,7 @@ mod input;
 mod nested;
 mod render;
 mod server;
+mod touch;
 
 pub use nested::run;
 pub use server::Process;

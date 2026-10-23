@@ -79,6 +79,7 @@ pub fn run(
                         server.resize((size.w, size.h));
                         damage = OutputDamageTracker::new(size, 1.0, Transform::Flipped180);
                     }
+                    WinitEvent::Focus(false) => server.touch_cancel(),
                     WinitEvent::Input(event) => server.input(event),
                     WinitEvent::CloseRequested => server.exit = true,
                     WinitEvent::Redraw => {
