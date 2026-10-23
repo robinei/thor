@@ -5,7 +5,7 @@ use crate::out::Out;
 use crate::{Effect, EntryAct, Event, Instance, Running, Session, WindowCommand};
 
 impl Session {
-    /// Runs after the windows changed. If the window in front when the last pass ran (see
+    /// Runs after every event. If the window in front when the last pass ran (see
     /// [`Session::followed`]) closed and nothing of its workspace is left, goes back to what was in front
     /// before it, with shelf as the last resort; otherwise sway would leave the empty workspace in front. The workspace is remembered in case a
     /// window appears on it soon after (see [`Session::show_reopened`]).

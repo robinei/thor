@@ -68,8 +68,6 @@ pub struct Session {
     autostarted: bool,
     /// ClamShell is the device's own session (see [`crate::Init::device_session`]).
     device_session: bool,
-    /// Counts changes to what the session follows from outside (see [`Session::version`]).
-    version: u64,
 }
 
 /// An entry by its id, in `library` or else among the `running` (see [`Session::entry`]).
@@ -236,20 +234,7 @@ impl Session {
         n
     }
 
-    /// Counts changes to what the session follows from outside: the windows, systemd's scopes, the tray,
-    /// the launcher's messages, the library and the clock. The steps that follow them run when it
-    /// changed (see [`crate::State::settle`]).
-    pub(crate) fn version(&self) -> u64 {
-        self.version
-    }
-
-    /// Something the session follows from outside changed (see [`Session::version`]).
-    pub(crate) fn changed(&mut self) {
-        self.version += 1;
-    }
-
     pub(crate) fn set_windows(&mut self, windows: Vec<Window>) {
-        self.changed();
         self.windows = windows;
         let present = |name: &String| self.windows.iter().any(|w| w.workspace == *name);
         self.recent.retain(present);
@@ -262,7 +247,6 @@ impl Session {
     }
 
     pub(crate) fn set_units(&mut self, units: Vec<Instance>) {
-        self.changed();
         self.units = units;
         self.units_known = true;
     }

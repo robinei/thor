@@ -144,7 +144,7 @@ impl Session {
         }
     }
 
-    /// Runs after the windows changed, and every second. Pauses, thaws or ends entries by their setting.
+    /// Runs after every event. Pauses, thaws or ends entries by their setting.
     pub(crate) fn follow_background(&mut self, now: u64, library: &Library, settings: &Settings, out: &mut Out) {
         // Launches of ours, including a Steam game's, which is in its launch's own scope since it started.
         let ours = |r: &&Running| r.origin == Origin::Ours;
@@ -405,6 +405,27 @@ mod tests {
         assert!(s.applied(Event::Windows(vec![])).contains(&freeze(&key, false)));
         s.applied(Event::tick(100 + 3 * GRACE));
         assert!(!s.session().paused("zelda-lttp"), "no window: none hidden");
+    }
+
+    /// The setting changed in the panel is followed in the same event, not at the next tick.
+    #[test]
+    fn a_paused_game_set_to_run_hidden_is_thawed_at_once() {
+        let mut s = state();
+        let zelda = launch(&mut s, "zelda-lttp");
+        let key = zelda.key().unwrap().to_owned();
+        s.applied(Event::tick(100));
+        s.applied(Event::Windows(vec![Window { unit: zelda.unit(), visible: false, ..win(3, "zelda3", &zelda.workspace(), false) }]));
+        s.applied(Event::tick(100 + GRACE));
+        assert!(s.session().paused("zelda-lttp"));
+        assert_eq!(s.panel().editing().map(|g| &*g.id), Some("zelda-lttp"));
+        let mut fx = Vec::new();
+        for _ in 0..4 {
+            if s.session().background_of("zelda-lttp", s.shelf().library(), s.prefs().settings()) == InBackground::Runs {
+                break;
+            }
+            fx = tap(&mut s, crate::Id::Settings(crate::SettingsId::Tile(Setting::Background)));
+        }
+        assert!(fx.contains(&freeze(&key, false)), "{fx:?}");
     }
 
     #[test]

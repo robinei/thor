@@ -238,6 +238,10 @@ impl Bottom {
             return;
         };
         self.show_down(w.id, out);
+        // Sent down already, so the rule added below doesn't send it again.
+        if !self.sent_down.contains(&w.id) {
+            self.sent_down.push(w.id);
+        }
         // The title is only used to tell it apart from another window of its program with the same
         // app id.
         let others = session.windows().iter().any(|o| o.id != w.id && o.app_id == w.app_id && o.unit == w.unit);
@@ -326,7 +330,7 @@ impl Bottom {
         }
     }
 
-    /// Runs after the windows changed. A window whose program has a rule for it is sent down, once.
+    /// Runs after every event. A window whose program has a rule for it is sent down, once.
     pub(crate) fn follow_window_rules(&mut self, session: &Session, out: &mut Out) {
         let wanted: Vec<i64> = session
             .windows()
@@ -414,6 +418,7 @@ mod tests {
         let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: Some("Bottom".into()) };
         assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(r)) if r.list() == [rule.clone()]), "{fx:?}");
         assert_eq!(fx[2], Effect::Window(WindowCommand::DownRules(vec![rule.down_rule()])), "for sway");
+        assert_eq!(fx.iter().filter(|e| **e == Effect::Window(WindowCommand::Down(2))).count(), 1, "sent down once, not again by its rule: {fx:?}");
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::BottomRule(true)));
         // sway reports it down, so it is shown there.
         s.applied(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));

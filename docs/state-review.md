@@ -46,7 +46,7 @@ The weak spots are at the seams.
       settings/keymap or keymap/route in sync, the event queue last-in-first-out, show pending/reopened
       swapped, quitting before background, the made-own saves swapped. One exact-sequence test per rule
       that claims an order.
-- [ ] **The session gate can't be tested** (replacing it with `true` passes everything), and changes made
+- [x] **The session gate can't be tested** (replacing it with `true` passes everything), and changes made
       while handling (a launch, a quit) wait for the next tick to be settled. Either drop the gate
       (settle every event) or document which changes must bump the version. Dropping it changes when some
       effects come, so it's a decision, not a cleanup.

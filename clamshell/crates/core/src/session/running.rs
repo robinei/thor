@@ -326,8 +326,8 @@ impl Session {
         true
     }
 
-    /// Runs after the windows changed, and every second, after the entries started by their windows'
-    /// app ids ([`Session::start_by_app_id`]).
+    /// Runs after every event, after the entries started by their windows' app ids
+    /// ([`Session::start_by_app_id`]).
     ///
     /// - A running entry's windows found by app id go to its workspace.
     /// - A new window of no launch of ours goes to the latest browsed file waiting for one, shown.

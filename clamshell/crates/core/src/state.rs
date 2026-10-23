@@ -53,8 +53,6 @@ pub struct State {
     /// moment. Shelf and the bottom screen say when they changed; `apply` touches this at its end.
     resume: Debounce,
     idle: Idle,
-    /// What the steps after an event last saw.
-    settled: Settled,
     /// What the outside was last sent (see [`crate::sync`]).
     sent: Sent,
     /// The events the rules queue for State, lent to `apply`'s [`Out`] and returned empty, so that its
@@ -98,7 +96,6 @@ impl State {
             s.pad.toggle_mouse();
             s.reconcile_pad();
         }
-        s.settled = Settled::new(&s.session);
         s.sent = Sent::new(&s.wanted());
         s
     }
@@ -343,9 +340,9 @@ impl State {
     }
 
     /// Brings the state up to date with what happened. The steps run in this order, since each reads
-    /// what the earlier ones settled. The first eight follow the session's inputs (the windows, systemd's
-    /// scopes, the tray, the launcher's messages, the library and the clock), and run only when one
-    /// changed, which [`crate::Session::version`] counts:
+    /// what the earlier ones settled. They run after every event; a step does nothing when nothing
+    /// changed for it. The first eight follow the session's inputs (the windows, systemd's scopes, the
+    /// tray, the launcher's messages, the library and the clock) and what the event did to the session:
     ///
     /// 1. systemd's scopes: entries found running, found ones promoted to launches, and ours ended
     ///    ([`crate::Session::follow_units`]). The first time, the entries to start with ClamShell are
@@ -363,7 +360,7 @@ impl State {
     /// 7. Going back to what was before when the one in front closed.
     /// 8. The dock: running entries are added to it and ended ones removed.
     ///
-    /// The rest run after every event:
+    /// Then the rest:
     ///
     /// 9. The second screen's dimming.
     /// 10. The browsed folder's selection and armed action.
@@ -375,45 +372,40 @@ impl State {
     /// 15. What claims the pad, and where it goes. The focus ring shows where the pad is, so it is hidden
     ///     when the pad leaves ClamShell's screens.
     /// 16. The scrolled lists keep their top items where they are ([`State::follow_lists`]).
-    ///
-    /// A step does nothing when nothing changed for it.
     fn settle(&mut self, out: &mut Out) {
-        if self.session.version() != self.settled.session {
-            self.settled.session = self.session.version();
-            if self.session.follow_units(&self.clock, &mut self.shelf, self.bottom.notice_mut(), out) {
-                self.bottom.unwake();
-            }
-            let mut due = Vec::new();
-            self.session.autostart_due(self.shelf.library(), &mut due);
-            // They start in the background, so what was going to be shown still is.
-            for id in due {
-                self.launch(id, None, false, out);
-            }
-            // The windows' effects go after those of the steps that follow them, below.
-            let mut windows = Out { effects: std::mem::take(&mut self.window_effects), events: Vec::new() };
-            let mut steam = Vec::new();
-            if self.session.start_by_app_id(&self.clock, self.shelf.library(), &mut steam) {
-                self.bottom.unwake();
-            }
-            // Before following the windows, which leaves a starting launch's windows where they are.
-            for id in steam {
-                self.launch(id, None, true, &mut windows);
-            }
-            self.session.follow_windows(&self.clock, &mut self.shelf, &mut windows);
-            self.bottom.follow_window_rules(&self.session, out);
-            self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
-            self.session.show_pending(out);
-            self.session.show_reopened(self.clock.mono(), out);
-            self.session.follow_quitting(self.shelf.library(), out);
-            self.session.follow_closed(self.clock.mono(), out);
-            // After handling the front one closing, so that a window just taken by a browsed file is shown
-            // over it.
-            out.effects.append(&mut windows.effects);
-            out.events.append(&mut windows.events);
-            self.window_effects = windows.effects;
-            self.dock.follow(&self.session);
-            self.session.followed();
+        if self.session.follow_units(&self.clock, &mut self.shelf, self.bottom.notice_mut(), out) {
+            self.bottom.unwake();
         }
+        let mut due = Vec::new();
+        self.session.autostart_due(self.shelf.library(), &mut due);
+        // They start in the background, so what was going to be shown still is.
+        for id in due {
+            self.launch(id, None, false, out);
+        }
+        // The windows' effects go after those of the steps that follow them, below.
+        let mut windows = Out { effects: std::mem::take(&mut self.window_effects), events: Vec::new() };
+        let mut steam = Vec::new();
+        if self.session.start_by_app_id(&self.clock, self.shelf.library(), &mut steam) {
+            self.bottom.unwake();
+        }
+        // Before following the windows, which leaves a starting launch's windows where they are.
+        for id in steam {
+            self.launch(id, None, true, &mut windows);
+        }
+        self.session.follow_windows(&self.clock, &mut self.shelf, &mut windows);
+        self.bottom.follow_window_rules(&self.session, out);
+        self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
+        self.session.show_pending(out);
+        self.session.show_reopened(self.clock.mono(), out);
+        self.session.follow_quitting(self.shelf.library(), out);
+        self.session.follow_closed(self.clock.mono(), out);
+        // After handling the front one closing, so that a window just taken by a browsed file is shown
+        // over it.
+        out.effects.append(&mut windows.effects);
+        out.events.append(&mut windows.events);
+        self.window_effects = windows.effects;
+        self.dock.follow(&self.session);
+        self.session.followed();
         self.bottom.follow_dim(&self.session, &self.clock);
         self.shelf.follow_folder();
         // Sleep only in the device's own session. A program in front doesn't hold it off; one playing a
@@ -492,8 +484,6 @@ impl State {
             self.idle.resumed(mono_secs);
         }
         self.clock.tick(unix_secs, mono_secs);
-        // The session's steps follow the time.
-        self.session.changed();
         if self.resume.due(mono_secs, SAVE_AFTER) {
             out.effects.push(Effect::Save(Save::Resume(self.resume())));
         }
@@ -533,7 +523,6 @@ impl State {
     /// depends on its entries is updated: runners' pauses and keymaps, landing rules, and pins of entries
     /// that are gone.
     fn library_read(&mut self, library: Library, out: &mut Out) {
-        self.session.changed();
         let problems = &library.problems;
         if !problems.is_empty() && *problems != self.shelf.library().problems {
             let first = problems.first().cloned().unwrap_or_default();
@@ -565,7 +554,6 @@ impl State {
     }
 
     fn on_launch_event(&mut self, event: LaunchEvent) {
-        self.session.changed();
         match event {
             LaunchEvent::Position { entry: game, position } => self.shelf.set_position(&game, position, self.clock.unix()),
             // A launch that never started doesn't change what runs, but it is no longer starting.
@@ -1126,19 +1114,5 @@ impl State {
     #[cfg(test)]
     pub(crate) fn editor_mut(&mut self) -> Option<&mut crate::Editor> {
         self.bottom.editor_mut()
-    }
-}
-
-/// What the steps after an event last saw (see [`State::settle`]).
-#[derive(Debug, Default)]
-pub(crate) struct Settled {
-    /// The session's version (see [`crate::Session::version`]).
-    session: u64,
-}
-
-impl Settled {
-    /// As at start: the session's steps run on the first change to what it follows.
-    pub(crate) fn new(session: &crate::Session) -> Settled {
-        Settled { session: session.version() }
     }
 }

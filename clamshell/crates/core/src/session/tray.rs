@@ -72,7 +72,6 @@ impl Session {
     /// Takes the tray icons after any change. Programs not started by ClamShell run as entries found by
     /// their icons, and end with them, or with their last window if one is still open.
     pub(crate) fn set_tray(&mut self, items: Vec<TrayItem>, clock: &Clock, library: &Library, out: &mut Out) {
-        self.changed();
         if self.tray != items {
             self.tray = items;
             self.follow_tray(clock, library, out);
