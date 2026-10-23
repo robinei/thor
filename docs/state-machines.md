@@ -417,3 +417,8 @@ Shelf, files, radios, levels, status:
 - S32. Dimming at brightness 0 raises it to 1 (`levels/mod.rs:264`).
 - S33. The battery warning fires on the charger in bypass mode (`status/mod.rs:103`).
 - S34. The battery tab's spender menu stays open across tabs and after its row is gone.
+- S35. A relayout doesn't close a group that left a derived collection (Recent, Favourites).
+- S36. A folder listing that changes the entries but not shelf's view isn't asked for metadata first.
+- S37. The Mute key shows its notice when the volume is unknown and nothing changes (`lib.rs:1058`).
+- S38. The resume record can leave out a collection whose stored place is past its list after a relayout
+  (`shelf/mod.rs:552`).
