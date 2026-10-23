@@ -540,7 +540,11 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       itself; it doesn't use a plane's rotation): measure what that pass costs at 120 Hz (GPU time,
       power), and see it in sway's debug log ("direct scan-out"). Whether the display engine's planes
       rotate RGB buffers by 90° (`drm_info`: each plane's rotation property and values): if so, gamescope
-      (which uses it) could show games without a composition pass.
+      (which uses it) could show games without a composition pass. From the kernel's source (2026-10-23,
+      `docs/compositor-mvp.md` section 4): Armada's patch 0066 (ROCKNIX) gives the VIG planes 90°/270°
+      rotation for UBWC buffers only, 8888 and 2101010 formats, height up to 1088; a rotated fullscreen
+      plane on the top panel takes two of the four VIG pipes. A compositor of ClamShell's own would use it
+      (Smithay tries it); sway doesn't.
       If the pass costs enough (a few hundred mW at 120 Hz, not tens), the way without plane rotation:
       games render portrait themselves. wlroots' scene scans out a buffer whose buffer transform matches
       the output's, and tells clients the transform it prefers (`wl_surface.preferred_buffer_transform`;

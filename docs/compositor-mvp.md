@@ -150,6 +150,14 @@ From the kernel the Thor runs (Armada at d2bcf6f with its patches) and Mesa:
 - **Smithay sets the plane rotation from the element and output transforms and test-commits it,** falling
   back to composition when refused: rotated direct scanout needs no code of ours, only **dmabuf feedback
   with a scanout tranche**, so that Turnip and freedreno allocate UBWC (they pick it whenever offered).
+- **The second way to scanout, already planned** (`docs/thor-gameplan.md`, "Direct scanout"): games render
+  rotated themselves. The compositor tells a fullscreen surface the transform it prefers
+  (`wl_surface.preferred_buffer_transform`; Smithay can send it, niri does), Mesa's Wayland WSI is patched
+  to report it as `currentTransform` and set the buffer transform, and DXVK's present pass, which already
+  copies into the swapchain image, writes it rotated (VKD3D-Proton likewise). Then the buffer matches the
+  panel, scans out with no plane rotation, linear or UBWC, on a pipe that needn't scale, leaving the
+  scaling pipes free. It needs Wine's Wayland driver: an X11 window under Xwayland can't set a buffer
+  transform. The compositor supports both ways; plane rotation covers what isn't patched.
 - **Timing:** no async (tearing) page flips; explicit sync supported. Armada patches 0078 and 0108 fix
   flip timestamps for command- and video-mode panels.
 - **Power:** disabling a CRTC runs the panel's power-down. The bottom panel's driver lacks a guard against
@@ -177,7 +185,7 @@ Before writing the backend, on the device (a day or two):
 | A refresh change is a 0.4 s black modeset | certain | decide the policy (section 7) |
 | A modeset or power change on one screen stalls the other | low-medium | toggle bottom power while the top animates; count missed flips, read dmesg |
 | Brightness writes racing power or frames | medium | sweep brightness across power toggles; never write the bottom backlight while off |
-| Games not getting UBWC (no scanout tranche, Xwayland, Proton) | medium | buffer modifiers while a game runs, native and through Proton |
+| Games not getting UBWC (no scanout tranche, Xwayland, Proton) | medium | buffer modifiers while a game runs, native and through Proton; the pre-rotated way (section 4) doesn't need UBWC |
 | UBWC scanout corruption | low | vkcube fullscreen with scanout, by eye |
 | Touch mapping or stuck contacts after resume | low | four-corner test; tolerate a contact that never lifts |
 | Sleep and resume, libseat re-activation | low-medium | full commit on both outputs after resume; lid sleep with the compositor |
