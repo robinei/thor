@@ -143,14 +143,20 @@ impl Running {
 }
 
 /// A launch asked for and not started yet. The launcher thread says when it has started, or that it
-/// couldn't.
+/// couldn't; without an answer by [`LAUNCH_WAIT`] it is given up.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Launching {
     pub entry: Arc<str>,
     pub instance: Instance,
     /// The app id its windows have, if it runs in another program's processes.
     pub app_id: Option<Arc<str>>,
+    /// When it was asked for, in monotonic seconds.
+    pub at: u64,
 }
+
+/// How long a launch waits for an answer from the launcher, its scope or its failure, in seconds, before
+/// it is given up as not started.
+pub const LAUNCH_WAIT: u64 = 30;
 
 /// The app id an entry's windows have when it runs in another program's processes, which makes them its
 /// windows wherever they open. For Steam's games it is `steam_app_<id>`. For an entry whose runner hands
@@ -181,12 +187,14 @@ fn handed_over_app(g: &Entry) -> Option<&str> {
 }
 
 impl Session {
-    /// Runs after systemd's list of our scopes changed. An entry with scopes listed that isn't known to
-    /// run, because an earlier ClamShell started it, runs from when its first scope started, by the time
-    /// in the scope's name. One the library doesn't have, because the earlier ClamShell found it, runs as
-    /// found again by its windows or tray icon ([`found_in_scope`]). An entry found by its tray icon whose process is now in a scope of ours runs as
-    /// a launch. Then the entries whose launches have ended are handled (see [`Session::follow_ours`]).
-    /// Returns whether a launch of ours started, which may let a second screen tapped awake go dark again.
+    /// Runs after systemd's list of our scopes changed, and after any event. A launch with no answer by
+    /// [`LAUNCH_WAIT`] is given up, with a notice that it didn't start. An entry with scopes listed that
+    /// isn't known to run, because an earlier ClamShell started it, runs from when its first scope
+    /// started, by the time in the scope's name. One the library doesn't have, because the earlier
+    /// ClamShell found it, runs as found again by its windows or tray icon ([`found_in_scope`]). An entry
+    /// found by its tray icon whose process is now in a scope of ours runs as a launch. Then the entries
+    /// whose launches have ended are handled (see [`Session::follow_ours`]). Returns whether a launch of
+    /// ours started, which may let a second screen tapped awake go dark again.
     pub(crate) fn follow_units(&mut self, clock: &Clock, library: &Library, notice: &mut NoticeSlot, plays: &mut Vec<Play>) -> bool {
         let (now, unix) = (clock.mono(), clock.unix());
         // The entries of launches whose scope is there run as launches of ours, including one that was
@@ -197,6 +205,15 @@ impl Session {
             self.launching = waiting;
             started
         };
+        // A launch the launcher never answered is given up, so that it can be launched again.
+        while let Some(i) = self.launching.iter().position(|l| now >= l.at + LAUNCH_WAIT) {
+            let l = self.launching.remove(i);
+            if self.pending_show.as_ref() == Some(&l.instance) {
+                self.pending_show = None;
+            }
+            let title = library.entry(&l.entry).map_or_else(|| l.entry.to_string(), |g| g.title.clone());
+            notice.show(NoticeKind::NotStarted(title), now);
+        }
         let any_started = !started.is_empty();
         for l in started {
             match self.running.iter_mut().find(|r| r.id == l.entry) {
@@ -551,7 +568,7 @@ impl Session {
     /// front, its workspace is shown once its first window appears.
     fn begin_launch(&mut self, entry: Arc<str>, key: String, app_id: Option<Arc<str>>, clock: &Clock, start: Start) -> Instance {
         let instance = Instance::Run { key, secs: clock.unix(), n: self.next_instance() };
-        self.launching.push(Launching { entry, instance: instance.clone(), app_id });
+        self.launching.push(Launching { entry, instance: instance.clone(), app_id, at: clock.mono() });
         if start == Start::Front {
             self.pending_show = Some(instance.clone());
         }
@@ -807,6 +824,23 @@ mod tests {
         let fx = s.applied(Event::Windows(vec![]));
         assert!(!fx.iter().any(|e| matches!(e, Effect::EndRun { .. })), "{fx:?}");
         assert!(s.session().running("zelda-lttp").is_some());
+    }
+
+    /// A launch the launcher never answers is given up after [`super::LAUNCH_WAIT`], says it didn't start,
+    /// and can be launched again.
+    #[test]
+    fn a_launch_never_answered_is_given_up() {
+        let mut s = state();
+        s.applied(Event::tick(100));
+        let fx: Vec<Effect> = tap(&mut s, entry("zelda-lttp")).into_iter().chain(tap(&mut s, entry("zelda-lttp"))).collect();
+        assert!(launches(&fx, "zelda-lttp"));
+        s.applied(Event::tick(100 + super::LAUNCH_WAIT - 1));
+        assert!(s.session().is_launching("zelda-lttp"));
+        s.applied(Event::tick(100 + super::LAUNCH_WAIT));
+        assert!(!s.session().is_launching("zelda-lttp"));
+        assert!(matches!(notice(&s), Some(crate::bottom::notice::NoticeKind::NotStarted(t)) if t == "A Link to the Past"), "{:?}", notice(&s));
+        assert_eq!(s.session().pending_show(), None);
+        assert!(launches(&tap(&mut s, entry("zelda-lttp")), "zelda-lttp"), "launched again");
     }
 
     #[test]

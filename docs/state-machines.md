@@ -24,7 +24,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Launching | `Units` lists its instance | Running(Ours) | second screen may go dark again | running `a_launch_runs_while_a_scope_…`; tests `…start_and_end_come_to_the_same_in_any_order` |
 | Launching | LaunchFailed, browsed file or app-id launch | Running(Windows, unseen, until now+15 s) | — | running `a_file_handed_to_another_program_…` (browsed); app id GAP |
 | Launching | LaunchFailed otherwise | Idle | NotStarted notice | tests `a_launch_that_didnt_start_says_so` |
-| Launching | no answer from the launcher | Launching, without end (S9) | — | GAP |
+| Launching | no answer from the launcher in 30 s | Idle | NotStarted notice; `pending_show` cleared | running `a_launch_never_answered_is_given_up` |
 | Idle | `Units` lists a scope of a library entry (an earlier ClamShell) | Running(Ours) | — | running `entries_started_before_clamshell_…` |
 | Idle | `Units` lists a scope of a key not in the library, a window or tray icon in it | Running(Ours), as found, named by the name whose key is the scope's (until a window or icon comes, nothing) | — | found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
 | Idle | a window with a library app id (not Steam) | Running(Windows, seen) | Focus once on its workspace | running `an_app_handed_over_…` |
@@ -389,7 +389,7 @@ Session and dock:
 - S7. A window-found entry without its own process gets a tray icon's pid; Quit then signals it (`tray.rs:111`).
   Fixed: state/session: a tray icon stays with its adopted program and gives no pid.
 - S8. A runner paused again while a launch waits more than 10 s for its scope (`background.rs:447`). Fixed: state/session: a launch waiting for its scope keeps its runner resumed.
-- S9. A launch the launcher never answers stays launching, blocking a relaunch (`running.rs:542`).
+- S9. A launch the launcher never answers stays launching, blocking a relaunch (`running.rs:542`). Fixed: state/session: a launch with no answer in 30 s is given up.
 - S20. Back at the top of the dock's tray menu closes the whole menu instead of going back to the entry menu.
 - S21. Dock leftovers: `close` keeps the tray path; the menu stays open after its entry left; a Library
   read can drop the item being moved; a long press while moving opens the menu with the move on.
