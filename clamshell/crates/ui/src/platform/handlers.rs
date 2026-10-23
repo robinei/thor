@@ -1,7 +1,7 @@
 //! The Wayland protocol handlers: configures and frame callbacks for the views, and the seats with their
 //! keyboard, pointer and touch, whose events are passed on to the input side.
 
-use clamshell_state::{Event, ShelfEvent};
+use clamshell_state::Event;
 use smithay_client_toolkit::{
     compositor::CompositorHandler,
     delegate_registry,
@@ -27,6 +27,7 @@ use smithay_client_toolkit::{
 };
 
 use super::App;
+use crate::Screen;
 use crate::input::{End, Source};
 
 impl CompositorHandler for App {
@@ -190,27 +191,23 @@ impl PointerHandler for App {
                     }
                 }
                 // A right click on the second screen pastes into the field open there, as Ctrl+V does.
-                PointerEventKind::Press { button: BTN_RIGHT, .. } if self.views.top.as_ref().is_none_or(|v| v.shell.surface() != &event.surface) => {
+                PointerEventKind::Press { button: BTN_RIGHT, .. } if self.screen_of(&event.surface) != Some(Screen::Top) => {
                     self.handle(Event::Paste);
                 }
-                PointerEventKind::Press { time, .. } => self.press_at(Source::Mouse, &event.surface, event.position, time),
+                PointerEventKind::Press { time, .. } => {
+                    if let Some(screen) = self.screen_of(&event.surface) {
+                        self.press_at(Source::Mouse, screen, event.position, time);
+                    }
+                }
                 PointerEventKind::Motion { time } => self.moved(Source::Mouse, event.position, time),
                 PointerEventKind::Release { time, .. } => {
                     let now = self.at(time);
                     self.up(Source::Mouse, End::Release, now);
                 }
-                // The wheel over the main screen scrolls the shelf's list by a game per notch. Over a list
-                // on the second screen, it scrolls by a row per notch.
                 PointerEventKind::Axis { vertical, .. } => {
-                    let over_top = self.views.top.as_ref().is_some_and(|v| v.shell.surface() == &event.surface);
                     let notches = if vertical.discrete != 0 { vertical.discrete } else { (vertical.absolute / 10.0) as i32 };
-                    if notches == 0 {
-                        continue;
-                    }
-                    if over_top {
-                        self.handle(Event::Shelf(ShelfEvent::ListStep(notches)));
-                    } else {
-                        self.wheel(&event.surface, event.position, notches);
+                    if let Some(screen) = self.screen_of(&event.surface).filter(|_| notches != 0) {
+                        self.wheel(screen, event.position, notches);
                     }
                 }
                 _ => {}
@@ -221,7 +218,9 @@ impl PointerHandler for App {
 
 impl TouchHandler for App {
     fn down(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, time: u32, surface: WlSurface, id: i32, position: (f64, f64)) {
-        self.press_at(Source::Touch(id), &surface, position, time);
+        if let Some(screen) = self.screen_of(&surface) {
+            self.press_at(Source::Touch(id), screen, position, time);
+        }
     }
 
     fn up(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, time: u32, id: i32) {

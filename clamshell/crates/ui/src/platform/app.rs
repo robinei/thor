@@ -98,6 +98,11 @@ impl App {
         });
     }
 
+    /// The screen `surface` shows, if it is one of ours. Input is routed by it.
+    pub(super) fn screen_of(&self, surface: &WlSurface) -> Option<Screen> {
+        Screen::BOTH.into_iter().find(|&s| self.views[s].as_ref().is_some_and(|v| v.shell.surface() == surface))
+    }
+
     pub(super) fn view_mut(&mut self, surface: &WlSurface) -> Option<&mut View> {
         self.views.iter_mut().filter_map(|(_, v)| v.as_mut()).find(|v| v.shell.surface() == surface)
     }

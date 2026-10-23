@@ -1,7 +1,7 @@
 //! Routes input to the pure machines: presses, the wheel, pointer motion and releases, the pad and keys.
 
-use clamshell_state::{Event, Id, ListEvent, PadInput, PointerEvent, State};
-use smithay_client_toolkit::{reexports::client::protocol::wl_surface::WlSurface, seat::keyboard::Keysym};
+use clamshell_state::{Event, Id, ListEvent, PadInput, PointerEvent, ShelfEvent, State};
+use smithay_client_toolkit::seat::keyboard::Keysym;
 
 use crate::Screen;
 use crate::input::focus::{self, PadPress};
@@ -12,20 +12,20 @@ use super::App;
 use crate::input;
 
 impl App {
-    /// A finger or button comes down at `position` on `surface`. It presses the topmost target there,
+    /// A finger or button comes down at `position` on `screen`. It presses the topmost target there,
     /// which is the last one drawn, so a button on a tile (such as the dock's "+") wins over the tile.
-    pub(super) fn press_at(&mut self, source: Source, surface: &WlSurface, (x, y): (f64, f64), time: u32) {
-        let Some(view) = self.view_mut(surface) else {
+    pub(super) fn press_at(&mut self, source: Source, screen: Screen, (x, y): (f64, f64), time: u32) {
+        let Some(view) = &self.views[screen] else {
             return;
         };
         let found = view.retained.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).cloned();
         // With no target there, below the second screen's bar, the press is on the blank, which may
         // point.
-        let bottom = view.screen == Screen::Bottom;
+        let bottom = screen == Screen::Bottom;
         if bottom {
             self.handle(Event::BottomTouched);
         }
-        let Some(view) = self.view_mut(surface) else {
+        let Some(view) = &self.views[screen] else {
             return;
         };
         let below_bar = bottom && view.body.is_some_and(|b| b.contains(x as f32, y as f32));
@@ -45,9 +45,13 @@ impl App {
         self.run_actions(actions);
     }
 
-    /// The wheel over a scrolled list on `surface` at `position`. It scrolls by `notches` rows.
-    pub(super) fn wheel(&mut self, surface: &WlSurface, (x, y): (f64, f64), notches: i32) {
-        let Some(view) = self.view_mut(surface) else {
+    /// The wheel on `screen` at `position`, by `notches`. Over the main screen it scrolls the shelf's
+    /// list by a game per notch. Over a list on the second screen, it scrolls by a row per notch.
+    pub(super) fn wheel(&mut self, screen: Screen, (x, y): (f64, f64), notches: i32) {
+        if screen == Screen::Top {
+            return self.handle(Event::Shelf(ShelfEvent::ListStep(notches)));
+        }
+        let Some(view) = &self.views[screen] else {
             return;
         };
         let list = view.retained.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).and_then(|t| t.list);
