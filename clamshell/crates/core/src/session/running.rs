@@ -167,6 +167,9 @@ pub fn has_app_id(g: &Entry, app_id: &str) -> bool {
 }
 
 /// A handed-over entry's app id: its desktop file's name.
+/// A play that ended: the entry and when it started, in monotonic seconds. State records it in shelf.
+pub(crate) type Play = (Arc<str>, u64);
+
 fn handed_over_app(g: &Entry) -> Option<&str> {
     ids::desktop_file(&g.id).filter(|_| g.runner.as_ref().is_some_and(|r| r.handover))
 }
@@ -177,7 +180,7 @@ impl Session {
     /// in the scope's name. An entry found by its tray icon whose process is now in a scope of ours runs as
     /// a launch. Then the entries whose launches have ended are handled (see [`Session::follow_ours`]).
     /// Returns whether a launch of ours started, which may let a second screen tapped awake go dark again.
-    pub(crate) fn follow_units(&mut self, clock: &Clock, shelf: &mut Shelf, notice: &mut NoticeSlot, out: &mut Out) -> bool {
+    pub(crate) fn follow_units(&mut self, clock: &Clock, library: &Library, notice: &mut NoticeSlot, plays: &mut Vec<Play>) -> bool {
         let (now, unix) = (clock.mono(), clock.unix());
         // The entries of launches whose scope is there run as launches of ours, including one that was
         // handed over to its windows and launched again.
@@ -193,7 +196,7 @@ impl Session {
                 Some(r) => r.origin = Origin::Ours,
                 None => {
                     // An entry gone from the library meanwhile is known by its id alone.
-                    let known = shelf.entry(&l.entry).cloned();
+                    let known = library.entry(&l.entry).cloned();
                     let entry = known.clone().unwrap_or_else(|| Entry::new(&l.entry, &l.entry));
                     let r = Running { app_id: l.app_id, ..Running::of(&entry, Origin::Ours, now) };
                     self.running.push(Running { entry: r.entry.filter(|_| known.is_some()), ..r });
@@ -216,7 +219,7 @@ impl Session {
             if self.running.iter().any(|r| r.key == key) || self.launching.iter().any(|l| l.instance.key() == Some(key)) {
                 continue;
             }
-            let Some(g) = shelf.library().entries.iter().find(|g| g.key == key) else {
+            let Some(g) = library.entries.iter().find(|g| g.key == key) else {
                 continue;
             };
             let first = units.iter().filter_map(|u| match u {
@@ -227,7 +230,7 @@ impl Session {
             let start = first.min().map_or(now, |secs| now.saturating_sub(unix.saturating_sub(secs)));
             self.running.push(Running { app_id: app_id_of(g), ..Running::of(g, Origin::Ours, start) });
         }
-        self.follow_ours(clock, shelf, notice, out);
+        self.follow_ours(clock.mono(), library, notice, plays);
         any_started
     }
 
@@ -235,9 +238,8 @@ impl Session {
     /// follower between Steam's setup and the game, and an entry started by an earlier ClamShell has its
     /// scopes listed too. Once there are none, an entry known by its app id whose windows are open or may
     /// still come, or a browsed file's entry soon after it started, runs on by its windows (see
-    /// [`Origin::Windows`]). The rest have ended, and their play is recorded.
-    fn follow_ours(&mut self, clock: &Clock, shelf: &mut Shelf, notice: &mut NoticeSlot, out: &mut Out) {
-        let now = clock.mono();
+    /// [`Origin::Windows`]). The rest have ended, and their plays are added to `plays`.
+    fn follow_ours(&mut self, now: u64, library: &Library, notice: &mut NoticeSlot, plays: &mut Vec<Play>) {
         let mut ended = Vec::new();
         let mut handed = Vec::new();
         let mut unstarted = Vec::new();
@@ -247,7 +249,7 @@ impl Session {
             }
             let has = self.windows_of(&r.id).next().is_some();
             let soon = now.saturating_sub(r.start) <= HANDOFF;
-            let browsed = shelf.entry(&r.id).is_some_and(|g| g.browsed.is_some());
+            let browsed = library.entry(&r.id).is_some_and(|g| g.browsed.is_some());
             if r.app_id.is_some() && (has || soon) {
                 handed.push((r.id.clone(), Origin::Windows { since: now, until: now + HANDOFF }, has));
             } else if browsed && soon {
@@ -271,9 +273,7 @@ impl Session {
             }
         }
         self.running.retain(|r| !ended.iter().any(|(id, _)| *id == r.id));
-        for (game, start) in ended {
-            shelf.record_play(game, start, clock, out);
-        }
+        plays.extend(ended);
     }
 
     /// A launch that never started, its scope gone before it was seen. A browsed file's launch, or one
@@ -335,15 +335,16 @@ impl Session {
     ///   [`crate::session::found`]).
     /// - A window left on the landing workspace that belongs to no entry goes to the main screen.
     /// - An entry running by its windows that had windows and has none, or that waited in vain, has ended.
-    pub(crate) fn follow_windows(&mut self, clock: &Clock, shelf: &mut Shelf, out: &mut Out) {
+    ///   Its play is added to `plays`.
+    pub(crate) fn follow_windows(&mut self, clock: &Clock, library: &Library, plays: &mut Vec<Play>, out: &mut Out) {
         self.windows_to_their_entries(out);
         let mut given = Vec::new();
         let taken = self.stray_to_waiting(clock.mono(), &mut given, out);
-        self.follow_found_windows(&given, clock, shelf.library(), out);
+        self.follow_found_windows(&given, clock, library, out);
         if taken.is_none() {
             self.landing_up(out);
         }
-        self.end_windowless(taken.as_ref(), clock, shelf, out);
+        self.end_windowless(taken.as_ref(), clock.mono(), plays);
     }
 
     /// Moves windows found by app id or by process to their entry's workspace.
@@ -385,15 +386,14 @@ impl Session {
     }
 
     /// Ends entries running by their windows, or found by a tray icon, once those are gone. `taken` is an
-    /// entry that was just given a window, which is still where it came up. A play by windows is recorded.
-    fn end_windowless(&mut self, taken: Option<&Arc<str>>, clock: &Clock, shelf: &mut Shelf, out: &mut Out) {
-        let now = clock.mono();
+    /// entry that was just given a window, which is still where it came up. A play by windows is added to
+    /// `plays`.
+    fn end_windowless(&mut self, taken: Option<&Arc<str>>, now: u64, plays: &mut Vec<Play>) {
         // Which have windows is worked out before any is removed, since a window's entry is found among
         // all of them.
         let mut with = std::mem::take(&mut self.with_windows);
         with.clear();
         with.extend(self.running.iter().map(|r| taken == Some(&r.id) || self.windows_of(&r.id).next().is_some()));
-        let mut ended = Vec::new();
         let (icons, units) = (&self.tray, &self.units);
         let mut has_windows = with.iter();
         self.running.retain_mut(|r| {
@@ -406,7 +406,7 @@ impl Session {
                     let launched = units.iter().any(|u| u.key() == Some(r.key.as_str()));
                     let runs = launched || if r.seen { has } else { now <= until };
                     if !runs && r.seen {
-                        ended.push((r.id.clone(), since));
+                        plays.push((r.id.clone(), since));
                     }
                     runs
                 }
@@ -414,9 +414,6 @@ impl Session {
             }
         });
         self.with_windows = with;
-        for (game, start) in ended {
-            shelf.record_play(game, start, clock, out);
-        }
     }
 
     /// The app whose window shows the running browsed file `id`. It is the app whose desktop file is named

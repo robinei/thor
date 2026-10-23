@@ -63,7 +63,7 @@ The weak spots are at the seams.
 
 ## Hygiene
 
-- [ ] Areas reach further than the crate doc says: `dock.on`, `device.tap` and `keymapping.on` take all of
+- [x] Areas reach further than the crate doc says: `dock.on`, `device.tap` and `keymapping.on` take all of
       `&mut Bottom` (they need the editors and the notice); `follow_units`/`follow_windows` take
       `&mut Shelf` only to record plays.
 - [x] One path each: notices (`bottom.notify` vs `*notice = Some(..)` in five places), the keymap setting

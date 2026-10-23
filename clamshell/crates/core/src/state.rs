@@ -61,6 +61,9 @@ pub struct State {
     /// The windows' effects while the session's steps run, put after the later steps' (see
     /// [`State::settle`]). Kept empty, so that its room is reused.
     window_effects: Vec<Effect>,
+    /// The plays the session's steps ended, until they are recorded in shelf. Kept empty, so that its
+    /// room is reused.
+    plays: Vec<crate::session::running::Play>,
 }
 
 impl State {
@@ -377,9 +380,10 @@ impl State {
     ///     when the pad leaves ClamShell's screens.
     /// 16. The scrolled lists keep their top items where they are ([`State::follow_lists`]).
     fn settle(&mut self, out: &mut Out) {
-        if self.session.follow_units(&self.clock, &mut self.shelf, self.bottom.notice_mut(), out) {
+        if self.session.follow_units(&self.clock, self.shelf.library(), self.bottom.notice_mut(), &mut self.plays) {
             self.bottom.unwake();
         }
+        self.record_plays(out);
         let mut due = Vec::new();
         self.session.autostart_due(self.shelf.library(), &mut due);
         // They start in the background, so what was going to be shown still is.
@@ -396,7 +400,8 @@ impl State {
         for id in steam {
             self.launch(id, None, true, &mut windows);
         }
-        self.session.follow_windows(&self.clock, &mut self.shelf, &mut windows);
+        self.session.follow_windows(&self.clock, self.shelf.library(), &mut self.plays, &mut windows);
+        self.record_plays(&mut windows);
         self.bottom.follow_window_rules(&self.session, out);
         self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
         self.session.show_pending(out);
@@ -426,6 +431,13 @@ impl State {
             self.pointer.hide_focus();
         }
         self.follow_lists();
+    }
+
+    /// Records in shelf the plays the session's steps ended.
+    fn record_plays(&mut self, out: &mut Out) {
+        for (entry, start) in self.plays.drain(..) {
+            self.shelf.record_play(entry, start, &self.clock, out);
+        }
     }
 
     /// Called when the program in force changed. Turns the pad mouse on if the program wants it
