@@ -10,8 +10,8 @@ pass confirmed its suspicions with probe tests in a scratch copy.
 
 ## Session: launches (session/)
 
-State: `Session.launching`, `running` (each with `origin: Ours | Found{pid, tray} | Windows{since,
-until}`, `seen`, `app_id`), `units`, `pending_show`, `quitting`.
+State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Windows{since, until}`,
+`seen`, `app_id`, `tray`), `units`, `pending_show`, `quitting`.
 
 | From | Event / condition | To | Effects | Test |
 |---|---|---|---|---|
@@ -31,7 +31,7 @@ until}`, `seen`, `app_id`), `units`, `pending_show`, `quitting`.
 | Idle | a Steam game's window by app id | Launching | as a launch | running `a_game_steam_started_is_followed…` |
 | Idle | a stray window of no entry | Running(Found) | Move, Focus if focused, FindIcon, Adopt (own pid) | found `a_window_of_no_entry_…` and its siblings |
 | Idle | a tray icon not in our scope (device session) | Running(Found{tray}) | Move/Focus, Adopt | tray `a_program_with_a_tray_icon_runs…` |
-| Running(Found) | its scope listed | Running(Ours) (pid and tray key dropped, S3) | — | tray test |
+| Running(Found) | its scope listed | Running(Ours) (pid dropped, tray key kept) | — | tray test; tray `an_adopted_tray_program_keeps_its_menu` |
 | Running(Found) | icon gone and no windows | Idle, no play recorded | — | tray test |
 | Running(Ours) | scope gone, app id and windows (or just started) | Running(Windows) | — | GAP (the `has && !soon` branch) |
 | Running(Ours) | scope gone otherwise | Idle | `RecordPlay`; NotStarted if it never had a window or tray icon and isn't quitting | tests `a_launch_that_ends_without_a_window_didnt_start`; tray `a_program_with_only_a_tray_icon_started` |
@@ -76,9 +76,11 @@ Freeze and RunnerCommand have no acknowledgement; the state assumes they worked.
 
 ### Tray, autostart, enqueue
 
-- Tray: `set_tray` does nothing when unchanged; icons whose unit is ours give their menu to that entry
-  (S3 after adoption); an icon of a running Found entry sets its tray and pid (S7). Test: tray
-  `a_program_with_a_tray_icon_runs…`, `a_guest_in_a_desktops_session_adopts_none…`.
+- Tray: `set_tray` does nothing when unchanged; icons whose unit is ours give their menu to that entry,
+  and an adopted entry keeps the key of the icon it was found by; an icon of a running Found entry sets
+  its tray key, not its pid. Test: tray `a_program_with_a_tray_icon_runs…`,
+  `a_guest_in_a_desktops_session_adopts_none…`, `an_adopted_tray_program_keeps_its_menu`,
+  `a_tray_icon_gives_no_process_to_an_entry_found_in_another_programs`.
 - Autostart: once, at the first settle after units are known, launching unshown what isn't running.
   Test: autostart `chosen_entries_start_once_…`.
 - Enqueue: to the runner's running instance whose workspace was in front most recently; without one, a
@@ -380,11 +382,12 @@ Session and dock:
   a restart (`running.rs:222`); its windows and tray are skipped as ours, so it runs with no dock tile and
   can't be quit, and a Frozen hold for it is dropped so its slice stays frozen.
 - S3. After a tray program's scope is adopted, its tray menu is missing until the tray thread re-reads the
-  icons (`tray.rs:122`).
+  icons (`tray.rs:122`). Fixed: state/session: a tray icon stays with its adopted program and gives no pid.
 - S5. Show when every window is moved down focuses an empty top workspace (`running.rs:488`).
 - S6. A quit the program refuses (a "save changes?" cancelled) stays quitting indefinitely: never paused,
   and ended when its windows later close (`running.rs:566-631`).
 - S7. A window-found entry without its own process gets a tray icon's pid; Quit then signals it (`tray.rs:111`).
+  Fixed: state/session: a tray icon stays with its adopted program and gives no pid.
 - S8. A runner paused again while a launch waits more than 10 s for its scope (`background.rs:447`).
 - S9. A launch the launcher never answers stays launching, blocking a relaunch (`running.rs:542`).
 - S20. Back at the top of the dock's tray menu closes the whole menu instead of going back to the entry menu.

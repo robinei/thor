@@ -54,9 +54,8 @@ pub enum Origin {
     /// open, until it is moved into a scope of ours, after which it runs as [`Origin::Ours`].
     ///
     /// `pid` is its own process, the tray icon's or its window's; windows of that process, or of a process
-    /// it started, are the entry's. It is none if the program runs in another program's process. `tray` is
-    /// the icon's key, if it has one.
-    Found { pid: Option<u32>, tray: Option<Arc<str>> },
+    /// it started, are the entry's. It is none if the program runs in another program's process.
+    Found { pid: Option<u32> },
     /// By its windows, since `since` (monotonic seconds, as in [`crate::Event::Tick`]). It was started by
     /// another program, or its launches ended while it ran on in a program not ours. It ends once it has
     /// had windows ([`Running::seen`]) and has none left, or when none came by `until`, and its play from
@@ -82,6 +81,10 @@ pub struct Running {
     /// Whether a window of it has been there since it started, or since it went on by its windows, or,
     /// unless it runs by its windows, a tray icon of it. Until then it is starting.
     pub(crate) seen: bool,
+    /// The key of the tray icon it was found by, if it was. It stays once the program is moved into a
+    /// scope of ours, since the icon's process is known to be in that scope only once the tray is read
+    /// again.
+    pub(crate) tray: Option<Arc<str>>,
     /// Its entry as it was when it started. The dock shows it by this if it leaves the library while it
     /// runs, for example because its file was renamed or deleted.
     pub entry: Option<Box<crate::Entry>>,
@@ -91,7 +94,7 @@ impl Running {
     /// `entry` running as `origin` since `start`, with no launch followed and no window seen yet.
     pub(crate) fn of(entry: &Entry, origin: Origin, start: u64) -> Running {
         let (id, key) = (entry.id.clone(), entry.key.clone());
-        Running { id, key, origin, app_id: None, start, seen: false, entry: Some(Box::new(entry.clone())) }
+        Running { id, key, origin, app_id: None, start, seen: false, tray: None, entry: Some(Box::new(entry.clone())) }
     }
 
     /// Its own process, if it was found and has one (see [`Origin::Found`]).
@@ -104,10 +107,7 @@ impl Running {
 
     /// The icon's key, if it was found by a tray icon.
     pub fn tray(&self) -> Option<&Arc<str>> {
-        match &self.origin {
-            Origin::Found { tray, .. } => tray.as_ref(),
-            _ => None,
-        }
+        self.tray.as_ref()
     }
 
     pub fn found(&self) -> bool {
@@ -403,7 +403,7 @@ impl Session {
             // by them alone, since it ends once they are gone.
             r.seen |= has || (icon && !matches!(r.origin, Origin::Windows { .. }));
             match r.origin {
-                Origin::Found { ref tray, .. } => tray.as_ref().is_some_and(|k| icons.iter().any(|t| t.key == *k)) || has,
+                Origin::Found { .. } => r.tray.as_ref().is_some_and(|k| icons.iter().any(|t| t.key == *k)) || has,
                 Origin::Windows { since, until } => {
                     // An entry with a scope listed has a launch of its own running.
                     let launched = units.iter().any(|u| u.key() == Some(r.key.as_str()));

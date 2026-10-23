@@ -66,7 +66,7 @@ impl Session {
             if self.running(&entry.id).is_some() {
                 continue;
             }
-            new.push(Running { app_id, seen: true, ..Running::of(&entry, Origin::Found { pid: own.then_some(pid), tray: None }, now) });
+            new.push(Running { app_id, seen: true, ..Running::of(&entry, Origin::Found { pid: own.then_some(pid) }, now) });
         }
         self.start_found(new, taken, clock, out);
     }

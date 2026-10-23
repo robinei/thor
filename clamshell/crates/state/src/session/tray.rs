@@ -104,15 +104,16 @@ impl Session {
                 Entry { icon: t.icon.clone(), app: true, ..Entry::new(&format!("{}{name}", ids::TRAY), title) }
             });
             // Its entry runs already. If it was found another way, by a window, the icon becomes that
-            // entry's. If it is a launch of ours, the icon is already its own.
+            // entry's. Its process doesn't: an entry found running in another program's process stays
+            // without one, so that Quit doesn't signal that program. If it is a launch of ours, the icon
+            // is already its own.
             if let Some(r) = self.running.iter_mut().find(|r| r.id == entry.id) {
-                if let Origin::Found { pid: found_pid, tray } = &mut r.origin {
-                    *tray = Some(t.key.clone());
-                    *found_pid = found_pid.or(Some(pid));
+                if r.found() {
+                    r.tray = Some(t.key.clone());
                 }
                 continue;
             }
-            new.push(Running::of(&entry, Origin::Found { pid: Some(pid), tray: Some(t.key.clone()) }, now));
+            new.push(Running { tray: Some(t.key.clone()), ..Running::of(&entry, Origin::Found { pid: Some(pid) }, now) });
         }
         self.start_found(new, &[], clock, out);
     }
@@ -256,6 +257,45 @@ mod tests {
         s.applied(Event::Units(vec![]));
         assert!(s.session().running("tray:thing").is_none());
         assert!(!not_started(&s), "{:?}", notice(&s));
+    }
+
+    /// Once a program found by its icon is moved into a scope of ours, its menu stays, though the tray
+    /// thread still reports the icon's process outside that scope until it reads the icons again.
+    #[test]
+    fn an_adopted_tray_program_keeps_its_menu() {
+        let mut s = started(crate::Init { device_session: true, ..init() });
+        let icon = item(":1.7/c", "thing", None);
+        let fx = s.applied(Event::Tray(vec![icon]));
+        let instance = fx.iter().find_map(|e| if let Effect::Adopt { instance, .. } = e { Some(instance.clone()) } else { None }).unwrap();
+        s.applied(Event::Units(vec![instance]));
+        assert_eq!(s.session().running("tray:thing").map(|r| r.origin.clone()), Some(Origin::Ours));
+        assert_eq!(s.session().tray_of("tray:thing").map(|t| &*t.key), Some(":1.7/c"));
+        assert_eq!(s.session().running_entries().len(), 1, "not found again by its icon");
+    }
+
+    /// A program found by its window that runs in another program's process gets that program's icon, not
+    /// its process: Quit closes its windows and signals nothing.
+    #[test]
+    fn a_tray_icon_gives_no_process_to_an_entry_found_in_another_programs() {
+        let mut library = clamshell_library::demo::library();
+        let firefox = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
+        firefox.runner = Some(clamshell_library::RunnerOf { handover: true, ..clamshell_library::RunnerOf::new("android", "Android", true) });
+        let mut s = started(crate::Init { library, device_session: true, ..init() });
+        launch_now(&mut s, "desktop:firefox");
+        crate::testkit::start(&mut s, "desktop:firefox");
+        crate::testkit::end(&mut s, "desktop:firefox");
+        // Waydroid's session shows Firefox and the terminal, in one process.
+        let in_waydroid = |id, app_id: &str| Window { pids: vec![700], unit: Some("waydroid-session.scope".into()), ..win(id, app_id, "1", false) };
+        s.applied(Event::Windows(vec![in_waydroid(5, "firefox"), in_waydroid(6, "foot")]));
+        assert_eq!(s.session().running("desktop:foot").map(Running::pid), Some(None));
+        // An icon of that process named like the terminal's desktop file is the terminal's.
+        s.applied(Event::Tray(vec![TrayItem { pid: Some(700), ..item(":1.8/d", "foot", Some("waydroid-session.scope")) }]));
+        let r = s.session().running("desktop:foot").unwrap();
+        assert_eq!((r.tray().map(|k| &**k), r.pid()), (Some(":1.8/d"), None), "its icon, not the process");
+        let id: Arc<str> = "desktop:foot".into();
+        assert_eq!(quit(&mut s, &id), vec![Effect::Window(WindowCommand::Close(vec![6]))]);
+        let fx = s.applied(Event::Windows(vec![in_waydroid(5, "firefox")]));
+        assert!(!fx.iter().any(|e| matches!(e, Effect::EndProcesses { .. })), "{fx:?}");
     }
 
     #[test]
