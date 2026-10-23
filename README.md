@@ -21,6 +21,9 @@ Not aims (decided, so they are not reopened by accident):
   which keeps its own layout.
 - Compositors other than sway. Placing windows, the second screen and following launches use sway's IPC,
   and other compositors offer no common way.
+- A compositor of ClamShell's own, for now. sway does the work; window operations go through ClamShell's
+  own effects and events (`crates/system/src/sway/` speaks to sway), so one could replace it later
+  without touching the state or the UI.
 - More than one virtual controller for games. Games see one Xbox 360 pad; remapping and the gyro are
   ClamShell's keymaps.
 - Themes, for now. There is one look, made for the OLED screens: black, grey text, colour only where it
