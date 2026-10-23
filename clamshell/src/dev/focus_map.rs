@@ -11,12 +11,13 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Write as _;
 use std::path::Path;
 
-use clamshell_state::{Event, Id, PadRoute, PointerEvent, ShelfId, State};
+use clamshell_state::{Control, DockId, Event, Id, LevelEvent, PadRoute, PointerEvent, RowPart, ShelfId, State};
 use clamshell_ui::{Dir, PadFrames, PadTarget, PadView, Screen};
 
 use super::trace;
 
-pub const DIRS: [(Dir, &str); 4] = [(Dir::Up, "up"), (Dir::Down, "down"), (Dir::Left, "left"), (Dir::Right, "right")];
+/// The directions, with the word a rule failure names each by and the mark the reference writes it with.
+pub const DIRS: [(Dir, &str, char); 4] = [(Dir::Up, "up", '^'), (Dir::Down, "down", 'v'), (Dir::Left, "left", '<'), (Dir::Right, "right", '>')];
 
 /// How many frames a shot's map may record for states that moves lead to, beyond the shot's own. Moves
 /// through a scrolled list record one each.
@@ -46,9 +47,10 @@ impl Move {
     fn text(&self) -> String {
         match self {
             Move::Stays => "-".into(),
-            Move::To(id) => format!("{id:?}"),
-            Move::Event(e, None) => format!("[{}]", trace::event(e)),
-            Move::Event(e, Some(id)) => format!("[{}] {id:?}", trace::event(e)),
+            Move::To(id) => short(id),
+            Move::Event(e, None) => format!("[{}]", event(e)),
+            // Where the focus ends up says what the event did.
+            Move::Event(_, Some(id)) => short(id),
         }
     }
 }
@@ -56,8 +58,11 @@ impl Move {
 /// A shot's map.
 pub struct Map {
     pub name: String,
-    /// The map as text, starting with a `== name` line.
-    pub text: String,
+    /// The map's first lines as text: `== name (...)`, then where the pad starts and what B does.
+    pub head: String,
+    /// The targets by section ([`SECTIONS`]): each target's short name and its moves as text, in the
+    /// order of [`DIRS`].
+    pub sections: [Vec<Line>; 4],
     /// The shot screen's targets the pad may focus, with their moves in the order of [`DIRS`].
     pub targets: Vec<(PadTarget, [Move; 4])>,
     /// Everything drawn on the shot's screen.
@@ -120,8 +125,16 @@ impl<'a> Mapper<'a> {
     pub fn map(&mut self, state: &State, log: &[Event], name: &str, screen: Screen) -> Map {
         if state.pad().route() == PadRoute::Listen {
             // The pad's inputs are chosen on the screen rather than moving the focus.
-            let text = format!("== {name} ({}; the pad listening for inputs)\n", screen_name(screen));
-            return Map { name: name.to_owned(), text, targets: Vec::new(), drawn: Vec::new(), start: None, failures: Vec::new() };
+            let head = format!("== {name} ({}; the pad listening for inputs)\n", screen_name(screen));
+            return Map {
+                name: name.to_owned(),
+                head,
+                sections: Default::default(),
+                targets: Vec::new(),
+                drawn: Vec::new(),
+                start: None,
+                failures: Vec::new(),
+            };
         }
         let view = self.frames.record(state);
         // A target drawn in pieces has one entry per piece; the pad moves from its first.
@@ -184,8 +197,8 @@ impl<'a> Mapper<'a> {
         }
         let targets: Vec<(PadTarget, [Move; 4])> =
             focusable.into_iter().filter(|t| t.screen == screen).map(|t| (t.clone(), moves.get(&t.id).cloned().unwrap_or_else(stays))).collect();
-        let text = text(state, name, screen, start.as_ref(), &targets);
-        Map { name: name.to_owned(), text, targets, drawn, start, failures }
+        let (head, sections) = text(state, name, screen, start.as_ref(), &targets);
+        Map { name: name.to_owned(), head, sections, targets, drawn, start, failures }
     }
 
     /// The four moves from the focus on `id`. A move to a target not shown in the frame the moves are
@@ -198,7 +211,7 @@ impl<'a> Mapper<'a> {
         let (prefix, at) = (node.prefix.clone(), node.view);
         let state = self.replay(log, &prefix);
         let mut out = stays();
-        for (slot, (dir, word)) in out.iter_mut().zip(DIRS) {
+        for (slot, (dir, word, _)) in out.iter_mut().zip(DIRS) {
             let Some(view) = views.get(at) else {
                 break;
             };
@@ -294,8 +307,51 @@ fn screen_name(screen: Screen) -> &'static str {
     }
 }
 
-/// The map as text.
-fn text(state: &State, name: &str, screen: Screen, start: Option<&Id>, targets: &[(PadTarget, [Move; 4])]) -> String {
+/// A target's short name and its moves as text.
+pub type Line = (String, [String; 4]);
+
+/// The sections a map's targets are written in: the bar, shelf, the keyboard, and the rest of the screen.
+pub const SECTIONS: [&str; 4] = ["bar", "shelf", "keyboard", "screen"];
+
+fn section(id: &Id) -> usize {
+    match id {
+        Id::Tab(_) | Id::Control(Control::Volume | Control::Brightness) | Id::PadMouse => 0,
+        Id::Shelf(_) => 1,
+        Id::Key(_) => 2,
+        _ => 3,
+    }
+}
+
+/// A target's short name: a shelf entry as its quoted id, a list row as `List[i]` (with `.Part` for a
+/// part other than the row itself), a key as `Key[row,col]`, a settings target, a shelf target or a
+/// keymap screen's (`Km(..)`) without the screen's name, and anything else as it is.
+fn short(id: &Id) -> String {
+    match id {
+        Id::Shelf(ShelfId::Entry(e)) => format!("{e:?}"),
+        Id::Shelf(s) => format!("{s:?}"),
+        Id::Settings(s) => format!("{s:?}"),
+        Id::Row { list, i, part: RowPart::Main } => format!("{list:?}[{i}]"),
+        Id::Row { list, i, part } => format!("{list:?}[{i}].{part:?}"),
+        Id::Key(k) => format!("Key[{},{}]", k.row, k.col),
+        Id::Dock(DockId::Entry(i)) => format!("Dock[{i}]"),
+        Id::Keymap(k) => format!("Km({k:?})"),
+        other => format!("{other:?}"),
+    }
+}
+
+/// An event a move or B makes, short.
+fn event(e: &Event) -> String {
+    match e {
+        Event::Pointer(PointerEvent::Focus(id)) => format!("Focus {}", short(id)),
+        Event::Pointer(PointerEvent::Activate(id)) => format!("Activate {}", short(id)),
+        Event::Shelf(s) => format!("{s:?}"),
+        Event::Level(LevelEvent::Step(level, step)) => format!("Step {level:?} {step}"),
+        other => trace::event(other),
+    }
+}
+
+/// The map as text: its head and its target lines by section.
+fn text(state: &State, name: &str, screen: Screen, start: Option<&Id>, targets: &[(PadTarget, [Move; 4])]) -> (String, [Vec<Line>; 4]) {
     let screen = screen_name(screen);
     let pad = if PadView::both_screens(state) && state.shelf().in_actions(state.pointer()) {
         "shelf's actions"
@@ -304,14 +360,82 @@ fn text(state: &State, name: &str, screen: Screen, start: Option<&Id>, targets: 
     } else {
         "the second screen"
     };
-    let back = PadView::back(state).map_or("-".into(), |e| trace::event(&e));
-    let mut out = format!("== {name} ({screen}; the pad on {pad})\nstart {}; back {back}\n", start.map_or("-".into(), |id| format!("{id:?}")));
+    let back = PadView::back(state).map_or("-".into(), |e| event(&e));
+    let head = format!("== {name} ({screen}; the pad on {pad})\nstart {}; back {back}\n", start.map_or("-".into(), short));
+    let mut sections: [Vec<Line>; 4] = Default::default();
     for (t, moves) in targets {
-        let _ = write!(out, "{:?}:", t.id);
-        for ((_, word), m) in DIRS.iter().zip(moves) {
-            let _ = write!(out, " {word} {}", m.text());
+        if let Some(out) = sections.get_mut(section(&t.id)) {
+            out.push((short(&t.id), moves.clone().map(|m| m.text())));
         }
-        out.push('\n');
+    }
+    (head, sections)
+}
+
+/// Writes `lines`, each with only the moves that differ from those of the line paired with it (all of
+/// them when it is paired with itself). Neighbours that come out the same share a line, their targets
+/// separated by commas.
+fn write_lines<'a>(out: &mut String, lines: impl Iterator<Item = (&'a Line, &'a Line)>) {
+    let mut merged: Vec<(String, String)> = Vec::new();
+    for ((target, moves), (_, base)) in lines {
+        let mut text = String::new();
+        for (i, ((_, _, mark), m)) in DIRS.iter().zip(moves).enumerate() {
+            if std::ptr::eq(moves, base) || base.get(i) != Some(m) {
+                let _ = write!(text, " {mark}{m}");
+            }
+        }
+        match merged.last_mut() {
+            Some((targets, last)) if *last == text => {
+                targets.push_str(", ");
+                targets.push_str(target);
+            }
+            _ => merged.push((target.clone(), text)),
+        }
+    }
+    for (targets, text) in merged {
+        let _ = writeln!(out, "{targets}:{text}");
+    }
+}
+
+/// The maps as the reference's blocks, one per shot. A section whose targets are those of a section
+/// written out in full for an earlier shot refers to it, as `-- section as in name`. If some moves
+/// differ (as the bar's down moves do with what is below it), `except` follows, with a line for each
+/// target whose moves differ that gives only the moves that differ. Neighbours written the same share
+/// a line.
+pub fn blocks(maps: &[&Map]) -> Vec<String> {
+    // The sections written out in full: their kind, their shot and their lines.
+    let mut full: Vec<(usize, &str, &[Line])> = Vec::new();
+    let mut out = Vec::new();
+    for m in maps {
+        let mut block = m.head.clone();
+        for (kind, lines) in m.sections.iter().enumerate() {
+            if lines.is_empty() {
+                continue;
+            }
+            let name = SECTIONS.get(kind).copied().unwrap_or_default();
+            // The moves that differ from `base`'s, if it has the same targets.
+            let differing = |base: &[Line]| -> Option<usize> {
+                let same = base.len() == lines.len() && base.iter().zip(lines).all(|(a, b)| a.0 == b.0);
+                same.then(|| base.iter().zip(lines).map(|(a, b)| a.1.iter().zip(&b.1).filter(|(x, y)| x != y).count()).sum())
+            };
+            let best =
+                full.iter().filter(|(k, _, _)| *k == kind).filter_map(|(_, shot, base)| differing(base).map(|d| (*shot, *base, d))).min_by_key(|(_, _, d)| *d);
+            match best {
+                Some((shot, _, 0)) => {
+                    let _ = writeln!(block, "-- {name} as in {shot}");
+                }
+                Some((shot, base, _)) => {
+                    let _ = writeln!(block, "-- {name} as in {shot} except");
+                    let changed = base.iter().zip(lines).filter(|(a, b)| a.1 != b.1).map(|(a, b)| (b, a));
+                    write_lines(&mut block, changed);
+                }
+                None => {
+                    let _ = writeln!(block, "-- {name}");
+                    write_lines(&mut block, lines.iter().map(|l| (l, l)));
+                    full.push((kind, &m.name, lines));
+                }
+            }
+        }
+        out.push(block);
     }
     out
 }
@@ -323,7 +447,7 @@ pub fn overlay(map: &Map, png: &Path, out: &Path) -> Result<(), image::ImageErro
     let mut image = image::open(png)?.to_rgba8();
     let rect_of = |id: &Id| map.drawn.iter().rev().find(|t| &t.id == id).map(|t| t.rect);
     for (t, moves) in &map.targets {
-        for ((dir, _), m) in DIRS.iter().zip(moves) {
+        for ((dir, _, _), m) in DIRS.iter().zip(moves) {
             let Some(to) = m.lands() else {
                 continue;
             };

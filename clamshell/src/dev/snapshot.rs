@@ -642,8 +642,12 @@ mod tests {
     const PIXELS_HEADER: &str = "# FNV-1a hashes of the snapshots' sizes and pixels (src/dev/snapshot.rs). After a change meant to change\n\
                                  # what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots";
     const FOCUS_HEADER: &str = "# Where the pad's focus goes on each snapshot (src/dev/focus_map.rs): where the pad starts, what B does,\n\
-                                # and for each target the pad may focus on the shot's screen, where up, down, left and right lead.\n\
-                                # \"-\" stays; [event] is what the move does instead of focusing, then where the focus ends up.";
+                                # and for each target the pad may focus on the shot's screen, where ^ up, v down, < left and > right\n\
+                                # lead, in sections for the bar, shelf, the keyboard and the rest of the screen. \"-\" stays; [event] is what a move\n\
+                                # does that leaves the focus where it is, such as a level's step. Targets written the same next to\n\
+                                # each other share a line. \"-- bar as in x.png\": the same as in that shot; \"... except\" then, for\n\
+                                # the targets whose moves differ, only the moves that differ. Shelf entries are their quoted ids,\n\
+                                # list rows List[i], dock tiles Dock[i], keys Key[row,col].";
     const TRACE_HEADER: &str = "# The effects of the snapshot scenario's events (src/dev/trace.rs), group by group: each event that\n\
                                 # had effects, then its effects. \"-- name\" is where a shot is taken.";
 
@@ -816,7 +820,7 @@ mod tests {
             hashes.insert(entry.file_name().to_string_lossy().into_owned(), pixels_hash(&entry.path()));
         }
         let pixels: String = std::iter::once(format!("{PIXELS_HEADER}\n")).chain(hashes.iter().map(|(name, hash)| format!("{name} {hash}\n"))).collect();
-        let focus_blocks: Vec<String> = maps.iter().map(|m| m.text.clone()).collect();
+        let focus_blocks = focus_map::blocks(&maps);
         let focus = format!("{FOCUS_HEADER}\n{}", focus_blocks.concat());
         let trace = format!("{TRACE_HEADER}\n{}", traces.concat());
 
@@ -857,7 +861,7 @@ mod tests {
             if !focus_diff.is_empty() {
                 let _ = writeln!(report, "the pad's focus changed ({FOCUS}):");
                 for (h, d) in &focus_diff {
-                    let image = maps.iter().find(|m| head(&m.text) == *h).map(|m| overlay(m).display().to_string());
+                    let image = maps.iter().find(|m| h.starts_with(&format!("== {} ", m.name))).map(|m| overlay(m).display().to_string());
                     let _ = writeln!(report, "{h}  {}\n{d}", image.unwrap_or_default());
                 }
             }
