@@ -740,6 +740,93 @@ mod tests {
         assert!(!s.shelf().file_armed(FileAction::Delete));
     }
 
+    /// An armed Delete waits only while nothing else happens to its entry: another action disarms it, and
+    /// so do the details moving to another entry, also when they come back.
+    #[test]
+    fn another_action_or_the_details_changing_disarms() {
+        let mut s = files_state();
+        s.applied(ShelfEvent::ListStep(1).into());
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        listed(&mut s, "browse:Trash", vec![entry("browse:Trash/a", false, BrowseKind::Trashed), entry("browse:Trash/b", false, BrowseKind::Trashed)]);
+        let delete = Id::Shelf(ShelfId::File(FileAction::Delete));
+        tap(&mut s, delete.clone());
+        assert!(s.shelf().file_armed(FileAction::Delete));
+        tap(&mut s, Id::Shelf(ShelfId::File(FileAction::Select)));
+        assert!(!s.shelf().file_armed(FileAction::Delete), "another action");
+        tap(&mut s, Id::Shelf(ShelfId::File(FileAction::Select)));
+        tap(&mut s, delete.clone());
+        s.applied(ShelfEvent::ListStep(1).into());
+        assert!(!s.shelf().file_armed(FileAction::Delete), "another entry");
+        s.applied(ShelfEvent::ListStep(-1).into());
+        assert!(!s.shelf().file_armed(FileAction::Delete), "and back");
+        assert_eq!(tap(&mut s, delete), vec![], "asks again");
+    }
+
+    /// New folder types its name on the keyboard and makes it in the folder open; Cancel, or a name that
+    /// can't be one, makes nothing, and the keyboard goes back.
+    #[test]
+    fn a_new_folder_is_named_on_the_keyboard() {
+        let mut s = files_state();
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        listed(&mut s, "browse:Home", vec![entry("browse:Home/a.txt", false, BrowseKind::Plain)]);
+        let before = s.bottom().tab();
+        let new_folder = Id::Shelf(ShelfId::File(FileAction::NewFolder));
+        tap(&mut s, new_folder.clone());
+        assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some(""));
+        s.editor_mut().unwrap().text = "Saves".into();
+        let fx = tap(&mut s, Id::Editor(crate::EditorId::Save));
+        assert!(fx.contains(&Effect::Files(FileOp::NewFolder { dir: "/Home".into(), name: "Saves".into() })), "{fx:?}");
+        assert_eq!(s.bottom().tab(), before);
+        tap(&mut s, new_folder.clone());
+        s.editor_mut().unwrap().text = "x".into();
+        let fx = tap(&mut s, Id::Editor(crate::EditorId::Cancel));
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Files(_))), "{fx:?}");
+        assert_eq!(s.bottom().tab(), before, "cancelled: back");
+        tap(&mut s, new_folder);
+        s.editor_mut().unwrap().text = "../up".into();
+        let fx = tap(&mut s, Id::Editor(crate::EditorId::Save));
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Files(_))), "not a name: {fx:?}");
+        assert_eq!(s.bottom().tab(), before);
+    }
+
+    /// Open in plays an archive with its runner; Eject unmounts removable storage; a change of the mounts
+    /// reads the library again.
+    #[test]
+    fn open_in_eject_and_mounts() {
+        let mut s = files_state();
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        let mut zip = entry("browse:Home/game.zip", false, BrowseKind::Plain);
+        if let Some(b) = zip.browsed.as_mut() {
+            b.archive = true;
+        }
+        zip.runner = Some(clamshell_library::RunnerOf::new("snes", "SNES", true));
+        listed(&mut s, "browse:Home", vec![zip, entry("browse:Home/card", true, BrowseKind::Removable("/dev/sdb1".into()))]);
+        let fx = tap(&mut s, Id::Shelf(ShelfId::File(FileAction::OpenIn)));
+        assert!(fx.iter().any(|e| matches!(e, Effect::Launch { entry, .. } if &**entry == "browse:Home/game.zip")), "{fx:?}");
+        s.applied(ShelfEvent::ListStep(1).into());
+        assert_eq!(tap(&mut s, Id::Shelf(ShelfId::File(FileAction::Eject))), vec![Effect::Files(FileOp::Eject("/dev/sdb1".into()))]);
+        assert_eq!(s.applied(Event::Files(FilesEvent::Mounts)), vec![Effect::Tool(clamshell_library::Tool::Rescan)]);
+    }
+
+    /// A listing without a folder that is open closes it, back to the folder listed, which is then the one
+    /// watched.
+    #[test]
+    fn a_listing_closes_the_folders_gone_from_it() {
+        let mut s = files_state();
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        listed(&mut s, "browse:Home", vec![entry("browse:Home/Films", true, BrowseKind::Plain), entry("browse:Home/a.txt", false, BrowseKind::Plain)]);
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        assert_eq!(s.shelf().group().map(|g| &*g.id), Some("browse:Home/Films"));
+        let fx =
+            browses(s.applied(Event::Files(FilesEvent::Listed {
+                folder: "browse:Home".into(),
+                entries: vec![entry("browse:Home/a.txt", false, BrowseKind::Plain)],
+            })));
+        assert_eq!(s.shelf().group().map(|g| &*g.id), Some("browse:Home"), "Films closed");
+        assert!(matches!(fx.as_slice(), [Effect::Browse(BrowseCommand::Open(Some(b)))] if &*b.folder == "browse:Home"), "{fx:?}");
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("browse:Home/a.txt"));
+    }
+
     #[test]
     fn renaming_types_on_the_keyboard_and_goes_back() {
         let mut s = files_state();

@@ -123,7 +123,7 @@ State: `items{id, pinned}`, `menu`, `tray` (submenu path), `moving`, `unsaved`.
 | `TextInput(false)` with an editor open on Keyboard → nothing, `raised_from` kept | `a_text_field_done_leaves_an_editor_on_the_keyboard_open` |
 | `EditOnKeyboard(e)` → editor opened, raised from the tab | device `the_password_is_typed_below_…`, `renaming_types_on_the_keyboard_and_goes_back` |
 | `EditOnKeyboard(e)` with an editor on Keyboard → refused, KeyboardBusy notice | `a_second_editor_for_the_keyboard_is_refused_and_what_is_typed_stays` |
-| an editor on Keyboard saved or cancelled → back from the keyboard, unless another took its place (the new password after the current one) | renaming test (Save); device `the_password_editor_goes_back_where_it_came_from`; file name Cancel GAP |
+| an editor on Keyboard saved or cancelled → back from the keyboard, unless another took its place (the new password after the current one) | renaming test (Save); device `the_password_editor_goes_back_where_it_came_from`; file name Cancel: `a_text_field_done_leaves_an_editor_on_the_keyboard_open`, files `a_new_folder_is_named_on_the_keyboard` |
 | Pointing contacts → pointing, `Touchpad` effect; idle → off | `it_points_until_idle_…` |
 
 Editor: one per tab; Char appends, Backspace pops, Enter saves, Esc cancels, Ctrl+V and Paste insert the
@@ -141,8 +141,8 @@ capture screen doesn't listen and Home acts on the top screen.
 ### Notice
 
 `show(kind, now)` replaces any notice; a tick after 2 s removes it. Tests: `keys_step_the_levels_and_show_
-them_for_a_moment`, `a_screenshot_is_asked_for_…`, `a_window_moved_down_…`. BottomRule(false) and Account
-notices GAP. The gyro's "hold still" notice stays until the calibration answers, at most 30 s:
+them_for_a_moment`, `a_screenshot_is_asked_for_…`, `a_window_moved_down_…`; BottomRule(false):
+`a_window_moved_up_says_its_rule_is_forgotten`; Account notices GAP. The gyro's "hold still" notice stays until the calibration answers, at most 30 s:
 `the_gyros_hold_still_shows_until_it_answers_at_most_30_s`.
 
 ### View, power and dim (bottom/screen.rs)
@@ -152,14 +152,14 @@ State: `screen{windows, off, idle_off}`, `used_at`, `dimmed`, `woken`, `sent_dow
 | Transition | Test |
 |---|---|
 | Home+Select: show ClamShell's view or the windows moved down | `a_window_moved_down_is_shown_there_and_remembered` |
-| WindowDown: the focused top window moves down, the screen shows it, a rule is added (notice, `Save(WindowRules)`, `DownRules`) | same; `a_programs_only_window_is_remembered_by_its_app_id_alone`; no focused window GAP |
+| WindowDown: the focused top window moves down, the screen shows it, a rule is added (notice, `Save(WindowRules)`, `DownRules`) | same; `a_programs_only_window_is_remembered_by_its_app_id_alone`; `window_down_with_no_window_in_front_does_nothing` |
 | WindowUp: the visible down window goes back, its rule is forgotten | same; `two_windows_down_are_tabs_…` |
 | settle: a window matching a rule moves down once | `a_rule_sends_the_window_down_when_its_program_opens_it_again` |
 | dock tap or BottomWindows → windows shown, `ShowDown`, the screen turned on if it was off by hand | `the_front_programs_windows_hidden_below_…`, `showing_the_windows_below_turns_the_screen_on_if_off_by_hand` |
 | Home+Start: wake if off by itself, else toggle off | `the_bottom_screen_turns_off_and_on`, `home_start_brings_back_…`, `…off_by_hand_and_by_itself_at_once` |
-| settle: off by itself when on battery, not refreshing, not set to stay on, no windows shown, no editor, and dark in a game or untouched 4 min | `on_battery_the_untouched_…` and siblings; refreshing and editor GAP |
+| settle: off by itself when on battery, not refreshing, not set to stay on, no windows shown, no editor, and dark in a game or untouched 4 min | `on_battery_the_untouched_…` and siblings; `a_refresh_calibration_or_an_editor_keeps_it_on` |
 | settle: dimmed after 60 s untouched, unless windows are shown | `the_bottom_screen_dims_untouched_and_lights_when_used` |
-| Wake tap sets `woken`; a game starting resets it | `dark_for_a_game_…`, `a_game_can_start_the_pad_mouse_…`; reset GAP; touch or pad focus don't wake a dark screen (S16) |
+| Wake tap sets `woken`; a game starting resets it | `dark_for_a_game_…`, `a_game_can_start_the_pad_mouse_…`, `a_game_starting_lets_a_woken_screen_go_dark_again`; touch or pad focus don't wake a dark screen (S16) |
 
 ## Idle and sleep (device/idle.rs)
 
@@ -246,13 +246,13 @@ State: `clip`, `selected`, `armed`, `busy`, `hidden`, the listings.
 | Transition | Test |
 |---|---|
 | Delete / Empty Trash arm, then confirm on the same target | `deleting_asks_first` |
-| another action or the details changing disarms | GAP |
+| another action or the details changing disarms | `another_action_or_the_details_changing_disarms` |
 | Select toggles; Trash/Restore/Delete act on the selection and clear it | `selected_entries_are_what_the_actions_act_on` |
 | Copy/Cut set the clip, and with nothing to copy do nothing; a listing drops the selected ids that are gone | `copy_then_paste_into_the_folder_open` (copy), `a_listing_drops_the_selected_entries_that_are_gone`; nothing to copy can't be reached once gone ids are dropped |
 | Paste; a cut entry leaves the clip when its move succeeds | copy tested; `a_cut_entry_stays_in_the_clip_until_it_is_moved` |
-| Rename, New folder, Extract → editor on the keyboard; Save gives the operation, Cancel goes back | `renaming_types_on_the_keyboard_and_goes_back`, `an_archive_is_a_folder_…`; New folder, Cancel GAP |
-| Open in, Eject, Mounts (rescan) | GAP |
-| Listed: listing set, gone folders closed, selection kept by id | `the_folder_open_is_listed_and_watched_while_open`; closing gone folders GAP |
+| Rename, New folder, Extract → editor on the keyboard; Save gives the operation, Cancel goes back | `renaming_types_on_the_keyboard_and_goes_back`, `an_archive_is_a_folder_…`, `a_new_folder_is_named_on_the_keyboard` |
+| Open in, Eject, Mounts (rescan) | `open_in_eject_and_mounts` |
+| Listed: listing set, gone folders closed, selection kept by id | `the_folder_open_is_listed_and_watched_while_open`, `a_listing_closes_the_folders_gone_from_it` |
 | Busy, Done: each operation sent ends in one Done, in order; `busy` lasts while any runs; Failed (outside an operation, an archive not mounted) only tells | `busy_lasts_while_any_operation_runs` |
 | sync: `Browse(Open)` on folder or hidden changes, `Browse(InUse)` by hash | `the_folder_open_is_listed…`, `an_archive_is_a_folder_…` |
 

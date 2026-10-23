@@ -657,6 +657,63 @@ mod tests {
         assert!(!s.bottom().off());
     }
 
+    /// Home+Down with no window of a program in front, shelf's or none, does nothing.
+    #[test]
+    fn window_down_with_no_window_in_front_does_nothing() {
+        let mut s = state();
+        assert_eq!(key(&mut s, DeviceKey::WindowDown), vec![], "no windows");
+        s.applied(Event::Windows(vec![crate::testkit::shelf_window(true), crate::testkit::win(2, "foot", "1", false)]));
+        assert_eq!(key(&mut s, DeviceKey::WindowDown), vec![], "shelf in front");
+        assert!(s.bottom().window_rules().list().is_empty());
+    }
+
+    /// Home+Up says the window's rule is forgotten.
+    #[test]
+    fn a_window_moved_up_says_its_rule_is_forgotten() {
+        let mut s = emulator();
+        key(&mut s, DeviceKey::WindowDown);
+        s.applied(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
+        s.applied(Event::tick(100));
+        key(&mut s, DeviceKey::WindowUp);
+        assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::BottomRule(false)));
+    }
+
+    /// On battery and untouched, it stays on while the refresh rate is calibrated, since the tool turns
+    /// it off and on itself, and while something is typed there.
+    #[test]
+    fn a_refresh_calibration_or_an_editor_keeps_it_on() {
+        let mut s = state();
+        on_battery(&mut s, true);
+        s.applied(Event::tick(1000));
+        s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::Device(crate::DeviceId::Refresh))));
+        assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), None, "calibrating");
+        assert!(!s.bottom().off());
+        assert_eq!(power(&s.applied(Event::RefreshCalibrated(Ok(String::new())))), Some(false), "done: off by itself");
+        let mut s = state();
+        on_battery(&mut s, true);
+        s.applied(Event::tick(1000));
+        let step = crate::device::account::PasswordStep::Current;
+        let editor = crate::Editor { purpose: crate::bottom::editor::Purpose::AccountPassword(step), text: String::new() };
+        s.applied(Event::EditOnKeyboard(editor));
+        assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), None, "typing");
+        let fx = s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::Editor(crate::EditorId::Cancel))));
+        assert_eq!(power(&fx), None, "the cancel is a touch: in use again");
+        assert_eq!(power(&s.applied(Event::tick(1000 + 2 * (DIM_AFTER + OFF_AFTER)))), Some(false), "then off by itself");
+    }
+
+    /// The Wake tap lasts until the next game: a game starting lets the screen go dark again.
+    #[test]
+    fn a_game_starting_lets_a_woken_screen_go_dark_again() {
+        let mut s = state();
+        s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::DarkInGame.value());
+        crate::testkit::launch(&mut s, "zelda-lttp");
+        assert!(s.bottom_dark());
+        s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::Wake)));
+        assert!(!s.bottom_dark(), "woken");
+        crate::testkit::launch(&mut s, "ff6");
+        assert!(s.bottom_dark(), "another game: dark again");
+    }
+
     #[test]
     fn showing_the_windows_below_turns_the_screen_on_if_off_by_hand() {
         let mut s = emulator();
