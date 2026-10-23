@@ -344,6 +344,24 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
      Pixel references are unchanged. Focus references now keep the pad on shelf when a scope has no
      window; trace changes record lifecycle inputs and selection at window arrival rather than scope
      arrival. Phase 2 can begin.
+1b. **The two screens' window model, under sway** (section 3, "Windows on the two screens" and "The Home
+    chords"; to do before phase 2's window presentation, which reads it). Phase 1 was built against an
+    earlier model with several windows below and tabs there.
+    - [ ] State: at most one window below; moving one down sends the one there back up into its program's
+          windows on top; activation brings windows forward on top only; what each screen shows when a
+          window closes; switching a program's windows on top; Home held known to the state.
+    - [ ] Pad router: Home + right stick flicks (down / up / left / right, once per flick past ~70%,
+          re-armed below ~30%, a stick off-centre at Home's press must return first, the game sent a
+          centred stick while Home is held), Home + right stick press for the second screen's view
+          (replacing Home+Select), the screenshot staying on Home+R1; Home+Up/Down and Home+Select go.
+    - [ ] UI host: the edge arrows on the top screen while Home is held, as a layer-shell overlay surface
+          under sway.
+    - [ ] The sway adapter: the top screen's shown window fullscreened in sway (hiding its tab bar); no tabs
+          on the second screen.
+    - [ ] docs/state-machines.md and tests for each rule; the random test's invariants (at most one window
+          below, and the rest); the focus and trace references where they change, reviewed.
+
+    Done when every item is ticked, `tools/check.sh`, the nested-sway test and the VM suite pass.
 2. **The compositor, nested and headless,** implementing the same model synchronously, with the
    presentation of windows that aren't fullscreen (section 3): xdg-shell, Xwayland
    with the X11 adapter, input routing, the on-screen keyboard through text-input, the clipboard,
