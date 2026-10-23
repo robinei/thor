@@ -76,6 +76,26 @@ fn the_picker_chooses_a_keymap_for_the_scope_edited() {
 }
 
 #[test]
+fn modifiers_armed_on_the_capture_screen_go_when_its_tab_is_left() {
+    let mut s = State::new(Init { keymaps: Keymaps::initial(), ..init() });
+    picker(&mut s);
+    keymap(&mut s, KeymapId::New);
+    type_text(&mut s, "fps");
+    tap(&mut s, Id::Editor(EditorId::Save));
+    open(&mut s, Input::Button(Button::A));
+    keymap(&mut s, KeymapId::Target(Target::Key));
+    assert!(matches!(s.keymapping().screen(), Some(Screen::Capture { .. })));
+    key(&mut s, Key::Mod(Modifier::Shift));
+    assert!(s.keyboard().latch(Modifier::Shift).on());
+    tap(&mut s, Id::Tab(Tab::Keyboard));
+    assert!(!s.keyboard().latch(Modifier::Shift).on(), "not typed into an app");
+    // Armed on the keyboard tab, they stay when another tab is chosen, the capture screen still open.
+    key(&mut s, Key::Mod(Modifier::Shift));
+    tap(&mut s, Id::Tab(Tab::Dock));
+    assert!(s.keyboard().latch(Modifier::Shift).on());
+}
+
+#[test]
 fn a_new_keymap_is_named_edited_and_mapped() {
     let mut s = State::new(Init { keymaps: Keymaps::initial(), ..init() });
     picker(&mut s);

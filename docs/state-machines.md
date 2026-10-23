@@ -131,8 +131,10 @@ clipboard as one line. Tests: `typing_editing_and_finishing`, `a_password_being_
 On-screen keyboard modifiers (`Latch{armed, held, used}` and caps): Down holds, Up releases (arming only
 if unused), a tap toggles armed, a long press does nothing, a stroke clears armed latches. Tests:
 `a_held_shift_acts_while_held`, `a_tapped_shift_arms_one_key`, `a_long_press_alone_neither_arms_nor_locks`,
-`modifiers_combine_for_one_stroke`, caps and Fn tests. A Down without Up leaves a modifier held (GAP);
-modifiers armed on the capture screen survive leaving it other than by Back (S13).
+`modifiers_combine_for_one_stroke`, caps and Fn tests. A Down without Up leaves a modifier held (GAP).
+Modifiers armed on the capture screen go when it is left by Back or by leaving the Settings tab
+(`modifiers_armed_on_the_capture_screen_go_when_its_tab_is_left`); Home doesn't leave it, since the
+capture screen doesn't listen and Home acts on the top screen.
 
 ### Notice
 
@@ -394,7 +396,7 @@ Second screen, device, pad, keymaps:
   against `Event::EditOnKeyboard`'s doc. Fixed: state/bottom: one editor on the keyboard, which goes back when it closes.
 - S11. A text field losing focus goes back from Keyboard even while an editor is open there (`bottom/mod.rs:204`). Fixed: state/bottom: one editor on the keyboard, which goes back when it closes.
 - S12. Opening the password editor while naming a file drops the name typed (`bottom/editor.rs:117`). Fixed: state/bottom: one editor on the keyboard, which goes back when it closes.
-- S13. Modifiers armed on the capture screen survive leaving it by tab or Home (`keymap/screens/mod.rs:573`).
+- S13. Modifiers armed on the capture screen survive leaving it by tab or Home (`keymap/screens/mod.rs:573`). Fixed: state/keymap: modifiers armed on the capture screen go with it.
 - S14. The gyro's "hold still" notice expires after 2 s whatever the calibration does. Fixed: state/bottom: the gyro's hold still shows until it answers.
 - S15. Showing the program's windows below (dock tap, BottomWindows) while the screen is off by hand shows
   them on a dark panel (`bottom/screen.rs:310`). Fixed: state/bottom: showing the windows below turns the screen on.

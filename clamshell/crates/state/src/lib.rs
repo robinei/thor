@@ -982,36 +982,40 @@ impl State {
 
     /// The user chose a tab (see [`Bottom::choose_tab`]).
     fn choose_tab(&mut self, tab: Tab) {
-        if self.bottom.choose_tab(tab) {
-            self.left_tab();
+        if let Some(left) = self.bottom.choose_tab(tab) {
+            self.left_tab(left);
         }
     }
 
     /// A text field wants typing, or is done (see [`Bottom::text_input`]).
     fn text_input(&mut self, active: bool) {
-        if self.bottom.text_input(active) {
-            self.left_tab();
+        if let Some(left) = self.bottom.text_input(active) {
+            self.left_tab(left);
         }
     }
 
     /// Opens `editor` on the keyboard tab (see [`Bottom::open_on_keyboard`]).
     fn edit_on_keyboard(&mut self, editor: crate::Editor) {
-        if self.bottom.open_on_keyboard(editor, self.clock.mono()) {
-            self.left_tab();
+        if let Some(left) = self.bottom.open_on_keyboard(editor, self.clock.mono()) {
+            self.left_tab(left);
         }
     }
 
     /// Goes back to the tab the keyboard came up from, if it did.
     fn back_from_keyboard(&mut self) {
-        if self.bottom.back_from_keyboard() {
-            self.left_tab();
+        if let Some(left) = self.bottom.back_from_keyboard() {
+            self.left_tab(left);
         }
     }
 
-    /// The second screen's tab changed, and its watch follows (see [`crate::sync::Sent::watches`]). What the
-    /// tab left had going ends: the dock's menu or move, and any level row being set. The time tab opens
-    /// on its main page again.
-    fn left_tab(&mut self) {
+    /// The second screen's tab changed from `left`, and its watch follows (see
+    /// [`crate::sync::Sent::watches`]). What the tab left had going ends: the dock's menu or move, any
+    /// level row being set, and the modifiers armed on the keymaps' capture screen. The time tab opens on
+    /// its main page again.
+    fn left_tab(&mut self, left: Tab) {
+        if self.keymapping.capturing(left, false) {
+            self.keyboard.take_modifiers();
+        }
         self.dock.close();
         self.levels.release();
         self.sys.reset_time_page();
