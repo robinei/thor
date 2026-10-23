@@ -554,15 +554,17 @@ impl Shelf {
     }
 
     /// Appends each collection's place to `places`: its name, then its open groups' ids and its selected
-    /// entry's id.
+    /// entry's id. A place past the end of its list, as after the list shrank while another collection
+    /// was shown, is taken as the list's last entry. A collection whose list is empty has no place.
     pub(crate) fn places(&self, places: &mut Vec<(String, Vec<String>)>) {
         for (c, coll) in self.library.collections.iter().enumerate() {
             debug_assert!(self.navs.get(c).is_some(), "a place for collection {c}");
             let Some(nav) = self.navs.get(c) else {
                 continue;
             };
-            let index = nav.places.last().map_or(0, |p| p.index);
-            let Some(g) = self.list_of(c).get(index).and_then(|&g| self.library.entries.get(g)) else {
+            let list = self.list_of(c);
+            let index = nav.places.last().map_or(0, |p| p.index).min(list.len().saturating_sub(1));
+            let Some(g) = list.get(index).and_then(|&g| self.library.entries.get(g)) else {
                 continue;
             };
             let mut ids: Vec<String> = nav.open.iter().filter_map(|&o| self.library.entries.get(o)).map(|g| g.id.to_string()).collect();
@@ -710,6 +712,28 @@ mod tests {
         go(&mut s, "Favourites");
         assert_eq!(s.shelf().group(), None);
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("metroid-zm"));
+    }
+
+    #[test]
+    fn the_resume_record_keeps_a_place_past_its_shrunk_list() {
+        let mut s = state();
+        let go = |s: &mut State, name: &str| {
+            let c = s.shelf().library().collections.iter().position(|c| c.name == name).unwrap() as u16;
+            tap(s, Id::Shelf(ShelfId::Collection(c)));
+        };
+        // Two favourites, the second selected in Favourites.
+        for _ in 0..2 {
+            s.applied(ShelfEvent::ListStep(1).into());
+            s.applied(ShelfEvent::ToggleFavourite.into());
+        }
+        go(&mut s, "Favourites");
+        s.applied(ShelfEvent::ListStep(1).into());
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("metroid-zm"));
+        // From Games, the first is no longer a favourite: Favourites' place is past its list.
+        go(&mut s, "Games");
+        assert_eq!(s.shelf().selected().map(|g| &**g), Some("mk-ds"));
+        s.applied(ShelfEvent::ToggleFavourite.into());
+        assert!(s.resume().places.contains(&("Favourites".to_owned(), vec!["metroid-zm".to_owned()])), "{:?}", s.resume().places);
     }
 
     #[test]

@@ -259,6 +259,8 @@ State: `clip`, `selected`, `armed`, `busy`, `hidden`, the listings.
   it. Test: tests `while_metadata_is_fetched_shelfs_view_goes_first`; the Library resend GAP.
 - Shelf or tab changes touch the resume debounce; a tick 2 s later saves it; Quit saves at once. Tests:
   resume `the_place_is_saved_after_a_pause_and_restored`, `open_groups_are_restored`.
+- The record keeps every collection's place, clamped to its list (one that shrank while another was
+  shown). Test: shelf `the_resume_record_keeps_a_place_past_its_shrunk_list`.
 
 ## Lists and presses (nav/)
 
@@ -430,7 +432,7 @@ Shelf, files, radios, levels, status:
 - S36. A folder listing that changes the entries but not shelf's view isn't asked for metadata first.
 - S37. The Mute key shows its notice when the volume is unknown and nothing changes (`lib.rs:1058`).
 - S38. The resume record can leave out a collection whose stored place is past its list after a relayout
-  (`shelf/mod.rs:552`).
+  (`shelf/mod.rs:552`). Fixed: state/shelf: the resume record keeps a place past its shrunk list.
 
 ## Decisions on the suspects (2026-10-23)
 
