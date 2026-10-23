@@ -179,7 +179,7 @@ impl Session {
     }
 
     /// The runners whose entries are paused together: those of the library's entries with a `pause`.
-    pub(crate) fn follow_pausable_runners(&mut self, library: &Library) {
+    pub(crate) fn set_pausable_runners(&mut self, library: &Library) {
         let runners = &mut self.background.runners;
         runners.clear();
         for r in library.entries.iter().filter_map(|g| g.runner.as_ref()).filter(|r| !r.pause.is_empty()) {

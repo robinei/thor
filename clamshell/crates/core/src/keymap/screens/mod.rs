@@ -229,21 +229,21 @@ impl Keymapping {
         self.edit
     }
 
-    /// The keymaps' screen that is open, while the settings tab is shown.
-    pub(crate) fn shown(&self, tab: Tab) -> Option<Screen> {
+    /// The keymaps' screen that is open, while the settings tab is the one shown (`tab`).
+    pub(crate) fn screen_in(&self, tab: Tab) -> Option<Screen> {
         self.open.filter(|_| tab == Tab::Settings)
     }
 
     /// Whether the pad listens for inputs: the edit screen, or a screen waiting for a pad button, is in
     /// view, with no editor over it.
     pub(crate) fn listening(&self, tab: Tab, editor_open: bool) -> bool {
-        !editor_open && self.shown(tab).is_some_and(Screen::listens)
+        !editor_open && self.screen_in(tab).is_some_and(Screen::listens)
     }
 
     /// Whether the keyboard's keys make a chord now, because the capture screen is in view, with no editor
     /// over it.
     pub(crate) fn capturing(&self, tab: Tab, editor_open: bool) -> bool {
-        matches!(self.shown(tab), Some(Screen::Capture { .. })) && !editor_open
+        matches!(self.screen_in(tab), Some(Screen::Capture { .. })) && !editor_open
     }
 
     /// The picker's rows. Usually they are, for `entry`, its own keymap or the row that makes one, then
@@ -307,7 +307,7 @@ impl Keymapping {
     /// For runners that come with one of ClamShell's keymaps (see [`crate::Library::runner_keymaps`]) and
     /// have no keymap chosen and none of their own: makes that keymap their own (see
     /// [`Keymaps::make_own_from`]), chooses it, and saves.
-    pub(crate) fn follow_runner_keymaps(&mut self, library: &crate::Library, prefs: &mut crate::Prefs, out: &mut Out) {
+    pub(crate) fn adopt_runner_keymaps(&mut self, library: &crate::Library, prefs: &mut crate::Prefs, out: &mut Out) {
         let wanting: Vec<(Arc<str>, Keymap)> = library
             .runner_keymaps
             .iter()

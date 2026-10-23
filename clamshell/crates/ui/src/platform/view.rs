@@ -61,7 +61,7 @@ pub(crate) struct View {
     /// The compositor configured it, and waits for a frame in answer even if nothing changed.
     pub(crate) reconfigured: bool,
     /// Whether it can be seen. A hidden view is not recorded until it can be seen again.
-    pub(crate) shown: bool,
+    pub(crate) visible: bool,
     /// A frame was committed and its callback hasn't come yet. Until it comes, wait; then draw the latest
     /// state once.
     pub(crate) frame_pending: bool,
@@ -89,7 +89,7 @@ impl View {
             configured: false,
             stale: true,
             reconfigured: false,
-            shown: true,
+            visible: true,
             frame_pending: false,
             retained: Retained::default(),
             body: None,
@@ -162,7 +162,7 @@ impl View {
     /// Whether a frame is due: the view is configured and can be seen, may have changed, and its last
     /// frame has been shown.
     pub(crate) fn due(&self) -> bool {
-        self.configured && self.shown && (self.stale || self.reconfigured) && !self.frame_pending
+        self.configured && self.visible && (self.stale || self.reconfigured) && !self.frame_pending
     }
 
     /// The buffer's size, its scale, and the current burn-in drift.

@@ -37,7 +37,7 @@ impl Pointer {
     }
 
     /// Shelf's selection moved. A focus in shelf's list follows it.
-    pub(crate) fn follow_shelf(&mut self, selected: Option<&Arc<str>>) {
+    pub(crate) fn shelf_moved(&mut self, selected: Option<&Arc<str>>) {
         if matches!(self.focus, Some(Id::Shelf(ShelfId::Entry(_) | ShelfId::Collection(_)))) {
             self.focus_shelf(selected);
         }

@@ -21,7 +21,7 @@ use crate::{Levels, PadRoute, Running};
 pub(crate) struct Wanted<'a> {
     pub(crate) shelf: &'a Shelf,
     /// What shelf shows while metadata is being fetched (see [`Shelf::fetch_first`]).
-    pub(crate) shown: Option<ShelfView>,
+    pub(crate) fetch_view: Option<ShelfView>,
     /// The open browsed folder and its directory (see [`Shelf::browsed`]), and whether hidden files are
     /// listed.
     pub(crate) browsed: Option<(&'a Arc<str>, &'a Path)>,
@@ -53,7 +53,7 @@ pub(crate) struct Wanted<'a> {
 #[derive(Debug)]
 pub(crate) struct Sent {
     /// What shelf showed when the entries it shows were last asked for first.
-    shown: Option<ShelfView>,
+    fetch_view: Option<ShelfView>,
     /// The folder listed and watched.
     browsing: Option<Browse>,
     /// A hash of the files in use (see [`BrowseCommand::InUse`]); 0 for none.
@@ -86,7 +86,7 @@ impl Default for Sent {
     /// applied by [`Sent::new`].
     fn default() -> Sent {
         Sent {
-            shown: None,
+            fetch_view: None,
             browsing: None,
             in_use: 0,
             stage: Stage::Awake,
@@ -109,7 +109,7 @@ impl Default for Sent {
 pub(crate) enum Resend {
     /// The library was read again or fetching started or stopped: shelf's entries shown are asked for
     /// first again.
-    Shown,
+    FetchFirst,
     /// The UI started: the pad is sent its route and keymap.
     Start,
     /// Back from sleep, which may have reset what the settings set, such as frequency caps and cores: they
@@ -125,7 +125,7 @@ impl Sent {
     pub(crate) fn resend(&mut self, why: Resend) {
         match why {
             Resend::Start => (self.keymap, self.route) = (None, None),
-            Resend::Shown => self.shown = None,
+            Resend::FetchFirst => self.fetch_view = None,
             Resend::Resumed => self.applied = None,
             Resend::RefreshCalibrated => self.bottom_on = None,
         }
@@ -167,13 +167,13 @@ impl Sent {
     /// While metadata is being fetched and what shelf shows has changed, asks for the shown entries'
     /// metadata first.
     fn fetch_first(&mut self, w: &Wanted, out: &mut Out) {
-        let Some(view) = w.shown else {
+        let Some(view) = w.fetch_view else {
             return;
         };
-        if self.shown == Some(view) {
+        if self.fetch_view == Some(view) {
             return;
         }
-        self.shown = Some(view);
+        self.fetch_view = Some(view);
         let mut ids = Vec::new();
         w.shelf.in_view(&mut ids);
         out.effects.push(Effect::FetchFirst(ids));

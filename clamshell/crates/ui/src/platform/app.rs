@@ -185,7 +185,7 @@ impl App {
         let hidden = super::hidden_views(self.bottom_kind, &self.state);
         for (screen, view) in self.views.iter_mut() {
             if let Some(view) = view.as_mut() {
-                view.shown = !hidden[screen];
+                view.visible = !hidden[screen];
             }
         }
         for (screen, view) in self.views.iter_mut() {

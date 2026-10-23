@@ -26,10 +26,10 @@
 //! runs in three phases:
 //!
 //! 1. Handle: the event goes to the rules of its area. They push effects into one [`out::Out`] in the
-//!    order things happen and mark the screens they changed. What needs several areas, such as a tab
-//!    change, playing an entry or choosing a keymap, is queued as an event, which State handles after
-//!    the rule returns, so its effects follow those pushed before it. Outside code may send the same
-//!    events.
+//!    order things happen. What needs several areas, such as a tab change, playing an entry or choosing
+//!    a keymap, is queued as an event, which State handles after the rule returns, so its effects follow
+//!    those pushed before it. Outside code may send the same events. Rules don't say which screens
+//!    they changed: after an event the UI records each screen again and draws one that looks different.
 //! 2. Settle: the steps that bring every area up to date with what happened, in an order where each
 //!    finds the ones it reads settled (see [`State::settle`]).
 //! 3. Sync: what the outside should have as things are now is compared with what it was last sent, and

@@ -74,7 +74,7 @@ impl Session {
     pub(crate) fn set_tray(&mut self, items: Vec<TrayItem>, clock: &Clock, library: &Library, out: &mut Out) {
         if self.tray != items {
             self.tray = items;
-            self.follow_tray(clock, library, out);
+            self.find_by_tray(clock, library, out);
         }
     }
 
@@ -82,7 +82,7 @@ impl Session {
     /// process is in no scope of ours, unless the icon already has one. This happens only in the device's
     /// session. In a desktop's session the programs are the desktop's, and ClamShell is a guest there that
     /// manages only what it started.
-    fn follow_tray(&mut self, clock: &Clock, library: &Library, out: &mut Out) {
+    fn find_by_tray(&mut self, clock: &Clock, library: &Library, out: &mut Out) {
         if !self.device_session {
             return;
         }

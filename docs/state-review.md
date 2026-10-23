@@ -72,7 +72,7 @@ The weak spots are at the seams.
 - [x] `apply_event` holds rules beside dispatch (Home's guards, level resolution, Quit); boolean
       parameters without names (`launch(id, None, true, ..)`, `activate(&id, false, ..)`);
       `Session::launch`'s nine parameters.
-- [ ] Two names for one thing: game and entry; `shown` for three things; `follow_*` for settle steps and
+- [x] Two names for one thing: game and entry; `shown` for three things; `follow_*` for settle steps and
       helpers. The crate doc still says rules mark screens (`lib.rs:29`).
 - [x] The UI applies rules core could state: `Effect::Screens` reads `bottom().off()` when carried out;
       which screens are hidden is decided from session state in the UI. (`Effect::Screens` now says

@@ -93,7 +93,7 @@ impl State {
             resume.restore(&mut s.shelf, &mut s.bottom);
         }
         s.dock.drop_gone_at_start(s.shelf.library(), &s.session);
-        s.session.follow_pausable_runners(s.shelf.library());
+        s.session.set_pausable_runners(s.shelf.library());
         s.pointer.focus_shelf(s.shelf.selected());
         if init.first_start {
             s.pointer.focus_on(Id::Device(crate::DeviceId::Wifi));
@@ -386,7 +386,7 @@ impl State {
         let settings = self.in_force();
         Wanted {
             shelf: &self.shelf,
-            shown: self.shelf.fetch_first(),
+            fetch_view: self.shelf.fetch_first(),
             browsed: self.shelf.browsed(),
             hidden: self.shelf.files().hidden(),
             running: self.session.running_entries(),
@@ -468,19 +468,19 @@ impl State {
         if self.shelf.reload(library) {
             self.shelf.moved(&mut self.pointer);
         }
-        self.session.follow_pausable_runners(self.shelf.library());
-        self.keymapping.follow_runner_keymaps(self.shelf.library(), &mut self.prefs, out);
+        self.session.set_pausable_runners(self.shelf.library());
+        self.keymapping.adopt_runner_keymaps(self.shelf.library(), &mut self.prefs, out);
         out.effects.push(crate::session::running::land_rules(self.shelf.library()));
         if self.dock.drop_gone(self.shelf.library(), &self.session) {
             out.effects.push(self.dock.save_effect());
         }
-        self.sent.resend(Resend::Shown);
+        self.sent.resend(Resend::FetchFirst);
     }
 
     /// Metadata fetching started or stopped. Shelf's entries shown are asked for first again.
     fn fetching(&mut self, on: bool) {
         self.shelf.set_fetching(on);
-        self.sent.resend(Resend::Shown);
+        self.sent.resend(Resend::FetchFirst);
     }
 
     /// Back from sleep: idle counts from now, and the settings in force are applied again.
@@ -506,7 +506,7 @@ impl State {
             out.effects.push(self.dock.save_effect());
         }
         out.effects.extend(self.levels.brightness_effect());
-        self.keymapping.follow_runner_keymaps(self.shelf.library(), &mut self.prefs, out);
+        self.keymapping.adopt_runner_keymaps(self.shelf.library(), &mut self.prefs, out);
         out.effects.push(self.bottom.window_rules().effect());
     }
 
@@ -770,7 +770,7 @@ impl State {
         if (self.dock.menu().is_some() || self.dock.moving().is_some()) && self.bottom.tab() == crate::Tab::Dock {
             return Some(crate::Id::Dock(crate::DockId::Back));
         }
-        self.keymapping.shown(self.bottom.tab()).map(|_| crate::Id::Keymap(crate::KeymapId::Back))
+        self.keymapping.screen_in(self.bottom.tab()).map(|_| crate::Id::Keymap(crate::KeymapId::Back))
     }
 
     /// Where shelf and the second screen are, to come back to.

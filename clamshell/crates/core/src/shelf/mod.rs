@@ -248,7 +248,7 @@ impl Shelf {
     /// the selection.
     pub(crate) fn moved(&mut self, pointer: &mut crate::Pointer) {
         self.unsaved = true;
-        pointer.follow_shelf(self.selected());
+        pointer.shelf_moved(self.selected());
     }
 
     /// Whether the place changed since this was last asked, so it is saved.
