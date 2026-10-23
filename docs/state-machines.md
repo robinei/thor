@@ -443,10 +443,9 @@ with what would make us change our minds.
 - S9. A launch with no answer from the launcher in 30 s is given up, with the "didn't start" notice.
   **Revisit** the 30 s for slow starts (Proton games on first run).
 - S10, S11, S12. An editor opened on the keyboard goes back where it came from when it closes, whatever
-  its purpose; a text field losing focus doesn't switch away from an open editor; opening an editor on
-  the keyboard while another is open there cancels the other first only if it is empty, otherwise the
-  new one waits — **Revisit**: simplest was refusing the second editor with a notice; chosen: refuse,
-  with the notice, since two editors on one tab can't both show.
+  its purpose; a text field losing focus doesn't switch away from an open editor; a second editor for
+  the keyboard while one is open there is refused with a notice, so nothing typed is lost. **Revisit**
+  if refusing turns out to block something the user expects to interrupt (the account password).
 - S13. Leaving the capture screen any way drops the modifiers armed there.
 - S14. The gyro's notice stays until the calibration answers, at most 30 s.
 - S15. Showing the windows below turns the screen on if it was off by hand.
