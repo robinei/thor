@@ -95,6 +95,7 @@ pub use effect::{Effect, Save, Watch, WindowCommand};
 pub use event::{EntryAct, Event, KeymapEvent, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
 pub use id::{AudioId, BatteryId, BtId, DeviceId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, TimeId, WifiId};
 pub use resume::Resume;
+pub use session::windows::{WindowEvent, WindowKind, WindowPlace};
 
 pub use bottom::editor::Editor;
 pub use bottom::{Bottom, Tab};
@@ -190,6 +191,8 @@ pub struct State {
     /// The windows' effects while the session's steps run, put after the later steps' (see
     /// [`State::settle`]). Kept empty, so that its room is reused.
     window_effects: Vec<Effect>,
+    /// Initial placements wait behind launches discovered by the same dispatch.
+    opening_effects: Vec<Effect>,
     /// The plays the session's steps ended, until they are recorded in shelf. Kept empty, so that its
     /// room is reused.
     plays: Vec<crate::session::running::Play>,
@@ -344,7 +347,16 @@ impl State {
             Event::Level(e) => self.on_level(e, out),
             Event::Shelf(e) => self.shelf.on_event(e, &mut self.pointer, out),
             Event::Launch(e) => self.on_launch_event(e),
-            Event::Windows(windows) => self.session.set_windows(windows),
+            Event::Window(event) => {
+                self.window_event(event, out);
+                self.session.remember_front();
+            }
+            Event::WindowBatch(events) => {
+                for event in events {
+                    self.window_event(event, out);
+                }
+                self.session.remember_front();
+            }
             Event::Meta { id, meta } => self.shelf.apply_meta(&id, &meta),
             Event::Library(library) => self.library_read(*library, out),
             Event::Files(e) => self.shelf.on_files(e, &mut self.pointer, self.bottom.notice_mut(), now, out),
@@ -383,6 +395,63 @@ impl State {
             Event::Quit => self.quit(out),
         }
         self.handle_queued(mark, out);
+    }
+
+    fn window_event(&mut self, event: WindowEvent, out: &mut Out) {
+        match event {
+            WindowEvent::Opened(mut window) => {
+                if self.session.windows().iter().any(|w| w.id == window.id) {
+                    return;
+                }
+                let parent = window.parent.and_then(|id| self.session.window(id)).map(|w| (w.workspace.clone(), w.down));
+                let inherit_down = parent.as_ref().is_some_and(|(_, down)| *down) && !window.down;
+                if inherit_down {
+                    window.down = true;
+                    window.focused = false;
+                }
+                {
+                    let group = parent.map(|(group, _)| group).or_else(|| {
+                        self.shelf
+                            .library()
+                            .entries
+                            .iter()
+                            .find(|g| crate::session::running::has_app_id(g, &window.app_id))
+                            .map(|g| Instance::workspace_of(&g.key))
+                            .or_else(|| self.session.running_of(&window).map(|r| r.workspace()))
+                            .or_else(|| window.home().map(|i| i.workspace()))
+                    });
+                    if let Some(group) = group.filter(|g| *g != window.workspace) {
+                        window.workspace.clone_from(&group);
+                        if !window.down {
+                            self.opening_effects.push(Effect::Window(WindowCommand::Move { windows: vec![window.id], to: group }));
+                            if window.focused {
+                                self.opening_effects.push(Effect::Window(WindowCommand::FocusWindow(window.id)));
+                            }
+                        }
+                    }
+                }
+                let id = window.id;
+                self.session.on_window(WindowEvent::Opened(window), out);
+                if inherit_down {
+                    self.bottom.show_down(id, &mut self.session, out);
+                }
+            }
+            WindowEvent::Activate(id) => {
+                if self.session.window(id).is_some() {
+                    self.session.cancel_front_launch();
+                }
+                if let Some(owner) = self.session.window(id).and_then(|w| self.session.owner_of(w)) {
+                    self.session.thaw(&owner, out);
+                    self.session.resume_runner_of(&owner, self.shelf.library(), out);
+                }
+                if self.session.window(id).is_some_and(|w| w.down) {
+                    self.bottom.show_program_down(id, &mut self.session, out);
+                } else {
+                    self.session.on_window(WindowEvent::Activate(id), out);
+                }
+            }
+            event => self.session.on_window(event, out),
+        }
     }
 
     /// Handles the events queued from `mark` on: what the event's rules asked of State, in the order they
@@ -447,14 +516,15 @@ impl State {
         for id in steam {
             self.launch(id, None, Start::Front, &mut windows);
         }
+        windows.effects.append(&mut self.opening_effects);
         self.session.follow_windows(&self.clock, self.shelf.library(), &mut self.plays, &mut windows);
         self.record_plays(&mut windows);
-        self.bottom.follow_window_rules(&self.session, out);
+        self.bottom.follow_window_rules(&mut self.session, self.shelf.library(), out);
         self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
-        self.session.show_pending(out);
-        self.session.show_reopened(self.clock.mono(), out);
+        self.session.follow_front_launch(&mut windows);
+        self.session.follow_replacement(self.clock.mono(), &mut windows);
         self.session.follow_quitting(self.clock.mono(), self.shelf.library(), out);
-        self.session.follow_closed(self.clock.mono(), out);
+        self.session.follow_front(self.clock.mono(), out);
         // After handling the front one closing, so that a window just taken by a browsed file is shown
         // over it.
         out.effects.append(&mut windows.effects);
@@ -601,7 +671,7 @@ impl State {
         }
         self.session.set_pausable_runners(self.shelf.library());
         self.keymapping.adopt_runner_keymaps(self.shelf.library(), &mut self.prefs, out);
-        out.effects.push(crate::session::running::land_rules(self.shelf.library()));
+        out.effects.push(crate::session::running::known_apps(self.shelf.library()));
         if self.dock.drop_gone(self.shelf.library(), &self.session) {
             out.effects.push(self.dock.save_effect());
         }
@@ -819,7 +889,7 @@ impl State {
             }
             Id::BottomWindows => {
                 if let Some(window) = self.bottom.hidden_down(&self.session) {
-                    self.bottom.show_program_down(window, out);
+                    self.bottom.show_program_down(window, &mut self.session, out);
                 }
             }
             Id::Time(id) => self.sys.on_time(id, self.scrolls.get_mut(ListId::Time), out),
@@ -1087,8 +1157,8 @@ impl State {
             DeviceKey::CloseWindow => return self.session.close_front_window(self.bottom.shows_windows(&self.session), out),
             DeviceKey::Quit => return self.session.quit_front(self.bottom.shows_windows(&self.session), out),
             DeviceKey::BottomPower => return self.bottom.toggle_power(self.power(), self.clock.mono()),
-            DeviceKey::WindowDown => return self.bottom.window_down(&self.session, self.clock.mono(), out),
-            DeviceKey::WindowUp => return self.bottom.window_up(&self.session, self.clock.mono(), out),
+            DeviceKey::WindowDown => return self.bottom.window_down(&mut self.session, self.clock.mono(), out),
+            DeviceKey::WindowUp => return self.bottom.window_up(&mut self.session, self.clock.mono(), out),
         };
         let control = if level == Level::Volume { Control::Volume } else { Control::Brightness };
         self.bottom.notice_mut().show(NoticeKind::Level(control), self.clock.mono());
@@ -1140,7 +1210,7 @@ impl State {
     /// Shows running entry `id` (see [`Session::show`]), on the bottom screen if all its windows are there.
     fn show(&mut self, id: &str, out: &mut Out) {
         if let Some(window) = self.session.show(id, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out) {
-            self.bottom.show_program_down(window, out);
+            self.bottom.show_program_down(window, &mut self.session, out);
         }
     }
 
@@ -1157,10 +1227,14 @@ impl State {
         let tab = self.bottom.chosen_tab();
         let request = LaunchRequest { entry: entry.clone(), command, start };
         match self.session.launch(request, &self.shelf, tab, self.prefs.settings(), &self.clock, out) {
-            Some(Instead::Device) => self.device.open(&mut self.pointer, out),
+            Some(Instead::Device) => {
+                self.session.cancel_front_launch();
+                self.device.open(&mut self.pointer, &mut self.session, out);
+            }
             Some(Instead::Group) if self.shelf.reveal(&entry) => {
+                self.session.cancel_front_launch();
                 self.shelf.moved(&mut self.pointer);
-                out.effects.push(Effect::Window(WindowCommand::ShowShelf));
+                self.session.command(WindowCommand::ShowShelf, out);
             }
             Some(Instead::Show) => self.show(&entry, out),
             Some(Instead::Group) | None => {}

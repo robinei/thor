@@ -109,10 +109,10 @@ fn a_play(entry: &str, start: u64, duration: u64, now: u64) -> Vec<Event> {
     vec![
         Event::tick(start),
         Event::Units(vec![clamshell_state::Instance::Run { key: clamshell_library::key_of(entry), secs: start, n: 0 }]),
-        Event::Windows(vec![window]),
+        clamshell_state::WindowEvent::Opened(window).into(),
         Event::tick(start + duration),
         Event::Units(vec![]),
-        Event::Windows(vec![]),
+        clamshell_state::WindowEvent::Closed(900).into(),
         Event::tick(now),
     ]
 }

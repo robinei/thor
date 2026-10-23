@@ -202,15 +202,15 @@ impl Handles {
             return;
         };
         match command {
+            WindowCommand::FocusWindow(id) => sway.send(sway::Command::Focus(*id)),
             WindowCommand::ShowShelf => sway.send(sway::Command::Workspace(Instance::Shelf.name())),
-            WindowCommand::Focus(name) => sway.send(sway::Command::Workspace(name.clone())),
             WindowCommand::Move { windows, to } => sway.send(sway::Command::Move { windows: windows.clone(), workspace: to.clone() }),
             WindowCommand::Close(ids) => ids.iter().for_each(|id| sway.send(sway::Command::Close(*id))),
             WindowCommand::Down(id) => sway.send(sway::Command::Down(*id)),
-            WindowCommand::Up { window, to } => sway.send(sway::Command::Up { window: *window, workspace: to.as_ref().map(Instance::workspace) }),
+            WindowCommand::Up { window, to } => sway.send(sway::Command::Up { window: *window, workspace: to.clone() }),
             WindowCommand::ShowDown(id) => sway.send(sway::Command::ShowDown(*id)),
             WindowCommand::DownRules(rules) => sway.send(sway::Command::DownRules(rules.clone())),
-            WindowCommand::LandRules(ids) => sway.send(sway::Command::LandRules(ids.clone())),
+            WindowCommand::KnownApps(ids) => sway.send(sway::Command::LandRules(ids.clone())),
         }
     }
 }

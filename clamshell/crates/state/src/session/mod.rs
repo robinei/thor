@@ -35,14 +35,18 @@ pub struct Session {
     launching: Vec<Launching>,
     /// The compositor's windows.
     windows: Vec<Window>,
+    /// The client with keyboard focus; none while ClamShell's own UI receives keys.
+    keyboard_focus: Option<i64>,
     /// Our running scopes, as systemd lists them.
     units: Vec<Instance>,
     /// Workspaces by when they were last in front, most recent first.
     recent: Vec<String>,
+    /// The selected window of each top group, retained while the group is hidden.
+    selected: Vec<(String, i64)>,
     /// The launch to show when its first window appears.
-    pending_show: Option<Instance>,
+    front_launch: Option<Instance>,
     /// The workspace whose window in front closed, leaving it empty, and when (see
-    /// [`Session::show_reopened`]).
+    /// [`Session::follow_replacement`]).
     closed_front: Option<(String, u64)>,
     /// Entries quitting (see [`Quitting`]).
     quitting: Vec<Quitting>,
@@ -53,7 +57,7 @@ pub struct Session {
     units_known: bool,
     /// What the last [`crate::State::settle`] saw: the windows' ids and the workspace in front on the
     /// main screen. They tell which windows are new and when the one in front closes.
-    followed_windows: Vec<i64>,
+    opened: Vec<i64>,
     followed_front: Option<String>,
     /// Which running entries have windows and which have a tray icon, in their order, kept so that each
     /// pass reuses it (see [`Session::end_windowless`]).
@@ -136,17 +140,41 @@ impl Session {
         &self.windows
     }
 
+    pub fn window(&self, id: i64) -> Option<&Window> {
+        self.windows.iter().find(|w| w.id == id)
+    }
+
+    pub fn keyboard_focus(&self) -> Option<i64> {
+        self.keyboard_focus
+    }
+
+    /// The selected top window, or none while shelf is shown without a client surface of its own.
+    pub fn top_window(&self) -> Option<&Window> {
+        self.windows
+            .iter()
+            .find(|w| w.focused && !w.down)
+            .or_else(|| self.windows.iter().filter(|w| !w.down && w.visible).max_by_key(|w| (self.selected.iter().any(|(_, id)| *id == w.id), w.id)))
+    }
+
+    pub fn bottom_window(&self) -> Option<&Window> {
+        self.windows.iter().find(|w| w.down && w.visible)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn selections_valid(&self) -> bool {
+        self.selected.iter().all(|(group, id)| self.window(*id).is_some_and(|w| !w.down && w.workspace == *group))
+    }
+
     pub fn units(&self) -> &[Instance] {
         &self.units
     }
 
     /// What is in front on the main screen: shelf, a running entry's window, or another.
     pub fn front(&self) -> Front {
-        match self.windows.iter().find(|w| w.focused && !w.down) {
+        match self.top_window() {
             Some(w) if w.app_id == SHELF_APP_ID => Front::Shelf,
             Some(w) if self.running_of(w).is_some() => Front::Program,
             Some(_) => Front::Other,
-            None if self.program.is_some() => Front::Program,
             None => Front::Shelf,
         }
     }
@@ -159,6 +187,13 @@ impl Session {
     /// - its process, for a program found by its tray icon;
     /// - its workspace.
     pub fn running_of(&self, w: &Window) -> Option<&Running> {
+        let mut w = w;
+        for _ in 0..self.windows.len() {
+            match w.parent.and_then(|id| self.window(id)) {
+                Some(parent) if parent.id != w.id => w = parent,
+                _ => break,
+            }
+        }
         let by_key = |k: Option<&str>| self.running.iter().find(|r| k == Some(r.key.as_str()));
         self.running
             .iter()
@@ -230,8 +265,8 @@ impl Session {
 
     /// The launch to show when its first window appears.
     #[cfg(test)]
-    pub(crate) fn pending_show(&self) -> Option<&Instance> {
-        self.pending_show.as_ref()
+    pub(crate) fn front_launch(&self) -> Option<&Instance> {
+        self.front_launch.as_ref()
     }
 
     /// The counter for a new instance's name (see [`crate::session::instance::Instance::Run`]).
@@ -241,12 +276,19 @@ impl Session {
         n
     }
 
-    pub(crate) fn set_windows(&mut self, windows: Vec<Window>) {
-        self.windows = windows;
+    /// Keeps the front's history after the window set changes, whichever backend reported it.
+    pub(crate) fn remember_front(&mut self) {
+        self.selected.retain(|(group, id)| self.windows.iter().any(|w| w.id == *id && !w.down && w.workspace == *group));
+        for w in self.windows.iter().filter(|w| !w.down && (w.visible || w.focused)) {
+            match self.selected.iter_mut().find(|(g, _)| *g == w.workspace) {
+                Some((_, id)) => *id = w.id,
+                None => self.selected.push((w.workspace.clone(), w.id)),
+            }
+        }
         let present = |name: &String| self.windows.iter().any(|w| w.workspace == *name);
         self.recent.retain(present);
         // Already first, it stays.
-        if let Some(front) = self.windows.iter().find(|w| w.focused).map(|w| &w.workspace).filter(|f| self.recent.first() != Some(*f)) {
+        if let Some(front) = self.top_window().map(|w| &w.workspace).filter(|f| self.recent.first() != Some(*f)) {
             let front = front.clone();
             self.recent.retain(|n| *n != front);
             self.recent.insert(0, front);
@@ -261,7 +303,7 @@ impl Session {
     /// If a window appears within [`REOPEN_SECS`] on the workspace whose window in front closed, shows
     /// that workspace again. This is for a program that replaces its first window, such as a splash
     /// screen, or Waydroid on a cold start.
-    pub(crate) fn show_reopened(&mut self, now: u64, out: &mut Out) {
+    pub(crate) fn follow_replacement(&mut self, now: u64, out: &mut Out) {
         let Some((ws, at)) = self.closed_front.take() else {
             return;
         };
@@ -269,7 +311,7 @@ impl Session {
             return;
         }
         if self.windows.iter().any(|w| w.workspace == ws && !w.down) {
-            out.effects.push(Effect::Window(WindowCommand::Focus(ws)));
+            self.focus(&ws, out);
             return;
         }
         self.closed_front = Some((ws, at));
@@ -278,15 +320,33 @@ impl Session {
     /// Shows the workspace of the launch just started, once its own first window is there. The entry's
     /// workspace may already have windows of its other launches. An entry known by its app id has no scope
     /// of ours, so any of its windows counts.
-    pub(crate) fn show_pending(&mut self, out: &mut Out) {
-        let arrived = self.pending_show.as_ref().is_some_and(|i| {
-            let unit = i.unit();
-            let outside = self.running.iter().find(|r| Some(r.key.as_str()) == i.key()).is_some_and(Running::outside);
-            self.windows.iter().any(|w| i.on(&w.workspace) && (outside || w.unit == unit))
-        });
-        match self.pending_show.take() {
-            Some(instance) if arrived => out.effects.push(Effect::Window(WindowCommand::Focus(instance.workspace()))),
-            other => self.pending_show = other,
+    pub(crate) fn follow_front_launch(&mut self, out: &mut Out) {
+        let Some(instance) = &self.front_launch else { return };
+        let outside = self
+            .running
+            .iter()
+            .find(|r| Some(r.key.as_str()) == instance.key())
+            .is_some_and(|r| r.outside() || matches!(r.origin, running::Origin::Windows { .. }));
+        if !outside && !self.units.contains(instance) && !self.launching.iter().any(|l| l.instance == *instance) {
+            self.front_launch = None;
+            return;
         }
+        let arrived = self
+            .windows
+            .iter()
+            .find(|w| {
+                instance.on(&w.workspace) && (outside || w.unit.as_deref().and_then(|unit| unit.strip_suffix(".scope")).is_some_and(|unit| instance.is(unit)))
+            })
+            .map(|w| (w.id, w.down));
+        if let Some((id, down)) = arrived {
+            self.front_launch = None;
+            if !down {
+                self.command(WindowCommand::FocusWindow(id), out);
+            }
+        }
+    }
+
+    pub(crate) fn cancel_front_launch(&mut self) {
+        self.front_launch = None;
     }
 }

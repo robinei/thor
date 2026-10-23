@@ -47,8 +47,8 @@ fn a_launchs_start_and_end_come_to_the_same_in_any_order() {
     // If there is no launch, the shapes below show it.
     let probe = start_end(&mut state()).unwrap_or(Instance::Shelf);
     let window = Window { unit: probe.unit(), visible: true, ..win(5, "zelda3", &probe.workspace(), true) };
-    let starts = [Event::Units(vec![probe.clone()]), Event::Windows(vec![window])];
-    let ends = [Event::Units(vec![]), Event::Windows(vec![])];
+    let starts = [Event::Units(vec![probe.clone()]), WindowEvent::Opened(window).into()];
+    let ends = [Event::Units(vec![]), WindowEvent::Closed(5).into()];
     for start in orders(&starts) {
         for end in orders(&ends) {
             let mut s = state();
@@ -104,8 +104,8 @@ fn a_launch_that_ends_without_a_window_didnt_start() {
     // A launch that showed a window and then ended gets no notice.
     let mut s = state();
     let zelda = launch(&mut s, "zelda-lttp");
-    s.applied(Event::Windows(vec![Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) }]));
-    s.applied(Event::Windows(vec![]));
+    s.observed(vec![Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) }]);
+    s.observed(vec![]);
     crate::testkit::end(&mut s, "zelda-lttp");
     assert!(!matches!(notice(&s), Some(crate::bottom::notice::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
 }
@@ -159,21 +159,24 @@ fn the_windows_effects_follow_the_later_steps() {
     let mut s = started(Init { library, ..init() });
     s.applied(Event::tick(1000));
     let zelda = launch(&mut s, "zelda-lttp").workspace();
-    s.applied(Event::Windows(vec![shelf_window(false), win(3, "zelda3", &zelda, true)]));
+    s.observed(vec![shelf_window(false), win(3, "zelda3", &zelda, true)]);
     s.applied(Event::Entry("zelda-lttp".into(), EntryAct::Quit));
-    let landing = Instance::Landing.name();
-    let fx = s.applied(Event::Windows(vec![shelf_window(false), win(7, "steam_app_620", &landing, true), win(8, "foot", &landing, false)]));
+    let landing = String::new();
+    let fx = s.observed(vec![shelf_window(false), win(7, "steam_app_620", &landing, true), win(8, "foot", &landing, false)]);
     let kinds: Vec<&str> = fx
         .iter()
         .map(|e| match e {
             Effect::EndRun { .. } => "end zelda",
             Effect::Save(Save::Resume(_)) => "save resume",
             Effect::Launch { entry, .. } if &**entry == "ff6" => "launch ff6",
-            Effect::Window(WindowCommand::Up { window: 8, .. }) => "foot up",
+            Effect::Window(WindowCommand::Move { windows, .. }) if windows == &[7] => "place ff6",
+            Effect::Window(WindowCommand::Move { windows, .. }) if windows == &[8] => "place foot",
+            Effect::Window(WindowCommand::FocusWindow(7)) => "focus ff6",
+            Effect::Window(WindowCommand::FocusWindow(8)) => "focus foot",
             _ => "other",
         })
         .collect();
-    assert_eq!(kinds, ["end zelda", "save resume", "launch ff6", "foot up"], "{fx:?}");
+    assert_eq!(kinds, ["end zelda", "save resume", "launch ff6", "place ff6", "focus ff6", "place foot", "focus foot"], "{fx:?}");
 }
 
 /// Sync sends the settings in force, then the keymap, then the pad's route. Nothing outside depends on
@@ -186,7 +189,9 @@ fn a_game_coming_in_front_gets_its_settings_then_its_keymap_then_the_pad() {
     s.applied(Event::tick(1000));
     tap(&mut s, entry("zelda-lttp"));
     tap(&mut s, entry("zelda-lttp"));
-    let fx = start(&mut s, "zelda-lttp");
+    let mut fx = start(&mut s, "zelda-lttp");
+    assert_eq!(s.pad().route(), PadRoute::Ui, "the launch has no window yet");
+    fx.extend(show_window(&mut s, "zelda-lttp", 7));
     let sent: Vec<&str> = fx
         .iter()
         .filter_map(|e| match e {
@@ -225,14 +230,14 @@ fn a_launchs_first_window_is_shown_before_a_window_that_came_back() {
     s.applied(Event::tick(1000));
     let zelda = launch(&mut s, "zelda-lttp");
     let zelda_window = Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), true) };
-    s.applied(Event::Windows(vec![shelf_window(false), zelda_window.clone()]));
+    s.observed(vec![shelf_window(false), zelda_window.clone()]);
     // Its window closes with nothing else in front: shelf is shown, and the workspace remembered.
-    let fx = s.applied(Event::Windows(vec![shelf_window(false)]));
+    let fx = s.observed(vec![shelf_window(false)]);
     assert_eq!(window_effects(fx), [Effect::Window(WindowCommand::ShowShelf)]);
     let ff6 = launch(&mut s, "ff6");
     let ff6_window = Window { unit: ff6.unit(), ..win(4, "ff6", &ff6.workspace(), false) };
-    let fx = s.applied(Event::Windows(vec![shelf_window(false), Window { focused: false, ..zelda_window }, ff6_window]));
-    assert_eq!(window_effects(fx), [focus(&ff6), Effect::Window(WindowCommand::Focus(zelda.workspace()))]);
+    let fx = s.observed(vec![shelf_window(false), Window { focused: false, ..zelda_window }, ff6_window]);
+    assert_eq!(window_effects(fx), [focus(4), focus(3)]);
 }
 
 /// The steps in the background run before the quitting entries are followed: here a paused game shown
@@ -245,11 +250,11 @@ fn the_background_is_followed_before_the_quitting() {
     let ff6 = launch(&mut s, "ff6");
     let zelda_window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), false) };
     let ff6_window = Window { unit: ff6.unit(), visible: true, ..win(4, "ff6", &ff6.workspace(), true) };
-    s.applied(Event::Windows(vec![zelda_window(false), ff6_window]));
+    s.observed(vec![zelda_window(false), ff6_window]);
     s.applied(Event::tick(100 + crate::session::background::GRACE));
     assert!(s.session().paused("zelda-lttp"));
     s.applied(Event::Entry("ff6".into(), EntryAct::Quit));
-    let fx = s.applied(Event::Windows(vec![Window { focused: true, ..zelda_window(true) }]));
+    let fx = s.observed(vec![Window { focused: true, ..zelda_window(true) }]);
     let kinds: Vec<&str> = fx
         .iter()
         .filter_map(|e| match e {
@@ -395,7 +400,7 @@ fn a_library_read_updates_the_landing_rules_and_the_runners_paused_together() {
         }
     }
     let fx = s.applied(Event::Library(Box::new(library)));
-    let land = Effect::Window(WindowCommand::LandRules(vec!["steam_app_620".into(), "firefox".into()]));
+    let land = Effect::Window(WindowCommand::KnownApps(vec!["steam_app_620".into(), "firefox".into()]));
     assert!(fx.contains(&land), "{fx:?}");
     let pause = Effect::RunnerCommand(vec!["pause".into()]);
     assert!(!s.applied(Event::tick(100 + crate::session::background::GRACE - 1)).contains(&pause));

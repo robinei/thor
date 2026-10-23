@@ -63,20 +63,20 @@ mod tests {
             if zelda_open {
                 w.push(win(3, "zelda3", &zelda.workspace(), true));
             }
-            Event::Windows(w)
+            w
         };
-        s.applied(windows(true));
+        s.observed(windows(true));
         let tile = Id::Dock(DockId::Entry(1));
         assert_eq!(s.dock().items().get(1).map(|i| &*i.id), Some("ff6"));
         s.applied(PointerEvent::Down(tile.clone(), None).into());
-        s.applied(windows(false));
+        s.observed(windows(false));
         end(&mut s, "zelda-lttp");
         assert_eq!(s.dock().items().first().map(|i| &*i.id), Some("ff6"), "moved up");
-        assert_eq!(window_effects(tap(&mut s, tile.clone())), [focus(&ff6)]);
+        assert_eq!(window_effects(tap(&mut s, tile.clone())), [focus(4)]);
         s.applied(PointerEvent::Up(tile.clone()).into());
         let first = Id::Dock(DockId::Entry(0));
         s.applied(PointerEvent::Down(first.clone(), None).into());
-        s.applied(Event::Windows(vec![]));
+        s.observed(vec![]);
         end(&mut s, "ff6");
         assert!(s.dock().items().is_empty());
         assert_eq!(tap(&mut s, first), [], "gone");

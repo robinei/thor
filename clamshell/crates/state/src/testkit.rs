@@ -9,9 +9,14 @@ use crate::*;
 pub trait Applied {
     /// Applies `event`, and returns the effects.
     fn applied(&mut self, event: Event) -> Vec<Effect>;
+    /// Reports a backend observation through the same event diff as the sway adapter.
+    fn observed(&mut self, windows: Vec<Window>) -> Vec<Effect>;
 }
 
 impl Applied for State {
+    fn observed(&mut self, windows: Vec<Window>) -> Vec<Effect> {
+        self.applied(Event::window_changes(self.session().windows(), &windows))
+    }
     fn applied(&mut self, event: Event) -> Vec<Effect> {
         let mut effects = Vec::new();
         self.apply(event, &mut effects);
@@ -59,12 +64,19 @@ pub fn started(init: Init) -> State {
 }
 
 pub fn win(id: i64, app_id: &str, workspace: &str, focused: bool) -> Window {
-    Window { id, app_id: app_id.into(), title: String::new(), focused, unit: None, workspace: workspace.into(), ..Window::default() }
+    Window { id, app_id: app_id.into(), title: String::new(), focused, visible: focused, unit: None, workspace: workspace.into(), ..Window::default() }
+}
+
+/// A running entry's first window becomes available and is shown by the backend.
+pub fn show_window(s: &mut State, entry: &str, id: i64) -> Vec<Effect> {
+    let key = clamshell_library::key_of(entry);
+    let unit = s.session().units().iter().find(|u| u.key() == Some(&key)).and_then(Instance::unit);
+    s.observed(vec![Window { unit, ..win(id, entry, &Instance::workspace_of(&key), true) }])
 }
 
 /// One of the user's terminals in front, not one of ours.
 pub fn foot() -> Window {
-    win(1, "foot", "1", true)
+    win(1001, "foot", "1", true)
 }
 
 /// A game in shelf's list.
@@ -100,9 +112,9 @@ pub fn window_effects(fx: Vec<Effect>) -> Vec<Effect> {
     fx.into_iter().filter(|e| matches!(e, Effect::Window(_))).collect()
 }
 
-/// The effect that shows `instance`'s workspace.
-pub fn focus(instance: &Instance) -> Effect {
-    Effect::Window(WindowCommand::Focus(instance.workspace()))
+/// The effect that selects a window in its group.
+pub fn focus(window: i64) -> Effect {
+    Effect::Window(WindowCommand::FocusWindow(window))
 }
 
 /// Launches `entry` from shelf and has it start. Returns its instance.

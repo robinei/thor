@@ -52,7 +52,7 @@ mod tests {
         let firefox = Instance::Run { key: clamshell_library::key_of("desktop:firefox"), secs: 1, n: 0 };
         let fx = s.applied(Event::Units(vec![firefox]));
         assert_eq!(launches(&fx), 1, "Zelda only: Firefox runs, `gone` isn't in the library: {fx:?}");
-        assert!(s.session().pending_show().is_none(), "not shown");
+        assert!(s.session().front_launch().is_none(), "not shown");
         assert_eq!(launches(&s.applied(Event::Units(vec![]))), 0, "once");
         // Choosing in the dock menu saves the list.
         let fx = s.handle(Event::Entry("zelda-lttp".into(), crate::EntryAct::ToggleAutostart));

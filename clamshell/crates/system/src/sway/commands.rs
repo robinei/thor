@@ -18,7 +18,8 @@ fn pin(name: &str, top: Option<&str>) -> String {
 /// Shows a workspace on the main screen, creating it if new.
 pub fn show(name: &str, top: Option<&str>) -> String {
     let focus = top.map_or_else(String::new, |top| format!("focus output \"{top}\"; "));
-    format!("{}{focus}workspace \"{name}\"", pin(name, top))
+    let shelf = if Instance::Shelf.is(name) { format!("; [app_id=\"^{SHELF_APP_ID}$\"] focus") } else { String::new() };
+    format!("{}{focus}workspace \"{name}\"{shelf}", pin(name, top))
 }
 
 /// Starts a job for a workspace on the main screen without showing it. The workspace is shown for the
@@ -45,7 +46,7 @@ pub const DOWN_MARK: &str = "clamshell-down";
 /// Moves a window to the bottom screen's workspace and shows it there, tabbed with the others. It is
 /// marked so it stays. Afterwards the main screen has the keyboard again.
 pub fn down(window: i64, top: Option<&str>) -> String {
-    let bottom = Instance::Bottom.name();
+    let bottom = super::BOTTOM.to_owned();
     format!(
         "[con_id={window}] mark --add {DOWN_MARK}-{window}; [con_id={window}] move container to workspace \"{bottom}\"; [con_id={window}] layout tabbed; {}",
         show_down(window, top)
@@ -115,7 +116,7 @@ pub fn switch_down_rule(rule: &DownRule, on: bool, bottom: &str) -> String {
 /// workspace. None if sway's quoting can't carry the app id.
 pub fn define_land_rule(app_id: &str) -> Option<String> {
     let id = literal(app_id)?;
-    let landing = Instance::Landing.name();
+    let landing = super::LANDING;
     Some(format!(
         "for_window [app_id=\"{id}\"] move container to workspace \"{landing}\"; for_window [class=\"{id}\"] move container to workspace \"{landing}\""
     ))
@@ -131,18 +132,22 @@ pub fn close(window: i64) -> String {
     format!("[con_id={window}] kill")
 }
 
+pub fn focus(window: i64) -> String {
+    format!("[con_id={window}] focus")
+}
+
 /// sway's rules for our windows, given when we connect and again on reconnecting. sway keeps them until
 /// it restarts. These are the rules that depend on the running machine, namely the outputs' names. The
 /// rest of how the session behaves, such as borders, focus and tabs, is in `clamshell/sway/clamshell.conf`,
 /// which every machine's config includes. Last, shelf's window is put in its place and shown, if it is
 /// already open. `bottom` is the second screen's output.
 pub fn rules(top: Option<&str>, bottom: &str) -> Vec<String> {
-    let (shelf, landing) = (Instance::Shelf.name(), Instance::Landing.name());
+    let (shelf, landing) = (Instance::Shelf.name(), super::LANDING);
     // The second screen's workspace: windows opening there go to the main screen.
-    let second = Instance::Bottom.name();
+    let second = super::BOTTOM.to_owned();
     let mut rules = vec![format!("for_window [app_id=\"^{SHELF_APP_ID}$\"] move container to workspace \"{shelf}\"")];
     if let Some(top) = top {
-        rules.push(format!("{}{}", pin(&shelf, Some(top)), pin(&landing, Some(top)).trim_end_matches("; ")));
+        rules.push(format!("{}{}", pin(&shelf, Some(top)), pin(landing, Some(top)).trim_end_matches("; ")));
         // A window that lands there by itself is sent to the main screen by `windows::reconcile`, which
         // knows which windows were moved there on purpose.
         rules.push(format!("workspace \"{second}\" output \"{bottom}\"; focus output \"{bottom}\"; workspace \"{second}\"; focus output \"{top}\""));

@@ -23,7 +23,7 @@ pub fn run(id: &str, n: u64) -> Instance {
 
 /// A window of a launch, on its entry's workspace, or moved to the bottom screen if `down` is set.
 fn window_of(id: i64, app_id: &str, launch: &Instance, focused: bool, down: bool) -> Window {
-    let workspace = if down { Instance::Bottom.name() } else { launch.workspace() };
+    let workspace = launch.workspace();
     Window { id, app_id: app_id.into(), focused, unit: launch.unit(), workspace, down, ..Window::default() }
 }
 
@@ -33,19 +33,30 @@ pub fn running() -> Vec<Event> {
     // Their scopes as systemd lists them, which marks them as running.
     vec![
         Event::Units(vec![game.clone(), t1.clone(), t2.clone(), web.clone()]),
-        Event::Windows(vec![
-            window_of(5, "retroarch", &game, false, false),
-            window_of(7, "foot", &t1, false, false),
-            window_of(8, "foot", &t2, true, false),
-            window_of(9, "firefox", &web, false, false),
-        ]),
+        Event::window_changes(
+            &[],
+            &[
+                window_of(5, "retroarch", &game, false, false),
+                window_of(7, "foot", &t1, false, false),
+                window_of(8, "foot", &t2, true, false),
+                window_of(9, "firefox", &web, false, false),
+            ],
+        ),
     ]
 }
 
 /// The terminal in front from [`running`], with a second window of it moved to the bottom screen.
 pub fn window_below() -> Vec<Event> {
     let t2 = run("desktop:foot", 2);
-    vec![Event::Windows(vec![window_of(8, "foot", &t2, true, false), window_of(10, "foot", &t2, false, true)])]
+    vec![Event::window_changes(
+        &[
+            window_of(5, "retroarch", &run("zelda-lttp", 0), false, false),
+            window_of(7, "foot", &run("desktop:foot", 1), false, false),
+            window_of(8, "foot", &t2, true, false),
+            window_of(9, "firefox", &run("desktop:firefox", 3), false, false),
+        ],
+        &[window_of(8, "foot", &t2, true, false), window_of(10, "foot", &t2, false, true)],
+    )]
 }
 
 /// Four networks in range, one connected.

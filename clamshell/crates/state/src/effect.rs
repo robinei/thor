@@ -220,8 +220,8 @@ pub enum Save {
 /// What the compositor is asked to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WindowCommand {
-    /// Show this workspace. It is an entry's, or, when Home goes back, whatever was in front.
-    Focus(String),
+    /// Select this top window, including its tab within its group.
+    FocusWindow(i64),
     /// Ask these windows to close, as their own close buttons would.
     Close(Vec<i64>),
     /// Move these windows to this workspace. Used for an entry known by app id, to move its windows from
@@ -233,12 +233,12 @@ pub enum WindowCommand {
     /// screen keeps the keyboard.
     Down(i64),
     /// Move a window that was moved down back to the top screen, to its workspace or the one in front.
-    Up { window: i64, to: Option<Instance> },
+    Up { window: i64, to: String },
     /// Show on the bottom screen this window that was moved there. The top screen keeps the keyboard.
     ShowDown(i64),
     /// The windows that go to the bottom screen as they open. This is the full set of rules in force.
     DownRules(Vec<crate::bottom::screen::DownRule>),
     /// The full set of app ids whose windows open on the landing workspace, to be moved to their entry's
     /// workspace from there (see [`crate::session::running::app_id_of`]).
-    LandRules(Vec<std::sync::Arc<str>>),
+    KnownApps(Vec<std::sync::Arc<str>>),
 }

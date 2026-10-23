@@ -1,4 +1,4 @@
-//! The names ClamShell gives sway workspaces, systemd scopes and slices.
+//! The names ClamShell gives home groups, systemd scopes and slices.
 //!
 //! A launch of a library entry, whether a game or an app, is a scope we started
 //! (`clamshell-run-<key>-<secs>-<n>.scope`). It is in the entry's slice
@@ -9,9 +9,8 @@
 //! started.
 //!
 //! An entry that runs in another program's processes, such as a game in Steam's or an Android app in
-//! Waydroid's, isn't in a scope of ours, but its windows go to its entry's workspace too. They first land on
-//! `clamshell-game`, where sway rules put them by their app ids. Shelf's window is on `clamshell-shelf`, and
-//! the second screen is `clamshell-bottom`.
+//! Waydroid's, isn't in a scope of ours, but its windows belong to its entry's home group too. The sway
+//! adapter translates groups into workspaces; landing and bottom workspace names belong to it.
 
 use std::fmt::{self, Write};
 use std::str::FromStr;
@@ -31,10 +30,6 @@ pub const STEAM_APP_PREFIX: &str = "steam_app_";
 pub enum Instance {
     /// Shelf's window.
     Shelf,
-    /// The second screen.
-    Bottom,
-    /// Where the windows of entries known by app id land before they are moved to their entry's workspace.
-    Landing,
     /// A launch of an entry: its key, the start time, a counter.
     Run { key: String, secs: u64, n: u64 },
 }
@@ -43,11 +38,8 @@ impl Instance {
     /// The instance that `name`, a workspace's or a scope's without `.scope`, stands for, if it is ours. An
     /// entry's workspace gives none, since its launches share it.
     pub fn parse(name: &str) -> Option<Instance> {
-        match name.strip_prefix(PREFIX)? {
-            "shelf" => return Some(Instance::Shelf),
-            "bottom" => return Some(Instance::Bottom),
-            "game" => return Some(Instance::Landing),
-            _ => {}
+        if name.strip_prefix(PREFIX)? == "shelf" {
+            return Some(Instance::Shelf);
         }
         let (key, secs, n) = Instance::parse_run(name)?;
         Some(Instance::Run { key: key.to_owned(), secs, n })
@@ -182,8 +174,6 @@ impl fmt::Display for Instance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Instance::Shelf => write!(f, "{PREFIX}shelf"),
-            Instance::Bottom => write!(f, "{PREFIX}bottom"),
-            Instance::Landing => write!(f, "{PREFIX}game"),
             Instance::Run { key, secs, n } => write!(f, "{RUN}{key}-{secs}-{n}"),
         }
     }
@@ -208,7 +198,7 @@ mod tests {
     #[test]
     fn names_read_back() {
         let run = Instance::Run { key: "zelda_3fa2b1".into(), secs: 1234, n: 7 };
-        for i in [Instance::Shelf, Instance::Bottom, Instance::Landing, run.clone()] {
+        for i in [Instance::Shelf, run.clone()] {
             assert_eq!(Instance::parse(&i.name()), Some(i.clone()), "{i}");
             assert!(i.is(&i.name()) && !i.is("clamshell-") && !i.is(&format!("{i}-1")), "{i}");
         }
@@ -221,7 +211,7 @@ mod tests {
         assert_eq!(Instance::key_of("clamshell-run-zelda_3fa2b1"), Some("zelda_3fa2b1"));
         assert_eq!(Instance::key_of("clamshell-run-zelda_3fa2b1-1234-7.scope"), Some("zelda_3fa2b1"));
         assert_eq!(Instance::key_of("clamshell-shelf"), None);
-        assert_eq!(Instance::Landing.unit(), None, "only a launch has a scope");
+        assert_eq!(Instance::Shelf.unit(), None, "only a launch has a scope");
         assert_eq!(Instance::from_unit("clamshell-run-x_1-5-0.scope").and_then(|i| i.key().map(str::to_owned)).as_deref(), Some("x_1"));
         assert_eq!(Instance::from_unit("clamshell-shelf.scope"), None);
         assert_eq!(Instance::parse("1"), None);

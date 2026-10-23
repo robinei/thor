@@ -339,8 +339,8 @@ mod tests {
         assert_eq!(tap(&mut s, dock(0)), vec![]);
         assert!(s.bottom().notice().is_some());
         // With a window, a tap shows it, and its menu pins it.
-        s.applied(Event::Windows(vec![win(3, "zelda3", &zelda.workspace(), false)]));
-        assert_eq!(tap(&mut s, dock(0)), vec![focus(&zelda)]);
+        s.observed(vec![win(3, "zelda3", &zelda.workspace(), false)]);
+        assert_eq!(tap(&mut s, dock(0)), vec![focus(3), Effect::PadRoute(crate::PadRoute::Game)]);
         long(&mut s, dock(0));
         assert_eq!(s.dock().menu().map(|m| &**m), Some("zelda-lttp"));
         let fx = tap(&mut s, Id::Dock(DockId::Pin));
@@ -433,7 +433,7 @@ mod tests {
         tap(&mut s, Id::Tab(crate::Tab::Dock));
         let zelda = launch(&mut s, "zelda-lttp");
         let w = Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) };
-        s.applied(Event::Windows(vec![w.clone()]));
+        s.observed(vec![w.clone()]);
         long(&mut s, dock(0));
         assert_eq!(tap(&mut s, Id::Dock(DockId::Autostart)), vec![Effect::Save(Save::Autostart(vec!["zelda-lttp".into()])), closed()]);
         long(&mut s, dock(0));
@@ -443,14 +443,19 @@ mod tests {
         let fx = tap(&mut s, Id::Dock(DockId::Suspend));
         assert_eq!(
             fx,
-            vec![Effect::Window(WindowCommand::ShowShelf), Effect::Freeze { slice: slice.clone(), frozen: true }, closed()],
+            vec![
+                Effect::Window(WindowCommand::ShowShelf),
+                Effect::Freeze { slice: slice.clone(), frozen: true },
+                closed(),
+                Effect::PadRoute(crate::PadRoute::Ui)
+            ],
             "shelf in front, then frozen"
         );
         assert!(s.session().suspended("zelda-lttp"));
-        s.applied(Event::Windows(vec![shelf_window(true), Window { focused: false, visible: false, ..w }]));
+        s.observed(vec![shelf_window(true), Window { focused: false, visible: false, ..w }]);
         long(&mut s, dock(0));
         let fx = tap(&mut s, Id::Dock(DockId::Suspend));
-        assert!(fx.contains(&Effect::Freeze { slice, frozen: false }) && fx.contains(&focus(&zelda)), "resumed and shown: {fx:?}");
+        assert!(fx.contains(&Effect::Freeze { slice, frozen: false }) && fx.contains(&focus(5)), "resumed and shown: {fx:?}");
         assert!(!s.session().suspended("zelda-lttp"));
     }
 
@@ -460,7 +465,7 @@ mod tests {
         tap(&mut s, Id::Tab(crate::Tab::Dock));
         let zelda = launch(&mut s, "zelda-lttp");
         let w = Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) };
-        s.applied(Event::Windows(vec![w]));
+        s.observed(vec![w]);
         let key = clamshell_library::key_of("zelda-lttp");
         long(&mut s, dock(0));
         assert!(!s.opens_another("zelda-lttp") && tap(&mut s, Id::Dock(DockId::OpenAnother)) == vec![closed()], "a game: not another");
@@ -542,9 +547,9 @@ mod tests {
     fn home_b_closes_the_bottom_screens_window_with_none_in_front_above() {
         use crate::device::buttons::DeviceKey;
         let mut s = state();
-        s.applied(Event::Windows(vec![shelf_window(false), foot()]));
+        s.observed(vec![shelf_window(false), foot()]);
         s.applied(Event::Device(DeviceKey::WindowDown));
-        s.applied(Event::Windows(vec![shelf_window(true), Window { down: true, visible: true, focused: false, ..foot() }]));
+        s.observed(vec![shelf_window(true), Window { down: true, visible: true, focused: false, ..foot() }]);
         assert!(s.bottom().shows_windows(s.session()));
         assert_eq!(s.applied(Event::Device(DeviceKey::CloseWindow)), vec![Effect::Window(WindowCommand::Close(vec![foot().id]))]);
         // With ClamShell's view on the bottom screen instead, there is nothing to close.

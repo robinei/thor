@@ -33,10 +33,22 @@ start "zelda-lttp"; back -
 Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), "zelda-lttp": >"metroid-zm"
 "metroid-zm": >[CollectionStep(1)]
 "mk-ds", "ff6", "dark-souls", "hades", "celeste": >"metroid-zm"
-== top-played.png (top; the pad on the second screen)
-start Tab(Sysinfo); back -
-== top-switch.png (top; the pad on the second screen)
-start Tab(Sysinfo); back -
+== top-played.png (top; the pad on both screens)
+start "zelda-lttp"; back -
+-- shelf
+Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5), Collection(6): ^"zelda-lttp" v"metroid-zm" <"zelda-lttp" >"metroid-zm"
+"zelda-lttp": ^[ListStep(0)] v"metroid-zm" <[CollectionStep(-1)] >"metroid-zm"
+"metroid-zm": ^"zelda-lttp" v"mk-ds" <"zelda-lttp" >[CollectionStep(1)]
+"mk-ds": ^"metroid-zm" v"ff6" <"zelda-lttp" >"metroid-zm"
+"ff6": ^"mk-ds" v"dark-souls" <"zelda-lttp" >"metroid-zm"
+"dark-souls": ^"ff6" v"hades" <"zelda-lttp" >"metroid-zm"
+"hades": ^"dark-souls" v"celeste" <"zelda-lttp" >"metroid-zm"
+"celeste": ^"hades" vTab(Keyboard) <"zelda-lttp" >"metroid-zm"
+== top-switch.png (top; the pad on both screens)
+start "ff6"; back -
+-- shelf as in top-played.png except
+Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5), Collection(6): ^"mk-ds" v"dark-souls"
+"zelda-lttp": ^[ListStep(-3)]
 == top-actions.png (top; the pad on shelf's actions)
 start Launch; back Focus "ff6"
 -- shelf
@@ -534,12 +546,12 @@ Wifi[8]: ^Wifi[7] vWifi[9] <Tab(Settings) >Wifi(Power)
 Wifi[9]: ^Wifi[8] vWifi[10] <Tab(Settings) >Wifi(Power)
 Wifi[10]: ^Wifi[9] vWifi[11] <Tab(Settings) >Wifi(Power)
 Wifi[11]: ^Wifi[10] vWifi[12] <Tab(Settings) >Wifi(Power)
-== battery.png (bottom; the pad on the second screen)
+== battery.png (bottom; the pad on both screens)
 start Tab(Battery); back -
 -- bar as in bottom.png except
-PadMouse, Tab(Time): ^- vTile(Sleep)
-Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): ^- vTile(ChargeLimit)
-Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vTile(ScreenOff)
+PadMouse, Tab(Time): vTile(Sleep)
+Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vTile(ChargeLimit)
+Tab(Bluetooth), Tab(Wifi), Tab(Battery): vTile(ScreenOff)
 -- screen
 Tile(Sleep): ^PadMouse vBattery(Spender(0)) <Tile(ScreenOff) >PadMouse
 Tile(ScreenOff): ^Tab(Wifi) vBattery(Spender(0)) <Tile(ChargeLimit) >Tile(Sleep)

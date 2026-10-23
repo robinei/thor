@@ -11,6 +11,26 @@ use clamshell_state::session::windows::Window;
 use super::commands;
 use super::ipc::Node;
 
+/// The last tree sent to the state. One tree becomes one batch: closing and replacing a window must
+/// not settle the session between the two changes. It is kept across IPC reconnects.
+#[derive(Default)]
+pub(super) struct Changes {
+    previous: Vec<Window>,
+}
+
+impl Changes {
+    pub(super) fn update(&mut self, mut windows: Vec<Window>) -> clamshell_state::Event {
+        for window in &mut windows {
+            if window.workspace == super::LANDING || window.workspace == crate::sway::BOTTOM {
+                window.workspace.clear();
+            }
+        }
+        let event = clamshell_state::Event::window_changes(&self.previous, &windows);
+        self.previous = windows;
+        event
+    }
+}
+
 /// The windows in a tree: the leaf containers that have a process, with their workspace. `unit` gives a
 /// pid's systemd unit and ancestry.
 pub fn windows(tree: &Node, unit: &mut impl FnMut(u32) -> (Option<String>, Vec<u32>)) -> Vec<Window> {
@@ -32,6 +52,8 @@ fn collect(node: &Node, workspace: &str, unit: &mut impl FnMut(u32) -> (Option<S
             id: node.id,
             app_id: app_id.to_owned(),
             title: node.name.clone().unwrap_or_default(),
+            parent: None,
+            kind: if node.window_properties.is_some() { clamshell_state::WindowKind::X11 } else { clamshell_state::WindowKind::Wayland },
             focused: node.focused,
             unit,
             pids,
@@ -53,7 +75,7 @@ fn collect(node: &Node, workspace: &str, unit: &mut impl FnMut(u32) -> (Option<S
 /// output and `down` the down rules in force.
 pub fn reconcile(windows: &[Window], top: Option<&str>, down: &[DownRule], land: &[Arc<str>], tried: &mut HashSet<(i64, String)>) -> Vec<String> {
     let mut out = Vec::new();
-    let bottom = Instance::Bottom.name();
+    let bottom = crate::sway::BOTTOM.to_owned();
     for w in windows {
         // A window moved to the bottom screen by us, or by a down rule as it opened, is left there.
         if w.down || (w.workspace == bottom && down.iter().any(|r| r.matches(w))) {
@@ -92,6 +114,27 @@ pub fn reconcile(windows: &[Window], top: Option<&str>, down: &[DownRule], land:
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+    use clamshell_state::{Event, WindowEvent};
+
+    #[test]
+    fn only_window_changes_cross_the_backend_boundary() {
+        let mut changes = Changes::default();
+        let one = window(7, "one", None, "1");
+        let two = window(8, "two", None, "2");
+        assert_eq!(
+            changes.update(vec![one.clone(), two.clone()]),
+            Event::WindowBatch(vec![WindowEvent::Opened(one.clone()), WindowEvent::Opened(two.clone()), WindowEvent::Order(vec![7, 8])])
+        );
+        assert_eq!(changes.update(vec![one.clone(), two.clone()]), Event::WindowBatch(vec![]));
+        let renamed = Window { title: "new title".into(), ..two.clone() };
+        assert_eq!(changes.update(vec![one.clone(), renamed.clone()]), Event::WindowBatch(vec![WindowEvent::Title { window: 8, title: "new title".into() }]));
+        let adopted = Window { unit: Some("clamshell-run-two-1-0.scope".into()), ..renamed };
+        assert_eq!(changes.update(vec![one, adopted.clone()]), Event::WindowBatch(vec![WindowEvent::Changed(adopted.clone())]));
+        // A disappeared window closes before the remaining tabs are reordered. The reducer settles once.
+        assert_eq!(changes.update(vec![adopted]), Event::WindowBatch(vec![WindowEvent::Closed(7), WindowEvent::Order(vec![8])]));
+        assert_eq!(changes.update(vec![]), Event::WindowBatch(vec![WindowEvent::Closed(8), WindowEvent::Order(vec![])]));
+        assert_eq!(changes.update(vec![]), Event::WindowBatch(vec![]));
+    }
 
     fn tree(json: &str) -> Node {
         serde_json::from_str(json).unwrap()
@@ -117,6 +160,7 @@ mod tests {
         assert_eq!((w[0].id, w[0].app_id.as_str(), w[0].focused, w[0].unit.as_deref()), (7, "foot", true, Some("clamshell-run-foot_1-1-0.scope")));
         assert_eq!((w[1].app_id.as_str(), w[1].title.as_str(), w[1].unit.as_deref()), ("steam_app_620", "Portal 2", None));
         assert_eq!(w[1].pids, [200, 1000], "its process and its parents");
+        assert_eq!((w[0].kind, w[1].kind), (clamshell_state::WindowKind::Wayland, clamshell_state::WindowKind::X11));
     }
 
     fn window(id: i64, app_id: &str, unit: Option<&str>, workspace: &str) -> Window {
@@ -147,7 +191,7 @@ mod tests {
 
     #[test]
     fn windows_moved_down_stay_and_strays_on_the_bottom_screen_go_up() {
-        let bottom = Instance::Bottom.name();
+        let bottom = crate::sway::BOTTOM.to_owned();
         let ours = "clamshell-run-zelda_1-1-0.scope";
         let down = Window { down: true, ..window(4, "emu", Some(ours), &bottom) };
         let stray = window(5, "foot", None, &bottom);
@@ -158,7 +202,7 @@ mod tests {
 
     #[test]
     fn a_window_a_down_rule_put_on_the_bottom_screen_stays_there() {
-        let bottom = Instance::Bottom.name();
+        let bottom = crate::sway::BOTTOM.to_owned();
         let ours = "clamshell-run-zelda_1-1-0.scope";
         let placed = window(4, "emu", Some(ours), &bottom);
         let rule = DownRule { app_id: "emu".into(), title: None };
@@ -182,6 +226,9 @@ mod tests {
         let shelf = window(1, clamshell_state::session::windows::SHELF_APP_ID, None, "1");
         let mut tried = HashSet::new();
         let asked = reconcile(&[shelf], None, &[], &[], &mut tried);
-        assert_eq!(asked, vec![r#"[con_id=1] move container to workspace "clamshell-shelf"; workspace "clamshell-shelf""#.to_owned()]);
+        assert_eq!(
+            asked,
+            vec![r#"[con_id=1] move container to workspace "clamshell-shelf"; workspace "clamshell-shelf"; [app_id="^clamshell.top$"] focus"#.to_owned()]
+        );
     }
 }

@@ -333,7 +333,7 @@ mod tests {
         crate::testkit::start(&mut s, "desktop:firefox");
         crate::testkit::end(&mut s, "desktop:firefox");
         let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
-        s.applied(Event::Windows(vec![Window { visible: true, ..crate::testkit::win(6, "firefox", &ws, true) }]));
+        s.observed(vec![Window { visible: true, ..crate::testkit::win(6, "firefox", &ws, true) }]);
         let ask = Effect::AskAwake(vec!["awake".into()]);
         // Asked once, 10 s before the screens dim. They go off at 5 minutes and dim 30 s before that.
         assert!(!s.applied(Event::tick(1259)).contains(&ask));

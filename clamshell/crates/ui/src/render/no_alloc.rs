@@ -160,11 +160,14 @@ fn warm_frames_do_not_allocate() {
                 tap(Id::Tab(Tab::Dock)),
                 Event::Units(vec![Instance::Run { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 }]),
                 Event::Units(["clamshell-run-zelda_1-1-0", "clamshell-run-foot_1-1-0"].into_iter().filter_map(Instance::parse).collect()),
-                Event::Windows(vec![
-                    window(5, "retroarch", Some("clamshell-run-zelda_1-1-0.scope"), false),
-                    window(7, "foot", Some("clamshell-run-foot_1-1-0.scope"), true),
-                    window(8, "foot", None, false),
-                ]),
+                Event::window_changes(
+                    &[],
+                    &[
+                        window(5, "retroarch", Some("clamshell-run-zelda_1-1-0.scope"), false),
+                        window(7, "foot", Some("clamshell-run-foot_1-1-0.scope"), true),
+                        window(8, "foot", None, false),
+                    ],
+                ),
             ],
         ),
         (

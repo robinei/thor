@@ -16,7 +16,7 @@ use crate::nav::pad::PadInput;
 use crate::radios::bluetooth::Bluetooth;
 use crate::radios::wifi::Wifi;
 use crate::session::instance::Instance;
-use crate::session::windows::Window;
+use crate::session::windows::{Window, WindowEvent};
 use crate::status::Status;
 use crate::status::battery::Battery;
 use crate::status::metrics::Metrics;
@@ -48,8 +48,10 @@ pub enum Event {
     Shelf(ShelfEvent),
     /// From the launcher thread: a game started by shelf couldn't start, or a video ended.
     Launch(LaunchEvent),
-    /// The compositor's windows, after any change.
-    Windows(Vec<Window>),
+    /// A window's lifecycle or an activation request. Placement is decided by the session.
+    Window(WindowEvent),
+    /// Changes from one backend dispatch, settled together so a replacement doesn't briefly end an app.
+    WindowBatch(Vec<WindowEvent>),
     /// Our running scopes, after any change. These are dock app instances and games started by shelf.
     Units(Vec<Instance>),
     /// The keys of our slices found frozen at start, sent after the first [`Event::Units`]. They are
@@ -278,6 +280,47 @@ macro_rules! into_event {
 into_event!(ListEvent => List, Reading => Reading, PointerEvent => Pointer, Slide => Slide, LevelEvent => Level, ShelfEvent => Shelf, LaunchEvent => Launch, Pointing => Pointing);
 
 impl Event {
+    /// Changes between two backend observations, applied as one dispatch. The backend keeps the
+    /// observations; State receives only the resulting events. Building the batch is outside apply.
+    pub fn window_changes(previous: &[Window], windows: &[Window]) -> Event {
+        let mut events = Vec::new();
+        for old in previous {
+            if !windows.iter().any(|w| w.id == old.id) {
+                events.push(WindowEvent::Closed(old.id));
+            }
+        }
+        for window in windows {
+            let Some(old) = previous.iter().find(|w| w.id == window.id) else {
+                events.push(WindowEvent::Opened(window.clone()));
+                continue;
+            };
+            if old == window {
+                continue;
+            }
+            let mut facts = window.clone();
+            facts.title.clone_from(&old.title);
+            facts.workspace.clone_from(&old.workspace);
+            facts.down = old.down;
+            facts.focused = old.focused;
+            facts.visible = old.visible;
+            if old != &facts {
+                events.push(WindowEvent::Changed(facts));
+            }
+            if old.title != window.title {
+                events.push(WindowEvent::Title { window: window.id, title: window.title.clone() });
+            }
+            let focused = (old.focused != window.focused).then_some(window.focused);
+            let visible = (old.visible != window.visible).then_some(window.visible);
+            if focused.is_some() || visible.is_some() {
+                events.push(WindowEvent::Presentation { window: window.id, focused, visible });
+            }
+        }
+        if !previous.iter().map(|w| w.id).eq(windows.iter().map(|w| w.id)) {
+            events.push(WindowEvent::Order(windows.iter().map(|w| w.id).collect()));
+        }
+        Event::WindowBatch(events)
+    }
+
     /// A tick at `secs` on both clocks, for tests and demos where the clocks never jump.
     pub fn tick(secs: u64) -> Event {
         Event::Tick { unix_secs: secs, mono_secs: secs }

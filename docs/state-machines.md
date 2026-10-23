@@ -10,8 +10,58 @@ pass confirmed its suspicions with probe tests in a scratch copy.
 
 ## Session: launches (session/)
 
+### Window lifecycle and placement
+
+`Event::Window` applies one change; `WindowBatch` applies one backend dispatch before settling once.
+State commits placement and selection during `apply`. A compositor reads `Window::place`,
+`Session::top_window`, `bottom_window` and `keyboard_focus` immediately after it returns. Home groups
+are strings shared with the sway executor, not physical output locations: a window below retains its
+home group. `Window.focused` records the selected top content; keyboard focus is independent and may
+belong to a bottom client or ClamShell's UI (`None`).
+
+`Opened` supplies identity and optional initial backend presentation. State resolves the home from a
+known parent, library app id, owner or launch scope before returning. A known parent's bottom placement
+is inherited. `Changed` updates only identity (app id, unit, process ancestry, parent and client kind);
+it cannot undo placement or change title. `Title` is independent. Sway translates stable tree snapshots
+into sparse changes; unchanged observations cannot overwrite a newer state decision.
+
+| From | Event / condition | To | Effects | Test |
+|---|---|---|---|---|
+| absent | Opened | present, home assigned synchronously | Move before exact Focus when needed | windows `lifecycle_open_and_close_follow_launch_ownership`, `a_scope_window_and_its_rule_are_placed_before_the_scope_is_listed` |
+| present | duplicate Opened | unchanged | — | windows `lifecycle_messages_keep_one_window_and_ignore_late_messages` |
+| present | Title | updated title | matching bottom rule sends Down once | windows `lifecycle_title_applies_a_bottom_rule_once` |
+| present | Changed | updated identity, same place and selection | ownership rules may assign its home | windows `stale_identity_facts_cannot_undo_a_placement` |
+| present | Closed | absent; select remaining tab or recent top group, shelf last | exact Focus or ShowShelf when a group empties | windows `lifecycle_close_falls_back_once_and_retains_the_other_windows`; front tests |
+| absent | late Closed, Title, Changed, Activate or keyboard focus | unchanged | — | windows `lifecycle_messages_keep_one_window_and_ignore_late_messages`, `backend_changes_preserve_titles_and_tab_order`, `keyboard_focus_is_independent_of_both_screens_selected_content` |
+| present on top | validated Activate | selected now | thaw/resume owner before exact Focus or ShowShelf | windows `activation_selects_the_window_on_its_screen`, `activation_thaws_a_suspended_owner_before_selecting_its_window` |
+| present below | validated Activate | bottom shows this window now | thaw/resume owner, ShowDown | same |
+| either screen selected | KeyboardFocus(Some(live id)) or None | keyboard target changes, content stays | — | windows `keyboard_focus_is_independent_of_both_screens_selected_content` |
+| top | Down | below, retains home; another top tab or shelf selected | Down, then front fallback if needed | bottom tests; windows `a_hidden_group_keeps_its_selection_and_closing_it_selects_the_next_window` |
+| below | Up | top at retained home, selected now | Up to explicit home | bottom tests |
+| any | Presentation / Order from sway | supplied observations / traversal order applied | normal selection and ownership rules | windows `backend_changes_preserve_titles_and_tab_order` |
+| front launch waiting | Home or another explicit selection | foreground intent cancelled | navigation's own effects | windows `home_cancels_a_launchs_late_request_to_take_the_front`, `activating_another_window_cancels_a_launchs_late_request_to_take_the_front` |
+
+The foreground launch intent (`front_launch`) and two-second replacement history are domain rules:
+an explicitly requested launch may show its first window, and a splash may be replaced without losing
+its place. They are not acknowledgements of sway commands. Placement and exact focus commands remain
+effects for the sway executor; the in-process compositor reads the committed state instead.
+
+Live ids are unique, at most one top window is selected and one bottom window visible, remembered
+selections belong to their home groups, and keyboard focus names a live window or none. The randomized
+event-sequence test checks these after every event, including lifecycle, activation and keyboard focus.
+The allocation test includes repeated lifecycle events and activation with live bottom rules.
+
+Sway's requested-layout mirror retries failed placement/focus without becoming the source of policy.
+Acknowledged focus accepts later user tab selection; late group moves leave bottom windows below.
+Pure `sway::desired` tests cover failures, reconnects and idempotent acknowledgements. The nested-sway
+suite checks real IPC placement and focus; the VM suite checks session adoption, input routes and
+services. Parent inheritance is checked in state tests; sway does not report protocol parents, so the
+nested compositor must exercise that path with real clients in phase 2.
+
+### Launches
+
 State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Windows{since, until}`,
-`seen`, `app_id`, `tray`), `units`, `pending_show`, `quitting`.
+`seen`, `app_id`, `tray`), `units`, `front_launch`, `quitting`.
 
 | From | Event / condition | To | Effects | Test |
 |---|---|---|---|---|
@@ -19,12 +69,12 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Idle | Play of another tool | Idle | `Tool` | running `play_of_a_tool_asks_for_it_and_of_an_unknown_id_does_nothing` |
 | Idle | Play of a group | Idle | shelf reveals it, `ShowShelf` | dock `shelf_pins_and_unpins_any_entry_…` |
 | Idle | Play of an id not in the library | Idle | nothing | same |
-| Idle | Play, OpenAnother, autostart, a Steam game found by app id | Launching | runner resumed if paused; `Save(Resume)`; `Launch`; `pending_show` if in front; Starting notice (from Play) | tests `a_launch_says_it_is_starting`; background `a_runner_paused_together…` |
+| Idle | Play, OpenAnother, autostart, a Steam game found by app id | Launching | runner resumed if paused; `Save(Resume)`; `Launch`; `front_launch` if in front; Starting notice (from Play) | tests `a_launch_says_it_is_starting`; background `a_runner_paused_together…` |
 | Launching | the same launched again | Launching | nothing | running `an_entry_runs_its_plays_count_…` |
 | Launching | `Units` lists its instance | Running(Ours) | second screen may go dark again | running `a_launch_runs_while_a_scope_…`; tests `…start_and_end_come_to_the_same_in_any_order` |
 | Launching | LaunchFailed, browsed file or app-id launch | Running(Windows, unseen, until now+15 s) | — | running `a_file_handed_to_another_program_…` (browsed); `a_failed_launch_known_by_app_id_waits_for_its_window` |
 | Launching | LaunchFailed otherwise | Idle | NotStarted notice | tests `a_launch_that_didnt_start_says_so` |
-| Launching | no answer from the launcher in 30 s | Idle | NotStarted notice; `pending_show` cleared | running `a_launch_never_answered_is_given_up` |
+| Launching | no answer from the launcher in 30 s | Idle | NotStarted notice; `front_launch` cleared | running `a_launch_never_answered_is_given_up` |
 | Idle | LaunchFailed of no launch waiting (a late answer to one given up) | Idle | nothing | running `a_launch_failure_after_it_was_given_up_says_nothing` |
 | Idle | `Units` lists a scope of a library entry (an earlier ClamShell) | Running(Ours) | — | running `entries_started_before_clamshell_…` |
 | Idle | `Units` lists a scope of a key not in the library, a window or tray icon in it | Running(Ours), as found, named by the name whose key is the scope's (until a window or icon comes, nothing) | — | found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
@@ -39,7 +89,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Running(Windows, unseen) | a new stray window before `until` | Running(Windows, seen) | Move, Focus | running `a_file_handed_…` |
 | Running(Windows, unseen) | past `until` | Idle, no play | — | running `a_file_handed_…` |
 | Running(Windows, seen) | no windows left | Idle | `RecordPlay` from `since` | running `an_app_handed_over_…` |
-| Running | Show / Play | same | thaw, runner resumed, Focus; else tray Activate and `pending_show`; else NoWindow notice | background `pauses_hidden_thawed_…`; dock `running_entries_join_the_dock…` |
+| Running | Show / Play | same | thaw, runner resumed, Focus; else tray Activate and `front_launch`; else NoWindow notice | background `pauses_hidden_thawed_…`; dock `running_entries_join_the_dock…` |
 | Running | Show when every window is moved down | same | thaw, runner resumed; the bottom screen shows them (`ShowDown`) | running `show_of_an_entry_whose_windows_are_all_below_shows_them_there` |
 | Running | Quit | Quitting | thaw, Close(windows) | running `quit_closes_the_windows_then_ends_…` |
 | Quitting | windows gone, still runs | Quitting(ended) | EndRun, or EndProcesses (found, own pid) | same |
@@ -54,7 +104,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 |---|---|---|
 | settle: the front workspace has no window left | Focus the most recent top workspace, else ShowShelf; remember it 2 s | front `a_closed_window_goes_back_…` |
 | settle: within 2 s a window reappears there | Focus it | front `a_window_in_front_replaced_at_once_…` |
-| settle: `pending_show` and its window arrived | Focus, cleared | tests `a_launchs_first_window_is_shown_before_…` |
+| settle: `front_launch` and its window arrived | Focus, cleared | tests `a_launchs_first_window_is_shown_before_…` |
 | Home, shelf not in front | ShowShelf | front `home_goes_to_shelf_…` |
 | Home, shelf in front | Focus the most recent other workspace (Device view open: close it first) | front tests; device `home_closes_the_device_view_first` |
 | settle: program in force | the focused top window's owner, else the kept one if it runs, else the last running | running `the_settings_follow_the_front`, `the_program_in_force_falls_back_to_the_last_started` |
@@ -377,8 +427,10 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    the focus ring shows only when the route is Ui, or after a hold on shelf's selected entry opened its
    actions with the pad elsewhere, until the next touch hides it (the ring is what shows the actions are
    open, S24; the focus may move meanwhile, as when the Device view opens).
-4. **Session:** running ids unique, at most one launch waiting per entry; no launching instance listed in
-   units; Ours ⇒ its scope is listed; Found ⇒ not; program in force is running and is the focused
+4. **Session:** live window ids and running ids unique; at most one selected top window and one visible
+   bottom window; remembered selections belong to their top groups; keyboard focus is absent or names
+   a live window; at most one launch waiting per entry; no launching instance listed in
+   units; Ours ⇒ its scope is listed; Found ⇒ not; program in force is running and is the selected top
    window's owner when it has one; quitting ⇒ running and not paused; paused ⇒ Ours; suspended ⇒ paused.
 5. **Dock:** ids unique; every running entry is on it; every item is pinned, running or being moved.
 6. **Shelf:** the cursor within the list; `selected` is the entry at the cursor; the collection index in

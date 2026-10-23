@@ -266,7 +266,7 @@ mod tests {
     fn a_text_field_brings_up_the_keyboard_and_back() {
         let mut s = state();
         tap(&mut s, Id::Tab(Tab::Touchpad));
-        s.applied(Event::Windows(vec![foot()]));
+        s.observed(vec![foot()]);
         let fx = s.applied(Event::TextInput(true));
         assert_eq!(s.bottom().tab(), Tab::Keyboard);
         assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Keys)]);
@@ -279,7 +279,7 @@ mod tests {
     #[test]
     fn a_tab_chosen_while_the_keyboard_is_up_stays() {
         let mut s = state();
-        s.applied(Event::Windows(vec![foot()]));
+        s.observed(vec![foot()]);
         // Even the keyboard's own.
         s.applied(Event::TextInput(true));
         tap(&mut s, Id::Tab(Tab::Keyboard));
@@ -308,7 +308,7 @@ mod tests {
     fn a_text_field_done_leaves_an_editor_on_the_keyboard_open() {
         let mut s = state();
         tap(&mut s, Id::Tab(Tab::Dock));
-        s.applied(Event::Windows(vec![foot()]));
+        s.observed(vec![foot()]);
         s.applied(Event::TextInput(true));
         s.applied(Event::EditOnKeyboard(rename("b")));
         s.applied(Event::TextInput(false));

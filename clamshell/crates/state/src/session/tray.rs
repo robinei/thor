@@ -130,7 +130,7 @@ impl Session {
         let Some(r) = self.running(entry) else {
             return false;
         };
-        self.pending_show = Some(Instance::Run { key: r.key.clone(), secs: clock.unix(), n: 0 });
+        self.front_launch = Some(Instance::Run { key: r.key.clone(), secs: clock.unix(), n: 0 });
         out.effects.push(Effect::Tray(TrayCommand::Activate(key)));
         true
     }
@@ -175,7 +175,7 @@ mod tests {
         let mut s = started(crate::Init { device_session: true, ..init() });
         tap(&mut s, Id::Tab(crate::Tab::Dock));
         let shelf = win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), true);
-        s.applied(Event::Windows(vec![shelf.clone()]));
+        s.observed(vec![shelf.clone()]);
         // The icon of a running entry, whose process is in the entry's scope, gives that entry its menu.
         let zelda = launch(&mut s, "zelda-lttp");
         let zelda_icon = item(":1.5/a", "zelda3", zelda.unit().as_deref());
@@ -200,13 +200,14 @@ mod tests {
         let at = s.dock().items().iter().position(|i| &*i.id == "desktop:firefox").unwrap() as u16;
         assert_eq!(tap_dock(&mut s, DockId::Entry(at)), vec![Effect::Tray(TrayCommand::Activate(":1.9/b".into()))]);
         let window = Window { pids: vec![900, 77], ..win(6, "firefox", &Instance::Shelf.name(), true) };
-        let fx = s.applied(Event::Windows(vec![shelf.clone(), window.clone()]));
+        let fx = s.observed(vec![shelf.clone(), window.clone()]);
         assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![6], to: ws.clone() })), "{fx:?}");
+        assert!(fx.contains(&Effect::Window(WindowCommand::FocusWindow(6))), "shown without waiting for sway: {fx:?}");
         let moved = Window { workspace: ws.clone(), ..window };
-        let fx = s.applied(Event::Windows(vec![shelf.clone(), moved.clone()]));
-        assert!(fx.contains(&Effect::Window(WindowCommand::Focus(ws.clone()))), "{fx:?}");
+        let fx = s.observed(vec![shelf.clone(), moved.clone()]);
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::FocusWindow(_)))), "already shown: {fx:?}");
         // With its window open, a tap shows it.
-        assert_eq!(tap_dock(&mut s, DockId::Entry(at)), vec![Effect::Window(WindowCommand::Focus(ws.clone()))]);
+        assert_eq!(tap_dock(&mut s, DockId::Entry(at)), vec![Effect::Window(WindowCommand::FocusWindow(6)), Effect::PadRoute(crate::PadRoute::Game)]);
         // Its corner mark opens its menu. A submenu opens, Back goes up, and clicking an entry closes the
         // menu.
         tap_dock(&mut s, DockId::Tray(at));
@@ -221,7 +222,7 @@ mod tests {
         // Quit closes its windows, then asks its process to end. Force kill kills it.
         let id: Arc<str> = "desktop:firefox".into();
         assert_eq!(quit(&mut s, &id), vec![Effect::Window(WindowCommand::Close(vec![6]))]);
-        let fx = s.applied(Event::Windows(vec![shelf.clone()]));
+        let fx = s.observed(vec![shelf.clone()]);
         assert!(fx.contains(&Effect::EndProcesses { pids: vec![77], force: false }), "{fx:?}");
         assert_eq!(force_kill(&mut s, "desktop:firefox"), vec![Effect::EndProcesses { pids: vec![77], force: true }]);
         // With its icon gone and no window, it has ended.
@@ -292,7 +293,7 @@ mod tests {
         crate::testkit::end(&mut s, "desktop:firefox");
         // Waydroid's session shows Firefox and the terminal, in one process.
         let in_waydroid = |id, app_id: &str| Window { pids: vec![700], unit: Some("waydroid-session.scope".into()), ..win(id, app_id, "1", false) };
-        s.applied(Event::Windows(vec![in_waydroid(5, "firefox"), in_waydroid(6, "foot")]));
+        s.observed(vec![in_waydroid(5, "firefox"), in_waydroid(6, "foot")]);
         assert_eq!(s.session().running("desktop:foot").map(Running::pid), Some(None));
         // An icon of that process named like the terminal's desktop file is the terminal's.
         s.applied(Event::Tray(vec![TrayItem { pid: Some(700), ..item(":1.8/d", "foot", Some("waydroid-session.scope")) }]));
@@ -300,7 +301,7 @@ mod tests {
         assert_eq!((r.tray().map(|k| &**k), r.pid()), (Some(":1.8/d"), None), "its icon, not the process");
         let id: Arc<str> = "desktop:foot".into();
         assert_eq!(quit(&mut s, &id), vec![Effect::Window(WindowCommand::Close(vec![6]))]);
-        let fx = s.applied(Event::Windows(vec![in_waydroid(5, "firefox")]));
+        let fx = s.observed(vec![in_waydroid(5, "firefox")]);
         assert!(!fx.iter().any(|e| matches!(e, Effect::EndProcesses { .. })), "{fx:?}");
     }
 

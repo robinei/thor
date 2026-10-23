@@ -209,7 +209,7 @@ mod tests {
         let run = Instance::Run { key, secs: 1, n: 1 };
         state.apply(Event::Units(vec![run.clone()]), &mut effects);
         let window = Window { id: 5, app_id: "game".into(), focused: true, visible: true, workspace: run.workspace(), ..Window::default() };
-        state.apply(Event::Windows(vec![window]), &mut effects);
+        state.apply(Event::window_changes(state.session().windows(), &[window]), &mut effects);
         state.apply(Event::Device(DeviceKey::BottomPower), &mut effects);
         let session = state.session();
         assert!(state.bottom().off() && session.windows().iter().any(|w| w.focused && session.running_of(w).is_some()));

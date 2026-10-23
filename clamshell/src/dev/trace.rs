@@ -3,7 +3,7 @@
 //! leaves out payloads such as settings, environments and readings, which other tests cover.
 
 use clamshell_state::shelf::files::BrowseCommand;
-use clamshell_state::{Effect, Event, Save, WindowCommand};
+use clamshell_state::{Effect, Event, Save, WindowCommand, WindowEvent};
 
 /// The longest Debug text kept whole. A longer one is cut to its kind.
 const SHORT: usize = 72;
@@ -25,10 +25,24 @@ pub fn event(event: &Event) -> String {
         Event::Tick { unix_secs, .. } => format!("Tick {unix_secs}"),
         Event::Reading(r) => format!("Reading {}", short(r).split('(').next().unwrap_or_default()),
         Event::Units(units) => format!("Units [{}]", units.iter().filter_map(|u| u.key()).collect::<Vec<_>>().join(", ")),
-        Event::Windows(windows) => format!("Windows [{}]", windows.iter().map(|w| format!("{} on {}", w.app_id, w.workspace)).collect::<Vec<_>>().join(", ")),
+        Event::Window(change) => window_change(change),
+        Event::WindowBatch(changes) => format!("Windows [{}]", changes.iter().map(window_change).collect::<Vec<_>>().join(", ")),
         Event::Library(_) => "Library".into(),
         Event::Meta { id, .. } => format!("Meta {id}"),
         other => short(other),
+    }
+}
+
+fn window_change(change: &WindowEvent) -> String {
+    match change {
+        WindowEvent::Opened(w) => format!("open {} on {}", w.app_id, w.workspace),
+        WindowEvent::Closed(id) => format!("close {id}"),
+        WindowEvent::Title { window, .. } => format!("title {window}"),
+        WindowEvent::Changed(w) => format!("changed {} on {}", w.app_id, w.workspace),
+        WindowEvent::Presentation { window, focused, visible } => format!("presentation {window} focus={focused:?} visible={visible:?}"),
+        WindowEvent::Order(ids) => format!("order {ids:?}"),
+        WindowEvent::Activate(id) => format!("activate {id}"),
+        WindowEvent::KeyboardFocus(id) => format!("keyboard focus {id:?}"),
     }
 }
 
@@ -70,7 +84,7 @@ fn save(save: &Save) -> String {
 fn window(command: &WindowCommand) -> String {
     match command {
         WindowCommand::DownRules(rules) => format!("DownRules {} rules", rules.len()),
-        WindowCommand::LandRules(ids) => format!("LandRules {} app ids", ids.len()),
+        WindowCommand::KnownApps(ids) => format!("KnownApps {} app ids", ids.len()),
         other => short(other),
     }
 }

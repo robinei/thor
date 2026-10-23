@@ -293,6 +293,7 @@ fn the_keymap_screens_stay_with_their_tab_and_listen_only_in_view() {
     assert_eq!((s.keymapping().screen(), s.keymapping().edit().selected), (Some(Screen::Edit(1)), Some(Input::Button(Button::LB))));
     // A game in front keeps the pad.
     crate::testkit::start(&mut s, "zelda-lttp");
+    show_window(&mut s, "zelda-lttp", 7);
     assert_eq!(s.pad().route(), PadRoute::Game);
     s.applied(Event::Listened(Input::Button(Button::A)));
     assert_eq!(s.keymapping().screen(), Some(Screen::Edit(1)), "not listening: nothing");

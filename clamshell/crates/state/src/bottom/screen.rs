@@ -39,7 +39,7 @@ pub struct WindowRule {
 
 impl WindowRule {
     fn matches(&self, owner: &str, w: &Window) -> bool {
-        &*self.owner == owner && self.down_rule().matches(w)
+        &*self.owner == owner && matches_window(&self.app_id, self.title.as_deref(), w)
     }
 
     /// What sway can match a window by: its app id and title, but not which program it belongs to.
@@ -58,8 +58,12 @@ pub struct DownRule {
 
 impl DownRule {
     pub fn matches(&self, w: &Window) -> bool {
-        self.app_id == w.app_id && self.title.as_ref().is_none_or(|t| *t == w.title)
+        matches_window(&self.app_id, self.title.as_deref(), w)
     }
+}
+
+fn matches_window(app_id: &str, title: Option<&str>, w: &Window) -> bool {
+    app_id == w.app_id && title.is_none_or(|t| t == w.title)
 }
 
 /// The rules for which programs' windows go to the bottom screen.
@@ -233,11 +237,11 @@ impl Bottom {
 
     /// Home+Down moves the window in front on the top screen to the bottom screen, shows it there, and
     /// remembers it for its program.
-    pub(crate) fn window_down(&mut self, session: &Session, now: u64, out: &mut Out) {
-        let Some(w) = session.windows().iter().find(|w| w.focused && !w.down && !w.is_shelf()) else {
+    pub(crate) fn window_down(&mut self, session: &mut Session, now: u64, out: &mut Out) {
+        let Some(w) = session.windows().iter().find(|w| w.focused && !w.down && !w.is_shelf()).cloned() else {
             return;
         };
-        self.show_down(w.id, out);
+        self.show_down(w.id, session, out);
         // Sent down already, so the rule added below doesn't send it again.
         if !self.sent_down.contains(&w.id) {
             self.sent_down.push(w.id);
@@ -246,7 +250,7 @@ impl Bottom {
         // app id.
         let others = session.windows().iter().any(|o| o.id != w.id && o.app_id == w.app_id && o.unit == w.unit);
         let title = others.then(|| w.title.clone());
-        if let Some(owner) = session.owner_of(w)
+        if let Some(owner) = session.owner_of(&w)
             && self.window_rules.add(WindowRule { owner, app_id: w.app_id.clone(), title })
         {
             self.window_rules_changed(true, now, out);
@@ -254,25 +258,25 @@ impl Bottom {
     }
 
     /// Moves a window down and shows it there, turning the bottom screen on again if it was off.
-    fn show_down(&mut self, id: i64, out: &mut Out) {
+    pub(crate) fn show_down(&mut self, id: i64, session: &mut Session, out: &mut Out) {
         self.screen.windows = true;
-        out.effects.push(Effect::Window(WindowCommand::Down(id)));
+        session.command(WindowCommand::Down(id), out);
         self.screen.off = false;
     }
 
     /// Home+Up moves the window the bottom screen shows (the tab in view) back to its place on the top
     /// screen, and forgets its rule. The bottom screen then shows the next tab, or ClamShell's view after
     /// the last one.
-    pub(crate) fn window_up(&mut self, session: &Session, now: u64, out: &mut Out) {
+    pub(crate) fn window_up(&mut self, session: &mut Session, now: u64, out: &mut Out) {
         if !self.shows_windows(session) {
             return;
         }
-        let Some(w) = session.windows_down().find(|w| w.visible).or_else(|| session.windows_down().next()) else {
+        let Some(w) = session.windows_down().find(|w| w.visible).or_else(|| session.windows_down().next()).cloned() else {
             return;
         };
-        out.effects.push(Effect::Window(WindowCommand::Up { window: w.id, to: w.home() }));
-        if let Some(owner) = session.owner_of(w)
-            && self.window_rules.forget(&owner, w)
+        session.command(WindowCommand::Up { window: w.id, to: w.workspace.clone() }, out);
+        if let Some(owner) = session.owner_of(&w)
+            && self.window_rules.forget(&owner, &w)
         {
             self.window_rules_changed(false, now, out);
         }
@@ -307,9 +311,9 @@ impl Bottom {
 
     /// A tap on a program whose windows are all on the bottom screen shows them there, with its first
     /// tab in view, turning the bottom screen on again if it was off by hand.
-    pub(crate) fn show_program_down(&mut self, window: i64, out: &mut Out) {
+    pub(crate) fn show_program_down(&mut self, window: i64, session: &mut Session, out: &mut Out) {
         self.screen.windows = true;
-        out.effects.push(Effect::Window(WindowCommand::ShowDown(window)));
+        session.command(WindowCommand::ShowDown(window), out);
         self.screen.off = false;
     }
 
@@ -332,17 +336,23 @@ impl Bottom {
     }
 
     /// Runs after every event. A window whose program has a rule for it is sent down, once.
-    pub(crate) fn follow_window_rules(&mut self, session: &Session, out: &mut Out) {
+    pub(crate) fn follow_window_rules(&mut self, session: &mut Session, library: &crate::Library, out: &mut Out) {
         let wanted: Vec<i64> = session
             .windows()
             .iter()
             .filter(|w| !w.down && !self.sent_down.contains(&w.id))
-            .filter(|w| session.owner_of(w).is_some_and(|o| self.window_rules.wants(&o, w)))
+            .filter(|w| {
+                let owner = session.owner_of(w).or_else(|| {
+                    let key = Instance::key_of(&w.workspace)?;
+                    library.entries.iter().find(|g| g.key == key).map(|g| g.id.clone())
+                });
+                owner.is_some_and(|o| self.window_rules.wants(&o, w))
+            })
             .map(|w| w.id)
             .collect();
         for id in wanted {
             self.sent_down.push(id);
-            self.show_down(id, out);
+            self.show_down(id, session, out);
         }
         self.sent_down.retain(|id| session.windows().iter().any(|w| w.id == *id));
     }
@@ -367,9 +377,10 @@ mod tests {
             title: title.into(),
             focused,
             unit: Some(unit.into()),
-            workspace: if down { Instance::Bottom.name() } else { Instance::from_unit(unit).map_or_else(String::new, |i| i.workspace()) },
+            workspace: Instance::from_unit(unit).map_or_else(String::new, |i| i.workspace()),
             down,
             pids: vec![],
+            ..Window::default()
         }
     }
 
@@ -388,7 +399,7 @@ mod tests {
     fn emulator() -> State {
         let mut s = state();
         s.add_run(running("melonds", "melonds_1"), emu());
-        s.applied(Event::Windows(vec![win(1, GAME, "Top", false, false), win(2, GAME, "Bottom", true, false)]));
+        s.observed(vec![win(1, GAME, "Top", false, false), win(2, GAME, "Bottom", true, false)]);
         s
     }
 
@@ -400,7 +411,7 @@ mod tests {
     fn a_programs_only_window_is_remembered_by_its_app_id_alone() {
         let mut s = state();
         s.add_run(running("melonds", "melonds_1"), emu());
-        s.applied(Event::Windows(vec![win(2, GAME, "Page one", true, false)]));
+        s.observed(vec![win(2, GAME, "Page one", true, false)]);
         let fx = key(&mut s, DeviceKey::WindowDown);
         let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: None };
         assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(r)) if r.list() == [rule.clone()]), "{fx:?}");
@@ -422,7 +433,7 @@ mod tests {
         assert_eq!(fx.iter().filter(|e| **e == Effect::Window(WindowCommand::Down(2))).count(), 1, "sent down once, not again by its rule: {fx:?}");
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::BottomRule(true)));
         // sway reports it down, so it is shown there.
-        s.applied(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
+        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
         assert!(s.bottom().shows_windows(s.session()));
         // Home+Select shows ClamShell's view, where Home+Up does nothing, and then the windows again.
         key(&mut s, DeviceKey::BottomView);
@@ -432,9 +443,9 @@ mod tests {
         assert!(s.bottom().shows_windows(s.session()));
         // Up moves it back to its workspace, forgets the rule, and shows ClamShell's view below.
         let fx = key(&mut s, DeviceKey::WindowUp);
-        assert_eq!(fx[0], Effect::Window(WindowCommand::Up { window: 2, to: Some(emu()) }));
+        assert_eq!(fx[0], Effect::Window(WindowCommand::Up { window: 2, to: emu().workspace() }));
         assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(r)) if r.list().is_empty()), "{fx:?}");
-        s.applied(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, false)]));
+        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, false)]);
         assert!(!s.bottom().shows_windows(s.session()), "none down: ClamShell's view");
     }
 
@@ -447,14 +458,14 @@ mod tests {
         // down, once.
         let mut s = crate::testkit::started(crate::Init { window_rules: rules.clone(), ..crate::testkit::init() });
         s.add_run(running("melonds", "melonds_1"), emu());
-        let fx = s.applied(Event::Windows(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)]));
+        let fx = s.observed(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)]);
         assert!(fx.contains(&Effect::Window(WindowCommand::Down(6))), "{fx:?}");
         assert!(!fx.contains(&Effect::Window(WindowCommand::Down(5))));
-        let fx = s.applied(Event::Windows(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)]));
+        let fx = s.observed(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)]);
         assert!(!fx.contains(&Effect::Window(WindowCommand::Down(6))), "asked once");
         // Its window appears before its scope is listed, and is sent down when the scope appears.
         let mut s = crate::testkit::started(crate::Init { window_rules: rules.clone(), ..crate::testkit::init() });
-        let fx = s.applied(Event::Windows(vec![win(8, GAME, "Bottom", true, false)]));
+        let fx = s.observed(vec![win(8, GAME, "Bottom", true, false)]);
         assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Down(_)))), "no entry yet: {fx:?}");
         s.add_run(running("melonds", "melonds_1"), emu());
         let fx = s.applied(Event::Units(vec![emu()]));
@@ -463,7 +474,7 @@ mod tests {
         key(&mut s, DeviceKey::WindowDown);
         // Another game's window with that title doesn't match the rule.
         s.add_run(running("other", "other_2"), Instance::Run { key: "other_2".into(), secs: 5, n: 2 });
-        let fx = s.applied(Event::Windows(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom", false, false)]));
+        let fx = s.observed(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom", false, false)]);
         assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Down(_)))), "{fx:?}");
     }
 
@@ -471,23 +482,23 @@ mod tests {
     fn two_windows_down_are_tabs_and_the_one_in_view_comes_back_up() {
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
-        s.applied(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
+        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
         key(&mut s, DeviceKey::WindowDown);
         let hidden = |w: Window| Window { visible: false, ..w };
-        s.applied(Event::Windows(vec![win(1, GAME, "Top", false, true), hidden(win(2, GAME, "Bottom", false, true))]));
+        s.observed(vec![win(1, GAME, "Top", false, true), hidden(win(2, GAME, "Bottom", false, true))]);
         let fx = key(&mut s, DeviceKey::WindowUp);
-        assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 1, to: Some(emu()) })), "the tab in view: {fx:?}");
-        s.applied(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
+        assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 1, to: emu().workspace() })), "the tab in view: {fx:?}");
+        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
         assert!(s.bottom().shows_windows(s.session()), "the other tab");
         let fx = key(&mut s, DeviceKey::WindowUp);
-        assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 2, to: Some(emu()) })), "{fx:?}");
+        assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 2, to: emu().workspace() })), "{fx:?}");
     }
 
     #[test]
     fn the_front_programs_windows_hidden_below_are_offered_and_shown() {
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
-        s.applied(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
+        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
         assert_eq!(s.bottom().hidden_down(s.session()), None, "shown");
         key(&mut s, DeviceKey::BottomView);
         assert_eq!(s.bottom().hidden_down(s.session()), Some(2), "ClamShell's view over them");
@@ -496,11 +507,7 @@ mod tests {
         assert!(s.bottom().shows_windows(s.session()));
         // With another program in front, the bar doesn't offer these windows.
         key(&mut s, DeviceKey::BottomView);
-        s.applied(Event::Windows(vec![
-            win(1, GAME, "Top", false, false),
-            win(2, GAME, "Bottom", false, true),
-            win(3, "clamshell-run-x_1-1-0.scope", "x", true, false),
-        ]));
+        s.observed(vec![win(1, GAME, "Top", false, false), win(2, GAME, "Bottom", false, true), win(3, "clamshell-run-x_1-1-0.scope", "x", true, false)]);
         assert_eq!(s.bottom().hidden_down(s.session()), None);
     }
 
@@ -591,7 +598,7 @@ mod tests {
         let mut s = emulator();
         on_battery(&mut s, true);
         key(&mut s, DeviceKey::WindowDown);
-        s.applied(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
+        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
         s.applied(Event::tick(1000));
         assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), None, "a window shown there");
     }
@@ -639,7 +646,7 @@ mod tests {
         // Windows moved there are watched without touching, so they are never dimmed.
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
-        s.applied(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
+        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
         s.applied(Event::tick(5000));
         s.applied(Event::tick(5000 + 2 * DIM_AFTER));
         assert!(s.bottom().shows_windows(s.session()) && !s.bottom().dimmed());
@@ -662,7 +669,7 @@ mod tests {
     fn window_down_with_no_window_in_front_does_nothing() {
         let mut s = state();
         assert_eq!(key(&mut s, DeviceKey::WindowDown), vec![], "no windows");
-        s.applied(Event::Windows(vec![crate::testkit::shelf_window(true), crate::testkit::win(2, "foot", "1", false)]));
+        s.observed(vec![crate::testkit::shelf_window(true), crate::testkit::win(2, "foot", "1", false)]);
         assert_eq!(key(&mut s, DeviceKey::WindowDown), vec![], "shelf in front");
         assert!(s.bottom().window_rules().list().is_empty());
     }
@@ -672,7 +679,7 @@ mod tests {
     fn a_window_moved_up_says_its_rule_is_forgotten() {
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
-        s.applied(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
+        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
         s.applied(Event::tick(100));
         key(&mut s, DeviceKey::WindowUp);
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::BottomRule(false)));
@@ -718,7 +725,7 @@ mod tests {
     fn showing_the_windows_below_turns_the_screen_on_if_off_by_hand() {
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
-        s.applied(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
+        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
         key(&mut s, DeviceKey::BottomView);
         key(&mut s, DeviceKey::BottomPower);
         assert!(s.bottom().off());

@@ -192,6 +192,11 @@ mod tests {
     use crate::testkit::*;
     use crate::*;
 
+    fn observed_route(s: &mut State, windows: Vec<Window>) -> PadRoute {
+        s.observed(windows);
+        s.pad().route()
+    }
+
     fn route(s: &mut State, event: Event) -> PadRoute {
         s.applied(event);
         s.pad().route()
@@ -227,13 +232,13 @@ mod tests {
         let window = |app_id: &str, unit: Option<&str>| Window { unit: unit.map(Into::into), workspace: String::new(), ..win(1, app_id, "", true) };
         assert_eq!(route(&mut s, Event::tick(1)), PadRoute::Ui, "nothing known, no game: shelf");
         crate::testkit::start(&mut s, "zelda-lttp");
-        assert_eq!(s.pad().route(), PadRoute::Game, "a game runs: in front");
-        assert_eq!(route(&mut s, Event::Windows(vec![window(crate::session::windows::SHELF_APP_ID, None)])), PadRoute::Ui, "shelf in front");
-        assert_eq!(route(&mut s, Event::Windows(vec![window("foot", Some("clamshell-run-foot_1-1-0.scope"))])), PadRoute::Game, "an app: its pad, as a game's");
+        assert_eq!(s.pad().route(), PadRoute::Ui, "shelf keeps the pad until the first window arrives");
+        assert_eq!(observed_route(&mut s, vec![window(crate::session::windows::SHELF_APP_ID, None)]), PadRoute::Ui, "shelf in front");
+        assert_eq!(observed_route(&mut s, vec![window("foot", Some("clamshell-run-foot_1-1-0.scope"))]), PadRoute::Game, "an app: its pad, as a game's");
         assert_eq!(route(&mut s, PointerEvent::Activate(Id::Tab(Tab::Keyboard)).into()), PadRoute::Keys, "an app and the keyboard: typing");
-        assert_eq!(route(&mut s, Event::Windows(vec![window("retroarch", Some("clamshell-run-zelda_1-1-0.scope"))])), PadRoute::Keys, "a game too");
+        assert_eq!(observed_route(&mut s, vec![window("retroarch", Some("clamshell-run-zelda_1-1-0.scope"))]), PadRoute::Keys, "a game too");
         assert_eq!(route(&mut s, PointerEvent::Activate(Id::Tab(Tab::Dock)).into()), PadRoute::Game);
-        let fx = s.applied(Event::Windows(vec![window(crate::session::windows::SHELF_APP_ID, None)]));
+        let fx = s.observed(vec![window(crate::session::windows::SHELF_APP_ID, None)]);
         assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Ui)]);
     }
 
@@ -242,17 +247,17 @@ mod tests {
     #[test]
     fn view_does_nothing_with_shelf_in_front() {
         let mut s = state();
-        s.applied(Event::Windows(vec![win(2, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), true)]));
+        s.observed(vec![win(2, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), true)]);
         assert_eq!(s.pad().route(), PadRoute::Ui);
         assert_eq!(s.applied(Event::PadSwitch), vec![]);
         assert!(s.pad().on_top());
-        assert_eq!(s.applied(Event::Windows(vec![foot()])), vec![Effect::PadRoute(PadRoute::Game)], "not kept on the second screen");
+        assert_eq!(s.observed(vec![foot()]), vec![Effect::PadRoute(PadRoute::Game)], "not kept on the second screen");
     }
 
     #[test]
     fn view_moves_the_pad_between_the_second_screen_and_what_wants_it() {
         let mut s = state();
-        s.applied(Event::Windows(vec![foot()]));
+        s.observed(vec![foot()]);
         tap(&mut s, Id::Tab(Tab::Keyboard));
         assert_eq!(s.pad().route(), PadRoute::Keys);
         assert_eq!(s.applied(Event::PadSwitch), vec![Effect::PadRoute(PadRoute::Ui)], "to the keys on screen");
@@ -272,7 +277,7 @@ mod tests {
         assert_eq!(s.applied(Event::PadSwitch), vec![Effect::PadRoute(PadRoute::Game)]);
         // With shelf in front and the pad in use on the second screen, the pad stays there when the
         // keyboard comes up under it.
-        s.applied(Event::Windows(vec![win(2, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), true)]));
+        s.observed(vec![win(2, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), true)]);
         s.applied(PointerEvent::Focus(Id::Tab(Tab::Dock)).into());
         tap(&mut s, Id::Tab(Tab::Keyboard));
         assert_eq!(s.pad().route(), PadRoute::Ui);
@@ -281,16 +286,16 @@ mod tests {
     #[test]
     fn the_pad_moved_to_the_second_screen_stays_there_until_view_or_shelf() {
         let mut s = state();
-        s.applied(Event::Windows(vec![foot()]));
+        s.observed(vec![foot()]);
         tap(&mut s, Id::Tab(Tab::Dock));
         assert_eq!(route(&mut s, Event::PadSwitch), PadRoute::Ui);
         assert_eq!(route(&mut s, Event::TextInput(true)), PadRoute::Ui, "the keyboard coming up under it: still there");
         assert_eq!(s.bottom().tab(), Tab::Keyboard);
         assert_eq!(route(&mut s, Event::PadSwitch), PadRoute::Keys, "View: back to what claims it, typing now");
         assert_eq!(route(&mut s, Event::PadSwitch), PadRoute::Ui);
-        s.applied(Event::Windows(vec![win(2, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), true)]));
+        s.observed(vec![win(2, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), true)]);
         assert_eq!(s.pad().route(), PadRoute::Ui, "shelf in front");
-        assert_eq!(route(&mut s, Event::Windows(vec![foot()])), PadRoute::Keys, "after shelf, the claimant has it again");
+        assert_eq!(observed_route(&mut s, vec![foot()]), PadRoute::Keys, "after shelf, the claimant has it again");
     }
 
     #[test]
@@ -299,13 +304,14 @@ mod tests {
         s.applied(PointerEvent::Focus(entry("zelda-lttp")).into());
         assert!(s.pointer().show_focus());
         crate::testkit::start(&mut s, "zelda-lttp");
+        show_window(&mut s, "zelda-lttp", 7);
         assert!(!s.pointer().show_focus());
     }
 
     #[test]
     fn moving_a_dock_entry_takes_the_pad_from_the_game() {
         let mut s = state();
-        s.applied(Event::Windows(vec![foot()]));
+        s.observed(vec![foot()]);
         tap(&mut s, Id::Tab(Tab::Dock));
         assert_eq!(s.pad().route(), PadRoute::Game);
         let foot_entry = Instance::Run { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 0 };

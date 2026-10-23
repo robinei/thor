@@ -24,6 +24,7 @@
 //! Without sway there is no window list, because other compositors offer no common way to get one.
 
 mod commands;
+mod desired;
 mod ipc;
 mod windows;
 
@@ -49,23 +50,36 @@ pub use ipc::Error;
 const RETRY: Duration = Duration::from_secs(2);
 /// The most process ancestries to remember, by id and start time. The cache is emptied when it is full.
 const LINEAGES_KEPT: usize = 256;
+/// sway holds app-id windows here until the state has placed them.
+const LANDING: &str = "clamshell-game";
+const BOTTOM: &str = "clamshell-bottom";
 
 lost_on!(Error: io::Error, serde_json::Error);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
+    Focus(i64),
     /// Show a workspace, creating it if new.
     Workspace(String),
     /// Run a job (see [`crate::launch::job`]) for this workspace, without showing it.
-    Launch { workspace: String, job: PathBuf },
+    Launch {
+        workspace: String,
+        job: PathBuf,
+    },
     /// Ask a window to close, as its close button would.
     Close(i64),
     /// Move windows to a workspace on the main screen, without showing it.
-    Move { windows: Vec<i64>, workspace: String },
+    Move {
+        windows: Vec<i64>,
+        workspace: String,
+    },
     /// Move a window to the bottom screen and show it there. It is marked, so it stays.
     Down(i64),
     /// Move a window that was moved down back up, to this workspace or else to the main screen.
-    Up { window: i64, workspace: Option<String> },
+    Up {
+        window: i64,
+        workspace: String,
+    },
     /// Show this window, which was moved to the bottom screen, there.
     ShowDown(i64),
     /// Turn the bottom screen's output on or off.
@@ -187,7 +201,7 @@ impl TopOutput {
     }
 }
 
-/// Follows sway's windows, sending [`Event::Windows`] after each change, and carries out commands. It
+/// Follows sway's windows, sending [`Event::WindowBatch`] after each change, and carries out commands. It
 /// connects again if sway goes away. Returns `None` without sway, when there is no `socket`. `bottom` is
 /// the second screen's output.
 pub fn spawn(socket: Option<PathBuf>, bottom: String, sink: impl Sink) -> io::Result<Option<Worker<Command>>> {
@@ -197,7 +211,9 @@ pub fn spawn(socket: Option<PathBuf>, bottom: String, sink: impl Sink) -> io::Re
     };
     let top = TopOutput { bottom, known: Arc::default() };
     let (down, land) = (DownRules::default(), LandRules::default());
-    let carrier = Carrier { socket: socket.clone(), top: top.clone(), exe: std::env::current_exe()?, down: down.clone(), land: land.clone() };
+    let desired = desired::Desired::default();
+    let carrier =
+        Carrier { socket: socket.clone(), top: top.clone(), exe: std::env::current_exe()?, down: down.clone(), land: land.clone(), desired: desired.clone() };
     let worker = Worker::spawn("sway commands", move |commands: Receiver<Command>| {
         for command in commands {
             if let Err(e) = carrier.carry_out(&command) {
@@ -205,7 +221,7 @@ pub fn spawn(socket: Option<PathBuf>, bottom: String, sink: impl Sink) -> io::Re
             }
         }
     })?;
-    let mut windows = Windows { socket, top, down, land, sink, lineages: HashMap::new(), tried: HashSet::new() };
+    let mut windows = Windows { socket, top, down, land, sink, lineages: HashMap::new(), tried: HashSet::new(), changes: windows::Changes::default(), desired };
     worker::detached("sway windows", move || worker::supervise_alone(&mut windows, RETRY))?;
     Ok(Some(worker))
 }
@@ -213,6 +229,7 @@ pub fn spawn(socket: Option<PathBuf>, bottom: String, sink: impl Sink) -> io::Re
 /// What the command thread needs to carry out commands. The rules are shared with the window thread,
 /// which applies them again when sway restarts.
 struct Carrier {
+    desired: desired::Desired,
     socket: PathBuf,
     top: TopOutput,
     exe: PathBuf,
@@ -223,24 +240,38 @@ struct Carrier {
 impl Carrier {
     /// Carries out one command on a connection of its own, since sway may have restarted since the last.
     fn carry_out(&self, command: &Command) -> Result<(), Error> {
+        let command = self.desired.request(command);
+        if matches!(&command, Command::Move { windows, .. } if windows.is_empty()) {
+            return Ok(());
+        }
         let mut ipc = Ipc::connect(&self.socket)?;
         let (bottom, exe) = (&self.top.bottom, &self.exe);
         let top = self.top.get(&mut ipc);
         let top = top.as_deref();
-        let text = match command {
+        let text = match &command {
             Command::DownRules(rules) => return self.down.apply(&mut ipc, Some(rules.clone()), false, bottom),
             Command::LandRules(ids) => return self.land.apply(&mut ipc, Some(ids.clone()), false),
             Command::Workspace(name) => commands::show(name, top),
+            Command::Focus(id) => commands::focus(*id),
             Command::Launch { workspace, job } => commands::launch(workspace, job, exe, top)?,
             Command::Close(id) => commands::close(*id),
-            Command::Move { windows, workspace } => commands::move_windows(windows, workspace, top),
+            Command::Move { windows, workspace } => {
+                let mut text = commands::move_windows(windows, workspace, top);
+                if let Some(focus) = self.desired.focus_after_move(windows) {
+                    text.push_str("; ");
+                    text.push_str(&focus);
+                }
+                text
+            }
             Command::Down(id) => commands::down(*id, top),
-            Command::Up { window, workspace } => commands::up(*window, workspace.as_deref(), top),
+            Command::Up { window, workspace } => commands::up(*window, Some(workspace), top),
             Command::ShowDown(id) => commands::show_down(*id, top),
             Command::Power(on) => commands::power(bottom, *on),
         };
         if let Some(error) = ipc::refused(&ipc.command(&text)?) {
             log::debug!("sway: {text}: {error}");
+        } else {
+            self.desired.carried_out(&command);
         }
         Ok(())
     }
@@ -248,6 +279,8 @@ impl Carrier {
 
 /// The thread following sway's windows.
 struct Windows<S> {
+    desired: desired::Desired,
+    changes: windows::Changes,
     socket: PathBuf,
     top: TopOutput,
     down: DownRules,
@@ -319,20 +352,28 @@ impl<S: Sink> Service for Windows<S> {
             });
             let top = self.top.get(&mut c.queries);
             let mut moved = false;
-            for command in windows::reconcile(&list, top.as_deref(), &self.down.wanted(), &self.land.wanted(), &mut self.tried) {
-                // Only a move sway carried out brings an event. A refused one brings none.
+            let mut commands = windows::reconcile(&list, top.as_deref(), &self.down.wanted(), &self.land.wanted(), &mut self.tried);
+            if commands.is_empty() {
+                commands = self.desired.reconcile(&list, top.as_deref());
+            }
+            if !commands.is_empty() {
+                // Place before focusing, in one dispatch, so no intermediate empty workspace is drawn.
+                let command = commands.join("; ");
                 match c.queries.command(&command) {
                     Ok(outcomes) => {
                         if let Some(error) = ipc::refused(&outcomes) {
                             log::debug!("sway: {command}: {error}");
                         }
-                        moved |= !outcomes.is_empty() && outcomes.iter().all(|o| o.success);
+                        moved = !outcomes.is_empty() && outcomes.iter().all(|o| o.success);
                     }
                     Err(e) => log::warn!("sway: {command}: {e}"),
                 }
             }
             if !moved {
-                self.sink.send(Event::Windows(list))?;
+                let event = self.changes.update(list);
+                if !matches!(&event, Event::WindowBatch(events) if events.is_empty()) {
+                    self.sink.send(event)?;
+                }
             }
             // Wait for the next window event, and any that came with it.
             loop {

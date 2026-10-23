@@ -15,7 +15,7 @@ what to try first.
   composition. sway (wlroots) never does this, so today every game frame is composited. Smithay already
   attempts rotated scanout and falls back to composition when the hardware refuses.
 - **It removes whole mechanisms, not just sway.** Synchronous placement deletes the landing workspace, the
-  `for_window` rules with their switch variables, marks, stray-window matching and `pending_show`;
+  `for_window` rules with their switch variables, marks and backend placement acknowledgements;
   the on-screen keyboard stops going through uinput; grim, sway's config and the generated output setup
   go; the nested-sway test becomes `cargo test`.
 - **The main risks** are the DRM side on msm (two DSI panels, one in command mode; rotated scanout
@@ -76,15 +76,15 @@ screen capture for other clients, layer-shell for third-party clients, multi-sea
   The compositor renders from that, as the views do: what each output shows, keyboard focus, configure
   sizes, visibility (for idle-inhibit and frame callbacks).
 - Effects shrink to actions (`Close`); placement, focus and moves become state that the compositor reads.
-  Screen power and refresh become one sync-driven `Outputs` effect.
-- Settle loses the steps that only reconciled sway's view with ours (`show_pending`, `show_reopened`,
-  `follow_closed`, `landing_up`, `windows_to_their_entries`, `stray_to_waiting`, `follow_window_rules`);
-  starting entries found by app id and ending windowless ones become rules on `Opened` and `Closed`.
+  Screen power and refresh use the sync-driven output effects introduced in phase 0.
+- State assigns ownership, home groups, bottom rules and selection during apply. Foreground launch intent,
+  replacement history, finding entries by app id and ending windowless entries remain domain rules.
+  Landing workspaces, marks and retrying asynchronous placement belong only to the sway adapter.
 - `apply` runs inside Smithay's dispatch, so the compositor's own effects are queued and carried out after
   dispatch, as the UI already does for events.
 - Title changes allocate (strings); the compositor coalesces them to at most one per frame.
-- About 178 uses of today's window snapshot event in 21 test files, and the state-machines document's
-  sections on launches, the front and the second screen, are rewritten.
+- Phase 1 replaces the window snapshot event in the state and its tests with lifecycle changes and
+  updates the state-machines document's launch, front and second-screen contracts.
 
 ### Drawing
 
@@ -247,10 +247,20 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
 
    Done when the pixel and focus references are unchanged, the trace differs only by those effects, the
    no-alloc tests pass, and the nested-sway test and the VM suite pass.
-1. **The state's new window model, under sway.** Window events (`Opened`, `Closed`, `Title`, `Activate`)
+1. **The state's new window model, under sway. Done, 2026-10-23.** Window events (`Opened`, `Closed`, `Title`, `Activate`)
    and each window's place in the state; `crates/system/src/sway` translates sway's snapshots into those
    events and the places into sway commands, holding the rules, marks and landing workspace. Checked by the
    state's tests, the random test, nested-sway and the VM suite.
+   - Implemented: lifecycle events and atomic batches, synchronous placement, retained home groups below,
+     explicit window selection, independent keyboard focus, and parent/client-kind facts. Sway converts
+     snapshots into sparse changes and executes placement with retry/reconnect reconciliation.
+   - Foreground launch intent and short replacement history remain as backend-independent behavior.
+     Placement effects remain for sway; the compositor reads the same committed state directly.
+   - Validated: `tools/check.sh` (including 342 state tests, randomized sequences, allocation checks,
+     snapshots and rustdoc), nested sway (0 failed), and the VM suite (119 passed, 0 failed).
+     Pixel references are unchanged. Focus references now keep the pad on shelf when a scope has no
+     window; trace changes record lifecycle inputs and selection at window arrival rather than scope
+     arrival. Phase 2 can begin.
 2. **The compositor, nested and headless,** implementing the same model synchronously: xdg-shell, Xwayland
    with the X11 adapter, input routing, the on-screen keyboard through text-input, the clipboard,
    screenshots, idle-inhibit. Developed with `clamshell --nested` on the desktop (real Steam and Proton on

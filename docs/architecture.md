@@ -69,6 +69,20 @@ How areas cooperate:
    was last sent (`Sent`); only differences become effects, in one fixed order. Effects that are
    commands (launch, quit, save) come from the rules; effects that describe a condition come from sync.
 
+## Windows
+
+The session owns each window's home group, top or bottom placement, and the selected content on both
+screens. Keyboard focus is separate and may name either screen's client or ClamShell's UI. Individual
+lifecycle events update window facts; batches settle one backend dispatch atomically. Placement is
+committed during `State::apply`, so the planned in-process compositor can read it before configuring
+a new window.
+
+The current sway executor converts tree snapshots into sparse lifecycle and presentation changes and
+translates placement effects into IPC commands. Landing workspaces, marks, rules and retrying failed
+placement belong to that adapter. A metadata change cannot restore an old placement. Foreground launch
+intent and recent-group history remain session rules shared by both backends. The detailed transitions
+and their tests are in `docs/state-machines.md`; the migration stages are in `docs/compositor-mvp.md`.
+
 ## The UI
 
 - **Core and host.** `ui::Core` is the UI without a backend: the state and the event queue, input routed

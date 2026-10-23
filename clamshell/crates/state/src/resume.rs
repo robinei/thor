@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn a_keyboard_a_text_field_brought_up_isnt_saved_as_the_tab() {
         let mut s = state();
-        s.applied(Event::Windows(vec![foot()]));
+        s.observed(vec![foot()]);
         tap(&mut s, Id::Tab(Tab::Dock));
         s.applied(Event::TextInput(true));
         assert_eq!(s.bottom().tab(), Tab::Keyboard);

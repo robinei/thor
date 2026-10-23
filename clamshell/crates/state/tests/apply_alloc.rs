@@ -10,7 +10,7 @@ use std::cell::Cell;
 use clamshell_state::radios::wifi::{Network, Wifi};
 use clamshell_state::session::windows::Window;
 use clamshell_state::status::metrics::Metrics;
-use clamshell_state::{Effect, EntryAct, Event, Id, Init, Instance, ListEvent, ListId, PointerEvent, Reading, State, Status, Tab};
+use clamshell_state::{Effect, EntryAct, Event, Id, Init, Instance, ListEvent, ListId, PointerEvent, Reading, State, Status, Tab, WindowEvent};
 
 thread_local! {
     static ALLOCS: Cell<usize> = const { Cell::new(0) };
@@ -73,7 +73,12 @@ fn count(s: &mut State, event: Event, effects: &mut Vec<Effect>) -> usize {
 /// A warm state: up, with two programs of ours running, each with a window, one of them in front, and a
 /// terminal of the user's on another workspace.
 fn warm() -> (State, Vec<Window>, Vec<Instance>) {
-    let mut s = State::new(Init { library: clamshell_library::demo::library(), ..Init::default() });
+    let window_rules = clamshell_state::bottom::screen::WindowRules::from_list(vec![clamshell_state::bottom::screen::WindowRule {
+        owner: "desktop:foot".into(),
+        app_id: "foot".into(),
+        title: Some("lower".into()),
+    }]);
+    let mut s = State::new(Init { library: clamshell_library::demo::library(), window_rules, ..Init::default() });
     let mut effects = Vec::new();
     s.apply(Event::Start, &mut effects);
     s.apply(Event::Tick { unix_secs: T0, mono_secs: 10 }, &mut effects);
@@ -103,7 +108,7 @@ fn warm() -> (State, Vec<Window>, Vec<Instance>) {
             visible: true,
             ..Window::default()
         });
-        s.apply(Event::Windows(windows.clone()), &mut effects);
+        s.apply(Event::window_changes(s.session().windows(), &windows), &mut effects);
     }
     assert_eq!(s.session().running_entries().len(), 2, "both programs run");
     (s, windows, units)
@@ -143,7 +148,19 @@ fn allocations_per_event() {
         run(&name("metrics reading"), s, &|i| Event::Reading(Reading::Metrics(Metrics { cpu: Some(i as f32 / 10.0), ..Metrics::default() })));
         run(&name("frames reading"), s, &|i| Event::Reading(Reading::Frames { fps: Some(60.0 + i as f32), frame_ms: None }));
         run(&name("wifi reading, unchanged"), s, &|_| Event::Reading(Reading::Wifi(wifi.clone())));
-        run(&name("windows, unchanged"), s, &|_| Event::Windows(windows.clone()));
+        run(&name("windows, unchanged"), s, &|_| Event::window_changes(&windows, &windows));
+        if let Some(window) = windows.first() {
+            run(&name("window open, repeated"), s, &|_| WindowEvent::Opened(window.clone()).into());
+            run(&name("window title"), s, &|i| WindowEvent::Title { window: window.id, title: format!("title {i}") }.into());
+            run(&name("window facts"), s, &|_| WindowEvent::Changed(window.clone()).into());
+            run(&name("window activation, already shown"), s, &|_| WindowEvent::Activate(window.id).into());
+            run(&name("keyboard focus, UI and client"), s, &|i| WindowEvent::KeyboardFocus((i % 2 == 0).then_some(window.id)).into());
+        }
+        run(&name("window batch, reordered"), s, &|i| {
+            let ids = if i % 2 == 0 { windows.iter().rev().map(|w| w.id).collect() } else { windows.iter().map(|w| w.id).collect() };
+            Event::WindowBatch(vec![WindowEvent::Order(ids)])
+        });
+        run(&name("window close, already gone"), s, &|_| WindowEvent::Closed(i64::MAX).into());
         run(&name("units, unchanged"), s, &|_| Event::Units(units.clone()));
         run(&name("pointer down and up on a tab"), s, &|i| {
             Event::Pointer(if i % 2 == 0 { PointerEvent::Down(Id::Tab(Tab::Volume), None) } else { PointerEvent::Up(Id::Tab(Tab::Volume)) })

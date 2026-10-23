@@ -350,7 +350,7 @@ mod tests {
         }
         let mut s = started(Init { library, ..init() });
         let zelda = launch(&mut s, "zelda-lttp").workspace();
-        s.applied(Event::Windows(vec![win(3, "zelda3", &zelda, true)]));
+        s.observed(vec![win(3, "zelda3", &zelda, true)]);
         assert_eq!(s.session().program().map(|p| &**p), Some("zelda-lttp"));
         let mut library = s.shelf().library().clone();
         library.runner_keymaps = vec![(runner_key("text"), "viewer".into())];
@@ -414,6 +414,7 @@ mod tests {
     fn a_running_game_takes_changes_at_once() {
         let mut s = state();
         crate::testkit::start(&mut s, "zelda-lttp");
+        show_window(&mut s, "zelda-lttp", 7);
         tap(&mut s, entry("ff6"));
         // The running game is the context, not the selection.
         let fx = taps(&mut s, Setting::FpsCap, 1);
@@ -423,7 +424,9 @@ mod tests {
         assert!(!taps(&mut s, Setting::FpsCap, 1).iter().any(|e| matches!(e, Effect::Apply { .. })), "its own cap stays: nothing to apply");
         let fx = taps(&mut s, Setting::Power, 1);
         assert!(fx.iter().any(|e| matches!(e, Effect::Apply { settings, .. } if settings.get(Setting::Power) == 2)));
-        let fx: Vec<Effect> = end(&mut s, "zelda-lttp").into_iter().filter(|e| !matches!(e, Effect::RecordPlay { .. })).collect();
+        let mut fx = end(&mut s, "zelda-lttp");
+        fx.extend(s.observed(vec![]));
+        let fx: Vec<Effect> = fx.into_iter().filter(|e| !matches!(e, Effect::RecordPlay { .. } | Effect::Window(_))).collect();
         assert_eq!(fx, vec![Effect::Apply { entry: None, settings: s.prefs().settings().global }, Effect::PadRoute(PadRoute::Ui)], "and the pad back to shelf");
     }
 
@@ -501,7 +504,7 @@ mod tests {
     #[test]
     fn a_text_field_doesnt_take_the_screen_from_an_open_editor() {
         let mut s = state();
-        s.applied(Event::Windows(vec![foot()]));
+        s.observed(vec![foot()]);
         tap(&mut s, Id::Tab(Tab::Settings));
         tap(&mut s, Id::Settings(SettingsId::Env));
         assert!(s.bottom().editor().is_some());
@@ -513,7 +516,7 @@ mod tests {
     fn an_editor_stays_with_its_tab() {
         let mut s = state();
         // An app in front, so the keyboard types into it.
-        s.applied(Event::Windows(vec![foot()]));
+        s.observed(vec![foot()]);
         tap(&mut s, Id::Tab(Tab::Settings));
         tap(&mut s, Id::Settings(SettingsId::Env));
         let key = |s: &mut State, k| tap(s, Id::Key(find(k).unwrap()));

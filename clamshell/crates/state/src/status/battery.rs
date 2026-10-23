@@ -220,7 +220,7 @@ mod tests {
         launch_now(&mut s, "desktop:firefox");
         crate::testkit::start(&mut s, "desktop:firefox");
         crate::testkit::end(&mut s, "desktop:firefox");
-        s.applied(Event::Windows(vec![win(6, "firefox", &ws, true)]));
+        s.observed(vec![win(6, "firefox", &ws, true)]);
         assert!(!s.opens_another("desktop:firefox"), "a launch would show the one it runs");
         // Its processes belong to another program, as Android apps do. The entry gets their cost, and
         // the row is named and ended as the entry.

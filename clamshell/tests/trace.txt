@@ -12,10 +12,13 @@ Start
 -- top-back.png
 Units [zelda_lttp_650a1e]
   Apply settings of zelda-lttp
+open game on clamshell-run-zelda_lttp_650a1e
   PadRoute Game
 Units []
   RecordPlay zelda-lttp from 1759900000 for 15660s
   Apply settings of all
+close 900
+  Window ShowShelf
   PadRoute Ui
 Shelf(ToggleFavourite)
   Save Favourites(["zelda-lttp"])
@@ -23,7 +26,6 @@ Shelf(TogglePin)
   Save Dock(["desktop:steam", "desktop:foot", "desktop:firefox", "zelda-lttp"])
 Units [zelda_lttp_650a1e]
   Apply settings of zelda-lttp
-  PadRoute Game
 -- top-played.png
 Pointer(Activate(Shelf(Entry("ff6"))))
   Save Resume
@@ -46,12 +48,15 @@ Start
 Units [1__the_shores_of_030fb1]
   Browse in use 1 files
   Apply settings of tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv
+open game on clamshell-run-1__the_shores_of_030fb1
   PadRoute Game
 Units []
   RecordPlay tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv from 1759900000 for 3600s
   ReadPosition tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv
   Browse in use 0 files
   Apply settings of all
+close 900
+  Window ShowShelf
   PadRoute Ui
 -- top-group.png
 -- top-recent.png
@@ -106,10 +111,13 @@ Pointer(Activate(Settings(Tile(ChargeLimit))))
 -- settings-global.png
 Units [zelda_lttp_650a1e]
   Apply settings of zelda-lttp
+open game on clamshell-run-zelda_lttp_650a1e
   PadRoute Game
 Units []
   RecordPlay zelda-lttp from 1759999940 for 60s
   Apply settings of all
+close 900
+  Window ShowShelf
   PadRoute Ui
 -- settings.png
 -- settings-env.png
@@ -547,9 +555,9 @@ Pointer(Activate(Tab(Dock)))
 -- launcher.png
 Units [zelda_lttp_650a1e, foot_666b83, foot_666b83, firefox_16b084]
   Apply settings of desktop:firefox
-  PadRoute Game
-Windows [retroarch on clamshell-run-zelda_lttp_650a1e, foot on clamshell-run-foot_666b83, foot on clamshell-run-foot_666b83, firefox on clamshell-run-firefox_16b084]
+Windows [open retroarch on clamshell-run-zelda_lttp_650a1e, open foot on clamshell-run-foot_666b83, open foot on clamshell-run-foot_666b83, open firefox on clamshell-run-firefox_16b084, order [5, 7, 8, 9]]
   Apply settings of desktop:foot
+  PadRoute Game
 -- launcher-running.png
 -- bar-window-below.png
 Pointer(LongPress(Dock(Entry(1))))
@@ -575,7 +583,6 @@ Start
   PadRoute Ui
 Units [zelda_lttp_650a1e]
   Apply settings of zelda-lttp
-  PadRoute Game
 Pointer(Activate(Tab(Battery)))
   Watch Metrics off
   Watch Battery on

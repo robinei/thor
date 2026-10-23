@@ -101,6 +101,7 @@ fn library() -> Library {
 #[derive(Default)]
 struct World {
     windows: Vec<Window>,
+    reported_windows: Vec<Window>,
     next_window: i64,
     units: Vec<Instance>,
     /// Launches asked for and not answered.
@@ -145,7 +146,7 @@ impl World {
                 Effect::Launch { entry, instance, .. } => self.launches.push((entry.clone(), instance.clone())),
                 Effect::EndRun { key, .. } => self.ending.push(key.clone()),
                 Effect::Window(WindowCommand::Close(ids)) => self.closing.extend(ids),
-                Effect::Window(WindowCommand::Focus(ws)) => self.focus(|w| w.workspace == *ws),
+                Effect::Window(WindowCommand::FocusWindow(id)) => self.focus(|w| w.id == *id),
                 Effect::Window(WindowCommand::ShowShelf) => self.focus(|w| w.app_id == SHELF_APP_ID),
                 Effect::Window(WindowCommand::Move { windows, to }) => {
                     for w in self.windows.iter_mut().filter(|w| windows.contains(&w.id)) {
@@ -173,14 +174,26 @@ impl World {
         }
     }
 
+    fn report(&mut self) -> Event {
+        let event = Event::window_changes(&self.reported_windows, &self.windows);
+        self.reported_windows.clone_from(&self.windows);
+        event
+    }
+
     fn window(&mut self, app_id: &str, workspace: String, unit: Option<String>, focused: bool) -> Event {
+        self.open(app_id, workspace, unit, focused);
+        self.report()
+    }
+
+    fn open(&mut self, app_id: &str, workspace: String, unit: Option<String>, focused: bool) -> Window {
         let id = self.next_window;
         self.next_window += 1;
-        self.windows.push(Window { id, app_id: app_id.into(), workspace, unit, pids: vec![1000 + id as u32], ..Window::default() });
+        let window = Window { id, app_id: app_id.into(), workspace, unit, pids: vec![1000 + id as u32], ..Window::default() };
+        self.windows.push(window.clone());
         if focused {
             self.focus(|w| w.id == id);
         }
-        Event::Windows(self.windows.clone())
+        self.windows.iter().find(|w| w.id == id).cloned().unwrap_or(window)
     }
 }
 
@@ -423,8 +436,8 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
         53..=60 => {
             let focused = rng.one_in(2);
             match rng.below(6) {
-                0 => w.window("steam_app_620", Instance::Landing.name(), Some("app-steam.scope".into()), focused),
-                1 => w.window("firefox", Instance::Landing.name(), None, focused),
+                0 => w.window("steam_app_620", String::new(), Some("app-steam.scope".into()), focused),
+                1 => w.window("firefox", String::new(), None, focused),
                 2 => w.window("foot", "1".into(), None, focused),
                 _ => {
                     let unit = rng.pick(&w.units)?.clone();
@@ -443,13 +456,13 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             if !w.windows.iter().any(|x| x.focused) {
                 w.focus(|x| x.app_id == SHELF_APP_ID);
             }
-            Event::Windows(w.windows.clone())
+            w.report()
         }
         // The focus moves to another window.
         65..=66 => {
             let id = rng.pick(&w.windows)?.id;
             w.focus(|x| x.id == id);
-            Event::Windows(w.windows.clone())
+            w.report()
         }
         // A scope ends, by itself or as asked; its windows go with it most times.
         67..=69 => {
@@ -620,6 +633,42 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
         96 => Event::Fetching(rng.one_in(2)),
         97 if rng.one_in(4) => Event::Library(Box::new(library.clone())),
         98 => Event::Enqueue,
+        99 => {
+            let window = rng.pick(&w.windows)?.clone();
+            match rng.below(6) {
+                0 => {
+                    let window = if rng.one_in(2) && w.windows.len() < 9 {
+                        let mut window = w.open("foot", "1".into(), None, false);
+                        window.kind = if rng.one_in(2) { WindowKind::X11 } else { WindowKind::Wayland };
+                        if rng.one_in(3) {
+                            window.parent = rng.pick(&w.windows).filter(|p| p.id < window.id).map(|p| p.id);
+                        }
+                        if let Some(actual) = w.windows.iter_mut().find(|actual| actual.id == window.id) {
+                            actual.kind = window.kind;
+                            actual.parent = window.parent;
+                        }
+                        window
+                    } else {
+                        window
+                    };
+                    WindowEvent::Opened(window).into()
+                }
+                1 if window.app_id != SHELF_APP_ID => {
+                    w.windows.retain(|w| w.id != window.id);
+                    WindowEvent::Closed(window.id).into()
+                }
+                2 => {
+                    let title = format!("title {}", rng.below(5));
+                    if let Some(w) = w.windows.iter_mut().find(|w| w.id == window.id) {
+                        w.title.clone_from(&title);
+                    }
+                    WindowEvent::Title { window: window.id, title }.into()
+                }
+                3 => WindowEvent::KeyboardFocus(Some(window.id)).into(),
+                4 => WindowEvent::KeyboardFocus(None).into(),
+                _ => WindowEvent::Activate(window.id).into(),
+            }
+        }
         _ => return None,
     })
 }
@@ -644,6 +693,14 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
             }
         };
     }
+    // 4. Live window ids are unique.
+    for (i, window) in s.session().windows().iter().enumerate() {
+        ensure!(!s.session().windows().iter().skip(i + 1).any(|other| other.id == window.id), "duplicate window id {}", window.id);
+    }
+    ensure!(s.session().windows().iter().filter(|w| w.focused && !w.down).count() <= 1, "more than one top window selected");
+    ensure!(s.session().windows().iter().filter(|w| w.down && w.visible).count() <= 1, "more than one bottom tab selected");
+    ensure!(s.session().selections_valid(), "a selected window is not in its top group");
+    ensure!(s.session().keyboard_focus().is_none_or(|id| s.session().window(id).is_some()), "keyboard focus names a closed window");
     // 1. Sync converges.
     let again = sync_again(s);
     ensure!(again.is_empty(), "1: sync again sends {again:?}");
@@ -881,7 +938,7 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
             0 => Event::Tick { unix_secs: 1_800_000_000 + clock, mono_secs: clock },
             1 => Event::Start,
             2 => Event::Units(Vec::new()),
-            3 => Event::Windows(world.windows.clone()),
+            3 => world.report(),
             _ => draw(&mut rng, &s, &mut world, &mut clock),
         };
         // A quit asked for may end its entry again.

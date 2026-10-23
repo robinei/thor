@@ -132,10 +132,10 @@ impl Device {
 
     /// Opens the view on the main screen, bringing shelf's window to the front, with the pad's focus on
     /// its first row. The account is read while it is open ([`crate::sync::Sent::watches`]).
-    pub(crate) fn open(&mut self, pointer: &mut Pointer, out: &mut Out) {
+    pub(crate) fn open(&mut self, pointer: &mut Pointer, session: &mut crate::Session, out: &mut Out) {
         self.open = true;
         pointer.focus_on(Id::Device(DeviceId::Wifi));
-        out.effects.push(Effect::Window(WindowCommand::ShowShelf));
+        session.command(WindowCommand::ShowShelf, out);
     }
 
     /// Goes back to shelf, with the focus on its `selected` entry.
@@ -304,15 +304,15 @@ mod tests {
         s.applied(Event::tick(1000));
         let zelda = launch(&mut s, "zelda-lttp");
         let zelda_window = |focused| crate::testkit::win(3, "zelda3", &zelda.workspace(), focused);
-        s.applied(Event::Windows(vec![shelf_window(false), zelda_window(true)]));
+        s.observed(vec![shelf_window(false), zelda_window(true)]);
         launch_now(&mut s, "tool:device");
-        s.applied(Event::Windows(vec![shelf_window(true), zelda_window(false)]));
+        s.observed(vec![shelf_window(true), zelda_window(false)]);
         assert_eq!(s.device().top_view(), TopView::Device);
         let fx = s.applied(Event::Home);
         assert!(window_effects(fx).is_empty(), "nothing shown but shelf");
         assert_eq!(s.device().top_view(), TopView::Shelf);
         assert_eq!(s.pointer().focus(), Some(&crate::testkit::entry("zelda-lttp")), "the focus on shelf's selection");
-        assert_eq!(window_effects(s.applied(Event::Home)), [focus(&zelda)]);
+        assert_eq!(window_effects(s.applied(Event::Home)), [focus(3)]);
     }
 
     /// The account is read while the view is open, from when the UI is up: an open view at the first
@@ -324,7 +324,7 @@ mod tests {
         assert!(s.applied(Event::Start).contains(&Effect::Watch(crate::Watch::Account, true)));
         assert!(tap(&mut s, DeviceId::Done).contains(&Effect::Watch(crate::Watch::Account, false)));
         // Opened again from shelf, and closed by Home.
-        s.applied(Event::Windows(vec![shelf_window(true)]));
+        s.observed(vec![shelf_window(true)]);
         let fx = s.applied(Event::Entry("tool:device".into(), crate::EntryAct::Play));
         assert!(fx.contains(&Effect::Watch(crate::Watch::Account, true)), "{fx:?}");
         assert!(s.applied(Event::Home).contains(&Effect::Watch(crate::Watch::Account, false)));
