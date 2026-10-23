@@ -70,6 +70,7 @@ impl App {
             loop_handle,
             on_effect,
             effects: Vec::new(),
+            queue: EventQueue::default(),
             exit: false,
         })
     }
@@ -101,19 +102,28 @@ impl App {
         self.views.iter_mut().filter_map(|(_, v)| v.as_mut()).find(|v| v.shell.surface() == surface)
     }
 
+    /// Handles `event`. One that comes while another is being handled, such as one the input side emits,
+    /// waits until that one's effects have been carried out (see [`EventQueue`]).
     pub(super) fn handle(&mut self, event: Event) {
+        if !self.queue.push(event) {
+            return;
+        }
+        while let Some(event) = self.queue.next() {
+            self.handle_one(event);
+        }
+    }
+
+    fn handle_one(&mut self, event: Event) {
         // The pad driving the screens is input, handled here like keys and touches.
         if let Event::Pad(input) = event {
             return self.pad(input);
         }
-        // Taken while the effects are carried out, which may handle further events.
-        let mut effects = std::mem::take(&mut self.effects);
-        effects.clear();
-        self.state.apply(event, &mut effects);
+        self.effects.clear();
+        self.state.apply(event, &mut self.effects);
         self.changed();
         let released = self.input.pad_route(self.state.pad().route(), &self.state);
         self.run_actions(released);
-        for effect in &effects {
+        for effect in &self.effects {
             match effect {
                 Effect::Quit => self.exit = true,
                 // The compositor controls the screens' power, and we ask it through Wayland. A bottom
@@ -135,8 +145,7 @@ impl App {
                 }
             }
         }
-        effects.clear();
-        self.effects = effects;
+        self.effects.clear();
     }
 
     pub(super) fn handle_all(&mut self, events: impl IntoIterator<Item = Event>) {
@@ -261,5 +270,74 @@ impl App {
             }
             Err(e) => log::warn!("{timer:?} timer: {}", e.error),
         }
+    }
+}
+
+/// The events waiting to be handled. Events are handled one at a time: one that comes while another is
+/// being handled, from the input side or a frame drawn, waits until that one is done, effects and all, so
+/// that the effects are carried out in the order of the events. Waiting events are handled in the order
+/// they came.
+#[derive(Default)]
+pub(super) struct EventQueue {
+    events: std::collections::VecDeque<Event>,
+    /// An event is being handled.
+    busy: bool,
+}
+
+impl EventQueue {
+    /// Queues `event`. Returns whether the caller is to handle the queue, which it is unless an event is
+    /// being handled already.
+    fn push(&mut self, event: Event) -> bool {
+        self.events.push_back(event);
+        !std::mem::replace(&mut self.busy, true)
+    }
+
+    /// The next event to handle, or None once the queue is empty, which ends handling.
+    fn next(&mut self) -> Option<Event> {
+        let next = self.events.pop_front();
+        self.busy = next.is_some();
+        next
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Handles events as `App::handle` does, where handling event `n` below 3 emits event `n + 1`, and
+    /// the emitted one is handled before the effects are carried out.
+    struct Fake {
+        queue: EventQueue,
+        log: Vec<String>,
+    }
+
+    impl Fake {
+        fn handle(&mut self, event: Event) {
+            if !self.queue.push(event) {
+                return;
+            }
+            while let Some(event) = self.queue.next() {
+                let Event::Shelf(ShelfEvent::Rows(n)) = event else {
+                    continue;
+                };
+                self.log.push(format!("apply {n}"));
+                if n < 3 {
+                    self.handle(Event::Shelf(ShelfEvent::Rows(n + 1)));
+                    self.handle(Event::Shelf(ShelfEvent::Rows(n + 10)));
+                }
+                self.log.push(format!("effects {n}"));
+            }
+        }
+    }
+
+    #[test]
+    fn an_event_emitted_while_handling_waits_for_the_effects() {
+        let mut app = Fake { queue: EventQueue::default(), log: Vec::new() };
+        app.handle(Event::Shelf(ShelfEvent::Rows(1)));
+        let expected = ["apply 1", "effects 1", "apply 2", "effects 2", "apply 11", "effects 11", "apply 3", "effects 3", "apply 12", "effects 12"];
+        assert_eq!(app.log, expected);
+        // Done, so the next event is handled at once.
+        app.handle(Event::Shelf(ShelfEvent::Rows(20)));
+        assert_eq!(app.log.get(10..), Some(&["apply 20".to_owned(), "effects 20".to_owned()][..]));
     }
 }

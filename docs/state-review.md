@@ -26,7 +26,7 @@ The weak spots are at the seams.
 - [x] **Lists are re-anchored only after readings.** `follow_lists` runs only from `on_reading`; the dock,
       keymaps, layers and time lists change through other paths and keep a stale anchor until the next
       reading, then jump. It belongs in settle. (`state.rs:850`, `:524`.)
-- [ ] **The UI reorders effects across re-entrant events.** `App::handle` applies an event, then
+- [x] **The UI reorders effects across re-entrant events.** `App::handle` applies an event, then
       `run_actions` can emit another, whose nested `handle` carries out its effects before the outer
       event's. Emitted events should wait until the effects are done. (`ui/platform/app.rs`.)
 - [ ] **The pressed highlight and the keyed action can land on different rows** when a list re-sorts

@@ -216,6 +216,8 @@ pub(crate) struct App {
     on_effect: Box<dyn FnMut(&Effect)>,
     /// The effects of the event being handled, kept to be reused for the next one.
     effects: Vec<Effect>,
+    /// The events waiting while another is handled.
+    queue: app::EventQueue,
     exit: bool,
 }
 
