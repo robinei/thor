@@ -268,7 +268,7 @@ fn rename_duplicate_and_delete_with_games_using_it() {
     assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Settings(_)))), "{fx:?}");
     assert!(s.keymapping().keymaps().list().is_empty());
     assert_eq!(s.prefs().settings().global.get(Setting::Keymap), 0);
-    assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Keymap), None, "Default, as all games");
+    assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(0), "Default, its own choice");
     // The Default row has no menu.
     long(&mut s, row(0));
     assert_eq!(s.keymapping().screen(), Some(Screen::List));

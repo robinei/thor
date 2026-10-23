@@ -214,7 +214,7 @@ Overwrite, Delete; Undo per keymap since the edit screen opened.
 |---|---|
 | Keymap tile → List; a row → chosen for the level edited | `the_picker_chooses_a_keymap_for_the_scope_edited` |
 | Own → made, settings saved then keymaps | `making_a_games_own_keymap_saves_the_settings_then_the_keymaps` |
-| Menu: rename, duplicate, load into own, save as, delete (asks if in use; settings forget it) | `rename_duplicate_and_delete_…`, `a_named_keymap_is_loaded_…`, `a_games_own_keymap_is_saved_…` (forgetting a keymap set globally leaves games on their runner's, S22) |
+| Menu: rename, duplicate, load into own, save as, delete (asks if in use; settings forget it: all games back to Default if it was theirs, and who chose it chooses Default) | `rename_duplicate_and_delete_…`, `a_named_keymap_is_loaded_…`, `a_games_own_keymap_is_saved_…`; settings `forgetting_a_keymap_sets_who_chose_it_to_default` |
 | Edit: select, bind, map to (pick, capture, mouse, layers), toggles, slides, undo, layers | `a_new_keymap_is_named_edited_and_mapped`, `targets_offered_fit_the_input`, `the_hold_and_double_tabs_…`, `parameters_slide_…`, layer tests, `undo_goes_back_…` |
 | Calibrate from Edit; MakeOwn from Edit; Back from Load and the pickers; an empty name | GAP |
 | Listened only while the route is Listen | `the_keymap_screens_stay_with_their_tab_and_listen_only_in_view` |
@@ -407,7 +407,7 @@ Second screen, device, pad, keymaps:
 - S19. The pad switched to the second screen goes back when the claimant changes (the keyboard coming
   up): the documented exception never applies (`nav/pad.rs:150`). Fixed: state/pad: switched to the second screen, the pad stays until View or shelf.
 - S22. Forgetting a keymap that was set globally leaves games that chose it on their runner's keymap, not
-  Default (`settings/mod.rs:569`).
+  Default (`settings/mod.rs:569`). Fixed: state/settings: forgetting a keymap sets who chose it to Default.
 
 Shelf, files, radios, levels, status:
 - S23. A tap on an entry not in the list leaves the focus on it.

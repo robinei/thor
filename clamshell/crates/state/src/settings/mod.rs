@@ -565,17 +565,15 @@ impl Settings {
         crate::keymap::screens::Users { all_entries, entries }
     }
 
-    /// Keymap `id` is gone. The games that used it, and all games if it was theirs, go back to Default.
+    /// Keymap `id` is gone. All games, if it was theirs, go back to Default, and the games and levels
+    /// that chose it choose Default. Their choice isn't cleared, since a level between them and all
+    /// games, such as their runner, may choose another keymap.
     pub fn forget_keymap(&mut self, id: u16) {
         if self.global.get(Setting::Keymap) == id {
             self.global.set(Setting::Keymap, 0);
         }
-        let entries: Vec<_> = self.overrides.iter().filter(|(_, o)| o.get(Setting::Keymap) == Some(id)).map(|(g, _)| g.clone()).collect();
-        let global = self.global.get(Setting::Keymap);
-        for entry in entries {
-            // The game gets Default as its own choice, unless all games use Default anyway, in which case
-            // its own choice is cleared.
-            self.set(Some(&entry), Setting::Keymap, (global != 0).then_some(0));
+        for o in self.overrides.values_mut().filter(|o| o.get(Setting::Keymap) == Some(id)) {
+            o.set(Setting::Keymap, Some(0));
         }
     }
 }
@@ -643,5 +641,22 @@ mod tests {
         s.reset("zelda");
         assert!(!s.has_own("zelda"));
         assert_eq!(s.of_in("zelda", &[]), s.global);
+    }
+
+    #[test]
+    fn forgetting_a_keymap_sets_who_chose_it_to_default() {
+        let mut s = Settings::default();
+        let (runner, game, other): (Arc<str>, Arc<str>, Arc<str>) = ("runner:SNES".into(), "ff6".into(), "zelda".into());
+        s.set(None, Setting::Keymap, Some(5));
+        s.set(Some(&runner), Setting::Keymap, Some(3));
+        s.set(Some(&game), Setting::Keymap, Some(5));
+        s.set(Some(&other), Setting::Keymap, Some(3));
+        s.forget_keymap(5);
+        assert_eq!(s.global.get(Setting::Keymap), 0);
+        assert_eq!(s.of_in("ff6", &["runner:SNES"]).get(Setting::Keymap), 0, "Default, not its runner's");
+        assert_eq!(s.of_in("snes-game", &["runner:SNES"]).get(Setting::Keymap), 3, "the runner's choice stays");
+        s.forget_keymap(3);
+        assert_eq!(s.of_in("snes-game", &["runner:SNES"]).get(Setting::Keymap), 0);
+        assert_eq!(s.of_in("zelda", &[]).get(Setting::Keymap), 0);
     }
 }
