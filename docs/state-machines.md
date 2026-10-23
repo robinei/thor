@@ -417,7 +417,7 @@ Second screen, device, pad, keymaps:
 - S15. Showing the program's windows below (dock tap, BottomWindows) while the screen is off by hand shows
   them on a dark panel (`bottom/screen.rs:310`). Fixed: state/bottom: showing the windows below turns the screen on.
 - S16. A screen dark for a game wakes only on the Wake tap, not a touch or pad focus, and not when the tap
-  is swallowed by idle (`screen.rs:154, 214`).
+  is swallowed by idle (`screen.rs:154, 214`). Kept, by decision.
 - S17. Two taps on Sticks before the first progress start the calibration twice (`device/mod.rs:151`). Fixed: state/device: sticks and remote login wait for their answer.
 - S18. Two taps on Ssh send it twice (`device/mod.rs:149`). Fixed: state/device: sticks and remote login wait for their answer.
 - S19. The pad switched to the second screen goes back when the claimant changes (the keyboard coming
