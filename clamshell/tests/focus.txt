@@ -51,8 +51,11 @@ Shelf(Entry("celeste")): up [Shelf(ListStep(5))] Shelf(Entry("hades")) down Tab(
 start Tab(Sysinfo); back -
 == top-switch.png (top; the pad on the second screen)
 start Tab(Sysinfo); back -
-== top-actions.png (top; the pad on the second screen)
-start Tab(Sysinfo); back Pointer(Focus(Shelf(Entry("ff6"))))
+== top-actions.png (top; the pad on shelf's actions)
+start Shelf(Launch); back Pointer(Focus(Shelf(Entry("ff6"))))
+Shelf(Launch): up - down Shelf(Favourite) left - right -
+Shelf(Favourite): up Shelf(Launch) down Shelf(Pin) left - right -
+Shelf(Pin): up Shelf(Favourite) down - left - right -
 == top-folder.png (top; the pad on both screens)
 start Shelf(Entry("tv:Cosmos")); back -
 Shelf(Collection(0)): up [Shelf(ListStep(0))] Shelf(Entry("tv:Cosmos")) down Shelf(Entry("tv:Cosmos")) left [Shelf(CollectionStep(-1))] Shelf(Entry("ff6")) right [Shelf(CollectionStep(1))] Shelf(Entry("desktop:steam"))

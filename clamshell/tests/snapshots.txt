@@ -62,7 +62,7 @@ time-by-hand.png 8f668a322f85dd2c
 time-europe.png b2d7a1c75809d461
 time-zones.png d21e9fd35c682724
 time.png 7b9825784ed01a79
-top-actions.png 26e1c2d1ccd93546
+top-actions.png 019021f63ccbda5c
 top-back.png b64317f9b5612953
 top-folder.png ca62fee6cde677d0
 top-group.png 1dad9289b024a19b

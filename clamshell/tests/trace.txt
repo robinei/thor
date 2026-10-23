@@ -29,6 +29,12 @@ Pointer(Activate(Shelf(Entry("ff6"))))
   Save Resume
   Launch ff6 as ff6_09d141
 -- top-switch.png
+== group top-actions.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
 -- top-actions.png
 == group top-folder.png
 Start

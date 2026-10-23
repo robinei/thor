@@ -246,18 +246,22 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                         .collect(),
                 ),
                 shot("top-switch.png", Top, vec![ff6(), ff6()]),
-                // A held on the selected entry with the pad opens its actions, with A and B shown at the
-                // bottom.
-                shot(
-                    "top-actions.png",
-                    Top,
-                    vec![
-                        ff6(),
-                        Event::Pointer(PointerEvent::Focus(Id::Shelf(ShelfId::Entry("ff6".into())))),
-                        Event::Pointer(PointerEvent::LongPress(Id::Shelf(ShelfId::Entry("ff6".into())))),
-                    ],
-                ),
             ],
+        ),
+        // A held on the selected entry with the pad opens its actions, with A and B shown at the bottom.
+        // Shelf is in front, so the pad is on them. The start sets shelf's rows as a frame would have
+        // reported them before the taps.
+        group(
+            vec![ShelfEvent::Rows(8).into()],
+            vec![shot(
+                "top-actions.png",
+                Top,
+                vec![
+                    ff6(),
+                    Event::Pointer(PointerEvent::Focus(Id::Shelf(ShelfId::Entry("ff6".into())))),
+                    Event::Pointer(PointerEvent::LongPress(Id::Shelf(ShelfId::Entry("ff6".into())))),
+                ],
+            )],
         ),
         // A series selected in shelf and then opened, showing its first season's episodes with the first one
         // played. The start sets shelf's rows as a frame would have reported them before the taps.
