@@ -422,3 +422,60 @@ Shelf, files, radios, levels, status:
 - S37. The Mute key shows its notice when the volume is unknown and nothing changes (`lib.rs:1058`).
 - S38. The resume record can leave out a collection whose stored place is past its list after a relayout
   (`shelf/mod.rs:552`).
+
+## Decisions on the suspects (2026-10-23)
+
+Decided without a design discussion, to get them fixed. **Revisit** marks the ones that might need it,
+with what would make us change our minds.
+
+- S1. A program that had a tray icon counts as seen: ending without a window isn't "didn't start".
+- S2. A scope of an entry not in the library is adopted as an entry found by its scope (named from its
+  windows or tray icon as when it was found), so it is on the dock and can be quit and thawed.
+  **Revisit** if adopting what an earlier ClamShell found turns out to bring back programs the user
+  doesn't think of as theirs.
+- S3. Adoption keeps the tray key, so the menu stays.
+- S5. Show of an entry whose windows are all moved down shows them below, as the dock tap does.
+- S6. A quit whose windows are still there 10 s after the last close is abandoned: the entry runs on as
+  before, unpaused rules apply again. **Revisit** the 10 s, and whether a second Quit should then
+  force-kill.
+- S7. A tray icon gives its pid only to an entry found by that program's own process.
+- S8. A launch waiting for its scope counts as starting, so its runner isn't paused again.
+- S9. A launch with no answer from the launcher in 30 s is given up, with the "didn't start" notice.
+  **Revisit** the 30 s for slow starts (Proton games on first run).
+- S10, S11, S12. An editor opened on the keyboard goes back where it came from when it closes, whatever
+  its purpose; a text field losing focus doesn't switch away from an open editor; opening an editor on
+  the keyboard while another is open there cancels the other first only if it is empty, otherwise the
+  new one waits — **Revisit**: simplest was refusing the second editor with a notice; chosen: refuse,
+  with the notice, since two editors on one tab can't both show.
+- S13. Leaving the capture screen any way drops the modifiers armed there.
+- S14. The gyro's notice stays until the calibration answers, at most 30 s.
+- S15. Showing the windows below turns the screen on if it was off by hand.
+- S16. Kept: a screen dark for a game wakes only on the Wake target, so a stray touch mid-game doesn't
+  light it. **Revisit** after using it on the device.
+- S17, S18. The sticks calibration and the remote-login toggle wait for their answer before taking
+  another tap.
+- S19. Implement the documented exception: the pad switched to the second screen stays there when the
+  claimant changes, until View is pressed or shelf comes to the front. **Revisit** if it feels sticky
+  on the device.
+- S20. Back at the top of the tray menu goes back to the entry's menu.
+- S21. The dock menu closes when its entry leaves the dock; a move ends when its item goes; `close`
+  clears the tray path; a long press while moving ends the move first.
+- S22. Forgetting a keymap sets those who chose it to Default, as the docs say.
+- S23. A tap on an entry not in the list does nothing.
+- S24. A long press on the selected entry opens its actions, by touch as with the pad.
+- S25. A relayout moves the focus with the selection.
+- S26. A library read keeps the typed filter.
+- S27. Copy or Cut with nothing valid selected does nothing; a listing drops selected ids that are gone.
+- S28. A cut clip is cleared when its paste succeeds.
+- S29. `busy` counts the operations running.
+- S30. A local error (needs a login) and the busy mark stay until the next attempt or a reading that
+  answers it (connected, or the system's own error). **Revisit** if a reading can't tell an old attempt
+  from a new one.
+- S31. Setting a muted stream's level unmutes it, as the output volume does.
+- S32. Dimming never raises the brightness.
+- S33. The battery warning keys on discharging.
+- S34. The battery menu closes when the tab is left or its row goes.
+- S35. A relayout closes a group no longer in its collection.
+- S36. A listing that changes the entries shown asks for their metadata first.
+- S37. The Mute key shows its notice only when something changed.
+- S38. The resume record keeps every collection's place, clamped to its list.
