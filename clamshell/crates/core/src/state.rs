@@ -330,8 +330,12 @@ impl State {
                 out.effects.push(Effect::Quit);
             }
         }
-        // What the event's rules asked of State, in order, after the effects they pushed. Each is handled
-        // with what it queues in turn, before the next.
+        self.handle_queued(mark, out);
+    }
+
+    /// Handles the events queued from `mark` on: what the event's rules asked of State, in the order they
+    /// asked, after the effects they pushed. Each is handled with what it queues in turn, before the next.
+    fn handle_queued(&mut self, mark: usize, out: &mut Out) {
         while out.events.len() > mark {
             let queued = out.events.remove(mark);
             self.apply_event(queued, out);
@@ -1100,6 +1104,15 @@ impl State {
     pub(crate) fn handle(&mut self, event: Event) -> Vec<Effect> {
         let mut out = Out::default();
         self.apply_event(event, &mut out);
+        out.effects
+    }
+
+    /// Handles `events` as if a rule had queued them, without the steps that follow, and returns the
+    /// effects.
+    #[cfg(test)]
+    pub(crate) fn handle_as_queued(&mut self, events: Vec<Event>) -> Vec<Effect> {
+        let mut out = Out { effects: Vec::new(), events };
+        self.handle_queued(0, &mut out);
         out.effects
     }
 

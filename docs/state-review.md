@@ -42,7 +42,7 @@ The weak spots are at the seams.
 - [x] **Settings sync has a back door.** `Sent` compares only the program, so every change to the settings
       in force must remember `Resend::Settings`; `follow_runner_keymaps` doesn't. `Values` is `Copy +
       PartialEq`: diff it and drop `Resend::Settings`. (`sync.rs`, `state.rs:1048`.)
-- [ ] **Order rules documented but not pinned.** These mutations passed the whole suite: swapping
+- [x] **Order rules documented but not pinned.** These mutations passed the whole suite: swapping
       settings/keymap or keymap/route in sync, the event queue last-in-first-out, show pending/reopened
       swapped, quitting before background, the made-own saves swapped. One exact-sequence test per rule
       that claims an order.

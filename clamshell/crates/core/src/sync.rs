@@ -148,7 +148,11 @@ impl Sent {
         self.ui_up = true;
     }
 
-    /// Sends what differs from `w`, in this order.
+    /// Sends what differs from `w`, in this order. Nothing outside depends on the settings coming before
+    /// the keymap. The keymap comes before the route: when a game comes in front, the pad thread then
+    /// takes the game's keymap while it doesn't have the pad yet, and on getting it presses what that
+    /// keymap makes of the buttons held, rather than entering the game with the old keymap and swapping
+    /// it there (see the system crate's `PadRouter::set_route` and `set_keymap`).
     pub(crate) fn sync(&mut self, w: &Wanted, out: &mut Out) {
         self.fetch_first(w, out);
         self.browse(w, out);

@@ -594,6 +594,23 @@ fn slide_start(s: &mut State, param: Param) -> Option<Slider> {
     slider
 }
 
+/// Making a game's own keymap saves the settings that choose it, then the keymaps.
+#[test]
+fn making_a_games_own_keymap_saves_the_settings_then_the_keymaps() {
+    let mut s = State::new(Init { keymaps: Keymaps::initial(), ..init() });
+    picker(&mut s);
+    let fx = tap(&mut s, row(0));
+    let saves: Vec<&str> = fx
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Save(Save::Settings(_)) => Some("settings"),
+            Effect::Save(Save::Keymaps(_)) => Some("keymaps"),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(saves, ["settings", "keymaps"], "{fx:?}");
+}
+
 #[test]
 fn a_games_own_keymap_is_made_and_kept_while_another_is_chosen() {
     let mut s = State::new(Init { keymaps: Keymaps::initial(), ..init() });
