@@ -259,9 +259,10 @@ impl Levels {
         self.brightness.level.map(|level| self.brightness_at(level))
     }
 
-    /// The screens dimmed for idle, to a third of their brightness. Not saved.
+    /// The screens dimmed for idle, to a third of their brightness but not dark, and never brighter than
+    /// they are. Not saved.
     pub fn dimmed_effect(&self) -> Option<Effect> {
-        self.known_brightness().map(|level| self.brightness_at((level / 3).max(1)))
+        self.known_brightness().map(|level| self.brightness_at((level / 3).max(1).min(level)))
     }
 
     /// The screens back from dimmed, at their brightness as ClamShell set it or as it was read.
@@ -568,6 +569,21 @@ mod tests {
             _ => None,
         });
         assert_eq!(brightness, Some(s.levels().brightness()));
+    }
+
+    #[test]
+    fn dimming_never_raises_the_brightness() {
+        let mut s = state();
+        let dimmed = |s: &mut State, brightness| {
+            read(s, Reading::Status(Status { brightness: Some(brightness), ..Status::default() }));
+            match s.levels().dimmed_effect() {
+                Some(Effect::Brightness { level, .. }) => level,
+                other => unreachable!("{other:?}"),
+            }
+        };
+        assert_eq!(dimmed(&mut s, 60), 20, "a third");
+        assert_eq!(dimmed(&mut s, 2), 1, "not dark");
+        assert_eq!(dimmed(&mut s, 0), 0, "not raised");
     }
 
     #[test]

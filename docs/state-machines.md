@@ -299,8 +299,8 @@ Volume and mute hold what was set until released; streams, outputs, brightness a
 the slider; the brightness save. Tests: `the_volume_tab_watches_and_sets_levels`, `leaving_the_tab_mid_
 drag_lets_readings_in_again`, `brightness_is_the_level_times_each_screens_share`, `the_pad_steps_levels`,
 the slider tests. Setting a muted stream's level unmutes it, as the output volume does:
-`setting_a_muted_streams_level_unmutes_it`. Dimming at brightness 0 raises it to 1 (S32); brightness
-sent at Start GAP.
+`setting_a_muted_streams_level_unmutes_it`. Dimming takes a third of the brightness, at least 1 but
+never more than it was: `dimming_never_raises_the_brightness`. Brightness sent at Start GAP.
 
 ## Status (status/)
 
@@ -428,7 +428,7 @@ Shelf, files, radios, levels, status:
 - S29. `busy` clears at the first of several operations' Done (`files.rs:415`); without a Done it never clears. Fixed: state/files: count the operations running, and keep a cut entry until moved.
 - S30. A Wi-Fi or Bluetooth reading wipes the local error and busy mark, even one older than the command.
 - S31. Setting a muted stream's volume shows it unmuted but leaves it muted (`levels/mod.rs:370`). Fixed: state/levels: setting a muted stream's level unmutes it.
-- S32. Dimming at brightness 0 raises it to 1 (`levels/mod.rs:264`).
+- S32. Dimming at brightness 0 raises it to 1 (`levels/mod.rs:264`). Fixed: state/levels: dimming never raises the brightness.
 - S33. The battery warning fires on the charger in bypass mode (`status/mod.rs:103`).
 - S34. The battery tab's spender menu stays open across tabs and after its row is gone.
 - S35. A relayout doesn't close a group that left a derived collection (Recent, Favourites). Fixed: state/shelf: a relayout closes a group no longer in its collection.
