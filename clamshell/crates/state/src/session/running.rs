@@ -60,7 +60,8 @@ pub enum Origin {
     /// it started, are the entry's. It is none if the program runs in another program's process.
     Found { pid: Option<u32> },
     /// By its windows, since `since` (monotonic seconds, as in [`crate::Event::Tick`]). It was started by
-    /// another program, or its launches ended while it ran on in a program not ours. It ends once it has
+    /// another program, or its launches ended while it ran on in a program not ours, and then `since` is
+    /// when it was launched. It ends once it has
     /// had windows ([`Running::seen`]) and has none left, or when none came by `until`, and its play from
     /// `since` is recorded then. Its windows are those with its app id, or, for a browsed file, a new window
     /// of no launch of ours, taken until `until`.
@@ -280,10 +281,11 @@ impl Session {
             let has = self.windows_of(&r.id).next().is_some();
             let soon = now.saturating_sub(r.start) <= HANDOFF;
             let browsed = library.entry(&r.id).is_some_and(|g| g.browsed.is_some());
+            // Its play goes on from its launch's start.
             if r.app_id.is_some() && (has || soon) {
-                handed.push((r.id.clone(), Origin::Windows { since: now, until: now + HANDOFF }, has));
+                handed.push((r.id.clone(), Origin::Windows { since: r.start, until: now + HANDOFF }, has));
             } else if browsed && soon {
-                handed.push((r.id.clone(), Origin::Windows { since: now, until: r.start + HANDOFF }, has));
+                handed.push((r.id.clone(), Origin::Windows { since: r.start, until: r.start + HANDOFF }, has));
             } else {
                 ended.push((r.id.clone(), r.start));
                 // It ended without ever having a window and without being quit, so it didn't start, as
@@ -930,6 +932,27 @@ mod tests {
         let ff6 = Instance::workspace_of(&key("ff6"));
         assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![7], to: ff6 })), "the game's, not Steam's: {fx:?}");
         assert_eq!(s.session().running_of(&window).map(|r| &*r.id), Some("ff6"));
+    }
+
+    /// A Steam game whose launch's scope ends while its window is open, long after it started, runs on by
+    /// its window. Its play, recorded when the window closes, is from its launch.
+    #[test]
+    fn a_game_known_by_app_id_runs_on_by_its_windows_after_its_scope() {
+        let mut s = steam_ff6();
+        s.ui_up();
+        s.applied(Event::tick(1000));
+        launch(&mut s, "ff6");
+        let ws = Instance::workspace_of(&key("ff6"));
+        s.applied(Event::Windows(vec![win(7, "steam_app_620", &ws, true)]));
+        s.applied(Event::tick(1600));
+        let fx = crate::testkit::end(&mut s, "ff6");
+        assert!(!fx.iter().any(|e| matches!(e, Effect::RecordPlay { .. })), "{fx:?}");
+        let ff6 = s.session().running("ff6").unwrap();
+        assert!(matches!(ff6.origin, Origin::Windows { .. }) && ff6.seen, "{ff6:?}");
+        s.applied(Event::tick(1900));
+        let fx = s.applied(Event::Windows(vec![]));
+        assert!(fx.contains(&Effect::RecordPlay { entry: "ff6".into(), start: 1000, duration: 900 }), "{fx:?}");
+        assert!(s.session().running("ff6").is_none());
     }
 
     /// A Files tab with a file of its own and one that is a library entry's (zelda's).

@@ -34,7 +34,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Idle | a tray icon not in our scope (device session) | Running(Found{tray}) | Move/Focus, Adopt | tray `a_program_with_a_tray_icon_runs…` |
 | Running(Found) | its scope listed | Running(Ours) (pid dropped, tray key kept) | — | tray test; tray `an_adopted_tray_program_keeps_its_menu` |
 | Running(Found) | icon gone and no windows | Idle, no play recorded | — | tray test |
-| Running(Ours) | scope gone, app id and windows (or just started) | Running(Windows) | — | GAP (the `has && !soon` branch) |
+| Running(Ours) | scope gone, app id and windows (or just started) | Running(Windows) since its launch | — | running `a_game_known_by_app_id_runs_on_by_its_windows_after_its_scope` |
 | Running(Ours) | scope gone otherwise | Idle | `RecordPlay`; NotStarted if it never had a window or tray icon and isn't quitting | tests `a_launch_that_ends_without_a_window_didnt_start`; tray `a_program_with_only_a_tray_icon_started` |
 | Running(Windows, unseen) | a new stray window before `until` | Running(Windows, seen) | Move, Focus | running `a_file_handed_…` |
 | Running(Windows, unseen) | past `until` | Idle, no play | — | running `a_file_handed_…` |
@@ -449,6 +449,10 @@ Shelf, files, radios, levels, status:
 - S37. The Mute key shows its notice when the volume is unknown and nothing changes (`lib.rs:1058`). Fixed: state/levels: the Mute key shows its notice only when the mute changed.
 - S38. The resume record can leave out a collection whose stored place is past its list after a relayout
   (`shelf/mod.rs:552`). Fixed: state/shelf: the resume record keeps a place past its shrunk list.
+- S39. An entry known by its app id (a Steam game) whose launch's scope ends while its window is open
+  runs on by its windows, but its play is then recorded from when the scope ended, not from its launch
+  (`running.rs` `follow_ours`); found by the test filling the GAP. Fixed: state/session: a play that goes
+  on by its windows counts from its launch.
 
 ## Decisions on the suspects (2026-10-23)
 
@@ -509,3 +513,5 @@ with what would make us change our minds.
 - S36. A listing that changes the entries shown asks for their metadata first.
 - S37. The Mute key shows its notice only when something changed.
 - S38. The resume record keeps every collection's place, clamped to its list.
+- S39. A launch that goes on by its windows (app id or browsed file) keeps its launch's start as the
+  play's start.
