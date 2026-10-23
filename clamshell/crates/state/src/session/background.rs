@@ -193,14 +193,15 @@ impl Session {
 
     /// Pauses each runner whose entries are paused together, when it is set to Pauses hidden and none of
     /// its entries has been shown for the grace period. None may be starting either, that is launched with
-    /// no window yet, since paused it would never draw one. Resumes the runner as one is shown, or when its
+    /// no window yet, or still waiting for its scope, since paused it would never draw one. Resumes the runner as one is shown, or when its
     /// setting changes.
     fn follow_runner_pauses(&mut self, now: u64, library: &Library, settings: &Settings, out: &mut Out) {
         for runner in &self.background.runners {
             let pauses = self.background_of(&runner.key, library, settings) == InBackground::Pauses;
             let of_runner = |r: &Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| o.key == runner.key);
             let shown = self.windows.iter().filter(|w| w.visible).any(|w| self.running_of(w).is_some_and(of_runner));
-            let starting = self.running.iter().filter(|r| of_runner(r)).any(|r| !r.found() && !r.seen);
+            let launching = self.launching.iter().any(|l| library.entry(&l.entry).and_then(|g| g.runner.as_ref()).is_some_and(|o| o.key == runner.key));
+            let starting = launching || self.running.iter().filter(|r| of_runner(r)).any(|r| !r.found() && !r.seen);
             match self.background.runner_pauses.follow(&runner.key, !pauses || shown || starting, now) {
                 Some(true) => out.effects.push(Effect::RunnerCommand(runner.pause.to_vec())),
                 Some(false) => out.effects.push(Effect::RunnerCommand(runner.resume.to_vec())),
@@ -357,6 +358,29 @@ mod tests {
         assert!(s.applied(Event::tick(t + 2 * GRACE + 1)).contains(&pause));
         // Shown again, it is resumed.
         assert!(s.applied(Event::Windows(vec![window(true)])).contains(&resume));
+    }
+
+    /// A launch whose scope is slow to come counts as starting: its runner, resumed for it, isn't paused
+    /// again while it waits.
+    #[test]
+    fn a_runner_isnt_paused_while_a_launch_waits_for_its_scope() {
+        let runner = clamshell_library::RunnerOf {
+            pause: vec!["pause".to_owned()].into(),
+            resume: vec!["resume".to_owned()].into(),
+            ..clamshell_library::RunnerOf::new("android", "Android", true)
+        };
+        let mut library = clamshell_library::demo::library();
+        library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap().runner = Some(runner.clone());
+        let mut s = State::new(crate::Init { library, ..init() });
+        s.settings_mut().set(Some(&runner.key), Setting::Background, Some(InBackground::Pauses.value()));
+        let pause = Effect::RunnerCommand(vec!["pause".into()]);
+        s.applied(Event::tick(100));
+        assert!(s.applied(Event::tick(100 + GRACE)).contains(&pause));
+        launch_now(&mut s, "desktop:firefox");
+        s.applied(Event::tick(101 + GRACE));
+        assert!(!s.applied(Event::tick(101 + 2 * GRACE)).contains(&pause), "launching, its scope not listed yet");
+        crate::testkit::start(&mut s, "desktop:firefox");
+        assert!(!s.applied(Event::tick(101 + 3 * GRACE)).contains(&pause), "started, no window yet");
     }
 
     #[test]

@@ -70,7 +70,7 @@ State: `Pauses{unused, paused: Hidden | Held}`.
 | Held | shown, Show, Quit, ForceKill | Running | Freeze off | same |
 | — | `Frozen(keys)` at start | Held (kept while the scope is listed, until its entry runs) | — | same; found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
 | Running | set to quit when closed, seen, no windows | Quitting | as Quit | background `quits_closed_ends_once_…` |
-| runner | none shown or starting for 10 s | runner paused | RunnerCommand(pause) | background `a_runner_paused_together…`; a slow launch re-pausing it (S8) GAP |
+| runner | none shown, launching or starting for 10 s | runner paused | RunnerCommand(pause) | background `a_runner_paused_together…`, `a_runner_isnt_paused_while_a_launch_waits_for_its_scope` |
 
 Freeze and RunnerCommand have no acknowledgement; the state assumes they worked.
 
@@ -388,7 +388,7 @@ Session and dock:
   and ended when its windows later close (`running.rs:566-631`). Fixed: state/session: a quit whose windows stay 10 s is given up.
 - S7. A window-found entry without its own process gets a tray icon's pid; Quit then signals it (`tray.rs:111`).
   Fixed: state/session: a tray icon stays with its adopted program and gives no pid.
-- S8. A runner paused again while a launch waits more than 10 s for its scope (`background.rs:447`).
+- S8. A runner paused again while a launch waits more than 10 s for its scope (`background.rs:447`). Fixed: state/session: a launch waiting for its scope keeps its runner resumed.
 - S9. A launch the launcher never answers stays launching, blocking a relaunch (`running.rs:542`).
 - S20. Back at the top of the dock's tray menu closes the whole menu instead of going back to the entry menu.
 - S21. Dock leftovers: `close` keeps the tray path; the menu stays open after its entry left; a Library
