@@ -88,23 +88,32 @@ screen capture for other clients, layer-shell for third-party clients, multi-sea
 
 ### Windows that aren't fullscreen
 
-The state decides each window's presentation from what the window says about itself (the compositor
-reports its parent, size limits and window type with `Opened` and `Changed`); the compositor computes the
-geometry and maps input through it. No window floats or is moved by hand: each has one fixed position.
+**MVP: one window at a time.** Each screen shows exactly one toplevel (with its popups): fullscreen, or
+centred at its own size on black. The compositor reports a window's parent, size limits and type with
+`Opened` and `Changed`; the state picks the presentation, and the compositor computes the geometry and maps
+input through it. No window floats or is moved by hand.
 
 - **Most windows** accept any size and are fullscreen.
-- **Dialogs** (a parent, or X11 `WM_TRANSIENT_FOR`) are drawn at their own size, centred over their parent,
-  as part of its group, never a tab of their own; one larger than the screen is told the screen's size.
-  - Modal (the xdg-dialog protocol's modal flag, or `_NET_WM_STATE_MODAL`): the parent is dimmed and
-    takes no input; the dialog stays in front until it closes.
-  - Non-modal, and dialogs that don't say: the parent is not dimmed and a tap gives it focus; the dialog
-    stays above its parent, and a tap on it takes focus back.
+- **A dialog** (a parent, or X11 `WM_TRANSIENT_FOR`) becomes the front of its parent's group, centred at its
+  own size on black, its parent not shown; closing it returns to the parent. One larger than the screen is
+  told the screen's size. Modal or not makes no difference: nothing beneath can be touched.
 - **Windows that can't change size** (minimum and maximum equal, or an X11 splash or utility window) are
-  centred at their own size on black, sharp at 1:1; one too big for the screen is scaled down to fit.
+  centred at their own size, sharp at 1:1; one too big for the screen is scaled down to fit.
 - **Windows that ignore their size** (mostly games rendering a fixed windowed resolution) are scaled to fit,
-  keeping their aspect, with black bars: on the device the scaling pipes can do it without the GPU. The
-  default follows the entry: fit for games, centred for apps; a per-entry setting can override it later.
+  keeping their aspect, with black bars (on the device the scaling pipes can do it without the GPU). The
+  default follows the entry: fit for games, centred for apps.
 - A touch on black around a window does nothing.
+
+**Later, considered:** dialogs whose parent should stay visible (find and replace, tool palettes, live
+previews) lose context in the MVP; switching between a dialog and its parent from the second screen covers
+it meanwhile. Two ways were weighed:
+
+- Dialogs on the second screen, the parent untouched on top: no app hints needed, but the second screen is
+  also the on-screen keyboard's and the touchpad's, and dialogs that take text would have to share it with
+  the keyboard. Rejected.
+- Dialogs overlaid on their parent, moved out of the way by touch: the likely direction, with its own
+  questions (what can be moved, where it stays, what a tap on the parent does, modal vs non-modal from the
+  apps' hints). For after the compositor has proven itself.
 
 ### Drawing
 
