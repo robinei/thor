@@ -34,7 +34,7 @@ until}`, `seen`, `app_id`), `units`, `pending_show`, `quitting`.
 | Running(Found) | its scope listed | Running(Ours) (pid and tray key dropped, S3) | — | tray test |
 | Running(Found) | icon gone and no windows | Idle, no play recorded | — | tray test |
 | Running(Ours) | scope gone, app id and windows (or just started) | Running(Windows) | — | GAP (the `has && !soon` branch) |
-| Running(Ours) | scope gone otherwise | Idle | `RecordPlay`; NotStarted if never seen and not quitting (S1) | tests `a_launch_that_ends_without_a_window_didnt_start` |
+| Running(Ours) | scope gone otherwise | Idle | `RecordPlay`; NotStarted if it never had a window or tray icon and isn't quitting | tests `a_launch_that_ends_without_a_window_didnt_start`; tray `a_program_with_only_a_tray_icon_started` |
 | Running(Windows, unseen) | a new stray window before `until` | Running(Windows, seen) | Move, Focus | running `a_file_handed_…` |
 | Running(Windows, unseen) | past `until` | Idle, no play | — | running `a_file_handed_…` |
 | Running(Windows, seen) | no windows left | Idle | `RecordPlay` from `since` | running `an_app_handed_over_…` |
@@ -375,7 +375,7 @@ app that opens another window; clocks advance by 0-400 s to cross the timeouts. 
 
 Session and dock:
 - S1. A tray-only program that exits by itself shows "didn't start" (`session/running.rs:261`): `seen` only
-  means it had a window.
+  means it had a window. Fixed: state/session: a program with a tray icon has started.
 - S2. A scope of an entry not in the library (window-found, tray-found, browsed) is never re-adopted after
   a restart (`running.rs:222`); its windows and tray are skipped as ours, so it runs with no dock tile and
   can't be quit, and a Frozen hold for it is dropped so its slice stays frozen.

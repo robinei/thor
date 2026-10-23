@@ -235,6 +235,29 @@ mod tests {
         assert!(s.session().running("desktop:firefox").is_none(), "its scope gone");
     }
 
+    /// A program that lives in its tray, started by ClamShell and ended without ever opening a window, did
+    /// start: no "didn't start" notice.
+    #[test]
+    fn a_program_with_only_a_tray_icon_started() {
+        let not_started = |s: &State| matches!(notice(s), Some(crate::bottom::notice::NoticeKind::NotStarted(_)));
+        let mut s = state();
+        let zelda = launch(&mut s, "zelda-lttp");
+        s.applied(Event::Tray(vec![item(":1.5/a", "zelda3", zelda.unit().as_deref())]));
+        // Its icon goes before its scope, as when it exits.
+        s.applied(Event::Tray(vec![]));
+        crate::testkit::end(&mut s, "zelda-lttp");
+        assert!(s.session().running("zelda-lttp").is_none());
+        assert!(!not_started(&s), "{:?}", notice(&s));
+        // Found by its icon and adopted, the same.
+        let mut s = started(crate::Init { device_session: true, ..init() });
+        let fx = s.applied(Event::Tray(vec![item(":1.7/c", "thing", None)]));
+        let instance = fx.iter().find_map(|e| if let Effect::Adopt { instance, .. } = e { Some(instance.clone()) } else { None }).unwrap();
+        s.applied(Event::Units(vec![instance]));
+        s.applied(Event::Units(vec![]));
+        assert!(s.session().running("tray:thing").is_none());
+        assert!(!not_started(&s), "{:?}", notice(&s));
+    }
+
     #[test]
     fn a_guest_in_a_desktops_session_adopts_none_of_its_programs() {
         let mut s = state();

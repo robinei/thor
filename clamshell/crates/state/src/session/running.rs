@@ -79,8 +79,8 @@ pub struct Running {
     pub app_id: Option<Arc<str>>,
     /// When it first started, in monotonic seconds as in [`crate::Event::Tick`].
     pub start: u64,
-    /// Whether a window of it has been there since it started, or since it went on by its windows. Until
-    /// then it is starting.
+    /// Whether a window of it has been there since it started, or since it went on by its windows, or,
+    /// unless it runs by its windows, a tray icon of it. Until then it is starting.
     pub(crate) seen: bool,
     /// Its entry as it was when it started. The dock shows it by this if it leaves the library while it
     /// runs, for example because its file was renamed or deleted.
@@ -385,7 +385,8 @@ impl Session {
         out.effects.extend(up.map(|w| Effect::Window(WindowCommand::Up { window: w.id, to: None })));
     }
 
-    /// Ends entries running by their windows, or found by a tray icon, once those are gone. `taken` is an
+    /// Marks entries seen once they have a window or a tray icon. Ends entries running by their windows, or
+    /// found by a tray icon, once those are gone. `taken` is an
     /// entry that was just given a window, which is still where it came up. A play by windows is added to
     /// `plays`.
     fn end_windowless(&mut self, taken: Option<&Arc<str>>, now: u64, plays: &mut Vec<Play>) {
@@ -393,12 +394,14 @@ impl Session {
         // all of them.
         let mut with = std::mem::take(&mut self.with_windows);
         with.clear();
-        with.extend(self.running.iter().map(|r| taken == Some(&r.id) || self.windows_of(&r.id).next().is_some()));
+        with.extend(self.running.iter().map(|r| (taken == Some(&r.id) || self.windows_of(&r.id).next().is_some(), self.tray_of(&r.id).is_some())));
         let (icons, units) = (&self.tray, &self.units);
         let mut has_windows = with.iter();
         self.running.retain_mut(|r| {
-            let has = has_windows.next().copied().unwrap_or(false);
-            r.seen |= has;
+            let (has, icon) = has_windows.next().copied().unwrap_or((false, false));
+            // A program with a tray icon has started, window or not. One running by its windows is seen
+            // by them alone, since it ends once they are gone.
+            r.seen |= has || (icon && !matches!(r.origin, Origin::Windows { .. }));
             match r.origin {
                 Origin::Found { ref tray, .. } => tray.as_ref().is_some_and(|k| icons.iter().any(|t| t.key == *k)) || has,
                 Origin::Windows { since, until } => {

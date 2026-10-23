@@ -55,9 +55,9 @@ pub struct Session {
     /// main screen. They tell which windows are new and when the one in front closes.
     followed_windows: Vec<i64>,
     followed_front: Option<String>,
-    /// Which running entries have windows, in their order, kept so that each pass reuses it (see
-    /// [`Session::end_windowless`]).
-    with_windows: Vec<bool>,
+    /// Which running entries have windows and which have a tray icon, in their order, kept so that each
+    /// pass reuses it (see [`Session::end_windowless`]).
+    with_windows: Vec<(bool, bool)>,
     /// Programs' tray icons (see [`crate::session::tray`]).
     tray: Vec<tray::TrayItem>,
     /// Programs paused or ended while hidden (see [`crate::session::background`]).
