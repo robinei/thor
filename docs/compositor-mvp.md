@@ -104,6 +104,18 @@ input through it. No window floats or is moved by hand.
   default follows the entry: fit for games, centred for apps.
 - A touch on black around a window does nothing.
 
+**Switching between a group's windows** (needed even in the MVP: a dialog that can't be closed would
+otherwise hide its parent):
+
+- **Home+Left and Home+Right** show the previous and next window in the front group, next to Home+Up and
+  Home+Down, which move windows between the screens. (Home+R1 is the screenshot; Home+L1 stays free.)
+- **The second screen shows that there are more**, never the top: a row of small grey dots under the front
+  entry's dock tile, one per window of its group, the shown one brighter, absent when there is only one;
+  a short notice when switching ("Find, 2 of 2"); and the entry's dock menu lists its windows to pick one
+  by touch.
+- A new dialog still takes the front of its group (it usually needs an answer); Home+Left/Right goes back.
+- The count is derived from the state's windows, not stored.
+
 **Later, considered:** dialogs whose parent should stay visible (find and replace, tool palettes, live
 previews) lose context in the MVP; switching between a dialog and its parent from the second screen covers
 it meanwhile. Two ways were weighed:
