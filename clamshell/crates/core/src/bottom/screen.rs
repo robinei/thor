@@ -22,10 +22,10 @@ use std::sync::Arc;
 use crate::bottom::Bottom;
 use crate::bottom::notice::NoticeKind;
 use crate::effect::{Effect, Save, WindowCommand};
-use crate::out::Out;
 use crate::session::instance::Instance;
 use crate::session::windows::Window;
 use crate::settings::BottomWhenIdle;
+use crate::state::out::Out;
 use crate::{Clock, Session};
 
 /// A window that goes to the bottom screen when its entry opens it. The rule names the entry by its id,
@@ -216,7 +216,7 @@ impl Bottom {
 
     /// Runs after any event. Turns the bottom screen off or on by itself as [`Bottom::idle_wanted`] says.
     /// A touch, the pad's focus, a window moved down or the charger turn it on again. The screen is told
-    /// after the event (see [`crate::sync::Sent::bottom_power`]).
+    /// after the event (see [`crate::state::sync::Sent::bottom_power`]).
     pub(crate) fn follow_power(&mut self, p: Power, now: u64) {
         self.screen.idle_off = self.idle_wanted(p, now);
     }

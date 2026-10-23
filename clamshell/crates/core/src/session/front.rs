@@ -1,7 +1,7 @@
 //! What is in front: the Home button, and what takes a closed window's place, which is what was in front
 //! before it.
 
-use crate::out::Out;
+use crate::state::out::Out;
 use crate::{Effect, EntryAct, Event, Instance, Running, Session, WindowCommand};
 
 impl Session {

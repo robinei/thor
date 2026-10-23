@@ -15,7 +15,7 @@ pub mod touch;
 use crate::Effect;
 use crate::effect::Watch;
 use crate::kit::names::names;
-use crate::out::Out;
+use crate::state::out::Out;
 use editor::{Editor, Editors};
 use notice::{Notice, NoticeSlot};
 

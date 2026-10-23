@@ -2,9 +2,9 @@
 //! fetching metadata first for the entries it shows.
 
 use crate::bottom::keyboard::{self, Key};
-use crate::out::Out;
 use crate::shelf::actions::Shortcut;
 use crate::shelf::{Shelf, ShelfView};
+use crate::state::out::Out;
 use crate::{Effect, EntryAct, Event, Id, Pointer, Save, ShelfEvent, ShelfId};
 
 impl Shelf {
@@ -151,7 +151,7 @@ impl Shelf {
     }
 
     /// While metadata is being fetched, what the list shows, whose entries' metadata is asked for first
-    /// whenever it changes (see [`crate::sync::Sent::fetch_first`]).
+    /// whenever it changes (see [`crate::state::sync::Sent::fetch_first`]).
     pub(crate) fn fetch_first(&self) -> Option<ShelfView> {
         self.fetching.then(|| self.view())
     }

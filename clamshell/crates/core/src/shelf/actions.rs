@@ -11,9 +11,9 @@
 //! Select. The details draw these rows in order, and the pad's buttons act on them. Holding A on the
 //! selected entry takes the pad to the rows themselves (see [`Shelf::in_actions`]).
 
-use crate::out::Out;
 use crate::shelf::Shelf;
 use crate::shelf::files::FileAction;
+use crate::state::out::Out;
 use crate::{EntryAct, Pointer, ShelfId};
 
 /// A row of the details' actions.

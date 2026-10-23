@@ -16,7 +16,7 @@ pub mod windows;
 use std::sync::Arc;
 
 use crate::effect::{Effect, WindowCommand};
-use crate::out::Out;
+use crate::state::out::Out;
 use crate::{Entry, Library};
 use instance::Instance;
 use running::{Front, Launching, Running};

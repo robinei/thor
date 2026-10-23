@@ -29,9 +29,9 @@ use clamshell_library::{Launch, ids};
 use crate::bottom::Tab;
 use crate::bottom::notice::{NoticeKind, NoticeSlot};
 use crate::effect::{Effect, Save, WindowCommand};
-use crate::out::Out;
 use crate::session::instance::{Instance, STEAM_APP_PREFIX};
 use crate::settings::Settings;
+use crate::state::out::Out;
 use crate::{Clock, Entry, Library, Resume, Session, Shelf};
 
 /// What is in front on the main screen.

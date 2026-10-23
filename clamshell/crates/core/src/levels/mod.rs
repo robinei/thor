@@ -20,8 +20,8 @@ use crate::id::Id;
 use crate::kit::debounce::Debounce;
 use crate::kit::list::{ItemKey, Rows};
 use crate::nav::lists::{ListId, RowPart};
-use crate::out::Out;
-use crate::resume::SAVE_AFTER;
+use crate::state::out::Out;
+use crate::state::resume::SAVE_AFTER;
 use crate::{AudioId, LevelEvent};
 use slider::{Control, Slider};
 

@@ -30,8 +30,8 @@ use crate::id::{KeymapId, Target};
 use crate::keymap::{Actuation, Binding, Chord, Input, Keymap, Keymaps, Kind, Layer, Output, PadOut, Param, as_on_the_pad};
 use crate::levels::slider::{Control, Slider};
 use crate::nav::lists::RowPart;
-use crate::out::Out;
 use crate::settings::Settings;
+use crate::state::out::Out;
 use crate::{Event, Tab};
 
 mod layers;

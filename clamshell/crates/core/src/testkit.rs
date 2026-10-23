@@ -130,7 +130,7 @@ pub fn force_kill(s: &mut State, id: &str) -> Vec<Effect> {
 
 /// Launches entry `id` again, as the dock's Open another does, with what that does at once.
 pub fn launch_now(s: &mut State, id: &str) -> Vec<Effect> {
-    let mut out = crate::out::Out::default();
+    let mut out = crate::state::out::Out::default();
     s.launch(id.into(), None, crate::session::running::Start::Front, &mut out);
     out.effects
 }

@@ -14,8 +14,8 @@ use std::sync::Arc;
 use clamshell_library::RunnerOf;
 
 use crate::bottom::notice::{NoticeKind, NoticeSlot};
-use crate::out::Out;
 use crate::session::running::Running;
+use crate::state::out::Out;
 use crate::{Effect, Session, Shelf};
 
 impl Session {

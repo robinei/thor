@@ -10,10 +10,10 @@ use std::sync::Arc;
 use crate::device::idle::Stage;
 use crate::effect::{Effect, Watch, WindowCommand};
 use crate::keymap::screens::Keymapping;
-use crate::out::Out;
 use crate::settings::{Setting, Values};
 use crate::shelf::files::{Browse, BrowseCommand};
 use crate::shelf::{Shelf, ShelfView};
+use crate::state::out::Out;
 use crate::{Levels, PadRoute, Running};
 
 /// What the outside should have as things are now. It is built after every event, so it holds

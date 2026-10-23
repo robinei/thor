@@ -9,7 +9,7 @@
 //! the icons sit near the middle of the bar, but not exactly in it.
 
 use crate::levels::{Level, Levels};
-use crate::out::Out;
+use crate::state::out::Out;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Control {

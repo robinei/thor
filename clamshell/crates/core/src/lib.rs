@@ -21,19 +21,20 @@
 //! - [`nav`]: focus and presses ([`Pointer`]), the lists, and the pad's routing ([`Pad`]);
 //! - [`kit`]: generic parts the areas build on, which know nothing about them.
 //!
-//! [`State`] holds the areas and coordinates them. Outside code reads an area through State's accessor
+//! [`State`] holds the areas and coordinates them. It and what only it uses (the sync's record of what
+//! was sent, the per-event output, the resume record) are in [`state`]'s folder. Outside code reads an area through State's accessor
 //! for it (`s.radios().wifi()`), and changes state only by sending an event to [`State::apply`], which
 //! runs in three phases:
 //!
-//! 1. Handle: the event goes to the rules of its area. They push effects into one [`out::Out`] in the
-//!    order things happen. What needs several areas, such as a tab change, playing an entry or choosing
+//! 1. Handle: the event goes to the rules of its area. They push effects into one
+//!    [`crate::state::out::Out`] in the order things happen. What needs several areas, such as a tab change, playing an entry or choosing
 //!    a keymap, is queued as an event, which State handles after the rule returns, so its effects follow
 //!    those pushed before it. Outside code may send the same events. Rules don't say which screens
 //!    they changed: after an event the UI records each screen again and draws one that looks different.
 //! 2. Settle: the steps that bring every area up to date with what happened, in an order where each
 //!    finds the ones it reads settled (see [`State::settle`]).
 //! 3. Sync: what the outside should have as things are now is compared with what it was last sent, and
-//!    the difference is sent ([`sync`]).
+//!    the difference is sent ([`crate::state::sync`]).
 //!
 //! The workspace lints rule out panics: no `unwrap`, `expect` or indexing. A lookup whose index is valid
 //! by construction, such as an enum's position in an array sized for it, or an index held by the
@@ -50,31 +51,25 @@ pub mod keymap;
 pub mod kit;
 pub mod levels;
 pub mod nav;
-mod out;
 pub mod radios;
-mod resume;
 pub mod session;
 pub mod settings;
 pub mod shelf;
 mod state;
 pub mod status;
-mod sync;
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 pub(crate) mod testkit;
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod tests;
 
 use settings::Settings;
 
 // What other crates use to talk to the state: the events and effects and what they carry, the ids, and
 // the groups the getters return.
+pub use crate::state::resume::Resume;
 pub use clock::Clock;
 pub use effect::{Effect, Save, Watch, WindowCommand};
 pub use event::{EntryAct, Event, KeymapEvent, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
 pub use id::{AudioId, BatteryId, BtId, DeviceId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, TimeId, WifiId};
-pub use resume::Resume;
 
 pub use bottom::editor::Editor;
 pub use bottom::{Bottom, Tab};

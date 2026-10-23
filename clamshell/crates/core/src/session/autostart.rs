@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use crate::effect::{Effect, Save};
-use crate::out::Out;
+use crate::state::out::Out;
 use crate::{Library, Session};
 
 impl Session {

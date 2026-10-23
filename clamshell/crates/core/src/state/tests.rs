@@ -178,7 +178,7 @@ fn the_windows_effects_follow_the_later_steps() {
 
 /// Sync sends the settings in force, then the keymap, then the pad's route. Nothing outside depends on
 /// the settings coming before the keymap; the keymap must come before the route (see
-/// [`crate::sync::Sent::sync`]).
+/// [`crate::state::sync::Sent::sync`]).
 #[test]
 fn a_game_coming_in_front_gets_its_settings_then_its_keymap_then_the_pad() {
     let mut s = started(Init { keymaps: crate::keymap::Keymaps::initial(), ..init() });

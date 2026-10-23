@@ -2,6 +2,13 @@
 //! to read, applies events in three phases (handle, settle, sync: see [`State::apply`]), and carries out
 //! what needs more than one area.
 
+pub(crate) mod out;
+pub(crate) mod resume;
+pub(crate) mod sync;
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests;
+
 use std::sync::Arc;
 
 use crate::bottom::Bottom;
@@ -16,16 +23,16 @@ use crate::keymap::screens::{KeymapCx, Keymapping};
 use crate::kit::debounce::Debounce;
 use crate::levels::slider::Control;
 use crate::nav::lists::Scrolls;
-use crate::out::Out;
-use crate::resume::SAVE_AFTER;
 use crate::session::running::{Instead, LaunchRequest, Start};
 use crate::settings::{BottomWhenIdle, MouseAtLaunch, Setting, Values};
-use crate::sync::{Resend, Sent, Wanted};
 use crate::{
     BtId, Clock, Dock, EditorId, Effect, Entry, EntryAct, Event, Id, Init, KeymapEvent, KeymapId, Launch, LaunchEvent, Level, LevelEvent, Levels, Library,
     ListEvent, ListId, Lists, Pad, PadRoute, Panel, Pointer, PointerEvent, Prefs, Radios, Reading, Resume, RowPart, Save, Scroll, Session, SettingsId, Shelf,
     Slide, Sys, Tab, Watch, WifiId, WindowCommand,
 };
+use out::Out;
+use resume::SAVE_AFTER;
+use sync::{Resend, Sent, Wanted};
 
 /// How a target was pressed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,7 +67,7 @@ pub struct State {
     /// moment. Shelf and the bottom screen say when they changed; `apply` touches this at its end.
     resume: Debounce,
     idle: Idle,
-    /// What the outside was last sent (see [`crate::sync`]).
+    /// What the outside was last sent (see [`crate::state::sync`]).
     sent: Sent,
     /// The events the rules queue for State, lent to `apply`'s [`Out`] and returned empty, so that its
     /// room is kept.
@@ -498,7 +505,7 @@ impl State {
 
     /// The UI is up. Sends what was waiting for it: the dock if pins were dropped at start, the
     /// brightness, the runners' keymaps and the down rules, and after the event the pad's route and
-    /// keymap. The open tab's watch starts from now (see [`crate::sync::Sent::ui_started`]).
+    /// keymap. The open tab's watch starts from now (see [`crate::state::sync::Sent::ui_started`]).
     fn ui_started(&mut self, out: &mut Out) {
         self.sent.ui_started();
         self.sent.resend(Resend::Start);
@@ -886,7 +893,7 @@ impl State {
         }
     }
 
-    /// The second screen's tab changed, and its watch follows (see [`crate::sync::Sent::watches`]). What the
+    /// The second screen's tab changed, and its watch follows (see [`crate::state::sync::Sent::watches`]). What the
     /// tab left had going ends: the dock's menu or move, and any level row being set. The time tab opens
     /// on its main page again.
     fn left_tab(&mut self) {
@@ -1061,7 +1068,7 @@ impl State {
 
     /// Changes `setting` where the panel edits, in the game's overrides or the global settings. It is set
     /// to `value`, or back to the default for `None`. The change is saved, and applied after the event
-    /// if the settings in force changed (see [`crate::sync`]).
+    /// if the settings in force changed (see [`crate::state::sync`]).
     fn change(&mut self, setting: Setting, value: Option<u16>, out: &mut Out) {
         let entry = self.panel().editing().map(|g| g.id.clone());
         self.prefs.set(entry.as_ref(), setting, value);

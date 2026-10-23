@@ -22,7 +22,7 @@ use std::sync::Arc;
 use crate::bottom::Tab;
 use crate::bottom::editor::{Editor, Purpose};
 use crate::effect::{Effect, Save, WindowCommand};
-use crate::out::Out;
+use crate::state::out::Out;
 use crate::{Event, Id, Pointer};
 use account::{Account, AccountCommand, PasswordStep};
 use sticks::{Calibrations, Progress, Sticks};
@@ -115,7 +115,7 @@ impl Device {
     }
 
     /// Opens the view on the main screen, bringing shelf's window to the front, with the pad's focus on
-    /// its first row. The account is read while it is open ([`crate::sync::Sent::watches`]).
+    /// its first row. The account is read while it is open ([`crate::state::sync::Sent::watches`]).
     pub(crate) fn open(&mut self, pointer: &mut Pointer, out: &mut Out) {
         self.open = true;
         pointer.focus_on(Id::Device(DeviceId::Wifi));
