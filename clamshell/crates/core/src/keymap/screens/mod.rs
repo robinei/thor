@@ -32,7 +32,7 @@ use crate::levels::slider::{Control, Slider};
 use crate::nav::lists::RowPart;
 use crate::out::Out;
 use crate::settings::Settings;
-use crate::{Bottom, Event, Tab};
+use crate::{Event, Tab};
 
 mod layers;
 mod params;
@@ -150,13 +150,12 @@ pub struct Keymapping {
     undo: Undo,
 }
 
-/// What the keymaps' screens read from elsewhere: the game the settings panel edits, if any, the keymap
-/// chosen for its scope, and the time, in monotonic seconds.
+/// What the keymaps' screens read from elsewhere: the game the settings panel edits, if any, and the
+/// keymap chosen for its scope.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct KeymapCx {
     pub(crate) game: Option<Arc<str>>,
     pub(crate) chosen: u16,
-    pub(crate) now: u64,
 }
 
 /// The edit screen's own state, kept while the screens for its input are open. It holds the layer shown
@@ -396,15 +395,15 @@ impl Keymapping {
     }
 
     /// The keymaps' screens' buttons, but Back (see [`Keymapping::back`]).
-    pub(crate) fn on(&mut self, id: KeymapId, long: bool, cx: &KeymapCx, settings: &Settings, bottom: &mut Bottom, out: &mut Out) {
+    pub(crate) fn on(&mut self, id: KeymapId, long: bool, cx: &KeymapCx, settings: &Settings, editors: &mut Editors, out: &mut Out) {
         let Some(screen) = self.open else {
             return;
         };
         debug_assert!(screen.keymap().is_none_or(|k| self.keymaps.get(k).is_some()), "the keymap of the screen open is there: {screen:?}");
         match screen {
-            Screen::List if id == KeymapId::New => name_keymap(bottom.editors_mut(), KeymapName::New, String::new()),
+            Screen::List if id == KeymapId::New => name_keymap(editors, KeymapName::New, String::new()),
             Screen::List => {}
-            Screen::Menu(k) => self.on_menu(id, k, settings, bottom.editors_mut(), out),
+            Screen::Menu(k) => self.on_menu(id, k, settings, editors, out),
             Screen::Overwrite { own, to } if id == KeymapId::ConfirmSave => {
                 self.open = Some(Screen::List);
                 if self.keymaps.copy_into(to, own) {
@@ -412,14 +411,14 @@ impl Keymapping {
                 }
             }
             Screen::Delete(k) if id == KeymapId::ConfirmDelete => self.delete(k, out),
-            Screen::Edit(k) => self.on_edit_screen(id, k, long, cx, bottom, out),
-            Screen::LayerPicker(k) => self.on_layer_picker(id, k, long, bottom.editors_mut()),
-            Screen::LayerMenu { id: k, layer } => self.on_layer_menu(id, k, layer, bottom.editors_mut(), out),
+            Screen::Edit(k) => self.on_edit_screen(id, k, long, cx, out),
+            Screen::LayerPicker(k) => self.on_layer_picker(id, k, long, editors),
+            Screen::LayerMenu { id: k, layer } => self.on_layer_menu(id, k, layer, editors, out),
             Screen::Layers { id: k, input } => match id {
                 KeymapId::ToLayer(layer) => self.choose(k, input, Output::Layer(layer), out),
                 KeymapId::NewLayer => {
                     let act = self.edit.act;
-                    name_keymap(bottom.editors_mut(), KeymapName::NewLayer(k, Some((input, act))), String::new());
+                    name_keymap(editors, KeymapName::NewLayer(k, Some((input, act))), String::new());
                 }
                 _ => {}
             },
@@ -464,7 +463,7 @@ impl Keymapping {
 
     /// The edit screen's buttons: selecting an input (a long press removes its binding), its actuation,
     /// its target and parameters, the layer shown, Undo, Make own, and the gyro's calibration and hold.
-    fn on_edit_screen(&mut self, id: KeymapId, k: u16, long: bool, cx: &KeymapCx, bottom: &mut Bottom, out: &mut Out) {
+    fn on_edit_screen(&mut self, id: KeymapId, k: u16, long: bool, cx: &KeymapCx, out: &mut Out) {
         match id {
             KeymapId::MakeOwn => self.make_own(k, cx, out),
             KeymapId::Input(input) if long => {
@@ -492,10 +491,7 @@ impl Keymapping {
                     self.saved_if(changed, out);
                 }
             }
-            KeymapId::Calibrate => {
-                bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Gyro(None), cx.now);
-                out.effects.push(Effect::CalibrateGyro);
-            }
+            KeymapId::Calibrate => out.events.push(Event::CalibrateGyro),
             KeymapId::Holds => {
                 let input = self.edit.selected.filter(|i| *i == Input::Gyro);
                 if let Some(input) = input.filter(|i| self.param_base(k, *i).is_some_and(|b| b.output != Output::Nothing)) {

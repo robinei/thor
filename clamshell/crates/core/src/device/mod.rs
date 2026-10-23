@@ -19,9 +19,8 @@ pub mod sticks;
 use crate::DeviceId;
 use std::sync::Arc;
 
+use crate::bottom::Tab;
 use crate::bottom::editor::{Editor, Purpose};
-use crate::bottom::notice::NoticeKind;
-use crate::bottom::{Bottom, Tab};
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::out::Out;
 use crate::{Event, Id, Pointer};
@@ -134,9 +133,9 @@ impl Device {
         self.account = account;
     }
 
-    /// A tap on one of the Device view's targets at `now`. Closing it gives the focus back to shelf's
+    /// A tap on one of the Device view's targets. Closing it gives the focus back to shelf's
     /// selection (`selected`). A tab to open is queued as an event, since State changes tabs.
-    pub(crate) fn tap(&mut self, id: DeviceId, now: u64, bottom: &mut Bottom, pointer: &mut Pointer, selected: Option<&Arc<str>>, out: &mut Out) {
+    pub(crate) fn tap(&mut self, id: DeviceId, pointer: &mut Pointer, selected: Option<&Arc<str>>, out: &mut Out) {
         let account = self.account;
         match id {
             DeviceId::Wifi => out.events.push(Event::ChooseTab(Tab::Wifi)),
@@ -154,10 +153,7 @@ impl Device {
                 out.effects.push(Effect::CalibrateSticks);
             }
             DeviceId::Sticks => {}
-            DeviceId::Gyro => {
-                bottom.notice_mut().show(NoticeKind::Gyro(None), now);
-                out.effects.push(Effect::CalibrateGyro);
-            }
+            DeviceId::Gyro => out.events.push(Event::CalibrateGyro),
             DeviceId::Refresh if self.refresh != Refresh::Running => {
                 self.refresh = Refresh::Running;
                 out.effects.push(Effect::CalibrateRefresh);

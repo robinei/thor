@@ -17,7 +17,6 @@
 
 use std::sync::Arc;
 
-use crate::bottom::Bottom;
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::id::DockId;
 use crate::keymap::Dir;
@@ -141,18 +140,18 @@ impl Dock {
     }
 
     /// A tap or long press on a dock tile, a choice in its menu, which then closes, or a step in move mode.
-    pub(crate) fn on(&mut self, id: DockId, long: bool, session: &Session, bottom: &mut Bottom, out: &mut Out) {
+    /// Returns the window to show on the bottom screen when a tap shows an entry whose windows are all
+    /// there, since the bottom screen shows it.
+    pub(crate) fn on(&mut self, id: DockId, long: bool, session: &Session, out: &mut Out) -> Option<i64> {
         match id {
             DockId::Entry(i) => {
-                let Some(entry) = self.items.get(usize::from(i)).map(|item| item.id.clone()) else {
-                    return;
-                };
+                let entry = self.items.get(usize::from(i)).map(|item| item.id.clone())?;
                 if long {
                     self.menu = Some(entry);
                     self.tray = None;
-                    return;
+                    return None;
                 }
-                tap(entry, session, bottom, out);
+                return tap(entry, session, out);
             }
             DockId::Tray(i) => {
                 if let Some(entry) = self.items.get(usize::from(i)).map(|item| item.id.clone()) {
@@ -184,6 +183,7 @@ impl Dock {
                 }
             }
         }
+        None
     }
 
     fn menu_choice(&mut self, choice: DockId, entry: Arc<str>, session: &Session, out: &mut Out) {
@@ -278,18 +278,18 @@ impl Dock {
 }
 
 /// A tap on a dock entry. A stopped entry starts. A running one is shown, on the bottom screen if all its
-/// windows are there.
-fn tap(entry: Arc<str>, session: &Session, bottom: &mut Bottom, out: &mut Out) {
+/// windows are there: that window is returned.
+fn tap(entry: Arc<str>, session: &Session, out: &mut Out) -> Option<i64> {
     if session.running(&entry).is_none() {
         out.events.push(Event::Entry(entry, EntryAct::Play));
-        return;
+        return None;
     }
     let below = |w: &&Window| w.down;
     let down = session.windows_of(&entry).all(|w| w.down).then(|| session.windows_of(&entry).find(below).map(|w| w.id)).flatten();
-    match down {
-        Some(window) => bottom.show_program_down(window, out),
-        None => out.events.push(Event::Entry(entry, EntryAct::Show)),
+    if down.is_none() {
+        out.events.push(Event::Entry(entry, EntryAct::Show));
     }
+    down
 }
 
 impl Session {

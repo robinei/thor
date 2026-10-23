@@ -287,6 +287,10 @@ impl State {
                 self.device.refresh_done(result);
                 self.sent.resend(Resend::RefreshCalibrated);
             }
+            Event::CalibrateGyro => {
+                self.bottom.notice_mut().show(NoticeKind::Gyro(None), self.clock.mono());
+                out.effects.push(Effect::CalibrateGyro);
+            }
             Event::GyroCalibrated(ok) => {
                 self.bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Gyro(Some(ok)), self.clock.mono());
             }
@@ -618,7 +622,9 @@ impl State {
                 self.shelf.on_target(id, long, &mut self.pointer, out);
             }
             Id::Dock(id) => {
-                self.dock.on(id, long, &self.session, &mut self.bottom, out);
+                if let Some(window) = self.dock.on(id, long, &self.session, out) {
+                    self.bottom.show_program_down(window, out);
+                }
             }
             Id::Settings(id) => {
                 self.on_settings(id, long, out);
@@ -686,7 +692,7 @@ impl State {
             }
             Id::Time(id) => self.sys.on_time(id, self.scrolls.get_mut(ListId::Time), out),
             Id::Device(id) => {
-                self.device.tap(id, self.clock.mono(), &mut self.bottom, &mut self.pointer, self.shelf.selected(), out);
+                self.device.tap(id, &mut self.pointer, self.shelf.selected(), out);
             }
             Id::Battery(id) => {
                 self.sys.on_battery(id, &self.session, out);
@@ -778,10 +784,10 @@ impl State {
         self.keymapping.listening(self.bottom.tab(), self.bottom.editor().is_some())
     }
 
-    /// What the keymaps' screens read from the settings panel and the clock (see [`KeymapCx`]).
+    /// What the keymaps' screens read from the settings panel (see [`KeymapCx`]).
     fn keymap_cx(&self) -> KeymapCx {
         let panel = self.panel();
-        KeymapCx { game: panel.editing().map(|g| g.id.clone()), chosen: panel.keymap_chosen(), now: self.clock.mono() }
+        KeymapCx { game: panel.editing().map(|g| g.id.clone()), chosen: panel.keymap_chosen() }
     }
 
     // Lists.
@@ -1048,7 +1054,7 @@ impl State {
             return;
         }
         let cx = self.keymap_cx();
-        self.keymapping.on(id, long, &cx, self.prefs.settings(), &mut self.bottom, out);
+        self.keymapping.on(id, long, &cx, self.prefs.settings(), self.bottom.editors_mut(), out);
     }
 
     /// A row of the picker (see [`Keymapping::on_row`]).

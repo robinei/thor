@@ -96,6 +96,8 @@ pub enum Event {
     Device(DeviceKey),
     /// The requested screenshot was taken, with its file, or failed, with the reason.
     Screenshot(Result<String, String>),
+    /// Calibrates the gyro. A notice says to hold the device still until it ends.
+    CalibrateGyro,
     /// A requested gyro calibration ended. True if it worked, meaning the device was held still enough.
     GyroCalibrated(bool),
     /// Progress or the end of a stick calibration (see [`crate::device`]).
