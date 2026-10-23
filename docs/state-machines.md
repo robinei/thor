@@ -228,8 +228,8 @@ Overwrite, Delete; Undo per keymap since the edit screen opened.
 | tap on an entry not in the list does nothing, the focus included | `a_tap_on_an_entry_not_in_the_list_does_nothing` |
 | long press on the selected entry, by touch or pad: its actions open, the focus ring on the first | `a_held_on_the_selected_entry_opens_its_actions` |
 | typing filters; Enter activates; Clear | `typing_with_shelf_in_front_finds_entries_…` |
-| favourite on/off: relayout by name and id, `Save(Favourites)`; the pointer isn't moved (S25) | `a_favourite_shows_in_its_collection_…`; removing, and the Favourites tab vanishing, GAP |
-| a play recorded: relayout, `RecordPlay`, `ReadPosition` for videos | tests `a_launchs_start_and_end…` (count only) |
+| favourite on/off: relayout by name and id, `Save(Favourites)`; a focus in the list follows the selection | `a_favourite_shows_in_its_collection_…`, `a_favourite_removed_moves_the_focus_with_the_selection`; the Favourites tab vanishing GAP |
+| a play recorded: relayout (a focus in the list follows the selection: GAP), `RecordPlay`, `ReadPosition` for videos | tests `a_launchs_start_and_end…` (count only) |
 | a group launched from elsewhere: its collection's places reset, the path opened, `ShowShelf` | `a_group_started_from_elsewhere_opens_in_shelf` |
 | Library read: places restored by name and id, the typed filter dropped (S26) | `listings_outlive_the_library_read_again`; selection gone and filter GAP |
 | Continue, Meta, Position | `continue_plays_on_where_the_series_was_left`; Meta GAP |
@@ -415,7 +415,7 @@ Second screen, device, pad, keymaps:
 Shelf, files, radios, levels, status:
 - S23. A tap on an entry not in the list leaves the focus on it. Fixed: state/shelf: a tap on an entry not in the list does nothing.
 - S24. A long press on the selected entry by touch plays it (`shelf/rules.rs:17`). Fixed: state/shelf: a long press on the selected entry opens its actions by touch too.
-- S25. A relayout (favourite, play) doesn't move the pointer's focus with the selection (`rules.rs:141`).
+- S25. A relayout (favourite, play) doesn't move the pointer's focus with the selection (`rules.rs:141`). Fixed: state/shelf: a relayout moves the focus with the selection.
 - S26. A Library read drops the typed filter.
 - S27. Copy/Cut with only stale selected entries makes an empty clip that Paste offers and ignores (`files.rs:316`).
 - S28. A cut clip is cleared before the move finishes, so after a failed move it is gone.

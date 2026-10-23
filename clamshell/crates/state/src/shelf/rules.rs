@@ -35,7 +35,7 @@ impl Shelf {
                 }
             }
             ShelfId::Launch => self.activate(pointer, out),
-            ShelfId::Favourite => self.toggle_favourite(out),
+            ShelfId::Favourite => self.toggle_favourite(pointer, out),
             ShelfId::Pin => self.ask(EntryAct::TogglePin, out),
             ShelfId::Continue => self.continue_selected(out),
             ShelfId::Enqueue => self.ask_enqueue(out),
@@ -134,13 +134,14 @@ impl Shelf {
         }
     }
 
-    /// Puts the selected entry in or out of the favourites and saves them.
-    pub(crate) fn toggle_favourite(&mut self, out: &mut Out) {
+    /// Puts the selected entry in or out of the favourites and saves them. A focus in the list follows
+    /// the selection, which moves if the entry left the list.
+    pub(crate) fn toggle_favourite(&mut self, pointer: &mut Pointer, out: &mut Out) {
         let Some(moved) = self.favourite_selected() else {
             return;
         };
         if moved {
-            self.unsaved = true;
+            self.moved(pointer);
         }
         let ids = self.library().favourite_ids().map(str::to_owned).collect();
         out.effects.push(Effect::Save(Save::Favourites(ids)));

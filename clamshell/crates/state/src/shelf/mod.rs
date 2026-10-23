@@ -422,10 +422,11 @@ impl Shelf {
             self.library.collections.iter().map(|c| names.iter().position(|n| *n == c.name).and_then(|i| old.get(i).cloned()).unwrap_or_default()).collect();
         self.current = current_name.and_then(|n| self.library.collections.iter().position(|c| c.name == n)).unwrap_or(0);
         self.refind();
-        if let Some(id) = selected {
-            self.select(&id);
+        if let Some(id) = &selected {
+            self.select(id);
         }
-        self.sync()
+        self.sync();
+        self.selected != selected
     }
 
     /// Takes the library read again. The listings of browsed folders that are still there are applied to
@@ -536,12 +537,12 @@ impl Shelf {
 
     /// Counts and records a play of `entry` from `start` (monotonic seconds, as in [`crate::Event::Tick`])
     /// until now, dated by the wall clock. For a video, it also reads where mpv left it, which mpv wrote as
-    /// it quit.
-    pub(crate) fn record_play(&mut self, entry: Arc<str>, start: u64, clock: &crate::Clock, out: &mut crate::out::Out) {
+    /// it quit. A focus in the list follows the selection.
+    pub(crate) fn record_play(&mut self, entry: Arc<str>, start: u64, clock: &crate::Clock, pointer: &mut crate::Pointer, out: &mut crate::out::Out) {
         let duration = clock.mono().saturating_sub(start);
         let start = clock.unix_at(start);
         if self.add_play(&entry, start, duration) {
-            self.unsaved = true;
+            self.moved(pointer);
         }
         let file = self.entry(&entry).and_then(|g| g.mpv_file()).map(std::path::Path::to_path_buf);
         out.effects.push(crate::Effect::RecordPlay { entry: entry.clone(), start, duration });
@@ -607,7 +608,7 @@ impl Rows for Shelf {
 }
 
 #[cfg(test)]
-#[allow(clippy::indexing_slicing)]
+#[allow(clippy::indexing_slicing, clippy::unwrap_used)]
 mod tests {
     use crate::bottom::keyboard::Key;
     use crate::testkit::*;
@@ -663,6 +664,26 @@ mod tests {
         assert!(s.shelf().library().collections.iter().any(|c| c.name == "Favourites" && c.entries == vec![2]));
         assert_eq!(s.shelf().collection().map(|c| c.name.clone()), name, "the collection stays");
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("mk-ds"), "so does the selection");
+    }
+
+    #[test]
+    fn a_favourite_removed_moves_the_focus_with_the_selection() {
+        let mut s = state();
+        // Two favourites, and the pad's focus on the first in Favourites.
+        for step in [1, 1] {
+            s.applied(ShelfEvent::ListStep(step).into());
+            s.applied(ShelfEvent::ToggleFavourite.into());
+        }
+        let favourites = s.shelf().library().collections.iter().position(|c| c.name == "Favourites").unwrap();
+        s.applied(ShelfEvent::CollectionStep(favourites as i32 - s.shelf().current() as i32).into());
+        s.applied(ShelfEvent::ListStep(-1).into());
+        let first = s.shelf().selected().cloned().unwrap();
+        assert_eq!(s.pointer().focus(), Some(&Id::Shelf(ShelfId::Entry(first.clone()))));
+        // Out of the favourites, it leaves the list, and the focus goes with the selection to the other.
+        s.applied(ShelfEvent::ToggleFavourite.into());
+        let other = s.shelf().selected().cloned().unwrap();
+        assert_ne!(other, first);
+        assert_eq!(s.pointer().focus(), Some(&Id::Shelf(ShelfId::Entry(other))));
     }
 
     #[test]

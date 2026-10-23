@@ -149,7 +149,7 @@ impl Shelf {
             Action::Open => self.activate(pointer, out),
             Action::Continue => self.continue_selected(out),
             Action::Enqueue => self.ask_enqueue(out),
-            Action::Favourite => self.toggle_favourite(out),
+            Action::Favourite => self.toggle_favourite(pointer, out),
             Action::Pin => self.ask(EntryAct::TogglePin, out),
             Action::File(a) => self.on_file(a, out),
         }

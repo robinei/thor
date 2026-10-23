@@ -479,7 +479,7 @@ impl State {
     /// Records in shelf the plays the session's steps ended.
     fn record_plays(&mut self, out: &mut Out) {
         for (entry, start) in self.plays.drain(..) {
-            self.shelf.record_play(entry, start, &self.clock, out);
+            self.shelf.record_play(entry, start, &self.clock, &mut self.pointer, out);
         }
     }
 
