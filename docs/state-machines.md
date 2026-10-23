@@ -464,6 +464,8 @@ Found by the randomized event-sequence test (`random.rs`):
 - S50. A launch given up that starts late isn't followed while another launch of the entry waits: its
   scope is skipped (`running.rs`, `follow_units`), so its windows are taken for a program found by them,
   with its scope listed. Fixed: state/session: a scope listed runs its entry while another launch waits.
+- S51. Suspend of a quitting entry freezes it, so it can't close its windows and end, and it stays quitting
+  and paused (`background.rs`, `suspendable`). Fixed: state/session: a quitting entry isn't suspended.
 
 ## Decisions on the suspects (2026-10-23)
 
@@ -530,3 +532,4 @@ with what would make us change our minds.
   frozen at start counts as hidden already.
 - S50. A scope listed runs its entry whatever launch of it waits; the waiting launch joins it when its
   own scope comes.
+- S51. A quitting entry can't be suspended; the dock menu's Suspend does nothing for it.

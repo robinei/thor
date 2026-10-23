@@ -240,9 +240,10 @@ impl Session {
         }
     }
 
-    /// Whether entry `id` can be suspended: it runs in a slice of ours, and isn't suspended.
+    /// Whether entry `id` can be suspended: it runs in a slice of ours, and isn't suspended or quitting (a
+    /// frozen program couldn't close its windows).
     pub fn suspendable(&self, id: &str) -> bool {
-        self.running(id).is_some_and(|r| r.origin == Origin::Ours && !self.suspended(id))
+        self.running(id).is_some_and(|r| r.origin == Origin::Ours && !self.suspended(id) && !self.is_quitting(id))
     }
 
     pub fn suspended(&self, id: &str) -> bool {
@@ -392,6 +393,20 @@ mod tests {
         assert!(!s.applied(Event::tick(101 + 2 * GRACE)).contains(&pause), "launching, its scope not listed yet");
         crate::testkit::start(&mut s, "desktop:firefox");
         assert!(!s.applied(Event::tick(101 + 3 * GRACE)).contains(&pause), "started, no window yet");
+    }
+
+    /// A quitting entry isn't suspended: frozen, it couldn't close its windows and end.
+    #[test]
+    fn a_quitting_entry_isnt_suspended() {
+        let mut s = state();
+        let zelda = launch(&mut s, "zelda-lttp");
+        s.applied(Event::tick(100));
+        s.applied(Event::Windows(vec![Window { unit: zelda.unit(), visible: true, ..win(3, "zelda3", &zelda.workspace(), true) }]));
+        quit(&mut s, "zelda-lttp");
+        assert!(!s.session().suspendable("zelda-lttp"));
+        let fx = s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::Suspend));
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Freeze { .. })), "{fx:?}");
+        assert!(!s.session().paused("zelda-lttp"));
     }
 
     #[test]
