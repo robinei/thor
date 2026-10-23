@@ -30,7 +30,10 @@ use crate::bottom::Tab;
 use crate::bottom::notice::{NoticeKind, NoticeSlot};
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::out::Out;
+use crate::session::found::window_entry;
 use crate::session::instance::{Instance, STEAM_APP_PREFIX};
+use crate::session::tray::{TrayItem, tray_entry};
+use crate::session::windows::Window;
 use crate::settings::Settings;
 use crate::{Clock, Entry, Library, Resume, Session, Shelf};
 
@@ -177,7 +180,8 @@ fn handed_over_app(g: &Entry) -> Option<&str> {
 impl Session {
     /// Runs after systemd's list of our scopes changed. An entry with scopes listed that isn't known to
     /// run, because an earlier ClamShell started it, runs from when its first scope started, by the time
-    /// in the scope's name. An entry found by its tray icon whose process is now in a scope of ours runs as
+    /// in the scope's name. One the library doesn't have, because the earlier ClamShell found it, runs as
+    /// found again by its windows or tray icon ([`found_in_scope`]). An entry found by its tray icon whose process is now in a scope of ours runs as
     /// a launch. Then the entries whose launches have ended are handled (see [`Session::follow_ours`]).
     /// Returns whether a launch of ours started, which may let a second screen tapped awake go dark again.
     pub(crate) fn follow_units(&mut self, clock: &Clock, library: &Library, notice: &mut NoticeSlot, plays: &mut Vec<Play>) -> bool {
@@ -219,16 +223,22 @@ impl Session {
             if self.running.iter().any(|r| r.key == key) || self.launching.iter().any(|l| l.instance.key() == Some(key)) {
                 continue;
             }
-            let Some(g) = library.entries.iter().find(|g| g.key == key) else {
-                continue;
-            };
             let first = units.iter().filter_map(|u| match u {
                 Instance::Run { key: k, secs, .. } if k == key => Some(*secs),
                 _ => None,
             });
             // Its scopes are named by the wall clock.
             let start = first.min().map_or(now, |secs| now.saturating_sub(unix.saturating_sub(secs)));
-            self.running.push(Running { app_id: app_id_of(g), ..Running::of(g, Origin::Ours, start) });
+            if let Some(g) = library.entries.iter().find(|g| g.key == key) {
+                self.running.push(Running { app_id: app_id_of(g), ..Running::of(g, Origin::Ours, start) });
+                continue;
+            }
+            // A program an earlier ClamShell found and moved into a scope of ours, or a file it opened,
+            // runs as found by its scope, once a window or tray icon of it says what it is.
+            let Some(g) = found_in_scope(key, &self.windows, &self.tray, library).filter(|g| !self.running.iter().any(|r| r.id == g.id)) else {
+                continue;
+            };
+            self.running.push(Running::of(&Entry { key: key.to_owned(), ..g }, Origin::Ours, start));
         }
         self.follow_ours(clock.mono(), library, notice, plays);
         any_started
@@ -444,6 +454,27 @@ impl Session {
         if self.followed_front.as_deref() != front {
             self.followed_front = front.map(str::to_owned);
         }
+    }
+}
+
+/// The entry that the program in our scope of entry `key`, which the library doesn't have, runs as: named
+/// by a window or tray icon in that scope, as when it was found (see [`crate::session::found`]). Of the two
+/// names, the one whose key is the scope's is the one it was found by. Without a window or icon there is
+/// none.
+fn found_in_scope(key: &str, windows: &[Window], tray: &[TrayItem], library: &Library) -> Option<Entry> {
+    let in_scope = |unit: Option<&str>| unit.and_then(Instance::key_of) == Some(key);
+    let by_window = windows.iter().filter(|w| in_scope(w.unit.as_deref())).find_map(|w| {
+        let pid = w.pids.first().copied();
+        (!w.app_id.is_empty() || pid.is_some()).then(|| window_entry(library, w, pid.unwrap_or_default()))
+    });
+    let by_icon = tray.iter().find(|t| in_scope(t.unit.as_deref())).map(|t| tray_entry(library, t));
+    let named = |g: &Option<Entry>| g.as_ref().is_some_and(|g| g.key == key);
+    if named(&by_icon) {
+        by_icon
+    } else if named(&by_window) {
+        by_window
+    } else {
+        by_window.or(by_icon)
     }
 }
 

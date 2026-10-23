@@ -148,8 +148,10 @@ impl Session {
     pub(crate) fn follow_background(&mut self, now: u64, library: &Library, settings: &Settings, out: &mut Out) {
         // Launches of ours, including a Steam game's, which is in its launch's own scope since it started.
         let ours = |r: &&Running| r.origin == Origin::Ours;
-        let running = &self.running;
-        self.background.entries.keep(|key| running.iter().filter(ours).any(|r| r.key == key));
+        let (running, units) = (&self.running, &self.units);
+        // A slice whose scope is listed is kept too: one held at start may belong to a program not known
+        // to run until a window or tray icon says what it is.
+        self.background.entries.keep(|key| running.iter().filter(ours).any(|r| r.key == key) || units.iter().any(|u| u.key() == Some(key)));
         let mut end = Vec::new();
         for r in self.running.iter().filter(ours) {
             let (has, shown) = {

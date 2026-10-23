@@ -96,13 +96,7 @@ impl Session {
             if self.running.iter().any(|r| r.tray().is_some_and(|k| *k == t.key)) {
                 continue;
             }
-            let entry = found_entry(library, &t.id, || {
-                let title = if t.title.is_empty() { &t.id } else { &t.title };
-                // It is named by the icon's own id, which is the same each time the program runs, so that
-                // a pin or a setting stays with it. Without an id, the icon's D-Bus name is used.
-                let name = if t.id.is_empty() { &*t.key } else { t.id.as_str() };
-                Entry { icon: t.icon.clone(), app: true, ..Entry::new(&format!("{}{name}", ids::TRAY), title) }
-            });
+            let entry = tray_entry(library, t);
             // Its entry runs already. If it was found another way, by a window, the icon becomes that
             // entry's. Its process doesn't: an entry found running in another program's process stays
             // without one, so that Quit doesn't signal that program. If it is a launch of ours, the icon
@@ -140,6 +134,18 @@ impl Session {
         out.effects.push(Effect::Tray(TrayCommand::Activate(key)));
         true
     }
+}
+
+/// The entry that a program found by tray icon `t` runs as: the library's desktop entry named like the
+/// icon's id, or else one of its own with the icon as its picture.
+pub(crate) fn tray_entry(library: &Library, t: &TrayItem) -> Entry {
+    found_entry(library, &t.id, || {
+        let title = if t.title.is_empty() { &t.id } else { &t.title };
+        // It is named by the icon's own id, which is the same each time the program runs, so that a pin or
+        // a setting stays with it. Without an id, the icon's D-Bus name is used.
+        let name = if t.id.is_empty() { &*t.key } else { t.id.as_str() };
+        Entry { icon: t.icon.clone(), app: true, ..Entry::new(&format!("{}{name}", ids::TRAY), title) }
+    })
 }
 
 #[cfg(test)]

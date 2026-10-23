@@ -26,7 +26,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Launching | LaunchFailed otherwise | Idle | NotStarted notice | tests `a_launch_that_didnt_start_says_so` |
 | Launching | no answer from the launcher | Launching, without end (S9) | — | GAP |
 | Idle | `Units` lists a scope of a library entry (an earlier ClamShell) | Running(Ours) | — | running `entries_started_before_clamshell_…` |
-| Idle | `Units` lists a scope of a key not in the library | ignored (S2) | — | GAP |
+| Idle | `Units` lists a scope of a key not in the library, a window or tray icon in it | Running(Ours), as found, named by the name whose key is the scope's (until a window or icon comes, nothing) | — | found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
 | Idle | a window with a library app id (not Steam) | Running(Windows, seen) | Focus once on its workspace | running `an_app_handed_over_…` |
 | Idle | a Steam game's window by app id | Launching | as a launch | running `a_game_steam_started_is_followed…` |
 | Idle | a stray window of no entry | Running(Found) | Move, Focus if focused, FindIcon, Adopt (own pid) | found `a_window_of_no_entry_…` and its siblings |
@@ -68,7 +68,7 @@ State: `Pauses{unused, paused: Hidden | Held}`.
 | Paused(Hidden) | shown, no windows, quitting, setting changed | Running | Freeze off | background tests, `a_paused_game_set_to_run_hidden_is_thawed_at_once` |
 | any | Suspend | Held | ShowShelf if visible; Freeze on | background `a_suspended_entry_stays_frozen_…` |
 | Held | shown, Show, Quit, ForceKill | Running | Freeze off | same |
-| — | `Frozen(keys)` at start | Held | — | same (S2: keys of entries not in the library are dropped and stay frozen) |
+| — | `Frozen(keys)` at start | Held (kept while the scope is listed, until its entry runs) | — | same; found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
 | Running | set to quit when closed, seen, no windows | Quitting | as Quit | background `quits_closed_ends_once_…` |
 | runner | none shown or starting for 10 s | runner paused | RunnerCommand(pause) | background `a_runner_paused_together…`; a slow launch re-pausing it (S8) GAP |
 
@@ -380,7 +380,7 @@ Session and dock:
   means it had a window. Fixed: state/session: a program with a tray icon has started.
 - S2. A scope of an entry not in the library (window-found, tray-found, browsed) is never re-adopted after
   a restart (`running.rs:222`); its windows and tray are skipped as ours, so it runs with no dock tile and
-  can't be quit, and a Frozen hold for it is dropped so its slice stays frozen.
+  can't be quit, and a Frozen hold for it is dropped so its slice stays frozen. Fixed: state/session: a found program's scope is found again after a restart.
 - S3. After a tray program's scope is adopted, its tray menu is missing until the tray thread re-reads the
   icons (`tray.rs:122`). Fixed: state/session: a tray icon stays with its adopted program and gives no pid.
 - S5. Show when every window is moved down focuses an empty top workspace (`running.rs:488`).

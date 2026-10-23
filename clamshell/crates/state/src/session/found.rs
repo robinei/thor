@@ -58,11 +58,7 @@ impl Session {
             if app_id.is_none() && !own {
                 continue;
             }
-            let entry = found_entry(library, &w.app_id, || {
-                let name = app_id.as_deref().map_or_else(|| pid.to_string(), str::to_owned);
-                let title = if w.app_id.is_empty() { &w.title } else { &w.app_id };
-                Entry { app: true, ..Entry::new(&format!("{}{name}", ids::WINDOW), title) }
-            });
+            let entry = window_entry(library, w, pid);
             if self.running(&entry.id).is_some() {
                 continue;
             }
@@ -96,6 +92,17 @@ impl Session {
             out.effects.push(adopted);
         }
     }
+}
+
+/// The entry that a program found by window `w` of its process `pid` runs as: the library's desktop entry
+/// named like the window's app id, or else one of its own, named by the app id, or without one by the
+/// process.
+pub(crate) fn window_entry(library: &Library, w: &Window, pid: u32) -> Entry {
+    found_entry(library, &w.app_id, || {
+        let name = if w.app_id.is_empty() { pid.to_string() } else { w.app_id.clone() };
+        let title = if w.app_id.is_empty() { &w.title } else { &w.app_id };
+        Entry { app: true, ..Entry::new(&format!("{}{name}", ids::WINDOW), title) }
+    })
 }
 
 /// The entry that a program found by `name`, its window's app id or its tray icon's id, runs as. It is the
@@ -205,6 +212,41 @@ mod tests {
         let fx = s.applied(Event::Windows(vec![mine]));
         assert!(!fx.iter().any(|e| matches!(e, Effect::EndProcesses { .. } | Effect::EndRun { .. })), "{fx:?}");
         assert!(s.session().running("window:org.other").is_none());
+    }
+
+    /// A restarted ClamShell finds the scopes of programs the last one found and moved, frozen. The
+    /// library has no entry of their keys; each runs again as found, named by its window or its tray icon,
+    /// on the dock, held and thawed when shown, and quit through its slice.
+    #[test]
+    fn a_found_program_in_our_scope_is_found_again_after_a_restart() {
+        let mut s = device();
+        s.applied(Event::tick(1000));
+        let key = |id: &str| clamshell_library::key_of(id);
+        let (thing, tray) = (Instance::Run { key: key("window:org.x.Thing"), secs: 1, n: 0 }, Instance::Run { key: key("tray:thing"), secs: 1, n: 1 });
+        s.applied(Event::Units(vec![thing.clone(), tray.clone()]));
+        assert!(s.session().running_entries().is_empty(), "not known yet");
+        s.applied(Event::Frozen(vec![thing.key().unwrap().into()]));
+        let in_scope = Window { unit: thing.unit(), workspace: thing.workspace(), ..window(5, "org.x.Thing", 500, "", false) };
+        s.applied(Event::Windows(vec![in_scope]));
+        let r = s.session().running("window:org.x.Thing").unwrap();
+        assert_eq!((r.origin.clone(), r.key.as_str()), (Origin::Ours, thing.key().unwrap()));
+        assert!(s.dock().items().iter().any(|i| &*i.id == "window:org.x.Thing"), "on the dock");
+        assert!(s.session().suspended("window:org.x.Thing"), "held frozen");
+        let fx = show(&mut s, "window:org.x.Thing");
+        assert_eq!(fx.first(), Some(&Effect::Freeze { slice: Instance::slice_of(thing.key().unwrap()), frozen: false }), "{fx:?}");
+        assert_eq!(force_kill(&mut s, "window:org.x.Thing"), vec![Effect::EndRun { key: thing.key().unwrap().to_owned(), force: true }]);
+        // A program found by its tray icon is named by it.
+        let icon = crate::session::tray::TrayItem {
+            key: ":1.7/c".into(),
+            id: "thing".into(),
+            title: "Thing".into(),
+            pid: Some(77),
+            unit: tray.unit(),
+            icon: None,
+            menu: vec![],
+        };
+        s.applied(Event::Tray(vec![icon]));
+        assert_eq!(s.session().running("tray:thing").map(|r| r.origin.clone()), Some(Origin::Ours));
     }
 
     #[test]
