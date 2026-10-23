@@ -365,6 +365,7 @@ impl State {
     /// 12. The pad mouse, when the program in force changed.
     /// 13. What claims the pad, and where it goes. The focus ring shows where the pad is, so it is hidden
     ///     when the pad leaves ClamShell's screens.
+    /// 14. The scrolled lists keep their top items where they are ([`State::follow_lists`]).
     ///
     /// A step does nothing when nothing changed for it.
     fn settle(&mut self, out: &mut Out) {
@@ -424,6 +425,7 @@ impl State {
         if self.reconcile_pad().is_some_and(|route| route != PadRoute::Ui) {
             self.pointer.hide_focus();
         }
+        self.follow_lists();
     }
 
     /// Called when the program in force changed. Turns the pad mouse on if the program wants it
@@ -496,7 +498,7 @@ impl State {
     }
 
     /// A reading of the system from a system thread. It is stored, and after a status reading the
-    /// battery warning is checked. The scrolled lists then follow what changed in them.
+    /// battery warning is checked.
     fn on_reading(&mut self, reading: Reading, out: &mut Out) {
         let status = matches!(reading, Reading::Status(_));
         match reading {
@@ -521,7 +523,6 @@ impl State {
         if status {
             self.sys.battery_warning(out);
         }
-        self.follow_lists();
     }
 
     /// The library was read again. New problems are reported once and shelf is reloaded. Then what
@@ -845,8 +846,8 @@ impl State {
         }
     }
 
-    /// Runs after the lists' contents may have changed. Each scrolled list keeps its top item where it
-    /// is, while that item is still there, and stays within its ends.
+    /// Runs after every event, since any may change the lists' contents. Each scrolled list keeps its top
+    /// item where it is, while that item is still there, and stays within its ends.
     fn follow_lists(&mut self) {
         for list in ListId::ALL {
             let lists = self.lists();

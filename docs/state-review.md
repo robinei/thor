@@ -23,7 +23,7 @@ The weak spots are at the seams.
       while a launched program's window has focus, which on a multi-output desktop freezes a visible
       window. Against "show everything on desktop". (`ui/platform/app.rs:180`, `view.rs:165`,
       `session/mod.rs:157`.)
-- [ ] **Lists are re-anchored only after readings.** `follow_lists` runs only from `on_reading`; the dock,
+- [x] **Lists are re-anchored only after readings.** `follow_lists` runs only from `on_reading`; the dock,
       keymaps, layers and time lists change through other paths and keep a stale anchor until the next
       reading, then jump. It belongs in settle. (`state.rs:850`, `:524`.)
 - [ ] **The UI reorders effects across re-entrant events.** `App::handle` applies an event, then

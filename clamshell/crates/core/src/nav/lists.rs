@@ -251,6 +251,24 @@ mod tests {
         assert_eq!(s.lists().scroll(ListId::Wifi).offset(), 0.0);
     }
 
+    /// The dock changes without a reading, and the list follows at once.
+    #[test]
+    fn a_list_changed_by_any_event_stays_within_its_ends() {
+        let mut s = state();
+        let ids: Vec<std::sync::Arc<str>> = s.shelf().library().entries.iter().take(3 * crate::session::dock::DOCK_COLUMNS).map(|g| g.id.clone()).collect();
+        for id in &ids {
+            s.applied(Event::Entry(id.clone(), EntryAct::TogglePin));
+        }
+        s.applied(ListEvent::Visible(ListId::Dock, 1.0).into());
+        s.applied(ListEvent::Scroll(ListId::Dock, 10.0).into());
+        assert_eq!(s.lists().scroll(ListId::Dock).offset(), 2.0);
+        for id in ids.iter().skip(1) {
+            s.applied(Event::Entry(id.clone(), EntryAct::TogglePin));
+        }
+        assert_eq!(s.lists().len(ListId::Dock), 1);
+        assert_eq!(s.lists().scroll(ListId::Dock).offset(), 0.0);
+    }
+
     #[test]
     fn the_pads_focus_on_a_row_shows_it() {
         let mut s = state();
