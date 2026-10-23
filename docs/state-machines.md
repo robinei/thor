@@ -99,15 +99,13 @@ State: `items{id, pinned}`, `menu`, `tray` (submenu path), `moving`, `unsaved`.
 | closed | tap, running | — | queued Show | dock tests |
 | closed | long press | menu open | Battery watched (sync) | dock tests |
 | menu | a choice | closed | OpenAnother, Autostart, Suspend, Quit, ForceKill queued; CloseWindow; Pin with `Save(Dock)`; Move starts moving | dock `the_menu_opens_another_…`; Autostart/Suspend via the menu GAP |
-| menu | TrayMenu, a submenu, Back | tray path pushed / popped | Tray Click on a leaf | tray test; Back at the top closes the whole menu (S20) |
+| menu | TrayMenu, a submenu, Back | tray path pushed / popped; Back at the top goes to the entry's menu | Tray Click on a leaf | tray test; dock `back_at_the_top_of_the_tray_menu_goes_to_the_entrys_menu` |
+| menu | its entry leaves the dock | closed, tray path cleared | — | dock `the_menu_and_the_move_end_with_their_entry` |
 | moving | Step | reordered, clamped | `Save(Dock)` if moved | dock `move_mode_reorders_…` (Right only; others GAP) |
 | moving | Done | closed | — | same |
-| any | tab left | menu and move closed | — | GAP |
-| — | Library read or start | entries gone from the library and not running dropped | `Save(Dock)` | dock `pins_of_entries_gone_…` |
-
-Dock oddities: S20 (Back at the top of the tray menu closes it all), S21 (`close` leaves the tray path,
-the menu stays open after its entry left, a Library read can drop the item being moved, a long press
-while moving opens the menu with the move still on).
+| moving | long press | move ended, menu open | Battery watched (sync) | dock `a_long_press_while_moving_ends_the_move` |
+| any | tab left | menu, tray path and move closed | — | dock `back_at_the_top_of_the_tray_menu_goes_to_the_entrys_menu` |
+| — | Library read or start | entries gone from the library and not running dropped; the menu or move of one ends | `Save(Dock)` | dock `pins_of_entries_gone_…`, `the_menu_and_the_move_end_with_their_entry` |
 
 ## Second screen (bottom/)
 
@@ -391,8 +389,10 @@ Session and dock:
 - S8. A runner paused again while a launch waits more than 10 s for its scope (`background.rs:447`). Fixed: state/session: a launch waiting for its scope keeps its runner resumed.
 - S9. A launch the launcher never answers stays launching, blocking a relaunch (`running.rs:542`). Fixed: state/session: a launch with no answer in 30 s is given up.
 - S20. Back at the top of the dock's tray menu closes the whole menu instead of going back to the entry menu.
+  Fixed: state/dock: Back goes up to the entry's menu; menu and move end with their entry.
 - S21. Dock leftovers: `close` keeps the tray path; the menu stays open after its entry left; a Library
   read can drop the item being moved; a long press while moving opens the menu with the move on.
+  Fixed: state/dock: Back goes up to the entry's menu; menu and move end with their entry.
 
 Second screen, device, pad, keymaps:
 - S10. After the account password editor saves or cancels, the screen stays on Keyboard (`lib.rs:1025`),

@@ -98,7 +98,19 @@ impl Dock {
     pub(crate) fn drop_gone(&mut self, library: &crate::Library, session: &crate::Session) -> bool {
         let before = self.items.len();
         self.items.retain(|i| library.has(&i.id) || session.running(&i.id).is_some());
+        self.end_gone();
         self.items.len() != before
+    }
+
+    /// Closes the menu of an entry no longer on the dock, and ends the move of one.
+    fn end_gone(&mut self) {
+        if self.menu.as_ref().is_some_and(|id| self.position(id).is_none()) {
+            self.menu = None;
+            self.tray = None;
+        }
+        if self.moving.as_ref().is_some_and(|id| self.position(id).is_none()) {
+            self.moving = None;
+        }
     }
 
     /// Drops the pins of entries gone at start (see [`Dock::drop_gone`]). The dock is then saved once the
@@ -117,17 +129,21 @@ impl Dock {
     /// Closes the menu and ends move mode, as when the tab is left.
     pub(crate) fn close(&mut self) {
         self.menu = None;
+        self.tray = None;
         self.moving = None;
     }
 
     /// Runs after anything that may start or stop an entry. Running entries not on the dock are added at
-    /// its end, and stopped ones that are neither pinned nor being moved are removed. Returns whether it
-    /// changed.
+    /// its end, and stopped ones that are neither pinned nor being moved are removed, closing their menu.
+    /// Returns whether it changed.
     pub(crate) fn follow(&mut self, session: &Session) -> bool {
         let before = self.items.len();
         let moving = &self.moving;
         self.items.retain(|i| i.pinned || session.running(&i.id).is_some() || moving.as_ref() == Some(&i.id));
         let removed = before != self.items.len();
+        if removed {
+            self.end_gone();
+        }
         let mut added = false;
         for r in session.running_entries() {
             if self.position(&r.id).is_none() {
@@ -146,6 +162,8 @@ impl Dock {
                     return;
                 };
                 if long {
+                    // A long press while moving ends the move, for the menu.
+                    self.moving = None;
                     self.menu = Some(entry);
                     self.tray = None;
                     return;
@@ -164,10 +182,10 @@ impl Dock {
                 }
             }
             DockId::TrayEntry(id) => self.tray_choice(id, session, out),
-            // Back in a submenu goes to the menu above it.
-            DockId::Back if self.tray.as_ref().is_some_and(|path| !path.is_empty()) => {
-                if let Some(path) = &mut self.tray {
-                    path.pop();
+            // Back in a submenu goes to the menu above it, and at the top to the entry's own menu.
+            DockId::Back if self.tray.is_some() => {
+                if self.tray.as_mut().is_some_and(|path| path.pop().is_none()) {
+                    self.tray = None;
                 }
             }
             DockId::Step(dir) => self.step(dir, out),
@@ -406,6 +424,69 @@ mod tests {
         // Home with B closes the window in front; held, it quits the window's entry.
         assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::CloseWindow)), vec![Effect::Window(WindowCommand::Close(vec![5]))]);
         assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::Quit)), vec![Effect::Window(WindowCommand::Close(vec![5]))]);
+    }
+
+    /// Back at the top of an entry's tray menu goes back to its own menu. Leaving the tab closes both.
+    #[test]
+    fn back_at_the_top_of_the_tray_menu_goes_to_the_entrys_menu() {
+        let mut s = state();
+        tap(&mut s, Id::Tab(crate::Tab::Dock));
+        let zelda = launch(&mut s, "zelda-lttp");
+        let menu = vec![crate::session::tray::TrayEntry { id: 1, label: "Exit".into(), enabled: true, checked: None, children: vec![] }];
+        let icon = crate::session::tray::TrayItem {
+            key: ":1.5/a".into(),
+            id: "zelda3".into(),
+            title: "Zelda".into(),
+            pid: Some(77),
+            unit: zelda.unit(),
+            icon: None,
+            menu,
+        };
+        s.applied(Event::Tray(vec![icon]));
+        long(&mut s, dock(0));
+        tap(&mut s, Id::Dock(DockId::TrayMenu));
+        assert!(s.dock().tray_open());
+        tap(&mut s, Id::Dock(DockId::Back));
+        assert_eq!((s.dock().menu().map(|m| &**m), s.dock().tray_open()), (Some("zelda-lttp"), false), "the entry's menu");
+        tap(&mut s, Id::Dock(DockId::Tray(0)));
+        assert!(s.dock().tray_open());
+        tap(&mut s, Id::Tab(crate::Tab::Volume));
+        assert_eq!((s.dock().menu(), s.dock().tray_open()), (None, false), "the tab left: all closed");
+    }
+
+    /// The menu closes when its entry leaves the dock, and a move ends when its entry is dropped.
+    #[test]
+    fn the_menu_and_the_move_end_with_their_entry() {
+        let mut s = state();
+        tap(&mut s, Id::Tab(crate::Tab::Dock));
+        launch(&mut s, "zelda-lttp");
+        long(&mut s, dock(0));
+        assert!(s.dock().menu().is_some());
+        end(&mut s, "zelda-lttp");
+        assert_eq!(entry(&s, 0), None);
+        assert_eq!(s.dock().menu(), None, "its entry left the dock");
+        // A rescan without the entry being moved drops it, and ends the move.
+        let mut s = State::new(Init { dock: crate::session::dock::Dock::pinned(vec!["zelda-lttp".into(), "ff6".into()]), ..init() });
+        tap(&mut s, Id::Tab(crate::Tab::Dock));
+        long(&mut s, dock(1));
+        tap(&mut s, Id::Dock(DockId::Move));
+        assert_eq!(s.dock().moving().map(|m| &**m), Some("ff6"));
+        let mut library = clamshell_library::demo::library();
+        library.entries.retain(|g| &*g.id != "ff6");
+        library.collections.iter_mut().for_each(|c| c.entries.clear());
+        s.applied(Event::Library(Box::new(library)));
+        assert_eq!(s.dock().moving(), None);
+    }
+
+    /// A long press while an entry is being moved ends the move and opens the menu.
+    #[test]
+    fn a_long_press_while_moving_ends_the_move() {
+        let mut s = State::new(Init { dock: crate::session::dock::Dock::pinned(vec!["zelda-lttp".into(), "ff6".into()]), ..init() });
+        tap(&mut s, Id::Tab(crate::Tab::Dock));
+        long(&mut s, dock(0));
+        tap(&mut s, Id::Dock(DockId::Move));
+        long(&mut s, dock(1));
+        assert_eq!((s.dock().moving(), s.dock().menu().map(|m| &**m)), (None, Some("ff6")));
     }
 
     #[test]
