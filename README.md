@@ -59,7 +59,7 @@ It is made to be dependable, light and quick, to start and while it runs. Measur
 - **Starting:** both screens are drawn about 80 ms after it starts, when it tells systemd it is ready. A
   restart loses nothing: what it launched runs on in its own systemd scopes and is found again, and a
   watchdog restarts it if its main loop ever stops.
-- **Running:** about 40 MB resident, most of it the two screens' buffers, and under 0.2 % of a CPU over
+- **Running:** about 40 MB resident, most of it the two screens' buffers, and about 0.2 % of a CPU over
   hours of use. A frame takes 0.1-0.6 ms to draw; when an event changes nothing visible, checking costs
   about 0.02 ms and nothing is drawn or sent to the compositor. Handling an event or drawing a frame
   allocates no memory.
