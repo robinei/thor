@@ -25,6 +25,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Launching | LaunchFailed, browsed file or app-id launch | Running(Windows, unseen, until now+15 s) | — | running `a_file_handed_to_another_program_…` (browsed); app id GAP |
 | Launching | LaunchFailed otherwise | Idle | NotStarted notice | tests `a_launch_that_didnt_start_says_so` |
 | Launching | no answer from the launcher in 30 s | Idle | NotStarted notice; `pending_show` cleared | running `a_launch_never_answered_is_given_up` |
+| Idle | LaunchFailed of no launch waiting (a late answer to one given up) | Idle | nothing | running `a_launch_failure_after_it_was_given_up_says_nothing` |
 | Idle | `Units` lists a scope of a library entry (an earlier ClamShell) | Running(Ours) | — | running `entries_started_before_clamshell_…` |
 | Idle | `Units` lists a scope of a key not in the library, a window or tray icon in it | Running(Ours), as found, named by the name whose key is the scope's (until a window or icon comes, nothing) | — | found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
 | Idle | a window with a library app id (not Steam) | Running(Windows, seen) | Focus once on its workspace | running `an_app_handed_over_…` |
@@ -462,7 +463,8 @@ with what would make us change our minds.
 - S7. A tray icon gives its pid only to an entry found by that program's own process.
 - S8. A launch waiting for its scope counts as starting, so its runner isn't paused again.
 - S9. A launch with no answer from the launcher in 30 s is given up, with the "didn't start" notice.
-  **Revisit** the 30 s for slow starts (Proton games on first run).
+  **Revisit** the 30 s for slow starts (Proton games on first run). The launcher's failure arriving after
+  that is ignored, so the notice isn't shown twice.
 - S10, S11, S12. An editor opened on the keyboard goes back where it came from when it closes, whatever
   its purpose; a text field losing focus doesn't switch away from an open editor; a second editor for
   the keyboard while one is open there is refused with a notice, so nothing typed is lost. **Revisit**

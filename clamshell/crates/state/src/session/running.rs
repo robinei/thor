@@ -307,12 +307,13 @@ impl Session {
     }
 
     /// A launch that never started, its scope gone before it was seen. A browsed file's launch, or one
-    /// known by its app id, waits for its window (see [`Origin::Windows`]).
+    /// known by its app id, waits for its window (see [`Origin::Windows`]). A failure of no launch waiting
+    /// is a late answer to one already given up ([`LAUNCH_WAIT`]), which said so then, and is ignored.
     pub(crate) fn launch_failed(&mut self, entry: Arc<str>, library: &Library, clock: &Clock, notice: &mut NoticeSlot) {
-        let app_id = match self.launching.iter().position(|l| l.entry == entry) {
-            Some(i) => self.launching.remove(i).app_id,
-            None => None,
+        let Some(i) = self.launching.iter().position(|l| l.entry == entry) else {
+            return;
         };
+        let app_id = self.launching.remove(i).app_id;
         let Some(known) = library.entry(&entry).filter(|g| g.browsed.is_some() || app_id.is_some()) else {
             // There is nothing to wait for, so it didn't start, and a notice says so.
             let title = library.entry(&entry).map_or_else(|| entry.to_string(), |g| g.title.clone());
@@ -843,6 +844,29 @@ mod tests {
         assert!(launches(&tap(&mut s, entry("zelda-lttp")), "zelda-lttp"), "launched again");
     }
 
+    /// The launcher's failure coming after the launch was given up doesn't say "didn't start" a second
+    /// time, nor start a browsed file's wait for its window.
+    #[test]
+    fn a_launch_failure_after_it_was_given_up_says_nothing() {
+        let mut s = state();
+        s.applied(Event::tick(100));
+        tap(&mut s, entry("zelda-lttp"));
+        tap(&mut s, entry("zelda-lttp"));
+        s.applied(Event::tick(100 + super::LAUNCH_WAIT));
+        assert!(matches!(notice(&s), Some(crate::bottom::notice::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
+        s.applied(Event::tick(200));
+        assert_eq!(notice(&s), None);
+        s.applied(LaunchEvent::LaunchFailed("zelda-lttp".into()).into());
+        assert_eq!(notice(&s), None, "said once");
+        assert!(s.session().running("zelda-lttp").is_none());
+        let mut s = files();
+        s.applied(Event::tick(100));
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        s.applied(Event::tick(100 + super::LAUNCH_WAIT));
+        s.applied(LaunchEvent::LaunchFailed("browse:Home/notes.md".into()).into());
+        assert!(s.session().running("browse:Home/notes.md").is_none(), "no wait for a window");
+    }
+
     #[test]
     fn a_game_steam_started_is_followed_as_a_launch_beside_the_others() {
         let mut s = steam_ff6();
@@ -969,7 +993,11 @@ mod tests {
         s.applied(Event::Windows(vec![shelf.clone(), other.clone()]));
         assert!(s.session().running("browse:Home/notes.md").is_none(), "its window closed: ended");
         // Another launch that never shows a window is gone after a while.
-        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        // (The library read again left shelf on another collection: the file is selected first.)
+        while s.shelf().selected().map(|g| &**g) != Some("browse:Home/notes.md") {
+            s.applied(ShelfEvent::CollectionStep(1).into());
+        }
+        assert!(launches(&tap(&mut s, Id::Shelf(ShelfId::Launch)), "browse:Home/notes.md"));
         s.applied(LaunchEvent::LaunchFailed("browse:Home/notes.md".into()).into());
         s.applied(Event::tick(200 + HANDOFF));
         assert!(s.session().running("browse:Home/notes.md").is_some());
