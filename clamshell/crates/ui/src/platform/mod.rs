@@ -168,6 +168,14 @@ impl BottomKind {
     }
 }
 
+/// The views that can't be seen, and so aren't drawn: the bottom one while it is on the second screen and
+/// that screen is off. On a desktop nothing turns it off, so it is drawn whatever the state says. A
+/// window covered by another is drawn too: it gets no frame callback while covered, so it commits at most
+/// one frame until it is shown again.
+fn hidden_views(kind: BottomKind, state: &State) -> Screens<bool> {
+    Screens { top: false, bottom: kind == BottomKind::Output && state.bottom().off() }
+}
+
 pub(crate) struct App {
     registry_state: RegistryState,
     seat_state: SeatState,
@@ -199,9 +207,8 @@ pub(crate) struct App {
     contacts: Vec<clamshell_core::bottom::touch::Contact>,
     /// Where the pad's focus was on each screen, so View can switch back to it.
     focus_memory: Screens<Option<Id>>,
-    /// Whether keys stand in for the pad. They do on a desktop, but not on the device, where keys
-    /// reaching shelf are typing.
-    desktop_keys: bool,
+    /// How the bottom view is shown (see `App::place_views`).
+    bottom_kind: BottomKind,
     text_input: text_input::TextInput,
     /// The compositor's idle report, the screens' power and the main screen's refresh rate.
     display: display::Display,
@@ -224,5 +231,31 @@ mod tests {
         assert_eq!(BottomKind::choose(false, true, false), BottomKind::Window);
         assert_eq!(BottomKind::choose(true, false, true), BottomKind::Window);
         assert!(!BottomKind::Output.desktop_keys() && BottomKind::Panel.desktop_keys() && BottomKind::Window.desktop_keys());
+    }
+
+    /// On a desktop the bottom view is drawn while the state has the second screen off, and the top view
+    /// while a program's window is in front, so neither freezes where it can be seen.
+    #[test]
+    fn only_the_second_screens_own_output_hides_a_view() {
+        use clamshell_core::device::buttons::DeviceKey;
+        use clamshell_core::session::instance::Instance;
+        use clamshell_core::session::windows::Window;
+        let mut state = State::new(clamshell_core::Init { library: clamshell_library::demo::library(), ..clamshell_core::Init::default() });
+        let mut effects = Vec::new();
+        let key = state.shelf().library().entries.first().map(|g| g.key.clone()).unwrap_or_default();
+        let run = Instance::Run { key, secs: 1, n: 1 };
+        state.apply(Event::Units(vec![run.clone()]), &mut effects);
+        let window = Window { id: 5, app_id: "game".into(), focused: true, visible: true, workspace: run.workspace(), ..Window::default() };
+        state.apply(Event::Windows(vec![window]), &mut effects);
+        state.apply(Event::Device(DeviceKey::BottomPower), &mut effects);
+        let session = state.session();
+        assert!(state.bottom().off() && session.windows().iter().any(|w| w.focused && session.running_of(w).is_some()));
+        let hidden = |kind| {
+            let h = hidden_views(kind, &state);
+            (h.top, h.bottom)
+        };
+        assert_eq!(hidden(BottomKind::Output), (false, true));
+        assert_eq!(hidden(BottomKind::Panel), (false, false));
+        assert_eq!(hidden(BottomKind::Window), (false, false));
     }
 }

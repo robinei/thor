@@ -165,7 +165,7 @@ impl App {
 
     /// A key on a desktop (see `focus::desktop_key`).
     pub(super) fn key(&mut self, sym: Keysym, down: bool) {
-        if !self.desktop_keys {
+        if !self.bottom_kind.desktop_keys() {
             return;
         }
         match focus::desktop_key(sym) {

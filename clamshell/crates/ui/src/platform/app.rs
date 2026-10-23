@@ -64,7 +64,7 @@ impl App {
             contacts: Vec::new(),
             clock: input::EventClock::default(),
             focus_memory: Screens::default(),
-            desktop_keys: true,
+            bottom_kind: BottomKind::Window,
             text_input: text_input::TextInput::bind(globals, qh),
             display: display::Display::bind(globals, qh, &config.bottom_output),
             loop_handle,
@@ -80,7 +80,7 @@ impl App {
         self.display.all_on(self.output_state.outputs(), qh);
         let output = self.output_state.outputs().find(|o| self.output_state.info(o).and_then(|i| i.name).as_deref() == Some(config.bottom_output.as_str()));
         let kind = BottomKind::choose(output.is_some(), shells.layer.is_some(), config.bottom_panel);
-        self.desktop_keys = kind.desktop_keys();
+        self.bottom_kind = kind;
         self.views.bottom = Some(match (kind, &shells.layer) {
             (BottomKind::Output, Some(layer_shell)) => {
                 log::info!("bottom view: layer surface on {}", config.bottom_output);
@@ -175,9 +175,7 @@ impl App {
         if let Some(view) = self.views.iter_mut().find(|(s, _)| *s == Screen::Bottom).and_then(|(_, v)| v.as_mut()) {
             view.set_behind(behind);
         }
-        // The main screen is hidden while a program's window is in front of shelf, and the second screen
-        // while it is off.
-        let hidden = Screens { top: self.state.session().program_window_in_front(), bottom: self.state.bottom().off() };
+        let hidden = super::hidden_views(self.bottom_kind, &self.state);
         for (screen, view) in self.views.iter_mut() {
             if let Some(view) = view.as_mut() {
                 view.shown = !hidden[screen];

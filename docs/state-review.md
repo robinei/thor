@@ -17,7 +17,7 @@ The weak spots are at the seams.
 
 ## Bugs
 
-- [ ] **A hidden view freezes on a desktop.** The bottom view isn't drawn while `bottom().off()`, but on a
+- [x] **A hidden view freezes on a desktop.** The bottom view isn't drawn while `bottom().off()`, but on a
       desktop there is no bottom output to power off, so the panel stays visible with a frozen clock,
       levels and notices (after Home+Start, or 4 minutes untouched on battery). The top view is skipped
       while a launched program's window has focus, which on a multi-output desktop freezes a visible
