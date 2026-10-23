@@ -155,6 +155,33 @@ pub(crate) fn draw_damaged(
     frame
 }
 
+/// One screen drawn frame after frame, live or not: what its last frame left behind and what changed in
+/// the last frames. Each frame is recorded and compared with the last one drawn, and what changed is
+/// played into a pixmap, which may be one of several buffers used in turn.
+#[derive(Default)]
+pub(crate) struct ScreenFrames {
+    pub retained: Retained,
+    history: History,
+}
+
+impl ScreenFrames {
+    /// Records the next frame (see [`record`]).
+    pub(crate) fn record(&mut self, at: Placement, screen: Screen, state: &State, fonts: &mut DrawCache, images: &mut Images) -> FrameOut {
+        record(&mut self.retained, at, screen, state, fonts, images)
+    }
+
+    /// What the frame recorded changes from the one drawn last, or `None` if it looks the same.
+    pub(crate) fn damage(&self) -> Option<Bounds> {
+        self.retained.damage()
+    }
+
+    /// Draws the frame recorded into `pixmap`, which holds frame `held` (0 for none), where `damage`
+    /// says it changed (see [`draw_damaged`]). Returns the frame the pixmap now holds.
+    pub(crate) fn draw(&mut self, pixmap: PixmapMut, held: u64, damage: Bounds, fonts: &mut DrawCache, images: &Images) -> u64 {
+        draw_damaged(pixmap, held, damage, &mut self.retained, &mut self.history, fonts, images)
+    }
+}
+
 /// How many frames back [`History`] remembers what changed.
 const AGES: usize = 4;
 

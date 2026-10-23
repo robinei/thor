@@ -212,7 +212,7 @@ impl Dispatch2<ExtIdleNotificationV1, App> for Data {
             ext_idle_notification_v1::Event::Resumed => IdleEvent::CompositorInput,
             _ => return,
         };
-        app.handle(Event::Idle(heard));
+        app.core.handle(Event::Idle(heard));
     }
 }
 

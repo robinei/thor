@@ -1,10 +1,7 @@
-//! A view is one screen's surface, either an xdg window or a layer surface, with its shm buffers. It
-//! records a frame (see `render`), and if it changed, draws what changed and hands it to the compositor.
+//! A view is one screen's surface, either an xdg window or a layer surface, with its shm buffers. When
+//! a frame is due it has the core record the screen, and if it changed, draws what changed into a free
+//! buffer and hands it to the compositor.
 
-use std::sync::Mutex;
-
-use clamshell_state::State;
-use clamshell_state::bottom::touch::TouchLayout;
 use smithay_client_toolkit::{
     compositor::{CompositorState, FrameCallbackData},
     reexports::client::{
@@ -25,13 +22,8 @@ use tiny_skia::PixmapMut;
 
 use super::App;
 use crate::Error;
-use crate::gfx::images::Images;
-use crate::gfx::record::Bounds;
-use crate::gfx::{DrawCache, Rect};
-use crate::input::focus::Drawn;
-use crate::render::{self, History, Placement, Retained};
-use crate::screens::{Screen, Screens};
-use crate::toolkit::{FrameOut, Target};
+use crate::core::Core;
+use crate::screens::Screen;
 
 pub(crate) enum Shell {
     Window(Window),
@@ -50,14 +42,9 @@ impl Shell {
 pub(crate) struct View {
     pub(crate) screen: Screen,
     pub(crate) shell: Shell,
-    /// Logical size, from the compositor's configure, or `default_size` if it leaves the size to us.
-    pub(crate) size: (u32, u32),
+    /// The logical size when the compositor's configure leaves the size to us.
     pub(crate) default_size: (u32, u32),
-    pub(crate) scale: i32,
     pub(crate) configured: bool,
-    /// What it shows may have changed since it was last recorded, so it is recorded again when a frame
-    /// is due.
-    pub(crate) stale: bool,
     /// The compositor configured it, and waits for a frame in answer even if nothing changed.
     pub(crate) reconfigured: bool,
     /// Whether it can be seen. A hidden view is not recorded until it can be seen again.
@@ -65,38 +52,16 @@ pub(crate) struct View {
     /// A frame was committed and its callback hasn't come yet. Until it comes, wait; then draw the latest
     /// state once.
     pub(crate) frame_pending: bool,
-    /// What the last frame left behind, including what can be tapped or focused in it.
-    pub(crate) retained: Retained,
-    /// The second screen's area below the bar in the last frame, in logical pixels.
-    pub(crate) body: Option<Rect>,
-    /// shm buffers, reused once the compositor releases them, each with the frame of `history` it holds
-    /// (0 for none). Two are used in turn, and a third is added if the compositor holds both.
+    /// shm buffers, reused once the compositor releases them, each with the frame it holds (0 for none).
+    /// Two are used in turn, and a third is added if the compositor holds both.
     buffers: Vec<(Buffer, u64)>,
-    /// What changed in the last frames, to bring a buffer up to date.
-    history: History,
     /// Whether a layer surface is behind the windows rather than over them (see [`View::set_behind`]).
     behind: bool,
 }
 
 impl View {
     fn new(screen: Screen, shell: Shell, default_size: (u32, u32)) -> Self {
-        View {
-            screen,
-            shell,
-            size: default_size,
-            default_size,
-            scale: 1,
-            configured: false,
-            stale: true,
-            reconfigured: false,
-            visible: true,
-            frame_pending: false,
-            retained: Retained::default(),
-            body: None,
-            buffers: Vec::new(),
-            history: History::default(),
-            behind: false,
-        }
+        View { screen, shell, default_size, configured: false, reconfigured: false, visible: true, frame_pending: false, buffers: Vec::new(), behind: false }
     }
 
     pub(crate) fn window(compositor: &CompositorState, xdg: &XdgShell, qh: &QueueHandle<App>, screen: Screen, size: (u32, u32)) -> Self {
@@ -159,46 +124,30 @@ impl View {
         }
     }
 
-    /// Whether a frame is due: the view is configured and can be seen, may have changed, and its last
-    /// frame has been shown.
-    pub(crate) fn due(&self) -> bool {
-        self.configured && self.visible && (self.stale || self.reconfigured) && !self.frame_pending
+    /// Whether a frame is due: the view is configured and can be seen, its screen may have changed
+    /// (`stale`) or the compositor waits for a frame, and its last frame has been shown.
+    pub(crate) fn due(&self, stale: bool) -> bool {
+        self.configured && self.visible && (stale || self.reconfigured) && !self.frame_pending
     }
 
-    /// The buffer's size, its scale, and the current burn-in drift.
-    fn placement(&self, unix_secs: u64) -> Placement {
-        let scale = self.scale.max(1).unsigned_abs();
-        Placement { size_px: (self.size.0 * scale, self.size.1 * scale), scale, drift: render::orbit(unix_secs) }
-    }
-
-    /// Records a frame of `state` and compares it with the last one drawn. If it changed, what changed
-    /// is drawn straight into a free shm buffer, which is committed with a frame callback asked for. If
-    /// the compositor is still reading every buffer, nothing is recorded. The view then stays due, and a
-    /// buffer's release wakes the loop to draw again. Returns what the frame reports, if it was recorded.
+    /// Has the core record a frame of the screen and compare it with the last one drawn. If it changed,
+    /// what changed is drawn straight into a free shm buffer, which is committed with a frame callback
+    /// asked for. If the compositor is still reading every buffer, nothing is recorded. The view then
+    /// stays due, and a buffer's release wakes the loop to draw again. Returns whether it recorded.
     ///
     /// The buffer is ABGR8888, which is tiny-skia's byte order (premultiplied RGBA in memory), so it is
     /// drawn into directly. A buffer drawn a few frames ago also gets what changed since then. The
     /// compositor is told the rectangle that changed since the last frame.
-    pub(crate) fn draw(
-        &mut self,
-        pool: &mut SlotPool,
-        fonts: &mut DrawCache,
-        state: &State,
-        images: &mut Images,
-        qh: &QueueHandle<App>,
-    ) -> Result<Option<FrameOut>, Error> {
-        let at = self.placement(state.clock().unix());
-        let (w, h) = (i32::try_from(at.size_px.0)?, i32::try_from(at.size_px.1)?);
+    pub(crate) fn draw(&mut self, core: &mut Core, pool: &mut SlotPool, qh: &QueueHandle<App>) -> Result<bool, Error> {
+        let (size, scale) = core.size(self.screen);
+        let size_px = (size.0 * scale, size.1 * scale);
+        let (w, h) = (i32::try_from(size_px.0)?, i32::try_from(size_px.1)?);
         let Some(index) = free_buffer(&mut self.buffers, pool, w, h)? else {
-            return Ok(None);
+            return Ok(false);
         };
-        let rendered = render::record(&mut self.retained, at, self.screen, state, fonts, images);
-        self.stale = false;
         // A configure is answered with a whole frame.
-        let damage = match self.retained.damage() {
-            _ if self.reconfigured => Bounds::of_size(at.size_px),
-            Some(damage) => damage,
-            None => return Ok(Some(rendered)),
+        let Some(damage) = core.record(self.screen, self.reconfigured) else {
+            return Ok(true);
         };
         let Some((buffer, held)) = self.buffers.get_mut(index) else {
             return Err("buffer index".into());
@@ -206,18 +155,18 @@ impl View {
         let Some(bytes) = buffer.canvas(pool) else {
             return Err("buffer busy".into());
         };
-        let len = at.size_px.0 as usize * at.size_px.1 as usize * 4;
-        let pixmap = bytes.get_mut(..len).and_then(|b| PixmapMut::from_bytes(b, at.size_px.0, at.size_px.1)).ok_or("buffer size")?;
-        *held = render::draw_damaged(pixmap, *held, damage, &mut self.retained, &mut self.history, fonts, images);
+        let len = size_px.0 as usize * size_px.1 as usize * 4;
+        let pixmap = bytes.get_mut(..len).and_then(|b| PixmapMut::from_bytes(b, size_px.0, size_px.1)).ok_or("buffer size")?;
+        *held = core.draw(self.screen, pixmap, *held, damage);
         let surface = self.shell.surface();
-        surface.set_buffer_scale(self.scale.max(1));
+        surface.set_buffer_scale(i32::try_from(scale)?);
         surface.damage_buffer(damage.x0, damage.y0, damage.width(), damage.height());
         surface.frame(qh, FrameCallbackData(surface.clone()));
         buffer.attach_to(surface)?;
         surface.commit();
         self.reconfigured = false;
         self.frame_pending = true;
-        Ok(Some(rendered))
+        Ok(true)
     }
 }
 
@@ -234,22 +183,4 @@ fn free_buffer(buffers: &mut Vec<(Buffer, u64)>, pool: &mut SlotPool, w: i32, h:
     let (buffer, _) = pool.create_buffer(w, h, w * 4, wl_shm::Format::Abgr8888)?;
     buffers.push((buffer, 0));
     Ok(Some(buffers.len() - 1))
-}
-
-impl Drawn for Screens<Option<View>> {
-    fn targets(&self, screen: Screen) -> &[Target] {
-        self[screen].as_ref().map_or(&[], |v| &v.retained.targets)
-    }
-
-    fn size(&self, screen: Screen) -> (f32, f32) {
-        self[screen].as_ref().map_or((1.0, 1.0), |v| (v.size.0 as f32, v.size.1 as f32))
-    }
-}
-
-/// Tells the virtual touchpad the second screen's size, in pixels.
-pub(crate) fn publish(touch: &Mutex<TouchLayout>, screen: (f32, f32)) {
-    match touch.lock() {
-        Ok(mut layout) => layout.screen = screen,
-        Err(e) => log::trace!("touch layout: {e}"),
-    }
 }

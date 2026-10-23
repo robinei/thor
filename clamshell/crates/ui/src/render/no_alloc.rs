@@ -24,7 +24,7 @@ use clamshell_state::{
 
 use crate::Screen;
 use crate::gfx::DrawCache;
-use crate::render::{History, Placement, Retained, draw_damaged, record};
+use crate::render::{Placement, ScreenFrames};
 
 thread_local! {
     static ALLOCS: Cell<usize> = const { Cell::new(0) };
@@ -98,8 +98,7 @@ fn wifi_reading() -> Event {
 
 /// A screen drawn frame after frame into one pixmap, as a live view does.
 struct Screen1 {
-    retained: Retained,
-    history: History,
+    frames: ScreenFrames,
     pixmap: tiny_skia::Pixmap,
     held: u64,
     at: Placement,
@@ -109,14 +108,14 @@ struct Screen1 {
 impl Screen1 {
     fn new(screen: Screen, at: Placement) -> Self {
         let pixmap = tiny_skia::Pixmap::new(at.size_px.0, at.size_px.1).expect("pixmap");
-        Screen1 { retained: Retained::default(), history: History::default(), pixmap, held: 0, at, screen }
+        Screen1 { frames: ScreenFrames::default(), pixmap, held: 0, at, screen }
     }
 
     /// Records `state`, and plays what changed since the last frame.
     fn draw(&mut self, state: &State, cache: &mut DrawCache, images: &mut crate::gfx::images::Images) {
-        record(&mut self.retained, self.at, self.screen, state, cache, images);
-        if let Some(damage) = self.retained.damage() {
-            self.held = draw_damaged(self.pixmap.as_mut(), self.held, damage, &mut self.retained, &mut self.history, cache, images);
+        self.frames.record(self.at, self.screen, state, cache, images);
+        if let Some(damage) = self.frames.damage() {
+            self.held = self.frames.draw(self.pixmap.as_mut(), self.held, damage, cache, images);
         }
     }
 }

@@ -13,8 +13,11 @@
 //! - `toolkit` is the immediate-mode kit the screens are drawn with;
 //! - `views` are the screens themselves, and `render` draws one frame of them;
 //! - `input` turns presses and the pad into events (the pure parts);
-//! - `platform` connects all of it to Wayland and the event loop.
+//! - `core` is all of it without a backend: the state, the event queue, input by screen, timers as
+//!   deadlines, and each screen drawn into a pixmap ([`Core`]);
+//! - `platform` hosts the core as a Wayland client, with its event loop.
 
+mod core;
 mod gfx;
 mod input;
 mod platform;
@@ -23,6 +26,9 @@ mod screens;
 mod toolkit;
 mod views;
 
+pub use crate::core::{Core, TextField};
+pub use gfx::record::Bounds;
+pub use input::{End, Source};
 pub use platform::run;
 pub use screens::Screen;
 
@@ -34,7 +40,7 @@ use smithay_client_toolkit::reexports::calloop::channel;
 
 use gfx::DrawCache;
 use gfx::images::Images;
-use render::{History, Placement, Retained};
+use render::{Placement, Retained};
 
 pub type Error = Box<dyn std::error::Error>;
 
@@ -83,8 +89,7 @@ pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, pat
 pub struct Frames {
     screen: Screen,
     at: Placement,
-    retained: Retained,
-    history: History,
+    frames: render::ScreenFrames,
     /// The buffers, each with the frame it holds (0 for none).
     buffers: [(tiny_skia::Pixmap, u64); 2],
     /// The buffer that holds the latest frame.
@@ -100,8 +105,7 @@ impl Frames {
         Ok(Frames {
             screen,
             at: Placement { size_px: size, scale: 1, drift: (0, 0) },
-            retained: Retained::default(),
-            history: History::default(),
+            frames: render::ScreenFrames::default(),
             buffers: [buffer()?, buffer()?],
             latest: 1,
             fonts: DrawCache::load(),
@@ -112,11 +116,11 @@ impl Frames {
     /// Draws `state` as the next frame. Returns the pixels shown, premultiplied RGBA, and the events a
     /// live frame would send the state.
     pub fn draw(&mut self, state: &State) -> (&[u8], Vec<Event>) {
-        let out = render::record(&mut self.retained, self.at, self.screen, state, &mut self.fonts, &mut self.images);
-        if let Some(damage) = self.retained.damage() {
+        let out = self.frames.record(self.at, self.screen, state, &mut self.fonts, &mut self.images);
+        if let Some(damage) = self.frames.damage() {
             let next = (self.latest + 1) % self.buffers.len();
             if let Some((pixmap, held)) = self.buffers.get_mut(next) {
-                *held = render::draw_damaged(pixmap.as_mut(), *held, damage, &mut self.retained, &mut self.history, &mut self.fonts, &self.images);
+                *held = self.frames.draw(pixmap.as_mut(), *held, damage, &mut self.fonts, &self.images);
                 self.latest = next;
             }
         }

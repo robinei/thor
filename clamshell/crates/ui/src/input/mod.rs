@@ -7,4 +7,5 @@ pub(crate) mod focus;
 pub(crate) mod nav;
 pub(crate) mod press;
 
-pub(crate) use press::{Action, End, EventClock, Input, Source, Timer, points};
+pub(crate) use press::{Action, EventClock, Input, Timer, points};
+pub use press::{End, Source};

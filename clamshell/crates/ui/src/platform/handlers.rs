@@ -1,5 +1,5 @@
 //! The Wayland protocol handlers: configures and frame callbacks for the views, and the seats with their
-//! keyboard, pointer and touch, whose events are passed on to the input side.
+//! keyboard, pointer and touch, whose events are passed on to the core by the screen they are on.
 
 use clamshell_state::Event;
 use smithay_client_toolkit::{
@@ -32,9 +32,9 @@ use crate::input::{End, Source};
 
 impl CompositorHandler for App {
     fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &WlSurface, factor: i32) {
-        if let Some(view) = self.view_mut(surface) {
-            view.scale = factor.max(1);
-            view.stale = true;
+        if let Some(screen) = self.screen_of(surface) {
+            let (size, _) = self.core.size(screen);
+            self.core.resize(screen, size, factor.max(1).unsigned_abs());
         }
     }
 
@@ -59,9 +59,11 @@ impl WindowHandler for App {
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, window: &Window, configure: WindowConfigure, _: u32) {
         if let Some(view) = self.view_mut(window.wl_surface()) {
             let (w, h) = configure.new_size;
-            view.size = (w.map_or(view.default_size.0, |w| w.get()), h.map_or(view.default_size.1, |h| h.get()));
+            let size = (w.map_or(view.default_size.0, |w| w.get()), h.map_or(view.default_size.1, |h| h.get()));
             view.configured = true;
             view.reconfigured = true;
+            let screen = view.screen;
+            self.configured(screen, size);
         }
     }
 }
@@ -75,10 +77,20 @@ impl LayerShellHandler for App {
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface, configure: LayerSurfaceConfigure, _: u32) {
         if let Some(view) = self.view_mut(layer.wl_surface()) {
             let (w, h) = configure.new_size;
-            view.size = (if w == 0 { view.default_size.0 } else { w }, if h == 0 { view.default_size.1 } else { h });
+            let size = (if w == 0 { view.default_size.0 } else { w }, if h == 0 { view.default_size.1 } else { h });
             view.configured = true;
             view.reconfigured = true;
+            let screen = view.screen;
+            self.configured(screen, size);
         }
+    }
+}
+
+impl App {
+    /// The compositor gave `screen` its logical size.
+    fn configured(&mut self, screen: crate::Screen, size: (u32, u32)) {
+        let (_, scale) = self.core.size(screen);
+        self.core.resize(screen, size, scale);
     }
 }
 
@@ -134,13 +146,13 @@ impl SeatHandler for App {
                 if let Some(p) = self.pointer.take() {
                     p.release();
                 }
-                self.up(Source::Mouse, End::Cancel, std::time::Instant::now());
+                self.core.up(Source::Mouse, End::Cancel, std::time::Instant::now());
             }
             Capability::Touch => {
                 if let Some(t) = self.touch.take() {
                     t.release();
                 }
-                self.cancel_touches();
+                self.core.cancel_touches();
             }
             _ => {}
         }
@@ -149,12 +161,21 @@ impl SeatHandler for App {
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
 }
 
+impl App {
+    /// Keys stand in for the pad on a desktop (see `BottomKind::desktop_keys`).
+    fn key(&mut self, sym: Keysym, down: bool) {
+        if self.bottom_kind.desktop_keys() {
+            self.core.key(sym, down);
+        }
+    }
+}
+
 impl KeyboardHandler for App {
     fn enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &WlSurface, _: u32, _: &[u32], _: &[Keysym]) {}
 
     // No release comes once the focus has left, so a held Enter would go on repeating.
     fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &WlSurface, _: u32) {
-        self.up(Source::Enter, End::Cancel, std::time::Instant::now());
+        self.core.up(Source::Enter, End::Cancel, std::time::Instant::now());
     }
 
     fn press_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, event: KeyEvent) {
@@ -192,22 +213,22 @@ impl PointerHandler for App {
                 }
                 // A right click on the second screen pastes into the field open there, as Ctrl+V does.
                 PointerEventKind::Press { button: BTN_RIGHT, .. } if self.screen_of(&event.surface) != Some(Screen::Top) => {
-                    self.handle(Event::Paste);
+                    self.core.handle(Event::Paste);
                 }
                 PointerEventKind::Press { time, .. } => {
                     if let Some(screen) = self.screen_of(&event.surface) {
-                        self.press_at(Source::Mouse, screen, event.position, time);
+                        self.core.press(Source::Mouse, screen, event.position, time);
                     }
                 }
-                PointerEventKind::Motion { time } => self.moved(Source::Mouse, event.position, time),
+                PointerEventKind::Motion { time } => self.core.moved(Source::Mouse, event.position, time),
                 PointerEventKind::Release { time, .. } => {
-                    let now = self.at(time);
-                    self.up(Source::Mouse, End::Release, now);
+                    let now = self.core.at(time);
+                    self.core.up(Source::Mouse, End::Release, now);
                 }
                 PointerEventKind::Axis { vertical, .. } => {
                     let notches = if vertical.discrete != 0 { vertical.discrete } else { (vertical.absolute / 10.0) as i32 };
                     if let Some(screen) = self.screen_of(&event.surface).filter(|_| notches != 0) {
-                        self.wheel(screen, event.position, notches);
+                        self.core.wheel(screen, event.position, notches);
                     }
                 }
                 _ => {}
@@ -219,17 +240,17 @@ impl PointerHandler for App {
 impl TouchHandler for App {
     fn down(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, time: u32, surface: WlSurface, id: i32, position: (f64, f64)) {
         if let Some(screen) = self.screen_of(&surface) {
-            self.press_at(Source::Touch(id), screen, position, time);
+            self.core.press(Source::Touch(id), screen, position, time);
         }
     }
 
     fn up(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, time: u32, id: i32) {
-        let now = self.at(time);
-        self.up(Source::Touch(id), End::Release, now);
+        let now = self.core.at(time);
+        self.core.up(Source::Touch(id), End::Release, now);
     }
 
     fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, time: u32, id: i32, position: (f64, f64)) {
-        self.moved(Source::Touch(id), position, time);
+        self.core.moved(Source::Touch(id), position, time);
     }
 
     fn shape(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: i32, _: f64, _: f64) {}
@@ -237,7 +258,7 @@ impl TouchHandler for App {
     fn orientation(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: i32, _: f64) {}
 
     fn cancel(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch) {
-        self.cancel_touches();
+        self.core.cancel_touches();
     }
 }
 

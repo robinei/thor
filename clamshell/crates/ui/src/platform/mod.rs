@@ -1,25 +1,23 @@
-//! The Wayland side. This module holds the app's event loop and its views, each a surface drawn into shm
-//! buffers. The submodules handle the compositor's events ([`handlers`]), idle and output power
-//! ([`display`]), the input method ([`text_input`]) and systemd's notifications ([`notify`]).
+//! The Wayland side: the host of the [`Core`] as a Wayland client. This module holds the event loop and
+//! the views, each a surface showing one of the core's screens, drawn into shm buffers. The submodules
+//! handle the compositor's events ([`handlers`]), idle and output power ([`display`]), the input method
+//! ([`text_input`]) and systemd's notifications ([`notify`]).
 
 mod app;
 mod display;
 mod handlers;
 mod notify;
-mod routing;
 mod text_input;
 mod view;
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-use clamshell_state::bottom::touch::TouchLayout;
-use clamshell_state::{Effect, Event, Id, State};
+use clamshell_state::{Effect, Event, State};
 use smithay_client_toolkit::{
     compositor::CompositorState,
     output::OutputState,
     reexports::{
-        calloop::{EventLoop, LoopHandle, RegistrationToken, channel},
+        calloop::{EventLoop, channel, ping},
         calloop_wayland_source::WaylandSource,
         client::{
             Connection, QueueHandle,
@@ -33,10 +31,9 @@ use smithay_client_toolkit::{
     shm::{Shm, slot::SlotPool},
 };
 
-use crate::gfx::DrawCache;
-use crate::input::{Input, Source};
+use crate::core::Core;
 use crate::screens::Screens;
-use crate::{Config, Error, EventSender, gfx, input};
+use crate::{Config, Error, EventSender};
 use view::View;
 
 /// Runs the UI until it quits. `start` gets a sender for the system threads. `on_effect` carries out what
@@ -47,8 +44,12 @@ pub fn run(state: State, config: Config, start: impl FnOnce(EventSender), on_eff
     let qh = queue.handle();
     let shells = Shells::bind(&globals, &qh)?;
     let mut event_loop: EventLoop<App> = EventLoop::try_new()?;
-    let images = install_images(&event_loop.handle())?;
-    let mut app = App::new(&globals, &qh, state, &config, images, event_loop.handle(), Box::new(on_effect))?;
+    // The core's threads wake the loop when a font or an image comes back, and the core takes it in on
+    // its next run.
+    let (wake, woken) = ping::make_ping()?;
+    event_loop.handle().insert_source(woken, |_, _, _| {}).map_err(|e| e.error)?;
+    let core = Core::new(state, config.touch_layout.clone(), move || wake.ping())?;
+    let mut app = App::new(&globals, &qh, core, &config, Box::new(on_effect))?;
 
     // Learn the outputs and their names before placing the bottom view. These roundtrips dispatch into
     // the app, which is why the app is made before its views.
@@ -70,24 +71,33 @@ pub fn run(state: State, config: Config, start: impl FnOnce(EventSender), on_eff
         .handle()
         .insert_source(receiver, |event, _, app: &mut App| {
             if let channel::Event::Msg(event) = event {
-                app.handle(event);
+                app.core.handle(event);
             }
         })
         .map_err(|e| e.error)?;
     start(EventSender(sender));
     // Now that everything runs, start what the current state needs, such as the tab's watch, brightness
     // and the pad.
-    app.handle(Event::Start);
+    app.core.handle(Event::Start);
+    app.carry_out();
 
     // systemd is told the program is up once the screens are drawn, and that the loop is still turning
-    // (see notify).
+    // (see notify). The loop sleeps until something happens or the core's next deadline.
     let mut notifier = notify::Notifier::new();
     while !app.exit {
-        event_loop.dispatch(None, &mut app)?;
-        app.redraw();
+        let timeout = app.core.deadline().map(|at| until(at, Instant::now()));
+        event_loop.dispatch(timeout, &mut app)?;
+        app.turn();
         notifier.turned();
     }
     Ok(())
+}
+
+/// The time from `now` to `at`, rounded up to whole milliseconds, so that the loop doesn't wake just
+/// before a deadline.
+fn until(at: Instant, now: Instant) -> Duration {
+    let wait = at.saturating_duration_since(now);
+    Duration::from_millis(u64::try_from(wait.as_micros().div_ceil(1000)).unwrap_or(u64::MAX))
 }
 
 /// The shells the views are made with.
@@ -105,39 +115,6 @@ impl Shells {
             layer: LayerShell::bind(globals, qh).inspect_err(|e| log::info!("no layer shell protocol: {e}")).ok(),
         })
     }
-}
-
-/// Sets up image loading. Requests go to a decoding thread, and results come back through the event loop.
-fn install_images(handle: &LoopHandle<'static, App>) -> Result<crate::gfx::images::Images, Error> {
-    let (requests, worker) = std::sync::mpsc::channel();
-    let (done, results) = channel::channel();
-    crate::gfx::images::spawn_worker(worker, move |key, pixmap| done.send((key, pixmap)).is_ok())?;
-    handle
-        .insert_source(results, |event, _, app: &mut App| {
-            if let channel::Event::Msg((key, pixmap)) = event {
-                app.images.arrived(key, pixmap);
-                app.changed();
-            }
-        })
-        .map_err(|e| e.error)?;
-    Ok(crate::gfx::images::Images::new(requests))
-}
-
-/// Sets up finding fonts for characters the built-in one lacks. They are found on a thread and come back
-/// through the event loop.
-fn install_fonts(handle: &LoopHandle<'static, App>) -> Result<DrawCache, Error> {
-    let (requests, finder) = std::sync::mpsc::channel();
-    let (done, results) = channel::channel();
-    gfx::spawn_font_finder(finder, move |found| done.send(found).is_ok())?;
-    handle
-        .insert_source(results, |event, _, app: &mut App| {
-            if let channel::Event::Msg(found) = event {
-                app.fonts.found(found);
-                app.changed();
-            }
-        })
-        .map_err(|e| e.error)?;
-    Ok(DrawCache::with_finder(requests))
 }
 
 /// How the bottom view is shown.
@@ -185,8 +162,7 @@ pub(crate) struct App {
     qh: QueueHandle<App>,
     /// Made once the outputs are known (see `run`).
     views: Screens<Option<View>>,
-    state: State,
-    fonts: DrawCache,
+    core: Core,
     keyboard: Option<wl_keyboard::WlKeyboard>,
     pointer: Option<wl_pointer::WlPointer>,
     /// The compositor's cursor shapes and our pointer's shape. We set the arrow over our surfaces,
@@ -194,30 +170,13 @@ pub(crate) struct App {
     cursor_shapes: Option<smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager>,
     pub(crate) cursor: Option<smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::WpCursorShapeDeviceV1>,
     touch: Option<wl_touch::WlTouch>,
-    touch_layout: Arc<Mutex<TouchLayout>>,
-    images: crate::gfx::images::Images,
-    input: Input,
-    /// The presses' running timers.
-    timers: HashMap<(Source, input::Timer), RegistrationToken>,
-    /// Turns the compositor's event times into instants, so they say when a finger moved rather than
-    /// when the event was handled.
-    clock: input::EventClock,
-    /// Fingers pointing in the touch frame being handled. They are sent on together once the whole frame
-    /// has been handled.
-    contacts: Vec<clamshell_state::bottom::touch::Contact>,
-    /// Where the pad's focus was on each screen, so View can switch back to it.
-    focus_memory: Screens<Option<Id>>,
     /// How the bottom view is shown (see `App::place_views`).
     bottom_kind: BottomKind,
     text_input: text_input::TextInput,
     /// The compositor's idle report, the screens' power and the main screen's refresh rate.
     display: display::Display,
-    loop_handle: LoopHandle<'static, App>,
+    /// Carries out the effects that aren't the UI's own, through the system crate.
     on_effect: Box<dyn FnMut(&Effect)>,
-    /// The effects of the event being handled, kept to be reused for the next one.
-    effects: Vec<Effect>,
-    /// The events waiting while another is handled.
-    queue: app::EventQueue,
     /// The screens' power as last set (see `App::outputs`).
     outputs: (bool, bool),
     exit: bool,

@@ -78,7 +78,7 @@ impl EventClock {
 
 /// Where a press comes from: each touch point, the mouse, the pad's A, or Enter on a desktop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum Source {
+pub enum Source {
     Touch(i32),
     Mouse,
     PadA,
@@ -121,7 +121,7 @@ pub(crate) enum Action {
 /// How a press ends. On release a tap acts. A press is cancelled when the touch was taken away or the pad
 /// left.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum End {
+pub enum End {
     Release,
     Cancel,
 }

@@ -1,43 +1,24 @@
-//! The app's own work. It places the views on the outputs, applies events, records the views after
-//! each and draws the ones that changed when their frames are due, and carries out the input machines'
-//! actions and arms their timers.
+//! The host's own work. It places the views on the outputs, runs the core after each turn of the loop,
+//! draws the views that are due when their frames can be shown, and carries out the core's effects.
 
-use std::collections::HashMap;
-use std::time::Duration;
-
-use clamshell_state::{Effect, Event, ShelfEvent, State};
+use clamshell_state::Effect;
 use smithay_client_toolkit::{
     output::OutputState,
-    reexports::{
-        calloop::{
-            LoopHandle,
-            timer::{TimeoutAction, Timer},
-        },
-        client::{QueueHandle, globals::GlobalList, protocol::wl_surface::WlSurface},
-    },
+    reexports::client::{QueueHandle, globals::GlobalList, protocol::wl_surface::WlSurface},
     registry::RegistryState,
     seat::SeatState,
     shm::{Shm, slot::SlotPool},
 };
 
 use super::view::View;
-use crate::input::{Action, Input, Source};
+use crate::core::Core;
 use crate::screens::Screens;
-use crate::{Config, Error, Screen, render};
+use crate::{Config, Error, Screen};
 
-use super::{App, BottomKind, Shells, display, install_fonts, text_input, view};
-use crate::input;
+use super::{App, BottomKind, Shells, display, text_input};
 
 impl App {
-    pub(super) fn new(
-        globals: &GlobalList,
-        qh: &QueueHandle<App>,
-        state: State,
-        config: &Config,
-        images: crate::gfx::images::Images,
-        loop_handle: LoopHandle<'static, App>,
-        on_effect: Box<dyn FnMut(&Effect)>,
-    ) -> Result<App, Error> {
+    pub(super) fn new(globals: &GlobalList, qh: &QueueHandle<App>, core: Core, config: &Config, on_effect: Box<dyn FnMut(&Effect)>) -> Result<App, Error> {
         let shm = Shm::bind(globals, qh)?;
         let pool = SlotPool::new(4 << 20, &shm)?;
         Ok(App {
@@ -48,8 +29,7 @@ impl App {
             pool,
             qh: qh.clone(),
             views: Screens::default(),
-            state,
-            fonts: install_fonts(&loop_handle)?,
+            core,
             keyboard: None,
             pointer: None,
             cursor_shapes: smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager::bind(globals, qh)
@@ -57,20 +37,10 @@ impl App {
                 .ok(),
             cursor: None,
             touch: None,
-            touch_layout: config.touch_layout.clone(),
-            images,
-            input: Input::default(),
-            timers: HashMap::new(),
-            contacts: Vec::new(),
-            clock: input::EventClock::default(),
-            focus_memory: Screens::default(),
             bottom_kind: BottomKind::Window,
             text_input: text_input::TextInput::bind(globals, qh),
             display: display::Display::bind(globals, qh, &config.bottom_output),
-            loop_handle,
             on_effect,
-            effects: Vec::new(),
-            queue: EventQueue::default(),
             outputs: (true, true),
             exit: false,
         })
@@ -97,6 +67,12 @@ impl App {
                 View::window(&shells.compositor, &shells.xdg, qh, Screen::Bottom, config.bottom_size)
             }
         });
+        // Until the compositor configures them, the screens are the views' default sizes.
+        for screen in Screen::BOTH {
+            if let Some(view) = &self.views[screen] {
+                self.core.resize(screen, view.default_size, 1);
+            }
+        }
     }
 
     /// The screen `surface` shows, if it is one of ours. Input is routed by it.
@@ -108,40 +84,27 @@ impl App {
         self.views.iter_mut().filter_map(|(_, v)| v.as_mut()).find(|v| v.shell.surface() == surface)
     }
 
-    /// Handles `event`. One that comes while another is being handled, such as one the input side emits,
-    /// waits until that one's effects have been carried out (see [`EventQueue`]).
-    pub(super) fn handle(&mut self, event: Event) {
-        if !self.queue.push(event) {
-            return;
-        }
-        while let Some(event) = self.queue.next() {
-            self.handle_one(event);
-        }
+    /// After each turn of the loop: runs what is due in the core, draws the views that are due, and
+    /// carries out the effects, those of the events handled and then those of the frames drawn.
+    pub(super) fn turn(&mut self) {
+        self.core.run(std::time::Instant::now());
+        self.carry_out();
+        self.redraw();
+        self.carry_out();
     }
 
-    fn handle_one(&mut self, event: Event) {
-        // The pad driving the screens is input, handled here like keys and touches.
-        if let Event::Pad(input) = event {
-            return self.pad(input);
-        }
-        self.effects.clear();
-        self.state.apply(event, &mut self.effects);
-        self.changed();
-        let released = self.input.pad_route(self.state.pad().route(), &self.state);
-        self.run_actions(released);
-        // Taken while carried out, and put back to be reused.
-        let mut effects = std::mem::take(&mut self.effects);
-        for effect in &effects {
+    /// Carries out the core's effects in order: quitting, the screens' power and the refresh rate here,
+    /// the rest through the system crate.
+    pub(super) fn carry_out(&mut self) {
+        while let Some(effect) = self.core.next_effect() {
             match effect {
                 Effect::Quit => self.exit = true,
-                Effect::Outputs { top, bottom } => self.outputs(*top, *bottom),
+                Effect::Outputs { top, bottom } => self.outputs(top, bottom),
                 // The main screen's refresh rate is set through Wayland.
-                Effect::Refresh(hz) => self.display.refresh(*hz, &self.qh),
-                other => (self.on_effect)(other),
+                Effect::Refresh(hz) => self.display.refresh(hz, &self.qh),
+                other => (self.on_effect)(&other),
             }
         }
-        effects.clear();
-        self.effects = effects;
     }
 
     /// Sets the screens' power (see `Effect::Outputs`). The compositor turns them off and on for idle,
@@ -158,196 +121,53 @@ impl App {
         }
     }
 
-    pub(super) fn handle_all(&mut self, events: impl IntoIterator<Item = Event>) {
-        for event in events {
-            self.handle(event);
-        }
-    }
-
-    /// What the views show may have changed, so each is recorded again before its next frame and drawn
-    /// if it changed.
-    pub(super) fn changed(&mut self) {
-        for (_, view) in self.views.iter_mut() {
-            if let Some(view) = view {
-                view.stale = true;
-            }
-        }
-    }
-
     /// Draws the views that are due. What the drawing changes, such as rows and lists, may make another
     /// view due. That view is drawn too rather than left until the next event, for a few passes at most.
-    pub(super) fn redraw(&mut self) {
+    fn redraw(&mut self) {
         for _ in 0..3 {
-            if !self.draw_due() || !self.views.iter_mut().any(|(_, v)| v.as_ref().is_some_and(View::due)) {
+            if !self.draw_due() || !Screen::BOTH.into_iter().any(|s| self.due(s)) {
                 break;
             }
         }
     }
 
-    /// Draws the views that are due. Returns whether it drew any.
+    /// Whether `screen`'s view is to be drawn: it may have changed, or the compositor waits for a frame.
+    fn due(&self, screen: Screen) -> bool {
+        self.views[screen].as_ref().is_some_and(|v| v.due(self.core.stale(screen)))
+    }
+
+    /// Draws the views that are due. Returns whether it recorded any.
     fn draw_due(&mut self) -> bool {
         let mut drew = false;
-        let mut rows_changed = None;
-        let mut lists = Vec::new();
         // While a window is shown on the bottom screen, ClamShell's bottom view goes behind it.
-        let behind = self.state.bottom().shows_windows(self.state.session());
-        if let Some(view) = self.views.iter_mut().find(|(s, _)| *s == Screen::Bottom).and_then(|(_, v)| v.as_mut()) {
+        let state = self.core.state();
+        let behind = state.bottom().shows_windows(state.session());
+        let hidden = super::hidden_views(self.bottom_kind, state);
+        if let Some(view) = self.views.bottom.as_mut() {
             view.set_behind(behind);
         }
-        let hidden = super::hidden_views(self.bottom_kind, &self.state);
         for (screen, view) in self.views.iter_mut() {
             if let Some(view) = view.as_mut() {
                 view.visible = !hidden[screen];
             }
         }
-        for (screen, view) in self.views.iter_mut() {
-            let Some(view) = view.as_mut().filter(|v| v.due()) else {
+        for screen in Screen::BOTH {
+            if !self.due(screen) {
+                continue;
+            }
+            let Some(view) = self.views[screen].as_mut() else {
                 continue;
             };
-            match view.draw(&mut self.pool, &mut self.fonts, &self.state, &mut self.images, &self.qh) {
-                Ok(None) => {}
-                Ok(Some(rendered)) => {
-                    drew = true;
-                    view.body = rendered.touchpad_area;
-                    if screen == Screen::Bottom {
-                        let scale = view.scale.max(1) as f32;
-                        view::publish(&self.touch_layout, (view.size.0 as f32 * scale, view.size.1 as f32 * scale));
-                    }
-                    rows_changed = rows_changed.or(rendered.list_rows.filter(|&rows| rows != self.state.shelf().rows()));
-                    lists.extend(render::list_changes(&self.state, &rendered));
-                }
+            match view.draw(&mut self.core, &mut self.pool, &self.qh) {
+                Ok(recorded) => drew |= recorded,
                 Err(e) => {
                     log::warn!("drawing {screen:?}: {e}");
-                    view.stale = false;
+                    self.core.skip(screen);
                     view.reconfigured = false;
                 }
             }
         }
-        // The list's row count follows the layout; the state keeps the selection within it.
-        if let Some(rows) = rows_changed {
-            self.handle(Event::Shelf(ShelfEvent::Rows(rows)));
-        }
-        self.handle_all(lists);
+        self.core.frames_done();
         drew
-    }
-
-    /// Carries out what the input side asks: events, and the presses' timers on the event loop.
-    pub(super) fn run_actions(&mut self, actions: Vec<Action>) {
-        for action in actions {
-            match action {
-                Action::Emit(event) => self.handle(event),
-                Action::Arm(source, timer, after) => self.arm(source, timer, after),
-                Action::Disarm(source, timer) => {
-                    if let Some(token) = self.timers.remove(&(source, timer)) {
-                        self.loop_handle.remove(token);
-                    }
-                }
-                // Positions are in the second screen's pixels, and a finger's slot comes from its touch id.
-                Action::Point(Source::Touch(id), phase, (x, y)) => {
-                    let scale = self.views.bottom.as_ref().map_or(1, |v| v.scale.max(1)) as f32;
-                    let slot = id.rem_euclid(clamshell_state::bottom::touch::SLOTS) as u8;
-                    let contact = clamshell_state::bottom::touch::Contact { slot, phase, x: (x * scale).round() as i32, y: (y * scale).round() as i32 };
-                    // A touch frame's events come in one go. Once they are handled, the frame's contacts
-                    // are sent on together.
-                    if self.contacts.is_empty() {
-                        self.loop_handle.insert_idle(|app| {
-                            let contacts = std::mem::take(&mut app.contacts);
-                            app.handle(clamshell_state::bottom::touch::Pointing::Contacts(contacts).into());
-                        });
-                    }
-                    self.contacts.push(contact);
-                }
-                Action::Point(..) => {}
-            }
-        }
-    }
-
-    fn arm(&mut self, source: Source, timer: input::Timer, after: Duration) {
-        if let Some(token) = self.timers.remove(&(source, timer)) {
-            self.loop_handle.remove(token);
-        }
-        let fire = move |_, _: &mut (), app: &mut App| {
-            // The timer is dropped by returning Drop, so here it is only forgotten, not removed from the
-            // loop from inside itself.
-            app.timers.remove(&(source, timer));
-            let actions = app.input.timer(source, timer, &app.state, std::time::Instant::now());
-            app.run_actions(actions);
-            TimeoutAction::Drop
-        };
-        match self.loop_handle.insert_source(Timer::from_duration(after), fire) {
-            Ok(token) => {
-                self.timers.insert((source, timer), token);
-            }
-            Err(e) => log::warn!("{timer:?} timer: {}", e.error),
-        }
-    }
-}
-
-/// The events waiting to be handled. Events are handled one at a time: one that comes while another is
-/// being handled, from the input side or a frame drawn, waits until that one is done, effects and all, so
-/// that the effects are carried out in the order of the events. Waiting events are handled in the order
-/// they came.
-#[derive(Default)]
-pub(super) struct EventQueue {
-    events: std::collections::VecDeque<Event>,
-    /// An event is being handled.
-    busy: bool,
-}
-
-impl EventQueue {
-    /// Queues `event`. Returns whether the caller is to handle the queue, which it is unless an event is
-    /// being handled already.
-    fn push(&mut self, event: Event) -> bool {
-        self.events.push_back(event);
-        !std::mem::replace(&mut self.busy, true)
-    }
-
-    /// The next event to handle, or None once the queue is empty, which ends handling.
-    fn next(&mut self) -> Option<Event> {
-        let next = self.events.pop_front();
-        self.busy = next.is_some();
-        next
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Handles events as `App::handle` does, where handling event `n` below 3 emits event `n + 1`, and
-    /// the emitted one is handled before the effects are carried out.
-    struct Fake {
-        queue: EventQueue,
-        log: Vec<String>,
-    }
-
-    impl Fake {
-        fn handle(&mut self, event: Event) {
-            if !self.queue.push(event) {
-                return;
-            }
-            while let Some(event) = self.queue.next() {
-                let Event::Shelf(ShelfEvent::Rows(n)) = event else {
-                    continue;
-                };
-                self.log.push(format!("apply {n}"));
-                if n < 3 {
-                    self.handle(Event::Shelf(ShelfEvent::Rows(n + 1)));
-                    self.handle(Event::Shelf(ShelfEvent::Rows(n + 10)));
-                }
-                self.log.push(format!("effects {n}"));
-            }
-        }
-    }
-
-    #[test]
-    fn an_event_emitted_while_handling_waits_for_the_effects() {
-        let mut app = Fake { queue: EventQueue::default(), log: Vec::new() };
-        app.handle(Event::Shelf(ShelfEvent::Rows(1)));
-        let expected = ["apply 1", "effects 1", "apply 2", "effects 2", "apply 11", "effects 11", "apply 3", "effects 3", "apply 12", "effects 12"];
-        assert_eq!(app.log, expected);
-        // Done, so the next event is handled at once.
-        app.handle(Event::Shelf(ShelfEvent::Rows(20)));
-        assert_eq!(app.log.get(10..), Some(&["apply 20".to_owned(), "effects 20".to_owned()][..]));
     }
 }

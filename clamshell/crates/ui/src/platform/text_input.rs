@@ -1,16 +1,11 @@
 //! Whether an app's text field wants typing, learned from the compositor's input-method protocol. Sway
 //! relays text-input-v3, which GTK, Qt, Firefox and foot use. ClamShell registers as the seat's input
-//! method and only listens; the keys still go through the keyboard's virtual device. A field that is let
-//! go is reported after a short wait, so moving between fields doesn't make the keyboard bounce.
+//! method and only listens; the keys still go through the keyboard's virtual device. What it hears is
+//! passed to the core ([`crate::Core::text_field`]).
 
-use std::time::Duration;
-
-use clamshell_state::Event;
 use smithay_client_toolkit::{
     dispatch2::Dispatch2,
     reexports::{
-        calloop::RegistrationToken,
-        calloop::timer::{TimeoutAction, Timer},
         client::{Connection, QueueHandle, globals::GlobalList, protocol::wl_seat::WlSeat},
         protocols_misc::zwp_input_method_v2::client::{
             zwp_input_method_manager_v2::{self, ZwpInputMethodManagerV2},
@@ -20,18 +15,7 @@ use smithay_client_toolkit::{
 };
 
 use super::App;
-
-/// How long a field must stay let go before the keyboard goes back.
-const SETTLE: Duration = Duration::from_millis(400);
-
-/// What the input method said, once a batch of its events is complete.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Field {
-    /// A field wants typing (true) or was let go (false).
-    Active(bool),
-    /// Another input method has the seat. Any field is treated as let go at once.
-    Gone,
-}
+use crate::core::TextField as Field;
 
 /// The input method and what it last said.
 #[derive(Default)]
@@ -40,9 +24,6 @@ pub(crate) struct TextInput {
     method: Option<ZwpInputMethodV2>,
     /// An activate (true) or deactivate (false) since the last `done`.
     pending: Option<bool>,
-    /// What the state was last told.
-    active: bool,
-    settle: Option<RegistrationToken>,
 }
 
 impl TextInput {
@@ -76,11 +57,6 @@ impl TextInput {
         }
         None
     }
-
-    /// Records what the state is told, and returns whether that is news.
-    fn tell(&mut self, active: bool) -> bool {
-        std::mem::replace(&mut self.active, active) != active
-    }
 }
 
 /// The objects' user data (they carry nothing).
@@ -93,40 +69,7 @@ impl Dispatch2<ZwpInputMethodManagerV2, App> for Data {
 impl Dispatch2<ZwpInputMethodV2, App> for Data {
     fn event(&self, app: &mut App, method: &ZwpInputMethodV2, event: zwp_input_method_v2::Event, _: &Connection, _: &QueueHandle<App>) {
         if let Some(field) = app.text_input.event(method, event) {
-            app.text_field(field);
-        }
-    }
-}
-
-impl App {
-    /// Tells the state about a text field. This happens at once when a field wants typing or the input
-    /// method is gone, and after `SETTLE` when a field was let go.
-    fn text_field(&mut self, field: Field) {
-        if let Some(token) = self.text_input.settle.take() {
-            self.loop_handle.remove(token);
-        }
-        match field {
-            Field::Active(true) | Field::Gone => {
-                let active = field == Field::Active(true);
-                if self.text_input.tell(active) {
-                    self.handle(Event::TextInput(active));
-                }
-            }
-            Field::Active(false) if self.text_input.active => {
-                let timer = Timer::from_duration(SETTLE);
-                let settled = self.loop_handle.insert_source(timer, |_, _, app: &mut App| {
-                    app.text_input.settle = None;
-                    if app.text_input.tell(false) {
-                        app.handle(Event::TextInput(false));
-                    }
-                    TimeoutAction::Drop
-                });
-                match settled {
-                    Ok(token) => self.text_input.settle = Some(token),
-                    Err(e) => log::warn!("text input timer: {e}"),
-                }
-            }
-            Field::Active(false) => {}
+            app.core.text_field(field);
         }
     }
 }
