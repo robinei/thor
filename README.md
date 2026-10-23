@@ -18,7 +18,7 @@ on-screen keyboard), and the games' settings and keymaps. Rust, a Cargo workspac
 
 | Crate | What |
 |---|---|
-| `crates/state` | the state and its rules: events in, dirty screens and effects out; no I/O |
+| `crates/state` | the state and its rules: events in, effects out; no I/O |
 | `crates/system` | threads that watch the system and send events, and carry out effects (sway, systemd, NetworkManager, BlueZ, evdev/uinput, sysfs); the game library from disk |
 | `crates/library` | the library's model (entries, groups, tabs), sorting, name patterns, and the parts of Steam's formats that need no disk |
 | `crates/ui` | Wayland, CPU drawing (tiny-skia, fontdue), the views, pad navigation; the font built in (Noto Sans, SIL Open Font License 1.1: `crates/ui/fonts/OFL.txt`) |
@@ -87,7 +87,7 @@ Covers, screenshots, descriptions, developers and years are fetched in the backg
 (libretro's thumbnails and database, by the file's checksum or by name), `"tmdb:movie"` or `"tmdb:tv"` (needs `"keys": { "tmdb": ... }`); Steam's
 games from the store; the desktop files' games from SteamGridDB (needs `keys.steamgriddb`). Art beside a
 file wins. libretro's lists are kept in `~/.cache/clamshell/libretro` for 30 days. The rules:
-`crates/system/src/meta.rs`.
+`crates/system/src/library/meta/`.
 
 What ClamShell keeps (play time, favourites, settings, keymaps, window rules, the dock's pins, where shelf
 was, brightness) is in JSON files in `~/.local/share/clamshell`, readable and editable by hand; which
