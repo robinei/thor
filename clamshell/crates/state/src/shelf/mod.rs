@@ -528,7 +528,7 @@ impl Shelf {
     /// Counts and records a play of `entry` from `start` (monotonic seconds, as in [`crate::Event::Tick`])
     /// until now, dated by the wall clock. For a video, it also reads where mpv left it, which mpv wrote as
     /// it quit.
-    pub(crate) fn record_play(&mut self, entry: Arc<str>, start: u64, clock: &crate::Clock, out: &mut crate::state::out::Out) {
+    pub(crate) fn record_play(&mut self, entry: Arc<str>, start: u64, clock: &crate::Clock, out: &mut crate::out::Out) {
         let duration = clock.mono().saturating_sub(start);
         let start = clock.unix_at(start);
         if self.add_play(&entry, start, duration) {

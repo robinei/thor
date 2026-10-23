@@ -14,7 +14,7 @@
 use crate::TimeId;
 use crate::effect::{Effect, Save};
 use crate::kit::list::Scroll;
-use crate::state::out::Out;
+use crate::out::Out;
 use crate::status::Sys;
 
 /// The system's time zone and the ones to choose from, by tzdata name ("Europe/Oslo"), and whether the

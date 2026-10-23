@@ -30,10 +30,10 @@ use clamshell_library::{Entry, Library, RunnerOf};
 
 use crate::Session;
 use crate::effect::Effect;
+use crate::out::Out;
 use crate::session::instance::Instance;
 use crate::session::running::{Origin, Running};
 use crate::settings::{InBackground, Settings};
-use crate::state::out::Out;
 
 /// How long, in seconds, a program's windows are all hidden before it is paused, so that switching away
 /// and back quickly doesn't pause it.

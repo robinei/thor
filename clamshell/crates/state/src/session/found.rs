@@ -21,10 +21,10 @@ use std::sync::Arc;
 use clamshell_library::ids;
 
 use crate::effect::{Effect, WindowCommand};
+use crate::out::Out;
 use crate::session::instance::Instance;
 use crate::session::running::{Origin, Running};
 use crate::session::windows::Window;
-use crate::state::out::Out;
 use crate::{Clock, Entry, Library, Session};
 
 impl Session {

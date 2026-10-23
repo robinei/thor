@@ -3,8 +3,8 @@
 //! The battery reports only its total drain. There is no power reading per program, so programs are
 //! ranked by their share of the work instead.
 
+use crate::out::Out;
 use crate::session::instance::Instance;
-use crate::state::out::Out;
 use crate::status::Sys;
 use crate::{BatteryId, Effect, EntryAct, Event, Library, Running, Session};
 

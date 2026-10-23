@@ -23,10 +23,10 @@ use std::sync::Arc;
 use clamshell_library::ids;
 
 use crate::effect::Effect;
+use crate::out::Out;
 use crate::session::found::found_entry;
 use crate::session::instance::Instance;
 use crate::session::running::{Origin, Running};
-use crate::state::out::Out;
 use crate::{Clock, Entry, Library, Session};
 
 /// A tray icon.

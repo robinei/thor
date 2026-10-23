@@ -9,7 +9,7 @@
 use crate::bottom::editor::{Editor, Editors, Purpose};
 use crate::effect::Effect;
 use crate::kit::secret::Secret;
-use crate::state::out::Out;
+use crate::out::Out;
 
 /// The account as the helper read it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

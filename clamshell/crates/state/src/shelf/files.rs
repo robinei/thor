@@ -14,9 +14,9 @@ use clamshell_library::BrowseKind;
 use crate::bottom::editor::{Editor, Purpose};
 use crate::bottom::notice::{NoticeKind, NoticeSlot};
 use crate::effect::Effect;
+use crate::out::Out;
 use crate::shelf::Shelf;
 use crate::shelf::actions::{Action, Actions};
-use crate::state::out::Out;
 use crate::{Entry, EntryAct, Event, Pointer, Running};
 
 /// What can be done to a browsed entry, or in the open folder.
@@ -438,13 +438,13 @@ impl Shelf {
     }
 
     /// The open browsed folder and its directory, which is listed and watched while it is open (see
-    /// [`crate::state::sync::Sent::browse`]).
+    /// [`crate::sync::Sent::browse`]).
     pub(crate) fn browsed(&self) -> Option<(&Arc<str>, &Path)> {
         self.group().and_then(|g| Some((&g.id, g.browsed_dir()?)))
     }
 
     /// The files in use: the open folder's, what is copied to be pasted, and what `running` launches
-    /// opened. The archives they are in stay mounted (see [`crate::state::sync::Sent::browse`]).
+    /// opened. The archives they are in stay mounted (see [`crate::sync::Sent::browse`]).
     pub(crate) fn in_use<'a>(&'a self, running: &'a [Running]) -> impl Iterator<Item = &'a Path> + Clone {
         let open = self.browsed().map(|(_, dir)| dir);
         let copied = self.files.clip.iter().flat_map(|c| c.entries.iter().map(|(p, _)| p.as_path()));

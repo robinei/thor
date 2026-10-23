@@ -20,9 +20,9 @@ use std::sync::Arc;
 use crate::effect::{Effect, Save, WindowCommand};
 use crate::id::DockId;
 use crate::keymap::Dir;
+use crate::out::Out;
 use crate::session::tray::{TrayCommand, TrayEntry, TrayItem};
 use crate::session::windows::Window;
-use crate::state::out::Out;
 use crate::{EntryAct, Event, Session};
 
 /// The dock's tiles in a row.

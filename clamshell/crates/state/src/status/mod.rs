@@ -8,7 +8,7 @@ pub mod metrics;
 pub mod time;
 
 use crate::effect::Effect;
-use crate::state::out::Out;
+use crate::out::Out;
 use battery::{Battery, Group};
 use metrics::{History, Metrics};
 use time::{TimePage, TimeZones};
