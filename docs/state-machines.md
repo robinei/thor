@@ -225,7 +225,7 @@ Overwrite, Delete; Undo per keymap since the edit screen opened.
 |---|---|
 | list steps, collection steps (each keeps its place), drag scrolls | `the_list_scrolls_to_keep_the_selection_on_screen`, `collections_keep_their_own_place`, `a_drag_scrolls_…` |
 | tap selects, tap again opens a group or plays; Up leaves a group | `selecting_then_activating_again_launches`, `a_group_opens_and_back_goes_out_to_it` |
-| tap on an entry not in the list leaves the focus on it | GAP (S23) |
+| tap on an entry not in the list does nothing, the focus included | `a_tap_on_an_entry_not_in_the_list_does_nothing` |
 | long press on the selected entry: actions with the focus ring shown, but plays it without | `a_held_on_the_selected_entry_…` asserts the focus only (S24) |
 | typing filters; Enter activates; Clear | `typing_with_shelf_in_front_finds_entries_…` |
 | favourite on/off: relayout by name and id, `Save(Favourites)`; the pointer isn't moved (S25) | `a_favourite_shows_in_its_collection_…`; removing, and the Favourites tab vanishing, GAP |
@@ -413,7 +413,7 @@ Second screen, device, pad, keymaps:
   Default (`settings/mod.rs:569`). Fixed: state/settings: forgetting a keymap sets who chose it to Default.
 
 Shelf, files, radios, levels, status:
-- S23. A tap on an entry not in the list leaves the focus on it.
+- S23. A tap on an entry not in the list leaves the focus on it. Fixed: state/shelf: a tap on an entry not in the list does nothing.
 - S24. A long press on the selected entry by touch plays it (`shelf/rules.rs:17`).
 - S25. A relayout (favourite, play) doesn't move the pointer's focus with the selection (`rules.rs:141`).
 - S26. A Library read drops the typed filter.

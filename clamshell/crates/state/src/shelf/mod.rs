@@ -290,6 +290,15 @@ impl Shelf {
         self.sync()
     }
 
+    /// Whether `id` is one of shelf's targets as they are now: an entry has to be in the current list.
+    /// Other ids are taken as they come.
+    pub(crate) fn has_target(&self, id: &crate::Id) -> bool {
+        match id {
+            crate::Id::Shelf(crate::ShelfId::Entry(entry)) => self.position_in(self.current, entry).is_some(),
+            _ => true,
+        }
+    }
+
     /// What the list shows, to tell when it changed.
     pub(crate) fn view(&self) -> ShelfView {
         ShelfView {
@@ -751,6 +760,17 @@ mod tests {
         end(&mut s, first);
         let fx = s.applied(ShelfEvent::Continue.into());
         assert_eq!(launched(&fx).as_deref(), Some("tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv"), "watched to its end: the next");
+    }
+
+    #[test]
+    fn a_tap_on_an_entry_not_in_the_list_does_nothing() {
+        let mut s = state();
+        let (focus, selected) = (s.pointer().focus().cloned(), s.shelf().selected().cloned());
+        // Cosmos is in TV, not in the Games list shown, as a tap on a row that just left the list.
+        assert_eq!(tap(&mut s, entry("tv:Cosmos")), vec![]);
+        assert_eq!(long(&mut s, entry("tv:Cosmos")), vec![]);
+        assert_eq!(s.pointer().focus().cloned(), focus, "the focus stays");
+        assert_eq!(s.shelf().selected().cloned(), selected);
     }
 
     #[test]

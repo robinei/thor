@@ -737,6 +737,10 @@ impl State {
         let Some(id) = self.lists().resolve(id) else {
             return;
         };
+        // A shelf entry that isn't in the list shown takes nothing, not even the focus.
+        if !self.shelf.has_target(&id) {
+            return;
+        }
         self.pointer.focus_on(id.clone());
         match id {
             Id::Shelf(id) => {
