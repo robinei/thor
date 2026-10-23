@@ -8,7 +8,7 @@
 
 use std::time::Duration;
 
-use clamshell_core::settings::fan::Mode;
+use clamshell_fan_mode::Mode;
 
 /// How often the daemon reads the sensors and sets the speed.
 pub const TICK: Duration = Duration::from_secs(3);

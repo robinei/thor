@@ -97,7 +97,8 @@ impl Table {
 }
 
 /// Defines a [`Choice`]: the enum, its default, and for each variant, in tap order, its stored value, its
-/// label and its [`Impact`].
+/// label and its [`Impact`]. With `impl`, for an enum defined elsewhere (the fan's [`fan::Mode`]), it
+/// gives only the [`Choice`]: the enum must be in scope by that name.
 macro_rules! choices {
     ($(#[$doc:meta])* $ty:ident for $setting:ident, default $default:ident {
         $($(#[$vdoc:meta])* $v:ident = $value:literal, $label:literal, $impact:ident;)*
@@ -122,31 +123,34 @@ macro_rules! choices {
             }
         }
 
+        $crate::settings::choices!(impl $ty for $setting, default $default {
+            $($v = $value, $label, $impact;)*
+        });
+    };
+    (impl $ty:ident for $setting:ident, default $default:ident {
+        $($v:ident = $value:literal, $label:literal, $impact:ident;)*
+    }) => {
         impl $crate::settings::Choice for $ty {
             const SETTING: $crate::settings::Setting = $crate::settings::Setting::$setting;
             const TABLE: $crate::settings::Table = $crate::settings::Table::new(
                 &[$($value),*],
                 &[$($label),*],
                 &[$($crate::settings::Impact::$impact),*],
-                $ty::$default.value_const(),
+                match $ty::$default {
+                    $($ty::$v => $value,)*
+                },
             );
 
             fn value(self) -> u16 {
-                self.value_const()
+                match self {
+                    $($ty::$v => $value,)*
+                }
             }
 
             fn of(value: u16) -> Self {
                 match value {
                     $($value => $ty::$v,)*
                     _ => $ty::$default,
-                }
-            }
-        }
-
-        impl $ty {
-            const fn value_const(self) -> u16 {
-                match self {
-                    $($ty::$v => $value,)*
                 }
             }
         }
@@ -291,7 +295,7 @@ impl Setting {
             Setting::Upscale => Some(&Upscale::TABLE),
             Setting::BottomScreen => Some(&BottomWhenIdle::TABLE),
             Setting::BigCores => Some(&Cores::TABLE),
-            Setting::Fan => Some(&crate::settings::fan::Mode::TABLE),
+            Setting::Fan => Some(&fan::Mode::TABLE),
             Setting::PadMouse => Some(&MouseAtLaunch::TABLE),
             Setting::Rumble => Some(&RumbleStrength::TABLE),
             Setting::Background => Some(&InBackground::TABLE),

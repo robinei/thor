@@ -10,6 +10,7 @@ description = "ClamShell's state and rules: events in, effects out, no I/O"
 
 [dependencies]
 clamshell-library.workspace = true
+clamshell-fan.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

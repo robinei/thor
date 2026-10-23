@@ -19,6 +19,7 @@ clamshell-core = { path = "crates/core" }
 clamshell-system = { path = "crates/system" }
 clamshell-library = { path = "crates/library" }
 clamshell-ui = { path = "crates/ui" }
+clamshell-fan = { path = "crates/fan" }
 smithay-client-toolkit = "0.21"
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
