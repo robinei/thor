@@ -145,3 +145,32 @@ fn while_metadata_is_fetched_shelfs_view_goes_first() {
     s.applied(Event::Fetching(false));
     assert!(!s.applied(ShelfEvent::ListStep(1).into()).iter().any(|e| matches!(e, Effect::FetchFirst(_))), "done");
 }
+
+/// The windows' effects come after those of the steps that follow them: here the quit entry is ended
+/// (its windows are gone), then the Steam game found by its window is launched, then a stray window on
+/// the landing workspace goes up.
+#[test]
+fn the_windows_effects_follow_the_later_steps() {
+    let mut library = clamshell_library::demo::library();
+    if let Some(g) = library.entries.iter_mut().find(|g| &*g.id == "ff6") {
+        g.launch = clamshell_library::Launch::Steam { appid: 620 };
+    }
+    let mut s = started(Init { library, ..init() });
+    s.applied(Event::tick(1000));
+    let zelda = launch(&mut s, "zelda-lttp").workspace();
+    s.applied(Event::Windows(vec![shelf_window(false), win(3, "zelda3", &zelda, true)]));
+    s.applied(Event::Entry("zelda-lttp".into(), EntryAct::Quit));
+    let landing = Instance::Landing.name();
+    let fx = s.applied(Event::Windows(vec![shelf_window(false), win(7, "steam_app_620", &landing, true), win(8, "foot", &landing, false)]));
+    let kinds: Vec<&str> = fx
+        .iter()
+        .map(|e| match e {
+            Effect::EndRun { .. } => "end zelda",
+            Effect::Save(Save::Resume(_)) => "save resume",
+            Effect::Launch { entry, .. } if &**entry == "ff6" => "launch ff6",
+            Effect::Window(WindowCommand::Up { window: 8, .. }) => "foot up",
+            _ => "other",
+        })
+        .collect();
+    assert_eq!(kinds, ["end zelda", "save resume", "launch ff6", "foot up"], "{fx:?}");
+}

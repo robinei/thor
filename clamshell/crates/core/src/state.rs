@@ -60,6 +60,9 @@ pub struct State {
     /// The events the rules queue for State, lent to `apply`'s [`Out`] and returned empty, so that its
     /// room is kept.
     queue: Vec<Event>,
+    /// The windows' effects while the session's steps run, put after the later steps' (see
+    /// [`State::settle`]). Kept empty, so that its room is reused.
+    window_effects: Vec<Effect>,
 }
 
 impl State {
@@ -336,7 +339,7 @@ impl State {
     }
 
     /// Brings the state up to date with what happened. The steps run in this order, since each reads
-    /// what the earlier ones settled. The first six follow the session's inputs (the windows, systemd's
+    /// what the earlier ones settled. The first eight follow the session's inputs (the windows, systemd's
     /// scopes, the tray, the launcher's messages, the library and the clock), and run only when one
     /// changed, which [`crate::Session::version`] counts:
     ///
@@ -346,26 +349,28 @@ impl State {
     /// 2. The windows: entries started by their app ids ([`crate::Session::start_by_app_id`]), with Steam's
     ///    games launched before the windows are followed, since a starting launch's window is left where
     ///    it is; then windows moved to their entries, programs found by them, and entries ended by them
-    ///    ([`crate::Session::follow_windows`], which compares with the windows the last pass saw). Then the
-    ///    rules that send windows down. The windows' effects come after those of steps 3 and 4.
-    /// 3. In the background: entries paused, thawed or ended by their setting. This reads 1 and 2.
-    /// 4. What is shown: a launch's first window, a workspace whose window came back, and going back to
-    ///    what was before when the one in front closed.
-    /// 5. Quitting entries are ended once their windows are gone. This reads 1 to 3.
-    /// 6. The dock: running entries are added to it and ended ones removed.
+    ///    ([`crate::Session::follow_windows`], which compares with the windows the last pass saw). The
+    ///    effects of this step, the Steam games' launches among them, come after those of steps 3 to 7,
+    ///    so that a window just taken by a browsed file is shown over the one in front closing.
+    /// 3. The rules that send windows down.
+    /// 4. In the background: entries paused, thawed or ended by their setting. This reads 1 and 2.
+    /// 5. What is shown: a launch's first window, and a workspace whose window came back.
+    /// 6. Quitting entries are ended once their windows are gone. This reads 1 to 4.
+    /// 7. Going back to what was before when the one in front closed.
+    /// 8. The dock: running entries are added to it and ended ones removed.
     ///
     /// The rest run after every event:
     ///
-    /// 7. The second screen's dimming.
-    /// 8. The browsed folder's selection and armed action.
-    /// 9. The idle stage.
-    /// 10. The program in force.
-    /// 11. The second screen turning off or on by itself, which reads the program in force's setting and
+    /// 9. The second screen's dimming.
+    /// 10. The browsed folder's selection and armed action.
+    /// 11. The idle stage.
+    /// 12. The program in force.
+    /// 13. The second screen turning off or on by itself, which reads the program in force's setting and
     ///     darkness.
-    /// 12. The pad mouse, when the program in force changed.
-    /// 13. What claims the pad, and where it goes. The focus ring shows where the pad is, so it is hidden
+    /// 14. The pad mouse, when the program in force changed.
+    /// 15. What claims the pad, and where it goes. The focus ring shows where the pad is, so it is hidden
     ///     when the pad leaves ClamShell's screens.
-    /// 14. The scrolled lists keep their top items where they are ([`State::follow_lists`]).
+    /// 16. The scrolled lists keep their top items where they are ([`State::follow_lists`]).
     ///
     /// A step does nothing when nothing changed for it.
     fn settle(&mut self, out: &mut Out) {
@@ -383,18 +388,17 @@ impl State {
             for id in due {
                 self.launch(id, None, false, out);
             }
-            // The windows' effects are moved after those of the steps that follow them, below.
-            let windows_from = out.effects.len();
+            // The windows' effects go after those of the steps that follow them, below.
+            let mut windows = Out { effects: std::mem::take(&mut self.window_effects), events: Vec::new() };
             let mut steam = Vec::new();
             if self.session.start_by_app_id(&self.clock, self.shelf.library(), &mut steam) {
                 self.bottom.unwake();
             }
             // Before following the windows, which leaves a starting launch's windows where they are.
             for id in steam {
-                self.launch(id, None, true, out);
+                self.launch(id, None, true, &mut windows);
             }
-            self.session.follow_windows(&self.clock, &mut self.shelf, out);
-            let by_windows = out.effects.len() - windows_from;
+            self.session.follow_windows(&self.clock, &mut self.shelf, &mut windows);
             self.bottom.follow_window_rules(&self.session, out);
             self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
             self.session.show_pending(out);
@@ -403,9 +407,9 @@ impl State {
             self.session.follow_closed(self.clock.mono(), out);
             // After handling the front one closing, so that a window just taken by a browsed file is shown
             // over it.
-            if let Some(effects) = out.effects.get_mut(windows_from..) {
-                effects.rotate_left(by_windows);
-            }
+            out.effects.append(&mut windows.effects);
+            out.events.append(&mut windows.events);
+            self.window_effects = windows.effects;
             self.dock.follow(&self.session);
             self.session.followed();
             self.settled.running = before;

@@ -35,7 +35,7 @@ The weak spots are at the seams.
 
 ## Fragile
 
-- [ ] **Settle reorders effects by position, untested.** `rotate_left` moves the window effects, and the
+- [x] **Settle reorders effects by position, untested.** `rotate_left` moves the window effects, and the
       Steam launches with them, after the later steps; deleting it passes every test; the step order in the
       doc doesn't match the code (quitting runs before closed). A buffer of its own for the window effects,
       appended at the right point, and a test. (`state.rs:386-407`.)
