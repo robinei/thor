@@ -13,8 +13,9 @@ use battery::{Battery, Group};
 use metrics::{History, Metrics};
 use time::{TimePage, TimeZones};
 
-/// Battery levels at which a notification warns, over whatever is running, while not charging. Each
-/// warns once until the battery charges. UPower hibernates the device at 3 % (the image's UPower.conf).
+/// Battery levels at which a notification warns, over whatever is running, while discharging. Each warns
+/// once until the battery stops discharging. On the charger with the charge held at a limit, it isn't
+/// charging but isn't discharging either. UPower hibernates the device at 3 % (the image's UPower.conf).
 const WARN_AT: [u8; 2] = [10, 5];
 
 /// The system's status as system threads read it.
@@ -100,7 +101,7 @@ impl Sys {
     /// Runs after a status reading. Gives a warning when the battery has fallen to one of [`WARN_AT`],
     /// with the lower one marked urgent.
     pub(crate) fn battery_warning(&mut self, out: &mut Out) {
-        let Status { battery: Some(level), charging: false, .. } = self.status else {
+        let Status { battery: Some(level), discharging: true, .. } = self.status else {
             self.warned = None;
             return;
         };
@@ -133,6 +134,21 @@ impl Sys {
 mod tests {
     use crate::testkit::*;
     use crate::*;
+
+    #[test]
+    fn the_battery_warns_only_while_discharging() {
+        let mut s = state();
+        let warns = |s: &mut State, battery, discharging| {
+            let fx = s.applied(Reading::Status(Status { battery: Some(battery), discharging, ..Status::default() }).into());
+            fx.iter().any(|e| matches!(e, Effect::Notify { .. }))
+        };
+        assert!(!warns(&mut s, 9, false), "on the charger, held at a limit: not charging, not discharging");
+        assert!(warns(&mut s, 9, true));
+        assert!(!warns(&mut s, 8, true), "once");
+        assert!(warns(&mut s, 5, true), "the lower one");
+        assert!(!warns(&mut s, 5, false));
+        assert!(warns(&mut s, 5, true), "again after the charger");
+    }
 
     #[test]
     fn the_frame_rate_is_kept_apart_from_the_metrics() {

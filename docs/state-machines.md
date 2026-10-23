@@ -306,8 +306,8 @@ only when the mute changed (not while the volume is unknown):
 
 ## Status (status/)
 
-- Battery warning: a notification at 10 % and every 5 % below while not charging. GAP; it warns on the
-  charger in bypass mode, keyed on not charging rather than discharging (S33).
+- Battery warning: a notification at 10 % and at 5 % while discharging, each once until it stops
+  discharging; none on the charger in bypass mode. Test: `the_battery_warns_only_while_discharging`.
 - Spender menu: opens on an endable row; Quit/ForceKill end a process or queue the entry's act. Test:
   `a_rows_menu_quits_or_kills_what_it_is`. It stays open across tabs and after its row is gone (S34).
 - Time pages: regions, a region's zones, set, back; reset on leaving the tab (GAP); NTP and stepping the
@@ -431,7 +431,7 @@ Shelf, files, radios, levels, status:
 - S30. A Wi-Fi or Bluetooth reading wipes the local error and busy mark, even one older than the command.
 - S31. Setting a muted stream's volume shows it unmuted but leaves it muted (`levels/mod.rs:370`). Fixed: state/levels: setting a muted stream's level unmutes it.
 - S32. Dimming at brightness 0 raises it to 1 (`levels/mod.rs:264`). Fixed: state/levels: dimming never raises the brightness.
-- S33. The battery warning fires on the charger in bypass mode (`status/mod.rs:103`).
+- S33. The battery warning fires on the charger in bypass mode (`status/mod.rs:103`). Fixed: state/status: the battery warning keys on discharging.
 - S34. The battery tab's spender menu stays open across tabs and after its row is gone.
 - S35. A relayout doesn't close a group that left a derived collection (Recent, Favourites). Fixed: state/shelf: a relayout closes a group no longer in its collection.
 - S36. A folder listing that changes the entries but not shelf's view isn't asked for metadata first. Fixed: state/shelf: a listing that changes the entries shown asks for their metadata first.
