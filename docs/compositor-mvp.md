@@ -125,6 +125,14 @@ Two ways, both used by real compositors:
 down) barely uses X11 positioning, and one window model is the simpler code. Either way, expect per-app
 quirks with Steam and Proton.
 
+Its cost: buffers pass through without a copy, but each frame's messages go through one more process (a
+little CPU and scheduling, well under a millisecond). The risk is what it forwards: per-surface dmabuf
+feedback (without it, X11 games don't get scanout-capable UBWC buffers and are composited) and the pacing
+protocols (presentation-time, fifo, commit-timing, explicit sync). So games run on Wine's Wayland driver
+by default (`PROTON_ENABLE_WAYLAND=1`, a native Wayland client with the full path; the pre-rotation
+fallback needs it too), and Steam's own client stays on X11 through satellite, where its speed matters
+little.
+
 ### Protocols
 
 Smithay provides everything in the MVP list. It lacks wlr-screencopy, wlr output management/power and
@@ -188,6 +196,7 @@ Before writing the backend, on the device (a day or two):
 | A modeset or power change on one screen stalls the other | low-medium | toggle bottom power while the top animates; count missed flips, read dmesg |
 | Brightness writes racing power or frames | medium | sweep brightness across power toggles; never write the bottom backlight while off |
 | Games not getting UBWC (no scanout tranche, Xwayland, Proton) | medium | buffer modifiers while a game runs, native and through Proton; the pre-rotated way (section 4) doesn't need UBWC |
+| X11 games through xwayland-satellite don't get scanout buffers or pacing protocols | medium, unknown | an X11 game through satellite: its buffers' modifiers and whether it is scanned out; if not, those games are composited, and the built-in X11 window manager is reconsidered only if many games must stay on X11 |
 | UBWC scanout corruption | low | vkcube fullscreen with scanout, by eye |
 | Touch mapping or stuck contacts after resume | low | four-corner test; tolerate a contact that never lifts |
 | Sleep and resume, libseat re-activation | low-medium | full commit on both outputs after resume; lid sleep with the compositor |
