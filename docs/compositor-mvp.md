@@ -144,6 +144,14 @@ is a supervised child (its exit handled, restarted) and every X11 call is non-bl
 Xwayland can't stall the loop. Expect per-app quirks with Steam and Proton either way; these become ours
 to fix in our own model.
 
+What comes later works on surfaces, below the adapter, so it is shared by both kinds: frame-rate limiting
+(the compositor paces frame callbacks and presentation feedback, which Xwayland's Present follows),
+measuring frames (commit and presentation times per surface; this could replace MangoHud's log as
+ClamShell's frame-rate source), and upscaling (the buffer drawn larger with FSR). Only asking a game to
+render smaller differs, and is one more adapter method: a Wayland game is told its size per client
+(configure and the outputs it sees), an X11 game picks a mode from Xwayland's RandR emulation, which
+already hands the compositor a small buffer marked for scaling.
+
 The alternative considered was xwayland-satellite (niri): X11 windows arrive as ordinary Wayland windows
 from a separate process, at about 500 lines, but with its own translation losses (Steam issues open) and,
 for us, the risk that per-surface dmabuf feedback and the pacing protocols don't pass through it, leaving
