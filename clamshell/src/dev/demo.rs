@@ -33,7 +33,7 @@ pub fn running() -> Vec<Event> {
     // Their scopes as systemd lists them, which marks them as running.
     vec![
         Event::Units(vec![game.clone(), t1.clone(), t2.clone(), web.clone()]),
-        Event::window_changes(
+        clamshell_state::session::windows::changes(
             &[],
             &[
                 window_of(5, "retroarch", &game, false, false),
@@ -48,7 +48,7 @@ pub fn running() -> Vec<Event> {
 /// The terminal in front from [`running`], with a second window of it moved to the bottom screen.
 pub fn window_below() -> Vec<Event> {
     let t2 = run("desktop:foot", 2);
-    vec![Event::window_changes(
+    vec![clamshell_state::session::windows::changes(
         &[
             window_of(5, "retroarch", &run("zelda-lttp", 0), false, false),
             window_of(7, "foot", &run("desktop:foot", 1), false, false),

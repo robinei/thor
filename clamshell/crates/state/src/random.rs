@@ -175,7 +175,7 @@ impl World {
     }
 
     fn report(&mut self) -> Event {
-        let event = Event::window_changes(&self.reported_windows, &self.windows);
+        let event = crate::session::windows::changes(&self.reported_windows, &self.windows);
         self.reported_windows.clone_from(&self.windows);
         event
     }

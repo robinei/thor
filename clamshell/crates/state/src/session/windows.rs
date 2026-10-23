@@ -139,7 +139,9 @@ pub enum WindowEvent {
     /// Backend facts which can change after opening, such as a process being adopted into a scope.
     Changed(Window),
     /// Focus and visibility observed by the sway host. Missing fields are unchanged, so an identity
-    /// update cannot restore an observation made before a placement decision.
+    /// update cannot restore an observation made before a placement decision. Only for a backend that
+    /// decides presentation itself (sway); the built-in compositor shows what the state decided and never
+    /// sends this, so the state stays the one writer of what is in front.
     Presentation {
         window: i64,
         focused: Option<bool>,
@@ -259,6 +261,48 @@ impl crate::Session {
     }
 }
 
+/// The window events between two snapshots of a backend's window list, as one batch. For a backend that
+/// only observes snapshots (sway) and for tests; the state's model takes events and never snapshots. The
+/// backend keeps the snapshots, and the batch is built outside `apply`.
+pub fn changes(previous: &[Window], windows: &[Window]) -> crate::Event {
+    let mut events = Vec::new();
+    for old in previous {
+        if !windows.iter().any(|w| w.id == old.id) {
+            events.push(WindowEvent::Closed(old.id));
+        }
+    }
+    for window in windows {
+        let Some(old) = previous.iter().find(|w| w.id == window.id) else {
+            events.push(WindowEvent::Opened(window.clone()));
+            continue;
+        };
+        if old == window {
+            continue;
+        }
+        let mut facts = window.clone();
+        facts.title.clone_from(&old.title);
+        facts.workspace.clone_from(&old.workspace);
+        facts.down = old.down;
+        facts.focused = old.focused;
+        facts.visible = old.visible;
+        if old != &facts {
+            events.push(WindowEvent::Changed(facts));
+        }
+        if old.title != window.title {
+            events.push(WindowEvent::Title { window: window.id, title: window.title.clone() });
+        }
+        let focused = (old.focused != window.focused).then_some(window.focused);
+        let visible = (old.visible != window.visible).then_some(window.visible);
+        if focused.is_some() || visible.is_some() {
+            events.push(WindowEvent::Presentation { window: window.id, focused, visible });
+        }
+    }
+    if !previous.iter().map(|w| w.id).eq(windows.iter().map(|w| w.id)) {
+        events.push(WindowEvent::Order(windows.iter().map(|w| w.id).collect()));
+    }
+    crate::Event::WindowBatch(events)
+}
+
 /// The app id of shelf's window, its own Wayland surface on the main screen.
 pub const SHELF_APP_ID: &str = "clamshell.top";
 
@@ -353,7 +397,7 @@ mod tests {
         let mut s = state();
         s.observed(vec![shelf_window(false), win(7, "test", "other", true)]);
         let windows = vec![shelf_window(true), win(8, "test", "other", false)];
-        let event = Event::window_changes(s.session().windows(), &windows);
+        let event = crate::session::windows::changes(s.session().windows(), &windows);
         // Closing first and settling would prune this workspace from history and briefly show shelf.
         // One backend dispatch keeps the replacement present throughout settling.
         assert_eq!(s.applied(event), vec![Effect::PadRoute(crate::PadRoute::Ui)]);
@@ -544,7 +588,7 @@ mod tests {
         s.applied(WindowEvent::Opened(before.clone()).into());
         s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
         let identity = Window { pids: vec![100, 50], kind: WindowKind::X11, ..before.clone() };
-        let event = Event::window_changes(&[before], &[identity]);
+        let event = crate::session::windows::changes(&[before], &[identity]);
         assert!(s.applied(event).is_empty());
         let window = s.session().window(7);
         assert_eq!(window.map(Window::place), Some(WindowPlace::Bottom));

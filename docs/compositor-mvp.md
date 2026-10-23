@@ -247,7 +247,8 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
 
    Done when the pixel and focus references are unchanged, the trace differs only by those effects, the
    no-alloc tests pass, and the nested-sway test and the VM suite pass.
-1. **The state's new window model, under sway. Done, 2026-10-23.** Window events (`Opened`, `Closed`, `Title`, `Activate`)
+1. **The state's new window model, under sway. Done, 2026-10-23.** Window events (`Opened`, `Closed`,
+   `Title`, `Activate`)
    and each window's place in the state; `crates/system/src/sway` translates sway's snapshots into those
    events and the places into sway commands, holding the rules, marks and landing workspace. Checked by the
    state's tests, the random test, nested-sway and the VM suite.

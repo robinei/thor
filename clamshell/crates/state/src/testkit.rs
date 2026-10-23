@@ -15,7 +15,7 @@ pub trait Applied {
 
 impl Applied for State {
     fn observed(&mut self, windows: Vec<Window>) -> Vec<Effect> {
-        self.applied(Event::window_changes(self.session().windows(), &windows))
+        self.applied(crate::session::windows::changes(self.session().windows(), &windows))
     }
     fn applied(&mut self, event: Event) -> Vec<Effect> {
         let mut effects = Vec::new();

@@ -463,7 +463,7 @@ mod tests {
         let workspace = clamshell_state::Instance::workspace_of(&key);
         s.apply(Event::Units(vec![clamshell_state::Instance::Run { key, secs: 1, n: 0 }]), &mut Vec::new());
         let window = clamshell_state::session::windows::Window { id: 1, app_id: "game".into(), workspace, focused: true, visible: true, ..Default::default() };
-        s.apply(Event::window_changes(s.session().windows(), &[window]), &mut Vec::new());
+        s.apply(clamshell_state::session::windows::changes(s.session().windows(), &[window]), &mut Vec::new());
         let actions: Vec<Id> = s.shelf().actions().as_slice().iter().map(|a| Id::Shelf(a.id())).collect();
         let mut d = drawn(&s);
         d.0.top.extend(actions.iter().enumerate().map(|(i, id)| t(60.0, 15.0 * i as f32, id.clone())));

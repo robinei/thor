@@ -25,7 +25,7 @@ impl Changes {
                 window.workspace.clear();
             }
         }
-        let event = clamshell_state::Event::window_changes(&self.previous, &windows);
+        let event = clamshell_state::session::windows::changes(&self.previous, &windows);
         self.previous = windows;
         event
     }

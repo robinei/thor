@@ -108,7 +108,7 @@ fn warm() -> (State, Vec<Window>, Vec<Instance>) {
             visible: true,
             ..Window::default()
         });
-        s.apply(Event::window_changes(s.session().windows(), &windows), &mut effects);
+        s.apply(clamshell_state::session::windows::changes(s.session().windows(), &windows), &mut effects);
     }
     assert_eq!(s.session().running_entries().len(), 2, "both programs run");
     (s, windows, units)
@@ -148,7 +148,7 @@ fn allocations_per_event() {
         run(&name("metrics reading"), s, &|i| Event::Reading(Reading::Metrics(Metrics { cpu: Some(i as f32 / 10.0), ..Metrics::default() })));
         run(&name("frames reading"), s, &|i| Event::Reading(Reading::Frames { fps: Some(60.0 + i as f32), frame_ms: None }));
         run(&name("wifi reading, unchanged"), s, &|_| Event::Reading(Reading::Wifi(wifi.clone())));
-        run(&name("windows, unchanged"), s, &|_| Event::window_changes(&windows, &windows));
+        run(&name("windows, unchanged"), s, &|_| clamshell_state::session::windows::changes(&windows, &windows));
         if let Some(window) = windows.first() {
             run(&name("window open, repeated"), s, &|_| WindowEvent::Opened(window.clone()).into());
             run(&name("window title"), s, &|i| WindowEvent::Title { window: window.id, title: format!("title {i}") }.into());
