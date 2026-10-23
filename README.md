@@ -7,6 +7,12 @@ runs the device's session, and the system around it: Arch Linux ARM with our own
 and kept current by pacman. `docs/thor-gameplan.md` says what to do when the device arrives and what is
 left to test on it.
 
+The aim is a full Linux PC in a handheld that folds shut. What runs on a desktop runs here, unchanged:
+Steam and Proton games, emulators, desktop programs, Android apps through Waydroid, files and media. What
+is adapted is how it is used. The interface is made for two small screens, a controller and touch, rather
+than a mouse and a monitor: the top screen holds the games and the program in front, and the second screen
+holds the controls, the on-screen keyboard and touchpad, and windows moved down to it.
+
 This README is kept short while things change. How each part behaves is in its module's documentation
 (`cargo doc --open --document-private-items` in `clamshell/`) and in its tests.
 
