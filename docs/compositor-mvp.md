@@ -241,6 +241,28 @@ from a separate process, at about 500 lines, but with its own translation losses
 for us, the risk that per-surface dmabuf feedback and the pacing protocols don't pass through it, leaving
 X11 games composited.
 
+### HDR: later, kept possible
+
+HDR is wanted, as the experiment in `docs/thor-gameplan.md` describes (the panels take no HDR signal: the
+panel driven brighter, ordinary content drawn dimmer within it, highlights in the headroom). It is not in
+the MVP, but three choices keep it possible without rebuilding:
+
+1. **No 8-bit assumption in composition.** Output buffers, the formats our elements produce and the
+   compositing shader take their precision from configuration, ideally compositing in linear light, so a
+   10-bit (2101010, which the display planes take, rotated too) or half-float path can be switched on.
+   ClamShell's CPU-drawn UI stays 8-bit: SDR content placed within the range.
+2. **A surface's colour description has a place** in our window data, though ignored for now: games
+   declare HDR content through the Wayland colour-management protocol (Proton and DXVK through Wine's
+   Wayland driver). Whether Smithay implements it is checked when its revision is pinned; if not, it is
+   ours to add later.
+3. **Plane assignment leaves room for a colour transform:** scanning out an HDR game means the display
+   hardware's colour pipeline (Armada's colour-pipeline patches) does the brightness and tone mapping, not
+   our shader.
+
+Later: the tone mapping, panel brightness and headroom, matching the two panels' white points (dual-screen
+emulators), an HDR setting per game, and the panels' measurements (bit depth, dithering, peak brightness)
+on the device.
+
 ### Protocols
 
 Smithay provides everything in the MVP list. It lacks wlr-screencopy, wlr output management/power and
