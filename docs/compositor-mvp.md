@@ -121,17 +121,33 @@ Two ways, both used by real compositors:
   lines of X11 handling plus X11 branches in focus and placement; long-open Smithay issues around Xwayland
   crashes and leaks; COSMIC still has open Steam/Proton issues.
 
-**Recommended: xwayland-satellite.** ClamShell's model (one fullscreen window in front, the rest moved
-down) barely uses X11 positioning, and one window model is the simpler code. Either way, expect per-app
-quirks with Steam and Proton.
+**Chosen: Smithay's built-in X11 window manager, contained in one adapter.** Smithay's `desktop::Window`
+already wraps a Wayland toplevel or an X11 surface, so the differences stay in one module of the
+compositor, as one small `enum Surface { Wayland(..), X11(..) }` with a method per concern:
 
-Its cost: buffers pass through without a copy, but each frame's messages go through one more process (a
-little CPU and scheduling, well under a millisecond). The risk is what it forwards: per-surface dmabuf
-feedback (without it, X11 games don't get scanout-capable UBWC buffers and are composited) and the pacing
-protocols (presentation-time, fifo, commit-timing, explicit sync). So games run on Wine's Wayland driver
-by default (`PROTON_ENABLE_WAYLAND=1`, a native Wayland client with the full path; the pre-rotation
-fallback needs it too), and Steam's own client stays on X11 through satellite, where its speed matters
-little.
+| Concern | Wayland | X11 |
+|---|---|---|
+| identity | `app_id` | `WM_CLASS` |
+| the client's pid, for its scope | socket credentials | the XRes extension (`get_client_pid`) |
+| placing and sizing | the first configure, before it maps | `configure_window`, answering its map request |
+| fullscreen, dialog, parent | `set_fullscreen`, parent toplevel | `_NET_WM_STATE`, `WM_TRANSIENT_FOR` |
+| menus and tooltips | `xdg_popup` with a positioner | override-redirect windows, made relative to their parent |
+| focus | keyboard enter | `SetInputFocus`, `WM_TAKE_FOCUS` |
+| closing | `close` | `WM_DELETE_WINDOW`, else kill |
+
+The state sees one window type and the same events; placement is synchronous for both (an X11 map request
+is held until the state has placed the window). Xwayland is a direct client, so dmabuf feedback (UBWC,
+scanout, plane rotation) and the pacing protocols reach X11 games with no relay, and Wine's Wayland driver
+is optional rather than required. Cost: about 1,500-2,000 lines in the adapter, and the X11 connection in
+our process: Smithay has open issues around Xwayland crashing (a deadlock, a leaked process), so Xwayland
+is a supervised child (its exit handled, restarted) and every X11 call is non-blocking, so a stuck
+Xwayland can't stall the loop. Expect per-app quirks with Steam and Proton either way; these become ours
+to fix in our own model.
+
+The alternative considered was xwayland-satellite (niri): X11 windows arrive as ordinary Wayland windows
+from a separate process, at about 500 lines, but with its own translation losses (Steam issues open) and,
+for us, the risk that per-surface dmabuf feedback and the pacing protocols don't pass through it, leaving
+X11 games composited.
 
 ### Protocols
 
@@ -196,7 +212,7 @@ Before writing the backend, on the device (a day or two):
 | A modeset or power change on one screen stalls the other | low-medium | toggle bottom power while the top animates; count missed flips, read dmesg |
 | Brightness writes racing power or frames | medium | sweep brightness across power toggles; never write the bottom backlight while off |
 | Games not getting UBWC (no scanout tranche, Xwayland, Proton) | medium | buffer modifiers while a game runs, native and through Proton; the pre-rotated way (section 4) doesn't need UBWC |
-| X11 games through xwayland-satellite don't get scanout buffers or pacing protocols | medium, unknown | an X11 game through satellite: its buffers' modifiers and whether it is scanned out; if not, those games are composited, and the built-in X11 window manager is reconsidered only if many games must stay on X11 |
+| Xwayland crashing or stalling inside our loop (Smithay's open issues) | medium | kill Xwayland while a game and Steam run: the compositor must carry on, restart it, and log |
 | UBWC scanout corruption | low | vkcube fullscreen with scanout, by eye |
 | Touch mapping or stuck contacts after resume | low | four-corner test; tolerate a contact that never lifts |
 | Sleep and resume, libseat re-activation | low-medium | full commit on both outputs after resume; lid sleep with the compositor |
@@ -226,7 +242,7 @@ Before writing the backend, on the device (a day or two):
 
 | Decision | Recommendation |
 |---|---|
-| Xwayland: satellite or built-in X11 WM | satellite (section 3) |
+| Xwayland: satellite or built-in X11 WM | decided: built-in, contained in one adapter (section 3) |
 | Notifications without mako (no layer-shell): ClamShell's own low-battery warning reaches nothing otherwise | ClamShell draws its own notices on the top screen, and serves the notification D-Bus API itself later; minimal layer-shell (about 250 lines) only if third-party overlays turn out to matter |
 | The top screen's tabs: sway shows a tab strip when a group has several windows | none on the top screen; switch a group's windows from the second screen; dialogs drawn over their parent |
 | The top panel's refresh: a change blanks it for 0.4 s | stay at 120 Hz and limit a game's frame rate: in command mode the host sends only the frames committed, so a 60 fps game at the 120 Hz mode costs the host what it would at 60 Hz; what remains is the panel scanning its own memory at 120 Hz. Measure the battery at both modes with the same 60 fps game and a static screen; if the difference is small, drop the 60 Hz mode; if it matters, look for a seamless switch of the panel's internal rate (a vendor command, a kernel driver change) rather than a blanking modeset |
@@ -261,7 +277,7 @@ Before writing the backend, on the device (a day or two):
 | Input routing, touch mapping, focus, cursor | ~750 | medium |
 | DRM backend: two rotated outputs, power, mode change, vblank pacing, scanout | ~1,200 | high (the device risk) |
 | Nested and headless backends | ~550 | low-medium |
-| Xwayland (satellite) | ~400-500 | medium-high (app quirks) |
+| Xwayland (the built-in X11 window manager, in one adapter) | ~1,500-2,000 | medium-high (app quirks) |
 | Placement, configure sizes, dialogs, close | ~500 | medium |
 | Text input and key injection | ~250 | medium |
 | Screenshot, idle-inhibit, clipboard, session | ~400 | low |
