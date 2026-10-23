@@ -1,8 +1,9 @@
 //! `--snapshot DIR` draws both screens at the Thor's size into PNG files, without Wayland. The shots cover
 //! shelf, the second screen and every tab. Each is drawn after the events that lead to it, in groups that
 //! each start from a fresh state. They are taken at a fixed time unless CLAMSHELL_SNAPSHOT_NOW is set, so
-//! they come out the same on every run. The test below keeps two references in tests/: hashes of the
-//! shots' pixels (snapshots.txt), and the effects of the events on the way (trace.txt, see trace.rs).
+//! they come out the same on every run. The test below keeps three references in tests/: hashes of the
+//! shots' pixels (snapshots.txt), where the pad's focus goes on each shot (focus.txt, see
+//! focus_map.rs), and the effects of the events on the way (trace.txt, see trace.rs).
 
 use std::fmt;
 use std::path::Path;
@@ -623,17 +624,22 @@ impl Walk {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+    use crate::dev::focus_map::{self, Map, Mapper};
     use crate::dev::trace;
     use std::collections::{BTreeMap, BTreeSet};
     use std::fmt::Write as _;
     use std::path::PathBuf;
 
-    /// The references: the shots' pixel hashes, one `name hash` line per file, and the effects of the
-    /// events on the way.
+    /// The references: the shots' pixel hashes, one `name hash` line per file; the pad's moves on each
+    /// shot; and the effects of the events on the way.
     const PIXELS: &str = "tests/snapshots.txt";
+    const FOCUS: &str = "tests/focus.txt";
     const TRACE: &str = "tests/trace.txt";
     const PIXELS_HEADER: &str = "# FNV-1a hashes of the snapshots' sizes and pixels (src/dev/snapshot.rs). After a change meant to change\n\
                                  # what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots";
+    const FOCUS_HEADER: &str = "# Where the pad's focus goes on each snapshot (src/dev/focus_map.rs): where the pad starts, what B does,\n\
+                                # and for each target the pad may focus on the shot's screen, where up, down, left and right lead.\n\
+                                # \"-\" stays; [event] is what the move does instead of focusing, then where the focus ends up.";
     const TRACE_HEADER: &str = "# The effects of the snapshot scenario's events (src/dev/trace.rs), group by group: each event that\n\
                                 # had effects, then its effects. \"-- name\" is where a shot is taken.";
 
@@ -672,9 +678,11 @@ mod tests {
         });
     }
 
-    /// One group walked: its shots drawn into the directory, and its trace.
+    /// One group walked: its shots drawn into the directory, their focus maps, and its trace.
     struct Checked<'a> {
         dir: &'a std::path::Path,
+        mapper: Mapper<'a>,
+        maps: Vec<Map>,
         trace: String,
     }
 
@@ -689,10 +697,13 @@ mod tests {
             }
         }
 
-        fn shot(&mut self, state: &State, _: &[Event], name: &str, screen: Screen) -> Result<Vec<Event>, Error> {
+        fn shot(&mut self, state: &State, log: &[Event], name: &str, screen: Screen) -> Result<Vec<Event>, Error> {
             let _ = writeln!(self.trace, "-- {name}");
             let path = self.dir.join(name);
-            clamshell_ui::snapshot(state, screen, size(screen), 1, &path).map_err(|e| Error::Render(name.into(), e.to_string()))
+            let events = clamshell_ui::snapshot(state, screen, size(screen), 1, &path).map_err(|e| Error::Render(name.into(), e.to_string()))?;
+            // The pad moves after the frame reported back, as on a live screen.
+            self.maps.push(self.mapper.map(state, &[log, &events].concat(), name, screen));
+            Ok(events)
         }
     }
 
@@ -764,9 +775,11 @@ mod tests {
         out
     }
 
-    /// Draws the snapshots and compares them with the references: their pixels' hashes and the effects of
-    /// the events on the way. On a difference the drawn files are left to look at. After a change meant
-    /// to make a difference, look at these and at the printed diff, then write the new references with
+    /// Draws the snapshots and compares them with the references: their pixels' hashes, where the pad's
+    /// focus goes on each, and the effects of the events on the way. The focus maps are also checked
+    /// against rules every screen keeps. On a difference the drawn files are left to look at: the shots,
+    /// and for a focus difference the shot with the pad's moves drawn over it. After a change meant to
+    /// make a difference, look at these and at the printed diff, then write the new references with
     /// `CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots`.
     #[test]
     fn snapshots_match_their_references() {
@@ -774,33 +787,56 @@ mod tests {
         let dir = base.join("shots");
         std::fs::create_dir_all(&dir).unwrap();
         let groups = shots(FIXED_NOW).unwrap();
-        let traces: Vec<String> = std::thread::scope(|scope| {
+        let library = clamshell_library::demo::library();
+        let fresh = || state(library.clone());
+        let walked: Vec<(Vec<Map>, String)> = std::thread::scope(|scope| {
             let threads: Vec<_> = groups
                 .into_iter()
                 .map(|group| {
-                    let dir = &dir;
+                    let (dir, fresh) = (&dir, &fresh);
                     scope.spawn(move || {
                         let first = group.shots.first().map_or("", |s| s.name);
-                        let mut checked = Checked { dir, trace: format!("== group {first}\n") };
-                        walk_group(state(clamshell_library::demo::library()), group, FIXED_NOW, &mut checked).unwrap();
-                        checked.trace
+                        let mut checked = Checked { dir, mapper: Mapper::new(fresh, size), maps: Vec::new(), trace: format!("== group {first}\n") };
+                        walk_group(fresh(), group, FIXED_NOW, &mut checked).unwrap();
+                        (checked.maps, checked.trace)
                     })
                 })
                 .collect();
             threads.into_iter().map(|t| t.join().unwrap()).collect()
         });
+        let maps: Vec<&Map> = walked.iter().flat_map(|(maps, _)| maps).collect();
+        let traces: Vec<String> = walked.iter().map(|(_, trace)| trace.clone()).collect();
 
         let mut hashes = BTreeMap::new();
         for entry in std::fs::read_dir(&dir).unwrap().flatten() {
             hashes.insert(entry.file_name().to_string_lossy().into_owned(), pixels_hash(&entry.path()));
         }
         let pixels: String = std::iter::once(format!("{PIXELS_HEADER}\n")).chain(hashes.iter().map(|(name, hash)| format!("{name} {hash}\n"))).collect();
+        let focus_blocks: Vec<String> = maps.iter().map(|m| m.text.clone()).collect();
+        let focus = format!("{FOCUS_HEADER}\n{}", focus_blocks.concat());
         let trace = format!("{TRACE_HEADER}\n{}", traces.concat());
 
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let failures: Vec<(&Map, &String)> = maps.iter().flat_map(|m| m.failures.iter().map(move |f| (*m, f))).collect();
+        let overlay = |m: &Map| {
+            let out = dir.join(m.name.replace(".png", ".focus.png"));
+            focus_map::overlay(m, &dir.join(&m.name), &out).unwrap();
+            out
+        };
         let mut report = String::new();
+        if !failures.is_empty() {
+            let _ = writeln!(report, "the pad's focus breaks a rule:");
+            for (m, f) in &failures {
+                let _ = writeln!(report, "  {}: {f}", m.name);
+            }
+            let names: BTreeSet<&str> = failures.iter().map(|(m, _)| m.name.as_str()).collect();
+            for m in maps.iter().filter(|m| names.contains(m.name.as_str())) {
+                let _ = writeln!(report, "  {}", overlay(m).display());
+            }
+        }
         if std::env::var_os("CLAMSHELL_UPDATE_SNAPSHOTS").is_some() {
             std::fs::write(root.join(PIXELS), pixels).unwrap();
+            std::fs::write(root.join(FOCUS), focus).unwrap();
             std::fs::write(root.join(TRACE), trace).unwrap();
         } else {
             let read = |path: &str| std::fs::read_to_string(root.join(path)).unwrap_or_default();
@@ -813,6 +849,14 @@ mod tests {
                     let _ = writeln!(report, "  {}", dir.join(name).display());
                 }
             }
+            let focus_diff = differences(&read(FOCUS), &focus_blocks);
+            if !focus_diff.is_empty() {
+                let _ = writeln!(report, "the pad's focus changed ({FOCUS}):");
+                for (h, d) in &focus_diff {
+                    let image = maps.iter().find(|m| head(&m.text) == *h).map(|m| overlay(m).display().to_string());
+                    let _ = writeln!(report, "{h}  {}\n{d}", image.unwrap_or_default());
+                }
+            }
             let trace_diff = differences(&read(TRACE), &traces);
             if !trace_diff.is_empty() {
                 let _ = writeln!(report, "the effects changed ({TRACE}):");
@@ -820,7 +864,7 @@ mod tests {
                     let _ = writeln!(report, "{h}\n{d}");
                 }
             }
-            if !report.is_empty() {
+            if !report.is_empty() && failures.is_empty() {
                 let _ = writeln!(
                     report,
                     "Look at the images and the diffs. If every difference follows from the intended change, update the references with \
