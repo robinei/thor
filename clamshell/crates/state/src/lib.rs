@@ -55,6 +55,9 @@ pub mod levels;
 pub mod nav;
 pub(crate) mod out;
 pub mod radios;
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod random;
 pub(crate) mod resume;
 pub mod session;
 pub mod settings;

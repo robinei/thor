@@ -222,6 +222,12 @@ impl Session {
         &self.launching
     }
 
+    /// The entries quitting.
+    #[cfg(test)]
+    pub(crate) fn quitting_entries(&self) -> impl Iterator<Item = &Arc<str>> {
+        self.quitting.iter().map(|q| &q.entry)
+    }
+
     /// The launch to show when its first window appears.
     #[cfg(test)]
     pub(crate) fn pending_show(&self) -> Option<&Instance> {

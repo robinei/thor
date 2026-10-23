@@ -364,33 +364,50 @@ Listened; Watch → readings. Freeze, RunnerCommand, Enqueue and saves are not a
 
 ## Invariants (for the randomized event-sequence test)
 
-After every event:
+After every event (checked by `random.rs`, `random_event_sequences_keep_the_invariants`):
 
 1. **Sync converges:** running sync again emits nothing.
 2. **What was sent mirrors the state:** the last PadRoute is `pad().route()`; the last Keymap is the
    keymap in force; Status is watched iff the screens are on; Account iff the UI is up and the Device
    view is open; the last Apply is `(program, in_force)`.
 3. **Pad route:** consistent with claimant, listening and dock move; reconciling again changes nothing;
-   the focus ring shows only when the route is Ui.
-4. **Session:** running ids unique, at most one launch per entry; no launching instance listed in units;
-   Ours ⇒ its scope is listed; Found ⇒ not; program in force is running and is the focused window's owner
-   when it has one; quitting ⇒ running and not paused; paused ⇒ Ours; suspended ⇒ paused.
+   the focus ring shows only when the route is Ui, or after a hold on shelf's selected entry opened its
+   actions with the pad elsewhere, until the next touch hides it (the ring is what shows the actions are
+   open, S24; the focus may move meanwhile, as when the Device view opens).
+4. **Session:** running ids unique, at most one launch waiting per entry; no launching instance listed in
+   units; Ours ⇒ its scope is listed; Found ⇒ not; program in force is running and is the focused
+   window's owner when it has one; quitting ⇒ running and not paused; paused ⇒ Ours; suspended ⇒ paused.
 5. **Dock:** ids unique; every running entry is on it; every item is pinned, running or being moved.
 6. **Shelf:** the cursor within the list; `selected` is the entry at the cursor; the collection index in
    range; every entry listed matches the filter.
 7. **Lists:** every scroll offset within its ends.
-8. **Bottom:** dimmed ⇒ no windows shown; the chosen tab differs from the tab only on Keyboard; an editor
-   is on the tab shown; the Touchpad tab ⇒ pointing.
+8. **Bottom:** dimmed ⇒ no windows shown; the chosen tab differs from the tab only on Keyboard; the editor
+   shown is the shown tab's; the Touchpad tab ⇒ pointing.
 9. **Keymaps:** the open screen's keymap exists; its layer exists; every keymap id in the settings exists.
 10. **Settings:** no empty override; no global-only setting in overrides.
-11. **Effect stream across events:** Freeze alternates per slice; at most one EndRun per Quit; at most one
-    RecordPlay per end; no Launch for an entry already launching.
+11. **Effect stream across events:** Freeze alternates per slice, starting frozen, while a scope of it is
+    listed (a slice whose scopes are all gone is gone, and starts thawed again); no second EndRun (not
+    forced) for a key until it is quit again or launched; at most one RecordPlay per entry per event, and
+    only for an entry that ran before it; no Launch for an entry already launching (one given up in the
+    same event may be launched again, as a Steam game whose window is there is).
 
-The generator draws events valid for the current state (ids that exist, taps on what is shown, Listened
-only while listening, Focus only while the route is Ui, results only after their requests), with a library
-holding a Steam game, a handover runner, an enqueue runner, a browsed file, a group, the Device tool and an
-app that opens another window; clocks advance by 0-400 s to cross the timeouts. A first probe (60 seeds ×
-400 events, shelf, lists, settings, levels, radios, status) held invariants 6, 7 and 10.
+The generator draws events valid for the current state: taps, holds and presses on the targets shown
+(shelf's only while shelf is in front, the Device view's while it is open, the tab's), Focus only while
+the route is Ui, shelf's pad events only while the pad is on shelf, a touch's HideFocus before its press,
+Listened only while listening, and results only after their requests (a scope or LaunchFailed after
+Launch, a scope ending after EndRun or by itself, windows closing after Close or by themselves, the
+calibrations', account's and screenshot's answers, Busy or Resumed after Sleep). A small model of the
+compositor and systemd follows the effects (focus, moves, windows down). The library holds a Steam game
+(ff6), an app handed over to another program (desktop:firefox), an enqueue runner's album, a browsed file,
+a group (the series), the Device tool, and any program may open several windows; stray windows, a
+landed Steam game's or app's window, and a stray program's tray icon come and go. Clocks advance mostly
+by 0-3 s, sometimes by up to 400 s, and now and then by 15-25 minutes to sleep.
+
+It runs 8 fixed seeds × 4000 events with the other tests (about 1.5 s in the debug build). More seeds:
+`RANDOM_SEEDS=2000 cargo test -p clamshell-state --release random` runs seeds 1 to 2000,
+`RANDOM_SEED=x` one seed, and `RANDOM_EVENTS=n` sets the events per seed. A failure prints the seed, the
+event's number, its effects and the 20 events before it. 3000 seeds × 5000 events passed after the fixes
+of S50 and S51.
 
 ## Suspected problems
 
