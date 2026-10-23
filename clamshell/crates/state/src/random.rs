@@ -163,6 +163,14 @@ impl World {
                         w.down = false;
                     }
                 }
+                Effect::Window(WindowCommand::Return { window, to }) => {
+                    for w in self.windows.iter_mut().filter(|w| w.id == *window) {
+                        w.down = false;
+                        w.visible = false;
+                        w.focused = false;
+                        w.workspace.clone_from(to);
+                    }
+                }
                 Effect::CalibrateSticks => self.sticks = true,
                 Effect::CalibrateGyro => self.gyro = true,
                 Effect::CalibrateRefresh => self.refresh = true,
@@ -584,6 +592,8 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 DeviceKey::BottomPower,
                 DeviceKey::WindowDown,
                 DeviceKey::WindowUp,
+                DeviceKey::WindowPrevious,
+                DeviceKey::WindowNext,
             ];
             Event::Device(*rng.pick(&keys)?)
         }
@@ -635,7 +645,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
         98 => Event::Enqueue,
         99 => {
             let window = rng.pick(&w.windows)?.clone();
-            match rng.below(6) {
+            match rng.below(10) {
                 0 => {
                     let window = if rng.one_in(2) && w.windows.len() < 9 {
                         let mut window = w.open("foot", "1".into(), None, false);
@@ -666,6 +676,16 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 }
                 3 => WindowEvent::KeyboardFocus(Some(window.id)).into(),
                 4 => WindowEvent::KeyboardFocus(None).into(),
+                5 => Event::HomeHeld(rng.one_in(2)),
+                6 => Event::PadActive,
+                7 => {
+                    use crate::session::presentation::{WindowLimits, WindowRole};
+                    let mut window = window;
+                    window.limits = if rng.one_in(2) { WindowLimits { min: (640, 480), max: (640, 480) } } else { WindowLimits::default() };
+                    window.role = if rng.one_in(2) { WindowRole::Utility } else { WindowRole::Normal };
+                    WindowEvent::Changed(window).into()
+                }
+                8 => Event::HomeTap,
                 _ => WindowEvent::Activate(window.id).into(),
             }
         }
@@ -700,6 +720,7 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
     ensure!(s.session().windows().iter().filter(|w| w.focused && !w.down).count() <= 1, "more than one top window selected");
     ensure!(s.session().windows().iter().filter(|w| w.down && w.visible).count() <= 1, "more than one bottom tab selected");
     ensure!(s.session().selections_valid(), "a selected window is not in its top group");
+    ensure!(s.session().windows_down().count() <= 1, "more than one window below");
     ensure!(s.session().keyboard_focus().is_none_or(|id| s.session().window(id).is_some()), "keyboard focus names a closed window");
     // 1. Sync converges.
     let again = sync_again(s);

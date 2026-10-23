@@ -161,6 +161,8 @@ fn allocations_per_event() {
             Event::WindowBatch(vec![WindowEvent::Order(ids)])
         });
         run(&name("window close, already gone"), s, &|_| WindowEvent::Closed(i64::MAX).into());
+        run(&name("Home held and released"), s, &|i| Event::HomeHeld(i % 2 == 0));
+        run(&name("controller keyboard focus"), s, &|_| Event::PadActive);
         run(&name("units, unchanged"), s, &|_| Event::Units(units.clone()));
         run(&name("pointer down and up on a tab"), s, &|i| {
             Event::Pointer(if i % 2 == 0 { PointerEvent::Down(Id::Tab(Tab::Volume), None) } else { PointerEvent::Up(Id::Tab(Tab::Volume)) })

@@ -77,6 +77,12 @@ pub enum Event {
     Start,
     /// The pad's home button.
     Home,
+    /// Whether the controller's Home button is held, for the window-switch arrows.
+    HomeHeld(bool),
+    /// The controller or desktop Home key was released without a button chord.
+    HomeTap,
+    /// Controller input returns keyboard focus to the content selected on top.
+    PadActive,
     /// The View button, away from shelf. Switches the pad between the second screen and whatever else
     /// wants it, such as the pad mouse or typing.
     PadSwitch,

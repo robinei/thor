@@ -122,6 +122,8 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
         let child = child_xdg.get_toplevel(&qh, ());
         child.set_parent(Some(&top));
         child.set_app_id("dialog".into());
+        child.set_min_size(320, 240);
+        child.set_max_size(320, 240);
         child_surface.commit();
         queue.roundtrip(&mut client).unwrap();
         report.send(Report::Child(*client.sizes.last().unwrap())).unwrap();
@@ -153,6 +155,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
                     assert_eq!(windows[0].unit.as_deref(), Some("test.service"));
                     assert!(matches!(windows[0].place(), WindowPlace::Top(_)));
                     assert!(!server.windows[0].mapped, "initial configure precedes the first buffer");
+                    assert_eq!(server.core.state().session().top_window().map(|w| w.id), Some(windows[0].id));
                     next.send(()).unwrap();
                 }
                 Report::Mapped => {
@@ -176,7 +179,8 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
                     assert_eq!(windows.len(), 2);
                     assert_eq!(windows[1].parent, Some(windows[0].id));
                     assert_eq!(windows[1].place(), WindowPlace::Bottom);
-                    assert_eq!(size, (server.area(true).size.w, server.area(true).size.h));
+                    assert_eq!(size, (320, 240));
+                    assert_eq!(windows[1].limits.fixed_size(), Some((320, 240)));
                     next.send(()).unwrap();
                 }
                 Report::Closed => {

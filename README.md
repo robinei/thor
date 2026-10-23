@@ -267,3 +267,10 @@ Ours: MIT or Apache-2.0, at your choice (`LICENSE-MIT`, `LICENSE-APACHE`). Not o
 
 Configuration values and facts taken from ROCKNIX, Armada, Thorch and Kettle Linux (named where used) are
 written here in our own words and files.
+
+The experimental in-process compositor runs with `cargo run --features compositor -- --nested` from
+`clamshell/`. It opens one desktop window with the logical screens side by side. F12 is Home (hold
+for window arrows), F11 moves the selected window down, and F10 returns it. Sway remains the normal
+session backend. Xwayland, touch and text-input are still pending. After `cargo build --features
+compositor`, `python3 tests/nested-compositor.py` checks real client rendering and screen moves using
+headless sway, foot and grim. It prints the directory containing its screenshots and logs.

@@ -85,6 +85,7 @@ impl Core {
     ///   between the second screen and whatever else wants it, such as the pad mouse or typing. The pad
     ///   thread sends View from there too.
     pub fn pad(&mut self, input: PadInput) {
+        self.handle(Event::PadActive);
         // While a dock entry is being moved, the D-pad moves it and A or B ends the move.
         if self.state.dock().moving().is_some() && self.state.bottom().tab() == clamshell_state::Tab::Dock {
             let step = |dir| Some(clamshell_state::DockId::Step(dir));

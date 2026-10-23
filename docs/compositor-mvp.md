@@ -128,12 +128,10 @@ becomes the front of its screen (it usually needs an answer); the arrows go back
 menu for an entry still lists its windows, to pick one by touch. Two windows below at once (a video and a
 chat) is given up, and can be relaxed later if a need appears.
 
-Under sway the model is the same (the state decides, the sway adapter carries it out with the commands it
-has: down, back up, focus a tab), the arrows are a layer-shell overlay surface on each output, and three
-things are presented differently, accepted for a fallback:
+Under sway the model is the same (the state decides, the sway adapter carries it out with down, back up
+and focus a tab). Sway keeps its own tab bar, so it needs no arrow overlay. Two other presentation
+differences are accepted for a fallback:
 
-- the top screen's shown window is made fullscreen in sway, which covers the tab bar sway draws when a
-  workspace holds several windows;
 - dialogs and fixed-size windows float over their parent, as sway does, instead of alone on black;
 - a game that ignores its size is shown at that size, not scaled to fit.
 
@@ -259,6 +257,12 @@ the MVP, but three choices keep it possible without rebuilding:
    hardware's colour pipeline (Armada's colour-pipeline patches) does the brightness and tone mapping, not
    our shader.
 
+The pinned Smithay revision (24647fc) has no colour-management protocol implementation. Window facts
+now reserve a colour description; the nested host does not advertise HDR. Client textures retain their
+imported format. Its EGL backend negotiates 10-bit output with an 8-bit fallback and logs the result;
+explicit precision configuration and linear-light composition remain work before an HDR path is enabled.
+There is no plane assignment yet.
+
 Later: the tone mapping, panel brightness and headroom, matching the two panels' white points (dual-screen
 emulators), an HDR setting per game, and the panels' measurements (bit depth, dithering, peak brightness)
 on the device.
@@ -366,29 +370,36 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
      Pixel references are unchanged. Focus references now keep the pad on shelf when a scope has no
      window; trace changes record lifecycle inputs and selection at window arrival rather than scope
      arrival. Phase 2 can begin.
-1b. **The two screens' window model, under sway** (section 3, "Windows on the two screens" and "The Home
-    chords"; to do before phase 2's window presentation, which reads it). Phase 1 was built against an
-    earlier model with several windows below and tabs there.
-    - [ ] State: at most one window below; moving one down sends the one there back up into its program's
+1b. **The two screens' window model, under sway. Implemented.** Section 3, "Windows on the two
+    screens" and "The Home chords", supplies the placement read by phase 2's window presentation.
+    Phase 1 was built against an earlier model with several windows below and tabs there.
+    - [x] State: at most one window below; moving one down sends the one there back up into its program's
           windows on top; activation brings windows forward on top only; what each screen shows when a
           window closes; switching a program's windows on top; Home held known to the state.
-    - [ ] Pad router: Home + right stick flicks (down / up / left / right, once per flick past ~70%,
+    - [x] Pad router: Home + right stick flicks (down / up / left / right, once per flick past ~70%,
           re-armed below ~30%, a stick off-centre at Home's press must return first, the game sent a
           centred stick while Home is held), Home + right stick press for the second screen's view
           (replacing Home+Select), the screenshot staying on Home+R1; Home+Up/Down and Home+Select go.
-    - [ ] UI host: the edge arrows on the top screen while Home is held, as a layer-shell overlay surface
-          under sway.
-    - [ ] The sway adapter: the top screen's shown window fullscreened in sway (hiding its tab bar); no tabs
-          on the second screen.
-    - [ ] docs/state-machines.md and tests for each rule; the random test's invariants (at most one window
+    - [x] The sway adapter: keep its top tab bar instead of drawing arrows; no tabs on the second screen.
+          Home-held edge arrows belong to phase 2's in-process compositor.
+    - [x] docs/state-machines.md and tests for each rule; the random test's invariants (at most one window
           below, and the rest); the focus and trace references where they change, reviewed.
 
-    Done when every item is ticked, `tools/check.sh`, the nested-sway test and the VM suite pass.
+    Validated with unchanged pixel, focus and trace references, nested sway (0 failures), and the VM
+    suite. The full VM run passed the new pad/window scenarios; two outdated test expectations were
+    corrected and the affected scenarios rerun (36 passed, 0 failed).
 2. **The compositor, nested and headless,** implementing the same model synchronously, with the
    presentation of windows that aren't fullscreen (section 3): xdg-shell, Xwayland
    with the X11 adapter, input routing, the on-screen keyboard through text-input, the clipboard,
    screenshots, idle-inhibit. Developed with `clamshell --nested` on the desktop (real Steam and Proton on
    x86), tested headless under `cargo test`. sway stays the session's compositor.
+   In progress: the nested host renders real Wayland clients, reads committed placement directly,
+   configures fixed-size clients, centres native-sized windows, fits games, and uses the same transform
+   for rendering and pointer coordinates. Home-held arrows use the shared state selection rule.
+   A socket-pair protocol test checks configure/lifecycle behavior; `tests/nested-compositor.py` checks
+   real EGL rendering, down/up and Home under a headless sway host. Xwayland, touch, text-input,
+   screenshot requests, idle-inhibit and the full clipboard remain to implement. The current host puts
+   the logical screens side by side for desktop testing.
 3. **The generic DRM backend, on the VM:** udev, DRM, GBM, GLES, libseat, libinput, two outputs, power,
    refresh, dmabuf feedback with scanout tranches. The VM image boots either compositor; the VM suite
    checks both.

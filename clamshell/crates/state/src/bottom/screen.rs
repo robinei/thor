@@ -1,10 +1,8 @@
 //! The bottom screen shared with programs' windows, such as a dual-screen emulator's second screen.
 //!
-//! Home+Down moves the window shown on the top screen down, and sway marks it so it stays there. Home+Up
-//! moves the one shown below back up. The windows on the bottom screen are tabs of one workspace, and a
-//! tap on a tab shows it. Home+Select switches the bottom screen between ClamShell's view and those
-//! windows, and does nothing if there are none. Home+Start turns the bottom screen off and on. None of
-//! this takes the keyboard from the window in front on the top screen.
+//! Home + right stick down puts the selected top window below, returning the previous occupant to its
+//! home group. Up brings the bottom window back, even while ClamShell's view covers it. Right stick
+//! press switches between that one window and ClamShell's view; Home+Start controls bottom power.
 //!
 //! Moving a game's or a dock app's window down is remembered as a rule ([`WindowRule`]), so the next
 //! time the program opens a window like it, the window goes down by itself. Moving it up forgets the
@@ -235,10 +233,10 @@ impl Bottom {
         self.woken = false;
     }
 
-    /// Home+Down moves the window in front on the top screen to the bottom screen, shows it there, and
+    /// Home + right stick down moves the window in front on the top screen to the bottom screen, shows it there, and
     /// remembers it for its program.
     pub(crate) fn window_down(&mut self, session: &mut Session, now: u64, out: &mut Out) {
-        let Some(w) = session.windows().iter().find(|w| w.focused && !w.down && !w.is_shelf()).cloned() else {
+        let Some(w) = session.top_window().filter(|w| !w.is_shelf()).cloned() else {
             return;
         };
         self.show_down(w.id, session, out);
@@ -251,8 +249,15 @@ impl Bottom {
         let others = session.windows().iter().any(|o| o.id != w.id && o.app_id == w.app_id && o.unit == w.unit);
         let title = others.then(|| w.title.clone());
         if let Some(owner) = session.owner_of(&w)
-            && self.window_rules.add(WindowRule { owner, app_id: w.app_id.clone(), title })
+            && self.window_rules.add(WindowRule { owner: owner.clone(), app_id: w.app_id.clone(), title })
         {
+            // A remembered rule applies to subsequent windows. Creating it must not move an already
+            // placed sibling with the same app id, including another launch of this program.
+            for existing in session.windows_of(&owner).filter(|other| other.app_id == w.app_id) {
+                if !self.sent_down.contains(&existing.id) {
+                    self.sent_down.push(existing.id);
+                }
+            }
             self.window_rules_changed(true, now, out);
         }
     }
@@ -264,13 +269,9 @@ impl Bottom {
         self.screen.off = false;
     }
 
-    /// Home+Up moves the window the bottom screen shows (the tab in view) back to its place on the top
-    /// screen, and forgets its rule. The bottom screen then shows the next tab, or ClamShell's view after
-    /// the last one.
+    /// Home + right stick up moves the window the bottom screen shows (the tab in view) back to its place on the top
+    /// screen, and forgets its rule. The bottom screen then shows ClamShell's view.
     pub(crate) fn window_up(&mut self, session: &mut Session, now: u64, out: &mut Out) {
-        if !self.shows_windows(session) {
-            return;
-        }
         let Some(w) = session.windows_down().find(|w| w.visible).or_else(|| session.windows_down().next()).cloned() else {
             return;
         };
@@ -290,7 +291,7 @@ impl Bottom {
         out.effects.push(self.window_rules.effect());
     }
 
-    /// Home+Select switches the bottom screen between the windows moved there and ClamShell's view. It
+    /// Home + right stick press switches the bottom screen between the windows moved there and ClamShell's view. It
     /// does nothing when no window is down.
     pub(crate) fn toggle_view(&mut self, session: &Session) {
         if session.windows_down().next().is_some() {
@@ -299,14 +300,14 @@ impl Bottom {
     }
 
     /// A window of the program in front on the top screen that is on the bottom screen but hidden by
-    /// ClamShell's view. The bar then offers to show them. Windows are matched by their scopes, which our
-    /// programs run in. It doesn't allocate, since the bar asks every frame.
+    /// ClamShell's view. The bar offers to show it. Home groups match all launches of one program.
+    /// It does not allocate, since the bar asks every frame.
     pub fn hidden_down(&self, session: &Session) -> Option<i64> {
         if self.shows_windows(session) {
             return None;
         }
-        let front = session.windows().iter().find(|w| w.focused && !w.down)?.unit.as_deref().filter(|u| Instance::is_ours(u))?;
-        session.windows_down().find(|w| w.unit.as_deref() == Some(front)).map(|w| w.id)
+        let front = &session.top_window()?.workspace;
+        session.windows_down().find(|w| w.workspace == *front).map(|w| w.id)
     }
 
     /// A tap on a program whose windows are all on the bottom screen shows them there, with its first
@@ -428,19 +429,17 @@ mod tests {
         assert_eq!(fx[0], Effect::Window(WindowCommand::Down(2)));
         // The title is included, since the emulator has another window with the same app id.
         let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: Some("Bottom".into()) };
-        assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(r)) if r.list() == [rule.clone()]), "{fx:?}");
-        assert_eq!(fx[2], Effect::Window(WindowCommand::DownRules(vec![rule.down_rule()])), "for sway");
+        assert_eq!(fx[1], Effect::Window(WindowCommand::FocusWindow(1)));
+        assert!(matches!(&fx[2], Effect::Save(Save::WindowRules(r)) if r.list() == [rule.clone()]), "{fx:?}");
+        assert_eq!(fx[3], Effect::Window(WindowCommand::DownRules(vec![rule.down_rule()])), "for sway");
         assert_eq!(fx.iter().filter(|e| **e == Effect::Window(WindowCommand::Down(2))).count(), 1, "sent down once, not again by its rule: {fx:?}");
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::BottomRule(true)));
         // sway reports it down, so it is shown there.
         s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
         assert!(s.bottom().shows_windows(s.session()));
-        // Home+Select shows ClamShell's view, where Home+Up does nothing, and then the windows again.
+        // Moving up acts even when ClamShell's own view covers the bottom window.
         key(&mut s, DeviceKey::BottomView);
         assert!(!s.bottom().shows_windows(s.session()));
-        assert_eq!(key(&mut s, DeviceKey::WindowUp), vec![]);
-        key(&mut s, DeviceKey::BottomView);
-        assert!(s.bottom().shows_windows(s.session()));
         // Up moves it back to its workspace, forgets the rule, and shows ClamShell's view below.
         let fx = key(&mut s, DeviceKey::WindowUp);
         assert_eq!(fx[0], Effect::Window(WindowCommand::Up { window: 2, to: emu().workspace() }));
@@ -479,19 +478,23 @@ mod tests {
     }
 
     #[test]
-    fn two_windows_down_are_tabs_and_the_one_in_view_comes_back_up() {
+    fn moving_another_window_down_swaps_the_single_bottom_slot() {
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
-        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
-        key(&mut s, DeviceKey::WindowDown);
-        let hidden = |w: Window| Window { visible: false, ..w };
-        s.observed(vec![win(1, GAME, "Top", false, true), hidden(win(2, GAME, "Bottom", false, true))]);
+        assert_eq!(s.session().bottom_window().map(|w| w.id), Some(2));
+        let fx = key(&mut s, DeviceKey::WindowDown);
+        // Return before Down: sway must not temporarily put two clients on the bottom workspace.
+        assert_eq!(&fx[..2], &[Effect::Window(WindowCommand::Return { window: 2, to: emu().workspace() }), Effect::Window(WindowCommand::Down(1)),]);
+        assert_eq!(s.session().windows_down().count(), 1);
+        assert_eq!(s.session().bottom_window().map(|w| w.id), Some(1));
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(2));
+        key(&mut s, DeviceKey::BottomView);
+        assert!(!s.bottom().shows_windows(s.session()));
         let fx = key(&mut s, DeviceKey::WindowUp);
-        assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 1, to: emu().workspace() })), "the tab in view: {fx:?}");
-        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
-        assert!(s.bottom().shows_windows(s.session()), "the other tab");
-        let fx = key(&mut s, DeviceKey::WindowUp);
-        assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 2, to: emu().workspace() })), "{fx:?}");
+        assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 1, to: emu().workspace() })));
+        assert_eq!(s.session().windows_down().count(), 0);
+        assert!(!s.bottom().shows_windows(s.session()));
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(1));
     }
 
     #[test]
@@ -664,7 +667,7 @@ mod tests {
         assert!(!s.bottom().off());
     }
 
-    /// Home+Down with no window of a program in front, shelf's or none, does nothing.
+    /// Home + right stick down with no window of a program in front, shelf's or none, does nothing.
     #[test]
     fn window_down_with_no_window_in_front_does_nothing() {
         let mut s = state();
@@ -674,7 +677,7 @@ mod tests {
         assert!(s.bottom().window_rules().list().is_empty());
     }
 
-    /// Home+Up says the window's rule is forgotten.
+    /// Home + right stick up says the window's rule is forgotten.
     #[test]
     fn a_window_moved_up_says_its_rule_is_forgotten() {
         let mut s = emulator();

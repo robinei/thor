@@ -1,5 +1,6 @@
 //! The in-process Wayland server. The nested host presents both screens in one desktop window.
 
+mod geometry;
 mod handlers;
 mod input;
 mod nested;

@@ -59,8 +59,14 @@ impl Desired {
                     layout.bottom = None;
                 }
             }
+            Command::Return { window, workspace } => {
+                layout.places.insert(*window, Place { group: workspace.clone(), down: false });
+                if layout.bottom.is_some_and(|(id, _)| id == *window) {
+                    layout.bottom = None;
+                }
+            }
             Command::ShowDown(id) => layout.bottom = Some((*id, true)),
-            Command::Launch { .. } | Command::Close(_) | Command::Power(_) | Command::DownRules(_) | Command::LandRules(_) => {}
+            Command::Launch { .. } | Command::KeyboardFocus(_) | Command::Close(_) | Command::Power(_) | Command::DownRules(_) | Command::LandRules(_) => {}
         }
         command.clone()
     }
@@ -106,7 +112,7 @@ impl Desired {
                     out.push(commands::down(w.id, top));
                 }
             } else if w.down {
-                out.push(commands::up(w.id, Some(&place.group), top));
+                out.push(commands::return_window(w.id, &place.group, top));
                 moving_focus |= focus_id == Some(w.id);
             } else if w.workspace != place.group {
                 out.push(commands::move_windows(&[w.id], &place.group, top));
@@ -203,7 +209,7 @@ mod tests {
         let down = Window { down: true, visible: true, ..window(7, crate::sway::BOTTOM, false) };
         assert!(desired.reconcile(std::slice::from_ref(&down), Some("TOP")).is_empty());
         desired.request(&Command::Up { window: 7, workspace: "group".into() });
-        assert_eq!(desired.reconcile(&[down], Some("TOP")), vec![commands::up(7, Some("group"), Some("TOP")), commands::focus(7)]);
+        assert_eq!(desired.reconcile(&[down], Some("TOP")), vec![commands::return_window(7, "group", Some("TOP")), commands::focus(7)]);
     }
 
     #[test]

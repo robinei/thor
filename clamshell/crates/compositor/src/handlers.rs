@@ -135,17 +135,18 @@ impl Server {
         }
     }
 
-    pub fn surface_under(
-        &self,
-        pos: smithay::utils::Point<f64, smithay::utils::Logical>,
-    ) -> Option<(WlSurface, smithay::utils::Point<f64, smithay::utils::Logical>)> {
+    pub fn hit(&self, pos: smithay::utils::Point<f64, smithay::utils::Logical>) -> Option<crate::input::Hit> {
         self.windows.iter().rev().filter(|w| w.mapped && self.visible(w.id)).find_map(|client| {
-            let down = self.core.state().session().window(client.id)?.down;
-            let area = self.area(down);
-            if !area.to_f64().contains(pos) {
+            let geometry = self.geometry(client.id)?;
+            if !geometry.viewport.to_f64().contains(pos) {
                 return None;
             }
-            client.window.surface_under(pos - area.loc.to_f64(), WindowSurfaceType::ALL).map(|(s, p)| (s, (p + area.loc).to_f64()))
+            let location = geometry.surface_coords(pos);
+            let (surface, origin) = client.window.surface_under(location, WindowSurfaceType::ALL)?;
+            if client.window.toplevel().is_some_and(|top| top.wl_surface() == &surface) && !geometry.native.to_f64().contains(location) {
+                return None;
+            }
+            Some(crate::input::Hit { window: client.id, surface, location, origin: origin.to_f64() })
         })
     }
 }

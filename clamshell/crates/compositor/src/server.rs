@@ -19,7 +19,7 @@ use smithay::{
         compositor::{CompositorClientState, CompositorState, with_states},
         output::OutputManagerState,
         selection::data_device::DataDeviceState,
-        shell::xdg::{ToplevelSurface, XdgShellState, XdgToplevelSurfaceData},
+        shell::xdg::{SurfaceCachedState, ToplevelSurface, XdgShellState, XdgToplevelSurfaceData},
         shm::ShmState,
     },
 };
@@ -51,6 +51,10 @@ pub(crate) struct Server {
     pub windows: Vec<ClientWindow>,
     pub outputs: [Output; 2],
     pub pointer: Point<f64, Logical>,
+    pub pointer_window: Option<i64>,
+    pub pointer_buttons: Vec<u32>,
+    pub arrow_pressed: bool,
+    pub keyboard_home: bool,
     pub size: (i32, i32),
     pub top_width: i32,
     pub exit: bool,
@@ -102,6 +106,10 @@ impl Server {
             popups: PopupManager::default(),
             windows: Vec::new(),
             pointer: (0.0, 0.0).into(),
+            pointer_window: None,
+            pointer_buttons: Vec::new(),
+            arrow_pressed: false,
+            keyboard_home: false,
             size: (1580, 540),
             top_width: 960,
             exit: false,
@@ -162,14 +170,29 @@ impl Server {
                 .map(|data| (data.app_id.clone().unwrap_or_default(), data.title.clone().unwrap_or_default(), data.parent.clone()))
                 .unwrap_or_default()
         });
-        let process = surface
-            .wl_surface()
-            .client()
-            .and_then(|c| c.get_credentials(&self.dh).ok())
-            .and_then(|c| u32::try_from(c.pid).ok())
-            .map(|pid| (self.identify)(pid))
-            .unwrap_or_default();
-        Window { id, app_id, title, parent: parent.and_then(|p| self.surface_id(&p)), unit: process.unit, pids: process.pids, ..Window::default() }
+        let process =
+            self.core.state().session().window(id).map(|window| Process { unit: window.unit.clone(), pids: window.pids.clone() }).unwrap_or_else(|| {
+                surface
+                    .wl_surface()
+                    .client()
+                    .and_then(|c| c.get_credentials(&self.dh).ok())
+                    .and_then(|c| u32::try_from(c.pid).ok())
+                    .map(|pid| (self.identify)(pid))
+                    .unwrap_or_default()
+            });
+        let limits = Self::size_limits(surface);
+        Window { id, app_id, title, parent: parent.and_then(|p| self.surface_id(&p)), unit: process.unit, pids: process.pids, limits, ..Window::default() }
+    }
+
+    fn size_limits(surface: &ToplevelSurface) -> clamshell_state::session::presentation::WindowLimits {
+        with_states(surface.wl_surface(), |states| {
+            let mut cached = states.cached_state.get::<SurfaceCachedState>();
+            let current = cached.current();
+            clamshell_state::session::presentation::WindowLimits {
+                min: (current.min_size.w.max(0) as u32, current.min_size.h.max(0) as u32),
+                max: (current.max_size.w.max(0) as u32, current.max_size.h.max(0) as u32),
+            }
+        })
     }
 
     pub fn open_on_commit(&mut self, surface: &WlSurface) {
@@ -179,11 +202,15 @@ impl Server {
         let id = client.id;
         if !client.opened {
             let mut facts = self.facts(&toplevel, id);
-            // A parent's dialog is a new selection in that group. Launch intent decides ordinary apps.
-            facts.focused = facts.parent.is_some();
+            facts.focused = self.core.state().session().opening_focus(&facts);
             self.core.handle(WindowEvent::Opened(facts).into());
             if let Some(client) = self.windows.get_mut(index) {
                 client.opened = true;
+            }
+        } else {
+            let limits = Self::size_limits(&toplevel);
+            if self.core.state().session().window(id).is_some_and(|old| old.limits != limits) {
+                self.core.handle(WindowEvent::Changed(self.facts(&toplevel, id)).into());
             }
         }
         self.sync_windows();
@@ -198,10 +225,17 @@ impl Server {
             let Some(window) = self.core.state().session().window(client.id) else { continue };
             let Some(surface) = client.window.toplevel() else { continue };
             let area = self.area(window.down);
+            let Some(policy) = self.core.state().window_presentation(client.id) else { continue };
+            let size = crate::geometry::configure_size(window, policy, area.size, client.window.geometry().size);
             surface.with_pending_state(|pending| {
-                pending.size = Some(area.size);
+                pending.size = size;
+                pending.bounds = Some(area.size);
                 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
-                pending.states.set(State::Fullscreen);
+                if policy.layout == clamshell_state::session::presentation::WindowLayout::Fullscreen {
+                    pending.states.set(State::Fullscreen);
+                } else {
+                    pending.states.unset(State::Fullscreen);
+                }
                 if focus == Some(client.id) {
                     pending.states.set(State::Activated);
                 } else {
@@ -262,6 +296,12 @@ impl Server {
         let session = self.core.state().session();
         session.top_window().is_some_and(|w| w.id == id)
             || (self.core.state().bottom().shows_windows(session) && session.bottom_window().is_some_and(|w| w.id == id))
+    }
+
+    pub fn geometry(&self, id: i64) -> Option<crate::geometry::Geometry> {
+        let window = self.core.state().session().window(id)?;
+        let client = self.windows.iter().find(|w| w.id == id && w.mapped)?;
+        crate::geometry::Geometry::new(self.area(window.down), client.window.geometry(), self.core.state().window_presentation(id)?)
     }
 }
 

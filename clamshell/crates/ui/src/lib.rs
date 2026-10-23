@@ -25,6 +25,7 @@ mod render;
 mod screens;
 mod toolkit;
 mod views;
+pub mod window_arrows;
 
 pub use crate::core::{Core, TextField};
 pub use gfx::record::Bounds;

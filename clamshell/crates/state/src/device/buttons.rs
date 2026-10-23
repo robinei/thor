@@ -11,7 +11,7 @@ pub enum DeviceKey {
     BrightnessDown,
     /// Save both screens to a file. The pad's Home with RB, or a keyboard's Print.
     Screenshot,
-    /// Switch the bottom screen between ClamShell's view and the windows moved there (Home+Select).
+    /// Switch the bottom screen between ClamShell's view and the windows moved there (Home + right stick press).
     BottomView,
     /// Home with B, released at once, closes the window in front.
     CloseWindow,
@@ -19,10 +19,14 @@ pub enum DeviceKey {
     Quit,
     /// Turn the bottom screen off, or on again (Home+Start).
     BottomPower,
-    /// Move the window in front on the top screen to the bottom screen (Home+Down).
+    /// Move the window in front on the top screen to the bottom screen (Home + right stick down).
     WindowDown,
-    /// Move the window the bottom screen shows back to the top screen (Home+Up).
+    /// Move the window the bottom screen shows back to the top screen (Home + right stick up).
     WindowUp,
+    /// The previous top window of the program shown on top.
+    WindowPrevious,
+    /// The next top window of the program shown on top.
+    WindowNext,
 }
 
 #[cfg(test)]

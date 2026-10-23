@@ -160,9 +160,9 @@ check_soon "Home+Down: the window in front to the bottom screen; the main screen
 check "  remembered for its entry" '[ "$(rules late)" = desktop:spawner ]'
 msg "[app_id=\"^first$\"] focus"; sleep 0.3
 ctl window down
-check_soon "  its last window down too: its emptied workspace leaves the front (to the one before it, shelf last)" '[ "$(output_of "$(ws_of first)")" = HEADLESS-2 ] && [ "$(front)" != "$SP" ] && shown "$(front)"'
+check_soon "  moving the other down swaps the bottom slot and shows the returned window on top" '[ "$(output_of "$(ws_of first)")" = HEADLESS-2 ] && [ "$(ws_of late)" = "$SP" ] && [ "$(front)" = "$SP" ]'
 ctl window up; sleep 0.3; ctl window up
-check_soon "Home+Up, twice: both back on their workspace, the rules forgotten" '[ "$(ws_of late)" = "$SP" ] && [ "$(ws_of first)" = "$SP" ] && [ -z "$(rules late)$(rules first)" ]'
+check_soon "Home+Up: the bottom window returns; repeating with an empty slot does nothing" '[ "$(ws_of late)" = "$SP" ] && [ "$(ws_of first)" = "$SP" ] && [ -z "$(rules first)" ]'
 
 ctl long dock $SPAWNER; ctl tap dock-menu quit
 check_soon "its menu, Quit: its windows closed, then its slice gone" '[ -z "$(units spawner)" ] && [ -z "$(ws_of first)" ] && [ -z "$(ws_of late)" ]' 10

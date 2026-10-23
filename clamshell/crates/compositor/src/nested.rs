@@ -20,7 +20,7 @@ use smithay::{
 };
 
 use crate::{
-    render::{self, UiFrame},
+    render::{self, ArrowFrame, UiFrame},
     server::{Process, Server, insert_client},
 };
 
@@ -64,8 +64,11 @@ pub fn run(
 
     let attributes = WindowAttributes::default().with_title("ClamShell nested").with_surface_size(LogicalSize::new(1580.0, 540.0));
     let (mut backend, events) = winit::init_from_attributes::<GlesRenderer>(attributes)?;
+    log::info!("nested output format: {:?}", backend.renderer().egl_context().pixel_format());
     let mut frames = [UiFrame::new((960, 540))?, UiFrame::new((620, 540))?];
+    let mut arrows = ArrowFrame::new((960, 540))?;
     let mut elements = Vec::new();
+    let mut submitted = false;
     let mut damage = OutputDamageTracker::new(backend.window_size(), 1.0, Transform::Flipped180);
     event_loop
         .handle()
@@ -80,13 +83,14 @@ pub fn run(
                     WinitEvent::CloseRequested => server.exit = true,
                     WinitEvent::Redraw => {
                         server.turn();
-                        let age = backend.buffer_age().unwrap_or(0);
+                        let age = if submitted { backend.buffer_age().unwrap_or(0) } else { 0 };
                         {
                             let (renderer, mut framebuffer) = backend.bind()?;
-                            render::elements(server, &mut frames, renderer, &mut elements)?;
+                            render::elements(server, &mut frames, &mut arrows, renderer, &mut elements)?;
                             damage.render_output(renderer, &mut framebuffer, age, &elements, [0.0, 0.0, 0.0, 1.0])?;
                         }
                         backend.submit(Some(&[Rectangle::from_size(backend.window_size())]))?;
+                        submitted = true;
                         for client in server.windows.iter().filter(|w| w.mapped && server.visible(w.id)) {
                             let [top, bottom] = &server.outputs;
                             let output = if server.core.state().session().window(client.id).is_some_and(|w| w.down) { bottom } else { top };

@@ -26,7 +26,15 @@ impl Session {
     /// Commits a placement decision before returning its command to the backend. The compositor reads
     /// this same placement after apply; it does not have to wait for a backend observation.
     pub(crate) fn command(&mut self, command: WindowCommand, out: &mut Out) {
+        if let WindowCommand::Down(id) = &command {
+            self.return_bottom(*id, out);
+        }
         match &command {
+            WindowCommand::KeyboardFocus(id) => {
+                if self.window(*id).is_some() {
+                    self.keyboard_focus = Some(*id);
+                }
+            }
             WindowCommand::FocusWindow(id) => self.select_top(*id),
             WindowCommand::ShowShelf => {
                 if let Some(id) = self.windows.iter().find(|w| w.is_shelf() && !w.down).map(|w| w.id) {
@@ -75,10 +83,18 @@ impl Session {
                 }
                 self.select_top(*window);
             }
-            WindowCommand::ShowDown(id) => {
-                if self.windows.iter().any(|w| w.id == *id && w.down) {
-                    self.keyboard_focus = Some(*id);
+            WindowCommand::Return { window, to } => {
+                if !self.windows.iter().any(|w| !w.down && w.workspace == *to) {
+                    self.recent.retain(|group| group != to);
                 }
+                if let Some(w) = self.windows.iter_mut().find(|w| w.id == *window) {
+                    w.down = false;
+                    w.visible = false;
+                    w.focused = false;
+                    w.workspace.clone_from(to);
+                }
+            }
+            WindowCommand::ShowDown(id) => {
                 for w in self.windows.iter_mut().filter(|w| w.down) {
                     w.visible = w.id == *id;
                 }
@@ -86,7 +102,17 @@ impl Session {
             WindowCommand::Close(_) | WindowCommand::DownRules(_) | WindowCommand::KnownApps(_) => {}
         }
         self.remember_front();
+        let refocus = matches!(command, WindowCommand::Down(_)).then(|| self.top_window().map(|w| w.id)).flatten();
         out.effects.push(Effect::Window(command));
+        if let Some(id) = refocus {
+            self.command(WindowCommand::FocusWindow(id), out);
+        }
+    }
+
+    pub(crate) fn return_bottom(&mut self, except: i64, out: &mut Out) {
+        while let Some(w) = self.windows.iter().find(|w| w.down && w.id != except) {
+            self.command(WindowCommand::Return { window: w.id, to: w.workspace.clone() }, out);
+        }
     }
 
     fn focus_group(&mut self, group: &str) {
@@ -168,6 +194,9 @@ impl crate::Session {
                 if self.windows.iter().any(|w| w.id == window.id) {
                     return;
                 }
+                if window.down {
+                    self.return_bottom(window.id, out);
+                }
                 let focus = window.focused && !window.down;
                 if window.focused {
                     self.keyboard_focus = Some(window.id);
@@ -185,6 +214,7 @@ impl crate::Session {
                 }
             }
             WindowEvent::Closed(id) => {
+                let parent = self.window(id).and_then(|w| w.parent).filter(|parent| self.window(*parent).is_some_and(|w| !w.down));
                 if self.keyboard_focus == Some(id) {
                     self.keyboard_focus = None;
                 }
@@ -192,7 +222,11 @@ impl crate::Session {
                 let bottom = self.windows.iter().any(|w| w.id == id && w.down && w.visible);
                 self.windows.retain(|w| w.id != id);
                 if let Some(group) = group.filter(|g| self.windows.iter().any(|w| !w.down && w.workspace == *g)) {
-                    self.focus_group(&group);
+                    if let Some(parent) = parent {
+                        self.command(WindowCommand::FocusWindow(parent), out);
+                    } else {
+                        self.focus(&group, out);
+                    }
                 }
                 if bottom && let Some(w) = self.windows.iter_mut().rev().find(|w| w.down) {
                     w.visible = true;
@@ -210,6 +244,9 @@ impl crate::Session {
                     w.pids = window.pids;
                     w.parent = window.parent;
                     w.kind = window.kind;
+                    w.limits = window.limits;
+                    w.role = window.role;
+                    w.colour = window.colour;
                 }
             }
             WindowEvent::Presentation { window, focused, visible } => {
@@ -316,6 +353,9 @@ pub struct Window {
     pub title: String,
     pub parent: Option<i64>,
     pub kind: WindowKind,
+    pub limits: super::presentation::WindowLimits,
+    pub role: super::presentation::WindowRole,
+    pub colour: Option<super::presentation::ColourDescription>,
     /// Whether this is the selected top content. Keyboard focus is independent: see
     /// [`Session::keyboard_focus`]. On opening, the backend may supply an initial focus observation.
     pub focused: bool,
@@ -370,6 +410,23 @@ mod tests {
     use crate::{Effect, Event, WindowCommand};
 
     #[test]
+    fn compositor_opening_focus_respects_launch_intent_and_shown_program() {
+        let mut s = state();
+        let unit = "clamshell-run-one-1-1.scope";
+        let first = Window { unit: Some(unit.into()), ..win(7, "one", "clamshell-run-one", false) };
+        assert!(!s.session().opening_focus(&first));
+        s.observed(vec![Window { focused: true, visible: true, ..first.clone() }]);
+        let next = Window { id: 8, ..first.clone() };
+        assert!(s.session().opening_focus(&next));
+        let other_launch = Window { unit: Some("clamshell-run-one-1-2.scope".into()), ..next.clone() };
+        assert!(!s.session().opening_focus(&other_launch));
+        s.applied(Event::Home);
+        assert!(!s.session().opening_focus(&next));
+        assert!(s.session().opening_focus(&Window { parent: Some(7), ..next }));
+        assert!(s.session().opening_focus(&win(9, "foot", "outside", false)));
+    }
+
+    #[test]
     fn lifecycle_messages_keep_one_window_and_ignore_late_messages() {
         let mut s = state();
         let window = win(7, "test", "1", false);
@@ -402,7 +459,8 @@ mod tests {
         // One backend dispatch keeps the replacement present throughout settling.
         assert_eq!(s.applied(event), vec![Effect::PadRoute(crate::PadRoute::Ui)]);
         assert_eq!(s.session().windows(), windows);
-        assert_eq!(s.applied(Event::Home), vec![Effect::Window(WindowCommand::FocusWindow(8)), Effect::PadRoute(crate::PadRoute::Game)]);
+        assert!(s.applied(Event::Home).is_empty());
+        assert_eq!(s.applied(WindowEvent::Activate(8).into()), vec![Effect::Window(WindowCommand::FocusWindow(8)), Effect::PadRoute(crate::PadRoute::Game)]);
     }
 
     #[test]
@@ -443,7 +501,10 @@ mod tests {
         let shelf_id = shelf.id;
         s.observed(vec![shelf, top, down]);
         assert_eq!(s.applied(WindowEvent::Activate(7).into()), vec![Effect::Window(WindowCommand::FocusWindow(7)), Effect::PadRoute(crate::PadRoute::Game)]);
-        assert_eq!(s.applied(WindowEvent::Activate(8).into()), vec![Effect::Window(WindowCommand::ShowDown(8)), Effect::Watch(crate::Watch::Metrics, false)]);
+        assert_eq!(
+            s.applied(WindowEvent::Activate(8).into()),
+            vec![Effect::Window(WindowCommand::ShowDown(8)), Effect::Window(WindowCommand::KeyboardFocus(8)), Effect::Watch(crate::Watch::Metrics, false)]
+        );
         assert!(s.bottom().shows_windows(s.session()));
         assert_eq!(s.applied(WindowEvent::Activate(shelf_id).into()), vec![Effect::Window(WindowCommand::ShowShelf), Effect::PadRoute(crate::PadRoute::Ui)]);
     }
@@ -612,7 +673,7 @@ mod tests {
         assert_eq!(s.session().top_window().map(|w| w.id), Some(9));
         assert_eq!(show(&mut s, "zelda-lttp"), vec![Effect::Window(WindowCommand::FocusWindow(7))]);
         assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
-        assert!(s.applied(WindowEvent::Closed(7).into()).is_empty());
+        assert_eq!(s.applied(WindowEvent::Closed(7).into()), vec![Effect::Window(WindowCommand::FocusWindow(8))]);
         assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
     }
 
@@ -647,10 +708,18 @@ mod tests {
         s.applied(WindowEvent::Opened(Window { unit: instance.unit(), ..win(7, "game", &instance.workspace(), true) }).into());
         s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
         let dialog = Window { id: 8, app_id: "dialog".into(), parent: Some(7), focused: true, ..Window::default() };
-        assert_eq!(s.applied(WindowEvent::Opened(dialog).into()), vec![Effect::Window(WindowCommand::Down(8))]);
+        assert_eq!(
+            s.applied(WindowEvent::Opened(dialog).into()),
+            vec![
+                Effect::Window(WindowCommand::Return { window: 7, to: instance.workspace() }),
+                Effect::Window(WindowCommand::Down(8)),
+                Effect::Window(WindowCommand::FocusWindow(7)),
+                Effect::PadRoute(crate::PadRoute::Game)
+            ]
+        );
         assert_eq!(s.session().window(8).map(Window::place), Some(WindowPlace::Bottom));
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(8));
-        assert!(s.session().top_window().is_none());
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
     }
 
     #[test]
@@ -670,5 +739,177 @@ mod tests {
         for w in &windows {
             assert_eq!((w.has_home(), w.is_shelf()), (w.home().is_some(), w.home() == Some(Instance::Shelf)), "{w:?}");
         }
+    }
+
+    #[test]
+    fn touching_a_home_arrow_consumes_the_release_but_direct_home_still_shows_shelf() {
+        let mut s = state();
+        s.observed(vec![shelf_window(false), win(7, "one", "one", true), win(8, "one", "one", false)]);
+        s.applied(Event::HomeHeld(true));
+        assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowNext)), vec![Effect::Window(WindowCommand::FocusWindow(8))]);
+        s.applied(Event::HomeHeld(false));
+        assert!(s.applied(Event::HomeTap).is_empty());
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
+        assert_eq!(window_effects(s.applied(Event::Home)), vec![Effect::Window(WindowCommand::ShowShelf)]);
+        s.applied(WindowEvent::Activate(8).into());
+        s.applied(Event::HomeHeld(true));
+        s.applied(Event::HomeHeld(false));
+        assert_eq!(window_effects(s.applied(Event::HomeTap)), vec![Effect::Window(WindowCommand::ShowShelf)]);
+        assert!(s.session().top_window().is_some_and(Window::is_shelf));
+    }
+
+    #[test]
+    fn presentation_facts_and_colour_do_not_change_placement_or_selection() {
+        use crate::session::presentation::{ColourDescription, ColourPrimaries, TransferFunction, WindowLayout, WindowLimits, WindowRole};
+        let mut s = state();
+        let window = win(7, "one", "one", true);
+        s.applied(WindowEvent::Opened(window.clone()).into());
+        let colour = ColourDescription { primaries: ColourPrimaries::Bt2020, transfer: TransferFunction::Pq, luminance: Some((1, 1_000_000)) };
+        let changed = Window { limits: WindowLimits { min: (400, 300), max: (400, 300) }, role: WindowRole::Utility, colour: Some(colour), ..window };
+        for _ in 0..2 {
+            assert!(s.applied(WindowEvent::Changed(changed.clone()).into()).is_empty());
+            let current = s.session().window(7);
+            assert_eq!(current.map(Window::place), Some(WindowPlace::Top("one")));
+            assert_eq!(current.and_then(|w| w.colour), Some(colour));
+            assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
+            assert_eq!(s.session().keyboard_focus(), Some(7));
+            assert_eq!(s.window_presentation(7).map(|p| p.layout), Some(WindowLayout::Centered));
+        }
+    }
+
+    #[test]
+    fn remembering_a_bottom_rule_does_not_move_existing_siblings_of_other_launches() {
+        let mut s = state();
+        let instance = crate::Instance::Run { key: clamshell_library::key_of("desktop:foot"), secs: 100, n: 0 };
+        let another = crate::Instance::Run { key: clamshell_library::key_of("desktop:foot"), secs: 200, n: 1 };
+        s.applied(Event::Units(vec![instance.clone(), another.clone()]));
+        s.observed(vec![
+            Window { unit: instance.unit(), ..win(7, "foot", &instance.workspace(), true) },
+            Window { unit: another.unit(), ..win(8, "foot", &another.workspace(), false) },
+        ]);
+        assert_eq!(
+            window_effects(s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown))),
+            vec![
+                Effect::Window(WindowCommand::Down(7)),
+                Effect::Window(WindowCommand::FocusWindow(8)),
+                Effect::Window(WindowCommand::DownRules(vec![crate::bottom::screen::DownRule { app_id: "foot".into(), title: None }]))
+            ]
+        );
+        assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
+        // A later matching window does use that rule and displaces the bottom occupant.
+        let fx = window_effects(s.applied(WindowEvent::Opened(Window { unit: another.unit(), ..win(9, "foot", &another.workspace(), false) }).into()));
+        assert_eq!(
+            fx,
+            vec![
+                Effect::Window(WindowCommand::Return { window: 7, to: instance.workspace() }),
+                Effect::Window(WindowCommand::Down(9)),
+                Effect::Window(WindowCommand::FocusWindow(8))
+            ]
+        );
+        assert_eq!(s.session().bottom_window().map(|w| w.id), Some(9));
+        assert_eq!(s.session().windows_down().count(), 1);
+    }
+
+    #[test]
+    fn displacing_another_programs_bottom_window_does_not_activate_it() {
+        let mut s = state();
+        s.observed(vec![shelf_window(false), win(7, "one", "one", true), win(8, "two", "two", false), win(9, "one", "one", false)]);
+        s.applied(WindowEvent::Activate(8).into());
+        s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
+        s.applied(WindowEvent::Activate(7).into());
+        let effects = window_effects(s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown)));
+        // Return must precede Down, and the returned foreign program must receive no focus.
+        assert_eq!(
+            effects,
+            vec![
+                Effect::Window(WindowCommand::Return { window: 8, to: "two".into() }),
+                Effect::Window(WindowCommand::Down(7)),
+                Effect::Window(WindowCommand::FocusWindow(9))
+            ]
+        );
+        assert_eq!(s.session().window(8).map(Window::place), Some(WindowPlace::Top("two")));
+        assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(9));
+        assert_eq!(s.session().keyboard_focus(), Some(9));
+    }
+
+    #[test]
+    fn top_window_switching_wraps_within_the_program_and_skips_the_bottom_slot() {
+        let mut s = state();
+        s.observed(vec![win(7, "one", "one", true), win(8, "one", "one", false), win(9, "other", "other", false)]);
+        assert!(s.session().has_other_top_window());
+        for (action, id) in [
+            (crate::device::buttons::DeviceKey::WindowNext, 8),
+            (crate::device::buttons::DeviceKey::WindowNext, 7),
+            (crate::device::buttons::DeviceKey::WindowPrevious, 8),
+        ] {
+            assert_eq!(s.applied(Event::Device(action)), vec![Effect::Window(WindowCommand::FocusWindow(id))]);
+            assert_eq!(s.session().top_window().map(|w| w.id), Some(id));
+        }
+        s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
+        assert!(!s.session().has_other_top_window());
+        assert!(s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowNext)).is_empty());
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
+        assert_eq!(s.session().bottom_window().map(|w| w.id), Some(8));
+    }
+
+    #[test]
+    fn pad_activity_returns_keyboard_focus_to_top_without_moving_windows() {
+        let mut s = state();
+        s.observed(vec![win(7, "one", "one", true), Window { down: true, visible: true, ..win(8, "two", "two", false) }]);
+        s.applied(WindowEvent::KeyboardFocus(Some(8)).into());
+        assert_eq!(s.applied(Event::PadActive), vec![Effect::Window(WindowCommand::FocusWindow(7))]);
+        assert_eq!(s.session().keyboard_focus(), Some(7));
+        assert_eq!(s.session().bottom_window().map(|w| w.id), Some(8));
+        assert!(s.applied(Event::PadActive).is_empty());
+        for held in [true, true, false, false] {
+            assert!(s.applied(Event::HomeHeld(held)).is_empty());
+            assert_eq!(s.session().home_held(), held);
+        }
+    }
+
+    #[test]
+    fn activating_a_program_reveals_its_bottom_window_without_moving_or_focusing_it() {
+        let mut s = state();
+        let instance = launch(&mut s, "zelda-lttp");
+        s.observed(vec![
+            Window { unit: instance.unit(), ..win(7, "game", &instance.workspace(), true) },
+            Window { unit: instance.unit(), ..win(8, "second", &instance.workspace(), false) },
+        ]);
+        s.applied(WindowEvent::Activate(8).into());
+        s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
+        s.applied(Event::Device(crate::device::buttons::DeviceKey::BottomView));
+        assert!(!s.bottom().shows_windows(s.session()));
+        assert_eq!(show(&mut s, "zelda-lttp"), vec![Effect::Window(WindowCommand::FocusWindow(7)), Effect::Window(WindowCommand::ShowDown(8))]);
+        assert_eq!(s.session().keyboard_focus(), Some(7));
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
+        assert_eq!(s.session().bottom_window().map(|w| w.id), Some(8));
+        assert!(s.bottom().shows_windows(s.session()));
+        s.applied(WindowEvent::Closed(8).into());
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
+        assert_eq!(s.session().bottom_window(), None);
+        assert!(!s.bottom().shows_windows(s.session()));
+    }
+
+    #[test]
+    fn moving_the_top_window_does_not_require_keyboard_focus_there() {
+        let mut s = state();
+        s.observed(vec![shelf_window(false), win(7, "one", "one", true), Window { down: true, visible: true, ..win(8, "two", "two", false) }]);
+        s.applied(WindowEvent::Presentation { window: 7, focused: Some(false), visible: None }.into());
+        s.applied(WindowEvent::KeyboardFocus(Some(8)).into());
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
+        let effects = window_effects(s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown)));
+        assert_eq!(
+            effects,
+            vec![
+                Effect::Window(WindowCommand::Return { window: 8, to: "two".into() }),
+                Effect::Window(WindowCommand::Down(7)),
+                Effect::Window(WindowCommand::ShowShelf)
+            ]
+        );
+        assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
+        assert!(s.session().top_window().is_some_and(Window::is_shelf));
+        assert_eq!(s.session().windows_down().count(), 1);
     }
 }

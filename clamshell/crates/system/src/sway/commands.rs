@@ -47,10 +47,7 @@ pub const DOWN_MARK: &str = "clamshell-down";
 /// marked so it stays. Afterwards the main screen has the keyboard again.
 pub fn down(window: i64, top: Option<&str>) -> String {
     let bottom = super::BOTTOM.to_owned();
-    format!(
-        "[con_id={window}] mark --add {DOWN_MARK}-{window}; [con_id={window}] move container to workspace \"{bottom}\"; [con_id={window}] layout tabbed; {}",
-        show_down(window, top)
-    )
+    format!("[con_id={window}] mark --add {DOWN_MARK}-{window}; [con_id={window}] move container to workspace \"{bottom}\"; {}", show_down(window, top))
 }
 
 /// Shows a window that was moved to the bottom screen by focusing its tab. The main screen keeps the
@@ -68,7 +65,11 @@ pub fn up(window: i64, workspace: Option<&str>, top: Option<&str>) -> String {
         (None, Some(top)) => format!("[con_id={window}] move container to output \"{top}\""),
         (None, None) => String::new(),
     };
-    format!("[con_id={window}] unmark {DOWN_MARK}-{window}; {to}; [con_id={window}] focus")
+    format!("[con_id={window}] unmark {DOWN_MARK}-{window}; {to}; {}", focus(window))
+}
+
+pub fn return_window(window: i64, workspace: &str, top: Option<&str>) -> String {
+    format!("[con_id={window}] unmark {DOWN_MARK}-{window}; {}", move_windows(&[window], workspace, top))
 }
 
 /// Moves a window that landed on the bottom screen by itself to the main screen.
@@ -193,7 +194,7 @@ mod tests {
     fn windows_go_down_marked_and_back_up_unmarked_the_main_screen_keeping_the_keyboard() {
         assert_eq!(
             down(7, Some("DSI-2")),
-            r#"[con_id=7] mark --add clamshell-down-7; [con_id=7] move container to workspace "clamshell-bottom"; [con_id=7] layout tabbed; [con_id=7] focus; focus output "DSI-2""#
+            r#"[con_id=7] mark --add clamshell-down-7; [con_id=7] move container to workspace "clamshell-bottom"; [con_id=7] focus; focus output "DSI-2""#
         );
         assert_eq!(show_down(7, Some("DSI-2")), r#"[con_id=7] focus; focus output "DSI-2""#);
         assert_eq!(

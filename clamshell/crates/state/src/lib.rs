@@ -365,6 +365,13 @@ impl State {
             Event::Units(units) => self.session.set_units(units),
             Event::Start => self.ui_started(out),
             Event::Home => self.home(out),
+            Event::HomeHeld(held) => self.session.hold_home(held),
+            Event::HomeTap => {
+                if self.session.home_tap() {
+                    self.home(out);
+                }
+            }
+            Event::PadActive => self.session.pad_active(out),
             Event::Listened(input) => self.keymapping.listened(input, self.pad.route() == PadRoute::Listen, out),
             Event::PadSwitch => self.pad.switch(),
             // Never applied here: the UI handles pad navigation itself.
@@ -446,6 +453,7 @@ impl State {
                 }
                 if self.session.window(id).is_some_and(|w| w.down) {
                     self.bottom.show_program_down(id, &mut self.session, out);
+                    self.session.command(WindowCommand::KeyboardFocus(id), out);
                 } else {
                     self.session.on_window(WindowEvent::Activate(id), out);
                 }
@@ -1159,6 +1167,8 @@ impl State {
             DeviceKey::BottomPower => return self.bottom.toggle_power(self.power(), self.clock.mono()),
             DeviceKey::WindowDown => return self.bottom.window_down(&mut self.session, self.clock.mono(), out),
             DeviceKey::WindowUp => return self.bottom.window_up(&mut self.session, self.clock.mono(), out),
+            DeviceKey::WindowPrevious => return self.session.step_window(false, out),
+            DeviceKey::WindowNext => return self.session.step_window(true, out),
         };
         let control = if level == Level::Volume { Control::Volume } else { Control::Brightness };
         self.bottom.notice_mut().show(NoticeKind::Level(control), self.clock.mono());
@@ -1209,7 +1219,10 @@ impl State {
 
     /// Shows running entry `id` (see [`Session::show`]), on the bottom screen if all its windows are there.
     fn show(&mut self, id: &str, out: &mut Out) {
+        let below = self.session.windows_of(id).find(|w| w.down).map(|w| w.id);
         if let Some(window) = self.session.show(id, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out) {
+            self.bottom.show_program_down(window, &mut self.session, out);
+        } else if let Some(window) = below.filter(|_| !self.bottom.shows_windows(&self.session)) {
             self.bottom.show_program_down(window, &mut self.session, out);
         }
     }

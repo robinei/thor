@@ -7,7 +7,12 @@ use smithay::{
         allocator::Fourcc,
         renderer::{
             ImportMem, Renderer,
-            element::{AsRenderElements, Id, Kind, surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
+            element::{
+                AsRenderElements, Id, Kind,
+                surface::WaylandSurfaceRenderElement,
+                texture::TextureRenderElement,
+                utils::{CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement},
+            },
             gles::{GlesRenderer, GlesTexture},
             utils::DamageBag,
         },
@@ -17,7 +22,7 @@ use smithay::{
 
 smithay::backend::renderer::element::render_elements! {
     pub(crate) Element<=GlesRenderer>;
-    Surface=WaylandSurfaceRenderElement<GlesRenderer>,
+    Surface=CropRenderElement<RelocateRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>>>,
     Ui=TextureRenderElement<GlesTexture>,
 }
 
@@ -50,6 +55,11 @@ impl UiFrame {
         }
         let Some(bounds) = core.record(screen, self.texture.is_none()) else { return Ok(()) };
         self.held = core.draw(screen, self.pixmap.as_mut(), self.held, bounds);
+        self.upload(renderer, bounds)
+    }
+
+    fn upload(&mut self, renderer: &mut GlesRenderer, bounds: clamshell_ui::Bounds) -> Result<(), Error> {
+        let size = (self.pixmap.width(), self.pixmap.height());
         let damage = Rectangle::new((bounds.x0, bounds.y0).into(), (bounds.x1 - bounds.x0, bounds.y1 - bounds.y0).into());
         match &self.texture {
             Some(texture) => renderer.update_memory(texture, self.pixmap.data(), damage)?,
@@ -82,31 +92,66 @@ impl UiFrame {
     }
 }
 
-pub(crate) fn elements(server: &mut Server, frames: &mut [UiFrame; 2], renderer: &mut GlesRenderer, out: &mut Vec<Element>) -> Result<(), Error> {
+pub(crate) struct ArrowFrame {
+    frame: UiFrame,
+    last: Option<clamshell_ui::window_arrows::WindowArrows>,
+}
+impl ArrowFrame {
+    pub fn new(size: (u32, u32)) -> Result<Self, Error> {
+        Ok(Self { frame: UiFrame::new(size)?, last: None })
+    }
+    fn update(&mut self, server: &Server, renderer: &mut GlesRenderer) -> Result<Option<Element>, Error> {
+        let size = (server.top_width as u32, server.size.1 as u32);
+        let arrows = clamshell_ui::window_arrows::WindowArrows::new(server.core.state(), size);
+        if self.frame.pixmap.width() != size.0 || self.frame.pixmap.height() != size.1 {
+            *self = Self::new(size)?;
+        }
+        if self.last != Some(arrows) {
+            if arrows.visible {
+                arrows.draw(self.frame.pixmap.as_mut());
+                self.frame.upload(renderer, clamshell_ui::Bounds::of_size(size))?;
+            }
+            self.last = Some(arrows);
+        }
+        Ok(arrows.visible.then(|| self.frame.element(renderer, 0, None)).flatten())
+    }
+}
+
+pub(crate) fn elements(
+    server: &mut Server,
+    frames: &mut [UiFrame; 2],
+    arrows: &mut ArrowFrame,
+    renderer: &mut GlesRenderer,
+    out: &mut Vec<Element>,
+) -> Result<(), Error> {
     let [top, bottom] = frames;
     top.update(&mut server.core, Screen::Top, renderer)?;
     bottom.update(&mut server.core, Screen::Bottom, renderer)?;
     server.core.frames_done();
     out.clear();
+    if let Some(element) = arrows.update(server, renderer)? {
+        out.push(element);
+    }
     let state = server.core.state();
     let show_bottom = state.bottom().shows_windows(state.session());
     if let Some(element) = bottom.element(renderer, server.top_width, show_bottom.then(|| server.area(true).loc.y)) {
         out.push(element);
     }
-    if state.session().top_window().is_none()
+    if !server.windows.iter().any(|w| w.mapped && server.visible(w.id) && state.session().window(w.id).is_some_and(|w| !w.down))
         && let Some(element) = top.element(renderer, 0, None)
     {
         out.push(element);
     }
     for client in server.windows.iter().filter(|w| w.mapped && server.visible(w.id)) {
-        let down = state.session().window(client.id).is_some_and(|w| w.down);
-        let area = server.area(down);
+        let Some(geometry) = server.geometry(client.id) else { continue };
         out.extend(
-            client
-                .window
-                .render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(renderer, area.loc.to_physical(1), 1.0.into(), 1.0)
-                .into_iter()
-                .map(Element::from),
+            client.window.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(renderer, (0, 0).into(), 1.0.into(), 1.0).into_iter().filter_map(
+                |element| {
+                    let element = RescaleRenderElement::from_element(element, (0, 0).into(), geometry.scale);
+                    let element = RelocateRenderElement::from_element(element, (geometry.origin.x as i32, geometry.origin.y as i32), Relocate::Relative);
+                    CropRenderElement::from_element(element, 1.0, geometry.viewport.to_physical(1)).map(Element::from)
+                },
+            ),
         );
     }
     Ok(())

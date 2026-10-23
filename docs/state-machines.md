@@ -36,20 +36,24 @@ into sparse changes; unchanged observations cannot overwrite a newer state decis
 | present on top | validated Activate | selected now | thaw/resume owner before exact Focus or ShowShelf | windows `activation_selects_the_window_on_its_screen`, `activation_thaws_a_suspended_owner_before_selecting_its_window` |
 | present below | validated Activate | bottom shows this window now | thaw/resume owner, ShowDown | same |
 | either screen selected | KeyboardFocus(Some(live id)) or None | keyboard target changes, content stays | — | windows `keyboard_focus_is_independent_of_both_screens_selected_content` |
-| top | Down | below, retains home; another top tab or shelf selected | Down, then front fallback if needed | bottom tests; windows `a_hidden_group_keeps_its_selection_and_closing_it_selects_the_next_window` |
-| below | Up | top at retained home, selected now | Up to explicit home | bottom tests |
+| top, regardless of keyboard focus | Down, including a remembered rule | previous bottom returned to its home without activation; requested window below; same-program next top or recent group/shelf selected | Return before Down, then exact top Focus/fallback | bottom `moving_another_window_down_swaps_the_single_bottom_slot`; windows `displacing_another_programs_bottom_window_does_not_activate_it`, `moving_the_top_window_does_not_require_keyboard_focus_there` |
+| below, shown or covered | Up | top at retained home, selected now; bottom shows ClamShell | Up to explicit home | bottom `moving_another_window_down_swaps_the_single_bottom_slot` |
 | any | Presentation / Order from sway | supplied observations / traversal order applied | normal selection and ownership rules | windows `backend_changes_preserve_titles_and_tab_order` |
 | front launch waiting | Home or another explicit selection | foreground intent cancelled | navigation's own effects | windows `home_cancels_a_launchs_late_request_to_take_the_front`, `activating_another_window_cancels_a_launchs_late_request_to_take_the_front` |
+
+Remembering a new bottom rule leaves existing sibling placements alone, including other launches of
+the same app (`remembering_a_bottom_rule_does_not_move_existing_siblings_of_other_launches`). Subsequent
+matching windows use the rule and displace the current bottom occupant.
 
 The foreground launch intent (`front_launch`) and two-second replacement history are domain rules:
 an explicitly requested launch may show its first window, and a splash may be replaced without losing
 its place. They are not acknowledgements of sway commands. Placement and exact focus commands remain
 effects for the sway executor; the in-process compositor reads the committed state instead.
 
-Live ids are unique, at most one top window is selected and one bottom window visible, remembered
+Live ids are unique, at most one top window is selected and one window placed below, remembered
 selections belong to their home groups, and keyboard focus names a live window or none. The randomized
 event-sequence test checks these after every event, including lifecycle, activation and keyboard focus.
-The allocation test includes repeated lifecycle events and activation with live bottom rules.
+The allocation test includes repeated lifecycle events, Home-held changes, controller focus and activation with live bottom rules.
 
 Sway's requested-layout mirror retries failed placement/focus without becoming the source of policy.
 Acknowledged focus accepts later user tab selection; late group moves leave bottom windows below.
@@ -105,8 +109,11 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | settle: the front workspace has no window left | Focus the most recent top workspace, else ShowShelf; remember it 2 s | front `a_closed_window_goes_back_…` |
 | settle: within 2 s a window reappears there | Focus it | front `a_window_in_front_replaced_at_once_…` |
 | settle: `front_launch` and its window arrived | Focus, cleared | tests `a_launchs_first_window_is_shown_before_…` |
-| Home, shelf not in front | ShowShelf | front `home_goes_to_shelf_…` |
-| Home, shelf in front | Focus the most recent other workspace (Device view open: close it first) | front tests; device `home_closes_the_device_view_first` |
+| Home, shelf not in front | ShowShelf; cancel foreground launch intent | front `home_always_shows_shelf_and_repeated_home_stays_there` |
+| Home, shelf in front | stays; close Device view first if open | same; device `home_closes_the_device_view_first` |
+| WindowPrevious / WindowNext | wrap within the selected top program, skipping the bottom slot; absent/single/shelf do nothing | windows `top_window_switching_wraps_within_the_program_and_skips_the_bottom_slot` |
+| HomeHeld(bool) | remember button state for the future compositor's arrows; repeated values do nothing | windows `pad_activity_returns_keyboard_focus_to_top_without_moving_windows` |
+| PadActive | keyboard focus returns to selected top content; placement stays | same |
 | settle: program in force | the focused top window's owner, else the kept one if it runs, else the last running | running `the_settings_follow_the_front`, `the_program_in_force_falls_back_to_the_last_started` |
 
 ### Background (per entry and per runner)
@@ -202,9 +209,9 @@ State: `screen{windows, off, idle_off}`, `used_at`, `dimmed`, `woken`, `sent_dow
 
 | Transition | Test |
 |---|---|
-| Home + right stick press (was Home+Select): show ClamShell's view or the windows moved down | `a_window_moved_down_is_shown_there_and_remembered` |
-| WindowDown: the focused top window moves down, the screen shows it, a rule is added (notice, `Save(WindowRules)`, `DownRules`) | same; `a_programs_only_window_is_remembered_by_its_app_id_alone`; `window_down_with_no_window_in_front_does_nothing` |
-| WindowUp: the visible down window goes back, its rule is forgotten | same; `two_windows_down_are_tabs_…` |
+| Home + right stick press: show ClamShell's view or the windows moved down | `a_window_moved_down_is_shown_there_and_remembered` |
+| WindowDown: the selected top window moves down without needing keyboard focus; the old bottom window returns to its group, the screen shows it, a rule is added (notice, `Save(WindowRules)`, `DownRules`) | same; `a_programs_only_window_is_remembered_by_its_app_id_alone`; `window_down_with_no_window_in_front_does_nothing` |
+| WindowUp: the visible down window goes back, its rule is forgotten | same; `moving_another_window_down_swaps_the_single_bottom_slot` |
 | settle: a window matching a rule moves down once | `a_rule_sends_the_window_down_when_its_program_opens_it_again` |
 | dock tap or BottomWindows → windows shown, `ShowDown`, the screen turned on if it was off by hand | `the_front_programs_windows_hidden_below_…`, `showing_the_windows_below_turns_the_screen_on_if_off_by_hand` |
 | Home+Start: wake if off by itself, else toggle off | `the_bottom_screen_turns_off_and_on`, `home_start_brings_back_…`, `…off_by_hand_and_by_itself_at_once` |
@@ -235,7 +242,7 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 |---|---|
 | first start → open, focus on Wi-Fi; Done → closed, `Save(FirstStartDone)`, the Sysinfo tab | `the_first_start_opens_the_device_view_…`, `the_first_start_begins_on_wifi_and_done_leaves_shelf_and_the_default_tab` |
 | the Device tool → open; Close or Done → closed, focus to shelf | `the_device_entry_opens_it_and_close_goes_back_to_shelf` |
-| Home with the view open → closed, focus to shelf's selection; the next Home goes to the program | `home_closes_the_device_view_first` |
+| Home with the view open → closed, focus to shelf's selection; repeated Home stays on shelf | `home_closes_the_device_view_first` |
 | open while the UI is up → `Watch(Account)` on; closed → off | `the_account_is_watched_while_the_view_is_open` |
 | Wifi / Zone rows → their tab, its watch | `the_wifi_and_zone_rows_open_their_tabs` |
 | Password → editor for the current then the new password → `Account(Password)` | `the_password_is_typed_below_the_current_one_first` |
@@ -258,6 +265,30 @@ while a dock entry is being moved. The focus ring hides when the route leaves Ui
 | pad mouse by hand, by game, kept by hand | `pad_mouse_toggles_independently_…`, `the_pad_mouse_follows_the_game_…` |
 | listening, dock move, focus ring | `a_new_keymap_is_named_edited_and_mapped`, `moving_a_dock_entry_takes_the_pad_…`, `the_focus_ring_hides_when_the_pad_leaves_…` |
 | Down/Up light a target; Activate resolves the item pressed | `down_and_up_light_a_target`, `the_pressed_item_is_lit_where_it_is_now`, `a_press_acts_on_the_item_that_was_drawn`; a Down without Up leaves the press until the next Down: `a_down_without_its_up_lasts_until_the_next_down` |
+
+### Home chords and directional flicks (system/input/)
+
+The reusable `Flick` recogniser receives normalised X/Y, arms below 30%, and reports the axis further
+out once it passes 70%. It stays disarmed until both axes return below 30%. `begin` with an already
+deflected stick waits for that return. Tests: `input::flick` pins thresholds, diagonals, repetition and
+initial deflection; it knows neither Home nor window actions.
+
+The pad router owns the chord policy. Home press emits `HomeHeld(true)` and centres the game's right
+stick through the current keymap; its physical position is still tracked. While Home is held, right
+stick flicks become WindowDown / WindowUp / WindowPrevious / WindowNext. Home release emits
+`HomeHeld(false)`, and emits `HomeTap` only if no chord used it. State consumes that tap when a
+Home-held arrow already switched a window; otherwise it shows shelf. Direct Home always shows shelf. A stick still out on release remains taken
+until it returns, including during remap ticks and gyro samples. Unplugging releases Home for state.
+Tests: `home_flicks_once_and_neutralises_the_games_stick_until_it_returns`,
+`losing_the_controller_releases_home_for_the_state`. The VM `pad_windows` check exercises real evdev
+routing, tab switching and bottom-slot swaps; nested sway checks the same placement through IPC.
+
+Home + right stick press switches the bottom view; Home + Start controls bottom power; Home + R1 is
+still Screenshot; Home + B closes or quits. Select and the D-pad no longer move windows or switch the
+bottom view. Tests: `home_chords_use_the_right_stick_and_not_select_or_the_dpad`, the existing B and R1
+chord tests. Sway keeps its tab bar, with no arrow overlay; the in-process compositor draws its arrows
+in its nested host. `Presentation` and the snapshot-diff helper `session::windows::changes` belong to sway and
+tests, never to the in-process compositor.
 
 ## Keymaps (keymap/)
 
@@ -427,8 +458,8 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    the focus ring shows only when the route is Ui, or after a hold on shelf's selected entry opened its
    actions with the pad elsewhere, until the next touch hides it (the ring is what shows the actions are
    open, S24; the focus may move meanwhile, as when the Device view opens).
-4. **Session:** live window ids and running ids unique; at most one selected top window and one visible
-   bottom window; remembered selections belong to their top groups; keyboard focus is absent or names
+4. **Session:** live window ids and running ids unique; at most one selected top window and one window placed
+   below; remembered selections belong to their top groups; keyboard focus is absent or names
    a live window; at most one launch waiting per entry; no launching instance listed in
    units; Ours ⇒ its scope is listed; Found ⇒ not; program in force is running and is the selected top
    window's owner when it has one; quitting ⇒ running and not paused; paused ⇒ Ours; suspended ⇒ paused.
@@ -605,3 +636,20 @@ with what would make us change our minds.
 - S50. A scope listed runs its entry whatever launch of it waits; the waiting launch joins it when its
   own scope comes.
 - S51. A quitting entry can't be suspended; the dock menu's Suspend does nothing for it.
+
+### In-process window presentation (compositor/)
+
+Window limits, role and optional colour description are facts. Changing them preserves selection and
+placement. Normal game windows fill their viewport with aspect-preserving fitting; normal apps use
+native scale. Fixed-size windows, dialogs and utility/splash roles are centred at native scale and
+shrink only when necessary. Rendering and pointer input share the same viewport, origin and scale;
+black around the client does not activate the shelf behind it. Colour metadata is reserved for future
+colour management; the host does not advertise HDR.
+
+An external client's first window selects itself. A first window of our own scope waits for foreground
+launch intent; a later window may select itself only when that program is shown. Dialogs may select
+themselves. Tests: `compositor_opening_focus_respects_launch_intent_and_shown_program`, the presentation
+policy tests, metadata-change and Home-tap tests in session/windows, and the randomized state test.
+The headless compositor protocol test checks first configure, fixed-size child placement and close;
+geometry tests check native sizing, fitting and inverse coordinates. `tests/nested-compositor.py` checks
+real client pixels across top, bottom, return and Home. Touch and the remaining protocols are pending.

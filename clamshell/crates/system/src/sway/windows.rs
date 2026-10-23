@@ -60,6 +60,7 @@ fn collect(node: &Node, workspace: &str, unit: &mut impl FnMut(u32) -> (Option<S
             workspace: workspace.to_owned(),
             down: node.marks.iter().any(|m| m.starts_with(commands::DOWN_MARK)),
             visible: node.visible.unwrap_or(false),
+            ..Window::default()
         });
     }
     for child in node.children() {

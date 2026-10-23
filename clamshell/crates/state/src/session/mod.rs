@@ -8,6 +8,7 @@ pub mod enqueue;
 pub(crate) mod found;
 mod front;
 pub mod instance;
+pub mod presentation;
 pub mod program;
 pub(crate) mod running;
 pub mod tray;
@@ -37,6 +38,8 @@ pub struct Session {
     windows: Vec<Window>,
     /// The client with keyboard focus; none while ClamShell's own UI receives keys.
     keyboard_focus: Option<i64>,
+    home_held: bool,
+    home_used: bool,
     /// Our running scopes, as systemd lists them.
     units: Vec<Instance>,
     /// Workspaces by when they were last in front, most recent first.
@@ -148,6 +151,62 @@ impl Session {
         self.keyboard_focus
     }
 
+    pub fn home_held(&self) -> bool {
+        self.home_held
+    }
+
+    pub(crate) fn hold_home(&mut self, held: bool) {
+        if held && !self.home_held {
+            self.home_used = false;
+        }
+        self.home_held = held;
+    }
+
+    pub(crate) fn use_home(&mut self) {
+        self.home_used |= self.home_held;
+    }
+
+    pub(crate) fn home_tap(&mut self) -> bool {
+        !std::mem::take(&mut self.home_used)
+    }
+
+    pub fn has_other_top_window(&self) -> bool {
+        self.top_window().is_some_and(|front| !front.is_shelf() && self.windows.iter().any(|w| !w.down && w.id != front.id && w.workspace == front.workspace))
+    }
+
+    /// Initial selection for a compositor that has no external focus observation. First windows of
+    /// our scopes follow foreground launch intent; later windows of the shown program may select
+    /// themselves. An unowned launch or a dialog is shown at once.
+    pub fn opening_focus(&self, window: &Window) -> bool {
+        if window.parent.is_some() || !window.unit.as_deref().is_some_and(Instance::is_launch_unit) {
+            return true;
+        }
+        let key = window.unit.as_deref().and_then(Instance::key_of);
+        self.top_window().is_some_and(|top| Instance::key_of(&top.workspace) == key) && self.windows.iter().any(|old| old.unit == window.unit)
+    }
+
+    pub(crate) fn step_window(&mut self, next: bool, out: &mut Out) {
+        let Some(front) = self.top_window().filter(|w| !w.is_shelf()) else { return };
+        let mut group = self.windows.iter().filter(|w| !w.down && w.workspace == front.workspace).cycle();
+        let count = self.windows.iter().filter(|w| !w.down && w.workspace == front.workspace).count();
+        let id = if next {
+            group.find(|w| w.id == front.id).and_then(|_| group.next()).map(|w| w.id)
+        } else {
+            group.find(|w| w.id == front.id).and_then(|_| group.nth(count.saturating_sub(2))).map(|w| w.id)
+        };
+        if let Some(id) = id.filter(|id| *id != front.id) {
+            self.use_home();
+            self.cancel_front_launch();
+            self.command(WindowCommand::FocusWindow(id), out);
+        }
+    }
+
+    pub(crate) fn pad_active(&mut self, out: &mut Out) {
+        if let Some(id) = self.top_window().map(|w| w.id).filter(|id| Some(*id) != self.keyboard_focus) {
+            self.command(WindowCommand::FocusWindow(id), out);
+        }
+    }
+
     /// The selected top window, or none while shelf is shown without a client surface of its own.
     pub fn top_window(&self) -> Option<&Window> {
         self.windows
@@ -231,10 +290,7 @@ impl Session {
     /// (`shows_windows`).
     pub(crate) fn home_b_window(&self, shows_windows: bool) -> Option<&Window> {
         let windows = &self.windows;
-        windows
-            .iter()
-            .find(|w| w.focused && !w.down && w.app_id != SHELF_APP_ID)
-            .or_else(|| shows_windows.then(|| windows.iter().filter(|w| w.down).max_by_key(|w| w.visible)).flatten())
+        self.top_window().filter(|w| !w.is_shelf()).or_else(|| shows_windows.then(|| windows.iter().filter(|w| w.down).max_by_key(|w| w.visible)).flatten())
     }
 
     /// Sets the icon of found entry `entry`, once it was found (see [`Effect::FindIcon`]).

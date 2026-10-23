@@ -296,8 +296,7 @@ mod tests {
         assert_eq!(s.device().top_view(), TopView::Device, "the view stays open");
     }
 
-    /// Home with the view in shelf's place closes it, back to shelf, and only the next Home goes to the
-    /// program that runs.
+    /// Home closes the Device view back to shelf. Repeated Home stays on shelf.
     #[test]
     fn home_closes_the_device_view_first() {
         let mut s = state();
@@ -312,7 +311,7 @@ mod tests {
         assert!(window_effects(fx).is_empty(), "nothing shown but shelf");
         assert_eq!(s.device().top_view(), TopView::Shelf);
         assert_eq!(s.pointer().focus(), Some(&crate::testkit::entry("zelda-lttp")), "the focus on shelf's selection");
-        assert_eq!(window_effects(s.applied(Event::Home)), [focus(3)]);
+        assert!(window_effects(s.applied(Event::Home)).is_empty());
     }
 
     /// The account is read while the view is open, from when the UI is up: an open view at the first

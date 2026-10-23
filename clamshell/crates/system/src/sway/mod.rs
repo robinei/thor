@@ -59,6 +59,7 @@ lost_on!(Error: io::Error, serde_json::Error);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Focus(i64),
+    KeyboardFocus(i64),
     /// Show a workspace, creating it if new.
     Workspace(String),
     /// Run a job (see [`crate::launch::job`]) for this workspace, without showing it.
@@ -77,6 +78,10 @@ pub enum Command {
     Down(i64),
     /// Move a window that was moved down back up, to this workspace or else to the main screen.
     Up {
+        window: i64,
+        workspace: String,
+    },
+    Return {
         window: i64,
         workspace: String,
     },
@@ -253,6 +258,7 @@ impl Carrier {
             Command::LandRules(ids) => return self.land.apply(&mut ipc, Some(ids.clone()), false),
             Command::Workspace(name) => commands::show(name, top),
             Command::Focus(id) => commands::focus(*id),
+            Command::KeyboardFocus(id) => format!("[con_id={id}] focus"),
             Command::Launch { workspace, job } => commands::launch(workspace, job, exe, top)?,
             Command::Close(id) => commands::close(*id),
             Command::Move { windows, workspace } => {
@@ -265,6 +271,7 @@ impl Carrier {
             }
             Command::Down(id) => commands::down(*id, top),
             Command::Up { window, workspace } => commands::up(*window, Some(workspace), top),
+            Command::Return { window, workspace } => commands::return_window(*window, workspace, top),
             Command::ShowDown(id) => commands::show_down(*id, top),
             Command::Power(on) => commands::power(bottom, *on),
         };

@@ -2,7 +2,7 @@
 //! before it.
 
 use crate::out::Out;
-use crate::{EntryAct, Event, Instance, Running, Session, WindowCommand};
+use crate::{EntryAct, Event, Instance, Session, WindowCommand};
 
 impl Session {
     /// Runs after every event. If the window in front when the last pass ran (see
@@ -18,11 +18,12 @@ impl Session {
         let shown = |ws: &String| windows.iter().any(|w| w.workspace == *ws && !w.down);
         let group = self.recent.iter().find(|ws| shown(ws)).filter(|ws| !Instance::Shelf.is(ws)).cloned();
         let was = was.clone();
+        let closed = !windows.iter().any(|w| w.workspace == was);
         match group {
             Some(group) => self.focus(&group, out),
             None => self.command(WindowCommand::ShowShelf, out),
         }
-        self.closed_front = Some((was, now));
+        self.closed_front = closed.then_some((was, now));
     }
 
     /// Whether shelf is in front on the main screen, as it is before the compositor reports a window.
@@ -30,23 +31,12 @@ impl Session {
         self.top_window().is_none_or(|w| w.is_shelf())
     }
 
-    /// The Home button. From anything it goes to shelf. From shelf it goes back to what was in front
-    /// before, or, without that history because the compositor hasn't reported any, to the program in
-    /// force. (When the Device view is in shelf's place, Home closes it instead: see
+    /// The Home button always goes to shelf. (When the Device view is in shelf's place, Home closes it instead: see
     /// [`crate::device::Device::close`].)
     pub(crate) fn home(&mut self, out: &mut Out) {
         self.cancel_front_launch();
         if !self.shelf_in_front() {
             self.command(WindowCommand::ShowShelf, out);
-            return;
-        }
-        // Only workspaces with a window on the main screen count; a window moved down leaves its workspace
-        // empty.
-        let shown = |ws: &String| self.windows.iter().any(|w| w.workspace == *ws && !w.down);
-        let before = self.recent.iter().find(|ws| !Instance::Shelf.is(ws) && shown(ws)).cloned();
-        let entry = self.program.as_deref().and_then(|id| self.running(id)).map(Running::workspace).filter(shown);
-        if let Some(workspace) = before.or(entry) {
-            self.focus(&workspace, out);
         }
     }
 
@@ -77,25 +67,13 @@ mod tests {
     use crate::*;
 
     #[test]
-    fn home_goes_to_shelf_and_back_to_what_was_in_front() {
+    fn home_always_shows_shelf_and_repeated_home_stays_there() {
         let mut s = state();
-        let zelda = Instance::workspace_of(&clamshell_library::key_of("zelda-lttp"));
-        let home = |s: &mut State| window_effects(s.applied(Event::Home));
-        assert_eq!(home(&mut s), vec![], "nothing before shelf: it stays");
-        crate::testkit::start(&mut s, "zelda-lttp");
-        assert_eq!(home(&mut s), vec![], "the program in force, no window of it yet: shelf stays");
-        s.observed(vec![shelf_window(true), win(3, "retroarch", &zelda, false)]);
-        assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::FocusWindow(3))], "no history: the program in force");
-        // A terminal in front, then shelf: home goes back to the terminal.
-        let terminal = "clamshell-run-foot_1";
-        s.observed(vec![shelf_window(false), win(2, "foot", terminal, true)]);
-        assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::ShowShelf)]);
-        s.observed(vec![shelf_window(true), win(2, "foot", terminal, false)]);
-        assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::FocusWindow(2))]);
-        // The terminal closed: back to the game, which was in front before.
-        s.observed(vec![shelf_window(false), win(3, "retroarch", &zelda, true)]);
-        s.observed(vec![shelf_window(true), win(3, "retroarch", &zelda, false)]);
-        assert_eq!(home(&mut s), vec![Effect::Window(WindowCommand::FocusWindow(3))]);
+        assert!(s.applied(Event::Home).is_empty());
+        s.observed(vec![shelf_window(false), win(7, "app", "app", true)]);
+        assert_eq!(s.applied(Event::Home), vec![Effect::Window(WindowCommand::ShowShelf), Effect::PadRoute(crate::PadRoute::Ui)]);
+        assert!(s.session().top_window().is_some_and(Window::is_shelf));
+        assert!(s.applied(Event::Home).is_empty());
     }
 
     #[test]
@@ -116,7 +94,10 @@ mod tests {
         // Nothing happens when a program's own second window closes, or for a new workspace before its
         // window.
         s.observed(vec![shelf_window(false), win(3, "retroarch", &zelda, true), win(4, "retroarch", &zelda, false)]);
-        assert_eq!(window_effects(s.observed(vec![shelf_window(false), win(4, "retroarch", &zelda, true)])), vec![]);
+        assert_eq!(
+            window_effects(s.observed(vec![shelf_window(false), win(4, "retroarch", &zelda, true)])),
+            vec![Effect::Window(WindowCommand::FocusWindow(4))]
+        );
         s.observed(vec![shelf_window(true), win(4, "retroarch", &zelda, false)]);
         assert_eq!(window_effects(s.observed(vec![shelf_window(false), win(4, "retroarch", &zelda, false)])), vec![], "shelf's window is still there");
     }
@@ -153,10 +134,10 @@ mod tests {
     }
 
     #[test]
-    fn home_goes_back_to_a_workspace_that_isnt_ours() {
+    fn home_stays_on_shelf_with_an_unowned_program_behind_it() {
         let mut s = state();
         s.observed(vec![shelf_window(false), foot()]);
         s.observed(vec![shelf_window(true), Window { focused: false, ..foot() }]);
-        assert_eq!(s.applied(Event::Home), vec![Effect::Window(WindowCommand::FocusWindow(1001)), Effect::PadRoute(crate::PadRoute::Game)]);
+        assert!(s.applied(Event::Home).is_empty());
     }
 }

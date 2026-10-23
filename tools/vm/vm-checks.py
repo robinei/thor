@@ -693,6 +693,48 @@ class Checks:
         self.check("  moved up, forgotten: opened again on top", bool(up) and up[0][0] != "clamshell-bottom", up)
         sh("swaymsg '[app_id=foot] kill' >/dev/null 2>&1 || true")
 
+    def pad_windows(self):
+        if not plug_pad():
+            return self.check("window flicks: the fake pad grabbed", False)
+
+        def windows():
+            tree = json.loads(sh("swaymsg -t get_tree") or "{}")
+            found = []
+            def walk(node):
+                if node.get("app_id") == "foot":
+                    found.append((node["id"], any(m.startswith("clamshell-down") for m in node.get("marks", [])), node.get("focused", False)))
+                for child in node.get("nodes", []) + node.get("floating_nodes", []):
+                    walk(child)
+            walk(tree)
+            return found
+
+        def focused():
+            return next((id for id, down, focus in windows() if focus and not down), None)
+
+        def below():
+            return [id for id, down, _ in windows() if down]
+
+        def flick(x, y):
+            pad("press home", f"stick right {x} {y}", "sleep 120", "stick right 0 0", "release home")
+            time.sleep(0.5)
+
+        control("tap dock 0")
+        until(lambda: len(windows()) == 1, 8)
+        control("long dock 0")
+        control("tap dock-menu open-another")
+        if not self.check("window flicks: two top windows of one program", until(lambda: len(windows()) == 2, 8), windows()):
+            return
+        first = focused()
+        flick(-1, 0)
+        self.check("  Home + right stick left selects the other top tab", focused() not in (None, first), windows())
+        flick(0, 1)
+        down = below()
+        self.check("  a downward flick moves exactly one window below", len(down) == 1 and focused() is not None, windows())
+        flick(0, 1)
+        self.check("  the next downward flick swaps that bottom slot", len(below()) == 1 and below() != down and focused() in down, windows())
+        flick(0, -1)
+        self.check("  an upward flick empties the slot and shows its window on top", not below() and len(windows()) == 2, windows())
+
     # the keyboard's pointing
 
     def keyboard_points(self):
@@ -747,7 +789,9 @@ class Checks:
         press("home")
         self.check("  Home goes to shelf", until(lambda: front() == "clamshell-shelf"), f"front {front()!r}")
         press("home")
-        self.check("  and Home again back to the game", until(lambda: front() == game), f"front {front()!r}")
+        self.check("  Home again stays on shelf", until(lambda: front() == "clamshell-shelf"), f"front {front()!r}")
+        press("a")
+        self.check("  activating the program shows its top window", until(lambda: front() == game), f"front {front()!r}")
 
     def pad_view(self):
         if not plug_pad():
@@ -879,7 +923,7 @@ class Checks:
             return
         self.check("  the first start made the Nintendo layout", keymap_named("Nintendo layout") is not None, saved_keymaps())
         since = now()
-        for line in ["tab settings", "scope game", "tap setting keymap", "tap keymap-new", "type Check", "tap save"]:
+        for line in ["tab settings", "tap scope game", "tap setting keymap", "tap keymap-new", "type Check", "tap save"]:
             control(line)
         listening = logged(since, "PadRoute(Listen)", 3)
         self.check("  named; the edit screen listens to the pad", listening, journal(since)[-300:])
@@ -905,10 +949,13 @@ class Checks:
                    saved, k)
         chosen = until(lambda: any(s.get("id") and s.get("settings", {}).get("keymap") == int(ident) for s in screens()), 3)
         self.check("  chosen for the selected game", chosen, screens())
+        # Choosing a map can already apply it to the program in force, before it is shown again.
+        # The virtual-device assertions below check the mapping itself; no duplicate command is needed.
+        applied_since = since
         since = now()
         control("tap launch")
         launched = until(lambda: bool(units("run-")) and front() not in ("", "clamshell-shelf"), 10)
-        if not self.check("  the game runs with it", launched and logged(since, f"pad: keymap {ident} (Check)", 5),
+        if not self.check("  the game runs with it", launched and logged(applied_since, f"pad: keymap {ident} (Check)", 5),
                           f"front {front()!r}; {journal(since)[-300:]!r}"):
             return
         mouse, virtual = device("clamshell pad mouse"), device("clamshell pad (Xbox 360)")
@@ -956,7 +1003,7 @@ class Checks:
         A, and Back let go while A is held, read from the virtual keyboard; then the layer made Once."""
         if not self.check("keymap layers: the fake pad grabbed", plug_pad()):
             return
-        for line in ["tab settings", "scope game", "tap setting keymap", "tap keymap-new", "type Layers", "tap save",
+        for line in ["tab settings", "tap scope game", "tap setting keymap", "tap keymap-new", "type Layers", "tap save",
                      "tap map-from a", "tap map-to key", "tap key ctrl", "tap key x",
                      "tap keymap-layers", "tap new-layer", "type held", "tap save", "tap map-from a", "tap map-to key", "tap key ctrl",
                      "tap key y", "tap keymap-layers", "tap keymap-layer base", "tap map-from back", "tap map-to layers", "tap to-layer 1",
@@ -1021,7 +1068,7 @@ class Checks:
         made through the screens; in a game, read from the virtual keyboard."""
         if not self.check("keymap actuations: the fake pad grabbed", plug_pad()):
             return
-        for line in ["tab settings", "scope game", "tap setting keymap", "tap keymap-new", "type Acts", "tap save",
+        for line in ["tab settings", "tap scope game", "tap setting keymap", "tap keymap-new", "type Acts", "tap save",
                      "tap map-from a", "tap map-to key", "tap key x", "tap keymap-act hold", "tap map-to key", "tap key e",
                      "tap map-from b", "tap keymap-act double", "tap map-to key", "tap key z",
                      "tap map-from y", "tap map-to key", "tap key t", "tap toggle", "tap keymap-back"]:
@@ -1129,7 +1176,7 @@ class Checks:
         time.sleep(1)
         control("home")
         self.check("pause: a game behind shelf is frozen after the grace", until(lambda: state() == "frozen", 20), f"{slice_}: {state()!r}")
-        control("home")
+        control("tap launch")
         self.check("  thawed when shown again", until(lambda: state() == "running" and front() == game, 5), f"{state()!r}, front {front()!r}")
         control("window quit")
         until(lambda: not [u for u in units("run-") if u.endswith(".scope")], 10)
@@ -1242,7 +1289,7 @@ GLib.MainLoop().run()
 
 
 
-CHECKS = ["shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules",
+CHECKS = ["shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "pad_windows",
           "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
           "keymap_actuations", "rumble", "launch_and_quit", "pause_hidden", "found_window", "tray_program", "clipboard",
           "bluetooth", "gyro_sleep"]
