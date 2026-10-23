@@ -254,6 +254,19 @@ mod tests {
         assert_eq!(tap(&mut s, REGIONS.len() as u16), vec![Effect::SetTimeZone("UTC".to_owned())]);
     }
 
+    /// Leaving the tab on a region's zones opens it on its main page next time.
+    #[test]
+    fn leaving_the_tab_resets_it_to_its_main_page() {
+        let mut s = state();
+        time(&mut s, TimeId::Zone);
+        tap(&mut s, 1);
+        assert_eq!(s.sys().time_region(), Some("America"));
+        s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Tab(Tab::Dock))));
+        s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Tab(Tab::Time))));
+        assert_eq!(s.sys().time_page(), TimePage::Main);
+        assert_eq!(s.sys().time_region(), None);
+    }
+
     #[test]
     fn the_clock_set_by_the_network_or_by_hand_and_twelve_hours_or_twenty_four() {
         let mut s = state();

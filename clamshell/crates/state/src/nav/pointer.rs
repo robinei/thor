@@ -117,6 +117,23 @@ mod tests {
         assert_eq!(s.pointer().pressed(), None);
     }
 
+    /// A Down without its Up (the UI lost the finger) leaves the target lit and its item held, until the
+    /// next Down replaces it or its own Up comes; an Up of another target leaves it. The UI sends an Up for
+    /// every Down it sends, including on a cancelled touch, so this is how a lost one recovers.
+    #[test]
+    fn a_down_without_its_up_lasts_until_the_next_down() {
+        let mut s = state();
+        let launch = Id::Shelf(ShelfId::Launch);
+        s.applied(PointerEvent::Down(launch.clone(), None).into());
+        s.applied(PointerEvent::Up(Id::Shelf(ShelfId::Up)).into());
+        assert_eq!(s.pointer().pressed(), Some(&launch), "another's Up");
+        let tab = Id::Tab(crate::Tab::Dock);
+        s.applied(PointerEvent::Down(tab.clone(), None).into());
+        assert_eq!(s.pointer().pressed(), Some(&tab), "replaced");
+        s.applied(PointerEvent::Up(tab).into());
+        assert_eq!(s.pointer().pressed(), None);
+    }
+
     #[test]
     fn the_focus_ring_shows_for_the_pad_only() {
         let mut s = state();

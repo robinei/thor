@@ -133,7 +133,8 @@ clipboard as one line. Tests: `typing_editing_and_finishing`, `a_password_being_
 On-screen keyboard modifiers (`Latch{armed, held, used}` and caps): Down holds, Up releases (arming only
 if unused), a tap toggles armed, a long press does nothing, a stroke clears armed latches. Tests:
 `a_held_shift_acts_while_held`, `a_tapped_shift_arms_one_key`, `a_long_press_alone_neither_arms_nor_locks`,
-`modifiers_combine_for_one_stroke`, caps and Fn tests. A Down without Up leaves a modifier held (GAP).
+`modifiers_combine_for_one_stroke`, caps and Fn tests. A Down without Up leaves a modifier held until its Up
+(`a_modifier_down_without_its_up_stays_held`).
 Modifiers armed on the capture screen go when it is left by Back or by leaving the Settings tab
 (`modifiers_armed_on_the_capture_screen_go_when_its_tab_is_left`); Home doesn't leave it, since the
 capture screen doesn't listen and Home acts on the top screen.
@@ -142,7 +143,7 @@ capture screen doesn't listen and Home acts on the top screen.
 
 `show(kind, now)` replaces any notice; a tick after 2 s removes it. Tests: `keys_step_the_levels_and_show_
 them_for_a_moment`, `a_screenshot_is_asked_for_…`, `a_window_moved_down_…`; BottomRule(false):
-`a_window_moved_up_says_its_rule_is_forgotten`; Account notices GAP. The gyro's "hold still" notice stays until the calibration answers, at most 30 s:
+`a_window_moved_up_says_its_rule_is_forgotten`; Account: device `an_account_change_says_how_it_went`. The gyro's "hold still" notice stays until the calibration answers, at most 30 s:
 `the_gyros_hold_still_shows_until_it_answers_at_most_30_s`.
 
 ### View, power and dim (bottom/screen.rs)
@@ -173,10 +174,10 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 | Resumed at State level (stage, and Apply resent) | tests `back_from_sleep_applies_the_settings_again_and_wakes_the_screens` |
 | a press on dark screens, or within 1 s of waking, is swallowed | idle `a_press_on_dark_screens_only_wakes_them`, `a_tap_on_dark_screens_wakes_them_and_does_nothing_else` |
 | Busy → sleep postponed 5 min | `a_busy_machine_sleeps_later` |
-| compositor input/quiet; watching off | `the_compositor_holds_idle_off_…`; watching on→off GAP |
+| compositor input/quiet; watching off | `the_compositor_holds_idle_off_…`, `with_the_devices_no_longer_read_nothing_goes_idle` |
 | AskAwake 10 s before dimming, once, with the shown app's command | `an_app_shown_that_keeps_the_screen_on_…` |
 | first tick, wall-clock jumps | `what_is_heard_before_the_clock_is_known_…`, `a_step_of_the_wall_clock_…` |
-| a suspend that fails without Busy leaves the stage Asleep with screens off until input | GAP (low) |
+| a suspend that fails without Busy leaves the stage Asleep with screens off until input | `a_suspend_that_failed_waits_for_input` |
 
 ## Device view (device/)
 
@@ -202,11 +203,11 @@ while a dock entry is being moved. The focus ring hides when the route leaves Ui
 | Transition | Test |
 |---|---|
 | front or tab changes the claimant, the route follows | `the_pad_goes_to_shelf_the_program_or_typing_…` |
-| View switches to the second screen and back | `view_moves_the_pad_between_…`; with shelf in front GAP |
+| View switches to the second screen and back | `view_moves_the_pad_between_…`, `view_does_nothing_with_shelf_in_front` |
 | a claimant change keeps the switch to the second screen; shelf claiming the pad clears it | `the_pad_moved_to_the_second_screen_stays_there_until_view_or_shelf` |
 | pad mouse by hand, by game, kept by hand | `pad_mouse_toggles_independently_…`, `the_pad_mouse_follows_the_game_…` |
 | listening, dock move, focus ring | `a_new_keymap_is_named_edited_and_mapped`, `moving_a_dock_entry_takes_the_pad_…`, `the_focus_ring_hides_when_the_pad_leaves_…` |
-| Down/Up light a target; Activate resolves the item pressed | `down_and_up_light_a_target`, `the_pressed_item_is_lit_where_it_is_now`, `a_press_acts_on_the_item_that_was_drawn`; a Down without Up leaves a stale press (GAP) |
+| Down/Up light a target; Activate resolves the item pressed | `down_and_up_light_a_target`, `the_pressed_item_is_lit_where_it_is_now`, `a_press_acts_on_the_item_that_was_drawn`; a Down without Up leaves the press until the next Down: `a_down_without_its_up_lasts_until_the_next_down` |
 
 ## Keymaps (keymap/)
 
@@ -293,7 +294,7 @@ Wi-Fi and Bluetooth readings replace the state whole; the system is the authorit
 
 - Wi-Fi: a tap joins (a password editor for a secure unsaved network; NeedsLogin for an enterprise
   one); a long press forgets a saved one; power toggles. Tests: `joining_asks_for_a_password_only_when_
-  needed`, `a_network_that_needs_a_login_says_so`. Cancel and power GAP. A reading keeps the join's busy
+  needed`, `a_network_that_needs_a_login_says_so`, `the_switch_toggles_the_radio_and_a_cancelled_password_joins_nothing`. A reading keeps the join's busy
   mark until it shows the join, the network connected or an error other than the one from before the
   join (a reading sent before the command still has that one): `a_join_stays_busy_until_a_reading_
   answers_it`. The login needed stays until the next attempt, the system's own error or that network
@@ -322,7 +323,7 @@ only when the mute changed (not while the volume is unknown):
 - Spender menu: opens on an endable row; Quit/ForceKill end a process or queue the entry's act. Test:
   `a_rows_menu_quits_or_kills_what_it_is`. It closes when the tab is left or its row is gone:
   `a_rows_menu_closes_when_the_tab_is_left_or_the_row_goes`.
-- Time pages: regions, a region's zones, set, back; reset on leaving the tab (GAP); NTP and stepping the
+- Time pages: regions, a region's zones, set, back; reset on leaving the tab (`leaving_the_tab_resets_it_to_its_main_page`); NTP and stepping the
   clock by hand. Tests: `regions_then_their_zones_…`, `the_clock_set_by_the_network_or_by_hand…`.
 
 ## Sync's resends (sync.rs)
@@ -348,7 +349,7 @@ only when the mute changed (not while the volume is unknown):
 | front, tab, listening, dock move | `reconcile_pad` | pad | pad tests |
 | windows down, program, battery, refresh, editor | `power()` for the bottom screen | bottom | screen tests |
 | idle stage | sync: dim and Screens; status watch | levels, system | idle test |
-| tabs | sync watches; `left_tab` closes the dock menu, releases levels, resets the time page, closes the battery menu | dock, levels, status | per tab; time page GAP |
+| tabs | sync watches; `left_tab` closes the dock menu, releases levels, resets the time page, closes the battery menu | dock, levels, status | per tab; `leaving_the_tab_resets_it_to_its_main_page` |
 | keymap chosen/deleted/made own | queued `KeymapEvent` → prefs | settings | keymap tests |
 | device view, files, keymaps naming | queued `EditOnKeyboard` / editors | bottom | per area |
 | Library read | problems notice, shelf reload, pausable runners, runner keymaps, land rules, dock pins, FetchFirst | bottom, session, keymap, settings, dock | partly |

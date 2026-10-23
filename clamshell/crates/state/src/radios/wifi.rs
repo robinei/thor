@@ -249,6 +249,28 @@ mod tests {
         assert_eq!(long(&mut s, network(1)), vec![], "nothing saved to forget");
     }
 
+    /// The power switch asks for the opposite of what the last reading said; the reading then says
+    /// whether it took. A password editor cancelled joins nothing, and the next tap asks again.
+    #[test]
+    fn the_switch_toggles_the_radio_and_a_cancelled_password_joins_nothing() {
+        let mut s = state();
+        tap(&mut s, Id::Tab(Tab::Wifi));
+        let new = net("new", 60, true, false, false);
+        read(&mut s, Reading::Wifi(Wifi { present: true, on: true, networks: vec![new.clone()], ..Wifi::default() }));
+        assert_eq!(tap(&mut s, Id::Wifi(crate::WifiId::Power)), vec![Effect::Wifi(Command::Enable(false))]);
+        assert!(s.radios().wifi().on, "until a reading says so");
+        read(&mut s, Reading::Wifi(Wifi { present: true, on: false, networks: vec![], ..Wifi::default() }));
+        assert_eq!(tap(&mut s, Id::Wifi(crate::WifiId::Power)), vec![Effect::Wifi(Command::Enable(true))]);
+        read(&mut s, Reading::Wifi(Wifi { present: true, on: true, networks: vec![new], ..Wifi::default() }));
+        assert_eq!(tap(&mut s, ListId::Wifi.row(0)), vec![]);
+        assert!(s.bottom().editor().is_some());
+        assert_eq!(tap(&mut s, Id::Editor(EditorId::Cancel)), vec![]);
+        assert_eq!(s.bottom().editor(), None);
+        assert_eq!(s.radios().wifi().busy, None, "nothing joining");
+        assert_eq!(tap(&mut s, ListId::Wifi.row(0)), vec![], "asks again");
+        assert!(s.bottom().editor().is_some());
+    }
+
     #[test]
     fn a_network_that_needs_a_login_says_so() {
         let mut s = state();

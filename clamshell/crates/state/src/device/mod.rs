@@ -403,6 +403,20 @@ mod tests {
         assert_eq!(tap(&mut s, DeviceId::Ssh), vec![Effect::Account(AccountCommand::Ssh(false))], "a failure answers too");
     }
 
+    /// The account helper's answer shows for a moment: what it did, or why it failed.
+    #[test]
+    fn an_account_change_says_how_it_went() {
+        use crate::bottom::notice::NoticeKind;
+        let mut s = State::new(init());
+        s.applied(Event::tick(100));
+        s.applied(Event::AccountChanged(Ok("Remote login on".into())));
+        assert_eq!(notice(&s), Some(NoticeKind::Account(Ok("Remote login on".into()))));
+        s.applied(Event::AccountChanged(Err("wrong password".into())));
+        assert_eq!(notice(&s), Some(NoticeKind::Account(Err("wrong password".into()))));
+        s.applied(Event::tick(102));
+        assert_eq!(notice(&s), None);
+    }
+
     #[test]
     fn the_sticks_calibration_waits_for_its_end_before_another_tap() {
         let mut s = State::new(init());

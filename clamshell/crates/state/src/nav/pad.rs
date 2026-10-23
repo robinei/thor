@@ -237,6 +237,18 @@ mod tests {
         assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Ui)]);
     }
 
+    /// With shelf in front the pad has both screens, so View has nothing to switch, and a program coming
+    /// in front after it gets the pad.
+    #[test]
+    fn view_does_nothing_with_shelf_in_front() {
+        let mut s = state();
+        s.applied(Event::Windows(vec![win(2, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), true)]));
+        assert_eq!(s.pad().route(), PadRoute::Ui);
+        assert_eq!(s.applied(Event::PadSwitch), vec![]);
+        assert!(s.pad().on_top());
+        assert_eq!(s.applied(Event::Windows(vec![foot()])), vec![Effect::PadRoute(PadRoute::Game)], "not kept on the second screen");
+    }
+
     #[test]
     fn view_moves_the_pad_between_the_second_screen_and_what_wants_it() {
         let mut s = state();

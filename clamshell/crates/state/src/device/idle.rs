@@ -418,6 +418,41 @@ mod tests {
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("metroid-zm"), "then it acts");
     }
 
+    /// The input devices no longer read, with a compositor that doesn't report, nothing can tell idle, so
+    /// it doesn't go on: dimmed screens come back and stay.
+    #[test]
+    fn with_the_devices_no_longer_read_nothing_goes_idle() {
+        use crate::Event;
+        use crate::status::Status;
+        let mut s = crate::testkit::state();
+        s.applied(crate::Reading::Status(Status { brightness: Some(60), ..Status::default() }).into());
+        s.applied(Event::tick(1000));
+        s.applied(Event::Idle(IdleEvent::Watching(true)));
+        s.applied(Event::tick(1270));
+        assert_eq!(s.idle().stage(), Stage::Dimmed);
+        let fx = s.applied(Event::Idle(IdleEvent::Watching(false)));
+        assert_eq!(s.idle().stage(), Stage::Awake);
+        assert!(fx.iter().any(|e| matches!(e, Effect::Brightness { level: 60, .. })), "undimmed: {fx:?}");
+        s.applied(Event::tick(5000));
+        assert_eq!(s.idle().stage(), Stage::Awake, "still");
+    }
+
+    /// A suspend that fails without the machine being busy (logind refused; the system thread logs it)
+    /// isn't tried again: the state stays asleep with the screens off, asks nothing more, and the next
+    /// input brings the screens back.
+    #[test]
+    fn a_suspend_that_failed_waits_for_input() {
+        use crate::Event;
+        let mut s = State::new(crate::Init { device_session: true, ..crate::testkit::init() });
+        s.applied(Event::tick(1000));
+        s.applied(Event::Idle(IdleEvent::Watching(true)));
+        assert!(s.applied(Event::tick(1900)).contains(&Effect::Sleep));
+        assert!(s.applied(Event::tick(5000)).is_empty(), "not asked again");
+        assert_eq!(s.idle().stage(), Stage::Asleep);
+        let fx = s.applied(Event::Idle(IdleEvent::DeviceInput));
+        assert!(fx.contains(&Effect::Screens { on: true, bottom: true }), "{fx:?}");
+    }
+
     #[test]
     fn back_from_sleep_counts_from_the_wake() {
         let mut idle = Idle::default();

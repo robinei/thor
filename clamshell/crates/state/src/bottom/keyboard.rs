@@ -438,6 +438,19 @@ mod tests {
         assert!(!kb.shift.on());
     }
 
+    /// A modifier's Down without its Up (the UI lost the finger) leaves it held, for every key after,
+    /// until its Up comes; the UI sends an Up for every Down, so that is how it recovers.
+    #[test]
+    fn a_modifier_down_without_its_up_stays_held() {
+        let mut kb = Keyboard::default();
+        let ctrl = pos(Key::Mod(Modifier::Ctrl));
+        kb.down(ctrl);
+        assert!(touch(&mut kb, Key::Char('a')).unwrap().ctrl);
+        assert!(touch(&mut kb, Key::Char('b')).unwrap().ctrl, "still held");
+        kb.up(ctrl);
+        assert!(!touch(&mut kb, Key::Char('c')).unwrap().ctrl);
+    }
+
     #[test]
     fn caps_lock_shifts_letters_until_tapped_again() {
         let mut kb = Keyboard::default();
