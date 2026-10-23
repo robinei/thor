@@ -144,8 +144,7 @@ impl Device {
             // Typed in the editor on the second screen's keyboard.
             DeviceId::Password if account.available => {
                 let step = if account.password { PasswordStep::Current } else { PasswordStep::New { current: None } };
-                bottom.editors_mut().open(Editor { purpose: Purpose::AccountPassword(step), text: String::new() });
-                out.events.push(Event::ChooseTab(Tab::Keyboard));
+                out.events.push(Event::EditOnKeyboard(Editor { purpose: Purpose::AccountPassword(step), text: String::new() }));
             }
             // Remote login needs a password to log in with.
             DeviceId::Ssh if account.available && account.password => out.effects.push(Effect::Account(AccountCommand::Ssh(!account.ssh))),
@@ -248,8 +247,10 @@ mod tests {
         launch_now(&mut s, "tool:device");
         assert!(tap(&mut s, DeviceId::Password).is_empty(), "unavailable off the device");
         available(&mut s, true);
+        let tab = s.bottom().tab();
         tap(&mut s, DeviceId::Password);
         assert_eq!(s.bottom().tab(), Tab::Keyboard, "typed on the second screen's keyboard");
+        assert_eq!(s.bottom().chosen_tab(), tab, "the tab it came up from is the one chosen");
         assert!(type_and_save(&mut s, "old").is_empty(), "then the new one");
         let effects = type_and_save(&mut s, "newpassword");
         assert!(matches!(effects.first(), Some(Effect::Account(AccountCommand::Password { current: Some(_), .. }))), "{effects:?}");
