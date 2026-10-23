@@ -709,6 +709,19 @@ mod tests {
     }
 
     #[test]
+    fn a_listing_that_changes_the_entries_shown_asks_for_their_metadata_first() {
+        let mut s = files_state();
+        s.applied(Event::Fetching(true));
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        let fetch = |fx: Vec<Effect>| fx.into_iter().filter(|e| matches!(e, Effect::FetchFirst(_))).collect::<Vec<_>>();
+        let fx = s.applied(Event::Files(FilesEvent::Listed { folder: "browse:Home".into(), entries: vec![entry("browse:Home/a", false, BrowseKind::Plain)] }));
+        assert_eq!(fetch(fx), vec![Effect::FetchFirst(vec!["browse:Home/a".into(), "browse:Home".into()])]);
+        // The same entries again: nothing new to ask for.
+        let fx = s.applied(Event::Files(FilesEvent::Listed { folder: "browse:Home".into(), entries: vec![entry("browse:Home/a", false, BrowseKind::Plain)] }));
+        assert_eq!(fetch(fx), vec![]);
+    }
+
+    #[test]
     fn deleting_asks_first() {
         let mut s = files_state();
         s.applied(ShelfEvent::ListStep(1).into());

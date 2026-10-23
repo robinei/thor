@@ -69,14 +69,17 @@ pub struct Shelf {
     files: files::Files,
     /// Whether metadata is being fetched (see [`Shelf::fetch_first`]).
     fetching: bool,
+    /// Counts the listings that changed the entries in the current list, so that the view changes with
+    /// them (see [`ShelfView`]).
+    listings_shown: u32,
 }
 
 /// A level of a collection's place kept across a library read: the entry selected in its list (the
 /// group opened from it, for all but the last), and what is typed in it.
 type KeptLevel = (Option<Arc<str>>, String);
 
-/// What shelf's list shows: the collection, the open group, the first row shown, how many rows, and the
-/// selected position.
+/// What shelf's list shows: the collection, the open group, the first row shown, how many rows, the
+/// selected position, and the listings that changed the list's entries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ShelfView {
     collection: usize,
@@ -84,6 +87,7 @@ pub(crate) struct ShelfView {
     top: usize,
     rows: usize,
     selected: usize,
+    listings: u32,
 }
 
 impl Shelf {
@@ -311,6 +315,7 @@ impl Shelf {
             top: self.cursor().top.floor().max(0.0) as usize,
             rows: self.rows,
             selected: self.cursor().index,
+            listings: self.listings_shown,
         }
     }
 
@@ -514,6 +519,8 @@ impl Shelf {
         let Some(f) = self.library.entries.iter().position(|g| g.id == folder) else {
             return false;
         };
+        let shown = |s: &Shelf| s.list().iter().filter_map(|&i| s.library.entries.get(i)).map(|g| g.id.clone()).collect::<Vec<_>>();
+        let shown_before = shown(self);
         let before = self.selected.clone();
         self.listings.retain(|(id, _)| *id != folder);
         self.listings.push((folder, entries.clone()));
@@ -527,6 +534,9 @@ impl Shelf {
             self.select(&id.clone());
         }
         self.sync();
+        if shown(self) != shown_before {
+            self.listings_shown = self.listings_shown.wrapping_add(1);
+        }
         self.selected != before
     }
 

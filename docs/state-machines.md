@@ -257,6 +257,8 @@ State: `clip`, `selected`, `armed`, `busy`, `hidden`, the listings.
 
 - While metadata is fetched, each change of shelf's view sends `FetchFirst`; Fetching and Library resend
   it. Test: tests `while_metadata_is_fetched_shelfs_view_goes_first`; the Library resend GAP.
+- A folder listing that changes the entries in the list counts as a change of the view. Test: files
+  `a_listing_that_changes_the_entries_shown_asks_for_their_metadata_first`.
 - Shelf or tab changes touch the resume debounce; a tick 2 s later saves it; Quit saves at once. Tests:
   resume `the_place_is_saved_after_a_pause_and_restored`, `open_groups_are_restored`.
 - The record keeps every collection's place, clamped to its list (one that shrank while another was
@@ -429,7 +431,7 @@ Shelf, files, radios, levels, status:
 - S33. The battery warning fires on the charger in bypass mode (`status/mod.rs:103`).
 - S34. The battery tab's spender menu stays open across tabs and after its row is gone.
 - S35. A relayout doesn't close a group that left a derived collection (Recent, Favourites). Fixed: state/shelf: a relayout closes a group no longer in its collection.
-- S36. A folder listing that changes the entries but not shelf's view isn't asked for metadata first.
+- S36. A folder listing that changes the entries but not shelf's view isn't asked for metadata first. Fixed: state/shelf: a listing that changes the entries shown asks for their metadata first.
 - S37. The Mute key shows its notice when the volume is unknown and nothing changes (`lib.rs:1058`).
 - S38. The resume record can leave out a collection whose stored place is past its list after a relayout
   (`shelf/mod.rs:552`). Fixed: state/shelf: the resume record keeps a place past its shrunk list.
