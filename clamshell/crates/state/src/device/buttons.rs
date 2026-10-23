@@ -52,6 +52,17 @@ mod tests {
     }
 
     #[test]
+    fn the_mute_key_shows_the_level_only_when_it_changes_something() {
+        let mut s = state();
+        s.applied(Event::tick(100));
+        assert_eq!(s.applied(Event::Device(DeviceKey::Mute)), vec![], "the volume unknown");
+        assert!(s.bottom().notice().is_none());
+        s.applied(Reading::Status(Status { volume: Some(50), ..Status::default() }).into());
+        assert_eq!(s.applied(Event::Device(DeviceKey::Mute)), vec![Effect::Sound(Sound::Mute(true))]);
+        assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::Level(Control::Volume)));
+    }
+
+    #[test]
     fn a_screenshot_is_asked_for_and_its_result_shown() {
         let mut s = state();
         assert_eq!(s.applied(Event::Device(DeviceKey::Screenshot)), vec![Effect::Screenshot]);

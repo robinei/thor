@@ -1066,9 +1066,12 @@ impl State {
             DeviceKey::VolumeDown => (Level::Volume, -1),
             DeviceKey::BrightnessUp => (Level::Brightness, 1),
             DeviceKey::BrightnessDown => (Level::Brightness, -1),
+            // The level is shown only when the mute changed.
             DeviceKey::Mute => {
-                self.bottom.notice_mut().show(NoticeKind::Level(Control::Volume), self.clock.mono());
-                return self.levels.toggle_mute(out);
+                if self.levels.toggle_mute(out) {
+                    self.bottom.notice_mut().show(NoticeKind::Level(Control::Volume), self.clock.mono());
+                }
+                return;
             }
             DeviceKey::Screenshot => return out.effects.push(Effect::Screenshot),
             DeviceKey::BottomView => return self.bottom.toggle_view(&self.session),

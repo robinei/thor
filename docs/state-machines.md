@@ -300,7 +300,9 @@ the slider; the brightness save. Tests: `the_volume_tab_watches_and_sets_levels`
 drag_lets_readings_in_again`, `brightness_is_the_level_times_each_screens_share`, `the_pad_steps_levels`,
 the slider tests. Setting a muted stream's level unmutes it, as the output volume does:
 `setting_a_muted_streams_level_unmutes_it`. Dimming takes a third of the brightness, at least 1 but
-never more than it was: `dimming_never_raises_the_brightness`. Brightness sent at Start GAP.
+never more than it was: `dimming_never_raises_the_brightness`. The Mute key shows the volume's notice
+only when the mute changed (not while the volume is unknown):
+`the_mute_key_shows_the_level_only_when_it_changes_something`. Brightness sent at Start GAP.
 
 ## Status (status/)
 
@@ -433,7 +435,7 @@ Shelf, files, radios, levels, status:
 - S34. The battery tab's spender menu stays open across tabs and after its row is gone.
 - S35. A relayout doesn't close a group that left a derived collection (Recent, Favourites). Fixed: state/shelf: a relayout closes a group no longer in its collection.
 - S36. A folder listing that changes the entries but not shelf's view isn't asked for metadata first. Fixed: state/shelf: a listing that changes the entries shown asks for their metadata first.
-- S37. The Mute key shows its notice when the volume is unknown and nothing changes (`lib.rs:1058`).
+- S37. The Mute key shows its notice when the volume is unknown and nothing changes (`lib.rs:1058`). Fixed: state/levels: the Mute key shows its notice only when the mute changed.
 - S38. The resume record can leave out a collection whose stored place is past its list after a relayout
   (`shelf/mod.rs:552`). Fixed: state/shelf: the resume record keeps a place past its shrunk list.
 

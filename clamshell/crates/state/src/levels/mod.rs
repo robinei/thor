@@ -306,7 +306,9 @@ impl Levels {
     /// The volume tab's buttons.
     pub(crate) fn on_audio(&mut self, id: AudioId, out: &mut Out) {
         match id {
-            AudioId::MuteOutput => self.toggle_mute(out),
+            AudioId::MuteOutput => {
+                self.toggle_mute(out);
+            }
             AudioId::Output(i) => self.choose_output(usize::from(i), out),
         }
     }
@@ -418,13 +420,15 @@ impl Levels {
         self.release();
     }
 
-    pub(crate) fn toggle_mute(&mut self, out: &mut Out) {
+    /// Mutes or unmutes the output, once its volume is known. Returns whether it did.
+    pub(crate) fn toggle_mute(&mut self, out: &mut Out) -> bool {
         if self.volume().is_none() {
-            return;
+            return false;
         }
         let muted = !self.muted();
         self.muted.put(muted);
         out.effects.push(Effect::Sound(Sound::Mute(muted)));
+        true
     }
 
     pub(crate) fn toggle_stream_mute(&mut self, i: usize, out: &mut Out) {
