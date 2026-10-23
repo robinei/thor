@@ -28,6 +28,16 @@ Not aims (decided, so they are not reopened by accident):
 - Animations, for now. Screens change at once, without transitions (a flung list still scrolls on and
   slows); every frame drawn costs power, and an interface that answers immediately needs no transition
   to show what happened.
+- Translations. The interface is in English, as the keyboard is.
+- Installing or buying software. ClamShell lists what is installed; installing stays with Steam, pacman
+  and programs' own installers.
+- Devices other than the Thor. ClamShell runs on a desktop for development, but the system, its packages
+  and its image are made for the Thor.
+- Google's apps in Waydroid. Android is set up without them, so apps that need Google Play's services or
+  certification don't run.
+- Several users or profiles, for now. There is one user, with one library and one set of settings.
+- Editing the library from the interface, for now. The library is what `library.json` declares, written
+  by hand; ClamShell reads it and doesn't rewrite it.
 - Reading older ClamShell formats. Nobody else runs it yet, so formats change outright.
 
 This README is kept short while things change. How each part behaves is in its module's documentation
