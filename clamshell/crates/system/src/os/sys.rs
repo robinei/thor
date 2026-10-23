@@ -154,7 +154,8 @@ mod tests {
 
     #[test]
     fn the_systems_battery_not_a_devices() {
-        let class = clamshell_core::kit::testdir::TempDir::new("sys");
+        let tmp = tempfile::tempdir().unwrap();
+        let class = tmp.path();
         for (name, kind, scope) in [("AC", "Mains", None), ("hid-headset-battery", "Battery", Some("Device")), ("BAT0", "Battery", Some("System"))] {
             fs::create_dir_all(class.join(name)).unwrap();
             fs::write(class.join(name).join("type"), format!("{kind}\n")).unwrap();
@@ -162,7 +163,7 @@ mod tests {
                 fs::write(class.join(name).join("scope"), scope).unwrap();
             }
         }
-        assert_eq!(system_battery_in(&class), Some(class.join("BAT0")));
+        assert_eq!(system_battery_in(class), Some(class.join("BAT0")));
         assert_eq!(read::<u32>(class.join("BAT0/type")), None);
         assert_eq!(read::<String>(class.join("BAT0/type")).as_deref(), Some("Battery"));
     }

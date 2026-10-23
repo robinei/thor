@@ -305,13 +305,10 @@ fn known_videos(entries: &mut [Entry], store: Option<&crate::library::meta::cach
 mod tests {
     use super::*;
 
-    fn scratch(name: &str) -> clamshell_core::kit::testdir::TempDir {
-        clamshell_core::kit::testdir::TempDir::new(&format!("files-{name}"))
-    }
-
     #[test]
     fn a_listing_has_folders_first_and_files_open_by_the_sources() {
-        let dir = scratch("list");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         fs::create_dir(dir.join("Zelda")).unwrap();
         for f in ["a.SFC", "b.txt", ".hidden", "cover.png"] {
             fs::write(dir.join(f), "x").unwrap();
@@ -324,7 +321,7 @@ mod tests {
         )
         .unwrap();
         let (runners, _) = runners::checked(&config, &|_| true);
-        let games = list(&dir, "browse:Files/Home", &runners, None, false);
+        let games = list(dir, "browse:Files/Home", &runners, None, false);
         let names: Vec<&str> = games.iter().map(|g| g.title.as_str()).collect();
         assert_eq!(names, ["Zelda", "a.SFC", "b.txt", "cover.png", "tool.desktop"]);
         assert_eq!(&*games[0].id, "browse:Files/Home/Zelda");
@@ -342,7 +339,7 @@ mod tests {
         // Pictures as in a scan: a folder's cover in it, a file's beside it, an image itself, else a glyph.
         fs::write(dir.join("Zelda/cover.jpg"), "x").unwrap();
         fs::write(dir.join("b.jpg"), "x").unwrap();
-        let games = list(&dir, "browse:Files/Home", &runners, None, false);
+        let games = list(dir, "browse:Files/Home", &runners, None, false);
         let by = |name: &str| games.iter().find(|g| g.title == name).unwrap();
         assert_eq!(by("Zelda").box_front.as_deref(), Some(dir.join("Zelda/cover.jpg").as_path()));
         assert_eq!(by("b.txt").box_front.as_deref(), Some(dir.join("b.jpg").as_path()), "beside it");

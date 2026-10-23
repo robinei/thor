@@ -115,13 +115,10 @@ pub(super) fn deletion_date() -> String {
 mod tests {
     use super::*;
 
-    fn scratch(name: &str) -> clamshell_core::kit::testdir::TempDir {
-        clamshell_core::kit::testdir::TempDir::new(&format!("files-{name}"))
-    }
-
     #[test]
     fn the_trash_records_where_things_were_and_restores_them() {
-        let dir = scratch("trash");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let home = dir.join("home");
         fs::create_dir_all(home.join("docs")).unwrap();
         fs::write(home.join("docs/a b.txt"), "x").unwrap();

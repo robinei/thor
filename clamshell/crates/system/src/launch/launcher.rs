@@ -286,7 +286,8 @@ mod tests {
         if !std::env::var_os("XDG_RUNTIME_DIR").is_some_and(|d| std::path::Path::new(&d).join("systemd/private").exists()) {
             return;
         }
-        let dir = clamshell_core::kit::testdir::TempDir::new("launch");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let script = dir.join("game.sh");
         std::fs::write(&script, "#!/bin/sh\nsleep 1\npwd > ran-in\n").unwrap();
         std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();

@@ -162,7 +162,8 @@ mod tests {
 
     #[test]
     fn a_job_round_trips_and_runs_in_its_scope() {
-        let dir = clamshell_core::kit::testdir::TempDir::new("jobs");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         let job = Job {
             unit: format!("clamshell-run-jobtest-{}-0", std::process::id()),
             workspace: "clamshell-run-jobtest".into(),
@@ -171,7 +172,7 @@ mod tests {
             env: vec![("K".into(), "v".into())],
             workdir: Some("/tmp".into()),
         };
-        let path = write(&dir, &job).unwrap();
+        let path = write(dir, &job).unwrap();
         let back: Job = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(back, job);
         let cmd = command(&job).unwrap();

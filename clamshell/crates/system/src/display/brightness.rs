@@ -140,7 +140,8 @@ mod tests {
 
     #[test]
     fn backlights_by_name_and_the_first_ones_level() {
-        let dir = clamshell_core::kit::testdir::TempDir::new("backlights");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         for (name, now) in [("b", 10), ("a", 128)] {
             std::fs::create_dir_all(dir.join(name)).unwrap();
             std::fs::write(dir.join(name).join("max_brightness"), "255\n").unwrap();

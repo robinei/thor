@@ -630,9 +630,10 @@ mod tests {
 
     #[test]
     fn files_and_folders_at_the_top_first_pattern_first() {
-        let root = clamshell_core::kit::testdir::TempDir::new("content");
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
         touch(
-            &root,
+            root,
             &["Zelda.sfc", "Zelda.png", "Mario.smc", "notes.txt", ".hidden.sfc", "FF7/FF7.m3u", "FF7/FF7 (Disc 1).cue", "FF7/cover.jpg", "Empty/readme"],
         );
         let s = source(r#"{ "place": "Games", "id": "g", "dir": "~/x", "match": ["*.sfc", "*.smc", "*/*.m3u", "*/*.cue"] }"#);
@@ -649,8 +650,9 @@ mod tests {
 
     #[test]
     fn a_dir_with_a_dollar_sign_is_scanned_as_it_is() {
-        let root = clamshell_core::kit::testdir::TempDir::new("dollar");
-        touch(&root, &["$NOT_SET/Zelda.sfc"]);
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        touch(root, &["$NOT_SET/Zelda.sfc"]);
         let s = source(r#"{ "place": "Games", "id": "g", "dir": "~/x", "match": ["*.sfc"] }"#);
         let s = Scan { dir: root.join("$NOT_SET").to_string_lossy().into_owned(), ..s };
         let mut games = Vec::new();
@@ -659,9 +661,10 @@ mod tests {
 
     #[test]
     fn a_folder_with_items_is_a_group_of_groups() {
-        let root = clamshell_core::kit::testdir::TempDir::new("series");
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
         touch(
-            &root,
+            root,
             &[
                 "Show/poster.jpg",
                 "Show/Season 2/1. Later.mkv",
@@ -692,8 +695,9 @@ mod tests {
 
     #[test]
     fn episodes_in_their_seasons_folder_are_titled_by_their_number() {
-        let root = clamshell_core::kit::testdir::TempDir::new("seasons");
-        touch(&root, &["Show/Cover.jpg", "Show/Season 1/017 S01E18 Part (Part 1).mkv", "Show/Season 1/S01E02 Two.mkv", "Show/Specials/001 S00E01 Pilot.mkv"]);
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        touch(root, &["Show/Cover.jpg", "Show/Season 1/017 S01E18 Part (Part 1).mkv", "Show/Season 1/S01E02 Two.mkv", "Show/Specials/001 S00E01 Pilot.mkv"]);
         let s = Scan { dir: root.to_string_lossy().into_owned(), ..source(r#"{ "place": "TV", "id": "tv", "dir": "", "match": ["*/"], "items": ["*.mkv"] }"#) };
         let mut games = Vec::new();
         let tops = scan(&s, &mut games, &by("mpv"));

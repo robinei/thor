@@ -109,15 +109,16 @@ mod tests {
 
     #[test]
     fn a_games_config_file_carries_its_cap_and_hud() {
-        let dir = clamshell_core::kit::testdir::TempDir::new("tuning");
-        let a = config(&dir, "steam:1", 40, Hud::Off).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let a = config(dir, "steam:1", 40, Hud::Off).unwrap();
         let text = fs::read_to_string(&a).unwrap();
         assert!(text.contains("fps_limit=40\n") && text.contains("alpha=0\n"));
-        let again = config(&dir, "steam:1", 0, Hud::Fps).unwrap();
+        let again = config(dir, "steam:1", 0, Hud::Fps).unwrap();
         assert_eq!(a, again, "the same file, rewritten");
         let text = fs::read_to_string(&a).unwrap();
         assert!(text.contains("fps_limit=0\n") && text.contains("fps_only\n") && !text.contains("alpha"));
-        assert_ne!(config(&dir, "steam:2", 0, Hud::Off).unwrap(), a);
+        assert_ne!(config(dir, "steam:2", 0, Hud::Off).unwrap(), a);
     }
 
     #[test]

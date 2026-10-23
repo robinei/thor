@@ -299,18 +299,15 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
 
-    fn scratch(name: &str) -> clamshell_core::kit::testdir::TempDir {
-        clamshell_core::kit::testdir::TempDir::new(&format!("files-{name}"))
-    }
-
     #[test]
     fn pastes_never_replace() {
-        let dir = scratch("paste");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         fs::create_dir_all(dir.join("from/sub")).unwrap();
         fs::write(dir.join("from/sub/f.txt"), "hello").unwrap();
         fs::write(dir.join("a.txt"), "a").unwrap();
         let (tx, _rx) = mpsc::channel();
-        assert_eq!(paste(&dir.join("a.txt"), &dir, false, &tx).unwrap(), "Copied a.txt");
+        assert_eq!(paste(&dir.join("a.txt"), dir, false, &tx).unwrap(), "Copied a.txt");
         assert_eq!(fs::read_to_string(dir.join("a (2).txt")).unwrap(), "a");
         paste(&dir.join("from"), &dir.join("from/sub"), false, &tx).unwrap_err();
         fs::create_dir(dir.join("to")).unwrap();

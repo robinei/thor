@@ -149,17 +149,18 @@ mod tests {
     use super::*;
 
     /// A machine's /sys and /run in a temporary directory.
-    fn machine(name: &str) -> clamshell_core::kit::testdir::TempDir {
-        let root = clamshell_core::kit::testdir::TempDir::new(&format!("fan-{name}"));
+    fn machine() -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path();
         for (dir, kind, temp) in [("thermal_zone0", "cpuss0", 72_000), ("thermal_zone1", "gpuss-0", 61_000), ("thermal_zone2", "pm8550_tz", 99_000)] {
-            let zone = root.join("sys/class/thermal").join(dir);
+            let zone = path.join("sys/class/thermal").join(dir);
             fs::create_dir_all(&zone).unwrap();
             fs::write(zone.join("type"), format!("{kind}\n")).unwrap();
             fs::write(zone.join("temp"), format!("{temp}\n")).unwrap();
         }
-        fs::create_dir_all(root.join("sys/class/hwmon/hwmon0")).unwrap();
-        fs::write(root.join("sys/class/hwmon/hwmon0/name"), "pm8550_tz\n").unwrap();
-        fs::create_dir_all(root.join("run")).unwrap();
+        fs::create_dir_all(path.join("sys/class/hwmon/hwmon0")).unwrap();
+        fs::write(path.join("sys/class/hwmon/hwmon0/name"), "pm8550_tz\n").unwrap();
+        fs::create_dir_all(path.join("run")).unwrap();
         root
     }
 
@@ -174,55 +175,59 @@ mod tests {
 
     #[test]
     fn the_cpu_and_gpu_sensors_only() {
-        let root = machine("readings");
-        assert_eq!(readings(&root), vec![72.0, 61.0], "the PMIC's zone isn't the CPU's or the GPU's");
+        let tmp = machine();
+        let root = tmp.path();
+        assert_eq!(readings(root), vec![72.0, 61.0], "the PMIC's zone isn't the CPU's or the GPU's");
     }
 
     #[test]
     fn waits_for_the_fan_then_takes_it_and_sets_it() {
-        let root = machine("ticks");
+        let tmp = machine();
+        let root = tmp.path();
         let mut d = Daemon::default();
-        assert_eq!(tick(&root, &mut d), None, "no fan yet");
-        let dir = add_fan(&root);
-        assert!(tick(&root, &mut d).is_some_and(|l| l.starts_with("the fan") && l.ends_with("mode auto")));
+        assert_eq!(tick(root, &mut d), None, "no fan yet");
+        let dir = add_fan(root);
+        assert!(tick(root, &mut d).is_some_and(|l| l.starts_with("the fan") && l.ends_with("mode auto")));
         assert_eq!(text(&dir.join("pwm1_enable")).as_deref(), Some("3"));
         assert_eq!(text(&dir.join("pwm1")).as_deref(), Some(&*curve::next(Mode::Auto, Some(66.5), 70).to_string()));
 
         fs::write(root.join("run/clamshell-fan"), "max").unwrap();
-        assert_eq!(tick(&root, &mut d).as_deref(), Some("mode max"));
-        assert_eq!(tick(&root, &mut d), None, "nothing new");
+        assert_eq!(tick(root, &mut d).as_deref(), Some("mode max"));
+        assert_eq!(tick(root, &mut d), None, "nothing new");
         // A half-written file keeps the mode.
         fs::write(root.join("run/clamshell-fan"), "").unwrap();
-        assert_eq!(tick(&root, &mut d), None);
+        assert_eq!(tick(root, &mut d), None);
         assert_eq!(d.mode, Some(Mode::Max));
         for _ in 0..8 {
-            tick(&root, &mut d);
+            tick(root, &mut d);
         }
         assert_eq!(text(&dir.join("pwm1")).as_deref(), Some("255"), "full, a step at a time");
     }
 
     #[test]
     fn taking_the_fan_is_tried_again() {
-        let root = machine("retake");
-        let dir = add_fan(&root);
+        let tmp = machine();
+        let root = tmp.path();
+        let dir = add_fan(root);
         fs::remove_file(dir.join("pwm1_enable")).unwrap();
         fs::create_dir(dir.join("pwm1_enable")).unwrap();
         let mut d = Daemon::default();
-        assert!(tick(&root, &mut d).is_some_and(|l| l.contains("pwm1_enable")));
+        assert!(tick(root, &mut d).is_some_and(|l| l.contains("pwm1_enable")));
         assert!(!d.taken);
         fs::remove_dir(dir.join("pwm1_enable")).unwrap();
-        tick(&root, &mut d);
+        tick(root, &mut d);
         assert!(d.taken);
         assert_eq!(text(&dir.join("pwm1_enable")).as_deref(), Some("3"));
     }
 
     #[test]
     fn an_unreadable_speed_goes_on_from_the_safe_speed() {
-        let root = machine("unreadable");
-        let dir = add_fan(&root);
+        let tmp = machine();
+        let root = tmp.path();
+        let dir = add_fan(root);
         fs::write(dir.join("pwm1"), "garbage\n").unwrap();
         let mut d = Daemon::default();
-        assert!(tick(&root, &mut d).is_some_and(|l| l.contains("pwm1")));
+        assert!(tick(root, &mut d).is_some_and(|l| l.contains("pwm1")));
         let expected = curve::next(Mode::Auto, d.temp, curve::SAFE);
         assert_eq!(text(&dir.join("pwm1")).as_deref(), Some(&*expected.to_string()));
         assert_eq!(d.written, Some(expected));
@@ -230,10 +235,11 @@ mod tests {
 
     #[test]
     fn stopping_leaves_it_at_the_safe_speed() {
-        let root = machine("safe");
-        assert!(safe(&root).is_err(), "no fan");
-        let dir = add_fan(&root);
-        safe(&root).unwrap();
+        let tmp = machine();
+        let root = tmp.path();
+        assert!(safe(root).is_err(), "no fan");
+        let dir = add_fan(root);
+        safe(root).unwrap();
         assert_eq!(text(&dir.join("pwm1")).as_deref(), Some("128"));
     }
 }

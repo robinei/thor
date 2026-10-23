@@ -109,8 +109,9 @@ mod tests {
 
     #[test]
     fn the_cache_keeps_a_file_per_entry() {
-        let dir = clamshell_core::kit::testdir::TempDir::new("cache");
-        let cache = Cache::open(&dir);
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let cache = Cache::open(dir);
         let details = clamshell_library::Details { year: Some(1994), summary: "S".into(), ..Default::default() };
         let meta = Meta { cover: Some("/c/x-cover.png".into()), details, ..Meta::default() };
         cache.save_meta("x", "libretro:SNES", 5, &meta).unwrap();

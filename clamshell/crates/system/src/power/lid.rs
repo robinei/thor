@@ -49,7 +49,8 @@ mod tests {
 
     #[test]
     fn the_power_keys_wakeup_follows_the_lid() {
-        let input = clamshell_core::kit::testdir::TempDir::new("lid");
+        let tmp = tempfile::tempdir().unwrap();
+        let input = tmp.path();
         for (dev, name) in [("input0", "pm8941_pwrkey"), ("input1", "gpio-keys"), ("input2", "pm8941_resin")] {
             let power = input.join(dev).join("device/power");
             fs::create_dir_all(&power).unwrap();
@@ -57,11 +58,11 @@ mod tests {
             fs::write(power.join("wakeup"), "enabled\n").unwrap();
         }
         let wakeup = |dev: &str| fs::read_to_string(input.join(dev).join("device/power/wakeup")).unwrap();
-        set_in(&input, true);
+        set_in(input, true);
         assert_eq!(wakeup("input0"), "disabled");
         assert_eq!(wakeup("input1"), "enabled\n", "only the power key");
         assert_eq!(wakeup("input2"), "enabled\n");
-        set_in(&input, false);
+        set_in(input, false);
         assert_eq!(wakeup("input0"), "enabled");
     }
 }

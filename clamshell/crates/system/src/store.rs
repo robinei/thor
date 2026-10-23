@@ -413,27 +413,25 @@ mod tests {
     use clamshell_core::keymap::{Binding, Button, Input, Output, PadOut};
     use clamshell_core::levels::Share;
 
-    fn dir(name: &str) -> clamshell_core::kit::testdir::TempDir {
-        clamshell_core::kit::testdir::TempDir::new(&format!("store-{name}"))
-    }
-
     #[test]
     fn the_writer_writes_in_order_and_finishes_before_it_is_gone() {
-        let dir = dir("writer");
-        let writer = Writer::spawn(Store::open(&dir)).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let writer = Writer::spawn(Store::open(dir)).unwrap();
         writer.send(Write::Save(Save::Favourites(vec!["a".into()])));
         writer.send(Write::Save(Save::Favourites(vec!["b".into()])));
         writer.send(Write::Play { id: "snes:Zelda.sfc".into(), start: 100, duration: 30 });
         drop(writer);
-        let store = Store::open(&dir);
+        let store = Store::open(dir);
         assert_eq!(store.favourites(), HashSet::from(["b".to_owned()]));
         assert_eq!(store.plays().get("snes:Zelda.sfc"), Some(&Plays { count: 1, seconds: 30, last: 130 }));
     }
 
     #[test]
     fn everything_reads_back_as_saved() {
-        let dir = dir("all");
-        let mut store = Store::open(&dir);
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let mut store = Store::open(dir);
         assert_eq!(store.resume(), None, "nothing saved yet");
         assert_eq!(store.keymaps(), None);
 
@@ -491,8 +489,9 @@ mod tests {
 
     #[test]
     fn settings_are_a_file_per_screen_written_where_they_changed() {
-        let dir = dir("settings");
-        let mut store = Store::open(&dir);
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let mut store = Store::open(dir);
         let zelda: Arc<str> = "snes:Zelda.sfc".into();
         let snes: Arc<str> = "runner:SNES".into();
         let mut settings = Settings::default();
@@ -505,7 +504,7 @@ mod tests {
         let mut names: Vec<String> = fs::read_dir(dir.join("settings")).unwrap().flatten().filter_map(|e| e.file_name().into_string().ok()).collect();
         names.sort();
         assert_eq!(names, ["all.json".to_owned(), format!("entry-{}.json", key_of(&zelda)), format!("runner-{}.json", key_of("SNES"))]);
-        assert_eq!(Store::open(&dir).settings(), settings);
+        assert_eq!(Store::open(dir).settings(), settings);
 
         // With Zelda's override and environment cleared, its file is gone and All's file is untouched.
         let all = dir.join("settings/all.json");
@@ -515,18 +514,19 @@ mod tests {
         store.save(&Save::Settings(settings.clone())).unwrap();
         assert!(!dir.join(format!("settings/entry-{}.json", key_of(&zelda))).exists());
         assert_eq!(fs::metadata(&all).unwrap().modified().unwrap(), written, "unchanged: not written");
-        assert_eq!(Store::open(&dir).settings(), settings);
+        assert_eq!(Store::open(dir).settings(), settings);
     }
 
     #[test]
     fn what_doesnt_read_back_is_skipped() {
-        let dir = dir("skip");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         fs::create_dir_all(dir.join("settings")).unwrap();
         fs::write(dir.join("settings/all.json"), r#"{"settings": {"fps": 33, "nonsense": 1}}"#).unwrap();
         fs::write(dir.join("settings/entry-x.json"), r#"{"id": "x", "settings": {"power": 2}}"#).unwrap();
         fs::write(dir.join("settings/broken.json"), "{").unwrap();
         fs::write(dir.join("plays.jsonl"), "{\"id\": \"a\", \"start\": 1, \"duration\": 2}\n{\"id\": \"a\", \"sta").unwrap();
-        let mut store = Store::open(&dir);
+        let mut store = Store::open(dir);
         let s = store.settings();
         assert_eq!(s.global.get(Setting::FpsCap), Setting::FpsCap.default_value());
         assert_eq!(s.of_in("x", &[]).get(Setting::Power), 2);

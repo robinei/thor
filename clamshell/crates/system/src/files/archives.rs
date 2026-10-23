@@ -179,10 +179,11 @@ mod tests {
     #[test]
     #[ignore = "needs a user manager, ratarmount and bsdtar"]
     fn live_mount_and_unmount() {
-        let dir = clamshell_core::kit::testdir::TempDir::new("archives");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         fs::write(dir.join("inside.txt"), "hello").unwrap();
         let zip = dir.join("a.zip");
-        assert!(std::process::Command::new("bsdtar").arg("-C").arg(&*dir).args(["-a", "-cf"]).arg(&zip).arg("inside.txt").status().unwrap().success());
+        assert!(std::process::Command::new("bsdtar").arg("-C").arg(dir).args(["-a", "-cf"]).arg(&zip).arg("inside.txt").status().unwrap().success());
         let mut mounts = Mounts::new(None);
         let at = mounts.mount(&zip).unwrap();
         assert_eq!(fs::read_to_string(at.join("inside.txt")).unwrap(), "hello");

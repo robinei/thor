@@ -88,7 +88,8 @@ mod tests {
 
     #[test]
     fn games_of_every_library_folder_with_their_art() {
-        let root = clamshell_core::kit::testdir::TempDir::new("steam");
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
         let other = root.join("other");
         fs::create_dir_all(root.join("steamapps")).unwrap();
         fs::create_dir_all(other.join("steamapps")).unwrap();
@@ -99,7 +100,7 @@ mod tests {
         let manifest = |id: u32, name: &str| format!("\"AppState\" {{ \"appid\" \"{id}\" \"name\" \"{name}\" \"StateFlags\" \"4\" }}");
         fs::write(root.join("steamapps/appmanifest_10.acf"), manifest(10, "Ten")).unwrap();
         fs::write(other.join("steamapps/appmanifest_20.acf"), manifest(20, "Twenty")).unwrap();
-        let games = games(&root);
+        let games = games(root);
         let found: Vec<(&str, bool)> = games.iter().map(|g| (&*g.id, g.box_front.is_some())).collect();
         assert_eq!(found, vec![("steam:10", false), ("steam:20", true)]);
         assert_eq!(games[1].launch, Launch::Steam { appid: 20 });

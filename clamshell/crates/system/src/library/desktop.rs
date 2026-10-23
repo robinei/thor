@@ -199,7 +199,8 @@ mod tests {
 
     #[test]
     fn installed_apps_and_games_are_entries_the_users_first_hidden_ones_left_out() {
-        let base = clamshell_core::kit::testdir::TempDir::new("desktop-entries");
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path();
         let (user, system) = (base.join("user"), base.join("system"));
         let write = |dir: &Path, id: &str, text: &str| {
             fs::create_dir_all(dir.join("applications")).unwrap();

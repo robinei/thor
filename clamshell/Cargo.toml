@@ -38,6 +38,7 @@ md5 = "0.8"
 percent-encoding = "2"
 resvg = { version = "0.48", default-features = false }
 env_logger = { version = "0.11", default-features = false, features = ["auto-color"] }
+tempfile = "3.27"
 
 # No panics by construction: errors are values.
 [workspace.lints.clippy]
