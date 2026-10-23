@@ -306,10 +306,11 @@ impl Bottom {
     }
 
     /// A tap on a program whose windows are all on the bottom screen shows them there, with its first
-    /// tab in view.
+    /// tab in view, turning the bottom screen on again if it was off by hand.
     pub(crate) fn show_program_down(&mut self, window: i64, out: &mut Out) {
         self.screen.windows = true;
         out.effects.push(Effect::Window(WindowCommand::ShowDown(window)));
+        self.screen.off = false;
     }
 
     /// Home+Start turns the bottom screen off, or on again. If it had turned off by itself, this turns it
@@ -654,5 +655,20 @@ mod tests {
         let fx = key(&mut s, DeviceKey::WindowDown);
         assert!(fx.contains(&Effect::Window(WindowCommand::BottomPower(true))), "{fx:?}");
         assert!(!s.bottom().off());
+    }
+
+    #[test]
+    fn showing_the_windows_below_turns_the_screen_on_if_off_by_hand() {
+        let mut s = emulator();
+        key(&mut s, DeviceKey::WindowDown);
+        s.applied(Event::Windows(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]));
+        key(&mut s, DeviceKey::BottomView);
+        key(&mut s, DeviceKey::BottomPower);
+        assert!(s.bottom().off());
+        let fx = s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::BottomWindows)));
+        assert_eq!(fx.first(), Some(&Effect::Window(WindowCommand::ShowDown(2))), "{fx:?}");
+        assert_eq!(power(&fx), Some(true), "not shown on a dark panel");
+        assert!(!s.bottom().off());
+        assert!(s.bottom().shows_windows(s.session()));
     }
 }

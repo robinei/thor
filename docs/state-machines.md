@@ -148,7 +148,7 @@ State: `screen{windows, off, idle_off}`, `used_at`, `dimmed`, `woken`, `sent_dow
 | WindowDown: the focused top window moves down, the screen shows it, a rule is added (notice, `Save(WindowRules)`, `DownRules`) | same; `a_programs_only_window_is_remembered_by_its_app_id_alone`; no focused window GAP |
 | WindowUp: the visible down window goes back, its rule is forgotten | same; `two_windows_down_are_tabs_…` |
 | settle: a window matching a rule moves down once | `a_rule_sends_the_window_down_when_its_program_opens_it_again` |
-| dock tap or BottomWindows → windows shown, `ShowDown` (without clearing `off`, S15) | `the_front_programs_windows_hidden_below_…` |
+| dock tap or BottomWindows → windows shown, `ShowDown`, the screen turned on if it was off by hand | `the_front_programs_windows_hidden_below_…`, `showing_the_windows_below_turns_the_screen_on_if_off_by_hand` |
 | Home+Start: wake if off by itself, else toggle off | `the_bottom_screen_turns_off_and_on`, `home_start_brings_back_…`, `…off_by_hand_and_by_itself_at_once` |
 | settle: off by itself when on battery, not refreshing, not set to stay on, no windows shown, no editor, and dark in a game or untouched 4 min | `on_battery_the_untouched_…` and siblings; refreshing and editor GAP |
 | settle: dimmed after 60 s untouched, unless windows are shown | `the_bottom_screen_dims_untouched_and_lights_when_used` |
@@ -394,7 +394,7 @@ Second screen, device, pad, keymaps:
 - S13. Modifiers armed on the capture screen survive leaving it by tab or Home (`keymap/screens/mod.rs:573`).
 - S14. The gyro's "hold still" notice expires after 2 s whatever the calibration does.
 - S15. Showing the program's windows below (dock tap, BottomWindows) while the screen is off by hand shows
-  them on a dark panel (`bottom/screen.rs:310`).
+  them on a dark panel (`bottom/screen.rs:310`). Fixed: state/bottom: showing the windows below turns the screen on.
 - S16. A screen dark for a game wakes only on the Wake tap, not a touch or pad focus, and not when the tap
   is swallowed by idle (`screen.rs:154, 214`).
 - S17. Two taps on Sticks before the first progress start the calibration twice (`device/mod.rs:151`).
