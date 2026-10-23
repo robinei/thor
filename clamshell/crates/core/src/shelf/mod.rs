@@ -496,14 +496,11 @@ impl Shelf {
         }
     }
 
-    /// Applies what was fetched about entry `id` (see [`Library::apply_meta`]). Returns whether the entry
-    /// is there.
-    pub(crate) fn apply_meta(&mut self, id: &str, meta: &crate::Meta) -> bool {
-        let Some(i) = self.library.entries.iter().position(|g| &*g.id == id) else {
-            return false;
-        };
-        self.library.apply_meta(i, meta);
-        true
+    /// Applies what was fetched about entry `id`, if it is there (see [`Library::apply_meta`]).
+    pub(crate) fn apply_meta(&mut self, id: &str, meta: &crate::Meta) {
+        if let Some(i) = self.library.entries.iter().position(|g| &*g.id == id) {
+            self.library.apply_meta(i, meta);
+        }
     }
 
     /// Puts the selected entry in or out of the favourites, if there is one. Returns whether the selection

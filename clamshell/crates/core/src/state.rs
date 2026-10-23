@@ -200,139 +200,54 @@ impl State {
         self.queue = out.events;
     }
 
+    /// Hands `event` to the rule that handles it, then handles what that queued.
     fn apply_event(&mut self, event: Event, out: &mut Out) {
         // Where the events this one queues start.
         let mark = out.events.len();
+        let now = self.clock.mono();
         match event {
             Event::Tick { unix_secs, mono_secs } => self.tick(unix_secs, mono_secs, out),
             Event::Reading(reading) => self.on_reading(reading, out),
-            Event::List(e) => {
-                self.on_list(e);
-            }
+            Event::List(e) => self.on_list(e),
             Event::Pointer(e) => self.on_pointer(e, out),
             Event::Slide(slide) => self.on_slide(slide, out),
-            // A level row set is the one the finger landed on, and nothing once it is gone.
-            Event::Level(LevelEvent::Set(level, value)) => {
-                if let Some(level) = self.lists().resolve_level(level) {
-                    self.levels.on_event(LevelEvent::Set(level, value), self.clock.mono(), out);
-                }
-            }
-            Event::Level(e) => self.levels.on_event(e, self.clock.mono(), out),
+            Event::Level(e) => self.on_level(e, out),
             Event::Shelf(e) => self.shelf.on_event(e, &mut self.pointer, out),
             Event::Launch(e) => self.on_launch_event(e),
-            Event::Windows(windows) => {
-                self.session.set_windows(windows);
-            }
-            Event::Meta { id, meta } => {
-                self.shelf.apply_meta(&id, &meta);
-            }
-            Event::Library(library) => {
-                self.library_read(*library, out);
-                self.sent.resend(Resend::Shown);
-            }
-            Event::Files(e) => {
-                self.shelf.on_files(e, &mut self.pointer, self.bottom.notice_mut(), self.clock.mono(), out);
-            }
-            Event::Fetching(on) => {
-                self.shelf.set_fetching(on);
-                self.sent.resend(Resend::Shown);
-            }
-            Event::Tray(items) => {
-                self.session.set_tray(items, &self.clock, self.shelf.library(), out);
-            }
-            Event::Units(units) => {
-                self.session.set_units(units);
-            }
-            Event::Start => {
-                self.ui_started(out);
-            }
-            // On a screen that listens for input, Home leaves it. Home is never taken as an input.
-            Event::Home if self.listening() => {
-                self.keymapping.back(&mut self.keyboard);
-            }
-            // When the Device view is in shelf's place, Home goes back to shelf.
-            Event::Home if self.session.shelf_in_front() && self.device.is_open() => self.device.close(&mut self.pointer, self.shelf.selected()),
-            Event::Home => self.session.home(out),
-            Event::Listened(input) => {
-                self.keymapping.listened(input, self.pad.route() == PadRoute::Listen, out);
-            }
+            Event::Windows(windows) => self.session.set_windows(windows),
+            Event::Meta { id, meta } => self.shelf.apply_meta(&id, &meta),
+            Event::Library(library) => self.library_read(*library, out),
+            Event::Files(e) => self.shelf.on_files(e, &mut self.pointer, self.bottom.notice_mut(), now, out),
+            Event::Fetching(on) => self.fetching(on),
+            Event::Tray(items) => self.session.set_tray(items, &self.clock, self.shelf.library(), out),
+            Event::Units(units) => self.session.set_units(units),
+            Event::Start => self.ui_started(out),
+            Event::Home => self.home(out),
+            Event::Listened(input) => self.keymapping.listened(input, self.pad.route() == PadRoute::Listen, out),
             Event::PadSwitch => self.pad.switch(),
             // Never applied here: the UI handles pad navigation itself.
             Event::Pad(_) => {}
-            Event::TextInput(active) => {
-                if self.bottom.text_input(active) {
-                    self.left_tab();
-                }
-            }
+            Event::TextInput(active) => self.text_input(active),
             Event::Pointing(pointing) => self.bottom.point(pointing, out),
-            Event::Resumed => {
-                self.idle.resumed(self.clock.mono());
-                self.sent.resend(Resend::Resumed);
-            }
-            Event::Idle(event) => self.idle.heard(event, self.clock.mono()),
-            Event::Device(key) => {
-                self.on_device_key(key, out);
-            }
+            Event::Resumed => self.resumed(),
+            Event::Idle(event) => self.idle.heard(event, now),
+            Event::Device(key) => self.on_device_key(key, out),
             Event::BottomTouched => self.bottom.used(&self.session, &self.clock),
-            Event::Frozen(keys) => {
-                self.session.found_frozen(keys);
-            }
-            Event::Paste => {
-                self.bottom.paste();
-            }
-            Event::Screenshot(result) => {
-                self.bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Screenshot(result), self.clock.mono());
-            }
-            Event::Sticks(event) => {
-                self.device.sticks_event(event, out);
-            }
-            Event::RefreshCalibrated(result) => {
-                self.device.refresh_done(result);
-                self.sent.resend(Resend::RefreshCalibrated);
-            }
-            Event::CalibrateGyro => {
-                self.bottom.notice_mut().show(NoticeKind::Gyro(None), self.clock.mono());
-                out.effects.push(Effect::CalibrateGyro);
-            }
-            Event::GyroCalibrated(ok) => {
-                self.bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Gyro(Some(ok)), self.clock.mono());
-            }
-            Event::AccountChanged(result) => {
-                // What the helper did, or why it failed, shown for a moment.
-                self.bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Account(result), self.clock.mono());
-            }
-            Event::ChooseTab(tab) => {
-                self.choose_tab(tab);
-            }
-            Event::Entry(id, act) => match act {
-                EntryAct::Play => self.play(id, out),
-                EntryAct::Show => self.session.show(&id, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out),
-                EntryAct::OpenAnother => {
-                    if self.opens_another(&id) {
-                        self.launch(id, None, true, out);
-                    }
-                }
-                EntryAct::Suspend => self.session.suspend(&id, out),
-                EntryAct::ToggleAutostart => self.session.toggle_autostart(id, out),
-                EntryAct::TogglePin => self.dock.toggle_pin(id, &self.session, out),
-                EntryAct::Quit => self.session.quit(&id, self.shelf.library(), out),
-                EntryAct::ForceKill => self.session.force_kill(&id, self.shelf.library(), out),
-            },
-            Event::Enqueue => {
-                self.enqueue(out);
-            }
-            Event::Keymap(e) => {
-                self.keymap_event(e, out);
-            }
-            Event::EditOnKeyboard(editor) => {
-                if self.bottom.open_on_keyboard(editor) {
-                    self.left_tab();
-                }
-            }
-            Event::Quit => {
-                out.effects.push(Effect::Save(Save::Resume(self.resume())));
-                out.effects.push(Effect::Quit);
-            }
+            Event::Frozen(keys) => self.session.found_frozen(keys),
+            Event::Paste => self.bottom.paste(),
+            Event::Screenshot(result) => self.bottom.notice_mut().show(NoticeKind::Screenshot(result), now),
+            Event::Sticks(event) => self.device.sticks_event(event, out),
+            Event::RefreshCalibrated(result) => self.refresh_calibrated(result),
+            Event::CalibrateGyro => self.calibrate_gyro(out),
+            Event::GyroCalibrated(ok) => self.bottom.notice_mut().show(NoticeKind::Gyro(Some(ok)), now),
+            // What the helper did, or why it failed, shown for a moment.
+            Event::AccountChanged(result) => self.bottom.notice_mut().show(NoticeKind::Account(result), now),
+            Event::ChooseTab(tab) => self.choose_tab(tab),
+            Event::Entry(id, act) => self.on_entry(id, act, out),
+            Event::Enqueue => self.enqueue(out),
+            Event::Keymap(e) => self.keymap_event(e, out),
+            Event::EditOnKeyboard(editor) => self.edit_on_keyboard(editor),
+            Event::Quit => self.quit(out),
         }
         self.handle_queued(mark, out);
     }
@@ -537,7 +452,7 @@ impl State {
 
     /// The library was read again. New problems are reported once and shelf is reloaded. Then what
     /// depends on its entries is updated: runners' pauses and keymaps, landing rules, and pins of entries
-    /// that are gone.
+    /// that are gone. Shelf's entries shown are asked for first again.
     fn library_read(&mut self, library: Library, out: &mut Out) {
         let problems = &library.problems;
         if !problems.is_empty() && *problems != self.shelf.library().problems {
@@ -553,6 +468,26 @@ impl State {
         if self.dock.drop_gone(self.shelf.library(), &self.session) {
             out.effects.push(self.dock.save_effect());
         }
+        self.sent.resend(Resend::Shown);
+    }
+
+    /// Metadata fetching started or stopped. Shelf's entries shown are asked for first again.
+    fn fetching(&mut self, on: bool) {
+        self.shelf.set_fetching(on);
+        self.sent.resend(Resend::Shown);
+    }
+
+    /// Back from sleep: idle counts from now, and the settings in force are applied again.
+    fn resumed(&mut self) {
+        self.idle.resumed(self.clock.mono());
+        self.sent.resend(Resend::Resumed);
+    }
+
+    /// The refresh rate calibration ended. It had turned the bottom screen off while it ran, so that
+    /// screen's power is set again.
+    fn refresh_calibrated(&mut self, result: Result<String, String>) {
+        self.device.refresh_done(result);
+        self.sent.resend(Resend::RefreshCalibrated);
     }
 
     /// The UI is up. Sends what was waiting for it: the dock if pins were dropped at start, the
@@ -567,6 +502,51 @@ impl State {
         out.effects.extend(self.levels.brightness_effect());
         self.keymapping.follow_runner_keymaps(self.shelf.library(), &mut self.prefs, out);
         out.effects.push(self.bottom.window_rules().effect());
+    }
+
+    /// A level event. A level row set is the one the finger landed on, and nothing once it is gone.
+    fn on_level(&mut self, event: LevelEvent, out: &mut Out) {
+        let event = match event {
+            LevelEvent::Set(level, value) => match self.lists().resolve_level(level) {
+                Some(level) => LevelEvent::Set(level, value),
+                None => return,
+            },
+            e => e,
+        };
+        self.levels.on_event(event, self.clock.mono(), out);
+    }
+
+    /// Home. On a screen that listens for input, it leaves that screen; Home is never taken as an input.
+    /// When the Device view is in shelf's place, it goes back to shelf. Otherwise the session handles it
+    /// (see [`Session::home`]).
+    fn home(&mut self, out: &mut Out) {
+        if self.listening() {
+            self.keymapping.back(&mut self.keyboard);
+        } else if self.session.shelf_in_front() && self.device.is_open() {
+            self.device.close(&mut self.pointer, self.shelf.selected());
+        } else {
+            self.session.home(out);
+        }
+    }
+
+    /// Quitting ClamShell: where shelf and the second screen are is saved first.
+    fn quit(&mut self, out: &mut Out) {
+        out.effects.push(Effect::Save(Save::Resume(self.resume())));
+        out.effects.push(Effect::Quit);
+    }
+
+    /// Something done to entry `id`.
+    fn on_entry(&mut self, id: Arc<str>, act: EntryAct, out: &mut Out) {
+        match act {
+            EntryAct::Play => self.play(id, out),
+            EntryAct::Show => self.session.show(&id, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out),
+            EntryAct::OpenAnother => self.open_another(id, out),
+            EntryAct::Suspend => self.session.suspend(&id, out),
+            EntryAct::ToggleAutostart => self.session.toggle_autostart(id, out),
+            EntryAct::TogglePin => self.dock.toggle_pin(id, &self.session, out),
+            EntryAct::Quit => self.session.quit(&id, self.shelf.library(), out),
+            EntryAct::ForceKill => self.session.force_kill(&id, self.shelf.library(), out),
+        }
     }
 
     fn on_launch_event(&mut self, event: LaunchEvent) {
@@ -878,6 +858,20 @@ impl State {
         }
     }
 
+    /// A text field wants typing, or is done (see [`Bottom::text_input`]).
+    fn text_input(&mut self, active: bool) {
+        if self.bottom.text_input(active) {
+            self.left_tab();
+        }
+    }
+
+    /// Opens `editor` on the keyboard tab (see [`Bottom::open_on_keyboard`]).
+    fn edit_on_keyboard(&mut self, editor: crate::Editor) {
+        if self.bottom.open_on_keyboard(editor) {
+            self.left_tab();
+        }
+    }
+
     /// Goes back to the tab the keyboard came up from, if it did.
     fn back_from_keyboard(&mut self) {
         if self.bottom.back_from_keyboard() {
@@ -918,6 +912,12 @@ impl State {
             }
             (Done::Save, Purpose::AccountPassword(step)) => crate::device::account::password_typed(step, editor.text, self.bottom.editors_mut(), out),
         }
+    }
+
+    /// Calibrates the gyro, with a notice to hold the device still.
+    fn calibrate_gyro(&mut self, out: &mut Out) {
+        self.bottom.notice_mut().show(NoticeKind::Gyro(None), self.clock.mono());
+        out.effects.push(Effect::CalibrateGyro);
     }
 
     /// A hardware key. A level key steps the level and shows it. The others take a screenshot or run
@@ -984,6 +984,13 @@ impl State {
         // game's, or Proton's setup.
         if let Some(title) = title.filter(|_| out.effects.iter().skip(mark).any(|e| matches!(e, Effect::Launch { .. }))) {
             self.bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Starting(title), self.clock.mono());
+        }
+    }
+
+    /// The dock menu's Open another: launches `id` again, if that is offered (see [`State::opens_another`]).
+    fn open_another(&mut self, id: Arc<str>, out: &mut Out) {
+        if self.opens_another(&id) {
+            self.launch(id, None, true, out);
         }
     }
 
