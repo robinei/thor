@@ -202,7 +202,7 @@ State: `screen{windows, off, idle_off}`, `used_at`, `dimmed`, `woken`, `sent_dow
 
 | Transition | Test |
 |---|---|
-| Home+Select: show ClamShell's view or the windows moved down | `a_window_moved_down_is_shown_there_and_remembered` |
+| Home + right stick press (was Home+Select): show ClamShell's view or the windows moved down | `a_window_moved_down_is_shown_there_and_remembered` |
 | WindowDown: the focused top window moves down, the screen shows it, a rule is added (notice, `Save(WindowRules)`, `DownRules`) | same; `a_programs_only_window_is_remembered_by_its_app_id_alone`; `window_down_with_no_window_in_front_does_nothing` |
 | WindowUp: the visible down window goes back, its rule is forgotten | same; `two_windows_down_are_tabs_…` |
 | settle: a window matching a rule moves down once | `a_rule_sends_the_window_down_when_its_program_opens_it_again` |

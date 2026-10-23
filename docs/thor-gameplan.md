@@ -533,6 +533,10 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       vectorise for NEON, checked in the aarch64 build: `ld4`/`st4` per channel, `umull`/`umlal`, `ushr`)
       and what the second screen costs in power while a game runs (a slider held, a list flung, the
       keymap edit screen with its labels).
+- [ ] The buttons' codes (`evtest` on the controller): which physical button sends `BTN_MODE`, which
+      ClamShell treats as Home (Home is on the left, the AYN button in the middle), and what the AYN
+      and Back buttons send. The Home chords (`docs/compositor-mvp.md`, "The Home chords") assume Home
+      is the left one.
 - [ ] GPU: Freedreno (sway) and Turnip (`vkcube`, a game); MangoHud frame rate in sysinfo.
 - [ ] Direct scanout. The spec sheet gives the panels as 1080x1920 (main, 120 Hz) and 1080x1240 (second,
       60 Hz): natively portrait, mounted sideways, as our configs' transforms assume. Confirm with the
