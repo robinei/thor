@@ -97,6 +97,14 @@ pub(crate) fn switch_screen(s: &State, d: &impl Drawn, memory: &mut Screens<Opti
     Some(PointerEvent::Focus(target).into())
 }
 
+/// The position in shelf's list of the focused entry, if the focus is on one.
+fn focused_entry(s: &State) -> Option<usize> {
+    let Some(Id::Shelf(ShelfId::Entry(id))) = s.pointer().focus() else {
+        return None;
+    };
+    (0..s.shelf().list().len()).find(|&i| s.shelf().entry_at(i).is_some_and(|e| &e.id == id))
+}
+
 /// The targets the pad may move between, each with its screen. On shelf's actions, reached by holding A,
 /// they are the actions alone. Otherwise they are the targets on the screens the pad may use, except
 /// those for fingers: a list's area (the pad goes to its rows instead) and a dock tile's tray mark (the
@@ -137,13 +145,17 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
     }
     let scope = scope(s);
     // In shelf's list, up and down move through the games, scrolling it, and left and right switch
-    // collections. Down past the last game goes on to the second screen.
+    // collections. Down past the last game goes on to the second screen. The steps count from the
+    // focused game, which isn't the selected one when the focus came up from the second screen.
     if scope == PadScope::ShelfList {
         let len = s.shelf().list().len();
-        let at_end = s.shelf().cursor().index + 1 >= len;
+        let cursor = s.shelf().cursor().index;
+        let from = focused_entry(s).unwrap_or(cursor);
+        let at_end = from + 1 >= len;
+        let to = |n: usize| ShelfEvent::ListStep(i32::try_from(n).unwrap_or(i32::MAX).saturating_sub(i32::try_from(cursor).unwrap_or(i32::MAX)));
         let step = match dir {
-            Dir::Up => Some(ShelfEvent::ListStep(-1)),
-            Dir::Down if !at_end => Some(ShelfEvent::ListStep(1)),
+            Dir::Up => Some(to(from.saturating_sub(1))),
+            Dir::Down if !at_end => Some(to(from + 1)),
             Dir::Left => Some(ShelfEvent::CollectionStep(-1)),
             Dir::Right => Some(ShelfEvent::CollectionStep(1)),
             Dir::Down => None,
@@ -420,6 +432,19 @@ mod tests {
         d.0.top.push(t(0.0, 90.0, last));
         let below = navigate(&s, &d, &memory, Dir::Down);
         assert!(matches!(below, Some(Event::Pointer(PointerEvent::Focus(Id::Tab(_))))), "{below:?}");
+    }
+
+    #[test]
+    fn in_shelfs_list_up_and_down_step_from_the_focused_entry() {
+        let mut s = state();
+        let d = drawn(&s);
+        let memory = Screens::default();
+        // The focus came up from the second screen onto entry 1, while entry 0 is selected.
+        let g = entry(&s, 1);
+        focus(&mut s, g);
+        assert_eq!(s.shelf().cursor().index, 0);
+        assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(ShelfEvent::ListStep(2).into()), "to entry 2");
+        assert_eq!(navigate(&s, &d, &memory, Dir::Up), Some(ShelfEvent::ListStep(0).into()), "to entry 0");
     }
 
     #[test]
