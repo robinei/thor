@@ -34,6 +34,13 @@ pub(crate) enum PadScope {
     BottomOnly,
 }
 
+/// Whether the pad is on shelf's actions, reached by holding A. Only while shelf is in front: with
+/// anything else in front shelf isn't shown, and the pad goes to the second screen even if the focus was
+/// left on an action, as it is after one that starts a game.
+fn on_actions(s: &State) -> bool {
+    s.pad().on_top() && s.shelf().in_actions(s.pointer())
+}
+
 pub(crate) fn scope(s: &State) -> PadScope {
     let in_list = matches!(s.pointer().focus(), Some(Id::Shelf(ShelfId::Entry(_) | ShelfId::Collection(_))));
     match (s.pad().on_top(), in_list) {
@@ -96,7 +103,7 @@ pub(crate) fn switch_screen(s: &State, d: &impl Drawn, memory: &mut Screens<Opti
 /// pad uses the Menu entry in the tile's long-press menu). Shelf's actions are left out, as they are
 /// reached only by holding A.
 pub(crate) fn candidates<'d>(s: &State, d: &'d impl Drawn) -> Vec<(Screen, &'d Target)> {
-    if s.shelf().in_actions(s.pointer()) {
+    if on_actions(s) {
         let actions: Vec<Id> = s.shelf().actions().as_slice().iter().map(|a| Id::Shelf(a.id())).collect();
         return d.targets(Screen::Top).iter().filter(|t| actions.contains(&t.id)).map(|t| (Screen::Top, t)).collect();
     }
@@ -121,7 +128,7 @@ fn placed(d: &impl Drawn, screen: Screen, t: &Target) -> NavTarget {
 /// main one.
 pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, dir: Dir) -> Option<Event> {
     // On shelf's actions, reached by holding A, up and down move through them only.
-    if s.shelf().in_actions(s.pointer()) {
+    if on_actions(s) {
         let rows: Vec<NavTarget> = candidates(s, d).into_iter().map(|(screen, t)| placed(d, screen, t)).collect();
         return match dir {
             Dir::Up | Dir::Down => nav::step(&rows, s.pointer().focus(), dir).map(|id| PointerEvent::Focus(id).into()),
@@ -194,7 +201,7 @@ pub(crate) fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> 
 /// tabs from left to right, opening and focusing each.
 pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     // On shelf's actions, shelf stays where it is.
-    if s.shelf().in_actions(s.pointer()) {
+    if on_actions(s) {
         return vec![];
     }
     // On shelf, move a page, which is the rows on screen.
@@ -219,7 +226,7 @@ fn on_shelf(s: &State, d: &impl Drawn) -> bool {
 
 /// L2 and R2 go to shelf's first or last entry.
 pub(crate) fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
-    if s.shelf().in_actions(s.pointer()) {
+    if on_actions(s) {
         return vec![];
     }
     if on_shelf(s, d) {
@@ -413,6 +420,27 @@ mod tests {
         d.0.top.push(t(0.0, 90.0, last));
         let below = navigate(&s, &d, &memory, Dir::Down);
         assert!(matches!(below, Some(Event::Pointer(PointerEvent::Focus(Id::Tab(_))))), "{below:?}");
+    }
+
+    #[test]
+    fn with_a_game_in_front_the_pad_leaves_shelfs_actions_for_the_second_screen() {
+        let mut s = state();
+        // A game started from shelf's actions is in front, with the focus left on an action.
+        let key = clamshell_library::key_of(&s.shelf().entry_at(0).map(|e| e.id.to_string()).unwrap_or_default());
+        let workspace = clamshell_state::Instance::workspace_of(&key);
+        s.apply(Event::Units(vec![clamshell_state::Instance::Run { key, secs: 1, n: 0 }]), &mut Vec::new());
+        let window = clamshell_state::session::windows::Window { id: 1, app_id: "game".into(), workspace, focused: true, visible: true, ..Default::default() };
+        s.apply(Event::Windows(vec![window]), &mut Vec::new());
+        let actions: Vec<Id> = s.shelf().actions().as_slice().iter().map(|a| Id::Shelf(a.id())).collect();
+        let mut d = drawn(&s);
+        d.0.top.extend(actions.iter().enumerate().map(|(i, id)| t(60.0, 15.0 * i as f32, id.clone())));
+        focus(&mut s, actions[0].clone());
+        assert!(s.shelf().in_actions(s.pointer()));
+        assert!(!s.pad().on_top(), "a game is in front");
+        let memory = Screens::default();
+        assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(Id::Tab(s.bottom().tab())).into()));
+        assert!(candidates(&s, &d).iter().all(|(screen, _)| *screen == Screen::Bottom));
+        assert!(!shoulder(&s, &d, 1).is_empty(), "the shoulders step the tabs");
     }
 
     #[test]
