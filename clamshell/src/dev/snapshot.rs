@@ -613,7 +613,9 @@ mod tests {
     }
 
     /// Draws every shot of the scenario as a live view would, frame after frame with only what changed
-    /// drawn, and checks each frame against the shot drawn whole.
+    /// drawn, and checks each frame against the shot drawn whole with no command cut to its bounds. A
+    /// difference means a damaged area or buffer age was wrong, or a command's bounds left out pixels it
+    /// draws, such as a glyph's anti-aliased edge.
     #[test]
     fn damaged_frames_match_whole_ones() {
         let groups = shots(FIXED_NOW).unwrap();

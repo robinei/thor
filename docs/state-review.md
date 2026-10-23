@@ -78,5 +78,6 @@ The weak spots are at the seams.
       which screens are hidden is decided from session state in the UI. (`Effect::Screens` now says
       whether the bottom screen is among them. The hidden view is only the bottom one on its own output
       while `bottom().off()`, which needs the UI's own placement, so it stays there.)
-- [ ] The damaged-vs-whole test doesn't catch bounds 2px too tight on text: the scenarios don't cover
-      anti-aliasing margins.
+- [x] The damaged-vs-whole test doesn't catch bounds 2px too tight on text: the scenarios don't cover
+      anti-aliasing margins. (It couldn't: the whole frame was cut to each command's bounds too. It is
+      now drawn with only the clips, so any bounds that leave out drawn pixels fail it.)

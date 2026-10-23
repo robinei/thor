@@ -175,6 +175,7 @@ impl<'a> Canvas<'a> {
             ),
             None => all,
         };
+        self.rec.clips.push((self.rec.cmds.len(), self.clip));
     }
 
     /// Buffer pixels per logical pixel.

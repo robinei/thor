@@ -123,11 +123,14 @@ impl Frames {
         (self.buffers.get(self.latest).map_or(&[], |(p, _)| p.data()), render::frame_events(state, &out))
     }
 
-    /// Draws `state` whole, as a fresh view's first frame. Returns its pixels.
+    /// Draws `state` whole, each command cut only by the clip it was recorded in, not by its bounds, to
+    /// check frames against: they match only if every command's bounds hold all it draws. Returns its
+    /// pixels.
     pub fn whole(&mut self, state: &State) -> Result<&[u8], Error> {
         let (pixmap, _) = self.buffers.first_mut().ok_or("no buffer")?;
         let mut retained = Retained::default();
-        render::render(pixmap.as_mut(), &mut retained, self.at, self.screen, state, &mut self.fonts, &mut self.images)?;
+        render::record(&mut retained, self.at, self.screen, state, &mut self.fonts, &mut self.images);
+        gfx::paint::play_unbounded(pixmap.as_mut(), &retained.next, &mut self.fonts, &self.images);
         Ok(pixmap.data())
     }
 }

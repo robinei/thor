@@ -23,26 +23,52 @@ pub fn play(pixmap: PixmapMut, rec: &Recording, damage: Bounds, cache: &mut Draw
             continue;
         }
         p.clip_to(clip);
-        let c = Color::from;
-        match cmd.op {
-            Op::Clear(color) => p.clear(c(color)),
-            Op::Fill { r, color } => p.fill(Px::to_rect(r), c(color)),
-            Op::HLine { x0, x1, y, px, color } => p.hline(x0.get(), x1.get(), y.get(), px, c(color)),
-            Op::VLine { x, y0, y1, px, color } => p.vline(x.get(), y0.get(), y1.get(), px, c(color)),
-            Op::Rounded { r, radius, color } => p.rounded(Px::to_rect(r), radius.get(), c(color)),
-            Op::Outline { r, radius, width, color } => p.outline(Px::to_rect(r), radius.get(), width.get(), c(color)),
-            Op::Circle { cx, cy, r, color } => p.circle(cx.get(), cy.get(), r.get(), c(color)),
-            Op::Line { a: [ax, ay], b: [bx, by], width, color } => p.line((ax.get(), ay.get()), (bx.get(), by.get()), width.get(), c(color)),
-            Op::Image { image, x, y, grey } => {
-                if let Some(pixmap) = images.pixmap(image) {
-                    p.blit(pixmap, x.get(), y.get(), grey);
-                }
+        draw(&mut p, rec, cmd.op, images);
+    }
+}
+
+/// Draws all of `rec` into `pixmap`, each command within the clip in force when it was recorded but not
+/// within its bounds. It is what the commands draw, to check against: it equals what [`play`] draws only
+/// if every command's bounds hold all of its pixels.
+pub fn play_unbounded(pixmap: PixmapMut, rec: &Recording, cache: &mut DrawCache, images: &Images) {
+    let mut p = Painter::new(pixmap, rec.scale.get(), rec.offset, cache);
+    let all = Bounds::of_size(rec.size);
+    let mut clips = rec.clips.iter().peekable();
+    let mut clip = all;
+    for (i, cmd) in rec.cmds.iter().enumerate() {
+        while let Some(&&(from, c)) = clips.peek() {
+            if from > i {
+                break;
             }
-            Op::Icon { icon, r, color } => p.icon(icon, Px::to_rect(r), c(color)),
-            Op::Text { x, y, size, color, .. } => {
-                if let Ok(text) = std::str::from_utf8(rec.text_of(&cmd.op)) {
-                    p.text(x.get(), y.get(), size.get(), c(color), text);
-                }
+            clip = c;
+            clips.next();
+        }
+        p.clip_to(clip);
+        draw(&mut p, rec, cmd.op, images);
+    }
+}
+
+/// Draws one command of `rec` with `p`, within the clip `p` has.
+fn draw(p: &mut Painter, rec: &Recording, op: Op, images: &Images) {
+    let c = Color::from;
+    match op {
+        Op::Clear(color) => p.clear(c(color)),
+        Op::Fill { r, color } => p.fill(Px::to_rect(r), c(color)),
+        Op::HLine { x0, x1, y, px, color } => p.hline(x0.get(), x1.get(), y.get(), px, c(color)),
+        Op::VLine { x, y0, y1, px, color } => p.vline(x.get(), y0.get(), y1.get(), px, c(color)),
+        Op::Rounded { r, radius, color } => p.rounded(Px::to_rect(r), radius.get(), c(color)),
+        Op::Outline { r, radius, width, color } => p.outline(Px::to_rect(r), radius.get(), width.get(), c(color)),
+        Op::Circle { cx, cy, r, color } => p.circle(cx.get(), cy.get(), r.get(), c(color)),
+        Op::Line { a: [ax, ay], b: [bx, by], width, color } => p.line((ax.get(), ay.get()), (bx.get(), by.get()), width.get(), c(color)),
+        Op::Image { image, x, y, grey } => {
+            if let Some(pixmap) = images.pixmap(image) {
+                p.blit(pixmap, x.get(), y.get(), grey);
+            }
+        }
+        Op::Icon { icon, r, color } => p.icon(icon, Px::to_rect(r), c(color)),
+        Op::Text { x, y, size, color, .. } => {
+            if let Ok(text) = std::str::from_utf8(rec.text_of(&op)) {
+                p.text(x.get(), y.get(), size.get(), c(color), text);
             }
         }
     }

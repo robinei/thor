@@ -194,6 +194,9 @@ pub struct Recording {
     pub(super) offset: (i32, i32),
     pub(super) cmds: Vec<Cmd>,
     pub(super) text: Vec<u8>,
+    /// Where the clip changed: from command `i` on, drawing is within the bounds. Before the first, it
+    /// is the whole buffer. Only a reference frame reads it (see [`super::paint::play_unbounded`]).
+    pub(super) clips: Vec<(usize, Bounds)>,
 }
 
 impl Recording {
@@ -204,6 +207,7 @@ impl Recording {
         self.offset = offset;
         self.cmds.clear();
         self.text.clear();
+        self.clips.clear();
     }
 
     pub fn size(&self) -> (u32, u32) {
