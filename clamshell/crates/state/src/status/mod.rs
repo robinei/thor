@@ -83,9 +83,21 @@ impl Sys {
         &self.time
     }
 
-    /// A reading of the battery's history and what is using the machine.
+    /// A reading of the battery's history and what is using the machine. A row's menu closes once the
+    /// row is gone.
     pub(crate) fn read_battery(&mut self, battery: Battery) {
         self.battery = battery;
+        if let Some(group) = &self.spender_menu
+            && !self.battery.spenders.iter().any(|s| s.group == *group)
+        {
+            self.spender_menu = None;
+        }
+    }
+
+    /// A tab was left: the time tab goes back to its main page, and the battery tab's menu closes.
+    pub(crate) fn left_tab(&mut self) {
+        self.time_page = TimePage::Main;
+        self.spender_menu = None;
     }
 
     /// A reading of the time zones.

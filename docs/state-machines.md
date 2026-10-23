@@ -309,7 +309,8 @@ only when the mute changed (not while the volume is unknown):
 - Battery warning: a notification at 10 % and at 5 % while discharging, each once until it stops
   discharging; none on the charger in bypass mode. Test: `the_battery_warns_only_while_discharging`.
 - Spender menu: opens on an endable row; Quit/ForceKill end a process or queue the entry's act. Test:
-  `a_rows_menu_quits_or_kills_what_it_is`. It stays open across tabs and after its row is gone (S34).
+  `a_rows_menu_quits_or_kills_what_it_is`. It closes when the tab is left or its row is gone:
+  `a_rows_menu_closes_when_the_tab_is_left_or_the_row_goes`.
 - Time pages: regions, a region's zones, set, back; reset on leaving the tab (GAP); NTP and stepping the
   clock by hand. Tests: `regions_then_their_zones_…`, `the_clock_set_by_the_network_or_by_hand…`.
 
@@ -336,7 +337,7 @@ only when the mute changed (not while the volume is unknown):
 | front, tab, listening, dock move | `reconcile_pad` | pad | pad tests |
 | windows down, program, battery, refresh, editor | `power()` for the bottom screen | bottom | screen tests |
 | idle stage | sync: dim and Screens; status watch | levels, system | idle test |
-| tabs | sync watches; `left_tab` closes the dock menu, releases levels, resets the time page | dock, levels, status | per tab; time page GAP |
+| tabs | sync watches; `left_tab` closes the dock menu, releases levels, resets the time page, closes the battery menu | dock, levels, status | per tab; time page GAP |
 | keymap chosen/deleted/made own | queued `KeymapEvent` → prefs | settings | keymap tests |
 | device view, files, keymaps naming | queued `EditOnKeyboard` / editors | bottom | per area |
 | Library read | problems notice, shelf reload, pausable runners, runner keymaps, land rules, dock pins, FetchFirst | bottom, session, keymap, settings, dock | partly |
@@ -432,7 +433,7 @@ Shelf, files, radios, levels, status:
 - S31. Setting a muted stream's volume shows it unmuted but leaves it muted (`levels/mod.rs:370`). Fixed: state/levels: setting a muted stream's level unmutes it.
 - S32. Dimming at brightness 0 raises it to 1 (`levels/mod.rs:264`). Fixed: state/levels: dimming never raises the brightness.
 - S33. The battery warning fires on the charger in bypass mode (`status/mod.rs:103`). Fixed: state/status: the battery warning keys on discharging.
-- S34. The battery tab's spender menu stays open across tabs and after its row is gone.
+- S34. The battery tab's spender menu stays open across tabs and after its row is gone. Fixed: state/status: the battery menu closes when the tab is left or its row goes.
 - S35. A relayout doesn't close a group that left a derived collection (Recent, Favourites). Fixed: state/shelf: a relayout closes a group no longer in its collection.
 - S36. A folder listing that changes the entries but not shelf's view isn't asked for metadata first. Fixed: state/shelf: a listing that changes the entries shown asks for their metadata first.
 - S37. The Mute key shows its notice when the volume is unknown and nothing changes (`lib.rs:1058`). Fixed: state/levels: the Mute key shows its notice only when the mute changed.

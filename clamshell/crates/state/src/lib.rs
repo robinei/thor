@@ -1020,7 +1020,7 @@ impl State {
         }
         self.dock.close();
         self.levels.release();
-        self.sys.reset_time_page();
+        self.sys.left_tab();
     }
 
     /// The editor's Save or Cancel, by its button or a key. Either closes it. Save hands the text to its

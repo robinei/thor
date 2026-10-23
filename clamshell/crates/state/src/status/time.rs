@@ -88,11 +88,6 @@ impl Sys {
         self.time_page
     }
 
-    /// Back to the main page, as when the tab is left.
-    pub(crate) fn reset_time_page(&mut self) {
-        self.time_page = TimePage::Main;
-    }
-
     /// Whether ClamShell's clocks show 12 hours rather than 24.
     pub fn twelve_hour(&self) -> bool {
         self.twelve_hour

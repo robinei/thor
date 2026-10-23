@@ -244,6 +244,25 @@ mod tests {
     }
 
     #[test]
+    fn a_rows_menu_closes_when_the_tab_is_left_or_the_row_goes() {
+        let mut s = state();
+        tap(&mut s, Id::Tab(Tab::Battery));
+        let firefox = || Battery { spenders: vec![spender(Group::Process("firefox".into()))], ..Battery::default() };
+        s.applied(Event::Reading(Reading::Battery(firefox())));
+        tap(&mut s, Id::Battery(BatteryId::Spender(0)));
+        assert!(s.sys().spender_menu().is_some());
+        tap(&mut s, Id::Tab(Tab::Wifi));
+        assert_eq!(s.sys().spender_menu(), None, "the tab left");
+        tap(&mut s, Id::Tab(Tab::Battery));
+        s.applied(Event::Reading(Reading::Battery(firefox())));
+        tap(&mut s, Id::Battery(BatteryId::Spender(0)));
+        s.applied(Event::Reading(Reading::Battery(firefox())));
+        assert!(s.sys().spender_menu().is_some(), "the row is still there");
+        s.applied(Event::Reading(Reading::Battery(Battery::default())));
+        assert_eq!(s.sys().spender_menu(), None, "the row gone");
+    }
+
+    #[test]
     fn the_battery_tab_watches_while_open() {
         let mut s = state();
         assert_eq!(tap(&mut s, Id::Tab(Tab::Battery)), vec![Effect::Watch(Watch::Metrics, false), Effect::Watch(Watch::Battery, true)]);
