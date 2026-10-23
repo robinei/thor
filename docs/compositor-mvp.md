@@ -107,25 +107,35 @@ input through it. No window floats or is moved by hand.
 **Windows on the two screens** (the model, the same under sway and the compositor; no focus or mode):
 
 1. **Every window lives on one screen** and stays there until moved, whichever program is active.
-2. **Each screen shows one window**, its front one; the second screen can show ClamShell's own view
+2. **At most one window is below, across all programs.** The second screen shows it, or ClamShell's own view
    instead (Home + right stick press).
-3. **Moving needs no focus:** Home + right stick down moves the window shown on the top screen down; up
-   moves the second screen's front window up (even while ClamShell's view is shown there). With nothing to
-   move, the flick does nothing. The moved window becomes the front of its new screen.
-4. **Activating a program** (shelf, the dock, a launch) brings its most recent window on each screen to the
-   front of that screen; a screen where it has no window is left as it is. So a game on top and a video
-   below stay as placed when either is activated, and the opposite arrangement works the same way: no
-   pinning is needed, since activation never pulls a window to another screen.
-5. **While Home is held, arrows at a screen's edges** appear where the program shown there has another
-   window on that screen; touching one switches to it. On the top screen Home + right stick left / right
-   does the same. Nothing else is shown.
-6. **When a screen's shown window closes**, the screen shows that program's next window there, else what
-   was in front before: on top eventually shelf, below ClamShell's view.
+3. **Moving needs no focus:** Home + right stick down moves the window shown on top down; if another was
+   below, it goes back up into its program's windows on top. So a window of the same program is swapped
+   (it is that program's next window on top, so it shows), and one of another program waits there until
+   that program is activated. Home + right stick up brings the window below up and shows it. With nothing
+   to move, the flick does nothing. A remembered window rule moving a new window down works the same way.
+4. **Activating a program** (shelf, the dock, a launch) brings its most recent window on top to the front;
+   the window below stays (shown, if it is that program's and ClamShell's view covered it).
+5. **While Home is held, arrows at the top screen's edges** appear when the program shown there has another
+   window on top; touching one, or Home + right stick left / right, switches to it. Nothing else is shown.
+   The second screen needs none: it has one window.
+6. **When the window shown on top closes**, the top shows that program's next window, else what was in
+   front before, eventually shelf. When the window below closes, the second screen shows ClamShell's view.
 
-The dock and shelf switch programs, on both screens; the arrows switch a program's windows on one screen;
-placement is the user's. Keyboard focus follows what was touched last, and pad input returns it to the top
-screen. A new dialog becomes the front of its screen (it usually needs an answer); the arrows go back to
-its parent. The dock's menu for an entry still lists its windows, to pick one by touch.
+The dock and shelf switch programs; the arrows switch a program's windows on top; placement is the user's.
+Keyboard focus follows what was touched last, and pad input returns it to the top screen. A new dialog
+becomes the front of its screen (it usually needs an answer); the arrows go back to its parent. The dock's
+menu for an entry still lists its windows, to pick one by touch. Two windows below at once (a video and a
+chat) is given up, and can be relaxed later if a need appears.
+
+Under sway the model is the same (the state decides, the sway adapter carries it out with the commands it
+has: down, back up, focus a tab), the arrows are a layer-shell overlay surface on each output, and three
+things are presented differently, accepted for a fallback:
+
+- the top screen's shown window is made fullscreen in sway, which covers the tab bar sway draws when a
+  workspace holds several windows;
+- dialogs and fixed-size windows float over their parent, as sway does, instead of alone on black;
+- a game that ignores its size is shown at that size, not scaled to fit.
 
 **The Home chords.** Home is on the left of the Thor, Select too; Start, Back and the right stick are on
 the right; the AYN button is in the middle. Every chord is Home under the left thumb with the right thumb or
@@ -134,7 +144,7 @@ an index finger, never two buttons under one thumb:
 | Chord | Action |
 |---|---|
 | Home | shelf |
-| Home + right stick down / up | the top screen's window down / the second screen's front window up (was Home+Down/Up) |
+| Home + right stick down / up | the top screen's window down (the one below goes back up) / the window below up (was Home+Down/Up) |
 | Home + right stick left / right | previous / next window of the program shown on the top screen |
 | Home + right stick press | the second screen: ClamShell's view or the windows moved there (was Home+Select) |
 | Home+B | close the window in front; held, quit the program |
