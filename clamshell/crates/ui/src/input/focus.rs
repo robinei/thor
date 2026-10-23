@@ -8,7 +8,7 @@
 
 use clamshell_state::bottom::keyboard;
 use clamshell_state::levels::Level;
-use clamshell_state::{DockId, EditorId, Event, Id, LevelEvent, ListId, PadInput, PointerEvent, ShelfEvent, ShelfId, State, Tab};
+use clamshell_state::{DockId, EditorId, Event, Id, LevelEvent, ListId, PadInput, PointerEvent, RowPart, ShelfEvent, ShelfId, State, Tab};
 use smithay_client_toolkit::seat::keyboard::Keysym;
 
 use crate::gfx::Rect;
@@ -184,6 +184,14 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
     {
         let next = if dir == Dir::Up { i.checked_sub(1) } else { Some(i + 1).filter(|&n| n < s.lists().len(list)) };
         if let Some(id) = next.and_then(|n| u16::try_from(n).ok()).and_then(|n| ListId::sibling(focus, n, s.dock().items().len())) {
+            // A row that is drawn without that part, such as a keymap without Edit, gets the focus on
+            // the row itself.
+            let id = match id {
+                Id::Row { list, i, part } if part != RowPart::Main && !drawn_on(d, None, &id) && drawn_on(d, None, &list.row(i)) => {
+                    Id::Row { list, i, part: RowPart::Main }
+                }
+                id => id,
+            };
             return Some(PointerEvent::Focus(id).into());
         }
     }
@@ -466,6 +474,26 @@ mod tests {
         assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(Id::Tab(s.bottom().tab())).into()));
         assert!(candidates(&s, &d).iter().all(|(screen, _)| *screen == Screen::Bottom));
         assert!(!shoulder(&s, &d, 1).is_empty(), "the shoulders step the tabs");
+    }
+
+    #[test]
+    fn up_and_down_from_a_rows_part_go_to_the_next_row_itself_where_it_has_no_such_part() {
+        use clamshell_state::Reading;
+        use clamshell_state::radios::wifi::{Network, Wifi};
+        let mut s = state();
+        let networks = (0..10).map(|i| Network { ssid: format!("n{i}"), ..Network::default() }).collect();
+        s.apply(Reading::Wifi(Wifi { present: true, on: true, networks, ..Wifi::default() }).into(), &mut Vec::new());
+        s.apply(PointerEvent::Activate(Id::Tab(Tab::Wifi)).into(), &mut Vec::new());
+        let part = |i, part| Id::Row { list: ListId::Wifi, i, part };
+        // Row 3 has an Edit part, row 4 doesn't, and row 2 isn't drawn.
+        let d = Fake(Screens {
+            top: vec![],
+            bottom: vec![t(0.0, 30.0, part(3, RowPart::Main)), t(50.0, 30.0, part(3, RowPart::Edit)), t(0.0, 40.0, part(4, RowPart::Main))],
+        });
+        let memory = Screens::default();
+        focus(&mut s, part(3, RowPart::Edit));
+        assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(part(4, RowPart::Main)).into()));
+        assert_eq!(navigate(&s, &d, &memory, Dir::Up), Some(PointerEvent::Focus(part(2, RowPart::Edit)).into()), "not drawn: the same part");
     }
 
     #[test]
