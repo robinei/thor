@@ -9,9 +9,9 @@
 //! (`clamshell ctl pad switch`) moves it to the second screen, and View there moves it back. While a
 //! dock entry is being moved, the second screen has the pad, since the D-pad moves the entry.
 //!
-//! When the claimant changes, the pad goes to the new one, with one exception. If the pad is in use on
-//! the second screen, with its focus ring showing, and nothing claimed it before, it stays there. This
-//! way the keyboard that comes up under it can be typed on with the pad.
+//! When the claimant changes, the pad goes to the new one, with one exception. If View moved the pad to
+//! the second screen, it stays there until View moves it back or shelf comes to the front. This way the
+//! keyboard that comes up under it can be typed on with the pad.
 //!
 //! The pad mouse is switched by the user, or follows the program in force (its Setting::PadMouse). It is
 //! turned on for a program that wants it, and off again when another program or none is in force, unless
@@ -92,7 +92,7 @@ pub struct Pad {
     route: PadRoute,
     mouse: PadMouse,
     /// View moved the pad to the second screen, away from what claims it, such as the pad mouse or
-    /// typing.
+    /// typing. It stays moved when the claimant changes, until shelf claims the pad.
     moved_to_ui: bool,
     /// What claimed the pad when last reconciled.
     last_claimant: Option<Claimant>,
@@ -141,13 +141,13 @@ impl Pad {
         }
     }
 
-    /// Runs after anything changed. Works out the claimant from what is in front, the tab and whether the
-    /// focus ring shows, and then where the pad goes. Returns the new route if it changed.
-    pub(crate) fn reconcile(&mut self, front: Front, tab: Tab, focus_shown: bool, listening: bool, moving: bool) -> Option<PadRoute> {
+    /// Runs after anything changed. Works out the claimant from what is in front and the tab, and then
+    /// where the pad goes. Returns the new route if it changed.
+    pub(crate) fn reconcile(&mut self, front: Front, tab: Tab, listening: bool, moving: bool) -> Option<PadRoute> {
         let claimant = self.claimant(front, tab);
         if claimant != self.last_claimant {
-            let in_use = self.route == PadRoute::Ui && focus_shown;
-            self.moved_to_ui = self.last_claimant.is_none() && in_use && claimant != Some(Claimant::Mouse);
+            // Shelf has both screens, so a later claimant gets the pad again.
+            self.moved_to_ui &= claimant != Some(Claimant::Shelf);
             self.last_claimant = claimant;
         }
         let route = match self.wanted_route() {
@@ -264,6 +264,21 @@ mod tests {
         s.applied(PointerEvent::Focus(Id::Tab(Tab::Dock)).into());
         tap(&mut s, Id::Tab(Tab::Keyboard));
         assert_eq!(s.pad().route(), PadRoute::Ui);
+    }
+
+    #[test]
+    fn the_pad_moved_to_the_second_screen_stays_there_until_view_or_shelf() {
+        let mut s = state();
+        s.applied(Event::Windows(vec![foot()]));
+        tap(&mut s, Id::Tab(Tab::Dock));
+        assert_eq!(route(&mut s, Event::PadSwitch), PadRoute::Ui);
+        assert_eq!(route(&mut s, Event::TextInput(true)), PadRoute::Ui, "the keyboard coming up under it: still there");
+        assert_eq!(s.bottom().tab(), Tab::Keyboard);
+        assert_eq!(route(&mut s, Event::PadSwitch), PadRoute::Keys, "View: back to what claims it, typing now");
+        assert_eq!(route(&mut s, Event::PadSwitch), PadRoute::Ui);
+        s.applied(Event::Windows(vec![win(2, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), true)]));
+        assert_eq!(s.pad().route(), PadRoute::Ui, "shelf in front");
+        assert_eq!(route(&mut s, Event::Windows(vec![foot()])), PadRoute::Keys, "after shelf, the claimant has it again");
     }
 
     #[test]

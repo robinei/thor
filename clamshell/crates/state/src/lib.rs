@@ -494,7 +494,7 @@ impl State {
     fn reconcile_pad(&mut self) -> Option<PadRoute> {
         let listening = self.listening();
         let moving = self.dock.moving().is_some() && self.bottom.tab() == Tab::Dock;
-        self.pad.reconcile(self.session.front(), self.bottom.tab(), self.pointer.show_focus(), listening, moving)
+        self.pad.reconcile(self.session.front(), self.bottom.tab(), listening, moving)
     }
 
     /// What the outside should have as things are now. The second screen watches what the open tab

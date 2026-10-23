@@ -198,7 +198,7 @@ while a dock entry is being moved. The focus ring hides when the route leaves Ui
 |---|---|
 | front or tab changes the claimant, the route follows | `the_pad_goes_to_shelf_the_program_or_typing_…` |
 | View switches to the second screen and back | `view_moves_the_pad_between_…`; with shelf in front GAP |
-| a claimant change resets the switch (the documented exception never applies, S19) | GAP |
+| a claimant change keeps the switch to the second screen; shelf claiming the pad clears it | `the_pad_moved_to_the_second_screen_stays_there_until_view_or_shelf` |
 | pad mouse by hand, by game, kept by hand | `pad_mouse_toggles_independently_…`, `the_pad_mouse_follows_the_game_…` |
 | listening, dock move, focus ring | `a_new_keymap_is_named_edited_and_mapped`, `moving_a_dock_entry_takes_the_pad_…`, `the_focus_ring_hides_when_the_pad_leaves_…` |
 | Down/Up light a target; Activate resolves the item pressed | `down_and_up_light_a_target`, `the_pressed_item_is_lit_where_it_is_now`, `a_press_acts_on_the_item_that_was_drawn`; a Down without Up leaves a stale press (GAP) |
@@ -403,7 +403,7 @@ Second screen, device, pad, keymaps:
 - S17. Two taps on Sticks before the first progress start the calibration twice (`device/mod.rs:151`). Fixed: state/device: sticks and remote login wait for their answer.
 - S18. Two taps on Ssh send it twice (`device/mod.rs:149`). Fixed: state/device: sticks and remote login wait for their answer.
 - S19. The pad switched to the second screen goes back when the claimant changes (the keyboard coming
-  up): the documented exception never applies (`nav/pad.rs:150`).
+  up): the documented exception never applies (`nav/pad.rs:150`). Fixed: state/pad: switched to the second screen, the pad stays until View or shelf.
 - S22. Forgetting a keymap that was set globally leaves games that chose it on their runner's keymap, not
   Default (`settings/mod.rs:569`).
 
