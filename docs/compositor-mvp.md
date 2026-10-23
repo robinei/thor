@@ -232,11 +232,11 @@ Before writing the backend, on the device (a day or two):
 ## 6. Phases (the product works at each step)
 
 0. **Prepare under sway, no Smithay.** Behaviour unchanged; worth doing whatever is decided about the rest.
-   - [ ] `ui::Core`: the state, the event queue, the input machines, timers as deadlines (not
+   - [x] `ui::Core`: the state, the event queue, the input machines, timers as deadlines (not
          `LoopHandle<App>` timers), each screen recorded and drawn into a pixmap; `ui::platform` reduced to
          the Wayland host around it.
-   - [ ] Input routed by `Screen`, not by `WlSurface`.
-   - [ ] `Effect::Outputs { top, bottom }` and `Effect::Refresh(hz)` computed by sync, replacing
+   - [x] Input routed by `Screen`, not by `WlSurface`.
+   - [x] `Effect::Outputs { top, bottom }` and `Effect::Refresh(hz)` computed by sync, replacing
          `Effect::Screens`, `BottomPower` and the refresh read out of `Apply`/`Launch` in `app.rs`.
 
    Done when the pixel and focus references are unchanged, the trace differs only by those effects, the

@@ -71,6 +71,11 @@ How areas cooperate:
 
 ## The UI
 
+- **Core and host.** `ui::Core` is the UI without a backend: the state and the event queue, input routed
+  by screen, the timers as deadlines (the core says when it next needs to run), each screen recorded and
+  drawn into a pixmap the host hands it, and the effects in order. `ui::platform` hosts it as a Wayland
+  client: the surfaces and their shm buffers, the protocols, and the effects that are the UI's own (the
+  screens' power, the refresh rate, quitting).
 - **Drawing.** Views are functions of `&State` that draw on a canvas. The canvas records commands (fills,
   text, icons, images, clips) into a flat, reused buffer; after every event each visible screen is
   recorded and compared with its last recording. If nothing differs, nothing is drawn or committed. If
