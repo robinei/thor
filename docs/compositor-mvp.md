@@ -229,7 +229,13 @@ Before writing the backend, on the device (a day or two):
 | UI rasterising delays game frames | low-medium | measure; move playback to a worker if needed |
 | The state rewrite | high effort, low risk with tests | behind the adapter (section 6), with the state machines and tests rewritten together |
 
-## 6. Phases (the product works at each step)
+## 6. Phases (as much as possible without the device; sway kept working throughout)
+
+The state's window model changes first, under sway: the state speaks one model, and gets two executors,
+the compositor (placing synchronously) and sway (placing a moment later with its rules, as today). The
+sway-specific mechanisms (the landing workspace, `for_window` rules and their switch variables, marks,
+stray-window matching) move out of the state into `crates/system/src/sway`, which approximates the model.
+Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, alongside them.
 
 0. **Prepare under sway, no Smithay.** Behaviour unchanged; worth doing whatever is decided about the rest.
    - [x] `ui::Core`: the state, the event queue, the input machines, timers as deadlines (not
@@ -241,18 +247,24 @@ Before writing the backend, on the device (a day or two):
 
    Done when the pixel and focus references are unchanged, the trace differs only by those effects, the
    no-alloc tests pass, and the nested-sway test and the VM suite pass.
-1. **Compositor crate, nested and headless,** hosting the core. A temporary adapter (about 300 lines)
-   presents its windows as today's window snapshot and carries out today's window commands, so the state is
-   untouched while the compositor matures. `clamshell --nested` on the desktop; the device stays on sway.
-   Headless tests are written against what is visible from outside (which window on which output,
-   configure sizes) so they survive phase 3.
-2. **Device backend:** DRM/GBM/GLES, libseat, libinput, rotation, power, refresh, Xwayland, dmabuf
-   feedback, the internal screenshot, the cursor, key injection and text-input. A session setting chooses
-   sway or ClamShell; both stay installed while it is tried on the device.
-3. **The state's window model with synchronous placement:** the adapter, the sway module, the choice, sway,
-   grim, swaybg, the sway configs, the output-setup script and the nested-sway test go; the VM suite, the
-   self-test and the panel calibration use ClamShell's own control words.
-4. **Absorb, later:** the clipboard and the Waydroid proxy in-process, libinput replacing the evdev watch
+1. **The state's new window model, under sway.** Window events (`Opened`, `Closed`, `Title`, `Activate`)
+   and each window's place in the state; `crates/system/src/sway` translates sway's snapshots into those
+   events and the places into sway commands, holding the rules, marks and landing workspace. Checked by the
+   state's tests, the random test, nested-sway and the VM suite.
+2. **The compositor, nested and headless,** implementing the same model synchronously: xdg-shell, Xwayland
+   with the X11 adapter, input routing, the on-screen keyboard through text-input, the clipboard,
+   screenshots, idle-inhibit. Developed with `clamshell --nested` on the desktop (real Steam and Proton on
+   x86), tested headless under `cargo test`. sway stays the session's compositor.
+3. **The generic DRM backend, on the VM:** udev, DRM, GBM, GLES, libseat, libinput, two outputs, power,
+   refresh, dmabuf feedback with scanout tranches. The VM image boots either compositor; the VM suite
+   checks both.
+4. **On the device:** the checks of section 5 (niri as a stand-in, possible as soon as the Thor arrives),
+   then the Snapdragon specifics: panel orientation, rotated plane scanout, command-mode pacing, the
+   refresh policy, the brightness and power guards; measurements; daily use with sway still the default.
+5. **The default switches** to ClamShell's compositor; sway stays installed and selectable as the fallback
+   for as long as the owner wants it. Dropping it (the sway adapter, its tests, the sway packages) is a
+   later decision, taken once the built-in compositor has proven itself in daily use.
+6. **Absorb, later:** the clipboard and the Waydroid proxy in-process, libinput replacing the evdev watch
    thread, notifications, uwsm, refresh calibration from vblank timestamps, direct injection of the pad
    mouse and keymap keys.
 
