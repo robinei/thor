@@ -210,7 +210,7 @@ impl Radios {
             (false, _, true) => Command::Disconnect(address),
             (false, _, false) => {
                 bt.busy = Some(address.clone());
-                bt.error = None;
+                self.bluetooth_local.attempt(bt.error.take());
                 Command::Connect(address)
             }
         };
@@ -236,6 +236,23 @@ mod tests {
         assert_eq!(names, ["buds", "pad", "zz", ""]);
         assert_eq!(Kind::from_icon("audio-headphones"), Kind::Audio);
         assert_eq!(Kind::from_icon("input-gaming"), Kind::Gamepad);
+    }
+
+    #[test]
+    fn a_connection_stays_busy_until_a_reading_answers_it() {
+        let mut s = state();
+        let bt = |busy: Option<&str>, error: Option<Problem>, connected: bool| {
+            let busy = busy.map(str::to_owned);
+            Reading::Bluetooth(Bluetooth { present: true, on: true, devices: vec![dev("pad", true, connected)], busy, error })
+        };
+        let refused = || Some(Problem { action: Action::Connect, reason: Reason::Bus("refused".into()) });
+        read(&mut s, bt(None, refused(), false));
+        tap(&mut s, ListId::Bluetooth.row(0));
+        read(&mut s, bt(None, refused(), false));
+        assert_eq!(s.radios().bluetooth().status(), RadioStatus::Busy("pad"), "a reading from before the tap");
+        read(&mut s, bt(Some("00:pad"), None, false));
+        read(&mut s, bt(None, None, true));
+        assert_eq!(s.radios().bluetooth().status(), RadioStatus::Connected("pad"));
     }
 
     #[test]

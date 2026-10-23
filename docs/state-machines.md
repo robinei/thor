@@ -288,10 +288,14 @@ Wi-Fi and Bluetooth readings replace the state whole; the system is the authorit
 
 - Wi-Fi: a tap joins (a password editor for a secure unsaved network; NeedsLogin for an enterprise
   one); a long press forgets a saved one; power toggles. Tests: `joining_asks_for_a_password_only_when_
-  needed`, `a_network_that_needs_a_login_says_so`. Cancel and power GAP. A reading wipes the local error
-  and the optimistic busy mark, even a reading older than the command (S30).
+  needed`, `a_network_that_needs_a_login_says_so`. Cancel and power GAP. A reading keeps the join's busy
+  mark until it shows the join, the network connected or an error other than the one from before the
+  join (a reading sent before the command still has that one): `a_join_stays_busy_until_a_reading_
+  answers_it`. The login needed stays until the next attempt, the system's own error or that network
+  connected: `a_login_needed_stays_until_the_next_attempt`.
 - Bluetooth: a tap connects (pairing) or disconnects; a long press forgets; discovery runs while the
-  tab is open. Test: `taps_connect_or_disconnect_and_a_long_press_forgets`.
+  tab is open. Test: `taps_connect_or_disconnect_and_a_long_press_forgets`. A connect's busy mark is
+  kept over readings as a join's is: `a_connection_stays_busy_until_a_reading_answers_it`.
 
 ## Levels (levels/)
 
@@ -429,7 +433,7 @@ Shelf, files, radios, levels, status:
 - S27. Copy/Cut with only stale selected entries makes an empty clip that Paste offers and ignores (`files.rs:316`). Fixed: state/files: a listing drops selected entries that are gone.
 - S28. A cut clip is cleared before the move finishes, so after a failed move it is gone. Fixed: state/files: count the operations running, and keep a cut entry until moved.
 - S29. `busy` clears at the first of several operations' Done (`files.rs:415`); without a Done it never clears. Fixed: state/files: count the operations running, and keep a cut entry until moved.
-- S30. A Wi-Fi or Bluetooth reading wipes the local error and busy mark, even one older than the command.
+- S30. A Wi-Fi or Bluetooth reading wipes the local error and busy mark, even one older than the command. Fixed: state/radios: a busy mark and a local error stay until a reading answers them.
 - S31. Setting a muted stream's volume shows it unmuted but leaves it muted (`levels/mod.rs:370`). Fixed: state/levels: setting a muted stream's level unmutes it.
 - S32. Dimming at brightness 0 raises it to 1 (`levels/mod.rs:264`). Fixed: state/levels: dimming never raises the brightness.
 - S33. The battery warning fires on the charger in bypass mode (`status/mod.rs:103`). Fixed: state/status: the battery warning keys on discharging.

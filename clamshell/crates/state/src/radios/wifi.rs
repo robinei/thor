@@ -183,6 +183,7 @@ impl Radios {
         }
         if n.enterprise && !n.saved {
             self.wifi.error = Some(Problem::NeedsLogin { ssid });
+            self.wifi_local.error = true;
             return;
         }
         if n.secure && !n.saved {
@@ -194,7 +195,7 @@ impl Radios {
 
     pub(crate) fn join(&mut self, ssid: String, password: Option<String>, out: &mut Out) {
         self.wifi.busy = Some(ssid.clone());
-        self.wifi.error = None;
+        self.wifi_local.attempt(self.wifi.error.take());
         out.effects.push(Effect::Wifi(Command::Connect { ssid, password: password.map(Secret) }));
     }
 }
@@ -256,6 +257,50 @@ mod tests {
         assert_eq!(s.radios().wifi().net_state(&login), NetState::Login);
         assert_eq!(tap(&mut s, ListId::Wifi.row(0)), vec![]);
         assert_eq!(s.radios().wifi().status(), RadioStatus::Error(&Problem::NeedsLogin { ssid: "work".into() }));
+    }
+
+    #[test]
+    fn a_join_stays_busy_until_a_reading_answers_it() {
+        let mut s = state();
+        let wifi = |busy: Option<&str>, error: Option<Problem>, connected: bool| {
+            let networks = vec![net("home", 70, true, true, connected), net("cafe", 90, false, false, false)];
+            Reading::Wifi(Wifi { present: true, on: true, networks, busy: busy.map(str::to_owned), error })
+        };
+        let no_answer = || Some(Problem::NoAnswer { ssid: "home".into() });
+        read(&mut s, wifi(None, no_answer(), false));
+        tap(&mut s, ListId::Wifi.row(0));
+        // A reading sent before the join, with the error from before it, doesn't end it.
+        read(&mut s, wifi(None, no_answer(), false));
+        assert_eq!(s.radios().wifi().status(), RadioStatus::Busy("home"));
+        read(&mut s, wifi(None, None, false));
+        assert_eq!(s.radios().wifi().status(), RadioStatus::Busy("home"));
+        // The system shows the join; from then on its readings stand.
+        read(&mut s, wifi(Some("home"), None, false));
+        read(&mut s, wifi(None, no_answer(), false));
+        assert_eq!(s.radios().wifi().status(), RadioStatus::Error(&Problem::NoAnswer { ssid: "home".into() }));
+        // Joined without the system showing the join: connected answers it.
+        tap(&mut s, ListId::Wifi.row(0));
+        read(&mut s, wifi(None, None, true));
+        assert_eq!(s.radios().wifi().status(), RadioStatus::Connected("home"));
+        // A new error answers it too.
+        read(&mut s, wifi(None, None, false));
+        tap(&mut s, ListId::Wifi.row(0));
+        read(&mut s, wifi(None, Some(Problem::WrongPassword { ssid: "home".into() }), false));
+        assert_eq!(s.radios().wifi().status(), RadioStatus::Error(&Problem::WrongPassword { ssid: "home".into() }));
+    }
+
+    #[test]
+    fn a_login_needed_stays_until_the_next_attempt() {
+        let mut s = state();
+        let login = Network { enterprise: true, ..net("work", 60, true, false, false) };
+        let reading =
+            || Reading::Wifi(Wifi { present: true, on: true, networks: vec![login.clone(), net("cafe", 90, false, false, false)], ..Wifi::default() });
+        read(&mut s, reading());
+        tap(&mut s, ListId::Wifi.row(0));
+        read(&mut s, reading());
+        assert_eq!(s.radios().wifi().status(), RadioStatus::Error(&Problem::NeedsLogin { ssid: "work".into() }), "a reading doesn't know of it");
+        tap(&mut s, ListId::Wifi.row(1));
+        assert_eq!(s.radios().wifi().status(), RadioStatus::Busy("cafe"), "the next attempt");
     }
 
     #[test]
