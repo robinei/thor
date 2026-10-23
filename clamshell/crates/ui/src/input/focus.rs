@@ -90,23 +90,39 @@ pub(crate) fn switch_screen(s: &State, d: &impl Drawn, memory: &mut Screens<Opti
     Some(PointerEvent::Focus(target).into())
 }
 
+/// The targets the pad may move between, each with its screen. On shelf's actions, reached by holding A,
+/// they are the actions alone. Otherwise they are the targets on the screens the pad may use, except
+/// those for fingers: a list's area (the pad goes to its rows instead) and a dock tile's tray mark (the
+/// pad uses the Menu entry in the tile's long-press menu). Shelf's actions are left out, as they are
+/// reached only by holding A.
+pub(crate) fn candidates<'d>(s: &State, d: &'d impl Drawn) -> Vec<(Screen, &'d Target)> {
+    if s.shelf().in_actions(s.pointer()) {
+        let actions: Vec<Id> = s.shelf().actions().as_slice().iter().map(|a| Id::Shelf(a.id())).collect();
+        return d.targets(Screen::Top).iter().filter(|t| actions.contains(&t.id)).map(|t| (Screen::Top, t)).collect();
+    }
+    let screens: &[Screen] = if scope(s) == PadScope::BottomOnly { &[Screen::Bottom] } else { &Screen::BOTH };
+    let actions = |id: &Id| matches!(id, Id::Shelf(s) if !matches!(s, ShelfId::Entry(_) | ShelfId::Collection(_) | ShelfId::Up));
+    let fingers = |id: &Id| matches!(id, Id::List(_) | Id::Dock(DockId::Tray(_)));
+    screens.iter().flat_map(|&screen| d.targets(screen).iter().map(move |t| (screen, t))).filter(|(_, t)| !fingers(&t.id) && !actions(&t.id)).collect()
+}
+
+/// `t` on `screen` placed in the plane [`nav::step`] works in.
+fn placed(d: &impl Drawn, screen: Screen, t: &Target) -> NavTarget {
+    let (w, h) = d.size(screen);
+    let (w, h) = (w.max(1.0), h.max(1.0));
+    let y0 = match screen {
+        Screen::Top => 0.0,
+        Screen::Bottom => 1.0,
+    };
+    NavTarget { screen, rect: Rect::new(t.rect.x / w, y0 + t.rect.y / h, t.rect.w / w, t.rect.h / h), id: t.id.clone() }
+}
+
 /// Pad-style focus movement over the screens' targets, as if the second screen were right below the
 /// main one.
 pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, dir: Dir) -> Option<Event> {
     // On shelf's actions, reached by holding A, up and down move through them only.
     if s.shelf().in_actions(s.pointer()) {
-        let actions: Vec<Id> = s.shelf().actions().as_slice().iter().map(|a| Id::Shelf(a.id())).collect();
-        let (w, h) = d.size(Screen::Top);
-        let rows: Vec<NavTarget> = d
-            .targets(Screen::Top)
-            .iter()
-            .filter(|t| actions.contains(&t.id))
-            .map(|t| NavTarget {
-                screen: Screen::Top,
-                rect: Rect::new(t.rect.x / w.max(1.0), t.rect.y / h.max(1.0), t.rect.w / w.max(1.0), t.rect.h / h.max(1.0)),
-                id: t.id.clone(),
-            })
-            .collect();
+        let rows: Vec<NavTarget> = candidates(s, d).into_iter().map(|(screen, t)| placed(d, screen, t)).collect();
         return match dir {
             Dir::Up | Dir::Down => nav::step(&rows, s.pointer().focus(), dir).map(|id| PointerEvent::Focus(id).into()),
             Dir::Left | Dir::Right => None,
@@ -152,26 +168,7 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
             return Some(PointerEvent::Focus(id).into());
         }
     }
-    let screens: &[Screen] = if scope == PadScope::BottomOnly { &[Screen::Bottom] } else { &Screen::BOTH };
-    let mut all = Vec::new();
-    for &screen in screens {
-        let (w, h) = d.size(screen);
-        let (w, h) = (w.max(1.0), h.max(1.0));
-        let y0 = match screen {
-            Screen::Top => 0.0,
-            Screen::Bottom => 1.0,
-        };
-        // A list's area is for fingers; the pad goes to its rows instead. Shelf's actions are reached
-        // only by holding A. A dock tile's tray mark is for fingers too; the pad uses the Menu entry in
-        // the tile's long-press menu.
-        let actions = |id: &Id| matches!(id, Id::Shelf(s) if !matches!(s, ShelfId::Entry(_) | ShelfId::Collection(_) | ShelfId::Up));
-        let fingers = |id: &Id| matches!(id, Id::List(_) | Id::Dock(DockId::Tray(_)));
-        all.extend(d.targets(screen).iter().filter(|t| !fingers(&t.id) && !actions(&t.id)).map(|t| NavTarget {
-            screen,
-            rect: Rect::new(t.rect.x / w, y0 + t.rect.y / h, t.rect.w / w, t.rect.h / h),
-            id: t.id.clone(),
-        }));
-    }
+    let all: Vec<NavTarget> = candidates(s, d).into_iter().map(|(screen, t)| placed(d, screen, t)).collect();
     nav::step(&all, s.pointer().focus(), dir).map(|id| PointerEvent::Focus(id).into())
 }
 

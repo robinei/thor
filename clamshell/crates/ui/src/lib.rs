@@ -134,3 +134,107 @@ impl Frames {
         Ok(pixmap.data())
     }
 }
+
+/// Records both screens without Wayland and answers what the pad does on them, by the same functions a
+/// live view uses (`input::focus`). The snapshot test maps the pad's moves with it.
+pub struct PadFrames {
+    at: screens::Screens<Placement>,
+    retained: screens::Screens<Retained>,
+    fonts: DrawCache,
+    images: Images,
+}
+
+/// Both screens' targets as one frame of each placed them.
+pub struct PadView {
+    targets: screens::Screens<Vec<toolkit::Target>>,
+    sizes: screens::Screens<(f32, f32)>,
+}
+
+/// A direction the pad moves the focus in.
+pub use input::nav::Dir;
+
+/// A target drawn on a screen: its id and its rect (x, y, width, height) in the screen's pixels.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PadTarget {
+    pub screen: Screen,
+    pub id: clamshell_state::Id,
+    pub rect: [f32; 4],
+}
+
+impl PadTarget {
+    fn of(screen: Screen, t: &toolkit::Target) -> PadTarget {
+        PadTarget { screen, id: t.id.clone(), rect: [t.rect.x, t.rect.y, t.rect.w, t.rect.h] }
+    }
+}
+
+impl PadFrames {
+    /// For screens of `top` and `bottom` pixels.
+    pub fn new(top: (u32, u32), bottom: (u32, u32)) -> PadFrames {
+        let at = |size_px| Placement { size_px, scale: 1, drift: (0, 0) };
+        PadFrames {
+            at: screens::Screens { top: at(top), bottom: at(bottom) },
+            retained: screens::Screens::default(),
+            fonts: DrawCache::load(),
+            images: Images::synchronous(),
+        }
+    }
+
+    /// Records both screens for `state`.
+    pub fn record(&mut self, state: &State) -> PadView {
+        let mut view = PadView { targets: screens::Screens::default(), sizes: screens::Screens::default() };
+        for screen in Screen::BOTH {
+            let at = self.at[screen];
+            render::record(&mut self.retained[screen], at, screen, state, &mut self.fonts, &mut self.images);
+            view.targets[screen] = self.retained[screen].targets.clone();
+            view.sizes[screen] = (at.size_px.0 as f32, at.size_px.1 as f32);
+        }
+        view
+    }
+}
+
+impl input::focus::Drawn for PadView {
+    fn targets(&self, screen: Screen) -> &[toolkit::Target] {
+        &self.targets[screen]
+    }
+
+    fn size(&self, screen: Screen) -> (f32, f32) {
+        self.sizes[screen]
+    }
+}
+
+impl PadView {
+    /// Every target drawn on `screen`, in the order drawn.
+    pub fn drawn(&self, screen: Screen) -> Vec<PadTarget> {
+        self.targets[screen].iter().map(|t| PadTarget::of(screen, t)).collect()
+    }
+
+    /// The targets the pad may move between in `state`.
+    pub fn focusable(&self, state: &State) -> Vec<PadTarget> {
+        input::focus::candidates(state, self).into_iter().map(|(screen, t)| PadTarget::of(screen, t)).collect()
+    }
+
+    /// What moving the pad in `dir` does, with nothing remembered of where the focus was on each screen.
+    pub fn navigate(&self, state: &State, dir: Dir) -> Option<Event> {
+        input::focus::navigate(state, self, &screens::Screens::default(), dir)
+    }
+
+    /// Where the pad's focus is when it is next used: the focus if it is drawn where the pad may go,
+    /// else where A brings it.
+    pub fn start(&self, state: &State) -> Option<clamshell_state::Id> {
+        match input::focus::press(state, self, &screens::Screens::default())? {
+            input::focus::PadPress::Press(id) => Some(id),
+            input::focus::PadPress::Focus(Event::Pointer(clamshell_state::PointerEvent::Focus(id))) => Some(id),
+            input::focus::PadPress::Focus(_) => None,
+        }
+    }
+
+    /// Whether the pad may go to both screens in `state`, rather than to the second screen alone.
+    pub fn both_screens(state: &State) -> bool {
+        input::focus::scope(state) != input::focus::PadScope::BottomOnly
+    }
+
+    /// What the pad's B does in `state`.
+    pub fn back(state: &State) -> Option<Event> {
+        input::focus::back(state)
+    }
+}
