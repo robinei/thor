@@ -5,6 +5,8 @@
 pub struct Screen {
     pub connector: &'static str,
     pub rotation: Rotation,
+    /// Role hint only: backlights themselves are discovered at runtime.
+    pub backlight: Option<&'static str>,
 }
 /// Clockwise orientation of the physical panel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,16 +59,16 @@ impl Profile {
     pub const fn thor() -> Self {
         Self {
             name: "thor",
-            top: Screen { connector: "DSI-2", rotation: Rotation::Clockwise90 },
-            bottom: Screen { connector: "DSI-1", rotation: Rotation::Clockwise90 },
+            top: Screen { connector: "DSI-2", rotation: Rotation::Clockwise90, backlight: Some("ae96000.dsi.0") },
+            bottom: Screen { connector: "DSI-1", rotation: Rotation::Clockwise90, backlight: Some("ae94000.dsi.0") },
             touchscreens: THOR_TOUCH,
         }
     }
     pub const fn vm() -> Self {
         Self {
             name: "vm",
-            top: Screen { connector: "Virtual-1", rotation: Rotation::Normal },
-            bottom: Screen { connector: "Virtual-2", rotation: Rotation::Normal },
+            top: Screen { connector: "Virtual-1", rotation: Rotation::Normal, backlight: None },
+            bottom: Screen { connector: "Virtual-2", rotation: Rotation::Normal, backlight: None },
             touchscreens: VM_TOUCH,
         }
     }
@@ -74,8 +76,8 @@ impl Profile {
     pub const fn generic() -> Self {
         Self {
             name: "generic",
-            top: Screen { connector: "ClamShell-Top", rotation: Rotation::Normal },
-            bottom: Screen { connector: "ClamShell-Bottom", rotation: Rotation::Normal },
+            top: Screen { connector: "ClamShell-Top", rotation: Rotation::Normal, backlight: None },
+            bottom: Screen { connector: "ClamShell-Bottom", rotation: Rotation::Normal, backlight: None },
             touchscreens: &[],
         }
     }

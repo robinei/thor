@@ -1280,3 +1280,10 @@ service identifies the same profile. `clamshell device panel` supplies connector
 tool, whose mode and vblank discovery stays runtime detection. An integration test forces each known
 profile, compares the emitted sway configuration, runs the installed output script against the binary
 and checks the calibration command's facts. The full VM suite checks these files at session startup.
+
+
+Backlight discovery remains runtime enumeration. The brightness view resolves each detected kernel
+name through the profile's top/bottom role hints; an unrecognised name stays its kernel name. Missing
+hints do not invent backlights or hide the view. The role test checks both Thor screens, an unrelated
+backlight and a generic profile given the same kernel name. Snapshot and allocation references remain
+unchanged.

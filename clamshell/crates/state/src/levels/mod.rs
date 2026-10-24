@@ -88,14 +88,14 @@ pub struct Audio {
     pub streams: Vec<Stream>,
 }
 
-/// A backlight's name as the brightness tab shows it. The Thor's backlights are named by the screen they
-/// light: the top panel is on the DSI host at ae96000, and the bottom one at ae94000. Any other backlight
-/// is shown as /sys/class/backlight names it.
-pub fn backlight_label(name: &str) -> &str {
-    match name {
-        "ae96000.dsi.0" => "Top screen",
-        "ae94000.dsi.0" => "Bottom screen",
-        _ => name,
+/// A detected backlight's screen role, or its kernel name when the profile has no role hint.
+pub fn backlight_label<'a>(profile: &crate::Profile, name: &'a str) -> &'a str {
+    if profile.top.backlight == Some(name) {
+        "Top screen"
+    } else if profile.bottom.backlight == Some(name) {
+        "Bottom screen"
+    } else {
+        name
     }
 }
 
@@ -600,8 +600,9 @@ mod tests {
 
     #[test]
     fn the_thors_backlights_by_their_screens() {
-        assert_eq!(backlight_label("ae96000.dsi.0"), "Top screen");
-        assert_eq!(backlight_label("ae94000.dsi.0"), "Bottom screen");
-        assert_eq!(backlight_label("intel_backlight"), "intel_backlight");
+        assert_eq!(backlight_label(&crate::Profile::thor(), "ae96000.dsi.0"), "Top screen");
+        assert_eq!(backlight_label(&crate::Profile::thor(), "ae94000.dsi.0"), "Bottom screen");
+        assert_eq!(backlight_label(&crate::Profile::thor(), "intel_backlight"), "intel_backlight");
+        assert_eq!(backlight_label(&crate::Profile::generic(), "ae96000.dsi.0"), "ae96000.dsi.0");
     }
 }
