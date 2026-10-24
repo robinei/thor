@@ -1,6 +1,6 @@
 #!/bin/bash
 # Starts Steam, Valve's native ARM64 client in ~/.local/share/Steam (steam-setup), as /usr/bin/steam: what
-# ClamShell's Steam launches (`steam -silent -applaunch ID`), the desktop file and steam:// links run.
+# ClamShell's Steam launches (`steam -gamepadui -silent -applaunch ID`), the desktop file and steam:// links run.
 # Not set up yet: set up first, in a terminal. As Armada's launch-steam: the client's own folder and the
 # links to older libraries first in the library path, Valve's runtime's tools on the path, and both kept
 # for compatibility tools (Steam restores SYSTEM_PATH and SYSTEM_LD_LIBRARY_PATH for them).

@@ -452,7 +452,8 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    complete dmabuf feedback plus native buffer submissions. The current host puts the logical
    screens side by side for desktop testing.
    Rules 1-3 of section 3, "Keeping the app tail small", hold for all of it; rule 5's real-client set
-   and window-event ring, and rule 6's defaults (Wine's Wayland driver, Big Picture), are part of this phase.
+   and window-event ring, and rule 6's defaults are part of this phase. Steam's packaged desktop entry
+   and game-start command now request Big Picture; Wine's Wayland-driver default remains to implement.
 3. **The generic DRM backend, on the VM:** udev, DRM, GBM, GLES, libseat, libinput, two outputs, power,
    refresh, dmabuf feedback with scanout tranches. The VM image boots either compositor; the VM suite
    checks both.

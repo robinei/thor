@@ -977,3 +977,17 @@ pin the pre-synchronisation Home race and an expired request before periodic pru
 activation tests pin resulting effects and their order; no new state event or randomized-generator
 branch is introduced. The nested software and GPU harnesses check coexistence with the EGL, Vulkan,
 clipboard, cursor and screen-move paths.
+
+### Steam's default interface (system/launch, thor-session)
+
+Steam's packaged desktop entry, including steam:// links, requests `-gamepadui`. Starting its client
+for a Steam game also requests `-gamepadui`, keeping `-silent -applaunch ID` so a cold game launch
+still suppresses the client window. An existing client receives the same game request. Scope ownership,
+following Steam's game launcher and the separation between the client's and game's environments stay
+as before. This is the default interface choice in both sway and the in-process session; the state
+continues to emit the same Launch::Steam effect.
+
+The desktop entry is validated with desktop-file-validate when available; argument forwarding through
+the packaged Steam wrapper is checked using a temporary client that records argv, without starting
+Steam or changing its installation. The client UI itself is checked with Steam on the device; the
+workspace tests continue to pin launch effects and scope/follower behaviour.

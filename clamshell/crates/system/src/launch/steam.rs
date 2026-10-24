@@ -1,4 +1,4 @@
-//! Steam's games. A game is started with `steam -silent -applaunch <id>`. If Steam is running, the
+//! Steam's games. A game is started with `steam -gamepadui -silent -applaunch <id>`. If Steam is running, the
 //! command is handed to it. Otherwise Steam is started with the command as a launch of Steam's desktop
 //! entry, in that entry's scope, so Steam is on the dock and outlives ClamShell. That start doesn't get
 //! the game's environment, because it would become Steam's own environment for every game it starts.
@@ -77,7 +77,7 @@ pub fn follow(appid: u32) {
 pub(super) fn ask_steam(config: &Config, request: &Request, appid: u32) -> Result<(), Error> {
     let env = &request.env;
     // With `-silent`, a Steam that isn't running starts without its window, so only the game shows.
-    let argv: Vec<String> = ["steam", "-silent", "-applaunch", &appid.to_string()].map(String::from).to_vec();
+    let argv: Vec<String> = ["steam", "-gamepadui", "-silent", "-applaunch", &appid.to_string()].map(String::from).to_vec();
     if !steam_client_running() {
         let instance = Instance::Run { key: clamshell_library::key_of(STEAM_ENTRY), secs: crate::time::clock::unix_secs(), n: 0 };
         let job = Job { unit: instance.name(), workspace: instance.workspace(), slice: instance.slice(), argv, env: vec![], workdir: None };
