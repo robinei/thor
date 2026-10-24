@@ -573,3 +573,6 @@ fn screenshots_are_consumed_by_the_host_instead_of_the_parent_capture_tool() {
     server.frame();
     assert!(server.screenshot_requested, "a later frame can capture again");
 }
+
+#[path = "viewport_tests.rs"]
+mod viewport_tests;

@@ -95,6 +95,7 @@ impl Server {
         seat.input_method();
         seat.text_input().set_compositor_input_method(true);
         TextInputManagerState::new::<Self>(&dh);
+        smithay::wayland::viewporter::ViewporterState::new::<Self>(&dh);
         smithay::wayland::idle_inhibit::IdleInhibitManagerState::new::<Self>(&dh);
         let primary_selection = smithay::wayland::selection::primary_selection::PrimarySelectionState::new::<Self>(&dh);
         let data_control = smithay::wayland::selection::ext_data_control::DataControlState::new::<Self, _>(&dh, Some(&primary_selection), |_| true);

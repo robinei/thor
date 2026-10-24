@@ -822,3 +822,18 @@ complete PNG in an isolated home, checks its dimensions, and continues with clie
 clipboard, screen moves and Home. This catches losing the EGL window binding during readback.
 Readback is an SDR file conversion after composition; it does not set client/target precision or
 advertise HDR. Future HDR screenshot tone mapping remains part of the colour-management work.
+
+### Client viewports (compositor)
+
+The nested host advertises viewporter. A committed source rectangle crops the buffer after its
+buffer transform and scale; the destination sets the logical surface size. Presentation fits that
+logical size to the selected screen, and hit testing uses the same inverse transform. Destroying a
+viewport clears source and destination on the next commit, restoring the buffer-derived logical size.
+Smithay validates viewport requests through the existing buffer commit handler; protocol errors end
+that client under the ordinary client-isolation rule. No viewport facts enter state, and no pixel
+format conversion is introduced.
+
+`viewport_destination_drives_geometry_and_destroy_restores_buffer_size` drives a real socket-pair
+client with a 640×480 buffer at scale 2, a cropped source and a 600×400 destination. It checks logical
+geometry and centre hit coordinates before and after destroying the viewport, with one state window
+throughout. Buffer cropping and sampling use the renderer's existing surface-tree path.
