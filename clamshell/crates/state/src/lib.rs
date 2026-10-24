@@ -54,6 +54,7 @@ pub mod kit;
 pub mod levels;
 pub mod nav;
 pub(crate) mod out;
+pub mod profiles;
 pub mod radios;
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

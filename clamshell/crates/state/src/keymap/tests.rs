@@ -146,7 +146,7 @@ fn holds_doubles_turbo_and_toggle_are_kept() {
     assert_eq!(k.lookup_of(a, Actuation::Double, &[aim]).map(|b| b.toggle), Some(true), "falls through");
     let maps = Keymaps::from_list(vec![k]);
     assert_eq!(round_trip(&maps), maps);
-    assert!(!maps.list.first().unwrap().is_empty(aim));
+    assert!(!maps.list().first().unwrap().is_empty(aim));
     // How values are shown: turbo off or a rate, and a hold's time.
     let show = |p: Param, v| {
         let mut s = String::new();

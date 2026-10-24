@@ -29,7 +29,7 @@ use std::fmt::{self, Write};
 
 use crate::bottom::keyboard::{Key, Named};
 use crate::kit::names::names;
-use crate::kit::replace;
+use crate::profiles::{Profile, Profiles};
 
 mod inputs;
 mod outputs;
@@ -291,23 +291,19 @@ struct LayerOf {
     once: bool,
 }
 
-/// A set of bindings in layers ([`Layer`]), with bindings for each actuation ([`Actuation`]). It is either
-/// named or a game's own.
+/// A keymap: a profile (see [`crate::profiles`]) of bindings in layers ([`Layer`]), with bindings for each
+/// actuation ([`Actuation`]). It is either named or a game's own.
+pub type Keymap = Profile<Layers>;
+
+/// What a keymap holds: its layers, Base first, then the others in the order added.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct Keymap {
-    /// Its number, kept across renames. 0 is Default, which no keymap has.
-    pub id: u16,
-    /// Empty for a game's own.
-    pub name: String,
-    /// The id of the game whose own keymap this is. None for a named keymap, which any game may choose.
-    pub owner: Option<std::sync::Arc<str>>,
-    /// Base first, then the others in the order added.
+pub struct Layers {
     layers: Vec<LayerOf>,
 }
 
-impl Default for Keymap {
-    fn default() -> Keymap {
-        Keymap::new(0, "")
+impl Default for Layers {
+    fn default() -> Layers {
+        Layers { layers: vec![LayerOf { id: Layer::BASE, name: "Base".into(), bindings: Bindings::default(), once: false }] }
     }
 }
 
@@ -316,12 +312,7 @@ static NO_BINDINGS: Bindings = Bindings { press: Vec::new(), hold: Vec::new(), d
 
 impl Keymap {
     pub fn new(id: u16, name: &str) -> Keymap {
-        Keymap {
-            id,
-            name: name.to_owned(),
-            owner: None,
-            layers: vec![LayerOf { id: Layer::BASE, name: "Base".into(), bindings: Bindings::default(), once: false }],
-        }
+        Profile::with(id, name, Layers::default())
     }
 
     /// Base's press bindings.
@@ -331,30 +322,30 @@ impl Keymap {
 
     /// The layers, Base first: their numbers and names.
     pub fn layers(&self) -> impl DoubleEndedIterator<Item = (Layer, &str)> {
-        self.layers.iter().map(|l| (l.id, l.name.as_str()))
+        self.body.layers.iter().map(|l| (l.id, l.name.as_str()))
     }
 
     /// A layer's name, or none if the layer isn't there.
     pub fn layer_name(&self, layer: Layer) -> Option<&str> {
-        self.layers.iter().find(|l| l.id == layer).map(|l| l.name.as_str())
+        self.body.layers.iter().find(|l| l.id == layer).map(|l| l.name.as_str())
     }
 
     /// Adds a layer named `name` and returns its number, or none when there is no more room (255 layers).
     pub fn add_layer(&mut self, name: &str) -> Option<Layer> {
-        let id = Layer(self.layers.iter().map(|l| l.id.0).max().unwrap_or(0).checked_add(1)?);
-        self.layers.push(LayerOf { id, name: name.trim().to_owned(), bindings: Bindings::default(), once: false });
+        let id = Layer(self.body.layers.iter().map(|l| l.id.0).max().unwrap_or(0).checked_add(1)?);
+        self.body.layers.push(LayerOf { id, name: name.trim().to_owned(), bindings: Bindings::default(), once: false });
         Some(id)
     }
 
     /// Whether a layer is Once. A Once layer turned on by a tap or a toggle stays on until the first input
     /// it maps has acted, then goes off. While held, it is on like any other layer. Base is never Once.
     pub fn layer_once(&self, layer: Layer) -> bool {
-        self.layers.iter().any(|l| l.id == layer && l.once)
+        self.body.layers.iter().any(|l| l.id == layer && l.once)
     }
 
     /// Makes a layer other than Base Once or not. Returns whether the layer is there.
     pub fn set_layer_once(&mut self, layer: Layer, once: bool) -> bool {
-        match self.layers.iter_mut().find(|l| l.id == layer && l.id != Layer::BASE) {
+        match self.body.layers.iter_mut().find(|l| l.id == layer && l.id != Layer::BASE) {
             Some(l) => {
                 l.once = once;
                 true
@@ -365,7 +356,7 @@ impl Keymap {
 
     /// Renames a layer; Base keeps its name. Returns whether the layer is there.
     pub fn rename_layer(&mut self, layer: Layer, name: &str) -> bool {
-        match self.layers.iter_mut().find(|l| l.id == layer && l.id != Layer::BASE) {
+        match self.body.layers.iter_mut().find(|l| l.id == layer && l.id != Layer::BASE) {
             Some(l) => {
                 l.name = name.trim().to_owned();
                 true
@@ -376,12 +367,12 @@ impl Keymap {
 
     /// Removes a layer other than Base, and the bindings to it. Returns whether it was there.
     pub fn remove_layer(&mut self, layer: Layer) -> bool {
-        let before = self.layers.len();
-        self.layers.retain(|l| l.id != layer || l.id == Layer::BASE);
-        if self.layers.len() == before {
+        let before = self.body.layers.len();
+        self.body.layers.retain(|l| l.id != layer || l.id == Layer::BASE);
+        if self.body.layers.len() == before {
             return false;
         }
-        for l in &mut self.layers {
+        for l in &mut self.body.layers {
             for act in Actuation::ALL {
                 l.bindings.of_mut(act).retain(|(_, b)| b.output != Output::Layer(layer));
             }
@@ -400,11 +391,11 @@ impl Keymap {
     }
 
     fn bindings_in(&self, layer: Layer) -> &Bindings {
-        self.layers.iter().find(|l| l.id == layer).map_or(&NO_BINDINGS, |l| &l.bindings)
+        self.body.layers.iter().find(|l| l.id == layer).map_or(&NO_BINDINGS, |l| &l.bindings)
     }
 
     fn bindings_in_mut(&mut self, layer: Layer) -> Option<&mut Bindings> {
-        self.layers.iter_mut().find(|l| l.id == layer).map(|l| &mut l.bindings)
+        self.body.layers.iter_mut().find(|l| l.id == layer).map(|l| &mut l.bindings)
     }
 
     /// Whether `layer` has no bindings at all.
@@ -516,180 +507,13 @@ pub fn nintendo(id: u16) -> Keymap {
     k
 }
 
-/// Every keymap, by id. Each change counts, and a keymap's version is the count at its last change, so
-/// that a keymap can be compared with one sent earlier by its id and version alone.
-#[derive(Debug, Clone, Default)]
-pub struct Keymaps {
-    list: Vec<Keymap>,
-    /// The changes so far.
-    changes: u64,
-    /// The keymaps changed since they were read, with the count at their last change.
-    versions: Vec<(u16, u64)>,
-}
-
-/// Equal when the keymaps are; their versions don't count.
-impl PartialEq for Keymaps {
-    fn eq(&self, other: &Keymaps) -> bool {
-        self.list == other.list
-    }
-}
-
-impl Eq for Keymaps {}
+/// Every keymap, by id (see [`Profiles`]).
+pub type Keymaps = Profiles<Layers>;
 
 impl Keymaps {
-    /// These keymaps, as saved.
-    pub fn from_list(list: Vec<Keymap>) -> Keymaps {
-        Keymaps { list, ..Keymaps::default() }
-    }
-
     /// The keymaps there are before any were saved: the Nintendo layout.
     pub fn initial() -> Keymaps {
         Keymaps::from_list(vec![nintendo(1)])
-    }
-
-    pub fn list(&self) -> &[Keymap] {
-        &self.list
-    }
-
-    pub fn get(&self, id: u16) -> Option<&Keymap> {
-        self.list.iter().find(|k| k.id == id)
-    }
-
-    /// Keymap `id` to change. It counts as changed whether or not it is.
-    pub fn get_mut(&mut self, id: u16) -> Option<&mut Keymap> {
-        self.changed(id);
-        self.list.iter_mut().find(|k| k.id == id)
-    }
-
-    /// Changes keymap `id` with `f`, which returns whether it changed anything. Returns that, and false if
-    /// the keymap isn't there.
-    pub fn edit(&mut self, id: u16, f: impl FnOnce(&mut Keymap) -> bool) -> bool {
-        let changed = self.list.iter_mut().find(|k| k.id == id).is_some_and(f);
-        if changed {
-            self.changed(id);
-        }
-        changed
-    }
-
-    /// Puts `keymap` in place of the keymap with its id, if there is one.
-    pub fn replace(&mut self, keymap: Keymap) {
-        self.edit(keymap.id, |k| replace(k, keymap));
-    }
-
-    /// Keymap `id`'s version: the count of changes at its last change, or 0 if it hasn't changed since the
-    /// keymaps were read.
-    pub fn version(&self, id: u16) -> u64 {
-        self.versions.iter().find(|(k, _)| *k == id).map_or(0, |(_, v)| *v)
-    }
-
-    /// Counts a change to keymap `id`.
-    fn changed(&mut self, id: u16) {
-        self.changes += 1;
-        let version = self.changes;
-        match self.versions.iter_mut().find(|(k, _)| *k == id) {
-            Some((_, v)) => *v = version,
-            None => self.versions.push((id, version)),
-        }
-    }
-
-    /// The named keymaps (those any game may choose).
-    pub fn named(&self) -> impl Iterator<Item = &Keymap> {
-        self.list.iter().filter(|k| k.owner.is_none())
-    }
-
-    /// `entry`'s own keymap, if it has one.
-    pub fn own_of(&self, entry: &str) -> Option<&Keymap> {
-        self.list.iter().find(|k| k.owner.as_deref() == Some(entry))
-    }
-
-    /// The id for a new keymap: one past the highest, so an id is never taken twice while the highest
-    /// stays. None once the ids have run out.
-    fn next_id(&self) -> Option<u16> {
-        self.list.iter().map(|k| k.id).max().unwrap_or(0).checked_add(1)
-    }
-
-    /// Makes `entry`'s own keymap as a copy of keymap `from` and returns its id. If `from` is Default or no
-    /// longer exists, the new keymap is empty.
-    pub fn make_own(&mut self, from: u16, entry: &std::sync::Arc<str>) -> Option<u16> {
-        let id = self.next_id()?;
-        let mut own = Keymap::new(id, "");
-        own.owner = Some(entry.clone());
-        if let Some(from) = self.get(from) {
-            own.layers = from.layers.clone();
-        }
-        self.list.push(own);
-        self.changed(id);
-        Some(id)
-    }
-
-    /// Makes `owner`'s own keymap with `preset`'s bindings (see [`preset`]) and returns its id.
-    pub fn make_own_from(&mut self, preset: &Keymap, owner: &std::sync::Arc<str>) -> Option<u16> {
-        let id = self.make_own(0, owner)?;
-        self.edit(id, |own| {
-            own.layers = preset.layers.clone();
-            true
-        });
-        Some(id)
-    }
-
-    /// Replaces keymap `to`'s bindings and layers with a copy of keymap `from`'s. If `from` is Default or
-    /// no longer exists, `to` is left with no bindings. Returns whether `to` is there.
-    pub fn copy_into(&mut self, to: u16, from: u16) -> bool {
-        let layers = self.get(from).map_or_else(|| Keymap::new(0, "").layers, |k| k.layers.clone());
-        if self.get(to).is_none() {
-            return false;
-        }
-        self.edit(to, |k| replace(&mut k.layers, layers));
-        true
-    }
-
-    /// A name no keymap has: `name`, or else `name` with a number after it. It is cleaned up the way the
-    /// file name is (see clamshell-system's `store`): a `/` becomes `-`, and it is cut at 64 characters.
-    pub fn unique_name(&self, name: &str) -> String {
-        let name: String = name.trim().replace('/', "-").chars().take(64).collect();
-        let name = name.trim();
-        let taken = |n: &str| self.list.iter().any(|k| k.name == n);
-        if !taken(name) {
-            return name.to_owned();
-        }
-        (2..).map(|i| format!("{name} {i}")).find(|n| !taken(n)).unwrap_or_default()
-    }
-
-    /// Adds a new, empty keymap named `name`, made unique, and returns its id.
-    pub fn add(&mut self, name: &str) -> Option<u16> {
-        let id = self.next_id()?;
-        let name = self.unique_name(name);
-        self.list.push(Keymap::new(id, &name));
-        self.changed(id);
-        Some(id)
-    }
-
-    /// Copies keymap `id` under the name `name`, made unique, and returns the copy's id.
-    pub fn duplicate(&mut self, id: u16, name: &str) -> Option<u16> {
-        let layers = self.get(id).map(|k| k.layers.clone())?;
-        let copy = self.add(name)?;
-        self.edit(copy, |k| replace(&mut k.layers, layers));
-        Some(copy)
-    }
-
-    /// Renames keymap `id`. A name another keymap has is made unique. Returns whether the keymap was there.
-    pub fn rename(&mut self, id: u16, name: &str) -> bool {
-        if self.get(id).is_some_and(|k| k.name == name.trim()) {
-            return true;
-        }
-        let name = self.unique_name(name);
-        if self.get(id).is_none() {
-            return false;
-        }
-        self.edit(id, |k| replace(&mut k.name, name));
-        true
-    }
-
-    pub fn remove(&mut self, id: u16) -> bool {
-        let before = self.list.len();
-        self.list.retain(|k| k.id != id);
-        self.versions.retain(|(k, _)| *k != id);
-        self.list.len() != before
     }
 }
 
