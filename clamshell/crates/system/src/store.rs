@@ -35,6 +35,7 @@ use clamshell_library::{Plays, key_of};
 use clamshell_state::bottom::screen::{WindowRule, WindowRules};
 use clamshell_state::keymap::{Keymap, Keymaps};
 use clamshell_state::levels::Brightness;
+use clamshell_state::profiles::{Profile, Profiles};
 use clamshell_state::settings::{Setting, Settings};
 use clamshell_state::{Dock, Resume, Save};
 use serde::de::DeserializeOwned;
@@ -236,25 +237,13 @@ impl Store {
     /// The keymaps, by id, or none if they were never saved. A keymap that doesn't read back is logged
     /// and skipped.
     pub fn keymaps(&self) -> Option<Keymaps> {
-        let dir = self.file("keymaps");
-        if !dir.is_dir() {
-            return None;
-        }
-        let mut list: Vec<Keymap> = read_folder(&dir).into_values().collect();
-        list.sort_by_key(|k| k.id);
-        Some(Keymaps::from_list(list))
+        read_profiles(&self.file("keymaps"))
     }
 
     /// Saves each keymap as a file, writing only the files that changed. Files of removed keymaps are
     /// deleted.
     fn save_keymaps(&mut self, k: &Keymaps) -> io::Result<()> {
-        let dir = self.file("keymaps");
-        fs::create_dir_all(&dir)?;
-        let before = self.keymaps.take().unwrap_or_else(|| read_folder(&dir));
-        let files: HashMap<String, Keymap> = k.list().iter().map(|k| (keymap_file(k), k.clone())).collect();
-        write_folder(&dir, &before, &files)?;
-        self.keymaps = Some(files);
-        Ok(())
+        save_profiles(&self.file("keymaps"), &mut self.keymaps, k)
     }
 
     pub fn window_rules(&self) -> WindowRules {
@@ -335,12 +324,38 @@ fn write_folder<T: Serialize + PartialEq>(dir: &Path, before: &HashMap<String, T
     Ok(())
 }
 
-/// A keymap's file name. It is the keymap's name (see [`Keymaps::unique_name`]), except that a keymap
+/// Profiles of one kind (keymaps, curves) from their folder, by id, or none if they were never saved. A
+/// profile that doesn't read back is logged and skipped.
+fn read_profiles<B: DeserializeOwned + Clone + Default + PartialEq>(dir: &Path) -> Option<Profiles<B>> {
+    if !dir.is_dir() {
+        return None;
+    }
+    let mut list: Vec<Profile<B>> = read_folder(dir).into_values().collect();
+    list.sort_by_key(|p| p.id);
+    Some(Profiles::from_list(list))
+}
+
+/// Saves each profile as a file in `dir`, writing only the files that changed since `written` (the files
+/// as last written, read from the folder the first time). Files of removed profiles are deleted.
+fn save_profiles<B: Serialize + DeserializeOwned + Clone + Default + PartialEq>(
+    dir: &Path,
+    written: &mut Option<HashMap<String, Profile<B>>>,
+    profiles: &Profiles<B>,
+) -> io::Result<()> {
+    fs::create_dir_all(dir)?;
+    let before = written.take().unwrap_or_else(|| read_folder(dir));
+    let files: HashMap<String, Profile<B>> = profiles.list().iter().map(|p| (profile_file(p), p.clone())).collect();
+    write_folder(dir, &before, &files)?;
+    *written = Some(files);
+    Ok(())
+}
+
+/// A profile's file name. It is the profile's name (see [`Profiles::unique_name`]), except that a profile
 /// owned by an entry or a runner level is named like the owner's settings file ([`screen_file`]).
-fn keymap_file(k: &Keymap) -> String {
-    match &k.owner {
+fn profile_file<B>(p: &Profile<B>) -> String {
+    match &p.owner {
         Some(owner) => screen_file(owner),
-        None => format!("{}.json", k.name),
+        None => format!("{}.json", p.name),
     }
 }
 
