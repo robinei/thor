@@ -681,3 +681,12 @@ fn requested_preview_geometry_sets_the_initial_canvas_and_resize_ratio() {
     assert_eq!(server.size, (4, 4));
     assert_eq!(server.top_width, 2);
 }
+
+/// Parallel process-spawn tests can retain CLOEXEC descriptors until their child reaches exec.
+/// Wait for the kernel's hangup notification before asserting EOF, rather than racing that exec.
+pub(crate) fn wait_closed(fd: &impl AsFd) {
+    use rustix::event::{PollFd, PollFlags, Timespec};
+    let mut fds = [PollFd::new(fd, PollFlags::HUP | PollFlags::ERR)];
+    assert_eq!(rustix::event::poll(&mut fds, Some(&Timespec { tv_sec: 2, tv_nsec: 0 })).unwrap(), 1);
+    assert!(fds[0].revents().intersects(PollFlags::HUP | PollFlags::ERR));
+}

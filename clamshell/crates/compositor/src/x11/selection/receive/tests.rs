@@ -346,6 +346,7 @@ fn conversion_and_mailbox_limits_close_only_new_readers_and_old_owner_snapshots_
     let (mut excess, writer) = pipe();
     imports.start(0, Format { atom: 101, mime: "text/plain".into(), latin1: false }, Some(writer), &mut wire, &atoms(), now).unwrap();
     assert_eq!(imports.transfers.len(), MAX_TRANSFERS);
+    crate::tests::wait_closed(&excess);
     assert_eq!(excess.read(&mut [0]).unwrap(), 0);
     let windows: std::collections::BTreeSet<u32> = imports.transfers.iter().map(|transfer| transfer.window).collect();
     assert_eq!(windows.len(), MAX_TRANSFERS, "each conversion has a unique requestor");
@@ -353,6 +354,7 @@ fn conversion_and_mailbox_limits_close_only_new_readers_and_old_owner_snapshots_
     let (mut stale, writer) = pipe();
     server.x11_selections.read(SelectionTarget::Clipboard, "text/plain".into(), writer.into(), 76);
     assert!(server.x11_selections.requests.is_empty());
+    crate::tests::wait_closed(&stale);
     assert_eq!(stale.read(&mut [0]).unwrap(), 0);
     for _ in 0..MAX_TRANSFERS {
         let (reader, writer) = pipe();
@@ -362,9 +364,13 @@ fn conversion_and_mailbox_limits_close_only_new_readers_and_old_owner_snapshots_
     let (mut excess, writer) = pipe();
     server.x11_selections.read(SelectionTarget::Clipboard, "text/plain".into(), writer.into(), 77);
     assert_eq!(server.x11_selections.requests.len(), MAX_TRANSFERS);
+    crate::tests::wait_closed(&excess);
     assert_eq!(excess.read(&mut [0]).unwrap(), 0);
     imports.clear(&mut server);
     assert!(server.x11_selections.requests.is_empty());
     assert_eq!(imports.deadline(), None);
-    assert!(readers.iter_mut().all(|reader| reader.read(&mut [0]).unwrap() == 0));
+    assert!(readers.iter_mut().all(|reader| {
+        crate::tests::wait_closed(reader);
+        reader.read(&mut [0]).unwrap() == 0
+    }));
 }

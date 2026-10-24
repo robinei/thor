@@ -331,6 +331,7 @@ fn clearing_a_source_releases_ownership_at_its_acquisition_time_and_removes_read
     bridge.turn(&mut wire, &atoms, 5, &mut server, now).unwrap();
     bridge.sync_sources(&handle, &mut sources).unwrap();
     assert!(sources.is_empty());
+    crate::tests::wait_closed(&writer);
     assert!(writer.write_all(b"closed reader").is_err());
     let requests = packets(&mut wire, &mut peer, now);
     assert_eq!(requests.iter().map(|packet| packet[0]).collect::<Vec<_>>(), [SEND_EVENT_REQUEST, SET_SELECTION_OWNER_REQUEST]);
