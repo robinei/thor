@@ -70,8 +70,10 @@ pub fn run(
     backend.window().set_cursor_visible(false);
     let mut cursor = crate::cursor::Cursor::new();
     log::info!("nested output format: {:?}", backend.renderer().egl_context().pixel_format());
-    let mut frames = [UiFrame::new((960, 540))?, UiFrame::new((620, 540))?];
-    let mut arrows = ArrowFrame::new((960, 540))?;
+    let top_size = server.core.size(clamshell_ui::Screen::Top).0;
+    let bottom_size = server.core.size(clamshell_ui::Screen::Bottom).0;
+    let mut frames = [UiFrame::new(top_size)?, UiFrame::new(bottom_size)?];
+    let mut arrows = ArrowFrame::new(top_size)?;
     let mut elements = Vec::new();
     let mut submitted = false;
     let mut refresh_known = false;
