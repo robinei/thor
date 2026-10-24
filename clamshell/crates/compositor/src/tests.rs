@@ -162,7 +162,24 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
                     next.send(()).unwrap();
                 }
                 Report::Mapped => {
+                    use clamshell_state::session::presentation::{WindowLayout, WindowRole};
                     assert!(server.windows[0].mapped);
+                    server.sync_windows();
+                    let revision = server.presentation_revision;
+                    for _ in 0..10 {
+                        server.sync_windows();
+                    }
+                    assert_eq!(server.presentation_revision, revision);
+                    let mut facts = server.core.state().session().windows()[0].clone();
+                    facts.role = WindowRole::Utility;
+                    server.core.handle(clamshell_state::WindowEvent::Changed(facts.clone()).into());
+                    server.sync_windows();
+                    assert_ne!(server.presentation_revision, revision);
+                    assert_eq!(server.windows[0].presentation.unwrap().layout, WindowLayout::Centred);
+                    facts.role = WindowRole::Normal;
+                    server.core.handle(clamshell_state::WindowEvent::Changed(facts).into());
+                    server.sync_windows();
+                    assert_eq!(server.windows[0].presentation.unwrap().layout, WindowLayout::Fullscreen);
                     server.core.handle(Event::Device(DeviceKey::WindowDown));
                     server.turn();
                     display.flush_clients().unwrap();

@@ -729,3 +729,8 @@ with no watch, then one report per arming. The session keyboard-focus and pad-ac
 effect sequence and unchanged placement. The randomized invariant checks the watch against top
 keyboard focus after every event. Snapshot pixels and focus are unchanged; the trace adds only watch
 arming/disarming in the three scenarios that move keyboard focus away and back.
+
+The nested host caches each client's window presentation at Core's state revision. Repeated frames
+and pointer hit tests read that cache. Any applied event, including UI-generated events, invalidates
+it; the next window sync derives it again. The protocol test changes a live window's role and checks
+its new configure policy, as well as unchanged revisions across repeated syncs.

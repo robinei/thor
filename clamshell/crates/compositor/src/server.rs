@@ -38,6 +38,7 @@ pub(crate) struct ClientWindow {
     pub window: SurfaceWindow,
     pub opened: bool,
     pub mapped: bool,
+    pub presentation: Option<clamshell_state::session::presentation::WindowPresentation>,
 }
 
 pub(crate) struct Server {
@@ -65,6 +66,7 @@ pub(crate) struct Server {
     pub exit: bool,
     pub started: Instant,
     pub idle: crate::idle::Idle,
+    pub presentation_revision: Option<u64>,
     pub socket: String,
     pub on_effect: Box<dyn FnMut(&Effect)>,
     identify: Box<dyn Fn(u32) -> Process>,
@@ -129,6 +131,7 @@ impl Server {
             exit: false,
             started: Instant::now(),
             idle: crate::idle::Idle::new(),
+            presentation_revision: None,
             socket: String::new(),
             on_effect: Box::new(on_effect),
             identify: Box::new(identify),
@@ -173,7 +176,13 @@ impl Server {
             surface.send_close();
             return;
         };
-        self.windows.push(ClientWindow { id: self.next_id, window: SurfaceWindow::new_wayland_window(surface), opened: false, mapped: false });
+        self.windows.push(ClientWindow {
+            id: self.next_id,
+            window: SurfaceWindow::new_wayland_window(surface),
+            opened: false,
+            mapped: false,
+            presentation: None,
+        });
         self.next_id = next;
     }
 
@@ -237,12 +246,19 @@ impl Server {
 
     pub fn sync_windows(&mut self) {
         self.cancel_hidden_touches();
+        let revision = self.core.state_revision();
+        if self.presentation_revision != Some(revision) {
+            for client in &mut self.windows {
+                client.presentation = self.core.state().window_presentation(client.id);
+            }
+            self.presentation_revision = Some(revision);
+        }
         let focus = self.core.state().session().keyboard_focus();
         for client in &self.windows {
             let Some(window) = self.core.state().session().window(client.id) else { continue };
             let Some(surface) = client.window.toplevel() else { continue };
             let area = self.area(window.down);
-            let Some(policy) = self.core.state().window_presentation(client.id) else { continue };
+            let Some(policy) = client.presentation else { continue };
             let size = crate::geometry::configure_size(window, policy, area.size, client.window.geometry().size);
             surface.with_pending_state(|pending| {
                 pending.size = size;
@@ -320,7 +336,7 @@ impl Server {
     pub fn geometry(&self, id: i64) -> Option<crate::geometry::Geometry> {
         let window = self.core.state().session().window(id)?;
         let client = self.windows.iter().find(|w| w.id == id && w.mapped)?;
-        crate::geometry::Geometry::new(self.area(window.down), client.window.geometry(), self.core.state().window_presentation(id)?)
+        crate::geometry::Geometry::new(self.area(window.down), client.window.geometry(), client.presentation?)
     }
 }
 
