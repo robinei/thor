@@ -1098,7 +1098,12 @@ until the next recorded frame, so title traffic never drives repeated UI applies
 Metadata and title changing together form one ordered batch, preserving a scope adoption that arrived
 while the properties waited.
 Initial facts and presentation policy
-are cached, so unchanged turns emit no state events or X11 requests.
+are cached, so unchanged turns emit no state events or X11 requests. The adapter's turn runs named
+steps in order: begin setup, dispatch replies, finish setup, anchor the wire sequence, dispatch events,
+query window properties, synchronise selections, settle managed windows, settle menus and synchronise
+the shared windows. Managed-window settlement publishes each window's facts, binds its surface and
+configures/maps it, then settles focus and close requests. The refactor preserves that order and the
+existing request-order and state-trace tests.
 
 `placed --WL_SURFACE_ID, matching private Wayland object exists--> drawable`.
 The shared surface wrapper uses the same rendering, geometry, input, frame and presentation-feedback

@@ -94,6 +94,19 @@ impl Wm {
         Ok(())
     }
     pub fn turn(&mut self, wire: &mut Transport, client: &Client, server: &mut Server, now: Instant) -> io::Result<()> {
+        self.start_setup(wire, now)?;
+        self.dispatch_replies(wire, server, now)?;
+        self.finish_setup(wire)?;
+        self.anchor_sequence(wire, now)?;
+        self.dispatch_events(wire, server)?;
+        self.query_window_properties(wire, now)?;
+        self.sync_selection(wire, server, now)?;
+        self.settle(wire, client, server)?;
+        self.settle_menus(wire, client, server)?;
+        server.sync_windows();
+        Ok(())
+    }
+    fn start_setup(&mut self, wire: &mut Transport, now: Instant) -> io::Result<()> {
         if !self.started && wire.setup.is_some() {
             self.started = true;
             for name in NAMES {
@@ -104,6 +117,9 @@ impl Wm {
         if self.started && self.composite.is_none() && !self.pending.iter().any(|p| matches!(p.kind, Query::CompositeExtension)) {
             self.query(wire, QueryExtensionRequest { name: b"Composite".as_slice().into() }, 0, Query::CompositeExtension, now)?;
         }
+        Ok(())
+    }
+    fn dispatch_replies(&mut self, wire: &mut Transport, server: &mut Server, now: Instant) -> io::Result<()> {
         let mut index = 0;
         while index < self.pending.len() {
             let Some(pending) = self.pending.get(index) else { break };
@@ -117,54 +133,48 @@ impl Wm {
                 index += 1;
             }
         }
+        Ok(())
+    }
+    fn finish_setup(&mut self, wire: &mut Transport) -> io::Result<()> {
         if self.started && !self.ready && self.atoms.0.len() == NAMES.len() && self.extension_done && self.composite_done {
             self.initialise(wire)?;
         }
+        Ok(())
+    }
+    fn anchor_sequence(&mut self, wire: &mut Transport, now: Instant) -> io::Result<()> {
         // X11's 16-bit wire sequence needs a reply before wrapping, only after actual traffic.
         if self.ready && self.pending.len() < 256 && wire.needs_sequence_anchor() && !self.pending.iter().any(|p| matches!(p.kind, Query::OwnershipBarrier)) {
             self.query(wire, GetSelectionOwnerRequest { selection: self.atoms.get("WM_S0") }, 0, Query::OwnershipBarrier, now)?;
         }
+        Ok(())
+    }
+    fn dispatch_events(&mut self, wire: &mut Transport, server: &mut Server) -> io::Result<()> {
         for _ in 0..64 {
             let Some(bytes) = wire.event() else { break };
             self.event(&bytes, wire, server)?;
         }
+        Ok(())
+    }
+    fn sync_selection(&mut self, wire: &mut Transport, server: &mut Server, now: Instant) -> io::Result<()> {
+        if self.ready {
+            self.selection.init_imports(wire, self.owner, now)?;
+            self.selection.turn(wire, &self.atoms, self.owner, server, now)?;
+        }
+        Ok(())
+    }
+    fn query_window_properties(&mut self, wire: &mut Transport, now: Instant) -> io::Result<()> {
         for i in 0..self.windows.len() {
-            let Some(window) = self.windows.get(i) else { continue };
-            if window.wants_map && !window.queried && self.pending.len() + PROPERTIES.len() + 2 <= 256 {
-                let (id, xid) = (window.id, window.xid);
-                self.query(wire, GetWindowAttributesRequest { window: xid }, 0, Query::Attributes(id), now)?;
-                for name in PROPERTIES {
-                    self.query(
-                        wire,
-                        GetPropertyRequest { delete: false, window: xid, property: self.atoms.get(name), type_: 0, long_offset: 0, long_length: 1024 },
-                        0,
-                        Query::Property(id, name),
-                        now,
-                    )?;
-                }
-                self.query(
-                    wire,
-                    res::QueryClientIdsRequest { specs: vec![res::ClientIdSpec { client: xid, mask: res::ClientIdMask::LOCAL_CLIENT_PID }].into() },
-                    self.res.unwrap_or_default(),
-                    Query::Pid(id),
-                    now,
-                )?;
-                if let Some(window) = self.windows.get_mut(i) {
-                    window.queried = true;
-                    window.refresh = 0;
-                }
-            }
-            for (bit, name) in PROPERTIES.iter().enumerate() {
-                let Some(window) = self.windows.get_mut(i) else { continue };
-                if !window.queried
-                    || self.pending.len() >= 256
-                    || window.refresh & (1 << bit) == 0
-                    || self.pending.iter().any(|p| matches!(p.kind, Query::Property(id, n) if id == window.id && n == *name))
-                {
-                    continue;
-                }
-                window.refresh &= !(1 << bit);
-                let (id, xid) = (window.id, window.xid);
+            self.query_initial_properties(i, wire, now)?;
+            self.query_changed_properties(i, wire, now)?;
+        }
+        Ok(())
+    }
+    fn query_initial_properties(&mut self, i: usize, wire: &mut Transport, now: Instant) -> io::Result<()> {
+        let Some(window) = self.windows.get(i) else { return Ok(()) };
+        if window.wants_map && !window.queried && self.pending.len() + PROPERTIES.len() + 2 <= 256 {
+            let (id, xid) = (window.id, window.xid);
+            self.query(wire, GetWindowAttributesRequest { window: xid }, 0, Query::Attributes(id), now)?;
+            for name in PROPERTIES {
                 self.query(
                     wire,
                     GetPropertyRequest { delete: false, window: xid, property: self.atoms.get(name), type_: 0, long_offset: 0, long_length: 1024 },
@@ -173,14 +183,40 @@ impl Wm {
                     now,
                 )?;
             }
+            self.query(
+                wire,
+                res::QueryClientIdsRequest { specs: vec![res::ClientIdSpec { client: xid, mask: res::ClientIdMask::LOCAL_CLIENT_PID }].into() },
+                self.res.unwrap_or_default(),
+                Query::Pid(id),
+                now,
+            )?;
+            if let Some(window) = self.windows.get_mut(i) {
+                window.queried = true;
+                window.refresh = 0;
+            }
         }
-        if self.ready {
-            self.selection.init_imports(wire, self.owner, now)?;
-            self.selection.turn(wire, &self.atoms, self.owner, server, now)?;
+        Ok(())
+    }
+    fn query_changed_properties(&mut self, i: usize, wire: &mut Transport, now: Instant) -> io::Result<()> {
+        for (bit, name) in PROPERTIES.iter().enumerate() {
+            let Some(window) = self.windows.get_mut(i) else { continue };
+            if !window.queried
+                || self.pending.len() >= 256
+                || window.refresh & (1 << bit) == 0
+                || self.pending.iter().any(|p| matches!(p.kind, Query::Property(id, n) if id == window.id && n == *name))
+            {
+                continue;
+            }
+            window.refresh &= !(1 << bit);
+            let (id, xid) = (window.id, window.xid);
+            self.query(
+                wire,
+                GetPropertyRequest { delete: false, window: xid, property: self.atoms.get(name), type_: 0, long_offset: 0, long_length: 1024 },
+                0,
+                Query::Property(id, name),
+                now,
+            )?;
         }
-        self.settle(wire, client, server)?;
-        self.settle_menus(wire, client, server)?;
-        server.sync_windows();
         Ok(())
     }
     fn initialise(&mut self, wire: &mut Transport) -> io::Result<()> {
@@ -526,6 +562,12 @@ impl Wm {
         }
     }
     fn settle(&mut self, wire: &mut Transport, client: &Client, server: &mut Server) -> io::Result<()> {
+        self.settle_windows(wire, client, server)?;
+        self.settle_focus(wire, server)?;
+        self.settle_close(wire, server)?;
+        Ok(())
+    }
+    fn settle_windows(&mut self, wire: &mut Transport, client: &Client, server: &mut Server) -> io::Result<()> {
         for i in 0..self.windows.len() {
             let Some(w) = self.windows.get(i) else { continue };
             if w.override_redirect || !w.wants_map || w.outstanding != 0 {
@@ -542,93 +584,13 @@ impl Wm {
             }
             let parent = w.properties.transient.and_then(|xid| self.windows.iter().find(|p| p.xid == xid && p.opened).map(|p| p.id));
             let Some(w) = self.windows.get_mut(i) else { continue };
-            if !w.opened || w.dirty || w.sent.as_ref().is_some_and(|old| old.parent != parent) {
-                let process = server
-                    .core
-                    .state()
-                    .session()
-                    .window(w.id)
-                    .map(|v| Process { unit: v.unit.clone(), pids: v.pids.clone() })
-                    .unwrap_or_else(|| w.pid.map(|pid| (server.identify)(pid)).unwrap_or_default());
-                let mut facts = w.properties.facts(w.id, parent, process);
-                if !w.opened {
-                    facts.focused = server.core.state().session().opening_focus(&facts);
-                    server.core.handle(WindowEvent::Opened(facts.clone()).into());
-                    w.opened = true;
-                    w.sent = Some(facts);
-                } else if w.sent.as_ref().is_none_or(|old| {
-                    old.app_id != facts.app_id || old.title != facts.title || old.parent != facts.parent || old.limits != facts.limits || old.role != facts.role
-                }) {
-                    if let Some(pending) = server.x11_changes.iter_mut().find(|old| old.id == facts.id) {
-                        *pending = facts.clone();
-                    } else {
-                        server.x11_changes.push(facts.clone());
-                    }
-                    w.sent = Some(facts);
-                }
-                w.dirty = false;
-            }
-            if let Some(object) = w.surface
-                && server.windows.iter().all(|v| v.id != w.id)
-                && let Ok(surface) = client.object_from_protocol_id::<WlSurface>(&server.dh, object)
-            {
-                let mapped = with_renderer_surface_state(&surface, |s| s.buffer().is_some()).unwrap_or(false);
-                log::debug!("X11 surface bound {} mapped={mapped}", w.id);
-                server.windows.push(ClientWindow {
-                    id: w.id,
-                    window: Surface::new_x11(surface),
-                    opened: true,
-                    mapped,
-                    title_dirty: false,
-                    presentation: server.core.state().window_presentation(w.id),
-                });
-            }
-            let Some(model) = server.core.state().session().window(w.id) else { continue };
-            if w.revision != Some(server.core.state_revision()) {
-                w.policy = server.core.state().window_presentation(w.id);
-                w.revision = Some(server.core.state_revision());
-            }
-            let Some(policy) = w.policy else { continue };
-            let area = server.area(model.down);
-            let size = crate::geometry::configure_size(model, policy, area.size, (i32::from(w.size.0), i32::from(w.size.1)).into())
-                .unwrap_or((i32::from(w.size.0), i32::from(w.size.1)).into());
-            let offset: smithay::utils::Point<i32, smithay::utils::Logical> = if policy.layout == WindowLayout::Centred {
-                ((area.size.w - size.w).max(0) / 2, (area.size.h - size.h).max(0) / 2).into()
-            } else {
-                (0, 0).into()
-            };
-            let geometry = Rectangle::new(area.loc + offset, size);
-            if w.configured != Some(geometry) || w.layout != Some(policy.layout) {
-                wire.request(
-                    ConfigureWindowRequest {
-                        window: w.xid,
-                        value_list: Cow::Owned(
-                            ConfigureWindowAux::new()
-                                .x(geometry.loc.x)
-                                .y(geometry.loc.y)
-                                .width(geometry.size.w.max(1) as u32)
-                                .height(geometry.size.h.max(1) as u32)
-                                .border_width(0),
-                        ),
-                    },
-                    0,
-                    false,
-                )?;
-                let fullscreen = [self.atoms.get("_NET_WM_STATE_FULLSCREEN")];
-                Self::property(
-                    &self.atoms,
-                    wire,
-                    w.xid,
-                    "_NET_WM_STATE",
-                    AtomEnum::ATOM.into(),
-                    if policy.layout == WindowLayout::Fullscreen { &fullscreen } else { &[] },
-                )?;
-                Self::property(&self.atoms, wire, w.xid, "WM_STATE", self.atoms.get("WM_STATE"), &[1, 0])?;
-                wire.request(MapWindowRequest { window: w.xid }, 0, false)?;
-                w.configured = Some(geometry);
-                w.layout = Some(policy.layout);
-            }
+            w.sync_facts(parent, server);
+            w.bind_surface(client, server);
+            w.configure(&self.atoms, wire, server)?;
         }
+        Ok(())
+    }
+    fn settle_focus(&mut self, wire: &mut Transport, server: &Server) -> io::Result<()> {
         let focus = server.core.state().session().keyboard_focus().and_then(|id| self.windows.iter().find(|w| w.id == id && w.opened).map(|w| w.xid));
         if self.focus != focus {
             let target = focus.and_then(|xid| self.windows.iter().find(|w| w.xid == xid));
@@ -650,6 +612,9 @@ impl Wm {
             Self::property(&self.atoms, wire, self.root, "_NET_ACTIVE_WINDOW", AtomEnum::WINDOW.into(), &[focus.unwrap_or(0)])?;
             self.focus = focus;
         }
+        Ok(())
+    }
+    fn settle_close(&mut self, wire: &mut Transport, server: &mut Server) -> io::Result<()> {
         for id in server.x11_close.drain(..) {
             if let Some(w) = self.windows.iter().find(|w| w.id == id) {
                 if w.properties.delete {
@@ -668,6 +633,99 @@ impl Wm {
                     wire.request(KillClientRequest { resource: w.xid }, 0, false)?;
                 }
             }
+        }
+        Ok(())
+    }
+}
+
+impl Window {
+    fn sync_facts(&mut self, parent: Option<i64>, server: &mut Server) {
+        if !self.opened || self.dirty || self.sent.as_ref().is_some_and(|old| old.parent != parent) {
+            let process = server
+                .core
+                .state()
+                .session()
+                .window(self.id)
+                .map(|v| Process { unit: v.unit.clone(), pids: v.pids.clone() })
+                .unwrap_or_else(|| self.pid.map(|pid| (server.identify)(pid)).unwrap_or_default());
+            let mut facts = self.properties.facts(self.id, parent, process);
+            if !self.opened {
+                facts.focused = server.core.state().session().opening_focus(&facts);
+                server.core.handle(WindowEvent::Opened(facts.clone()).into());
+                self.opened = true;
+                self.sent = Some(facts);
+            } else if self.sent.as_ref().is_none_or(|old| {
+                old.app_id != facts.app_id || old.title != facts.title || old.parent != facts.parent || old.limits != facts.limits || old.role != facts.role
+            }) {
+                if let Some(pending) = server.x11_changes.iter_mut().find(|old| old.id == facts.id) {
+                    *pending = facts.clone();
+                } else {
+                    server.x11_changes.push(facts.clone());
+                }
+                self.sent = Some(facts);
+            }
+            self.dirty = false;
+        }
+    }
+    fn bind_surface(&self, client: &Client, server: &mut Server) {
+        if let Some(object) = self.surface
+            && server.windows.iter().all(|v| v.id != self.id)
+            && let Ok(surface) = client.object_from_protocol_id::<WlSurface>(&server.dh, object)
+        {
+            let mapped = with_renderer_surface_state(&surface, |s| s.buffer().is_some()).unwrap_or(false);
+            log::debug!("X11 surface bound {} mapped={mapped}", self.id);
+            server.windows.push(ClientWindow {
+                id: self.id,
+                window: Surface::new_x11(surface),
+                opened: true,
+                mapped,
+                title_dirty: false,
+                presentation: server.core.state().window_presentation(self.id),
+            });
+        }
+    }
+    fn configure(&mut self, atoms: &Atoms, wire: &mut Transport, server: &Server) -> io::Result<()> {
+        let Some(model) = server.core.state().session().window(self.id) else { return Ok(()) };
+        if self.revision != Some(server.core.state_revision()) {
+            self.policy = server.core.state().window_presentation(self.id);
+            self.revision = Some(server.core.state_revision());
+        }
+        let Some(policy) = self.policy else { return Ok(()) };
+        let area = server.area(model.down);
+        let size = crate::geometry::configure_size(model, policy, area.size, (i32::from(self.size.0), i32::from(self.size.1)).into())
+            .unwrap_or((i32::from(self.size.0), i32::from(self.size.1)).into());
+        let offset: smithay::utils::Point<i32, smithay::utils::Logical> =
+            if policy.layout == WindowLayout::Centred { ((area.size.w - size.w).max(0) / 2, (area.size.h - size.h).max(0) / 2).into() } else { (0, 0).into() };
+        let geometry = Rectangle::new(area.loc + offset, size);
+        if self.configured != Some(geometry) || self.layout != Some(policy.layout) {
+            wire.request(
+                ConfigureWindowRequest {
+                    window: self.xid,
+                    value_list: Cow::Owned(
+                        ConfigureWindowAux::new()
+                            .x(geometry.loc.x)
+                            .y(geometry.loc.y)
+                            .width(geometry.size.w.max(1) as u32)
+                            .height(geometry.size.h.max(1) as u32)
+                            .border_width(0),
+                    ),
+                },
+                0,
+                false,
+            )?;
+            let fullscreen = [atoms.get("_NET_WM_STATE_FULLSCREEN")];
+            Wm::property(
+                atoms,
+                wire,
+                self.xid,
+                "_NET_WM_STATE",
+                AtomEnum::ATOM.into(),
+                if policy.layout == WindowLayout::Fullscreen { &fullscreen } else { &[] },
+            )?;
+            Wm::property(atoms, wire, self.xid, "WM_STATE", atoms.get("WM_STATE"), &[1, 0])?;
+            wire.request(MapWindowRequest { window: self.xid }, 0, false)?;
+            self.configured = Some(geometry);
+            self.layout = Some(policy.layout);
         }
         Ok(())
     }
