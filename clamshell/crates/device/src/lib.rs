@@ -49,6 +49,8 @@ pub struct Profile {
     pub top: Screen,
     pub bottom: Screen,
     pub touchscreens: &'static [Touchscreen],
+    /// Pixels per millimetre, in tenths, used by the virtual bottom-screen touchpad.
+    pub bottom_density_tenths: u16,
 }
 impl Default for Profile {
     fn default() -> Self {
@@ -62,6 +64,7 @@ impl Profile {
             top: Screen { connector: "DSI-2", rotation: Rotation::Clockwise90, backlight: Some("ae96000.dsi.0") },
             bottom: Screen { connector: "DSI-1", rotation: Rotation::Clockwise90, backlight: Some("ae94000.dsi.0") },
             touchscreens: THOR_TOUCH,
+            bottom_density_tenths: 165,
         }
     }
     pub const fn vm() -> Self {
@@ -70,6 +73,7 @@ impl Profile {
             top: Screen { connector: "Virtual-1", rotation: Rotation::Normal, backlight: None },
             bottom: Screen { connector: "Virtual-2", rotation: Rotation::Normal, backlight: None },
             touchscreens: VM_TOUCH,
+            bottom_density_tenths: 165,
         }
     }
     /// Unknown physical connectors remain unmatched; desktop views still draw as ordinary windows.
@@ -79,7 +83,11 @@ impl Profile {
             top: Screen { connector: "ClamShell-Top", rotation: Rotation::Normal, backlight: None },
             bottom: Screen { connector: "ClamShell-Bottom", rotation: Rotation::Normal, backlight: None },
             touchscreens: &[],
+            bottom_density_tenths: 38,
         }
+    }
+    pub const fn bottom_pixels_per_mm(&self) -> f32 {
+        self.bottom_density_tenths as f32 / 10.0
     }
     pub const fn screen(&self, role: ScreenRole) -> Screen {
         match role {
@@ -117,6 +125,12 @@ mod tests {
         assert_eq!(Profile::identify(Some("vm"), b"ayn,thor\0", "", ""), Ok(Profile::vm()));
         assert_eq!(Profile::identify(Some("generic"), b"ayn,thor\0", "", ""), Ok(Profile::generic()));
         assert_eq!(Profile::identify(Some("unknown"), b"ayn,thor\0", "", ""), Err("unknown"));
+    }
+    #[test]
+    fn touchpad_density_follows_the_profile_including_the_vm_fixture() {
+        assert_eq!(Profile::thor().bottom_pixels_per_mm(), 16.5);
+        assert_eq!(Profile::vm().bottom_pixels_per_mm(), 16.5);
+        assert_eq!(Profile::generic().bottom_pixels_per_mm(), 3.8);
     }
     #[test]
     fn profiles_always_name_distinct_top_and_bottom_screens() {

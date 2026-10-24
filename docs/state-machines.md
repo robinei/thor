@@ -1287,3 +1287,10 @@ name through the profile's top/bottom role hints; an unrecognised name stays its
 hints do not invent backlights or hide the view. The role test checks both Thor screens, an unrelated
 backlight and a generic profile given the same kernel name. Snapshot and allocation references remain
 unchanged.
+
+
+The virtual touchpad's pixel-to-millimetre resolution now receives the bottom-screen density from the
+profile through system wiring, rather than assuming the Thor's density on every machine. Thor and the
+VM fixture retain 16.5 px/mm; generic desktop development uses a nominal 3.8 px/mm. The density test
+asserts each value. The VM suite checks the resulting uinput device and real finger forwarding; UI,
+state, snapshots and allocation checks remain unchanged.

@@ -86,6 +86,7 @@ fn run_host(env: &Env, paths: Paths, sources: &Sources, nested: bool) -> Result<
     let handles: Rc<RefCell<Option<Handles>>> = Rc::default();
     let started = handles.clone();
     let mut system_config = wiring::Config {
+        profile: env.profile,
         gamepad: env.gamepad.clone(),
         device_session: env.device_session,
         sway: env.sway.clone(),

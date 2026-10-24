@@ -67,6 +67,6 @@ command line, the self-test.
 2. **Implemented.** `clamshell device outputs`, used by `thor-outputs` (then the VM branch there goes) and
    `thor-panel-calibration`.
 3. Each hard-coded fact above moved, one commit each, its readers taking the fact.
-   Moved: screen connectors, transforms, touchscreen mapping, and backlight role hints.
+   Moved: screen connectors, transforms, touchscreen mapping, backlight role hints, and bottom-screen touchpad density.
 4. A rule in `AGENTS.md` (added with this plan): device facts live in the profile, code never checks the
    device.
