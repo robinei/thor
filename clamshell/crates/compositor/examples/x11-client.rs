@@ -42,6 +42,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     connection.create_window(0, helper, screen.root, 0, 0, 1, 1, 0, WindowClass::INPUT_ONLY, 0, &CreateWindowAux::default())?;
     connection.change_property8(PropMode::REPLACE, helper, AtomEnum::WM_CLASS, AtomEnum::STRING, b"hidden-helper\0HiddenX11Helper\0")?;
     connection.map_window(helper)?;
+    if std::env::args().any(|arg| arg == "--transient") {
+        let parent = connection.generate_id()?;
+        connection.create_window(0, parent, screen.root, 0, 0, 400, 300, 0, WindowClass::INPUT_OUTPUT, 0, &CreateWindowAux::default())?;
+        connection.change_property32(PropMode::REPLACE, window, AtomEnum::WM_TRANSIENT_FOR, AtomEnum::WINDOW, &[parent])?;
+    }
     connection.map_window(window)?;
     connection.flush()?;
     let (commands, received) = std::sync::mpsc::channel();

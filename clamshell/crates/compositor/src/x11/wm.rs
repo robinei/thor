@@ -126,7 +126,7 @@ impl Wm {
         }
         for i in 0..self.windows.len() {
             let Some(window) = self.windows.get(i) else { continue };
-            if !window.queried && self.pending.len() + PROPERTIES.len() + 2 <= 256 {
+            if window.wants_map && !window.queried && self.pending.len() + PROPERTIES.len() + 2 <= 256 {
                 let (id, xid) = (window.id, window.xid);
                 self.query(wire, GetWindowAttributesRequest { window: xid }, 0, Query::Attributes(id), now)?;
                 for name in PROPERTIES {
@@ -147,6 +147,7 @@ impl Wm {
                 )?;
                 if let Some(window) = self.windows.get_mut(i) {
                     window.queried = true;
+                    window.refresh = 0;
                 }
             }
             for (bit, name) in PROPERTIES.iter().enumerate() {
@@ -658,6 +659,17 @@ mod tests {
         wm.forget(old_id, &mut server);
         wm.discover(10, (640, 360), &mut wire, &mut server).unwrap();
         assert_ne!(wm.windows[0].id, old_id);
+        wm.res = Some(140);
+        wm.turn(&mut wire, &client, &mut server, now).unwrap();
+        assert!(wm.pending.is_empty(), "creation alone does not snapshot properties before the app sets them");
+        let event = MapRequestEvent { response_type: MAP_REQUEST_EVENT, parent: 1, window: 10, ..MapRequestEvent::default() };
+        let mut event = Serialize::serialize(&event).to_vec();
+        event.resize(32, 0);
+        wm.event(&event, &mut wire, &mut server).unwrap();
+        wm.turn(&mut wire, &client, &mut server, now).unwrap();
+        assert_eq!(wm.pending.len(), PROPERTIES.len() + 2, "MapRequest starts the attributes, properties and PID snapshot");
+        assert!(server.core.state().session().windows().is_empty(), "the initial facts precede placement");
+
         // An old window's reply cannot change another window, even if X11 reuses its resource id.
         let mut bytes = Serialize::serialize(&GetPropertyReply {
             format: 8,

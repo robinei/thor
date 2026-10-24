@@ -198,6 +198,17 @@ time.sleep(300)
         assert x11.wait(timeout=5) == 0
         processes.remove(x11)
         wait(lambda: pixels() == (True, False), "Wayland survives Xwayland restart")
+        x11 = spawn([str(BIN.parent / "examples/x11-client"), "--transient"], "x11-transient", {**nested, "DISPLAY": f":{display_match[1]}"}, stdin=subprocess.PIPE)
+        wait(lambda: pixels((128, 80, 32)) == (True, False), "X11 transient maps before its parent")
+        def transient_centred():
+            width, height, data = image()
+            offset = (height // 2 * width + 10) * 3
+            return data[offset:offset + 3] == b"\0\0\0"
+        wait(transient_centred, "a transient stays centred even before its parent maps")
+        control("window", "close")
+        assert x11.wait(timeout=5) == 0
+        processes.remove(x11)
+        wait(lambda: pixels() == (True, False), "Wayland returns after the transient closes")
         def patch(x, y=250):
             width, _, data = image()
             return b"".join(data[(row * width + x - 10) * 3:(row * width + x + 40) * 3] for row in range(y - 10, y + 40))

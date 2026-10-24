@@ -125,7 +125,7 @@ impl Properties {
             title: self.utf8_name.as_ref().unwrap_or(&self.name).clone(),
             parent,
             limits: self.limits,
-            role: self.role,
+            role: if self.role == WindowRole::Normal && self.transient.is_some() { WindowRole::Dialog } else { self.role },
             unit: process.unit,
             pids: process.pids,
             ..Window::default()

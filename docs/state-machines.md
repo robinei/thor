@@ -1083,12 +1083,15 @@ before allocating their payload. At most 256 queries are outstanding, deferring 
 requests. At most 128 X11 windows are tracked; an excess ends the offending X11 client. command-fds
 passes the four private descriptors only in child-side exec setup, retaining the parent's CLOEXEC.
 
-`created --attributes/properties/XRes replies--> known facts`.
-`known --MapRequest, initial facts available--> placed [Opened → final configure → map → focus]`.
+`created --MapRequest--> querying [attributes, properties, XRes]`.
+`querying --initial replies--> placed [Opened → final configure → map → focus]`.
+The initial queries are issued after MapRequest, so properties set between creation and mapping
+are included in the first placement.
 Input-only and override-redirect surfaces are excluded from these toplevels. Class, UTF-8 title with
 Latin-1 fallback, transient parent, normal size hints and dialog/splash/utility role become the same
 Window facts as Wayland. PIDs come from XRes, never the forgeable _NET_WM_PID property or Xwayland's
-own socket credentials. Properties have a 4 KiB query bound and validated types/formats; absent or
+own socket credentials. WM_TRANSIENT_FOR also implies dialog presentation when the parent has not
+mapped or has gone away, even without an explicit window type. Properties have a 4 KiB query bound and validated types/formats; absent or
 malformed properties clear their facts. Title/property notifications coalesce while a query is in
 flight, retaining a refresh bit for changes that race its reply. Changed facts coalesce per window
 until the next recorded frame, so title traffic never drives repeated UI applies within that frame.
@@ -1115,5 +1118,5 @@ setup/replies, full buffers, EOF, oversize rejection, idle silence and outstandi
 The dormant listener test asserts no child/deadline before a connection. The request-order test pins
 configure before map and focus, and no repeated commands for unchanged state. The real software/GPU
 harness starts a font-independent X11 fixture, checks pixels through top/bottom moves, configure sizes,
-unmap/remap and WM_DELETE_WINDOW, then stops/kills Xwayland while Wayland keeps moving. It checks
+unmap/remap, WM_DELETE_WINDOW and a transient preceding its parent, then stops/kills Xwayland while Wayland keeps moving. It checks
 reaping, no eager restart, and activation of a replacement by another X11 client.

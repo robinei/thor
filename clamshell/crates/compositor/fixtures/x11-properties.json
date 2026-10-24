@@ -350,5 +350,33 @@
       ]
     },
     "parent": null
+  },
+  {
+    "label": "transient with an unmapped parent and no explicit type",
+    "properties": [
+      {
+        "name": "WM_TRANSIENT_FOR",
+        "type": "WINDOW",
+        "format": 32,
+        "bytes": [],
+        "words": [
+          77
+        ]
+      }
+    ],
+    "app": "",
+    "title": "",
+    "role": "Dialog",
+    "limits": {
+      "min": [
+        0,
+        0
+      ],
+      "max": [
+        0,
+        0
+      ]
+    },
+    "parent": 77
   }
 ]
