@@ -433,8 +433,9 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    on its initial surface and inverse transform,
    including simultaneous contacts on different screens. The on-screen keyboard commits text through
    text-input-v3 and sends shortcuts and other keys through the seat, retaining physical modifiers.
-   Visible client idle inhibitors feed the existing idle state machine. Xwayland, screenshot requests
-   and the full clipboard remain to implement. The current host puts the logical screens side by side
+   Visible client idle inhibitors feed the existing idle state machine. Clipboard and primary selection
+   use Smithay's selection protocols; the existing keeper connects to the private nested display and
+   preserves text separately from the parent. Xwayland and screenshot requests remain to implement. The current host puts the logical screens side by side
    for desktop testing.
    Rules 1-3 of section 3, "Keeping the app tail small", hold for all of it; rule 5's real-client set
    and window-event ring, and rule 6's defaults (Wine's Wayland driver, Big Picture), are part of this phase.

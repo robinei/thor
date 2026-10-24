@@ -29,7 +29,7 @@ use crate::{
 pub fn run(
     state: State,
     config: Config,
-    start: impl FnOnce(EventSender),
+    start: impl FnOnce(EventSender, std::path::PathBuf),
     on_effect: impl FnMut(&Effect) + 'static,
     identify: impl Fn(u32) -> Process + 'static,
 ) -> Result<(), Error> {
@@ -109,7 +109,8 @@ pub fn run(
             }
         })
         .map_err(|e| e.error)?;
-    start(sender);
+    let runtime = std::env::var_os("XDG_RUNTIME_DIR").ok_or("nested compositor: XDG_RUNTIME_DIR is missing")?;
+    start(sender, std::path::PathBuf::from(runtime).join(&server.socket));
     server.core.handle(Event::Start);
     while !server.exit {
         let wait = server.core.deadline().map(|at| at.saturating_duration_since(Instant::now()));

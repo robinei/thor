@@ -49,6 +49,8 @@ pub(crate) struct Server {
     pub shm: ShmState,
     pub seats: SeatState<Self>,
     pub data_device: DataDeviceState,
+    pub primary_selection: smithay::wayland::selection::primary_selection::PrimarySelectionState,
+    pub data_control: smithay::wayland::selection::ext_data_control::DataControlState,
     pub seat: Seat<Self>,
     pub popups: PopupManager,
     pub windows: Vec<ClientWindow>,
@@ -91,6 +93,8 @@ impl Server {
         seat.text_input().set_compositor_input_method(true);
         TextInputManagerState::new::<Self>(&dh);
         smithay::wayland::idle_inhibit::IdleInhibitManagerState::new::<Self>(&dh);
+        let primary_selection = smithay::wayland::selection::primary_selection::PrimarySelectionState::new::<Self>(&dh);
+        let data_control = smithay::wayland::selection::ext_data_control::DataControlState::new::<Self, _>(&dh, Some(&primary_selection), |_| true);
         let outputs = ["ClamShell-Top", "ClamShell-Bottom"].map(|name| {
             let output = Output::new(
                 name.into(),
@@ -112,6 +116,8 @@ impl Server {
             shell: XdgShellState::new::<Self>(&dh),
             shm: ShmState::new::<Self>(&dh, vec![smithay::reexports::wayland_server::protocol::wl_shm::Format::Abgr8888]),
             data_device: DataDeviceState::new::<Self>(&dh),
+            primary_selection,
+            data_control,
             seats,
             seat,
             dh,
@@ -293,6 +299,10 @@ impl Server {
             && keyboard.current_focus() != surface
         {
             self.core.handle(clamshell_state::Event::TextInput(false));
+            if surface.is_none() {
+                smithay::wayland::selection::data_device::set_data_device_focus(&self.dh, &self.seat, None);
+                smithay::wayland::selection::primary_selection::set_primary_focus(&self.dh, &self.seat, None);
+            }
             keyboard.set_focus(self, surface, SERIAL_COUNTER.next_serial());
         }
     }

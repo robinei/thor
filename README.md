@@ -272,6 +272,6 @@ The experimental in-process compositor runs with `cargo run --features composito
 `clamshell/`. It opens one desktop window with the logical screens side by side. F12 is Home (hold
 for window arrows), F11 moves the selected window down, and F10 returns it. Sway remains the normal
 session backend. Touch is routed to UI or clients. The on-screen keyboard uses text-input-v3 or seat key events;
-Xwayland is still pending. After `cargo build --features
-compositor`, `python3 tests/nested-compositor.py` checks real client rendering and screen moves using
+Its clipboard is separate from the parent's; Xwayland is still pending. After `cargo build --features
+compositor`, `python3 tests/nested-compositor.py` checks clipboard isolation, native copy/primary paste, persistence, real client rendering and screen moves using
 headless sway, foot and grim. It prints the directory containing its screenshots and logs.

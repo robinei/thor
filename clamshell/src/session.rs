@@ -84,7 +84,21 @@ fn run_host(env: &Env, paths: Paths, sources: &Sources, nested: bool) -> Result<
     // after that.
     let handles: Rc<RefCell<Option<Handles>>> = Rc::default();
     let started = handles.clone();
-    let start = move |sender| *started.borrow_mut() = Some(start(env, &paths, sources, layout, &global, fetch, sender));
+    let mut system_config = wiring::Config {
+        gamepad: env.gamepad.clone(),
+        device_session: env.device_session,
+        sway: env.sway.clone(),
+        clipboard_display: None,
+        bottom_output: env.bottom_output.clone(),
+        backlights: env.backlights.clone(),
+    };
+    let start = move |sender: EventSender, display| {
+        system_config.clipboard_display = display;
+        if let Some(path) = env.control.as_ref().or(paths.control.as_ref()) {
+            control::spawn(path.clone(), UiSink(sender.clone()));
+        }
+        *started.borrow_mut() = Some(start(&system_config, &paths, sources, layout, &global, fetch, sender));
+    };
     let on_effect = move |effect: &clamshell_state::Effect| {
         if let Some(handles) = handles.borrow_mut().as_mut() {
             handles.dispatch(effect);
@@ -92,14 +106,17 @@ fn run_host(env: &Env, paths: Paths, sources: &Sources, nested: bool) -> Result<
     };
     #[cfg(feature = "compositor")]
     if nested {
-        return clamshell_compositor::run(state, config, start, on_effect, |pid| clamshell_compositor::Process {
-            unit: clamshell_system::os::unit_of(pid),
-            pids: clamshell_system::os::lineage(pid),
-        })
+        return clamshell_compositor::run(
+            state,
+            config,
+            |sender, display| start(sender, Some(display)),
+            on_effect,
+            |pid| clamshell_compositor::Process { unit: clamshell_system::os::unit_of(pid), pids: clamshell_system::os::lineage(pid) },
+        )
         .map_err(|e| e.to_string());
     }
     let _ = nested;
-    let result = clamshell_ui::run(state, config, start, on_effect);
+    let result = clamshell_ui::run(state, config, |sender| start(sender, None), on_effect);
     result.map_err(|e| e.to_string())
 }
 
@@ -113,9 +130,9 @@ impl Sink for UiSink {
     }
 }
 
-/// Starts the control pipe and every system thread, sending to `sender` (see `clamshell_system::wiring::start`).
+/// Starts every system thread, sending to `sender` (see `clamshell_system::wiring::start`).
 pub fn start(
-    env: &Env,
+    config: &wiring::Config,
     paths: &Paths,
     sources: &Sources,
     layout: Arc<Mutex<TouchLayout>>,
@@ -124,16 +141,5 @@ pub fn start(
     sender: EventSender,
 ) -> Handles {
     let sink = UiSink(sender);
-    // Commands (`clamshell ctl`, tests) come through a pipe.
-    if let Some(path) = env.control.as_ref().or(paths.control.as_ref()) {
-        control::spawn(path.clone(), sink.clone());
-    }
-    let config = wiring::Config {
-        gamepad: env.gamepad.clone(),
-        device_session: env.device_session,
-        sway: env.sway.clone(),
-        bottom_output: env.bottom_output.clone(),
-        backlights: env.backlights.clone(),
-    };
-    wiring::start(&config, paths, sources, layout, global, fetch, sink)
+    wiring::start(config, paths, sources, layout, global, fetch, sink)
 }

@@ -1,6 +1,6 @@
 //! The clipboard, kept by ClamShell as the session's shell. It uses the compositor's data control
-//! protocol (`ext_data_control_manager_v1`), which is given to a shell and not to apps, and lets the
-//! clipboard be read and set without a window. Only text is handled; files copied in the Files tab are
+//! protocol (`ext_data_control_manager_v1`), which lets the shell read and set the clipboard without
+//! a window. Only text is handled; files copied in the Files tab are
 //! kept by that tab.
 //!
 //! - Each copied text is read as it is copied. On Wayland the data stays with the program that copied
@@ -51,18 +51,25 @@ const SET_WAIT: Duration = Duration::from_secs(5);
 
 /// Where the kept text is also written, so that a ClamShell started again after an update or a crash
 /// offers it. It is in the user's runtime directory, which only they can read and which is gone at a
-/// reboot.
-fn saved() -> Option<std::path::PathBuf> {
-    std::env::var_os("XDG_RUNTIME_DIR").map(|d| std::path::PathBuf::from(d).join("clamshell/clipboard"))
+/// reboot. An explicit nested display gets a separate file, leaving the parent session's text alone.
+fn saved(display: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
+    let directory = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR")?).join("clamshell");
+    Some(match display {
+        Some(socket) => directory.join("compositor").join(socket.file_name()?).join("clipboard"),
+        None => directory.join("clipboard"),
+    })
 }
 
 /// Keeps the clipboard (see the module's doc) on a thread of its own, as long as the compositor is
 /// there. It starts with the text an earlier ClamShell kept, offered if the clipboard is empty.
-pub fn spawn(sink: impl Sink + Clone + 'static) -> io::Result<()> {
+/// `display` selects the nested server explicitly; None uses the session's environment.
+pub fn spawn(display: Option<std::path::PathBuf>, sink: impl Sink + Clone + 'static) -> io::Result<()> {
+    let saved = saved(display.as_deref());
     worker::detached("clipboard", move || {
-        let before = saved()
+        let before = saved
+            .as_ref()
             .and_then(|path| {
-                std::fs::read_to_string(&path)
+                std::fs::read_to_string(path)
                     .inspect_err(|e| {
                         if e.kind() == io::ErrorKind::NotFound {
                             log::debug!("clipboard: {}: {e}", path.display());
@@ -79,14 +86,14 @@ pub fn spawn(sink: impl Sink + Clone + 'static) -> io::Result<()> {
         // The reading threads send through this.
         let sink = Mutex::new(sink);
         let on_read = move |text: Option<String>| {
-            if let Some(path) = saved() {
+            if let Some(path) = saved.as_ref() {
                 let written = match &text {
                     Some(t) => path.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| {
                         use std::os::unix::fs::OpenOptionsExt;
-                        let mut file = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&path)?;
+                        let mut file = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path)?;
                         file.write_all(t.as_bytes())
                     }),
-                    None => std::fs::remove_file(&path).or(Ok(())),
+                    None => std::fs::remove_file(path).or(Ok(())),
                 };
                 if let Err(e) = written {
                     log::debug!("clipboard: {}: {e}", path.display());
@@ -96,7 +103,7 @@ pub fn spawn(sink: impl Sink + Clone + 'static) -> io::Result<()> {
             let _ = sink.send(Event::Reading(Reading::Clipboard(text.map(Arc::from))));
         };
         let kept = Arc::new(KeptText { text: Mutex::new(before), on_read: Box::new(on_read) });
-        match Keeper::connect(Mode::Keep { kept, own: None }) {
+        match Keeper::connect(Mode::Keep { kept, own: None }, display.as_deref()) {
             Ok((mut keeper, mut queue)) => {
                 log::info!("clipboard: kept by ClamShell");
                 let gone = loop {
@@ -113,7 +120,7 @@ pub fn spawn(sink: impl Sink + Clone + 'static) -> io::Result<()> {
 
 /// The clipboard's text, if it has one (`--clipboard get`).
 pub fn get() -> Result<Option<String>, String> {
-    let (mut keeper, mut queue) = Keeper::connect(Mode::Get { found: None })?;
+    let (mut keeper, mut queue) = Keeper::connect(Mode::Get { found: None }, None)?;
     // The compositor sends the clipboard's offer when the device is made.
     for _ in 0..2 {
         queue.roundtrip(&mut keeper).map_err(|e| e.to_string())?;
@@ -128,7 +135,7 @@ pub fn get() -> Result<Option<String>, String> {
 /// Sets the clipboard to `text` (`--clipboard set`) until it is taken, normally by ClamShell, which then
 /// keeps it, or for at most [`SET_WAIT`].
 pub fn set(text: String) -> Result<(), String> {
-    let (mut keeper, mut queue) = Keeper::connect(Mode::Set { text, done: false })?;
+    let (mut keeper, mut queue) = Keeper::connect(Mode::Set { text, done: false }, None)?;
     let qh = queue.handle();
     let source = keeper.manager.create_data_source(&qh, ());
     for t in TEXT {
@@ -175,8 +182,13 @@ struct Keeper {
 }
 
 impl Keeper {
-    fn connect(mode: Mode) -> Result<(Keeper, EventQueue<Keeper>), String> {
-        let conn = Connection::connect_to_env().map_err(|e| e.to_string())?;
+    fn connect(mode: Mode, display: Option<&std::path::Path>) -> Result<(Keeper, EventQueue<Keeper>), String> {
+        let conn = match display {
+            Some(path) => std::os::unix::net::UnixStream::connect(path)
+                .map_err(|e| e.to_string())
+                .and_then(|stream| Connection::from_socket(stream).map_err(|e| e.to_string())),
+            None => Connection::connect_to_env().map_err(|e| e.to_string()),
+        }?;
         let (globals, queue) = registry_queue_init::<Keeper>(&conn).map_err(|e| e.to_string())?;
         let qh = queue.handle();
         let manager: ExtDataControlManagerV1 = globals.bind(&qh, 1..=1, ()).map_err(|e| format!("no data control: {e}"))?;

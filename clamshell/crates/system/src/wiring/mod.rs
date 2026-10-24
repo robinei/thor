@@ -40,6 +40,8 @@ pub struct Config {
     pub device_session: bool,
     /// sway's socket, under sway.
     pub sway: Option<PathBuf>,
+    /// An explicit compositor socket for the clipboard, or the environment under sway.
+    pub clipboard_display: Option<PathBuf>,
     /// The second screen's output.
     pub bottom_output: String,
     /// The backlights' folder: /sys/class/backlight, or a stand-in.
@@ -141,7 +143,7 @@ pub fn start<S: Sink + Clone>(
     let mixer = started("mixer", mixer::spawn(backlights.clone(), sink.clone()));
     let bluetooth = started("bluetooth", bluetooth::spawn(sink.clone()));
     let tray = started("tray", crate::session::tray::spawn(sink.clone()));
-    detached("clipboard", crate::session::clipboard::spawn(sink.clone()));
+    detached("clipboard", crate::session::clipboard::spawn(env.clipboard_display.clone(), sink.clone()));
     let icons = started("icons", crate::session::icons::spawn(sink.clone()));
     let system = started("system", crate::device::spawn(paths.screenshots.clone(), sink.clone()));
     // The lengths and frames of browsed videos are read by the metadata threads, as for scanned ones.

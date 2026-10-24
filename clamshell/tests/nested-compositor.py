@@ -74,8 +74,36 @@ def main():
 
         nested_socket = wait(socket_name, "nested Wayland socket")
         wait(lambda: (directory / "control").exists(), "control pipe")
-        client = spawn(["foot", "-o", "colors-dark.background=204080", "--app-id=nested-test", "sh", "-c",
-                        "printf 'ClamShell nested client\n'; sleep 300"], "client", {**host, "WAYLAND_DISPLAY": nested_socket})
+        nested = {**host, "WAYLAND_DISPLAY": nested_socket}
+        subprocess.run([str(BIN), "--clipboard", "set"], input="nested clipboard", text=True,
+                       env=nested, check=True, timeout=10)
+        def clipboard(environment):
+            return subprocess.run([str(BIN), "--clipboard", "get"], env=environment,
+                                  capture_output=True, text=True, check=True, timeout=10).stdout
+        wait(lambda: clipboard(nested) == "nested clipboard", "clipboard kept after its source exits")
+        saved = runtime / "clamshell/compositor" / nested_socket / "clipboard"
+        wait(lambda: saved.exists() and saved.read_text() == "nested clipboard", "nested clipboard persisted separately")
+        assert clipboard(host) == "", "nested clipboard must not change the parent compositor's clipboard"
+        client_program = directory / "client.py"
+        client_program.write_text(r'''import base64, os, pathlib, select, sys, time, tty
+root = pathlib.Path(sys.argv[1])
+tty.setraw(0)
+os.write(1, b"ClamShell nested client\r\n")
+while not (root / "copy").exists(): time.sleep(0.02)
+os.write(1, b"\x1b]52;c;" + base64.b64encode(b"native clipboard") + b"\x07")
+while not (root / "primary").exists(): time.sleep(0.02)
+os.write(1, b"\x1b]52;p;?\x07")
+response = b""
+until = time.monotonic() + 5
+while time.monotonic() < until:
+    if select.select([0], [], [], 0.1)[0]: response += os.read(0, 4096)
+    if response.endswith((b"\x07", b"\x1b\\")): break
+payload = response.split(b";", 2)[2].removesuffix(b"\x07").removesuffix(b"\x1b\\")
+(root / "primary.txt").write_bytes(base64.b64decode(payload))
+time.sleep(300)
+''')
+        client = spawn(["foot", "-o", "colors-dark.background=204080", "--app-id=nested-test",
+                        "python3", str(client_program), str(directory)], "client", nested)
 
         def pixels():
             result = subprocess.run(["grim", "-o", "HEADLESS-1", "-t", "ppm", "-"], env=host, capture_output=True, check=True)
@@ -96,6 +124,11 @@ def main():
 
         wait(lambda: pixels() == (True, False), "client rendered on top")
         shot("top")
+        (directory / "copy").touch()
+        wait(lambda: clipboard(nested) == "native clipboard", "native client copied through wl_data_device")
+        (directory / "primary").touch()
+        wait(lambda: (directory / "primary.txt").exists(), "native client read the mirrored primary selection")
+        assert (directory / "primary.txt").read_text() == "native clipboard"
         control("window", "down")
         wait(lambda: pixels() == (False, True), "client rendered below")
         shot("bottom")
@@ -106,7 +139,11 @@ def main():
         wait(lambda: pixels() == (False, False), "Home rendered shelf")
         shot("home")
         assert client.poll() is None, "Home must leave the client alive"
-        print("ok: real client rendering, bottom-slot move, return and Home", flush=True)
+        os.killpg(client.pid, signal.SIGTERM)
+        client.wait(timeout=5)
+        wait(lambda: clipboard(nested) == "native clipboard", "native copy survived the source client exiting")
+        assert clipboard(host) == "", "native copy must remain isolated from the parent"
+        print("ok: clipboard isolation and persistence, real client rendering, bottom-slot move, return and Home", flush=True)
     finally:
         for process in reversed(processes):
             if process.poll() is None:

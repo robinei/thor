@@ -716,6 +716,20 @@ surface destruction. The existing state idle tests pin dim/off/sleep effects and
 guard; no separate policy is introduced in the compositor. The nested host still leaves physical
 output power to its parent; actual output power belongs to the DRM backend.
 
+### Nested clipboard and selection focus (compositor, system/session/clipboard)
+
+Smithay owns data-device, primary-selection and ext-data-control protocol objects and offer transfer.
+Keyboard focus selects the client receiving clipboard and primary offers; losing focus clears both.
+The existing keeper remains a system thread and retains its text-only, primary-mirroring, password
+manager and size-limit rules. The nested host passes its socket path to that thread explicitly.
+Sway uses the environment as before; the process environment is never changed.
+
+Nested saved text goes under `$XDG_RUNTIME_DIR/clamshell/compositor/<socket>/clipboard`, separately
+from the session's `$XDG_RUNTIME_DIR/clamshell/clipboard`. The nested compositor neither reads the
+parent's saved text nor replaces it. `tests/nested-compositor.py` checks CLI set/get, persistence after
+the source exits, native Foot OSC52 copy through wl_data_device, primary paste back into Foot, and
+an unchanged parent clipboard. The nested-sway test checks the normal session startup path.
+
 ### One-shot game-pad activity (state/sync, system/input/pad)
 
 Top content without keyboard focus arms PadActivity(true). A game-pad press or deflection sends one

@@ -163,7 +163,9 @@ impl SeatHandler for Server {
     }
     fn cursor_image(&mut self, _: &Seat<Self>, _: smithay::input::pointer::CursorImageStatus) {}
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
-        set_data_device_focus(&self.dh, seat, focused.and_then(|s| self.dh.get_client(s.id()).ok()));
+        let client = focused.and_then(|s| self.dh.get_client(s.id()).ok());
+        set_data_device_focus(&self.dh, seat, client.clone());
+        smithay::wayland::selection::primary_selection::set_primary_focus(&self.dh, seat, client);
     }
 }
 impl SelectionHandler for Server {
@@ -177,3 +179,14 @@ impl DataDeviceHandler for Server {
 impl WaylandDndGrabHandler for Server {}
 
 smithay::delegate_dispatch2!(Server);
+
+impl smithay::wayland::selection::primary_selection::PrimarySelectionHandler for Server {
+    fn primary_selection_state(&mut self) -> &mut smithay::wayland::selection::primary_selection::PrimarySelectionState {
+        &mut self.primary_selection
+    }
+}
+impl smithay::wayland::selection::ext_data_control::DataControlHandler for Server {
+    fn data_control_state(&mut self) -> &mut smithay::wayland::selection::ext_data_control::DataControlState {
+        &mut self.data_control
+    }
+}
