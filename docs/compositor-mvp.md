@@ -628,6 +628,13 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
           highlights in the headroom; our own tone mapping into the measured peak; limits on highlights
           against heat and burn-in.
     - [ ] The two panels' white points matched (dual-screen emulators); an HDR setting per game.
+    - [ ] HDR games through the same curve, not a second setting: a curve is how a game should look on
+          the screen, applied to whatever it sends. For SDR the highlights expand into the headroom (now);
+          for an HDR game (its own HDR mode through Proton, Wine's Wayland driver and colour management)
+          they are compressed into the panel's peak from the same knee, with the black point, contrast,
+          paper white (SDR white) and saturation meaning the same. Off for an HDR game is plain tone
+          mapping into the panel. The edit screen plots whichever applies to the game's output. Tried
+          first on the desktop with a game that has an HDR mode (2h's Proton test).
     - [ ] SDR to HDR on the device: 2h's curve into the panel's headroom; in the display hardware's
           per-plane lookup tables if they can hold it, so a game keeps direct scanout, else in the shader
           (every frame composited: measure the cost); highlight limits against heat and burn-in, static HUD
