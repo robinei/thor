@@ -117,7 +117,9 @@ impl XdgShellHandler for Server {
             self.reject_client(&wl_surface, &format!("cannot track popup: {error}"));
         }
     }
-    fn grab(&mut self, _: PopupSurface, _: WlSeat, _: Serial) {}
+    fn grab(&mut self, surface: PopupSurface, seat: WlSeat, serial: Serial) {
+        self.grab_popup(surface, seat, serial);
+    }
     fn reposition_request(&mut self, surface: PopupSurface, positioner: PositionerState, token: u32) {
         surface.with_pending_state(|pending| {
             pending.geometry = positioner.get_geometry();

@@ -33,6 +33,8 @@ struct Client {
     feedback_table: Vec<u8>,
     feedback_done: bool,
     imported_buffers: usize,
+    pointer_serial: u32,
+    popup_done: usize,
 }
 
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Client {
@@ -629,3 +631,6 @@ mod viewport_tests;
 
 #[path = "dmabuf_tests.rs"]
 mod dmabuf_tests;
+
+#[path = "popup_tests.rs"]
+mod popup_tests;

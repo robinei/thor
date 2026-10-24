@@ -876,3 +876,27 @@ green. Its `--gpu` mode uses a headless GLES2 host and hardware EGL, checks rend
 screen moves/close and requires native dmabuf create requests in the fixture's protocol log. It fails
 rather than accepting shared-memory transport in that mode. Both modes passed on the development
 desktop; the hardware run submitted AMD-modified 10-bit buffers and rendered the expected colours.
+
+### Popup menu grabs (compositor/popup)
+
+A menu belongs to its root toplevel and never creates a state window. A visible, keyboard-focused
+parent may grant a popup grab on the session seat; other parents or seats receive popup_done.
+Malformed roots and failed popup setup end that client with a logged reason. A conflicting seat grab
+dismisses the popup chain instead of replacing the other grab. Nested popups share the parent's grab
+chain. The pointer grab is installed before the keyboard grab: replacing a parent pointer grab releases
+its matching keyboard grab, so reversing this order would release the newly installed submenu grab.
+
+Normal window synchronisation keeps keyboard focus on the current popup while the root remains
+selected, visible and mapped. Destroying a submenu restores its parent popup; destroying the last menu
+restores the toplevel. Touch or pointer presses outside the parent window dismiss the chain before
+routing the new input. Home, root unmapping, root destruction, hiding the root or moving keyboard focus
+to another window dismisses the chain and releases its seat grabs. Home still clears keyboard focus
+and shows the shelf, even if the client leaves its dismissed popup resources alive.
+
+`menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy` uses a real socket-pair
+xdg client and seat input serials. It checks popup hit coordinates and focus, outside touch dismissal,
+Home while the menu still exists, nested menu focus and restoration, parent unmapping/remapping and
+client destruction. The exact pointer-before-keyboard order is pinned by the nested submenu's live
+keyboard grab. State's window count remains one throughout menus, and zero while the parent is unmapped.
+No new state events or protocol-specific state facts are introduced. The nested software and GPU smoke
+harnesses check that the ordinary client presentation/input paths still run with menu support enabled.

@@ -437,8 +437,9 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    use Smithay's selection protocols; the existing keeper connects to the private nested display and
    preserves text separately from the parent. A 256-entry window-input ring exports through the control
    command and replays against state fixtures. Real Wayland clients cover fixed-size dialogs, ignored
-   configure and unmap/remap; a malformed client is isolated from a healthy one. X11/menu fixtures,
-   and Xwayland supervision remain to implement. Viewporter cropping and destination sizing use the
+   configure and unmap/remap; a malformed client is isolated from a healthy one. Real popup clients
+   cover nested grabs, outside touch dismissal, Home and parent unmapping; menus stay local to their
+   toplevel and do not enter state. X11 fixtures and Xwayland supervision remain to implement. Viewporter cropping and destination sizing use the
    same logical geometry for presentation and input, covered by a socket-pair client. Screenshots read the presented nested scene and
    encode it on the system worker; SDR PNG export does not change composition precision. The nested
    host advertises renderer-native dmabuf formats, with render-device feedback when available, and

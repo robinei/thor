@@ -32,6 +32,7 @@ impl Server {
             log::debug!("compositor: too many simultaneous touches");
             return;
         };
+        self.dismiss_menu_outside(self.hit(position).map(|hit| hit.window));
         let arrows = clamshell_ui::window_arrows::WindowArrows::new(self.core.state(), (self.top_width as u32, self.size.1 as u32));
         let target = if let Some(action) = arrows.hit((position.x, position.y)) {
             self.core.handle(clamshell_state::Event::Device(action));

@@ -56,6 +56,7 @@ pub(crate) struct Server {
     pub data_control: smithay::wayland::selection::ext_data_control::DataControlState,
     pub seat: Seat<Self>,
     pub popups: PopupManager,
+    pub menu: Option<crate::popup::Menu>,
     pub windows: Vec<ClientWindow>,
     pub outputs: [Output; 2],
     pub pointer: Point<f64, Logical>,
@@ -135,6 +136,7 @@ impl Server {
             dh,
             outputs,
             popups: PopupManager::default(),
+            menu: None,
             windows: Vec::new(),
             pointer: (0.0, 0.0).into(),
             pointer_window: None,
@@ -329,6 +331,7 @@ impl Server {
         }
         let surface =
             focus.and_then(|id| self.windows.iter().find(|w| w.id == id && w.mapped)).and_then(|w| w.window.toplevel()).map(|t| t.wl_surface().clone());
+        let surface = self.menu_focus(surface);
         if let Some(keyboard) = self.seat.get_keyboard()
             && keyboard.current_focus() != surface
         {

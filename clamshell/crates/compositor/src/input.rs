@@ -76,6 +76,7 @@ impl Server {
                 }
                 if event.state() == ButtonState::Pressed {
                     if self.pointer_buttons.is_empty() {
+                        self.dismiss_menu_outside(self.hit(self.pointer).map(|hit| hit.window));
                         let arrows = clamshell_ui::window_arrows::WindowArrows::new(self.core.state(), (self.top_width as u32, self.size.1 as u32));
                         if event.button_code() == 0x110
                             && let Some(action) = arrows.hit((self.pointer.x, self.pointer.y))
