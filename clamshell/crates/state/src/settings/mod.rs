@@ -558,22 +558,23 @@ impl Settings {
         self.overrides.contains_key(entry) || self.env.contains_key(entry)
     }
 
-    /// Who uses keymap `id`: all games, if it is the global choice, and the games that chose it.
-    pub fn keymap_users(&self, id: u16) -> crate::keymap::screens::Users {
-        let all_entries = self.global.get(Setting::Keymap) == id;
-        let entries = self.overrides.values().filter(|o| o.get(Setting::Keymap) == Some(id)).count();
-        crate::keymap::screens::Users { all_entries, entries }
+    /// Who uses profile `id` of the kind `setting` holds (a keymap): all games, if it is the global
+    /// choice, and the games that chose it.
+    pub fn users(&self, setting: Setting, id: u16) -> crate::profiles::picker::Users {
+        let all_entries = self.global.get(setting) == id;
+        let entries = self.overrides.values().filter(|o| o.get(setting) == Some(id)).count();
+        crate::profiles::picker::Users { all_entries, entries }
     }
 
-    /// Keymap `id` is gone. All games, if it was theirs, go back to Default, and the games and levels
-    /// that chose it choose Default. Their choice isn't cleared, since a level between them and all
-    /// games, such as their runner, may choose another keymap.
-    pub fn forget_keymap(&mut self, id: u16) {
-        if self.global.get(Setting::Keymap) == id {
-            self.global.set(Setting::Keymap, 0);
+    /// Profile `id` of the kind `setting` holds is gone. All games, if it was theirs, go back to Default,
+    /// and the games and levels that chose it choose Default. Their choice isn't cleared, since a level
+    /// between them and all games, such as their runner, may choose another profile.
+    pub fn forget(&mut self, setting: Setting, id: u16) {
+        if self.global.get(setting) == id {
+            self.global.set(setting, 0);
         }
-        for o in self.overrides.values_mut().filter(|o| o.get(Setting::Keymap) == Some(id)) {
-            o.set(Setting::Keymap, Some(0));
+        for o in self.overrides.values_mut().filter(|o| o.get(setting) == Some(id)) {
+            o.set(setting, Some(0));
         }
     }
 }
@@ -651,11 +652,11 @@ mod tests {
         s.set(Some(&runner), Setting::Keymap, Some(3));
         s.set(Some(&game), Setting::Keymap, Some(5));
         s.set(Some(&other), Setting::Keymap, Some(3));
-        s.forget_keymap(5);
+        s.forget(Setting::Keymap, 5);
         assert_eq!(s.global.get(Setting::Keymap), 0);
         assert_eq!(s.of_in("ff6", &["runner:SNES"]).get(Setting::Keymap), 0, "Default, not its runner's");
         assert_eq!(s.of_in("snes-game", &["runner:SNES"]).get(Setting::Keymap), 3, "the runner's choice stays");
-        s.forget_keymap(3);
+        s.forget(Setting::Keymap, 3);
         assert_eq!(s.of_in("snes-game", &["runner:SNES"]).get(Setting::Keymap), 0);
         assert_eq!(s.of_in("zelda", &[]).get(Setting::Keymap), 0);
     }

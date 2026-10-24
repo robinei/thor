@@ -2,6 +2,7 @@
 //! layer, or to pick one as a target), a layer's menu, the mouse's drawing, and a key chord typed on the
 //! keyboard.
 
+use clamshell_state::profiles::picker::{Kind, ProfileId};
 use std::fmt::Write;
 
 use clamshell_state::bottom::keyboard::Modifier;
@@ -66,7 +67,11 @@ pub(super) fn layer_menu(f: &mut Frame, id: u16, layer: Layer) {
     let area = header(f, name, HeaderRight::None);
     let k = |id| Id::Keymap(id);
     if f.s.keymapping().edit().clearing {
-        widgets::menu(f, area, [(k(KeymapId::ConfirmClear), "Clear all its bindings", Tone::Accent), (k(KeymapId::Back), "Cancel", Tone::Fn)]);
+        widgets::menu(
+            f,
+            area,
+            [(k(KeymapId::ConfirmClear), "Clear all its bindings", Tone::Accent), (Id::Profile(Kind::Keymap, ProfileId::Back), "Cancel", Tone::Fn)],
+        );
     } else if layer == Layer::BASE {
         widgets::menu(f, area, [(k(KeymapId::Clear), "Clear", Tone::Fn)]);
     } else {
@@ -200,5 +205,5 @@ pub(super) fn capture(f: &mut Frame, input: Input, keys: Option<(usize, [Chord; 
     if !held.is_empty() {
         let _ = write!(text, "{}+", OutputLabel(Output::Key(held), &f.s.profile().control_layout.labels));
     }
-    editor::field(f, &title, &text, (Id::Keymap(KeymapId::Back), "Cancel"), (Id::Keymap(KeymapId::Done), "Done"));
+    editor::field(f, &title, &text, (Id::Profile(Kind::Keymap, ProfileId::Back), "Cancel"), (Id::Keymap(KeymapId::Done), "Done"));
 }

@@ -8,6 +8,7 @@
 
 use clamshell_state::bottom::keyboard;
 use clamshell_state::levels::Level;
+use clamshell_state::profiles::picker::{Kind, ProfileId};
 use clamshell_state::{DockId, EditorId, Event, Id, LevelEvent, ListId, PadInput, PointerEvent, RowPart, ShelfEvent, ShelfId, State, Tab};
 use smithay_client_toolkit::seat::keyboard::Keysym;
 
@@ -288,7 +289,7 @@ pub(crate) fn back(s: &State) -> Option<Event> {
         return Some(PointerEvent::Activate(Id::Time(clamshell_state::TimeId::Back)).into());
     }
     if s.keymapping().screen().is_some() {
-        return Some(PointerEvent::Activate(Id::Keymap(clamshell_state::KeymapId::Back)).into());
+        return Some(PointerEvent::Activate(Id::Profile(Kind::Keymap, ProfileId::Back)).into());
     }
     // The Device view in shelf's place goes back to shelf.
     if s.device().top_view() == clamshell_state::device::TopView::Device {

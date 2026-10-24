@@ -24,6 +24,7 @@ use crate::device::{SticksEvent, TopView};
 use crate::keymap::{Button, Input};
 use crate::levels::{Audio, AudioOutput, Stream};
 use crate::out::Out;
+use crate::profiles::picker::ProfileId;
 use crate::radios::bluetooth::{Bluetooth, Device as BtDevice, Kind};
 use crate::radios::wifi::{Network, Wifi};
 use crate::session::windows::{SHELF_APP_ID, Window};
@@ -325,13 +326,6 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
             Some(_) => {
                 ids.extend(
                     [
-                        KeymapId::Back,
-                        KeymapId::New,
-                        KeymapId::Edit,
-                        KeymapId::Rename,
-                        KeymapId::Duplicate,
-                        KeymapId::Delete,
-                        KeymapId::ConfirmDelete,
                         KeymapId::MakeOwn,
                         KeymapId::Undo,
                         KeymapId::LayerPicker,
@@ -345,6 +339,21 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
                         KeymapId::Calibrate,
                     ]
                     .map(Id::Keymap),
+                );
+                ids.extend(
+                    [
+                        ProfileId::Back,
+                        ProfileId::New,
+                        ProfileId::Edit,
+                        ProfileId::Rename,
+                        ProfileId::Duplicate,
+                        ProfileId::Delete,
+                        ProfileId::ConfirmDelete,
+                        ProfileId::SaveAs,
+                        ProfileId::ConfirmSave,
+                        ProfileId::LoadFrom,
+                    ]
+                    .map(|p| Id::Profile(crate::profiles::picker::Kind::Keymap, p)),
                 );
                 ids.extend(row(ListId::Keymaps, s.lists().len(ListId::Keymaps)));
                 ids.extend(row(ListId::Layers, s.lists().len(ListId::Layers)));

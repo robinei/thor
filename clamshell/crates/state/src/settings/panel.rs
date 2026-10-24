@@ -7,7 +7,8 @@ use std::sync::Arc;
 
 use crate::bottom::editor::{Editor, Editors, Purpose};
 use crate::effect::{Effect, Save};
-use crate::keymap::screens::{Keymapping, PickerRow};
+use crate::keymap::screens::Keymapping;
+use crate::profiles::picker::PickerRow;
 use crate::session::running::Front;
 use crate::settings::{Setting, Settings};
 use crate::{Session, Shelf};
@@ -66,10 +67,11 @@ impl Prefs {
         self.settings.set(entry, setting, value);
     }
 
-    /// Chooses keymap `id` for `entry`, or for all entries. Every choice of a keymap is set here: the
-    /// picker's, an entry's own keymap just made, and a runner's own keymap from the library.
-    pub(crate) fn choose_keymap(&mut self, entry: Option<&Arc<str>>, id: u16) {
-        self.settings.set(entry, Setting::Keymap, Some(id));
+    /// Chooses profile `id` of the kind `setting` holds for `entry`, or for all entries. Every choice of a
+    /// profile is set here: the picker's, an entry's own profile just made, and a runner's own keymap from
+    /// the library.
+    pub(crate) fn choose(&mut self, entry: Option<&Arc<str>>, setting: Setting, id: u16) {
+        self.settings.set(entry, setting, Some(id));
     }
 
     /// Drops a game's overrides and environment (see [`Settings::reset`]).
@@ -81,9 +83,9 @@ impl Prefs {
         self.settings.set_env(entry, text);
     }
 
-    /// Keymap `id` is gone (see [`Settings::forget_keymap`]).
-    pub(crate) fn forget_keymap(&mut self, id: u16) {
-        self.settings.forget_keymap(id);
+    /// Profile `id` of the kind `setting` holds is gone (see [`Settings::forget`]).
+    pub(crate) fn forget(&mut self, setting: Setting, id: u16) {
+        self.settings.forget(setting, id);
     }
 
     /// Opens the editor on `entry`'s environment variables, or with none, those for all games.
@@ -232,6 +234,18 @@ impl<'a> Panel<'a> {
     /// Row `i` of the keymaps' picker, for what the panel edits.
     pub fn keymap_row(&self, i: usize) -> Option<PickerRow<'a>> {
         self.keymapping.row(i, self.entry())
+    }
+
+    /// Row `i` of `kind`'s picker, for what the panel edits.
+    pub fn profile_row(&self, kind: crate::profiles::picker::Kind, i: usize) -> Option<PickerRow<'a>> {
+        match kind {
+            crate::profiles::picker::Kind::Keymap => self.keymap_row(i),
+        }
+    }
+
+    /// The profile of `kind` chosen for the scope edited; 0 is Default.
+    pub fn profile_chosen(&self, kind: crate::profiles::picker::Kind) -> u16 {
+        self.tile_value(kind.setting())
     }
 
     pub(crate) fn keymap_rows_len(&self) -> usize {

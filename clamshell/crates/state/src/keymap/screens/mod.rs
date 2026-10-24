@@ -1,11 +1,6 @@
-//! The keymaps' screens, shown over the settings tab on the second screen.
+//! The keymaps' screens, shown over the settings tab.
 //!
-//! - The picker lists, for a game, its own keymap or a row that makes one from the keymap in force. Then
-//!   come Default, the named keymaps with how many games use each, and New.
-//! - A keymap's menu has Edit, Rename, Duplicate and Delete; deleting a keymap in use asks first. A game's
-//!   own keymap stays while another is chosen. Its menu has Edit, Load from, Save as and Delete. Load from
-//!   copies Default or a named keymap into it and opens its edit screen, where Undo goes back. Save as
-//!   copies it to a new named keymap, or over an existing one after asking.
+//! - The picker and a keymap's menu are the profiles' picker ([`crate::profiles::picker`]).
 //! - The edit screen shows the pad's inputs in one layer of the keymap ([`EditView`]). The layer button
 //!   opens the list of layers: tap one to show it, add one, or long-press one to rename, clear or delete
 //!   it. An input is chosen by touch or by pressing it on the pad, which listens while the screen is open.
@@ -31,6 +26,8 @@ use crate::keymap::{Actuation, Binding, Chord, Input, Keymap, Keymaps, Kind, Lay
 use crate::levels::slider::{Control, Slider};
 use crate::nav::lists::RowPart;
 use crate::out::Out;
+use crate::profiles::Profiles;
+use crate::profiles::picker::{self, Kind as ProfileKind, Owner, PickerCx, PickerRow, PickerScreen, ProfileId, ProfileName};
 use crate::settings::Settings;
 use crate::{Event, Tab};
 
@@ -43,18 +40,8 @@ pub use undo::Undo;
 /// Which of the keymaps' screens is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
-    /// Default, the keymaps, and New.
-    List,
-    /// A keymap's long-press menu.
-    Menu(u16),
-    /// Asks whether to delete a keymap that games use.
-    Delete(u16),
-    /// Default and the named keymaps, to pick one to copy into this game's own keymap.
-    Load(u16),
-    /// A new named keymap and the named keymaps, to pick what to save this game's own keymap as.
-    SaveAs(u16),
-    /// Asks whether to save `own` over the named keymap `to`.
-    Overwrite { own: u16, to: u16 },
+    /// One of the picker's screens (see [`crate::profiles::picker`]).
+    Picker(PickerScreen),
     /// A keymap's inputs. The pad listens.
     Edit(u16),
     /// The edit screen while the control that `input` maps to is picked on the drawing, by tapping it or
@@ -85,9 +72,8 @@ impl Screen {
     /// The keymap it is about, if any.
     pub fn keymap(self) -> Option<u16> {
         match self {
-            Screen::List => None,
-            Screen::Menu(id) | Screen::Delete(id) | Screen::Load(id) | Screen::SaveAs(id) | Screen::Edit(id) => Some(id),
-            Screen::Overwrite { own, .. } => Some(own),
+            Screen::Picker(p) => p.profile(),
+            Screen::Edit(id) => Some(id),
             Screen::Pick { id, .. } | Screen::Holds { id, .. } | Screen::Mouse { id, .. } | Screen::Capture { id, .. } => Some(id),
             Screen::Layers { id, .. } | Screen::LayerMenu { id, .. } | Screen::LayerPicker(id) => Some(id),
         }
@@ -150,14 +136,6 @@ pub struct Keymapping {
     undo: Undo,
 }
 
-/// What the keymaps' screens read from elsewhere: the game the settings panel edits, if any, and the
-/// keymap chosen for its scope.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct KeymapCx {
-    pub(crate) entry: Option<Arc<str>>,
-    pub(crate) chosen: u16,
-}
-
 /// The edit screen's own state, kept while the screens for its input are open. It holds the layer shown
 /// and edited, the input selected into the panel and which of its actuations is shown, whether "No
 /// changes" waits for confirmation, and the slider of one of the input's parameters while a finger is on
@@ -169,31 +147,6 @@ pub struct EditView {
     pub act: Actuation,
     pub clearing: bool,
     pub slider: Option<Slider>,
-}
-
-/// A row of the picker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PickerRow<'a> {
-    /// The game's own keymap, or none for the row that makes it.
-    Own(Option<&'a Keymap>),
-    /// When saving a game's own keymap: save it as a new named keymap.
-    New,
-    Default,
-    Named(&'a Keymap),
-}
-
-/// Who uses a keymap: whether all games do, as their default, and how many games have chosen it as their
-/// own.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Users {
-    pub all_entries: bool,
-    pub entries: usize,
-}
-
-impl Users {
-    pub fn any(self) -> bool {
-        self.all_entries || self.entries > 0
-    }
 }
 
 /// A stroke of the keyboard as a chord.
@@ -246,48 +199,37 @@ impl Keymapping {
         matches!(self.screen_in(tab), Some(Screen::Capture { .. })) && !editor_open
     }
 
-    /// The picker's rows. Usually they are, for `entry`, its own keymap or the row that makes one, then
-    /// Default and the named keymaps. When loading into a game's own keymap they are Default and the named
-    /// keymaps; when saving it, a new keymap and the named keymaps.
-    fn rows<'a>(&'a self, entry: Option<&str>) -> impl Iterator<Item = PickerRow<'a>> + use<'a> {
-        let (loading, saving) = match self.open {
-            Some(Screen::Load(_)) => (true, false),
-            Some(Screen::SaveAs(_)) => (false, true),
-            _ => (false, false),
-        };
-        let own = entry.filter(|_| !loading && !saving).map(|g| PickerRow::Own(self.keymaps.own_of(g)));
-        let new = saving.then_some(PickerRow::New);
-        let default = (!saving).then_some(PickerRow::Default);
-        own.into_iter().chain(new).chain(default).chain(self.keymaps.named().map(PickerRow::Named))
+    /// The picker's screen open, if one is.
+    fn picker_screen(&self) -> Option<PickerScreen> {
+        match self.open {
+            Some(Screen::Picker(p)) => Some(p),
+            _ => None,
+        }
     }
 
     pub(crate) fn rows_len(&self, entry: Option<&str>) -> usize {
-        self.rows(entry).count()
+        self.keymaps.rows_len(self.picker_screen(), entry)
     }
 
     /// Row `i` of the picker, with the settings panel editing `entry`.
     pub(crate) fn row(&self, i: usize, entry: Option<&str>) -> Option<PickerRow<'_>> {
-        self.rows(entry).nth(i)
+        self.keymaps.row(self.picker_screen(), i, entry)
     }
 
     /// Whether keymap `id` is a game's own.
     pub fn is_own(&self, id: u16) -> bool {
-        self.keymaps.get(id).is_some_and(|k| k.owner.is_some())
+        self.keymaps.is_own(id)
     }
 
     /// Whether `entry`, the one the settings panel edits, has no keymap of its own and so can make one.
     pub(crate) fn can_make_own(&self, entry: Option<&str>) -> bool {
-        entry.is_some_and(|g| self.keymaps.own_of(g).is_none())
+        self.keymaps.can_make_own(entry)
     }
 
     /// A keymap's name. It is "Own keymap" for a game's own, and "Default" for none or for one that is
     /// gone.
     pub fn name(&self, id: u16) -> &str {
-        match self.keymaps.get(id) {
-            Some(k) if k.owner.is_some() => "Own keymap",
-            Some(k) => k.name.as_str(),
-            None => "Default",
-        }
+        self.keymaps.shown_name(id, ProfileKind::Keymap)
     }
 
     /// Keymap `id`, the one in force. It is Default (id 0, empty) if there is none.
@@ -319,7 +261,7 @@ impl Keymapping {
         }
         for (key, preset) in &wanting {
             if let Some(id) = self.keymaps.make_own_from(preset, key) {
-                prefs.choose_keymap(Some(key), id);
+                prefs.choose(Some(key), crate::settings::Setting::Keymap, id);
             }
         }
         out.effects.push(self.save_effect());
@@ -328,89 +270,27 @@ impl Keymapping {
 
     /// The keymap tile opens the picker.
     pub(crate) fn open_picker(&mut self) {
-        self.open = Some(Screen::List);
+        self.open = Some(Screen::Picker(PickerScreen::List));
     }
 
-    /// A row of the picker. A tap chooses it for the scope being edited and closes the picker, a long
-    /// press opens the keymap's menu, and its Edit button opens its edit screen. The game's row, when the
-    /// game has no keymap of its own, makes one.
-    pub(crate) fn on_row(&mut self, i: usize, part: RowPart, long: bool, cx: &KeymapCx, editors: &mut Editors, out: &mut Out) {
-        let entry = cx.entry.as_deref();
-        match self.open {
-            Some(Screen::Load(own)) => {
-                match self.row(i, entry) {
-                    Some(PickerRow::Default) if !long => self.load_into(own, 0, out),
-                    Some(PickerRow::Named(k)) if !long => self.load_into(own, k.id, out),
-                    _ => {}
-                }
-                return;
-            }
-            Some(Screen::SaveAs(own)) => {
-                match self.row(i, entry) {
-                    Some(PickerRow::New) if !long => name_keymap(editors, KeymapName::SaveAs(own), String::new()),
-                    Some(PickerRow::Named(k)) if !long => self.open = Some(Screen::Overwrite { own, to: k.id }),
-                    _ => {}
-                }
-                return;
-            }
-            _ => {}
-        }
-        let (id, keymap) = match self.row(i, entry) {
-            None | Some(PickerRow::New) => return,
-            Some(PickerRow::Own(None)) => return self.make_own(cx.chosen, cx, out),
-            Some(PickerRow::Default) => (0, false),
-            Some(PickerRow::Own(Some(k)) | PickerRow::Named(k)) => (k.id, true),
-        };
-        match (part, long) {
-            (RowPart::Edit, _) if keymap => self.open_edit(id),
-            (_, true) if keymap => self.open = Some(Screen::Menu(id)),
-            (_, false) => {
-                self.open = None;
-                out.events.push(Event::Keymap(KeymapEvent::Choose(id)));
-            }
-            _ => {}
-        }
+    /// A row of the picker (see [`picker::on_row`]).
+    pub(crate) fn on_row(&mut self, i: usize, part: RowPart, long: bool, cx: &PickerCx, editors: &mut Editors, out: &mut Out) {
+        picker::on_row(self, i, part, long, cx, editors, out);
     }
 
-    /// Copies keymap `from` into `own`, a game's own keymap, and opens its edit screen, where Undo puts it
-    /// back as it was.
-    fn load_into(&mut self, own: u16, from: u16, out: &mut Out) {
-        self.open_edit(own);
-        if self.keymaps.copy_into(own, from) {
-            out.effects.push(self.save());
-        }
-    }
-
-    /// Gives the game the panel edits, if it has none, its own keymap as a copy of keymap `from`. Its edit
-    /// screen opens, and State chooses it for the game and saves the keymaps.
-    fn make_own(&mut self, from: u16, cx: &KeymapCx, out: &mut Out) {
-        let Some(entry) = cx.entry.as_ref().filter(|g| self.keymaps.own_of(g).is_none()) else {
-            return;
-        };
-        let Some(own) = self.keymaps.make_own(from, entry) else {
-            return;
-        };
-        self.open_edit(own);
-        out.events.push(Event::Keymap(KeymapEvent::MadeOwn(own)));
+    /// The picker's buttons, but Back (see [`picker::on`]).
+    pub(crate) fn on_picker(&mut self, id: ProfileId, settings: &Settings, editors: &mut Editors, out: &mut Out) {
+        picker::on(self, id, |k| settings.users(crate::settings::Setting::Keymap, k), editors, out);
     }
 
     /// The keymaps' screens' buttons, but Back (see [`Keymapping::back`]).
-    pub(crate) fn on(&mut self, id: KeymapId, long: bool, cx: &KeymapCx, settings: &Settings, editors: &mut Editors, out: &mut Out) {
+    pub(crate) fn on(&mut self, id: KeymapId, long: bool, cx: &PickerCx, editors: &mut Editors, out: &mut Out) {
         let Some(screen) = self.open else {
             return;
         };
         debug_assert!(screen.keymap().is_none_or(|k| self.keymaps.get(k).is_some()), "the keymap of the screen open is there: {screen:?}");
         match screen {
-            Screen::List if id == KeymapId::New => name_keymap(editors, KeymapName::New, String::new()),
-            Screen::List => {}
-            Screen::Menu(k) => self.on_menu(id, k, settings, editors, out),
-            Screen::Overwrite { own, to } if id == KeymapId::ConfirmSave => {
-                self.open = Some(Screen::List);
-                if self.keymaps.copy_into(to, own) {
-                    out.effects.push(self.save());
-                }
-            }
-            Screen::Delete(k) if id == KeymapId::ConfirmDelete => self.delete(k, out),
+            Screen::Picker(_) => {}
             Screen::Edit(k) => self.on_edit_screen(id, k, long, cx, out),
             Screen::LayerPicker(k) => self.on_layer_picker(id, k, long, editors),
             Screen::LayerMenu { id: k, layer } => self.on_layer_menu(id, k, layer, editors, out),
@@ -443,29 +323,15 @@ impl Keymapping {
             },
             // The modifiers held make the chord, and only State has the keyboard.
             Screen::Capture { .. } if id == KeymapId::Done => out.events.push(Event::Keymap(KeymapEvent::Capture)),
-            Screen::Load(_) | Screen::SaveAs(_) | Screen::Overwrite { .. } | Screen::Delete(_) | Screen::Capture { .. } => {}
-        }
-    }
-
-    /// A keymap's menu (a long press on its row).
-    fn on_menu(&mut self, id: KeymapId, k: u16, settings: &Settings, editors: &mut Editors, out: &mut Out) {
-        match id {
-            KeymapId::Edit => self.open_edit(k),
-            KeymapId::Rename => name_keymap(editors, KeymapName::Rename(k), self.name(k).to_owned()),
-            KeymapId::Duplicate => name_keymap(editors, KeymapName::Duplicate(k), self.keymaps.unique_name(self.name(k))),
-            KeymapId::LoadFrom if self.is_own(k) => self.open = Some(Screen::Load(k)),
-            KeymapId::SaveAs if self.is_own(k) => self.open = Some(Screen::SaveAs(k)),
-            KeymapId::Delete if settings.keymap_users(k).any() => self.open = Some(Screen::Delete(k)),
-            KeymapId::Delete => self.delete(k, out),
-            _ => {}
+            Screen::Capture { .. } => {}
         }
     }
 
     /// The edit screen's buttons: selecting an input (a long press removes its binding), its actuation,
     /// its target and parameters, the layer shown, Undo, Make own, and the gyro's calibration and hold.
-    fn on_edit_screen(&mut self, id: KeymapId, k: u16, long: bool, cx: &KeymapCx, out: &mut Out) {
+    fn on_edit_screen(&mut self, id: KeymapId, k: u16, long: bool, cx: &PickerCx, out: &mut Out) {
         match id {
-            KeymapId::MakeOwn => self.make_own(k, cx, out),
+            KeymapId::MakeOwn => picker::make_own(self, k, cx, out),
             KeymapId::Input(input) if long => {
                 self.edit.selected = Some(input);
                 self.bind(k, input, None, out);
@@ -561,10 +427,9 @@ impl Keymapping {
         }
         let capture = matches!(self.open, Some(Screen::Capture { .. }));
         self.open = match self.open {
-            None | Some(Screen::List) => None,
-            Some(Screen::Menu(_) | Screen::Delete(_) | Screen::Edit(_)) => Some(Screen::List),
-            Some(Screen::Load(id) | Screen::SaveAs(id)) => Some(Screen::Menu(id)),
-            Some(Screen::Overwrite { own, .. }) => Some(Screen::SaveAs(own)),
+            None => None,
+            Some(Screen::Picker(p)) => picker::back(p).map(Screen::Picker),
+            Some(Screen::Edit(_)) => Some(Screen::Picker(PickerScreen::List)),
             Some(Screen::Pick { id, .. } | Screen::Holds { id, .. } | Screen::Mouse { id, .. }) => Some(Screen::Edit(id)),
             Some(Screen::Layers { id, .. } | Screen::LayerPicker(id)) => Some(Screen::Edit(id)),
             Some(Screen::LayerMenu { id, .. }) => Some(Screen::LayerPicker(id)),
@@ -627,26 +492,17 @@ impl Keymapping {
         self.saved_if(changed, out);
     }
 
-    /// The editor saved a name: for a new keymap, which then opens on its edit screen, a renamed keymap, a
-    /// copy, or a new or renamed layer.
+    /// The editor saved a keymap's name (see [`picker::named`]).
+    pub(crate) fn named_profile(&mut self, action: ProfileName, name: &str, out: &mut Out) {
+        picker::named(self, action, name, out);
+    }
+
+    /// The editor saved a layer's name: for a new or a renamed layer.
     pub(crate) fn named(&mut self, action: KeymapName, name: &str, out: &mut Out) {
         if name.trim().is_empty() {
             return;
         }
         match action {
-            KeymapName::New => {
-                if let Some(id) = self.keymaps.add(name) {
-                    self.open_edit(id);
-                }
-            }
-            KeymapName::Rename(id) => {
-                self.keymaps.rename(id, name);
-                self.open = Some(Screen::List);
-            }
-            KeymapName::Duplicate(id) | KeymapName::SaveAs(id) => {
-                self.keymaps.duplicate(id, name);
-                self.open = Some(Screen::List);
-            }
             KeymapName::NewLayer(id, for_input) => {
                 let mut layer = None;
                 self.keymaps.edit(id, |k| {
@@ -674,15 +530,6 @@ impl Keymapping {
             }
         }
         out.effects.push(self.save());
-    }
-
-    /// Deletes keymap `id`. State then puts the games that used it, and all games if it was theirs, back
-    /// on Default.
-    fn delete(&mut self, id: u16, out: &mut Out) {
-        self.keymaps.remove(id);
-        self.open = Some(Screen::List);
-        out.effects.push(self.save());
-        out.events.push(Event::Keymap(KeymapEvent::Deleted(id)));
     }
 
     /// The menu of keymap `id`'s `layer` (see [`Screen::LayerMenu`]).
@@ -778,6 +625,29 @@ impl Keymapping {
                 self.choose(id, input, Output::Keys(so_far), out);
             }
         }
+    }
+}
+
+impl Owner for Keymapping {
+    type Body = crate::keymap::Layers;
+    const KIND: ProfileKind = ProfileKind::Keymap;
+    fn profiles(&self) -> &Profiles<Self::Body> {
+        &self.keymaps
+    }
+    fn profiles_mut(&mut self) -> &mut Profiles<Self::Body> {
+        &mut self.keymaps
+    }
+    fn picker(&self) -> Option<PickerScreen> {
+        self.picker_screen()
+    }
+    fn set_picker(&mut self, screen: Option<PickerScreen>) {
+        self.open = screen.map(Screen::Picker);
+    }
+    fn open_edit(&mut self, id: u16) {
+        Keymapping::open_edit(self, id);
+    }
+    fn save(&mut self) -> Effect {
+        Keymapping::save(self)
     }
 }
 

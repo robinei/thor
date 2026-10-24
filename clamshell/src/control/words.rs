@@ -6,6 +6,7 @@ use clamshell_state::bottom::keyboard::{self, Key, Modifier, Named};
 use clamshell_state::device::buttons::DeviceKey;
 use clamshell_state::keymap::{Actuation, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
 use clamshell_state::levels::Level;
+use clamshell_state::profiles::picker::{Kind, ProfileId};
 use clamshell_state::settings::Setting;
 use clamshell_state::{
     BtId, DockId, EditorId, Event, Id, KeymapId, LevelEvent, ListId, PadInput, PointerEvent, RowPart, SettingsId, ShelfEvent, ShelfId, Slide, Tab, Target,
@@ -75,6 +76,11 @@ pub const COMMANDS: &[Form<Vec<Event>>] = &[
 
 pub(super) fn km(id: KeymapId) -> Result<Id, ParseError> {
     Ok(Id::Keymap(id))
+}
+
+/// A button of the keymaps' picker.
+pub(super) fn kp(id: ProfileId) -> Result<Id, ParseError> {
+    Ok(Id::Profile(Kind::Keymap, id))
 }
 
 /// What a tap or a long press (`tap TARGET`, `long TARGET`) can be on.
@@ -195,21 +201,21 @@ pub const TARGETS: &[Form<Id>] = &[
         |a| Ok(ListId::Keymaps.row(number(arg(a, 0))?)),
     ),
     form("keymap-edit N", "row N's Edit", |a| Ok(Id::Row { list: ListId::Keymaps, i: number(arg(a, 0))?, part: RowPart::Edit })),
-    form("keymap-new", "the picker's New", |_| km(KeymapId::New)),
-    form("keymap-back", "back one keymap screen (picking: Cancel)", |_| km(KeymapId::Back)),
+    form("keymap-new", "the picker's New", |_| kp(ProfileId::New)),
+    form("keymap-back", "back one keymap screen (picking: Cancel)", |_| kp(ProfileId::Back)),
     form("keymap-menu ACTION", "a keymap's menu: edit, rename, duplicate, delete; a game's own: load, save-as", |a| {
-        km(match arg(a, 0) {
-            "edit" => KeymapId::Edit,
-            "rename" => KeymapId::Rename,
-            "duplicate" => KeymapId::Duplicate,
-            "delete" => KeymapId::Delete,
-            "load" => KeymapId::LoadFrom,
-            "save-as" => KeymapId::SaveAs,
+        kp(match arg(a, 0) {
+            "edit" => ProfileId::Edit,
+            "rename" => ProfileId::Rename,
+            "duplicate" => ProfileId::Duplicate,
+            "delete" => ProfileId::Delete,
+            "load" => ProfileId::LoadFrom,
+            "save-as" => ProfileId::SaveAs,
             other => return Err(name_err(other)),
         })
     }),
-    form("keymap-delete", "deleting confirmed", |_| km(KeymapId::ConfirmDelete)),
-    form("keymap-replace", "saving over a named keymap confirmed", |_| km(KeymapId::ConfirmSave)),
+    form("keymap-delete", "deleting confirmed", |_| kp(ProfileId::ConfirmDelete)),
+    form("keymap-replace", "saving over a named keymap confirmed", |_| kp(ProfileId::ConfirmSave)),
     form("keymap-make-own", "the edit screen's Make own (a game's own keymap, a copy)", |_| km(KeymapId::MakeOwn)),
     form("keymap-undo", "the edit screen's Undo", |_| km(KeymapId::Undo)),
     form("map-from INPUT", "an input selected (a, lb, up, lstick, rstick-up, lt, gyro; a long press sets it back)", |a| {

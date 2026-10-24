@@ -292,8 +292,10 @@ tests, never to the in-process compositor.
 
 ## Keymaps (keymap/)
 
-Screens: List, Menu, Edit, Pick, Holds, Mouse, Layers, Capture, LayerPicker, LayerMenu, Load, SaveAs,
-Overwrite, Delete; Undo per keymap since the edit screen opened.
+Screens: the picker's (List, Menu, Load, SaveAs, Overwrite, Delete: `profiles::picker`, shared by every
+kind of profile, the keymaps' own through `Owner`), then Edit, Pick, Holds, Mouse, Layers, Capture,
+LayerPicker, LayerMenu; Undo per keymap since the edit screen opened. One Back for all of them
+(`Id::Profile(Keymap, Back)`), so the pad's focus stays on it between the edit screen and the picker.
 
 | Transition | Test |
 |---|---|
@@ -433,7 +435,7 @@ only when the mute changed (not while the volume is unknown):
 | windows down, program, battery, refresh, editor | `power()` for the bottom screen | bottom | screen tests |
 | idle stage | sync: dim and Outputs; status watch | levels, system | idle test |
 | tabs | sync watches; `left_tab` closes the dock menu, releases levels, resets the time page, closes the battery menu | dock, levels, status | per tab; `leaving_the_tab_resets_it_to_its_main_page` |
-| keymap chosen/deleted/made own | queued `KeymapEvent` → prefs | settings | keymap tests |
+| profile (keymap) chosen/deleted/made own | queued `Event::Profile(kind, ProfileEvent)` → prefs, the kind's setting | settings | keymap tests |
 | device view, files, keymaps naming | queued `EditOnKeyboard` / editors | bottom | per area |
 | Library read | problems notice, shelf reload, pausable runners, runner keymaps, land rules, dock pins, FetchFirst | bottom, session, keymap, settings, dock | tests `new_library_problems_are_said_once`, `a_library_read_updates_the_landing_rules_and_the_runners_paused_together`, `a_library_read_while_fetching_asks_for_shelfs_view_first_again`; shelf `listings_outlive_…`, `a_library_read_keeps_what_is_typed`; settings `a_runner_gets_its_keymap_once`; dock `pins_of_entries_gone_…` |
 | battery tab quit | queued `Event::Entry` | session | `a_rows_menu_quits_…` |

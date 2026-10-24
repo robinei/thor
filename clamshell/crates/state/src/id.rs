@@ -49,6 +49,8 @@ pub enum Id {
     },
     /// Buttons on the keymap screens (see [`crate::keymap::screens`]).
     Keymap(KeymapId),
+    /// Buttons on a kind's picker (see [`crate::profiles::picker`]).
+    Profile(crate::profiles::picker::Kind, crate::profiles::picker::ProfileId),
     /// A scrolled list's area, under its rows. A finger on it between rows drags the list, and a tap does
     /// nothing.
     List(crate::nav::lists::ListId),
@@ -129,29 +131,12 @@ pub enum SettingsId {
     Reset,
 }
 
-/// Buttons on the keymap screens. The picker's rows are [`Id::Row`]s of [`crate::ListId::Keymaps`].
+/// Buttons on the keymap screens, but the picker's and Back, which are [`Id::Profile`]s.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeymapId {
-    /// Back one screen.
-    Back,
-    /// The picker's New.
-    New,
-    /// A keymap's menu.
-    Edit,
-    Rename,
-    Duplicate,
-    Delete,
-    /// Confirms deleting a keymap that games use.
-    ConfirmDelete,
     /// Makes a game its own keymap from the one in force for it. This is a row in the picker, and an
     /// action on the edit screen while a shared keymap is being edited.
     MakeOwn,
-    /// In the menu of a game's own keymap: save it over a named keymap, or as a new one.
-    SaveAs,
-    /// Confirms saving over a named keymap.
-    ConfirmSave,
-    /// In the menu of a game's own keymap: the keymaps to load into it.
-    LoadFrom,
     /// An input on the edit screen. A tap selects it and shows its panel, and a tap on the selected one
     /// opens the way it is mapped now. A long press resets it in the layer shown. While a control is being
     /// picked, this is the control picked.

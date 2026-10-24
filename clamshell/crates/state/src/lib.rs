@@ -80,9 +80,10 @@ use crate::bottom::notice::NoticeKind;
 use crate::bottom::screen::Power;
 use crate::device::buttons::DeviceKey;
 use crate::device::idle::Idle;
-use crate::keymap::screens::{KeymapCx, Keymapping};
+use crate::keymap::screens::Keymapping;
 use crate::kit::debounce::Debounce;
 use crate::nav::lists::Scrolls;
+use crate::profiles::picker::{Kind as ProfileKind, PickerCx, ProfileEvent, ProfileId};
 use crate::session::running::{Instead, LaunchRequest, Start};
 use crate::settings::{BottomWhenIdle, MouseAtLaunch, Setting, Settings, Values};
 use out::Out;
@@ -412,6 +413,7 @@ impl State {
             Event::Entry(id, act) => self.on_entry(id, act, out),
             Event::Enqueue => self.enqueue(out),
             Event::Keymap(e) => self.keymap_event(e, out),
+            Event::Profile(kind, e) => self.profile_event(kind, e, out),
             Event::EditOnKeyboard(editor) => self.edit_on_keyboard(editor),
             Event::Quit => self.quit(out),
         }
@@ -876,6 +878,9 @@ impl State {
             Id::Keymap(id) => {
                 self.on_keymap(id, long, out);
             }
+            Id::Profile(kind, id) => {
+                self.on_profile(kind, id, out);
+            }
             Id::Tab(tab) => {
                 self.choose_tab(tab);
             }
@@ -996,7 +1001,7 @@ impl State {
         if (self.dock.menu().is_some() || self.dock.moving().is_some()) && self.bottom.tab() == crate::Tab::Dock {
             return Some(crate::Id::Dock(crate::DockId::Back));
         }
-        self.keymapping.screen_in(self.bottom.tab()).map(|_| crate::Id::Keymap(crate::KeymapId::Back))
+        self.keymapping.screen_in(self.bottom.tab()).map(|_| crate::Id::Profile(ProfileKind::Keymap, ProfileId::Back))
     }
 
     /// Where shelf and the second screen are, to come back to.
@@ -1009,10 +1014,31 @@ impl State {
         self.keymapping.listening(self.bottom.tab(), self.bottom.editor().is_some())
     }
 
-    /// What the keymaps' screens read from the settings panel (see [`KeymapCx`]).
-    fn keymap_cx(&self) -> KeymapCx {
+    /// Profile `id` of `kind`'s name as shown (see [`crate::profiles::Profiles::shown_name`]).
+    pub fn profile_name(&self, kind: ProfileKind, id: u16) -> &str {
+        match kind {
+            ProfileKind::Keymap => self.keymapping.name(id),
+        }
+    }
+
+    /// Whether profile `id` of `kind` is a game's own.
+    pub fn profile_is_own(&self, kind: ProfileKind, id: u16) -> bool {
+        match kind {
+            ProfileKind::Keymap => self.keymapping.is_own(id),
+        }
+    }
+
+    /// Whether profile `id` of `kind` is there.
+    pub fn profile_exists(&self, kind: ProfileKind, id: u16) -> bool {
+        match kind {
+            ProfileKind::Keymap => self.keymapping.keymaps().get(id).is_some(),
+        }
+    }
+
+    /// What the keymaps' screens read from the settings panel (see [`PickerCx`]).
+    fn keymap_cx(&self) -> PickerCx {
         let panel = self.panel();
-        KeymapCx { entry: panel.editing().map(|g| g.id.clone()), chosen: panel.keymap_chosen() }
+        PickerCx { entry: panel.editing().map(|g| g.id.clone()), chosen: panel.keymap_chosen() }
     }
 
     // Lists.
@@ -1142,6 +1168,7 @@ impl State {
             }
             (Done::Save, Purpose::Password { ssid }) => self.radios.join(ssid, Some(editor.text), out),
             (Done::Save, Purpose::KeymapName(action)) => self.keymapping.named(action, &editor.text, out),
+            (Done::Save, Purpose::ProfileName(ProfileKind::Keymap, action)) => self.keymapping.named_profile(action, &editor.text, out),
             (Done::Save, Purpose::FileName(purpose)) => {
                 if let Some(op) = crate::shelf::files::named(purpose, &editor.text) {
                     self.shelf.run_file_op(op, out);
@@ -1328,21 +1355,25 @@ impl State {
         out.effects.push(self.prefs.save_effect());
     }
 
-    /// Chooses keymap `id` where the panel edits, and saves the settings.
-    fn choose_keymap(&mut self, id: u16, out: &mut Out) {
+    /// Chooses profile `id` of `kind` where the panel edits, and saves the settings.
+    fn choose_profile(&mut self, kind: ProfileKind, id: u16, out: &mut Out) {
         let entry = self.panel().editing().map(|g| g.id.clone());
-        self.prefs.choose_keymap(entry.as_ref(), id);
+        self.prefs.choose(entry.as_ref(), kind.setting(), id);
         out.effects.push(self.prefs.save_effect());
     }
 
-    /// The keymaps' screens' buttons. Back goes back a screen; the others are the screen's.
+    /// The keymaps' screens' buttons, but Back (the picker's, [`ProfileId::Back`]).
     fn on_keymap(&mut self, id: KeymapId, long: bool, out: &mut Out) {
-        if id == KeymapId::Back {
-            self.keymapping.back(&mut self.keyboard);
-            return;
-        }
         let cx = self.keymap_cx();
-        self.keymapping.on(id, long, &cx, self.prefs.settings(), self.bottom.editors_mut(), out);
+        self.keymapping.on(id, long, &cx, self.bottom.editors_mut(), out);
+    }
+
+    /// A kind's picker's buttons. Back goes back a screen; the others are the picker's.
+    fn on_profile(&mut self, kind: ProfileKind, id: ProfileId, out: &mut Out) {
+        match kind {
+            ProfileKind::Keymap if id == ProfileId::Back => self.keymapping.back(&mut self.keyboard),
+            ProfileKind::Keymap => self.keymapping.on_picker(id, self.prefs.settings(), self.bottom.editors_mut(), out),
+        }
     }
 
     /// A row of the picker (see [`Keymapping::on_row`]).
@@ -1358,20 +1389,28 @@ impl State {
         }
     }
 
-    /// What the keymaps' screens ask of the settings and the keyboard.
+    /// What the keymaps' screens ask of the keyboard.
     fn keymap_event(&mut self, event: KeymapEvent, out: &mut Out) {
         match event {
-            KeymapEvent::Choose(id) => self.choose_keymap(id, out),
-            // The settings are saved before the keymaps.
-            KeymapEvent::MadeOwn(id) => {
-                self.choose_keymap(id, out);
-                out.effects.push(self.keymapping.save());
+            KeymapEvent::Capture => self.keymapping.capture(&mut self.keyboard, out),
+        }
+    }
+
+    /// What a kind's picker asks of the settings.
+    fn profile_event(&mut self, kind: ProfileKind, event: ProfileEvent, out: &mut Out) {
+        match event {
+            ProfileEvent::Choose(id) => self.choose_profile(kind, id, out),
+            // The settings are saved before the profiles.
+            ProfileEvent::MadeOwn(id) => {
+                self.choose_profile(kind, id, out);
+                out.effects.push(match kind {
+                    ProfileKind::Keymap => self.keymapping.save(),
+                });
             }
-            KeymapEvent::Deleted(id) => {
-                self.prefs.forget_keymap(id);
+            ProfileEvent::Deleted(id) => {
+                self.prefs.forget(kind.setting(), id);
                 out.effects.push(self.prefs.save_effect());
             }
-            KeymapEvent::Capture => self.keymapping.capture(&mut self.keyboard, out),
         }
     }
 

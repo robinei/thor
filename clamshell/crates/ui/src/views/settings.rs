@@ -9,6 +9,7 @@
 //! once. The environment tile opens an editor over the on-screen keyboard.
 
 use clamshell_state::bottom::editor::{Editor, KeymapName, Purpose};
+use clamshell_state::profiles::picker::ProfileName;
 use clamshell_state::settings::{Impact, Setting};
 use clamshell_state::{Id, Scope, SettingsId, State, TileOrigin};
 
@@ -211,11 +212,13 @@ fn editor(f: &mut Frame) {
             };
             Fmt::<160>::of(format_args!("Environment for {title}: KEY=value, space-separated"))
         }
+        Some(Editor { purpose: Purpose::ProfileName(kind, name), .. }) => match name {
+            ProfileName::New => Fmt::of(format_args!("Name of the new {}", kind.noun())),
+            ProfileName::Rename(id) => Fmt::of(format_args!("New name for {}", s.profile_name(*kind, *id))),
+            ProfileName::Duplicate(id) => Fmt::of(format_args!("Name of the copy of {}", s.profile_name(*kind, *id))),
+            ProfileName::SaveAs(_) => Fmt::of(format_args!("A name for the copy (other games can use it)")),
+        },
         Some(Editor { purpose: Purpose::KeymapName(name), .. }) => match name {
-            KeymapName::New => Fmt::of(format_args!("Name of the new keymap")),
-            KeymapName::Rename(id) => Fmt::of(format_args!("New name for {}", s.keymapping().name(*id))),
-            KeymapName::Duplicate(id) => Fmt::of(format_args!("Name of the copy of {}", s.keymapping().name(*id))),
-            KeymapName::SaveAs(_) => Fmt::of(format_args!("A name for the copy (other games can use it)")),
             KeymapName::NewLayer(..) => Fmt::of(format_args!("Name of the new layer")),
             KeymapName::RenameLayer(id, layer) => {
                 let name = s.keymapping().keymaps().get(*id).and_then(|k| k.layer_name(*layer)).unwrap_or("the layer");

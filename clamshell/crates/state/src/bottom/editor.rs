@@ -31,7 +31,7 @@ impl Editor {
         match self.purpose {
             Purpose::Password { .. } => crate::Tab::Wifi,
             Purpose::AccountPassword(_) | Purpose::FileName(_) => crate::Tab::Keyboard,
-            Purpose::Env { .. } | Purpose::KeymapName(_) => crate::Tab::Settings,
+            Purpose::Env { .. } | Purpose::KeymapName(_) | Purpose::ProfileName(..) => crate::Tab::Settings,
         }
     }
 }
@@ -42,23 +42,19 @@ pub enum Purpose {
     Env { entry: Option<Arc<str>> },
     /// The password for joining this Wi-Fi network.
     Password { ssid: String },
-    /// A keymap's name.
+    /// A keymap layer's name.
     KeymapName(KeymapName),
+    /// A profile's name (see [`crate::profiles::picker`]).
+    ProfileName(crate::profiles::picker::Kind, crate::profiles::picker::ProfileName),
     /// A browsed file's or folder's name (see [`crate::shelf::files`]).
     FileName(crate::shelf::files::FileName),
     /// The account's password, current or new (see [`crate::device::account`]).
     AccountPassword(crate::device::account::PasswordStep),
 }
 
-/// What a keymap's name is for.
+/// What a keymap layer's name is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeymapName {
-    New,
-    Rename(u16),
-    /// A copy of this one.
-    Duplicate(u16),
-    /// A copy of a game's own keymap, as a new named one.
-    SaveAs(u16),
     /// A new layer of this keymap, shown once it is made. If an input is given, it is mapped to the
     /// layer.
     NewLayer(u16, Option<(crate::keymap::Input, crate::keymap::Actuation)>),

@@ -324,7 +324,8 @@ fn section(id: &Id) -> usize {
 
 /// A target's short name: a shelf entry as its quoted id, a list row as `List[i]` (with `.Part` for a
 /// part other than the row itself), a key as `Key[row,col]`, a settings target, a shelf target or a
-/// keymap screen's (`Km(..)`) without the screen's name, and anything else as it is.
+/// keymap screen's and the keymaps' picker's (`Km(..)`) without the screen's name, and anything else as
+/// it is.
 fn short(id: &Id) -> String {
     match id {
         Id::Shelf(ShelfId::Entry(e)) => format!("{e:?}"),
@@ -335,6 +336,7 @@ fn short(id: &Id) -> String {
         Id::Key(k) => format!("Key[{},{}]", k.row, k.col),
         Id::Dock(DockId::Entry(i)) => format!("Dock[{i}]"),
         Id::Keymap(k) => format!("Km({k:?})"),
+        Id::Profile(clamshell_state::profiles::picker::Kind::Keymap, p) => format!("Km({p:?})"),
         other => format!("{other:?}"),
     }
 }

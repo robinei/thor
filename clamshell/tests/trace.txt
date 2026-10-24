@@ -383,7 +383,7 @@ Tick 1760000005
 Pointer(Activate(Keymap(Target(MouseParts))))
   PadRoute Ui
 -- keymap-mouse.png
-Pointer(Activate(Keymap(Back)))
+Pointer(Activate(Profile(Keymap, Back)))
   PadRoute Listen
 -- keymap-edit-gyro.png
 Slide(End)
@@ -396,7 +396,7 @@ Pointer(Activate(Keymap(Toggle(Twist))))
 Pointer(Activate(Keymap(Target(Key))))
   PadRoute Ui
 -- keymap-capture.png
-Pointer(Activate(Keymap(Back)))
+Pointer(Activate(Profile(Keymap, Back)))
   PadRoute Listen
 -- keymap-pick.png
 == group keymaps.png
@@ -457,7 +457,7 @@ Slide(End)
   Save Keymaps
 Slide(End)
   Save Keymaps
-Pointer(Activate(Keymap(Back)))
+Pointer(Activate(Profile(Keymap, Back)))
   PadRoute Ui
 Tick 1760000005
   Save Resume
@@ -524,7 +524,7 @@ Slide(End)
   Save Keymaps
 Slide(End)
   Save Keymaps
-Pointer(Activate(Keymap(Back)))
+Pointer(Activate(Profile(Keymap, Back)))
   PadRoute Ui
 Pointer(Activate(Row { list: Keymaps, i: 3, part: Main }))
   Save Settings
@@ -537,7 +537,7 @@ Pointer(Activate(Row { list: Keymaps, i: 3, part: Edit }))
 Pointer(Activate(Keymap(MakeOwn)))
   Save Settings
   Save Keymaps
-Pointer(Activate(Keymap(Back)))
+Pointer(Activate(Profile(Keymap, Back)))
   PadRoute Ui
 -- keymap-own.png
 -- keymap-own-menu.png
@@ -547,7 +547,7 @@ Pointer(Activate(Row { list: Keymaps, i: 3, part: Main }))
 -- keymap-load.png
 -- keymap-save.png
 -- keymap-replace.png
-Pointer(Activate(Keymap(Edit)))
+Pointer(Activate(Profile(Keymap, Edit)))
   PadRoute Listen
 -- keymap-edit-own.png
 == group launcher.png

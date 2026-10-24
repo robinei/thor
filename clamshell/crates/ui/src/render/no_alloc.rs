@@ -340,7 +340,12 @@ fn warm_frames_do_not_allocate() {
         ),
         (
             "keymap name editor",
-            vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(Setting::Keymap))), tap(Id::Keymap(KeymapId::New)), key(Key::Char('a'))],
+            vec![
+                tap(Id::Tab(Tab::Settings)),
+                tap(Id::Settings(SettingsId::Tile(Setting::Keymap))),
+                tap(Id::Profile(clamshell_state::profiles::picker::Kind::Keymap, clamshell_state::profiles::picker::ProfileId::New)),
+                key(Key::Char('a')),
+            ],
         ),
         // The demo's TV tab with one of its series open.
         ("shelf, an open group", vec![Event::Shelf(ShelfEvent::Rows(8)), tap(Id::Shelf(ShelfId::Collection(2))), tap(Id::Shelf(ShelfId::Launch))]),

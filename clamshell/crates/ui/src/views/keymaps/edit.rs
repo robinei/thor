@@ -1,6 +1,7 @@
 //! The keymap edit screen: the Thor's controls drawn in two clusters, with a label and a line in to it
 //! for each changed control, the corners (Close, Undo, the layer button), and the layout they share.
 
+use clamshell_state::profiles::picker::{Kind, ProfileId};
 use std::fmt::Write;
 
 use clamshell_state::keymap::{Actuation, Binding, Button, Change, Dir, Input, Keymap, Layer, Side, change};
@@ -252,7 +253,7 @@ pub(super) fn edit_corners(f: &mut Frame, l: &EditLayout, keymap: Option<&Keymap
         layer_button(f, Tone::Dim);
         return;
     }
-    f.text_button(Id::Keymap(KeymapId::Back), close, size, Tone::Fn, "Close", Align::Start);
+    f.text_button(Id::Profile(Kind::Keymap, ProfileId::Back), close, size, Tone::Fn, "Close", Align::Start);
     if f.s.keymapping().can_undo() {
         f.text_button(Id::Keymap(KeymapId::Undo), undo, size, Tone::Fn, "Undo", Align::Start);
     } else {

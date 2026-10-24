@@ -5,6 +5,8 @@
 //! game's own can be saved as a new named profile or over an existing one. What a profile holds is its
 //! body (`B`): a keymap's layers, a curve's parameters.
 
+pub mod picker;
+
 use std::sync::Arc;
 
 use crate::kit::replace;

@@ -5,6 +5,7 @@
 use clamshell_state::keymap::screens::{EditView, way_of, ways};
 use clamshell_state::keymap::{Actuation, Binding, Change, Input, Keymap, Kind, Layer, Output, Param, change, params_of};
 use clamshell_state::levels::slider::{Control, Slider};
+use clamshell_state::profiles::picker::{Kind as ProfileKind, ProfileId};
 use clamshell_state::{Id, KeymapId, Target};
 
 use crate::gfx::icons::Icon;
@@ -52,9 +53,9 @@ pub(super) fn picking_panel(f: &mut Frame, r: Rect, id: u16, picking: Picking) {
             let always = f.s.keymapping().param_base(id, gyro).is_some_and(|b| b.hold.is_none());
             let (a, c) = (row.cell(2, 1, 0.0, 0), row.cell(2, 1, 0.0, 1));
             f.text_button(Id::Keymap(KeymapId::Hold(None)), a, small, if always { Tone::High } else { Tone::Fn }, "Always", Align::Center);
-            f.text_button(Id::Keymap(KeymapId::Back), c, small, Tone::Fn, "Cancel", Align::Center);
+            f.text_button(Id::Profile(ProfileKind::Keymap, ProfileId::Back), c, small, Tone::Fn, "Cancel", Align::Center);
         }
-        Picking::Target(_) => f.text_button(Id::Keymap(KeymapId::Back), row, small, Tone::Fn, "Cancel", Align::Center),
+        Picking::Target(_) => f.text_button(Id::Profile(ProfileKind::Keymap, ProfileId::Back), row, small, Tone::Fn, "Cancel", Align::Center),
     }
 }
 

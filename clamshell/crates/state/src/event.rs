@@ -121,8 +121,10 @@ pub enum Event {
     AccountChanged(Result<String, String>),
     /// Opens a tab on the second screen, as tapping its icon does.
     ChooseTab(crate::Tab),
-    /// What the keymaps' screens ask of the settings and the keyboard (see [`crate::keymap::screens`]).
+    /// What the keymaps' screens ask of the keyboard (see [`crate::keymap::screens`]).
     Keymap(KeymapEvent),
+    /// What a kind's picker asks of the settings (see [`crate::profiles::picker`]).
+    Profile(crate::profiles::picker::Kind, crate::profiles::picker::ProfileEvent),
     /// Something done to an entry, by its id.
     Entry(Arc<str>, EntryAct),
     /// Adds what shelf's details show, or the entries picked in its open folder, to what their runner
@@ -159,14 +161,6 @@ pub enum EntryAct {
 /// What the keymaps' screens ask of the settings and the keyboard.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeymapEvent {
-    /// Keymap `id` is chosen for what the settings panel edits.
-    Choose(u16),
-    /// Keymap `id` was made as the own keymap of the game the settings panel edits. It is chosen for the
-    /// game, and then the keymaps are saved.
-    MadeOwn(u16),
-    /// Keymap `id` was deleted. The games that used it, and all games if it was theirs, go back to
-    /// Default.
-    Deleted(u16),
     /// The capture screen's Done: the keyboard's modifiers held make the chord.
     Capture,
 }

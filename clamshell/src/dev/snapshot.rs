@@ -142,6 +142,11 @@ fn km(id: KeymapId) -> Event {
     tap(Id::Keymap(id))
 }
 
+/// A tap on a button of the keymaps' picker.
+fn kp(id: clamshell_state::profiles::picker::ProfileId) -> Event {
+    tap(Id::Profile(clamshell_state::profiles::picker::Kind::Keymap, id))
+}
+
 /// Selects an input on the keymap edit screen. The panel's ways to remap then apply to it.
 fn select(input: Input) -> Vec<Event> {
     vec![km(KeymapId::Input(input))]
@@ -188,7 +193,7 @@ pub struct Group {
 /// D-pad's left to 1; and B to the pad's Y. R1 has turbo and the right stick's deadzone is tuned.
 fn fps_keymap() -> Result<Vec<Event>, ParseError> {
     Ok([
-        vec![tab(Tab::Settings), keymap_tile(), km(KeymapId::New)],
+        vec![tab(Tab::Settings), keymap_tile(), kp(clamshell_state::profiles::picker::ProfileId::New)],
         control::type_text("FPS")?,
         vec![tap(Id::Editor(EditorId::Save))],
         select(Input::Button(Button::A)),
@@ -336,7 +341,11 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
         group(
             vec![ff6(), ff6(), tab(Tab::Settings)],
             vec![
-                shot("keymap-name.png", Bottom, [keymap_tile(), km(KeymapId::New)].into_iter().chain(control::type_text("FPS")?).collect()),
+                shot(
+                    "keymap-name.png",
+                    Bottom,
+                    [keymap_tile(), kp(clamshell_state::profiles::picker::ProfileId::New)].into_iter().chain(control::type_text("FPS")?).collect(),
+                ),
                 shot("keymap-edit-new.png", Bottom, vec![tap(Id::Editor(EditorId::Save))]),
             ],
         ),
@@ -372,8 +381,8 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                     "keymap-layers.png",
                     Bottom,
                     vec![
-                        km(KeymapId::Back),
-                        km(KeymapId::Back),
+                        kp(clamshell_state::profiles::picker::ProfileId::Back),
+                        kp(clamshell_state::profiles::picker::ProfileId::Back),
                         km(KeymapId::Layer(Layer::BASE)),
                         km(KeymapId::Input(Input::Button(Button::Back))),
                         km(KeymapId::Target(Target::Layers)),
@@ -394,21 +403,33 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
             .concat(),
             vec![
                 shot("keymap-mouse.png", Bottom, vec![km(KeymapId::Input(Input::Button(Button::A))), km(KeymapId::Target(Target::MouseParts))]),
-                shot("keymap-edit-gyro.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Gyro))]),
+                shot("keymap-edit-gyro.png", Bottom, vec![kp(clamshell_state::profiles::picker::ProfileId::Back), km(KeymapId::Input(Input::Gyro))]),
                 shot("keymap-edit-gyro-accel.png", Bottom, [slide(Param::Accel, 0.25, true), vec![km(KeymapId::Toggle(Param::Twist))]].concat()),
                 shot("keymap-holds.png", Bottom, vec![km(KeymapId::Holds)]),
-                shot("keymap-edit-rstick.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Stick(Side::Right)))]),
+                shot(
+                    "keymap-edit-rstick.png",
+                    Bottom,
+                    vec![kp(clamshell_state::profiles::picker::ProfileId::Back), km(KeymapId::Input(Input::Stick(Side::Right)))],
+                ),
                 shot(
                     "keymap-capture.png",
                     Bottom,
                     vec![km(KeymapId::Input(Input::Button(Button::Y))), km(KeymapId::Target(Target::Key)), key(Key::Mod(Modifier::Alt))?],
                 ),
-                shot("keymap-pick.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Input(Input::Button(Button::B))), km(KeymapId::Target(Target::Pick))]),
+                shot(
+                    "keymap-pick.png",
+                    Bottom,
+                    vec![
+                        kp(clamshell_state::profiles::picker::ProfileId::Back),
+                        km(KeymapId::Input(Input::Button(Button::B))),
+                        km(KeymapId::Target(Target::Pick)),
+                    ],
+                ),
             ],
         ),
         // The keymaps' list.
         group(
-            [vec![ff6(), ff6()], fps_keymap()?, vec![km(KeymapId::Back)]].concat(),
+            [vec![ff6(), ff6()], fps_keymap()?, vec![kp(clamshell_state::profiles::picker::ProfileId::Back)]].concat(),
             vec![
                 shot("keymaps.png", Bottom, vec![]),
                 shot("keymap-menu.png", Bottom, vec![PointerEvent::LongPress(ListId::Keymaps.row(3)).into()]),
@@ -416,11 +437,11 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                     "keymap-delete.png",
                     Bottom,
                     vec![
-                        km(KeymapId::Back),
+                        kp(clamshell_state::profiles::picker::ProfileId::Back),
                         tap(ListId::Keymaps.row(3)),
                         keymap_tile(),
                         PointerEvent::LongPress(ListId::Keymaps.row(3)).into(),
-                        km(KeymapId::Delete),
+                        kp(clamshell_state::profiles::picker::ProfileId::Delete),
                     ],
                 ),
             ],
@@ -428,17 +449,34 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
         // A game's own keymap, made from FPS after FPS is chosen for the game. Then its menu, the own keymap
         // kept while FPS is chosen again, and FPS's edit screen while games use it.
         group(
-            [vec![ff6(), ff6()], fps_keymap()?, vec![km(KeymapId::Back), tap(ListId::Keymaps.row(3)), keymap_tile()]].concat(),
+            [vec![ff6(), ff6()], fps_keymap()?, vec![kp(clamshell_state::profiles::picker::ProfileId::Back), tap(ListId::Keymaps.row(3)), keymap_tile()]]
+                .concat(),
             vec![
                 shot("keymaps-chosen.png", Bottom, vec![]),
                 shot("keymap-edit-shared.png", Bottom, vec![tap(Id::Row { list: ListId::Keymaps, i: 3, part: clamshell_state::RowPart::Edit })]),
-                shot("keymap-own.png", Bottom, vec![km(KeymapId::MakeOwn), km(KeymapId::Back)]),
+                shot("keymap-own.png", Bottom, vec![km(KeymapId::MakeOwn), kp(clamshell_state::profiles::picker::ProfileId::Back)]),
                 shot("keymap-own-menu.png", Bottom, vec![PointerEvent::LongPress(ListId::Keymaps.row(0)).into()]),
-                shot("keymap-own-kept.png", Bottom, vec![km(KeymapId::Back), tap(ListId::Keymaps.row(3)), keymap_tile()]),
-                shot("keymap-load.png", Bottom, vec![PointerEvent::LongPress(ListId::Keymaps.row(0)).into(), km(KeymapId::LoadFrom)]),
-                shot("keymap-save.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::SaveAs)]),
+                shot("keymap-own-kept.png", Bottom, vec![kp(clamshell_state::profiles::picker::ProfileId::Back), tap(ListId::Keymaps.row(3)), keymap_tile()]),
+                shot(
+                    "keymap-load.png",
+                    Bottom,
+                    vec![PointerEvent::LongPress(ListId::Keymaps.row(0)).into(), kp(clamshell_state::profiles::picker::ProfileId::LoadFrom)],
+                ),
+                shot(
+                    "keymap-save.png",
+                    Bottom,
+                    vec![kp(clamshell_state::profiles::picker::ProfileId::Back), kp(clamshell_state::profiles::picker::ProfileId::SaveAs)],
+                ),
                 shot("keymap-replace.png", Bottom, vec![tap(ListId::Keymaps.row(2))]),
-                shot("keymap-edit-own.png", Bottom, vec![km(KeymapId::Back), km(KeymapId::Back), km(KeymapId::Edit)]),
+                shot(
+                    "keymap-edit-own.png",
+                    Bottom,
+                    vec![
+                        kp(clamshell_state::profiles::picker::ProfileId::Back),
+                        kp(clamshell_state::profiles::picker::ProfileId::Back),
+                        kp(clamshell_state::profiles::picker::ProfileId::Edit),
+                    ],
+                ),
             ],
         ),
         group(

@@ -178,11 +178,12 @@ mod tests {
     fn the_keymaps_screens() {
         use clamshell_state::keymap::Button;
         let km = |id| activate(Id::Keymap(id));
+        let kp = |id| activate(Id::Profile(clamshell_state::profiles::picker::Kind::Keymap, id));
         assert_eq!(parse("tap keymap 1"), Ok(activate(ListId::Keymaps.row(1))));
         assert_eq!(parse("long keymap 2"), Ok(vec![PointerEvent::LongPress(ListId::Keymaps.row(2)).into()]));
         assert_eq!(parse("tap keymap-edit 1"), Ok(activate(Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit })));
-        assert_eq!(parse("tap keymap-new"), Ok(km(KeymapId::New)));
-        assert_eq!(parse("tap keymap-menu rename"), Ok(km(KeymapId::Rename)));
+        assert_eq!(parse("tap keymap-new"), Ok(kp(clamshell_state::profiles::picker::ProfileId::New)));
+        assert_eq!(parse("tap keymap-menu rename"), Ok(kp(clamshell_state::profiles::picker::ProfileId::Rename)));
         assert_eq!(parse("tap map-from rstick"), Ok(km(KeymapId::Input(Input::Stick(Side::Right)))));
         assert_eq!(parse("tap map-from lstick-up"), Ok(km(KeymapId::Input(Input::StickDir(Side::Left, Dir::Up)))));
         assert_eq!(parse("tap map-to key"), Ok(km(KeymapId::Target(Target::Key))));

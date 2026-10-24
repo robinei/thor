@@ -20,6 +20,7 @@ mod editor;
 mod keyboard;
 mod keymaps;
 mod levels;
+mod profiles;
 mod radio;
 mod settings;
 mod shelf;
@@ -105,6 +106,7 @@ mod tests {
     use crate::gfx::record::Recording;
     use crate::gfx::{Canvas, DrawCache};
     use crate::toolkit::{Scratch, Target};
+    use clamshell_state::profiles::picker::{Kind, ProfileId};
     use clamshell_state::{Event, Id, Init, Reading, State, Status};
 
     /// Draws the second screen for `state` at `w` x `h`. Returns what can be tapped in it and what the
@@ -184,27 +186,38 @@ mod tests {
         let screens: Vec<(&str, Vec<Event>)> = vec![
             ("picker", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(Setting::Keymap)))]),
             ("menu", vec![Event::Pointer(PointerEvent::LongPress(ListId::Keymaps.row(2)))]),
-            ("name", vec![km(KeymapId::Rename)]),
+            ("name", vec![tap(Id::Profile(clamshell_state::profiles::picker::Kind::Keymap, clamshell_state::profiles::picker::ProfileId::Rename))]),
             (
                 "delete",
                 vec![
                     tap(Id::Editor(clamshell_state::EditorId::Cancel)),
-                    km(KeymapId::Back),
+                    tap(Id::Profile(Kind::Keymap, ProfileId::Back)),
                     tap(ListId::Keymaps.row(2)),
                     tap(Id::Settings(SettingsId::Tile(Setting::Keymap))),
                     Event::Pointer(PointerEvent::LongPress(ListId::Keymaps.row(2))),
-                    km(KeymapId::Delete),
+                    tap(Id::Profile(clamshell_state::profiles::picker::Kind::Keymap, clamshell_state::profiles::picker::ProfileId::Delete)),
                 ],
             ),
-            ("edit", vec![km(KeymapId::Back), tap(Id::Row { list: ListId::Keymaps, i: 2, part: clamshell_state::RowPart::Edit })]),
+            ("edit", vec![tap(Id::Profile(Kind::Keymap, ProfileId::Back)), tap(Id::Row { list: ListId::Keymaps, i: 2, part: clamshell_state::RowPart::Edit })]),
             ("edit, a button selected", vec![km(KeymapId::Input(Input::Button(Button::A)))]),
             ("the mouse", vec![km(KeymapId::Target(Target::MouseParts))]),
-            ("capture", [vec![km(KeymapId::Back)], pick(Input::Trigger(Side::Left)), vec![km(KeymapId::Target(Target::Key))]].concat()),
-            ("edit, the gyro's panel", [vec![km(KeymapId::Back)], pick(Input::Gyro), vec![km(KeymapId::Target(Target::To(Output::Pointer)))]].concat()),
+            (
+                "capture",
+                [vec![tap(Id::Profile(Kind::Keymap, ProfileId::Back))], pick(Input::Trigger(Side::Left)), vec![km(KeymapId::Target(Target::Key))]].concat(),
+            ),
+            (
+                "edit, the gyro's panel",
+                [vec![tap(Id::Profile(Kind::Keymap, ProfileId::Back))], pick(Input::Gyro), vec![km(KeymapId::Target(Target::To(Output::Pointer)))]].concat(),
+            ),
             ("the gyro's hold", vec![km(KeymapId::Holds)]),
             (
                 "edit, a stick's panel",
-                [vec![km(KeymapId::Back)], pick(Input::Stick(Side::Right)), vec![km(KeymapId::Target(Target::To(Output::Pointer)))]].concat(),
+                [
+                    vec![tap(Id::Profile(Kind::Keymap, ProfileId::Back))],
+                    pick(Input::Stick(Side::Right)),
+                    vec![km(KeymapId::Target(Target::To(Output::Pointer)))],
+                ]
+                .concat(),
             ),
             ("edit, a slider up", slide(Param::Speed, false)),
             (
@@ -214,7 +227,12 @@ mod tests {
             ("edit, clearing", vec![km(KeymapId::Clear)]),
             (
                 "edit, picking a control",
-                [vec![km(KeymapId::Back), km(KeymapId::Layer(Layer::BASE))], pick(Input::Button(Button::B)), vec![km(KeymapId::Target(Target::Pick))]].concat(),
+                [
+                    vec![tap(Id::Profile(Kind::Keymap, ProfileId::Back)), km(KeymapId::Layer(Layer::BASE))],
+                    pick(Input::Button(Button::B)),
+                    vec![km(KeymapId::Target(Target::Pick))],
+                ]
+                .concat(),
             ),
         ];
         let mut cache = DrawCache::load();
@@ -231,7 +249,7 @@ mod tests {
                 let (targets, out) = draw_bottom(&state, (w, h), &mut cache);
                 let body = out.touchpad_area.expect("the area below the bar");
                 let case = format!("{name} at {w}x{h}");
-                assert!(targets.iter().any(|t| matches!(t.id, Id::Keymap(_) | Id::Row { .. } | Id::Editor(_))), "{case}: its buttons");
+                assert!(targets.iter().any(|t| matches!(t.id, Id::Keymap(_) | Id::Profile(..) | Id::Row { .. } | Id::Editor(_))), "{case}: its buttons");
                 if name.starts_with("edit") {
                     // The panel, its buttons and rows lie between the label columns, and the label
                     // columns are clear of the clusters.

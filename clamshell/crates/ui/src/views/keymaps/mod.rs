@@ -1,11 +1,6 @@
 //! The keymap screens, drawn over the settings tab. Their rules are on [`clamshell_state::keymap::screens::Keymapping`].
 //!
-//! - The picker, a scrolled list. For a game it starts with its own keymap or Make own keymap. Then come
-//!   Default, the named keymaps (each with who uses it and an Edit button), and New.
-//! - A keymap's menu, and the confirmation for deleting one in use.
-//! - The lists for loading a keymap into a game's own and for saving the game's own as a named one.
-//!   They show the picker's rows without the game's own keymap, the Edit buttons and the mark. Saving
-//!   lists a new keymap first, and saving over a named one asks first.
+//! - The picker and a keymap's menu, the profiles' picker ([`super::profiles`]).
 //! - The edit screen ([`edit`](fn@edit)), showing one layer of the keymap. The layer's name is at the top
 //!   right with a button to the list of layers, and Close is at the top left. The pad's controls are
 //!   drawn in two clusters at the sides, as they sit beside the screen, with a label for each control the
@@ -17,14 +12,14 @@
 //! Colours follow the rest of the UI on black. The pad's parts are thin dim outlines, blue marks what a
 //! keymap maps to something else, and grey marks what it only tunes.
 
+use clamshell_state::Id;
 use clamshell_state::keymap::Input;
-use clamshell_state::keymap::screens::{PickerRow, Screen, holds, picked};
-use clamshell_state::{Id, KeymapId, ListId, RowPart, Scope};
+use clamshell_state::keymap::screens::{Screen, holds, picked};
+use clamshell_state::profiles::picker::{Kind, ProfileId};
 
-use crate::gfx::{Rect, Rgb, Span};
+use crate::gfx::{Rect, Rgb};
 use crate::toolkit::format::Fmt;
-use crate::toolkit::style::{Text, Tone};
-use crate::toolkit::widgets::{EditCell, HeaderRight, ListArea, ListRow};
+use crate::toolkit::widgets::HeaderRight;
 use crate::toolkit::{Frame, widgets};
 
 mod choose;
@@ -46,12 +41,7 @@ const BUTTON_H: f32 = 0.085;
 
 pub(super) fn draw(f: &mut Frame, screen: Screen) {
     match screen {
-        Screen::List => list(f, Listing::Pick),
-        Screen::Load(_) => list(f, Listing::Load),
-        Screen::SaveAs(_) => list(f, Listing::Save),
-        Screen::Overwrite { to, .. } => overwrite(f, to),
-        Screen::Menu(id) => menu(f, id),
-        Screen::Delete(id) => delete(f, id),
+        Screen::Picker(p) => super::profiles::draw(f, Kind::Keymap, p),
         Screen::Edit(id) => edit(f, id, None),
         Screen::Pick { id, input } => edit(f, id, Some(Picking::Target(input))),
         Screen::Holds { id, input } => edit(f, id, Some(Picking::Hold(input))),
@@ -65,7 +55,7 @@ pub(super) fn draw(f: &mut Frame, screen: Screen) {
 
 /// The keymap screens' header (see [`widgets::header`]): Back, the title, and `right` on the right.
 fn header(f: &mut Frame, title: &str, right: HeaderRight) -> Rect {
-    widgets::header(f, Some(Id::Keymap(KeymapId::Back)), title, false, right)
+    widgets::header(f, Some(Id::Profile(Kind::Keymap, ProfileId::Back)), title, false, right)
 }
 
 /// What is picked on the edit screen's drawing: what an input maps to, or what holds the gyro on.
@@ -89,7 +79,7 @@ impl Picking {
 /// title centred and Cancel on the right. There is no back arrow, since choosing something closes it and
 /// Cancel gives up. Returns the area below it.
 fn choice_header(f: &mut Frame, title: &str) -> Rect {
-    widgets::header(f, None, title, true, HeaderRight::Action(Id::Keymap(KeymapId::Back), "Cancel"))
+    widgets::header(f, None, title, true, HeaderRight::Action(Id::Profile(Kind::Keymap, ProfileId::Back), "Cancel"))
 }
 
 /// "Remap A to…".
@@ -99,125 +89,7 @@ fn remap_title(input: Input, labels: &clamshell_state::ControlLabels) -> Fmt<64>
 
 /// Who uses a keymap, in words.
 fn users(f: &Frame, id: u16) -> Fmt<48> {
-    let u = f.s.prefs().settings().keymap_users(id);
-    match (u.all_entries, u.entries) {
-        (true, 0) => Fmt::of(format_args!("All games")),
-        (true, n) => Fmt::of(format_args!("All games, {n} {}", if n == 1 { "game" } else { "games" })),
-        (false, 0) => Fmt::of(format_args!("Not used")),
-        (false, n) => Fmt::of(format_args!("{n} {}", if n == 1 { "game" } else { "games" })),
-    }
-}
-
-/// What the keymaps' list is for.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Listing {
-    /// The picker.
-    Pick,
-    /// A keymap to copy into the game's own.
-    Load,
-    /// Where to save the game's own: a new one, or over a named one.
-    Save,
-}
-
-/// The picker, or the list of keymaps to load into a game's own or to save it as.
-fn list(f: &mut Frame, listing: Listing) {
-    let s = f.s;
-    let panel = s.panel();
-    let scope = match (panel.scope(), panel.editing()) {
-        (Scope::Runner | Scope::Content, Some(entry)) => entry.title,
-        _ => "all",
-    };
-    let (area, hint) = match listing {
-        Listing::Load => (header(f, "Load into own keymap", HeaderRight::None), "Its bindings replace the own keymap's (Undo goes back)"),
-        Listing::Save => (header(f, "Save own keymap as", HeaderRight::None), "A new keymap, or one whose bindings it replaces"),
-        Listing::Pick => {
-            let title = Fmt::<128>::of(format_args!("Keymap for {scope}"));
-            (header(f, &title, HeaderRight::Action(Id::Keymap(KeymapId::New), "New")), "Long press a keymap to rename, duplicate or delete it")
-        }
-    };
-    let loading = (listing != Listing::Pick).then_some(());
-    let list = ListArea::new(f, area, f.body().h * ROW_H);
-    list.hint(f, hint);
-    let chosen = panel.keymap_chosen();
-    let rows = list.scrolled(f, ListId::Keymaps, s.lists().len(ListId::Keymaps));
-    for i in rows.shown() {
-        let Some(row) = panel.keymap_row(i) else {
-            continue;
-        };
-        let at = |part| Id::Row { list: ListId::Keymaps, i: i as u16, part };
-        let (id, label, note) = match row {
-            PickerRow::Own(Some(k)) => (Some(k.id), "Own keymap", Fmt::<48>::of(format_args!("This game only"))),
-            PickerRow::Own(None) => (None, "Make own keymap", Fmt::of(format_args!("From {}", s.keymapping().name(chosen)))),
-            PickerRow::New => (None, "New keymap…", Fmt::new()),
-            PickerRow::Default => (Some(0), "Default", Fmt::of(format_args!("As on the pad"))),
-            PickerRow::Named(k) => (Some(k.id), k.name.as_str(), users(f, k.id)),
-        };
-        // A keymap that no longer exists counts as Default.
-        let mine = loading.is_none() && (id == Some(chosen) || (id == Some(0) && s.keymapping().keymaps().get(chosen).is_none()));
-        let tone = if id.is_none() { Tone::Fn } else { Tone::high_if(mine) };
-        let edit = match id {
-            _ if loading.is_some() => EditCell::None,
-            Some(id) if id != 0 => EditCell::Edit(at(RowPart::Edit)),
-            _ => EditCell::Empty,
-        };
-        let item = ListRow { label, tone, mark: mine, note: &note, edit };
-        widgets::list_row(f, at(RowPart::Main), rows.row(i), list.pad, list.size, item);
-    }
-    list.end(f, rows);
-}
-
-fn menu(f: &mut Frame, id: u16) {
-    let name = f.s.keymapping().name(id);
-    let area = header(f, name, HeaderRight::None);
-    let k = |id| Id::Keymap(id);
-    // A game's own keymap becomes a shared one when it is named.
-    if f.s.keymapping().is_own(id) {
-        let items = [
-            (k(KeymapId::Edit), "Edit", Tone::Fn),
-            (k(KeymapId::LoadFrom), "Load from…", Tone::Fn),
-            (k(KeymapId::SaveAs), "Save as…", Tone::Fn),
-            (k(KeymapId::Delete), "Delete", Tone::Accent),
-        ];
-        return widgets::menu(f, area, items);
-    }
-    let items = [
-        (k(KeymapId::Edit), "Edit", Tone::Fn),
-        (k(KeymapId::Rename), "Rename", Tone::Fn),
-        (k(KeymapId::Duplicate), "Duplicate", Tone::Fn),
-        (k(KeymapId::Delete), "Delete", Tone::Accent),
-    ];
-    widgets::menu(f, area, items);
-}
-
-fn delete(f: &mut Frame, id: u16) {
-    let name = f.s.keymapping().name(id);
-    let title = Fmt::<128>::of(format_args!("Delete {name}?"));
-    let text = Fmt::<160>::of(format_args!("In use ({}): deleting it puts them back on Default.", users(f, id).as_str()));
-    confirm(f, &title, &text, (KeymapId::ConfirmDelete, "Delete"));
-}
-
-/// Asks to confirm saving a game's own keymap over the named keymap `to`, since the change reaches the
-/// games using it.
-fn overwrite(f: &mut Frame, to: u16) {
-    let name = f.s.keymapping().name(to);
-    let title = Fmt::<128>::of(format_args!("Replace {name}?"));
-    let text = if f.s.prefs().settings().keymap_users(to).any() {
-        Fmt::<160>::of(format_args!("Its bindings become the own keymap's, for every game using it ({}).", users(f, to).as_str()))
-    } else {
-        Fmt::of(format_args!("Its bindings become the own keymap's."))
-    };
-    confirm(f, &title, &text, (KeymapId::ConfirmSave, "Replace"));
-}
-
-/// A screen asking to confirm something that can't be undone: its title, what it does, then Keep it,
-/// which goes back, and the action.
-fn confirm(f: &mut Frame, title: &str, text: &str, (act, label): (KeymapId, &str)) {
-    let area = header(f, title, HeaderRight::None);
-    let size = f.text(Text::Body);
-    let used = f.c.wrap(Span { x: area.x, y: area.y, w: area.w }, size, Tone::Normal, text, 3);
-    let pad = f.pad();
-    let rest = Rect::new(area.x, area.y + used + pad, area.w, area.h - used - pad);
-    widgets::menu(f, rest, [(Id::Keymap(KeymapId::Back), "Keep it", Tone::Fn), (Id::Keymap(act), label, Tone::Accent)]);
+    super::profiles::users(f, Kind::Keymap, id)
 }
 
 /// Edit screen sizes. The labels' text is a fraction of the small text size. A cluster's width, the gap
