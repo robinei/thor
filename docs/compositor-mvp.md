@@ -435,8 +435,11 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    text-input-v3 and sends shortcuts and other keys through the seat, retaining physical modifiers.
    Visible client idle inhibitors feed the existing idle state machine. Clipboard and primary selection
    use Smithay's selection protocols; the existing keeper connects to the private nested display and
-   preserves text separately from the parent. Xwayland and screenshot requests remain to implement. The current host puts the logical screens side by side
-   for desktop testing.
+   preserves text separately from the parent. A 256-entry window-input ring exports through the control
+   command and replays against state fixtures. Real Wayland clients cover fixed-size dialogs, ignored
+   configure and unmap/remap; a malformed client is isolated from a healthy one. X11/menu fixtures,
+   Xwayland supervision and screenshot requests remain to implement. The current host puts the logical
+   screens side by side for desktop testing.
    Rules 1-3 of section 3, "Keeping the app tail small", hold for all of it; rule 5's real-client set
    and window-event ring, and rule 6's defaults (Wine's Wayland driver, Big Picture), are part of this phase.
 3. **The generic DRM backend, on the VM:** udev, DRM, GBM, GLES, libseat, libinput, two outputs, power,

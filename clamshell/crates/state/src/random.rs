@@ -643,6 +643,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
         }
         96 => Event::Fetching(rng.one_in(2)),
         97 if rng.one_in(4) => Event::Library(Box::new(library.clone())),
+        97 => Event::DumpWindowEvents("window-events.json".into()),
         98 => Event::Enqueue,
         99 => {
             let window = rng.pick(&w.windows)?.clone();

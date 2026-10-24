@@ -275,3 +275,7 @@ session backend. Touch is routed to UI or clients. The on-screen keyboard uses t
 Its clipboard is separate from the parent's; Xwayland is still pending. After `cargo build --features
 compositor`, `python3 tests/nested-compositor.py` checks clipboard isolation, native copy/primary paste, persistence, real client rendering and screen moves using
 headless sway, foot and grim. It prints the directory containing its screenshots and logs.
+
+For nested compositor diagnostics, `clamshell ctl window events /tmp/window-events.json` exports the
+last 256 window inputs. `clamshell_compositor::trace::Recording::replay` checks the recording against a
+state fixture with the matching library, rules and launch context.

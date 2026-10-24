@@ -15,7 +15,7 @@ pub enum WindowPlace<'a> {
     Bottom,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum WindowKind {
     #[default]
     Wayland,
@@ -154,7 +154,7 @@ impl Session {
 
 /// Changes to one window. Repeated opens and messages for a closed window do nothing. A backend must
 /// close an id before reusing it for another window.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum WindowEvent {
     Opened(Window),
     Closed(i64),
@@ -344,7 +344,7 @@ pub fn changes(previous: &[Window], windows: &[Window]) -> crate::Event {
 pub const SHELF_APP_ID: &str = "clamshell.top";
 
 /// An open toplevel. The session owns its home group, screen and selection.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct Window {
     /// The compositor's id for it, to focus or close it by.
     pub id: i64,

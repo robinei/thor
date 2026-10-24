@@ -296,6 +296,8 @@ dependencies = [
  "clamshell-state",
  "clamshell-ui",
  "log",
+ "serde",
+ "serde_json",
  "smithay",
  "tempfile",
  "tiny-skia",

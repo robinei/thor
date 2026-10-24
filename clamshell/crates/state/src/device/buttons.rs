@@ -2,7 +2,7 @@
 //! the Home combinations. Each one says what happened in a notice (see [`crate::bottom::notice`]).
 
 /// A hardware key, or the same key requested through the control pipe.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DeviceKey {
     VolumeUp,
     VolumeDown,

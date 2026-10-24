@@ -1,6 +1,6 @@
 //! Presentation policy is shared by client types. Geometry and buffer transforms belong to the host.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct WindowLimits {
     pub min: (u32, u32),
     pub max: (u32, u32),
@@ -11,7 +11,7 @@ impl WindowLimits {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum WindowRole {
     #[default]
     Normal,
@@ -20,18 +20,18 @@ pub enum WindowRole {
     Utility,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum WindowLayout {
     Fullscreen,
     Centred,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum WindowScale {
     Fit,
     Native,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct WindowPresentation {
     pub layout: WindowLayout,
     pub scale: WindowScale,
@@ -39,20 +39,20 @@ pub struct WindowPresentation {
 
 /// Client colour metadata. None on a window means unspecified, not an assumption about buffer depth.
 /// Rendering and scanout will consume this description when colour management is implemented.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ColourDescription {
     pub primaries: ColourPrimaries,
     pub transfer: TransferFunction,
     /// Declared minimum and maximum luminance, in millinits.
     pub luminance: Option<(u32, u32)>,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ColourPrimaries {
     Srgb,
     DisplayP3,
     Bt2020,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TransferFunction {
     Srgb,
     Linear,

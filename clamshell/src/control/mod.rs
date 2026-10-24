@@ -274,3 +274,12 @@ mod tests {
         assert_eq!(type_text("é"), Err(ParseError::Untypeable('é')));
     }
 }
+
+#[cfg(test)]
+mod window_trace_test {
+    #[test]
+    fn the_window_event_dump_command_keeps_the_requested_path() {
+        assert_eq!(super::parse("window events /tmp/events.json"), Ok(vec![clamshell_state::Event::DumpWindowEvents("/tmp/events.json".into())]));
+        assert!(super::parse("window events").is_err());
+    }
+}

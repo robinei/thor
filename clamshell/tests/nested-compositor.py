@@ -5,6 +5,7 @@ Build first: cargo build --features compositor (in clamshell/).
 Needs sway, foot and grim. Leaves screenshots and logs in the printed temporary directory.
 """
 import os
+import json
 from pathlib import Path
 import re
 import signal
@@ -141,9 +142,22 @@ time.sleep(300)
         assert client.poll() is None, "Home must leave the client alive"
         os.killpg(client.pid, signal.SIGTERM)
         client.wait(timeout=5)
+        processes.remove(client)
         wait(lambda: clipboard(nested) == "native clipboard", "native copy survived the source client exiting")
         assert clipboard(host) == "", "native copy must remain isolated from the parent"
-        print("ok: clipboard isolation and persistence, real client rendering, bottom-slot move, return and Home", flush=True)
+        trace = directory / "window-events.json"
+        control("window", "events", str(trace))
+        def recording():
+            try:
+                value = json.loads(trace.read_text())
+                return value if value.get("records") else None
+            except (FileNotFoundError, json.JSONDecodeError):
+                return None
+        recorded = wait(recording, "window-event ring exported by control command")
+        assert len(recorded["records"]) <= 256
+        assert any("Window" in event["input"] for event in recorded["records"])
+        assert recorded["after"]["windows"] == 0
+        print("ok: window-event export, clipboard isolation and persistence, real client rendering, bottom-slot move, return and Home", flush=True)
     finally:
         for process in reversed(processes):
             if process.poll() is None:

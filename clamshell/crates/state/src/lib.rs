@@ -384,6 +384,7 @@ impl State {
             Event::BottomTouched => self.bottom.used(&self.session, &self.clock),
             Event::Frozen(keys) => self.session.found_frozen(keys),
             Event::Paste => self.bottom.paste(),
+            Event::DumpWindowEvents(path) => out.effects.push(Effect::DumpWindowEvents(path)),
             Event::Screenshot(result) => self.bottom.notice_mut().show(NoticeKind::Screenshot(result), now),
             Event::Sticks(event) => self.device.sticks_event(event, now, out),
             Event::RefreshCalibrated(result) => self.refresh_calibrated(result),

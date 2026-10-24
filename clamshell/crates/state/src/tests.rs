@@ -424,3 +424,12 @@ fn a_video_ended_asks_where_it_was_left() {
     s.applied(LaunchEvent::Position { entry: episode.into(), position: Some(700) }.into());
     assert_eq!(s.shelf().entry(episode).map(|g| g.playback.position), Some(Some(700)));
 }
+
+#[test]
+fn dumping_window_events_is_one_backend_effect_without_changing_windows() {
+    use crate::testkit::*;
+    let mut s = state();
+    let before = s.session().windows().to_vec();
+    assert_eq!(s.applied(crate::Event::DumpWindowEvents("events.json".into())), vec![crate::Effect::DumpWindowEvents("events.json".into())]);
+    assert_eq!(s.session().windows(), before);
+}

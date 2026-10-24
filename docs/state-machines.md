@@ -765,3 +765,24 @@ transform. It unmaps and remaps the same surface, reapplying xdg properties and 
 unowned window starts above again. Fixed-size child presentation remains in the same test. Renderer import paths are exercised by
 `tests/nested-compositor.py`; a failed client import never propagates as a host-loop error. Xwayland
 supervision and X11/menu fixtures are still pending phase 2 work.
+
+### Window-event diagnostics and replay (compositor/trace)
+
+Core's optional observer sees inputs before apply and cannot change state. The compositor retains the
+last 256 window inputs, preserving atomic batches, plus Home/window chords and pad focus restoration.
+Each record has a sequence, both clocks and the preceding top/bottom/keyboard selection and window
+count. Irrelevant inputs do not enter the ring. At capacity, a new record discards the oldest. No
+recording work occurs in an unchanged frame; strings are copied only for recorded window metadata.
+
+`window events FILE` becomes one DumpWindowEvents effect. The compositor snapshots the ring and final
+selection, then a worker writes JSON with mode 0600. Success or failure is logged; an export failure
+does not change the session. Sway logs that this diagnostic belongs to the in-process host.
+
+`trace::Recording::replay` applies the recorded clocks and inputs to a matching state fixture and
+checks each preceding selection and the final one. The fixture supplies the library, rules and launch
+context; a wrapped ring starts at its first retained event. A mismatch is reported with its sequence.
+`recorded_window_batches_and_chords_replay_through_state` checks round-trip serialization, batch
+preservation, replayed window facts and keyboard focus, fixture mismatch, file permissions and export
+failure. `the_ring_keeps_only_the_last_256_window_inputs` pins wrap order and capacity. State and control
+tests pin the diagnostic effect and path; its event is in the randomized generator. The nested smoke
+test exports the live ring through the control command and parses its final empty-window selection.

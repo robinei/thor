@@ -139,6 +139,8 @@ pub enum Effect {
     Sleep,
     /// Save both screens to a file. The result comes back as [`crate::Event::Screenshot`].
     Screenshot,
+    /// Export the in-process compositor's bounded window-event ring.
+    DumpWindowEvents(std::path::PathBuf),
     /// Ask the account helper to do something (see [`crate::device::account`]). A change is reported and
     /// the account is then read again.
     Account(crate::device::account::AccountCommand),

@@ -69,6 +69,7 @@ pub(crate) struct Server {
     pub started: Instant,
     pub idle: crate::idle::Idle,
     pub presentation_revision: Option<u64>,
+    pub trace: std::rc::Rc<std::cell::RefCell<crate::trace::Ring>>,
     pub socket: String,
     pub on_effect: Box<dyn FnMut(&Effect)>,
     identify: Box<dyn Fn(u32) -> Process>,
@@ -110,8 +111,12 @@ impl Server {
             output
         });
         OutputManagerState::new_with_xdg_output::<Self>(&dh);
+        let trace = std::rc::Rc::new(std::cell::RefCell::new(crate::trace::Ring::new()));
+        let observed = trace.clone();
+        let mut core = Core::new(state, config.touch_layout, wake)?;
+        core.observe_events(move |event, state| observed.borrow_mut().record(event, state));
         let mut server = Self {
-            core: Core::new(state, config.touch_layout, wake)?,
+            core,
             compositor: CompositorState::new::<Self>(&dh),
             shell: XdgShellState::new::<Self>(&dh),
             shm: ShmState::new::<Self>(&dh, vec![smithay::reexports::wayland_server::protocol::wl_shm::Format::Abgr8888]),
@@ -138,6 +143,7 @@ impl Server {
             started: Instant::now(),
             idle: crate::idle::Idle::new(),
             presentation_revision: None,
+            trace,
             socket: String::new(),
             on_effect: Box::new(on_effect),
             identify: Box::new(identify),
@@ -331,6 +337,7 @@ impl Server {
         self.core.run(Instant::now());
         while let Some(effect) = self.core.next_effect() {
             match effect {
+                Effect::DumpWindowEvents(ref path) => crate::trace::save(self.trace.borrow().snapshot(self.core.state()), path.clone()),
                 Effect::Quit => self.exit = true,
                 Effect::Window(WindowCommand::Close(ref ids)) => {
                     for client in self.windows.iter().filter(|w| ids.contains(&w.id)) {

@@ -147,6 +147,7 @@ impl Handles {
             Effect::EndProcesses { pids, force } => launcher::end_processes(pids, *force),
             Effect::Freeze { slice, frozen } => crate::launch::freezer::freeze(slice.clone(), *frozen),
             Effect::Tray(command) => self.tray.send(command.clone()),
+            Effect::DumpWindowEvents(_) => log::debug!("window events: available in the in-process compositor"),
             Effect::Screenshot => self.system.send(crate::device::Command::Screenshot),
             Effect::AskAwake(argv) => self.system.send(crate::device::Command::AskAwake(argv.clone())),
             Effect::Sleep => self.system.send(crate::device::Command::Sleep),
