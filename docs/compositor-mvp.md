@@ -361,9 +361,10 @@ imported format. Its EGL backend negotiates 10-bit output with an 8-bit fallback
 explicit precision configuration and linear-light composition remain work before an HDR path is enabled.
 There is no plane assignment yet.
 
-Later: the tone mapping, panel brightness and headroom, matching the two panels' white points (dual-screen
-emulators), an HDR setting per game, and the panels' measurements (bit depth, dithering, peak brightness)
-on the device.
+The work is split in two phases (section 6): 2h builds what is the same everywhere (the colour-management
+protocol, composition in a common colour space, colour-aware scanout) on the desktop, nested on an HDR
+monitor; 4h does what only the device can (the panels' brightness and headroom, tone mapping to their
+measured peak, matching the two panels' white points for dual-screen emulators, an HDR setting per game).
 
 ### Protocols
 
@@ -536,6 +537,20 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    Rules 1-3 of section 3, "Keeping the app tail small", hold for all of it; rule 5's real-client set
    and window-event ring, and rule 6's defaults are part of this phase. Steam's packaged desktop entry
    and game-start command now request Big Picture; Wine's Wayland-driver default remains to implement.
+2h. **HDR, the shared half, nested on the desktop** (section 3, "HDR"; after phase 2, beside phase 3;
+    the desktop has an HDR mini-LED monitor under KWin):
+    - [ ] The colour-management protocol (`wp_color_management_v1`, parametric descriptions; no ICC
+          profiles) on the server side, ours: Smithay has only the bindings. Surfaces' descriptions in the
+          window data, as constraint 2 left room for.
+    - [ ] Composition in a common colour space: each surface converted to linear light in the shader,
+          a 10-bit or half-float output, ClamShell's SDR UI and SDR clients placed at a reference white.
+    - [ ] Scanout knowing about colour: a surface whose description matches the output passes through
+          untouched (constraint 3).
+    - [ ] The nested output: the host window's own colour description given to KWin on its raw Wayland
+          surface (winit has no colour management), so KWin tone-maps our output to the monitor.
+    - [ ] Tests: headless, a PQ client's pixels converted as expected, SDR content unchanged, the UI at
+          reference white; nested, mpv (`gpu-next`) playing a PQ clip, compared by eye with the same clip
+          in mpv directly on KWin, and a Proton game with HDR through Wine's Wayland driver.
 3. **The generic DRM backend, on the VM:** udev, DRM, GBM, GLES, libseat, libinput, two outputs, power,
    refresh, dmabuf feedback with scanout tranches. The VM image boots either compositor; the VM suite
    checks both.
@@ -555,6 +570,15 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    then the Snapdragon specifics: panel orientation, rotated plane scanout, command-mode pacing, the
    refresh policy, the brightness and power guards; measurements (frame statistics against MangoHud's
    under sway for the same game, a capped game's pacing and power); daily use with sway still the default.
+4h. **HDR, the device half** (after phase 4's measurements, as the gameplan's HDR experiment describes;
+    the panels take no HDR signal):
+    - [ ] The panels measured: bit depth and dithering, real peak brightness, banding, heat at high
+          brightness; whether HDR is worth having on them at all. If not, 4h stops here and 2h's work
+          still serves SDR colour correctness.
+    - [ ] The output: the panel driven brighter for HDR content, SDR content dimmed to keep its look,
+          highlights in the headroom; our own tone mapping into the measured peak; limits on highlights
+          against heat and burn-in.
+    - [ ] The two panels' white points matched (dual-screen emulators); an HDR setting per game.
 5. **The default switches** to ClamShell's compositor; sway stays installed and selectable as the fallback
    for as long as the owner wants it. Dropping it (the sway adapter, its tests, the sway packages) is a
    later decision, taken once the built-in compositor has proven itself in daily use.
