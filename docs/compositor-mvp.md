@@ -544,7 +544,9 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
           profiles) on the server side, ours: Smithay has only the bindings. Surfaces' descriptions in the
           window data, as constraint 2 left room for.
     - [ ] Composition in a common colour space: each surface converted to linear light in the shader,
-          a 10-bit or half-float output, ClamShell's SDR UI and SDR clients placed at a reference white.
+          a 10-bit or half-float output, ClamShell's SDR UI and SDR clients placed at a reference white,
+          and the output's primaries applied (on the Thor, sRGB mapped into the top panel's wider gamut,
+          4h's profile).
     - [ ] Scanout knowing about colour: a surface whose description matches the output passes through
           untouched (constraint 3).
     - [ ] The nested output: the host window's own colour description given to KWin on its raw Wayland
@@ -578,6 +580,12 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
           component). Find out whether the controller dithers 10-bit content down to 8 bits for them, and
           whether the panels' controllers (ICNA3520, CH13726A) accept 10 bits (DSI RGB101010, DSC at 10
           bits per component) with a driver change; AYN's Android may show which it uses.
+    - [ ] Start from what gamescope already does on the top panel (Armada PR #261, merged 2026-08-20,
+          tested on a Thor): its display profile marks the ICNA3520 HDR-capable with a gamma 2.2 EOTF, so
+          gamescope tone-maps itself and sends ordinary pixel values; primaries R 0.680/0.320, G
+          0.265/0.690, B 0.150/0.060, white D65; 650 nits peak and frame average, 0.002 black. The same
+          primaries mean SDR content needs mapping from sRGB to the panel's wider gamut to look right,
+          which 2h's composition can do for SDR alone. The bottom panel (CH13726A) has no profile there.
     - [ ] The panels measured: real peak brightness, banding, heat at high
           brightness; whether HDR is worth having on them at all. If not, 4h stops here and 2h's work
           still serves SDR colour correctness.
