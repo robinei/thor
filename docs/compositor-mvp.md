@@ -493,8 +493,8 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    and lazy restart after a crash, while Wayland survives. Property fixtures cover malformed metadata
    and ordinary/dialog/splash/utility facts. Override-redirect menus and tooltips now share their parent’s scaling, screen clip and input
    geometry, with real-client dismissal and submenu tests. The clipboard bridge now imports and exports both seat selections with INCR and bounded pipe
-   backpressure, covered by native clients, source/reader failures and Xwayland restart. Further X11
-   focus fixtures remain; drag and drop is outside this adapter's scope.
+   backpressure, covered by native clients, source/reader failures and Xwayland restart. Real X11 focus fixtures exercise all four ICCCM input models, matching nonzero focus timestamps,
+   actual key delivery, Home release and unmap/remap. Drag and drop is outside this adapter's scope.
    Viewporter cropping and destination sizing use the
    same logical geometry for presentation and input, covered by a socket-pair client. Screenshots read the presented nested scene and
    encode it on the system worker; SDR PNG export does not change composition precision. The nested

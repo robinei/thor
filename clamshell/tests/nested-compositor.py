@@ -276,6 +276,34 @@ time.sleep(300)
             move_pointer(1400 + ready_moves % 2, 450)
             return shell_cursor_patch() != initial_shell_cursor
         wait(pointer_ready, "virtual pointer capability and focus reach the X11 client")
+        def wait_focus(expected, description):
+            def replies():
+                return re.findall(r"^focus (true|false)$", (directory / "x11-client.log").read_text(), re.MULTILINE)
+            seen = len(replies())
+            x11_command("focus")
+            def checked():
+                nonlocal seen
+                current = replies()
+                if len(current) <= seen:
+                    return False
+                seen = len(current)
+                if current[-1] == str(expected).lower():
+                    return True
+                x11_command("focus")
+                return False
+            wait(checked, description)
+        expected_keys = 0
+        for mode, gets_keys, takes_focus in [("passive", True, False), ("local-focus", True, True), ("global-focus", True, True), ("no-focus", False, False), ("passive", True, False)]:
+            before_take = (directory / "x11-client.log").read_text().count("take focus ")
+            x11_command(mode)
+            if takes_focus:
+                wait(lambda: (directory / "x11-client.log").read_text().count("take focus ") > before_take, "active X11 client receives a timestamped focus offer")
+            wait_focus(gets_keys, f"X11 {mode} focus policy")
+            control("tap", "key", "a")
+            if gets_keys:
+                expected_keys += 1
+                wait(lambda: (directory / "x11-client.log").read_text().count("key up 38") == expected_keys, f"X11 {mode} receives a complete key stroke")
+        assert (directory / "x11-client.log").read_text().count("key down 38") == expected_keys, "no-input clients receive no keys"
         x11_command("menu")
         wait(lambda: colour_at(120, 140, (64, 128, 32)), "X11 menu is drawn over its parent")
         move_pointer(120, 100, True)
@@ -323,6 +351,7 @@ time.sleep(300)
         assert lower
         wait(lambda: colour_at(lower[0] + 20, lower[1] + 60, (64, 128, 32)), "X11 menu stays local to a bottom-screen parent")
         control("home")
+        wait_focus(False, "Home removes X11 keyboard focus")
         wait(lambda: not colour_at(lower[0] + 20, lower[1] + 60, (64, 128, 32)), "Home dismisses a menu even while its bottom parent remains visible")
 
         control("window", "up")
@@ -333,6 +362,7 @@ time.sleep(300)
         x11.stdin.write(b"map\n")
         x11.stdin.flush()
         wait(lambda: pixels((128, 80, 32)) == (True, False), "the same X11 window maps again")
+        wait_focus(True, "remapping restores X11 keyboard focus")
         x11.stdin.write(b"title\n")
         x11.stdin.flush()
         x11_trace = directory / "x11-events.json"

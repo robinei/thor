@@ -79,6 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let protocols = atom(b"WM_PROTOCOLS")?;
     let delete = atom(b"WM_DELETE_WINDOW")?;
     let utf8 = atom(b"UTF8_STRING")?;
+    let take_focus = atom(b"WM_TAKE_FOCUS")?;
     let name = atom(b"_NET_WM_NAME")?;
     connection.change_property8(PropMode::REPLACE, window, AtomEnum::WM_CLASS, AtomEnum::STRING, b"nested-x11\0NestedX11\0")?;
     connection.change_property8(PropMode::REPLACE, window, name, utf8, b"X11 fixture")?;
@@ -114,6 +115,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     'client: loop {
         for command in received.try_iter() {
             match command.as_str() {
+                "passive" | "local-focus" | "global-focus" | "no-focus" => {
+                    let input = matches!(command.as_str(), "passive" | "local-focus");
+                    let take = matches!(command.as_str(), "local-focus" | "global-focus");
+                    connection.change_property32(
+                        PropMode::REPLACE,
+                        window,
+                        AtomEnum::WM_HINTS,
+                        AtomEnum::WM_HINTS,
+                        &[1, u32::from(input), 0, 0, 0, 0, 0, 0, 0],
+                    )?;
+                    let offered = if take { vec![delete, take_focus] } else { vec![delete] };
+                    connection.change_property32(PropMode::REPLACE, window, protocols, AtomEnum::ATOM, &offered)?;
+                    println!("mode {command}");
+                }
+                "focus" => println!("focus {}", connection.get_input_focus()?.reply()?.focus == window),
                 "unmap" => {
                     connection.unmap_window(window)?;
                 }
@@ -158,6 +174,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Event::ConfigureNotify(event) => println!("configured {} {}", event.width, event.height),
                 Event::ClientMessage(event) if event.type_ == protocols && event.data.as_data32().first() == Some(&delete) => break 'client,
+                Event::ClientMessage(event) if event.type_ == protocols && event.data.as_data32().first() == Some(&take_focus) => {
+                    let time = event.data.as_data32().get(1).copied().ok_or("missing focus timestamp")?;
+                    if time == 0 {
+                        return Err("WM_TAKE_FOCUS used CurrentTime".into());
+                    }
+                    println!("take focus {time}");
+                    connection.set_input_focus(InputFocus::PARENT, window, time)?;
+                    connection.flush()?;
+                }
                 Event::ButtonPress(event) => {
                     println!("{} button {} {}", if popups.contains(&event.event) { "popup" } else { "parent" }, event.event_x, event.event_y)
                 }

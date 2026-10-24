@@ -1109,7 +1109,9 @@ existing request-order and state-trace tests.
 The shared surface wrapper uses the same rendering, geometry, input, frame and presentation-feedback
 paths. A window ignoring its configured size is treated by the existing geometry policy. X11 size
 requests cannot choose placement or stacking. WM_HINTS input and WM_TAKE_FOCUS are honoured when focus
-changes; WM_DELETE_WINDOW closes a supporting client, otherwise KillClient ends it.
+changes. SetInputFocus and WM_TAKE_FOCUS use the same last observed X server timestamp, following
+[ICCCM's focus convention](https://xorg.freedesktop.org/releases/current/doc/xorg-docs/icccm/icccm.html#input_focus).
+WM_DELETE_WINDOW closes a supporting client, otherwise KillClient ends it.
 `mapped --unmap--> known [Closed, detach drawable]`; a later map reopens it with the same model id.
 `known/mapped --destroy/BadWindow--> removed [Closed if open]`.
 Late replies use unique model ids, so XID reuse cannot modify a replacement. Selection/focus/placement
@@ -1126,6 +1128,14 @@ harness starts a font-independent X11 fixture, checks pixels through top/bottom 
 unmap/remap, WM_DELETE_WINDOW and a transient preceding its parent, then stops/kills Xwayland while Wayland keeps moving. It checks
 reaping, no eager restart, and activation of a replacement by another X11 client.
 
+
+The focus request-order fixture covers all four ICCCM models: passive (input true, no take-focus),
+locally active (input true, take-focus), globally active (input false, take-focus) and no-input (input
+false, no take-focus). It asserts direct focus or None, the matching protocol message, the same
+nonzero timestamp in both requests, and no repeated commands without a change. The real X11 fixture
+changes between those models, rejects zero-time WM_TAKE_FOCUS, responds using the offered timestamp,
+and checks actual key press/release delivery. No-input receives no keys. The real harness also checks
+Home releasing focus while the bottom parent remains visible, and focus returning after unmap/remap.
 
 ### X11 menus and tooltips
 

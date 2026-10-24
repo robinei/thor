@@ -595,7 +595,7 @@ impl Wm {
         if self.focus != focus {
             let target = focus.and_then(|xid| self.windows.iter().find(|w| w.xid == xid));
             let direct = target.filter(|w| w.properties.input.unwrap_or(true)).map_or(0, |w| w.xid);
-            wire.request(SetInputFocusRequest { revert_to: InputFocus::POINTER_ROOT, focus: direct, time: 0 }, 0, false)?;
+            wire.request(SetInputFocusRequest { revert_to: InputFocus::POINTER_ROOT, focus: direct, time: self.timestamp }, 0, false)?;
             if let Some(window) = target.filter(|w| w.properties.take_focus) {
                 let event = ClientMessageEvent::new(32, window.xid, self.atoms.get("WM_PROTOCOLS"), [self.atoms.get("WM_TAKE_FOCUS"), self.timestamp, 0, 0, 0]);
                 wire.request(
@@ -854,7 +854,13 @@ mod tests {
         let mut wire = Transport::new(socket, now).unwrap();
         wire.turn(now).unwrap();
         peer.read_exact(&mut [0; 12]).unwrap();
-        let mut wm = Wm { root: 1, owner: 2, atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()), ..Wm::default() };
+        let mut wm = Wm {
+            timestamp: 1234,
+            root: 1,
+            owner: 2,
+            atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()),
+            ..Wm::default()
+        };
         wm.discover(10, Rectangle::from_size((400, 300).into()), false, &mut wire, &mut server).unwrap();
         wm.windows[0].outstanding = 0;
         wm.windows[0].wants_map = true;
@@ -886,6 +892,29 @@ mod tests {
                 CHANGE_PROPERTY_REQUEST
             ]
         );
+        for (input, take) in [(true, false), (true, true), (false, true), (false, false), (true, false)] {
+            wm.focus = None;
+            wm.windows[0].properties.input = Some(input);
+            wm.windows[0].properties.take_focus = take;
+            wm.settle_focus(&mut wire, &server).unwrap();
+            wire.turn(now).unwrap();
+            let count = peer.read(&mut bytes).unwrap();
+            let focus = &bytes[..12];
+            assert_eq!(focus[0], SET_INPUT_FOCUS_REQUEST);
+            assert_eq!(u32::from_ne_bytes(focus[4..8].try_into().unwrap()), if input { 10 } else { 0 });
+            assert_eq!(u32::from_ne_bytes(focus[8..12].try_into().unwrap()), 1234);
+            let rest = &bytes[12..count];
+            if take {
+                // The client sees the same nonzero time as the preceding SetInputFocus request.
+                assert_eq!(rest[0], SEND_EVENT_REQUEST);
+                let message = ClientMessageEvent::try_parse(&rest[12..]).unwrap().0;
+                assert_eq!(message.data.as_data32()[0], wm.atoms.get("WM_TAKE_FOCUS"));
+                assert_eq!(message.data.as_data32()[1], 1234);
+                assert_eq!(rest[44], CHANGE_PROPERTY_REQUEST);
+            } else {
+                assert_eq!(rest[0], CHANGE_PROPERTY_REQUEST);
+            }
+        }
         wm.settle(&mut wire, &client, &mut server).unwrap();
         wire.turn(now).unwrap();
         peer.set_nonblocking(true).unwrap();
