@@ -34,6 +34,15 @@ fn package_outputs_and_panel_queries_follow_the_selected_profile() {
         assert!(!runtime.path().join("thor-outputs.env").exists());
         let panel = Command::new(binary).args(["device", "panel"]).env("CLAMSHELL_DEVICE", profile).output().unwrap();
         assert!(panel.status.success());
-        assert_eq!(serde_json::from_slice::<serde_json::Value>(&panel.stdout).unwrap(), serde_json::json!({ "top": top, "bottom": bottom }));
+        let panel: serde_json::Value = serde_json::from_slice(&panel.stdout).unwrap();
+        assert_eq!(panel.get("top"), Some(&serde_json::json!(top)));
+        assert_eq!(panel.get("bottom"), Some(&serde_json::json!(bottom)));
+        if profile == "thor" {
+            let calibration = panel.get("calibration").unwrap();
+            assert_eq!(calibration.get("step"), Some(&serde_json::json!(4)));
+            assert_eq!(calibration.get("rates").unwrap().as_array().unwrap().len(), 2);
+        } else {
+            assert_eq!(panel.get("calibration"), Some(&serde_json::Value::Null));
+        }
     }
 }

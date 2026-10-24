@@ -59,13 +59,13 @@ fn awake(argv: &[String]) -> bool {
 /// Screenshots go to the folder `screenshots`, which is made if needed. Anything that may take seconds
 /// (the account's helper, a runner's awake check, the panel's calibration) runs on a thread of its own,
 /// so a screenshot or sleep asked for meanwhile doesn't wait for it.
-pub fn spawn(screenshots: Option<PathBuf>, sink: impl Sink + Clone) -> io::Result<Worker<Command>> {
+pub fn spawn(screenshots: Option<PathBuf>, calibration: Option<&'static str>, sink: impl Sink + Clone) -> io::Result<Worker<Command>> {
     Worker::spawn("system", move |commands| {
         // Our last notification, which the next one replaces. For example, a lower battery warning
         // replaces the earlier one.
         let mut shown = 0;
         for command in commands {
-            if carry_out(command, screenshots.as_ref(), &mut shown, &sink).is_err() {
+            if carry_out(command, screenshots.as_ref(), calibration, &mut shown, &sink).is_err() {
                 return;
             }
         }
@@ -73,7 +73,13 @@ pub fn spawn(screenshots: Option<PathBuf>, sink: impl Sink + Clone) -> io::Resul
 }
 
 /// Carries out one command. Returns `Closed` once the UI is gone.
-fn carry_out(command: Command, screenshots: Option<&PathBuf>, shown: &mut u32, sink: &(impl Sink + Clone)) -> Result<(), Closed> {
+fn carry_out(
+    command: Command,
+    screenshots: Option<&PathBuf>,
+    calibration: Option<&'static str>,
+    shown: &mut u32,
+    sink: &(impl Sink + Clone),
+) -> Result<(), Closed> {
     match command {
         Command::Screenshot => sink.send(Event::Screenshot(screenshot::screenshot(screenshots))),
         Command::SaveScreenshot(pixels) => sink.send(Event::Screenshot(pixels.and_then(|pixels| screenshot::save(screenshots, pixels)))),
@@ -109,8 +115,8 @@ fn carry_out(command: Command, screenshots: Option<&PathBuf>, shown: &mut u32, s
             sink.send(Event::Reading(Reading::Time(timedated::read_time(error))))
         }
         Command::CalibrateRefresh => {
-            in_background("refresh", sink, || {
-                let result = refresh::calibrate_refresh();
+            in_background("refresh", sink, move || {
+                let result = refresh::calibrate_refresh(calibration);
                 log::info!("refresh calibration: {result:?}");
                 vec![Event::RefreshCalibrated(result)]
             });

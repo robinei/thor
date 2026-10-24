@@ -100,6 +100,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     f.button(Id::Device(DeviceId::Gyro), gyro, Look::ROW, |f| widgets::value_row(f, gyro, size, "Gyro (held still)", "Calibrate", true));
     let refresh = col.take(row_h);
     let (value, ok) = match device.refresh() {
+        Refresh::Idle if s.profile().refresh_calibration.is_none() => (Fmt::<128>::of(format_args!("Unavailable")), false),
         Refresh::Idle => (Fmt::<128>::of(format_args!("Calibrate")), true),
         Refresh::Running => (Fmt::of(format_args!("Calibrating (the bottom screen goes off)")), false),
         Refresh::Done(Ok(said)) => (Fmt::of(format_args!("{}", said.lines().last().unwrap_or("Calibrated"))), true),

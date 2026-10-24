@@ -91,7 +91,7 @@ fn open_device() -> Vec<Event> {
 /// remembered.
 pub fn state(library: Library) -> State {
     let dock = Dock::pinned(vec!["desktop:steam".into(), "desktop:foot".into(), "desktop:firefox".into()]);
-    State::new(Init { library, dock, keymaps: clamshell_state::keymap::Keymaps::initial(), ..Init::default() })
+    State::new(Init { profile: clamshell_state::Profile::thor(), library, dock, keymaps: clamshell_state::keymap::Keymaps::initial(), ..Init::default() })
 }
 
 /// A play of `entry` from `start` for `duration` seconds, as the launcher reports one. The clock is set

@@ -19,5 +19,14 @@ pub fn outputs(profile: &Profile) -> String {
     out
 }
 pub fn panel(profile: &Profile) -> serde_json::Value {
-    serde_json::json!({ "top": profile.top.connector, "bottom": profile.bottom.connector })
+    let calibration = profile.refresh_calibration.map(|calibration| {
+        serde_json::json!({
+            "program": calibration.program, "step": calibration.step,
+            "rates": calibration.rates.iter().map(|rate| serde_json::json!({
+                "hz": rate.hz, "attribute": rate.attribute, "low": rate.low, "high": rate.high,
+                "tolerance_millihz": rate.tolerance_millihz, "big_error_millihz": rate.big_error_millihz,
+            })).collect::<Vec<_>>(),
+        })
+    });
+    serde_json::json!({ "top": profile.top.connector, "bottom": profile.bottom.connector, "calibration": calibration })
 }

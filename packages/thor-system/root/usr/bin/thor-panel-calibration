@@ -20,7 +20,6 @@ import sys
 import time
 
 DRM_IOCTL_WAIT_VBLANK = 0xC018643A
-STEP = 4
 SAVED = "/var/lib/thor/panel-calibration"
 
 
@@ -58,17 +57,13 @@ def write(attr, value):
     time.sleep(0.5)
 
 
-# The driver's ranges (thor-0005), which the stepping stays in.
-RANGES = {120: (0x10, 0x80), 60: (0x770, 0x838)}
-
-
-def calibrate(attr, target, fd, pipe):
+def calibrate(attr, target, settings, step_size, fd, pipe):
     """The frame length that puts the rate just above `target` (ROCKNIX's steps and tolerances), or
     None (the value it started from written back)."""
-    tolerance, big_error = (0.05, 0.1) if target == 60 else (0.2, 0.4)
-    low, high = RANGES[target]
+    tolerance, big_error = settings["tolerance_millihz"] / 1000, settings["big_error_millihz"] / 1000
+    low, high = settings["low"], settings["high"]
     start = int(open(attr).read())
-    value = start // STEP * STEP
+    value = start // step_size * step_size
     try:
         start_rate = rate(fd, pipe)
         deadline, adjust_until = time.monotonic() + 60, time.monotonic() + 15
@@ -78,7 +73,7 @@ def calibrate(attr, target, fd, pipe):
             settled = 0 <= delta <= tolerance
             if time.monotonic() < adjust_until:
                 if not settled:
-                    step = STEP if abs(delta) < big_error else 2 * STEP
+                    step = step_size if abs(delta) < big_error else 2 * step_size
                     value = min(high, max(low, value + (step if delta > 0 else -step)))
                     write(attr, value)
             elif settled:
@@ -108,15 +103,19 @@ def outputs(top_name, bottom_name):
 
 
 def main():
-    panel = next(iter(glob.glob("/sys/bus/mipi-dsi/devices/*/frame_len_120")), None)
+    facts = json.loads(subprocess.run(["clamshell", "device", "panel"], capture_output=True, text=True, check=True).stdout)
+    settings = facts["calibration"]
+    if not settings or not settings["rates"]:
+        sys.exit("no calibratable panel in the device profile")
+    rates = settings["rates"]
+    panel = next(iter(glob.glob(f"/sys/bus/mipi-dsi/devices/*/{rates[0]['attribute']}")), None)
     if not panel:
-        sys.exit("no calibratable panel (linux-thor's thor-0005)")
+        sys.exit("calibratable panel not found")
     panel = os.path.dirname(panel)
     try:
         os.sched_setscheduler(0, os.SCHED_FIFO, os.sched_param(10))
     except OSError:
         pass
-    facts = json.loads(subprocess.run(["clamshell", "device", "panel"], capture_output=True, text=True, check=True).stdout)
     top, bottom = facts["top"], facts["bottom"]
     current, by_rate, bottom_on = outputs(top, bottom)
     found = {}
@@ -125,10 +124,11 @@ def main():
         time.sleep(1)
         # (The top's pipe, the one display left running: found once, kept across its modes.)
         fd, pipe = display()
-        for target in (60, 120):
+        for calibration in rates:
+            target = calibration["hz"]
             subprocess.run(["swaymsg", "output", top, "mode", by_rate[target]], check=True, capture_output=True)
             time.sleep(2)
-            value = calibrate(f"{panel}/frame_len_{target}", target, fd, pipe)
+            value = calibrate(f"{panel}/{calibration['attribute']}", target, calibration, settings["step"], fd, pipe)
             if value is not None:
                 found[target] = value
         os.close(fd)
@@ -145,11 +145,11 @@ def main():
             saved = dict(line.strip().split("=", 1) for line in f if "=" in line)
     except OSError:
         pass
-    saved.update({f"frame_len_{r}": str(v) for r, v in found.items()})
+    saved.update({calibration["attribute"]: str(found[calibration["hz"]]) for calibration in rates if calibration["hz"] in found})
     with open(SAVED, "w") as f:
         f.write("".join(f"{k}={v}\n" for k, v in sorted(saved.items())))
     print(f"saved in {SAVED}")
-    if len(found) < 2:
+    if len(found) < len(rates):
         sys.exit("one rate not calibrated (the other saved)")
 
 

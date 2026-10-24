@@ -1294,3 +1294,13 @@ profile through system wiring, rather than assuming the Thor's density on every 
 VM fixture retain 16.5 px/mm; generic desktop development uses a nominal 3.8 px/mm. The density test
 asserts each value. The VM suite checks the resulting uinput device and real finger forwarding; UI,
 state, snapshots and allocation checks remain unchanged.
+
+
+Refresh calibration's capability, helper program, frame-length attributes/ranges, step and tolerances
+now come from the profile. The package tool still detects the actual panel's sysfs files and available
+modes; it no longer embeds ICNA3520 ranges or chooses tolerances by rate. The Device row remains drawn
+and tappable without the capability, dimmed and labelled Unavailable. A tap follows the existing
+Running → Done(error) route without starting a helper when no capability exists. Package-query tests
+check Thor/VM capability facts and the worker test asserts the unavailable outcome. Snapshots now
+explicitly use the Thor profile and retain the same pixels, focus and trace. Actual frame-length
+calibration remains a device check.

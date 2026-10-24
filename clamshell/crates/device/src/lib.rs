@@ -42,6 +42,29 @@ const THOR_TOUCH: &[Touchscreen] = &[
     Touchscreen { selector: TouchSelector::Named("0:0:bottom_touchscreen"), screen: ScreenRole::Bottom },
 ];
 const VM_TOUCH: &[Touchscreen] = &[Touchscreen { selector: TouchSelector::All, screen: ScreenRole::Bottom }];
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RefreshRate {
+    pub hz: u16,
+    pub attribute: &'static str,
+    pub low: u16,
+    pub high: u16,
+    pub tolerance_millihz: u16,
+    pub big_error_millihz: u16,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RefreshCalibration {
+    pub program: &'static str,
+    pub step: u16,
+    pub rates: &'static [RefreshRate],
+}
+const THOR_REFRESH: RefreshCalibration = RefreshCalibration {
+    program: "thor-panel-calibration",
+    step: 4,
+    rates: &[
+        RefreshRate { hz: 60, attribute: "frame_len_60", low: 0x770, high: 0x838, tolerance_millihz: 50, big_error_millihz: 100 },
+        RefreshRate { hz: 120, attribute: "frame_len_120", low: 0x10, high: 0x80, tolerance_millihz: 200, big_error_millihz: 400 },
+    ],
+};
 /// The two-screen machine's fixed facts, identified once and passed to their readers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Profile {
@@ -51,6 +74,7 @@ pub struct Profile {
     pub touchscreens: &'static [Touchscreen],
     /// Pixels per millimetre, in tenths, used by the virtual bottom-screen touchpad.
     pub bottom_density_tenths: u16,
+    pub refresh_calibration: Option<RefreshCalibration>,
 }
 impl Default for Profile {
     fn default() -> Self {
@@ -65,6 +89,7 @@ impl Profile {
             bottom: Screen { connector: "DSI-1", rotation: Rotation::Clockwise90, backlight: Some("ae94000.dsi.0") },
             touchscreens: THOR_TOUCH,
             bottom_density_tenths: 165,
+            refresh_calibration: Some(THOR_REFRESH),
         }
     }
     pub const fn vm() -> Self {
@@ -74,6 +99,7 @@ impl Profile {
             bottom: Screen { connector: "Virtual-2", rotation: Rotation::Normal, backlight: None },
             touchscreens: VM_TOUCH,
             bottom_density_tenths: 165,
+            refresh_calibration: None,
         }
     }
     /// Unknown physical connectors remain unmatched; desktop views still draw as ordinary windows.
@@ -84,6 +110,7 @@ impl Profile {
             bottom: Screen { connector: "ClamShell-Bottom", rotation: Rotation::Normal, backlight: None },
             touchscreens: &[],
             bottom_density_tenths: 38,
+            refresh_calibration: None,
         }
     }
     pub const fn bottom_pixels_per_mm(&self) -> f32 {
