@@ -122,3 +122,6 @@ Rules for living with what apps do (`docs/compositor-mvp.md`, "Keeping the app t
 Short imperative subjects scoped by area (`state/shelf: ...`), one concern per commit. Push, and publish
 packages (`tools/repo/repo.sh publish`), only when asked. The device is maintained on the device
 (`.claude/commands/maintain.md`), from the published packages.
+
+During long work, give a one-line note after each commit, or after a long stretch of working without
+one (what landed or is under way, what's next), and say so when a step is blocked.
