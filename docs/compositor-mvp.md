@@ -442,7 +442,8 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    same logical geometry for presentation and input, covered by a socket-pair client. Screenshots read the presented nested scene and
    encode it on the system worker; SDR PNG export does not change composition precision. The nested
    host advertises renderer-native dmabuf formats, with render-device feedback when available, and
-   validates imports before drawing; hardware import coverage remains to check. The current host puts the logical
+   validates imports before drawing. The smoke harness also passes with `--gpu`, requiring actual
+   native dmabuf submissions and checking presentation through moves and close. The current host puts the logical
    screens side by side for desktop testing.
    Rules 1-3 of section 3, "Keeping the app tail small", hold for all of it; rule 5's real-client set
    and window-event ring, and rule 6's defaults (Wine's Wayland driver, Big Picture), are part of this phase.

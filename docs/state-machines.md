@@ -872,4 +872,7 @@ mock renderer boundary, asserts that boundary was reached exactly once and rejec
 connection, then changes a healthy mapped window's title. The accepted-import protocol test uses a
 mock successful boundary to assert one created buffer and no work on an empty queue. This tests
 protocol completion, not a GPU importing an ordinary file. The nested software-EGL smoke test remains
-green; successful native hardware dmabuf import still needs GPU-client coverage.
+green. Its `--gpu` mode uses a headless GLES2 host and hardware EGL, checks rendered pixels across
+screen moves/close and requires native dmabuf create requests in the fixture's protocol log. It fails
+rather than accepting shared-memory transport in that mode. Both modes passed on the development
+desktop; the hardware run submitted AMD-modified 10-bit buffers and rendered the expected colours.

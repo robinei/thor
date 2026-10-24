@@ -3,9 +3,11 @@
 
 Build first (in clamshell/): cargo build --features compositor
     cargo build -p clamshell-compositor --example egl-client
+Run with --gpu to require native dmabuf on a machine with an accessible render node.
 Needs sway, foot and grim. Leaves screenshots and logs in the printed temporary directory.
 """
 import os
+import argparse
 import json
 from pathlib import Path
 import re
@@ -19,6 +21,9 @@ BIN = ROOT / "clamshell/target/debug/clamshell"
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--gpu", action="store_true", help="require hardware EGL and native dmabuf traffic")
+    args = parser.parse_args()
     directory = Path(tempfile.mkdtemp(prefix="clamshell-compositor-"))
     print(f"nested compositor artifacts: {directory}", flush=True)
     runtime = directory / "runtime"
@@ -36,8 +41,8 @@ def main():
     private_home.mkdir()
     env = {**os.environ, "HOME": str(private_home), "XDG_RUNTIME_DIR": str(runtime), "XDG_CONFIG_HOME": str(directory / "config"),
            "XDG_DATA_HOME": str(directory / "data"), "XDG_CACHE_HOME": str(directory / "cache"),
-           "WLR_BACKENDS": "headless", "WLR_HEADLESS_OUTPUTS": "1", "WLR_RENDERER": "pixman",
-           "WLR_LIBINPUT_NO_DEVICES": "1", "LIBGL_ALWAYS_SOFTWARE": "1", "CLAMSHELL_STEAM": "off",
+           "WLR_BACKENDS": "headless", "WLR_HEADLESS_OUTPUTS": "1", "WLR_RENDERER": "gles2" if args.gpu else "pixman",
+           "WLR_LIBINPUT_NO_DEVICES": "1", "LIBGL_ALWAYS_SOFTWARE": "0" if args.gpu else "1", "CLAMSHELL_STEAM": "off",
            "CLAMSHELL_CONTROL": str(directory / "control"), "CLAMSHELL_BACKLIGHTS": str(directory / "backlights"),
            "CLAMSHELL_GAMEPAD": str(directory / "no-controller")}
     env["DBUS_SESSION_BUS_ADDRESS"] = os.environ.get("DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{os.getuid()}/bus")
@@ -149,8 +154,12 @@ time.sleep(300)
         control("window", "up")
         wait(lambda: pixels() == (True, False), "client returned to top")
         shot("up")
-        egl = spawn([str(BIN.parent / "examples/egl-client")], "egl-client", nested)
+        egl_env = {**nested, "WAYLAND_DEBUG": "1"} if args.gpu else nested
+        egl = spawn([str(BIN.parent / "examples/egl-client")], "egl-client", egl_env)
         wait(lambda: pixels((128, 32, 64)) == (True, False), "Wayland EGL client rendered on top")
+        if args.gpu:
+            protocol = (directory / "egl-client.log").read_text()
+            assert re.search(r"zwp_linux_buffer_params_v1#\d+\.create(?:_immed)?\(", protocol), "GPU mode must actually submit dmabufs"
         shot("egl-top")
         control("window", "down")
         wait(lambda: pixels((128, 32, 64)) == (False, True), "Wayland EGL client rendered below")
@@ -182,6 +191,8 @@ time.sleep(300)
         assert len(recorded["records"]) <= 256
         assert any("Window" in event["input"] for event in recorded["records"])
         assert recorded["after"]["windows"] == 0
+        if args.gpu:
+            print("ok: native dmabuf submission and rendering on the GPU path", flush=True)
         print("ok: in-process screenshot, window-event export, clipboard isolation and persistence, Wayland EGL and shm rendering, bottom-slot move, return and Home", flush=True)
     finally:
         for process in reversed(processes):
