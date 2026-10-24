@@ -2,6 +2,7 @@
 
 mod geometry;
 mod handlers;
+mod idle;
 mod input;
 mod keyboard;
 mod nested;

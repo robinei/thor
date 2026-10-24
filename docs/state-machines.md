@@ -699,3 +699,19 @@ wl_keyboard and text-input-v3 messages over a socket pair. It pins commit string
 modifier order, native key fallback before enable and after disable, physical Shift retention, F12
 delivery, the state-to-effect route, tab restoration and silence after focus loss. The touch protocol
 test continues to pin the two-screen routing. Real toolkit activation is checked in nested mode.
+
+### Compositor idle inhibition (compositor/idle)
+
+Nested input restarts a ten-second quiet timer. Quiet and resumed transitions send CompositorQuiet /
+CompositorInput to the existing device idle machine through Core. A mapped surface belonging to a
+visible window, including a subsurface or popup, can inhibit that timer with idle-inhibit-v1. Hidden,
+unmapped and dead surfaces cannot. Each inhibitor is counted separately; destroying one removes only
+that inhibitor. Dead surfaces are discarded. Ending inhibition starts a fresh quiet interval.
+
+`quiet_input_and_inhibition_report_only_transitions_and_restart_the_timeout` pins timeout thresholds,
+repetition, resumption and inhibitor removal.
+`inhibitors_count_individually_and_only_mapped_visible_surfaces_keep_idle_off` uses real protocol
+objects to check mapping, hiding/showing, subsurface ownership, multiple inhibitors, unmapping and
+surface destruction. The existing state idle tests pin dim/off/sleep effects and the desktop sleep
+guard; no separate policy is introduced in the compositor. The nested host still leaves physical
+output power to its parent; actual output power belongs to the DRM backend.

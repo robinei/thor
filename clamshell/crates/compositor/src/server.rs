@@ -64,6 +64,7 @@ pub(crate) struct Server {
     pub top_width: i32,
     pub exit: bool,
     pub started: Instant,
+    pub idle: crate::idle::Idle,
     pub socket: String,
     pub on_effect: Box<dyn FnMut(&Effect)>,
     identify: Box<dyn Fn(u32) -> Process>,
@@ -87,6 +88,7 @@ impl Server {
         seat.input_method();
         seat.text_input().set_compositor_input_method(true);
         TextInputManagerState::new::<Self>(&dh);
+        smithay::wayland::idle_inhibit::IdleInhibitManagerState::new::<Self>(&dh);
         let outputs = ["ClamShell-Top", "ClamShell-Bottom"].map(|name| {
             let output = Output::new(
                 name.into(),
@@ -126,6 +128,7 @@ impl Server {
             top_width: 960,
             exit: false,
             started: Instant::now(),
+            idle: crate::idle::Idle::new(),
             socket: String::new(),
             on_effect: Box::new(on_effect),
             identify: Box::new(identify),
@@ -279,6 +282,7 @@ impl Server {
     }
 
     pub fn turn(&mut self) {
+        self.update_idle(Instant::now());
         self.core.run(Instant::now());
         while let Some(effect) = self.core.next_effect() {
             match effect {

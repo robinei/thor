@@ -25,6 +25,7 @@ pub(crate) struct Hit {
 
 impl Server {
     pub fn input(&mut self, event: InputEvent<WinitInput>) {
+        self.idle.input(std::time::Instant::now());
         match event {
             InputEvent::Keyboard { event, .. } => {
                 if let Some(keyboard) = self.seat.get_keyboard() {
