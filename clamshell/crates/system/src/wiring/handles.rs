@@ -56,6 +56,11 @@ pub struct Handles {
 }
 
 impl Handles {
+    /// Save an in-process compositor capture and report the result through the system sink.
+    pub fn save_screenshot(&self, pixels: Result<super::ScreenshotPixels, String>) {
+        self.system.send(crate::device::Command::SaveScreenshot(pixels));
+    }
+
     pub fn dispatch(&mut self, effect: &Effect) {
         match effect {
             Effect::Watch(watch, on) => {

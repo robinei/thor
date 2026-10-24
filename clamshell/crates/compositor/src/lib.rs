@@ -20,3 +20,9 @@ pub use server::Process;
 
 #[cfg(test)]
 mod tests;
+
+/// An opaque SDR capture of the presented scene, with the top row first.
+pub struct Capture {
+    pub size: (u32, u32),
+    pub rgba: Vec<u8>,
+}

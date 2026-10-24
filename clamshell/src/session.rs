@@ -99,6 +99,8 @@ fn run_host(env: &Env, paths: Paths, sources: &Sources, nested: bool) -> Result<
         }
         *started.borrow_mut() = Some(start(&system_config, &paths, sources, layout, &global, fetch, sender));
     };
+    #[cfg(feature = "compositor")]
+    let capture_handles = handles.clone();
     let on_effect = move |effect: &clamshell_state::Effect| {
         if let Some(handles) = handles.borrow_mut().as_mut() {
             handles.dispatch(effect);
@@ -112,6 +114,11 @@ fn run_host(env: &Env, paths: Paths, sources: &Sources, nested: bool) -> Result<
             |sender, display| start(sender, Some(display)),
             on_effect,
             |pid| clamshell_compositor::Process { unit: clamshell_system::os::unit_of(pid), pids: clamshell_system::os::lineage(pid) },
+            move |captured| {
+                if let Some(handles) = capture_handles.borrow().as_ref() {
+                    handles.save_screenshot(captured.map(|capture| wiring::ScreenshotPixels { size: capture.size, rgba: capture.rgba }));
+                }
+            },
         )
         .map_err(|e| e.to_string());
     }

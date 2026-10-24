@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use clamshell_state::bottom::touch::TouchLayout;
 use clamshell_state::settings::Values;
 
+pub use crate::display::screenshot::Pixels as ScreenshotPixels;
 pub use handles::Handles;
 pub use settings::Tuning;
 

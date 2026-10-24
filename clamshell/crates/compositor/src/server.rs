@@ -67,6 +67,7 @@ pub(crate) struct Server {
     pub size: (i32, i32),
     pub top_width: i32,
     pub exit: bool,
+    pub screenshot_requested: bool,
     pub started: Instant,
     pub idle: crate::idle::Idle,
     pub presentation_revision: Option<u64>,
@@ -141,6 +142,7 @@ impl Server {
             size: (1580, 540),
             top_width: 960,
             exit: false,
+            screenshot_requested: false,
             started: Instant::now(),
             idle: crate::idle::Idle::new(),
             presentation_revision: None,
@@ -361,6 +363,7 @@ impl Server {
         while let Some(effect) = self.core.next_effect() {
             match effect {
                 Effect::DumpWindowEvents(ref path) => crate::trace::save(self.trace.borrow().snapshot(self.core.state()), path.clone()),
+                Effect::Screenshot => self.screenshot_requested = true,
                 Effect::Quit => self.exit = true,
                 Effect::Window(WindowCommand::Close(ref ids)) => {
                     for client in self.windows.iter().filter(|w| ids.contains(&w.id)) {

@@ -10,6 +10,7 @@ description = "ClamShell's system threads: D-Bus, sway, the controller, sensors,
 
 [dependencies]
 jiff.workspace = true
+png.workspace = true
 serde_json.workspace = true
 serde.workspace = true
 dbus.workspace = true

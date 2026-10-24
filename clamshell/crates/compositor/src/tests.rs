@@ -542,3 +542,34 @@ fn a_protocol_error_disconnects_only_its_client() {
     assert!(thread.is_finished());
     thread.join().unwrap();
 }
+
+#[test]
+fn screenshots_are_consumed_by_the_host_instead_of_the_parent_capture_tool() {
+    use std::{cell::RefCell, rc::Rc};
+    let display = Display::<Server>::new().unwrap();
+    let forwarded = Rc::new(RefCell::new(Vec::new()));
+    let effects = forwarded.clone();
+    let config =
+        Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
+    let mut server = Server::new(
+        State::new(Init::default()),
+        config,
+        display.handle(),
+        || {},
+        |_| Process::default(),
+        move |effect| effects.borrow_mut().push(effect.clone()),
+    )
+    .unwrap();
+    server.core.handle(Event::Start);
+    server.frame();
+    forwarded.borrow_mut().clear();
+    server.core.handle(Event::Device(DeviceKey::Screenshot));
+    server.core.handle(Event::Device(DeviceKey::Screenshot));
+    server.frame();
+    assert!(std::mem::take(&mut server.screenshot_requested));
+    assert!(!std::mem::take(&mut server.screenshot_requested), "several requests before a frame need one capture");
+    assert!(!forwarded.borrow().iter().any(|effect| matches!(effect, clamshell_state::Effect::Screenshot)));
+    server.core.handle(Event::Device(DeviceKey::Screenshot));
+    server.frame();
+    assert!(server.screenshot_requested, "a later frame can capture again");
+}

@@ -342,6 +342,7 @@ dependencies = [
  "log",
  "md5",
  "percent-encoding",
+ "png",
  "rustix",
  "serde",
  "serde_json",

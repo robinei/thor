@@ -279,3 +279,6 @@ headless sway, foot and grim. It prints the directory containing its screenshots
 For nested compositor diagnostics, `clamshell ctl window events /tmp/window-events.json` exports the
 last 256 window inputs. `clamshell_compositor::trace::Recording::replay` checks the recording against a
 state fixture with the matching library, rules and launch context.
+
+The screenshot chord or `clamshell ctl screenshot` captures the nested scene directly and saves through
+the normal system worker. The nested smoke test checks this export and continued rendering afterward.

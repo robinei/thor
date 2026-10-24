@@ -7,7 +7,7 @@ use clamshell_state::{Effect, Event, State};
 use clamshell_ui::{Config, Error, EventSender};
 use smithay::{
     backend::{
-        renderer::{damage::OutputDamageTracker, gles::GlesRenderer},
+        renderer::{Frame, Renderer, damage::OutputDamageTracker, gles::GlesRenderer},
         winit::{self, WinitEvent},
     },
     reexports::{
@@ -32,6 +32,7 @@ pub fn run(
     start: impl FnOnce(EventSender, std::path::PathBuf),
     on_effect: impl FnMut(&Effect) + 'static,
     identify: impl Fn(u32) -> Process + 'static,
+    mut on_capture: impl FnMut(Result<crate::Capture, String>) + 'static,
 ) -> Result<(), Error> {
     let mut event_loop: EventLoop<Server> = EventLoop::try_new()?;
     let mut display = Display::<Server>::new()?;
@@ -85,10 +86,22 @@ pub fn run(
                     WinitEvent::Redraw => {
                         server.frame();
                         let age = if submitted { backend.buffer_age().unwrap_or(0) } else { 0 };
+                        let capturing = std::mem::take(&mut server.screenshot_requested);
                         {
                             let (renderer, mut framebuffer) = backend.bind()?;
                             render::elements(server, &mut frames, &mut arrows, renderer, &mut elements)?;
                             damage.render_output(renderer, &mut framebuffer, age, &elements, [0.0, 0.0, 0.0, 1.0])?;
+                            if capturing {
+                                let captured = render::capture(renderer, &framebuffer, server.size);
+                                if let Err(error) = &captured {
+                                    log::warn!("compositor screenshot: {error}");
+                                }
+                                // bind() is lazy. Begin an empty frame to actually restore the
+                                // window EGL target after the surfaceless readback mapping.
+                                // No drawing is submitted by this frame; swap supplies presentation synchronization.
+                                drop(renderer.render(&mut framebuffer, server.size.into(), Transform::Flipped180)?.finish()?);
+                                on_capture(captured);
+                            }
                         }
                         backend.submit(Some(&[Rectangle::from_size(backend.window_size())]))?;
                         submitted = true;

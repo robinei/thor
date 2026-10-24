@@ -805,3 +805,20 @@ The headless lifecycle client sends 101 different titles in one batch and then 1
 `xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu` asserts the final title and
 exactly one Title record in the event ring across both batches, alongside the unmap/remap checks.
 Headless tests step the same frame boundary as the nested host.
+
+### In-process screenshots (compositor/render, system/display/screenshot)
+
+Screenshot effects in the nested host request one capture of the next rendered scene. Requests before
+that frame coalesce. Readback copies the combined logical screens to top-first SDR RGBA8 pixels, then
+restores the window EGL target before presentation. Readback failure is logged and forwarded as a
+screenshot error; it does not escape into the host loop. The binary passes pixels or the error to
+Handles, whose system worker encodes/saves PNG and sends the existing Screenshot result event.
+The state owns the success/failure notice. Sway continues to capture through grim.
+
+`screenshots_are_consumed_by_the_host_instead_of_the_parent_capture_tool` pins coalescing and prevents
+the nested effect reaching grim. System screenshot tests decode a saved PNG to check size and row
+order, and check invalid images, missing folders and write failure. The nested smoke test saves a
+complete PNG in an isolated home, checks its dimensions, and continues with client rendering,
+clipboard, screen moves and Home. This catches losing the EGL window binding during readback.
+Readback is an SDR file conversion after composition; it does not set client/target precision or
+advertise HDR. Future HDR screenshot tone mapping remains part of the colour-management work.

@@ -31,7 +31,9 @@ def main():
     sway_config = directory / "sway.conf"
     sway_config.write_text('output HEADLESS-1 resolution 1580x540\ndefault_border none\n'
                            'for_window [title="ClamShell nested"] fullscreen enable\n')
-    env = {**os.environ, "XDG_RUNTIME_DIR": str(runtime), "XDG_CONFIG_HOME": str(directory / "config"),
+    private_home = directory / "home"
+    private_home.mkdir()
+    env = {**os.environ, "HOME": str(private_home), "XDG_RUNTIME_DIR": str(runtime), "XDG_CONFIG_HOME": str(directory / "config"),
            "XDG_DATA_HOME": str(directory / "data"), "XDG_CACHE_HOME": str(directory / "cache"),
            "WLR_BACKENDS": "headless", "WLR_HEADLESS_OUTPUTS": "1", "WLR_RENDERER": "pixman",
            "WLR_LIBINPUT_NO_DEVICES": "1", "LIBGL_ALWAYS_SOFTWARE": "1", "CLAMSHELL_STEAM": "off",
@@ -125,6 +127,16 @@ time.sleep(300)
 
         wait(lambda: pixels() == (True, False), "client rendered on top")
         shot("top")
+        control("screenshot")
+        screenshots = private_home / "Pictures/Screenshots"
+        captured = wait(lambda: next(screenshots.glob("clamshell-*.png"), None), "in-process screenshot saved")
+        def png_size():
+            data = captured.read_bytes()
+            if len(data) < 24 or not data.endswith(b"\x00\x00\x00\x00IEND\xaeB`\x82"): return None
+            assert data[:8] == b"\x89PNG\r\n\x1a\n"
+            return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+        assert wait(png_size, "screenshot PNG header") == (1580,540)
+        wait(lambda: pixels() == (True,False), "rendering continues after framebuffer readback")
         (directory / "copy").touch()
         wait(lambda: clipboard(nested) == "native clipboard", "native client copied through wl_data_device")
         (directory / "primary").touch()
@@ -157,7 +169,7 @@ time.sleep(300)
         assert len(recorded["records"]) <= 256
         assert any("Window" in event["input"] for event in recorded["records"])
         assert recorded["after"]["windows"] == 0
-        print("ok: window-event export, clipboard isolation and persistence, real client rendering, bottom-slot move, return and Home", flush=True)
+        print("ok: in-process screenshot, window-event export, clipboard isolation and persistence, real client rendering, bottom-slot move, return and Home", flush=True)
     finally:
         for process in reversed(processes):
             if process.poll() is None:
