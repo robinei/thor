@@ -488,7 +488,7 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
     Validated with unchanged pixel, focus and trace references, nested sway (0 failures), and the VM
     suite. The full VM run passed the new pad/window scenarios; two outdated test expectations were
     corrected and the affected scenarios rerun (36 passed, 0 failed).
-2. **The compositor, nested and headless,** implementing the same model synchronously, with the
+2. **Done (2026-10-24), with three items deferred (below).** **The compositor, nested and headless,** implementing the same model synchronously, with the
    presentation of windows that aren't fullscreen (section 3): xdg-shell, Xwayland
    with the X11 adapter, input routing, the on-screen keyboard through text-input, the clipboard,
    screenshots, idle-inhibit. Developed with `clamshell --nested` on the desktop (real Steam and Proton on
@@ -537,7 +537,12 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    real-client tests cover committed, superseded, hidden and unchanged content.
    Rules 1-3 of section 3, "Keeping the app tail small", hold for all of it; rule 5's real-client set
    and window-event ring, and rule 6's defaults are part of this phase. Steam's packaged desktop entry
-   and game-start command now request Big Picture; Wine's Wayland-driver default remains to implement.
+   and game-start command now request Big Picture.
+   Deferred, none blocking: the per-frame allocation ceiling in the headless harness (Smithay allocates
+   per frame, so a pinned count rather than zero, with per-frame CPU time); Wine's Wayland driver as the
+   launch default, after trying a few Proton games under sway and nested; the real Steam and Proton
+   check by hand (Big Picture, a Proton game under X11 and the Wayland driver, clipboard, menus; the
+   desktop's own Steam quit first).
 2h. **HDR, the shared half, nested on the desktop** (section 3, "HDR"; after phase 2, beside phase 3;
     the desktop has an HDR mini-LED monitor under KWin):
     - [ ] The colour-management protocol (`wp_color_management_v1`, parametric descriptions; no ICC
