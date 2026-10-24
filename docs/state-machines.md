@@ -1313,3 +1313,13 @@ not a PQ link; both current links are eight bits. Unprofiled panels use sRGB pri
 SDR-only, with luminance left unknown. No brightness-register calibration is invented. Unit tests pin
 these values and the package query checks their public representation. Phase 2h will consume these
 facts for physical outputs; nested outputs take their description from the host instead.
+
+
+Auxiliary GPIO-key identity/code and the controller's physical Back code now come from the profile.
+The GPIO device is still discovered by advertised name/capabilities. Physical presses are normalised
+into fixed logical auxiliary/Back roles before routing and keymaps; resynchronisation applies the same
+normalisation. The virtual gamepad excludes the physical Back key as well as the logical role. The VM
+profile models the Thor's auxiliary controls for its input fixtures; generic has no auxiliary GPIO key.
+Pure tests check alternate physical codes, unrelated keys/axes and virtual-pad filtering. Existing
+router, held-key, disconnect and randomized state tests retain the same canonical semantics. The VM
+suite checks actual GPIO-key discovery and uinput forwarding.

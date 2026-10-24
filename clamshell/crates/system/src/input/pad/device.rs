@@ -11,6 +11,7 @@ use super::remap::{AYN_KEY, BACK_KEY};
 use super::route::{Axis, PadSnapshot, Ranges, mouse_device_keys};
 use crate::os::evdev::device::{self, DeviceSpec};
 use crate::os::evdev::{Press, Range, Raw, keyset};
+use clamshell_device::input::{AuxiliaryKey as AuxiliaryHint, Controls};
 
 const VIRTUAL_PAD: &str = "clamshell pad (Xbox 360)";
 /// The virtual pad's USB ids, which are a wired Xbox 360 controller's.
@@ -28,23 +29,25 @@ pub fn find(spec: &DeviceSpec) -> io::Result<RawDevice> {
 
 /// The device the Thor's AYN button is on, its GPIO keys. It is read alongside the controller for that one
 /// key. It isn't grabbed, so other keys on it go where they would.
-pub struct AynKey {
+pub struct AuxiliaryKey {
     device: RawDevice,
+    code: KeyCode,
 }
 
-impl AynKey {
-    const NAME: &'static str = "gpio-keys-ayn";
-
-    pub fn find() -> Option<AynKey> {
-        let device =
-            evdev::raw_stream::enumerate().map(|(_, d)| d).find(|d| d.name() == Some(Self::NAME) && d.supported_keys().is_some_and(|k| k.contains(AYN_KEY)))?;
+impl AuxiliaryKey {
+    pub fn find(hint: Option<AuxiliaryHint>) -> Option<AuxiliaryKey> {
+        let hint = hint?;
+        let code = KeyCode(hint.code);
+        let device = evdev::raw_stream::enumerate()
+            .map(|(_, device)| device)
+            .find(|device| device.name() == Some(hint.device_name) && device.supported_keys().is_some_and(|keys| keys.contains(code)))?;
         let nonblocking = rustix::fs::fcntl_getfl(&device).and_then(|f| rustix::fs::fcntl_setfl(&device, f | rustix::fs::OFlags::NONBLOCK));
         if let Err(e) = nonblocking {
             log::warn!("pad: AYN button: {e}");
             return None;
         }
-        log::info!("pad: the AYN button from {}", Self::NAME);
-        Some(AynKey { device })
+        log::info!("pad: the auxiliary button from {}", hint.device_name);
+        Some(AuxiliaryKey { device, code })
     }
 
     pub fn device(&self) -> &RawDevice {
@@ -55,8 +58,8 @@ impl AynKey {
     pub fn fetch(&mut self, out: &mut Vec<Raw>) -> io::Result<()> {
         match self.device.fetch_events() {
             Ok(events) => {
-                for e in events.filter(|e| e.event_type() == evdev::EventType::KEY && e.code() == AYN_KEY.0) {
-                    out.extend([Raw::from(e), Raw::REPORT]);
+                for e in events.filter(|e| e.event_type() == evdev::EventType::KEY && e.code() == self.code.0) {
+                    out.extend([Raw { kind: evdev::EventType::KEY, code: AYN_KEY.0, value: e.value() }, Raw::REPORT]);
                 }
                 Ok(())
             }
@@ -129,11 +132,11 @@ pub struct VirtualDevices {
 }
 
 impl VirtualDevices {
-    pub fn new(caps: Capabilities) -> io::Result<VirtualDevices> {
-        let mut neutral: Vec<Raw> = pad_keys(&caps).map(|k| Raw::key(k, Press::Up)).collect();
+    pub fn new(caps: Capabilities, controls: Controls) -> io::Result<VirtualDevices> {
+        let mut neutral: Vec<Raw> = pad_keys(&caps, controls).map(|k| Raw::key(k, Press::Up)).collect();
         neutral.extend(pad_axes(&caps).iter().map(|(code, a)| Raw::abs(*code, rest(a))));
         neutral.push(Raw::REPORT);
-        Ok(VirtualDevices { pad: virtual_pad(&caps)?, mouse: virtual_mouse()?, made_for: caps, neutral })
+        Ok(VirtualDevices { pad: virtual_pad(&caps, controls)?, mouse: virtual_mouse()?, made_for: caps, neutral })
     }
 
     /// Puts the virtual pad at rest when the controller is gone. The pad itself stays.
@@ -197,9 +200,9 @@ const DPAD_KEYS: [KeyCode; 4] = [KeyCode::BTN_DPAD_UP, KeyCode::BTN_DPAD_DOWN, K
 /// that does nothing as on the pad, and the D-pad's buttons. The virtual D-pad is a hat, as on an Xbox 360
 /// pad, because SDL takes a pad with both for one whose D-pad is its buttons, and finds none. Guide is
 /// added even if the controller has none, for the AYN button as on the pad and for Home with Back.
-fn pad_keys(caps: &Capabilities) -> impl Iterator<Item = KeyCode> + '_ {
+fn pad_keys(caps: &Capabilities, controls: Controls) -> impl Iterator<Item = KeyCode> + '_ {
     let guide = (!caps.keys.contains(&KeyCode::BTN_MODE)).then_some(KeyCode::BTN_MODE);
-    caps.keys.iter().copied().filter(|&k| k != BACK_KEY && !DPAD_KEYS.contains(&k)).chain(guide)
+    caps.keys.iter().copied().filter(move |&k| k != BACK_KEY && controls.back_key != Some(k.0) && !DPAD_KEYS.contains(&k)).chain(guide)
 }
 
 /// The real pad's axes that the virtual one has: all of them, plus the D-pad's hat even if the controller
@@ -216,7 +219,7 @@ fn pad_axes(caps: &Capabilities) -> Vec<(AbsoluteAxisCode, AbsInfo)> {
 
 /// A pad with the real one's buttons and axes, identified as a wired Xbox 360 controller so SDL, Wine
 /// and Steam map it without configuration.
-fn virtual_pad(caps: &Capabilities) -> io::Result<VirtualDevice> {
+fn virtual_pad(caps: &Capabilities, controls: Controls) -> io::Result<VirtualDevice> {
     // Rumble, as an Xbox 360 pad has it. Games' effects come back on its file, which is read without
     // blocking.
     let ff: AttributeSet<FFEffectCode> = [FFEffectCode::FF_RUMBLE].into_iter().collect();
@@ -225,7 +228,7 @@ fn virtual_pad(caps: &Capabilities) -> io::Result<VirtualDevice> {
         .input_id(InputId::new(BusType::BUS_USB, VIRTUAL_IDS.0, VIRTUAL_IDS.1, 0x0110))
         .with_ff(&ff)?
         .with_ff_effects_max(super::rumble::EFFECTS_MAX);
-    let keys: Vec<KeyCode> = pad_keys(caps).collect();
+    let keys: Vec<KeyCode> = pad_keys(caps, controls).collect();
     if !keys.is_empty() {
         builder = builder.with_keys(&keyset(&keys))?;
     }
@@ -274,5 +277,27 @@ mod letter_tests {
             events,
             [Raw::key(KeyCode::BTN_WEST, Press::Down), Raw::key(KeyCode::BTN_NORTH, Press::Up), Raw::key(KeyCode::BTN_SOUTH, Press::Down), Raw::REPORT]
         );
+    }
+}
+
+pub fn normalise_controls(controls: Controls, raws: &mut [Raw]) {
+    for raw in raws.iter_mut().filter(|raw| raw.kind == evdev::EventType::KEY) {
+        raw.code = controls.normalise_button(raw.code);
+    }
+}
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+    #[test]
+    fn control_normalisation_preserves_other_keys_and_axis_codes() {
+        let controls = Controls { back_key: Some(123), auxiliary: None };
+        let mut events =
+            [Raw::key(KeyCode(123), Press::Down), Raw::key(KeyCode::BTN_SOUTH, Press::Down), Raw { kind: evdev::EventType::ABSOLUTE, code: 123, value: 1 }];
+        normalise_controls(controls, &mut events);
+        assert_eq!(events.first(), Some(&Raw::key(BACK_KEY, Press::Down)));
+        assert_eq!(events.get(1), Some(&Raw::key(KeyCode::BTN_SOUTH, Press::Down)));
+        assert_eq!(events.get(2).map(|event| event.code), Some(123));
+        let caps = Capabilities { keys: vec![KeyCode(123), KeyCode::BTN_SOUTH], axes: Vec::new() };
+        assert_eq!(pad_keys(&caps, controls).collect::<Vec<_>>(), [KeyCode::BTN_SOUTH, KeyCode::BTN_MODE]);
     }
 }

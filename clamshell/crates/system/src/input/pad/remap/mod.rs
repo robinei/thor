@@ -200,13 +200,11 @@ impl Actuator {
     }
 }
 
-/// The Thor's Back button, under the screen. It is BTN_BACK on the gamepad, going by Armada's rsinput
-/// keymap and PB-OS's Thor map; this is still to be confirmed on the device (docs/thor-gameplan.md). It
-/// is an input of keymaps, and never on the game's pad itself.
-pub const BACK_KEY: KeyCode = KeyCode::BTN_BACK;
+/// The normalised Back role. Physical codes are translated from the device profile before routing.
+pub const BACK_KEY: KeyCode = KeyCode(clamshell_device::input::BACK_ROLE);
 
-/// The Thor's AYN button's code, on a device of its own (see [`super::device::AynKey`]).
-pub const AYN_KEY: KeyCode = KeyCode::KEY_F24;
+/// The normalised auxiliary-button role, emitted by the profile's GPIO-key reader.
+pub const AYN_KEY: KeyCode = KeyCode(clamshell_device::input::AUXILIARY_ROLE);
 
 /// A binding to a layer that is on. It holds the input and actuation it belongs to, and the binding as it
 /// was when it came on. That binding is kept while on, whatever the layers since make of the input. It

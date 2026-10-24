@@ -18,7 +18,7 @@
 //! pressing Back with a game in front gives the game's Guide (see [`route`]). The Back button
 //! ([`remap::BACK_KEY`]) is a keymap input in the game and means back on ClamShell's screens. The AYN
 //! button ([`remap::AYN_KEY`]) is on the Thor's GPIO keys and is read alongside the controller
-//! ([`device::AynKey`]). It is also a keymap input in the game, and Guide by default, as on the pad.
+//! ([`device::AuxiliaryKey`]). It is also a keymap input in the game, and Guide by default, as on the pad.
 //!
 //! The virtual devices outlive the controller. If it is unplugged or fails, the pad stays, at rest,
 //! until a controller is back. Games' rumble on the virtual pad reaches the real controller's motors
@@ -54,7 +54,7 @@ use crate::os::evdev::Raw;
 use crate::os::evdev::device::{DeviceSpec, Grabbed};
 use crate::os::worker::{self, Bell, Ended, Next, Service, Worker, lost_on};
 use crate::{Closed, Sink};
-use device::{AynKey, Capabilities, VirtualDevices};
+use device::{AuxiliaryKey, Capabilities, VirtualDevices};
 use motion::{EvdevMotion, MotionSource, Sample};
 use route::{Out, PadRouter, Ranges};
 use rumble::{Buzz, Effects, Rumble};
@@ -120,13 +120,14 @@ impl Taken {
 /// Owns the controller whenever one is connected, with its ids in `taken`. `spec` comes from
 /// CLAMSHELL_GAMEPAD. Without a controller it looks again when /dev/input changes, and also every
 /// [`RETRY`].
-pub fn spawn(spec: DeviceSpec, taken: Taken, sink: impl Sink) -> io::Result<Worker<Command>> {
+pub fn spawn(spec: DeviceSpec, controls: clamshell_device::input::Controls, taken: Taken, sink: impl Sink) -> io::Result<Worker<Command>> {
     let watched = crate::input::watch::devices_watch();
     let retry = if watched.is_some() { RETRY } else { RETRY_UNWATCHED };
     let worker = Worker::spawn_belled("pad", move |commands, bell| {
         let mut pad = PadThread {
             bell,
             spec,
+            controls,
             taken,
             sink,
             route: PadRoute::default(),
@@ -166,6 +167,7 @@ struct PadThread<S> {
     /// Rung by the thread's commands, and waited on together with the controller.
     bell: Bell,
     spec: DeviceSpec,
+    controls: clamshell_device::input::Controls,
     taken: Taken,
     sink: S,
     route: PadRoute,
@@ -184,11 +186,12 @@ struct PadThread<S> {
 /// A controller taken over, with its gyro if one is found.
 struct Controller {
     grabbed: Grabbed,
+    controls: clamshell_device::input::Controls,
     ranges: Ranges,
     snapshot: PadSnapshot,
     motion: Option<Box<dyn MotionSource>>,
     /// The AYN button's device, on the Thor.
-    ayn: Option<AynKey>,
+    ayn: Option<AuxiliaryKey>,
     /// Its motors, if it has force feedback.
     rumble: Option<Rumble>,
     /// Whether its X and Y codes are by letter, as with xpad and rsinput, rather than by place. If so
@@ -297,7 +300,7 @@ impl<S: Sink> Service for PadThread<S> {
         let caps = Capabilities::of(&real)?;
         let (ranges, mut snapshot) = (caps.ranges(), caps.snapshot());
         if self.devices.as_ref().is_none_or(|v| v.made_for != caps) {
-            self.devices = Some(VirtualDevices::new(caps)?);
+            self.devices = Some(VirtualDevices::new(caps, self.controls)?);
         }
         let (name, phys) = (real.name().unwrap_or("").to_owned(), real.physical_path().unwrap_or("").to_owned());
         let rumble = Rumble::of(&mut real).unwrap_or_else(|e| {
@@ -318,7 +321,19 @@ impl<S: Sink> Service for PadThread<S> {
         if sticks.sticks.is_some() {
             log::info!("pad: its sticks calibrated");
         }
-        Ok(Controller { grabbed, ranges, snapshot, motion, ayn: AynKey::find(), rumble, letters, name, phys, sticks })
+        Ok(Controller {
+            grabbed,
+            controls: self.controls,
+            ranges,
+            snapshot,
+            motion,
+            ayn: AuxiliaryKey::find(self.controls.auxiliary),
+            rumble,
+            letters,
+            name,
+            phys,
+            sticks,
+        })
     }
 
     /// Routes the controller's events until it, or the program, is gone.
@@ -409,10 +424,15 @@ fn read_controller(c: &mut Controller, router: &mut PadRouter, raws: &mut Vec<Ra
         if c.letters {
             down.iter_mut().for_each(|k| *k = device::swap_key(*k));
         }
+        down.iter_mut().for_each(|key| key.0 = c.controls.normalise_button(key.0));
         router.resync(&down, &axes, raws);
         log::info!("pad: the controller's events overran; caught up with it as it is");
-    } else if c.letters {
-        device::swap_xy(raws.get_mut(from..).unwrap_or_default());
+    } else {
+        let physical = raws.get_mut(from..).unwrap_or_default();
+        if c.letters {
+            device::swap_xy(physical);
+        }
+        device::normalise_controls(c.controls, physical);
     }
     // The sticks go through their calibration. While a calibration is in progress, they go only to it.
     c.sticks.take(raws);
@@ -436,7 +456,7 @@ fn read_controller(c: &mut Controller, router: &mut PadRouter, raws: &mut Vec<Ra
 fn wait(
     pad: &Grabbed,
     motion: Option<&dyn MotionSource>,
-    ayn: Option<&AynKey>,
+    ayn: Option<&AuxiliaryKey>,
     virtual_pad: Option<BorrowedFd>,
     bell: &Bell,
     timeout: Option<Duration>,

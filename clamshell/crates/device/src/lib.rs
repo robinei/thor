@@ -1,5 +1,6 @@
 //! Facts hardware cannot announce. Identification is pure; callers read the device tree and DMI.
 pub mod colour;
+pub mod input;
 use colour::PanelColour;
 
 /// A screen's role has a stable connector name on a known device.
@@ -78,6 +79,7 @@ pub struct Profile {
     /// Pixels per millimetre, in tenths, used by the virtual bottom-screen touchpad.
     pub bottom_density_tenths: u16,
     pub refresh_calibration: Option<RefreshCalibration>,
+    pub controls: input::Controls,
 }
 impl Default for Profile {
     fn default() -> Self {
@@ -93,6 +95,7 @@ impl Profile {
             touchscreens: THOR_TOUCH,
             bottom_density_tenths: 165,
             refresh_calibration: Some(THOR_REFRESH),
+            controls: input::Controls::thor(),
         }
     }
     pub const fn vm() -> Self {
@@ -103,6 +106,7 @@ impl Profile {
             touchscreens: VM_TOUCH,
             bottom_density_tenths: 165,
             refresh_calibration: None,
+            controls: input::Controls::thor(),
         }
     }
     /// Unknown physical connectors remain unmatched; desktop views still draw as ordinary windows.
@@ -114,6 +118,7 @@ impl Profile {
             touchscreens: &[],
             bottom_density_tenths: 38,
             refresh_calibration: None,
+            controls: input::Controls::generic(),
         }
     }
     pub const fn bottom_pixels_per_mm(&self) -> f32 {
