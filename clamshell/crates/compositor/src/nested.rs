@@ -66,6 +66,8 @@ pub fn run(
     let attributes = WindowAttributes::default().with_title("ClamShell nested").with_surface_size(LogicalSize::new(1580.0, 540.0));
     let (mut backend, events) = winit::init_from_attributes::<GlesRenderer>(attributes)?;
     server.advertise_dmabuf(backend.renderer());
+    backend.window().set_cursor_visible(false);
+    let mut cursor = crate::cursor::Cursor::new();
     log::info!("nested output format: {:?}", backend.renderer().egl_context().pixel_format());
     let mut frames = [UiFrame::new((960, 540))?, UiFrame::new((620, 540))?];
     let mut arrows = ArrowFrame::new((960, 540))?;
@@ -81,7 +83,10 @@ pub fn run(
                         server.resize((size.w, size.h));
                         damage = OutputDamageTracker::new(size, 1.0, Transform::Flipped180);
                     }
-                    WinitEvent::Focus(false) => server.touch_cancel(),
+                    WinitEvent::Focus(false) => {
+                        server.cursor_visible = false;
+                        server.touch_cancel();
+                    }
                     WinitEvent::Input(event) => server.input(event),
                     WinitEvent::CloseRequested => server.exit = true,
                     WinitEvent::Redraw => {
@@ -94,6 +99,7 @@ pub fn run(
                         {
                             let (renderer, mut framebuffer) = backend.bind()?;
                             render::elements(server, &mut frames, &mut arrows, renderer, &mut elements)?;
+                            cursor.elements(server, renderer, &mut elements)?;
                             damage.render_output(renderer, &mut framebuffer, age, &elements, [0.0, 0.0, 0.0, 1.0])?;
                             if capturing {
                                 let captured = render::capture(renderer, &framebuffer, server.size);

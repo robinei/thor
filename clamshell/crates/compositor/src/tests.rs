@@ -34,6 +34,7 @@ struct Client {
     feedback_done: bool,
     imported_buffers: usize,
     pointer_serial: u32,
+    cursor_enter: u32,
     popup_done: usize,
 }
 
@@ -634,3 +635,6 @@ mod dmabuf_tests;
 
 #[path = "popup_tests.rs"]
 mod popup_tests;
+
+#[path = "cursor_tests.rs"]
+mod cursor_tests;

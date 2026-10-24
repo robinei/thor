@@ -164,7 +164,9 @@ impl SeatHandler for Server {
     fn touch_down_grab(&mut self, start: smithay::input::touch::GrabStartData<Self>) -> impl smithay::input::touch::TouchGrab<Self> {
         crate::touch::ContactGrab::new(start)
     }
-    fn cursor_image(&mut self, _: &Seat<Self>, _: smithay::input::pointer::CursorImageStatus) {}
+    fn cursor_image(&mut self, _: &Seat<Self>, image: smithay::input::pointer::CursorImageStatus) {
+        self.cursor = image;
+    }
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
         let client = focused.and_then(|s| self.dh.get_client(s.id()).ok());
         set_data_device_focus(&self.dh, seat, client.clone());
@@ -192,4 +194,9 @@ impl smithay::wayland::selection::ext_data_control::DataControlHandler for Serve
     fn data_control_state(&mut self) -> &mut smithay::wayland::selection::ext_data_control::DataControlState {
         &mut self.data_control
     }
+}
+
+// Cursor-shape dispatch also accepts tablet tools; this host advertises only pointer devices.
+impl smithay::input::tablet::TabletSeatHandler for Server {
+    type ToolFocus = WlSurface;
 }

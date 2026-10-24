@@ -2,7 +2,7 @@
 """Run the in-process compositor in headless sway and check a real client's pixels on both screens.
 
 Build first (in clamshell/): cargo build --features compositor
-    cargo build -p clamshell-compositor --example egl-client
+    cargo build -p clamshell-compositor --examples
 Run with --gpu to require native dmabuf on a machine with an accessible render node.
 Needs sway, foot and grim. Leaves screenshots and logs in the printed temporary directory.
 """
@@ -50,10 +50,10 @@ def main():
         env.pop(key, None)
     processes = []
 
-    def spawn(argv, name, environment):
+    def spawn(argv, name, environment, stdin=None):
         log = (directory / f"{name}.log").open("w")
         try:
-            process = subprocess.Popen(argv, env=environment, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+            process = subprocess.Popen(argv, env=environment, stdin=stdin, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         finally:
             log.close()
         processes.append(process)
@@ -114,15 +114,19 @@ time.sleep(300)
         client = spawn(["foot", "-o", "colors-dark.background=204080", "--app-id=nested-test",
                         "python3", str(client_program), str(directory)], "client", nested)
 
-        def pixels(colour=(32, 64, 128)):
+        def image():
             result = subprocess.run(["grim", "-o", "HEADLESS-1", "-t", "ppm", "-"], env=host, capture_output=True, check=True)
             magic, dimensions, maximum, image = result.stdout.split(b"\n", 3)
             assert magic == b"P6" and maximum == b"255"
             width, height = map(int, dimensions.split())
             assert len(image) == width * height * 3
+            return width, height, image
+
+        def pixels(colour=(32, 64, 128)):
+            width, height, data = image()
             def blue(x, y):
                 offset = (y * width + x) * 3
-                return all(abs(a - b) < 3 for a, b in zip(image[offset:offset + 3], colour))
+                return all(abs(a - b) < 3 for a, b in zip(data[offset:offset + 3], colour))
             return blue(300, height // 2), blue(width - 300, height // 2)
 
         def shot(name):
@@ -133,6 +137,26 @@ time.sleep(300)
 
         wait(lambda: pixels() == (True, False), "client rendered on top")
         shot("top")
+        def patch(x, y=250):
+            width, _, data = image()
+            return b"".join(data[(row * width + x - 10) * 3:(row * width + x + 40) * 3] for row in range(y - 10, y + 40))
+        before_first, before_second, before_shell = patch(400), patch(500), patch(1400, 450)
+        pointer = spawn([str(BIN.parent / "examples/pointer")], "pointer", host, stdin=subprocess.PIPE)
+        def move_pointer(x, y):
+            pointer.stdin.write(f"{x} {y}\n".encode())
+            pointer.stdin.flush()
+        move_pointer(400, 250)
+        def cursor_drawn():
+            # The first virtual device also adds the host seat's pointer capability. Keep
+            # moving while the nested client's wl_pointer binding catches up with it.
+            move_pointer(400 + int(time.monotonic() * 10) % 2, 250)
+            return patch(400) != before_first
+        wait(cursor_drawn, "cursor is drawn into the compositor scene")
+        shot("cursor")
+        move_pointer(500, 250)
+        wait(lambda: patch(400) == before_first and patch(500) != before_second, "moving the cursor damages its old and new position")
+        move_pointer(1400, 450)
+        wait(lambda: patch(500) == before_second and patch(1400, 450) != before_shell, "the shell draws its themed cursor after leaving the client")
         control("screenshot")
         screenshots = private_home / "Pictures/Screenshots"
         captured = wait(lambda: next(screenshots.glob("clamshell-*.png"), None), "in-process screenshot saved")
@@ -193,7 +217,7 @@ time.sleep(300)
         assert recorded["after"]["windows"] == 0
         if args.gpu:
             print("ok: native dmabuf submission and rendering on the GPU path", flush=True)
-        print("ok: in-process screenshot, window-event export, clipboard isolation and persistence, Wayland EGL and shm rendering, bottom-slot move, return and Home", flush=True)
+        print("ok: compositor cursor and damage, in-process screenshot, window-event export, clipboard isolation and persistence, Wayland EGL and shm rendering, bottom-slot move, return and Home", flush=True)
     finally:
         for process in reversed(processes):
             if process.poll() is None:

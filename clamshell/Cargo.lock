@@ -302,6 +302,8 @@ dependencies = [
  "tempfile",
  "tiny-skia",
  "wayland-client",
+ "wayland-protocols-wlr",
+ "xcursor",
 ]
 
 [[package]]

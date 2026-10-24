@@ -19,6 +19,9 @@ impl Dispatch<xdg_popup::XdgPopup, ()> for Client {
 }
 impl Dispatch<wl_pointer::WlPointer, ()> for Client {
     fn event(state: &mut Self, _: &wl_pointer::WlPointer, event: wl_pointer::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+        if let wl_pointer::Event::Enter { serial, .. } = event {
+            state.cursor_enter = serial;
+        }
         if let wl_pointer::Event::Button { serial, state: wayland_client::WEnum::Value(wl_pointer::ButtonState::Pressed), .. } = event {
             state.pointer_serial = serial;
         }

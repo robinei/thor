@@ -60,6 +60,8 @@ pub(crate) struct Server {
     pub windows: Vec<ClientWindow>,
     pub outputs: [Output; 2],
     pub pointer: Point<f64, Logical>,
+    pub cursor: smithay::input::pointer::CursorImageStatus,
+    pub cursor_visible: bool,
     pub pointer_window: Option<i64>,
     pub pointer_buttons: Vec<u32>,
     pub arrow_pressed: bool,
@@ -98,6 +100,7 @@ impl Server {
         seat.input_method();
         seat.text_input().set_compositor_input_method(true);
         TextInputManagerState::new::<Self>(&dh);
+        smithay::wayland::cursor_shape::CursorShapeManagerState::new::<Self>(&dh);
         smithay::wayland::viewporter::ViewporterState::new::<Self>(&dh);
         smithay::wayland::idle_inhibit::IdleInhibitManagerState::new::<Self>(&dh);
         let primary_selection = smithay::wayland::selection::primary_selection::PrimarySelectionState::new::<Self>(&dh);
@@ -139,6 +142,8 @@ impl Server {
             menu: None,
             windows: Vec::new(),
             pointer: (0.0, 0.0).into(),
+            cursor: smithay::input::pointer::CursorImageStatus::default_named(),
+            cursor_visible: false,
             pointer_window: None,
             pointer_buttons: Vec::new(),
             arrow_pressed: false,

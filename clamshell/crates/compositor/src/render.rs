@@ -25,6 +25,7 @@ use smithay::{
 smithay::backend::renderer::element::render_elements! {
     pub(crate) Element<=GlesRenderer>;
     Surface=CropRenderElement<RelocateRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>>>,
+    Cursor=WaylandSurfaceRenderElement<GlesRenderer>,
     Ui=TextureRenderElement<GlesTexture>,
 }
 
