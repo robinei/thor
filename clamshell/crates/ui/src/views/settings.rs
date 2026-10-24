@@ -41,13 +41,14 @@ enum Tile {
 }
 
 /// The grid, in order. On a game's tab, Reset follows. The settings for the device rather than a game,
-/// the charge limit and idle, are on the battery tab.
+/// the charge limit and idle, are on the battery tab. Upscale's tile is left out until upscaling works
+/// (with the compositor), which keeps the grid at four rows with Reset.
 const GRID: [Tile; 15] = [
     Tile::Setting(Setting::Power),
     Tile::Setting(Setting::FpsCap),
     Tile::Setting(Setting::Refresh),
     Tile::Setting(Setting::Hud),
-    Tile::Setting(Setting::Upscale),
+    Tile::Setting(Setting::Curve),
     Tile::Setting(Setting::BottomScreen),
     Tile::Setting(Setting::BigCores),
     Tile::Setting(Setting::Fan),
@@ -67,6 +68,9 @@ pub(super) fn draw(f: &mut Frame) {
     }
     if let Some(screen) = f.s.keymapping().screen() {
         return super::keymaps::draw(f, screen);
+    }
+    if let Some(screen) = f.s.curving().screen() {
+        return super::curves::draw(f, screen);
     }
     let s = f.s;
     let panel = s.panel();
@@ -136,9 +140,11 @@ fn face(s: &State, tile: Tile) -> Face {
     match tile {
         Tile::Setting(setting) => {
             let value = p.tile_value(setting);
-            // The keymap's tile shows its name.
+            // The keymap's and the curve's tiles show their names.
             let text = match setting {
                 Setting::Keymap => Fmt::of(format_args!("{}", s.keymapping().name(value))),
+                Setting::Curve if value == 0 => Fmt::of(format_args!("HDR off")),
+                Setting::Curve => Fmt::of(format_args!("{}", s.curving().name(value))),
                 _ => {
                     let mut text = Fmt::new();
                     setting.describe(value, &mut text);
@@ -154,8 +160,10 @@ fn face(s: &State, tile: Tile) -> Face {
                 active: setting.active()
                     && (setting != Setting::Refresh || !s.device().display_modes().rates().is_empty())
                     && (setting != Setting::Fan || s.profile().fan.is_some())
-                    && !(setting.through_launch() && p.handed_over()),
-                note: note(!setting.active(), setting.through_launch() && p.handed_over()),
+                    && !(setting.through_launch() && p.handed_over())
+                    && (setting != Setting::Curve || s.compositor()),
+                // Only ClamShell's own compositor applies a curve; under sway it does nothing.
+                note: note(!setting.active(), (setting.through_launch() && p.handed_over()) || (setting == Setting::Curve && !s.compositor())),
             }
         }
         Tile::Env => {

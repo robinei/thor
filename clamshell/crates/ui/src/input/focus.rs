@@ -288,6 +288,9 @@ pub(crate) fn back(s: &State) -> Option<Event> {
     if s.bottom().tab() == Tab::Time && s.sys().time_page() != clamshell_state::TimePage::Main {
         return Some(PointerEvent::Activate(Id::Time(clamshell_state::TimeId::Back)).into());
     }
+    if s.curving().screen().is_some() {
+        return Some(PointerEvent::Activate(Id::Profile(Kind::Curve, ProfileId::Back)).into());
+    }
     if s.keymapping().screen().is_some() {
         return Some(PointerEvent::Activate(Id::Profile(Kind::Keymap, ProfileId::Back)).into());
     }

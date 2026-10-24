@@ -27,6 +27,8 @@ pub enum ListId {
     Backlights,
     /// The keymap picker: Default, then the keymaps.
     Keymaps,
+    /// The curve picker: Off, then the curves.
+    Curves,
     /// A keymap's layers. To pick one to show, it lists all of them, then New layer. To pick one as a
     /// target, it lists all but Base, then New layer.
     Layers,
@@ -49,9 +51,19 @@ pub enum RowPart {
 }
 
 impl ListId {
-    pub const COUNT: usize = 9;
-    pub const ALL: [ListId; ListId::COUNT] =
-        [ListId::Shelf, ListId::Wifi, ListId::Bluetooth, ListId::Streams, ListId::Backlights, ListId::Keymaps, ListId::Layers, ListId::Time, ListId::Dock];
+    pub const COUNT: usize = 10;
+    pub const ALL: [ListId; ListId::COUNT] = [
+        ListId::Shelf,
+        ListId::Wifi,
+        ListId::Bluetooth,
+        ListId::Streams,
+        ListId::Backlights,
+        ListId::Keymaps,
+        ListId::Curves,
+        ListId::Layers,
+        ListId::Time,
+        ListId::Dock,
+    ];
 
     pub fn index(self) -> usize {
         self as usize
@@ -118,6 +130,7 @@ pub struct Lists<'a> {
     pub(crate) session: &'a Session,
     pub(crate) prefs: &'a Prefs,
     pub(crate) keymapping: &'a Keymapping,
+    pub(crate) curving: &'a crate::curve::screens::Curving,
     pub(crate) radios: &'a Radios,
     pub(crate) levels: &'a Levels,
     pub(crate) sys: &'a Sys,
@@ -126,6 +139,10 @@ pub struct Lists<'a> {
 }
 
 impl<'a> Lists<'a> {
+    fn panel(&self) -> Panel<'a> {
+        Panel::new(self.session, self.shelf, self.prefs, self.keymapping, self.curving)
+    }
+
     /// Where `list` is scrolled. For shelf, this is the current collection's position.
     pub fn scroll(&self, list: ListId) -> &'a Scroll {
         match list {
@@ -147,7 +164,8 @@ impl<'a> Lists<'a> {
             ListId::Bluetooth => RowsOf::Of(self.radios.bluetooth()),
             ListId::Streams => RowsOf::Of(self.levels.audio()),
             ListId::Backlights => RowsOf::Of(self.levels.backlight_rows()),
-            ListId::Keymaps => RowsOf::Count(Panel::new(self.session, self.shelf, self.prefs, self.keymapping).keymap_rows_len()),
+            ListId::Keymaps => RowsOf::Count(self.panel().keymap_rows_len()),
+            ListId::Curves => RowsOf::Count(self.panel().curve_rows_len()),
             ListId::Layers => RowsOf::Count(self.keymapping.layer_rows()),
             ListId::Time => RowsOf::Count(self.sys.time_rows()),
             ListId::Dock => RowsOf::Count(self.dock.items().len().div_ceil(crate::session::dock::DOCK_COLUMNS)),

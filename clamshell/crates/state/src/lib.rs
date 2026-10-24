@@ -45,6 +45,7 @@
 
 pub mod bottom;
 mod clock;
+pub mod curve;
 pub mod device;
 mod effect;
 mod event;
@@ -131,6 +132,10 @@ pub struct Init {
     pub settings: Settings,
     /// The keymaps.
     pub keymaps: keymap::Keymaps,
+    /// The HDR curves.
+    pub curves: curve::Curves,
+    /// Whether ClamShell's own compositor shows the windows, rather than sway. Only it applies HDR curves.
+    pub compositor: bool,
     /// The screens' brightness as it was left.
     pub brightness: Brightness,
     /// The dock's pinned entries, in order.
@@ -183,6 +188,9 @@ pub struct State {
     keyboard: Keyboard,
     /// The keymaps and their screens (see [`crate::keymap::screens`]).
     keymapping: Keymapping,
+    curving: crate::curve::screens::Curving,
+    /// Whether ClamShell's own compositor shows the windows (see [`Init::compositor`]).
+    compositor: bool,
     /// Where the lists but shelf are scrolled.
     scrolls: Scrolls,
     clock: Clock,
@@ -214,6 +222,8 @@ impl State {
             shelf: Shelf::new(init.library),
             prefs: Prefs::new(init.settings),
             keymapping: Keymapping::new(init.keymaps),
+            curving: crate::curve::screens::Curving::new(init.curves),
+            compositor: init.compositor,
             bottom: Bottom::new(init.window_rules),
             sys: Sys::new(init.twelve_hour),
             levels: Levels::new(init.brightness),
@@ -300,6 +310,15 @@ impl State {
         &self.keymapping
     }
 
+    pub fn curving(&self) -> &crate::curve::screens::Curving {
+        &self.curving
+    }
+
+    /// Whether ClamShell's own compositor shows the windows (see [`Init::compositor`]).
+    pub fn compositor(&self) -> bool {
+        self.compositor
+    }
+
     /// The lists, their rows and where each is scrolled (see [`Lists`]).
     pub fn lists(&self) -> Lists<'_> {
         Lists {
@@ -308,6 +327,7 @@ impl State {
             session: &self.session,
             prefs: &self.prefs,
             keymapping: &self.keymapping,
+            curving: &self.curving,
             radios: &self.radios,
             levels: &self.levels,
             sys: &self.sys,
@@ -889,8 +909,8 @@ impl State {
                 let tab = match control {
                     Control::Volume => Tab::Volume,
                     Control::Brightness => Tab::Brightness,
-                    // A keymap parameter is held or slid, not tapped.
-                    Control::Param(_) => return,
+                    // A keymap's or a curve's parameter is held or slid, not tapped.
+                    Control::Param(_) | Control::Curve(_) => return,
                 };
                 self.choose_tab(tab);
             }
@@ -971,7 +991,7 @@ impl State {
 
     /// The settings panel as it is now (see [`Panel::new`]).
     pub fn panel(&self) -> Panel<'_> {
-        Panel::new(&self.session, &self.shelf, &self.prefs, &self.keymapping)
+        Panel::new(&self.session, &self.shelf, &self.prefs, &self.keymapping, &self.curving)
     }
 
     /// Whether the second screen is dark (see [`Bottom::dark`]).
@@ -1001,6 +1021,9 @@ impl State {
         if (self.dock.menu().is_some() || self.dock.moving().is_some()) && self.bottom.tab() == crate::Tab::Dock {
             return Some(crate::Id::Dock(crate::DockId::Back));
         }
+        if self.curving.screen_in(self.bottom.tab()).is_some() {
+            return Some(crate::Id::Profile(ProfileKind::Curve, ProfileId::Back));
+        }
         self.keymapping.screen_in(self.bottom.tab()).map(|_| crate::Id::Profile(ProfileKind::Keymap, ProfileId::Back))
     }
 
@@ -1018,6 +1041,7 @@ impl State {
     pub fn profile_name(&self, kind: ProfileKind, id: u16) -> &str {
         match kind {
             ProfileKind::Keymap => self.keymapping.name(id),
+            ProfileKind::Curve => self.curving.name(id),
         }
     }
 
@@ -1025,6 +1049,7 @@ impl State {
     pub fn profile_is_own(&self, kind: ProfileKind, id: u16) -> bool {
         match kind {
             ProfileKind::Keymap => self.keymapping.is_own(id),
+            ProfileKind::Curve => self.curving.curves().is_own(id),
         }
     }
 
@@ -1032,13 +1057,19 @@ impl State {
     pub fn profile_exists(&self, kind: ProfileKind, id: u16) -> bool {
         match kind {
             ProfileKind::Keymap => self.keymapping.keymaps().get(id).is_some(),
+            ProfileKind::Curve => self.curving.curves().get(id).is_some(),
         }
     }
 
     /// What the keymaps' screens read from the settings panel (see [`PickerCx`]).
     fn keymap_cx(&self) -> PickerCx {
+        self.picker_cx(ProfileKind::Keymap)
+    }
+
+    /// What `kind`'s picker reads from the settings panel (see [`PickerCx`]).
+    fn picker_cx(&self, kind: ProfileKind) -> PickerCx {
         let panel = self.panel();
-        PickerCx { entry: panel.editing().map(|g| g.id.clone()), chosen: panel.keymap_chosen() }
+        PickerCx { entry: panel.editing().map(|g| g.id.clone()), chosen: panel.profile_chosen(kind) }
     }
 
     // Lists.
@@ -1065,6 +1096,10 @@ impl State {
             ListId::Bluetooth => self.radios.tap_device(i, long, out),
             ListId::Streams => self.levels.on_stream(i, part, out),
             ListId::Keymaps => self.on_keymap_row(i, part, long, out),
+            ListId::Curves => {
+                let cx = self.picker_cx(ProfileKind::Curve);
+                self.curving.on_row(i, part, long, &cx, self.bottom.editors_mut(), out);
+            }
             ListId::Layers => self.on_layer_row(i, part, long, out),
             ListId::Time => self.sys.on_time_row(i, self.scrolls.get_mut(ListId::Time), out),
             // Its tiles are targets of their own.
@@ -1169,6 +1204,7 @@ impl State {
             (Done::Save, Purpose::Password { ssid }) => self.radios.join(ssid, Some(editor.text), out),
             (Done::Save, Purpose::KeymapName(action)) => self.keymapping.named(action, &editor.text, out),
             (Done::Save, Purpose::ProfileName(ProfileKind::Keymap, action)) => self.keymapping.named_profile(action, &editor.text, out),
+            (Done::Save, Purpose::ProfileName(ProfileKind::Curve, action)) => self.curving.named_profile(action, &editor.text, out),
             (Done::Save, Purpose::FileName(purpose)) => {
                 if let Some(op) = crate::shelf::files::named(purpose, &editor.text) {
                     self.shelf.run_file_op(op, out);
@@ -1222,11 +1258,15 @@ impl State {
             Slide::Start { control: Control::Param(param), x, width } => {
                 self.keymapping.param_slide_start(param, x, width);
             }
+            Slide::Start { control: Control::Curve(param), x, width } => {
+                self.curving.slide_start(param, x, width);
+            }
             Slide::Start { control, x, width } => {
                 self.levels.slide_start(control, x, width);
             }
             Slide::To { x } if self.levels.slider().is_none() => {
                 self.keymapping.param_slide_to(x);
+                self.curving.slide_to(x);
             }
             Slide::To { x } => {
                 self.levels.change(self.clock.mono(), |l| l.slide_to(x, out));
@@ -1234,6 +1274,7 @@ impl State {
             Slide::End => {
                 self.levels.slide_end();
                 self.keymapping.param_slide_end(out);
+                self.curving.slide_end(out);
             }
         }
     }
@@ -1320,6 +1361,7 @@ impl State {
     fn on_settings(&mut self, id: SettingsId, long: bool, out: &mut Out) {
         match id {
             SettingsId::Tile(Setting::Keymap) if !long => self.keymapping.open_picker(),
+            SettingsId::Tile(Setting::Curve) if !long => self.curving.open_picker(),
             SettingsId::Tile(setting) => {
                 let value = if long {
                     None
@@ -1373,6 +1415,8 @@ impl State {
         match kind {
             ProfileKind::Keymap if id == ProfileId::Back => self.keymapping.back(&mut self.keyboard),
             ProfileKind::Keymap => self.keymapping.on_picker(id, self.prefs.settings(), self.bottom.editors_mut(), out),
+            ProfileKind::Curve if id == ProfileId::Back => self.curving.back(),
+            ProfileKind::Curve => self.curving.on_picker(id, self.prefs.settings(), self.bottom.editors_mut(), out),
         }
     }
 
@@ -1405,6 +1449,7 @@ impl State {
                 self.choose_profile(kind, id, out);
                 out.effects.push(match kind {
                     ProfileKind::Keymap => self.keymapping.save(),
+                    ProfileKind::Curve => self.curving.save_effect(),
                 });
             }
             ProfileEvent::Deleted(id) => {

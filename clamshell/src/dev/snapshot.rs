@@ -102,6 +102,7 @@ pub fn state(library: Library) -> State {
         library,
         dock,
         keymaps: clamshell_state::keymap::Keymaps::initial(),
+        curves: clamshell_state::curve::Curves::initial(),
         ..Init::default()
     })
 }
@@ -163,6 +164,13 @@ fn slide(param: Param, by: f32, lift: bool) -> Vec<Event> {
         events.push(Slide::End.into());
     }
     events
+}
+
+/// Slides a curve parameter's slider by `by` of half the screen, without lifting.
+fn curve_slide(param: clamshell_state::curve::CurveParam, by: f32) -> Vec<Event> {
+    let control = clamshell_state::Control::Curve(param);
+    let (x, width) = (620.0, 1240.0);
+    vec![Slide::Start { control, x, width }.into(), Slide::To { x: x + by * width * 0.5 }.into()]
 }
 
 /// A tap on the settings' keymap tile, which opens the picker.
@@ -444,6 +452,15 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                         kp(clamshell_state::profiles::picker::ProfileId::Delete),
                     ],
                 ),
+            ],
+        ),
+        // The HDR curves for a game: the picker, a curve's sliders, and one held.
+        group(
+            vec![ff6(), ff6(), tab(Tab::Settings), tap(Id::Settings(SettingsId::Tile(Setting::Curve)))],
+            vec![
+                shot("curves.png", Bottom, vec![]),
+                shot("curve-edit.png", Bottom, vec![tap(Id::Row { list: ListId::Curves, i: 2, part: clamshell_state::RowPart::Edit })]),
+                shot("curve-edit-slider.png", Bottom, curve_slide(clamshell_state::curve::CurveParam::Peak, 0.2)),
             ],
         ),
         // A game's own keymap, made from FPS after FPS is chosen for the game. Then its menu, the own keymap

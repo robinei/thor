@@ -200,6 +200,7 @@ pub enum Save {
     /// The entries' settings and environment.
     Settings(crate::settings::Settings),
     Keymaps(crate::keymap::Keymaps),
+    Curves(crate::curve::Curves),
     /// The favourite entries' ids.
     Favourites(Vec<String>),
     /// Where shelf and the second screen are, to start there next time.

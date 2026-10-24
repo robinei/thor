@@ -306,6 +306,26 @@ LayerPicker, LayerMenu; Undo per keymap since the edit screen opened. One Back f
 | Calibrate from Edit; MakeOwn from Edit; Back from Load and the pickers; an empty name | `calibrate_on_the_edit_screen_calibrates_the_gyro`, `make_own_on_a_shared_keymaps_edit_screen`, `back_goes_up_from_load_and_the_pickers`, `an_empty_name_makes_nothing` |
 | Listened only while the route is Listen | `the_keymap_screens_stay_with_their_tab_and_listen_only_in_view` |
 
+## HDR curves (curve/)
+
+Screens: the picker's (`profiles::picker`, as for keymaps; Off is the default, "SDR as it is"), then Edit
+(a slider per parameter). One Back for all of them (`Id::Profile(Curve, Back)`). The curve chosen is
+`Setting::Curve` (an id, 0 Off), per game or for all; it does something only under ClamShell's own
+compositor (`Init::compositor`), and its tile is drawn dimmed with "no effect" under sway.
+
+| Transition | Test |
+|---|---|
+| Curve tile → List; a row → chosen for the level edited; Off → 0 | `the_tile_opens_the_picker_and_a_row_chooses_a_curve_for_the_game` |
+| List: Make own → own curve copied from the one in force, Edit opens, chosen; settings saved before curves | `a_games_own_curve_is_made_from_the_one_in_force_and_opens_on_its_sliders` |
+| Edit: slide start/to → the curve changes as it moves (the compositor reads it each frame); end → saved once if moved | `a_slider_changes_the_curve_as_it_moves_and_saves_once_when_lifted` |
+| Edit --Back--> List --Back--> closed | `back_goes_from_the_sliders_to_the_picker_and_out` |
+| Menu: Delete in use → asks; confirmed → removed, its games back on Off | `deleting_a_curve_in_use_asks_and_puts_its_games_back_on_off` |
+| List: New → named → Edit, a curve that changes nothing | `a_new_curve_is_named_and_changes_nothing_until_edited` |
+
+The mapping (`Curve::map`, mirrored by the compositor's shader): black point, shadow contrast, decode,
+highlights above the start expanded to the peak with a smooth join, saturation around luminance; tested in
+`curve::tests`. The randomized test taps the curve screens and slides their parameters.
+
 ## Shelf (shelf/)
 
 | Transition | Test |

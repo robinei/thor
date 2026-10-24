@@ -39,6 +39,7 @@ impl Icon {
             Setting::Refresh => Icon::Refresh,
             Setting::Hud => Icon::Hud,
             Setting::Upscale => Icon::Upscale,
+            Setting::Curve => Icon::Brightness,
             Setting::BottomScreen => Icon::ScreenOff,
             Setting::BigCores => Icon::Cores,
             Setting::Fan => Icon::Fan,

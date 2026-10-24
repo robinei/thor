@@ -17,6 +17,8 @@ pub enum Control {
     Brightness,
     /// A parameter of the input selected on the keymap edit screen, in the layer shown.
     Param(crate::keymap::Param),
+    /// A parameter of the curve on the curve edit screen (see [`crate::curve::screens`]).
+    Curve(crate::curve::CurveParam),
 }
 
 impl Control {
@@ -25,7 +27,7 @@ impl Control {
         match self {
             Control::Volume => Some(Level::Volume),
             Control::Brightness => Some(Level::Brightness),
-            Control::Param(_) => None,
+            Control::Param(_) | Control::Curve(_) => None,
         }
     }
 }

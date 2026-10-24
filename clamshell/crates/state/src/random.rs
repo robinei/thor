@@ -317,6 +317,14 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
                 }
             }
         }
+        Tab::Settings if s.curving().screen().is_some() => {
+            ids.extend(
+                [ProfileId::Back, ProfileId::New, ProfileId::Edit, ProfileId::Rename, ProfileId::Duplicate, ProfileId::Delete, ProfileId::ConfirmDelete]
+                    .map(|p| Id::Profile(crate::profiles::picker::Kind::Curve, p)),
+            );
+            ids.extend(row(ListId::Curves, s.lists().len(ListId::Curves)));
+            ids.extend(crate::curve::CurveParam::ALL.map(|p| Id::Control(Control::Curve(p))));
+        }
         Tab::Settings => match s.keymapping().screen() {
             None => {
                 ids.extend(Setting::ALL.map(|t| Id::Settings(SettingsId::Tile(t))));
@@ -626,7 +634,14 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
         93 => match rng.below(5) {
             0 => LevelEvent::Step(Level::Volume, if rng.one_in(2) { 1 } else { -1 }).into(),
             1 => LevelEvent::Set(Level::Brightness, rng.below(101) as u8).into(),
-            2 => Slide::Start { control: if rng.one_in(2) { Control::Volume } else { Control::Brightness }, x: rng.below(100) as f32, width: 100.0 }.into(),
+            2 => {
+                let control = match rng.below(3) {
+                    0 => Control::Volume,
+                    1 => Control::Brightness,
+                    _ => Control::Curve(crate::curve::CurveParam::ALL.get(rng.below(6)).copied().unwrap_or(crate::curve::CurveParam::Peak)),
+                };
+                Slide::Start { control, x: rng.below(100) as f32, width: 100.0 }.into()
+            }
             3 => Slide::To { x: rng.below(100) as f32 }.into(),
             _ => Slide::End.into(),
         },

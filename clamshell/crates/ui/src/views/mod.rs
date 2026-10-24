@@ -13,6 +13,7 @@
 pub(crate) mod bar;
 mod battery;
 mod bluetooth;
+mod curves;
 mod dark;
 mod device;
 mod dock;

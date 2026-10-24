@@ -5,6 +5,9 @@ battery.png a8c24178fa75e160
 bluetooth.png 4bf9def0203a4ec4
 bottom.png db2d234e080fb9f7
 brightness.png 1391ab34e3b0a48d
+curve-edit-slider.png 9115ddb72a075dee
+curve-edit.png 8a599cd7dfffc74f
+curves.png e8698b1661e557b4
 device-password.png 8913f6989c27e354
 device-sticks.png 60cc1de095ed797a
 device-unavailable.png 42d7c4b38ba52673
@@ -52,11 +55,11 @@ keymaps.png 5338fc9fd2300330
 launcher-running.png 5fc1169742660b77
 launcher.png 58731080f58c75e3
 settings-env.png a0d5cd60142f9870
-settings-global.png 2208b1154a05051f
-settings-running.png eb78f9fc404b2af1
-settings.png e6ef4b29a114f08e
+settings-global.png b7fbfd86597dd3d3
+settings-running.png f866c91ce601a3ed
+settings.png 1a6336bfa44fc38a
 slider.png 8c4a1b0e3313a9da
-status-low.png 48e4e87de482a03c
+status-low.png 7f1673af287f3dc0
 sysinfo.png 4655106c32090347
 time-by-hand.png 8f668a322f85dd2c
 time-europe.png b2d7a1c75809d461

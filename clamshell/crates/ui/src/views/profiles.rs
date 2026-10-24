@@ -52,6 +52,19 @@ fn words(kind: Kind) -> Words {
             overwrite: "Its bindings become the own keymap's.",
             overwrite_used: "Its bindings become the own keymap's, for every game using it",
         },
+        Kind::Curve => Words {
+            title: "HDR curve",
+            make_own: "Make own curve",
+            new: "New curve…",
+            default_note: "SDR as it is",
+            load_title: "Load into own curve",
+            load_hint: "Its values replace the own curve's",
+            save_title: "Save own curve as",
+            save_hint: "A new curve, or one whose values it replaces",
+            pick_hint: "Long press a curve to rename, duplicate or delete it",
+            overwrite: "Its values become the own curve's.",
+            overwrite_used: "Its values become the own curve's, for every game using it",
+        },
     }
 }
 

@@ -27,6 +27,9 @@ pub enum Setting {
     /// Rendering below the screen's resolution through gamescope: 0 native, 1 FSR from 720p, 2 FSR from
     /// 540p, 3 integer scaling.
     Upscale,
+    /// The HDR curve by its id (see [`crate::curve`]): SDR shown with HDR's range. 0 is Off. It is chosen
+    /// in the curve picker, and it works only under ClamShell's compositor.
+    Curve,
     /// The second screen: 0 on but dimmed when untouched, 1 dark while a game runs until tapped, 2 off
     /// when idle. With 1 and 2 it is powered off on battery (see [`crate::bottom::screen`]).
     BottomScreen,
@@ -241,7 +244,7 @@ choices!(
     }
 );
 
-pub const COUNT: usize = 17;
+pub const COUNT: usize = 18;
 
 /// What a value does, for the tile's colour. It is the stock value and does nothing, or it saves power
 /// or eases the load, costs power, or changes how the game looks or plays.
@@ -261,6 +264,7 @@ names!(Setting {
     Refresh: "refresh";
     Hud: "hud";
     Upscale: "upscale";
+    Curve: "curve";
     BottomScreen: "bottom";
     BigCores: "bigcores";
     Fan: "fan";
@@ -284,7 +288,7 @@ impl Setting {
 
     /// Whether the setting takes `value`. It must be one of its choices, or any keymap id for the keymap.
     pub fn accepts(self, value: u16) -> bool {
-        self == Setting::Keymap || (self == Setting::Refresh && value <= 1000) || self.choices().contains(&value)
+        matches!(self, Setting::Keymap | Setting::Curve) || (self == Setting::Refresh && value <= 1000) || self.choices().contains(&value)
     }
 
     /// The setting's values as a [`Choice`]'s table, if they are named choices.
@@ -299,7 +303,7 @@ impl Setting {
             Setting::PadMouse => Some(&MouseAtLaunch::TABLE),
             Setting::Rumble => Some(&RumbleStrength::TABLE),
             Setting::Background => Some(&InBackground::TABLE),
-            Setting::FpsCap | Setting::Refresh | Setting::Keymap | Setting::CpuMax | Setting::GpuMax => None,
+            Setting::FpsCap | Setting::Refresh | Setting::Keymap | Setting::Curve | Setting::CpuMax | Setting::GpuMax => None,
             Setting::ChargeLimit | Setting::ScreenOff | Setting::Sleep => None,
         }
     }
@@ -312,8 +316,8 @@ impl Setting {
         match self {
             Setting::FpsCap => &[0, 30, 40, 45, 60, 90, 120],
             Setting::Refresh => &[0],
-            // The other values are the existing keymaps.
-            Setting::Keymap => &[0],
+            // The other values are the existing keymaps and curves.
+            Setting::Keymap | Setting::Curve => &[0],
             Setting::CpuMax | Setting::GpuMax => &[0, 40, 50, 60, 70, 80, 90, 100],
             Setting::ChargeLimit => &[100, 90, 80, 0],
             Setting::ScreenOff => &[1, 2, 5, 10, 0],
@@ -363,7 +367,7 @@ impl Setting {
             (Setting::Refresh, 120) | (Setting::CpuMax | Setting::GpuMax, 100) => Impact::Costs,
             // Never, or later than the default, costs power. Sooner saves it.
             (Setting::ScreenOff | Setting::Sleep, v) if v == 0 || v > self.default_value() => Impact::Costs,
-            (Setting::Keymap, _) => Impact::Changes,
+            (Setting::Keymap | Setting::Curve, _) => Impact::Changes,
             _ => Impact::Saves,
         }
     }
@@ -387,6 +391,9 @@ impl Setting {
             (Setting::Keymap, 0) => "Default",
             // The tile shows the keymap's name.
             (Setting::Keymap, v) => return number(buf, "Keymap ", v, ""),
+            (Setting::Curve, 0) => "Off",
+            // The tile shows the curve's name.
+            (Setting::Curve, v) => return number(buf, "Curve ", v, ""),
             (Setting::CpuMax, 0) => "CPU auto",
             (Setting::GpuMax, 0) => "GPU auto",
             (Setting::ChargeLimit, 100) => "Charge full",

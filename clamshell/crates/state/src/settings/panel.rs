@@ -119,6 +119,7 @@ pub struct Program<'a> {
 pub struct Panel<'a> {
     prefs: &'a Prefs,
     keymapping: &'a Keymapping,
+    curving: &'a crate::curve::screens::Curving,
     context: Option<Program<'a>>,
     levels: [Option<(Scope, Program<'a>)>; 2],
     editing: Option<Program<'a>>,
@@ -131,7 +132,13 @@ impl<'a> Panel<'a> {
     /// The settings panel as it is now. Its item is chosen by what is in front: the entry whose window is
     /// in front, or shelf's selection, where a browsed file that belongs to a library entry stands for
     /// that entry. There is none for a window of no program.
-    pub(crate) fn new(session: &'a Session, shelf: &'a Shelf, prefs: &'a Prefs, keymapping: &'a Keymapping) -> Panel<'a> {
+    pub(crate) fn new(
+        session: &'a Session,
+        shelf: &'a Shelf,
+        prefs: &'a Prefs,
+        keymapping: &'a Keymapping,
+        curving: &'a crate::curve::screens::Curving,
+    ) -> Panel<'a> {
         let entry_of = |id: &str| session.entry(shelf.library(), id);
         let id = match session.front() {
             Front::Program => session.windows().iter().find(|w| w.focused && !w.down).and_then(|w| session.owner_of(w)).or_else(|| session.program().cloned()),
@@ -159,7 +166,7 @@ impl<'a> Panel<'a> {
         };
         let runner = editing.as_ref().and_then(|p| entry_of(&p.id)).and_then(|g| g.runner.as_ref()).map(|r| &*r.key);
         let handover = editing.is_some() && entry.and_then(|g| g.runner.as_ref()).is_some_and(|r| r.handover);
-        Panel { prefs, keymapping, context, levels, editing, runner, handover }
+        Panel { prefs, keymapping, curving, context, levels, editing, runner, handover }
     }
 
     /// The item the settings panel is about, chosen by what is in front (see [`Panel::new`]). It is
@@ -240,6 +247,7 @@ impl<'a> Panel<'a> {
     pub fn profile_row(&self, kind: crate::profiles::picker::Kind, i: usize) -> Option<PickerRow<'a>> {
         match kind {
             crate::profiles::picker::Kind::Keymap => self.keymap_row(i),
+            crate::profiles::picker::Kind::Curve => self.curving.row(i, self.entry()),
         }
     }
 
@@ -250,6 +258,10 @@ impl<'a> Panel<'a> {
 
     pub(crate) fn keymap_rows_len(&self) -> usize {
         self.keymapping.rows_len(self.entry())
+    }
+
+    pub(crate) fn curve_rows_len(&self) -> usize {
+        self.curving.rows_len(self.entry())
     }
 
     /// Whether the panel edits a game that has no keymap of its own and so can make one.

@@ -466,6 +466,22 @@ Tick 1760000005
 Pointer(Activate(Row { list: Keymaps, i: 3, part: Main }))
   Save Settings
 -- keymap-delete.png
+== group curves.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Shelf(Entry("ff6"))))
+  Save Resume
+  Launch ff6 as ff6_09d141
+Pointer(Activate(Tab(Settings)))
+  Watch Metrics off
+Tick 1760000005
+  Save Resume
+-- curves.png
+-- curve-edit.png
+-- curve-edit-slider.png
 == group keymaps-chosen.png
 Start
   Window DownRules 0 rules

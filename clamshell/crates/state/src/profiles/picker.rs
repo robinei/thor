@@ -1,7 +1,7 @@
 //! The picker, shown over the settings tab, the same for every kind of profile ([`Kind`]):
 //!
 //! - It lists, for a game, its own profile or a row that makes one from the profile in force. Then come
-//!   Default (no profile: the pad as it is, no curve), the named profiles with how many games use each,
+//!   Default (no profile: the pad as it is, or for curves Off), the named profiles with how many games use each,
 //!   and New.
 //! - A profile's menu has Edit, Rename, Duplicate and Delete; deleting one in use asks first. A game's own
 //!   profile stays while another is chosen. Its menu has Edit, Load from, Save as and Delete. Load from
@@ -25,6 +25,8 @@ use crate::{Event, ListId};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kind {
     Keymap,
+    /// HDR curves (see [`crate::curve`]).
+    Curve,
 }
 
 impl Kind {
@@ -33,6 +35,7 @@ impl Kind {
     pub fn setting(self) -> Setting {
         match self {
             Kind::Keymap => Setting::Keymap,
+            Kind::Curve => Setting::Curve,
         }
     }
 
@@ -40,6 +43,7 @@ impl Kind {
     pub fn list(self) -> ListId {
         match self {
             Kind::Keymap => ListId::Keymaps,
+            Kind::Curve => ListId::Curves,
         }
     }
 
@@ -47,6 +51,7 @@ impl Kind {
     pub fn own_name(self) -> &'static str {
         match self {
             Kind::Keymap => "Own keymap",
+            Kind::Curve => "Own curve",
         }
     }
 
@@ -54,6 +59,7 @@ impl Kind {
     pub fn noun(self) -> &'static str {
         match self {
             Kind::Keymap => "keymap",
+            Kind::Curve => "curve",
         }
     }
 
@@ -61,6 +67,7 @@ impl Kind {
     pub fn default_name(self) -> &'static str {
         match self {
             Kind::Keymap => "Default",
+            Kind::Curve => "Off",
         }
     }
 }

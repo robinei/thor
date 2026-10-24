@@ -98,15 +98,15 @@ Tab(Wifi), Tab(Battery): vTile(Refresh)
 -- screen
 Scope(Global): ^Tab(Settings) vTile(Power) <Tab(Settings) >Scope(Runner)
 Scope(Runner): ^Tab(Touchpad) vTile(Power) <Scope(Global) >Tab(Touchpad)
-Tile(Power): ^Scope(Global) vTile(Upscale) <Scope(Global) >Tile(FpsCap)
+Tile(Power): ^Scope(Global) vTile(Curve) <Scope(Global) >Tile(FpsCap)
 Tile(FpsCap): ^Scope(Runner) vTile(BottomScreen) <Tile(Power) >Tile(Refresh)
 Tile(Refresh): ^Scope(Runner) vTile(BigCores) <Tile(FpsCap) >Tile(Hud)
 Tile(Hud): ^PadMouse vTile(Fan) <Tile(Refresh) >PadMouse
-Tile(Upscale): ^Tile(Power) vTile(PadMouse) <Scope(Global) >Tile(BottomScreen)
-Tile(BottomScreen): ^Tile(FpsCap) vTile(Keymap) <Tile(Upscale) >Tile(BigCores)
+Tile(Curve): ^Tile(Power) vTile(PadMouse) <Scope(Global) >Tile(BottomScreen)
+Tile(BottomScreen): ^Tile(FpsCap) vTile(Keymap) <Tile(Curve) >Tile(BigCores)
 Tile(BigCores): ^Tile(Refresh) vTile(Rumble) <Tile(BottomScreen) >Tile(Fan)
 Tile(Fan): ^Tile(Hud) vTile(CpuMax) <Tile(BigCores) >PadMouse
-Tile(PadMouse): ^Tile(Upscale) vTile(GpuMax) <Scope(Global) >Tile(Keymap)
+Tile(PadMouse): ^Tile(Curve) vTile(GpuMax) <Scope(Global) >Tile(Keymap)
 Tile(Keymap): ^Tile(BottomScreen) vTile(Background) <Tile(PadMouse) >Tile(Rumble)
 Tile(Rumble): ^Tile(BigCores) vEnv <Tile(Keymap) >Tile(CpuMax)
 Tile(CpuMax): ^Tile(Fan) vReset <Tile(Rumble) >PadMouse
@@ -124,15 +124,15 @@ Tab(Wifi), Tab(Battery): vTile(Refresh)
 -- screen
 Scope(Global): ^Tab(Settings) vTile(Power) <Tab(Settings) >Scope(Runner)
 Scope(Runner): ^Tab(Touchpad) vTile(Power) <Scope(Global) >Tab(Touchpad)
-Tile(Power): ^Scope(Global) vTile(Upscale) <Scope(Global) >Tile(FpsCap)
+Tile(Power): ^Scope(Global) vTile(Curve) <Scope(Global) >Tile(FpsCap)
 Tile(FpsCap): ^Scope(Runner) vTile(BottomScreen) <Tile(Power) >Tile(Refresh)
 Tile(Refresh): ^Scope(Runner) vTile(BigCores) <Tile(FpsCap) >Tile(Hud)
 Tile(Hud): ^PadMouse vTile(Fan) <Tile(Refresh) >PadMouse
-Tile(Upscale): ^Tile(Power) vTile(PadMouse) <Scope(Global) >Tile(BottomScreen)
-Tile(BottomScreen): ^Tile(FpsCap) vTile(Keymap) <Tile(Upscale) >Tile(BigCores)
+Tile(Curve): ^Tile(Power) vTile(PadMouse) <Scope(Global) >Tile(BottomScreen)
+Tile(BottomScreen): ^Tile(FpsCap) vTile(Keymap) <Tile(Curve) >Tile(BigCores)
 Tile(BigCores): ^Tile(Refresh) vTile(Rumble) <Tile(BottomScreen) >Tile(Fan)
 Tile(Fan): ^Tile(Hud) vTile(CpuMax) <Tile(BigCores) >PadMouse
-Tile(PadMouse): ^Tile(Upscale) vTile(GpuMax) <Scope(Global) >Tile(Keymap)
+Tile(PadMouse): ^Tile(Curve) vTile(GpuMax) <Scope(Global) >Tile(Keymap)
 Tile(Keymap): ^Tile(BottomScreen) vTile(Background) <Tile(PadMouse) >Tile(Rumble)
 Tile(Rumble): ^Tile(BigCores) vEnv <Tile(Keymap) >Tile(CpuMax)
 Tile(CpuMax): ^Tile(Fan) vEnv <Tile(Rumble) >PadMouse
@@ -369,6 +369,42 @@ PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab
 -- screen
 Km(Back): ^Tab(Settings) vKm(ConfirmDelete) <Tab(Settings) >Tab(Dock)
 Km(ConfirmDelete): ^Km(Back) v- <Km(Back) >Tab(Touchpad)
+== curves.png (bottom; the pad on both screens)
+start "ff6"; back Activate Profile(Curve, Back)
+-- bar as in bottom.png except
+PadMouse: vProfile(Curve, New) >Profile(Curve, New)
+Tab(Time): vProfile(Curve, New)
+Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vProfile(Curve, Back)
+Control(Brightness): vCurves[0]
+Tab(Bluetooth), Tab(Wifi), Tab(Battery): vProfile(Curve, New)
+-- screen
+Profile(Curve, Back): ^Tab(Settings) vCurves[0] <Tab(Settings) >Tab(Dock)
+Profile(Curve, New): ^PadMouse vCurves[0] <PadMouse >Curves[2].Edit
+Curves[0]: ^Profile(Curve, Back) vCurves[1] <Profile(Curve, Back) >Profile(Curve, New)
+Curves[1]: ^Curves[0] vCurves[2] <Profile(Curve, Back) >Curves[2].Edit
+Curves[2]: ^Curves[1] vCurves[3] <Profile(Curve, Back) >Curves[2].Edit
+Curves[2].Edit: ^Curves[1] vCurves[3].Edit <Curves[2] >-
+Curves[3]: ^Curves[2] vCurves[4] <Profile(Curve, Back) >Curves[3].Edit
+Curves[3].Edit: ^Curves[2].Edit vCurves[4].Edit <Curves[3] >-
+Curves[4]: ^Curves[3] v- <Profile(Curve, Back) >Curves[4].Edit
+Curves[4].Edit: ^Curves[3].Edit v- <Curves[4] >-
+== curve-edit.png (bottom; the pad on both screens)
+start "ff6"; back Activate Profile(Curve, Back)
+-- bar as in bottom.png except
+PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vProfile(Curve, Back)
+-- screen
+Profile(Curve, Back): ^Tab(Settings) vControl(Curve(Black)) <Tab(Settings) >Tab(Dock)
+Control(Curve(Black)): ^Profile(Curve, Back) vControl(Curve(Contrast)) <Profile(Curve, Back) >PadMouse
+Control(Curve(Contrast)): ^Control(Curve(Black)) vControl(Curve(White)) <Profile(Curve, Back) >PadMouse
+Control(Curve(White)): ^Control(Curve(Contrast)) vControl(Curve(Start)) <Profile(Curve, Back) >PadMouse
+Control(Curve(Start)): ^Control(Curve(White)) vControl(Curve(Peak)) <Profile(Curve, Back) >PadMouse
+Control(Curve(Peak)): ^Control(Curve(Start)) vControl(Curve(Saturation)) <Profile(Curve, Back) >PadMouse
+Control(Curve(Saturation)): ^Control(Curve(Peak)) v- <Profile(Curve, Back) >PadMouse
+== curve-edit-slider.png (bottom; the pad on both screens)
+start "ff6"; back Activate Profile(Curve, Back)
+-- bar as in bottom.png except
+PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vProfile(Curve, Back)
+-- screen as in curve-edit.png
 == keymaps-chosen.png (bottom; the pad on both screens)
 start "ff6"; back Activate Km(Back)
 -- bar as in bottom.png except
