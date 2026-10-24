@@ -20,6 +20,7 @@ mod render;
 mod server;
 mod touch;
 pub mod trace;
+mod x11;
 
 pub use nested::run;
 pub use server::Process;

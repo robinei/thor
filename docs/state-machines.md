@@ -1051,3 +1051,35 @@ client to check the clock, exact timestamps, output notification, completion onc
 states, synchronised subsurfaces, Home/activation, superseded commits and destruction. `tests/nested-compositor.py` also runs a
 real feedback client against the software and GPU hosts: both a newly attached buffer and a subsequent
 unchanged frame must receive ordered monotonic feedback with unknown refresh and no hardware flags.
+
+### Xwayland transport and supervision (compositor/x11)
+
+The nested host owns one private Xwayland child, its Wayland connection, a dedicated X11 WM socket and
+a display-number socket. The X server chooses and owns its display slot. The adapter is asynchronous:
+x11rb supplies protocol encoders, parsers and sequence tracking, but performs no socket I/O. Smithay's
+XWM and its blocking X11 commit hooks are not used. Window translation and mapping are the next step;
+this transport alone does not expose DISPLAY to launches or accept X11 windows into State.
+
+`waiting --retry deadline--> starting [spawn Xwayland, insert private Wayland client]`.
+`starting --spawn failure--> waiting [log, retry after one second]`.
+`starting --display number, X11 setup and first probe reply--> connected [log transport ready]`.
+The display-number deadline is five seconds; setup and outstanding replies have three seconds.
+Partial setup and packets retain their bytes until the rest arrives. Every socket is non-blocking;
+WouldBlock retains unsent bytes and returns to the main loop. Each turn permits at most 64 writes,
+64 setup reads and 64 packet reads, each packet read at most 4096 bytes. Incoming packets and queued
+outgoing bytes are capped at 1 MiB, with an oversized length rejected before allocating its payload.
+
+`connected --one second since probe--> connected [send GetInputFocus]`.
+`starting/connected --EOF, malformed data, queue limit, timeout or I/O failure--> stopping
+[kill only Xwayland, disconnect its Wayland client, log]`.
+`starting/connected/stopping --child exit--> waiting [reap, log, retry after one second]`.
+A stopped child receives SIGKILL too; it does not need to read a socket to terminate. Child status is
+polled without waiting in the compositor loop. Shutdown kills any remaining child and reaps it on a
+separate thread. The safe command-fds API clears CLOEXEC on the three private descriptors only in child-side exec setup; the
+parent's descriptor flags are never changed while other threads launch programs.
+
+The transport tests use socket pairs for partial setup, split replies, silent peers, full write
+buffers, EOF, timeouts and oversized packets, asserting outcomes and retained buffers. A child process
+test checks descriptor inheritance. The real nested software/GPU harness stops Xwayland with SIGSTOP,
+moves a live Wayland window down and up through the control socket, waits for watchdog restart and
+reaping, then kills the replacement with SIGKILL and checks restart and Wayland survival again.

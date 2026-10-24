@@ -4,7 +4,7 @@
 Build first (in clamshell/): cargo build --features compositor
     cargo build -p clamshell-compositor --examples
 Run with --gpu to require native dmabuf on a machine with an accessible render node.
-Needs sway, foot and grim; --gpu also needs vkcube with Wayland WSI support and a Vulkan driver. Leaves screenshots and logs in the printed temporary directory.
+Needs sway, Xwayland, foot and grim; --gpu also needs vkcube with Wayland WSI support and a Vulkan driver. Leaves screenshots and logs in the printed temporary directory.
 """
 import os
 import argparse
@@ -137,6 +137,24 @@ time.sleep(300)
 
         wait(lambda: pixels() == (True, False), "client rendered on top")
         shot("top")
+        def xwayland_pids():
+            log = (directory / "compositor.log").read_text()
+            return [int(pid) for pid in re.findall(r"Xwayland X11 transport ready display=:\d+ pid=(\d+)", log)]
+        wait(lambda: len(xwayland_pids()) >= 1, "private Xwayland transport handshake")
+        stopped = xwayland_pids()[-1]
+        os.kill(stopped, signal.SIGSTOP)
+        # A stopped X server must not prevent Wayland presentation or control requests.
+        control("window", "down")
+        wait(lambda: pixels() == (False, True), "Wayland client moves while Xwayland is stopped")
+        control("window", "up")
+        wait(lambda: pixels() == (True, False), "Wayland client returns while Xwayland is stopped")
+        wait(lambda: len(xwayland_pids()) >= 2, "Xwayland watchdog kills and restarts a stopped child")
+        wait(lambda: not Path(f"/proc/{stopped}").exists(), "stopped Xwayland is reaped")
+        killed = xwayland_pids()[-1]
+        os.kill(killed, signal.SIGKILL)
+        wait(lambda: len(xwayland_pids()) >= 3, "Xwayland restarts after a crash")
+        wait(lambda: not Path(f"/proc/{killed}").exists(), "crashed Xwayland is reaped")
+        assert pixels() == (True, False), "a Wayland window survives both Xwayland failures"
         def patch(x, y=250):
             width, _, data = image()
             return b"".join(data[(row * width + x - 10) * 3:(row * width + x + 40) * 3] for row in range(y - 10, y + 40))
@@ -262,7 +280,7 @@ time.sleep(300)
         assert recorded["after"]["windows"] == 0
         if args.gpu:
             print("ok: Vulkan WSI animation, resize, close, dmabuf feedback and native submission; EGL native submission", flush=True)
-        print("ok: compositor cursor and damage, in-process screenshot, window-event export, clipboard isolation and persistence, presentation feedback, Wayland EGL and shm rendering, bottom-slot move, return and Home", flush=True)
+        print("ok: compositor cursor and damage, in-process screenshot, window-event export, clipboard isolation and persistence, presentation feedback, Xwayland crash/stall recovery, Wayland EGL and shm rendering, bottom-slot move, return and Home", flush=True)
     finally:
         for process in reversed(processes):
             if process.poll() is None:

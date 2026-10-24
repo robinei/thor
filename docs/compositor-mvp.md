@@ -203,9 +203,12 @@ Two ways, both used by real compositors:
   lines of X11 handling plus X11 branches in focus and placement; long-open Smithay issues around Xwayland
   crashes and leaks; COSMIC still has open Steam/Proton issues.
 
-**Chosen: Smithay's built-in X11 window manager, contained in one adapter.** Smithay's `desktop::Window`
-already wraps a Wayland toplevel or an X11 surface, so the differences stay in one module of the
-compositor, as one small `enum Surface { Wayland(..), X11(..) }` with a method per concern:
+**Chosen: an in-process asynchronous X11 window manager, contained in one adapter.** The pinned
+Smithay XWM makes blocking X11 round trips in event dispatch and Wayland commit hooks. A worker alone
+cannot isolate those hooks, so it is not used. The adapter uses x11rb's protocol types and sequence
+tracking with its own bounded non-blocking socket I/O; no X11 reply is waited for in the main loop.
+This is more code than Smithay's XWM, accepted to keep a stopped Xwayland from stopping the session.
+Wayland and X11 surfaces share presentation and input below the adapter, with one method per concern:
 
 | Concern | Wayland | X11 |
 |---|---|---|
@@ -445,7 +448,10 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    expired/background requests and Home revocation are covered by a real client. The shared relative
    pointer/constraint path is tested headless with injected relative input, including camera motion,
    confinement, unmap/remap and Home release. The absolute-only nested host omits those protocols;
-   the device will receive relative input from libinput. X11 fixtures and Xwayland supervision remain to implement. Viewporter cropping and destination sizing use the
+   the device will receive relative input from libinput. Xwayland now has an asynchronous private
+   transport and supervised child: setup/reply timeouts, bounded I/O, crash and stopped-child restart
+   are tested while a real Wayland client survives. X11 window translation, mapping and fixtures
+   remain to implement; the private X11 display is not yet exposed to app launches. Viewporter cropping and destination sizing use the
    same logical geometry for presentation and input, covered by a socket-pair client. Screenshots read the presented nested scene and
    encode it on the system worker; SDR PNG export does not change composition precision. The nested
    host advertises renderer-native dmabuf formats, with render-device feedback when available, and
@@ -483,7 +489,7 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
 
 | Decision | Recommendation |
 |---|---|
-| Xwayland: satellite or built-in X11 WM | decided: built-in, contained in one adapter (section 3) |
+| Xwayland: satellite or built-in X11 WM | decided: in-process async X11 adapter using x11rb; the pinned Smithay XWM blocks on replies (section 3) |
 | Notifications without mako (no layer-shell): ClamShell's own low-battery warning reaches nothing otherwise | ClamShell draws its own notices on the top screen, and serves the notification D-Bus API itself later; minimal layer-shell (about 250 lines) only if third-party overlays turn out to matter |
 | The top screen's tabs: sway shows a tab strip when a group has several windows | none on the top screen; switch a group's windows from the second screen; dialogs drawn over their parent |
 | The top panel's refresh: a change blanks it for 0.4 s | stay at 120 Hz and limit a game's frame rate: in command mode the host sends only the frames committed, so a 60 fps game at the 120 Hz mode costs the host what it would at 60 Hz; what remains is the panel scanning its own memory at 120 Hz. Measure the battery at both modes with the same 60 fps game and a static screen; if the difference is small, drop the 60 Hz mode; if it matters, look for a seamless switch of the panel's internal rate (a vendor command, a kernel driver change) rather than a blanking modeset |

@@ -138,12 +138,21 @@ pub fn run(
             }
         })
         .map_err(|e| e.error)?;
+    let mut x11 = crate::x11::Supervisor::new(Instant::now());
     let runtime = std::env::var_os("XDG_RUNTIME_DIR").ok_or("nested compositor: XDG_RUNTIME_DIR is missing")?;
     start(sender, std::path::PathBuf::from(runtime).join(&server.socket));
     server.core.handle(Event::Start);
     while !server.exit {
         let now = Instant::now();
-        let wait = server.core.deadline().into_iter().chain(server.cursor_activity.deadline(now)).min().map(|at| at.saturating_duration_since(now));
+        x11.turn(&mut server.dh, now);
+        let wait = server
+            .core
+            .deadline()
+            .into_iter()
+            .chain(server.cursor_activity.deadline(now))
+            .chain([x11.deadline()])
+            .min()
+            .map(|at| at.saturating_duration_since(now));
         event_loop.dispatch(wait, &mut server)?;
         server.turn();
         server.dh.flush_clients()?;
