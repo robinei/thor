@@ -67,6 +67,17 @@ pub fn run(
         WindowAttributes::default().with_title("ClamShell nested").with_surface_size(LogicalSize::new(f64::from(server.size.0), f64::from(server.size.1)));
     let (mut backend, events) = winit::init_from_attributes::<GlesRenderer>(attributes)?;
     server.advertise_dmabuf(backend.renderer());
+    let mut colour_pipeline = match crate::colour::render::Pipeline::new(backend.renderer(), server.size) {
+        Ok(pipeline) => {
+            crate::colour::protocol::install(&server.dh);
+            Some(pipeline)
+        }
+        Err(error) => {
+            log::warn!("colour management unavailable: {error}");
+            None
+        }
+    };
+    let mut host_colour = colour_pipeline.as_ref().and_then(|_| crate::colour::host::Host::new(backend.window()));
     backend.window().set_cursor_visible(false);
     let mut cursor = crate::cursor::Cursor::new();
     log::info!("nested output format: {:?}", backend.renderer().egl_context().pixel_format());
@@ -109,20 +120,44 @@ pub fn run(
                             }
                         }
                         server.frame();
+                        if let (Some(host), Some(pipeline)) = (&mut host_colour, &mut colour_pipeline) {
+                            if let Some(preferred) = host.turn()? {
+                                log::info!("nested compositor: host preferred colour {preferred:?}");
+                            }
+                            let (peak, average) = server.colour_volume();
+                            if let Some(planned) = host.planned_encoding(peak, average) {
+                                host.describe(planned);
+                            }
+                            if let Some(encoding) = host.encoding() {
+                                pipeline.set_output(backend.renderer(), encoding)?;
+                                server.colour.set_output(encoding);
+                            }
+                        }
                         sync_capture(server, backend.window());
                         let imported = server.import_dmabufs(backend.renderer());
                         // Imports may make EGL surfaceless. Force a rendered frame to restore the
                         // window target even when the scene has not otherwise changed.
                         let age = if submitted && !imported { backend.buffer_age().unwrap_or(0) } else { 0 };
                         let capturing = std::mem::take(&mut server.screenshot_requested);
+                        render::elements(server, &mut frames, &mut arrows, backend.renderer(), &mut elements)?;
+                        cursor.elements(server, backend.renderer(), &mut elements)?;
+                        let composed_states =
+                            if let Some(pipeline) = &mut colour_pipeline { Some(pipeline.compose(server, backend.renderer(), &mut elements)?) } else { None };
                         let states;
                         {
                             let (renderer, mut framebuffer) = backend.bind()?;
-                            render::elements(server, &mut frames, &mut arrows, renderer, &mut elements)?;
-                            cursor.elements(server, renderer, &mut elements)?;
-                            states = damage.render_output(renderer, &mut framebuffer, age, &elements, [0.0, 0.0, 0.0, 1.0])?.states;
+                            states = if let Some(pipeline) = &colour_pipeline {
+                                pipeline.present(renderer, &mut framebuffer)?;
+                                composed_states.ok_or("colour scene was not composed")?
+                            } else {
+                                damage.render_output(renderer, &mut framebuffer, age, &elements, [0.0, 0.0, 0.0, 1.0])?.states
+                            };
                             if capturing {
-                                let captured = render::capture(renderer, &framebuffer, server.size);
+                                let captured = if let Some(pipeline) = &colour_pipeline {
+                                    pipeline.capture(renderer)
+                                } else {
+                                    render::capture(renderer, &framebuffer, server.size)
+                                };
                                 if let Err(error) = &captured {
                                     log::warn!("compositor screenshot: {error}");
                                 }

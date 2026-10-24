@@ -42,8 +42,20 @@ impl CompositorHandler for Server {
             }
         }
     }
+    fn destroyed(&mut self, surface: &WlSurface) {
+        self.colour.surfaces.remove(&smithay::backend::renderer::element::Id::from_wayland_resource(surface));
+    }
     fn commit(&mut self, surface: &WlSurface) {
         on_commit_buffer_handler::<Self>(surface);
+        let id = smithay::backend::renderer::element::Id::from_wayland_resource(surface);
+        let current = crate::colour::protocol::current(surface);
+        let previous = match current.clone() {
+            Some(colour) => self.colour.surfaces.insert(id, colour),
+            None => self.colour.surfaces.remove(&id),
+        };
+        if previous != current {
+            self.colour.revision = self.colour.revision.wrapping_add(1);
+        }
         if !is_sync_subsurface(surface) {
             let mut root = surface.clone();
             while let Some(parent) = get_parent(&root) {

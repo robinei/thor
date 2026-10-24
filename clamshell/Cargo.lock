@@ -308,6 +308,7 @@ dependencies = [
  "tiny-skia",
  "wayland-client",
  "wayland-protocols-wlr",
+ "winit-wayland",
  "x11rb",
  "x11rb-protocol",
  "xcursor",

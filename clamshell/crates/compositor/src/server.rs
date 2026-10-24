@@ -44,6 +44,7 @@ pub(crate) struct ClientWindow {
 
 pub(crate) struct Server {
     pub core: Core,
+    pub colour: crate::colour::State,
     pub dh: DisplayHandle,
     pub compositor: CompositorState,
     pub shell: XdgShellState,
@@ -147,6 +148,7 @@ impl Server {
         let mut server = Self {
             clock,
             core,
+            colour: Default::default(),
             compositor: CompositorState::new::<Self>(&dh),
             shell: XdgShellState::new::<Self>(&dh),
             activation: smithay::wayland::xdg_activation::XdgActivationState::new::<Self>(&dh),
@@ -296,7 +298,17 @@ impl Server {
                     .unwrap_or_default()
             });
         let limits = Self::size_limits(surface);
-        Window { id, app_id, title, parent: parent.and_then(|p| self.surface_id(&p)), unit: process.unit, pids: process.pids, limits, ..Window::default() }
+        Window {
+            id,
+            app_id,
+            title,
+            colour: crate::colour::protocol::current(surface.wl_surface()),
+            parent: parent.and_then(|p| self.surface_id(&p)),
+            unit: process.unit,
+            pids: process.pids,
+            limits,
+            ..Window::default()
+        }
     }
 
     fn size_limits(surface: &ToplevelSurface) -> clamshell_state::session::presentation::WindowLimits {
@@ -324,7 +336,7 @@ impl Server {
             }
         } else {
             let limits = Self::size_limits(&toplevel);
-            if self.core.state().session().window(id).is_some_and(|old| old.limits != limits) {
+            if self.core.state().session().window(id).is_some_and(|old| old.limits != limits || old.colour != crate::colour::protocol::current(surface)) {
                 self.core.handle(WindowEvent::Changed(self.facts(&toplevel, id)).into());
             }
         }
@@ -436,6 +448,11 @@ impl Server {
     }
 
     pub fn turn(&mut self) {
+        // A destructor event must follow the dispatch that installs the new object's data.
+        // Sending it from get_information itself removes the object before wayland-backend installs it.
+        for information in self.colour.information.drain(..) {
+            information.done();
+        }
         self.expire_activation_tokens(Instant::now());
         self.update_idle(Instant::now());
         self.core.run(Instant::now());

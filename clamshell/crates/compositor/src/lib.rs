@@ -5,6 +5,7 @@
 //! facts as Wayland ones in one adapter. See `docs/compositor-mvp.md`, "Keeping the app tail small".
 
 mod activation;
+mod colour;
 mod cursor;
 mod dmabuf;
 mod geometry;

@@ -20,11 +20,12 @@ xcursor = "0.3.11"
 x11rb-protocol = { version = "0.13.2", features = ["res", "composite", "xfixes"] }
 command-fds = "0.3.3"
 rustix.workspace = true
+wayland-client.workspace = true
+winit-wayland = { version = "=0.31.0-beta.3", default-features = false }
 
 [dev-dependencies]
 x11rb = { version = "0.13.2", features = ["shape"] }
 tempfile.workspace = true
-wayland-client.workspace = true
 wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
 
 [lints]

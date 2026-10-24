@@ -500,6 +500,21 @@ time.sleep(300)
         assert egl.wait(timeout=5) == 0, "EGL client must receive the close request"
         processes.remove(egl)
         wait(lambda: pixels() == (True, False), "previous client visible after EGL client exits")
+        for mode, expected in [("pq", 186), ("linear", 118), ("srgb", 128)]:
+            colour = spawn([str(BIN.parent / "examples/colour-client"), mode], f"colour-{mode}", egl_env)
+            wait(lambda: pixels((expected, expected, expected)) == (True, False), f"{mode} EGL pixels converted through the linear scene")
+            control("window", "events", str(directory / f"colour-{mode}.json"))
+            def colour_recording():
+                try:
+                    return json.loads((directory / f"colour-{mode}.json").read_text())
+                except (FileNotFoundError, json.JSONDecodeError):
+                    return None
+            facts = wait(colour_recording, "colour facts exported")
+            assert any(any(record["input"].get("Window", {}).get(kind, {}).get("colour") for kind in ["Opened", "Changed"]) for record in facts["records"] if isinstance(record["input"], dict)), "surface colour reaches the common window facts"
+            control("window", "close")
+            assert colour.wait(timeout=5) == 0, "colour client receives close"
+            processes.remove(colour)
+            wait(lambda: pixels() == (True, False), "SDR client remains unchanged after colour fixture exits")
         if args.gpu:
             def window_region(down):
                 width, _, data = image()
@@ -554,7 +569,7 @@ time.sleep(300)
         assert not any(r["input"].get("Window", {}).get("Opened", {}).get("app_id") == "HiddenX11Helper" for r in recorded["records"] if isinstance(r["input"], dict)), "input-only X11 helpers never enter the window model"
         if args.gpu:
             print("ok: Vulkan WSI animation, resize, close, dmabuf feedback and native submission; EGL native submission", flush=True)
-        print("ok: compositor cursor and damage, in-process screenshot, window-event export, clipboard isolation and persistence, presentation feedback, lazy Xwayland, X11 presentation and crash recovery, Wayland EGL and shm rendering, bottom-slot move, return and Home", flush=True)
+        print("ok: PQ, linear and SDR EGL colour conversion; compositor cursor and damage, in-process screenshot, window-event export, clipboard isolation and persistence, presentation feedback, lazy Xwayland, X11 presentation and crash recovery, Wayland EGL and shm rendering, bottom-slot move, return and Home", flush=True)
     finally:
         # Kill the entire isolated group even when its leader already exited, so a stopped
         # Xwayland cannot survive a failing test's teardown.
