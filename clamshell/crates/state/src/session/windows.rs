@@ -4,6 +4,8 @@
 //! runs in another program's processes, such as a Steam game or a Waydroid app, gets a workspace of its own
 //! too, and its windows are found by their app id (see [`crate::session::running`]).
 
+use std::sync::Arc;
+
 use crate::out::Out;
 use crate::session::instance::Instance;
 use crate::{Effect, Session, WindowCommand};
@@ -346,7 +348,7 @@ pub struct Window {
     pub parent: Option<i64>,
     pub limits: super::presentation::WindowLimits,
     pub role: super::presentation::WindowRole,
-    pub colour: Option<super::presentation::ColourDescription>,
+    pub colour: Option<Arc<super::presentation::ColourDescription>>,
     /// Whether this is the selected top content. Keyboard focus is independent: see
     /// [`Session::keyboard_focus`]. On opening, the backend may supply an initial focus observation.
     pub focused: bool,
@@ -755,13 +757,18 @@ mod tests {
         let mut s = state();
         let window = win(7, "one", "one", true);
         s.applied(WindowEvent::Opened(window.clone()).into());
-        let colour = ColourDescription { primaries: ColourPrimaries::Bt2020, transfer: TransferFunction::Pq, luminance: Some((1, 1_000_000)) };
-        let changed = Window { limits: WindowLimits { min: (400, 300), max: (400, 300) }, role: WindowRole::Utility, colour: Some(colour), ..window };
+        let colour = ColourDescription {
+            primaries: ColourPrimaries::Bt2020,
+            transfer: TransferFunction::Pq,
+            luminance: Some(crate::session::presentation::ColourLuminance { min: 10, max: 1000, reference: 203 }),
+            target: None,
+        };
+        let changed = Window { limits: WindowLimits { min: (400, 300), max: (400, 300) }, role: WindowRole::Utility, colour: Some(Arc::new(colour)), ..window };
         for _ in 0..2 {
             assert!(s.applied(WindowEvent::Changed(changed.clone()).into()).is_empty());
             let current = s.session().window(7);
             assert_eq!(current.map(Window::place), Some(WindowPlace::Top("one")));
-            assert_eq!(current.and_then(|w| w.colour), Some(colour));
+            assert_eq!(current.and_then(|w| w.colour.as_deref()).copied(), Some(colour));
             assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
             assert_eq!(s.session().keyboard_focus(), Some(7));
             assert_eq!(s.window_presentation(7).map(|p| p.layout), Some(WindowLayout::Centred));

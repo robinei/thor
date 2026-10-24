@@ -1409,3 +1409,18 @@ State tests pin the saved values, save-before-apply ordering and refresh effects
 repeats, unplugging and replacement. Random sequences include reports and assert sorted unique valid
 rates after every event; the allocation test covers changing reports. Nested sway checks the actual
 output-management route. Offline snapshots explicitly announce their fixture modes.
+
+### Parametric window colour facts
+
+An immutable shared description holds named or explicit CIE xy primaries, the transfer function,
+primary luminance and reference white, and optional mastering/CLL/FALL metadata. The description is
+shared by reference so window events remain small and copying a description during apply allocates
+nothing. Physical panel descriptions come from the startup profile; nested output descriptions come
+from the host's preferred description. Unknown physical measurements stay unknown.
+
+`window --Changed(colour)--> same placement, selection and focus with new colour facts [no effects]`.
+Repeating the same facts has no effects. The existing presentation-facts test asserts the resulting
+colour, placement, policy and focus; random window-fact changes now include colour descriptions.
+Matching source/output primaries, transfer and primary luminance permit colour-preserving scanout;
+mastering metadata does not change the signal encoding. The compositor still checks buffer and plane
+constraints before scanout. Numeric conversion and protocol commit behaviour are compositor tests.

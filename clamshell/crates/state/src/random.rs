@@ -689,6 +689,12 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                     use crate::session::presentation::{WindowLimits, WindowRole};
                     let mut window = window;
                     window.limits = if rng.one_in(2) { WindowLimits { min: (640, 480), max: (640, 480) } } else { WindowLimits::default() };
+                    window.colour = rng.one_in(2).then(|| {
+                        Arc::new(crate::session::presentation::ColourDescription {
+                            transfer: crate::session::presentation::TransferFunction::Gamma(22000),
+                            ..Default::default()
+                        })
+                    });
                     window.role = if rng.one_in(2) { WindowRole::Utility } else { WindowRole::Normal };
                     WindowEvent::Changed(window).into()
                 }
