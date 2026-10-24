@@ -55,6 +55,7 @@ impl CompositorHandler for Server {
                 if client.mapped && !mapped {
                     client.mapped = false;
                     client.opened = false;
+                    client.title_dirty = false;
                     self.core.handle(WindowEvent::Closed(client.id).into());
                     self.sync_windows();
                     return;
@@ -98,11 +99,10 @@ impl XdgShellHandler for Server {
         }
     }
     fn title_changed(&mut self, surface: ToplevelSurface) {
-        if let Some(id) = self.surface_id(surface.wl_surface())
-            && self.core.state().session().window(id).is_some()
+        if let Some(client) =
+            self.windows.iter_mut().find(|client| client.opened && client.window.toplevel().is_some_and(|top| top.wl_surface() == surface.wl_surface()))
         {
-            let title = self.facts(&surface, id).title;
-            self.core.handle(WindowEvent::Title { window: id, title }.into());
+            client.title_dirty = true;
         }
     }
     fn app_id_changed(&mut self, surface: ToplevelSurface) {

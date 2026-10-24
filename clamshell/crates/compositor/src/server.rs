@@ -38,6 +38,7 @@ pub(crate) struct ClientWindow {
     pub window: SurfaceWindow,
     pub opened: bool,
     pub mapped: bool,
+    pub title_dirty: bool,
     pub presentation: Option<clamshell_state::session::presentation::WindowPresentation>,
 }
 
@@ -197,6 +198,7 @@ impl Server {
             window: SurfaceWindow::new_wayland_window(surface),
             opened: false,
             mapped: false,
+            title_dirty: false,
             presentation: None,
         });
         self.next_id = next;
@@ -330,6 +332,27 @@ impl Server {
             }
             keyboard.set_focus(self, surface, SERIAL_COUNTER.next_serial());
         }
+    }
+
+    /// Flush client titles once for the frame, after all requests in the dispatch batch.
+    pub fn frame(&mut self) {
+        for index in 0..self.windows.len() {
+            let pending = self.windows.get_mut(index).and_then(|client| {
+                std::mem::take(&mut client.title_dirty).then(|| client.window.toplevel().cloned().map(|surface| (client.id, surface))).flatten()
+            });
+            if let Some((id, surface)) = pending {
+                let title = with_states(surface.wl_surface(), |states| {
+                    states.data_map.get::<XdgToplevelSurfaceData>().and_then(|data| data.lock().ok()).and_then(|data| {
+                        let title = data.title.as_deref().unwrap_or_default();
+                        self.core.state().session().window(id).filter(|old| old.title != title).map(|_| title.to_owned())
+                    })
+                });
+                if let Some(title) = title {
+                    self.core.handle(WindowEvent::Title { window: id, title }.into());
+                }
+            }
+        }
+        self.turn();
     }
 
     pub fn turn(&mut self) {

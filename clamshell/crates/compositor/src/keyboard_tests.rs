@@ -53,7 +53,7 @@ fn the_bottom_keyboard_commits_text_and_sends_shortcuts_without_stealing_focus()
         Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
     let mut server = Server::new(State::new(Init::default()), config, display.handle(), || {}, |_| Process::default(), |_| {}).unwrap();
     server.core.handle(Event::Start);
-    server.turn();
+    server.frame();
     let original_tab = server.core.state().bottom().tab();
     let (server_socket, client_socket) = UnixStream::pair().unwrap();
     display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
@@ -143,7 +143,7 @@ fn the_bottom_keyboard_commits_text_and_sends_shortcuts_without_stealing_focus()
     let mut phases = 0;
     while !thread.is_finished() && Instant::now() < until {
         display.dispatch_clients(&mut server).unwrap();
-        server.turn();
+        server.frame();
         display.flush_clients().unwrap();
         if let Ok(phase) = reports.try_recv() {
             match phase {
@@ -173,7 +173,7 @@ fn the_bottom_keyboard_commits_text_and_sends_shortcuts_without_stealing_focus()
                     server.stroke(&Stroke { shift: true, ..stroke(Key::Char('1')) });
                     let pos = keyboard::find(Key::Char('a')).unwrap();
                     server.core.handle(PointerEvent::Activate(Id::Key(pos)).into());
-                    server.turn();
+                    server.frame();
                     server.stroke(&Stroke { ctrl: true, ..stroke(Key::Char('c')) });
                     server.stroke(&stroke(Key::Named(Named::Backspace)));
                 }
@@ -184,7 +184,7 @@ fn the_bottom_keyboard_commits_text_and_sends_shortcuts_without_stealing_focus()
                 3 => {
                     assert_eq!(server.core.state().bottom().tab(), Tab::Keyboard);
                     server.core.handle(Event::Home);
-                    server.turn();
+                    server.frame();
                     assert_eq!(server.core.state().bottom().tab(), original_tab);
                     server.stroke(&stroke(Key::Char('c')));
                 }

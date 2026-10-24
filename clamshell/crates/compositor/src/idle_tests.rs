@@ -17,7 +17,7 @@ fn inhibitors_count_individually_and_only_mapped_visible_surfaces_keep_idle_off(
         Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
     let mut server = Server::new(State::new(Init::default()), config, display.handle(), || {}, |_| Process::default(), |_| {}).unwrap();
     server.core.handle(Event::Start);
-    server.turn();
+    server.frame();
     let (server_socket, client_socket) = UnixStream::pair().unwrap();
     display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
     let (report, reports) = mpsc::channel();
@@ -78,7 +78,7 @@ fn inhibitors_count_individually_and_only_mapped_visible_surfaces_keep_idle_off(
     let mut phases = 0;
     while !thread.is_finished() && Instant::now() < until {
         display.dispatch_clients(&mut server).unwrap();
-        server.turn();
+        server.frame();
         display.flush_clients().unwrap();
         if let Ok(phase) = reports.try_recv() {
             match phase {

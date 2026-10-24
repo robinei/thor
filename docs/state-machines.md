@@ -792,3 +792,16 @@ role, limits, identity and colour facts; state rules use those facts uniformly. 
 checks Wayland app IDs and X11 class translation, and session tests check identity changes and parent
 inheritance without a transport-dependent branch. This removal preserves snapshot pixels, focus and
 trace.
+
+### Coalesced client titles (compositor/server)
+
+A title request for an open Wayland toplevel marks that client's title dirty. At the next rendered
+frame, the host reads its final title and emits one Title event if it differs from state. Repeating
+the same title emits nothing. Initial titles arrive with Opened; unmapping clears a pending title,
+and a removed window has nothing left to flush. The ordinary event-loop turn does not flush titles,
+so several protocol dispatches before a redraw still produce at most one update per rendered frame.
+
+The headless lifecycle client sends 101 different titles in one batch and then 100 identical ones.
+`xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu` asserts the final title and
+exactly one Title record in the event ring across both batches, alongside the unmap/remap checks.
+Headless tests step the same frame boundary as the nested host.

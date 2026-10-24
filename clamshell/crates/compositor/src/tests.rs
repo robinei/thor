@@ -83,7 +83,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
         Server::new(State::new(Init::default()), config, display.handle(), || {}, |_| Process { unit: Some("test.service".into()), pids: vec![100] }, |_| {})
             .unwrap();
     server.core.handle(Event::Start);
-    server.turn();
+    server.frame();
     let (server_socket, client_socket) = UnixStream::pair().unwrap();
     display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
     let (report, reports) = mpsc::channel();
@@ -121,7 +121,16 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
         queue.roundtrip(&mut client).unwrap();
         report.send(Report::Below(*client.sizes.last().unwrap())).unwrap();
         steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        for number in 0..100 {
+            top.set_title(format!("intermediate title {number}"));
+        }
         top.set_title("after configure".into());
+        queue.roundtrip(&mut client).unwrap();
+        report.send(Report::Renamed).unwrap();
+        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        for _ in 0..100 {
+            top.set_title("after configure".into());
+        }
         queue.roundtrip(&mut client).unwrap();
         report.send(Report::Renamed).unwrap();
         steps.recv_timeout(Duration::from_secs(5)).unwrap();
@@ -169,7 +178,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
     let mut phases = 0;
     while !thread.is_finished() && Instant::now() < until {
         display.dispatch_clients(&mut server).unwrap();
-        server.turn();
+        server.frame();
         display.flush_clients().unwrap();
         while let Ok(report) = reports.try_recv() {
             let windows = server.core.state().session().windows();
@@ -204,7 +213,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
                     server.sync_windows();
                     assert_eq!(server.windows[0].presentation.unwrap().layout, WindowLayout::Fullscreen);
                     server.core.handle(Event::Device(DeviceKey::WindowDown));
-                    server.turn();
+                    server.frame();
                     display.flush_clients().unwrap();
                     next.send(()).unwrap();
                 }
@@ -219,6 +228,13 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
                     next.send(()).unwrap();
                 }
                 Report::Renamed => {
+                    let recording = server.trace.borrow().snapshot(server.core.state());
+                    let titles = recording
+                        .records
+                        .iter()
+                        .filter(|record| matches!(&record.input, crate::trace::Input::Window(clamshell_state::WindowEvent::Title { .. })))
+                        .count();
+                    assert_eq!(titles, 1, "a title burst enters state and diagnostics once per frame");
                     assert_eq!(windows[0].title, "after configure");
                     assert_eq!(windows[0].place(), WindowPlace::Bottom);
                     next.send(()).unwrap();
@@ -235,7 +251,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
                     assert_eq!(windows[0].title, "after configure");
                     assert!(matches!(windows[0].place(), WindowPlace::Top(_)), "this unowned client has no persistent bottom rule");
                     server.core.handle(Event::Device(DeviceKey::WindowDown));
-                    server.turn();
+                    server.frame();
                     next.send(()).unwrap();
                 }
                 Report::Child(size) => {
@@ -263,7 +279,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
         assert!(server.windows.is_empty());
         phases += 1;
     }
-    assert_eq!(phases, 8);
+    assert_eq!(phases, 9);
 }
 
 #[derive(Debug, PartialEq)]
@@ -297,7 +313,7 @@ fn touch_contacts_keep_independent_surfaces_and_native_coordinates() {
         Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
     let mut server = Server::new(State::new(Init::default()), config, display.handle(), || {}, |_| Process::default(), |_| {}).unwrap();
     server.core.handle(Event::Start);
-    server.turn();
+    server.frame();
     let (server_socket, client_socket) = UnixStream::pair().unwrap();
     display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
     let (report, reports) = mpsc::channel();
@@ -364,14 +380,14 @@ fn touch_contacts_keep_independent_surfaces_and_native_coordinates() {
     let mut checked = false;
     while !thread.is_finished() && Instant::now() < until {
         display.dispatch_clients(&mut server).unwrap();
-        server.turn();
+        server.frame();
         display.flush_clients().unwrap();
         if reports.try_recv().is_ok() {
             let first = server.windows[0].id;
             let second = server.windows[1].id;
             server.core.handle(Event::Device(DeviceKey::WindowDown));
             server.core.handle(clamshell_state::WindowEvent::Activate(first).into());
-            server.turn();
+            server.frame();
             let top = server.geometry(first).unwrap();
             let bottom = server.geometry(second).unwrap();
             let time = InputTime::from_millis(10);
@@ -400,7 +416,7 @@ fn touch_contacts_keep_independent_surfaces_and_native_coordinates() {
             server.touch_down(Some(5).into(), point, time);
             server.touch_frame();
             server.core.handle(Event::Home);
-            server.turn();
+            server.frame();
             assert!(server.touches.iter().all(Option::is_none), "hiding a touched client cancels the gesture");
             display.flush_clients().unwrap();
             next.send(()).unwrap();
@@ -457,7 +473,7 @@ fn a_protocol_error_disconnects_only_its_client() {
         Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
     let mut server = Server::new(State::new(Init::default()), config, display.handle(), || {}, |_| Process::default(), |_| {}).unwrap();
     server.core.handle(Event::Start);
-    server.turn();
+    server.frame();
     let (good_server, good_client) = UnixStream::pair().unwrap();
     let (bad_server, bad_client) = UnixStream::pair().unwrap();
     for stream in [good_server, bad_server] {
@@ -507,7 +523,7 @@ fn a_protocol_error_disconnects_only_its_client() {
     let mut phases = 0;
     while !thread.is_finished() && Instant::now() < until {
         display.dispatch_clients(&mut server).unwrap();
-        server.turn();
+        server.frame();
         display.flush_clients().unwrap();
         if let Ok(phase) = reports.try_recv() {
             assert_eq!(server.windows.len(), 1);

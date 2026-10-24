@@ -83,7 +83,7 @@ pub fn run(
                     WinitEvent::Input(event) => server.input(event),
                     WinitEvent::CloseRequested => server.exit = true,
                     WinitEvent::Redraw => {
-                        server.turn();
+                        server.frame();
                         let age = if submitted { backend.buffer_age().unwrap_or(0) } else { 0 };
                         {
                             let (renderer, mut framebuffer) = backend.bind()?;
