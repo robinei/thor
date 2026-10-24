@@ -837,3 +837,16 @@ format conversion is introduced.
 client with a 640×480 buffer at scale 2, a cropped source and a 600×400 destination. It checks logical
 geometry and centre hit coordinates before and after destroying the viewport, with one state window
 throughout. Buffer cropping and sampling use the renderer's existing surface-tree path.
+
+### Real EGL client coverage (compositor)
+
+The nested smoke harness starts the standalone `egl-client` example alongside Foot. The example is a
+Wayland EGL client using the existing safe renderer API, with no session state or system workers.
+Its distinct solid colour lets the harness check top presentation, moving below and returning above
+while Foot remains visible on the other screen. A close chord above delivers xdg close, the client
+exits normally, and the previous window reappears; Home still returns to the shelf afterwards.
+
+`tests/nested-compositor.py` checks those pixels and process outcomes under headless sway with software
+EGL, alongside its shared-memory, clipboard and screenshot checks. The EGL fixture is built separately
+as stated in the script. This exercises EGL rendering over the available software transport; native
+dmabuf advertisement/import and hardware GPU-client coverage remain separate work.

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Run the in-process compositor in headless sway and check a real client's pixels on both screens.
 
-Build first: cargo build --features compositor (in clamshell/).
+Build first (in clamshell/): cargo build --features compositor
+    cargo build -p clamshell-compositor --example egl-client
 Needs sway, foot and grim. Leaves screenshots and logs in the printed temporary directory.
 """
 import os
@@ -108,7 +109,7 @@ time.sleep(300)
         client = spawn(["foot", "-o", "colors-dark.background=204080", "--app-id=nested-test",
                         "python3", str(client_program), str(directory)], "client", nested)
 
-        def pixels():
+        def pixels(colour=(32, 64, 128)):
             result = subprocess.run(["grim", "-o", "HEADLESS-1", "-t", "ppm", "-"], env=host, capture_output=True, check=True)
             magic, dimensions, maximum, image = result.stdout.split(b"\n", 3)
             assert magic == b"P6" and maximum == b"255"
@@ -116,7 +117,7 @@ time.sleep(300)
             assert len(image) == width * height * 3
             def blue(x, y):
                 offset = (y * width + x) * 3
-                return all(abs(a - b) < 3 for a, b in zip(image[offset:offset + 3], (32, 64, 128)))
+                return all(abs(a - b) < 3 for a, b in zip(image[offset:offset + 3], colour))
             return blue(300, height // 2), blue(width - 300, height // 2)
 
         def shot(name):
@@ -148,6 +149,18 @@ time.sleep(300)
         control("window", "up")
         wait(lambda: pixels() == (True, False), "client returned to top")
         shot("up")
+        egl = spawn([str(BIN.parent / "examples/egl-client")], "egl-client", nested)
+        wait(lambda: pixels((128, 32, 64)) == (True, False), "Wayland EGL client rendered on top")
+        shot("egl-top")
+        control("window", "down")
+        wait(lambda: pixels((128, 32, 64)) == (False, True), "Wayland EGL client rendered below")
+        shot("egl-bottom")
+        control("window", "up")
+        wait(lambda: pixels((128, 32, 64)) == (True, False), "Wayland EGL client returned to top")
+        control("window", "close")
+        assert egl.wait(timeout=5) == 0, "EGL client must receive the close request"
+        processes.remove(egl)
+        wait(lambda: pixels() == (True, False), "previous client visible after EGL client exits")
         control("home")
         wait(lambda: pixels() == (False, False), "Home rendered shelf")
         shot("home")
@@ -169,7 +182,7 @@ time.sleep(300)
         assert len(recorded["records"]) <= 256
         assert any("Window" in event["input"] for event in recorded["records"])
         assert recorded["after"]["windows"] == 0
-        print("ok: in-process screenshot, window-event export, clipboard isolation and persistence, real client rendering, bottom-slot move, return and Home", flush=True)
+        print("ok: in-process screenshot, window-event export, clipboard isolation and persistence, Wayland EGL and shm rendering, bottom-slot move, return and Home", flush=True)
     finally:
         for process in reversed(processes):
             if process.poll() is None:
