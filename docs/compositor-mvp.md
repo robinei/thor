@@ -393,7 +393,7 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    events and the places into sway commands, holding the rules, marks and landing workspace. Checked by the
    state's tests, the random test, nested-sway and the VM suite.
    - Implemented: lifecycle events and atomic batches, synchronous placement, retained home groups below,
-     explicit window selection, independent keyboard focus, and parent/client-kind facts. Sway converts
+     explicit window selection, independent keyboard focus, and parent/identity facts. Sway converts
      snapshots into sparse changes and executes placement with retry/reconnect reconciliation.
    - Foreground launch intent and short replacement history remain as backend-independent behavior.
      Placement effects remain for sway; the compositor reads the same committed state directly.

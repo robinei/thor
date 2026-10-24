@@ -15,13 +15,6 @@ pub enum WindowPlace<'a> {
     Bottom,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-pub enum WindowKind {
-    #[default]
-    Wayland,
-    X11,
-}
-
 impl Session {
     /// Commits a placement decision before returning its command to the backend. The compositor reads
     /// this same placement after apply; it does not have to wait for a backend observation.
@@ -243,7 +236,6 @@ impl crate::Session {
                     w.unit = window.unit;
                     w.pids = window.pids;
                     w.parent = window.parent;
-                    w.kind = window.kind;
                     w.limits = window.limits;
                     w.role = window.role;
                     w.colour = window.colour;
@@ -352,7 +344,6 @@ pub struct Window {
     pub app_id: String,
     pub title: String,
     pub parent: Option<i64>,
-    pub kind: WindowKind,
     pub limits: super::presentation::WindowLimits,
     pub role: super::presentation::WindowRole,
     pub colour: Option<super::presentation::ColourDescription>,
@@ -656,13 +647,13 @@ mod tests {
         let before = Window { unit: instance.unit(), ..win(7, "game", &instance.workspace(), true) };
         s.applied(WindowEvent::Opened(before.clone()).into());
         s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
-        let identity = Window { pids: vec![100, 50], kind: WindowKind::X11, ..before.clone() };
+        let identity = Window { pids: vec![100, 50], ..before.clone() };
         let event = crate::session::windows::changes(&[before], &[identity]);
         assert!(s.applied(event).is_empty());
         let window = s.session().window(7);
         assert_eq!(window.map(Window::place), Some(WindowPlace::Bottom));
         assert_eq!(window.map(|w| w.workspace.as_str()), Some(instance.workspace().as_str()));
-        assert_eq!(window.map(|w| (w.kind, w.pids.as_slice())), Some((WindowKind::X11, &[100, 50][..])));
+        assert_eq!(window.map(|w| w.pids.as_slice()), Some(&[100, 50][..]));
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
     }
 
@@ -690,15 +681,7 @@ mod tests {
         let mut s = state();
         let instance = launch(&mut s, "zelda-lttp");
         s.applied(WindowEvent::Opened(Window { unit: instance.unit(), ..win(7, "game", &instance.workspace(), true) }).into());
-        let dialog = Window {
-            id: 8,
-            app_id: "dialog".into(),
-            parent: Some(7),
-            kind: WindowKind::X11,
-            unit: Some("portal.service".into()),
-            focused: true,
-            ..Window::default()
-        };
+        let dialog = Window { id: 8, app_id: "dialog".into(), parent: Some(7), unit: Some("portal.service".into()), focused: true, ..Window::default() };
         assert_eq!(
             s.applied(WindowEvent::Opened(dialog).into()),
             vec![Effect::Window(WindowCommand::Move { windows: vec![8], to: instance.workspace() }), Effect::Window(WindowCommand::FocusWindow(8)),]
@@ -706,7 +689,7 @@ mod tests {
         assert_eq!(s.session().window(8).map(Window::place), Some(WindowPlace::Top(&instance.workspace())));
         assert_eq!(s.session().window(8).and_then(|w| s.session().running_of(w)).map(|r| &*r.id), Some("zelda-lttp"));
         assert!(s.applied(WindowEvent::Closed(7).into()).is_empty());
-        assert_eq!(s.session().top_window().map(|w| (w.id, w.kind)), Some((8, WindowKind::X11)));
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
     }
 
     #[test]

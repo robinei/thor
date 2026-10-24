@@ -21,7 +21,7 @@ belong to a bottom client or ClamShell's UI (`None`).
 
 `Opened` supplies identity and optional initial backend presentation. State resolves the home from a
 known parent, library app id, owner or launch scope before returning. A known parent's bottom placement
-is inherited. `Changed` updates only identity (app id, unit, process ancestry, parent and client kind);
+is inherited. `Changed` updates only identity (app id, unit, process ancestry and parent);
 it cannot undo placement or change title. `Title` is independent. Sway translates stable tree snapshots
 into sparse changes; unchanged observations cannot overwrite a newer state decision.
 
@@ -786,3 +786,9 @@ preservation, replayed window facts and keyboard focus, fixture mismatch, file p
 failure. `the_ring_keeps_only_the_last_256_window_inputs` pins wrap order and capacity. State and control
 tests pin the diagnostic effect and path; its event is in the randomized generator. The nested smoke
 test exports the live ring through the control command and parses its final empty-window selection.
+
+Window facts carry no Wayland/X11 transport tag. Adapters translate client properties into parent,
+role, limits, identity and colour facts; state rules use those facts uniformly. The sway tree fixture
+checks Wayland app IDs and X11 class translation, and session tests check identity changes and parent
+inheritance without a transport-dependent branch. This removal preserves snapshot pixels, focus and
+trace.

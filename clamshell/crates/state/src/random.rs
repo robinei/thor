@@ -651,12 +651,10 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 0 => {
                     let window = if rng.one_in(2) && w.windows.len() < 9 {
                         let mut window = w.open("foot", "1".into(), None, false);
-                        window.kind = if rng.one_in(2) { WindowKind::X11 } else { WindowKind::Wayland };
                         if rng.one_in(3) {
                             window.parent = rng.pick(&w.windows).filter(|p| p.id < window.id).map(|p| p.id);
                         }
                         if let Some(actual) = w.windows.iter_mut().find(|actual| actual.id == window.id) {
-                            actual.kind = window.kind;
                             actual.parent = window.parent;
                         }
                         window

@@ -95,7 +95,7 @@ pub use effect::{Effect, Save, Watch, WindowCommand};
 pub use event::{EntryAct, Event, KeymapEvent, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
 pub use id::{AudioId, BatteryId, BtId, DeviceId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, TimeId, WifiId};
 pub use resume::Resume;
-pub use session::windows::{WindowEvent, WindowKind, WindowPlace};
+pub use session::windows::{WindowEvent, WindowPlace};
 
 pub use bottom::editor::Editor;
 pub use bottom::{Bottom, Tab};

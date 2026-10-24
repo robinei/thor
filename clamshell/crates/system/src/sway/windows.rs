@@ -53,7 +53,6 @@ fn collect(node: &Node, workspace: &str, unit: &mut impl FnMut(u32) -> (Option<S
             app_id: app_id.to_owned(),
             title: node.name.clone().unwrap_or_default(),
             parent: None,
-            kind: if node.window_properties.is_some() { clamshell_state::WindowKind::X11 } else { clamshell_state::WindowKind::Wayland },
             focused: node.focused,
             unit,
             pids,
@@ -161,7 +160,6 @@ mod tests {
         assert_eq!((w[0].id, w[0].app_id.as_str(), w[0].focused, w[0].unit.as_deref()), (7, "foot", true, Some("clamshell-run-foot_1-1-0.scope")));
         assert_eq!((w[1].app_id.as_str(), w[1].title.as_str(), w[1].unit.as_deref()), ("steam_app_620", "Portal 2", None));
         assert_eq!(w[1].pids, [200, 1000], "its process and its parents");
-        assert_eq!((w[0].kind, w[1].kind), (clamshell_state::WindowKind::Wayland, clamshell_state::WindowKind::X11));
     }
 
     fn window(id: i64, app_id: &str, unit: Option<&str>, workspace: &str) -> Window {
