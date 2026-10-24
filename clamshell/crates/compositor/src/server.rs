@@ -49,6 +49,7 @@ pub(crate) struct Server {
     pub shell: XdgShellState,
     pub activation: smithay::wayland::xdg_activation::XdgActivationState,
     pub shm: ShmState,
+    pub clock: smithay::utils::Clock<smithay::utils::Monotonic>,
     pub dmabuf: smithay::wayland::dmabuf::DmabufState,
     pub pending_imports: Vec<(smithay::backend::allocator::dmabuf::Dmabuf, smithay::wayland::dmabuf::ImportNotifier)>,
     pub seats: SeatState<Self>,
@@ -130,7 +131,10 @@ impl Server {
         let observed = trace.clone();
         let mut core = Core::new(state, config.touch_layout, wake)?;
         core.observe_events(move |event, state| observed.borrow_mut().record(event, state));
+        let clock = smithay::utils::Clock::<smithay::utils::Monotonic>::new();
+        smithay::wayland::presentation::PresentationState::new::<Self>(&dh, clock.id() as u32);
         let mut server = Self {
+            clock,
             core,
             compositor: CompositorState::new::<Self>(&dh),
             shell: XdgShellState::new::<Self>(&dh),

@@ -185,6 +185,10 @@ time.sleep(300)
         control("window", "up")
         wait(lambda: pixels() == (True, False), "client returned to top")
         shot("up")
+        feedback = spawn([str(BIN.parent / "examples/feedback-client")], "feedback-client", nested)
+        assert feedback.wait(timeout=10) == 0, "presentation feedback client must complete successfully"
+        processes.remove(feedback)
+        assert "ok: submitted and unchanged" in (directory / "feedback-client.log").read_text()
         egl_env = {**nested, "WAYLAND_DEBUG": "1"}
         egl = spawn([str(BIN.parent / "examples/egl-client")], "egl-client", egl_env)
         wait(lambda: pixels((128, 32, 64)) == (True, False), "Wayland EGL client rendered on top")
@@ -258,7 +262,7 @@ time.sleep(300)
         assert recorded["after"]["windows"] == 0
         if args.gpu:
             print("ok: Vulkan WSI animation, resize, close, dmabuf feedback and native submission; EGL native submission", flush=True)
-        print("ok: compositor cursor and damage, in-process screenshot, window-event export, clipboard isolation and persistence, Wayland EGL and shm rendering, bottom-slot move, return and Home", flush=True)
+        print("ok: compositor cursor and damage, in-process screenshot, window-event export, clipboard isolation and persistence, presentation feedback, Wayland EGL and shm rendering, bottom-slot move, return and Home", flush=True)
     finally:
         for process in reversed(processes):
             if process.poll() is None:

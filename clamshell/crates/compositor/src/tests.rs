@@ -24,6 +24,10 @@ use crate::server::{ClientState, Process, Server};
 #[derive(Default)]
 struct Client {
     sizes: Vec<(i32, i32)>,
+    presentation_clock: Option<u32>,
+    presented: Vec<(u32, Duration)>,
+    discarded: Vec<u32>,
+    presentation_outputs: usize,
     ignore_configures: bool,
     touches: Vec<TouchRecord>,
     keys: Vec<(u32, bool)>,
@@ -656,3 +660,6 @@ mod activation_tests;
 
 #[path = "pointer_tests.rs"]
 mod pointer_tests;
+
+#[path = "presentation_tests.rs"]
+mod presentation_tests;

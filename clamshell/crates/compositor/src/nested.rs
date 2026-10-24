@@ -100,11 +100,12 @@ pub fn run(
                         // window target even when the scene has not otherwise changed.
                         let age = if submitted && !imported { backend.buffer_age().unwrap_or(0) } else { 0 };
                         let capturing = std::mem::take(&mut server.screenshot_requested);
+                        let states;
                         {
                             let (renderer, mut framebuffer) = backend.bind()?;
                             render::elements(server, &mut frames, &mut arrows, renderer, &mut elements)?;
                             cursor.elements(server, renderer, &mut elements)?;
-                            damage.render_output(renderer, &mut framebuffer, age, &elements, [0.0, 0.0, 0.0, 1.0])?;
+                            states = damage.render_output(renderer, &mut framebuffer, age, &elements, [0.0, 0.0, 0.0, 1.0])?.states;
                             if capturing {
                                 let captured = render::capture(renderer, &framebuffer, server.size);
                                 if let Err(error) = &captured {
@@ -119,6 +120,7 @@ pub fn run(
                         }
                         backend.submit(Some(&[Rectangle::from_size(backend.window_size())]))?;
                         submitted = true;
+                        server.present_submission(&states, server.clock.now());
                         for client in server.windows.iter().filter(|w| w.mapped && server.visible(w.id)) {
                             let [top, bottom] = &server.outputs;
                             let output = if server.core.state().session().window(client.id).is_some_and(|w| w.down) { bottom } else { top };

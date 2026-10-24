@@ -1029,3 +1029,25 @@ The exact host mode sequence is asserted. `a_host_that_cannot_release_capture_en
 pins the host failure policy. The real-client popup test also acquires a lock and checks that opening
 a menu releases it. The nested software/GPU smoke tests assert that an absolute-only host
 omits both globals and continue testing cursor, EGL, Vulkan and screen moves with upstream Smithay.
+
+### Presentation feedback (compositor/presentation)
+
+The server advertises wp_presentation with CLOCK_MONOTONIC. A feedback request belongs to the next
+surface commit. A successful nested host submission completes the committed callbacks only for mapped,
+visible windows and surfaces included in the renderer's presentation states; this includes their
+subsurfaces and popups. Rendering alone does not complete feedback, and failed submission ends the
+unusable nested host before any presentation is reported. The output comes from the window's current
+screen. Completed callbacks are drained once. Hidden or occluded content retains feedback until it is
+shown; a newer feedback-bearing commit supersedes it with discarded, and destruction discards pending
+callbacks through Smithay's cached surface state.
+
+Winit does not expose a display timestamp or refresh sequence. Its feedback uses the monotonic time
+immediately after a successful swap, unknown refresh, zero sequence and no flags: no vsync, hardware
+clock, hardware completion or zero-copy claim. This is an estimated software timestamp. The DRM backend
+must supply actual flip timing and its matching flags instead of reusing this submission estimate.
+
+`feedback_follows_submission_visibility_superseding_and_surface_destruction` uses a real socket-pair
+client to check the clock, exact timestamps, output notification, completion once, missing renderer
+states, synchronised subsurfaces, Home/activation, superseded commits and destruction. `tests/nested-compositor.py` also runs a
+real feedback client against the software and GPU hosts: both a newly attached buffer and a subsequent
+unchanged frame must receive ordered monotonic feedback with unknown refresh and no hardware flags.

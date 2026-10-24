@@ -453,7 +453,9 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    native dmabuf submissions and checking presentation through moves and close. Alongside the EGL
    fixture, Wayland `vkcube` checks Vulkan WSI animation through screen moves and resizes, and requires
    complete dmabuf feedback plus native buffer submissions. The current host puts the logical
-   screens side by side for desktop testing.
+   screens side by side for desktop testing. Presentation feedback follows successful submissions
+   and renderer-visible surfaces, with software monotonic timestamps and no hardware/vsync claims;
+   real-client tests cover committed, superseded, hidden and unchanged content.
    Rules 1-3 of section 3, "Keeping the app tail small", hold for all of it; rule 5's real-client set
    and window-event ring, and rule 6's defaults are part of this phase. Steam's packaged desktop entry
    and game-start command now request Big Picture; Wine's Wayland-driver default remains to implement.
