@@ -453,6 +453,13 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
 3. **The generic DRM backend, on the VM:** udev, DRM, GBM, GLES, libseat, libinput, two outputs, power,
    refresh, dmabuf feedback with scanout tranches. The VM image boots either compositor; the VM suite
    checks both.
+   - [ ] `tools/vm/vm.py --gl`: the x86_64 VM with `virtio-gpu-gl-pci` (`venus=on,blob=on,hostmem=...`)
+         and `-display sdl,gl=on` (`egl-headless` when headless), so the guest has OpenGL through virgl
+         and Vulkan through Venus (the guest's `vulkan-virtio`), both on the host's GPU. The compositor's
+         VM checks run with it: GLES and GBM on real hardware, dmabufs from GPU clients, and a Vulkan
+         client (`vkcube`) through the WSI path. Without `--gl` the VM stays as it is (pixman, no host
+         GPU), and the existing suite keeps running that way. First confirmed on the host with `eglinfo`
+         and `vkcube` in the guest.
 4. **On the device:** the checks of section 5 (niri as a stand-in, possible as soon as the Thor arrives),
    then the Snapdragon specifics: panel orientation, rotated plane scanout, command-mode pacing, the
    refresh policy, the brightness and power guards; measurements; daily use with sway still the default.
@@ -491,9 +498,10 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
   checked after every step.
 - A control socket with replies (`ctl windows`, `ctl screenshot FILE`) for the VM suite and any remaining
   shell test.
-- The VM suite keeps DRM on virtio-gpu, libinput, logind and the session's files (GLES through llvmpipe, or
-  pixman on DRM if that fails); the device covers rotation, both panels, refresh, power, scanout and frame
-  pacing.
+- The VM suite keeps DRM on virtio-gpu, libinput, logind and the session's files; the compositor's checks
+  run with `--gl` (GLES and Vulkan on the host's GPU through virgl and Venus), the rest without. virtio-gpu
+  has no planes and mostly linear modifiers, so the device covers rotation, both panels, refresh, power,
+  scanout, modifiers and frame pacing.
 
 ## 9. Size
 
