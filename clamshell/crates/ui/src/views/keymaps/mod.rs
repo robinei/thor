@@ -93,8 +93,8 @@ fn choice_header(f: &mut Frame, title: &str) -> Rect {
 }
 
 /// "Remap A to…".
-fn remap_title(input: Input) -> Fmt<64> {
-    Fmt::of(format_args!("Remap {} to…", Label(input)))
+fn remap_title(input: Input, labels: &clamshell_state::ControlLabels) -> Fmt<64> {
+    Fmt::of(format_args!("Remap {} to…", Label(input, labels)))
 }
 
 /// Who uses a keymap, in words.

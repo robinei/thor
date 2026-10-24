@@ -1373,3 +1373,12 @@ System tuning tests assert discovery changes, quirk and override precedence, bot
 firmware fallback, Bypass and release targets. The existing hysteresis test pins charge-current holds.
 Actual battery firmware behaviour is checked on the device; attribute presence alone cannot establish
 that its firmware honours a write.
+
+### Control diagram facts
+
+The keymap screen reads immutable control-layout and printed-legend facts from the startup profile.
+The Thor and VM fixture retain their diagram and Nintendo-style face legends. Unknown hardware shows
+a virtual-pad reference diagram with canonical legends; this does not announce physical capabilities.
+Changing a binding, selecting an input or choosing an output uses the same legends throughout. The
+existing keymapping events, effects and transitions are unchanged. UI tests check input/output legends
+and swapped group placement; Thor snapshots pin the existing pixels, focus targets and effect trace.

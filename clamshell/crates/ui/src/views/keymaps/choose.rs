@@ -25,7 +25,7 @@ use super::{BUTTON_H, PART_LINE, PART_W, ROW_H, SELECTED_W, choice_header, heade
 /// one closes the screen; Cancel gives up.
 pub(super) fn layers(f: &mut Frame, id: u16, input: Input) {
     let now = binding(f.s.keymapping().keymaps().get(id), f.s.keymapping().edit().layer, input).map(|b| b.output);
-    let area = choice_header(f, &remap_title(input));
+    let area = choice_header(f, &remap_title(input, &f.s.profile().control_layout.labels));
     layer_list(f, area, id, |l| now == Some(Output::Layer(l)), false);
 }
 
@@ -41,7 +41,11 @@ pub(super) fn layer_list(f: &mut Frame, area: Rect, id: u16, current: impl Fn(La
         let at = |part| Id::Row { list: ListId::Layers, i: i as u16, part };
         let layer = s.keymapping().layer_row(i);
         let (name, what, mine) = match layer {
-            Some(l) => (keymap.and_then(|k| k.layer_name(l)).unwrap_or(""), keymap.map_or(Fmt::new(), |k| turned_on_by(k, l)), current(l)),
+            Some(l) => (
+                keymap.and_then(|k| k.layer_name(l)).unwrap_or(""),
+                keymap.map_or(Fmt::new(), |k| turned_on_by(k, l, &f.s.profile().control_layout.labels)),
+                current(l),
+            ),
             None => ("New layer…", Fmt::new(), false),
         };
         let tone = if layer.is_some() { Tone::high_if(mine) } else { Tone::Fn };
@@ -107,7 +111,7 @@ pub(super) const MOUSE_ASPECT: f32 = 0.6;
 pub(super) fn mouse(f: &mut Frame, id: u16, input: Input) {
     let s = f.s;
     let out = binding(s.keymapping().keymaps().get(id), s.keymapping().edit().layer, input).map(|b| b.output);
-    let area = choice_header(f, &remap_title(input));
+    let area = choice_header(f, &remap_title(input, &f.s.profile().control_layout.labels));
     let small = f.text(Text::Small);
     let room = widgets::hint(f, area, "A button, the wheel (its middle button) or an arrow (a turn of it)");
     let h = (room.h * MOUSE_H).min(room.w * 0.5 / MOUSE_ASPECT);
@@ -182,17 +186,19 @@ pub(super) fn capture(f: &mut Frame, input: Input, keys: Option<(usize, [Chord; 
     let held = Chord { key: None, shift: on(Modifier::Shift), ctrl: on(Modifier::Ctrl), alt: on(Modifier::Alt), logo: on(Modifier::Super) };
     let mut text = Fmt::<96>::new();
     let title = match keys {
-        None => Fmt::<128>::of(format_args!("Remap {} to… modifiers, then a key (Done: the modifiers alone)", Label(input))),
+        None => {
+            Fmt::<128>::of(format_args!("Remap {} to… modifiers, then a key (Done: the modifiers alone)", Label(input, &f.s.profile().control_layout.labels)))
+        }
         Some((n, so_far)) => {
             for k in so_far.iter().take(n) {
-                let _ = write!(text, "{}  ", OutputLabel(Output::Key(*k)));
+                let _ = write!(text, "{}  ", OutputLabel(Output::Key(*k), &f.s.profile().control_layout.labels));
             }
             let dir = [Dir::Up, Dir::Left, Dir::Down, Dir::Right].get(n).copied().unwrap_or(Dir::Up);
-            Fmt::<128>::of(format_args!("Remap {} to… the key for {} ({} of 4)", Label(input), dir.name(), n + 1))
+            Fmt::<128>::of(format_args!("Remap {} to… the key for {} ({} of 4)", Label(input, &f.s.profile().control_layout.labels), dir.name(), n + 1))
         }
     };
     if !held.is_empty() {
-        let _ = write!(text, "{}+", OutputLabel(Output::Key(held)));
+        let _ = write!(text, "{}+", OutputLabel(Output::Key(held), &f.s.profile().control_layout.labels));
     }
     editor::field(f, &title, &text, (Id::Keymap(KeymapId::Back), "Cancel"), (Id::Keymap(KeymapId::Done), "Done"));
 }

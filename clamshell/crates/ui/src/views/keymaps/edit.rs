@@ -14,7 +14,7 @@ use crate::toolkit::{Frame, style};
 
 use super::pad::{Pad, Part};
 use super::panel::{panel, picking_panel};
-use super::words::{described, summary, thor};
+use super::words::{described, printed, summary};
 use super::{
     CLUSTER_W, CONTROLS, FIXED, GAP, LABEL, LABEL_COLUMN_W, LABEL_GAP, LABEL_MIN, LEADER_ALPHA, LEADER_W, MUTED, PANEL_TEXT, PART_LINE, PART_W, Picking,
     SELECTED_W,
@@ -25,10 +25,15 @@ pub(super) type FirstLine = (Actuation, Fmt<48>, Tone);
 
 /// An input's label in a layer: the line for its press, unless that is as on the pad in Base, then the
 /// lines for its hold and double. Without a press line, the first of those becomes the first line.
-pub(super) fn callout_lines(keymap: Option<&Keymap>, layer: Layer, input: Input) -> (Option<FirstLine>, [Option<(Actuation, Fmt<48>)>; 2]) {
+pub(super) fn callout_lines(
+    keymap: Option<&Keymap>,
+    layer: Layer,
+    input: Input,
+    labels: &clamshell_state::ControlLabels,
+) -> (Option<FirstLine>, [Option<(Actuation, Fmt<48>)>; 2]) {
     let press = binding(keymap, layer, input).filter(|b| layer != Layer::BASE || change(input, Some(b)) != Change::None);
     let mut lines = press.map(|b| {
-        let (text, tone) = described(input, &b, keymap);
+        let (text, tone) = described(input, &b, keymap, labels);
         (Actuation::Press, text, tone)
     });
     let mut extra = [None, None];
@@ -37,8 +42,8 @@ pub(super) fn callout_lines(keymap: Option<&Keymap>, layer: Layer, input: Input)
             continue;
         };
         match lines {
-            None => lines = Some((act, summary(input, b, keymap), Tone::Fn)),
-            Some(_) => *slot = Some((act, summary(input, b, keymap))),
+            None => lines = Some((act, summary(input, b, keymap, labels), Tone::Fn)),
+            Some(_) => *slot = Some((act, summary(input, b, keymap, labels))),
         }
     }
     (lines, extra)
@@ -279,7 +284,7 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
     let EditLayout { area, cw, gap, lw, strip, .. } = layout;
     let size = f.text(Text::Small) * LABEL;
     let line = size * LINE;
-    let pad = Pad::new(area, cw);
+    let pad = Pad::new(area, cw, s.profile().control_layout);
 
     let (mut left, mut right) = (Labels::new(), Labels::new());
     for input in Input::all() {
@@ -292,10 +297,10 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
         }
         // The layer's own label. In a layer other than Base, an input the layer doesn't map shows Base's,
         // faded.
-        let (mut lines, mut extra) = callout_lines(keymap, layer, input);
+        let (mut lines, mut extra) = callout_lines(keymap, layer, input, &s.profile().control_layout.labels);
         let mut faded = false;
         if lines.is_none() && layer != Layer::BASE {
-            (lines, extra) = callout_lines(keymap, Layer::BASE, input);
+            (lines, extra) = callout_lines(keymap, Layer::BASE, input, &s.profile().control_layout.labels);
             faded = true;
         }
         let Some((act, text, tone)) = lines else {
@@ -345,7 +350,7 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
             let extra = Actuation::of(input.kind()).filter(|a| *a != Actuation::Press).any(|a| keymap.is_some_and(|k| k.get_of(layer, input, a).is_some()));
             let tone = match binding(keymap, layer, input) {
                 _ if extra => Tone::Fn,
-                Some(b) => described(input, &b, keymap).1,
+                Some(b) => described(input, &b, keymap, &s.profile().control_layout.labels).1,
                 None => Tone::Dim,
             };
             let muted = picking.is_some_and(|p| !p.takes(input));
@@ -484,22 +489,22 @@ pub(super) fn control(f: &mut Frame, input: Input, p: Part, tone: Tone, selected
             }
             Input::Button(b @ (Button::LB | Button::RB)) => {
                 f.c.outline(shown, shown.h / 2.0, lw, lc);
-                name(f, thor(b), shown, size.min(shown.h * 0.6));
+                name(f, printed(b, &f.s.profile().control_layout.labels), shown, size.min(shown.h * 0.6));
             }
             Input::Button(b @ (Button::A | Button::B | Button::X | Button::Y)) => {
                 f.c.outline(shown, shown.w, lw, lc);
-                name(f, thor(b), shown, shown.h * 0.48);
+                name(f, printed(b, &f.s.profile().control_layout.labels), shown, shown.h * 0.48);
             }
             Input::Button(b @ (Button::LS | Button::RS)) => {
                 f.c.outline(shown, shown.w, lw, lc);
-                name(f, thor(b), shown.inset(-shown.w), shown.h * 0.4);
+                name(f, printed(b, &f.s.profile().control_layout.labels), shown.inset(-shown.w), shown.h * 0.4);
             }
             Input::Button(b @ (Button::View | Button::Menu | Button::Back)) => {
                 f.c.outline(shown, shown.w, lw, lc);
                 // Its name on the outer side.
-                let w = f.c.text_width(size, thor(b));
+                let w = f.c.text_width(size, printed(b, &f.s.profile().control_layout.labels));
                 let x = if p.side == Side::Left { shown.x - shown.w * 0.6 - w } else { shown.right() + shown.w * 0.6 };
-                f.c.text_in(Rect::new(x, shown.y, w, shown.h), size, tone, thor(b), Align::Start);
+                f.c.text_in(Rect::new(x, shown.y, w, shown.h), size, tone, printed(b, &f.s.profile().control_layout.labels), Align::Start);
             }
             Input::Stick(_) => f.c.outline(shown, shown.w, lw, lc),
             Input::Button(Button::Ayn) => {

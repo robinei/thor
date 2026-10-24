@@ -1,6 +1,6 @@
 //! Where the AYN Thor's controls are drawn on the keymap edit screen. They sit on either side of its
 //! bottom screen, so they are drawn as two clusters at the screen's edges. Each cluster is a column of
-//! groups in the order of [`LEFT`] and [`RIGHT`]:
+//! groups in the order of the profile tables:
 //!
 //! - the shoulders, on the top edge of the back;
 //! - a small round button above the screen's corner (Select, Start);
@@ -20,29 +20,8 @@ use clamshell_state::keymap::{Button, Dir, Input, Side};
 
 use crate::gfx::Rect;
 
-/// A group of controls in a cluster.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Group {
-    /// L2, R2.
-    Trigger,
-    /// L1, R1.
-    Bumper,
-    /// The small round button above the screen's corner: Select or Start.
-    Top,
-    Stick,
-    Dpad,
-    Face,
-    /// The gyro (a pill), below the D-pad.
-    Gyro,
-    /// The small round button at the screen's bottom corner, Home or Back, and AYN's pill beside Home.
-    Foot,
-}
-
-/// Each side's groups from top to bottom, and the share of the cluster's height each takes.
-pub const LEFT: [(Group, f32); 7] =
-    [(Group::Trigger, 0.1), (Group::Bumper, 0.085), (Group::Top, 0.09), (Group::Stick, 0.3), (Group::Dpad, 0.285), (Group::Gyro, 0.07), (Group::Foot, 0.07)];
-pub const RIGHT: [(Group, f32); 6] =
-    [(Group::Trigger, 0.1), (Group::Bumper, 0.085), (Group::Top, 0.09), (Group::Face, 0.32), (Group::Stick, 0.33), (Group::Foot, 0.075)];
+pub use clamshell_state::ControlGroup as Group;
+use clamshell_state::ControlLayout;
 
 /// Sizes in a group, as fractions of the smaller of its width and height. For a stick: the radii of the
 /// well, the cap and the click's dimple, and the half height of the click's target, which is as wide as
@@ -93,11 +72,12 @@ pub struct Part {
 pub struct Pad {
     area: Rect,
     width: f32,
+    layout: ControlLayout,
 }
 
 impl Pad {
-    pub fn new(area: Rect, width: f32) -> Pad {
-        Pad { area, width }
+    pub fn new(area: Rect, width: f32, layout: ControlLayout) -> Pad {
+        Pad { area, width, layout }
     }
 
     /// A side's cluster.
@@ -109,11 +89,11 @@ impl Pad {
     /// Where `group` is on `side`, if it is there.
     pub fn group(&self, side: Side, group: Group) -> Option<Rect> {
         let c = self.cluster(side);
-        let table: &[(Group, f32)] = if side == Side::Left { &LEFT } else { &RIGHT };
-        let total: f32 = table.iter().map(|(_, share)| share).sum();
+        let table = if side == Side::Left { self.layout.left } else { self.layout.right };
+        let total: f32 = table.iter().map(|(_, share)| f32::from(*share) / 1000.0).sum();
         let mut y = c.y;
         for &(g, share) in table {
-            let h = c.h * share / total.max(1e-3);
+            let h = c.h * (f32::from(share) / 1000.0) / total.max(1e-3);
             if g == group {
                 return Some(Rect::new(c.x, y, c.w, h));
             }
@@ -150,7 +130,7 @@ impl Pad {
         let (side, group) = match input {
             Input::Trigger(s) => (s, Group::Trigger),
             Input::Stick(s) | Input::StickDir(s, _) => (s, Group::Stick),
-            Input::Dpad(_) => (side_of(Group::Dpad), Group::Dpad),
+            Input::Dpad(_) => (self.side_of(Group::Dpad), Group::Dpad),
             Input::Button(b) => match b {
                 Button::LB => (Side::Left, Group::Bumper),
                 Button::RB => (Side::Right, Group::Bumper),
@@ -160,7 +140,7 @@ impl Pad {
                 Button::Menu => (Side::Right, Group::Top),
                 Button::Back => (Side::Right, Group::Foot),
                 Button::Ayn => (Side::Left, Group::Foot),
-                Button::A | Button::B | Button::X | Button::Y => (side_of(Group::Face), Group::Face),
+                Button::A | Button::B | Button::X | Button::Y => (self.side_of(Group::Face), Group::Face),
                 // The Thor has no back buttons.
                 Button::L4 | Button::L5 | Button::R4 | Button::R5 => return None,
             },
@@ -296,11 +276,10 @@ impl Pad {
         };
         Some(part)
     }
-}
-
-/// Which side's table has `group`. The D-pad and the face buttons may be on either.
-fn side_of(group: Group) -> Side {
-    if LEFT.iter().any(|(g, _)| *g == group) { Side::Left } else { Side::Right }
+    /// Which column contains a group. The D-pad and face buttons may be on either side.
+    fn side_of(&self, group: Group) -> Side {
+        if self.layout.left.iter().any(|(g, _)| *g == group) { Side::Left } else { Side::Right }
+    }
 }
 
 /// The edge of `r` toward the labels: the right edge when `k` is 1.
@@ -318,5 +297,22 @@ fn dir(d: Dir) -> (f32, f32) {
         Dir::Down => (0.0, 1.0),
         Dir::Left => (-1.0, 0.0),
         Dir::Right => (1.0, 0.0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn the_profile_places_groups_and_their_input_targets() {
+        let layout = clamshell_state::Profile::thor().control_layout;
+        let area = Rect::new(0.0, 0.0, 1000.0, 500.0);
+        let thor = Pad::new(area, 200.0, layout);
+        let swapped = Pad::new(area, 200.0, ControlLayout { left: layout.right, right: layout.left, ..layout });
+        assert_eq!(thor.part(Input::Dpad(Dir::Up)).map(|part| part.side), Some(Side::Left));
+        assert_eq!(swapped.part(Input::Dpad(Dir::Up)).map(|part| part.side), Some(Side::Right));
+        assert_eq!(thor.part(Input::Button(Button::A)).map(|part| part.side), Some(Side::Right));
+        assert_eq!(swapped.part(Input::Button(Button::A)).map(|part| part.side), Some(Side::Left));
+        assert!(thor.group(Side::Left, Group::Stick).zip(thor.group(Side::Left, Group::Dpad)).is_some_and(|(stick, dpad)| stick.bottom() <= dpad.y));
     }
 }

@@ -116,6 +116,7 @@ pub use status::time::{ClockField, TimePage, TimeRow, TimeZones};
 pub use status::{Status, Sys};
 
 pub use clamshell_device::Profile;
+pub use clamshell_device::layout::{ControlLayout, Group as ControlGroup, Labels as ControlLabels};
 pub use clamshell_library::{BrowseKind, Browsed, Collection, Entry, Launch, Library, Meta, RunnerOf, runner_key};
 
 /// What the state starts from, as read from disk and the environment.

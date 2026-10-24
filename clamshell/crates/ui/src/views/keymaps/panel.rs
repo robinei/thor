@@ -25,7 +25,7 @@ pub(super) fn picking_panel(f: &mut Frame, r: Rect, id: u16, picking: Picking) {
     let mut col = Column::new(r);
     let (title, what) = match picking {
         Picking::Target(input) => (
-            remap_title(input),
+            remap_title(input, &f.s.profile().control_layout.labels),
             match input.kind() {
                 Kind::Stick => "Tap or move a stick, or tap the D-pad",
                 Kind::Gyro => "Tap or move a stick",
@@ -95,7 +95,7 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
     let act = view.act;
     let own = keymap.and_then(|k| k.get_of(layer, input, act)).copied();
     // The name.
-    let name = Fmt::<32>::of(format_args!("{}", Label(input)));
+    let name = Fmt::<32>::of(format_args!("{}", Label(input, &f.s.profile().control_layout.labels)));
     let heading = f.text(Text::Heading) * 0.9;
     if let Some(row) = col.next(heading * LINE) {
         widgets::centred_text(f, row, heading, Tone::High, &name);
@@ -124,7 +124,12 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
         Actuation::Double => Fmt::of(format_args!("No double")),
         Actuation::FullPull => Fmt::of(format_args!("No full pull")),
     };
-    let main = || keymap.and_then(|k| k.get_of(Layer::BASE, input, act)).map(|b| summary(input, b, keymap)).unwrap_or_else(|| unset(input));
+    let main = || {
+        keymap
+            .and_then(|k| k.get_of(Layer::BASE, input, act))
+            .map(|b| summary(input, b, keymap, &s.profile().control_layout.labels))
+            .unwrap_or_else(|| unset(input))
+    };
     if let Some(row) = col.next(small * LINE * 2.2) {
         match (own, layer) {
             (None, l) if l != Layer::BASE => {
@@ -138,9 +143,9 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
                 let tone = if input == Input::Gyro || change(input, Some(&b)) == Change::Mapped || act != Actuation::Press {
                     Tone::High
                 } else {
-                    described(input, &b, keymap).1
+                    described(input, &b, keymap, &s.profile().control_layout.labels).1
                 };
-                widgets::centred_lines(f, row, small, tone, &summary(input, &b, keymap));
+                widgets::centred_lines(f, row, small, tone, &summary(input, &b, keymap, &s.profile().control_layout.labels));
             }
         }
     }
@@ -213,7 +218,7 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
                 break 'rows;
             };
             let value = match base.hold {
-                Some(h) => Fmt::<24>::of(format_args!("while {}", Label(h))),
+                Some(h) => Fmt::<24>::of(format_args!("while {}", Label(h, &f.s.profile().control_layout.labels))),
                 None => Fmt::of(format_args!("Always")),
             };
             f.button(Id::Keymap(KeymapId::Holds), row, Look::ROW, |f| widgets::value_row(f, row, small, "Active", &value, base.hold.is_some()));
