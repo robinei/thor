@@ -118,6 +118,12 @@ impl Host {
             Some(preferred)
         }
     }
+    /// What clients are told the output can show: our PQ encoding, with the host's peak and average
+    /// anchored to our reference white. Advertising the content's current volume instead (as the encoding
+    /// sent to the host does) would make clients tone-map down to it and never declare more.
+    pub fn advertised(&self) -> Option<ColourDescription> {
+        Some(advertise(self.data.preferred?, self.data.pq && self.data.mastering))
+    }
     /// The selected output encoding is described before the host surface's next commit.
     pub(crate) fn describe(&mut self, description: ColourDescription) -> bool {
         if self.data.requested == Some(description) {
@@ -177,6 +183,54 @@ impl Host {
         true
     }
 }
+/// The client-facing description for a host preference; `hdr` when the host takes PQ with mastering
+/// metadata. Otherwise the host's own description is passed on.
+fn advertise(preferred: ColourDescription, hdr: bool) -> ColourDescription {
+    if !hdr {
+        return preferred;
+    }
+    let luminance = preferred.luminances();
+    let anchored = |value: u32| (u64::from(value) * 203).div_ceil(u64::from(luminance.reference.max(1))).min(10000) as u32;
+    let target = preferred.target.unwrap_or_default();
+    let peak = anchored(target.luminance.map(|(_, max)| max).or(target.max_cll).unwrap_or(luminance.max)).max(203);
+    let average = target.max_fall.map_or(peak, anchored).clamp(203, peak);
+    ColourDescription {
+        primaries: preferred.primaries,
+        transfer: TransferFunction::Pq,
+        luminance: Some(ColourLuminance { min: 0, max: 10000, reference: 203 }),
+        target: Some(ColourTarget {
+            primaries: Some(target.primaries.unwrap_or(preferred.primaries)),
+            luminance: Some((target.luminance.map_or(0, |(min, _)| min), peak)),
+            max_cll: Some(peak),
+            max_fall: Some(average),
+        }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn clients_are_told_the_hosts_headroom_not_the_contents_volume() {
+        // KWin on an HDR monitor: gamma 2.2 signal, 1400 nits peak, 951 average, reference white 218.
+        let host = ColourDescription {
+            primaries: ColourPrimaries::Bt2020,
+            transfer: TransferFunction::Gamma(22000),
+            luminance: Some(ColourLuminance { min: 0, max: 1400, reference: 218 }),
+            target: Some(ColourTarget { primaries: None, luminance: Some((50, 1400)), max_cll: None, max_fall: Some(951) }),
+        };
+        let advertised = advertise(host, true);
+        assert_eq!(advertised.transfer, TransferFunction::Pq);
+        assert_eq!(advertised.luminance, Some(ColourLuminance { min: 0, max: 10000, reference: 203 }));
+        let target = advertised.target.unwrap_or_default();
+        // Anchored to our reference white: 1400 * 203 / 218 and 951 * 203 / 218, rounded up.
+        assert_eq!((target.luminance, target.max_cll, target.max_fall), (Some((50, 1304)), Some(1304), Some(886)));
+        assert_eq!(target.primaries, Some(ColourPrimaries::Bt2020));
+        // An SDR host, or one without PQ, is passed on as it is.
+        assert_eq!(advertise(host, false), host);
+    }
+}
+
 impl Data {
     fn request_preferred(&mut self, qh: &QueueHandle<Self>) {
         let Some(feedback) = &self.feedback else { return };

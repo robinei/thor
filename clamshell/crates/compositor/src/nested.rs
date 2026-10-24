@@ -130,7 +130,9 @@ pub fn run(
                             }
                             if let Some(encoding) = host.encoding() {
                                 pipeline.set_output(backend.renderer(), encoding)?;
-                                server.colour.set_output(encoding);
+                            }
+                            if let Some(advertised) = host.advertised() {
+                                server.colour.set_output(advertised);
                             }
                         }
                         sync_capture(server, backend.window());
