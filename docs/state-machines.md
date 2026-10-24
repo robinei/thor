@@ -991,3 +991,41 @@ The desktop entry is validated with desktop-file-validate when available; argume
 the packaged Steam wrapper is checked using a temporary client that records argv, without starting
 Steam or changing its installation. The client UI itself is checked with Steam on the device; the
 workspace tests continue to pin launch effects and scope/follower behaviour.
+
+### Relative pointer and constraints (compositor/pointer)
+
+A backend declares whether it supplies relative motion when constructing the server. Relative-pointer
+and pointer-constraints globals are offered only with that capability. The headless harness enables it
+and injects relative motion, as the libinput backend will on the device. The current nested winit host
+is absolute-only and offers neither global; a separate upstream forwarding patch is not a build
+dependency. No local Cargo source override is needed by this checkout or CI.
+
+Relative-only input reports both accelerated and unaccelerated deltas to the focused client, using the
+window's inverse scale, and moves the free or confined compositor cursor. A locked cursor stays fixed
+and hidden while relative events continue. Winit's dual absolute/relative stream, if supplied by a
+future upstream update, positions a free cursor from the absolute event without moving it twice.
+Motion never becomes a state event or triggers a UI recording merely to deliver camera input.
+
+A pointer over the keyboard-focused, visible, mapped window may activate its surface's lock or
+confinement inside the requested region, after the backend accepts capture. Confinement rejects
+positions outside that surface/region and retains a permitted axis of motion. Changing a committed
+region to exclude the cursor ends capture. Destroying a constraint, unmapping/hiding the window,
+changing focus or geometry, opening a menu, Home and host focus loss release it. Persistent constraints
+may reactivate on return; one-shot constraints are removed on release. Cursor-position hints are
+advisory and are not applied. No constraint is represented in State.
+
+A failure to obtain host capture posts and flushes a fatal protocol error for the requesting client;
+the session continues. Merely marking a client dead after request dispatch can leave its socket
+waiting indefinitely, so the shared rejection helper now posts wl_display.implementation on the actual
+display object. A host that cannot release capture leaves no usable input path; the nested session
+ends rather than trapping the user's pointer. Ordinary releases reach the backend before a later
+capture activates.
+
+`relative_motion_and_constraints_follow_geometry_home_regions_and_host_focus` uses a real socket-pair
+client, an oversized buffer and injected relative input. It pins free-cursor movement, exact scaled
+relative channels, 100 camera events without a state revision, fixed/hidden locked cursors, persistent
+unmap/remap, confinement, Home, region commits, one-shot focus loss and rejection when capture fails.
+The exact host mode sequence is asserted. `a_host_that_cannot_release_capture_ends_the_unusable_session`
+pins the host failure policy. The real-client popup test also acquires a lock and checks that opening
+a menu releases it. The nested software/GPU smoke tests assert that an absolute-only host
+omits both globals and continue testing cursor, EGL, Vulkan and screen moves with upstream Smithay.

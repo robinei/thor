@@ -1,6 +1,7 @@
 //! Real menus borrow focus and cannot keep it when their parent is hidden.
 
 use super::*;
+use smithay::reexports::wayland_protocols::wp::pointer_constraints::zv1::client::zwp_pointer_constraints_v1;
 use smithay::{
     backend::input::{ButtonState, InputTime, TouchSlot},
     input::pointer::{ButtonEvent, MotionEvent},
@@ -33,7 +34,7 @@ fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() 
     let mut display = Display::<Server>::new().unwrap();
     let config =
         Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), || {}, |_| Process::default(), |_| {}).unwrap();
+    let mut server = Server::new(State::new(Init::default()), config, display.handle(), true, || {}, |_| Process::default(), |_| {}).unwrap();
     server.core.handle(Event::Start);
     server.frame();
     let (server_socket, client_socket) = UnixStream::pair().unwrap();
@@ -48,7 +49,9 @@ fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() 
         let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
         let shm: wl_shm::WlShm = globals.bind(&qh, 1..=1, ()).unwrap();
         let seat: wl_seat::WlSeat = globals.bind(&qh, 1..=7, ()).unwrap();
-        let _pointer = seat.get_pointer(&qh, ());
+        let pointer = seat.get_pointer(&qh, ());
+        let constraints: zwp_pointer_constraints_v1::ZwpPointerConstraintsV1 = globals.bind(&qh, 1..=1, ()).unwrap();
+        let mut lock = None;
         let _keyboard = seat.get_keyboard(&qh, ());
         let surface = compositor.create_surface(&qh, ());
         let xdg = shell.get_xdg_surface(&surface, &qh, ());
@@ -70,6 +73,13 @@ fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() 
             steps.recv_timeout(Duration::from_secs(5)).unwrap();
             queue.roundtrip(&mut client).unwrap();
             assert_ne!(client.pointer_serial, 0);
+            if cycle == 0 {
+                lock = Some(constraints.lock_pointer(&surface, &pointer, None, zwp_pointer_constraints_v1::Lifetime::Persistent, &qh, ()));
+                queue.roundtrip(&mut client).unwrap();
+                queue.roundtrip(&mut client).unwrap();
+                report.send((cycle, 6)).unwrap();
+                steps.recv_timeout(Duration::from_secs(5)).unwrap();
+            }
             let menu_surface = compositor.create_surface(&qh, ());
             let menu_xdg = shell.get_xdg_surface(&menu_surface, &qh, ());
             let positioner = shell.create_positioner(&qh, ());
@@ -88,6 +98,10 @@ fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() 
             steps.recv_timeout(Duration::from_secs(5)).unwrap();
             queue.roundtrip(&mut client).unwrap();
             assert_eq!(client.popup_done, (cycle + 1).min(2));
+            if let Some(lock) = lock.take() {
+                lock.destroy();
+                queue.roundtrip(&mut client).unwrap();
+            }
             if cycle == 2 {
                 let child_surface = compositor.create_surface(&qh, ());
                 let child_xdg = shell.get_xdg_surface(&child_surface, &qh, ());
@@ -138,6 +152,7 @@ fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() 
     while !thread.is_finished() && Instant::now() < until {
         display.dispatch_clients(&mut server).unwrap();
         server.frame();
+        server.sync_pointer_capture(|_| Ok::<_, &str>(()));
         display.flush_clients().unwrap();
         if let Ok((cycle, phase)) = reports.try_recv() {
             let id = server.windows[0].id;
@@ -163,6 +178,7 @@ fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() 
                 }
                 1 => {
                     assert!(server.menu.is_some());
+                    assert!(server.capture.is_none(), "opening a menu releases the game's pointer capture");
                     assert!(keyboard.is_grabbed());
                     assert_ne!(keyboard.current_focus(), Some(root.clone()));
                     let hit = server.hit((111.0, 111.0).into()).unwrap();
@@ -215,8 +231,13 @@ fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() 
                     assert_eq!(keyboard.current_focus(), None);
                     assert!(!server.windows[0].mapped);
                 }
+                6 => {
+                    assert!(server.pointer_locked());
+                    assert_eq!(server.host_capture, crate::pointer::CaptureMode::Locked);
+                }
                 _ => panic!("unexpected phase"),
             }
+            server.sync_pointer_capture(|_| Ok::<_, &str>(()));
             phases += 1;
             next.send(()).unwrap();
         }
@@ -224,5 +245,5 @@ fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() 
     }
     assert!(thread.is_finished());
     thread.join().unwrap();
-    assert_eq!(phases, 15);
+    assert_eq!(phases, 16);
 }

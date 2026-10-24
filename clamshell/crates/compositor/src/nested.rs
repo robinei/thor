@@ -38,7 +38,7 @@ pub fn run(
     let mut display = Display::<Server>::new()?;
     let (wake, woken) = ping::make_ping()?;
     event_loop.handle().insert_source(woken, |_, _, _| {}).map_err(|e| e.error)?;
-    let mut server = Server::new(state, config, display.handle(), move || wake.ping(), identify, on_effect)?;
+    let mut server = Server::new(state, config, display.handle(), false, move || wake.ping(), identify, on_effect)?;
     let socket = ListeningSocketSource::new_auto()?;
     server.socket = socket.socket_name().to_string_lossy().into_owned();
     log::info!("nested compositor: WAYLAND_DISPLAY={}", server.socket);
@@ -83,14 +83,18 @@ pub fn run(
                         server.resize((size.w, size.h));
                         damage = OutputDamageTracker::new(size, 1.0, Transform::Flipped180);
                     }
-                    WinitEvent::Focus(false) => {
-                        server.cursor_activity.hide();
-                        server.touch_cancel();
+                    WinitEvent::Focus(focused) => {
+                        server.host_focused = focused;
+                        if !focused {
+                            server.cursor_activity.hide();
+                            server.touch_cancel();
+                        }
                     }
                     WinitEvent::Input(event) => server.input(event),
                     WinitEvent::CloseRequested => server.exit = true,
                     WinitEvent::Redraw => {
                         server.frame();
+                        sync_capture(server, backend.window());
                         let imported = server.import_dmabufs(backend.renderer());
                         // Imports may make EGL surfaceless. Force a rendered frame to restore the
                         // window target even when the scene has not otherwise changed.
@@ -122,8 +126,8 @@ pub fn run(
                         }
                         backend.window().request_redraw();
                     }
-                    _ => {}
                 }
+                sync_capture(server, backend.window());
                 Ok(())
             })();
             if let Err(error) = result {
@@ -143,4 +147,16 @@ pub fn run(
         server.dh.flush_clients()?;
     }
     Ok(())
+}
+
+fn sync_capture(server: &mut Server, window: &dyn smithay::reexports::winit::window::Window) {
+    use crate::pointer::CaptureMode;
+    use smithay::reexports::winit::window::CursorGrabMode;
+    server.sync_pointer_capture(|mode| {
+        window.set_cursor_grab(match mode {
+            CaptureMode::Free => CursorGrabMode::None,
+            CaptureMode::Locked => CursorGrabMode::Locked,
+            CaptureMode::Confined => CursorGrabMode::Confined,
+        })
+    });
 }

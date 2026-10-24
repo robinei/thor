@@ -5,7 +5,8 @@ use clamshell_state::{Event as StateEvent, WindowEvent, device::buttons::DeviceK
 use clamshell_ui::{End, Screen, Source};
 use smithay::{
     backend::input::{
-        AbsolutePositionEvent, Axis, ButtonState, Event, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, TouchEvent,
+        AbsolutePositionEvent, Axis, ButtonState, Event, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
+        TouchEvent,
     },
     backend::winit::WinitInput,
     input::{
@@ -61,12 +62,24 @@ impl Server {
                     });
                 }
             }
+            InputEvent::PointerMotion { event } => {
+                self.validate_capture();
+                let delta = PointerMotionEvent::<WinitInput>::delta(&event);
+                let unaccelerated = PointerMotionEvent::<WinitInput>::delta_unaccel(&event);
+                let time = Event::<WinitInput>::time(&event);
+                // Winit can report absolute and relative events for one physical movement.
+                // Its absolute event positions the free cursor; captured motion is relative-only.
+                if self.capture.is_some() {
+                    self.pointer_relative(delta, unaccelerated, time);
+                } else {
+                    self.relative_motion(delta, unaccelerated, time);
+                }
+            }
             InputEvent::PointerMotionAbsolute { event, .. } => {
-                self.cursor_activity.motion(std::time::Instant::now());
-                self.pointer = event.position_transformed(self.size.into());
-                let (_, position) = self.ui_position();
-                self.core.moved(Source::Mouse, position, event.time().millis());
-                self.move_pointer(event.time());
+                self.validate_capture();
+                if self.capture.is_none() {
+                    self.pointer_absolute(event.position_transformed(self.size.into()), event.time());
+                }
             }
             InputEvent::PointerButton { event, .. } => {
                 if event.button_code() == 0x110 && self.arrow_pressed {
@@ -154,6 +167,18 @@ impl Server {
             InputEvent::TouchFrame { .. } => self.touch_frame(),
             _ => {}
         }
+    }
+
+    pub(crate) fn pointer_absolute(&mut self, position: Point<f64, Logical>, time: smithay::backend::input::InputTime) {
+        self.cursor_activity.motion(std::time::Instant::now());
+        self.validate_capture();
+        if self.pointer_locked() {
+            return;
+        }
+        self.pointer = self.constrain_pointer(position);
+        let (_, position) = self.ui_position();
+        self.core.moved(Source::Mouse, position, time.millis());
+        self.move_pointer(time);
     }
 
     fn move_pointer(&mut self, time: smithay::backend::input::InputTime) {

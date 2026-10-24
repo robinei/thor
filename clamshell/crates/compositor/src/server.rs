@@ -61,6 +61,10 @@ pub(crate) struct Server {
     pub windows: Vec<ClientWindow>,
     pub outputs: [Output; 2],
     pub pointer: Point<f64, Logical>,
+    pub relative_pointer: bool,
+    pub capture: Option<crate::pointer::Capture>,
+    pub host_capture: crate::pointer::CaptureMode,
+    pub host_focused: bool,
     pub cursor: smithay::input::pointer::CursorImageStatus,
     pub cursor_activity: crate::cursor::Activity,
     pub pointer_window: Option<i64>,
@@ -89,6 +93,7 @@ impl Server {
         state: State,
         config: Config,
         dh: DisplayHandle,
+        relative_motion: bool,
         wake: impl Fn() + Send + Sync + 'static,
         identify: impl Fn(u32) -> Process + 'static,
         on_effect: impl FnMut(&Effect) + 'static,
@@ -144,6 +149,10 @@ impl Server {
             menu: None,
             windows: Vec::new(),
             pointer: (0.0, 0.0).into(),
+            relative_pointer: false,
+            capture: None,
+            host_capture: crate::pointer::CaptureMode::Free,
+            host_focused: true,
             cursor: smithay::input::pointer::CursorImageStatus::default_named(),
             cursor_activity: crate::cursor::Activity::default(),
             pointer_window: None,
@@ -166,6 +175,9 @@ impl Server {
             identify: Box::new(identify),
             next_id: 1,
         };
+        if relative_motion {
+            server.enable_relative_pointer();
+        }
         server.resize((1580, 540));
         Ok(server)
     }
@@ -222,16 +234,22 @@ impl Server {
 
     pub(crate) fn reject_client(&self, surface: &WlSurface, message: &str) {
         log::warn!("compositor: rejecting client surface {:?}: {message}", surface.id());
-        if let Some(client) = surface.client() {
-            client.kill(
-                &self.dh,
-                smithay::reexports::wayland_server::backend::protocol::ProtocolError {
-                    code: 0, // wl_display.invalid_object; wl_display is internal to wayland-server.
-                    object_id: 1,
-                    object_interface: "wl_display".into(),
-                    message: message.into(),
-                },
-            );
+        let Some(client) = surface.client() else { return };
+        let backend = self.dh.backend_handle();
+        let mut display = None;
+        // Posting the error also flushes it. Merely marking a client dead outside a
+        // protocol dispatch can leave its socket waiting for another incoming request.
+        if backend
+            .with_all_objects_for(client.id(), |object| {
+                if object.protocol_id() == 1 {
+                    display = Some(object);
+                }
+            })
+            .is_ok()
+            && let Some(display) = display
+        {
+            let message = std::ffi::CString::new(message).unwrap_or_else(|_| c"client request rejected".to_owned());
+            backend.post_error(display, 3, message); // wl_display.implementation
         }
     }
 
@@ -294,6 +312,7 @@ impl Server {
     }
 
     pub fn sync_windows(&mut self) {
+        self.validate_capture();
         self.cancel_hidden_touches();
         let revision = self.core.state_revision();
         if self.presentation_revision != Some(revision) {

@@ -38,6 +38,8 @@ struct Client {
     pointer_serial: u32,
     cursor_enter: u32,
     popup_done: usize,
+    relative: Vec<(f64, f64, f64, f64)>,
+    constraints: Vec<&'static str>,
 }
 
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Client {
@@ -89,9 +91,16 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
     let mut display = Display::<Server>::new().unwrap();
     let config =
         Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
-    let mut server =
-        Server::new(State::new(Init::default()), config, display.handle(), || {}, |_| Process { unit: Some("test.service".into()), pids: vec![100] }, |_| {})
-            .unwrap();
+    let mut server = Server::new(
+        State::new(Init::default()),
+        config,
+        display.handle(),
+        false,
+        || {},
+        |_| Process { unit: Some("test.service".into()), pids: vec![100] },
+        |_| {},
+    )
+    .unwrap();
     server.core.handle(Event::Start);
     server.frame();
     let (server_socket, client_socket) = UnixStream::pair().unwrap();
@@ -321,7 +330,7 @@ fn touch_contacts_keep_independent_surfaces_and_native_coordinates() {
     let mut display = Display::<Server>::new().unwrap();
     let config =
         Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), || {}, |_| Process::default(), |_| {}).unwrap();
+    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
     server.core.handle(Event::Start);
     server.frame();
     let (server_socket, client_socket) = UnixStream::pair().unwrap();
@@ -446,7 +455,7 @@ fn touching_a_home_arrow_switches_once_and_consumes_home_release() {
     let display = Display::<Server>::new().unwrap();
     let config =
         Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), || {}, |_| Process::default(), |_| {}).unwrap();
+    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
     server.core.handle(Event::Start);
     for (id, focused) in [(1, true), (2, false)] {
         server.core.handle(
@@ -490,7 +499,7 @@ fn client_error_is_isolated(dmabuf_error: bool) {
     let mut display = Display::<Server>::new().unwrap();
     let config =
         Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), || {}, |_| Process::default(), |_| {}).unwrap();
+    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
     use smithay::backend::allocator::{Format, Fourcc, Modifier};
     server.advertise_dmabuf_formats(
         [Format { code: Fourcc::Xrgb8888, modifier: Modifier::Linear }, Format { code: Fourcc::Abgr2101010, modifier: Modifier::Linear }],
@@ -610,6 +619,7 @@ fn screenshots_are_consumed_by_the_host_instead_of_the_parent_capture_tool() {
         State::new(Init::default()),
         config,
         display.handle(),
+        false,
         || {},
         |_| Process::default(),
         move |effect| effects.borrow_mut().push(effect.clone()),
@@ -643,3 +653,6 @@ mod cursor_tests;
 
 #[path = "activation_tests.rs"]
 mod activation_tests;
+
+#[path = "pointer_tests.rs"]
+mod pointer_tests;

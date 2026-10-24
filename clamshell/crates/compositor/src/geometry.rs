@@ -6,7 +6,7 @@ use clamshell_state::session::{
 };
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Geometry {
     pub viewport: Rectangle<i32, Logical>,
     pub native: Rectangle<i32, Logical>,

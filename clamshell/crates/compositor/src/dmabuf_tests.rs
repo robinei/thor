@@ -60,7 +60,7 @@ fn an_accepted_import_completes_once_and_an_empty_frame_has_no_import_work() {
     let mut display = Display::<Server>::new().unwrap();
     let config =
         Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), || {}, |_| Process::default(), |_| {}).unwrap();
+    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
     server.advertise_dmabuf_formats([Format { code: Fourcc::Xrgb8888, modifier: Modifier::Linear }], None);
     let (server_socket, client_socket) = UnixStream::pair().unwrap();
     display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();

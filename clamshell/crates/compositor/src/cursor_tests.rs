@@ -18,7 +18,7 @@ fn cursor_requests_keep_hotspots_ignore_old_serials_and_release_on_home() {
     let mut display = Display::<Server>::new().unwrap();
     let config =
         Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), || {}, |_| Process::default(), |_| {}).unwrap();
+    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
     server.core.handle(Event::Start);
     server.frame();
     let (server_socket, client_socket) = UnixStream::pair().unwrap();

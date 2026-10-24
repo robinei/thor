@@ -189,6 +189,8 @@ time.sleep(300)
         egl = spawn([str(BIN.parent / "examples/egl-client")], "egl-client", egl_env)
         wait(lambda: pixels((128, 32, 64)) == (True, False), "Wayland EGL client rendered on top")
         protocol = (directory / "egl-client.log").read_text()
+        for interface in ["zwp_relative_pointer_manager_v1", "zwp_pointer_constraints_v1"]:
+            assert f'"{interface}"' not in protocol, "the absolute-only nested backend must not offer pointer capture"
         if not args.gpu:
             assert '"zwp_linux_dmabuf_v1"' not in protocol, "software EGL must not offer native dmabuf imports"
         if args.gpu:

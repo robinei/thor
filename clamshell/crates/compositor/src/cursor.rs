@@ -200,6 +200,9 @@ fn fallback() -> Image {
 
 impl Server {
     pub(crate) fn effective_cursor(&self) -> CursorImageStatus {
+        if self.pointer_locked() {
+            return CursorImageStatus::Hidden;
+        }
         let client = self.seat.get_pointer().is_some_and(|pointer| pointer.current_focus().is_some())
             && (self.hit(self.pointer).is_some() || self.pointer_window.is_some_and(|window| self.visible(window)));
         match &self.cursor {

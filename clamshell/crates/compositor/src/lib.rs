@@ -13,6 +13,7 @@ mod idle;
 mod input;
 mod keyboard;
 mod nested;
+mod pointer;
 mod popup;
 mod render;
 mod server;

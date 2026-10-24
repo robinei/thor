@@ -281,6 +281,12 @@ That mode also needs Wayland-capable `vkcube`: it checks Vulkan WSI animation th
 resizes and close, plus complete dmabuf feedback and native buffer submission. The harness prints the
 directory containing screenshots and protocol logs.
 
+Relative-pointer and pointer-lock behaviour is tested headless by injecting relative input, independent
+of the nested host. The pinned winit backend is absolute-only, so nested mode omits relative-pointer
+and pointer-constraints globals; the device backend will use libinput. A winit raw-motion forwarding
+patch is being prepared upstream separately. Builds and CI use the pinned dependency without a local
+Cargo source override.
+
 For nested compositor diagnostics, `clamshell ctl window events /tmp/window-events.json` exports the
 last 256 window inputs. `clamshell_compositor::trace::Recording::replay` checks the recording against a
 state fixture with the matching library, rules and launch context.

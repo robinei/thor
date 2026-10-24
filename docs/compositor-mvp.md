@@ -442,7 +442,10 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    toplevel and do not enter state. Cursors are composed by the host from cached xcursor theme frames
    or client surfaces, with cursor-shape requests, hidden cursors and hotspots covered by real clients
    and pixel checks. Xdg activation delegates recent, single-use tokens through state selection;
-   expired/background requests and Home revocation are covered by a real client. X11 fixtures and Xwayland supervision remain to implement. Viewporter cropping and destination sizing use the
+   expired/background requests and Home revocation are covered by a real client. The shared relative
+   pointer/constraint path is tested headless with injected relative input, including camera motion,
+   confinement, unmap/remap and Home release. The absolute-only nested host omits those protocols;
+   the device will receive relative input from libinput. X11 fixtures and Xwayland supervision remain to implement. Viewporter cropping and destination sizing use the
    same logical geometry for presentation and input, covered by a socket-pair client. Screenshots read the presented nested scene and
    encode it on the system worker; SDR PNG export does not change composition precision. The nested
    host advertises renderer-native dmabuf formats, with render-device feedback when available, and
