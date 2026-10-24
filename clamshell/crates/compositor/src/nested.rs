@@ -73,6 +73,7 @@ pub fn run(
     let mut arrows = ArrowFrame::new((960, 540))?;
     let mut elements = Vec::new();
     let mut submitted = false;
+    let mut refresh_known = false;
     let mut damage = OutputDamageTracker::new(backend.window_size(), 1.0, Transform::Flipped180);
     event_loop
         .handle()
@@ -80,6 +81,7 @@ pub fn run(
             let result: Result<(), Error> = (|| {
                 match event {
                     WinitEvent::Resized { size, .. } => {
+                        refresh_known = false;
                         server.resize((size.w, size.h));
                         damage = OutputDamageTracker::new(size, 1.0, Transform::Flipped180);
                     }
@@ -93,6 +95,16 @@ pub fn run(
                     WinitEvent::Input(event) => server.input(event),
                     WinitEvent::CloseRequested => server.exit = true,
                     WinitEvent::Redraw => {
+                        // The host tells which monitor shows the window only after it is shown, so ask
+                        // at each frame until it does, and again after a resize.
+                        if !refresh_known && let Some(refresh) = host_refresh(backend.window()) {
+                            refresh_known = true;
+                            if refresh != server.refresh {
+                                log::info!("nested compositor: host refresh {} Hz", f64::from(refresh) / 1000.0);
+                                server.refresh = refresh;
+                                server.resize(server.size);
+                            }
+                        }
                         server.frame();
                         sync_capture(server, backend.window());
                         let imported = server.import_dmabufs(backend.renderer());
@@ -159,6 +171,12 @@ pub fn run(
         server.dh.flush_clients()?;
     }
     Ok(())
+}
+
+/// The refresh of the monitor showing the window, in mHz, once the host says.
+fn host_refresh(window: &dyn smithay::reexports::winit::window::Window) -> Option<i32> {
+    let refresh = window.current_monitor()?.current_video_mode()?.refresh_rate_millihertz()?;
+    i32::try_from(refresh.get()).ok()
 }
 
 fn sync_capture(server: &mut Server, window: &dyn smithay::reexports::winit::window::Window) {

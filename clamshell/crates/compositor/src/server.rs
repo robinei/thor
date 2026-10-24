@@ -77,6 +77,9 @@ pub(crate) struct Server {
     pub touch_pending: bool,
     pub size: (i32, i32),
     pub top_width: i32,
+    /// The outputs' refresh in mHz: the host monitor's when nested, so clients pacing to it (mpv's
+    /// display-resample) match the frame callbacks they get.
+    pub refresh: i32,
     pub exit: bool,
     pub screenshot_requested: bool,
     pub started: Instant,
@@ -173,6 +176,7 @@ impl Server {
             touch_pending: false,
             size: (1580, 540),
             top_width: 960,
+            refresh: 60_000,
             exit: false,
             screenshot_requested: false,
             started: Instant::now(),
@@ -203,7 +207,7 @@ impl Server {
         for (screen, output, x, w) in
             [(Screen::Top, &self.outputs[0], 0, self.top_width), (Screen::Bottom, &self.outputs[1], self.top_width, self.size.0 - self.top_width)]
         {
-            let mode = Mode { size: (w, self.size.1).into(), refresh: 60_000 };
+            let mode = Mode { size: (w, self.size.1).into(), refresh: self.refresh };
             output.change_current_state(Some(mode), Some(Transform::Normal), None, Some((x, 0).into()));
             output.set_preferred(mode);
             self.core.resize(screen, (w as u32, self.size.1 as u32), 1);
