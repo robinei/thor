@@ -37,6 +37,7 @@ pub(super) const NAMES: &[&str] = &[
     "INCR",
     "TEXT",
     "_THOR_SELECTION",
+    "_THOR_TIMESTAMP",
 ];
 pub(super) const PROPERTIES: &[&str] =
     &["WM_NAME", "_NET_WM_NAME", "WM_CLASS", "WM_TRANSIENT_FOR", "WM_NORMAL_HINTS", "_NET_WM_WINDOW_TYPE", "WM_PROTOCOLS", "WM_HINTS"];

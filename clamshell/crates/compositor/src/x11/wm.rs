@@ -41,6 +41,16 @@ enum Query {
     Attributes(i64),
     OwnershipBarrier,
 }
+/// The server time for a focus change. The X server ignores a focus request older than the last focus
+/// change, which an active client may have made itself, so each change waits for a fresh time: an empty
+/// append to a property of our own window, whose PropertyNotify carries the current time (ICCCM 2.1).
+#[derive(Default)]
+enum Stamp {
+    #[default]
+    None,
+    Requested(Instant),
+    Fresh(u32),
+}
 struct Window {
     xid: u32,
     id: i64,
@@ -78,12 +88,16 @@ pub(super) struct Wm {
     composite_done: bool,
     pub ready: bool,
     focus: Option<u32>,
-    timestamp: u32,
+    stamp: Stamp,
     selection: super::selection::Bridge,
 }
 impl Wm {
     pub fn deadline(&self) -> Option<Instant> {
-        self.pending.iter().map(|p| p.deadline).chain(self.selection.deadline()).min()
+        let stamp = match self.stamp {
+            Stamp::Requested(deadline) => Some(deadline),
+            _ => None,
+        };
+        self.pending.iter().map(|p| p.deadline).chain(self.selection.deadline()).chain(stamp).min()
     }
     fn query(&mut self, wire: &mut Transport, request: impl Request, opcode: u8, kind: Query, now: Instant) -> io::Result<()> {
         if self.pending.len() >= 256 {
@@ -132,6 +146,11 @@ impl Wm {
                 }
                 index += 1;
             }
+        }
+        if let Stamp::Requested(deadline) = self.stamp
+            && now >= deadline
+        {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "X11 server time for focus timed out"));
         }
         Ok(())
     }
@@ -497,7 +516,9 @@ impl Wm {
             }
             Some(PROPERTY_NOTIFY_EVENT) => {
                 let event = PropertyNotifyEvent::try_parse(bytes).map_err(io::Error::other)?.0;
-                self.timestamp = event.time;
+                if event.window == self.owner && event.atom == self.atoms.get("_THOR_TIMESTAMP") {
+                    self.stamp = Stamp::Fresh(event.time);
+                }
                 if let Some(window) = self.windows.iter_mut().find(|w| w.xid == event.window)
                     && let Some(index) = PROPERTIES.iter().position(|name| self.atoms.get(name) == event.atom)
                 {
@@ -592,12 +613,41 @@ impl Wm {
     }
     fn settle_focus(&mut self, wire: &mut Transport, server: &Server) -> io::Result<()> {
         let focus = server.core.state().session().keyboard_focus().and_then(|id| self.windows.iter().find(|w| w.id == id && w.opened).map(|w| w.xid));
-        if self.focus != focus {
+        if self.focus == focus {
+            // A time that arrives after the change it was for was undone would be stale by the next one.
+            if matches!(self.stamp, Stamp::Fresh(_)) {
+                self.stamp = Stamp::None;
+            }
+            return Ok(());
+        }
+        let time = match self.stamp {
+            Stamp::Fresh(time) => time,
+            Stamp::Requested(_) => return Ok(()),
+            Stamp::None => {
+                wire.request(
+                    ChangePropertyRequest {
+                        mode: PropMode::APPEND,
+                        window: self.owner,
+                        property: self.atoms.get("_THOR_TIMESTAMP"),
+                        type_: AtomEnum::INTEGER.into(),
+                        format: 32,
+                        data_len: 0,
+                        data: Cow::Borrowed(&[]),
+                    },
+                    0,
+                    false,
+                )?;
+                self.stamp = Stamp::Requested(Instant::now() + Duration::from_secs(3));
+                return Ok(());
+            }
+        };
+        self.stamp = Stamp::None;
+        {
             let target = focus.and_then(|xid| self.windows.iter().find(|w| w.xid == xid));
             let direct = target.filter(|w| w.properties.input.unwrap_or(true)).map_or(0, |w| w.xid);
-            wire.request(SetInputFocusRequest { revert_to: InputFocus::POINTER_ROOT, focus: direct, time: self.timestamp }, 0, false)?;
+            wire.request(SetInputFocusRequest { revert_to: InputFocus::POINTER_ROOT, focus: direct, time }, 0, false)?;
             if let Some(window) = target.filter(|w| w.properties.take_focus) {
-                let event = ClientMessageEvent::new(32, window.xid, self.atoms.get("WM_PROTOCOLS"), [self.atoms.get("WM_TAKE_FOCUS"), self.timestamp, 0, 0, 0]);
+                let event = ClientMessageEvent::new(32, window.xid, self.atoms.get("WM_PROTOCOLS"), [self.atoms.get("WM_TAKE_FOCUS"), time, 0, 0, 0]);
                 wire.request(
                     SendEventRequest {
                         propagate: false,
@@ -854,13 +904,7 @@ mod tests {
         let mut wire = Transport::new(socket, now).unwrap();
         wire.turn(now).unwrap();
         peer.read_exact(&mut [0; 12]).unwrap();
-        let mut wm = Wm {
-            timestamp: 1234,
-            root: 1,
-            owner: 2,
-            atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()),
-            ..Wm::default()
-        };
+        let mut wm = Wm { root: 1, owner: 2, atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()), ..Wm::default() };
         wm.discover(10, Rectangle::from_size((400, 300).into()), false, &mut wire, &mut server).unwrap();
         wm.windows[0].outstanding = 0;
         wm.windows[0].wants_map = true;
@@ -888,28 +932,52 @@ mod tests {
                 CHANGE_PROPERTY_REQUEST,
                 CHANGE_PROPERTY_REQUEST,
                 MAP_WINDOW_REQUEST,
-                SET_INPUT_FOCUS_REQUEST,
                 CHANGE_PROPERTY_REQUEST
             ]
         );
-        for (input, take) in [(true, false), (true, true), (false, true), (false, false), (true, false)] {
+        // Focus waits for the server's time: the last request is the empty append on our own window.
+        let stamp = &bytes[length - 24..length];
+        assert_eq!((stamp[0], stamp[1]), (CHANGE_PROPERTY_REQUEST, u8::from(PropMode::APPEND)));
+        assert_eq!(u32::from_ne_bytes(stamp[4..8].try_into().unwrap()), 2);
+        assert_eq!(u32::from_ne_bytes(stamp[20..24].try_into().unwrap()), 0);
+        let notify = |wm: &mut Wm, server: &mut Server, wire: &mut Transport, time: u32| {
+            let event = PropertyNotifyEvent {
+                response_type: PROPERTY_NOTIFY_EVENT,
+                sequence: 0,
+                window: 2,
+                atom: wm.atoms.get("_THOR_TIMESTAMP"),
+                time,
+                state: Property::NEW_VALUE,
+            };
+            wm.event(&<[u8; 32]>::from(&event), wire, server).unwrap();
+        };
+        for (n, (input, take)) in [(true, false), (true, true), (false, true), (false, false), (true, false)].into_iter().enumerate() {
             wm.focus = None;
             wm.windows[0].properties.input = Some(input);
             wm.windows[0].properties.take_focus = take;
+            wm.settle_focus(&mut wire, &server).unwrap();
+            if n > 0 {
+                // Each change asks for a new time; the last one is never reused.
+                wire.turn(now).unwrap();
+                let count = peer.read(&mut bytes).unwrap();
+                assert_eq!((count, bytes[0], bytes[1]), (24, CHANGE_PROPERTY_REQUEST, u8::from(PropMode::APPEND)));
+            }
+            let time = 1234 + n as u32;
+            notify(&mut wm, &mut server, &mut wire, time);
             wm.settle_focus(&mut wire, &server).unwrap();
             wire.turn(now).unwrap();
             let count = peer.read(&mut bytes).unwrap();
             let focus = &bytes[..12];
             assert_eq!(focus[0], SET_INPUT_FOCUS_REQUEST);
             assert_eq!(u32::from_ne_bytes(focus[4..8].try_into().unwrap()), if input { 10 } else { 0 });
-            assert_eq!(u32::from_ne_bytes(focus[8..12].try_into().unwrap()), 1234);
+            assert_eq!(u32::from_ne_bytes(focus[8..12].try_into().unwrap()), time);
             let rest = &bytes[12..count];
             if take {
                 // The client sees the same nonzero time as the preceding SetInputFocus request.
                 assert_eq!(rest[0], SEND_EVENT_REQUEST);
                 let message = ClientMessageEvent::try_parse(&rest[12..]).unwrap().0;
                 assert_eq!(message.data.as_data32()[0], wm.atoms.get("WM_TAKE_FOCUS"));
-                assert_eq!(message.data.as_data32()[1], 1234);
+                assert_eq!(message.data.as_data32()[1], time);
                 assert_eq!(rest[44], CHANGE_PROPERTY_REQUEST);
             } else {
                 assert_eq!(rest[0], CHANGE_PROPERTY_REQUEST);

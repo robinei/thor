@@ -1109,8 +1109,13 @@ existing request-order and state-trace tests.
 The shared surface wrapper uses the same rendering, geometry, input, frame and presentation-feedback
 paths. A window ignoring its configured size is treated by the existing geometry policy. X11 size
 requests cannot choose placement or stacking. WM_HINTS input and WM_TAKE_FOCUS are honoured when focus
-changes. SetInputFocus and WM_TAKE_FOCUS use the same last observed X server timestamp, following
-[ICCCM's focus convention](https://xorg.freedesktop.org/releases/current/doc/xorg-docs/icccm/icccm.html#input_focus).
+changes. Each focus change first gets a fresh server time: `focus changed --> stamping [empty append to
+_THOR_TIMESTAMP on our window]`, `stamping --its PropertyNotify--> [SetInputFocus and WM_TAKE_FOCUS with
+that time]`; the time is used once, and one arriving after the change was undone is dropped; no
+PropertyNotify within 3 s restarts Xwayland like a missed reply. The server ignores a focus request older
+than the last focus change, which an active client may have made itself, so an old observed time could be
+ignored silently ([ICCCM](https://xorg.freedesktop.org/releases/current/doc/xorg-docs/icccm/icccm.html#input_focus),
+2.1 for the append). Tested by `placement_is_committed_and_configured_before_mapping_and_focus`.
 WM_DELETE_WINDOW closes a supporting client, otherwise KillClient ends it.
 `mapped --unmap--> known [Closed, detach drawable]`; a later map reopens it with the same model id.
 `known/mapped --destroy/BadWindow--> removed [Closed if open]`.
