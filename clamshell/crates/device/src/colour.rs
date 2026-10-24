@@ -29,7 +29,7 @@ pub struct PanelColour {
     pub primaries: Primaries,
     pub transfer: Transfer,
     pub luminance: Option<Luminance>,
-    pub link_bits_per_channel: u8,
+    pub link_bits_per_channel: Option<u8>,
     /// The compositor can tone-map highlights into panel headroom; this is not a PQ/HLG link.
     pub hdr_capable: bool,
 }
@@ -41,7 +41,7 @@ impl PanelColour {
             primaries: Primaries { red: Xy { x: 640000, y: 330000 }, green: Xy { x: 300000, y: 600000 }, blue: Xy { x: 150000, y: 60000 }, white: D65 },
             transfer: Transfer::Gamma22,
             luminance: None,
-            link_bits_per_channel: 8,
+            link_bits_per_channel: None,
             hdr_capable: false,
         }
     }
@@ -51,7 +51,7 @@ impl PanelColour {
             primaries: Primaries { red: Xy { x: 680000, y: 320000 }, green: Xy { x: 265000, y: 690000 }, blue: Xy { x: 150000, y: 60000 }, white: D65 },
             transfer: Transfer::Gamma22,
             luminance: Some(Luminance { peak: 650000, frame_average: 650000, black: 2 }),
-            link_bits_per_channel: 8,
+            link_bits_per_channel: Some(8),
             hdr_capable: true,
         }
     }
@@ -68,12 +68,17 @@ mod tests {
         assert_eq!(top.primaries.white, D65);
         assert_eq!(top.transfer, Transfer::Gamma22);
         assert_eq!(top.luminance, Some(Luminance { peak: 650000, frame_average: 650000, black: 2 }));
-        assert_eq!(top.link_bits_per_channel, 8);
+        assert_eq!(top.link_bits_per_channel, Some(8));
         assert!(top.hdr_capable);
-        for panel in [crate::Profile::thor().bottom, crate::Profile::vm().top, crate::Profile::generic().bottom] {
+        let bottom = crate::Profile::thor().bottom.colour;
+        assert_eq!(bottom.link_bits_per_channel, Some(8));
+        assert!(!bottom.hdr_capable);
+        assert_eq!(bottom.primaries, PanelColour::srgb().primaries);
+        for panel in [crate::Profile::vm().top, crate::Profile::generic().bottom] {
             assert_eq!(panel.colour, PanelColour::srgb());
             assert!(!panel.colour.hdr_capable);
             assert_eq!(panel.colour.luminance, None);
+            assert_eq!(panel.colour.link_bits_per_channel, None);
         }
     }
 }

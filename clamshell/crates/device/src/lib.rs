@@ -93,7 +93,12 @@ impl Profile {
         Self {
             name: "thor",
             top: Screen { connector: "DSI-2", rotation: Rotation::Clockwise90, backlight: Some("ae96000.dsi.0"), colour: PanelColour::icna3520() },
-            bottom: Screen { connector: "DSI-1", rotation: Rotation::Clockwise90, backlight: Some("ae94000.dsi.0"), colour: PanelColour::srgb() },
+            bottom: Screen {
+                connector: "DSI-1",
+                rotation: Rotation::Clockwise90,
+                backlight: Some("ae94000.dsi.0"),
+                colour: PanelColour { link_bits_per_channel: Some(8), ..PanelColour::srgb() },
+            },
             touchscreens: THOR_TOUCH,
             bottom_density_tenths: Some(165),
             refresh_calibration: Some(THOR_REFRESH),

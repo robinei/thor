@@ -38,7 +38,7 @@ fn package_outputs_and_panel_queries_follow_the_selected_profile() {
         assert_eq!(panel.get("top"), Some(&serde_json::json!(top)));
         assert_eq!(panel.get("bottom"), Some(&serde_json::json!(bottom)));
         let top_colour = panel.get("colour").unwrap().get("top").unwrap();
-        assert_eq!(top_colour.get("link_bits_per_channel"), Some(&serde_json::json!(8)));
+        assert_eq!(top_colour.get("link_bits_per_channel"), Some(&if profile == "thor" { serde_json::json!(8) } else { serde_json::Value::Null }));
         assert_eq!(top_colour.get("transfer"), Some(&serde_json::json!("gamma22")));
         assert_eq!(top_colour.get("hdr_capable"), Some(&serde_json::json!(profile == "thor")));
         if profile == "thor" {

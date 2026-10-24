@@ -1312,7 +1312,8 @@ calibration remains a device check.
 Panel colour is immutable profile data, exposed by `clamshell device panel` for inspection. The top
 panel preserves the gamescope starting profile's primaries, D65, gamma 2.2, 650-nit peak/frame-average
 and 0.002-nit black. Its HDR capability describes compositor tone mapping into available headroom,
-not a PQ link; both current links are eight bits. Unprofiled panels use sRGB primaries at gamma 2.2,
+not a PQ link; both current Thor links are eight bits. VM/generic link depth stays unknown,
+so no compositor can mistake an invented eight-bit default for a hardware limit. Unprofiled panels use sRGB primaries at gamma 2.2,
 SDR-only, with luminance left unknown. No brightness-register calibration is invented. Unit tests pin
 these values and the package query checks their public representation. Phase 2h will consume these
 facts for physical outputs; nested outputs take their description from the host instead.
