@@ -23,7 +23,7 @@ pub enum WindowRole {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowLayout {
     Fullscreen,
-    Centered,
+    Centred,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowScale {
@@ -62,10 +62,10 @@ pub enum TransferFunction {
 
 impl super::windows::Window {
     pub fn presentation(&self, game: bool) -> WindowPresentation {
-        let centered = self.parent.is_some() || self.role != WindowRole::Normal || self.limits.fixed_size().is_some();
+        let centred = self.parent.is_some() || self.role != WindowRole::Normal || self.limits.fixed_size().is_some();
         WindowPresentation {
-            layout: if centered { WindowLayout::Centered } else { WindowLayout::Fullscreen },
-            scale: if game && !centered { WindowScale::Fit } else { WindowScale::Native },
+            layout: if centred { WindowLayout::Centred } else { WindowLayout::Fullscreen },
+            scale: if game && !centred { WindowScale::Fit } else { WindowScale::Native },
         }
     }
 }
@@ -83,22 +83,22 @@ mod tests {
     use super::*;
     use crate::session::windows::Window;
     #[test]
-    fn dialogs_and_fixed_windows_are_centered_and_games_fit_ignored_sizes() {
+    fn dialogs_and_fixed_windows_are_centred_and_games_fit_ignored_sizes() {
         let mut window = Window::default();
         assert_eq!(window.presentation(false), WindowPresentation { layout: WindowLayout::Fullscreen, scale: WindowScale::Native });
         assert_eq!(window.presentation(true), WindowPresentation { layout: WindowLayout::Fullscreen, scale: WindowScale::Fit });
         window.parent = Some(7);
-        assert_eq!(window.presentation(true), WindowPresentation { layout: WindowLayout::Centered, scale: WindowScale::Native });
+        assert_eq!(window.presentation(true), WindowPresentation { layout: WindowLayout::Centred, scale: WindowScale::Native });
         window.parent = None;
         window.limits = WindowLimits { min: (640, 480), max: (640, 480) };
         assert_eq!(window.limits.fixed_size(), Some((640, 480)));
-        assert_eq!(window.presentation(true).layout, WindowLayout::Centered);
+        assert_eq!(window.presentation(true).layout, WindowLayout::Centred);
         window.limits.max = (0, 0);
         assert_eq!(window.limits.fixed_size(), None);
         assert_eq!(window.presentation(true).layout, WindowLayout::Fullscreen);
         for role in [WindowRole::Dialog, WindowRole::Splash, WindowRole::Utility] {
             window.role = role;
-            assert_eq!(window.presentation(false).layout, WindowLayout::Centered);
+            assert_eq!(window.presentation(false).layout, WindowLayout::Centred);
         }
     }
 }

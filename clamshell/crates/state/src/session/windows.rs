@@ -781,7 +781,7 @@ mod tests {
             assert_eq!(current.and_then(|w| w.colour), Some(colour));
             assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
             assert_eq!(s.session().keyboard_focus(), Some(7));
-            assert_eq!(s.window_presentation(7).map(|p| p.layout), Some(WindowLayout::Centered));
+            assert_eq!(s.window_presentation(7).map(|p| p.layout), Some(WindowLayout::Centred));
         }
     }
 
