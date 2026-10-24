@@ -24,6 +24,7 @@ use crate::server::{ClientState, Process, Server};
 #[derive(Default)]
 struct Client {
     sizes: Vec<(i32, i32)>,
+    ignore_configures: bool,
     touches: Vec<TouchRecord>,
     keys: Vec<(u32, bool)>,
     text: Vec<keyboard_tests::TextRecord>,
@@ -40,8 +41,10 @@ impl Dispatch<xdg_wm_base::XdgWmBase, ()> for Client {
     }
 }
 impl Dispatch<xdg_surface::XdgSurface, ()> for Client {
-    fn event(_: &mut Self, proxy: &xdg_surface::XdgSurface, event: xdg_surface::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
-        if let xdg_surface::Event::Configure { serial } = event {
+    fn event(state: &mut Self, proxy: &xdg_surface::XdgSurface, event: xdg_surface::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+        if let xdg_surface::Event::Configure { serial } = event
+            && !state.ignore_configures
+        {
             proxy.ack_configure(serial);
         }
     }
@@ -65,6 +68,8 @@ enum Report {
     Mapped,
     Below((i32, i32)),
     Renamed,
+    Unmapped,
+    Remapped,
     Child((i32, i32)),
     Closed,
 }
@@ -110,6 +115,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
         surface.damage_buffer(0, 0, width, height);
         surface.commit();
         queue.roundtrip(&mut client).unwrap();
+        client.ignore_configures = true;
         report.send(Report::Mapped).unwrap();
         steps.recv_timeout(Duration::from_secs(5)).unwrap();
         queue.roundtrip(&mut client).unwrap();
@@ -118,6 +124,23 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
         top.set_title("after configure".into());
         queue.roundtrip(&mut client).unwrap();
         report.send(Report::Renamed).unwrap();
+        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        client.ignore_configures = false;
+        surface.attach(None, 0, 0);
+        surface.commit();
+        queue.roundtrip(&mut client).unwrap();
+        report.send(Report::Unmapped).unwrap();
+        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        // Unmapping resets xdg properties; clients must set them again before remapping.
+        top.set_app_id("test".into());
+        top.set_title("after configure".into());
+        surface.commit();
+        queue.roundtrip(&mut client).unwrap();
+        surface.attach(Some(&buffer), 0, 0);
+        surface.commit();
+        queue.roundtrip(&mut client).unwrap();
+        report.send(Report::Remapped).unwrap();
         steps.recv_timeout(Duration::from_secs(5)).unwrap();
 
         let child_surface = compositor.create_surface(&qh, ());
@@ -186,6 +209,11 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
                     next.send(()).unwrap();
                 }
                 Report::Below(size) => {
+                    // The client keeps its original buffer and stops acknowledging configure. It
+                    // cannot hold up placement; rendering and input use a fitted transform at once.
+                    let geometry = server.geometry(windows[0].id).unwrap();
+                    assert!(geometry.scale < 1.0);
+                    assert_eq!(geometry.native.size, (960, 540).into());
                     assert_eq!(windows[0].place(), WindowPlace::Bottom);
                     assert_eq!(size, (server.area(true).size.w, server.area(true).size.h));
                     next.send(()).unwrap();
@@ -193,6 +221,21 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
                 Report::Renamed => {
                     assert_eq!(windows[0].title, "after configure");
                     assert_eq!(windows[0].place(), WindowPlace::Bottom);
+                    next.send(()).unwrap();
+                }
+                Report::Unmapped => {
+                    assert!(windows.is_empty());
+                    assert!(!server.windows[0].mapped);
+                    next.send(()).unwrap();
+                }
+                Report::Remapped => {
+                    assert_eq!(windows.len(), 1);
+                    assert_eq!(windows[0].id, server.windows[0].id);
+                    assert!(server.windows[0].mapped);
+                    assert_eq!(windows[0].title, "after configure");
+                    assert!(matches!(windows[0].place(), WindowPlace::Top(_)), "this unowned client has no persistent bottom rule");
+                    server.core.handle(Event::Device(DeviceKey::WindowDown));
+                    server.turn();
                     next.send(()).unwrap();
                 }
                 Report::Child(size) => {
@@ -220,7 +263,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
         assert!(server.windows.is_empty());
         phases += 1;
     }
-    assert_eq!(phases, 6);
+    assert_eq!(phases, 8);
 }
 
 #[derive(Debug, PartialEq)]
@@ -406,3 +449,80 @@ mod keyboard_tests;
 
 #[path = "idle_tests.rs"]
 mod idle_tests;
+
+#[test]
+fn a_protocol_error_disconnects_only_its_client() {
+    let mut display = Display::<Server>::new().unwrap();
+    let config =
+        Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
+    let mut server = Server::new(State::new(Init::default()), config, display.handle(), || {}, |_| Process::default(), |_| {}).unwrap();
+    server.core.handle(Event::Start);
+    server.turn();
+    let (good_server, good_client) = UnixStream::pair().unwrap();
+    let (bad_server, bad_client) = UnixStream::pair().unwrap();
+    for stream in [good_server, bad_server] {
+        display.handle().insert_client(stream, Arc::new(ClientState::default())).unwrap();
+    }
+    let (report, reports) = mpsc::channel();
+    let (next, steps) = mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        let connection = Connection::from_socket(good_client).unwrap();
+        let (globals, mut queue) = registry_queue_init::<Client>(&connection).unwrap();
+        let qh = queue.handle();
+        let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
+        let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
+        let shm: wl_shm::WlShm = globals.bind(&qh, 1..=1, ()).unwrap();
+        let surface = compositor.create_surface(&qh, ());
+        let xdg = shell.get_xdg_surface(&surface, &qh, ());
+        let top = xdg.get_toplevel(&qh, ());
+        top.set_app_id("healthy".into());
+        surface.commit();
+        let mut client = Client::default();
+        queue.roundtrip(&mut client).unwrap();
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(&vec![0xff; 960 * 540 * 4]).unwrap();
+        let pool = shm.create_pool(file.as_fd(), 960 * 540 * 4, &qh, ());
+        let buffer = pool.create_buffer(0, 960, 540, 960 * 4, wl_shm::Format::Abgr8888, &qh, ());
+        surface.attach(Some(&buffer), 0, 0);
+        surface.commit();
+        queue.roundtrip(&mut client).unwrap();
+        report.send(0).unwrap();
+        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        let bad = Connection::from_socket(bad_client).unwrap();
+        let (globals, mut bad_queue) = registry_queue_init::<Client>(&bad).unwrap();
+        let qh = bad_queue.handle();
+        let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
+        let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
+        let broken = compositor.create_surface(&qh, ());
+        let role = shell.get_xdg_surface(&broken, &qh, ());
+        let _one = role.get_toplevel(&qh, ());
+        let _two = role.get_toplevel(&qh, ());
+        assert!(bad_queue.roundtrip(&mut Client::default()).is_err(), "a duplicate role must end this connection");
+        top.set_title("still responsive".into());
+        queue.roundtrip(&mut client).unwrap();
+        report.send(1).unwrap();
+        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+    });
+    let until = Instant::now() + Duration::from_secs(15);
+    let mut phases = 0;
+    while !thread.is_finished() && Instant::now() < until {
+        display.dispatch_clients(&mut server).unwrap();
+        server.turn();
+        display.flush_clients().unwrap();
+        if let Ok(phase) = reports.try_recv() {
+            assert_eq!(server.windows.len(), 1);
+            assert!(server.windows[0].mapped);
+            assert!(!server.exit);
+            assert_eq!(server.core.state().session().windows()[0].app_id, "healthy");
+            if phase == 1 {
+                assert_eq!(server.core.state().session().windows()[0].title, "still responsive");
+            }
+            phases += 1;
+            next.send(()).unwrap();
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(phases, 2);
+    assert!(thread.is_finished());
+    thread.join().unwrap();
+}

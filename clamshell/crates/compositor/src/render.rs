@@ -3,6 +3,7 @@
 use crate::server::Server;
 use clamshell_ui::{Core, Error, Screen};
 use smithay::{
+    backend::renderer::utils::import_surface_tree,
     backend::{
         allocator::Fourcc,
         renderer::{
@@ -17,6 +18,7 @@ use smithay::{
             utils::DamageBag,
         },
     },
+    desktop::PopupManager,
     utils::{Buffer, Rectangle, Transform},
 };
 
@@ -144,6 +146,18 @@ pub(crate) fn elements(
     }
     for client in server.windows.iter().filter(|w| w.mapped && server.visible(w.id)) {
         let Some(geometry) = server.geometry(client.id) else { continue };
+        let Some(toplevel) = client.window.toplevel() else { continue };
+        let surface = toplevel.wl_surface();
+        let imported = import_surface_tree(renderer, surface).and_then(|()| {
+            for (popup, _) in PopupManager::popups_for_surface(surface) {
+                import_surface_tree(renderer, popup.wl_surface())?;
+            }
+            Ok(())
+        });
+        if let Err(error) = imported {
+            server.reject_client(surface, &format!("cannot import window {} buffer: {error}", client.id));
+            continue;
+        }
         out.extend(
             client.window.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(renderer, (0, 0).into(), 1.0.into(), 1.0).into_iter().filter_map(
                 |element| {

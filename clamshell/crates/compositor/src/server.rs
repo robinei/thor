@@ -177,6 +177,10 @@ impl Server {
     }
 
     pub fn add_toplevel(&mut self, surface: ToplevelSurface) {
+        if self.surface_id(surface.wl_surface()).is_some() {
+            self.reject_client(surface.wl_surface(), "wl_surface already has a toplevel");
+            return;
+        }
         let Some(next) = self.next_id.checked_add(1) else {
             log::error!("compositor: window ids exhausted");
             surface.send_close();
@@ -190,6 +194,21 @@ impl Server {
             presentation: None,
         });
         self.next_id = next;
+    }
+
+    pub(crate) fn reject_client(&self, surface: &WlSurface, message: &str) {
+        log::warn!("compositor: rejecting client surface {:?}: {message}", surface.id());
+        if let Some(client) = surface.client() {
+            client.kill(
+                &self.dh,
+                smithay::reexports::wayland_server::backend::protocol::ProtocolError {
+                    code: 0, // wl_display.invalid_object; wl_display is internal to wayland-server.
+                    object_id: 1,
+                    object_interface: "wl_display".into(),
+                    message: message.into(),
+                },
+            );
+        }
     }
 
     pub fn facts(&self, surface: &ToplevelSurface, id: i64) -> Window {
@@ -356,7 +375,12 @@ pub(crate) struct ClientState {
 }
 impl ClientData for ClientState {
     fn initialized(&self, _: ClientId) {}
-    fn disconnected(&self, _: ClientId, _: DisconnectReason) {}
+    fn disconnected(&self, id: ClientId, reason: DisconnectReason) {
+        match reason {
+            DisconnectReason::ProtocolError(error) => log::warn!("compositor: client {id:?} disconnected for protocol error: {error:?}"),
+            reason => log::debug!("compositor: client {id:?} disconnected: {reason:?}"),
+        }
+    }
 }
 
 pub(crate) fn insert_client(dh: &mut DisplayHandle, stream: std::os::unix::net::UnixStream) {

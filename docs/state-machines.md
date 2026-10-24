@@ -748,3 +748,20 @@ The nested host caches each client's window presentation at Core's state revisio
 and pointer hit tests read that cache. Any applied event, including UI-generated events, invalidates
 it; the next window sync derives it again. The protocol test changes a live window's role and checks
 its new configure policy, as well as unchanged revisions across repeated syncs.
+
+### Client failure containment (compositor/server, render)
+
+One wl_surface has at most one live toplevel. A duplicate is rejected before another window enters
+the model. A failed client buffer import or popup setup rejects that client, with a logged reason;
+other windows and the event loop continue. Wayland protocol disconnects are logged; normal disconnects
+are debug messages. Host renderer/display failures remain session failures, as there is no usable
+display to continue on. No X11-specific path has been introduced in state.
+
+`a_protocol_error_disconnects_only_its_client` constructs a duplicate role on a separate real Wayland
+connection and then changes a healthy mapped client's title, asserting its window and session remain
+alive. `xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu` now also stops
+acknowledging configure, retains an oversized buffer across a screen move, and checks the fitted
+transform. It unmaps and remaps the same surface, reapplying xdg properties and checking that the
+unowned window starts above again. Fixed-size child presentation remains in the same test. Renderer import paths are exercised by
+`tests/nested-compositor.py`; a failed client import never propagates as a host-loop error. Xwayland
+supervision and X11/menu fixtures are still pending phase 2 work.

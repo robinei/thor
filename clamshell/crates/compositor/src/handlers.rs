@@ -68,7 +68,7 @@ impl CompositorHandler for Server {
             && !popup.is_initial_configure_sent()
             && let Err(error) = popup.send_configure()
         {
-            log::debug!("compositor: configure popup: {error}");
+            self.reject_client(surface, &format!("cannot configure popup: {error}"));
         }
     }
 }
@@ -112,8 +112,9 @@ impl XdgShellHandler for Server {
         self.identity_changed(surface);
     }
     fn new_popup(&mut self, surface: PopupSurface, _: PositionerState) {
+        let wl_surface = surface.wl_surface().clone();
         if let Err(error) = self.popups.track_popup(PopupKind::Xdg(surface)) {
-            log::debug!("compositor: popup: {error}");
+            self.reject_client(&wl_surface, &format!("cannot track popup: {error}"));
         }
     }
     fn grab(&mut self, _: PopupSurface, _: WlSeat, _: Serial) {}
