@@ -933,3 +933,19 @@ harness creates a virtual pointer only in its isolated parent sway, checks curso
 presented scene (without grim's parent-cursor capture), moves it and checks both damage positions,
 then checks the shell's themed cursor, its idle disappearance and reappearance on motion. Both software and GPU modes exercise these steps alongside
 screenshots and client rendering.
+
+### Vulkan WSI client coverage (compositor)
+
+The GPU smoke harness runs `vkcube --wsi wayland` beside the EGL fixture. It checks that the cube
+presents changing frames above, remains animated after moving below and resizing, and keeps presenting
+when returned above. Closing delivers the normal close request and exits the client successfully;
+the previous terminal returns and the existing Home, clipboard and event-ring checks still pass.
+
+The Vulkan protocol log must contain Wayland buffer attachments, native dmabuf create requests,
+a feedback request, a format table and feedback completion. Animation is checked from successive
+scene captures, not inferred from process liveness or protocol requests alone. Vulkan runs in the
+explicit `tests/nested-compositor.py --gpu` mode, with a native EGL renderer, accessible render node,
+Vulkan driver and Wayland-capable vkcube. Software mode keeps the EGL/shared-memory tests and pins that
+software EGL advertises no native dmabuf transport. No software-WSI override or pixel-format downgrade
+is added to application launches. Both modes passed on the development desktop; their screenshots
+and full protocol logs are retained by the harness.

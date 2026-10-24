@@ -272,9 +272,14 @@ The experimental in-process compositor runs with `cargo run --features composito
 `clamshell/`. It opens one desktop window with the logical screens side by side. F12 is Home (hold
 for window arrows), F11 moves the selected window down, and F10 returns it. Sway remains the normal
 session backend. Touch is routed to UI or clients. The on-screen keyboard uses text-input-v3 or seat key events;
-Its clipboard is separate from the parent's; Xwayland is still pending. After `cargo build --features
-compositor`, `python3 tests/nested-compositor.py` checks clipboard isolation, native copy/primary paste, persistence, real client rendering and screen moves using
-headless sway, foot and grim. It prints the directory containing its screenshots and logs.
+its clipboard is separate from the parent's. Xwayland is still pending. Build with
+`cargo build --features compositor` and `cargo build -p clamshell-compositor --examples`, then run
+`python3 tests/nested-compositor.py` to check clipboard isolation, persistence, cursor visibility,
+screenshots and client screen moves using headless sway, foot, grim and the EGL fixture. Add `--gpu`
+on a desktop with an accessible render node and Vulkan driver to require native dmabuf submission.
+That mode also needs Wayland-capable `vkcube`: it checks Vulkan WSI animation through screen moves,
+resizes and close, plus complete dmabuf feedback and native buffer submission. The harness prints the
+directory containing screenshots and protocol logs.
 
 For nested compositor diagnostics, `clamshell ctl window events /tmp/window-events.json` exports the
 last 256 window inputs. `clamshell_compositor::trace::Recording::replay` checks the recording against a

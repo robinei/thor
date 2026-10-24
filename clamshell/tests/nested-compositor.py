@@ -4,7 +4,7 @@
 Build first (in clamshell/): cargo build --features compositor
     cargo build -p clamshell-compositor --examples
 Run with --gpu to require native dmabuf on a machine with an accessible render node.
-Needs sway, foot and grim. Leaves screenshots and logs in the printed temporary directory.
+Needs sway, foot and grim; --gpu also needs vkcube with Wayland WSI support and a Vulkan driver. Leaves screenshots and logs in the printed temporary directory.
 """
 import os
 import argparse
@@ -203,6 +203,36 @@ time.sleep(300)
         assert egl.wait(timeout=5) == 0, "EGL client must receive the close request"
         processes.remove(egl)
         wait(lambda: pixels() == (True, False), "previous client visible after EGL client exits")
+        if args.gpu:
+            def window_region(down):
+                width, _, data = image()
+                left, right = (1020, 1500) if down else (100, 850)
+                return b"".join(data[(row * width + left) * 3:(row * width + right) * 3] for row in range(100, 440))
+            def animating(down, description):
+                before = window_region(down)
+                wait(lambda: window_region(down) != before, description)
+            vulkan_env = {**nested, "WAYLAND_DEBUG": "1"}
+            vulkan = spawn(["vkcube", "--wsi", "wayland"], "vulkan-client", vulkan_env)
+            wait(lambda: pixels()[0] is False, "Wayland Vulkan client rendered on top")
+            animating(False, "Vulkan swapchain presents changing frames on top")
+            protocol = (directory / "vulkan-client.log").read_text()
+            assert re.search(r"wl_surface#\d+\.attach\(", protocol), "Vulkan WSI must attach Wayland buffers"
+            assert re.search(r"zwp_linux_buffer_params_v1#\d+\.create(?:_immed)?\(", protocol), "Vulkan GPU mode must actually submit dmabufs"
+            assert re.search(r"zwp_linux_dmabuf_v1#\d+\.get_(?:default|surface)_feedback\(", protocol), "Vulkan WSI must request dmabuf feedback"
+            assert re.search(r"zwp_linux_dmabuf_feedback_v1#\d+\.format_table\(", protocol), "Vulkan WSI must receive the feedback format table"
+            assert re.search(r"zwp_linux_dmabuf_feedback_v1#\d+\.done\(", protocol), "Vulkan WSI must receive complete feedback"
+            shot("vulkan-top")
+            control("window", "down")
+            wait(lambda: pixels()[0] is True, "previous client visible above the Vulkan client")
+            animating(True, "Vulkan swapchain keeps presenting below after resize")
+            shot("vulkan-bottom")
+            control("window", "up")
+            wait(lambda: pixels()[0] is False, "Vulkan client returned to top")
+            animating(False, "Vulkan swapchain keeps presenting after returning above")
+            control("window", "close")
+            assert vulkan.wait(timeout=5) == 0, "Vulkan client must receive the close request"
+            processes.remove(vulkan)
+            wait(lambda: pixels() == (True, False), "previous client visible after Vulkan client exits")
         control("home")
         wait(lambda: pixels() == (False, False), "Home rendered shelf")
         shot("home")
@@ -225,7 +255,7 @@ time.sleep(300)
         assert any("Window" in event["input"] for event in recorded["records"])
         assert recorded["after"]["windows"] == 0
         if args.gpu:
-            print("ok: native dmabuf submission and rendering on the GPU path", flush=True)
+            print("ok: Vulkan WSI animation, resize, close, dmabuf feedback and native submission; EGL native submission", flush=True)
         print("ok: compositor cursor and damage, in-process screenshot, window-event export, clipboard isolation and persistence, Wayland EGL and shm rendering, bottom-slot move, return and Home", flush=True)
     finally:
         for process in reversed(processes):

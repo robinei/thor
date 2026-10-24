@@ -446,7 +446,9 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    encode it on the system worker; SDR PNG export does not change composition precision. The nested
    host advertises renderer-native dmabuf formats, with render-device feedback when available, and
    validates imports before drawing. The smoke harness also passes with `--gpu`, requiring actual
-   native dmabuf submissions and checking presentation through moves and close. The current host puts the logical
+   native dmabuf submissions and checking presentation through moves and close. Alongside the EGL
+   fixture, Wayland `vkcube` checks Vulkan WSI animation through screen moves and resizes, and requires
+   complete dmabuf feedback plus native buffer submissions. The current host puts the logical
    screens side by side for desktop testing.
    Rules 1-3 of section 3, "Keeping the app tail small", hold for all of it; rule 5's real-client set
    and window-event ring, and rule 6's defaults (Wine's Wayland driver, Big Picture), are part of this phase.
