@@ -339,8 +339,9 @@ games through Xwayland, and Android apps (Waydroid's windows are Wayland surface
 
 ### HDR: later, kept possible
 
-HDR is wanted, as the experiment in `docs/thor-gameplan.md` describes (the panels take no HDR signal: the
-panel driven brighter, ordinary content drawn dimmer within it, highlights in the headroom). It is not in
+HDR is wanted, as the experiment in `docs/thor-gameplan.md` describes (the panels do no tone mapping of their
+own: unlike an HDR monitor they take no PQ signal or metadata, and show the values sent at the brightness
+set, so HDR is done as on phones: the panel driven brighter, ordinary content drawn dimmer within it, highlights in the headroom). It is not in
 the MVP, but three choices keep it possible without rebuilding:
 
 1. **No 8-bit assumption in composition.** Output buffers, the formats our elements produce and the
@@ -571,8 +572,13 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    refresh policy, the brightness and power guards; measurements (frame statistics against MangoHud's
    under sway for the same game, a capped game's pacing and power); daily use with sway still the default.
 4h. **HDR, the device half** (after phase 4's measurements, as the gameplan's HDR experiment describes;
-    the panels take no HDR signal):
-    - [ ] The panels measured: bit depth and dithering, real peak brightness, banding, heat at high
+    the panels do no tone mapping of their own, so ours does it all):
+    - [ ] Bit depth. The display controller takes 10-bit buffers (2101010), but the link to both panels is
+          8-bit as the drivers set it today (`MIPI_DSI_FMT_RGB888`, `bpc = 8`; the top's DSC at 8 bits per
+          component). Find out whether the controller dithers 10-bit content down to 8 bits for them, and
+          whether the panels' controllers (ICNA3520, CH13726A) accept 10 bits (DSI RGB101010, DSC at 10
+          bits per component) with a driver change; AYN's Android may show which it uses.
+    - [ ] The panels measured: real peak brightness, banding, heat at high
           brightness; whether HDR is worth having on them at all. If not, 4h stops here and 2h's work
           still serves SDR colour correctness.
     - [ ] The output: the panel driven brighter for HDR content, SDR content dimmed to keep its look,

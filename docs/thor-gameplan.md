@@ -560,7 +560,8 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       it rotated into a 1080x1920 swapchain (VKD3D-Proton likewise, probably). Only through Wine's
       Wayland driver (`PROTON_ENABLE_WAYLAND=1`): an X11 window under Xwayland can't set a buffer
       transform. Native games gain nothing. Both patches are upstream candidates.
-- [ ] HDR, an experiment (the panels take no HDR signal; HDR as on phones: the panel driven brighter,
+- [ ] HDR, an experiment (the panels do no tone mapping of their own: no PQ signal or metadata as an HDR
+      monitor takes, and an 8-bit link as the drivers set it; HDR as on phones: the panel driven brighter,
       ordinary content drawn dimmer within it, highlights above). Peaks from the spec sheets: top 650
       nits, bottom 550. The bottom needs no HDR, but it shows dual-screen emulators' second screen (DS,
       3DS, Wii U), so its white and colours must match the top's: with the top in headroom mode, the
