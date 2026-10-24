@@ -5,6 +5,7 @@ pub mod fan;
 pub mod gyro;
 pub mod input;
 pub mod layout;
+pub mod preview;
 use colour::PanelColour;
 
 /// A screen's role has a stable connector name on a known device.
@@ -88,6 +89,7 @@ pub struct Profile {
     pub fan: Option<fan::Fan>,
     pub charge: charge::Charge,
     pub control_layout: layout::ControlLayout,
+    pub preview: preview::Preview,
 }
 impl Default for Profile {
     fn default() -> Self {
@@ -113,6 +115,7 @@ impl Profile {
             fan: Some(fan::Fan::thor()),
             charge: charge::Charge::thor(),
             control_layout: layout::ControlLayout::thor(),
+            preview: preview::Preview::reference(),
         }
     }
     pub const fn vm() -> Self {
@@ -128,6 +131,7 @@ impl Profile {
             fan: None,
             charge: charge::Charge::standard(),
             control_layout: layout::ControlLayout::thor(),
+            preview: preview::Preview::reference(),
         }
     }
     /// Unknown physical connectors remain unmatched; desktop views still draw as ordinary windows.
@@ -144,6 +148,7 @@ impl Profile {
             fan: None,
             charge: charge::Charge::standard(),
             control_layout: layout::ControlLayout::standard(),
+            preview: preview::Preview::reference(),
         }
     }
     pub fn bottom_pixels_per_mm_hint(&self) -> Option<f32> {

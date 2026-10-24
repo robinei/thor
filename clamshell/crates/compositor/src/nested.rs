@@ -63,7 +63,8 @@ pub fn run(
         })
         .map_err(|e| e.error)?;
 
-    let attributes = WindowAttributes::default().with_title("ClamShell nested").with_surface_size(LogicalSize::new(1580.0, 540.0));
+    let attributes =
+        WindowAttributes::default().with_title("ClamShell nested").with_surface_size(LogicalSize::new(f64::from(server.size.0), f64::from(server.size.1)));
     let (mut backend, events) = winit::init_from_attributes::<GlesRenderer>(attributes)?;
     server.advertise_dmabuf(backend.renderer());
     backend.window().set_cursor_visible(false);

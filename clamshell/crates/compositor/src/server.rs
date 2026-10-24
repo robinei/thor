@@ -77,6 +77,7 @@ pub(crate) struct Server {
     pub touch_pending: bool,
     pub size: (i32, i32),
     pub top_width: i32,
+    preview_widths: (u32, u32),
     /// The outputs' refresh in mHz: the host monitor's when nested, so clients pacing to it (mpv's
     /// display-resample) match the frame callbacks they get.
     pub refresh: i32,
@@ -107,6 +108,8 @@ impl Server {
         identify: impl Fn(u32) -> Process + 'static,
         on_effect: impl FnMut(&Effect) + 'static,
     ) -> Result<Self, Error> {
+        let preview_widths = (config.top_size.0.max(1), config.bottom_size.0.max(1));
+        let preview_size = (config.top_size.0.saturating_add(config.bottom_size.0).min(i32::MAX as u32) as i32, config.top_size.1.min(i32::MAX as u32) as i32);
         let mut seats = SeatState::new();
         let mut seat = seats.new_wl_seat(&dh, "clamshell");
         seat.add_keyboard(Default::default(), 200, 25)?;
@@ -174,8 +177,9 @@ impl Server {
             keyboard_source: smithay::input::keyboard::KeyboardSource::new_auxiliary(),
             touches: std::array::from_fn(|_| None),
             touch_pending: false,
-            size: (1580, 540),
-            top_width: 960,
+            size: preview_size,
+            top_width: config.top_size.0.min(i32::MAX as u32) as i32,
+            preview_widths,
             refresh: 60_000,
             exit: false,
             screenshot_requested: false,
@@ -196,14 +200,15 @@ impl Server {
         if relative_motion {
             server.enable_relative_pointer();
         }
-        server.resize((1580, 540));
+        server.resize(preview_size);
         Ok(server)
     }
 
     pub fn resize(&mut self, (width, height): (i32, i32)) {
         self.touch_cancel();
         self.size = (width.max(4), height.max(4));
-        self.top_width = (self.size.0 * 960 / 1580).max(2);
+        let (top, bottom) = self.preview_widths;
+        self.top_width = ((u64::from(self.size.0 as u32) * u64::from(top) / (u64::from(top) + u64::from(bottom))) as i32).clamp(2, self.size.0 - 2);
         for (screen, output, x, w) in
             [(Screen::Top, &self.outputs[0], 0, self.top_width), (Screen::Bottom, &self.outputs[1], self.top_width, self.size.0 - self.top_width)]
         {

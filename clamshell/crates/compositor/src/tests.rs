@@ -666,3 +666,18 @@ mod presentation_tests;
 
 #[path = "x11_popup_tests.rs"]
 mod x11_popup_tests;
+
+#[test]
+fn requested_preview_geometry_sets_the_initial_canvas_and_resize_ratio() {
+    let display = Display::<Server>::new().unwrap();
+    let config = Config { bottom_output: "bottom".into(), top_size: (800, 600), bottom_size: (400, 600), bottom_panel: false, touch_layout: Arc::default() };
+    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
+    assert_eq!(server.size, (1200, 600));
+    assert_eq!(server.top_width, 800);
+    server.resize((900, 400));
+    assert_eq!(server.top_width, 600);
+    assert_eq!(server.core.size(clamshell_ui::Screen::Bottom).0, (300, 400));
+    server.resize((1, 1));
+    assert_eq!(server.size, (4, 4));
+    assert_eq!(server.top_width, 2);
+}

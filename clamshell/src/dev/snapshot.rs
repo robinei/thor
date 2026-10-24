@@ -44,11 +44,12 @@ pub struct Shot {
     pub before: Vec<Event>,
 }
 
-/// A screen's size in pixels: the Thor's panels.
+/// The fixed Thor reference canvas; live outputs are configured independently.
 fn size(screen: Screen) -> (u32, u32) {
+    let preview = clamshell_state::Profile::thor().preview;
     match screen {
-        Screen::Top => (1920, 1080),
-        Screen::Bottom => (1240, 1080),
+        Screen::Top => preview.top,
+        Screen::Bottom => preview.bottom,
     }
 }
 

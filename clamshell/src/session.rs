@@ -71,11 +71,11 @@ fn run_host(env: &Env, paths: Paths, sources: &Sources, nested: bool) -> Result<
         // Settings, keymaps, window rules, brightness, the dock, where shelf was.
         ..saved(&paths)
     });
+    let preview = env.profile.preview.half();
     let config = Config {
         bottom_output: env.bottom_output.clone(),
-        // The Thor's panels at half size: top 1920x1080 (landscape), bottom 1240x1080.
-        top_size: (960, 540),
-        bottom_size: (620, 540),
+        top_size: preview.top,
+        bottom_size: preview.bottom,
         bottom_panel: env.bottom_panel,
         touch_layout: Arc::default(),
     };

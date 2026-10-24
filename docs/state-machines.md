@@ -1382,3 +1382,11 @@ a virtual-pad reference diagram with canonical legends; this does not announce p
 Changing a binding, selecting an input or choosing an output uses the same legends throughout. The
 existing keymapping events, effects and transitions are unchanged. UI tests check input/output legends
 and swapped group placement; Thor snapshots pin the existing pixels, focus targets and effect trace.
+
+### Preview geometry
+
+Startup profile preview dimensions request the two desktop windows' initial size, the nested host's
+initial canvas and its split ratio. Live configure events still replace their dimensions. Offline
+Thor snapshots explicitly use its reference canvas. These values never supply physical millimetres
+or claim an output mode. Compositor resize tests exercise the split and clamped tiny hosts; snapshot
+pixel, focus and trace references stay unchanged.
