@@ -232,8 +232,8 @@ to fix in our own model.
 
 What comes later works on surfaces, below the adapter, so it is shared by both kinds: frame-rate limiting
 (the compositor paces frame callbacks and presentation feedback, which Xwayland's Present follows),
-measuring frames (commit and presentation times per surface; this could replace MangoHud's log as
-ClamShell's frame-rate source), and upscaling (the buffer drawn larger with FSR). Only asking a game to
+measuring frames (commit and presentation times per surface, "Frame statistics and limiting" below),
+and upscaling (the buffer drawn larger with FSR). Only asking a game to
 render smaller differs, and is one more adapter method: a Wayland game is told its size per client
 (configure and the outputs it sees), an X11 game picks a mode from Xwayland's RandR emulation, which
 already hands the compositor a small buffer marked for scaling.
@@ -309,6 +309,33 @@ and fixed once. Seven rules, the first three binding on the code from the start:
 7. **Later, once the harness exists:** a randomized client that maps, unmaps, resizes, asks for
    fullscreen and opens menus, with the session's invariants checked after every step, as the randomized
    state test does one layer up.
+
+### Frame statistics and limiting
+
+**Decided: under the compositor, frame statistics and the frame-rate cap come from the compositor, and
+MangoHud isn't used.** Today ClamShell launches games with MangoHud as a layer inside them: its CSV log
+feeds the FPS tile, its `fps_limit` is the per-game cap (`Setting::FpsCap`), its overlay is the HUD
+setting, and Waydroid's apps, which MangoHud can't reach, get the same log written from their commits.
+The compositor sees every frame of every client without injecting anything: native Wayland apps, X11
+games through Xwayland, and Android apps (Waydroid's windows are Wayland surfaces).
+
+- **Statistics, per window:** when each frame was committed (the app's frame rate), when it reached the
+  screen (the page flip's timestamp from DRM, also under direct scanout), frames committed but replaced
+  before being shown (rendering faster than the display), and frames shown late (stutter where the user
+  sees it). Commits arriving late means the app is slow; commits on time but shown late means it is ours.
+  GPU and CPU load stay where they are (the kernel's per-client DRM statistics, `/proc`). Kept in a
+  fixed-size ring per window, read by the FPS tile and the system info, no allocation per frame.
+- **The cap:** the compositor paces a capped window's frame callbacks and presentation feedback to the
+  cap, which FIFO clients follow (Mesa's Vulkan WSI, EGL with a swap interval, Xwayland's Present, and
+  the fifo and commit-timing protocols). Clients that don't wait (Vulkan mailbox or immediate, EGL swap
+  interval 0) can't be paced from outside, so a capped launch also forces FIFO through Mesa's settings
+  (`MESA_VK_WSI_PRESENT_MODE=fifo`, `vblank_mode`). Together with the 120 Hz command-mode panel (section
+  7), a capped game costs the panel link only the frames it sends.
+- **The HUD:** the frame rate and frame time drawn by the compositor as an overlay element when the
+  setting asks for it; the full MangoHud overlay goes, the details being on the second screen's system
+  info, which can show them live beside the game.
+- **Under sway,** for as long as it is kept, MangoHud stays as it is: sway gives nothing comparable. It
+  goes with sway.
 
 ### HDR: later, kept possible
 
@@ -512,6 +539,11 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
 3. **The generic DRM backend, on the VM:** udev, DRM, GBM, GLES, libseat, libinput, two outputs, power,
    refresh, dmabuf feedback with scanout tranches. The VM image boots either compositor; the VM suite
    checks both.
+   - [ ] Frame statistics and the cap ("Frame statistics and limiting", section 3) on the DRM backend's
+         page-flip timestamps: the per-window ring, the FPS tile and system info reading it, the cap
+         pacing frame callbacks with FIFO forced at launch, the HUD as an overlay element; MangoHud not
+         launched under the compositor. Tested headless with injected flips and in the VM with `--gl`
+         (`vkcube` and a capped client); exact pacing measured on the device (phase 4).
    - [ ] `tools/vm/vm.py --gl`: the x86_64 VM with `virtio-gpu-gl-pci` (`venus=on,blob=on,hostmem=...`)
          and `-display sdl,gl=on` (`egl-headless` when headless), so the guest has OpenGL through virgl
          and Vulkan through Venus (the guest's `vulkan-virtio`), both on the host's GPU. The compositor's
@@ -521,7 +553,8 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
          and `vkcube` in the guest.
 4. **On the device:** the checks of section 5 (niri as a stand-in, possible as soon as the Thor arrives),
    then the Snapdragon specifics: panel orientation, rotated plane scanout, command-mode pacing, the
-   refresh policy, the brightness and power guards; measurements; daily use with sway still the default.
+   refresh policy, the brightness and power guards; measurements (frame statistics against MangoHud's
+   under sway for the same game, a capped game's pacing and power); daily use with sway still the default.
 5. **The default switches** to ClamShell's compositor; sway stays installed and selectable as the fallback
    for as long as the owner wants it. Dropping it (the sway adapter, its tests, the sway packages) is a
    later decision, taken once the built-in compositor has proven itself in daily use.
@@ -537,6 +570,7 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
 | Notifications without mako (no layer-shell): ClamShell's own low-battery warning reaches nothing otherwise | ClamShell draws its own notices on the top screen, and serves the notification D-Bus API itself later; minimal layer-shell (about 250 lines) only if third-party overlays turn out to matter |
 | The top screen's tabs: sway shows a tab strip when a group has several windows | none on the top screen; switch a group's windows from the second screen; dialogs drawn over their parent |
 | The top panel's refresh: a change blanks it for 0.4 s | stay at 120 Hz and limit a game's frame rate: in command mode the host sends only the frames committed, so a 60 fps game at the 120 Hz mode costs the host what it would at 60 Hz; what remains is the panel scanning its own memory at 120 Hz. Measure the battery at both modes with the same 60 fps game and a static screen; if the difference is small, drop the 60 Hz mode; if it matters, look for a seamless switch of the panel's internal rate (a vendor command, a kernel driver change) rather than a blanking modeset |
+| Frame statistics and the frame-rate cap | decided: from the compositor for every client, Android included; MangoHud only under sway, and gone with it (section 3) |
 | Nested mode: one host window with both screens stacked, or two windows | one window, both screens stacked (Smithay's winit backend gives one) |
 | Smithay: release 0.7 or a git revision | a pinned git revision |
 | Allocation in the compositor's hot path | ours zero, enforced; Smithay's per-frame allocations counted and pinned in a reference so they can't grow unnoticed |
