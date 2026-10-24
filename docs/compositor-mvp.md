@@ -545,16 +545,19 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    desktop's own Steam quit first).
 2h. **HDR, the shared half, nested on the desktop** (section 3, "HDR"; after phase 2, beside phase 3;
     the desktop has an HDR mini-LED monitor under KWin):
-    - [ ] The colour-management protocol (`wp_color_management_v1`, parametric descriptions; no ICC
+    - [x] The colour-management protocol (`wp_color_management_v1`, parametric descriptions; no ICC
           profiles) on the server side, ours: Smithay has only the bindings. Surfaces' descriptions in the
-          window data, as constraint 2 left room for.
-    - [ ] Composition in a common colour space: each surface converted to linear light in the shader,
+          window data, as constraint 2 left room for. Clients are told the output's real headroom (the
+          host's peak and average anchored to our reference white), not the content's current volume.
+    - [x] Composition in a common colour space: each surface converted to linear light in the shader,
           a 10-bit or half-float output, ClamShell's SDR UI and SDR clients placed at a reference white,
           and the output's primaries applied (on the Thor, sRGB mapped into the top panel's wider gamut;
           the panels' colour facts come from the device profile, `docs/device-profiles.md`; nested, from
-          the host's preferred description).
+          the host's preferred description). Done nested: a half-float linear BT.2020 scene at reference
+          white, encoded once for the output. The device's panels' descriptions from the profile follow with
+          the DRM backend (phase 3).
     - [ ] Scanout knowing about colour: a surface whose description matches the output passes through
-          untouched (constraint 3).
+          untouched (constraint 3). With the DRM backend (phase 3): the nested host has no scanout.
     - [ ] SDR to HDR for games (inverse tone mapping, as Special K does rather than Windows' Auto HDR): a
           per-pixel curve on luminance, hue and saturation kept, no object classification. Parameters, per
           game: the black point (many games lift their blacks; mapping the game's floor to true black suits
@@ -563,11 +566,13 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
           game runs on top, saved with the game's settings, off by default. Optionally later: the black
           floor measured from the frames (the darkest values over a long window) to suggest the black
           point, and the curve adapting slowly to each frame's average and peak.
-    - [ ] The nested output: the host window's own colour description given to KWin on its raw Wayland
+    - [x] The nested output: the host window's own colour description given to KWin on its raw Wayland
           surface (winit has no colour management), so KWin tone-maps our output to the monitor.
     - [ ] Tests: headless, a PQ client's pixels converted as expected, SDR content unchanged, the UI at
-          reference white; nested, mpv (`gpu-next`) playing a PQ clip, compared by eye with the same clip
-          in mpv directly on KWin, and a Proton game with HDR through Wine's Wayland driver.
+          reference white (done: unit tests and PQ, linear and sRGB EGL fixtures in the nested test);
+          nested, mpv (`gpu-next`, `--target-colorspace-hint=yes`) playing a PQ clip, compared by eye with
+          the same clip in mpv directly on KWin (a synthetic clip: a 0-1000 nit ramp, patches from 1 to
+          1000 nits, a moving 1000-nit highlight); a Proton game with HDR through Wine's Wayland driver.
 3. **The generic DRM backend, on the VM:** udev, DRM, GBM, GLES, libseat, libinput, two outputs, power,
    refresh, dmabuf feedback with scanout tranches. The VM image boots either compositor; the VM suite
    checks both.
