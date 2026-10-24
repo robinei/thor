@@ -23,6 +23,8 @@ use crate::status::metrics::Metrics;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
+    /// Controllable refresh modes at the main output's current dimensions, or empty when unavailable.
+    DisplayModes(crate::device::display::DisplayModes),
     /// The clocks, sent once a second by a system thread. The wall clock, in epoch seconds, is for dating
     /// things. The monotonic clock (clamshell-system's `clock::mono_secs`) is for timing durations, so
     /// that a jump in the wall clock, by hand or by NTP, doesn't count as time passing.

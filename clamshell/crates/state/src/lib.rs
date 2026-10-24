@@ -123,6 +123,7 @@ pub use clamshell_library::{BrowseKind, Browsed, Collection, Entry, Launch, Libr
 #[derive(Debug, Default)]
 pub struct Init {
     pub profile: Profile,
+    pub display_modes: device::display::DisplayModes,
     pub library: Library,
     /// Every game's settings and environment.
     pub settings: Settings,
@@ -222,6 +223,7 @@ impl State {
         if let Some(resume) = &init.resume {
             resume.restore(&mut s.shelf, &mut s.bottom);
         }
+        s.device.set_display_modes(init.display_modes);
         s.dock.drop_gone_at_start(s.shelf.library(), &s.session);
         s.session.set_pausable_runners(s.shelf.library());
         s.pointer.focus_shelf(s.shelf.selected());
@@ -348,6 +350,7 @@ impl State {
         let mark = out.events.len();
         let now = self.clock.mono();
         match event {
+            Event::DisplayModes(modes) => self.device.set_display_modes(modes),
             Event::Tick { unix_secs, mono_secs } => self.tick(unix_secs, mono_secs, out),
             Event::Reading(reading) => self.on_reading(reading, out),
             Event::List(e) => self.on_list(e),
@@ -1290,7 +1293,15 @@ impl State {
         match id {
             SettingsId::Tile(Setting::Keymap) if !long => self.keymapping.open_picker(),
             SettingsId::Tile(setting) => {
-                let value = if long { None } else { Some(setting.next(self.panel().tile_value(setting))) };
+                let value = if long {
+                    None
+                } else {
+                    Some(if setting == Setting::Refresh {
+                        self.device.display_modes().next(self.panel().tile_value(setting))
+                    } else {
+                        setting.next(self.panel().tile_value(setting))
+                    })
+                };
                 self.change(setting, value, out);
             }
             SettingsId::Env => {

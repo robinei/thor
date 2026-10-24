@@ -1390,3 +1390,22 @@ initial canvas and its split ratio. Live configure events still replace their di
 Thor snapshots explicitly use its reference canvas. These values never supply physical millimetres
 or claim an output mode. Compositor resize tests exercise the split and clamped tiny hosts; snapshot
 pixel, focus and trace references stay unchanged.
+
+### Announced display modes
+
+`DisplayModes` arrives from output management after a complete mode report, containing only refresh
+rates at the main output's current dimensions. State stores a bounded sorted unique list; zero always
+means restore the original mode. No modes are invented from the profile. The Refresh tile stays
+visible and tappable, dimmed when no controllable rates are known. Frame-cap choices are generic
+limiter policy; upscale choices remain inactive and describe relative render sizes.
+
+- `unknown --mode report--> known [no effects]`; repeated reports replace the facts without effects.
+- `known --mode change/hotplug--> known or unknown [no effects]`; saved choices remain intact.
+- `known --Refresh tap--> next announced rate, then zero [save settings, apply, refresh]`.
+- `unknown or saved rate absent --Refresh tap--> zero [save settings, apply when changed]`.
+- `known --output manager finished--> unknown [no effects]`.
+
+State tests pin the saved values, save-before-apply ordering and refresh effects through reports,
+repeats, unplugging and replacement. Random sequences include reports and assert sorted unique valid
+rates after every event; the allocation test covers changing reports. Nested sway checks the actual
+output-management route. Offline snapshots explicitly announce their fixture modes.

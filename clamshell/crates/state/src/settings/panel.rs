@@ -253,6 +253,37 @@ mod tests {
     use crate::*;
     use clamshell_library::runner_key;
 
+    #[test]
+    fn refresh_taps_follow_announced_modes_and_reports_never_change_saved_choices() {
+        let mut s = started(Init::default());
+        let mut modes = crate::device::display::DisplayModes::default();
+        for hz in [75000, 59940, 60000] {
+            modes.add(hz);
+        }
+        assert!(s.applied(Event::DisplayModes(modes)).is_empty());
+        assert!(s.applied(Event::DisplayModes(modes)).is_empty(), "a repeated report has no effects");
+        let effects = taps(&mut s, Setting::Refresh, 1);
+        assert_eq!(s.prefs().settings().global.get(Setting::Refresh), 60);
+        // Persist the requested choice before applying it; the output request follows hardware settings.
+        assert!(
+            matches!(effects.as_slice(), [Effect::Save(Save::Settings(_)), Effect::Apply { entry: None, settings }, Effect::Refresh(60)] if settings.get(Setting::Refresh) == 60),
+            "{effects:?}"
+        );
+        let effects = taps(&mut s, Setting::Refresh, 1);
+        assert_eq!(s.prefs().settings().global.get(Setting::Refresh), 75);
+        assert!(effects.iter().any(|effect| matches!(effect, Effect::Refresh(75))));
+        assert!(s.applied(Event::DisplayModes(Default::default())).is_empty());
+        assert_eq!(s.prefs().settings().global.get(Setting::Refresh), 75, "hotplug never overwrites a saved choice");
+        let effects = taps(&mut s, Setting::Refresh, 1);
+        assert_eq!(s.prefs().settings().global.get(Setting::Refresh), 0);
+        assert!(effects.iter().any(|effect| matches!(effect, Effect::Refresh(0))));
+        let mut replacement = crate::device::display::DisplayModes::default();
+        replacement.add(144000);
+        assert!(s.applied(Event::DisplayModes(replacement)).is_empty());
+        taps(&mut s, Setting::Refresh, 1);
+        assert_eq!(s.prefs().settings().global.get(Setting::Refresh), 144);
+    }
+
     /// Taps a tile `n` times.
     fn taps(s: &mut State, setting: Setting, n: usize) -> Vec<Effect> {
         let mut fx = vec![];

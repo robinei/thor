@@ -191,6 +191,21 @@ impl Display {
         config.apply();
     }
 
+    fn modes(&self) -> clamshell_state::device::display::DisplayModes {
+        let mut modes = clamshell_state::device::display::DisplayModes::default();
+        if let Some(main) = self.heads.iter().find(|head| head.enabled && head.name != self.bottom_output)
+            && let Some(current) = main.current.as_ref().and_then(|mode| main.modes.iter().find(|candidate| candidate.mode == *mode))
+        {
+            for mode in main.modes.iter().filter(|mode| mode.size == current.size) {
+                if !modes.add(mode.refresh) {
+                    log::warn!("output has more refresh choices than the UI can hold");
+                    break;
+                }
+            }
+        }
+        modes
+    }
+
     fn head_mut(&mut self, head: &ZwlrOutputHeadV1) -> Option<&mut Head> {
         self.heads.iter_mut().find(|h| h.head == *head)
     }
@@ -253,7 +268,15 @@ impl Dispatch2<ZwlrOutputManagerV1, App> for Data {
             zwlr_output_manager_v1::Event::Head { head } => {
                 app.display.heads.push(Head { head, name: String::new(), enabled: false, modes: Vec::new(), current: None });
             }
-            zwlr_output_manager_v1::Event::Done { serial } => app.display.listed(serial, qh),
+            zwlr_output_manager_v1::Event::Done { serial } => {
+                app.display.listed(serial, qh);
+                app.core.handle(Event::DisplayModes(app.display.modes()));
+            }
+            zwlr_output_manager_v1::Event::Finished => {
+                app.display.manager = None;
+                app.display.serial = None;
+                app.core.handle(Event::DisplayModes(Default::default()));
+            }
             _ => {}
         }
     }

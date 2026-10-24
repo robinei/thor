@@ -141,6 +141,11 @@ fn allocations_per_event() {
         let windows = if state == "idle" { Vec::new() } else { windows.clone() };
         let units = if state == "idle" { Vec::new() } else { units.clone() };
         let name = |what: &str| format!("{state}: {what}");
+        run(&name("display modes"), s, &|i| {
+            let mut modes = clamshell_state::device::display::DisplayModes::default();
+            modes.add(60000 + i as i32 * 1000);
+            Event::DisplayModes(modes)
+        });
         run(&name("tick, same minute"), s, &|i| Event::Tick { unix_secs: T0 + 1000 + i, mono_secs: 1000 + i });
         run(&name("tick, a new minute each"), s, &|i| Event::Tick { unix_secs: T0 + 2000 + 60 * i, mono_secs: 2000 + 60 * i });
         run(&name("status reading, unchanged"), s, &|_| Event::Reading(Reading::Status(Status::default())));

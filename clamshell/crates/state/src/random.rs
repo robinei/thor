@@ -614,13 +614,20 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             _ => IdleEvent::DeviceInput,
         }),
         // Levels and the slider.
-        93..=94 => match rng.below(5) {
+        93 => match rng.below(5) {
             0 => LevelEvent::Step(Level::Volume, if rng.one_in(2) { 1 } else { -1 }).into(),
             1 => LevelEvent::Set(Level::Brightness, rng.below(101) as u8).into(),
             2 => Slide::Start { control: if rng.one_in(2) { Control::Volume } else { Control::Brightness }, x: rng.below(100) as f32, width: 100.0 }.into(),
             3 => Slide::To { x: rng.below(100) as f32 }.into(),
             _ => Slide::End.into(),
         },
+        94 => {
+            let mut modes = crate::device::display::DisplayModes::default();
+            for _ in 0..rng.below(5) {
+                modes.add((rng.below(240) as i32 + 1) * 1000);
+            }
+            Event::DisplayModes(modes)
+        }
         // The pad's inputs while it listens on the keymap edit screen.
         95 if s.pad().route() == PadRoute::Listen => {
             let inputs: Vec<Input> = Input::all().collect();
@@ -722,6 +729,8 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
     ensure!(s.session().selections_valid(), "a selected window is not in its top group");
     ensure!(s.session().windows_down().count() <= 1, "more than one window below");
     ensure!(s.session().keyboard_focus().is_none_or(|id| s.session().window(id).is_some()), "keyboard focus names a closed window");
+    ensure!(s.device().display_modes().rates().iter().all(|hz| (1..=1000).contains(hz)), "invalid detected refresh rate");
+    ensure!(s.device().display_modes().rates().windows(2).all(|pair| matches!(pair, [a,b] if a < b)), "refresh choices not sorted and unique");
     // 1. Sync converges.
     let again = sync_again(s);
     ensure!(again.is_empty(), "1: sync again sends {again:?}");

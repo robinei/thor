@@ -182,8 +182,8 @@ choices!(
     /// [`Setting::Upscale`]: rendering below the screen's resolution through gamescope.
     Upscale for Upscale, default Native {
         Native = 0, "Native", Stock;
-        Fsr720 = 1, "FSR 720p", Saves;
-        Fsr540 = 2, "FSR 540p", Saves;
+        FsrTwoThirds = 1, "FSR 2/3 size", Saves;
+        FsrHalf = 2, "FSR 1/2 size", Saves;
         Integer = 3, "Integer", Changes;
     }
 );
@@ -284,7 +284,7 @@ impl Setting {
 
     /// Whether the setting takes `value`. It must be one of its choices, or any keymap id for the keymap.
     pub fn accepts(self, value: u16) -> bool {
-        self == Setting::Keymap || self.choices().contains(&value)
+        self == Setting::Keymap || (self == Setting::Refresh && value <= 1000) || self.choices().contains(&value)
     }
 
     /// The setting's values as a [`Choice`]'s table, if they are named choices.
@@ -311,7 +311,7 @@ impl Setting {
         }
         match self {
             Setting::FpsCap => &[0, 30, 40, 45, 60, 90, 120],
-            Setting::Refresh => &[0, 60, 90, 120],
+            Setting::Refresh => &[0],
             // The other values are the existing keymaps.
             Setting::Keymap => &[0],
             Setting::CpuMax | Setting::GpuMax => &[0, 40, 50, 60, 70, 80, 90, 100],

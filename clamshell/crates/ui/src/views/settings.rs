@@ -150,7 +150,10 @@ fn face(s: &State, tile: Tile) -> Face {
                 value: text,
                 impact: setting.impact(value),
                 origin: p.tile_origin(setting),
-                active: setting.active() && (setting != Setting::Fan || s.profile().fan.is_some()) && !(setting.through_launch() && p.handed_over()),
+                active: setting.active()
+                    && (setting != Setting::Refresh || !s.device().display_modes().rates().is_empty())
+                    && (setting != Setting::Fan || s.profile().fan.is_some())
+                    && !(setting.through_launch() && p.handed_over()),
                 note: note(!setting.active(), setting.through_launch() && p.handed_over()),
             }
         }
