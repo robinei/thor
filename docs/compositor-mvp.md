@@ -555,6 +555,14 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
           the host's preferred description).
     - [ ] Scanout knowing about colour: a surface whose description matches the output passes through
           untouched (constraint 3).
+    - [ ] SDR to HDR for games (inverse tone mapping, as Special K does rather than Windows' Auto HDR): a
+          per-pixel curve on luminance, hue and saturation kept, no object classification. Parameters, per
+          game: the black point (many games lift their blacks; mapping the game's floor to true black suits
+          the OLED), shadow contrast, the SDR white the midtones stay anchored to, where highlights start
+          expanding and the peak they expand to, saturation. Tuned live from the second screen while the
+          game runs on top, saved with the game's settings, off by default. Optionally later: the black
+          floor measured from the frames (the darkest values over a long window) to suggest the black
+          point, and the curve adapting slowly to each frame's average and peak.
     - [ ] The nested output: the host window's own colour description given to KWin on its raw Wayland
           surface (winit has no colour management), so KWin tone-maps our output to the monitor.
     - [ ] Tests: headless, a PQ client's pixels converted as expected, SDR content unchanged, the UI at
@@ -599,6 +607,10 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
           highlights in the headroom; our own tone mapping into the measured peak; limits on highlights
           against heat and burn-in.
     - [ ] The two panels' white points matched (dual-screen emulators); an HDR setting per game.
+    - [ ] SDR to HDR on the device: 2h's curve into the panel's headroom; in the display hardware's
+          per-plane lookup tables if they can hold it, so a game keeps direct scanout, else in the shader
+          (every frame composited: measure the cost); highlight limits against heat and burn-in, static HUD
+          elements in particular.
 5. **The default switches** to ClamShell's compositor; sway stays installed and selectable as the fallback
    for as long as the owner wants it. Dropping it (the sway adapter, its tests, the sway packages) is a
    later decision, taken once the built-in compositor has proven itself in daily use.
