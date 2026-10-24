@@ -903,7 +903,9 @@ harnesses check that the ordinary client presentation/input paths still run with
 
 ### Compositor cursors (compositor/cursor)
 
-The first pointer motion makes the compositor cursor visible; nested host focus loss hides it. The
+Pointer motion makes the compositor cursor visible and restarts a three-second timeout. Touch down,
+motion or up hides it immediately; nested host focus loss also hides it. Only pointer motion shows
+it again. The visibility deadline wakes the loop even without a further input event. The
 host window's own cursor is disabled. Client cursor requests are delivered by Smithay's seat handler:
 Named selects an xcursor theme image, Hidden draws nothing over that client, and Surface draws the
 client's committed cursor tree with its hotspot. Cursor-shape-v1 provides named requests. The protocol
@@ -921,8 +923,10 @@ animations to continue.
 
 `cursor_requests_keep_hotspots_ignore_old_serials_and_release_on_home` drives real pointer and
 cursor-shape requests, asserting named, hidden and custom states, hotspot, stale serial handling,
-Home and cursor destruction. The animation test pins frame boundaries and wrap. The nested smoke
+Home and cursor destruction. The visibility test pins the three-second boundary, repeated movement, immediate hiding and motion
+restoration; the real touch test checks down, motion and up hiding a visible cursor. The animation
+test pins frame boundaries and wrap. The nested smoke
 harness creates a virtual pointer only in its isolated parent sway, checks cursor pixels inside the
 presented scene (without grim's parent-cursor capture), moves it and checks both damage positions,
-then checks the shell's themed cursor. Both software and GPU modes exercise these steps alongside
+then checks the shell's themed cursor, its idle disappearance and reappearance on motion. Both software and GPU modes exercise these steps alongside
 screenshots and client rendering.

@@ -1,6 +1,6 @@
 //! The same cursor composition serves nested and later direct outputs.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use clamshell_ui::Error;
 use smithay::{
@@ -29,6 +29,27 @@ use xcursor::{
 
 use crate::{render::Element, server::Server};
 
+const HIDE_AFTER: Duration = Duration::from_secs(3);
+
+#[derive(Default)]
+pub(crate) struct Activity {
+    last_motion: Option<Instant>,
+}
+impl Activity {
+    pub fn motion(&mut self, now: Instant) {
+        self.last_motion = Some(now);
+    }
+    pub fn hide(&mut self) {
+        self.last_motion = None;
+    }
+    pub fn visible(&self, now: Instant) -> bool {
+        self.last_motion.is_some_and(|last| now.saturating_duration_since(last) < HIDE_AFTER)
+    }
+    pub fn deadline(&self, now: Instant) -> Option<Instant> {
+        self.last_motion.map(|last| last + HIDE_AFTER).filter(|deadline| *deadline > now)
+    }
+}
+
 struct Frame {
     texture: GlesTexture,
     id: Id,
@@ -52,7 +73,7 @@ impl Cursor {
     }
 
     pub fn elements(&mut self, server: &mut Server, renderer: &mut GlesRenderer, out: &mut Vec<Element>) -> Result<(), Error> {
-        if !server.cursor_visible {
+        if !server.cursor_activity.visible(Instant::now()) {
             return Ok(());
         }
         let status = server.effective_cursor();
@@ -192,6 +213,27 @@ impl Server {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn motion_shows_the_cursor_and_touch_or_three_seconds_without_motion_hides_it() {
+        let start = Instant::now();
+        let mut activity = Activity::default();
+        assert!(!activity.visible(start));
+        assert_eq!(activity.deadline(start), None);
+        activity.motion(start);
+        assert!(activity.visible(start + HIDE_AFTER - Duration::from_nanos(1)));
+        assert_eq!(activity.deadline(start), Some(start + HIDE_AFTER));
+        assert!(!activity.visible(start + HIDE_AFTER));
+        assert_eq!(activity.deadline(start + HIDE_AFTER), None);
+        activity.motion(start + HIDE_AFTER);
+        activity.motion(start + HIDE_AFTER + Duration::from_secs(1));
+        assert!(activity.visible(start + HIDE_AFTER * 2));
+        activity.hide();
+        assert!(!activity.visible(start + HIDE_AFTER * 2));
+        assert_eq!(activity.deadline(start + HIDE_AFTER * 2), None);
+        activity.motion(start + HIDE_AFTER * 2);
+        assert!(activity.visible(start + HIDE_AFTER * 2));
+    }
+
     #[test]
     fn cursor_animation_wraps_and_zero_delay_images_do_not_stall_it() {
         let frame = |time| animation_frame([0, 20, 30].into_iter(), time);

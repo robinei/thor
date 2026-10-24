@@ -84,7 +84,7 @@ pub fn run(
                         damage = OutputDamageTracker::new(size, 1.0, Transform::Flipped180);
                     }
                     WinitEvent::Focus(false) => {
-                        server.cursor_visible = false;
+                        server.cursor_activity.hide();
                         server.touch_cancel();
                     }
                     WinitEvent::Input(event) => server.input(event),
@@ -136,7 +136,8 @@ pub fn run(
     start(sender, std::path::PathBuf::from(runtime).join(&server.socket));
     server.core.handle(Event::Start);
     while !server.exit {
-        let wait = server.core.deadline().map(|at| at.saturating_duration_since(Instant::now()));
+        let now = Instant::now();
+        let wait = server.core.deadline().into_iter().chain(server.cursor_activity.deadline(now)).min().map(|at| at.saturating_duration_since(now));
         event_loop.dispatch(wait, &mut server)?;
         server.turn();
         server.dh.flush_clients()?;

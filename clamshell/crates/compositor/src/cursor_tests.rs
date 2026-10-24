@@ -2,7 +2,7 @@
 
 use super::*;
 use smithay::{
-    backend::input::InputTime,
+    backend::input::{InputTime, TouchSlot},
     input::pointer::{CursorIcon, CursorImageStatus, CursorImageSurfaceData, MotionEvent},
     reexports::wayland_protocols::wp::cursor_shape::v1::client::{wp_cursor_shape_device_v1, wp_cursor_shape_manager_v1},
     utils::SERIAL_COUNTER,
@@ -107,6 +107,19 @@ fn cursor_requests_keep_hotspots_ignore_old_serials_and_release_on_home() {
                     };
                     let hotspot = with_states(&surface, |states| states.data_map.get::<CursorImageSurfaceData>().unwrap().lock().unwrap().hotspot);
                     assert_eq!(hotspot, (3, 7).into());
+                    if phase == 3 {
+                        let now = Instant::now();
+                        server.cursor_activity.motion(now);
+                        server.touch_down(TouchSlot::from(Some(0)), (200.0, 200.0).into(), InputTime::now());
+                        assert!(!server.cursor_activity.visible(now), "touch immediately hides a visible cursor");
+                        server.cursor_activity.motion(now);
+                        server.touch_motion(TouchSlot::from(Some(0)), (210.0, 200.0).into(), InputTime::now());
+                        assert!(!server.cursor_activity.visible(now));
+                        server.cursor_activity.motion(now);
+                        server.touch_up(TouchSlot::from(Some(0)), InputTime::now());
+                        server.touch_frame();
+                        assert!(!server.cursor_activity.visible(now));
+                    }
                     if phase == 4 {
                         server.core.handle(Event::Home);
                         server.frame();

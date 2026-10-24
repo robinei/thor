@@ -24,6 +24,7 @@ pub(crate) struct Contact {
 
 impl Server {
     pub(crate) fn touch_down(&mut self, slot: TouchSlot, position: Point<f64, Logical>, time: InputTime) {
+        self.cursor_activity.hide();
         self.idle.input(std::time::Instant::now());
         if self.touches.iter().flatten().any(|contact| contact.slot == slot) {
             self.touch_cancel();
@@ -64,6 +65,7 @@ impl Server {
         self.sync_windows();
     }
     pub(crate) fn touch_motion(&mut self, slot: TouchSlot, position: Point<f64, Logical>, time: InputTime) {
+        self.cursor_activity.hide();
         self.idle.input(std::time::Instant::now());
         let Some(contact) = self.touches.iter_mut().flatten().find(|contact| contact.slot == slot) else { return };
         contact.location = position;
@@ -83,6 +85,7 @@ impl Server {
         }
     }
     pub(crate) fn touch_up(&mut self, slot: TouchSlot, time: InputTime) {
+        self.cursor_activity.hide();
         self.idle.input(std::time::Instant::now());
         let Some(contact) = self.touches.iter_mut().find(|contact| contact.as_ref().is_some_and(|contact| contact.slot == slot)).and_then(Option::take) else {
             return;

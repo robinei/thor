@@ -62,7 +62,7 @@ impl Server {
                 }
             }
             InputEvent::PointerMotionAbsolute { event, .. } => {
-                self.cursor_visible = true;
+                self.cursor_activity.motion(std::time::Instant::now());
                 self.pointer = event.position_transformed(self.size.into());
                 let (_, position) = self.ui_position();
                 self.core.moved(Source::Mouse, position, event.time().millis());
