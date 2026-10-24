@@ -1,4 +1,6 @@
 //! Facts hardware cannot announce. Identification is pure; callers read the device tree and DMI.
+pub mod colour;
+use colour::PanelColour;
 
 /// A screen's role has a stable connector name on a known device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -7,6 +9,7 @@ pub struct Screen {
     pub rotation: Rotation,
     /// Role hint only: backlights themselves are discovered at runtime.
     pub backlight: Option<&'static str>,
+    pub colour: PanelColour,
 }
 /// Clockwise orientation of the physical panel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,8 +88,8 @@ impl Profile {
     pub const fn thor() -> Self {
         Self {
             name: "thor",
-            top: Screen { connector: "DSI-2", rotation: Rotation::Clockwise90, backlight: Some("ae96000.dsi.0") },
-            bottom: Screen { connector: "DSI-1", rotation: Rotation::Clockwise90, backlight: Some("ae94000.dsi.0") },
+            top: Screen { connector: "DSI-2", rotation: Rotation::Clockwise90, backlight: Some("ae96000.dsi.0"), colour: PanelColour::icna3520() },
+            bottom: Screen { connector: "DSI-1", rotation: Rotation::Clockwise90, backlight: Some("ae94000.dsi.0"), colour: PanelColour::srgb() },
             touchscreens: THOR_TOUCH,
             bottom_density_tenths: 165,
             refresh_calibration: Some(THOR_REFRESH),
@@ -95,8 +98,8 @@ impl Profile {
     pub const fn vm() -> Self {
         Self {
             name: "vm",
-            top: Screen { connector: "Virtual-1", rotation: Rotation::Normal, backlight: None },
-            bottom: Screen { connector: "Virtual-2", rotation: Rotation::Normal, backlight: None },
+            top: Screen { connector: "Virtual-1", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb() },
+            bottom: Screen { connector: "Virtual-2", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb() },
             touchscreens: VM_TOUCH,
             bottom_density_tenths: 165,
             refresh_calibration: None,
@@ -106,8 +109,8 @@ impl Profile {
     pub const fn generic() -> Self {
         Self {
             name: "generic",
-            top: Screen { connector: "ClamShell-Top", rotation: Rotation::Normal, backlight: None },
-            bottom: Screen { connector: "ClamShell-Bottom", rotation: Rotation::Normal, backlight: None },
+            top: Screen { connector: "ClamShell-Top", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb() },
+            bottom: Screen { connector: "ClamShell-Bottom", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb() },
             touchscreens: &[],
             bottom_density_tenths: 38,
             refresh_calibration: None,

@@ -1304,3 +1304,12 @@ Running → Done(error) route without starting a helper when no capability exist
 check Thor/VM capability facts and the worker test asserts the unavailable outcome. Snapshots now
 explicitly use the Thor profile and retain the same pixels, focus and trace. Actual frame-length
 calibration remains a device check.
+
+
+Panel colour is immutable profile data, exposed by `clamshell device panel` for inspection. The top
+panel preserves the gamescope starting profile's primaries, D65, gamma 2.2, 650-nit peak/frame-average
+and 0.002-nit black. Its HDR capability describes compositor tone mapping into available headroom,
+not a PQ link; both current links are eight bits. Unprofiled panels use sRGB primaries at gamma 2.2,
+SDR-only, with luminance left unknown. No brightness-register calibration is invented. Unit tests pin
+these values and the package query checks their public representation. Phase 2h will consume these
+facts for physical outputs; nested outputs take their description from the host instead.
