@@ -56,6 +56,7 @@ impl Server {
         let valid = self.capture.as_ref().is_none_or(|capture| {
             self.host_focused
                 && self.menu.is_none()
+                && !self.has_x11_menu()
                 && capture.surface.is_alive()
                 && self.core.state().session().keyboard_focus() == Some(capture.window)
                 && self.visible(capture.window)
@@ -82,7 +83,7 @@ impl Server {
 
     pub(crate) fn sync_pointer_capture<E: std::fmt::Display>(&mut self, mut apply: impl FnMut(CaptureMode) -> Result<(), E>) {
         self.validate_capture();
-        let wanted = if self.relative_pointer && self.host_focused && self.menu.is_none() {
+        let wanted = if self.relative_pointer && self.host_focused && self.menu.is_none() && !self.has_x11_menu() {
             self.capture.clone().or_else(|| {
                 let hit = self.hit(self.pointer)?;
                 if !hit.surface.is_alive() || self.core.state().session().keyboard_focus() != Some(hit.window) {

@@ -663,3 +663,6 @@ mod pointer_tests;
 
 #[path = "presentation_tests.rs"]
 mod presentation_tests;
+
+#[path = "x11_popup_tests.rs"]
+mod x11_popup_tests;

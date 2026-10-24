@@ -486,7 +486,8 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    (class, title, XRes PID, parent, size limits and role), placed before mapping, and use shared drawing,
    input geometry and feedback. A real X11 fixture covers top/bottom moves, resize, close, unmap/remap
    and lazy restart after a crash, while Wayland survives. Property fixtures cover malformed metadata
-   and ordinary/dialog/splash/utility facts. Override-redirect menus, further X11 focus fixtures and
+   and ordinary/dialog/splash/utility facts. Override-redirect menus and tooltips now share their parent’s scaling, screen clip and input
+   geometry, with real-client dismissal and submenu tests. Further X11 focus fixtures and
    the planned X11/Wayland clipboard bridge remain; drag and drop is outside this adapter's scope.
    Viewporter cropping and destination sizing use the
    same logical geometry for presentation and input, covered by a socket-pair client. Screenshots read the presented nested scene and

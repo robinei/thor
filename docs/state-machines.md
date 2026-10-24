@@ -1108,7 +1108,7 @@ changes; WM_DELETE_WINDOW closes a supporting client, otherwise KillClient ends 
 `mapped --unmap--> known [Closed, detach drawable]`; a later map reopens it with the same model id.
 `known/mapped --destroy/BadWindow--> removed [Closed if open]`.
 Late replies use unique model ids, so XID reuse cannot modify a replacement. Selection/focus/placement
-remain state rules. Override-redirect menus and the planned clipboard bridge are not implemented yet;
+remain state rules. The planned clipboard bridge is not implemented yet;
 there is no drag and drop. The clipboard bridge's INCR and asynchronous transfer plan is explicit in
 `docs/compositor-mvp.md` and will add its own transitions/tests when implemented.
 
@@ -1120,3 +1120,26 @@ configure before map and focus, and no repeated commands for unchanged state. Th
 harness starts a font-independent X11 fixture, checks pixels through top/bottom moves, configure sizes,
 unmap/remap, WM_DELETE_WINDOW and a transient preceding its parent, then stops/kills Xwayland while Wayland keeps moving. It checks
 reaping, no eager restart, and activation of a replacement by another X11 client.
+
+
+### X11 menus and tooltips
+
+Override-redirect windows remain adapter-owned surfaces, never State windows.
+`known --map, metadata and buffer ready, visible focused parent--> menu layer`.
+WM_TRANSIENT_FOR resolves through live menu ancestors; absent a hint, the focused managed window
+must have the same XRes PID. Ownership stays fixed while mapped. Tooltips may use the hovered
+same-process parent and do not take input or keyboard focus. Cycles and missing ancestors reject the
+menu. Rendering and hit testing share the parent's scale and screen clip, including submenus.
+`menu layer --outside press, focus loss, Home, parent geometry change/hide/unmap/destroy--> dismissed
+[detach, asynchronous UnmapWindow]`.
+`submenu --ancestor unmap/destroy--> dismissed [detach, asynchronous UnmapWindow]`.
+`tooltip --parent geometry change/hide/unmap/destroy--> dismissed`.
+`layer --surface destroyed--> detached`. Repeated dismissal is harmless. Detached touch targets are
+cancelled, and an interactive menu releases pointer capture until dismissed.
+
+The headless surface fixture asserts scaled menu/submenu touch coordinates, passive tooltips,
+stationary-touch cancellation and unchanged State window count. Adapter tests assert same-PID
+inference, tooltip hover ownership, fixed ownership, ancestor unmap and bounded transient cycles.
+The real-client software/GPU harness checks menu pixels and local pointer coordinates, submenu
+stacking and ancestor dismissal, parentless inference, clipping at the screen boundary, tooltip input pass-through, outside presses,
+parent screen moves and Home while the bottom parent remains visible.

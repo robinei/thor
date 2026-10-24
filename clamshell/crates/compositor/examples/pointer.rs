@@ -4,7 +4,7 @@ use std::io::BufRead;
 use wayland_client::{
     Connection, Dispatch, QueueHandle, delegate_noop,
     globals::{GlobalListContents, registry_queue_init},
-    protocol::wl_registry,
+    protocol::{wl_pointer::ButtonState, wl_registry},
 };
 use wayland_protocols_wlr::virtual_pointer::v1::client::{zwlr_virtual_pointer_manager_v1, zwlr_virtual_pointer_v1};
 
@@ -29,6 +29,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let y: u32 = words.next().ok_or("missing y")?.parse()?;
         pointer.motion_absolute(u32::try_from(start.elapsed().as_millis()).unwrap_or(u32::MAX), x, y, 1580, 540);
         pointer.frame();
+        if words.next() == Some("click") {
+            let time = u32::try_from(start.elapsed().as_millis()).unwrap_or(u32::MAX);
+            pointer.button(time, 0x110, ButtonState::Pressed);
+            pointer.frame();
+            pointer.button(time.saturating_add(1), 0x110, ButtonState::Released);
+            pointer.frame();
+        }
         connection.flush()?;
     }
     Ok(())

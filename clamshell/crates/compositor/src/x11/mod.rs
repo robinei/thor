@@ -121,6 +121,7 @@ impl Supervisor {
             return;
         }
         server.x11_close.clear();
+        server.x11_popup_dismiss.clear();
         if !self.demand.get() || self.retry.is_some_and(|deadline| now < deadline) {
             return;
         }

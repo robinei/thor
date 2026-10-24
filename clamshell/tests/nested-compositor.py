@@ -145,8 +145,80 @@ time.sleep(300)
         assert display_match
         x11 = spawn([str(BIN.parent / "examples/x11-client")], "x11-client", {**nested, "DISPLAY": f":{display_match[1]}"}, stdin=subprocess.PIPE)
         wait(lambda: pixels((128, 80, 32)) == (True, False), "X11 client rendered on top")
+        pointer = spawn([str(BIN.parent / "examples/pointer")], "pointer", host, stdin=subprocess.PIPE)
+        def move_pointer(x, y, click=False):
+            pointer.stdin.write(f"{x} {y}{' click' if click else ''}\n".encode())
+            pointer.stdin.flush()
+        def colour_at(x, y, colour):
+            width, _, data = image()
+            start = (y * width + x) * 3
+            return all(abs(a - b) < 3 for a, b in zip(data[start:start + 3], colour))
+        def x11_command(command):
+            x11.stdin.write(f"{command}\n".encode())
+            x11.stdin.flush()
+        def popup_position(kind):
+            matches = re.findall(rf"popup {kind} \d+ (\d+) (\d+)", (directory / "x11-client.log").read_text())
+            return tuple(map(int, matches[-1])) if matches else None
+        def shell_cursor_patch():
+            width, _, data = image()
+            return b"".join(data[(y * width + 1390) * 3:(y * width + 1430) * 3] for y in range(440, 480))
+        initial_shell_cursor = shell_cursor_patch()
+        ready_moves = 0
+        def pointer_ready():
+            nonlocal ready_moves
+            ready_moves += 1
+            move_pointer(1400 + ready_moves % 2, 450)
+            return shell_cursor_patch() != initial_shell_cursor
+        wait(pointer_ready, "virtual pointer capability and focus reach the X11 client")
+        x11_command("menu")
+        wait(lambda: colour_at(120, 140, (64, 128, 32)), "X11 menu is drawn over its parent")
+        move_pointer(120, 100, True)
+        wait(lambda: "popup button 20 20" in (directory / "x11-client.log").read_text(), "X11 menu receives local pointer coordinates")
+        x11_command("submenu")
+        wait(lambda: colour_at(220, 220, (32, 64, 128)), "X11 submenu is drawn above the parent menu")
+        before_submenu_click = (directory / "x11-client.log").read_text().count("popup button 20 20")
+        move_pointer(220, 180, True)
+        wait(lambda: (directory / "x11-client.log").read_text().count("popup button 20 20") > before_submenu_click, "X11 submenu receives its own pointer coordinates")
+        move_pointer(800, 400, True)
+        wait(lambda: colour_at(120, 140, (128, 80, 32)) and colour_at(220, 220, (128, 80, 32)), "an outside press dismisses the X11 menu chain")
+        x11_command("hide-popups")
+        x11_command("menu-no-parent")
+        wait(lambda: colour_at(120, 140, (64, 128, 32)), "a parentless menu belongs to the focused client with the same XRes PID")
+        x11_command("hide-popups")
+        x11_command("menu")
+        x11_command("submenu")
+        wait(lambda: colour_at(220, 220, (32, 64, 128)), "submenu reopened before ancestor unmap")
+        x11_command("unmap-menu")
+        wait(lambda: colour_at(120, 140, (128, 80, 32)) and colour_at(220, 220, (128, 80, 32)), "unmapping a menu dismisses its submenu")
+        x11_command("hide-popups")
+        x11_command("tooltip")
+        wait(lambda: colour_at(120, 140, (96, 96, 128)), "X11 tooltip is drawn")
+        move_pointer(120, 100, True)
+        wait(lambda: "parent button 120 100" in (directory / "x11-client.log").read_text(), "X11 tooltip does not intercept pointer input")
+        x11_command("hide-popups")
+        wait(lambda: colour_at(120, 140, (128, 80, 32)), "destroying X11 popups removes their pixels")
+        x11_command("edge-menu")
+        wait(lambda: colour_at(950, 140, (64, 128, 32)), "a menu can extend to its screen edge")
+        assert not colour_at(980, 140, (64, 128, 32)), "menu pixels cannot cross into the other screen"
+        x11_command("hide-popups")
+        x11_command("menu")
+        wait(lambda: colour_at(120, 140, (64, 128, 32)), "X11 menu reopened before moving its parent")
+
         control("window", "down")
         wait(lambda: pixels((128, 80, 32)) == (False, True), "X11 client rendered below")
+        assert not colour_at(120, 140, (64, 128, 32)), "moving a parent dismisses its old menu"
+        before_bottom_click = (directory / "x11-client.log").read_text().count("parent button")
+        move_pointer(1280, 300, True)
+        wait(lambda: (directory / "x11-client.log").read_text().count("parent button") > before_bottom_click, "touching the bottom parent restores its keyboard focus")
+        before = len(re.findall(r"popup menu ", (directory / "x11-client.log").read_text()))
+        x11_command("menu")
+        wait(lambda: len(re.findall(r"popup menu ", (directory / "x11-client.log").read_text())) > before, "menu created on the bottom screen")
+        lower = popup_position("menu")
+        assert lower
+        wait(lambda: colour_at(lower[0] + 20, lower[1] + 60, (64, 128, 32)), "X11 menu stays local to a bottom-screen parent")
+        control("home")
+        wait(lambda: not colour_at(lower[0] + 20, lower[1] + 60, (64, 128, 32)), "Home dismisses a menu even while its bottom parent remains visible")
+
         control("window", "up")
         wait(lambda: pixels((128, 80, 32)) == (True, False), "X11 client returned to top")
         x11.stdin.write(b"unmap\n")
@@ -165,6 +237,7 @@ time.sleep(300)
             except (FileNotFoundError, json.JSONDecodeError):
                 return False
             facts = [r["input"].get("Window", {}) for r in records if isinstance(r["input"], dict)]
+            assert not any(r.get("Opened", {}).get("app_id") == "X11PopupFixture" for r in facts), "menus never enter the window model"
             opened = [r["Opened"] for r in facts if r.get("Opened", {}).get("app_id") == "NestedX11"]
             if not opened:
                 return False
@@ -213,14 +286,9 @@ time.sleep(300)
             width, _, data = image()
             return b"".join(data[(row * width + x - 10) * 3:(row * width + x + 40) * 3] for row in range(y - 10, y + 40))
         before_first, before_second, before_shell = patch(400), patch(500), patch(1400, 450)
-        pointer = spawn([str(BIN.parent / "examples/pointer")], "pointer", host, stdin=subprocess.PIPE)
-        def move_pointer(x, y):
-            pointer.stdin.write(f"{x} {y}\n".encode())
-            pointer.stdin.flush()
         move_pointer(400, 250)
         def cursor_drawn():
-            # The first virtual device also adds the host seat's pointer capability. Keep
-            # moving while the nested client's wl_pointer binding catches up with it.
+            # Keep moving while the nested client's wl_pointer focus catches up.
             move_pointer(400 + int(time.monotonic() * 10) % 2, 250)
             return patch(400) != before_first
         wait(cursor_drawn, "cursor is drawn into the compositor scene")

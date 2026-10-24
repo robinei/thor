@@ -12,7 +12,7 @@ use clamshell_state::{WindowEvent, session::presentation::WindowLayout};
 use smithay::{
     backend::renderer::utils::with_renderer_surface_state,
     reexports::wayland_server::{Client, protocol::wl_surface::WlSurface},
-    utils::Rectangle,
+    utils::{Logical, Point, Rectangle},
 };
 use std::{
     borrow::Cow,
@@ -44,6 +44,9 @@ enum Query {
 struct Window {
     xid: u32,
     id: i64,
+    override_redirect: bool,
+    position: Point<i32, Logical>,
+    popup_parent: Option<i64>,
     properties: Properties,
     pid: Option<u32>,
     outstanding: usize,
@@ -171,6 +174,8 @@ impl Wm {
             }
         }
         self.settle(wire, client, server)?;
+        self.settle_menus(wire, client, server)?;
+        server.sync_windows();
         Ok(())
     }
     fn initialise(&mut self, wire: &mut Transport) -> io::Result<()> {
@@ -338,7 +343,7 @@ impl Wm {
         }
         Ok(())
     }
-    fn discover(&mut self, xid: u32, size: (u16, u16), wire: &mut Transport, server: &mut Server) -> io::Result<()> {
+    fn discover(&mut self, xid: u32, geometry: Rectangle<i32, Logical>, override_redirect: bool, wire: &mut Transport, server: &mut Server) -> io::Result<()> {
         if self.windows.iter().any(|w| w.xid == xid) || xid == self.owner {
             return Ok(());
         }
@@ -352,6 +357,9 @@ impl Wm {
         self.windows.push(Window {
             xid,
             id,
+            override_redirect,
+            position: geometry.loc,
+            popup_parent: None,
             properties: Properties::default(),
             pid: None,
             outstanding: PROPERTIES.len() + 2,
@@ -361,7 +369,7 @@ impl Wm {
             layout: None,
             opened: false,
             surface: None,
-            size,
+            size: (u16::try_from(geometry.size.w).unwrap_or(1), u16::try_from(geometry.size.h).unwrap_or(1)),
             configured: None,
             sent: None,
             dirty: true,
@@ -381,14 +389,37 @@ impl Wm {
         match bytes.first().map(|v| v & 0x7f) {
             Some(CREATE_NOTIFY_EVENT) => {
                 let event = CreateNotifyEvent::try_parse(bytes).map_err(io::Error::other)?.0;
-                if event.parent == self.root && !event.override_redirect {
-                    self.discover(event.window, (event.width, event.height), wire, server)?;
+                if event.parent == self.root {
+                    self.discover(
+                        event.window,
+                        Rectangle::new((i32::from(event.x), i32::from(event.y)).into(), (i32::from(event.width), i32::from(event.height)).into()),
+                        event.override_redirect,
+                        wire,
+                        server,
+                    )?;
                 }
             }
             Some(MAP_REQUEST_EVENT) => {
                 let event = MapRequestEvent::try_parse(bytes).map_err(io::Error::other)?.0;
                 if let Some(window) = self.windows.iter_mut().find(|w| w.xid == event.window) {
                     window.wants_map = true;
+                }
+            }
+            Some(MAP_NOTIFY_EVENT) => {
+                let event = MapNotifyEvent::try_parse(bytes).map_err(io::Error::other)?.0;
+                if let Some(window) = self.windows.iter_mut().find(|w| w.xid == event.window) {
+                    if !window.wants_map {
+                        window.popup_parent = None;
+                    }
+                    window.wants_map = true;
+                    window.override_redirect = event.override_redirect;
+                }
+            }
+            Some(CONFIGURE_NOTIFY_EVENT) => {
+                let event = ConfigureNotifyEvent::try_parse(bytes).map_err(io::Error::other)?.0;
+                if let Some(window) = self.windows.iter_mut().find(|w| w.xid == event.window && w.override_redirect) {
+                    window.position = (i32::from(event.x), i32::from(event.y)).into();
+                    window.size = (event.width, event.height);
                 }
             }
             Some(UNMAP_NOTIFY_EVENT | DESTROY_NOTIFY_EVENT) => {
@@ -407,6 +438,10 @@ impl Wm {
                         w.sent = None;
                         w.surface = None;
                         w.configured = None;
+                        for client in &mut server.windows {
+                            let parent = client.id == id;
+                            client.window.dismiss_x11_popups(&mut server.x11_popup_dismiss, |popup| parent || popup.id == id);
+                        }
                         server.windows.retain(|v| v.id != id);
                         server.x11_changes.retain(|v| v.id != id);
                         if opened {
@@ -457,6 +492,10 @@ impl Wm {
     }
     fn forget(&mut self, id: i64, server: &mut Server) {
         self.windows.retain(|w| w.id != id);
+        for client in &mut server.windows {
+            let parent = client.id == id;
+            client.window.dismiss_x11_popups(&mut server.x11_popup_dismiss, |popup| parent || popup.id == id);
+        }
         server.x11_changes.retain(|facts| facts.id != id);
         server.windows.retain(|w| w.id != id);
         if server.core.state().session().window(id).is_some() {
@@ -472,7 +511,7 @@ impl Wm {
     fn settle(&mut self, wire: &mut Transport, client: &Client, server: &mut Server) -> io::Result<()> {
         for i in 0..self.windows.len() {
             let Some(w) = self.windows.get(i) else { continue };
-            if !w.wants_map || w.outstanding != 0 {
+            if w.override_redirect || !w.wants_map || w.outstanding != 0 {
                 continue;
             }
             if w.input_only {
@@ -520,7 +559,7 @@ impl Wm {
                 log::debug!("X11 surface bound {} mapped={mapped}", w.id);
                 server.windows.push(ClientWindow {
                     id: w.id,
-                    window: Surface::X11(surface),
+                    window: Surface::new_x11(surface),
                     opened: true,
                     mapped,
                     title_dirty: false,
@@ -613,7 +652,6 @@ impl Wm {
                 }
             }
         }
-        server.sync_windows();
         Ok(())
     }
 }
@@ -624,7 +662,7 @@ mod tests {
     use super::*;
     use std::{os::unix::net::UnixStream, sync::Arc};
     #[test]
-    fn only_outstanding_requests_supply_deadlines_and_stale_window_replies_are_ignored() {
+    fn outstanding_deadlines_stale_replies_and_menu_ownership_follow_window_lifetimes() {
         let display = smithay::reexports::wayland_server::Display::<Server>::new().unwrap();
         let mut server = Server::new(
             clamshell_state::State::new(clamshell_state::Init::default()),
@@ -654,10 +692,10 @@ mod tests {
         assert_eq!(wm.turn(&mut wire, &client, &mut server, now + Duration::from_secs(3)).unwrap_err().kind(), io::ErrorKind::TimedOut);
         wm.pending.clear();
         assert_eq!(wm.deadline(), None);
-        wm.discover(10, (640, 360), &mut wire, &mut server).unwrap();
+        wm.discover(10, Rectangle::from_size((640, 360).into()), false, &mut wire, &mut server).unwrap();
         let old_id = wm.windows[0].id;
         wm.forget(old_id, &mut server);
-        wm.discover(10, (640, 360), &mut wire, &mut server).unwrap();
+        wm.discover(10, Rectangle::from_size((640, 360).into()), false, &mut wire, &mut server).unwrap();
         assert_ne!(wm.windows[0].id, old_id);
         wm.res = Some(140);
         wm.turn(&mut wire, &client, &mut server, now).unwrap();
@@ -684,6 +722,35 @@ mod tests {
         assert_eq!(wm.windows.len(), 1);
         assert!(wm.windows[0].properties.name.is_empty());
         assert_eq!(server.core.state().session().windows().len(), 0);
+
+        // Override-redirect ownership follows live transient ancestors; cached ownership never
+        // transfers a mapped menu to a different focused client.
+        for (xid, redirect) in [(20, false), (30, true), (40, true)] {
+            wm.discover(xid, Rectangle::from_size((100, 100).into()), redirect, &mut wire, &mut server).unwrap();
+        }
+        for window in &mut wm.windows {
+            window.pid = Some(123);
+            window.wants_map = true;
+        }
+        let parent = wm.windows[0].id;
+        let other = wm.windows[1].id;
+        assert_eq!(wm.popup_owner(&wm.windows[2], Some(parent), None), Some(parent));
+        wm.windows[2].pid = Some(456);
+        assert_eq!(wm.popup_owner(&wm.windows[2], Some(parent), None), None);
+        wm.windows[2].pid = Some(123);
+        wm.windows[2].properties.tooltip = true;
+        assert_eq!(wm.popup_owner(&wm.windows[2], Some(parent), Some(other)), Some(other));
+        wm.windows[2].properties.transient = Some(10);
+        wm.windows[3].properties.transient = Some(30);
+        wm.windows[3].popup_parent = Some(parent);
+        assert_eq!(wm.popup_owner(&wm.windows[3], Some(other), None), Some(parent));
+        wm.windows[2].wants_map = false;
+        assert_eq!(wm.popup_owner(&wm.windows[3], Some(parent), None), None);
+        wm.windows[2].wants_map = true;
+        wm.windows[2].properties.transient = Some(40);
+        assert_eq!(wm.popup_owner(&wm.windows[3], Some(parent), None), None, "transient cycles are bounded");
+        wm.windows[2].properties.transient = Some(20);
+        assert_eq!(wm.popup_owner(&wm.windows[3], Some(other), None), None, "a mapped menu cannot change owner");
     }
     #[test]
     fn placement_is_committed_and_configured_before_mapping_and_focus() {
@@ -713,7 +780,7 @@ mod tests {
         wire.turn(now).unwrap();
         peer.read_exact(&mut [0; 12]).unwrap();
         let mut wm = Wm { root: 1, owner: 2, atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()), ..Wm::default() };
-        wm.discover(10, (400, 300), &mut wire, &mut server).unwrap();
+        wm.discover(10, Rectangle::from_size((400, 300).into()), false, &mut wire, &mut server).unwrap();
         wm.windows[0].outstanding = 0;
         wm.windows[0].wants_map = true;
         wm.windows[0].properties.class = "fixture".into();
@@ -780,3 +847,6 @@ mod tests {
         );
     }
 }
+
+#[path = "menus.rs"]
+mod menus;

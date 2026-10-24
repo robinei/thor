@@ -30,6 +30,7 @@ pub(super) const NAMES: &[&str] = &[
     "_NET_WM_STATE",
     "_NET_WM_STATE_FULLSCREEN",
     "WM_HINTS",
+    "_NET_WM_WINDOW_TYPE_TOOLTIP",
 ];
 pub(super) const PROPERTIES: &[&str] =
     &["WM_NAME", "_NET_WM_NAME", "WM_CLASS", "WM_TRANSIENT_FOR", "WM_NORMAL_HINTS", "_NET_WM_WINDOW_TYPE", "WM_PROTOCOLS", "WM_HINTS"];
@@ -52,6 +53,7 @@ pub(super) struct Properties {
     pub delete: bool,
     pub take_focus: bool,
     pub input: Option<bool>,
+    pub tooltip: bool,
 }
 impl Properties {
     pub fn update(&mut self, name: &str, reply: &GetPropertyReply, atoms: &Atoms) {
@@ -91,7 +93,9 @@ impl Properties {
                 self.limits = WindowLimits { min: size(1 << 4, 5), max: size(1 << 5, 7) };
             }
             "_NET_WM_WINDOW_TYPE" => {
-                self.role = words(AtomEnum::ATOM.into())
+                let types = words(AtomEnum::ATOM.into());
+                self.tooltip = types.contains(&atoms.get("_NET_WM_WINDOW_TYPE_TOOLTIP"));
+                self.role = types
                     .into_iter()
                     .find_map(|atom| {
                         if atom == atoms.get("_NET_WM_WINDOW_TYPE_DIALOG") {
@@ -104,7 +108,7 @@ impl Properties {
                             None
                         }
                     })
-                    .unwrap_or_default()
+                    .unwrap_or_default();
             }
             "WM_HINTS" => {
                 let hints = words(AtomEnum::WM_HINTS.into());

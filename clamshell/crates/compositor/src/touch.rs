@@ -33,7 +33,9 @@ impl Server {
             log::debug!("compositor: too many simultaneous touches");
             return;
         };
-        self.dismiss_menu_outside(self.hit(position).map(|hit| hit.window));
+        let hit = self.hit(position);
+        self.dismiss_menu_outside(hit.as_ref().map(|hit| hit.window));
+        self.dismiss_x11_menus_outside(hit.as_ref().map(|hit| &hit.surface));
         let arrows = clamshell_ui::window_arrows::WindowArrows::new(self.core.state(), (self.top_width as u32, self.size.1 as u32));
         let target = if let Some(action) = arrows.hit((position.x, position.y)) {
             self.core.handle(clamshell_state::Event::Device(action));
@@ -113,7 +115,9 @@ impl Server {
     }
     pub(crate) fn cancel_hidden_touches(&mut self) {
         let hidden = self.touches.iter().flatten().any(|contact| match &contact.target {
-            Target::Client { window, .. } => !self.visible(*window) || !self.windows.iter().any(|client| client.id == *window && client.mapped),
+            Target::Client { window, surface, .. } => {
+                !self.visible(*window) || !self.windows.iter().any(|client| client.id == *window && client.mapped && client.window.contains_x11_target(surface))
+            }
             _ => false,
         });
         if hidden {

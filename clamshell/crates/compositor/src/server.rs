@@ -88,6 +88,7 @@ pub(crate) struct Server {
     pub(crate) identify: Box<dyn Fn(u32) -> Process>,
     pub(crate) next_id: i64,
     pub x11_close: Vec<i64>,
+    pub x11_popup_dismiss: Vec<i64>,
     pub x11_changes: Vec<Window>,
     pub x11_display: Option<String>,
 }
@@ -182,6 +183,7 @@ impl Server {
             identify: Box::new(identify),
             next_id: 1,
             x11_close: Vec::new(),
+            x11_popup_dismiss: Vec::new(),
             x11_changes: Vec::new(),
             x11_display: None,
         };
@@ -322,6 +324,7 @@ impl Server {
     }
 
     pub fn sync_windows(&mut self) {
+        self.sync_x11_popups();
         self.validate_capture();
         self.cancel_hidden_touches();
         let revision = self.core.state_revision();

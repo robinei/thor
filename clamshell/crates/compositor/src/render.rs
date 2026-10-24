@@ -153,17 +153,22 @@ pub(crate) fn elements(
             for (popup, _) in PopupManager::popups_for_surface(surface) {
                 import_surface_tree(renderer, popup.wl_surface())?;
             }
+            for popup in client.window.x11_popups() {
+                import_surface_tree(renderer, &popup.surface)?;
+            }
             Ok(())
         });
         if let Err(error) = imported {
             server.reject_client(surface, &format!("cannot import window {} buffer: {error}", client.id));
             continue;
         }
-        out.extend(client.window.render_elements(renderer).into_iter().filter_map(|element| {
+        client.window.for_each_element(renderer, |element| {
             let element = RescaleRenderElement::from_element(element, (0, 0).into(), geometry.scale);
             let element = RelocateRenderElement::from_element(element, (geometry.origin.x as i32, geometry.origin.y as i32), Relocate::Relative);
-            CropRenderElement::from_element(element, 1.0, geometry.viewport.to_physical(1)).map(Element::from)
-        }));
+            if let Some(element) = CropRenderElement::from_element(element, 1.0, geometry.viewport.to_physical(1)) {
+                out.push(element.into());
+            }
+        });
     }
     Ok(())
 }
