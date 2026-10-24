@@ -245,6 +245,8 @@ time.sleep(300)
         copied.terminate()
         copied.wait(timeout=5)
         processes.remove(copied)
+        # Finish the keeper's asynchronous restore before the next independent copy case.
+        wait(lambda: read_x11_selection().stdout == b"replacement owner", "keeper exports the retained selection before another X11 source starts")
         copied = copy_x11("CLIPBOARD", b"caf\xe9", "--latin1")
         wait(lambda: clipboard(nested) == "café", "X11 STRING is translated from Latin-1 to UTF-8")
         copied.terminate()
