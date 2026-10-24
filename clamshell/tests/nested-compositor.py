@@ -62,12 +62,12 @@ def main():
     def wait(predicate, description):
         until = time.monotonic() + 10
         while time.monotonic() < until:
-            value = predicate()
-            if value:
-                return value
             failed = [process.returncode for process in processes if process.poll() is not None]
             if failed:
                 raise RuntimeError(f"{description}: a process exited: {failed}; logs in {directory}")
+            value = predicate()
+            if value:
+                return value
             time.sleep(0.1)
         raise RuntimeError(f"timed out: {description}; logs in {directory}")
 
@@ -181,11 +181,13 @@ time.sleep(300)
         control("window", "up")
         wait(lambda: pixels() == (True, False), "client returned to top")
         shot("up")
-        egl_env = {**nested, "WAYLAND_DEBUG": "1"} if args.gpu else nested
+        egl_env = {**nested, "WAYLAND_DEBUG": "1"}
         egl = spawn([str(BIN.parent / "examples/egl-client")], "egl-client", egl_env)
         wait(lambda: pixels((128, 32, 64)) == (True, False), "Wayland EGL client rendered on top")
+        protocol = (directory / "egl-client.log").read_text()
+        if not args.gpu:
+            assert '"zwp_linux_dmabuf_v1"' not in protocol, "software EGL must not offer native dmabuf imports"
         if args.gpu:
-            protocol = (directory / "egl-client.log").read_text()
             assert re.search(r"zwp_linux_buffer_params_v1#\d+\.create(?:_immed)?\(", protocol), "GPU mode must actually submit dmabufs"
         shot("egl-top")
         control("window", "down")

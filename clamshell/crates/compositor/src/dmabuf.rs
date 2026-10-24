@@ -20,11 +20,14 @@ impl Server {
             log::debug!("compositor: renderer has no dmabuf formats");
             return;
         }
-        let device = EGLDevice::device_for_display(renderer.egl_context().display())
-            .and_then(|device| device.render_device_path())
-            .ok()
-            .and_then(|path| std::fs::metadata(path).ok())
-            .map(|metadata| metadata.rdev());
+        let device = EGLDevice::device_for_display(renderer.egl_context().display());
+        if device.as_ref().is_ok_and(EGLDevice::is_software) {
+            // Software EGL exposes import formats even for native allocations it cannot sample.
+            // Such an import may fail inside the driver after EGL has already accepted it.
+            log::debug!("compositor: software EGL has no native dmabuf transport");
+            return;
+        }
+        let device = device.and_then(|device| device.render_device_path()).ok().and_then(|path| std::fs::metadata(path).ok()).map(|metadata| metadata.rdev());
         self.advertise_dmabuf_formats(formats, device);
     }
 

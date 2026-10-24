@@ -853,8 +853,11 @@ dmabuf advertisement/import and hardware GPU-client coverage remain separate wor
 
 ### Native dmabuf imports (compositor/dmabuf)
 
-The host advertises exactly its renderer's dmabuf formats and modifiers, retaining higher-precision
-formats. A renderer with no formats advertises no dmabuf global. When EGL identifies a render device,
+A native EGL renderer advertises exactly its dmabuf formats and modifiers, retaining higher-precision
+formats. A software EGL device advertises no native dmabuf global: its import-format list does not
+guarantee that native Vulkan allocations can be sampled, and a deferred import can fail inside Mesa
+after EGL accepted it. The software smoke test asserts the absence of that global in a real EGL
+client's registry traffic, then checks rendering, moves and close. A renderer with no formats advertises no dmabuf global. When EGL identifies a render device,
 feedback describes that device and its sampling formats; otherwise the host advertises version 3.
 Feedback-file creation failure is logged and also uses version 3. No scanout preference is advertised
 by the nested backend.
