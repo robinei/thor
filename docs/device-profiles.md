@@ -1,8 +1,8 @@
 # Device profiles
 
 How ClamShell keeps what is specific to one device in one place, so that another dual-screen clamshell
-can be added without conditionals spread through the code. Not started; to do after the compositor's
-phase 2 closes, in small steps. ClamShell keeps assuming two screens, a top and a bottom one.
+can be added without conditionals spread through the code. In progress after the compositor's phase 2,
+in small steps. ClamShell keeps assuming two screens, a top and a bottom one.
 
 ## Rules
 
@@ -62,7 +62,7 @@ command line, the self-test.
 
 ## Steps
 
-1. `crates/device` with `Profile`, the Thor's and the VM's constructors and identification; `Init`
+1. **Implemented.** `crates/device` with `Profile`, the Thor's and the VM's constructors and identification; `Init`
    carries the profile; `CLAMSHELL_DEVICE` replaces the VM's environment overrides.
 2. `clamshell device outputs`, used by `thor-outputs` (then the VM branch there goes) and
    `thor-panel-calibration`.

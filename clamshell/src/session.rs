@@ -63,6 +63,7 @@ fn run_host(env: &Env, paths: Paths, sources: &Sources, nested: bool) -> Result<
     // Metadata to fetch once the threads run, if there is somewhere to keep it.
     let fetch = paths.art.clone().map(|art| meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art });
     let state = State::new(Init {
+        profile: env.profile,
         library: loaded.library,
         start_tab: env.start_tab,
         pad_mouse: env.pad_mouse,

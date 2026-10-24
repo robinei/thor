@@ -9,6 +9,7 @@ publish.workspace = true
 description = "ClamShell's system threads: D-Bus, sway, the controller, sensors, files and launches"
 
 [dependencies]
+clamshell-device.workspace = true
 jiff.workspace = true
 png.workspace = true
 serde_json.workspace = true

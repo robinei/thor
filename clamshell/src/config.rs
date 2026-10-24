@@ -2,13 +2,15 @@
 
 use std::path::PathBuf;
 
-use clamshell_state::Tab;
+use clamshell_state::{Profile, Tab};
 use clamshell_system::os::evdev::device::DeviceSpec;
 use clamshell_system::paths::Base;
 
 pub struct Env {
+    /// Fixed hardware facts, selected once from the kernel identity or CLAMSHELL_DEVICE.
+    pub profile: Profile,
     /// CLAMSHELL_BOTTOM_OUTPUT: the second screen's output, which gets the bottom view as a layer-shell
-    /// surface (default DSI-1, the Thor's).
+    /// surface (default: the selected profile's bottom connector).
     pub bottom_output: String,
     /// CLAMSHELL_BOTTOM_PANEL=1: on a desktop, the bottom view as a panel in a corner instead of a
     /// window, so tapping its keyboard leaves the keyboard focus on the app being typed into.
@@ -39,12 +41,14 @@ pub struct Env {
 }
 
 impl Env {
-    pub fn from_env() -> Env {
+    pub fn from_env() -> Result<Env, String> {
         let var = |name: &str| std::env::var(name).ok();
         let flag = |name: &str, on: &str| var(name).as_deref() == Some(on);
         let path = |name: &str| std::env::var_os(name).map(PathBuf::from);
-        Env {
-            bottom_output: var("CLAMSHELL_BOTTOM_OUTPUT").unwrap_or_else(|| "DSI-1".into()),
+        let profile = clamshell_system::profile::detect(std::path::Path::new("/"), var("CLAMSHELL_DEVICE").as_deref())?;
+        Ok(Env {
+            profile,
+            bottom_output: var("CLAMSHELL_BOTTOM_OUTPUT").unwrap_or_else(|| profile.bottom.connector.into()),
             bottom_panel: flag("CLAMSHELL_BOTTOM_PANEL", "1"),
             gamepad: DeviceSpec::parse(var("CLAMSHELL_GAMEPAD").as_deref()),
             steam: !flag("CLAMSHELL_STEAM", "off"),
@@ -55,6 +59,6 @@ impl Env {
             backlights: path("CLAMSHELL_BACKLIGHTS").unwrap_or_else(|| PathBuf::from("/sys/class/backlight")),
             sway: path("SWAYSOCK"),
             base: Base::from_env(),
-        }
+        })
     }
 }

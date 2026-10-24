@@ -433,3 +433,14 @@ fn dumping_window_events_is_one_backend_effect_without_changing_windows() {
     assert_eq!(s.applied(crate::Event::DumpWindowEvents("events.json".into())), vec![crate::Effect::DumpWindowEvents("events.json".into())]);
     assert_eq!(s.session().windows(), before);
 }
+
+#[test]
+fn immutable_device_profile_is_carried_from_init_through_state_events() {
+    for profile in [crate::Profile::thor(), crate::Profile::vm(), crate::Profile::generic()] {
+        let mut state = crate::State::new(crate::Init { profile, ..Default::default() });
+        assert_eq!(*state.profile(), profile);
+        let mut effects = Vec::new();
+        state.apply(crate::Event::Home, &mut effects);
+        assert_eq!(*state.profile(), profile);
+    }
+}

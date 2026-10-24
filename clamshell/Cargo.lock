@@ -311,6 +311,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "clamshell-device"
+version = "0.1.0"
+
+[[package]]
 name = "clamshell-fan"
 version = "0.1.0"
 dependencies = [
@@ -328,6 +332,7 @@ dependencies = [
 name = "clamshell-state"
 version = "0.1.0"
 dependencies = [
+ "clamshell-device",
  "clamshell-fan",
  "clamshell-library",
  "serde",
@@ -338,6 +343,7 @@ dependencies = [
 name = "clamshell-system"
 version = "0.1.0"
 dependencies = [
+ "clamshell-device",
  "clamshell-library",
  "clamshell-state",
  "crc32fast",

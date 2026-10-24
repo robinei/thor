@@ -31,6 +31,7 @@ pub(crate) mod network;
 pub mod os;
 pub mod paths;
 pub(crate) mod power;
+pub mod profile;
 pub mod readings;
 pub mod session;
 pub mod store;

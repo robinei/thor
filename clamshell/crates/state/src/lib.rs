@@ -115,11 +115,13 @@ pub use shelf::{Cursor, Shelf};
 pub use status::time::{ClockField, TimePage, TimeRow, TimeZones};
 pub use status::{Status, Sys};
 
+pub use clamshell_device::Profile;
 pub use clamshell_library::{BrowseKind, Browsed, Collection, Entry, Launch, Library, Meta, RunnerOf, runner_key};
 
 /// What the state starts from, as read from disk and the environment.
 #[derive(Debug, Default)]
 pub struct Init {
+    pub profile: Profile,
     pub library: Library,
     /// Every game's settings and environment.
     pub settings: Settings,
@@ -160,6 +162,7 @@ enum Press {
 /// Everything ClamShell knows, as its areas (see the [crate docs](crate)).
 #[derive(Debug, Default)]
 pub struct State {
+    profile: Profile,
     shelf: Shelf,
     bottom: Bottom,
     session: Session,
@@ -203,6 +206,7 @@ impl State {
 
     pub fn new(init: Init) -> State {
         let mut s = State {
+            profile: init.profile,
             shelf: Shelf::new(init.library),
             prefs: Prefs::new(init.settings),
             keymapping: Keymapping::new(init.keymaps),
@@ -233,6 +237,10 @@ impl State {
         }
         s.sent = Sent::new(&s.wanted());
         s
+    }
+
+    pub fn profile(&self) -> &Profile {
+        &self.profile
     }
 
     pub fn shelf(&self) -> &Shelf {

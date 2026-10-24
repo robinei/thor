@@ -9,6 +9,7 @@ publish.workspace = true
 description = "ClamShell's state and rules: events in, effects out, no I/O"
 
 [dependencies]
+clamshell-device.workspace = true
 clamshell-library.workspace = true
 clamshell-fan.workspace = true
 serde.workspace = true

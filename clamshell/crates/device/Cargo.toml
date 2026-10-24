@@ -1,0 +1,12 @@
+[package]
+name = "clamshell-device"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Typed device facts shared by ClamShell and its system services"
+
+[lints]
+workspace = true

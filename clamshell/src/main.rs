@@ -41,7 +41,7 @@ fn main() -> ExitCode {
 
 /// Carries out what the command line asked for. The error is a message saying what went wrong.
 fn carry_out(command: Command) -> Result<(), String> {
-    let env = Env::from_env();
+    let env = Env::from_env()?;
     let paths = Paths::new(&env.base);
     let sources = Sources::new(&paths, env.base.home.as_deref(), env.steam);
     match command {

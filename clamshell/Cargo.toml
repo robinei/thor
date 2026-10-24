@@ -15,6 +15,7 @@ repository = "https://github.com/robinei/thor"
 publish = false
 
 [workspace.dependencies]
+clamshell-device = { path = "crates/device" }
 clamshell-state = { path = "crates/state" }
 clamshell-system = { path = "crates/system" }
 clamshell-library = { path = "crates/library" }

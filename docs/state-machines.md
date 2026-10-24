@@ -1255,3 +1255,19 @@ selections on adapter shutdown. The real-client software/GPU harness covers both
 properties larger than a slice, INCR metadata/data, arbitrary binary MIME data, slow/abandoned/stalled
 readers, refusal and bad formats, owner replacement during metadata, Latin-1, keeper persistence,
 parent-desktop isolation and fresh clipboard generations after Xwayland crashes and restarts.
+
+
+### Device profile at startup
+
+`startup --CLAMSHELL_DEVICE or kernel identity--> identified [construct typed profile]`.
+An explicit thor/vm/generic override wins over the device tree and DMI. Compatible entries match whole
+NUL-separated strings; QEMU's DMI selects the VM. Unknown hardware selects the generic profile; an
+unknown explicit override fails startup with a diagnostic. Identification performs no periodic work.
+`identified --build Init--> running [immutable profile available through State]`.
+The VM service now forces CLAMSHELL_DEVICE=vm, replacing its bottom-output environment override.
+Detected modes, inputs, backlights and readings remain runtime detection; each fixed fact is moved to
+the profile separately. Existing desktop output overrides remain available for nested-sway tests.
+Pure identity tests cover precedence, exact matching and unknown names. A filesystem fixture checks
+kernel identity reads without host-specific assumptions. State, allocation and snapshot checks cover
+passing the profile without changing per-event behaviour. VM service boot is checked by the VM suite
+once its output-generation script has been switched to the profile too.
