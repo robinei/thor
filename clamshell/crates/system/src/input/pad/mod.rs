@@ -313,9 +313,9 @@ impl<S: Sink> Service for PadThread<S> {
         let grabbed = Grabbed::new(real)?;
         log::info!("pad: {} grabbed; games see the virtual pad", grabbed.device().name().unwrap_or("controller"));
         let motion = find_motion(&name, &phys);
-        let letters = device::letter_codes(&name, &phys);
+        let letters = device::letter_codes(self.controls, &name, &phys);
         if letters {
-            log::info!("pad: its X and Y codes are by letter (xpad, rsinput): read by place");
+            log::info!("pad: its driver reports X and Y by letter: read by place");
         }
         let sticks = calibrate::StickState::new(ranges.stick, self.sticks.get(&name).copied(), &mut snapshot);
         if sticks.sticks.is_some() {

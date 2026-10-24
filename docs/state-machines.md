@@ -1323,3 +1323,10 @@ profile models the Thor's auxiliary controls for its input fixtures; generic has
 Pure tests check alternate physical codes, unrelated keys/axes and virtual-pad filtering. Existing
 router, held-key, disconnect and randomized state tests retain the same canonical semantics. The VM
 suite checks actual GPIO-key discovery and uinput forwarding.
+
+
+The pad's actual driver is still detected through its sysfs device link. The profile supplies the
+list of drivers whose X/Y codes use letters rather than positions; input code no longer names those
+drivers in its decision. Thor/VM include rsinput and xpad, generic includes xpad. The existing swap,
+resynchronisation and routing paths are unchanged. Profile tests pin each convention and reject an
+unlisted driver; the existing event tests pin the resulting canonical button meanings.

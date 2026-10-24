@@ -150,7 +150,7 @@ impl VirtualDevices {
 /// place. The left button sends BTN_X, which is the code Linux calls BTN_NORTH, and PB-OS found rsinput's
 /// top button sending BTN_WEST, which is BTN_Y. Linux and ClamShell go by place: BTN_WEST is the left
 /// button and BTN_NORTH the top one.
-pub fn letter_codes(name: &str, phys: &str) -> bool {
+pub fn letter_codes(controls: Controls, name: &str, phys: &str) -> bool {
     let inputs = match std::fs::read_dir("/sys/class/input") {
         Ok(inputs) => inputs,
         Err(e) => {
@@ -165,7 +165,8 @@ pub fn letter_codes(name: &str, phys: &str) -> bool {
     entries.map(|e| e.path().join("device")).any(|dev| {
         read(dev.join("name")) == name
             && read(dev.join("phys")) == phys
-            && std::fs::read_link(dev.join("device/driver")).is_ok_and(|d| d.file_name().is_some_and(|n| n == "xpad" || n == "rsinput"))
+            && std::fs::read_link(dev.join("device/driver"))
+                .is_ok_and(|d| d.file_name().and_then(|name| name.to_str()).is_some_and(|driver| controls.letter_code_drivers.contains(&driver)))
     })
 }
 
@@ -290,7 +291,7 @@ mod profile_tests {
     use super::*;
     #[test]
     fn control_normalisation_preserves_other_keys_and_axis_codes() {
-        let controls = Controls { back_key: Some(123), auxiliary: None };
+        let controls = Controls { back_key: Some(123), auxiliary: None, letter_code_drivers: &[] };
         let mut events =
             [Raw::key(KeyCode(123), Press::Down), Raw::key(KeyCode::BTN_SOUTH, Press::Down), Raw { kind: evdev::EventType::ABSOLUTE, code: 123, value: 1 }];
         normalise_controls(controls, &mut events);
