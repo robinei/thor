@@ -139,6 +139,16 @@ impl crate::State {
         let game = self.session().running_of(window).and_then(|r| self.session().entry(self.shelf().library(), &r.id)).is_some_and(crate::Entry::is_game);
         Some(window.presentation(game))
     }
+
+    /// The HDR curve for window `id`'s SDR content: the curve chosen for the program running it, in its
+    /// settings in force (see [`crate::settings::Setting::Curve`]). None for Off, for a curve that is gone,
+    /// and for a window no launch runs.
+    pub fn window_curve(&self, id: i64) -> Option<crate::curve::Curve> {
+        let window = self.session().window(id)?;
+        let running = self.session().running_of(window)?;
+        let chosen = self.settings_of(&running.id).get(crate::settings::Setting::Curve);
+        self.curving().in_force(chosen).copied()
+    }
 }
 
 #[cfg(test)]

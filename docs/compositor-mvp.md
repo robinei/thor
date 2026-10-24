@@ -558,7 +558,7 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
           the DRM backend (phase 3).
     - [ ] Scanout knowing about colour: a surface whose description matches the output passes through
           untouched (constraint 3). With the DRM backend (phase 3): the nested host has no scanout.
-    - [ ] SDR to HDR for games (inverse tone mapping, as Special K does rather than Windows' Auto HDR): a
+    - [x] SDR to HDR for games (inverse tone mapping, as Special K does rather than Windows' Auto HDR): a
           per-pixel curve on luminance, hue and saturation kept, no object classification. Parameters, per
           game: the black point (many games lift their blacks; mapping the game's floor to true black suits
           the OLED), shadow contrast, the SDR white the midtones stay anchored to, where highlights start
@@ -576,7 +576,12 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
           generic, keymaps on it, behaviour and trace unchanged; (2) storage the same way; (3) the picker
           and menus shared; (4) curves: the parameters, presets, the setting (a curve's id, 0 Off), the
           tile, the edit screen; (5) the compositor applying a window's curve to its SDR surfaces, read
-          from the state; under sway the tile is dimmed (the compositor alone can do it).
+          from the state; under sway the tile is dimmed (the compositor alone can do it). Done: the
+          profile list, storage and picker shared with keymaps (`profiles`), `curve` with its three to
+          start from, the tile (Upscale's left out until upscaling works, to keep four rows), the edit
+          screen with the curve plotted on PQ's scale, and the compositor's SDR input shader applying the
+          window's curve from uniforms (its arithmetic tested against `Curve::map`). Left: trying it on
+          real games, the black floor measured from frames, adapting to each frame.
     - [x] The nested output: the host window's own colour description given to KWin on its raw Wayland
           surface (winit has no colour management), so KWin tone-maps our output to the monitor.
     - [ ] Tests: headless, a PQ client's pixels converted as expected, SDR content unchanged, the UI at

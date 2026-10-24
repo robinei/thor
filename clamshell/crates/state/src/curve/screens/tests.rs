@@ -132,3 +132,21 @@ fn a_new_curve_is_named_and_changes_nothing_until_edited() {
     assert_eq!(s.curving().screen(), Some(CurveScreen::Edit(id)));
     assert_eq!(s.curving().in_force(id), Some(&Curve::default()));
 }
+
+#[test]
+fn a_windows_curve_is_the_one_chosen_for_the_game_running_it_and_follows_its_slider() {
+    let mut s = new_state();
+    launch(&mut s, "zelda-lttp");
+    show_window(&mut s, "zelda-lttp", 7);
+    assert_eq!(s.window_curve(7), None, "Off");
+    picker(&mut s);
+    tap(&mut s, row(2));
+    assert_eq!(s.window_curve(7).as_ref(), s.curving().in_force(1));
+    // A slider's change reaches the window as it moves, before the finger lifts.
+    picker(&mut s);
+    tap(&mut s, Id::Row { list: ListId::Curves, i: 2, part: RowPart::Edit });
+    s.applied(Slide::Start { control: Control::Curve(CurveParam::Black), x: 300.0, width: 620.0 }.into());
+    s.applied(Slide::To { x: 200.0 }.into());
+    assert_eq!(s.window_curve(7).map(|c| c.black), Some(0), "slid all the way down");
+    assert_eq!(s.window_curve(99), None, "no such window");
+}
