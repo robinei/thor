@@ -35,7 +35,7 @@ pub struct Process {
 
 pub(crate) struct ClientWindow {
     pub id: i64,
-    pub window: SurfaceWindow,
+    pub window: crate::surface::Surface,
     pub opened: bool,
     pub mapped: bool,
     pub title_dirty: bool,
@@ -85,8 +85,11 @@ pub(crate) struct Server {
     pub trace: std::rc::Rc<std::cell::RefCell<crate::trace::Ring>>,
     pub socket: String,
     pub on_effect: Box<dyn FnMut(&Effect)>,
-    identify: Box<dyn Fn(u32) -> Process>,
-    next_id: i64,
+    pub(crate) identify: Box<dyn Fn(u32) -> Process>,
+    pub(crate) next_id: i64,
+    pub x11_close: Vec<i64>,
+    pub x11_changes: Vec<Window>,
+    pub x11_display: Option<String>,
 }
 
 impl Server {
@@ -178,6 +181,9 @@ impl Server {
             on_effect: Box::new(on_effect),
             identify: Box::new(identify),
             next_id: 1,
+            x11_close: Vec::new(),
+            x11_changes: Vec::new(),
+            x11_display: None,
         };
         if relative_motion {
             server.enable_relative_pointer();
@@ -212,7 +218,7 @@ impl Server {
     }
 
     pub fn surface_id(&self, surface: &WlSurface) -> Option<i64> {
-        self.windows.iter().find(|w| w.window.toplevel().is_some_and(|t| t.wl_surface() == surface)).map(|w| w.id)
+        self.windows.iter().find(|w| w.window.root().as_ref() == Some(surface)).map(|w| w.id)
     }
 
     pub fn add_toplevel(&mut self, surface: ToplevelSurface) {
@@ -227,7 +233,7 @@ impl Server {
         };
         self.windows.push(ClientWindow {
             id: self.next_id,
-            window: SurfaceWindow::new_wayland_window(surface),
+            window: crate::surface::Surface::Wayland(SurfaceWindow::new_wayland_window(surface)),
             opened: false,
             mapped: false,
             title_dirty: false,
@@ -292,7 +298,7 @@ impl Server {
     }
 
     pub fn open_on_commit(&mut self, surface: &WlSurface) {
-        let Some(index) = self.windows.iter().position(|w| w.window.toplevel().is_some_and(|t| t.wl_surface() == surface)) else { return };
+        let Some(index) = self.windows.iter().position(|w| w.window.root().as_ref() == Some(surface)) else { return };
         let Some(client) = self.windows.get(index) else { return };
         let Some(toplevel) = client.window.toplevel().cloned() else { return };
         let id = client.id;
@@ -328,39 +334,40 @@ impl Server {
         let focus = self.core.state().session().keyboard_focus();
         for client in &self.windows {
             let Some(window) = self.core.state().session().window(client.id) else { continue };
-            let Some(surface) = client.window.toplevel() else { continue };
-            let area = self.area(window.down);
-            let Some(policy) = client.presentation else { continue };
-            let size = crate::geometry::configure_size(window, policy, area.size, client.window.geometry().size);
-            surface.with_pending_state(|pending| {
-                pending.size = size;
-                pending.bounds = Some(area.size);
-                use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
-                if policy.layout == clamshell_state::session::presentation::WindowLayout::Fullscreen {
-                    pending.states.set(State::Fullscreen);
-                } else {
-                    pending.states.unset(State::Fullscreen);
+            if let Some(surface) = client.window.toplevel() {
+                let area = self.area(window.down);
+                let Some(policy) = client.presentation else { continue };
+                let size = crate::geometry::configure_size(window, policy, area.size, client.window.geometry().size);
+                surface.with_pending_state(|pending| {
+                    pending.size = size;
+                    pending.bounds = Some(area.size);
+                    use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
+                    if policy.layout == clamshell_state::session::presentation::WindowLayout::Fullscreen {
+                        pending.states.set(State::Fullscreen);
+                    } else {
+                        pending.states.unset(State::Fullscreen);
+                    }
+                    if focus == Some(client.id) {
+                        pending.states.set(State::Activated);
+                    } else {
+                        pending.states.unset(State::Activated);
+                    }
+                });
+                if surface.is_initial_configure_sent() {
+                    surface.send_pending_configure();
                 }
-                if focus == Some(client.id) {
-                    pending.states.set(State::Activated);
-                } else {
-                    pending.states.unset(State::Activated);
-                }
-            });
-            if surface.is_initial_configure_sent() {
-                surface.send_pending_configure();
             }
+            let Some(root) = client.window.root() else { continue };
             let output = if window.down { &self.outputs[1] } else { &self.outputs[0] };
             for candidate in &self.outputs {
                 if candidate == output {
-                    candidate.enter(surface.wl_surface());
+                    candidate.enter(&root);
                 } else {
-                    candidate.leave(surface.wl_surface());
+                    candidate.leave(&root);
                 }
             }
         }
-        let surface =
-            focus.and_then(|id| self.windows.iter().find(|w| w.id == id && w.mapped)).and_then(|w| w.window.toplevel()).map(|t| t.wl_surface().clone());
+        let surface = focus.and_then(|id| self.windows.iter().find(|w| w.id == id && w.mapped)).and_then(|w| w.window.root());
         let surface = self.menu_focus(surface);
         if let Some(keyboard) = self.seat.get_keyboard()
             && keyboard.current_focus() != surface
@@ -377,6 +384,24 @@ impl Server {
 
     /// Flush client titles once for the frame, after all requests in the dispatch batch.
     pub fn frame(&mut self) {
+        for mut facts in self.x11_changes.drain(..) {
+            let Some(old) = self.core.state().session().window(facts.id) else { continue };
+            let title_changed = old.title != facts.title;
+            let changed =
+                old.app_id != facts.app_id || old.parent != facts.parent || old.limits != facts.limits || old.role != facts.role || old.colour != facts.colour;
+            if changed {
+                // Scope adoption can arrive while the properties wait for this frame.
+                facts.unit.clone_from(&old.unit);
+                facts.pids.clone_from(&old.pids);
+            }
+            let title = title_changed.then(|| WindowEvent::Title { window: facts.id, title: std::mem::take(&mut facts.title) });
+            match (changed, title) {
+                (true, Some(title)) => self.core.handle(clamshell_state::Event::WindowBatch(vec![WindowEvent::Changed(facts), title])),
+                (true, None) => self.core.handle(WindowEvent::Changed(facts).into()),
+                (false, Some(title)) => self.core.handle(title.into()),
+                (false, None) => {}
+            }
+        }
         for index in 0..self.windows.len() {
             let pending = self.windows.get_mut(index).and_then(|client| {
                 std::mem::take(&mut client.title_dirty).then(|| client.window.toplevel().cloned().map(|surface| (client.id, surface))).flatten()
@@ -406,6 +431,10 @@ impl Server {
                 Effect::Screenshot => self.screenshot_requested = true,
                 Effect::Quit => self.exit = true,
                 Effect::Window(WindowCommand::Close(ref ids)) => {
+                    self.x11_close.extend(ids.iter().copied().filter(|id| {
+                        self.core.state().session().window(*id).is_some()
+                            && self.windows.iter().all(|window| window.id != *id || window.window.toplevel().is_none())
+                    }));
                     for client in self.windows.iter().filter(|w| ids.contains(&w.id)) {
                         if let Some(surface) = client.window.toplevel() {
                             surface.send_close();
@@ -419,6 +448,10 @@ impl Server {
                     if let Effect::Launch { env: target, .. } = &mut launch {
                         *target =
                             env.iter().filter(|(k, _)| k != "WAYLAND_DISPLAY").cloned().chain([("WAYLAND_DISPLAY".into(), self.socket.clone())]).collect();
+                    }
+                    if let (Some(display), Effect::Launch { env, .. }) = (&self.x11_display, &mut launch) {
+                        env.retain(|(name, _)| name != "DISPLAY");
+                        env.push(("DISPLAY".into(), display.clone()));
                     }
                     (self.on_effect)(&launch);
                 }

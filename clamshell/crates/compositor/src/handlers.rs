@@ -49,10 +49,10 @@ impl CompositorHandler for Server {
             while let Some(parent) = get_parent(&root) {
                 root = parent;
             }
-            if let Some(client) = self.windows.iter_mut().find(|w| w.window.toplevel().is_some_and(|t| t.wl_surface() == &root)) {
+            if let Some(client) = self.windows.iter_mut().find(|w| w.window.root().as_ref() == Some(&root)) {
                 client.window.on_commit();
                 let mapped = with_renderer_surface_state(&root, |state| state.buffer().is_some()).unwrap_or(false);
-                if client.mapped && !mapped {
+                if client.mapped && !mapped && client.window.toplevel().is_some() {
                     client.mapped = false;
                     client.opened = false;
                     client.title_dirty = false;
@@ -146,7 +146,7 @@ impl Server {
             }
             let location = geometry.surface_coords(pos);
             let (surface, origin) = client.window.surface_under(location, WindowSurfaceType::ALL)?;
-            if client.window.toplevel().is_some_and(|top| top.wl_surface() == &surface) && !geometry.native.to_f64().contains(location) {
+            if client.window.root().as_ref() == Some(&surface) && !geometry.native.to_f64().contains(location) {
                 return None;
             }
             Some(crate::input::Hit { window: client.id, surface, location, origin: origin.to_f64() })

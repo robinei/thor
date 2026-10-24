@@ -18,6 +18,7 @@ mod popup;
 mod presentation;
 mod render;
 mod server;
+mod surface;
 mod touch;
 pub mod trace;
 mod x11;

@@ -9,7 +9,7 @@ use smithay::{
         renderer::{
             ImportMem, Renderer,
             element::{
-                AsRenderElements, Id, Kind,
+                Id, Kind,
                 surface::WaylandSurfaceRenderElement,
                 texture::TextureRenderElement,
                 utils::{CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement},
@@ -147,8 +147,8 @@ pub(crate) fn elements(
     }
     for client in server.windows.iter().filter(|w| w.mapped && server.visible(w.id)) {
         let Some(geometry) = server.geometry(client.id) else { continue };
-        let Some(toplevel) = client.window.toplevel() else { continue };
-        let surface = toplevel.wl_surface();
+        let Some(surface) = client.window.root() else { continue };
+        let surface = &surface;
         let imported = import_surface_tree(renderer, surface).and_then(|()| {
             for (popup, _) in PopupManager::popups_for_surface(surface) {
                 import_surface_tree(renderer, popup.wl_surface())?;
@@ -159,15 +159,11 @@ pub(crate) fn elements(
             server.reject_client(surface, &format!("cannot import window {} buffer: {error}", client.id));
             continue;
         }
-        out.extend(
-            client.window.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(renderer, (0, 0).into(), 1.0.into(), 1.0).into_iter().filter_map(
-                |element| {
-                    let element = RescaleRenderElement::from_element(element, (0, 0).into(), geometry.scale);
-                    let element = RelocateRenderElement::from_element(element, (geometry.origin.x as i32, geometry.origin.y as i32), Relocate::Relative);
-                    CropRenderElement::from_element(element, 1.0, geometry.viewport.to_physical(1)).map(Element::from)
-                },
-            ),
-        );
+        out.extend(client.window.render_elements(renderer).into_iter().filter_map(|element| {
+            let element = RescaleRenderElement::from_element(element, (0, 0).into(), geometry.scale);
+            let element = RelocateRenderElement::from_element(element, (geometry.origin.x as i32, geometry.origin.y as i32), Relocate::Relative);
+            CropRenderElement::from_element(element, 1.0, geometry.viewport.to_physical(1)).map(Element::from)
+        }));
     }
     Ok(())
 }

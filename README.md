@@ -272,11 +272,11 @@ The experimental in-process compositor runs with `cargo run --features composito
 `clamshell/`. It opens one desktop window with the logical screens side by side. F12 is Home (hold
 for window arrows), F11 moves the selected window down, and F10 returns it. Sway remains the normal
 session backend. Touch is routed to UI or clients. The on-screen keyboard uses text-input-v3 or seat key events;
-its clipboard is separate from the parent's. Xwayland has a private non-blocking transport and crash/stall
-supervision; X11 window mapping is still pending. Build with
+its clipboard is separate from the parent's. Xwayland starts on the first X11 connection, with non-blocking requests and supervised shutdown.
+X11 toplevels share presentation and input geometry; menus and clipboard bridging remain pending. Build with
 `cargo build --features compositor` and `cargo build -p clamshell-compositor --examples`, then run
 `python3 tests/nested-compositor.py` to check clipboard isolation, persistence, cursor visibility,
-screenshots, Xwayland crash/stall recovery and client screen moves using headless sway, Xwayland, foot,
+screenshots, lazy Xwayland startup/restart, X11 toplevels and client screen moves using headless sway, Xwayland, foot,
 grim and the EGL fixture. Add `--gpu`
 on a desktop with an accessible render node and Vulkan driver to require native dmabuf submission.
 That mode also needs Wayland-capable `vkcube`: it checks Vulkan WSI animation through screen moves,

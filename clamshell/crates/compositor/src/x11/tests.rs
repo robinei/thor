@@ -19,3 +19,41 @@ fn private_descriptors_are_inherited_only_by_the_selected_child() {
     assert!(child.wait().unwrap().success());
     assert_eq!(rustix::io::fcntl_getfd(&copy).unwrap(), flags, "the parent retains CLOEXEC");
 }
+
+fn server() -> Server {
+    let display = smithay::reexports::wayland_server::Display::<Server>::new().unwrap();
+    Server::new(
+        clamshell_state::State::new(clamshell_state::Init::default()),
+        clamshell_ui::Config {
+            bottom_output: "ClamShell-Bottom".into(),
+            top_size: (960, 540),
+            bottom_size: (620, 540),
+            bottom_panel: false,
+            touch_layout: Arc::default(),
+        },
+        display.handle(),
+        false,
+        || {},
+        |_| crate::Process::default(),
+        |_| {},
+    )
+    .unwrap()
+}
+
+#[test]
+fn dormant_xwayland_has_no_child_or_deadline_and_a_connection_wakes_its_listener() {
+    let mut event_loop = smithay::reexports::calloop::EventLoop::<Server>::try_new().unwrap();
+    let supervisor = Supervisor::new(event_loop.handle()).unwrap();
+    let path = format!("/tmp/.X11-unix/X{}", supervisor.socket.number);
+    assert_eq!(supervisor.deadline(), None);
+    assert!(supervisor.running.is_none());
+    let _client = UnixStream::connect(&path).unwrap();
+    event_loop.dispatch(Some(Duration::ZERO), &mut server()).unwrap();
+    assert!(supervisor.demand.get(), "the connection wakes the loop without starting Xwayland during dispatch");
+    assert!(supervisor.running.is_none());
+    assert_eq!(supervisor.deadline(), None);
+    // Drop also removes the registration and the display slot this instance owns.
+    supervisor.demand.set(false);
+    drop(supervisor);
+    assert!(!std::path::Path::new(&path).exists());
+}

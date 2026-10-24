@@ -44,7 +44,7 @@ def main():
            "WLR_BACKENDS": "headless", "WLR_HEADLESS_OUTPUTS": "1", "WLR_RENDERER": "gles2" if args.gpu else "pixman",
            "WLR_LIBINPUT_NO_DEVICES": "1", "LIBGL_ALWAYS_SOFTWARE": "0" if args.gpu else "1", "CLAMSHELL_STEAM": "off",
            "CLAMSHELL_CONTROL": str(directory / "control"), "CLAMSHELL_BACKLIGHTS": str(directory / "backlights"),
-           "CLAMSHELL_GAMEPAD": str(directory / "no-controller")}
+           "CLAMSHELL_GAMEPAD": str(directory / "no-controller"), "RUST_LOG": "info,clamshell_compositor::x11=debug"}
     env["DBUS_SESSION_BUS_ADDRESS"] = os.environ.get("DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{os.getuid()}/bus")
     for key in ["SWAYSOCK", "WAYLAND_DISPLAY", "DISPLAY", "WAYLAND_SOCKET", "CLAMSHELL_SESSION"]:
         env.pop(key, None)
@@ -140,21 +140,64 @@ time.sleep(300)
         def xwayland_pids():
             log = (directory / "compositor.log").read_text()
             return [int(pid) for pid in re.findall(r"Xwayland X11 transport ready display=:\d+ pid=(\d+)", log)]
-        wait(lambda: len(xwayland_pids()) >= 1, "private Xwayland transport handshake")
-        stopped = xwayland_pids()[-1]
-        os.kill(stopped, signal.SIGSTOP)
-        # A stopped X server must not prevent Wayland presentation or control requests.
+        assert not xwayland_pids(), "Wayland-only use leaves Xwayland dormant"
+        display_match = re.search(r"X11 socket ready display=:(\d+)", (directory / "compositor.log").read_text())
+        assert display_match
+        x11 = spawn([str(BIN.parent / "examples/x11-client")], "x11-client", {**nested, "DISPLAY": f":{display_match[1]}"}, stdin=subprocess.PIPE)
+        wait(lambda: pixels((128, 80, 32)) == (True, False), "X11 client rendered on top")
         control("window", "down")
-        wait(lambda: pixels() == (False, True), "Wayland client moves while Xwayland is stopped")
+        wait(lambda: pixels((128, 80, 32)) == (False, True), "X11 client rendered below")
         control("window", "up")
-        wait(lambda: pixels() == (True, False), "Wayland client returns while Xwayland is stopped")
-        wait(lambda: len(xwayland_pids()) >= 2, "Xwayland watchdog kills and restarts a stopped child")
-        wait(lambda: not Path(f"/proc/{stopped}").exists(), "stopped Xwayland is reaped")
+        wait(lambda: pixels((128, 80, 32)) == (True, False), "X11 client returned to top")
+        x11.stdin.write(b"unmap\n")
+        x11.stdin.flush()
+        wait(lambda: pixels() == (True, False), "unmapping X11 restores the Wayland client")
+        x11.stdin.write(b"map\n")
+        x11.stdin.flush()
+        wait(lambda: pixels((128, 80, 32)) == (True, False), "the same X11 window maps again")
+        x11.stdin.write(b"title\n")
+        x11.stdin.flush()
+        x11_trace = directory / "x11-events.json"
+        def renamed_x11():
+            control("window", "events", str(x11_trace))
+            try:
+                records = json.loads(x11_trace.read_text())["records"]
+            except (FileNotFoundError, json.JSONDecodeError):
+                return False
+            facts = [r["input"].get("Window", {}) for r in records if isinstance(r["input"], dict)]
+            opened = [r["Opened"] for r in facts if r.get("Opened", {}).get("app_id") == "NestedX11"]
+            if not opened:
+                return False
+            assert opened[0]["title"] == "X11 fixture"
+            assert opened[0]["pids"][0] == x11.pid, "XRes reports the app, not Xwayland"
+            assert opened[0]["role"] == "Normal" and opened[0]["colour"] is None
+            return any(r.get("Title", {}).get("title") == "X11 renamed" for r in facts)
+        wait(renamed_x11, "X11 property changes enter the ordinary window-event ring")
+        control("window", "close")
+        assert x11.wait(timeout=5) == 0, "X11 client receives WM_DELETE_WINDOW"
+        processes.remove(x11)
+        wait(lambda: pixels() == (True, False), "Wayland client restored after X11 closes")
+        count = len(xwayland_pids())
         killed = xwayland_pids()[-1]
-        os.kill(killed, signal.SIGKILL)
-        wait(lambda: len(xwayland_pids()) >= 3, "Xwayland restarts after a crash")
-        wait(lambda: not Path(f"/proc/{killed}").exists(), "crashed Xwayland is reaped")
-        assert pixels() == (True, False), "a Wayland window survives both Xwayland failures"
+        if Path(f"/proc/{killed}").exists():
+            os.kill(killed, signal.SIGSTOP)
+            control("window", "down")
+            wait(lambda: pixels() == (False, True), "Wayland still moves while idle Xwayland is stopped")
+            control("window", "up")
+            wait(lambda: pixels() == (True, False), "Wayland returns while idle Xwayland is stopped")
+            os.kill(killed, signal.SIGKILL)
+        wait(lambda: not Path(f"/proc/{killed}").exists(), "crashed Xwayland is reaped through pidfd readiness")
+        assert len(xwayland_pids()) == count, "crash recovery waits for another X11 connection"
+        x11 = spawn([str(BIN.parent / "examples/x11-client"), "--fixed"], "x11-restarted", {**nested, "DISPLAY": f":{display_match[1]}"}, stdin=subprocess.PIPE)
+        wait(lambda: pixels((128, 80, 32)) == (True, False), "another client starts a replacement Xwayland")
+        wait(lambda: len(xwayland_pids()) == count + 1, "Xwayland starts again on demand")
+        width, height, data = image()
+        offset = (height // 2 * width + 10) * 3
+        assert data[offset:offset + 3] == b"\0\0\0", "fixed-size X11 content is centred on black"
+        control("window", "close")
+        assert x11.wait(timeout=5) == 0
+        processes.remove(x11)
+        wait(lambda: pixels() == (True, False), "Wayland survives Xwayland restart")
         def patch(x, y=250):
             width, _, data = image()
             return b"".join(data[(row * width + x - 10) * 3:(row * width + x + 40) * 3] for row in range(y - 10, y + 40))
@@ -278,10 +321,13 @@ time.sleep(300)
         assert len(recorded["records"]) <= 256
         assert any("Window" in event["input"] for event in recorded["records"])
         assert recorded["after"]["windows"] == 0
+        assert not any(r["input"].get("Window", {}).get("Opened", {}).get("app_id") == "HiddenX11Helper" for r in recorded["records"] if isinstance(r["input"], dict)), "input-only X11 helpers never enter the window model"
         if args.gpu:
             print("ok: Vulkan WSI animation, resize, close, dmabuf feedback and native submission; EGL native submission", flush=True)
-        print("ok: compositor cursor and damage, in-process screenshot, window-event export, clipboard isolation and persistence, presentation feedback, Xwayland crash/stall recovery, Wayland EGL and shm rendering, bottom-slot move, return and Home", flush=True)
+        print("ok: compositor cursor and damage, in-process screenshot, window-event export, clipboard isolation and persistence, presentation feedback, lazy Xwayland, X11 presentation and crash recovery, Wayland EGL and shm rendering, bottom-slot move, return and Home", flush=True)
     finally:
+        # Kill the entire isolated group even when its leader already exited, so a stopped
+        # Xwayland cannot survive a failing test's teardown.
         for process in reversed(processes):
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGTERM)
@@ -291,6 +337,10 @@ time.sleep(300)
             except subprocess.TimeoutExpired:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
 
 if __name__ == "__main__":

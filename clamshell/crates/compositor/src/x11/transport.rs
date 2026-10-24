@@ -9,8 +9,8 @@ use std::{
 use x11rb_protocol::{
     connect::Connect,
     connection::{Connection, ReplyFdKind},
-    protocol::xproto::{GetInputFocusReply, GetInputFocusRequest, Setup},
-    x11_utils::{Request, TryParse},
+    protocol::xproto::Setup,
+    x11_utils::Request,
 };
 
 const LIMIT: usize = 1024 * 1024;
@@ -20,15 +20,15 @@ const BUDGET: usize = 64;
 pub(super) struct Transport {
     stream: UnixStream,
     handshake: Option<Connect>,
-    setup: Option<Setup>,
+    pub setup: Option<Setup>,
     wire: Connection,
     outgoing: VecDeque<u8>,
     incoming: Vec<u8>,
     packet_size: usize,
-    probe: Option<u64>,
-    deadline: Instant,
-    next_probe: Instant,
-    pub ready: bool,
+    pub setup_deadline: Instant,
+    write_deadline: Option<Instant>,
+    last_request: u64,
+    last_reply: u64,
 }
 
 impl Transport {
@@ -44,24 +44,19 @@ impl Transport {
             outgoing: bytes.into(),
             incoming: Vec::with_capacity(32),
             packet_size: 32,
-            probe: None,
-            deadline: now + TIMEOUT,
-            next_probe: now,
-            ready: false,
+            setup_deadline: now + TIMEOUT,
+            write_deadline: Some(now + TIMEOUT),
+            last_request: 0,
+            last_reply: 0,
         })
     }
 
     pub fn turn(&mut self, now: Instant) -> io::Result<()> {
-        if now >= self.deadline && (!self.outgoing.is_empty() || self.handshake.is_some() || self.probe.is_some()) {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "Xwayland stopped responding"));
+        if self.handshake.is_some() && now >= self.setup_deadline {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "X11 setup timed out"));
         }
-        if self.setup.is_some() && self.probe.is_none() && now >= self.next_probe {
-            let sequence = self.wire.send_request(ReplyFdKind::ReplyWithoutFDs).ok_or_else(|| io::Error::other("X11 sequence exhausted"))?;
-            let (bytes, _) = Request::serialize(GetInputFocusRequest {}, 0);
-            self.queue(&bytes)?;
-            self.probe = Some(sequence);
-            self.deadline = now + TIMEOUT;
-            self.next_probe = now + Duration::from_secs(1);
+        if self.write_deadline.is_some_and(|at| now >= at) && self.writing() {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "X11 write timed out"));
         }
         for _ in 0..BUDGET {
             let (bytes, _) = self.outgoing.as_slices();
@@ -77,6 +72,9 @@ impl Transport {
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(e) => return Err(e),
             }
+        }
+        if !self.writing() {
+            self.write_deadline = None;
         }
         if let Some(handshake) = self.handshake.as_mut() {
             for _ in 0..BUDGET {
@@ -123,23 +121,52 @@ impl Transport {
             if self.incoming.len() == self.packet_size {
                 self.wire.enqueue_packet(std::mem::replace(&mut self.incoming, Vec::with_capacity(32)));
                 self.packet_size = 32;
-                if let Some(sequence) = self.probe
-                    && let Some((bytes, _)) = self.wire.poll_for_reply_or_error(sequence)
-                {
-                    GetInputFocusReply::try_parse(&bytes).map_err(io::Error::other)?;
-                    self.probe = None;
-                    self.ready = true;
-                }
-                // Window events are consumed by the adapter in the next implementation step.
-                while self.wire.poll_for_event_with_sequence().is_some() {}
             }
         }
         Ok(())
     }
 
+    pub fn fd(&self) -> &UnixStream {
+        &self.stream
+    }
+    pub fn writing(&self) -> bool {
+        !self.outgoing.is_empty()
+    }
+    pub fn deadline(&self) -> Option<Instant> {
+        self.handshake.as_ref().map(|_| self.setup_deadline).into_iter().chain(self.write_deadline).min()
+    }
+    pub fn request(&mut self, request: impl Request, opcode: u8, reply: bool) -> io::Result<u64> {
+        let (bytes, fds) = request.serialize(opcode);
+        if !fds.is_empty() {
+            return Err(io::Error::other("XWM requests cannot carry descriptors"));
+        }
+        let kind = if reply { ReplyFdKind::ReplyWithoutFDs } else { ReplyFdKind::NoReply };
+        let sequence = self.wire.send_request(kind).ok_or_else(|| io::Error::other("X11 sequence exhausted"))?;
+        self.queue(&bytes)?;
+        self.last_request = sequence;
+        Ok(sequence)
+    }
+
+    pub fn reply(&mut self, sequence: u64) -> Option<Vec<u8>> {
+        let (bytes, _) = self.wire.poll_for_reply_or_error(sequence)?;
+        self.last_reply = self.last_reply.max(sequence);
+        Some(bytes)
+    }
+
+    pub fn needs_sequence_anchor(&self) -> bool {
+        self.last_request.saturating_sub(self.last_reply) >= 32_768
+    }
+
+    pub fn event(&mut self) -> Option<Vec<u8>> {
+        self.wire.poll_for_event_with_sequence().map(|(bytes, _)| bytes)
+    }
+
     fn queue(&mut self, bytes: &[u8]) -> io::Result<()> {
         if self.outgoing.len().saturating_add(bytes.len()) > LIMIT {
             return Err(io::Error::other("X11 outgoing queue exceeds limit"));
+        }
+        if self.outgoing.is_empty() && !bytes.is_empty() {
+            self.write_deadline = Some(Instant::now() + TIMEOUT);
         }
         self.outgoing.extend(bytes);
         Ok(())

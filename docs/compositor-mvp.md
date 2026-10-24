@@ -8,7 +8,7 @@ what to try first.
 ## 1. Summary
 
 - **It is feasible and well-trodden.** Smithay (Rust) runs daily-driver compositors (niri, COSMIC). An MVP
-  for ClamShell is about **7,000-8,500 new lines and 2,900 deleted**, roughly 2.5-4 months of focused work
+  for ClamShell is now estimated at **9,000-11,000 new production lines and 2,900 deleted**, roughly 3-5 months of focused work
   to daily use, then a tail of per-app quirks (Steam, Proton).
 - **The hardware favours it.** The Thor's kernel carries ROCKNIX's inline-rotation patch: a game's
   compressed (UBWC) buffer can be scanned out **rotated** onto the portrait-native panels, with no GPU
@@ -223,7 +223,8 @@ Wayland and X11 surfaces share presentation and input below the adapter, with on
 The state sees one window type and the same events; placement is synchronous for both (an X11 map request
 is held until the state has placed the window). Xwayland is a direct client, so dmabuf feedback (UBWC,
 scanout, plane rotation) and the pacing protocols reach X11 games with no relay, and Wine's Wayland driver
-is optional rather than required. Cost: about 1,500-2,000 lines in the adapter, and the X11 connection in
+is optional rather than required. Revised cost: about 2,500-3,500 production lines in the adapter,
+including its asynchronous request handling, socket activation, supervision and clipboard bridge, and the X11 connection in
 our process: Smithay has open issues around Xwayland crashing (a deadlock, a leaked process), so Xwayland
 is a supervised child (its exit handled, restarted) and every X11 call is non-blocking, so a stuck
 Xwayland can't stall the loop. Expect per-app quirks with Steam and Proton either way; these become ours
@@ -241,6 +242,36 @@ The alternative considered was xwayland-satellite (niri): X11 windows arrive as 
 from a separate process, at about 500 lines, but with its own translation losses (Steam issues open) and,
 for us, the risk that per-surface dmabuf feedback and the pacing protocols don't pass through it, leaving
 X11 games composited.
+
+### X11/Wayland clipboard bridge (planned in phase 2)
+
+The adapter bridges **CLIPBOARD and PRIMARY** through the same Wayland seat selections and keeper;
+it does not implement drag and drop. Selection ownership is watched through XFixes notifications,
+not polled. The bridge's hidden X11 owner window, transfer properties, generations and pending
+requests all live inside the adapter. A Wayland offer originating from X11 is tagged so it cannot
+become a new X11 owner and echo back. Changing owner, destroying either endpoint or restarting
+Xwayland cancels that generation's transfers without clearing a newer selection.
+
+- **X11 → Wayland:** asynchronously request TARGETS, then publish the supported MIME offer. On a
+  Wayland reader's request, send ConvertSelection with a transfer-specific property. SelectionNotify
+  identifies success or refusal; GetProperty replies are polled through the existing request queue.
+  A normal reply is written to the reader's non-blocking fd. For **INCR**, acknowledge the initial
+  marker by deleting its property, then read each PropertyNotify/NewValue chunk and delete it only
+  after the bounded chunk has been accepted by the Wayland pipe. A zero-length chunk completes it.
+- **Wayland → X11:** own the corresponding X11 selection while its Wayland source exists. Answer
+  TARGETS and TIMESTAMP from cached metadata. For SelectionRequest, ask the Wayland source to send to
+  a pipe and read it asynchronously. Small content uses ChangeProperty and SelectionNotify. Large
+  content starts INCR and sends SelectionNotify; each PropertyNotify/Delete permits one bounded
+  chunk, with a final zero-length property and no wait for the client in the loop. Use the requested
+  property, or the target when the request specifies None, and refuse unsupported targets explicitly.
+- Translate UTF8_STRING, STRING and text/plain MIME types explicitly; preserve other advertised MIME
+  names as atoms. Cap simultaneous transfers and per-transfer buffers; stream rather than collecting
+  an unbounded selection. Request and transfer-progress deadlines exist only while work is pending.
+  Refusal, invalid type/format, dead pipes, stalled INCR handshakes and disappearing owners fail only
+  that transfer. Do not fake MULTIPLE support before its independent subrequests are implemented.
+- Real-client cases must cover both directions for CLIPBOARD and PRIMARY, small and INCR-sized data,
+  split chunks/backpressure, refusal, owner replacement, endpoint death, timeout, Xwayland restart,
+  persistence through the existing keeper and continued isolation from the parent desktop clipboard.
 
 ### Keeping the app tail small
 
@@ -449,9 +480,15 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    pointer/constraint path is tested headless with injected relative input, including camera motion,
    confinement, unmap/remap and Home release. The absolute-only nested host omits those protocols;
    the device will receive relative input from libinput. Xwayland now has an asynchronous private
-   transport and supervised child: setup/reply timeouts, bounded I/O, crash and stopped-child restart
-   are tested while a real Wayland client survives. X11 window translation, mapping and fixtures
-   remain to implement; the private X11 display is not yet exposed to app launches. Viewporter cropping and destination sizing use the
+   transport and supervised child, started by the first connection to its reserved display socket.
+   Socket readiness and pidfd drive it; there is no idle liveness probe or polling deadline. Setup,
+   write and outstanding-reply timeouts remain. X11 toplevels are translated to the same window facts
+   (class, title, XRes PID, parent, size limits and role), placed before mapping, and use shared drawing,
+   input geometry and feedback. A real X11 fixture covers top/bottom moves, resize, close, unmap/remap
+   and lazy restart after a crash, while Wayland survives. Property fixtures cover malformed metadata
+   and ordinary/dialog/splash/utility facts. Override-redirect menus, further X11 focus fixtures and
+   the planned X11/Wayland clipboard bridge remain; drag and drop is outside this adapter's scope.
+   Viewporter cropping and destination sizing use the
    same logical geometry for presentation and input, covered by a socket-pair client. Screenshots read the presented nested scene and
    encode it on the system worker; SDR PNG export does not change composition precision. The nested
    host advertises renderer-native dmabuf formats, with render-device feedback when available, and
@@ -520,6 +557,13 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
 
 ## 9. Size
 
+Revised 2026-10-24 after choosing our own asynchronous XWM instead of Smithay's blocking one. The
+range includes the X11/Wayland clipboard bridge and socket activation, excludes drag and drop, and
+keeps tests and fixtures additional to production code. The compositor crate currently has about
+4,400 lines across production modules (including their inline tests), plus about 2,800 lines of
+separate tests/client fixtures and 350 lines of property fixture data. This is a planning range for
+the complete MVP, not a claim that all remaining work is implemented.
+
 | Part | Lines | Effort |
 |---|---|---|
 | UI core extraction (phase 0) | ~600 changed | low |
@@ -528,13 +572,13 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
 | Input routing, touch mapping, focus, cursor | ~750 | medium |
 | DRM backend: two rotated outputs, power, mode change, vblank pacing, scanout | ~1,200 | high (the device risk) |
 | Nested and headless backends | ~550 | low-medium |
-| Xwayland (the built-in X11 window manager, in one adapter) | ~1,500-2,000 | medium-high (app quirks) |
+| Xwayland (async X11 adapter, activation, supervision and clipboard bridge; no drag and drop) | ~2,500-3,500 | high (async transfers and app quirks) |
 | Placement, configure sizes, dialogs, close | ~500 | medium |
 | Text input and key injection | ~250 | medium |
 | Screenshot, idle-inhibit, clipboard, session | ~400 | low |
 | The state's window model | ~1,000 code, ~2,000 test lines changed | high (the logic risk) |
 | Packages, calibration, self-test, VM suite | ~300 | low |
-| **New** | **~7,000-8,500** | |
+| **New production code** | **~9,000-11,000** | |
 | **Deleted in the MVP** | **~2,900** (sway module, the Wayland client host, the uinput keyboard, grim, the nested-sway test, configs, restart adoption, settle's window steps) | |
 
 For comparison: niri reached its first alpha in about 3.5 months at 12.9k lines, written from scratch;

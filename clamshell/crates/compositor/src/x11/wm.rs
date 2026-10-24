@@ -1,0 +1,770 @@
+//! The private XWM pipelines requests and translates replies without waiting for an X11 peer.
+use super::{
+    properties::{Atoms, NAMES, PROPERTIES, Properties},
+    transport::Transport,
+};
+use crate::{
+    Process,
+    server::{ClientWindow, Server},
+    surface::Surface,
+};
+use clamshell_state::{WindowEvent, session::presentation::WindowLayout};
+use smithay::{
+    backend::renderer::utils::with_renderer_surface_state,
+    reexports::wayland_server::{Client, protocol::wl_surface::WlSurface},
+    utils::Rectangle,
+};
+use std::{
+    borrow::Cow,
+    io,
+    time::{Duration, Instant},
+};
+use x11rb_protocol::{
+    id_allocator::IdAllocator,
+    protocol::{composite, res, xproto::*},
+    x11_utils::{Request, Serialize, TryParse},
+};
+
+struct Pending {
+    sequence: u64,
+    kind: Query,
+    deadline: Instant,
+}
+enum Query {
+    Atom(&'static str),
+    Extension,
+    CompositeExtension,
+    CompositeVersion,
+    Version,
+    Property(i64, &'static str),
+    Pid(i64),
+    Attributes(i64),
+    OwnershipBarrier,
+}
+struct Window {
+    xid: u32,
+    id: i64,
+    properties: Properties,
+    pid: Option<u32>,
+    outstanding: usize,
+    wants_map: bool,
+    queried: bool,
+    input_only: bool,
+    layout: Option<WindowLayout>,
+    opened: bool,
+    surface: Option<u32>,
+    size: (u16, u16),
+    configured: Option<Rectangle<i32, smithay::utils::Logical>>,
+    sent: Option<clamshell_state::session::windows::Window>,
+    dirty: bool,
+    refresh: u16,
+    revision: Option<u64>,
+    policy: Option<clamshell_state::session::presentation::WindowPresentation>,
+}
+#[derive(Default)]
+pub(super) struct Wm {
+    atoms: Atoms,
+    pending: Vec<Pending>,
+    windows: Vec<Window>,
+    started: bool,
+    owner: u32,
+    root: u32,
+    res: Option<u8>,
+    extension_done: bool,
+    composite: Option<u8>,
+    composite_done: bool,
+    pub ready: bool,
+    focus: Option<u32>,
+    timestamp: u32,
+}
+impl Wm {
+    pub fn deadline(&self) -> Option<Instant> {
+        self.pending.iter().map(|p| p.deadline).min()
+    }
+    fn query(&mut self, wire: &mut Transport, request: impl Request, opcode: u8, kind: Query, now: Instant) -> io::Result<()> {
+        if self.pending.len() >= 256 {
+            return Err(io::Error::other("too many pending XWM replies"));
+        }
+        let sequence = wire.request(request, opcode, true)?;
+        self.pending.push(Pending { sequence, kind, deadline: now + Duration::from_secs(3) });
+        Ok(())
+    }
+    pub fn turn(&mut self, wire: &mut Transport, client: &Client, server: &mut Server, now: Instant) -> io::Result<()> {
+        if !self.started && wire.setup.is_some() {
+            self.started = true;
+            for name in NAMES {
+                self.query(wire, InternAtomRequest { only_if_exists: false, name: name.as_bytes().into() }, 0, Query::Atom(name), now)?;
+            }
+            self.query(wire, QueryExtensionRequest { name: b"X-Resource".as_slice().into() }, 0, Query::Extension, now)?;
+        }
+        if self.started && self.composite.is_none() && !self.pending.iter().any(|p| matches!(p.kind, Query::CompositeExtension)) {
+            self.query(wire, QueryExtensionRequest { name: b"Composite".as_slice().into() }, 0, Query::CompositeExtension, now)?;
+        }
+        let mut index = 0;
+        while index < self.pending.len() {
+            let Some(pending) = self.pending.get(index) else { break };
+            if let Some(bytes) = wire.reply(pending.sequence) {
+                let pending = self.pending.remove(index);
+                self.reply(pending.kind, &bytes, wire, server, now)?;
+            } else {
+                if now >= pending.deadline {
+                    return Err(io::Error::new(io::ErrorKind::TimedOut, "XWM reply timed out"));
+                }
+                index += 1;
+            }
+        }
+        if self.started && !self.ready && self.atoms.0.len() == NAMES.len() && self.extension_done && self.composite_done {
+            self.initialise(wire)?;
+        }
+        // X11's 16-bit wire sequence needs a reply before wrapping, only after actual traffic.
+        if self.ready && self.pending.len() < 256 && wire.needs_sequence_anchor() && !self.pending.iter().any(|p| matches!(p.kind, Query::OwnershipBarrier)) {
+            self.query(wire, GetSelectionOwnerRequest { selection: self.atoms.get("WM_S0") }, 0, Query::OwnershipBarrier, now)?;
+        }
+        for _ in 0..64 {
+            let Some(bytes) = wire.event() else { break };
+            self.event(&bytes, wire, server)?;
+        }
+        for i in 0..self.windows.len() {
+            let Some(window) = self.windows.get(i) else { continue };
+            if !window.queried && self.pending.len() + PROPERTIES.len() + 2 <= 256 {
+                let (id, xid) = (window.id, window.xid);
+                self.query(wire, GetWindowAttributesRequest { window: xid }, 0, Query::Attributes(id), now)?;
+                for name in PROPERTIES {
+                    self.query(
+                        wire,
+                        GetPropertyRequest { delete: false, window: xid, property: self.atoms.get(name), type_: 0, long_offset: 0, long_length: 1024 },
+                        0,
+                        Query::Property(id, name),
+                        now,
+                    )?;
+                }
+                self.query(
+                    wire,
+                    res::QueryClientIdsRequest { specs: vec![res::ClientIdSpec { client: xid, mask: res::ClientIdMask::LOCAL_CLIENT_PID }].into() },
+                    self.res.unwrap_or_default(),
+                    Query::Pid(id),
+                    now,
+                )?;
+                if let Some(window) = self.windows.get_mut(i) {
+                    window.queried = true;
+                }
+            }
+            for (bit, name) in PROPERTIES.iter().enumerate() {
+                let Some(window) = self.windows.get_mut(i) else { continue };
+                if !window.queried
+                    || self.pending.len() >= 256
+                    || window.refresh & (1 << bit) == 0
+                    || self.pending.iter().any(|p| matches!(p.kind, Query::Property(id, n) if id == window.id && n == *name))
+                {
+                    continue;
+                }
+                window.refresh &= !(1 << bit);
+                let (id, xid) = (window.id, window.xid);
+                self.query(
+                    wire,
+                    GetPropertyRequest { delete: false, window: xid, property: self.atoms.get(name), type_: 0, long_offset: 0, long_length: 1024 },
+                    0,
+                    Query::Property(id, name),
+                    now,
+                )?;
+            }
+        }
+        self.settle(wire, client, server)?;
+        Ok(())
+    }
+    fn initialise(&mut self, wire: &mut Transport) -> io::Result<()> {
+        let setup = wire.setup.as_ref().ok_or_else(|| io::Error::other("missing X11 setup"))?;
+        let root = setup.roots.first().ok_or_else(|| io::Error::other("X11 server has no screen"))?;
+        self.root = root.root;
+        self.owner = IdAllocator::new(setup.resource_id_base, setup.resource_id_mask)
+            .map_err(io::Error::other)?
+            .generate_id()
+            .ok_or_else(|| io::Error::other("no X11 resource ids"))?;
+        wire.request(
+            CreateWindowRequest {
+                depth: 0,
+                wid: self.owner,
+                parent: self.root,
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+                border_width: 0,
+                class: WindowClass::INPUT_OUTPUT,
+                visual: 0,
+                value_list: Cow::Owned(CreateWindowAux::new().event_mask(EventMask::PROPERTY_CHANGE)),
+            },
+            0,
+            false,
+        )?;
+        wire.request(
+            ChangeWindowAttributesRequest {
+                window: self.root,
+                value_list: Cow::Owned(ChangeWindowAttributesAux::new().event_mask(EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY)),
+            },
+            0,
+            false,
+        )?;
+        wire.request(
+            composite::RedirectSubwindowsRequest { window: self.root, update: composite::Redirect::MANUAL },
+            self.composite.unwrap_or_default(),
+            false,
+        )?;
+        for name in ["WM_S0", "_NET_WM_CM_S0"] {
+            wire.request(SetSelectionOwnerRequest { owner: self.owner, selection: self.atoms.get(name), time: 0 }, 0, false)?;
+        }
+        Self::property(&self.atoms, wire, self.root, "_NET_SUPPORTING_WM_CHECK", AtomEnum::WINDOW.into(), &[self.owner])?;
+        Self::property(&self.atoms, wire, self.owner, "_NET_SUPPORTING_WM_CHECK", AtomEnum::WINDOW.into(), &[self.owner])?;
+        wire.request(
+            ChangePropertyRequest {
+                mode: PropMode::REPLACE,
+                window: self.owner,
+                property: self.atoms.get("_NET_WM_NAME"),
+                type_: self.atoms.get("UTF8_STRING"),
+                format: 8,
+                data_len: 9,
+                data: b"ClamShell".as_slice().into(),
+            },
+            0,
+            false,
+        )?;
+        let supported: Vec<u32> =
+            ["_NET_WM_STATE", "_NET_WM_STATE_FULLSCREEN", "_NET_ACTIVE_WINDOW", "_NET_WM_WINDOW_TYPE"].iter().map(|name| self.atoms.get(name)).collect();
+        Self::property(&self.atoms, wire, self.root, "_NET_SUPPORTED", AtomEnum::ATOM.into(), &supported)?;
+        self.ready = true;
+        log::info!("compositor: asynchronous X11 window manager ready");
+        Ok(())
+    }
+    fn property(atoms: &Atoms, wire: &mut Transport, window: u32, name: &str, type_: u32, values: &[u32]) -> io::Result<()> {
+        let bytes: Vec<u8> = values.iter().flat_map(|v| v.to_ne_bytes()).collect();
+        wire.request(
+            ChangePropertyRequest {
+                mode: PropMode::REPLACE,
+                window,
+                property: atoms.get(name),
+                type_,
+                format: 32,
+                data_len: values.len() as u32,
+                data: bytes.into(),
+            },
+            0,
+            false,
+        )?;
+        Ok(())
+    }
+    fn reply(&mut self, query: Query, bytes: &[u8], wire: &mut Transport, server: &mut Server, now: Instant) -> io::Result<()> {
+        if bytes.first() == Some(&0) {
+            match query {
+                Query::Property(id, _) | Query::Pid(id) | Query::Attributes(id) => {
+                    self.forget(id, server);
+                    return Ok(());
+                }
+                _ => return Err(io::Error::other("XWM initialisation request rejected")),
+            }
+        }
+        match query {
+            Query::Atom(name) => self.atoms.0.push((name, InternAtomReply::try_parse(bytes).map_err(io::Error::other)?.0.atom)),
+            Query::Extension => {
+                let reply = QueryExtensionReply::try_parse(bytes).map_err(io::Error::other)?.0;
+                if !reply.present {
+                    return Err(io::Error::other("Xwayland lacks X-Resource"));
+                }
+                self.res = Some(reply.major_opcode);
+                self.query(wire, res::QueryVersionRequest { client_major: 1, client_minor: 2 }, reply.major_opcode, Query::Version, now)?;
+            }
+            Query::CompositeExtension => {
+                let reply = QueryExtensionReply::try_parse(bytes).map_err(io::Error::other)?.0;
+                if !reply.present {
+                    return Err(io::Error::other("Xwayland lacks Composite"));
+                }
+                self.composite = Some(reply.major_opcode);
+                self.query(
+                    wire,
+                    composite::QueryVersionRequest { client_major_version: 0, client_minor_version: 4 },
+                    reply.major_opcode,
+                    Query::CompositeVersion,
+                    now,
+                )?;
+            }
+            Query::CompositeVersion => {
+                composite::QueryVersionReply::try_parse(bytes).map_err(io::Error::other)?;
+                self.composite_done = true;
+            }
+            Query::Version => {
+                let version = res::QueryVersionReply::try_parse(bytes).map_err(io::Error::other)?.0;
+                if (version.server_major, version.server_minor) < (1, 2) {
+                    return Err(io::Error::other("X-Resource 1.2 required"));
+                }
+                self.extension_done = true;
+            }
+            Query::Property(id, name) => {
+                let reply = GetPropertyReply::try_parse(bytes).map_err(io::Error::other)?.0;
+                if let Some(window) = self.windows.iter_mut().find(|w| w.id == id) {
+                    window.outstanding = window.outstanding.saturating_sub(1);
+                    window.properties.update(name, &reply, &self.atoms);
+                    window.dirty = true;
+                    if matches!(name, "WM_HINTS" | "WM_PROTOCOLS") && self.focus == Some(window.xid) {
+                        self.focus = None;
+                    }
+                }
+            }
+            Query::OwnershipBarrier => {
+                let reply = GetSelectionOwnerReply::try_parse(bytes).map_err(io::Error::other)?.0;
+                if reply.owner != self.owner {
+                    return Err(io::Error::other("X11 WM selection lost"));
+                }
+            }
+            Query::Attributes(id) => {
+                let reply = GetWindowAttributesReply::try_parse(bytes).map_err(io::Error::other)?.0;
+                if let Some(window) = self.windows.iter_mut().find(|w| w.id == id) {
+                    window.input_only = reply.class == WindowClass::INPUT_ONLY;
+                    window.outstanding = window.outstanding.saturating_sub(1);
+                }
+            }
+            Query::Pid(id) => {
+                let reply = res::QueryClientIdsReply::try_parse(bytes).map_err(io::Error::other)?.0;
+                if let Some(window) = self.windows.iter_mut().find(|w| w.id == id) {
+                    window.outstanding = window.outstanding.saturating_sub(1);
+                    window.pid = reply
+                        .ids
+                        .iter()
+                        .find(|v| v.spec.mask.contains(res::ClientIdMask::LOCAL_CLIENT_PID))
+                        .and_then(|v| v.value.first())
+                        .copied()
+                        .filter(|pid| *pid > 1);
+                }
+            }
+        }
+        Ok(())
+    }
+    fn discover(&mut self, xid: u32, size: (u16, u16), wire: &mut Transport, server: &mut Server) -> io::Result<()> {
+        if self.windows.iter().any(|w| w.xid == xid) || xid == self.owner {
+            return Ok(());
+        }
+        if self.windows.len() >= 128 {
+            log::warn!("compositor: X11 window limit exceeded by resource {xid}; ending its client");
+            wire.request(KillClientRequest { resource: xid }, 0, false)?;
+            return Ok(());
+        }
+        let id = server.next_id;
+        server.next_id = id.checked_add(1).ok_or_else(|| io::Error::other("window ids exhausted"))?;
+        self.windows.push(Window {
+            xid,
+            id,
+            properties: Properties::default(),
+            pid: None,
+            outstanding: PROPERTIES.len() + 2,
+            wants_map: false,
+            queried: false,
+            input_only: false,
+            layout: None,
+            opened: false,
+            surface: None,
+            size,
+            configured: None,
+            sent: None,
+            dirty: true,
+            refresh: 0,
+            revision: None,
+            policy: None,
+        });
+        wire.request(
+            ChangeWindowAttributesRequest { window: xid, value_list: Cow::Owned(ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE)) },
+            0,
+            false,
+        )?;
+
+        Ok(())
+    }
+    fn event(&mut self, bytes: &[u8], wire: &mut Transport, server: &mut Server) -> io::Result<()> {
+        match bytes.first().map(|v| v & 0x7f) {
+            Some(CREATE_NOTIFY_EVENT) => {
+                let event = CreateNotifyEvent::try_parse(bytes).map_err(io::Error::other)?.0;
+                if event.parent == self.root && !event.override_redirect {
+                    self.discover(event.window, (event.width, event.height), wire, server)?;
+                }
+            }
+            Some(MAP_REQUEST_EVENT) => {
+                let event = MapRequestEvent::try_parse(bytes).map_err(io::Error::other)?.0;
+                if let Some(window) = self.windows.iter_mut().find(|w| w.xid == event.window) {
+                    window.wants_map = true;
+                }
+            }
+            Some(UNMAP_NOTIFY_EVENT | DESTROY_NOTIFY_EVENT) => {
+                let xid = if bytes.first().map(|v| v & 0x7f) == Some(UNMAP_NOTIFY_EVENT) {
+                    UnmapNotifyEvent::try_parse(bytes).map_err(io::Error::other)?.0.window
+                } else {
+                    DestroyNotifyEvent::try_parse(bytes).map_err(io::Error::other)?.0.window
+                };
+                if let Some(id) = self.windows.iter().find(|w| w.xid == xid).map(|w| w.id) {
+                    if bytes.first().map(|v| v & 0x7f) == Some(DESTROY_NOTIFY_EVENT) {
+                        self.forget(id, server);
+                    } else if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+                        let opened = w.opened;
+                        w.wants_map = false;
+                        w.opened = false;
+                        w.sent = None;
+                        w.surface = None;
+                        w.configured = None;
+                        server.windows.retain(|v| v.id != id);
+                        server.x11_changes.retain(|v| v.id != id);
+                        if opened {
+                            server.core.handle(WindowEvent::Closed(id).into());
+                        }
+                    }
+                }
+            }
+            Some(PROPERTY_NOTIFY_EVENT) => {
+                let event = PropertyNotifyEvent::try_parse(bytes).map_err(io::Error::other)?.0;
+                self.timestamp = event.time;
+                if let Some(window) = self.windows.iter_mut().find(|w| w.xid == event.window)
+                    && let Some(index) = PROPERTIES.iter().position(|name| self.atoms.get(name) == event.atom)
+                {
+                    window.refresh |= 1 << index;
+                }
+            }
+            Some(CLIENT_MESSAGE_EVENT) => {
+                let event = ClientMessageEvent::try_parse(bytes).map_err(io::Error::other)?.0;
+                log::debug!("X11 client message window={} type={} data={:?}", event.window, event.type_, event.data.as_data32());
+                if event.format == 32
+                    && event.type_ == self.atoms.get("WL_SURFACE_ID")
+                    && let Some(window) = self.windows.iter_mut().find(|w| w.xid == event.window)
+                {
+                    window.surface = event.data.as_data32().first().copied();
+                    log::debug!("X11 association id={} map={} pending={}", window.id, window.wants_map, window.outstanding);
+                }
+            }
+            Some(CONFIGURE_REQUEST_EVENT) => {
+                let event = ConfigureRequestEvent::try_parse(bytes).map_err(io::Error::other)?.0;
+                if let Some(window) = self.windows.iter_mut().find(|w| w.xid == event.window) {
+                    if event.value_mask.contains(ConfigWindow::WIDTH) {
+                        window.size.0 = event.width.max(1);
+                    }
+                    if event.value_mask.contains(ConfigWindow::HEIGHT) {
+                        window.size.1 = event.height.max(1);
+                    }
+                    window.configured = None;
+                }
+            }
+            Some(0) if bytes.get(1) == Some(&10) => return Err(io::Error::other("X11 window manager lost root ownership")),
+            Some(0) => {
+                log::debug!("compositor: X11 request rejected for a vanished or unmapped window");
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    fn forget(&mut self, id: i64, server: &mut Server) {
+        self.windows.retain(|w| w.id != id);
+        server.x11_changes.retain(|facts| facts.id != id);
+        server.windows.retain(|w| w.id != id);
+        if server.core.state().session().window(id).is_some() {
+            server.core.handle(WindowEvent::Closed(id).into());
+        }
+    }
+    pub fn clear(&mut self, server: &mut Server) {
+        while let Some(window) = self.windows.last() {
+            let id = window.id;
+            self.forget(id, server);
+        }
+    }
+    fn settle(&mut self, wire: &mut Transport, client: &Client, server: &mut Server) -> io::Result<()> {
+        for i in 0..self.windows.len() {
+            let Some(w) = self.windows.get(i) else { continue };
+            if !w.wants_map || w.outstanding != 0 {
+                continue;
+            }
+            if w.input_only {
+                if w.configured.is_none() {
+                    wire.request(MapWindowRequest { window: w.xid }, 0, false)?;
+                    if let Some(w) = self.windows.get_mut(i) {
+                        w.configured = Some(Rectangle::from_size((1, 1).into()));
+                    }
+                }
+                continue;
+            }
+            let parent = w.properties.transient.and_then(|xid| self.windows.iter().find(|p| p.xid == xid && p.opened).map(|p| p.id));
+            let Some(w) = self.windows.get_mut(i) else { continue };
+            if !w.opened || w.dirty || w.sent.as_ref().is_some_and(|old| old.parent != parent) {
+                let process = server
+                    .core
+                    .state()
+                    .session()
+                    .window(w.id)
+                    .map(|v| Process { unit: v.unit.clone(), pids: v.pids.clone() })
+                    .unwrap_or_else(|| w.pid.map(|pid| (server.identify)(pid)).unwrap_or_default());
+                let mut facts = w.properties.facts(w.id, parent, process);
+                if !w.opened {
+                    facts.focused = server.core.state().session().opening_focus(&facts);
+                    server.core.handle(WindowEvent::Opened(facts.clone()).into());
+                    w.opened = true;
+                    w.sent = Some(facts);
+                } else if w.sent.as_ref().is_none_or(|old| {
+                    old.app_id != facts.app_id || old.title != facts.title || old.parent != facts.parent || old.limits != facts.limits || old.role != facts.role
+                }) {
+                    if let Some(pending) = server.x11_changes.iter_mut().find(|old| old.id == facts.id) {
+                        *pending = facts.clone();
+                    } else {
+                        server.x11_changes.push(facts.clone());
+                    }
+                    w.sent = Some(facts);
+                }
+                w.dirty = false;
+            }
+            if let Some(object) = w.surface
+                && server.windows.iter().all(|v| v.id != w.id)
+                && let Ok(surface) = client.object_from_protocol_id::<WlSurface>(&server.dh, object)
+            {
+                let mapped = with_renderer_surface_state(&surface, |s| s.buffer().is_some()).unwrap_or(false);
+                log::debug!("X11 surface bound {} mapped={mapped}", w.id);
+                server.windows.push(ClientWindow {
+                    id: w.id,
+                    window: Surface::X11(surface),
+                    opened: true,
+                    mapped,
+                    title_dirty: false,
+                    presentation: server.core.state().window_presentation(w.id),
+                });
+            }
+            let Some(model) = server.core.state().session().window(w.id) else { continue };
+            if w.revision != Some(server.core.state_revision()) {
+                w.policy = server.core.state().window_presentation(w.id);
+                w.revision = Some(server.core.state_revision());
+            }
+            let Some(policy) = w.policy else { continue };
+            let area = server.area(model.down);
+            let size = crate::geometry::configure_size(model, policy, area.size, (i32::from(w.size.0), i32::from(w.size.1)).into())
+                .unwrap_or((i32::from(w.size.0), i32::from(w.size.1)).into());
+            let offset: smithay::utils::Point<i32, smithay::utils::Logical> = if policy.layout == WindowLayout::Centred {
+                ((area.size.w - size.w).max(0) / 2, (area.size.h - size.h).max(0) / 2).into()
+            } else {
+                (0, 0).into()
+            };
+            let geometry = Rectangle::new(area.loc + offset, size);
+            if w.configured != Some(geometry) || w.layout != Some(policy.layout) {
+                wire.request(
+                    ConfigureWindowRequest {
+                        window: w.xid,
+                        value_list: Cow::Owned(
+                            ConfigureWindowAux::new()
+                                .x(geometry.loc.x)
+                                .y(geometry.loc.y)
+                                .width(geometry.size.w.max(1) as u32)
+                                .height(geometry.size.h.max(1) as u32)
+                                .border_width(0),
+                        ),
+                    },
+                    0,
+                    false,
+                )?;
+                let fullscreen = [self.atoms.get("_NET_WM_STATE_FULLSCREEN")];
+                Self::property(
+                    &self.atoms,
+                    wire,
+                    w.xid,
+                    "_NET_WM_STATE",
+                    AtomEnum::ATOM.into(),
+                    if policy.layout == WindowLayout::Fullscreen { &fullscreen } else { &[] },
+                )?;
+                Self::property(&self.atoms, wire, w.xid, "WM_STATE", self.atoms.get("WM_STATE"), &[1, 0])?;
+                wire.request(MapWindowRequest { window: w.xid }, 0, false)?;
+                w.configured = Some(geometry);
+                w.layout = Some(policy.layout);
+            }
+        }
+        let focus = server.core.state().session().keyboard_focus().and_then(|id| self.windows.iter().find(|w| w.id == id && w.opened).map(|w| w.xid));
+        if self.focus != focus {
+            let target = focus.and_then(|xid| self.windows.iter().find(|w| w.xid == xid));
+            let direct = target.filter(|w| w.properties.input.unwrap_or(true)).map_or(0, |w| w.xid);
+            wire.request(SetInputFocusRequest { revert_to: InputFocus::POINTER_ROOT, focus: direct, time: 0 }, 0, false)?;
+            if let Some(window) = target.filter(|w| w.properties.take_focus) {
+                let event = ClientMessageEvent::new(32, window.xid, self.atoms.get("WM_PROTOCOLS"), [self.atoms.get("WM_TAKE_FOCUS"), self.timestamp, 0, 0, 0]);
+                wire.request(
+                    SendEventRequest {
+                        propagate: false,
+                        destination: window.xid,
+                        event_mask: EventMask::NO_EVENT,
+                        event: Cow::Owned(Serialize::serialize(&event)),
+                    },
+                    0,
+                    false,
+                )?;
+            }
+            Self::property(&self.atoms, wire, self.root, "_NET_ACTIVE_WINDOW", AtomEnum::WINDOW.into(), &[focus.unwrap_or(0)])?;
+            self.focus = focus;
+        }
+        for id in server.x11_close.drain(..) {
+            if let Some(w) = self.windows.iter().find(|w| w.id == id) {
+                if w.properties.delete {
+                    let event = ClientMessageEvent::new(32, w.xid, self.atoms.get("WM_PROTOCOLS"), [self.atoms.get("WM_DELETE_WINDOW"), 0, 0, 0, 0]);
+                    wire.request(
+                        SendEventRequest {
+                            propagate: false,
+                            destination: w.xid,
+                            event_mask: EventMask::NO_EVENT,
+                            event: Cow::Owned(Serialize::serialize(&event)),
+                        },
+                        0,
+                        false,
+                    )?;
+                } else {
+                    wire.request(KillClientRequest { resource: w.xid }, 0, false)?;
+                }
+            }
+        }
+        server.sync_windows();
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
+    use super::*;
+    use std::{os::unix::net::UnixStream, sync::Arc};
+    #[test]
+    fn only_outstanding_requests_supply_deadlines_and_stale_window_replies_are_ignored() {
+        let display = smithay::reexports::wayland_server::Display::<Server>::new().unwrap();
+        let mut server = Server::new(
+            clamshell_state::State::new(clamshell_state::Init::default()),
+            clamshell_ui::Config {
+                bottom_output: "ClamShell-Bottom".into(),
+                top_size: (960, 540),
+                bottom_size: (620, 540),
+                bottom_panel: false,
+                touch_layout: Arc::default(),
+            },
+            display.handle(),
+            false,
+            || {},
+            |_| Process::default(),
+            |_| {},
+        )
+        .unwrap();
+        let (socket, _peer) = UnixStream::pair().unwrap();
+        let client = display.handle().insert_client(socket, Arc::new(crate::server::ClientState::default())).unwrap();
+        let (socket, _peer) = UnixStream::pair().unwrap();
+        let now = Instant::now();
+        let mut wire = Transport::new(socket, now).unwrap();
+        let mut wm = Wm::default();
+        assert_eq!(wm.deadline(), None);
+        wm.query(&mut wire, GetWindowAttributesRequest { window: 10 }, 0, Query::Attributes(7), now).unwrap();
+        assert_eq!(wm.deadline(), Some(now + Duration::from_secs(3)));
+        assert_eq!(wm.turn(&mut wire, &client, &mut server, now + Duration::from_secs(3)).unwrap_err().kind(), io::ErrorKind::TimedOut);
+        wm.pending.clear();
+        assert_eq!(wm.deadline(), None);
+        wm.discover(10, (640, 360), &mut wire, &mut server).unwrap();
+        let old_id = wm.windows[0].id;
+        wm.forget(old_id, &mut server);
+        wm.discover(10, (640, 360), &mut wire, &mut server).unwrap();
+        assert_ne!(wm.windows[0].id, old_id);
+        // An old window's reply cannot change another window, even if X11 reuses its resource id.
+        let mut bytes = Serialize::serialize(&GetPropertyReply {
+            format: 8,
+            type_: AtomEnum::STRING.into(),
+            value: b"stale".to_vec(),
+            value_len: 5,
+            length: 2,
+            ..GetPropertyReply::default()
+        });
+        bytes.resize(40, 0);
+        wm.reply(Query::Property(old_id, "WM_NAME"), &bytes, &mut wire, &mut server, now).unwrap();
+        assert_eq!(wm.windows.len(), 1);
+        assert!(wm.windows[0].properties.name.is_empty());
+        assert_eq!(server.core.state().session().windows().len(), 0);
+    }
+    #[test]
+    fn placement_is_committed_and_configured_before_mapping_and_focus() {
+        use std::io::Read;
+        let display = smithay::reexports::wayland_server::Display::<Server>::new().unwrap();
+        let mut server = Server::new(
+            clamshell_state::State::new(clamshell_state::Init::default()),
+            clamshell_ui::Config {
+                bottom_output: "ClamShell-Bottom".into(),
+                top_size: (960, 540),
+                bottom_size: (620, 540),
+                bottom_panel: false,
+                touch_layout: Arc::default(),
+            },
+            display.handle(),
+            false,
+            || {},
+            |_| Process::default(),
+            |_| {},
+        )
+        .unwrap();
+        let (socket, _peer) = UnixStream::pair().unwrap();
+        let client = display.handle().insert_client(socket, Arc::new(crate::server::ClientState::default())).unwrap();
+        let (socket, mut peer) = UnixStream::pair().unwrap();
+        let now = Instant::now();
+        let mut wire = Transport::new(socket, now).unwrap();
+        wire.turn(now).unwrap();
+        peer.read_exact(&mut [0; 12]).unwrap();
+        let mut wm = Wm { root: 1, owner: 2, atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()), ..Wm::default() };
+        wm.discover(10, (400, 300), &mut wire, &mut server).unwrap();
+        wm.windows[0].outstanding = 0;
+        wm.windows[0].wants_map = true;
+        wm.windows[0].properties.class = "fixture".into();
+        let id = wm.windows[0].id;
+        wm.settle(&mut wire, &client, &mut server).unwrap();
+        assert!(server.core.state().session().window(id).is_some());
+        assert_eq!(server.core.state().session().top_window().map(|w| w.id), Some(id));
+        wire.turn(now).unwrap();
+        let mut bytes = [0; 4096];
+        let length = peer.read(&mut bytes).unwrap();
+        let mut packets = &bytes[..length];
+        let mut requests = Vec::new();
+        while !packets.is_empty() {
+            requests.push(packets[0]);
+            let size = usize::from(u16::from_ne_bytes([packets[2], packets[3]])) * 4;
+            packets = &packets[size..];
+        }
+        // The X server must receive final geometry before it can map or focus the new window.
+        assert_eq!(
+            requests,
+            vec![
+                CHANGE_WINDOW_ATTRIBUTES_REQUEST,
+                CONFIGURE_WINDOW_REQUEST,
+                CHANGE_PROPERTY_REQUEST,
+                CHANGE_PROPERTY_REQUEST,
+                MAP_WINDOW_REQUEST,
+                SET_INPUT_FOCUS_REQUEST,
+                CHANGE_PROPERTY_REQUEST
+            ]
+        );
+        wm.settle(&mut wire, &client, &mut server).unwrap();
+        wire.turn(now).unwrap();
+        peer.set_nonblocking(true).unwrap();
+        assert_eq!(peer.read(&mut bytes).unwrap_err().kind(), io::ErrorKind::WouldBlock, "unchanged state sends no X11 commands");
+        wm.windows[0].properties.name = "first title".into();
+        wm.windows[0].dirty = true;
+        wm.settle(&mut wire, &client, &mut server).unwrap();
+        wm.windows[0].properties.name = "last title".into();
+        wm.windows[0].dirty = true;
+        wm.settle(&mut wire, &client, &mut server).unwrap();
+        assert_eq!(server.x11_changes.len(), 1, "X11 title changes coalesce before recording a frame");
+        assert_eq!(server.core.state().session().window(id).unwrap().title, "");
+        server.frame();
+        assert_eq!(server.core.state().session().window(id).unwrap().title, "last title");
+        assert!(server.x11_changes.is_empty());
+        wm.windows[0].properties.name = "dialog title".into();
+        wm.windows[0].properties.role = clamshell_state::session::presentation::WindowRole::Dialog;
+        wm.windows[0].dirty = true;
+        wm.settle(&mut wire, &client, &mut server).unwrap();
+        let mut adopted = server.core.state().session().window(id).unwrap().clone();
+        adopted.unit = Some("adopted.scope".into());
+        adopted.pids = vec![456];
+        server.core.handle(WindowEvent::Changed(adopted).into());
+        server.frame();
+        let window = server.core.state().session().window(id).unwrap();
+        assert_eq!(window.title, "dialog title");
+        assert_eq!(window.role, clamshell_state::session::presentation::WindowRole::Dialog);
+        assert_eq!(window.unit.as_deref(), Some("adopted.scope"));
+        assert_eq!(window.pids, vec![456], "deferred metadata cannot undo scope adoption");
+        let recording = server.trace.borrow().snapshot(server.core.state());
+        // Identity and title settle atomically: the UI must never record half of this update.
+        assert!(
+            matches!(recording.records.back().map(|r| &r.input), Some(crate::trace::Input::Batch(events)) if matches!(events.as_slice(), [WindowEvent::Changed(_), WindowEvent::Title { window, title }] if *window == id && title == "dialog title"))
+        );
+    }
+}

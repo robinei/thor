@@ -764,7 +764,7 @@ acknowledging configure, retains an oversized buffer across a screen move, and c
 transform. It unmaps and remaps the same surface, reapplying xdg properties and checking that the
 unowned window starts above again. Fixed-size child presentation remains in the same test. Renderer import paths are exercised by
 `tests/nested-compositor.py`; a failed client import never propagates as a host-loop error. Xwayland
-supervision and X11/menu fixtures are still pending phase 2 work.
+supervision and X11 toplevel fixtures are implemented; X11 menus and clipboard bridging remain phase 2 work.
 
 ### Window-event diagnostics and replay (compositor/trace)
 
@@ -1052,34 +1052,68 @@ states, synchronised subsurfaces, Home/activation, superseded commits and destru
 real feedback client against the software and GPU hosts: both a newly attached buffer and a subsequent
 unchanged frame must receive ordered monotonic feedback with unknown refresh and no hardware flags.
 
-### Xwayland transport and supervision (compositor/x11)
+### Xwayland windows, transport and activation (compositor/x11)
 
-The nested host owns one private Xwayland child, its Wayland connection, a dedicated X11 WM socket and
-a display-number socket. The X server chooses and owns its display slot. The adapter is asynchronous:
-x11rb supplies protocol encoders, parsers and sequence tracking, but performs no socket I/O. Smithay's
-XWM and its blocking X11 commit hooks are not used. Window translation and mapping are the next step;
-this transport alone does not expose DISPLAY to launches or accept X11 windows into State.
+The adapter owns one reserved X11 display socket and at most one private Xwayland child. The socket
+is advertised to nested launches; the process environment and parent display are untouched. The
+first connection in its listen queue starts Xwayland with that socket, its private Wayland/WM sockets
+and display-number socket. The parent never accepts the pending X11 connection: Xwayland does.
 
-`waiting --retry deadline--> starting [spawn Xwayland, insert private Wayland client]`.
-`starting --spawn failure--> waiting [log, retry after one second]`.
-`starting --display number, X11 setup and first probe reply--> connected [log transport ready]`.
-The display-number deadline is five seconds; setup and outstanding replies have three seconds.
-Partial setup and packets retain their bytes until the rest arrives. Every socket is non-blocking;
-WouldBlock retains unsent bytes and returns to the main loop. Each turn permits at most 64 writes,
-64 setup reads and 64 packet reads, each packet read at most 4096 bytes. Incoming packets and queued
-outgoing bytes are capped at 1 MiB, with an oversized length rejected before allocating its payload.
+`dormant --X11 listener readable--> starting [spawn, pass listener, insert Wayland client]`.
+`starting --spawn failure--> retrying [log, retry after one second while demand exists]`.
+`starting --display number, X11 setup, atom and extension replies--> connected
+[claim WM/compositing selections, redirect subwindows]`.
+`starting/connected --EOF, malformed data, queue limit, request/write timeout or I/O failure-->
+stopping [kill only Xwayland, disconnect its Wayland client, close its model windows, log]`.
+`starting/connected/stopping --pidfd readable, child exited--> dormant
+[reap without waiting, close only its windows, rearm listener]`.
+The next X11 connection starts a replacement on the same display. Shutdown kills and reaps any child
+on a separate thread and removes only this instance's display socket and lock file.
 
-`connected --one second since probe--> connected [send GetInputFocus]`.
-`starting/connected --EOF, malformed data, queue limit, timeout or I/O failure--> stopping
-[kill only Xwayland, disconnect its Wayland client, log]`.
-`starting/connected/stopping --child exit--> waiting [reap, log, retry after one second]`.
-A stopped child receives SIGKILL too; it does not need to read a socket to terminate. Child status is
-polled without waiting in the compositor loop. Shutdown kills any remaining child and reaps it on a
-separate thread. The safe command-fds API clears CLOEXEC on the three private descriptors only in child-side exec setup; the
-parent's descriptor flags are never changed while other threads launch programs.
+All socket I/O is non-blocking. x11rb supplies protocol types and sequence tracking, never blocking
+connections or Smithay XWM commit hooks. Read/write/displayfd/listener readiness and pidfd are calloop
+sources; write readiness is registered only with unsent bytes. Dormant and idle connected Xwayland
+have no adapter deadline, probe traffic or periodic wakeup. A selection-ownership reply is requested
+only after 32,768 unacknowledged requests to anchor X11's 16-bit sequence before it wraps.
+The display-number deadline is five
+seconds; setup, queued writes and outstanding replies have three seconds. Partial messages retain
+their bytes. Each turn permits at most 64 writes, 64 setup reads, 64 packet reads of at most 4096 bytes
+and 64 event deliveries. Packets and outgoing bytes are capped at 1 MiB; packet lengths are checked
+before allocating their payload. At most 256 queries are outstanding, deferring further property
+requests. At most 128 X11 windows are tracked; an excess ends the offending X11 client. command-fds
+passes the four private descriptors only in child-side exec setup, retaining the parent's CLOEXEC.
 
-The transport tests use socket pairs for partial setup, split replies, silent peers, full write
-buffers, EOF, timeouts and oversized packets, asserting outcomes and retained buffers. A child process
-test checks descriptor inheritance. The real nested software/GPU harness stops Xwayland with SIGSTOP,
-moves a live Wayland window down and up through the control socket, waits for watchdog restart and
-reaping, then kills the replacement with SIGKILL and checks restart and Wayland survival again.
+`created --attributes/properties/XRes replies--> known facts`.
+`known --MapRequest, initial facts available--> placed [Opened → final configure → map → focus]`.
+Input-only and override-redirect surfaces are excluded from these toplevels. Class, UTF-8 title with
+Latin-1 fallback, transient parent, normal size hints and dialog/splash/utility role become the same
+Window facts as Wayland. PIDs come from XRes, never the forgeable _NET_WM_PID property or Xwayland's
+own socket credentials. Properties have a 4 KiB query bound and validated types/formats; absent or
+malformed properties clear their facts. Title/property notifications coalesce while a query is in
+flight, retaining a refresh bit for changes that race its reply. Changed facts coalesce per window
+until the next recorded frame, so title traffic never drives repeated UI applies within that frame.
+Metadata and title changing together form one ordered batch, preserving a scope adoption that arrived
+while the properties waited.
+Initial facts and presentation policy
+are cached, so unchanged turns emit no state events or X11 requests.
+
+`placed --WL_SURFACE_ID, matching private Wayland object exists--> drawable`.
+The shared surface wrapper uses the same rendering, geometry, input, frame and presentation-feedback
+paths. A window ignoring its configured size is treated by the existing geometry policy. X11 size
+requests cannot choose placement or stacking. WM_HINTS input and WM_TAKE_FOCUS are honoured when focus
+changes; WM_DELETE_WINDOW closes a supporting client, otherwise KillClient ends it.
+`mapped --unmap--> known [Closed, detach drawable]`; a later map reopens it with the same model id.
+`known/mapped --destroy/BadWindow--> removed [Closed if open]`.
+Late replies use unique model ids, so XID reuse cannot modify a replacement. Selection/focus/placement
+remain state rules. Override-redirect menus and the planned clipboard bridge are not implemented yet;
+there is no drag and drop. The clipboard bridge's INCR and asynchronous transfer plan is explicit in
+`docs/compositor-mvp.md` and will add its own transitions/tests when implemented.
+
+Property fixtures check ordinary and fixed transient windows, all supported roles, malformed types,
+negative sizes and property deletion, plus focus protocols/hints. Socket-pair tests check partial
+setup/replies, full buffers, EOF, oversize rejection, idle silence and outstanding-request deadlines.
+The dormant listener test asserts no child/deadline before a connection. The request-order test pins
+configure before map and focus, and no repeated commands for unchanged state. The real software/GPU
+harness starts a font-independent X11 fixture, checks pixels through top/bottom moves, configure sizes,
+unmap/remap and WM_DELETE_WINDOW, then stops/kills Xwayland while Wayland keeps moving. It checks
+reaping, no eager restart, and activation of a replacement by another X11 client.
