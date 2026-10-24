@@ -174,7 +174,7 @@ impl SeatHandler for Server {
     }
 }
 impl SelectionHandler for Server {
-    type SelectionUserData = ();
+    type SelectionUserData = u64;
     fn new_selection(
         &mut self,
         target: smithay::wayland::selection::SelectionTarget,
@@ -182,6 +182,16 @@ impl SelectionHandler for Server {
         _seat: Seat<Self>,
     ) {
         self.x11_selections.changed(target, source);
+    }
+    fn send_selection(
+        &mut self,
+        target: smithay::wayland::selection::SelectionTarget,
+        mime: String,
+        fd: std::os::fd::OwnedFd,
+        _seat: Seat<Self>,
+        origin: &u64,
+    ) {
+        self.x11_selections.read(target, mime, fd, *origin);
     }
 }
 impl DataDeviceHandler for Server {

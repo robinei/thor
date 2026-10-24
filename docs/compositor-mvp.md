@@ -243,11 +243,12 @@ from a separate process, at about 500 lines, but with its own translation losses
 for us, the risk that per-surface dmabuf feedback and the pacing protocols don't pass through it, leaving
 X11 games composited.
 
-### X11/Wayland clipboard bridge (in progress in phase 2)
+### X11/Wayland clipboard bridge
 
-Wayland → X11 is implemented for both seat selections, with bounded asynchronous pipe reads,
-INCR handshakes, metadata and MIME/text targets, cancellation and real-client tests. X11 → Wayland
-remains to be implemented, including XFixes ownership notifications and INCR reader backpressure.
+Both directions are implemented for both seat selections, with bounded asynchronous pipe I/O,
+INCR handshakes, metadata and MIME/text targets, cancellation and real-client tests. XFixes watches
+ownership without polling. Incoming offers carry a generation tag so they cannot echo into X11;
+a conversion gets a fresh hidden requestor window so a late reply cannot feed its replacement.
 
 The adapter bridges **CLIPBOARD and PRIMARY** through the same Wayland seat selections and keeper;
 it does not implement drag and drop. Selection ownership is watched through XFixes notifications,
@@ -491,8 +492,9 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    input geometry and feedback. A real X11 fixture covers top/bottom moves, resize, close, unmap/remap
    and lazy restart after a crash, while Wayland survives. Property fixtures cover malformed metadata
    and ordinary/dialog/splash/utility facts. Override-redirect menus and tooltips now share their parent’s scaling, screen clip and input
-   geometry, with real-client dismissal and submenu tests. Further X11 focus fixtures and
-   the X11 → Wayland half of the clipboard bridge remain; drag and drop is outside this adapter's scope.
+   geometry, with real-client dismissal and submenu tests. The clipboard bridge now imports and exports both seat selections with INCR and bounded pipe
+   backpressure, covered by native clients, source/reader failures and Xwayland restart. Further X11
+   focus fixtures remain; drag and drop is outside this adapter's scope.
    Viewporter cropping and destination sizing use the
    same logical geometry for presentation and input, covered by a socket-pair client. Screenshots read the presented nested scene and
    encode it on the system worker; SDR PNG export does not change composition precision. The nested
@@ -562,12 +564,12 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
 
 ## 9. Size
 
-Revised 2026-10-24 after choosing our own asynchronous XWM instead of Smithay's blocking one. The
-range includes the X11/Wayland clipboard bridge and socket activation, excludes drag and drop, and
-keeps tests and fixtures additional to production code. The compositor crate currently has about
-4,400 lines across production modules (including their inline tests), plus about 2,800 lines of
-separate tests/client fixtures and 350 lines of property fixture data. This is a planning range for
-the complete MVP, not a claim that all remaining work is implemented.
+Revised 2026-10-24 after implementing the asynchronous XWM and clipboard bridge. The range includes
+socket activation and both clipboard directions, excludes drag and drop, and keeps tests and fixtures
+additional to production code. The compositor crate currently has about 5,500 production lines,
+excluding inline tests; about 2,700 belong to the X11 adapter. Rust tests and client fixtures add about
+4,500 lines, the real-client Python harness about 550, and property fixture data about 350. This is a
+planning range for the complete MVP, not a claim that all remaining work is implemented.
 
 | Part | Lines | Effort |
 |---|---|---|

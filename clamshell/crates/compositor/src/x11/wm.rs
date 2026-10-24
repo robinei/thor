@@ -175,6 +175,7 @@ impl Wm {
             }
         }
         if self.ready {
+            self.selection.init_imports(wire, self.owner, now)?;
             self.selection.turn(wire, &self.atoms, self.owner, server, now)?;
         }
         self.settle(wire, client, server)?;
@@ -348,6 +349,9 @@ impl Wm {
         Ok(())
     }
     fn discover(&mut self, xid: u32, geometry: Rectangle<i32, Logical>, override_redirect: bool, wire: &mut Transport, server: &mut Server) -> io::Result<()> {
+        if wire.setup.as_ref().is_some_and(|setup| (xid & !setup.resource_id_mask) == setup.resource_id_base) {
+            return Ok(());
+        }
         if self.windows.iter().any(|w| w.xid == xid) || xid == self.owner {
             return Ok(());
         }
@@ -515,7 +519,7 @@ impl Wm {
         self.selection.sync_sources(handle, sources)
     }
     pub fn clear(&mut self, server: &mut Server) {
-        self.selection.clear();
+        self.selection.clear(server);
         while let Some(window) = self.windows.last() {
             let id = window.id;
             self.forget(id, server);

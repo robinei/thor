@@ -1,4 +1,5 @@
 //! Seat selection changes are translated here; neither State nor drawing knows about X11 transfers.
+mod receive;
 mod send;
 
 use super::{properties::Atoms, transport::Transport};
@@ -9,6 +10,7 @@ use smithay::{
 };
 use std::{
     io,
+    os::fd::OwnedFd,
     time::{Duration, Instant},
 };
 use x11rb_protocol::{protocol::xproto::*, x11_utils::TryParse};
@@ -33,19 +35,45 @@ impl<T> Pair<T> {
 #[derive(Default)]
 pub(crate) struct SeatSelections {
     entries: Pair<SeatSelection>,
+    requests: Vec<ReadRequest>,
+    next_origin: u64,
 }
 #[derive(Default)]
 struct SeatSelection {
     revision: u64,
     mime_types: Vec<String>,
+    origin: Option<u64>,
 }
 impl SeatSelections {
     pub fn changed(&mut self, target: SelectionTarget, source: Option<SelectionSource>) {
         let entry = self.entries.get_mut(slot(target));
         entry.revision = entry.revision.wrapping_add(1);
+        entry.origin = None;
         entry.mime_types = source.map(|source| source.mime_types()).unwrap_or_default();
         entry.mime_types.retain(|mime| mime.len() <= 255);
         entry.mime_types.truncate(64);
+    }
+}
+struct ReadRequest {
+    selection: usize,
+    origin: u64,
+    mime: String,
+    fd: OwnedFd,
+}
+impl SeatSelections {
+    pub fn read(&mut self, target: SelectionTarget, mime: String, fd: OwnedFd, origin: u64) {
+        if self.entries.get(slot(target)).origin != Some(origin) || self.requests.len() >= MAX_TRANSFERS {
+            return;
+        }
+        if let Err(error) = rustix::fs::fcntl_setfl(&fd, rustix::fs::OFlags::NONBLOCK) {
+            log::warn!("compositor: selection reader flags: {error}");
+            return;
+        }
+        self.requests.push(ReadRequest { selection: slot(target), origin, mime, fd });
+    }
+    fn origin(&mut self) -> u64 {
+        self.next_origin = self.next_origin.wrapping_add(1);
+        self.next_origin
     }
 }
 fn slot(target: SelectionTarget) -> usize {
@@ -86,6 +114,7 @@ pub(super) struct Bridge {
     transfers: Vec<send::Transfer>,
     next_id: u64,
     clock_pending: Option<Clock>,
+    imports: receive::Imports,
 }
 struct Clock {
     deadline: Instant,
@@ -94,6 +123,7 @@ struct Clock {
 pub(super) struct IoSource {
     id: u64,
     token: RegistrationToken,
+    incoming: bool,
 }
 impl Bridge {
     pub fn deadline(&self) -> Option<Instant> {
@@ -102,13 +132,18 @@ impl Bridge {
             .map(|pending| pending.deadline)
             .chain(self.transfers.iter().map(|transfer| transfer.deadline))
             .chain(self.clock_pending.as_ref().map(|clock| clock.deadline))
+            .chain(self.imports.deadline())
             .min()
     }
-    pub fn clear(&mut self) {
+    pub fn clear(&mut self, server: &mut Server) {
+        self.imports.clear(server);
         self.transfers.clear();
         self.pending.clear();
         self.exports = Default::default();
         self.clock_pending = None;
+    }
+    pub fn init_imports(&mut self, wire: &mut Transport, owner: u32, now: Instant) -> io::Result<()> {
+        self.imports.start_setup(wire, owner, now)
     }
     pub fn turn(&mut self, wire: &mut Transport, atoms: &Atoms, owner: u32, server: &mut Server, now: Instant) -> io::Result<()> {
         if self.clock_pending.as_ref().is_some_and(|clock| now >= clock.deadline) {
@@ -134,10 +169,22 @@ impl Bridge {
                 index += 1;
             }
         }
+        self.imports.turn(wire, atoms, server, now)?;
         for selection in 0..2 {
+            if let Some(revision) = self.imports.take_change(selection) {
+                let entry = server.x11_selections.entries.get(selection);
+                if entry.revision == revision || entry.origin.is_some() {
+                    self.cancel(selection, wire, now)?;
+                    *self.exports.get_mut(selection) = Export { revision: Some(entry.revision), ..Default::default() };
+                }
+            }
             let seat = server.x11_selections.entries.get(selection);
             if self.exports.get(selection).revision != Some(seat.revision) && self.pending.len() + seat.mime_types.len() <= 128 {
                 self.cancel(selection, wire, now)?;
+                if seat.origin.is_some() {
+                    *self.exports.get_mut(selection) = Export { revision: Some(seat.revision), ..Default::default() };
+                    continue;
+                }
                 if seat.mime_types.is_empty() && self.exports.get(selection).owned {
                     wire.request(
                         SetSelectionOwnerRequest { owner: 0, selection: selection_atom(atoms, selection), time: self.exports.get(selection).timestamp },
@@ -198,6 +245,7 @@ impl Bridge {
         if export.claim && export.pending == 0 && !export.formats.is_empty() && export.timestamp == 0 { export.revision } else { None }
     }
     pub fn event(&mut self, bytes: &[u8], wire: &mut Transport, atoms: &Atoms, owner: u32, server: &mut Server, now: Instant) -> io::Result<()> {
+        self.imports.event(bytes, wire, atoms, server, now)?;
         match bytes.first().map(|byte| byte & 0x7f) {
             Some(SELECTION_REQUEST_EVENT) => {
                 let request = SelectionRequestEvent::try_parse(bytes).map_err(io::Error::other)?.0;
@@ -251,7 +299,7 @@ impl Bridge {
     }
     pub fn sync_sources(&self, handle: &LoopHandle<'static, Server>, sources: &mut Vec<IoSource>) -> io::Result<()> {
         sources.retain(|source| {
-            if self.transfers.iter().any(|transfer| transfer.id == source.id && transfer.reading()) {
+            if source.incoming || self.transfers.iter().any(|transfer| transfer.id == source.id && transfer.reading()) {
                 true
             } else {
                 handle.remove(source.token);
@@ -259,10 +307,15 @@ impl Bridge {
             }
         });
         for transfer in self.transfers.iter().filter(|transfer| transfer.reading()) {
-            if !sources.iter().any(|source| source.id == transfer.id) {
-                sources.push(IoSource { id: transfer.id, token: super::watch(handle, &transfer.pipe, smithay::reexports::calloop::Interest::READ)? });
+            if !sources.iter().any(|source| !source.incoming && source.id == transfer.id) {
+                sources.push(IoSource {
+                    id: transfer.id,
+                    incoming: false,
+                    token: super::watch(handle, &transfer.pipe, smithay::reexports::calloop::Interest::READ)?,
+                });
             }
         }
+        self.imports.sync_sources(handle, sources)?;
         Ok(())
     }
     pub fn remove_sources(handle: &LoopHandle<'static, Server>, sources: &mut Vec<IoSource>) {

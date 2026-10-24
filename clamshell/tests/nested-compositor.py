@@ -50,6 +50,7 @@ def main():
     for key in ["SWAYSOCK", "WAYLAND_DISPLAY", "DISPLAY", "WAYLAND_SOCKET", "CLAMSHELL_SESSION"]:
         env.pop(key, None)
     processes = []
+    expected_exits = set()
 
     def spawn(argv, name, environment, stdin=None):
         log = (directory / f"{name}.log").open("w")
@@ -63,7 +64,7 @@ def main():
     def wait(predicate, description):
         until = time.monotonic() + 10
         while time.monotonic() < until:
-            failed = [process.returncode for process in processes if process.poll() is not None]
+            failed = [process.returncode for process in processes if process.poll() is not None and process not in expected_exits]
             if failed:
                 raise RuntimeError(f"{description}: a process exited: {failed}; logs in {directory}")
             value = predicate()
@@ -182,6 +183,74 @@ time.sleep(300)
         wait(lambda: clipboard(nested) == "café €", "replacement selection reaches the Wayland seat")
         wait(lambda: read_x11_selection("CLIPBOARD", "STRING").stdout == b"caf\xe9 ?", "X11 STRING uses Latin-1 with replacement")
         assert clipboard(host) == "", "X11 clipboard reads remain private to the nested session"
+        copies = 0
+        def copy_x11(selection, content, *options):
+            nonlocal copies
+            copies += 1
+            name = f"x11-copy-{copies}"
+            source = directory / f"{name}.bin"
+            source.write_bytes(content)
+            process = spawn([str(BIN.parent / "examples/x11-copy"), selection, str(source), *options], name, x11_environment)
+            wait(lambda: "owned" in (directory / f"{name}.log").read_text(), "X11 selection source owns its selection")
+            return process
+        def read_wayland_selection(mime, *options):
+            return subprocess.run([str(BIN.parent / "examples/selection"), "CLIPBOARD", mime, *options],
+                                  env=nested, capture_output=True, timeout=10)
+        copied = copy_x11("CLIPBOARD", b"copied from X11")
+        wait(lambda: clipboard(nested) == "copied from X11", "Wayland reads an X11-owned clipboard")
+        assert read_x11_selection().stdout == b"copied from X11", "the imported offer is not echoed back as a new X11 owner"
+        copied.terminate()
+        copied.wait(timeout=5)
+        processes.remove(copied)
+        wait(lambda: clipboard(nested) == "copied from X11", "the keeper retains text after the X11 owner exits")
+        imported_large = ("X11 streaming café\n" * 8192).encode()
+        for selection in ("CLIPBOARD", "PRIMARY"):
+            copied = copy_x11(selection, imported_large, "--incr", "--incr-targets")
+            wait(lambda: clipboard(nested).encode() == imported_large, f"Wayland imports large X11 {selection} through INCR")
+            copied.terminate()
+            copied.wait(timeout=5)
+            processes.remove(copied)
+            wait(lambda: clipboard(nested).encode() == imported_large, "keeper takes over after an incremental source exits")
+        normal_large = b"n" * (48 * 1024)
+        copied = copy_x11("CLIPBOARD", normal_large)
+        wait(lambda: clipboard(nested).encode() == normal_large, "large ordinary X11 properties are sliced without early deletion")
+        copied.terminate()
+        copied.wait(timeout=5)
+        processes.remove(copied)
+        wait(lambda: clipboard(nested).encode() == normal_large, "keeper takes over after a normal-property source exits")
+        binary = bytes(range(256)) * 1024
+        copied = copy_x11("CLIPBOARD", binary, "--mime", "application/x-thor-bytes", "--incr")
+        wait(lambda: read_wayland_selection("application/x-thor-bytes", "--slow").stdout == binary, "Wayland imports arbitrary MIME bytes with pipe backpressure")
+        assert read_wayland_selection("application/x-thor-bytes", "--abandon").returncode == 0
+        stalled = read_wayland_selection("application/x-thor-bytes", "--stall")
+        assert stalled.returncode == 0 and len(stalled.stdout) < len(binary), "a stalled Wayland reader is cancelled"
+        assert read_wayland_selection("application/x-thor-bytes").stdout == binary, "a failed reader does not disrupt another transfer"
+        copied.terminate()
+        copied.wait(timeout=5)
+        processes.remove(copied)
+        for option, mime in [("--refuse", "application/x-thor-refused"), ("--bad-format", "application/x-thor-invalid")]:
+            copied = copy_x11("CLIPBOARD", b"invalid data", "--mime", mime, option)
+            wait(lambda: read_wayland_selection(mime).returncode == 0, "a refused or malformed transfer closes only its reader")
+            assert read_wayland_selection(mime).stdout == b""
+            copied.terminate()
+            copied.wait(timeout=5)
+            processes.remove(copied)
+        old = copy_x11("CLIPBOARD", b"stale owner", "--stall-targets")
+        copied = copy_x11("CLIPBOARD", b"replacement owner")
+        wait(lambda: clipboard(nested) == "replacement owner", "a replacement X11 owner supersedes pending TARGETS")
+        old.terminate()
+        old.wait(timeout=5)
+        processes.remove(old)
+        assert clipboard(nested) == "replacement owner", "an old owner dying cannot clear its replacement"
+        copied.terminate()
+        copied.wait(timeout=5)
+        processes.remove(copied)
+        copied = copy_x11("CLIPBOARD", b"caf\xe9", "--latin1")
+        wait(lambda: clipboard(nested) == "café", "X11 STRING is translated from Latin-1 to UTF-8")
+        copied.terminate()
+        copied.wait(timeout=5)
+        processes.remove(copied)
+        assert clipboard(host) == "", "X11 copies remain isolated from the host clipboard"
         pointer = spawn([str(BIN.parent / "examples/pointer")], "pointer", host, stdin=subprocess.PIPE)
         def move_pointer(x, y, click=False):
             pointer.stdin.write(f"{x} {y}{' click' if click else ''}\n".encode())
@@ -287,6 +356,8 @@ time.sleep(300)
         assert x11.wait(timeout=5) == 0, "X11 client receives WM_DELETE_WINDOW"
         processes.remove(x11)
         wait(lambda: pixels() == (True, False), "Wayland client restored after X11 closes")
+        crash_copy = copy_x11("CLIPBOARD", b"kept across Xwayland death")
+        wait(lambda: clipboard(nested) == "kept across Xwayland death", "X11 clipboard is cached before Xwayland crashes")
         count = len(xwayland_pids())
         killed = xwayland_pids()[-1]
         if Path(f"/proc/{killed}").exists():
@@ -295,12 +366,23 @@ time.sleep(300)
             wait(lambda: pixels() == (False, True), "Wayland still moves while idle Xwayland is stopped")
             control("window", "up")
             wait(lambda: pixels() == (True, False), "Wayland returns while idle Xwayland is stopped")
+            expected_exits.add(crash_copy)
             os.kill(killed, signal.SIGKILL)
         wait(lambda: not Path(f"/proc/{killed}").exists(), "crashed Xwayland is reaped through pidfd readiness")
         assert len(xwayland_pids()) == count, "crash recovery waits for another X11 connection"
+        crash_copy.wait(timeout=5)
+        processes.remove(crash_copy)
+        expected_exits.discard(crash_copy)
+        wait(lambda: clipboard(nested) == "kept across Xwayland death", "keeper survives destruction of the imported X11 offer")
         x11 = spawn([str(BIN.parent / "examples/x11-client"), "--fixed"], "x11-restarted", {**nested, "DISPLAY": f":{display_match[1]}"}, stdin=subprocess.PIPE)
         wait(lambda: pixels((128, 80, 32)) == (True, False), "another client starts a replacement Xwayland")
         wait(lambda: len(xwayland_pids()) == count + 1, "Xwayland starts again on demand")
+        wait(lambda: read_x11_selection().stdout == b"kept across Xwayland death", "replacement Xwayland exports the retained Wayland selection")
+        copied = copy_x11("CLIPBOARD", b"copied after Xwayland restart")
+        wait(lambda: clipboard(nested) == "copied after Xwayland restart", "a replacement adapter imports a fresh X11 generation")
+        copied.terminate()
+        copied.wait(timeout=5)
+        processes.remove(copied)
         width, height, data = image()
         offset = (height // 2 * width + 10) * 3
         assert data[offset:offset + 3] == b"\0\0\0", "fixed-size X11 content is centred on black"

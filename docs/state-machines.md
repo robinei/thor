@@ -1108,9 +1108,8 @@ changes; WM_DELETE_WINDOW closes a supporting client, otherwise KillClient ends 
 `mapped --unmap--> known [Closed, detach drawable]`; a later map reopens it with the same model id.
 `known/mapped --destroy/BadWindow--> removed [Closed if open]`.
 Late replies use unique model ids, so XID reuse cannot modify a replacement. Selection/focus/placement
-remain state rules. The clipboard bridge currently exports Wayland selections to X11;
-X11-owned selections are not yet imported into Wayland;
-there is no drag and drop. The clipboard bridge's INCR and asynchronous transfer plan is explicit in
+remain state rules. The clipboard bridge imports and exports both seat selections; there is no
+drag and drop. The clipboard bridge's INCR and asynchronous transfer plan is explicit in
 `docs/compositor-mvp.md`; the implemented export transitions and tests are described below.
 
 Property fixtures check ordinary and fixed transient windows, all supported roles, malformed types,
@@ -1187,5 +1186,52 @@ cancellation, stale atom/timestamp replies, refusal limits, watch cleanup and no
 selections through X11, including large slow INCR reads, None properties, metadata, refusal, dead and
 stalled readers, an external X11 owner taking over, a UTF-8 scalar at the chunk boundary, selection
 replacement and nested-host isolation.
-X11-owned selections are not yet imported into Wayland; that direction needs XFixes ownership
-notifications, asynchronous TARGETS/ConvertSelection requests and reader-side INCR backpressure.
+X11-owned selections follow the incoming transitions below.
+
+
+### X11 selections imported into Wayland
+
+The adapter negotiates XFixes once, subscribes to CLIPBOARD and PRIMARY ownership and queries their
+initial owners once. Setup replies and initial-owner queries share the bounded asynchronous transport;
+an initial-owner reply cannot overwrite a newer notification. There is no ownership poll or idle timer.
+`owner changed --external nonzero owner--> discovering [cancel old conversions, create fresh hidden
+requestor, ConvertSelection(TARGETS)]`.
+`discovering --valid TARGETS, atom-name replies--> offered [publish generation-tagged seat selection]`.
+UTF8_STRING takes precedence over STRING for text; STRING converts Latin-1 to UTF-8. Other advertised
+MIME atoms retain their names. Metadata is capped at 4 KiB, 64 MIME types and 255 bytes per name.
+Unknown non-MIME atoms are skipped. TARGETS itself may use INCR. A replacement keeps the previous
+seat offer until its metadata is ready, avoiding a temporary empty selection and a keeper restore.
+A Wayland selection changed during discovery wins over the pending X11 offer. Old metadata, stale
+read requests and late property replies cannot alter a replacement generation.
+`offered --Wayland reader requests live MIME/generation--> converting [fresh requestor,
+ConvertSelection, non-blocking reader fd]`.
+`converting --SelectionNotify with expected property--> reading [GetProperty slice]`.
+`reading --normal value--> draining [write to Wayland pipe]`.
+`reading --initial INCR marker--> awaiting chunk [DeleteProperty]`.
+`awaiting chunk --PropertyNotify/NewValue--> reading [GetProperty slice]`.
+`draining --pipe accepts slice, more property bytes--> reading [GetProperty at next offset]`.
+`draining --pipe accepts entire non-final INCR chunk--> awaiting chunk [DeleteProperty]`.
+`draining --normal property complete or final zero INCR chunk--> complete [DeleteProperty,
+destroy requestor, close pipe]`.
+The DeleteProperty acknowledgement follows every accepted byte, including multiple slices of one
+large property. A blocked reader holds one bounded slice and a writable-fd watch, with no further
+property reads or acknowledgements. UTF-8/raw slices are at most 16 KiB; Latin-1 slices are at most
+8 KiB before conversion, yielding at most 16 KiB. There are at most eight data conversions plus one
+metadata conversion per selection. A full queue refuses a new reader by closing its fd.
+`discovering/converting/reading/draining --owner replaced, owner disappears, newer Wayland copy,
+refusal, wrong property type/format, malformed INCR, dead reader or five seconds without progress-->
+cancelled [destroy requestor, close pipe, remove watch]`.
+Failures affect that conversion. A newer seat selection is never cleared by cancellation or Xwayland
+exit. An imported offer cannot acquire X11 ownership again. Owner disappearance or Xwayland death
+clears only its current imported offer, allowing the existing keeper to restore cached text. The
+keeper's restore and mirrors are ordinary subsequent Wayland selection changes. Outstanding X server
+reply deadlines remain three seconds; a stuck X server is handled by its supervisor.
+
+Socket-pair tests pin partial-property offsets, no INCR acknowledgement while a pipe is blocked,
+chunk deletion before requestor destruction, bounded Latin-1 expansion, malformed/refused replies,
+dead readers, timeouts and harmless late replies. Offer tests assert delayed MIME-name publication,
+generation tags, echo suppression, replacement without an empty offer and preserving newer Wayland
+selections on adapter shutdown. The real-client software/GPU harness covers both selections, normal
+properties larger than a slice, INCR metadata/data, arbitrary binary MIME data, slow/abandoned/stalled
+readers, refusal and bad formats, owner replacement during metadata, Latin-1, keeper persistence,
+parent-desktop isolation and fresh clipboard generations after Xwayland crashes and restarts.

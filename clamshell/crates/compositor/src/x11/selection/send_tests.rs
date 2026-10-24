@@ -305,7 +305,7 @@ fn late_atom_replies_cannot_restore_an_old_generation_and_missing_replies_have_a
     assert!(!bridge.exports.clipboard.owned);
     assert_eq!(packets(&mut wire, &mut peer, now)[0][0], CHANGE_PROPERTY_REQUEST);
     assert_eq!(bridge.turn(&mut wire, &atoms, 5, &mut server, now + Duration::from_secs(3)).unwrap_err().kind(), io::ErrorKind::TimedOut);
-    bridge.clear();
+    bridge.clear(&mut server);
     assert!(bridge.transfers.is_empty());
     assert_eq!(bridge.deadline(), None);
     bridge.turn(&mut wire, &atoms, 5, &mut server, now).unwrap();
