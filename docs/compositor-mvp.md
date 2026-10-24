@@ -562,10 +562,21 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
           per-pixel curve on luminance, hue and saturation kept, no object classification. Parameters, per
           game: the black point (many games lift their blacks; mapping the game's floor to true black suits
           the OLED), shadow contrast, the SDR white the midtones stay anchored to, where highlights start
-          expanding and the peak they expand to, saturation. Tuned live from the second screen while the
-          game runs on top, saved with the game's settings, off by default. Optionally later: the black
+          expanding and the peak they expand to, saturation. Off by default. Optionally later: the black
           floor measured from the frames (the darkest values over a long window) to suggest the black
           point, and the curve adapting slowly to each frame's average and peak.
+          Edited as keymaps are (the owner's decision, 2026-10-25): one tile in the game's settings, the
+          HDR curve, opening a picker over the settings tab like the keymap picker: the game's own curve
+          (or a row making one from the curve in force), Off, the named curves with how many games use
+          each, New; menus with Edit, Rename, Duplicate, Delete, and for a game's own Load from and Save
+          as. Presets to start from (Neutral, True black, Punchy). The edit screen has a slider per
+          parameter, applied live while the game runs on top. The list of named and own profiles, their
+          storage, the picker and the menus become one implementation shared by keymaps and curves, not a
+          copy. Steps: (1) the profile list (named and own, ids, names, versions, own-from, load, save as)
+          generic, keymaps on it, behaviour and trace unchanged; (2) storage the same way; (3) the picker
+          and menus shared; (4) curves: the parameters, presets, the setting (a curve's id, 0 Off), the
+          tile, the edit screen; (5) the compositor applying a window's curve to its SDR surfaces, read
+          from the state; under sway the tile is dimmed (the compositor alone can do it).
     - [x] The nested output: the host window's own colour description given to KWin on its raw Wayland
           surface (winit has no colour management), so KWin tone-maps our output to the monitor.
     - [ ] Tests: headless, a PQ client's pixels converted as expected, SDR content unchanged, the UI at
