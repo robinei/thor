@@ -1343,3 +1343,13 @@ sleep takes the same facts. Thor retains 400/200 Hz/19.2 MHz and the quarter-tur
 VM/generic claim no hub, while detected evdev sensors remain usable. Existing wire/sample tests pin
 protocol parsing and the profile-driven transform. Profile tests assert hub presence and timing;
 firmware service appearance/disappearance and physical mounting remain device checks.
+
+
+The fan daemon identifies the profile once, using the same pure identification as ClamShell. Its
+hwmon target, Auto/Quiet curves, minimum/safe/emergency duties and ramp policy come from the profile;
+actual hwmon files and thermal readings stay discovered. A profile without a userspace fan policy
+exits successfully and the service does not restart it. Fan controls remain visible and tappable,
+dimmed when no policy exists. Thor's curve and safe-stop behaviour are unchanged. Existing daemon
+filesystem tests now supply the Thor policy explicitly; interpolation, ramp, emergency and missing-
+sensor tests retain their exact outcomes. The service uses Restart=on-failure to preserve recovery
+without a retry loop on unsupported machines.

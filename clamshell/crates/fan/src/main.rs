@@ -10,20 +10,21 @@
 //!   `clamshell-fan --safe [ROOT]`
 //!
 //! ROOT (default /) is where /sys and /run are, for trying it on a copy. `--safe` sets the fan to its
-//! safe speed ([`curve::SAFE`]) and exits. The service runs it as it stops (its `ExecStopPost`), so that
+//! safe speed (from the device profile) and exits. The service runs it as it stops (its `ExecStopPost`), so that
 //! a stopped daemon doesn't leave the fan off.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use clamshell_device::{Profile, fan::Fan};
 use clamshell_fan_mode::{MODE_FILE, Mode};
 
 mod curve;
 use curve::Duty;
 
 /// The fan's hwmon directory under `root`, if it is there.
-fn find_fan(root: &Path) -> Option<PathBuf> {
-    entries(&root.join("sys/class/hwmon")).into_iter().find(|chip| text(&chip.join("name")).as_deref() == Some("pwmfan") && chip.join("pwm1").exists())
+fn find_fan(root: &Path, fan: &Fan) -> Option<PathBuf> {
+    entries(&root.join("sys/class/hwmon")).into_iter().find(|chip| text(&chip.join("name")).as_deref() == Some(fan.hwmon_name) && chip.join("pwm1").exists())
 }
 
 /// The readings of the CPU and GPU thermal zones, in °C.
@@ -65,10 +66,10 @@ struct Daemon {
 }
 
 /// One tick, which sets or keeps the speed. Returns a line for the log if anything worth one happened.
-fn tick(root: &Path, d: &mut Daemon) -> Option<String> {
+fn tick(root: &Path, fan: &Fan, d: &mut Daemon) -> Option<String> {
     let mut found = false;
     if d.fan.as_ref().is_none_or(|dir| !dir.join("pwm1").exists()) {
-        d.fan = find_fan(root);
+        d.fan = find_fan(root, fan);
         d.taken = false;
         found = d.fan.is_some();
     }
@@ -93,9 +94,9 @@ fn tick(root: &Path, d: &mut Daemon) -> Option<String> {
     if let Err(e) = &read {
         problem.get_or_insert(format!("{}: pwm1: {e}", dir.display()));
     }
-    let now = read.as_ref().ok().copied().or(d.written).unwrap_or(curve::SAFE);
+    let now = read.as_ref().ok().copied().or(d.written).unwrap_or(fan.safe_duty);
     d.temp = curve::smooth(d.temp, curve::temperature(readings(root)));
-    let duty = curve::next(mode, d.temp, now);
+    let duty = curve::next(fan, mode, d.temp, now);
     if duty != now || read.is_err() {
         if let Err(e) = fs::write(dir.join("pwm1"), duty.to_string()) {
             return Some(format!("{}: pwm1: {e}", dir.display()));
@@ -112,17 +113,27 @@ fn tick(root: &Path, d: &mut Daemon) -> Option<String> {
 }
 
 /// Sets the fan to its safe speed, for when the service stops.
-fn safe(root: &Path) -> Result<(), String> {
-    let dir = find_fan(root).ok_or("no fan")?;
-    fs::write(dir.join("pwm1"), curve::SAFE.to_string()).map_err(|e| format!("{}: pwm1: {e}", dir.display()))
+fn safe(root: &Path, fan: &Fan) -> Result<(), String> {
+    let dir = find_fan(root, fan).ok_or("no fan")?;
+    fs::write(dir.join("pwm1"), fan.safe_duty.to_string()).map_err(|e| format!("{}: pwm1: {e}", dir.display()))
 }
 
 fn main() {
     let mut args = std::env::args().skip(1).peekable();
     let to_safe = args.next_if(|a| a == "--safe").is_some();
     let root = PathBuf::from(args.next().unwrap_or_else(|| "/".to_owned()));
+    let profile = match identify(&root) {
+        Ok(profile) => profile,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+    };
+    let Some(fan) = profile.fan else {
+        return;
+    };
     if to_safe {
-        if let Err(e) = safe(&root) {
+        if let Err(e) = safe(&root, &fan) {
             eprintln!("{e}");
             std::process::exit(1);
         }
@@ -132,7 +143,7 @@ fn main() {
     let mut said = None;
     loop {
         // Log each line once, until a different one comes.
-        let line = tick(&root, &mut daemon);
+        let line = tick(&root, &fan, &mut daemon);
         if line.is_some() && line != said {
             if let Some(line) = &line {
                 eprintln!("{line}");
@@ -143,10 +154,33 @@ fn main() {
     }
 }
 
+fn identify(root: &Path) -> Result<Profile, String> {
+    let forced = std::env::var("CLAMSHELL_DEVICE").ok();
+    let read = |relative: &str| -> Result<Vec<u8>, String> {
+        let path = root.join(relative);
+        match fs::read(&path) {
+            Ok(bytes) => Ok(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+            Err(error) => Err(format!("{}: {error}", path.display())),
+        }
+    };
+    let compatible = read("sys/firmware/devicetree/base/compatible")?;
+    let vendor = read("sys/class/dmi/id/sys_vendor")?;
+    let product = read("sys/class/dmi/id/product_name")?;
+    Profile::identify(forced.as_deref(), &compatible, &String::from_utf8_lossy(&vendor), &String::from_utf8_lossy(&product))
+        .map_err(|name| format!("unknown CLAMSHELL_DEVICE {name:?}"))
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    fn tick(root: &Path, daemon: &mut Daemon) -> Option<String> {
+        super::tick(root, &Fan::thor(), daemon)
+    }
+    fn safe(root: &Path) -> Result<(), String> {
+        super::safe(root, &Fan::thor())
+    }
 
     /// A machine's /sys and /run in a temporary directory.
     fn machine() -> tempfile::TempDir {
@@ -189,7 +223,7 @@ mod tests {
         let dir = add_fan(root);
         assert!(tick(root, &mut d).is_some_and(|l| l.starts_with("the fan") && l.ends_with("mode auto")));
         assert_eq!(text(&dir.join("pwm1_enable")).as_deref(), Some("3"));
-        assert_eq!(text(&dir.join("pwm1")).as_deref(), Some(&*curve::next(Mode::Auto, Some(66.5), 70).to_string()));
+        assert_eq!(text(&dir.join("pwm1")).as_deref(), Some(&*curve::next(&Fan::thor(), Mode::Auto, Some(66.5), 70).to_string()));
 
         fs::write(root.join("run/clamshell-fan"), "max").unwrap();
         assert_eq!(tick(root, &mut d).as_deref(), Some("mode max"));
@@ -228,7 +262,7 @@ mod tests {
         fs::write(dir.join("pwm1"), "garbage\n").unwrap();
         let mut d = Daemon::default();
         assert!(tick(root, &mut d).is_some_and(|l| l.contains("pwm1")));
-        let expected = curve::next(Mode::Auto, d.temp, curve::SAFE);
+        let expected = curve::next(&Fan::thor(), Mode::Auto, d.temp, Fan::thor().safe_duty);
         assert_eq!(text(&dir.join("pwm1")).as_deref(), Some(&*expected.to_string()));
         assert_eq!(d.written, Some(expected));
     }

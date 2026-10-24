@@ -5,14 +5,14 @@ DefaultDependencies=no
 After=systemd-tmpfiles-setup.service
 Conflicts=shutdown.target
 Before=sysinit.target shutdown.target
-# (Started again however often it fails: never left stopped, the fan at --safe's half speed.)
+# Restart after failures. A profile without a userspace fan policy exits successfully.
 StartLimitIntervalSec=0
 
 [Service]
 ExecStart=/usr/bin/clamshell-fan
 # (Stopped or failed: the fan left at half speed, not wherever it was, possibly off.)
 ExecStopPost=/usr/bin/clamshell-fan --safe
-Restart=always
+Restart=on-failure
 RestartSec=2
 ProtectSystem=strict
 ProtectHome=yes

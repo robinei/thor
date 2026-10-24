@@ -321,6 +321,7 @@ version = "0.1.0"
 name = "clamshell-fan"
 version = "0.1.0"
 dependencies = [
+ "clamshell-device",
  "tempfile",
 ]
 

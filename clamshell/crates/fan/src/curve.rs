@@ -8,6 +8,7 @@
 
 use std::time::Duration;
 
+use clamshell_device::fan::Fan;
 use clamshell_fan_mode::Mode;
 
 /// How often the daemon reads the sensors and sets the speed.
@@ -18,35 +19,16 @@ pub const TICK: Duration = Duration::from_secs(3);
 /// still available.
 pub type Duty = u8;
 
-/// At or above this temperature (°C) the fan goes to full speed at once, in every mode. It is past the
-/// ends of the curves, so stepping up gradually is no longer worth waiting for.
-pub const HOT: f32 = 95.0;
-/// The speed used when no sensor can be read, and when the daemon stops (`clamshell-fan --safe`).
-pub const SAFE: Duty = 128;
-/// The slowest speed the fan runs at (Armada's `min_pwm`). Starting goes straight to it, and slowing down
-/// never goes below it but straight to off instead.
-const MIN_RUNNING: Duty = 51;
-/// How far below a curve's first point (°C) the fan is turned off, so that it doesn't keep starting and
-/// stopping around that point. Turning it off at all is our choice; Armada's curves never stop the fan.
-const OFF_BELOW: f32 = 5.0;
-/// The most the speed rises in one tick. It falls by at most [`STEP_DOWN`]. Both are Armada's ramp.
-const STEP_UP: Duty = 36;
-const STEP_DOWN: Duty = 6;
 /// How many of the hottest sensors are averaged.
 const HOTTEST: usize = 3;
 /// How much of a new reading [`smooth`] takes.
 const SMOOTHING: f32 = 0.5;
 
-/// Each mode's curve as rising (°C, duty) points. The speed is linear between points, off below the first
-/// and full above the last. Auto is Armada's moderate curve; Quiet starts later and stays slower.
-const AUTO: [(f32, Duty); 6] = [(55.0, 51), (72.0, 77), (78.0, 102), (84.0, 153), (90.0, 204), (96.0, 255)];
-const QUIET: [(f32, Duty); 5] = [(60.0, 51), (78.0, 77), (85.0, 102), (90.0, 153), (95.0, 204)];
-
-/// The curve for `mode` as rising (°C, duty) points. Max has none, as it is always full speed.
-fn curve(mode: Mode) -> &'static [(f32, Duty)] {
+/// Each mode selects a curve from the board policy. Max always runs at full speed.
+fn curve(fan: &Fan, mode: Mode) -> &'static [(u16, Duty)] {
     match mode {
-        Mode::Auto => &AUTO,
-        Mode::Quiet => &QUIET,
+        Mode::Auto => fan.auto,
+        Mode::Quiet => fan.quiet,
         Mode::Max => &[],
     }
 }
@@ -69,41 +51,54 @@ pub fn smooth(was: Option<f32>, now: Option<f32>) -> Option<f32> {
 
 /// The speed for the next tick, in `mode`, with the fan running at `now`. `temp` is in °C as [`smooth`]
 /// gives it, or `None` if no sensor could be read.
-pub fn next(mode: Mode, temp: Option<f32>, now: Duty) -> Duty {
-    let curve = curve(mode);
+pub fn next(fan: &Fan, mode: Mode, temp: Option<f32>, now: Duty) -> Duty {
+    let curve = curve(fan, mode);
     let (Some(&(first_t, first)), Some(&(last_t, _))) = (curve.first(), curve.last()) else {
         return Duty::MAX;
     };
     let Some(t) = temp else {
-        return SAFE;
+        return fan.safe_duty;
     };
-    if t >= HOT {
+    if t >= f32::from(fan.emergency_celsius) {
         return Duty::MAX;
     }
+    let (first_t, last_t) = (f32::from(first_t), f32::from(last_t));
     let target = if t >= last_t {
         Duty::MAX
     } else if t < first_t {
-        if now > 0 && t >= first_t - OFF_BELOW { first } else { 0 }
+        if now > 0 && t >= first_t - f32::from(fan.off_below) { first } else { 0 }
     } else {
         curve
             .windows(2)
             .find_map(|w| match *w {
-                [(t0, d0), (t1, d1)] if t < t1 => Some(d0 as f32 + (d1 as f32 - d0 as f32) * (t - t0) / (t1 - t0)),
+                [(t0, d0), (t1, d1)] if t < f32::from(t1) => Some(d0 as f32 + (d1 as f32 - d0 as f32) * (t - f32::from(t0)) / (f32::from(t1) - f32::from(t0))),
                 _ => None,
             })
             .map_or(Duty::MAX, |d| d.round() as Duty)
     };
     if target >= now {
-        return target.min(now.saturating_add(STEP_UP).max(MIN_RUNNING));
+        return target.min(now.saturating_add(fan.step_up).max(fan.min_running));
     }
-    let down = now.saturating_sub(STEP_DOWN).max(target);
-    if down < MIN_RUNNING { target } else { down }
+    let down = now.saturating_sub(fan.step_down).max(target);
+    if down < fan.min_running { target } else { down }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    const HOT: f32 = Fan::thor().emergency_celsius as f32;
+    const SAFE: Duty = Fan::thor().safe_duty;
+    fn next(mode: Mode, temp: Option<f32>, now: Duty) -> Duty {
+        super::next(&Fan::thor(), mode, temp, now)
+    }
 
+    #[test]
+    fn a_different_board_policy_changes_interpolation_and_fallback_without_device_checks() {
+        let fan = Fan { auto: &[(10, 100), (20, 200)], safe_duty: 222, emergency_celsius: 70, min_running: 1, step_up: 255, step_down: 255, ..Fan::thor() };
+        assert_eq!(super::next(&fan, Mode::Auto, Some(15.0), 0), 150);
+        assert_eq!(super::next(&fan, Mode::Auto, None, 0), 222);
+        assert_eq!(super::next(&fan, Mode::Auto, Some(70.0), 0), 255);
+    }
     #[test]
     fn the_mean_of_the_hottest_sensors_smoothed() {
         assert_eq!(temperature([70.0, 40.0, 80.0, 60.0, 500.0]), Some(70.0), "80, 70 and 60; 500 isn't believed");
