@@ -20,6 +20,8 @@
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TouchLayout {
     pub screen: (f32, f32),
+    /// Measured buffer pixels per millimetre, when the host reports physical dimensions.
+    pub pixels_per_mm: Option<(f32, f32)>,
 }
 
 /// How many fingers (slots) a touchpad tracks.

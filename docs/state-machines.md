@@ -1289,11 +1289,14 @@ backlight and a generic profile given the same kernel name. Snapshot and allocat
 unchanged.
 
 
-The virtual touchpad's pixel-to-millimetre resolution now receives the bottom-screen density from the
-profile through system wiring, rather than assuming the Thor's density on every machine. Thor and the
-VM fixture retain 16.5 px/mm; generic desktop development uses a nominal 3.8 px/mm. The density test
-asserts each value. The VM suite checks the resulting uinput device and real finger forwarding; UI,
-state, snapshots and allocation checks remain unchanged.
+The virtual touchpad prefers density measured from the output's reported physical/logical dimensions,
+with output rotation and buffer scale accounted for. Surface enter/leave and output changes update
+the measurement. Only the matched Thor panel, when it reports no physical dimensions, uses its 16.5 px/mm hint;
+VM and generic profiles have no invented density. Both axes retain their reported resolution. With
+neither measurement nor hint, the touchpad stays unavailable rather than publishing made-up uinput
+resolution; after the initial layout arrives, it waits for input rather than polling for density.
+Unit tests pin measured-over-hint precedence and unknown/invalid dimensions. The VM suite checks the
+resulting uinput device and real finger forwarding; UI snapshot references remain unchanged.
 
 
 Refresh calibration's capability, helper program, frame-length attributes/ranges, step and tolerances

@@ -46,9 +46,19 @@ impl CompositorHandler for App {
         }
     }
 
-    fn surface_enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlSurface, _: &wl_output::WlOutput) {}
+    fn surface_enter(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &WlSurface, output: &wl_output::WlOutput) {
+        if self.screen_of(surface) == Some(Screen::Bottom) {
+            self.bottom_output = Some(output.clone());
+            self.update_bottom_density();
+        }
+    }
 
-    fn surface_leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlSurface, _: &wl_output::WlOutput) {}
+    fn surface_leave(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &WlSurface, output: &wl_output::WlOutput) {
+        if self.screen_of(surface) == Some(Screen::Bottom) && self.bottom_output.as_ref() == Some(output) {
+            self.bottom_output = None;
+            self.update_bottom_density();
+        }
+    }
 }
 
 impl WindowHandler for App {
@@ -101,9 +111,18 @@ impl OutputHandler for App {
 
     fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
 
-    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
+    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, output: wl_output::WlOutput) {
+        if self.bottom_output.as_ref() == Some(&output) {
+            self.update_bottom_density();
+        }
+    }
 
-    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
+    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, output: wl_output::WlOutput) {
+        if self.bottom_output.as_ref() == Some(&output) {
+            self.bottom_output = None;
+            self.update_bottom_density();
+        }
+    }
 }
 
 impl SeatHandler for App {

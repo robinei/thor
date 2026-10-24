@@ -114,7 +114,7 @@ pub fn start<S: Sink + Clone>(
     }
     let rescan = rescanner(sources.clone(), paths.clone(), fetching.clone(), sink.clone());
     detached("frames", frames::spawn(paths.mangohud.clone(), sink.clone()));
-    let touchpad = started("touchpad", touchpad::spawn(touchpad::Config { px_per_mm: env.profile.bottom_pixels_per_mm() }, layout));
+    let touchpad = started("touchpad", touchpad::spawn(layout));
     // Watch input on every device for idle, and the hardware keys in the device's own session.
     detached("input watch", crate::input::watch::spawn(env.device_session, sink.clone()));
     let sway = sway::spawn(env.sway.clone(), env.bottom_output.clone(), sink.clone()).unwrap_or_else(|e| {

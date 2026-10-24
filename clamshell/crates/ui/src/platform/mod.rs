@@ -157,6 +157,7 @@ pub(crate) struct App {
     registry_state: RegistryState,
     seat_state: SeatState,
     output_state: OutputState,
+    bottom_output: Option<smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput>,
     shm: Shm,
     pool: SlotPool,
     qh: QueueHandle<App>,

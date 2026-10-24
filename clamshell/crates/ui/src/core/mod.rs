@@ -105,6 +105,7 @@ pub struct Core {
     text_settle: Option<Instant>,
     /// Where the touchpad area and the bar's targets are, for the touchpad tab's input side.
     touch_layout: Arc<Mutex<TouchLayout>>,
+    bottom_density: Option<(f32, f32)>,
     /// The effects of the event being handled, kept to be reused for the next one.
     effects: Vec<Effect>,
     /// The effects not yet taken by the host, in order.
@@ -151,6 +152,7 @@ impl Core {
             text_active: false,
             text_settle: None,
             touch_layout,
+            bottom_density: None,
             effects: Vec::new(),
             outbox: VecDeque::new(),
             queue: EventQueue::default(),
@@ -308,6 +310,14 @@ impl Core {
         (s.size, s.scale, s.stale) = (size, scale.max(1), true);
     }
 
+    /// Host-reported logical pixels per millimetre. Buffer scale is applied when publishing a frame.
+    pub fn set_bottom_density(&mut self, density: Option<(f32, f32)>) {
+        if self.bottom_density != density {
+            self.bottom_density = density;
+            self.screens[Screen::Bottom].stale = true;
+        }
+    }
+
     /// `screen`'s logical size and its scale.
     pub fn size(&self, screen: Screen) -> ((u32, u32), u32) {
         (self.screens[screen].size, self.screens[screen].scale)
@@ -340,7 +350,7 @@ impl Core {
         s.stale = false;
         s.body = out.touchpad_area;
         if screen == Screen::Bottom {
-            publish(&self.touch_layout, (size_px.0 as f32, size_px.1 as f32));
+            publish(&self.touch_layout, (size_px.0 as f32, size_px.1 as f32), self.bottom_density.map(|(x, y)| (x * s.scale as f32, y * s.scale as f32)));
         }
         self.rows = self.rows.or(out.list_rows.filter(|&rows| rows != self.state.shelf().rows()));
         self.lists.extend(render::list_changes(&self.state, &out));
@@ -372,9 +382,12 @@ fn tell(to: &Sender<Arrival>, wake: &dyn Fn(), arrival: Arrival) -> bool {
 }
 
 /// Tells the virtual touchpad the second screen's size, in pixels.
-fn publish(touch: &Mutex<TouchLayout>, screen: (f32, f32)) {
+fn publish(touch: &Mutex<TouchLayout>, screen: (f32, f32), density: Option<(f32, f32)>) {
     match touch.lock() {
-        Ok(mut layout) => layout.screen = screen,
+        Ok(mut layout) => {
+            layout.screen = screen;
+            layout.pixels_per_mm = density;
+        }
         Err(e) => log::trace!("touch layout: {e}"),
     }
 }

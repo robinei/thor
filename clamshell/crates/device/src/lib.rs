@@ -77,8 +77,8 @@ pub struct Profile {
     pub top: Screen,
     pub bottom: Screen,
     pub touchscreens: &'static [Touchscreen],
-    /// Pixels per millimetre, in tenths, used by the virtual bottom-screen touchpad.
-    pub bottom_density_tenths: u16,
+    /// Fallback pixels per millimetre, in tenths, only when the output reports no physical dimensions.
+    pub bottom_density_tenths: Option<u16>,
     pub refresh_calibration: Option<RefreshCalibration>,
     pub controls: input::Controls,
     pub sensor_hub: Option<gyro::SensorHub>,
@@ -95,7 +95,7 @@ impl Profile {
             top: Screen { connector: "DSI-2", rotation: Rotation::Clockwise90, backlight: Some("ae96000.dsi.0"), colour: PanelColour::icna3520() },
             bottom: Screen { connector: "DSI-1", rotation: Rotation::Clockwise90, backlight: Some("ae94000.dsi.0"), colour: PanelColour::srgb() },
             touchscreens: THOR_TOUCH,
-            bottom_density_tenths: 165,
+            bottom_density_tenths: Some(165),
             refresh_calibration: Some(THOR_REFRESH),
             controls: input::Controls::thor(),
             sensor_hub: Some(gyro::SensorHub::thor()),
@@ -107,7 +107,7 @@ impl Profile {
             top: Screen { connector: "Virtual-1", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb() },
             bottom: Screen { connector: "Virtual-2", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb() },
             touchscreens: VM_TOUCH,
-            bottom_density_tenths: 165,
+            bottom_density_tenths: None,
             refresh_calibration: None,
             controls: input::Controls::thor(),
             sensor_hub: None,
@@ -120,14 +120,14 @@ impl Profile {
             top: Screen { connector: "ClamShell-Top", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb() },
             bottom: Screen { connector: "ClamShell-Bottom", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb() },
             touchscreens: &[],
-            bottom_density_tenths: 38,
+            bottom_density_tenths: None,
             refresh_calibration: None,
             controls: input::Controls::generic(),
             sensor_hub: None,
         }
     }
-    pub const fn bottom_pixels_per_mm(&self) -> f32 {
-        self.bottom_density_tenths as f32 / 10.0
+    pub fn bottom_pixels_per_mm_hint(&self) -> Option<f32> {
+        self.bottom_density_tenths.map(|density| density as f32 / 10.0)
     }
     pub const fn screen(&self, role: ScreenRole) -> Screen {
         match role {
@@ -167,10 +167,10 @@ mod tests {
         assert_eq!(Profile::identify(Some("unknown"), b"ayn,thor\0", "", ""), Err("unknown"));
     }
     #[test]
-    fn touchpad_density_follows_the_profile_including_the_vm_fixture() {
-        assert_eq!(Profile::thor().bottom_pixels_per_mm(), 16.5);
-        assert_eq!(Profile::vm().bottom_pixels_per_mm(), 16.5);
-        assert_eq!(Profile::generic().bottom_pixels_per_mm(), 3.8);
+    fn only_a_known_physical_panel_supplies_a_density_hint() {
+        assert_eq!(Profile::thor().bottom_pixels_per_mm_hint(), Some(16.5));
+        assert_eq!(Profile::vm().bottom_pixels_per_mm_hint(), None);
+        assert_eq!(Profile::generic().bottom_pixels_per_mm_hint(), None);
     }
     #[test]
     fn profiles_always_name_distinct_top_and_bottom_screens() {
