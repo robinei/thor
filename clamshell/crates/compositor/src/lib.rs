@@ -1,4 +1,8 @@
 //! The in-process Wayland server. The nested host presents both screens in one desktop window.
+//!
+//! Clients are told their size and place and nothing waits on them: a window ignoring its size is
+//! scaled. A client's error ends that client, never the server. X11 windows become the same window
+//! facts as Wayland ones in one adapter. See `docs/compositor-mvp.md`, "Keeping the app tail small".
 
 mod geometry;
 mod handlers;

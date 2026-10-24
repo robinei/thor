@@ -88,6 +88,16 @@ updates that document in the same change, and:
 - Comments and docs are plain sentences, matter-of-fact; they say what and why, not what the code
   plainly says.
 
+## The compositor (crates/compositor)
+
+Rules for living with what apps do (`docs/compositor-mvp.md`, "Keeping the app tail small"):
+
+- Enforce, never negotiate: a window is told its size and place; one that ignores them is scaled, and
+  nothing waits on a client.
+- A client's error ends that client, logged, never the session; Xwayland is restarted if it dies.
+- X11 is translated into the same window facts as Wayland in one adapter; the state never sees X11.
+- Each app bug fixed adds a case to the real-client tests.
+
 ## Checking
 
 - `tools/check.sh` (fmt, clippy for debug, dev and release builds, all tests including the snapshots,

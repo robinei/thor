@@ -239,6 +239,38 @@ from a separate process, at about 500 lines, but with its own translation losses
 for us, the risk that per-surface dmabuf feedback and the pacing protocols don't pass through it, leaving
 X11 games composited.
 
+### Keeping the app tail small
+
+Apps will do odd things with their windows, Steam and Proton above all. The tail can't be avoided, but
+each oddity should be harmless to the session, found by us before the user meets it, fixed in one place,
+and fixed once. Seven rules, the first three binding on the code from the start:
+
+1. **Enforce, never negotiate.** The compositor tells a window its size and doesn't wait for agreement:
+   a window that ignores it is scaled, positions it asks for are ignored, there is no stacking to request,
+   and nothing waits on a client's acknowledgement. A misbehaving client can only make its own window look
+   wrong, never placement, the other screen or the session.
+2. **A client's error stays the client's.** Anything a client sends that we can't handle ends that
+   client's connection, logged, never a crash. Xwayland is a supervised child: if it dies it is restarted;
+   the X11 apps go, the session and the Wayland games stay.
+3. **X11's oddities in one place.** The X11 adapter is a translation from a window's X11 properties to the
+   same window facts the Wayland side produces (role, parent, size limits, title, identity, shown or not);
+   the state never sees X11. An app quirk is a fact derived wrongly, fixed in that translation, and tested
+   with the recorded properties as input and the expected facts as output, without running the app.
+4. **The user can always get out.** Home goes through our pad router before any client sees it: Home
+   returns to the shelf, Home+B closes the window, held it ends the program's scope, whatever the window
+   does. The worst case of an app bug is pressing Home.
+5. **Bugs fixed once stay fixed.** A set of real clients in the headless harness (a Wayland app, an X11
+   app, a fixed-size dialog, a window ignoring its size, one that hides and reappears, a menu), growing by
+   a case with each app bug fixed. On the device, a fixed-size ring of the last few hundred window events,
+   dumped by a control command, replays as a state test; the maintenance agent can attach a dump to a
+   report.
+6. **Defaults that avoid the hard paths:** games through Wine's Wayland driver, so most game traffic never
+   reaches Xwayland, and Steam in Big Picture mode (`-gamepadui`): one fullscreen controller-driven window
+   instead of the desktop client's many windows and menus.
+7. **Later, once the harness exists:** a randomized client that maps, unmaps, resizes, asks for
+   fullscreen and opens menus, with the session's invariants checked after every step, as the randomized
+   state test does one layer up.
+
 ### HDR: later, kept possible
 
 HDR is wanted, as the experiment in `docs/thor-gameplan.md` describes (the panels take no HDR signal: the
@@ -404,6 +436,8 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    Visible client idle inhibitors feed the existing idle state machine. Xwayland, screenshot requests
    and the full clipboard remain to implement. The current host puts the logical screens side by side
    for desktop testing.
+   Rules 1-3 of section 3, "Keeping the app tail small", hold for all of it; rule 5's real-client set
+   and window-event ring, and rule 6's defaults (Wine's Wayland driver, Big Picture), are part of this phase.
 3. **The generic DRM backend, on the VM:** udev, DRM, GBM, GLES, libseat, libinput, two outputs, power,
    refresh, dmabuf feedback with scanout tranches. The VM image boots either compositor; the VM suite
    checks both.
@@ -440,6 +474,9 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
   slow app not shown early; down and up with rules placing at the first configure; quit; the front falling
   back; a stray window; dialogs over their parent; text-input commit and key injection; the clipboard; touch
   routing; screenshot pixel hashes; the allocation budget. Xwayland tests opt-in.
+- The real-client set and the replay of recorded window events (section 3, "Keeping the app tail
+  small"); each app bug fixed adds a case. Later, a randomized client with the session's invariants
+  checked after every step.
 - A control socket with replies (`ctl windows`, `ctl screenshot FILE`) for the VM suite and any remaining
   shell test.
 - The VM suite keeps DRM on virtio-gpu, libinput, logind and the session's files (GLES through llvmpipe, or
