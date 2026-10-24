@@ -24,10 +24,9 @@ mod wire;
 
 use super::motion::{MotionSource, Rate, Sample};
 use crate::os::qrtr;
+use clamshell_device::gyro::SensorHub as HubFacts;
 use wire::{Qmi, Value, pb_bytes, pb_fields, pb_fixed32, pb_fixed64, pb_varint_field, qmi_message, qmi_request};
 
-/// The sensor hub's client service.
-const SERVICE: u32 = 400;
 /// The sensor API's message ids, from sns_suid.proto, sns_std_sensor.proto and sns_client.proto.
 const MSG_SUID_REQUEST: u32 = 512;
 const MSG_SUID_EVENT: u32 = 768;
@@ -39,16 +38,6 @@ const SUID_LOOKUP: Suid = Suid { low: 0xabab_abab_abab_abab, high: 0xabab_abab_a
 /// Our processor, the application processor, with reports only while it is awake.
 const PROCESSOR_APSS: u64 = 1;
 const DELIVERY_NO_WAKEUP: u64 = 1;
-/// Samples per second, as PB-OS uses.
-const RATE_HZ: f32 = 200.0;
-/// The hub's clock rate.
-const TICKS_PER_SECOND: u64 = 19_200_000;
-
-/// Turns the Thor's sensor frame into the Deck's: Deck x = -sensor y, y = sensor x. It is a quarter turn,
-/// because the Thor's panels are portrait. The turn is PB-OS's, "the frame MaSi's and Batocera's bridges
-/// validated on a Thor".
-const THOR_TURN: [[f32; 3]; 3] = [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]];
-
 /// A sensor's id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Suid {
@@ -59,6 +48,7 @@ struct Suid {
 /// The sensor hub's gyro, while there is one.
 pub struct SensorHub {
     socket: OwnedFd,
+    facts: HubFacts,
     /// The hub's service node and port, once the name service has given them.
     service: Option<(u32, u32)>,
     /// The gyro that is streaming.
@@ -69,19 +59,14 @@ pub struct SensorHub {
 }
 
 impl SensorHub {
-    /// The Thor's sensor hub, found by the device tree, or none on other machines. It waits for the hub's
-    /// service, which may come up later than this, with thor-sensors' hexagonrpcd.
-    pub fn find() -> Option<SensorHub> {
-        let compatible = std::fs::read("/sys/firmware/devicetree/base/compatible")
-            .inspect_err(|e| log::debug!("pad: reading /sys/firmware/devicetree/base/compatible: {e}"))
-            .ok()?;
-        if !compatible.split(|&b| b == 0).any(|c| c == b"ayn,thor") {
-            return None;
-        }
+    /// Uses the profile's hub after normal evdev motion discovery found none. Service availability
+    /// remains asynchronous: firmware can announce the hub after startup or resume.
+    pub fn find(facts: Option<HubFacts>) -> Option<SensorHub> {
+        let facts = facts?;
         let hub = (|| {
             let (socket, node) = qrtr::socket()?;
-            qrtr::lookup(&socket, node, SERVICE)?;
-            Ok::<_, io::Error>(SensorHub { socket, service: None, gyro: None, txn: 0, buf: vec![0; 65536] })
+            qrtr::lookup(&socket, node, facts.service)?;
+            Ok::<_, io::Error>(SensorHub { socket, facts, service: None, gyro: None, txn: 0, buf: vec![0; 65536] })
         })();
         hub.map_err(|e| log::warn!("pad: the sensor hub: {e}")).ok().inspect(|_| log::info!("pad: gyro from the sensor hub, once it is up"))
     }
@@ -104,7 +89,7 @@ impl SensorHub {
     /// Handles one datagram from the name service, saying the hub came, so the gyro is looked up, or went.
     fn control(&mut self, pkt: &[u8]) {
         match qrtr::control(pkt) {
-            Some((qrtr::NEW_SERVER, SERVICE, node, port)) if node != 0 || port != 0 => {
+            Some((qrtr::NEW_SERVER, service, node, port)) if service == self.facts.service && (node != 0 || port != 0) => {
                 log::info!("pad: the sensor hub is up");
                 self.service = Some((node, port));
                 self.gyro = None;
@@ -114,7 +99,7 @@ impl SensorHub {
                 pb_varint_field(&mut lookup, 3, 1); // default_only
                 self.request(SUID_LOOKUP, MSG_SUID_REQUEST, &lookup);
             }
-            Some((qrtr::DEL_SERVER, SERVICE, node, port)) if self.service == Some((node, port)) => {
+            Some((qrtr::DEL_SERVER, service, node, port)) if service == self.facts.service && self.service == Some((node, port)) => {
                 log::info!("pad: the sensor hub is gone (until it is back)");
                 self.service = None;
                 self.gyro = None;
@@ -136,16 +121,18 @@ impl SensorHub {
                 None => {
                     if let Some(suid) = suid_of(report, b"gyro") {
                         let mut config = Vec::new();
-                        pb_fixed32(&mut config, 1, RATE_HZ.to_bits());
+                        pb_fixed32(&mut config, 1, f32::from(self.facts.rate_hz).to_bits());
                         if self.request(suid, MSG_STD_SENSOR_CONFIG, &config) {
                             self.gyro = Some(suid);
-                            log::info!("pad: the gyro streams at {RATE_HZ} Hz");
+                            log::info!("pad: the gyro streams at {} Hz", self.facts.rate_hz);
                         }
                     }
                 }
                 Some(_) => samples(report, |[x, y, z], ticks| {
-                    let d = turned(THOR_TURN, [x, y, z]).map(f32::to_degrees);
-                    let at = Duration::from_nanos(u64::try_from(u128::from(ticks) * 1_000_000_000 / u128::from(TICKS_PER_SECOND)).unwrap_or(u64::MAX));
+                    let d = turned(self.facts.axes, [x, y, z]).map(f32::to_degrees);
+                    let at = Duration::from_nanos(
+                        u64::try_from(u128::from(ticks) * 1_000_000_000 / u128::from(self.facts.ticks_per_second.max(1))).unwrap_or(u64::MAX),
+                    );
                     out.push(Sample { rate: Rate { pitch: d[0], yaw: d[1], roll: d[2] }, at });
                 }),
             },
@@ -190,8 +177,8 @@ impl MotionSource for SensorHub {
 }
 
 /// `turn` × `v`.
-fn turned(turn: [[f32; 3]; 3], v: [f32; 3]) -> [f32; 3] {
-    turn.map(|row| row.iter().zip(v).map(|(a, b)| a * b).sum())
+fn turned(turn: [[i8; 3]; 3], v: [f32; 3]) -> [f32; 3] {
+    turn.map(|row| row.iter().zip(v).map(|(a, b)| f32::from(*a) * b).sum())
 }
 
 fn pb_suid(s: Suid) -> Vec<u8> {
@@ -373,6 +360,6 @@ mod tests {
 
     #[test]
     fn the_thors_frame_is_turned_a_quarter() {
-        assert_eq!(turned(THOR_TURN, [1.0, 2.0, 3.0]), [-2.0, 1.0, 3.0]);
+        assert_eq!(turned(HubFacts::thor().axes, [1.0, 2.0, 3.0]), [-2.0, 1.0, 3.0]);
     }
 }

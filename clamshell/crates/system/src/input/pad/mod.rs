@@ -120,7 +120,13 @@ impl Taken {
 /// Owns the controller whenever one is connected, with its ids in `taken`. `spec` comes from
 /// CLAMSHELL_GAMEPAD. Without a controller it looks again when /dev/input changes, and also every
 /// [`RETRY`].
-pub fn spawn(spec: DeviceSpec, controls: clamshell_device::input::Controls, taken: Taken, sink: impl Sink) -> io::Result<Worker<Command>> {
+pub fn spawn(
+    spec: DeviceSpec,
+    controls: clamshell_device::input::Controls,
+    sensor_hub: Option<clamshell_device::gyro::SensorHub>,
+    taken: Taken,
+    sink: impl Sink,
+) -> io::Result<Worker<Command>> {
     let watched = crate::input::watch::devices_watch();
     let retry = if watched.is_some() { RETRY } else { RETRY_UNWATCHED };
     let worker = Worker::spawn_belled("pad", move |commands, bell| {
@@ -128,6 +134,7 @@ pub fn spawn(spec: DeviceSpec, controls: clamshell_device::input::Controls, take
             bell,
             spec,
             controls,
+            sensor_hub,
             taken,
             sink,
             route: PadRoute::default(),
@@ -168,6 +175,7 @@ struct PadThread<S> {
     bell: Bell,
     spec: DeviceSpec,
     controls: clamshell_device::input::Controls,
+    sensor_hub: Option<clamshell_device::gyro::SensorHub>,
     taken: Taken,
     sink: S,
     route: PadRoute,
@@ -206,10 +214,10 @@ struct Controller {
 
 /// The gyro of the controller named `name` at `phys`: its own motion sensor, or else the Thor's sensor
 /// hub.
-fn find_motion(name: &str, phys: &str) -> Option<Box<dyn MotionSource>> {
+fn find_motion(name: &str, phys: &str, sensor_hub: Option<clamshell_device::gyro::SensorHub>) -> Option<Box<dyn MotionSource>> {
     EvdevMotion::find(name, phys)
         .map(|m| Box::new(m) as Box<dyn MotionSource>)
-        .or_else(|| sensor_hub::SensorHub::find().map(|m| Box::new(m) as Box<dyn MotionSource>))
+        .or_else(|| sensor_hub::SensorHub::find(sensor_hub).map(|m| Box::new(m) as Box<dyn MotionSource>))
 }
 
 impl<S: Sink> PadThread<S> {
@@ -312,7 +320,7 @@ impl<S: Sink> Service for PadThread<S> {
         }
         let grabbed = Grabbed::new(real)?;
         log::info!("pad: {} grabbed; games see the virtual pad", grabbed.device().name().unwrap_or("controller"));
-        let motion = find_motion(&name, &phys);
+        let motion = find_motion(&name, &phys, self.sensor_hub);
         let letters = device::letter_codes(self.controls, &name, &phys);
         if letters {
             log::info!("pad: its driver reports X and Y by letter: read by place");
@@ -533,7 +541,7 @@ impl<S: Sink> PadThread<S> {
                 }
                 Ok(Command::Woke) => {
                     if c.motion.is_none() {
-                        c.motion = find_motion(&c.name, &c.phys);
+                        c.motion = find_motion(&c.name, &c.phys, self.sensor_hub);
                     }
                 }
                 Ok(Command::CalibrateSticks) => {

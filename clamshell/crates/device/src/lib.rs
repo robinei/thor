@@ -1,5 +1,6 @@
 //! Facts hardware cannot announce. Identification is pure; callers read the device tree and DMI.
 pub mod colour;
+pub mod gyro;
 pub mod input;
 use colour::PanelColour;
 
@@ -80,6 +81,7 @@ pub struct Profile {
     pub bottom_density_tenths: u16,
     pub refresh_calibration: Option<RefreshCalibration>,
     pub controls: input::Controls,
+    pub sensor_hub: Option<gyro::SensorHub>,
 }
 impl Default for Profile {
     fn default() -> Self {
@@ -96,6 +98,7 @@ impl Profile {
             bottom_density_tenths: 165,
             refresh_calibration: Some(THOR_REFRESH),
             controls: input::Controls::thor(),
+            sensor_hub: Some(gyro::SensorHub::thor()),
         }
     }
     pub const fn vm() -> Self {
@@ -107,6 +110,7 @@ impl Profile {
             bottom_density_tenths: 165,
             refresh_calibration: None,
             controls: input::Controls::thor(),
+            sensor_hub: None,
         }
     }
     /// Unknown physical connectors remain unmatched; desktop views still draw as ordinary windows.
@@ -119,6 +123,7 @@ impl Profile {
             bottom_density_tenths: 38,
             refresh_calibration: None,
             controls: input::Controls::generic(),
+            sensor_hub: None,
         }
     }
     pub const fn bottom_pixels_per_mm(&self) -> f32 {

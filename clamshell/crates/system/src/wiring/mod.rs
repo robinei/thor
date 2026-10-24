@@ -131,7 +131,7 @@ pub fn start<S: Sink + Clone>(
     );
     // The controller is grabbed for good, with a virtual Xbox pad for games.
     let pad_taken = pad::Taken::default();
-    let pad = started("pad", pad::spawn(env.gamepad.clone(), env.profile.controls, pad_taken.clone(), sink.clone()));
+    let pad = started("pad", pad::spawn(env.gamepad.clone(), env.profile.controls, env.profile.sensor_hub, pad_taken.clone(), sink.clone()));
     // Send the sticks' calibrations as saved. The state has them too, from the same file.
     if let Some(dir) = paths.state_dir.as_deref() {
         pad.send(pad::Command::Sticks(Store::open(dir).sticks()));

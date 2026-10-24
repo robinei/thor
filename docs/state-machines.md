@@ -1330,3 +1330,12 @@ list of drivers whose X/Y codes use letters rather than positions; input code no
 drivers in its decision. Thor/VM include rsinput and xpad, generic includes xpad. The existing swap,
 resynchronisation and routing paths are unchanged. Profile tests pin each convention and reject an
 unlisted driver; the existing event tests pin the resulting canonical button meanings.
+
+
+Motion discovery still tries a controller's advertised evdev sensor first. Only if absent does it use
+the profile's optional sensor hub. Its QMI service, sample rate, clock rate and mounting matrix are
+profile facts; the input thread no longer reads compatible or identifies a Thor. Reconnection after
+sleep takes the same facts. Thor retains 400/200 Hz/19.2 MHz and the quarter-turn axis transform;
+VM/generic claim no hub, while detected evdev sensors remain usable. Existing wire/sample tests pin
+protocol parsing and the profile-driven transform. Profile tests assert hub presence and timing;
+firmware service appearance/disappearance and physical mounting remain device checks.
