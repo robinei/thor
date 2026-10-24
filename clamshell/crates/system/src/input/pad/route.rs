@@ -191,6 +191,7 @@ enum Home {
 /// second screen.
 pub struct PadRouter {
     route: PadRoute,
+    watch_activity: bool,
     home: Home,
     /// Buttons a combination took. Their release stays ClamShell's too.
     taken: Vec<KeyCode>,
@@ -223,6 +224,7 @@ impl PadRouter {
         remap.set_keymap(keymap, &snapshot, false, out);
         let mut router = PadRouter {
             route,
+            watch_activity: false,
             home: Home::Up,
             taken: Vec::new(),
             stick_range: ranges.stick,
@@ -302,6 +304,11 @@ impl PadRouter {
             Some(mapping) => mapping.release(out),
             None => self.remap.release(out),
         }
+    }
+
+    /// Arms one activity report for the next game input after keyboard focus leaves the top window.
+    pub fn watch_activity(&mut self, watch: bool) {
+        self.watch_activity = watch;
     }
 
     /// Moves the pad to route `to`. The mapping it leaves lets go of what it holds. The virtual pad is
@@ -454,9 +461,11 @@ impl PadRouter {
             _ => {}
         }
         self.snapshot.update(raw);
-        if self.route == PadRoute::Game
+        if self.watch_activity
+            && self.route == PadRoute::Game
             && (key.is_some_and(|(_, press)| press == Press::Down) || raw.as_abs().is_some_and(|(_, value)| value.unsigned_abs() > 4096))
         {
+            self.watch_activity = false;
             out.events.push(Event::PadActive);
         }
         // Away from the game, the Back button means back on ClamShell's screens and nothing with the pad
@@ -573,6 +582,33 @@ mod tests {
         }
         down.sort_by_key(|k| k.0);
         down
+    }
+
+    #[test]
+    fn game_activity_is_reported_once_per_keyboard_focus_loss() {
+        let (mut r, mut out) = router(PadRoute::Game);
+        let now = Instant::now();
+        out.events.clear();
+        for _ in 0..100 {
+            r.event(key(KeyCode::BTN_SOUTH, Press::Down), now, &mut out);
+            r.event(key(KeyCode::BTN_SOUTH, Press::Up), now, &mut out);
+            r.event(Raw::abs(AbsoluteAxisCode::ABS_X, 30000), now, &mut out);
+        }
+        assert!(out.events.is_empty(), "normal play sends no state activity events");
+        r.watch_activity(true);
+        for _ in 0..100 {
+            r.event(Raw::abs(AbsoluteAxisCode::ABS_X, 30000), now, &mut out);
+            r.event(key(KeyCode::BTN_SOUTH, Press::Down), now, &mut out);
+            r.event(key(KeyCode::BTN_SOUTH, Press::Up), now, &mut out);
+        }
+        assert_eq!(out.events, vec![Event::PadActive]);
+        r.watch_activity(false);
+        r.watch_activity(true);
+        r.event(key(KeyCode::BTN_SOUTH, Press::Up), now, &mut out);
+        r.event(Raw::abs(AbsoluteAxisCode::ABS_X, 0), now, &mut out);
+        assert_eq!(out.events, vec![Event::PadActive], "release and rest do not take focus");
+        r.event(key(KeyCode::BTN_SOUTH, Press::Down), now, &mut out);
+        assert_eq!(out.events, vec![Event::PadActive, Event::PadActive]);
     }
 
     #[test]
@@ -852,7 +888,7 @@ mod tests {
         r.event(Raw::abs(AbsoluteAxisCode::ABS_RX, 0), now, &mut out);
         r.event(Raw::abs(AbsoluteAxisCode::ABS_RX, 30000), now, &mut out);
         assert!(out.pad.contains(&Raw::abs(AbsoluteAxisCode::ABS_RX, 30000)));
-        assert_eq!(out.events.last(), Some(&Event::PadActive));
+        assert_eq!(out.events.last(), Some(&Event::HomeHeld(false)));
     }
 
     #[test]

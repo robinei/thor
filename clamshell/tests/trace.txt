@@ -13,12 +13,14 @@ Start
 Units [zelda_lttp_650a1e]
   Apply settings of zelda-lttp
 open game on clamshell-run-zelda_lttp_650a1e
+  PadActivity(true)
   PadRoute Game
 Units []
   RecordPlay zelda-lttp from 1759900000 for 15660s
   Apply settings of all
 close 900
   Window ShowShelf
+  PadActivity(false)
   PadRoute Ui
 Shelf(ToggleFavourite)
   Save Favourites(["zelda-lttp"])
@@ -49,6 +51,7 @@ Units [1__the_shores_of_030fb1]
   Browse in use 1 files
   Apply settings of tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv
 open game on clamshell-run-1__the_shores_of_030fb1
+  PadActivity(true)
   PadRoute Game
 Units []
   RecordPlay tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv from 1759900000 for 3600s
@@ -57,6 +60,7 @@ Units []
   Apply settings of all
 close 900
   Window ShowShelf
+  PadActivity(false)
   PadRoute Ui
 -- top-group.png
 -- top-recent.png
@@ -112,12 +116,14 @@ Pointer(Activate(Settings(Tile(ChargeLimit))))
 Units [zelda_lttp_650a1e]
   Apply settings of zelda-lttp
 open game on clamshell-run-zelda_lttp_650a1e
+  PadActivity(true)
   PadRoute Game
 Units []
   RecordPlay zelda-lttp from 1759999940 for 60s
   Apply settings of all
 close 900
   Window ShowShelf
+  PadActivity(false)
   PadRoute Ui
 -- settings.png
 -- settings-env.png

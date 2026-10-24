@@ -471,7 +471,7 @@ mod tests {
         s.observed(vec![one.clone(), two.clone()]);
         let changed = Window { title: "new title".into(), unit: Some("app-two.scope".into()), visible: true, ..two };
         let windows = vec![changed, one];
-        assert_eq!(s.observed(windows.clone()), vec![Effect::PadRoute(crate::PadRoute::Game)]);
+        assert_eq!(s.observed(windows.clone()), vec![Effect::PadActivity(true), Effect::PadRoute(crate::PadRoute::Game)]);
         assert_eq!(s.session().windows(), windows);
         assert!(s.observed(windows.clone()).is_empty());
         assert_eq!(s.session().windows(), windows);
@@ -503,10 +503,18 @@ mod tests {
         assert_eq!(s.applied(WindowEvent::Activate(7).into()), vec![Effect::Window(WindowCommand::FocusWindow(7)), Effect::PadRoute(crate::PadRoute::Game)]);
         assert_eq!(
             s.applied(WindowEvent::Activate(8).into()),
-            vec![Effect::Window(WindowCommand::ShowDown(8)), Effect::Window(WindowCommand::KeyboardFocus(8)), Effect::Watch(crate::Watch::Metrics, false)]
+            vec![
+                Effect::Window(WindowCommand::ShowDown(8)),
+                Effect::Window(WindowCommand::KeyboardFocus(8)),
+                Effect::Watch(crate::Watch::Metrics, false),
+                Effect::PadActivity(true)
+            ]
         );
         assert!(s.bottom().shows_windows(s.session()));
-        assert_eq!(s.applied(WindowEvent::Activate(shelf_id).into()), vec![Effect::Window(WindowCommand::ShowShelf), Effect::PadRoute(crate::PadRoute::Ui)]);
+        assert_eq!(
+            s.applied(WindowEvent::Activate(shelf_id).into()),
+            vec![Effect::Window(WindowCommand::ShowShelf), Effect::PadActivity(false), Effect::PadRoute(crate::PadRoute::Ui)]
+        );
     }
 
     #[test]
@@ -514,8 +522,8 @@ mod tests {
         let mut s = state();
         s.observed(vec![win(7, "top", "top", true), Window { down: true, visible: true, ..win(8, "bottom", "bottom", false) }]);
         assert_eq!(s.session().keyboard_focus(), Some(7));
-        for target in [Some(8), None, Some(7)] {
-            assert!(s.applied(WindowEvent::KeyboardFocus(target).into()).is_empty());
+        for (target, effects) in [(Some(8), vec![Effect::PadActivity(true)]), (None, vec![]), (Some(7), vec![Effect::PadActivity(false)])] {
+            assert_eq!(s.applied(WindowEvent::KeyboardFocus(target).into()), effects);
             assert_eq!(s.session().keyboard_focus(), target);
             assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
             assert_eq!(s.session().bottom_window().map(|w| w.id), Some(8));
@@ -858,8 +866,9 @@ mod tests {
     fn pad_activity_returns_keyboard_focus_to_top_without_moving_windows() {
         let mut s = state();
         s.observed(vec![win(7, "one", "one", true), Window { down: true, visible: true, ..win(8, "two", "two", false) }]);
-        s.applied(WindowEvent::KeyboardFocus(Some(8)).into());
-        assert_eq!(s.applied(Event::PadActive), vec![Effect::Window(WindowCommand::FocusWindow(7))]);
+        assert_eq!(s.applied(WindowEvent::KeyboardFocus(Some(8)).into()), vec![Effect::PadActivity(true)]);
+        // Focus is restored before the activity watch is disarmed; another focus loss can then arm it.
+        assert_eq!(s.applied(Event::PadActive), vec![Effect::Window(WindowCommand::FocusWindow(7)), Effect::PadActivity(false)]);
         assert_eq!(s.session().keyboard_focus(), Some(7));
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(8));
         assert!(s.applied(Event::PadActive).is_empty());

@@ -715,3 +715,17 @@ objects to check mapping, hiding/showing, subsurface ownership, multiple inhibit
 surface destruction. The existing state idle tests pin dim/off/sleep effects and the desktop sleep
 guard; no separate policy is introduced in the compositor. The nested host still leaves physical
 output power to its parent; actual output power belongs to the DRM backend.
+
+### One-shot game-pad activity (state/sync, system/input/pad)
+
+Top content without keyboard focus arms PadActivity(true). A game-pad press or deflection sends one
+PadActive and disarms the router locally, before another input can be reported. State restores top
+keyboard focus and sync sends PadActivity(false). Further game input sends no activity events. Losing
+keyboard focus again rearms the watch; repeated focus observations do not. The pad supervisor retains
+the watch while the controller is absent and installs it on reconnection.
+
+`game_activity_is_reported_once_per_keyboard_focus_loss` exercises hundreds of presses and deflections
+with no watch, then one report per arming. The session keyboard-focus and pad-activity tests pin the
+effect sequence and unchanged placement. The randomized invariant checks the watch against top
+keyboard focus after every event. Snapshot pixels and focus are unchanged; the trace adds only watch
+arming/disarming in the three scenarios that move keyboard focus away and back.

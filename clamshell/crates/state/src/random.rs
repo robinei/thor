@@ -209,6 +209,7 @@ impl World {
 #[derive(Default)]
 struct Sent {
     route: Option<PadRoute>,
+    pad_activity: bool,
     keymap: Option<crate::keymap::Keymap>,
     apply: Option<(Option<Arc<str>>, crate::settings::Values)>,
     status: bool,
@@ -730,6 +731,7 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
     for e in effects {
         match e {
             Effect::PadRoute(r) => sent.route = Some(*r),
+            Effect::PadActivity(watch) => sent.pad_activity = *watch,
             Effect::Keymap(k) => sent.keymap = Some(k.clone()),
             Effect::Apply { entry, settings } => sent.apply = Some((entry.clone(), *settings)),
             Effect::Watch(Watch::Status, on) => sent.status = *on,
@@ -757,6 +759,10 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
     ensure!(sent.apply.as_ref() == Some(&apply), "2: applied {:?}, in force {:?}", sent.apply, apply);
 
     // 3. The pad's route.
+    ensure!(
+        sent.pad_activity == s.session().top_window().is_some_and(|w| Some(w.id) != s.session().keyboard_focus()),
+        "pad activity watch differs from keyboard focus"
+    );
     let route = s.pad().route();
     let listening = s.listening();
     let moving = s.dock().moving().is_some() && s.bottom().tab() == Tab::Dock;

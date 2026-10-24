@@ -40,6 +40,8 @@ pub enum Effect {
     Touchpad(Vec<crate::bottom::touch::Contact>),
     /// Where the controller's input goes now.
     PadRoute(PadRoute),
+    /// Report the first game-pad input while the top window lacks keyboard focus.
+    PadActivity(bool),
     /// Ask the compositor to show, close or move windows.
     Window(WindowCommand),
     /// End an entry's slice, which holds all its launches. Normally it is stopped: systemd asks its

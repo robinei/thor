@@ -69,6 +69,7 @@ const RETRY_UNWATCHED: Duration = Duration::from_secs(1);
 #[derive(Debug, Clone)]
 pub enum Command {
     Route(PadRoute),
+    WatchActivity(bool),
     /// The keymap in force. Default has no bindings.
     Keymap(Box<Keymap>),
     /// Calibrate the gyro from its next samples.
@@ -129,6 +130,7 @@ pub fn spawn(spec: DeviceSpec, taken: Taken, sink: impl Sink) -> io::Result<Work
             taken,
             sink,
             route: PadRoute::default(),
+            watch_activity: false,
             keymap: Keymap::default(),
             devices: None,
             effects: Effects::default(),
@@ -167,6 +169,7 @@ struct PadThread<S> {
     taken: Taken,
     sink: S,
     route: PadRoute,
+    watch_activity: bool,
     keymap: Keymap,
     devices: Option<VirtualDevices>,
     /// Games' rumble effects on the virtual pad, and the Rumble setting.
@@ -220,6 +223,12 @@ impl<S: Sink> PadThread<S> {
                 self.route = route;
                 if let Some((router, out)) = router {
                     router.set_route(route, out);
+                }
+            }
+            Command::WatchActivity(watch) => {
+                self.watch_activity = watch;
+                if let Some((router, _)) = router {
+                    router.watch_activity(watch);
                 }
             }
             Command::Rumble(setting) => self.rumble_setting = setting,

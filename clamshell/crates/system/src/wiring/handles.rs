@@ -66,6 +66,7 @@ impl Handles {
                 log::info!("effect: {effect:?}");
                 self.pad.send(pad::Command::Route(*route));
             }
+            Effect::PadActivity(watch) => self.pad.send(pad::Command::WatchActivity(*watch)),
             Effect::Touchpad(contacts) => self.touchpad.send(touchpad::Command::Contacts(contacts.clone())),
             Effect::Key(stroke) => match self.keyboard.as_mut() {
                 Some(kb) => {

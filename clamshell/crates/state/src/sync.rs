@@ -49,6 +49,7 @@ pub(crate) struct Wanted<'a> {
     pub(crate) keymapping: &'a Keymapping,
     /// Where the pad goes.
     pub(crate) route: PadRoute,
+    pub(crate) pad_activity: bool,
 }
 
 /// What the outside was last sent.
@@ -84,6 +85,7 @@ pub(crate) struct Sent {
     keymap_sent: Option<crate::keymap::Keymap>,
     /// Where the pad was last sent, or None to send it again.
     route: Option<PadRoute>,
+    pad_activity: bool,
 }
 
 impl Default for Sent {
@@ -106,6 +108,7 @@ impl Default for Sent {
             #[cfg(debug_assertions)]
             keymap_sent: None,
             route: None,
+            pad_activity: false,
         }
     }
 }
@@ -299,6 +302,10 @@ impl Sent {
 
     /// The pad goes where it is wanted (see [`crate::Pad::reconcile`]).
     fn pad_route(&mut self, w: &Wanted, out: &mut Out) {
+        if self.pad_activity != w.pad_activity {
+            self.pad_activity = w.pad_activity;
+            out.effects.push(Effect::PadActivity(w.pad_activity));
+        }
         if self.route.replace(w.route) != Some(w.route) {
             out.effects.push(Effect::PadRoute(w.route));
         }
