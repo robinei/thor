@@ -850,3 +850,26 @@ exits normally, and the previous window reappears; Home still returns to the she
 EGL, alongside its shared-memory, clipboard and screenshot checks. The EGL fixture is built separately
 as stated in the script. This exercises EGL rendering over the available software transport; native
 dmabuf advertisement/import and hardware GPU-client coverage remain separate work.
+
+### Native dmabuf imports (compositor/dmabuf)
+
+The host advertises exactly its renderer's dmabuf formats and modifiers, retaining higher-precision
+formats. A renderer with no formats advertises no dmabuf global. When EGL identifies a render device,
+feedback describes that device and its sampling formats; otherwise the host advertises version 3.
+Feedback-file creation failure is logged and also uses version 3. No scanout preference is advertised
+by the nested backend.
+
+A create request queues an import for the next redraw. The renderer validates it before scene drawing:
+success completes the buffer notification once; failure logs the reason and posts a fatal client
+protocol error. Each client may have at most 64 pending imports in one dispatch; exceeding that limit
+ends that client. Queued notifications are failed on host shutdown. A frame with imports forces a full
+render, restoring the EGL window target even if scene damage would otherwise be empty. No window event
+or state apply is produced by buffer imports, and no intermediate 8-bit conversion is used.
+
+`a_rejected_dmabuf_disconnects_only_its_client` receives real version-3 format events and version-4
+feedback, including a 10-bit format and the native-byte format table/device. It submits a buffer to a
+mock renderer boundary, asserts that boundary was reached exactly once and rejected the requesting
+connection, then changes a healthy mapped window's title. The accepted-import protocol test uses a
+mock successful boundary to assert one created buffer and no work on an empty queue. This tests
+protocol completion, not a GPU importing an ordinary file. The nested software-EGL smoke test remains
+green; successful native hardware dmabuf import still needs GPU-client coverage.

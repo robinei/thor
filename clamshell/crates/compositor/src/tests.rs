@@ -28,6 +28,11 @@ struct Client {
     touches: Vec<TouchRecord>,
     keys: Vec<(u32, bool)>,
     text: Vec<keyboard_tests::TextRecord>,
+    dmabuf_formats: Vec<(u32, u64)>,
+    feedback_device: Vec<u8>,
+    feedback_table: Vec<u8>,
+    feedback_done: bool,
+    imported_buffers: usize,
 }
 
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Client {
@@ -468,10 +473,24 @@ mod idle_tests;
 
 #[test]
 fn a_protocol_error_disconnects_only_its_client() {
+    client_error_is_isolated(false);
+}
+
+#[test]
+fn a_rejected_dmabuf_disconnects_only_its_client() {
+    client_error_is_isolated(true);
+}
+
+fn client_error_is_isolated(dmabuf_error: bool) {
     let mut display = Display::<Server>::new().unwrap();
     let config =
         Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
     let mut server = Server::new(State::new(Init::default()), config, display.handle(), || {}, |_| Process::default(), |_| {}).unwrap();
+    use smithay::backend::allocator::{Format, Fourcc, Modifier};
+    server.advertise_dmabuf_formats(
+        [Format { code: Fourcc::Xrgb8888, modifier: Modifier::Linear }, Format { code: Fourcc::Abgr2101010, modifier: Modifier::Linear }],
+        dmabuf_error.then_some(42),
+    );
     server.core.handle(Event::Start);
     server.frame();
     let (good_server, good_client) = UnixStream::pair().unwrap();
@@ -507,13 +526,38 @@ fn a_protocol_error_disconnects_only_its_client() {
         let bad = Connection::from_socket(bad_client).unwrap();
         let (globals, mut bad_queue) = registry_queue_init::<Client>(&bad).unwrap();
         let qh = bad_queue.handle();
-        let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
-        let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
-        let broken = compositor.create_surface(&qh, ());
-        let role = shell.get_xdg_surface(&broken, &qh, ());
-        let _one = role.get_toplevel(&qh, ());
-        let _two = role.get_toplevel(&qh, ());
-        assert!(bad_queue.roundtrip(&mut Client::default()).is_err(), "a duplicate role must end this connection");
+        if dmabuf_error {
+            use dmabuf_tests::{zwp_linux_buffer_params_v1, zwp_linux_dmabuf_v1};
+            let manager: zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1 = globals.bind(&qh, 3..=3, ()).unwrap();
+            let mut bad_state = Client::default();
+            bad_queue.roundtrip(&mut bad_state).unwrap();
+            assert_eq!(bad_state.dmabuf_formats, vec![(Fourcc::Xrgb8888 as u32, 0), (Fourcc::Abgr2101010 as u32, 0)]);
+            let feedback_manager: zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1 = globals.bind(&qh, 4..=4, ()).unwrap();
+            let feedback = feedback_manager.get_default_feedback(&qh, ());
+            bad_queue.roundtrip(&mut bad_state).unwrap();
+            assert!(bad_state.feedback_done);
+            assert_eq!(bad_state.feedback_device, 42_u64.to_ne_bytes());
+            let expected: Vec<_> = [Fourcc::Xrgb8888, Fourcc::Abgr2101010]
+                .into_iter()
+                .flat_map(|format| (format as u32).to_ne_bytes().into_iter().chain(0_u32.to_ne_bytes()).chain(0_u64.to_ne_bytes()))
+                .collect();
+            assert_eq!(bad_state.feedback_table, expected);
+            feedback.destroy();
+            let params = manager.create_params(&qh, ());
+            let file = tempfile::tempfile().unwrap();
+            file.set_len(4096).unwrap();
+            params.add(file.as_fd(), 0, 0, 64, 0, 0);
+            params.create(16, 16, Fourcc::Xrgb8888 as u32, zwp_linux_buffer_params_v1::Flags::empty());
+            assert!(bad_queue.roundtrip(&mut bad_state).is_err(), "a rejected import must end only its connection");
+        } else {
+            let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
+            let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
+            let broken = compositor.create_surface(&qh, ());
+            let role = shell.get_xdg_surface(&broken, &qh, ());
+            let _one = role.get_toplevel(&qh, ());
+            let _two = role.get_toplevel(&qh, ());
+            assert!(bad_queue.roundtrip(&mut Client::default()).is_err(), "a duplicate role must end this connection");
+        }
         top.set_title("still responsive".into());
         queue.roundtrip(&mut client).unwrap();
         report.send(1).unwrap();
@@ -521,8 +565,13 @@ fn a_protocol_error_disconnects_only_its_client() {
     });
     let until = Instant::now() + Duration::from_secs(15);
     let mut phases = 0;
+    let mut imports = 0;
     while !thread.is_finished() && Instant::now() < until {
         display.dispatch_clients(&mut server).unwrap();
+        server.complete_dmabuf_imports(|_| {
+            imports += 1;
+            Err("test renderer cannot import this fd")
+        });
         server.frame();
         display.flush_clients().unwrap();
         if let Ok(phase) = reports.try_recv() {
@@ -538,6 +587,7 @@ fn a_protocol_error_disconnects_only_its_client() {
         }
         std::thread::sleep(Duration::from_millis(1));
     }
+    assert_eq!(imports, usize::from(dmabuf_error), "the failure must reach the renderer boundary");
     assert_eq!(phases, 2);
     assert!(thread.is_finished());
     thread.join().unwrap();
@@ -576,3 +626,6 @@ fn screenshots_are_consumed_by_the_host_instead_of_the_parent_capture_tool() {
 
 #[path = "viewport_tests.rs"]
 mod viewport_tests;
+
+#[path = "dmabuf_tests.rs"]
+mod dmabuf_tests;

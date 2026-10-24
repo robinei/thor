@@ -65,6 +65,7 @@ pub fn run(
 
     let attributes = WindowAttributes::default().with_title("ClamShell nested").with_surface_size(LogicalSize::new(1580.0, 540.0));
     let (mut backend, events) = winit::init_from_attributes::<GlesRenderer>(attributes)?;
+    server.advertise_dmabuf(backend.renderer());
     log::info!("nested output format: {:?}", backend.renderer().egl_context().pixel_format());
     let mut frames = [UiFrame::new((960, 540))?, UiFrame::new((620, 540))?];
     let mut arrows = ArrowFrame::new((960, 540))?;
@@ -85,7 +86,10 @@ pub fn run(
                     WinitEvent::CloseRequested => server.exit = true,
                     WinitEvent::Redraw => {
                         server.frame();
-                        let age = if submitted { backend.buffer_age().unwrap_or(0) } else { 0 };
+                        let imported = server.import_dmabufs(backend.renderer());
+                        // Imports may make EGL surfaceless. Force a rendered frame to restore the
+                        // window target even when the scene has not otherwise changed.
+                        let age = if submitted && !imported { backend.buffer_age().unwrap_or(0) } else { 0 };
                         let capturing = std::mem::take(&mut server.screenshot_requested);
                         {
                             let (renderer, mut framebuffer) = backend.bind()?;
