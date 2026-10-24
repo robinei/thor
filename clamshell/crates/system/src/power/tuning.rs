@@ -18,6 +18,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use clamshell_device::charge::{Charge as ChargePolicy, Switches};
 use clamshell_state::settings::fan;
 use clamshell_state::settings::{Cores, PowerProfile};
 use clamshell_state::settings::{Setting, Values};
@@ -72,34 +73,37 @@ const CHARGE_AGAIN: Duration = Duration::from_secs(30);
 /// it, as in Kettle.
 const CHARGE_RESUME: u64 = 5;
 
-/// How a charge limit is held, from `CLAMSHELL_CHARGE_LIMIT`, read at start. Bypass always sets the
-/// current to 0.
-///
-/// - `Current`, the default, holds the limit with the charge current. The current is 0 from the limit
-///   until the level is [`CHARGE_RESUME`] below it, so the charger powers the device and the battery is
-///   left alone. This is Kettle's kettle-powerd, measured on a Thor: SM8550's battery firmware never
-///   answers the end threshold's request but does take the current (Armada's patch 0903).
-/// - `threshold` uses the battery firmware's own end threshold, for trying on firmware that takes it.
-///   Armada's patch 0904 makes a refused write fail.
-/// - `firmware` uses the battery firmware's own switches, which AYN's and Retroid's Android drivers write
-///   (PB-OS's kernel patch, in linux-thor; untried on a Thor). For 80 it sets the firmware's 80 % limit
-///   (`retroid_limit_capacity`). For Bypass it runs from USB with the battery left alone
-///   (`retroid_charge_now` 0, with the current at 0 too). For 90 it uses the charge current, since the
-///   firmware has no other level. The switches are written again at every check, as the firmware may
-///   drop them when the charger is plugged in again. Without the switches it works like `Current`.
+/// How a charge limit is held. The default discovers a standard end threshold, unless a board
+/// quirk says its firmware only honours the charge current. An explicit environment override permits
+/// trying other methods. Bypass always sets the current to zero where supported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Hold {
+    Detected,
     Current,
     Threshold,
     Firmware,
 }
 
 impl Hold {
-    fn from_env() -> Hold {
-        match std::env::var("CLAMSHELL_CHARGE_LIMIT").as_deref() {
-            Ok("threshold") => Hold::Threshold,
-            Ok("firmware") => Hold::Firmware,
-            _ => Hold::Current,
+    fn from_env(policy: ChargePolicy) -> Hold {
+        Self::selected(std::env::var("CLAMSHELL_CHARGE_LIMIT").ok().as_deref(), policy)
+    }
+
+    fn selected(value: Option<&str>, policy: ChargePolicy) -> Hold {
+        match value {
+            Some("threshold") => Hold::Threshold,
+            Some("firmware") => Hold::Firmware,
+            Some("current") => Hold::Current,
+            _ if policy.prefer_current => Hold::Current,
+            _ => Hold::Detected,
+        }
+    }
+
+    fn for_supply(self, supply: &Path) -> Hold {
+        match self {
+            Self::Detected if supply.join("charge_control_end_threshold").exists() => Self::Threshold,
+            Self::Detected => Self::Current,
+            other => other,
         }
     }
 }
@@ -152,13 +156,14 @@ fn big_cpus(clusters: &[(u64, Vec<u32>)]) -> Vec<u32> {
 
 /// Starts the hardware thread. It applies the settings it is sent, only the latest when several wait.
 /// With a charge limit or Bypass on, it sees to the battery again every [`CHARGE_AGAIN`].
-pub fn spawn() -> io::Result<Worker<Values>> {
-    Worker::spawn("tuning", |commands| {
+pub fn spawn(policy: ChargePolicy) -> io::Result<Worker<Values>> {
+    Worker::spawn("tuning", move |commands| {
         let (mut quiet, mut known, mut last) = (Quiet::default(), Vec::new(), None::<Values>);
-        let mut charge = Charge { hold: Hold::from_env(), held: false };
+        let mut charge = Charge { hold: Hold::from_env(policy), switches: policy.switches, held: false };
         log::info!(
             "charge limit held by {}",
             match charge.hold {
+                Hold::Detected => "detected battery controls",
                 Hold::Current => "the charge current",
                 Hold::Threshold => "the battery's threshold",
                 Hold::Firmware => "the battery firmware's switches",
@@ -252,6 +257,7 @@ fn set_cores(big_cores: bool, known: &[Policy], quiet: &mut Quiet) {
 /// The charge limit's state: how it is held, and whether charging is held now.
 struct Charge {
     hold: Hold,
+    switches: Option<Switches>,
     held: bool,
 }
 
@@ -264,21 +270,13 @@ impl Charge {
     /// the firmware keeps it across unplugging and replugging. Otherwise it is set to its maximum where
     /// it differs.
     fn battery(&mut self, limit: u16, quiet: &mut Quiet) {
-        let switches = oem_switches();
+        let switches = self.switches.and_then(|names| oem_switches(Path::new("/sys/bus/auxiliary/devices"), names).map(|dir| (dir, names)));
         let firmware = self.hold == Hold::Firmware && switches.is_some();
-        // The end threshold, the limit held by the current, and the switches' charge_now and limit.
-        let (by_threshold, by_current, charge_now, limit80) = match (self.hold, limit) {
-            // Bypass by both the switch and the current, since the current is the one measured on a Thor.
-            (Hold::Firmware, 0) if firmware => (100, 0, 0, 0),
-            (Hold::Firmware, 80) if firmware => (100, 100, 1, 1),
-            (_, 0) => (100, 0, 1, 0),
-            (Hold::Threshold, l) => (l, 100, 1, 0),
-            (_, l) => (100, l, 1, 0),
-        };
+        let (_, _, charge_now, limit80) = targets(self.hold, limit, firmware);
         // The switch files show what was last written, or -1 before that, so the firmware's defaults are
         // written once.
-        if let Some(dir) = switches {
-            for (name, want) in [("retroid_charge_now", charge_now), ("retroid_limit_capacity", limit80)] {
+        if let Some((dir, names)) = switches {
+            for (name, want) in [(names.charge_now, charge_now), (names.limit80, limit80)] {
                 let file = dir.join(name);
                 if firmware || sys::read::<u64>(&file) != Some(want) {
                     write(&file, want, quiet);
@@ -286,6 +284,7 @@ impl Charge {
             }
         }
         for supply in sys::power_supplies() {
+            let (by_threshold, by_current, _, _) = targets(self.hold.for_supply(&supply), limit, firmware);
             let file = supply.join("charge_control_end_threshold");
             let end = u64::from(by_threshold);
             if file.exists() && sys::read(&file) != Some(end) {
@@ -309,14 +308,60 @@ impl Charge {
 
 /// The device with the battery firmware's own charge switches, the battery manager, where the kernel has
 /// them (see [`Hold`]).
-fn oem_switches() -> Option<PathBuf> {
-    sys::entries("/sys/bus/auxiliary/devices").into_iter().find(|d| d.join("retroid_charge_now").exists())
+fn oem_switches(root: &Path, names: Switches) -> Option<PathBuf> {
+    sys::entries(root).into_iter().find(|d| d.join(names.charge_now).exists() && d.join(names.limit80).exists())
+}
+
+/// The end threshold, the limit held by current, and firmware charge/80-percent switches.
+fn targets(hold: Hold, limit: u16, firmware: bool) -> (u16, u16, u64, u64) {
+    match (hold, limit) {
+        (Hold::Firmware, 0) if firmware => (100, 0, 0, 0),
+        (Hold::Firmware, 80) if firmware => (100, 100, 1, 1),
+        (_, 0) => (100, 0, 1, 0),
+        (Hold::Threshold, l) => (l, 100, 1, 0),
+        (_, l) => (100, l, 1, 0),
+    }
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detected_controls_take_precedence_unless_the_profile_records_a_firmware_quirk() {
+        let root = tempfile::tempdir().unwrap();
+        let detected = Hold::selected(None, ChargePolicy::standard());
+        assert_eq!(detected.for_supply(root.path()), Hold::Current);
+        assert_eq!(targets(detected.for_supply(root.path()), 80, false), (100, 80, 1, 0));
+        fs::write(root.path().join("charge_control_end_threshold"), "100").unwrap();
+        assert_eq!(detected.for_supply(root.path()), Hold::Threshold);
+        assert_eq!(targets(detected.for_supply(root.path()), 80, false), (80, 100, 1, 0));
+        let quirk = Hold::selected(None, ChargePolicy::thor());
+        assert_eq!(quirk.for_supply(root.path()), Hold::Current);
+        assert_eq!(targets(quirk.for_supply(root.path()), 80, false), (100, 80, 1, 0));
+        assert_eq!(Hold::selected(Some("threshold"), ChargePolicy::thor()).for_supply(root.path()), Hold::Threshold);
+        fs::remove_file(root.path().join("charge_control_end_threshold")).unwrap();
+        assert_eq!(detected.for_supply(root.path()), Hold::Current, "rediscover after a supply changes");
+    }
+
+    #[test]
+    fn firmware_switches_require_both_detected_attributes_and_use_the_supplied_names() {
+        let root = tempfile::tempdir().unwrap();
+        let names = Switches { charge_now: "charging", limit80: "limit" };
+        let device = root.path().join("manager");
+        fs::create_dir(&device).unwrap();
+        fs::write(device.join("charging"), "1").unwrap();
+        assert_eq!(oem_switches(root.path(), names), None);
+        fs::write(device.join("limit"), "0").unwrap();
+        assert_eq!(oem_switches(root.path(), names), Some(device));
+        assert_eq!(targets(Hold::Firmware, 80, true), (100, 100, 1, 1));
+        assert_eq!(targets(Hold::Firmware, 80, false), (100, 80, 1, 0), "missing switches fall back to current");
+        assert_eq!(targets(Hold::Firmware, 90, true), (100, 90, 1, 0));
+        assert_eq!(targets(Hold::Firmware, 0, true), (100, 0, 0, 0));
+        assert_eq!(targets(Hold::Firmware, 100, true), (100, 100, 1, 0), "release on shutdown");
+        assert_eq!(targets(Hold::Threshold, 0, false), (100, 0, 1, 0), "Bypass always uses current");
+    }
 
     #[test]
     fn picks_a_step_at_or_below_the_target() {

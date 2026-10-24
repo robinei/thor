@@ -167,7 +167,7 @@ pub fn start<S: Sink + Clone>(
     let browse = started("browse", crate::files::browse::spawn_browse(browsing, sink.clone()));
     let files = started("files", crate::files::ops::spawn_ops(sources.home.clone(), sink.clone()));
     let wifi = started("wifi", wifi::spawn(sink));
-    let tuning = Tuning { hardware: started("tuning", tuning::spawn()), pad: pad.clone(), mangohud: paths.mangohud.clone() };
+    let tuning = Tuning { hardware: started("tuning", tuning::spawn(env.profile.charge)), pad: pad.clone(), mangohud: paths.mangohud.clone() };
     tuning.apply(global, None);
     let store = paths.state_dir.as_deref().and_then(|dir| Writer::spawn(Store::open(dir)).map_err(|e| log::error!("store thread: {e}")).ok());
     Handles {

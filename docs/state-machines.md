@@ -1353,3 +1353,23 @@ dimmed when no policy exists. Thor's curve and safe-stop behaviour are unchanged
 filesystem tests now supply the Thor policy explicitly; interpolation, ramp, emergency and missing-
 sensor tests retain their exact outcomes. The service uses Restart=on-failure to preserve recovery
 without a retry loop on unsupported machines.
+
+### Charging control discovery
+
+The tuning worker receives immutable charging quirks and optional OEM attribute names from the device
+profile. State settings and their effects are unchanged. Without an override or firmware quirk, each
+application discovers the battery's end-threshold attribute; a missing threshold uses the charge
+current where its attributes exist. The Thor's known ignored threshold selects current instead.
+Explicit `CLAMSHELL_CHARGE_LIMIT` selects current, threshold or firmware for trials.
+
+- `detected --threshold appears--> threshold [hold requested limit in firmware]`;
+  `detected --threshold vanishes--> current [hold requested limit with current]`.
+- `current quirk --threshold present--> current`; an explicit threshold override takes precedence.
+- `firmware --both OEM switches present / limit 80--> firmware [enable 80-percent switch]`;
+  absent switches or limit 90 use current. Bypass uses zero current and, when selected and present,
+  disables charging through the switch. Disconnect releases the hold and resets the switches.
+
+System tuning tests assert discovery changes, quirk and override precedence, both-attribute detection,
+firmware fallback, Bypass and release targets. The existing hysteresis test pins charge-current holds.
+Actual battery firmware behaviour is checked on the device; attribute presence alone cannot establish
+that its firmware honours a write.

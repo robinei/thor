@@ -1,4 +1,5 @@
 //! Facts hardware cannot announce. Identification is pure; callers read the device tree and DMI.
+pub mod charge;
 pub mod colour;
 pub mod fan;
 pub mod gyro;
@@ -84,6 +85,7 @@ pub struct Profile {
     pub controls: input::Controls,
     pub sensor_hub: Option<gyro::SensorHub>,
     pub fan: Option<fan::Fan>,
+    pub charge: charge::Charge,
 }
 impl Default for Profile {
     fn default() -> Self {
@@ -107,6 +109,7 @@ impl Profile {
             controls: input::Controls::thor(),
             sensor_hub: Some(gyro::SensorHub::thor()),
             fan: Some(fan::Fan::thor()),
+            charge: charge::Charge::thor(),
         }
     }
     pub const fn vm() -> Self {
@@ -120,6 +123,7 @@ impl Profile {
             controls: input::Controls::thor(),
             sensor_hub: None,
             fan: None,
+            charge: charge::Charge::standard(),
         }
     }
     /// Unknown physical connectors remain unmatched; desktop views still draw as ordinary windows.
@@ -134,6 +138,7 @@ impl Profile {
             controls: input::Controls::generic(),
             sensor_hub: None,
             fan: None,
+            charge: charge::Charge::standard(),
         }
     }
     pub fn bottom_pixels_per_mm_hint(&self) -> Option<f32> {
