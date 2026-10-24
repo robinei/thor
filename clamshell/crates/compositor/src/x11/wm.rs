@@ -79,10 +79,11 @@ pub(super) struct Wm {
     pub ready: bool,
     focus: Option<u32>,
     timestamp: u32,
+    selection: super::selection::Bridge,
 }
 impl Wm {
     pub fn deadline(&self) -> Option<Instant> {
-        self.pending.iter().map(|p| p.deadline).min()
+        self.pending.iter().map(|p| p.deadline).chain(self.selection.deadline()).min()
     }
     fn query(&mut self, wire: &mut Transport, request: impl Request, opcode: u8, kind: Query, now: Instant) -> io::Result<()> {
         if self.pending.len() >= 256 {
@@ -172,6 +173,9 @@ impl Wm {
                     now,
                 )?;
             }
+        }
+        if self.ready {
+            self.selection.turn(wire, &self.atoms, self.owner, server, now)?;
         }
         self.settle(wire, client, server)?;
         self.settle_menus(wire, client, server)?;
@@ -386,6 +390,7 @@ impl Wm {
         Ok(())
     }
     fn event(&mut self, bytes: &[u8], wire: &mut Transport, server: &mut Server) -> io::Result<()> {
+        self.selection.event(bytes, wire, &self.atoms, self.owner, server, Instant::now())?;
         match bytes.first().map(|v| v & 0x7f) {
             Some(CREATE_NOTIFY_EVENT) => {
                 let event = CreateNotifyEvent::try_parse(bytes).map_err(io::Error::other)?.0;
@@ -502,7 +507,15 @@ impl Wm {
             server.core.handle(WindowEvent::Closed(id).into());
         }
     }
+    pub fn sync_selection_sources(
+        &self,
+        handle: &smithay::reexports::calloop::LoopHandle<'static, Server>,
+        sources: &mut Vec<super::selection::IoSource>,
+    ) -> io::Result<()> {
+        self.selection.sync_sources(handle, sources)
+    }
     pub fn clear(&mut self, server: &mut Server) {
+        self.selection.clear();
         while let Some(window) = self.windows.last() {
             let id = window.id;
             self.forget(id, server);

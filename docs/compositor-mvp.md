@@ -243,7 +243,11 @@ from a separate process, at about 500 lines, but with its own translation losses
 for us, the risk that per-surface dmabuf feedback and the pacing protocols don't pass through it, leaving
 X11 games composited.
 
-### X11/Wayland clipboard bridge (planned in phase 2)
+### X11/Wayland clipboard bridge (in progress in phase 2)
+
+Wayland → X11 is implemented for both seat selections, with bounded asynchronous pipe reads,
+INCR handshakes, metadata and MIME/text targets, cancellation and real-client tests. X11 → Wayland
+remains to be implemented, including XFixes ownership notifications and INCR reader backpressure.
 
 The adapter bridges **CLIPBOARD and PRIMARY** through the same Wayland seat selections and keeper;
 it does not implement drag and drop. Selection ownership is watched through XFixes notifications,
@@ -488,7 +492,7 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    and lazy restart after a crash, while Wayland survives. Property fixtures cover malformed metadata
    and ordinary/dialog/splash/utility facts. Override-redirect menus and tooltips now share their parent’s scaling, screen clip and input
    geometry, with real-client dismissal and submenu tests. Further X11 focus fixtures and
-   the planned X11/Wayland clipboard bridge remain; drag and drop is outside this adapter's scope.
+   the X11 → Wayland half of the clipboard bridge remain; drag and drop is outside this adapter's scope.
    Viewporter cropping and destination sizing use the
    same logical geometry for presentation and input, covered by a socket-pair client. Screenshots read the presented nested scene and
    encode it on the system worker; SDR PNG export does not change composition precision. The nested

@@ -1108,9 +1108,10 @@ changes; WM_DELETE_WINDOW closes a supporting client, otherwise KillClient ends 
 `mapped --unmap--> known [Closed, detach drawable]`; a later map reopens it with the same model id.
 `known/mapped --destroy/BadWindow--> removed [Closed if open]`.
 Late replies use unique model ids, so XID reuse cannot modify a replacement. Selection/focus/placement
-remain state rules. The planned clipboard bridge is not implemented yet;
+remain state rules. The clipboard bridge currently exports Wayland selections to X11;
+X11-owned selections are not yet imported into Wayland;
 there is no drag and drop. The clipboard bridge's INCR and asynchronous transfer plan is explicit in
-`docs/compositor-mvp.md` and will add its own transitions/tests when implemented.
+`docs/compositor-mvp.md`; the implemented export transitions and tests are described below.
 
 Property fixtures check ordinary and fixed transient windows, all supported roles, malformed types,
 negative sizes and property deletion, plus focus protocols/hints. Socket-pair tests check partial
@@ -1143,3 +1144,48 @@ inference, tooltip hover ownership, fixed ownership, ancestor unmap and bounded 
 The real-client software/GPU harness checks menu pixels and local pointer coordinates, submenu
 stacking and ancestor dismissal, parentless inference, clipping at the screen boundary, tooltip input pass-through, outside presses,
 parent screen moves and Home while the bottom parent remains visible.
+
+
+### Wayland selections exported to X11
+
+Seat selection callbacks cache a revision and at most 64 advertised types of at most 255 bytes for
+CLIPBOARD and PRIMARY separately. They do not enter State.
+`new Wayland revision --adapter turn--> preparing [cancel previous transfers, asynchronously intern
+MIME atoms]`. Late atom replies from a previous revision are drained and ignored.
+`preparing --atoms ready--> awaiting timestamp [change hidden owner's TIMESTAMP property]`.
+`awaiting timestamp --matching-generation PropertyNotify--> exported [SetSelectionOwner with that
+server timestamp]`. A timestamp requested for an older revision cannot acquire a replacement offer.
+TARGETS lists MIME atoms and supported text/metadata targets. TIMESTAMP returns the acquisition time.
+UTF8_STRING and TEXT request UTF-8 from the Wayland source; STRING translates it to Latin-1, replacing
+unrepresentable or invalid scalars with question marks and preserving split UTF-8 scalars.
+`exported --SelectionClear from a newer owner--> inactive [cancel transfers, forget formats]`.
+An unchanged Wayland revision never reclaims another X11 client's selection. Clearing a Wayland
+selection releases an owned X11 selection using its acquisition timestamp, so an older clear cannot
+replace ownership acquired at a later X11 time. Stale SelectionClear events are ignored.
+
+`exported --supported SelectionRequest--> reading [request Wayland source into pipe, watch read fd]`.
+None as the requested property uses the target atom. Unsupported targets, a stale seat revision,
+missing source, a reused requestor/property pair or more than eight simultaneous transfers receive
+SelectionNotify with None. MULTIPLE is not advertised.
+`reading --EOF before a full chunk--> complete [ChangeProperty, SelectionNotify, close pipe]`.
+`reading --16 KiB buffered--> incremental [INCR marker, SelectionNotify]`.
+`incremental --PropertyNotify/Delete--> permitted`.
+`permitted --buffered bytes--> incremental [one ChangeProperty chunk]`.
+`permitted --EOF with empty buffer--> complete [zero-length property, close pipe]`.
+Each transfer buffers at most 16 KiB, including at most three incomplete UTF-8 bytes
+between reads. A full buffer or EOF removes the read watch; the next deletion or pipe readiness drives
+progress. No timer runs when there are no pending requests or transfers.
+`reading/incremental --five seconds without progress, source revision replaced, SelectionClear,
+requestor destroyed or Xwayland stopped--> cancelled [close pipe, remove watch]`.
+Cancellation before INCR notifies refusal; cancellation after INCR never fakes a successful truncated
+EOF. Other selections and transfers continue. X server atom/timestamp requests have three-second
+response deadlines; lack of response restarts Xwayland through the existing supervisor.
+
+Socket-pair tests pin the property-before-notify order, every INCR acknowledgement, bounded chunk
+sizes and final zero length; they assert empty data, split-scalar encoding, timeout, selective
+cancellation, stale atom/timestamp replies, refusal limits, watch cleanup and no remaining idle deadline. The software/GPU real-client harness reads both seat
+selections through X11, including large slow INCR reads, None properties, metadata, refusal, dead and
+stalled readers, an external X11 owner taking over, a UTF-8 scalar at the chunk boundary, selection
+replacement and nested-host isolation.
+X11-owned selections are not yet imported into Wayland; that direction needs XFixes ownership
+notifications, asynchronous TARGETS/ConvertSelection requests and reader-side INCR backpressure.

@@ -31,6 +31,11 @@ pub(super) const NAMES: &[&str] = &[
     "_NET_WM_STATE_FULLSCREEN",
     "WM_HINTS",
     "_NET_WM_WINDOW_TYPE_TOOLTIP",
+    "CLIPBOARD",
+    "TARGETS",
+    "TIMESTAMP",
+    "INCR",
+    "TEXT",
 ];
 pub(super) const PROPERTIES: &[&str] =
     &["WM_NAME", "_NET_WM_NAME", "WM_CLASS", "WM_TRANSIENT_FOR", "WM_NORMAL_HINTS", "_NET_WM_WINDOW_TYPE", "WM_PROTOCOLS", "WM_HINTS"];

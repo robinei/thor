@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 import re
 import signal
+import sys
 import subprocess
 import tempfile
 import time
@@ -145,6 +146,42 @@ time.sleep(300)
         assert display_match
         x11 = spawn([str(BIN.parent / "examples/x11-client")], "x11-client", {**nested, "DISPLAY": f":{display_match[1]}"}, stdin=subprocess.PIPE)
         wait(lambda: pixels((128, 80, 32)) == (True, False), "X11 client rendered on top")
+        x11_environment = {**nested, "DISPLAY": f":{display_match[1]}"}
+        def read_x11_selection(selection="CLIPBOARD", target="UTF8_STRING", *options):
+            return subprocess.run([str(BIN.parent / "examples/x11-selection"), selection, target, *options],
+                                  env=x11_environment, capture_output=True, timeout=10)
+        wait(lambda: read_x11_selection().stdout == b"nested clipboard", "X11 reads the Wayland clipboard")
+        wait(lambda: read_x11_selection("PRIMARY").stdout == b"nested clipboard", "X11 reads the Wayland primary selection")
+        assert read_x11_selection("CLIPBOARD", "UTF8_STRING", "--no-property").stdout == b"nested clipboard", "None property falls back to the requested target"
+        timestamp = read_x11_selection("CLIPBOARD", "TIMESTAMP")
+        assert timestamp.returncode == 0 and len(timestamp.stdout) == 4 and int.from_bytes(timestamp.stdout, sys.byteorder) != 0
+        targets = read_x11_selection("CLIPBOARD", "TARGETS")
+        assert targets.returncode == 0 and len(targets.stdout) >= 20
+        assert read_x11_selection("CLIPBOARD", "THOR_UNSUPPORTED").returncode != 0, "unsupported targets are refused"
+        large_clipboard = ("café clipboard transfer\n" * 4096).encode()
+        subprocess.run([str(BIN), "--clipboard", "set"], input=large_clipboard, env=nested, check=True, timeout=10)
+        wait(lambda: saved.read_bytes() == large_clipboard, "large Wayland selection reaches the keeper")
+        for selection in ("CLIPBOARD", "PRIMARY"):
+            result = read_x11_selection(selection, "UTF8_STRING", "--slow")
+            assert result.returncode == 0 and result.stdout == large_clipboard, result.stderr
+            assert b"INCR" in result.stderr, "large transfers use incremental X11 properties"
+        abandoned = read_x11_selection("CLIPBOARD", "UTF8_STRING", "--abandon")
+        assert abandoned.returncode == 0 and b"INCR" in abandoned.stderr
+        assert read_x11_selection().stdout == large_clipboard, "a dead requestor does not disrupt another reader"
+        stalled = read_x11_selection("CLIPBOARD", "UTF8_STRING", "--stall")
+        assert stalled.returncode != 0 and b"INCR" in stalled.stderr, "a reader that stops acknowledging times out"
+        assert read_x11_selection().stdout == large_clipboard, "a timed-out transfer does not stop the clipboard"
+        edge_clipboard = "a" * (16 * 1024 - 1) + "€"
+        subprocess.run([str(BIN), "--clipboard", "set"], input=edge_clipboard, text=True, env=nested, check=True, timeout=10)
+        wait(lambda: saved.read_text() == edge_clipboard, "a UTF-8 scalar straddles the INCR chunk boundary")
+        edge = read_x11_selection("CLIPBOARD", "STRING")
+        assert edge.returncode == 0 and edge.stdout == b"a" * (16 * 1024 - 1) + b"?", edge.stderr
+        assert b"INCR" in edge.stderr
+        assert read_x11_selection("CLIPBOARD", "UTF8_STRING", "--take").stdout == b"owned\n", "a new X11 owner is never reclaimed without a new Wayland copy"
+        subprocess.run([str(BIN), "--clipboard", "set"], input="café €", text=True, env=nested, check=True, timeout=10)
+        wait(lambda: clipboard(nested) == "café €", "replacement selection reaches the Wayland seat")
+        wait(lambda: read_x11_selection("CLIPBOARD", "STRING").stdout == b"caf\xe9 ?", "X11 STRING uses Latin-1 with replacement")
+        assert clipboard(host) == "", "X11 clipboard reads remain private to the nested session"
         pointer = spawn([str(BIN.parent / "examples/pointer")], "pointer", host, stdin=subprocess.PIPE)
         def move_pointer(x, y, click=False):
             pointer.stdin.write(f"{x} {y}{' click' if click else ''}\n".encode())

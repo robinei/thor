@@ -1,5 +1,6 @@
 //! Xwayland starts on the first display connection. Socket readiness drives all adapter work.
 mod properties;
+pub(crate) mod selection;
 mod socket;
 mod transport;
 mod wm;
@@ -46,6 +47,7 @@ struct Running {
     sources: Vec<RegistrationToken>,
     ready_source: Option<RegistrationToken>,
     write_source: Option<RegistrationToken>,
+    selection_sources: Vec<selection::IoSource>,
 }
 fn watch(handle: &LoopHandle<'static, Server>, fd: &impl AsFd, interest: Interest) -> io::Result<RegistrationToken> {
     let fd = fd.as_fd().try_clone_to_owned()?;
@@ -203,6 +205,7 @@ impl Running {
             sources: Vec::new(),
             ready_source: None,
             write_source: None,
+            selection_sources: Vec::new(),
         })
     }
     fn register(&mut self, handle: &LoopHandle<'static, Server>) -> io::Result<()> {
@@ -255,6 +258,7 @@ impl Running {
         }
         self.transport.turn(now)?;
         self.wm.turn(&mut self.transport, &self.client, server, now)?;
+        self.wm.sync_selection_sources(handle, &mut self.selection_sources)?;
         self.update_writing(handle)?;
         if self.wm.ready && self.display.is_some() && !self.ready_logged {
             log::info!("compositor: Xwayland X11 transport ready display=:{} pid={}", self.display.unwrap_or_default(), self.child.id());
@@ -270,6 +274,7 @@ impl Running {
         }
     }
     fn remove_io_sources(&mut self, handle: &LoopHandle<'static, Server>) {
+        selection::Bridge::remove_sources(handle, &mut self.selection_sources);
         if let Some(token) = self.ready_source.take() {
             handle.remove(token);
         }

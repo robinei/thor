@@ -175,6 +175,14 @@ impl SeatHandler for Server {
 }
 impl SelectionHandler for Server {
     type SelectionUserData = ();
+    fn new_selection(
+        &mut self,
+        target: smithay::wayland::selection::SelectionTarget,
+        source: Option<smithay::wayland::selection::SelectionSource>,
+        _seat: Seat<Self>,
+    ) {
+        self.x11_selections.changed(target, source);
+    }
 }
 impl DataDeviceHandler for Server {
     fn data_device_state(&mut self) -> &mut DataDeviceState {
