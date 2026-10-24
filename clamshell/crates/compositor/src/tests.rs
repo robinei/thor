@@ -27,6 +27,8 @@ struct Client {
     ignore_configures: bool,
     touches: Vec<TouchRecord>,
     keys: Vec<(u32, bool)>,
+    keyboard_enter: u32,
+    activation_tokens: Vec<String>,
     text: Vec<keyboard_tests::TextRecord>,
     dmabuf_formats: Vec<(u32, u64)>,
     feedback_device: Vec<u8>,
@@ -638,3 +640,6 @@ mod popup_tests;
 
 #[path = "cursor_tests.rs"]
 mod cursor_tests;
+
+#[path = "activation_tests.rs"]
+mod activation_tests;

@@ -47,6 +47,7 @@ pub(crate) struct Server {
     pub dh: DisplayHandle,
     pub compositor: CompositorState,
     pub shell: XdgShellState,
+    pub activation: smithay::wayland::xdg_activation::XdgActivationState,
     pub shm: ShmState,
     pub dmabuf: smithay::wayland::dmabuf::DmabufState,
     pub pending_imports: Vec<(smithay::backend::allocator::dmabuf::Dmabuf, smithay::wayland::dmabuf::ImportNotifier)>,
@@ -128,6 +129,7 @@ impl Server {
             core,
             compositor: CompositorState::new::<Self>(&dh),
             shell: XdgShellState::new::<Self>(&dh),
+            activation: smithay::wayland::xdg_activation::XdgActivationState::new::<Self>(&dh),
             shm: ShmState::new::<Self>(&dh, vec![smithay::reexports::wayland_server::protocol::wl_shm::Format::Abgr8888]),
             dmabuf: smithay::wayland::dmabuf::DmabufState::new(),
             pending_imports: Vec::new(),
@@ -342,6 +344,7 @@ impl Server {
         {
             self.core.handle(clamshell_state::Event::TextInput(false));
             if surface.is_none() {
+                self.activation.retain_tokens(|_, _| false);
                 smithay::wayland::selection::data_device::set_data_device_focus(&self.dh, &self.seat, None);
                 smithay::wayland::selection::primary_selection::set_primary_focus(&self.dh, &self.seat, None);
             }
@@ -371,6 +374,7 @@ impl Server {
     }
 
     pub fn turn(&mut self) {
+        self.expire_activation_tokens(Instant::now());
         self.update_idle(Instant::now());
         self.core.run(Instant::now());
         while let Some(effect) = self.core.next_effect() {

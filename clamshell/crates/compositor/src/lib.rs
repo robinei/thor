@@ -4,6 +4,7 @@
 //! scaled. A client's error ends that client, never the server. X11 windows become the same window
 //! facts as Wayland ones in one adapter. See `docs/compositor-mvp.md`, "Keeping the app tail small".
 
+mod activation;
 mod cursor;
 mod dmabuf;
 mod geometry;

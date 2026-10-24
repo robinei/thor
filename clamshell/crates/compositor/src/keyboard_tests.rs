@@ -23,6 +23,9 @@ pub(super) enum TextRecord {
 
 impl Dispatch<wl_keyboard::WlKeyboard, ()> for Client {
     fn event(state: &mut Self, _: &wl_keyboard::WlKeyboard, event: wl_keyboard::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+        if let wl_keyboard::Event::Enter { serial, .. } = event {
+            state.keyboard_enter = serial;
+        }
         if let wl_keyboard::Event::Key { key, state: value, .. } = event {
             state.keys.push((key, value == WEnum::Value(wl_keyboard::KeyState::Pressed)));
         }

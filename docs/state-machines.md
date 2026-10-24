@@ -949,3 +949,31 @@ Vulkan driver and Wayland-capable vkcube. Software mode keeps the EGL/shared-mem
 software EGL advertises no native dmabuf transport. No software-WSI override or pixel-format downgrade
 is added to application launches. Both modes passed on the development desktop; their screenshots
 and full protocol logs are retained by the harness.
+
+### Xdg activation (compositor/activation)
+
+A client may mint a token only while its mapped window owns keyboard focus in State and on the seat,
+using this seat's serial no older than its latest keyboard enter. An optional source surface must
+belong to that client. Missing/old serials and background clients still receive an opaque token string,
+but it is untracked and grants no activation. Tokens expire after five seconds and unused expired
+tokens are pruned on event-loop turns.
+
+A known token is consumed on its first activation request, including a rejected request. A recent token
+for a mapped toplevel becomes the existing WindowEvent::Activate; ordinary state selection, keyboard
+focus and bottom presentation rules settle before synchronisation. Activation never moves a window
+between screens. Unknown surfaces, unmapped windows and expired or reused tokens do nothing. A token's
+app_id is advisory and does not override window identity or placement.
+
+Returning keyboard focus to the shelf clears outstanding tokens. Both creation and redemption read
+State's current focus, so Home also wins if it settles before the seat is synchronised in the same
+dispatch. A pending activation cannot undo Home. Policy denial is an ordinary protocol outcome; it
+does not disconnect the client or change the session.
+
+`activation_tokens_require_focus_expire_are_single_use_and_cannot_undo_home` drives real activation,
+keyboard and xdg-shell traffic. It pins missing/old serials, a background connection borrowing another
+client's serial, Home revocation, successful activation, reuse, expiry, unknown surfaces, activating
+below without changing placement, and a target unmapping. Direct callbacks with real token data also
+pin the pre-synchronisation Home race and an expired request before periodic pruning. Existing state
+activation tests pin resulting effects and their order; no new state event or randomized-generator
+branch is introduced. The nested software and GPU harnesses check coexistence with the EGL, Vulkan,
+clipboard, cursor and screen-move paths.
