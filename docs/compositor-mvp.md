@@ -545,8 +545,9 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
           window data, as constraint 2 left room for.
     - [ ] Composition in a common colour space: each surface converted to linear light in the shader,
           a 10-bit or half-float output, ClamShell's SDR UI and SDR clients placed at a reference white,
-          and the output's primaries applied (on the Thor, sRGB mapped into the top panel's wider gamut,
-          4h's profile).
+          and the output's primaries applied (on the Thor, sRGB mapped into the top panel's wider gamut;
+          the panels' colour facts come from the device profile, `docs/device-profiles.md`; nested, from
+          the host's preferred description).
     - [ ] Scanout knowing about colour: a surface whose description matches the output passes through
           untouched (constraint 3).
     - [ ] The nested output: the host window's own colour description given to KWin on its raw Wayland
