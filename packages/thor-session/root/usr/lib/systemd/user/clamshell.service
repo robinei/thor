@@ -19,8 +19,6 @@ Environment=CLAMSHELL_CONTROL=%t/clamshell-control
 # ClamShell is the device's session: it puts the device to sleep when idle (dim, screens off, then sleep
 # through logind) and takes the hardware keys (volume, brightness). Desktop runs leave this unset.
 Environment=CLAMSHELL_SESSION=device
-# The bottom screen's output (DSI-1 on the Thor), as thor-outputs found it.
-EnvironmentFile=%t/thor-outputs.env
 # Restarted when it fails; failing 4 times within a minute, given up: then the session ends and the
 # console says why (clamshell-failed.service, thor-session).
 Restart=on-failure

@@ -64,7 +64,7 @@ command line, the self-test.
 
 1. **Implemented.** `crates/device` with `Profile`, the Thor's and the VM's constructors and identification; `Init`
    carries the profile; `CLAMSHELL_DEVICE` replaces the VM's environment overrides.
-2. `clamshell device outputs`, used by `thor-outputs` (then the VM branch there goes) and
+2. **Implemented.** `clamshell device outputs`, used by `thor-outputs` (then the VM branch there goes) and
    `thor-panel-calibration`.
 3. Each hard-coded fact above moved, one commit each, its readers taking the fact.
 4. A rule in `AGENTS.md` (added with this plan): device facts live in the profile, code never checks the

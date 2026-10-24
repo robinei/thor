@@ -4,13 +4,49 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Screen {
     pub connector: &'static str,
+    pub rotation: Rotation,
 }
+/// Clockwise orientation of the physical panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rotation {
+    Normal,
+    Clockwise90,
+}
+impl Rotation {
+    pub const fn degrees(self) -> u16 {
+        match self {
+            Self::Normal => 0,
+            Self::Clockwise90 => 90,
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScreenRole {
+    Top,
+    Bottom,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TouchSelector {
+    Named(&'static str),
+    All,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Touchscreen {
+    pub selector: TouchSelector,
+    pub screen: ScreenRole,
+}
+const THOR_TOUCH: &[Touchscreen] = &[
+    Touchscreen { selector: TouchSelector::Named("0:0:top_touchscreen"), screen: ScreenRole::Top },
+    Touchscreen { selector: TouchSelector::Named("0:0:bottom_touchscreen"), screen: ScreenRole::Bottom },
+];
+const VM_TOUCH: &[Touchscreen] = &[Touchscreen { selector: TouchSelector::All, screen: ScreenRole::Bottom }];
 /// The two-screen machine's fixed facts, identified once and passed to their readers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Profile {
     pub name: &'static str,
     pub top: Screen,
     pub bottom: Screen,
+    pub touchscreens: &'static [Touchscreen],
 }
 impl Default for Profile {
     fn default() -> Self {
@@ -19,14 +55,35 @@ impl Default for Profile {
 }
 impl Profile {
     pub const fn thor() -> Self {
-        Self { name: "thor", top: Screen { connector: "DSI-2" }, bottom: Screen { connector: "DSI-1" } }
+        Self {
+            name: "thor",
+            top: Screen { connector: "DSI-2", rotation: Rotation::Clockwise90 },
+            bottom: Screen { connector: "DSI-1", rotation: Rotation::Clockwise90 },
+            touchscreens: THOR_TOUCH,
+        }
     }
     pub const fn vm() -> Self {
-        Self { name: "vm", top: Screen { connector: "Virtual-1" }, bottom: Screen { connector: "Virtual-2" } }
+        Self {
+            name: "vm",
+            top: Screen { connector: "Virtual-1", rotation: Rotation::Normal },
+            bottom: Screen { connector: "Virtual-2", rotation: Rotation::Normal },
+            touchscreens: VM_TOUCH,
+        }
     }
     /// Unknown physical connectors remain unmatched; desktop views still draw as ordinary windows.
     pub const fn generic() -> Self {
-        Self { name: "generic", top: Screen { connector: "ClamShell-Top" }, bottom: Screen { connector: "ClamShell-Bottom" } }
+        Self {
+            name: "generic",
+            top: Screen { connector: "ClamShell-Top", rotation: Rotation::Normal },
+            bottom: Screen { connector: "ClamShell-Bottom", rotation: Rotation::Normal },
+            touchscreens: &[],
+        }
+    }
+    pub const fn screen(&self, role: ScreenRole) -> Screen {
+        match role {
+            ScreenRole::Top => self.top,
+            ScreenRole::Bottom => self.bottom,
+        }
     }
     /// Maps identification to facts in one place. A forced unknown name is an error, not a guess.
     pub fn identify<'a>(forced: Option<&'a str>, compatible: &[u8], dmi_vendor: &str, dmi_product: &str) -> Result<Self, &'a str> {

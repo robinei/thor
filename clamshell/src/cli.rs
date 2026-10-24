@@ -6,6 +6,9 @@ use std::path::PathBuf;
 pub enum Command {
     /// No arguments: run the session (the UI and every system thread).
     Run,
+    /// Device facts for package scripts.
+    DeviceOutputs,
+    DevicePanel,
     /// `--nested`: the experimental in-process compositor (built with `--features compositor`).
     Nested,
     /// `--run FILE`: become a launched job's program. Sway's exec starts us this way (see
@@ -42,6 +45,8 @@ pub enum Command {
 }
 
 pub const USAGE: &str = "usage: clamshell [ctl COMMAND...]
+  device outputs       sway output and touchscreen configuration from the profile
+  device panel         panel facts as JSON for calibration tools
   ctl COMMAND...       drive the running ClamShell (`clamshell ctl help` lists the commands)
 used by ClamShell itself:
   --run FILE           a launch's job, through sway's exec
@@ -60,6 +65,8 @@ for development:
 pub fn parse(args: &[String]) -> Option<Command> {
     Some(match args {
         [] => Command::Run,
+        [device, what] if device == "device" && what == "outputs" => Command::DeviceOutputs,
+        [device, what] if device == "device" && what == "panel" => Command::DevicePanel,
         [flag] if flag == "--nested" => Command::Nested,
         [flag, file] if flag == "--run" => Command::RunJob(file.into()),
         [flag, appid] if flag == "--follow-steam" => Command::FollowSteam(appid.parse().ok()?),
@@ -88,6 +95,9 @@ mod tests {
     #[test]
     fn commands() {
         assert_eq!(parse(&args("")), Some(Command::Run));
+        assert_eq!(parse(&args("device outputs")), Some(Command::DeviceOutputs));
+        assert_eq!(parse(&args("device panel")), Some(Command::DevicePanel));
+        assert_eq!(parse(&args("device unknown")), None);
         assert_eq!(parse(&args("--nested")), Some(Command::Nested));
         assert_eq!(parse(&args("--snapshot /tmp/s")), Some(Command::Snapshot("/tmp/s".into())));
         assert_eq!(parse(&args("--run /run/j.json")), Some(Command::RunJob("/run/j.json".into())));

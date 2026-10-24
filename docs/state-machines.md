@@ -1271,3 +1271,12 @@ Pure identity tests cover precedence, exact matching and unknown names. A filesy
 kernel identity reads without host-specific assumptions. State, allocation and snapshot checks cover
 passing the profile without changing per-event behaviour. VM service boot is checked by the VM suite
 once its output-generation script has been switched to the profile too.
+
+
+The startup package's `thor-outputs` now writes the output configuration returned by `clamshell device
+outputs`. Both connectors, clockwise transforms and touchscreen-to-screen mappings come from the
+profile. It has no device detection branch and writes no separate environment override; ClamShell's
+service identifies the same profile. `clamshell device panel` supplies connectors to the calibration
+tool, whose mode and vblank discovery stays runtime detection. An integration test forces each known
+profile, compares the emitted sway configuration, runs the installed output script against the binary
+and checks the calibration command's facts. The full VM suite checks these files at session startup.

@@ -72,6 +72,8 @@ default-run = "clamshell"
 
 [dependencies]
 clamshell-state.workspace = true
+clamshell-device.workspace = true
+serde_json.workspace = true
 clamshell-system.workspace = true
 clamshell-library.workspace = true
 clamshell-ui.workspace = true
@@ -81,6 +83,7 @@ env_logger.workspace = true
 rustix.workspace = true
 
 [dev-dependencies]
+tempfile.workspace = true
 clamshell-library = { workspace = true, features = ["demo"] }
 # (The snapshot test decodes its PNGs, to hash their pixels.)
 image.workspace = true

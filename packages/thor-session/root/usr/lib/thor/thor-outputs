@@ -1,25 +1,4 @@
 #!/bin/sh
-# sway's outputs, written at each session start (thor-session) into the runtime directory, where the
-# session's sway config includes them, and which output is ClamShell's bottom screen (its service reads
-# thor-outputs.env). On the Thor (its DSI panels): the panels natively portrait, both turned 90 degrees
-# (sway's clockwise angle; the panels' orientation in the device tree, "right side up": ROCKNIX's
-# autostart/common/111-sway-init, Kettle's gamescope.conf, Thorch's KWin config, Armada's
-# ARMADA_PANEL_ORIENTATION), each touchscreen on its panel (wlroots turns touch with its output; Armada's
-# device tree has the touchscreens unturned, so no calibration matrix). In the test machine
-# (tools/vm/vm.py thor-image: QEMU's two screens, Virtual-1 and Virtual-2): unturned, its touchscreen on
-# the bottom one.
-if ls /sys/class/drm/card*-DSI-2 > /dev/null 2>&1; then
-    angle=90 top=DSI-2 bottom=DSI-1
-    touch="input \"0:0:top_touchscreen\" map_to_output $top
-input \"0:0:bottom_touchscreen\" map_to_output $bottom"
-else
-    angle=0 top=Virtual-1 bottom=Virtual-2
-    touch="input type:touch map_to_output $bottom"
-fi
-cat > "$XDG_RUNTIME_DIR/thor-outputs.conf" <<EOF
-# Written by thor-outputs at session start (rotation: $angle).
-output $top transform $angle position 0 0
-output $bottom transform $angle
-$touch
-EOF
-echo "CLAMSHELL_BOTTOM_OUTPUT=$bottom" > "$XDG_RUNTIME_DIR/thor-outputs.env"
+# sway's output and touch mapping, from the same profile ClamShell uses in its session.
+set -eu
+clamshell device outputs > "$XDG_RUNTIME_DIR/thor-outputs.conf"

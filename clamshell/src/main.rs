@@ -9,6 +9,7 @@ mod config;
 mod control;
 #[cfg(any(test, feature = "dev"))]
 mod dev;
+mod profile;
 mod session;
 
 use std::process::ExitCode;
@@ -45,6 +46,14 @@ fn carry_out(command: Command) -> Result<(), String> {
     let paths = Paths::new(&env.base);
     let sources = Sources::new(&paths, env.base.home.as_deref(), env.steam);
     match command {
+        Command::DeviceOutputs => {
+            print!("{}", profile::outputs(&env.profile));
+            Ok(())
+        }
+        Command::DevicePanel => {
+            println!("{}", profile::panel(&env.profile));
+            Ok(())
+        }
         Command::Run => session::run(&env, paths, &sources),
         Command::Nested => {
             #[cfg(feature = "compositor")]

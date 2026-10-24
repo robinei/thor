@@ -279,6 +279,7 @@ name = "clamshell"
 version = "0.1.0"
 dependencies = [
  "clamshell-compositor",
+ "clamshell-device",
  "clamshell-library",
  "clamshell-state",
  "clamshell-system",
@@ -287,6 +288,8 @@ dependencies = [
  "image",
  "log",
  "rustix",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
