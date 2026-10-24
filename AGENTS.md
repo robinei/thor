@@ -85,6 +85,8 @@ updates that document in the same change, and:
 - No panics by construction: `unwrap`, `expect`, `panic!` and indexing are denied outside tests, and
   `unsafe` is denied. Don't crash unless there's no way on, and log a failure handled by falling back
   (`warn` when it shouldn't happen, `debug` when expected or repeating on a timer).
+- Device facts live in the device profile (`crates/device`, `docs/device-profiles.md`; detect what can be
+  detected first); code reads facts and never checks which device it runs on.
 - Comments and docs are plain sentences, matter-of-fact; they say what and why, not what the code
   plainly says.
 
