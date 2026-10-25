@@ -95,13 +95,16 @@ pub struct Running {
     /// Its entry as it was when it started. The dock shows it by this if it leaves the library while it
     /// runs, for example because its file was renamed or deleted.
     pub entry: Option<Box<crate::Entry>>,
+    /// The resolution the compositor told it its screen has, when it connected (see
+    /// [`crate::Reading::Told`]); a change of the setting applies the next time it starts.
+    pub told: Option<crate::settings::Resolution>,
 }
 
 impl Running {
     /// `entry` running as `origin` since `start`, with no launch followed and no window seen yet.
     pub(crate) fn of(entry: &Entry, origin: Origin, start: u64) -> Running {
         let (id, key) = (entry.id.clone(), entry.key.clone());
-        Running { id, key, origin, app_id: None, start, seen: false, tray: None, entry: Some(Box::new(entry.clone())) }
+        Running { id, key, origin, app_id: None, start, seen: false, tray: None, entry: Some(Box::new(entry.clone())), told: None }
     }
 
     /// Its own process, if it was found and has one (see [`Origin::Found`]).

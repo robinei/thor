@@ -274,6 +274,15 @@ impl Session {
         })
     }
 
+    /// Notes the resolution a client's process was told, on the running entry it belongs to (see
+    /// [`Session::running_of_process`]).
+    pub(crate) fn told(&mut self, unit: Option<&str>, steam_app: Option<u32>, resolution: crate::settings::Resolution) {
+        let id = self.running_of_process(unit, steam_app).map(|r| r.id.clone());
+        if let Some(running) = id.and_then(|id| self.running.iter_mut().find(|r| r.id == id)) {
+            running.told = Some(resolution);
+        }
+    }
+
     /// The running entry a window belongs to, by the first of these that matches:
     ///
     /// - its app id (see [`crate::session::running::app_id_of`]), as for a Steam game that runs in Steam's

@@ -199,6 +199,9 @@ pub enum Reading {
     Screens(Box<crate::session::presentation::Screens>),
     /// Where the pixels of the plotted window's picture are (see [`crate::State::histogram_window`]).
     Histogram(Box<crate::session::presentation::Histogram>),
+    /// The compositor told a game's process, known by its scope or Steam's app id, that its screen has this
+    /// resolution, when it connected (see [`crate::State::process_game`]).
+    Told { unit: Option<String>, steam_app: Option<u32>, resolution: crate::settings::Resolution },
 }
 
 /// A press on a target from touch, the mouse or the pad's A, and pad focus changes.

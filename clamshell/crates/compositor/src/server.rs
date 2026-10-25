@@ -569,9 +569,13 @@ impl Server {
     pub(crate) fn admit(&mut self, stream: std::os::unix::net::UnixStream) {
         let Some(client) = insert_client(&mut self.dh, stream) else { return };
         let process = client.get_credentials(&self.dh).ok().and_then(|c| u32::try_from(c.pid).ok()).map(|pid| (self.identify)(pid));
-        let game = process.and_then(|process| self.core.state().process_game(process.unit.as_deref(), process.steam_app));
+        let game = process.as_ref().and_then(|process| self.core.state().process_game(process.unit.as_deref(), process.steam_app));
         if let Some(state) = client.get_data::<ClientState>() {
             let _ = state.game.set(game);
+        }
+        if let (Some(process), Some((resolution, _))) = (process, game) {
+            let told = clamshell_state::Reading::Told { unit: process.unit, steam_app: process.steam_app, resolution };
+            self.core.handle(clamshell_state::Event::Reading(told));
         }
     }
 

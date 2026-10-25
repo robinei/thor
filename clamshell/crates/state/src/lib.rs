@@ -716,6 +716,7 @@ impl State {
             Reading::Frames { fps, frame_ms } => self.sys.frames(fps, frame_ms),
             Reading::Screens(screens) => self.screens = *screens,
             Reading::Histogram(histogram) => self.histogram = Some(*histogram),
+            Reading::Told { unit, steam_app, resolution } => self.session.told(unit.as_deref(), steam_app, resolution),
             Reading::Wifi(wifi) => self.radios.read_wifi(wifi),
             Reading::Bluetooth(bluetooth) => self.radios.read_bluetooth(bluetooth),
             Reading::Battery(battery) => self.sys.read_battery(battery),

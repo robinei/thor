@@ -210,7 +210,11 @@ fn face(s: &State, tile: Tile) -> Face {
                     && (!setting.compositor_only() || s.compositor()),
                 // Only ClamShell's own compositor shows a game's picture differently; under sway these do
                 // nothing.
-                note: note((setting.through_launch() && p.handed_over()) || (setting.compositor_only() && !s.compositor())),
+                note: if setting == Setting::Resolution && s.compositor() && s.resolution_waits() {
+                    "next start"
+                } else {
+                    note((setting.through_launch() && p.handed_over()) || (setting.compositor_only() && !s.compositor()))
+                },
             }
         }
         Tile::Env => {

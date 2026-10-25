@@ -272,6 +272,14 @@ impl crate::State {
     /// What a curve's plot shows for the program whose settings are edited: whether its window on screen
     /// shows HDR content and how bright it declares, and its screen's headroom. Without a window, SDR
     /// content on the top screen.
+    /// Whether the Resolution set for the program the settings panel edits waits for its next start: it runs,
+    /// and was told another when it started.
+    pub fn resolution_waits(&self) -> bool {
+        let Some(program) = self.panel().editing().map(|p| p.id.clone()) else { return false };
+        let set: crate::settings::Resolution = crate::settings::Choice::of(self.panel().tile_value(crate::settings::Setting::Resolution));
+        self.session().running(&program).and_then(|r| r.told).is_some_and(|told| told != set)
+    }
+
     /// The window whose picture the curve's edit screen plots: the edited program's, on the main screen if
     /// it has one there.
     fn plot_window(&self) -> Option<&crate::session::windows::Window> {
@@ -368,6 +376,25 @@ mod tests {
         tap(&mut s, Id::Settings(SettingsId::Tile(Setting::FpsCap)));
         assert_eq!(s.window_fps_cap(7), Some(30));
         assert_eq!(s.window_fps_cap(99), None, "no such window");
+    }
+    /// A game is told its resolution when it starts: a change waits for its next start, and the tile says
+    /// so until the setting is back to what it was told, or the game starts again.
+    #[test]
+    fn a_resolution_change_waits_for_the_games_next_start() {
+        use crate::testkit::*;
+        use crate::{Id, SettingsId, Tab, settings::Resolution, settings::Setting};
+        let mut s = state();
+        let launch = launch(&mut s, "zelda-lttp");
+        tap(&mut s, Id::Tab(Tab::Settings));
+        let unit = launch.unit();
+        s.applied(crate::Event::Reading(crate::Reading::Told { unit: unit.clone(), steam_app: None, resolution: Resolution::Native }));
+        assert!(!s.resolution_waits(), "as it was told");
+        tap(&mut s, Id::Settings(SettingsId::Tile(Setting::Resolution)));
+        assert!(s.resolution_waits(), "changed while it runs");
+        // Started again with it: told the new one.
+        let set: Resolution = crate::settings::Choice::of(s.panel().tile_value(Setting::Resolution));
+        s.applied(crate::Event::Reading(crate::Reading::Told { unit, steam_app: None, resolution: set }));
+        assert!(!s.resolution_waits());
     }
     #[test]
     fn dialogs_and_fixed_windows_are_centred_and_games_fit_ignored_sizes() {
