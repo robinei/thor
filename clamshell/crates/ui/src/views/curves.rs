@@ -31,7 +31,7 @@ const PLOT_NITS: f64 = 1000.0;
 const PLOT_STEPS: u16 = 96;
 /// The outline of the histogram's bars, so that dark ones show on black.
 const AXIS: Rgb = Rgb(0x2a2a30);
-/// The lines at the screen's peak, paper white and black.
+/// The lines at the screen's peak and paper white.
 const AS_IS: Rgb = Rgb(0x4a4a54);
 /// The brightest grey a histogram bar is filled with, the light at the top of the plot; paper white is half
 /// of it.
@@ -193,7 +193,11 @@ fn plot(f: &mut Frame, r: Rect, curve: &Curve, on: CurvePlot, size: f32) {
     let mut last_label = f32::NEG_INFINITY;
     for nits in [screen_nits, paper, on.black * REFERENCE_NITS] {
         let y = y_of(nits);
-        f.c.line((inner.x, y), (inner.right(), y), 1.0, AS_IS);
+        // The screen's black is only labelled: its line would lie on the base strip.
+        let black = nits <= on.black * REFERENCE_NITS;
+        if !black {
+            f.c.line((inner.x, y), (inner.right(), y), 1.0, AS_IS);
+        }
         if y - last_label >= size * 1.35 {
             // The unit once, on the topmost.
             let unit = if last_label == f32::NEG_INFINITY { " nits" } else { "" };
