@@ -155,9 +155,9 @@ impl Pipeline {
             self.revision = server.colour.revision;
         }
         self.curves.clear();
-        // The windows' own surfaces whose pictures take FSR's upscale before the scene, so that the final
-        // pass can sharpen what it upscaled, with a texel of their buffers.
-        let mut chained: Vec<(Id, smithay::reexports::wayland_server::protocol::wl_surface::WlSurface, [f32; 2])> = Vec::new();
+        // The windows' own surfaces whose pictures take passes before the scene (see `super::chain`): SMAA,
+        // and with FSR and sharpening, FSR's upscale.
+        let mut chained: Vec<(Id, smithay::reexports::wayland_server::protocol::wl_surface::WlSurface, bool, bool)> = Vec::new();
         let state = server.core.state();
         for client in server.windows.iter().filter(|client| client.mapped && server.visible(client.id)) {
             let curve = state.window_curve(client.id);
@@ -170,12 +170,10 @@ impl Pipeline {
                 let buffer = renderer_state.and_then(|state| state.lock().ok()?.buffer_size()).map_or((0, 0), |size| (size.w, size.h));
                 self.curves.push((Id::from_wayland_resource(surface), Look { curve, headroom, clarity, buffer }));
             });
-            let fsr = clarity.scaling == clamshell_state::settings::Scaling::Fsr && clarity.sharpen > 0;
-            if let (true, Some(root)) = (fsr, client.window.root()) {
-                let look = self.curves.iter().rev().find(|(id, _)| *id == Id::from_wayland_resource(&root)).map(|(_, look)| look.buffer);
-                if let Some((w, h)) = look.filter(|(w, h)| *w > 0 && *h > 0) {
-                    chained.push((Id::from_wayland_resource(&root), root, [1.0 / w as f32, 1.0 / h as f32]));
-                }
+            let upscale = clarity.scaling == clamshell_state::settings::Scaling::Fsr && clarity.sharpen > 0;
+            let smaa = clarity.anti_aliasing == clamshell_state::settings::AntiAliasing::Smaa;
+            if let (true, Some(root)) = (upscale || smaa, client.window.root()) {
+                chained.push((Id::from_wayland_resource(&root), root, smaa, upscale));
             }
         }
         if self.curves != self.last_curves {
@@ -184,7 +182,7 @@ impl Pipeline {
             std::mem::swap(&mut self.curves, &mut self.last_curves);
         }
         let replaced = self.chains.run(renderer, elements, |id| {
-            chained.iter().find(|(chained, _, _)| chained == id).map(|(_, surface, texel)| super::chain::Want { surface, texel: *texel })
+            chained.iter().find(|(chained, ..)| chained == id).map(|(_, surface, smaa, upscale)| super::chain::Want { surface, smaa: *smaa, upscale: *upscale })
         })?;
         self.converted.clear();
         for inner in elements.drain(..) {

@@ -388,12 +388,6 @@ impl Setting {
         }
     }
 
-    /// Whether changing the setting does anything yet. The others are still stored, and will work once
-    /// implemented.
-    pub fn active(self) -> bool {
-        !matches!(self, Setting::AntiAliasing)
-    }
-
     /// Whether only ClamShell's own compositor does it: under sway it does nothing.
     pub fn compositor_only(self) -> bool {
         matches!(self, Setting::Curve | Setting::Resolution | Setting::Scaling | Setting::AntiAliasing | Setting::Sharpen)

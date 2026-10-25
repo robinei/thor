@@ -29,8 +29,8 @@ const ROWS: usize = 4;
 /// The icon's size and top, as fractions of a tile's height. Values are not cut, since they are short; in
 /// a narrow window a long one runs over the tile's edges.
 const TILE: TileShape = TileShape { icon: 0.36, icon_y: 0.17, cut: None };
-/// The colour of tiles whose setting does nothing yet, barely visible.
-const LATER: Rgb = Rgb(0x34343c);
+/// The icon colour of tiles whose setting does nothing for what is edited, barely visible.
+const INERT: Rgb = Rgb(0x34343c);
 
 /// What a tile is: a setting, the environment, or Reset.
 #[derive(Clone, Copy)]
@@ -129,15 +129,9 @@ struct Face {
     note: &'static str,
 }
 
-/// A tile's note when it does nothing: not yet (`later`), or not for what is being edited (`no_effect`).
-fn note(later: bool, no_effect: bool) -> &'static str {
-    if later {
-        "later"
-    } else if no_effect {
-        "no effect"
-    } else {
-        ""
-    }
+/// A tile's note when it does nothing for what is being edited.
+fn note(no_effect: bool) -> &'static str {
+    if no_effect { "no effect" } else { "" }
 }
 
 /// How `value` of `setting` reads, on its tile and in its menu: the keymap's and the curve's names, and
@@ -206,14 +200,13 @@ fn face(s: &State, tile: Tile) -> Face {
                 value: text,
                 impact: setting.impact(value),
                 origin: p.tile_origin(setting),
-                active: setting.active()
-                    && (setting != Setting::Refresh || !s.device().display_modes().rates().is_empty())
+                active: (setting != Setting::Refresh || !s.device().display_modes().rates().is_empty())
                     && (setting != Setting::Fan || s.profile().fan.is_some())
                     && !(setting.through_launch() && p.handed_over())
                     && (!setting.compositor_only() || s.compositor()),
                 // Only ClamShell's own compositor shows a game's picture differently; under sway these do
                 // nothing.
-                note: note(!setting.active(), (setting.through_launch() && p.handed_over()) || (setting.compositor_only() && !s.compositor())),
+                note: note((setting.through_launch() && p.handed_over()) || (setting.compositor_only() && !s.compositor())),
             }
         }
         Tile::Env => {
@@ -222,7 +215,7 @@ fn face(s: &State, tile: Tile) -> Face {
             let origin = if entry.is_some() && count > 0 { TileOrigin::Own } else { TileOrigin::Global };
             let value = Fmt::of(format_args!("{}", Variables(count)));
             let off = p.handed_over();
-            Face { id: Id::Settings(SettingsId::Env), icon: Icon::Env, value, impact, origin, active: !off, note: note(false, off) }
+            Face { id: Id::Settings(SettingsId::Env), icon: Icon::Env, value, impact, origin, active: !off, note: note(off) }
         }
         Tile::Reset => {
             let any = entry.as_ref().is_some_and(|g| s.prefs().settings().has_own(g));
@@ -248,7 +241,7 @@ fn draw_tile(f: &mut Frame, r: Rect, tile: Tile) {
     // No background, since the grid's alignment gives the structure. A press still lights it.
     widgets::tile(f, face.id.clone(), r, &TILE, tile_face, |f, r| {
         let color = match (face.active, face.impact) {
-            (false, _) => LATER,
+            (false, _) => INERT,
             (true, Impact::Stock) => Tone::Dim.rgb(),
             (true, Impact::Saves) => Tone::Go.rgb(),
             (true, Impact::Costs) => Tone::Accent.rgb(),

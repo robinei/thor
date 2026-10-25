@@ -1430,7 +1430,7 @@ rates at the main output's current dimensions. State stores a bounded sorted uni
 means restore the original mode. No modes are invented from the profile. The Refresh tile stays
 visible and tappable, dimmed when no controllable rates are known. Frame-cap choices are generic
 limiter policy. Resolution, Scaling, Anti-aliasing and Sharpen (`docs/picture.md`) are the compositor's
-alone (`Setting::compositor_only`), inactive until it does them; Resolution's tile shows its size on the
+alone (`Setting::compositor_only`), dimmed with "no effect" under sway; Resolution's tile shows its size on the
 top screen once the compositor has said it (`Reading::Screens`).
 
 - `unknown --mode report--> known [no effects]`; repeated reports replace the facts without effects.
