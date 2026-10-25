@@ -491,11 +491,14 @@ impl Areas {
             .map_or(ScreenRole::Top, |t| t.screen)
     }
 
-    fn of(&self, device: &InputDevice) -> Rectangle<f64, Logical> {
-        match self.role(device) {
+    /// The device's screen's area in the scene, and how its panel is turned.
+    fn of(&self, device: &InputDevice) -> (Rectangle<f64, Logical>, Transform) {
+        let role = self.role(device);
+        let area = match role {
             ScreenRole::Top => Rectangle::from_size(self.top.to_f64()),
             ScreenRole::Bottom => Rectangle::new((f64::from(self.top.w), 0.0).into(), self.bottom.to_f64()),
-        }
+        };
+        (area, transform(self.profile.screen(role).rotation))
     }
 }
 

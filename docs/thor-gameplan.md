@@ -652,6 +652,10 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       sometimes resets at once, or QEMU's ACPI S4 wakes the hibernating kernel; one resume went through.
 - [ ] Time tab: the time zone set from the regions; "Set automatically" off and on (timesyncd); with it
       off, the date and time stepped (the bar's clock follows at once); 24-hour clock off and on.
+- [ ] ClamShell's compositor (`echo clamshell > /etc/thor/session`, then a new login on tty1): both
+      panels the right way up, and a touch on each screen landing under the finger (the touchscreens
+      report across their panels as mounted; `upright` in the compositor's input turns them back with the
+      output's transform: if a touch lands mirrored or turned, that transform is the wrong way round).
 - [ ] The session (only tried in the VM and nested on the desktop): autologin on tty1 starts sway through
       uwsm, `graphical-session.target` is reached, and ClamShell, mako and udiskie are active
       (`systemctl --user status`); launches run under `app-graphical.slice`. The failure path on the real

@@ -13,7 +13,7 @@ use smithay::{
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
     reexports::wayland_server::protocol::wl_surface::WlSurface,
-    utils::{Logical, Point, Rectangle, SERIAL_COUNTER},
+    utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Transform},
 };
 
 /// How a host delivers input.
@@ -33,10 +33,23 @@ pub(crate) struct Hit {
     pub origin: Point<f64, Logical>,
 }
 
+/// Where an absolute device's position lies in the scene. The device reports across its panel as the
+/// panel is mounted (a portrait panel turned in the case, `turn` the output's transform), so the position
+/// is turned back to the screen's upright area.
+fn placed<B: InputBackend>(event: &impl AbsolutePositionEvent<B>, (area, turn): (Rectangle<f64, Logical>, Transform)) -> Point<f64, Logical> {
+    let panel = turn.transform_size(area.size);
+    upright(event.position_transformed(panel.to_i32_round()), area, turn)
+}
+
+/// A position across a panel turned `turn`, in the scene's upright `area`.
+fn upright(on_panel: Point<f64, Logical>, area: Rectangle<f64, Logical>, turn: Transform) -> Point<f64, Logical> {
+    area.loc + turn.invert().transform_point_in(on_panel, &turn.transform_size(area.size))
+}
+
 impl Server {
     /// An input event from a host. `area` is where an absolute device (a touchscreen, a tablet, the
-    /// nested window) lies in the scene.
-    pub(crate) fn input<B: InputBackend>(&mut self, event: InputEvent<B>, host: Host, area: impl Fn(&B::Device) -> Rectangle<f64, Logical>) {
+    /// nested window) lies in the scene, and the turn of the panel it reports in (see [`placed`]).
+    pub(crate) fn input<B: InputBackend>(&mut self, event: InputEvent<B>, host: Host, area: impl Fn(&B::Device) -> (Rectangle<f64, Logical>, Transform)) {
         self.idle.input(std::time::Instant::now());
         match event {
             InputEvent::Keyboard { event, .. } => {
@@ -96,10 +109,9 @@ impl Server {
             InputEvent::PointerMotionAbsolute { event, .. } => {
                 self.validate_capture();
                 if self.capture.is_none() {
-                    let area = area(&event.device());
-                    let at = event.position_transformed(area.size.to_i32_round());
-                    log::debug!("compositor: absolute motion to {:?} in {area:?}", area.loc + at);
-                    self.pointer_absolute(area.loc + at, event.time());
+                    let at = placed(&event, area(&event.device()));
+                    log::debug!("compositor: absolute motion to {at:?}");
+                    self.pointer_absolute(at, event.time());
                 }
             }
             InputEvent::PointerButton { event, .. } => {
@@ -176,15 +188,13 @@ impl Server {
             // Positions are within the device's area of the scene. Winit sends no frame events, so each
             // of its touch events ends a frame.
             InputEvent::TouchDown { event } => {
-                let area = area(&event.device());
-                self.touch_down(event.slot(), area.loc + event.position_transformed(area.size.to_i32_round()), event.time());
+                self.touch_down(event.slot(), placed(&event, area(&event.device())), event.time());
                 if !host.touch_frames {
                     self.touch_frame();
                 }
             }
             InputEvent::TouchMotion { event } => {
-                let area = area(&event.device());
-                self.touch_motion(event.slot(), area.loc + event.position_transformed(area.size.to_i32_round()), event.time());
+                self.touch_motion(event.slot(), placed(&event, area(&event.device())), event.time());
                 if !host.touch_frames {
                     self.touch_frame();
                 }
@@ -248,5 +258,24 @@ impl Server {
 
     fn screen_position(&self, point: Point<f64, Logical>) -> (Screen, (f64, f64)) {
         if point.x < self.top_width as f64 { (Screen::Top, (point.x, point.y)) } else { (Screen::Bottom, (point.x - self.top_width as f64, point.y)) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_turned_panels_corners_reach_the_screens_corners() {
+        // The bottom screen, 1240 x 1080 upright, beside a 1920 wide top one.
+        let area = Rectangle::<f64, Logical>::new((1920.0, 0.0).into(), (1240.0, 1080.0).into());
+        assert_eq!(upright((10.0, 20.0).into(), area, Transform::Normal), (1930.0, 20.0).into());
+        // Its panel reports 1080 x 1240, portrait. Each panel corner lands on a screen corner, all four
+        // of them, and the middle stays the middle.
+        let corners = [(0.0, 0.0), (1080.0, 0.0), (0.0, 1240.0), (1080.0, 1240.0)];
+        let mut reached: Vec<(f64, f64)> = corners.iter().map(|&(x, y)| upright((x, y).into(), area, Transform::_90)).map(|p| (p.x, p.y)).collect();
+        reached.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        assert_eq!(reached, vec![(1920.0, 0.0), (1920.0, 1080.0), (3160.0, 0.0), (3160.0, 1080.0)]);
+        assert_eq!(upright((540.0, 620.0).into(), area, Transform::_90), (2540.0, 540.0).into());
     }
 }
