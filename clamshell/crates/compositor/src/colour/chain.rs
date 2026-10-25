@@ -113,6 +113,13 @@ impl Chains {
             })
             .flatten();
             let Some((source, read)) = source.filter(|_| geometry.size.w > 0 && geometry.size.h > 0) else { continue };
+            // The passes take the whole buffer: one its viewport crops is shown without them.
+            if element.src() != Rectangle::from_size(source.size()).to_f64() {
+                if self.failed.insert(element.id().clone()) {
+                    log::warn!("compositor: a window's buffer is cropped by its viewport: shown without its picture passes");
+                }
+                continue;
+            }
             let id = element.id().clone();
             let commit = element.current_commit();
             let shown: Size<i32, Buffer> = (geometry.size.w, geometry.size.h).into();
@@ -141,6 +148,9 @@ impl Chains {
                 (None, None, Some(fxaa)) => (fxaa.clone(), Transform::Normal),
                 (None, None, None) => continue,
             };
+            // The whole texture, drawn at the size shown (by default Smithay would take that size as the
+            // texture's, and repeat a smaller texture).
+            let whole = Rectangle::from_size(texture.size().to_logical(1, transform).to_f64());
             *element = Element::Ui(TextureRenderElement::from_texture_with_damage(
                 id.clone(),
                 renderer.context_id(),
@@ -149,7 +159,7 @@ impl Chains {
                 1,
                 transform,
                 None,
-                None,
+                Some(whole),
                 Some((geometry.size.w, geometry.size.h).into()),
                 None,
                 chain.damage.snapshot(),

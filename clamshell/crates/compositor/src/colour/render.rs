@@ -196,7 +196,7 @@ impl Pipeline {
             self.revision = server.colour.revision;
         }
         self.curves.clear();
-        // The windows' own surfaces whose pictures take passes before the scene (see `super::chain`): SMAA,
+        // The surface holding each window's picture, if it takes passes before the scene (see `super::chain`): SMAA,
         // and with FSR and sharpening, FSR's upscale.
         let mut chained: Vec<(Id, smithay::reexports::wayland_server::protocol::wl_surface::WlSurface, clamshell_state::settings::AntiAliasing, bool, bool)> =
             Vec::new();
@@ -207,7 +207,24 @@ impl Pipeline {
             // PQ signal we send it.
             let headroom = server.colour.screen(state.session().window(client.id).is_some_and(|w| w.down)).headroom() as f32;
             let mut clarity = state.window_clarity(client.id);
-            let one_to_one = server.geometry(client.id).is_some_and(|g| g.scale == 1.0);
+            // The game's picture: the window's surface with the largest buffer (Wine draws it in a subsurface
+            // over the toplevel's), and whether that buffer is its surface's size (Xwayland and Wine show a
+            // mode a game picked as a smaller buffer scaled by a viewport).
+            let mut picture: Option<(smithay::reexports::wayland_server::protocol::wl_surface::WlSurface, i64, bool)> = None;
+            client.window.with_surfaces(|surface, states| {
+                let renderer_state = states.data_map.get::<smithay::backend::renderer::utils::RendererSurfaceStateUserData>();
+                let sizes = renderer_state.and_then(|state| {
+                    let state = state.lock().ok()?;
+                    state.buffer_size().zip(state.surface_size())
+                });
+                if let Some((buffer, shown)) = sizes {
+                    let area = i64::from(buffer.w) * i64::from(buffer.h);
+                    if picture.as_ref().is_none_or(|(_, largest, _)| area > *largest) {
+                        picture = Some((surface.clone(), area, buffer.w == shown.w && buffer.h == shown.h));
+                    }
+                }
+            });
+            let one_to_one = server.geometry(client.id).is_some_and(|g| g.scale == 1.0) && picture.as_ref().is_some_and(|(_, _, unscaled)| *unscaled);
             // FSR shown one to one would upscale nothing: sampled as it is, its sharpening CAS's.
             if one_to_one && clarity.scaling == clamshell_state::settings::Scaling::Fsr {
                 clarity.scaling = clamshell_state::settings::Scaling::Bilinear;
@@ -225,8 +242,8 @@ impl Pipeline {
             let upscale = clarity.scaling == clamshell_state::settings::Scaling::Fsr && clarity.sharpen > 0;
             // FXAA done in the final pass takes no passes before it.
             let aa = if fxaa_here { clamshell_state::settings::AntiAliasing::Off } else { clarity.anti_aliasing };
-            if let (true, Some(root)) = (upscale || aa != clamshell_state::settings::AntiAliasing::Off, client.window.root()) {
-                chained.push((Id::from_wayland_resource(&root), root, aa, upscale, smaa_fused));
+            if let (true, Some((surface, ..))) = (upscale || aa != clamshell_state::settings::AntiAliasing::Off, picture) {
+                chained.push((Id::from_wayland_resource(&surface), surface, aa, upscale, smaa_fused));
             }
         }
         if self.curves != self.last_curves {
