@@ -194,7 +194,7 @@ fn relative_motion_and_constraints_follow_geometry_home_regions_and_host_focus()
             let id = server.windows[0].id;
             match phase {
                 0 => {
-                    assert_eq!(server.geometry(id).unwrap().scale, 0.75);
+                    assert_eq!(server.geometry(id).unwrap().scale, smithay::utils::Scale::from(0.75));
                     server.pointer_absolute((290.0, 175.0).into(), InputTime::now());
                     server.pointer_relative((10.0, 5.0).into(), (8.0, 4.0).into(), InputTime::now());
                     assert_eq!(server.pointer, (300.0, 180.0).into(), "relative-only devices position the free cursor");

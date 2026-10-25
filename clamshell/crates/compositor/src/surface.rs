@@ -119,6 +119,28 @@ impl Surface {
             }
         }
     }
+    /// The shape the window's picture should keep, if a viewport stretches it to another: the buffer of its
+    /// picture (the surface with the largest buffer) when its shape is more than 2 % off its surface's, as a
+    /// game's mode Xwayland, SDL or Wine stretch over the screen. Rounding to even pixels stays within it.
+    pub fn picture_aspect(&self) -> Option<smithay::utils::Size<i32, smithay::utils::Logical>> {
+        let mut picture: Option<(smithay::utils::Size<i32, smithay::utils::Logical>, smithay::utils::Size<i32, smithay::utils::Logical>)> = None;
+        self.with_surfaces(|_, states| {
+            let state = states.data_map.get::<smithay::backend::renderer::utils::RendererSurfaceStateUserData>();
+            let sizes = state.and_then(|state| {
+                let state = state.lock().ok()?;
+                state.buffer_size().zip(state.surface_size())
+            });
+            if let Some((buffer, shown)) = sizes
+                && picture.is_none_or(|(largest, _)| i64::from(buffer.w) * i64::from(buffer.h) > i64::from(largest.w) * i64::from(largest.h))
+            {
+                picture = Some((buffer, shown));
+            }
+        });
+        let (buffer, shown) = picture?;
+        let ratio = |s: smithay::utils::Size<i32, smithay::utils::Logical>| (s.h > 0).then(|| f64::from(s.w) / f64::from(s.h));
+        let (b, s) = (ratio(buffer)?, ratio(shown)?);
+        ((b / s - 1.0).abs() > 0.02).then_some(buffer)
+    }
     pub fn send_frame(&self, output: &Output, time: Duration, throttle: Option<Duration>, f: impl FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy) {
         match self {
             Self::Wayland(window) => window.send_frame(output, time, throttle, f),

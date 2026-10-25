@@ -237,14 +237,22 @@ def main():
         screen = None
 
         def check(case, expected_mode=None):
-            """The picture fills the top screen, of `screen`: each corner block touches its corner, the
-            border shows at Native, and the magenta cross is there once each way, near the middle."""
+            """The picture fills the top screen, of `screen`, or for a mode of another shape (more than 2 %
+            off) is fitted in it and centred between black bars: each corner block touches the picture's
+            corner, the border shows at Native, and the magenta cross is there once each way, near the
+            middle."""
             time.sleep(0.8)
             subprocess.run(["grim", "-o", "HEADLESS-1", str(directory / f"{case}.png")], env=host, check=True)
             width, height, pixels = image()
-            w, h = screen
+            sw, sh = screen
+            x0, y0, w, h = 0, 0, sw, sh
+            if expected_mode and abs((expected_mode[0] / expected_mode[1]) / (sw / sh) - 1) > 0.02:
+                fit = min(sw / expected_mode[0], sh / expected_mode[1])
+                w, h = round(expected_mode[0] * fit), round(expected_mode[1] * fit)
+                x0, y0 = (sw - w) // 2, (sh - h) // 2
 
             def at(x, y):
+                x, y = x + x0, y + y0
                 o = (y * width + x) * 3
                 return pixels[o], pixels[o + 1], pixels[o + 2]
 
@@ -272,8 +280,13 @@ def main():
                 if near_x > 2 or near_y > 2:
                     problems.append(f"{colour} block {near_x},{near_y} px from its corner")
             # Past the right edge (the second screen) no green or yellow block continues.
-            if w + 2 < width and any(colours["green"](*at(w + 1, y)) for y in range(0, 16)):
+            if sw + 2 < width and any(colours["green"](*at(sw - x0 + 1, y)) for y in range(0, 16)):
                 problems.append("green past the top screen's right edge")
+            # The bars around a fitted picture are black.
+            if x0 > 2 and any(max(at(-x0 + 1, y)) > 16 or max(at(w + 1, y)) > 16 for y in range(16, h - 16, 37)):
+                problems.append("the bars beside the picture aren't black")
+            if x0 or y0:
+                measured.append(f"fitted {w}x{h} at {x0},{y0}")
             # The cross: magenta runs across a row a quarter down and a column a quarter across.
             magenta = lambda r, g, b: r - g > 60 and b - g > 60
 

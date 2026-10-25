@@ -203,8 +203,8 @@ impl Server {
             self,
             Some((surface, origin)),
             &RelativeMotionEvent {
-                delta: (delta.x / geometry.scale, delta.y / geometry.scale).into(),
-                delta_unaccel: (unaccelerated.x / geometry.scale, unaccelerated.y / geometry.scale).into(),
+                delta: (delta.x / geometry.scale.x, delta.y / geometry.scale.y).into(),
+                delta_unaccel: (unaccelerated.x / geometry.scale.x, unaccelerated.y / geometry.scale.y).into(),
                 time,
             },
         );

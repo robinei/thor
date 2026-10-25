@@ -661,7 +661,7 @@ impl Server {
     pub fn geometry(&self, id: i64) -> Option<crate::geometry::Geometry> {
         let window = self.core.state().session().window(id)?;
         let client = self.windows.iter().find(|w| w.id == id && w.mapped)?;
-        crate::geometry::Geometry::new(self.area(window.down), client.window.geometry(), client.presentation?)
+        crate::geometry::Geometry::new(self.area(window.down), client.window.geometry(), client.presentation?, client.window.picture_aspect())
     }
 }
 

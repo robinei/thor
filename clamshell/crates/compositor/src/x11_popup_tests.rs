@@ -94,7 +94,7 @@ fn x11_popups_share_parent_scaling_keep_tooltips_passive_and_cancel_dismissed_co
                 frames: Default::default(),
             });
             let geometry = server.geometry(1).unwrap();
-            assert_eq!(geometry.scale, 0.75);
+            assert_eq!(geometry.scale, smithay::utils::Scale::from(0.75));
             if let Surface::X11(window) = &mut server.windows[0].window {
                 window.popups.extend([
                     X11Popup { id: 101, surface: first.clone(), location: (100, 80).into(), geometry, input: true },
@@ -106,7 +106,7 @@ fn x11_popups_share_parent_scaling_keep_tooltips_passive_and_cancel_dismissed_co
             assert_eq!(server.geometry(1).unwrap(), geometry, "popup extents do not change parent sizing");
             assert!(server.has_x11_menu());
             let time = InputTime::from_millis(10);
-            let point = |x, y| geometry.origin + Point::from((x * geometry.scale, y * geometry.scale));
+            let point = |x, y| geometry.origin + Point::from((x * geometry.scale.x, y * geometry.scale.y));
             let main_point = point(120.0, 100.0);
             let sub_point = point(150.0, 120.0);
             assert_eq!(server.hit(main_point).unwrap().surface, first);

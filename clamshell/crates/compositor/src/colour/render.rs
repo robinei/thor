@@ -224,7 +224,7 @@ impl Pipeline {
                     }
                 }
             });
-            let one_to_one = server.geometry(client.id).is_some_and(|g| g.scale == 1.0) && picture.as_ref().is_some_and(|(_, _, unscaled)| *unscaled);
+            let one_to_one = server.geometry(client.id).is_some_and(|g| g.one_to_one()) && picture.as_ref().is_some_and(|(_, _, unscaled)| *unscaled);
             // FSR shown one to one would upscale nothing: sampled as it is, its sharpening CAS's.
             if one_to_one && clarity.scaling == clamshell_state::settings::Scaling::Fsr {
                 clarity.scaling = clamshell_state::settings::Scaling::Bilinear;

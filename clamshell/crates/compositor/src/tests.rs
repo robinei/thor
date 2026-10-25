@@ -244,7 +244,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
                     // The client keeps its original buffer and stops acknowledging configure. It
                     // cannot hold up placement; rendering and input use a fitted transform at once.
                     let geometry = server.geometry(windows[0].id).unwrap();
-                    assert!(geometry.scale < 1.0);
+                    assert!(geometry.scale.x < 1.0);
                     assert_eq!(geometry.native.size, (960, 540).into());
                     assert_eq!(windows[0].place(), WindowPlace::Bottom);
                     assert_eq!(size, (server.area(true).size.w, server.area(true).size.h));
@@ -431,8 +431,8 @@ fn touch_contacts_keep_independent_surfaces_and_native_coordinates() {
             assert!(server.touches.iter().all(Option::is_none));
             server.resize((790, 135));
             let scaled = server.geometry(first).unwrap();
-            assert!(scaled.scale < 1.0);
-            let point = scaled.origin + smithay::utils::Point::from((128.0 * scaled.scale, 64.0 * scaled.scale));
+            assert!(scaled.scale.x < 1.0);
+            let point = scaled.origin + smithay::utils::Point::from((128.0 * scaled.scale.x, 64.0 * scaled.scale.y));
             server.touch_down(Some(4).into(), point, time);
             server.touch_up(Some(4).into(), time);
             server.touch_frame();
