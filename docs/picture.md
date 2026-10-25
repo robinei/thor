@@ -30,22 +30,30 @@ effects worth having are written for our shaders instead.
 
 One tile in a game's settings, **Picture** (the HDR curve tile, renamed), opening the profile picker as
 now: the game's own profile, Off, the named ones, New; the same menus. A profile holds everything below;
-presets to start from cover the common cases (True black, Punchy, Gentle; Sharp: CAS only; Pixel art:
-integer scaling, no anti-aliasing).
+presets to start from cover the common cases (True black, Punchy, Gentle; Sharp: CAS only; Performance:
+1280×720, FSR, SMAA; Pixel art: 960×540, Nearest, no anti-aliasing).
 
 The edit screen has three pages, switched by tabs under the header (and the shoulder buttons):
 
 - **Look:** the plot and the curve's rows, as now (black point, contrast, SDR white, highlights from,
   highlight peak, saturation, HDR game's peak).
-- **Clarity:** Anti-aliasing (Off, SMAA); Scaling, when the game's picture is smaller than the screen
-  (Smooth, Sharp, Integer, FSR); Render size, asked of the game (Native, ⅔, ½); Sharpen (Off, then a
-  strength; RCAS with FSR, CAS without).
+- **Clarity:** four settings, each on its own, combined into one chain (below):
+  - Resolution, asked of the game: Native (1920×1080 on the Thor), 1600×900, 1280×720, 960×540,
+    640×360; on another screen the same fractions of it (⅚, ⅔, ½, ⅓).
+  - Scaling, whenever the game's picture is smaller than the screen, whoever chose its size: Bilinear,
+    Nearest, FSR. Nearest at ½ or ⅓ (960×540, 640×360 on the Thor) is exact integer scaling, which is
+    why there is no integer setting; at the others it is uneven, and the row says so.
+  - Anti-aliasing: Off, SMAA.
+  - Sharpen: Off, then a strength. CAS, or FSR's own sharpening (RCAS) when Scaling is FSR, so it is
+    never sharpened twice.
+  Defaults: Native, Bilinear, Off, Off.
 - **In game** (Proton games): Upscaler (the game's own, FSR 3.1, XeSS); Frame generation (Off, FSR,
   XeSS). Shown only once layer 1 is known to work on the device; until then not there.
 
 Rows that do nothing for this game are dimmed with why, never hidden (the curve's peak for an HDR game;
-Scaling with the picture at the screen's size; Render size for a game that chooses its own resolution;
-everything in layer 2 under sway, where the compositor isn't ours). One rule keeps the layers from
+Scaling with the picture at the screen's size; Resolution for a game that chooses its own; everything in
+layer 2 under sway, where the compositor isn't ours). No combination is refused: SMAA before Nearest blurs
+pixel edges, and the presets are where the sensible combinations are. One rule keeps the layers from
 fighting: **with an upscaler in the game (In game's Upscaler, or the game's own temporal one), the
 compositor's anti-aliasing and scaling are off** and dimmed ("the game upscales"); sharpening stays,
 for those who want more.
@@ -59,9 +67,8 @@ so ("60 fps, 30 rendered"). The frame rate cap applies to frames shown.
 
 1. SMAA at the game's own resolution: three passes (edges, blend weights, blending) with its two lookup
    textures. Fixed shaders, compiled once.
-2. Scaling to the size the window is shown at: FSR 1's EASU (one pass), or a filter (sharp bilinear,
-   integer, smooth) in the final pass's sampling. EASU works on the signal (gamma or PQ), so before
-   decoding.
+2. Scaling to the size the window is shown at: FSR 1's EASU (one pass), or the final pass sampling with
+   Nearest or Bilinear. EASU works on the signal (gamma or PQ), so before decoding.
 3. The final pass, into the scene: RCAS or CAS on what it reads, then the decoding, the curve and the
    conversion to the scene, as the input shader does now.
 
@@ -74,7 +81,7 @@ whether the final pass sharpens); everything a slider moves is a uniform, so mov
 Branches on uniforms are fine (every pixel takes the same one). Shader compiles stutter on the Adreno,
 so variants are compiled when a window maps or a profile changes, never during play, and cached.
 
-**Render size:** the compositor already tells each window its size. A smaller render size configures the
+**Resolution:** the compositor already tells each window its size. A smaller resolution configures the
 game's window smaller and shows it at the screen's size through the Scaling stage. A game that sets its
 resolution itself (most Proton games, through Wine's display modes) ignores it; Scaling still applies to
 whatever size its picture is.
@@ -84,7 +91,7 @@ Proton-CachyOS's `PROTON_USE_OPTISCALER=1`, under the compositor and under sway 
 into the game's folder.
 
 **What replaces what:** `Setting::Upscale` (gamescope's FSR and integer modes, never implemented) goes;
-Render size and Scaling replace it. The curve's profiles become Picture profiles (a format change: the
+Resolution and Scaling replace it. The curve's profiles become Picture profiles (a format change: the
 saved curves are rewritten once by hand, as there are few).
 
 **Licences:** FSR 1 (EASU, RCAS) and CAS are MIT; SMAA is MIT with its lookup textures; the filters are
@@ -93,7 +100,7 @@ ours.
 ## Phases
 
 1. **On the desktop, nested and on the VM:** the tile renamed, the profile's body grown, the edit screen's
-   pages; then CAS and RCAS in the final pass, the scaling filters, EASU, SMAA, in that order. Each tested
+   pages; then CAS and RCAS in the final pass, Nearest and Bilinear, Resolution, EASU, SMAA, in that order. Each tested
    headless against reference images computed on the CPU (the shaders' arithmetic mirrored, as the
    curve's is), and by eye nested with a game.
 2. **On the device (phase 4 of the compositor plan):** each stage's GPU time on the Adreno at 1080p and
