@@ -107,7 +107,7 @@ fn edit(f: &mut Frame, id: u16) {
             Source::Defaults => Fmt::of(format_args!("Read from defaults{note}")),
         };
         let inner = caption.inset(size * 0.4);
-        f.c.text_fit(Rect::new(inner.x, caption.y + caption.h * 0.3, inner.w, caption.h * 0.7), size * 0.8, Tone::Dim, text.as_str(), Keep::Start);
+        f.c.text_fit(Rect::new(inner.x, caption.y + caption.h * 0.15, inner.w, caption.h * 0.85), size, Tone::Dim, text.as_str(), Keep::Start);
     }
     let mut held_setting = None;
     if let Some(row) = col.next(rh) {
@@ -181,34 +181,29 @@ fn plot(f: &mut Frame, r: Rect, curve: &Curve, on: CurvePlot, size: f32) {
     // The screen's peak, paper white and black, each labelled above its line; a label too close to the
     // one above is left out.
     let paper = (f64::from(curve.white)).min(screen_nits);
-    let mut last_label = f32::NEG_INFINITY;
-    for nits in [screen_nits, paper, on.black * REFERENCE_NITS] {
-        let y = y_of(nits);
-        // The screen's black is only labelled: its line would lie on the base strip.
-        let black = nits <= on.black * REFERENCE_NITS;
-        if !black {
-            f.c.line((inner.x, y), (inner.right(), y), 1.0, AS_IS);
+    let label = |nits: f64, unit: &str| {
+        if nits >= 10.0 {
+            Fmt::<24>::of(format_args!("{nits:.0}{unit}"))
+        } else if nits >= 1.0 {
+            Fmt::of(format_args!("{nits:.1}{unit}"))
+        } else {
+            Fmt::of(format_args!("{nits:.3}{unit}"))
         }
-        if y - last_label >= size * 1.35 {
-            // The unit once, on the topmost.
-            let unit = if last_label == f32::NEG_INFINITY { " nits" } else { "" };
-            let label = if nits >= 10.0 {
-                Fmt::<24>::of(format_args!("{nits:.0}{unit}"))
-            } else if nits >= 1.0 {
-                Fmt::of(format_args!("{nits:.1}{unit}"))
-            } else {
-                Fmt::of(format_args!("{nits:.3}{unit}"))
-            };
-            // Above its line at the left, where the curve is low; the black's below the plot at the right,
-            // under the histogram's bars.
-            if black {
-                f.c.text_in(Rect::new(inner.x, inner.bottom() + size * 0.2, inner.w, size * 1.2), size, Tone::Dim, label.as_str(), Align::End);
-            } else {
-                f.c.text_in(Rect::new(inner.x + size * 0.4, y - size * 1.5, inner.w - size * 0.7, size * 1.2), size, Tone::Dim, label.as_str(), Align::Start);
-            }
-            last_label = y;
-        }
+    };
+    // The screen's peak, labelled above its line at the left, where the curve is low; paper white below
+    // its line there, so that the two never meet, and not at all when it is the peak (an SDR screen).
+    let (peak_y, paper_y) = (y_of(screen_nits), y_of(paper));
+    f.c.line((inner.x, peak_y), (inner.right(), peak_y), 1.0, AS_IS);
+    let text_at = |y: f32| Rect::new(inner.x + size * 0.4, y, inner.w - size * 0.7, size * 1.2);
+    f.c.text_in(text_at(peak_y - size * 1.5), size, Tone::Dim, label(screen_nits, " nits").as_str(), Align::Start);
+    if paper_y - peak_y >= 1.0 {
+        f.c.line((inner.x, paper_y), (inner.right(), paper_y), 1.0, AS_IS);
+        f.c.text_in(text_at(paper_y + size * 0.3), size, Tone::Dim, label(paper, "").as_str(), Align::Start);
     }
+    // The screen's black, only labelled, below the plot at the right: its line would lie under the
+    // histogram's bars.
+    let black = on.black * REFERENCE_NITS;
+    f.c.text_in(Rect::new(inner.x, inner.bottom() + size * 0.2, inner.w, size * 1.2), size, Tone::Dim, label(black, "").as_str(), Align::End);
     let line = |f: &mut Frame, curved: bool, width: f32, colour: Rgb| {
         let mut last = (inner.x, y_of(shown(0.0, curved)));
         for i in 1..=PLOT_STEPS {
