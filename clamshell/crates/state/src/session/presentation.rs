@@ -93,10 +93,16 @@ impl ColourDescription {
     /// peak, else its nominal maximum (10000 nits for linear light, which has none).
     pub fn peak(self) -> f64 {
         let luminance = self.luminances();
-        let target = self.target.unwrap_or_default();
         let nominal = if self.transfer == TransferFunction::Linear { 10000 } else { luminance.max };
-        let peak = target.max_cll.or(target.luminance.map(|(_, maximum)| maximum)).unwrap_or(nominal);
-        f64::from(peak) / f64::from(luminance.reference.max(1))
+        self.declared_peak().unwrap_or(f64::from(nominal) / f64::from(luminance.reference.max(1)))
+    }
+
+    /// The brightest it declares itself, over its reference white: its MaxCLL, else its mastering
+    /// display's peak; none if it gives neither.
+    pub fn declared_peak(self) -> Option<f64> {
+        let target = self.target.unwrap_or_default();
+        let peak = target.max_cll.or(target.luminance.map(|(_, maximum)| maximum))?;
+        Some(f64::from(peak) / f64::from(self.luminances().reference.max(1)))
     }
 
     /// For a screen's description: what it shows above its reference white, at least 1.
@@ -151,12 +157,25 @@ impl From<clamshell_device::colour::PanelColour> for ColourDescription {
 /// What a curve's plot shows (see [`crate::State::curve_plot`]), in units of the reference white.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurvePlot {
-    /// For HDR content, the brightest it declares; None for SDR.
-    pub hdr_peak: Option<f64>,
+    /// For HDR content, its signal and peak; None for SDR.
+    pub hdr: Option<HdrPlot>,
     /// What the screen shows above the reference white.
     pub headroom: f64,
     /// The screen's black.
     pub black: f64,
+}
+
+/// An HDR game's content in a curve's plot.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HdrPlot {
+    /// The brightest it declares, or the nominal maximum its signal allows, over its reference white.
+    pub peak: f64,
+    /// The same in the game's own nits (scRGB's white is 80, which is shown at the reference white).
+    pub nits: f64,
+    /// Whether it declares its peak (MaxCLL or its mastering display's).
+    pub declared: bool,
+    /// Whether it is scRGB (linear light) rather than PQ.
+    pub scrgb: bool,
 }
 
 impl super::windows::Window {
@@ -209,7 +228,13 @@ impl crate::State {
         let screen = self.screen_colour(window.is_some_and(|w| w.down));
         let luminance = screen.luminances();
         let black = f64::from(luminance.min) / 10000.0 / f64::from(luminance.reference.max(1));
-        CurvePlot { hdr_peak: colour.map(ColourDescription::peak), headroom: screen.headroom(), black }
+        let hdr = colour.map(|colour| HdrPlot {
+            peak: colour.peak(),
+            nits: colour.peak() * f64::from(colour.luminances().reference),
+            declared: colour.declared_peak().is_some(),
+            scrgb: colour.transfer == TransferFunction::Linear,
+        });
+        CurvePlot { hdr, headroom: screen.headroom(), black }
     }
 
     /// The frame rate cap for window `id`: the one in the settings in force for the program running it.

@@ -464,8 +464,17 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot("curves.png", Bottom, vec![]),
                 shot("curve-edit.png", Bottom, vec![tap(Id::Row { list: ListId::Curves, i: 2, part: clamshell_state::RowPart::Edit })]),
                 shot("curve-edit-slider.png", Bottom, curve_slide(clamshell_state::curve::CurveParam::Peak, 0.2)),
-                shot("curve-edit-hdr.png", Bottom, [vec![Slide::End.into()], demo::hdr_game("ff6")].concat()),
+                shot("curve-edit-hdr.png", Bottom, [vec![Slide::End.into()], demo::hdr_game("ff6", true)].concat()),
             ],
+        ),
+        // An HDR game giving no peak: scRGB, its peak assumed.
+        group(
+            vec![ff6(), ff6(), Reading::Screens(Box::new(demo::screens())).into(), tab(Tab::Settings), tap(Id::Settings(SettingsId::Tile(Setting::Curve)))],
+            vec![shot(
+                "curve-edit-scrgb.png",
+                Bottom,
+                [vec![tap(Id::Row { list: ListId::Curves, i: 2, part: clamshell_state::RowPart::Edit })], demo::hdr_game("ff6", false)].concat(),
+            )],
         ),
         // A game's own keymap, made from FPS after FPS is chosen for the game. Then its menu, the own keymap
         // kept while FPS is chosen again, and FPS's edit screen while games use it.

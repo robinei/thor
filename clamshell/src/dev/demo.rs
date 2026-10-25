@@ -66,15 +66,20 @@ pub fn screens() -> [clamshell_state::session::presentation::ColourDescription; 
     [profile.top.colour.into(), profile.bottom.colour.into()]
 }
 
-/// `entry` running, with its window on the top screen sending HDR: PQ, mastered to 1000 nits.
-pub fn hdr_game(entry: &str) -> Vec<Event> {
+/// `entry` running, with its window on the top screen sending HDR: PQ mastered to 1000 nits if `declared`,
+/// else scRGB with no peak given.
+pub fn hdr_game(entry: &str, declared: bool) -> Vec<Event> {
     use clamshell_state::session::presentation::{ColourDescription, ColourPrimaries, ColourTarget, TransferFunction};
     let launch = run(entry, 0);
-    let colour = ColourDescription {
-        primaries: ColourPrimaries::Bt2020,
-        transfer: TransferFunction::Pq,
-        luminance: None,
-        target: Some(ColourTarget { luminance: Some((0, 1000)), max_cll: Some(1000), ..ColourTarget::default() }),
+    let colour = if declared {
+        ColourDescription {
+            primaries: ColourPrimaries::Bt2020,
+            transfer: TransferFunction::Pq,
+            luminance: None,
+            target: Some(ColourTarget { luminance: Some((0, 1000)), max_cll: Some(1000), ..ColourTarget::default() }),
+        }
+    } else {
+        ColourDescription { primaries: ColourPrimaries::Srgb, transfer: TransferFunction::Linear, luminance: None, target: None }
     };
     let window = Window { colour: Some(std::sync::Arc::new(colour)), ..window_of(30, "game", &launch, true, false) };
     vec![Event::Units(vec![launch]), clamshell_state::session::windows::changes(&[], &[window])]

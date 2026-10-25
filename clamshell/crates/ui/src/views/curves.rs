@@ -121,15 +121,23 @@ fn plot(f: &mut Frame, r: Rect, curve: &Curve, on: CurvePlot, size: f32) {
             last_label = y;
         }
     }
-    let caption = match on.hdr_peak {
-        Some(peak) => Fmt::<48>::of(format_args!("HDR game to {:.0} nits", peak * REFERENCE_NITS)),
+    // The game's signal, and its peak, as it declares it or as assumed.
+    let caption = match on.hdr {
+        Some(hdr) => {
+            let (signal, nits) = (if hdr.scrgb { "scRGB" } else { "PQ" }, hdr.nits);
+            if hdr.declared {
+                Fmt::<64>::of(format_args!("HDR game, {signal}, to {nits:.0} nits"))
+            } else {
+                Fmt::of(format_args!("HDR game, {signal}, peak not given ({nits:.0} nits assumed)"))
+            }
+        }
         None => Fmt::of(format_args!("SDR game")),
     };
     // At the right, clear of the peak's label.
     f.c.text_in(Rect::new(inner.x, r.y, inner.w - size * 0.3, size * 1.4), size, Tone::Dim, caption.as_str(), Align::End);
     // The light shown for level `e` (0 to 1) as it is, and through the curve.
     let shown = |e: f64, curved: bool| -> f64 {
-        match on.hdr_peak {
+        match on.hdr.map(|hdr| hdr.peak) {
             None if curved => curve.map_on([e, e, e], on.headroom)[1] * REFERENCE_NITS,
             None => Curve::default().map([e, e, e])[1] * REFERENCE_NITS,
             Some(peak) => {
