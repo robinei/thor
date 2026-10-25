@@ -781,6 +781,9 @@ def pointer(args):
               {"type": "abs", "data": {"axis": "y", "value": scaled(args.y, size[1])}}]
     qmp.command("input-send-event", device="video0", head=args.head, events=events)
     if args.click:
+        # QEMU's USB tablet can deliver a button ahead of a motion sent just before it: give the motion
+        # time to arrive, so the click lands where the pointer was sent.
+        time.sleep(0.1)
         for down in (True, False):
             qmp.command("input-send-event", device="video0", head=args.head,
                         events=[{"type": "btn", "data": {"button": args.click, "down": down}}])

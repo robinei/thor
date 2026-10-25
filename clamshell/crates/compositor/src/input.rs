@@ -98,10 +98,12 @@ impl Server {
                 if self.capture.is_none() {
                     let area = area(&event.device());
                     let at = event.position_transformed(area.size.to_i32_round());
+                    log::debug!("compositor: absolute motion to {:?} in {area:?}", area.loc + at);
                     self.pointer_absolute(area.loc + at, event.time());
                 }
             }
             InputEvent::PointerButton { event, .. } => {
+                log::debug!("compositor: button {:#x} {:?} at {:?}", event.button_code(), event.state(), self.pointer);
                 if event.button_code() == 0x110 && self.arrow_pressed {
                     if event.state() == ButtonState::Released {
                         self.arrow_pressed = false;
