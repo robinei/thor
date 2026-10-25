@@ -77,6 +77,10 @@ pub(crate) struct Server {
     pub vt_switch: Option<i32>,
     /// Commits so far, for a host to tell when clients want frame callbacks without a visible change.
     pub commits: u64,
+    /// Whether the state wants the top screen and the second on (`Effect::Outputs`), and the top
+    /// screen's refresh in Hz, 0 for the rate it had at start (`Effect::Refresh`), for a host with screens.
+    pub screens_on: [bool; 2],
+    pub refresh_wanted: u16,
     pub keyboard_source: smithay::input::keyboard::KeyboardSource,
     pub touches: [Option<crate::touch::Contact>; 32],
     pub touch_pending: bool,
@@ -182,6 +186,8 @@ impl Server {
             keyboard_home: false,
             vt_switch: None,
             commits: 0,
+            screens_on: [true; 2],
+            refresh_wanted: 0,
             keyboard_source: smithay::input::keyboard::KeyboardSource::new_auxiliary(),
             touches: std::array::from_fn(|_| None),
             touch_pending: false,
@@ -478,7 +484,10 @@ impl Server {
                         }
                     }
                 }
-                Effect::Window(_) | Effect::Outputs { .. } | Effect::Refresh(_) => {}
+                // The second screen is on only while the screens are.
+                Effect::Outputs { top, bottom } => self.screens_on = [top, top && bottom],
+                Effect::Refresh(hz) => self.refresh_wanted = hz,
+                Effect::Window(_) => {}
                 Effect::Key(ref stroke) => self.stroke(stroke),
                 Effect::Launch { ref env, .. } => {
                     let mut launch = effect.clone();

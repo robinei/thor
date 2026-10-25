@@ -58,6 +58,13 @@ struct Screen {
     /// The commits its last frame callbacks answered, and when an idle screen may send the next ones.
     answered: u64,
     next_callbacks: Option<Instant>,
+    /// Whether it is on, as the state last asked.
+    on: bool,
+    /// The connector's modes of the screen's size, the one it started with, and the refresh last asked
+    /// for (0: the starting one).
+    modes: Vec<smithay::reexports::drm::control::Mode>,
+    start_mode: smithay::reexports::drm::control::Mode,
+    refresh: u16,
 }
 
 /// What drawing needs, shared by the loop's sources.
@@ -73,10 +80,11 @@ struct Drawing {
     states: RenderElementStates,
 }
 
-/// A connector chosen for a screen: its handle, mode and CRTC.
+/// A connector chosen for a screen: its handle, mode, the modes it has of that size, and its CRTC.
 struct Chosen {
     connector: connector::Handle,
     mode: smithay::reexports::drm::control::Mode,
+    modes: Vec<smithay::reexports::drm::control::Mode>,
     crtc: crtc::Handle,
 }
 
@@ -150,8 +158,19 @@ pub fn run(
             dirty: true,
             answered: 0,
             next_callbacks: None,
+            on: true,
+            modes: chosen.modes.clone(),
+            start_mode: chosen.mode,
+            refresh: 0,
         });
     }
+
+    // The top screen's rates, for the refresh setting (sway's output management tells them otherwise).
+    let mut rates = clamshell_state::device::display::DisplayModes::default();
+    for mode in &top.modes {
+        rates.add(i32::try_from(mode.vrefresh()).unwrap_or(0).saturating_mul(1000));
+    }
+    server.core.handle(clamshell_state::Event::DisplayModes(rates));
 
     let top_ui = server.core.size(clamshell_ui::Screen::Top).0;
     let bottom_ui = server.core.size(clamshell_ui::Screen::Bottom).0;
@@ -279,8 +298,9 @@ fn choose(drm: &DrmDevice, profile: &Profile, role: ScreenRole, taken: Option<cr
             .and_then(|e| drm.get_encoder(e).ok()?.crtc())
             .filter(|c| Some(*c) != taken)
             .and_then(|c| Some((c, drm.get_crtc(c).ok()?.mode()?)));
+        let same_size = |mode: smithay::reexports::drm::control::Mode| info.modes().iter().filter(|m| m.size() == mode.size()).copied().collect();
         if let Some((crtc, mode)) = current {
-            return Ok(Chosen { connector: handle, mode, crtc });
+            return Ok(Chosen { connector: handle, mode, modes: same_size(mode), crtc });
         }
         let mode = info
             .modes()
@@ -296,7 +316,7 @@ fn choose(drm: &DrmDevice, profile: &Profile, role: ScreenRole, taken: Option<cr
             .flat_map(|e| resources.filter_crtcs(e.possible_crtcs()))
             .find(|c| Some(*c) != taken)
             .ok_or_else(|| format!("drm: no CRTC for {name}"))?;
-        return Ok(Chosen { connector: handle, mode, crtc });
+        return Ok(Chosen { connector: handle, mode, modes: same_size(mode), crtc });
     }
     Err(format!("drm: no connector {name} for the {role:?} screen").into())
 }
@@ -342,6 +362,7 @@ fn callbacks(server: &Server, down: bool) {
 /// their frame callbacks, at most once a refresh, so that an idle screen never spins. Returns when those
 /// are next due.
 fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(Result<crate::Capture, String>), now: Instant) -> Option<Instant> {
+    outputs(drawing, server);
     if let Err(error) = compose(drawing, server, on_capture) {
         log::warn!("drm: drawing: {error}");
     }
@@ -353,7 +374,7 @@ fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(
         if screen.pending {
             continue;
         }
-        if screen.dirty {
+        if screen.dirty && screen.on {
             if let Err(error) = present(drawing, server, index) {
                 log::warn!("drm: drawing: {error}");
             }
@@ -371,6 +392,44 @@ fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(
         }
     }
     due
+}
+
+/// Turns each screen off or on, and the top screen to the refresh, as the state last asked.
+fn outputs(drawing: &mut Drawing, server: &mut Server) {
+    for screen in &mut drawing.screens {
+        let index = usize::from(screen.role == ScreenRole::Bottom);
+        let wanted = server.screens_on.get(index).copied().unwrap_or(true);
+        if wanted != screen.on {
+            log::info!("drm: {:?} screen {}", screen.role, if wanted { "on" } else { "off" });
+            screen.on = wanted;
+            if wanted {
+                // The next frame turns it back on.
+                screen.surface.reset_buffers();
+                screen.dirty = true;
+            } else if let Err(error) = screen.surface.surface().clear() {
+                log::warn!("drm: turning the {:?} screen off: {error}", screen.role);
+            }
+            screen.pending = false;
+        }
+        if screen.role == ScreenRole::Top && server.refresh_wanted != screen.refresh {
+            screen.refresh = server.refresh_wanted;
+            let hz = u32::from(screen.refresh);
+            let mode =
+                if hz == 0 { screen.start_mode } else { screen.modes.iter().copied().min_by_key(|m| m.vrefresh().abs_diff(hz)).unwrap_or(screen.start_mode) };
+            if mode != screen.surface.pending_mode() {
+                log::info!("drm: top screen at {} Hz", mode.vrefresh());
+                match screen.surface.use_mode(mode) {
+                    Ok(()) => {
+                        screen.interval = Duration::from_micros(1_000_000 / u64::from(mode.vrefresh().max(1)));
+                        screen.dirty = true;
+                        server.refresh = i32::try_from(mode.vrefresh()).unwrap_or(60).saturating_mul(1000);
+                        server.resize(server.size);
+                    }
+                    Err(error) => log::warn!("drm: top screen at {} Hz: {error}", mode.vrefresh()),
+                }
+            }
+        }
+    }
 }
 
 /// Draws what changed in the scene, marking the screens whose part it is in.
