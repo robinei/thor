@@ -590,17 +590,18 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
           the same clip in mpv directly on KWin (done 2026-10-25: they look the same) (a synthetic clip: a 0-1000 nit ramp, patches from 1 to
           1000 nits, a moving 1000-nit highlight); a Proton game with HDR through Wine's Wayland driver.
 3. **The generic DRM backend, on the VM:** udev, DRM, GBM, GLES, libseat, libinput, two outputs, power,
-   refresh, dmabuf feedback with scanout tranches. The VM image boots either compositor; the VM suite
-   checks both.
+   refresh. The VM image boots either compositor; the VM suite checks both. (dmabuf feedback with scanout
+   tranches moved to phase 4, with direct scanout.)
    - [x] `clamshell --drm`: libseat, DRM and GBM with GLES, libinput, both screens from the device profile
          (the kernel's mode kept, turned as mounted), each shown its part of the one composed scene and
          drawn only when that part changed; flips give presentation feedback and frame callbacks; VT
          switching. Tried in the bring-up image (llvmpipe): both screens right, about 1 % CPU idle, clicks,
          touch, keys, a Wayland client (foot) shown and moved to the second screen.
    - [x] The session switch: `/etc/thor/session` saying `clamshell` runs it on tty1 instead of sway.
-   - [ ] Output power and refresh as the state asks (`Effect::Outputs`, `Effect::Refresh`); dmabuf
-         feedback with the scanout tranches; touch on panels mounted turned (the Thor's), rotated with the
-         output; ClamShell's package built with the compositor (its libraries in the aarch64 sysroot).
+   - [x] Output power and refresh as the state asks (`Effect::Outputs`, `Effect::Refresh`); touch on
+         panels mounted turned (the Thor's), rotated with the output; ClamShell's package built with the
+         compositor (its libraries in the aarch64 sysroot). The render device's dmabuf feedback is sent;
+         the scanout tranche waits for direct scanout (phase 4).
    - [ ] The session's services under the compositor (udiskie; notifications are phase 6), and the
          watchdog and restart that clamshell.service gives under sway.
    - [x] Frame statistics and the cap ("Frame statistics and limiting", section 3) on the DRM backend's
@@ -628,6 +629,16 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
    then the Snapdragon specifics: panel orientation, rotated plane scanout, command-mode pacing, the
    refresh policy, the brightness and power guards; measurements (frame statistics against MangoHud's
    under sway for the same game, a capped game's pacing and power); daily use with sway still the default.
+   - [ ] Direct scanout and the scanout tranche. The DRM backend now always composes (the colour
+         pipeline: curves, the panel's colour), so no client buffer reaches a plane, and a scanout tranche
+         would only steer allocations for nothing. Direct scanout needs the backend on Smithay's
+         `DrmCompositor` (it picks planes, test-commits, gives per-surface scanout feedback), and is
+         allowed only when composition would change nothing: the window fullscreen on its screen, no
+         overlay over it, its curve Off, its colours matching the panel's (or the plane's KMS colour
+         pipeline doing the conversion). First read on the device: the top panel's gamut against sRGB, the
+         planes' colour properties and formats, and the power composition costs against scanout; then
+         decide. With it, the per-surface feedback's scanout tranche (UBWC for Turnip and freedreno,
+         section 4).
 4h. **HDR, the device half** (after phase 4's measurements, as the gameplan's HDR experiment describes;
     the panels do no tone mapping of their own, so ours does it all):
     - [ ] Bit depth. The display controller takes 10-bit buffers (2101010), but the link to both panels is
