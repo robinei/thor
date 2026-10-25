@@ -1428,7 +1428,9 @@ pixel, focus and trace references stay unchanged.
 rates at the main output's current dimensions. State stores a bounded sorted unique list; zero always
 means restore the original mode. No modes are invented from the profile. The Refresh tile stays
 visible and tappable, dimmed when no controllable rates are known. Frame-cap choices are generic
-limiter policy; upscale choices remain inactive and describe relative render sizes.
+limiter policy. Resolution, Scaling, Anti-aliasing and Sharpen (`docs/picture.md`) are the compositor's
+alone (`Setting::compositor_only`), inactive until it does them; Resolution's tile shows its size on the
+top screen once the compositor has said it (`Reading::Screens`).
 
 - `unknown --mode report--> known [no effects]`; repeated reports replace the facts without effects.
 - `known --mode change/hotplug--> known or unknown [no effects]`; saved choices remain intact.

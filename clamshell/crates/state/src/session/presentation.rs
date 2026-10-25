@@ -154,6 +154,16 @@ impl From<clamshell_device::colour::PanelColour> for ColourDescription {
     }
 }
 
+/// The screens as the compositor has them (see [`crate::Reading::Screens`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Screens {
+    /// Each screen's colour as clients are told it (the top's, the second's): what a curve is shown
+    /// within.
+    pub colour: [ColourDescription; 2],
+    /// The top screen's size in pixels, which a game's resolution is a fraction of.
+    pub top_size: (u32, u32),
+}
+
 /// What a curve's plot shows (see [`crate::State::curve_plot`]), in units of the reference white.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurvePlot {

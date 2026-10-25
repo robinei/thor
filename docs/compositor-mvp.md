@@ -701,8 +701,8 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
           per-plane lookup tables if they can hold it, so a game keeps direct scanout, else in the shader
           (every frame composited: measure the cost); highlight limits against heat and burn-in, static HUD
           elements in particular.
-4p. **Picture** (`docs/picture.md`): the curve's tile becomes Picture, a profile with the curve, SMAA,
-    resolution, scaling (Bilinear, Nearest, FSR 1) and sharpening, applied per window in the compositor; and
+4p. **Picture** (`docs/picture.md`): the curve as the colour profile, and Resolution, Scaling (Bilinear,
+    Nearest, FSR 1), Anti-aliasing (SMAA) and Sharpen as setting tiles, applied per window in the compositor; and
     OptiScaler for Proton games' own upscalers and frame generation, once a test on the device shows it
     works on Turnip. Its first phase is on the desktop, its measurements on the device.
 5. **The default switches** to ClamShell's compositor; sway stays installed and selectable as the fallback

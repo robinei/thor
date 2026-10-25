@@ -74,6 +74,8 @@ pub(crate) struct Server {
     /// last sent.
     pub frames_due: Option<Instant>,
     frames_sent: (Option<f32>, Option<f32>),
+    /// The screens last told to the state (see [`Server::report_screens`]).
+    screens_sent: Option<clamshell_state::session::presentation::Screens>,
     pub pointer_window: Option<i64>,
     pub pointer_buttons: Vec<u32>,
     pub arrow_pressed: bool,
@@ -187,6 +189,7 @@ impl Server {
             cursor_activity: crate::cursor::Activity::default(),
             frames_due: None,
             frames_sent: (None, None),
+            screens_sent: None,
             pointer_window: None,
             pointer_buttons: Vec::new(),
             arrow_pressed: false,
@@ -476,6 +479,7 @@ impl Server {
         self.expire_activation_tokens(Instant::now());
         self.update_idle(Instant::now());
         self.report_frames(Instant::now());
+        self.report_screens();
         self.core.run(Instant::now());
         while let Some(effect) = self.core.next_effect() {
             match effect {
@@ -517,11 +521,22 @@ impl Server {
         self.popups.cleanup();
     }
 
-    /// Each screen's colour (the top's, the second's): described to clients, and told to the state, which
-    /// shows a curve within it.
+    /// Each screen's colour (the top's, the second's), described to clients (and told to the state, see
+    /// [`Server::report_screens`]).
     pub fn describe_screens(&mut self, descriptions: [clamshell_state::session::presentation::ColourDescription; 2]) {
-        if self.colour.set_outputs(descriptions) {
-            self.core.handle(clamshell_state::Event::Reading(clamshell_state::Reading::Screens(Box::new(descriptions))));
+        self.colour.set_outputs(descriptions);
+    }
+
+    /// Tells the state the screens' colours and the top screen's size when they change: a curve is shown
+    /// within the colour, and a game's resolution is a fraction of the size.
+    fn report_screens(&mut self) {
+        let screens = clamshell_state::session::presentation::Screens {
+            colour: self.colour.descriptions,
+            top_size: (self.top_width.max(0) as u32, self.size.1.max(0) as u32),
+        };
+        if self.screens_sent != Some(screens) {
+            self.screens_sent = Some(screens);
+            self.core.handle(clamshell_state::Event::Reading(clamshell_state::Reading::Screens(Box::new(screens))));
         }
     }
 

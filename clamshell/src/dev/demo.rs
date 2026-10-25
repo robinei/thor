@@ -61,9 +61,9 @@ pub fn window_below() -> Vec<Event> {
 
 /// The screens as the compositor describes them with the VM's HDR profile: the Thor's top panel with
 /// SDR white at the reference, 650 nits at its peak; its second panel, SDR.
-pub fn screens() -> [clamshell_state::session::presentation::ColourDescription; 2] {
+pub fn screens() -> clamshell_state::session::presentation::Screens {
     let profile = clamshell_state::Profile::vm_hdr();
-    [profile.top.colour.into(), profile.bottom.colour.into()]
+    clamshell_state::session::presentation::Screens { colour: [profile.top.colour.into(), profile.bottom.colour.into()], top_size: (1920, 1080) }
 }
 
 /// `entry` running, with its window on the top screen sending HDR: PQ mastered to 1000 nits if `declared`,

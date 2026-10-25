@@ -24,7 +24,7 @@ use crate::toolkit::widgets::{self, TileFace, TileShape};
 const TABS_H: f32 = 0.1;
 /// The largest width of a tab label, as a fraction of the area's width. Longer titles are cut.
 const TAB_MAX: f32 = 0.5;
-const COLUMNS: usize = 4;
+const COLUMNS: usize = 5;
 const ROWS: usize = 4;
 /// The icon's size and top, as fractions of a tile's height. Values are not cut, since they are short; in
 /// a narrow window a long one runs over the tile's edges.
@@ -41,14 +41,17 @@ enum Tile {
 }
 
 /// The grid, in order. On a game's tab, Reset follows. The settings for the device rather than a game,
-/// the charge limit and idle, are on the battery tab. Upscale's tile is left out until upscaling works
-/// (with the compositor), which keeps the grid at four rows with Reset.
-const GRID: [Tile; 15] = [
+/// the charge limit and idle, are on the battery tab. Five columns and four rows hold it all with Reset.
+const GRID: [Tile; 19] = [
     Tile::Setting(Setting::Power),
     Tile::Setting(Setting::FpsCap),
     Tile::Setting(Setting::Refresh),
     Tile::Setting(Setting::Hud),
     Tile::Setting(Setting::Curve),
+    Tile::Setting(Setting::Resolution),
+    Tile::Setting(Setting::Scaling),
+    Tile::Setting(Setting::AntiAliasing),
+    Tile::Setting(Setting::Sharpen),
     Tile::Setting(Setting::BottomScreen),
     Tile::Setting(Setting::BigCores),
     Tile::Setting(Setting::Fan),
@@ -140,8 +143,14 @@ fn face(s: &State, tile: Tile) -> Face {
     match tile {
         Tile::Setting(setting) => {
             let value = p.tile_value(setting);
-            // The keymap's and the curve's tiles show their names.
+            // The keymap's and the curve's tiles show their names, and the resolution its size on the top
+            // screen once the compositor has said it.
+            let resolution: clamshell_state::settings::Resolution = clamshell_state::settings::Choice::of(value);
             let text = match setting {
+                Setting::Resolution if resolution != clamshell_state::settings::Resolution::Native && s.top_size().is_some() => {
+                    let (w, h) = resolution.size_on(s.top_size().unwrap_or_default());
+                    Fmt::of(format_args!("{w}×{h}"))
+                }
                 Setting::Keymap => Fmt::of(format_args!("{}", s.keymapping().name(value))),
                 Setting::Curve if value == 0 => Fmt::of(format_args!("HDR off")),
                 Setting::Curve => Fmt::of(format_args!("{}", s.curving().name(value))),
@@ -161,9 +170,10 @@ fn face(s: &State, tile: Tile) -> Face {
                     && (setting != Setting::Refresh || !s.device().display_modes().rates().is_empty())
                     && (setting != Setting::Fan || s.profile().fan.is_some())
                     && !(setting.through_launch() && p.handed_over())
-                    && (setting != Setting::Curve || s.compositor()),
-                // Only ClamShell's own compositor applies a curve; under sway it does nothing.
-                note: note(!setting.active(), (setting.through_launch() && p.handed_over()) || (setting == Setting::Curve && !s.compositor())),
+                    && (!setting.compositor_only() || s.compositor()),
+                // Only ClamShell's own compositor shows a game's picture differently; under sway these do
+                // nothing.
+                note: note(!setting.active(), (setting.through_launch() && p.handed_over()) || (setting.compositor_only() && !s.compositor())),
             }
         }
         Tile::Env => {

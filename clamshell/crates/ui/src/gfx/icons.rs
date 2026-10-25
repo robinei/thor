@@ -23,7 +23,14 @@ pub enum Icon {
     Gauge,
     Refresh,
     Hud,
+    /// A game's resolution: a small frame growing to a larger one.
     Upscale,
+    /// Scaling: a two-by-two grid of pixels.
+    Scaling,
+    /// Anti-aliasing: a staircase with the smooth edge over it.
+    AntiAlias,
+    /// Sharpening: a triangle.
+    Sharpen,
     ScreenOff,
     Cores,
     Fan,
@@ -273,6 +280,16 @@ pub fn draw(c: &mut Painter, icon: Icon, r: Rect, color: Color) {
             p.line(&[(9.0, 15.0), (20.0, 4.0)], LINE);
             p.line(&[(13.5, 4.0), (20.0, 4.0), (20.0, 10.5)], LINE);
         }
+        Icon::Scaling => {
+            for (x, y) in [(3.0, 3.0), (13.0, 3.0), (3.0, 13.0), (13.0, 13.0)] {
+                p.frame((x, y, 8.0, 8.0), 1.0, LINE);
+            }
+        }
+        Icon::AntiAlias => {
+            p.line(&[(3.0, 21.0), (3.0, 17.0), (7.0, 17.0), (7.0, 13.0), (11.0, 13.0), (11.0, 9.0), (15.0, 9.0), (15.0, 5.0), (19.0, 5.0)], 1.0);
+            p.line(&[(3.0, 19.0), (19.0, 3.0)], LINE);
+        }
+        Icon::Sharpen => p.shape(&[(12.0, 3.0), (21.0, 20.0), (3.0, 20.0)], LINE),
         Icon::ScreenOff => {
             p.frame((2.5, 5.0, 19.0, 14.0), 2.0, LINE);
             p.line(&[(3.0, 3.0), (21.0, 21.0)], LINE);
@@ -593,6 +610,9 @@ mod tests {
             Icon::Refresh,
             Icon::Hud,
             Icon::Upscale,
+            Icon::Scaling,
+            Icon::AntiAlias,
+            Icon::Sharpen,
             Icon::ScreenOff,
             Icon::Cores,
             Icon::Fan,
@@ -649,7 +669,7 @@ mod tests {
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 55, "a variant is missing from the list");
+        assert_eq!(seen.len(), 58, "a variant is missing from the list");
         all
     }
 
@@ -711,6 +731,9 @@ mod tests {
             Icon::App => 59,
             Icon::Archive => 60,
             Icon::Dot => 61,
+            Icon::Scaling => 62,
+            Icon::AntiAlias => 63,
+            Icon::Sharpen => 64,
         }
     }
 

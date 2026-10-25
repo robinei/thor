@@ -26,9 +26,16 @@ pub enum Setting {
     /// The HUD over the game: 0 off, 1 the frame rate only, 2 the full HUD (the compositor's: the frame
     /// rate and frame time; under sway, MangoHud's overlay).
     Hud,
-    /// Rendering below the screen's resolution through gamescope: 0 native, 1 FSR from 720p, 2 FSR from
-    /// 540p, 3 integer scaling.
-    Upscale,
+    /// The screen as the game sees it (see [`Resolution`]): the screen's own size or a fraction of it, which
+    /// [`Setting::Scaling`] shows at the screen's size. The compositor's alone (`docs/picture.md`).
+    Resolution,
+    /// How the game's picture is shown when it is smaller than its screen (see [`Scaling`]).
+    Scaling,
+    /// Anti-aliasing of the game's picture by the compositor (see [`AntiAliasing`]).
+    AntiAliasing,
+    /// Sharpening of the game's picture by the compositor, in percent: 0 off, 25 to 100 its strength. CAS,
+    /// or FSR's own with [`Scaling::Fsr`].
+    Sharpen,
     /// The HDR curve by its id (see [`crate::curve`]): SDR shown with HDR's range. 0 is Off. It is chosen
     /// in the curve picker, and it works only under ClamShell's compositor.
     Curve,
@@ -184,12 +191,47 @@ choices!(
 );
 
 choices!(
-    /// [`Setting::Upscale`]: rendering below the screen's resolution through gamescope.
-    Upscale for Upscale, default Native {
+    /// [`Setting::Resolution`]: the screen's size as the game sees it, as a fraction of the screen's own.
+    /// Its tile shows the size it gives on the top screen.
+    Resolution for Resolution, default Native {
         Native = 0, "Native", Stock;
-        FsrTwoThirds = 1, "FSR 2/3 size", Saves;
-        FsrHalf = 2, "FSR 1/2 size", Saves;
-        Integer = 3, "Integer", Changes;
+        FiveSixths = 1, "5/6 size", Saves;
+        TwoThirds = 2, "2/3 size", Saves;
+        Half = 3, "1/2 size", Saves;
+        Third = 4, "1/3 size", Saves;
+    }
+);
+
+impl Resolution {
+    /// The size it gives on a screen of `size`, rounded to even pixels.
+    pub fn size_on(self, (w, h): (u32, u32)) -> (u32, u32) {
+        let (num, den) = match self {
+            Resolution::Native => (1, 1),
+            Resolution::FiveSixths => (5, 6),
+            Resolution::TwoThirds => (2, 3),
+            Resolution::Half => (1, 2),
+            Resolution::Third => (1, 3),
+        };
+        let scaled = |v: u32| (v * num / den) & !1;
+        (scaled(w), scaled(h))
+    }
+}
+
+choices!(
+    /// [`Setting::Scaling`]: how a picture smaller than its screen is brought to the screen's size.
+    /// Nearest at 1/2 or 1/3 size is exact integer scaling.
+    Scaling for Scaling, default Bilinear {
+        Bilinear = 0, "Bilinear", Stock;
+        Nearest = 1, "Nearest", Changes;
+        Fsr = 2, "FSR", Changes;
+    }
+);
+
+choices!(
+    /// [`Setting::AntiAliasing`]: anti-aliasing at the game's own resolution, before scaling.
+    AntiAliasing for AntiAliasing, default Off {
+        Off = 0, "AA off", Stock;
+        Smaa = 1, "SMAA", Costs;
     }
 );
 
@@ -246,7 +288,7 @@ choices!(
     }
 );
 
-pub const COUNT: usize = 18;
+pub const COUNT: usize = 21;
 
 /// What a value does, for the tile's colour. It is the stock value and does nothing, or it saves power
 /// or eases the load, costs power, or changes how the game looks or plays.
@@ -265,7 +307,10 @@ names!(Setting {
     FpsCap: "fps";
     Refresh: "refresh";
     Hud: "hud";
-    Upscale: "upscale";
+    Resolution: "resolution";
+    Scaling: "scaling";
+    AntiAliasing: "aa";
+    Sharpen: "sharpen";
     Curve: "curve";
     BottomScreen: "bottom";
     BigCores: "bigcores";
@@ -298,14 +343,16 @@ impl Setting {
         match self {
             Setting::Power => Some(&PowerProfile::TABLE),
             Setting::Hud => Some(&Hud::TABLE),
-            Setting::Upscale => Some(&Upscale::TABLE),
+            Setting::Resolution => Some(&Resolution::TABLE),
+            Setting::Scaling => Some(&Scaling::TABLE),
+            Setting::AntiAliasing => Some(&AntiAliasing::TABLE),
             Setting::BottomScreen => Some(&BottomWhenIdle::TABLE),
             Setting::BigCores => Some(&Cores::TABLE),
             Setting::Fan => Some(&fan::Mode::TABLE),
             Setting::PadMouse => Some(&MouseAtLaunch::TABLE),
             Setting::Rumble => Some(&RumbleStrength::TABLE),
             Setting::Background => Some(&InBackground::TABLE),
-            Setting::FpsCap | Setting::Refresh | Setting::Keymap | Setting::Curve | Setting::CpuMax | Setting::GpuMax => None,
+            Setting::FpsCap | Setting::Refresh | Setting::Keymap | Setting::Curve | Setting::CpuMax | Setting::GpuMax | Setting::Sharpen => None,
             Setting::ChargeLimit | Setting::ScreenOff | Setting::Sleep => None,
         }
     }
@@ -321,6 +368,7 @@ impl Setting {
             // The other values are the existing keymaps and curves.
             Setting::Keymap | Setting::Curve => &[0],
             Setting::CpuMax | Setting::GpuMax => &[0, 40, 50, 60, 70, 80, 90, 100],
+            Setting::Sharpen => &[0, 25, 50, 75, 100],
             Setting::ChargeLimit => &[100, 90, 80, 0],
             Setting::ScreenOff => &[1, 2, 5, 10, 0],
             Setting::Sleep => &[5, 15, 30, 60, 0],
@@ -343,7 +391,12 @@ impl Setting {
     /// Whether changing the setting does anything yet. The others are still stored, and will work once
     /// implemented.
     pub fn active(self) -> bool {
-        !matches!(self, Setting::Upscale)
+        !matches!(self, Setting::Resolution | Setting::Scaling | Setting::AntiAliasing | Setting::Sharpen)
+    }
+
+    /// Whether only ClamShell's own compositor does it: under sway it does nothing.
+    pub fn compositor_only(self) -> bool {
+        matches!(self, Setting::Curve | Setting::Resolution | Setting::Scaling | Setting::AntiAliasing | Setting::Sharpen)
     }
 
     /// Whether the setting works through the launch's own process, as MangoHud's cap and HUD do. An app
@@ -369,7 +422,7 @@ impl Setting {
             (Setting::Refresh, 120) | (Setting::CpuMax | Setting::GpuMax, 100) => Impact::Costs,
             // Never, or later than the default, costs power. Sooner saves it.
             (Setting::ScreenOff | Setting::Sleep, v) if v == 0 || v > self.default_value() => Impact::Costs,
-            (Setting::Keymap | Setting::Curve, _) => Impact::Changes,
+            (Setting::Keymap | Setting::Curve | Setting::Sharpen, _) => Impact::Changes,
             _ => Impact::Saves,
         }
     }
@@ -398,6 +451,7 @@ impl Setting {
             (Setting::Curve, v) => return number(buf, "Curve ", v, ""),
             (Setting::CpuMax, 0) => "CPU auto",
             (Setting::GpuMax, 0) => "GPU auto",
+            (Setting::Sharpen, 0) => "Sharpen off",
             (Setting::ChargeLimit, 100) => "Charge full",
             (Setting::ChargeLimit, 0) => "Bypass",
             (Setting::ScreenOff, 0) => "Always on",
@@ -407,6 +461,7 @@ impl Setting {
             (Setting::Refresh, v) => return number(buf, "", v, " Hz"),
             (Setting::CpuMax, v) => return number(buf, "CPU ", v, " %"),
             (Setting::GpuMax, v) => return number(buf, "GPU ", v, " %"),
+            (Setting::Sharpen, v) => return number(buf, "Sharpen ", v, " %"),
             (Setting::ChargeLimit, v) => return number(buf, "Charge to ", v, " %"),
             (Setting::ScreenOff, v) => return number(buf, "Off after ", v, " min"),
             (Setting::Sleep, v) => return number(buf, "Sleep after ", v, " min"),
@@ -591,6 +646,19 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_resolution_is_its_fraction_of_the_screen_in_even_pixels() {
+        let thor = (1920, 1080);
+        assert_eq!(Resolution::Native.size_on(thor), thor);
+        assert_eq!(Resolution::FiveSixths.size_on(thor), (1600, 900));
+        assert_eq!(Resolution::TwoThirds.size_on(thor), (1280, 720));
+        assert_eq!(Resolution::Half.size_on(thor), (960, 540));
+        assert_eq!(Resolution::Third.size_on(thor), (640, 360));
+        assert_eq!(Resolution::TwoThirds.size_on((960, 540)), (640, 360), "nested, half size");
+        assert_eq!(Setting::Sharpen.next(100), 0);
+        assert!(Setting::Scaling.compositor_only() && !Setting::FpsCap.compositor_only());
+    }
 
     #[test]
     fn taps_step_through_the_values_and_wrap() {

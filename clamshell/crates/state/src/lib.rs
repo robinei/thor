@@ -189,8 +189,8 @@ pub struct State {
     /// The keymaps and their screens (see [`crate::keymap::screens`]).
     keymapping: Keymapping,
     curving: crate::curve::screens::Curving,
-    /// Each screen's colour, as the compositor last said (see [`Reading::Screens`]).
-    screens: [crate::session::presentation::ColourDescription; 2],
+    /// The screens, as the compositor last said (see [`Reading::Screens`]).
+    screens: crate::session::presentation::Screens,
     /// Whether ClamShell's own compositor shows the windows (see [`Init::compositor`]).
     compositor: bool,
     /// Where the lists but shelf are scrolled.
@@ -315,8 +315,13 @@ impl State {
 
     /// Screen `down`'s colour (the second's, or the top's), as the compositor describes it.
     pub fn screen_colour(&self, down: bool) -> crate::session::presentation::ColourDescription {
-        let [top, bottom] = self.screens;
+        let [top, bottom] = self.screens.colour;
         if down { bottom } else { top }
+    }
+
+    /// The top screen's size, once the compositor has said; under sway, none.
+    pub fn top_size(&self) -> Option<(u32, u32)> {
+        Some(self.screens.top_size).filter(|(w, h)| *w > 0 && *h > 0)
     }
 
     pub fn curving(&self) -> &crate::curve::screens::Curving {

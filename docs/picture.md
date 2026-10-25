@@ -14,8 +14,8 @@ first part of it and is done; the rest follows the order in "Phases" below.
    on the Adreno is unknown**: FSR 4 needs RDNA 3 or 4; FSR 3.1's upscaler and frame generation are DX12
    compute through VKD3D, which Turnip can run in principle, but no one reports it, and VKD3D is the
    Adreno 740's weak spot. So it is a test on the device first (Phases).
-2. **In the compositor, for any window** (native, Proton, emulators, Android): the Picture profile. It
-   sees only the finished picture, HUD included, with no depth and no motion vectors, so it does what
+2. **In the compositor, for any window** (native, Proton, emulators, Android): the colour profile and the
+   clarity settings. It sees only the finished picture, HUD included, with no depth and no motion vectors, so it does what
    needs neither: the curve, anti-aliasing (SMAA), scaling (FSR 1's upscale or a plain filter),
    sharpening.
 3. **Frame generation:** OptiScaler's, where layer 1 works. Generating frames in the compositor without
@@ -28,33 +28,38 @@ effects worth having are written for our shaders instead.
 
 ## What the user sees
 
-One tile in a game's settings, **Picture** (the HDR curve tile, renamed), opening the profile picker as
-now: the game's own profile, Off, the named ones, New; the same menus. A profile holds everything below;
-presets to start from cover the common cases (True black, Punchy, Gentle; Sharp: CAS only; Performance:
-1280×720, FSR, SMAA; Pixel art: 960×540, Nearest, no anti-aliasing).
+Every setting is a tile in the settings grid (five columns, four rows), as the others are: a tap steps to
+the next value, a long press opens the tile's menu (below). No screens in between.
 
-The edit screen has three pages, switched by tabs under the header (and the shoulder buttons):
-
-- **Look:** the plot and the curve's rows, as now (black point, contrast, SDR white, highlights from,
-  highlight peak, saturation, HDR game's peak).
-- **Clarity:** four settings, each on its own, combined into one chain (below):
+- **Colour** (the HDR curve tile): the curve profile, as now: a game's own, Off, the named ones. Tapping
+  steps through them; the menu is the picker, with the edit screen (the plot and the curve's rows: black
+  point, contrast, SDR white, highlights from, highlight peak, saturation, HDR game's peak). A LUT for
+  colour grading, if it comes, is part of this profile.
+- **Clarity**, four ordinary settings, each a tile, with the All / runner / game levels every setting
+  has (Nearest set once on a pixel-art emulator's runner, 1280×720 on one heavy game, the rest inherited):
   - Resolution, the screen as the game sees it: Native (1920×1080 on the Thor), 1600×900, 1280×720,
-    960×540, 640×360; on another screen the same fractions of it (⅚, ⅔, ½, ⅓).
+    960×540, 640×360; on another screen the same fractions of it (⅚, ⅔, ½, ⅓). The tile shows the size.
   - Scaling, whenever the game's picture is smaller than the screen, whoever chose its size: Bilinear,
-    Nearest, FSR. Nearest at ½ or ⅓ (960×540, 640×360 on the Thor) is exact integer scaling, which is
-    why there is no integer setting; at the others it is uneven, and the row says so.
+    Nearest, FSR (a CRT look, if it comes, is one more). Nearest at ½ or ⅓ (960×540, 640×360 on the
+    Thor) is exact integer scaling, which is why there is no integer setting; at the others it is
+    uneven, and the tile says so.
   - Anti-aliasing: Off, SMAA.
-  - Sharpen: Off, then a strength. CAS, or FSR's own sharpening (RCAS) when Scaling is FSR, so it is
+  - Sharpen: Off, 25, 50, 75, 100 %. CAS, or FSR's own sharpening (RCAS) when Scaling is FSR, so it is
     never sharpened twice.
   Defaults: Native, Bilinear, Off, Off.
-- **In game** (Proton games): Upscaler (the game's own, FSR 3.1, XeSS); Frame generation (Off, FSR,
-  XeSS). Shown only once layer 1 is known to work on the device; until then not there.
+- **In game** (Proton games), two more tiles, once layer 1 is known to work on the device: Upscaler (the
+  game's own, FSR 3.1, XeSS) and Frame generation (Off, FSR, XeSS).
 
-Rows that do nothing for this game are dimmed with why, never hidden (the curve's peak for an HDR game;
-Scaling with the picture at the screen's size; everything in layer 2 under sway, where the compositor
-isn't ours). No combination is refused: SMAA before Nearest blurs
-pixel edges, and the presets are where the sensible combinations are. One rule keeps the layers from
-fighting: **with an upscaler in the game (In game's Upscaler, or the game's own temporal one), the
+**A tile's menu** (a long press, or holding A): every value of the setting, to pick one directly, and
+Reset to the level below ("Reset to All's: Native") when this level overrides it. A profile tile's
+menu is its picker (with New, and each profile's Edit, Rename, Duplicate, Delete), with the same Reset.
+Reset for a whole level stays its own tile.
+
+Tiles that do nothing for this game are dimmed with why, never hidden (Scaling with the picture at the
+screen's size; everything in layer 2 under sway, where the compositor isn't ours); so are rows of the
+curve's edit screen (the curve's peak for an HDR game). No combination is refused: SMAA before Nearest
+blurs pixel edges, and the levels are where the sensible combinations are kept. One rule keeps the layers
+from fighting: **with an upscaler in the game (In game's Upscaler, or the game's own temporal one), the
 compositor's anti-aliasing and scaling are off** and dimmed ("the game upscales"); sharpening stays,
 for those who want more.
 
@@ -93,26 +98,26 @@ is at the screen's. The mode is the screen's for every client on it (Xwayland's 
 runs; since the compositor tells every window its size, other windows hardly notice. Outputs per game
 would avoid even that, if it ever matters.
 
-**Layer 1:** ClamShell writes the game's `OptiScaler.ini` from its profile and starts it with
+**Layer 1:** ClamShell writes the game's `OptiScaler.ini` from its settings and starts it with
 Proton-CachyOS's `PROTON_USE_OPTISCALER=1`, under the compositor and under sway alike. No files are put
 into the game's folder.
 
 **What replaces what:** `Setting::Upscale` (gamescope's FSR and integer modes, never implemented) goes;
-Resolution and Scaling replace it. The curve's profiles become Picture profiles (a format change: the
-saved curves are rewritten once by hand, as there are few).
+Resolution and Scaling replace it. The curve profiles stay as they are, as the colour.
 
 **Licences:** FSR 1 (EASU, RCAS) and CAS are MIT; SMAA is MIT with its lookup textures; the filters are
 ours.
 
 ## Phases
 
-1. **On the desktop, nested and on the VM:** the tile renamed, the profile's body grown, the edit screen's
-   pages; then CAS and RCAS in the final pass, Nearest and Bilinear, Resolution, EASU, SMAA, in that order. Each tested
-   headless against reference images computed on the CPU (the shaders' arithmetic mirrored, as the
-   curve's is), and by eye nested with a game.
+1. **On the desktop, nested and on the VM:** the four clarity tiles on a 5×4 grid (done); the tiles'
+   menus, with profile tiles stepping through their profiles on a tap; then CAS and RCAS in the final
+   pass, Nearest and Bilinear, Resolution, EASU, SMAA, in that order. Each tested headless against
+   reference images computed on the CPU (the shaders' arithmetic mirrored, as the curve's is), and by
+   eye nested with a game.
 2. **On the device (phase 4 of the compositor plan):** each stage's GPU time on the Adreno at 1080p and
-   at ⅔; which presets are affordable. OptiScaler with a DX12 game through VKD3D on Turnip: does FSR
-   3.1's upscaler run, at what cost, and frame generation, at what latency. The In game page follows only
+   at ⅔; which combinations are affordable. OptiScaler with a DX12 game through VKD3D on Turnip: does FSR
+   3.1's upscaler run, at what cost, and frame generation, at what latency. The In game tiles follow only
    if it does.
 3. **Later, if wanted:** a CRT shader for standalone emulators (RetroArch has its own); a LUT for colour
    grading; frame generation in the compositor, if measurements leave room.
