@@ -178,11 +178,11 @@ impl Chains {
             chain.commit = None;
             chain.fxaa = want.fxaa.then(|| renderer.create_buffer(picture, source_size)).transpose()?;
         }
-        let upscaled_size = chain.upscaled.as_ref().map(|t| t.size());
-        if want.upscale != upscaled_size.is_some() || upscaled_size.is_some_and(|size| size != shown) {
+        let upscaled_now = chain.upscaled.as_ref().map(|t| (t.size(), t.format()));
+        if want.upscale != upscaled_now.is_some() || upscaled_now.is_some_and(|now| now != (shown, Some(picture))) {
             chain.upscaled = None;
             chain.commit = None;
-            chain.upscaled = want.upscale.then(|| renderer.create_buffer(Fourcc::Abgr16161616f, shown)).transpose()?;
+            chain.upscaled = want.upscale.then(|| renderer.create_buffer(picture, shown)).transpose()?;
         }
         if chain.commit != Some(commit) {
             chain.commit = None;

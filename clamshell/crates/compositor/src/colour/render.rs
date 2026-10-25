@@ -168,8 +168,12 @@ impl Pipeline {
             // What the screen shows, as clients are told: nested, the host's real peak rather than the
             // PQ signal we send it.
             let headroom = server.colour.screen(state.session().window(client.id).is_some_and(|w| w.down)).headroom() as f32;
-            let clarity = state.window_clarity(client.id);
+            let mut clarity = state.window_clarity(client.id);
             let one_to_one = server.geometry(client.id).is_some_and(|g| g.scale == 1.0);
+            // FSR shown one to one would upscale nothing: sampled as it is, its sharpening CAS's.
+            if one_to_one && clarity.scaling == clamshell_state::settings::Scaling::Fsr {
+                clarity.scaling = clamshell_state::settings::Scaling::Bilinear;
+            }
             let fxaa_here = clarity.anti_aliasing == clamshell_state::settings::AntiAliasing::Fxaa && one_to_one && clarity.sharpen == 0;
             client.window.with_surfaces(|surface, states| {
                 let renderer_state = states.data_map.get::<smithay::backend::renderer::utils::RendererSurfaceStateUserData>();

@@ -83,7 +83,15 @@ sharpening.**
    texture first and the final pass sharpens what it reads from it.
 
 The anti-aliasing comes first so that the upscale doesn't enlarge jagged edges (AMD's own advice for
-FSR 1); sharpening once. A stage switched off costs nothing: no pass, no texture. Intermediate textures
+FSR 1); sharpening once.
+
+Passes before the final one, by what is set, each the fewest it can be: none for sharpening (CAS),
+Nearest, Bilinear and FSR without sharpening (all in the final pass), nor for FSR shown one to one (it
+upscales nothing: sampled as it is, sharpened by CAS), nor for FXAA one to one unsharpened; one for FSR
+with sharpening (RCAS needs what EASU gave around each pixel, as in AMD's own two passes) and for FXAA
+with scaling or sharpening after it (anti-aliasing comes before both); three for SMAA. Textures between
+passes are bytes for SDR, half floats for HDR. Fusing SMAA's blending into the final pass would need a
+second texture in it, which Smithay's texture programs don't take. A stage switched off costs nothing: no pass, no texture. Intermediate textures
 exist only for windows that need them, kept between frames, sized to the game's buffer.
 
 **Shaders:** a variant is compiled for what changes the structure (the surface's colour description, how
