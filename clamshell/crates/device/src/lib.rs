@@ -50,7 +50,13 @@ const THOR_TOUCH: &[Touchscreen] = &[
     Touchscreen { selector: TouchSelector::Named("0:0:top_touchscreen"), screen: ScreenRole::Top },
     Touchscreen { selector: TouchSelector::Named("0:0:bottom_touchscreen"), screen: ScreenRole::Bottom },
 ];
-const VM_TOUCH: &[Touchscreen] = &[Touchscreen { selector: TouchSelector::All, screen: ScreenRole::Bottom }];
+/// The test machine's absolute devices: a tablet on each screen (QEMU's, as the host's pointer), and its
+/// touchscreen on the second.
+const VM_TOUCH: &[Touchscreen] = &[
+    Touchscreen { selector: TouchSelector::Named("1575:3:QEMU_Virtio_Tablet"), screen: ScreenRole::Top },
+    Touchscreen { selector: TouchSelector::Named("1575:1:QEMU_QEMU_USB_Tablet"), screen: ScreenRole::Bottom },
+    Touchscreen { selector: TouchSelector::All, screen: ScreenRole::Bottom },
+];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RefreshRate {
     pub hz: u16,

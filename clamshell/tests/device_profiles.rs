@@ -12,7 +12,12 @@ fn package_outputs_and_panel_queries_follow_the_selected_profile() {
             "DSI-2",
             "DSI-1",
         ),
-        ("vm", "output Virtual-1 transform 0 position 0 0\noutput Virtual-2 transform 0\ninput type:touch map_to_output Virtual-2\n", "Virtual-1", "Virtual-2"),
+        (
+            "vm",
+            "output Virtual-1 transform 0 position 0 0\noutput Virtual-2 transform 0\ninput \"1575:3:QEMU_Virtio_Tablet\" map_to_output Virtual-1\ninput \"1575:1:QEMU_QEMU_USB_Tablet\" map_to_output Virtual-2\ninput type:touch map_to_output Virtual-2\n",
+            "Virtual-1",
+            "Virtual-2",
+        ),
     ] {
         let runtime = tempfile::tempdir().unwrap();
         let queried = Command::new(binary).args(["device", "outputs"]).env("CLAMSHELL_DEVICE", profile).output().unwrap();
