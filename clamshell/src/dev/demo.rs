@@ -68,6 +68,29 @@ pub fn screens() -> clamshell_state::session::presentation::Screens {
 
 /// `entry` running, with its window on the top screen sending HDR: PQ mastered to 1000 nits if `declared`,
 /// else scRGB with no peak given.
+/// An SDR game's window for `entry`, and a histogram of its picture as a game's might be: mostly dark
+/// and mid tones, some highlights, and a spike of clipped white.
+pub fn sdr_game_measured(entry: &str) -> Vec<Event> {
+    use clamshell_state::session::presentation::{HISTOGRAM_BINS, Histogram};
+    let launch = run(entry, 0);
+    let window = window_of(30, "game", &launch, true, false);
+    let mut bins = [0u16; HISTOGRAM_BINS];
+    for (i, bin) in bins.iter_mut().enumerate() {
+        let x = (i as f64 + 0.5) / HISTOGRAM_BINS as f64;
+        let hump = |at: f64, wide: f64, high: f64| high * (-((x - at) / wide).powi(2)).exp();
+        *bin = (hump(0.12, 0.07, 260.0) + hump(0.42, 0.14, 150.0) + hump(0.82, 0.06, 45.0) + 6.0) as u16;
+    }
+    if let Some(last) = bins.last_mut() {
+        *last += 140;
+    }
+    let histogram = Histogram { window: 30, hdr: false, bins };
+    vec![
+        Event::Units(vec![launch]),
+        clamshell_state::session::windows::changes(&[], &[window]),
+        Event::Reading(clamshell_state::Reading::Histogram(Box::new(histogram))),
+    ]
+}
+
 pub fn hdr_game(entry: &str, declared: bool) -> Vec<Event> {
     use clamshell_state::session::presentation::{ColourDescription, ColourPrimaries, ColourTarget, TransferFunction};
     let launch = run(entry, 0);

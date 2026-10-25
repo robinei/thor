@@ -5,11 +5,12 @@ battery.png 174cc13ced9e0de4
 bluetooth.png aa580c9c1e5ef330
 bottom.png ac7c47d0398d607b
 brightness.png bc677692b2744831
-curve-edit-hdr.png 0ad3c0313f7e1b79
-curve-edit-peak.png 872e37214a7a5601
-curve-edit-scrgb.png cbbed2164ffea964
-curve-edit-slider.png db2d3e56b1640645
-curve-edit.png 1f6bef4dd7c209bc
+curve-edit-hdr.png 5043d7efbda8b093
+curve-edit-histogram.png da8e9cb251878320
+curve-edit-peak.png 6f9c50d628418179
+curve-edit-scrgb.png 90c195afdef35093
+curve-edit-slider.png 5a2510f3047ca379
+curve-edit.png 3bd4093d0f0f5e55
 curves-reset.png aaafcb3632c1c761
 curves.png bc43b23cd85dab50
 device-password.png e142ed890bd132a0

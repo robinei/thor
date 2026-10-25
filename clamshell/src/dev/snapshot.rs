@@ -500,6 +500,22 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 ),
             ],
         ),
+        // An SDR game's picture measured: its histogram behind Punchy's curve, its highlights taken above
+        // paper white.
+        group(
+            vec![
+                ff6(),
+                ff6(),
+                Reading::Screens(Box::new(demo::screens())).into(),
+                tab(Tab::Settings),
+                PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Curve))).into(),
+            ],
+            vec![shot(
+                "curve-edit-histogram.png",
+                Bottom,
+                [vec![tap(Id::Row { list: ListId::Curves, i: 3, part: clamshell_state::RowPart::Edit })], demo::sdr_game_measured("ff6")].concat(),
+            )],
+        ),
         // An HDR game giving no peak: scRGB, its peak assumed.
         group(
             vec![

@@ -517,6 +517,24 @@ Windows [open game on clamshell-run-ff6_09d141, order [30]]
 Slide(To { x: 1116.0 })
   Apply settings of ff6
 -- curve-edit-peak.png
+== group curve-edit-histogram.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Shelf(Entry("ff6"))))
+  Save Resume
+  Launch ff6 as ff6_09d141
+Pointer(Activate(Tab(Settings)))
+  Watch Metrics off
+Tick 1760000005
+  Save Resume
+Units [ff6_09d141]
+  Apply settings of ff6
+Windows [open game on clamshell-run-ff6_09d141, order [30]]
+  PadRoute Game
+-- curve-edit-histogram.png
 == group curve-edit-scrgb.png
 Start
   Window DownRules 0 rules

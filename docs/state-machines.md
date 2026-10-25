@@ -343,9 +343,13 @@ game's window's content and its screen's description (`Reading::Screens`), and b
 picture's histogram: while the edit screen is open the compositor draws the plotted window's picture
 small, its luminance as the content's signal level (SDR's, or PQ's with its white at the reference),
 reads it back four times a second and counts it into 64 bins (`colour::histogram`, `Reading::Histogram`,
-for `State::histogram_window`). The plot draws the levels along the bottom, the input, and each bin's
-light through the curve along the right edge, where the curve puts them; `tests/picture-scaling.py`
-checks it is drawn for the test pattern. The randomized test taps the
+for `State::histogram_window`). The plot draws the levels along the bottom, each bar filled with the grey
+of the light the curve gives it (black to paper white the darker half of the greys, paper white to the
+screen's peak the lighter), over a strip with each level's grey as the content is, so a bar brighter or
+darker than the strip under it is brightened or darkened. The strip is drawn without a histogram too,
+as the plot's base, in place of axis lines. The curve is orange and the content as it is blue, to stand
+out from the greys. `tests/picture-scaling.py` checks the histogram is drawn for the test
+pattern, and `curve-edit-histogram.png` shows one. The randomized test taps the
 curve screens and slides their parameters.
 
 ## Shelf (shelf/)

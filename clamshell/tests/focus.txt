@@ -456,6 +456,11 @@ start Tab(Settings); back Activate Profile(Curve, Back)
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vProfile(Curve, Back)
 -- screen as in curve-edit.png
+== curve-edit-histogram.png (bottom; the pad on the second screen)
+start Tab(Settings); back Activate Profile(Curve, Back)
+-- bar as in bottom.png except
+Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vProfile(Curve, Back)
+-- screen as in curve-edit.png
 == curve-edit-scrgb.png (bottom; the pad on the second screen)
 start Tab(Settings); back Activate Profile(Curve, Back)
 -- bar as in bottom.png except

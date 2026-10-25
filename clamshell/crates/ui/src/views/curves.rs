@@ -29,11 +29,13 @@ const ROW_TEXT: f32 = 0.8;
 const PLOT_NITS: f64 = 1000.0;
 /// Points along the plotted curve.
 const PLOT_STEPS: u16 = 96;
-/// The plot's axes and the screen's peak, and the game as it is, drawn behind the curve.
+/// The outline of the histogram's bars, so that dark ones show on black.
 const AXIS: Rgb = Rgb(0x2a2a30);
+/// The lines at the screen's peak, paper white and black.
 const AS_IS: Rgb = Rgb(0x4a4a54);
-/// The picture's histogram behind the plot: where its pixels are and where the curve puts them.
-const HISTOGRAM: Rgb = Rgb(0x26262e);
+/// The brightest grey a histogram bar is filled with, the light at the top of the plot; paper white is half
+/// of it.
+const HISTOGRAM_WHITE: u8 = 230;
 
 pub(super) fn draw(f: &mut Frame, screen: CurveScreen) {
     match screen {
@@ -159,10 +161,32 @@ fn plot(f: &mut Frame, r: Rect, curve: &Curve, on: CurvePlot, size: f32) {
     let inner = Rect::new(r.x + size * 0.5, r.y + size * 1.6, r.w - size, r.h - size * 2.1);
     let screen_nits = on.headroom * REFERENCE_NITS;
     let top_nits = PLOT_NITS.max(screen_nits).min(10000.0);
-    f.c.line((inner.x, inner.bottom()), (inner.right(), inner.bottom()), 1.0, AXIS);
-    f.c.line((inner.x, inner.y), (inner.x, inner.bottom()), 1.0, AXIS);
     let top = pq(top_nits);
     let y_of = |nits: f64| inner.bottom() - (pq(nits) / top).min(1.0) as f32 * inner.h;
+    // The light shown for level `e` (0 to 1) as it is, and through the curve.
+    let shown = |e: f64, curved: bool| -> f64 {
+        match on.hdr.map(|hdr| hdr.peak) {
+            None if curved => curve.map_on([e, e, e], on.headroom)[1] * REFERENCE_NITS,
+            None => Curve::default().map([e, e, e])[1] * REFERENCE_NITS,
+            Some(peak) => {
+                let light = pq_light(e * pq(peak * REFERENCE_NITS)) / REFERENCE_NITS;
+                if curved { map_hdr(Some(curve), [light; 3], peak, on.headroom)[1] * REFERENCE_NITS } else { light * REFERENCE_NITS }
+            }
+        }
+    };
+    // The greys first, under the lines and their labels: along the bottom each level's grey as the content
+    // is, the plot's base, and above it the picture's histogram when one is measured.
+    let grey = grey_scale(inner, &y_of);
+    let strip = Rect::new(inner.x, inner.bottom() + 1.0, inner.w, (inner.h * 0.07).max(4.0));
+    let n = HISTOGRAM_BINS;
+    for i in 0..n {
+        let e = (i as f64 + 0.5) / n as f64;
+        let w = inner.w / n as f32;
+        f.c.fill(Rect::new(inner.x + i as f32 * w, strip.y, w + 0.5, strip.h), grey(shown(e, false)));
+    }
+    if let Some(histogram) = on.histogram {
+        histograms(f, inner, &histogram, on, &shown, &grey);
+    }
     // The screen's peak, paper white and black, each labelled above its line; a label too close to the
     // one above is left out.
     let paper = (f64::from(curve.white)).min(screen_nits);
@@ -182,21 +206,14 @@ fn plot(f: &mut Frame, r: Rect, curve: &Curve, on: CurvePlot, size: f32) {
             };
             // At the left, where the curve is low; the black's at the right, where it is high.
             let (x, align) = if nits <= on.black * REFERENCE_NITS { (inner.x, Align::End) } else { (inner.x + size * 0.4, Align::Start) };
+            // On black, so that the histogram's bars don't hide it.
+            let tw = f.c.text_width(size, label.as_str());
+            let tx = if align == Align::End { x + inner.w - size * 0.7 - tw } else { x };
+            f.c.fill(Rect::new(tx - size * 0.15, y - size * 1.45, tw + size * 0.3, size * 1.15), Rgb(0x000000));
             f.c.text_in(Rect::new(x, y - size * 1.5, inner.w - size * 0.7, size * 1.2), size, Tone::Dim, label.as_str(), align);
             last_label = y;
         }
     }
-    // The light shown for level `e` (0 to 1) as it is, and through the curve.
-    let shown = |e: f64, curved: bool| -> f64 {
-        match on.hdr.map(|hdr| hdr.peak) {
-            None if curved => curve.map_on([e, e, e], on.headroom)[1] * REFERENCE_NITS,
-            None => Curve::default().map([e, e, e])[1] * REFERENCE_NITS,
-            Some(peak) => {
-                let light = pq_light(e * pq(peak * REFERENCE_NITS)) / REFERENCE_NITS;
-                if curved { map_hdr(Some(curve), [light; 3], peak, on.headroom)[1] * REFERENCE_NITS } else { light * REFERENCE_NITS }
-            }
-        }
-    };
     let line = |f: &mut Frame, curved: bool, width: f32, colour: Rgb| {
         let mut last = (inner.x, y_of(shown(0.0, curved)));
         for i in 1..=PLOT_STEPS {
@@ -206,18 +223,31 @@ fn plot(f: &mut Frame, r: Rect, curve: &Curve, on: CurvePlot, size: f32) {
             last = point;
         }
     };
-    if let Some(histogram) = on.histogram {
-        histograms(f, inner, &histogram, on, &shown, &y_of);
+    // Coloured, to stand out from the greys of the histogram: as the content is, and through the curve.
+    line(f, false, 1.5, Tone::Fn.rgb());
+    line(f, true, 2.0, Tone::Accent.rgb());
+}
+
+/// The grey of light in the plot `inner`, drawn at `y_of`: black to paper white the darker half of the
+/// greys, paper white to the top of the plot (the screen's peak) the lighter, so that what a curve takes
+/// above paper white is brighter than any of SDR's greys. Each half follows how high the plot draws it.
+fn grey_scale<'a>(inner: Rect, y_of: &'a dyn Fn(f64) -> f32) -> impl Fn(f64) -> Rgb + 'a {
+    let height = move |nits: f64| ((inner.bottom() - y_of(nits)) / inner.h.max(1.0)).clamp(0.0, 1.0);
+    let paper = height(REFERENCE_NITS).max(1e-3);
+    move |nits: f64| {
+        let h = height(nits);
+        let v = if h <= paper { h / paper * 0.5 } else { 0.5 + (h - paper) / (1.0 - paper).max(1e-3) * 0.5 };
+        let v = (v.clamp(0.0, 1.0) * f32::from(HISTOGRAM_WHITE)) as u32;
+        Rgb((v << 16) | (v << 8) | v)
     }
-    line(f, false, 1.0, AS_IS);
-    line(f, true, 2.0, Tone::High.rgb());
 }
 
 /// The picture's histogram in the plot `inner`: where its pixels' levels are, as bars along the bottom
-/// (for HDR, those beyond the content's peak in the last), and where the curve puts them, as bars along
-/// the right edge, from each level's light through `shown` to its height `y_of`. Heights are square
-/// roots of the shares, so that few pixels still show.
-fn histograms(f: &mut Frame, inner: Rect, histogram: &Histogram, on: CurvePlot, shown: &dyn Fn(f64, bool) -> f64, y_of: &dyn Fn(f64) -> f32) {
+/// (for HDR, those beyond the content's peak in the last), each filled with the grey (`grey`) of the light
+/// the curve gives it, over the base strip with each level's grey as the content is, so that a bar brighter
+/// or darker than the strip under it is brightened or darkened. Heights are square roots of the shares, so
+/// that few pixels still show.
+fn histograms(f: &mut Frame, inner: Rect, histogram: &Histogram, on: CurvePlot, shown: &dyn Fn(f64, bool) -> f64, grey: &dyn Fn(f64) -> Rgb) {
     let n = HISTOGRAM_BINS;
     // A bin's middle level as the plot's: SDR's signal, or PQ's over the content's peak.
     let along = |bin: usize| {
@@ -227,27 +257,20 @@ fn histograms(f: &mut Frame, inner: Rect, histogram: &Histogram, on: CurvePlot, 
             None => level,
         }
     };
-    let (mut columns, mut rows) = ([0u32; HISTOGRAM_BINS], [0u32; HISTOGRAM_BINS]);
+    let mut columns = [0u32; HISTOGRAM_BINS];
     for (bin, count) in histogram.bins.iter().enumerate().filter(|(_, c)| **c > 0) {
-        let e = along(bin);
-        if let Some(c) = columns.get_mut(((e * n as f64) as usize).min(n - 1)) {
+        if let Some(c) = columns.get_mut(((along(bin) * n as f64) as usize).min(n - 1)) {
             *c += u32::from(*count);
         }
-        let height = (inner.bottom() - y_of(shown(e, true))) / inner.h.max(1.0);
-        if let Some(r) = rows.get_mut(((height * n as f32) as usize).min(n - 1)) {
-            *r += u32::from(*count);
-        }
     }
-    let share = |count: u32, most: u32| (count as f32 / most.max(1) as f32).sqrt();
-    let (most_column, most_row) = (columns.iter().copied().max().unwrap_or(0), rows.iter().copied().max().unwrap_or(0));
-    let (w, h) = (inner.w / n as f32, inner.h / n as f32);
+    let most = columns.iter().copied().max().unwrap_or(0).max(1);
+    let w = inner.w / n as f32;
     for (i, count) in columns.iter().enumerate().filter(|(_, c)| **c > 0) {
-        let bar = share(*count, most_column) * inner.h * 0.4;
-        f.c.fill(Rect::new(inner.x + i as f32 * w, inner.bottom() - bar, w.max(1.0), bar), HISTOGRAM);
-    }
-    for (i, count) in rows.iter().enumerate().filter(|(_, c)| **c > 0) {
-        let bar = share(*count, most_row) * inner.w * 0.12;
-        f.c.fill(Rect::new(inner.right() - bar, inner.bottom() - (i + 1) as f32 * h, bar, h.max(1.0)), HISTOGRAM);
+        let e = (i as f64 + 0.5) / n as f64;
+        let bar = (*count as f32 / most as f32).sqrt() * inner.h * 0.4;
+        let r = Rect::new(inner.x + i as f32 * w, inner.bottom() - bar, w, bar);
+        f.c.fill(r, AXIS);
+        f.c.fill(r.inset(1.0), grey(shown(e, true)));
     }
 }
 

@@ -367,7 +367,11 @@ def main():
                 subprocess.run(["grim", "-o", "HEADLESS-1", str(directory / "pattern-curve-histogram.png")], env=host, check=True)
                 width, height, pixels = image()
                 plot = [(x, y) for y in range(0, height // 2) for x in range(screen[0], width)]
-                drawn = sum(1 for x, y in plot if pixels[(y * width + x) * 3:(y * width + x) * 3 + 3] == bytes([0x26, 0x26, 0x2e]))
+                # Its bars and strip are pure greys; everything else on the screen is tinted or black.
+                def neutral(x, y):
+                    r, g, b = pixels[(y * width + x) * 3:(y * width + x) * 3 + 3]
+                    return r == g == b and r > 8
+                drawn = sum(1 for x, y in plot if neutral(x, y))
                 print(f"{'ok' if drawn > 200 else 'FAIL'}: pattern-curve-histogram: {drawn} pixels of the histogram drawn", flush=True)
                 if drawn <= 200:
                     failures.append("pattern-curve-histogram")
