@@ -203,7 +203,7 @@ pub const TARGETS: &[Form<Id>] = &[
     form("keymap-edit N", "row N's Edit", |a| Ok(Id::Row { list: ListId::Keymaps, i: number(arg(a, 0))?, part: RowPart::Edit })),
     form("keymap-new", "the picker's New", |_| kp(ProfileId::New)),
     form("keymap-back", "back one keymap screen (picking: Cancel)", |_| kp(ProfileId::Back)),
-    form("keymap-menu ACTION", "a keymap's menu: edit, rename, duplicate, delete; a game's own: load, save-as", |a| {
+    form("keymap-menu ACTION", "a keymap's menu: edit, rename, duplicate, delete; a game's own: load, save-as, reset", |a| {
         kp(match arg(a, 0) {
             "edit" => ProfileId::Edit,
             "rename" => ProfileId::Rename,
@@ -211,6 +211,7 @@ pub const TARGETS: &[Form<Id>] = &[
             "delete" => ProfileId::Delete,
             "load" => ProfileId::LoadFrom,
             "save-as" => ProfileId::SaveAs,
+            "reset" => ProfileId::Reset,
             other => return Err(name_err(other)),
         })
     }),

@@ -4,9 +4,10 @@
 //!   Default (no profile: the pad as it is, or for curves Off), the named profiles with how many games use each,
 //!   and New.
 //! - A profile's menu has Edit, Rename, Duplicate and Delete; deleting one in use asks first. A game's own
-//!   profile stays while another is chosen. Its menu has Edit, Load from, Save as and Delete. Load from
-//!   copies Default or a named profile into it and opens its edit screen, where Undo goes back. Save as
-//!   copies it to a new named profile, or over an existing one after asking.
+//!   profile stays while another is chosen, and is never deleted. Its menu has Edit, Load from, Save as
+//!   and Reset. Load from copies Default or a named profile into it and opens its edit screen, where Undo
+//!   goes back; Reset loads Default. Save as copies it to a new named profile, or over an existing one
+//!   after asking.
 //!
 //! The kind's own screens, such as its edit screen, are its own; the picker opens them through the kind's
 //! [`Owner`].
@@ -167,6 +168,8 @@ pub enum ProfileId {
     ConfirmSave,
     /// In the menu of a game's own profile: the profiles to load into it.
     LoadFrom,
+    /// In the menu of a game's own profile: Default loaded into it.
+    Reset,
 }
 
 /// What a profile's name, typed in the editor, is for.
@@ -377,6 +380,8 @@ fn on_menu<O: Owner>(o: &mut O, id: ProfileId, p: u16, users: impl Fn(u16) -> Us
         }
         ProfileId::LoadFrom if own => o.set_picker(Some(PickerScreen::Load(p))),
         ProfileId::SaveAs if own => o.set_picker(Some(PickerScreen::SaveAs(p))),
+        ProfileId::Reset if own => load_into(o, p, 0, out),
+        ProfileId::Delete if own => {}
         ProfileId::Delete if users(p).any() => o.set_picker(Some(PickerScreen::Delete(p))),
         ProfileId::Delete => delete(o, p, out),
         _ => {}

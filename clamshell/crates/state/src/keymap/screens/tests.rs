@@ -661,14 +661,17 @@ fn a_games_own_keymap_is_made_and_kept_while_another_is_chosen() {
     assert_eq!(s.panel().keymap_row(0).map(|r| matches!(r, PickerRow::Own(Some(k)) if k == own)), Some(true));
     tap(&mut s, row(0));
     assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Keymap), Some(own), "chosen again");
-    // Deleting it from its menu asks first, since it is in use. The game is then back on Default.
+    // It isn't deleted: its menu resets it instead, loading Default into it on its edit screen, where
+    // Undo puts it back.
     picker(&mut s);
     long(&mut s, row(0));
     profile(&mut s, ProfileId::Delete);
-    assert_eq!(s.keymapping().screen(), Some(Screen::Picker(PickerScreen::Delete(own))));
-    profile(&mut s, ProfileId::ConfirmDelete);
-    assert!(s.keymapping().keymaps().own_of("zelda-lttp").is_none());
-    assert_eq!(s.panel().keymap_row(0), Some(PickerRow::Own(None)));
+    assert!(s.keymapping().keymaps().own_of("zelda-lttp").is_some(), "never deleted");
+    let before = s.keymapping().keymaps().own_of("zelda-lttp").map(|k| k.body.clone());
+    profile(&mut s, ProfileId::Reset);
+    assert_eq!(s.keymapping().keymaps().own_of("zelda-lttp").map(|k| k.body.clone()), Some(Default::default()), "Default's");
+    assert_ne!(before, Some(Default::default()), "it differed from Default before");
+    assert_eq!(s.panel().keymap_row(0), Some(PickerRow::Own(Some(own))));
 }
 
 #[test]

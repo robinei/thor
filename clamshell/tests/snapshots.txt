@@ -48,7 +48,7 @@ keymap-menu.png 0d80217dc18d634b
 keymap-mouse.png ec3cb35d274ade7d
 keymap-name.png 77963b2d1ad305d9
 keymap-own-kept.png 0f7a63a9dabacd38
-keymap-own-menu.png 26aa2b2f94388e21
+keymap-own-menu.png 405977bc2055eac9
 keymap-own.png fa03a092efcfba87
 keymap-pick.png 713c33e0a0c1efd0
 keymap-replace.png 8371098739aadd17

@@ -360,6 +360,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
                         ProfileId::SaveAs,
                         ProfileId::ConfirmSave,
                         ProfileId::LoadFrom,
+                        ProfileId::Reset,
                     ]
                     .map(|p| Id::Profile(crate::profiles::picker::Kind::Keymap, p)),
                 );

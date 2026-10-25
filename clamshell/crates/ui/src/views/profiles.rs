@@ -168,7 +168,7 @@ fn menu(f: &mut Frame, kind: Kind, id: u16) {
             (p(ProfileId::Edit), "Edit", Tone::Fn),
             (p(ProfileId::LoadFrom), "Load from…", Tone::Fn),
             (p(ProfileId::SaveAs), "Save as…", Tone::Fn),
-            (p(ProfileId::Delete), "Delete", Tone::Accent),
+            (p(ProfileId::Reset), "Reset", Tone::Accent),
         ];
         return widgets::menu(f, area, items);
     }
