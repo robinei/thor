@@ -54,6 +54,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--gpu", action="store_true", help="the host on GLES")
     parser.add_argument("--keep", action="store_true", help="leave the session running at the end")
+    parser.add_argument("--only", choices=["pattern", "sdl-wayland", "sdl-x11"], help="run only this game's cases")
     args = parser.parse_args()
     for path in [BIN, PATTERN]:
         if not path.exists():
@@ -78,8 +79,9 @@ def main():
     games = directory / "games"
     games.mkdir()
     # Each game: a file the runner starts through the wrapper, its commands from a FIFO, its output to a file.
-    kinds = {"pattern": [str(PATTERN)], "sdl-wayland": ["env", "SDL_VIDEO_DRIVER=wayland", str(sdl)],
-             "sdl-x11": ["env", "SDL_VIDEO_DRIVER=x11", str(sdl)]}
+    # SDL logs its video subsystem to the game's .err, for what it did with a mode.
+    kinds = {"pattern": [str(PATTERN)], "sdl-wayland": ["env", "SDL_VIDEO_DRIVER=wayland", "SDL_LOGGING=video=debug", str(sdl)],
+             "sdl-x11": ["env", "SDL_VIDEO_DRIVER=x11", "SDL_LOGGING=video=debug", str(sdl)]}
     wrapper = directory / "run-game.sh"
     wrapper.write_text("#!/bin/sh\n"
                        "# The game named by its file, its commands from <name>.in, its output to <name>.out.\n"
@@ -318,7 +320,7 @@ def main():
                 set_setting(key, value)
 
         # pattern-game: at Native, then relaunched at 1/2.
-        for resolution in ["native", "1/2"]:
+        for resolution in ["native", "1/2"] if args.only in (None, "pattern") else []:
             launch("pattern")
             wait(lambda: any(l.startswith("mode") for l in output("pattern")), "pattern-game's modes")
             lines = output("pattern")
@@ -347,13 +349,15 @@ def main():
             quit("pattern")
 
         # SDL, on Wayland and on X11: at the desktop's size, then a lower mode it lists.
-        for name in ["sdl-wayland", "sdl-x11"]:
+        for name in [n for n in ["sdl-wayland", "sdl-x11"] if args.only in (None, n)]:
             launch(name)
             wait(lambda: any(l.startswith("size") for l in output(name)), f"{name} drawing")
             lines = output(name)
             desktop = next(tuple(map(int, l.split()[1:])) for l in lines if l.startswith("desktop "))
             listed = [tuple(map(int, l.split()[1:])) for l in lines if l.startswith("mode ")]
             print(f"{name}: desktop {desktop}, modes {listed}", flush=True)
+            # Without pattern-game's run (--only), the screen is taken as SDL's desktop.
+            screen = screen or desktop
             if desktop != screen:
                 print(f"FAIL: {name}-desktop-size: SDL's desktop {desktop}, the screen {screen}", flush=True)
                 failures.append(f"{name}-desktop-size")
@@ -370,8 +374,10 @@ def main():
                     wait(lambda: len([l for l in output(name) if l.startswith("size")]) > sizes_before, f"{name} at {target}")
                 except RuntimeError as error:
                     print(f"note: {error}", flush=True)
-                drawn = [l for l in output(name) if l.startswith("size")][-1]
-                print(f"{name}: mode {target}, drawing at {drawn}", flush=True)
+                drawn = tuple(map(int, [l for l in output(name) if l.startswith("size")][-1].split()[1:]))
+                print(f"{'ok' if drawn == target else 'FAIL'}: {name}-mode{target[0]}x{target[1]}-drawn: drawing at {drawn}", flush=True)
+                if drawn != target:
+                    failures.append(f"{name}-mode{target[0]}x{target[1]}-drawn")
                 go_through(name, f"{name}-mode{target[0]}x{target[1]}", False, target)
             quit(name)
 
