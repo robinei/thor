@@ -242,6 +242,10 @@ impl Server {
             let mode = Mode { size: (w, self.size.1).into(), refresh: self.refresh };
             output.change_current_state(Some(mode), Some(Transform::Normal), None, Some((x, 0).into()));
             output.set_preferred(mode);
+            // One mode, the screen's: Smithay keeps every mode an output had, and Wine would offer them.
+            for old in output.modes().into_iter().filter(|old| *old != mode) {
+                output.delete_mode(old);
+            }
             // The top's mode follows the game on top again (see `sync_top_mode`).
             self.top_mode = None;
             self.core.resize(screen, (w as u32, self.size.1 as u32), 1);
