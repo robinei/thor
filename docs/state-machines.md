@@ -342,7 +342,8 @@ read from or that it is written to the level the picker was opened from: a slide
 game's window's content and its screen's description (`Reading::Screens`), and behind the curve the
 picture's histogram: while the edit screen is open the compositor draws the plotted window's picture
 small, its luminance as the content's signal level (SDR's, or PQ's with its white at the reference),
-reads it back four times a second and counts it into 64 bins (`colour::histogram`, `Reading::Histogram`,
+reads it back four times a second and counts it into 64 bins, without the black bars a game draws at
+its edges and the blended line beside each (`colour::histogram`, `Reading::Histogram`,
 for `State::histogram_window`). The plot draws the levels along the bottom, each bar filled with the grey
 of the light the curve gives it (black to paper white the darker half of the greys, paper white to the
 screen's peak the lighter) but for its left quarter, the grey of its light as the content is, so a bar
