@@ -84,6 +84,16 @@ impl CompositorHandler for Server {
             }
         }
         self.open_on_commit(surface);
+        // A subsurface's colour may be its window's (see `Server::window_colour`).
+        if previous != current && get_parent(surface).is_some() {
+            let mut root = surface.clone();
+            while let Some(parent) = get_parent(&root) {
+                root = parent;
+            }
+            if self.windows.iter().any(|w| w.opened && w.window.root().as_ref() == Some(&root)) {
+                self.open_on_commit(&root);
+            }
+        }
         self.popups.commit(surface);
         if let Some(PopupKind::Xdg(popup)) = self.popups.find_popup(surface)
             && !popup.is_initial_configure_sent()

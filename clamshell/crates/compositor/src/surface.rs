@@ -119,8 +119,24 @@ impl Surface {
             }
         }
     }
-    /// The size of the window's picture: the buffer of its surface with the largest one (Wine draws a game
-    /// in a subsurface; Xwayland, SDL and Wine show a mode a game picked as a buffer a viewport stretches).
+    /// The surface holding the window's picture: the one with the largest buffer (Wine draws a game in a
+    /// subsurface; Xwayland, SDL and Wine show a mode a game picked as a buffer a viewport stretches).
+    pub fn picture_surface(&self) -> Option<WlSurface> {
+        let mut picture: Option<(WlSurface, i64)> = None;
+        self.with_surfaces(|surface, states| {
+            let state = states.data_map.get::<smithay::backend::renderer::utils::RendererSurfaceStateUserData>();
+            let buffer = state.and_then(|state| state.lock().ok()?.buffer_size());
+            if let Some(buffer) = buffer {
+                let area = i64::from(buffer.w) * i64::from(buffer.h);
+                if picture.as_ref().is_none_or(|(_, largest)| area > *largest) {
+                    picture = Some((surface.clone(), area));
+                }
+            }
+        });
+        picture.map(|(surface, _)| surface)
+    }
+
+    /// The size of the window's picture (see [`Surface::picture_surface`]).
     pub fn picture_size(&self) -> Option<smithay::utils::Size<i32, smithay::utils::Logical>> {
         let mut picture: Option<smithay::utils::Size<i32, smithay::utils::Logical>> = None;
         self.with_surfaces(|_, states| {

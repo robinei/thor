@@ -348,7 +348,7 @@ impl Server {
             id,
             app_id,
             title,
-            colour: crate::colour::protocol::current(surface.wl_surface()),
+            colour: self.windows.iter().find(|w| w.id == id).and_then(|client| self.window_colour(&client.window)),
             parent: parent.and_then(|p| self.surface_id(&p)),
             unit: process.unit,
             pids: process.pids,
@@ -368,6 +368,15 @@ impl Server {
         })
     }
 
+    /// A window's colour, as the state has it: the description of the surface holding its picture (the one
+    /// with the largest buffer: Wine declares a game's on the subsurface it draws in), else its toplevel's.
+    pub(crate) fn window_colour(&self, window: &crate::surface::Surface) -> Option<std::sync::Arc<clamshell_state::session::presentation::ColourDescription>> {
+        use smithay::backend::renderer::element::Id;
+        let picture = window.picture_surface().map(|surface| Id::from_wayland_resource(&surface));
+        let root = window.root().map(|surface| Id::from_wayland_resource(&surface));
+        picture.and_then(|id| self.colour.surfaces.get(&id)).or_else(|| root.and_then(|id| self.colour.surfaces.get(&id))).cloned()
+    }
+
     pub fn open_on_commit(&mut self, surface: &WlSurface) {
         let Some(index) = self.windows.iter().position(|w| w.window.root().as_ref() == Some(surface)) else { return };
         let Some(client) = self.windows.get(index) else { return };
@@ -382,7 +391,8 @@ impl Server {
             }
         } else {
             let limits = Self::size_limits(&toplevel);
-            if self.core.state().session().window(id).is_some_and(|old| old.limits != limits || old.colour != crate::colour::protocol::current(surface)) {
+            let colour = self.windows.get(index).and_then(|client| self.window_colour(&client.window));
+            if self.core.state().session().window(id).is_some_and(|old| old.limits != limits || old.colour != colour) {
                 self.core.handle(WindowEvent::Changed(self.facts(&toplevel, id)).into());
             }
         }
