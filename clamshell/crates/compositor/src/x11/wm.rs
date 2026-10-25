@@ -746,6 +746,12 @@ impl Window {
         let fill = server.fill_size(self.id, area.size);
         let size = crate::geometry::configure_size(model, policy, area.size, fill, (i32::from(self.size.0), i32::from(self.size.1)).into())
             .unwrap_or((i32::from(self.size.0), i32::from(self.size.1)).into());
+        // A fullscreen game that switched mode is configured to it, so that Xwayland emulates it: the window
+        // at the mode's size is scaled to the screen, and comes to us as a smaller buffer scaled by a viewport.
+        let size = match self.properties.emulated {
+            Some((w, h)) if policy.layout == WindowLayout::Fullscreen => (i32::try_from(w).unwrap_or(size.w), i32::try_from(h).unwrap_or(size.h)).into(),
+            _ => size,
+        };
         let offset: smithay::utils::Point<i32, smithay::utils::Logical> =
             if policy.layout == WindowLayout::Centred { ((area.size.w - size.w).max(0) / 2, (area.size.h - size.h).max(0) / 2).into() } else { (0, 0).into() };
         let geometry = Rectangle::new(area.loc + offset, size);

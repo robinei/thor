@@ -38,9 +38,19 @@ pub(super) const NAMES: &[&str] = &[
     "TEXT",
     "_THOR_SELECTION",
     "_THOR_TIMESTAMP",
+    "_XWAYLAND_RANDR_EMU_MONITOR_RECTS",
 ];
-pub(super) const PROPERTIES: &[&str] =
-    &["WM_NAME", "_NET_WM_NAME", "WM_CLASS", "WM_TRANSIENT_FOR", "WM_NORMAL_HINTS", "_NET_WM_WINDOW_TYPE", "WM_PROTOCOLS", "WM_HINTS"];
+pub(super) const PROPERTIES: &[&str] = &[
+    "WM_NAME",
+    "_NET_WM_NAME",
+    "WM_CLASS",
+    "WM_TRANSIENT_FOR",
+    "WM_NORMAL_HINTS",
+    "_NET_WM_WINDOW_TYPE",
+    "WM_PROTOCOLS",
+    "WM_HINTS",
+    "_XWAYLAND_RANDR_EMU_MONITOR_RECTS",
+];
 #[derive(Default)]
 pub(super) struct Atoms(pub Vec<(&'static str, u32)>);
 impl Atoms {
@@ -61,6 +71,9 @@ pub(super) struct Properties {
     pub take_focus: bool,
     pub input: Option<bool>,
     pub tooltip: bool,
+    /// The size of the mode its client switched to, which Xwayland emulates for a window of that size by
+    /// scaling it to the screen (the first of `_XWAYLAND_RANDR_EMU_MONITOR_RECTS`, x, y, width, height).
+    pub emulated: Option<(u32, u32)>,
 }
 impl Properties {
     pub fn update(&mut self, name: &str, reply: &GetPropertyReply, atoms: &Atoms) {
@@ -116,6 +129,12 @@ impl Properties {
                         }
                     })
                     .unwrap_or_default();
+            }
+            "_XWAYLAND_RANDR_EMU_MONITOR_RECTS" => {
+                self.emulated = match words(AtomEnum::CARDINAL.into()).as_slice() {
+                    [_, _, w, h, ..] if *w > 0 && *h > 0 => Some((*w, *h)),
+                    _ => None,
+                };
             }
             "WM_HINTS" => {
                 let hints = words(AtomEnum::WM_HINTS.into());
