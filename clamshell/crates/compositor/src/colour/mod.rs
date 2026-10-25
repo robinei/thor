@@ -1,5 +1,6 @@
 //! Parametric colour conversion. Linear BT.2020 with one unit at reference white is the working space.
 pub(crate) mod chain;
+pub(crate) mod histogram;
 pub(crate) mod math;
 
 pub(crate) mod host;

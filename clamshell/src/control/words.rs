@@ -201,6 +201,12 @@ pub const TARGETS: &[Form<Id>] = &[
         |a| Ok(ListId::Keymaps.row(number(arg(a, 0))?)),
     ),
     form("keymap-edit N", "row N's Edit", |a| Ok(Id::Row { list: ListId::Keymaps, i: number(arg(a, 0))?, part: RowPart::Edit })),
+    // The tone curves' picker, opened by a long press on the curve tile.
+    form("curve N", "the tone curve picker's row N (for a game 0 its own curve or Make own, then Default colours, then the named curves)", |a| {
+        Ok(ListId::Curves.row(number(arg(a, 0))?))
+    }),
+    form("curve-edit N", "row N's Edit: the curve's edit screen", |a| Ok(Id::Row { list: ListId::Curves, i: number(arg(a, 0))?, part: RowPart::Edit })),
+    form("curve-back", "back one tone curve screen", |_| Ok(Id::Profile(clamshell_state::profiles::picker::Kind::Curve, ProfileId::Back))),
     form("keymap-new", "the picker's New", |_| kp(ProfileId::New)),
     form("keymap-back", "back one keymap screen (picking: Cancel)", |_| kp(ProfileId::Back)),
     form("keymap-menu ACTION", "a keymap's menu: edit, rename, duplicate, delete; a game's own: load, save-as, reset", |a| {

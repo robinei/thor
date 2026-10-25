@@ -9,7 +9,7 @@
 use clamshell_state::curve::screens::CurveScreen;
 use clamshell_state::curve::{Curve, CurveParam, REFERENCE_NITS, map_hdr};
 use clamshell_state::profiles::picker::{Kind, ProfileId};
-use clamshell_state::session::presentation::CurvePlot;
+use clamshell_state::session::presentation::{CurvePlot, HISTOGRAM_BINS, Histogram};
 use clamshell_state::settings::Setting;
 
 use clamshell_state::{Control, Id, Source, State};
@@ -32,6 +32,8 @@ const PLOT_STEPS: u16 = 96;
 /// The plot's axes and the screen's peak, and the game as it is, drawn behind the curve.
 const AXIS: Rgb = Rgb(0x2a2a30);
 const AS_IS: Rgb = Rgb(0x4a4a54);
+/// The picture's histogram behind the plot: where its pixels are and where the curve puts them.
+const HISTOGRAM: Rgb = Rgb(0x26262e);
 
 pub(super) fn draw(f: &mut Frame, screen: CurveScreen) {
     match screen {
@@ -204,8 +206,49 @@ fn plot(f: &mut Frame, r: Rect, curve: &Curve, on: CurvePlot, size: f32) {
             last = point;
         }
     };
+    if let Some(histogram) = on.histogram {
+        histograms(f, inner, &histogram, on, &shown, &y_of);
+    }
     line(f, false, 1.0, AS_IS);
     line(f, true, 2.0, Tone::High.rgb());
+}
+
+/// The picture's histogram in the plot `inner`: where its pixels' levels are, as bars along the bottom
+/// (for HDR, those beyond the content's peak in the last), and where the curve puts them, as bars along
+/// the right edge, from each level's light through `shown` to its height `y_of`. Heights are square
+/// roots of the shares, so that few pixels still show.
+fn histograms(f: &mut Frame, inner: Rect, histogram: &Histogram, on: CurvePlot, shown: &dyn Fn(f64, bool) -> f64, y_of: &dyn Fn(f64) -> f32) {
+    let n = HISTOGRAM_BINS;
+    // A bin's middle level as the plot's: SDR's signal, or PQ's over the content's peak.
+    let along = |bin: usize| {
+        let level = (bin as f64 + 0.5) / n as f64;
+        match on.hdr.filter(|_| histogram.hdr) {
+            Some(hdr) => level / pq(hdr.peak * REFERENCE_NITS).max(1e-6),
+            None => level,
+        }
+    };
+    let (mut columns, mut rows) = ([0u32; HISTOGRAM_BINS], [0u32; HISTOGRAM_BINS]);
+    for (bin, count) in histogram.bins.iter().enumerate().filter(|(_, c)| **c > 0) {
+        let e = along(bin);
+        if let Some(c) = columns.get_mut(((e * n as f64) as usize).min(n - 1)) {
+            *c += u32::from(*count);
+        }
+        let height = (inner.bottom() - y_of(shown(e, true))) / inner.h.max(1.0);
+        if let Some(r) = rows.get_mut(((height * n as f32) as usize).min(n - 1)) {
+            *r += u32::from(*count);
+        }
+    }
+    let share = |count: u32, most: u32| (count as f32 / most.max(1) as f32).sqrt();
+    let (most_column, most_row) = (columns.iter().copied().max().unwrap_or(0), rows.iter().copied().max().unwrap_or(0));
+    let (w, h) = (inner.w / n as f32, inner.h / n as f32);
+    for (i, count) in columns.iter().enumerate().filter(|(_, c)| **c > 0) {
+        let bar = share(*count, most_column) * inner.h * 0.4;
+        f.c.fill(Rect::new(inner.x + i as f32 * w, inner.bottom() - bar, w.max(1.0), bar), HISTOGRAM);
+    }
+    for (i, count) in rows.iter().enumerate().filter(|(_, c)| **c > 0) {
+        let bar = share(*count, most_row) * inner.w * 0.12;
+        f.c.fill(Rect::new(inner.right() - bar, inner.bottom() - (i + 1) as f32 * h, bar, h.max(1.0)), HISTOGRAM);
+    }
 }
 
 /// SMPTE ST 2084's decoding: the light in nits of a PQ signal, 0 to 1.

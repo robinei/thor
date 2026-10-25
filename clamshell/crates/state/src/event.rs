@@ -197,6 +197,8 @@ pub enum Reading {
     Account(crate::device::account::Account),
     /// The screens as the compositor has them, at the start and when they change.
     Screens(Box<crate::session::presentation::Screens>),
+    /// Where the pixels of the plotted window's picture are (see [`crate::State::histogram_window`]).
+    Histogram(Box<crate::session::presentation::Histogram>),
 }
 
 /// A press on a target from touch, the mouse or the pad's A, and pad focus changes.

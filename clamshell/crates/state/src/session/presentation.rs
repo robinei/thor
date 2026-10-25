@@ -173,6 +173,22 @@ pub struct CurvePlot {
     pub headroom: f64,
     /// The screen's black.
     pub black: f64,
+    /// Where the content's pixels are, as the compositor last measured them, if it did for its window.
+    pub histogram: Option<Histogram>,
+}
+
+/// How many bins a [`Histogram`] has.
+pub const HISTOGRAM_BINS: usize = 64;
+
+/// Where the pixels of a window's picture are, as the compositor measures them while its curve's edit
+/// screen is open (see [`crate::State::histogram_window`]): how many pixels' luminance falls in each of
+/// [`HISTOGRAM_BINS`] equal steps of the content's signal, SDR's (sRGB's encoding) or for HDR PQ's, over
+/// its whole range with the content's white at the reference white.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Histogram {
+    pub window: i64,
+    pub hdr: bool,
+    pub bins: [u16; HISTOGRAM_BINS],
 }
 
 /// How a window's picture is shown: its clarity settings (see [`crate::State::window_clarity`]).
@@ -256,13 +272,25 @@ impl crate::State {
     /// What a curve's plot shows for the program whose settings are edited: whether its window on screen
     /// shows HDR content and how bright it declares, and its screen's headroom. Without a window, SDR
     /// content on the top screen.
-    pub fn curve_plot(&self) -> CurvePlot {
-        let panel = self.panel();
-        let program = panel.editing().map(|program| program.id.clone());
-        let window = program.as_deref().and_then(|id| {
+    /// The window whose picture the curve's edit screen plots: the edited program's, on the main screen if
+    /// it has one there.
+    fn plot_window(&self) -> Option<&crate::session::windows::Window> {
+        let program = self.panel().editing().map(|program| program.id.clone());
+        let id = program.as_deref().and_then(|id| {
             let mut windows = self.session().windows_of(id);
-            windows.find(|w| !w.down).or_else(|| self.session().windows_of(id).next())
-        });
+            windows.find(|w| !w.down).or_else(|| self.session().windows_of(id).next()).map(|w| w.id)
+        })?;
+        self.session().window(id)
+    }
+
+    /// The window whose picture the compositor measures for the plot's histogram: the plotted one, while a
+    /// curve's edit screen is open.
+    pub fn histogram_window(&self) -> Option<i64> {
+        matches!(self.curving().screen(), Some(crate::curve::screens::CurveScreen::Edit(_))).then(|| self.plot_window().map(|w| w.id)).flatten()
+    }
+
+    pub fn curve_plot(&self) -> CurvePlot {
+        let window = self.plot_window();
         let colour = window.and_then(|w| w.colour.as_deref().copied()).filter(|colour| colour.hdr());
         let screen = self.screen_colour(window.is_some_and(|w| w.down));
         let luminance = screen.luminances();
@@ -282,7 +310,8 @@ impl crate::State {
                 scrgb: colour.transfer == TransferFunction::Linear,
             }
         });
-        CurvePlot { hdr, headroom: screen.headroom(), black }
+        let histogram = self.histogram.filter(|h| window.is_some_and(|w| w.id == h.window));
+        CurvePlot { hdr, headroom: screen.headroom(), black, histogram }
     }
 
     /// The HDR content peak set for window `id`'s program, in the content's nits (see

@@ -314,7 +314,7 @@ fn read(state: &smithay::backend::renderer::utils::RendererSurfaceState, formats
 
 /// `source`, turned by `turn`, drawn over all of `target`, by `program` with its uniform, or as Smithay
 /// draws a texture.
-fn render(
+pub(super) fn render(
     renderer: &mut GlesRenderer,
     target: &mut GlesTexture,
     source: &GlesTexture,
@@ -338,7 +338,7 @@ fn render(
 
 /// A pass's program: `glsl` defining the function `main` calls (`easu()` or `fxaa(v_coords)`), its signal
 /// as it is (decoding comes in the final pass).
-fn pass_program(renderer: &mut GlesRenderer, call: &str, glsl: &str) -> Result<GlesTexProgram, Error> {
+pub(super) fn pass_program(renderer: &mut GlesRenderer, call: &str, glsl: &str) -> Result<GlesTexProgram, Error> {
     let source = format!(
         r#"#version 100
 //_DEFINES_

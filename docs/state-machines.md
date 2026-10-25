@@ -339,7 +339,13 @@ read from or that it is written to the level the picker was opened from: a slide
 `State::setting_stop`) whose first stop, Default, writes nothing there
 (`the_hdr_content_peak_is_the_games_setting_slid_from_default_and_outlives_its_curve`); tested in
 `curve::tests`. The edit screen's plot follows `State::curve_plot`: the
-game's window's content and its screen's description (`Reading::Screens`). The randomized test taps the
+game's window's content and its screen's description (`Reading::Screens`), and behind the curve the
+picture's histogram: while the edit screen is open the compositor draws the plotted window's picture
+small, its luminance as the content's signal level (SDR's, or PQ's with its white at the reference),
+reads it back four times a second and counts it into 64 bins (`colour::histogram`, `Reading::Histogram`,
+for `State::histogram_window`). The plot draws the levels along the bottom, the input, and each bin's
+light through the curve along the right edge, where the curve puts them; `tests/picture-scaling.py`
+checks it is drawn for the test pattern. The randomized test taps the
 curve screens and slides their parameters.
 
 ## Shelf (shelf/)

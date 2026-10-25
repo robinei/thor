@@ -33,6 +33,8 @@ pub(crate) struct Pipeline {
     last_curves: Vec<(Id, Look)>,
     /// The windows whose pictures take passes before the scene (FSR with sharpening), and their textures.
     chains: super::chain::Chains,
+    /// The histogram of the picture a curve's edit screen plots.
+    histogram: super::histogram::Measure,
 }
 
 /// How a window's surface is shown: the HDR curve of the game running it (or none), the headroom of its
@@ -144,6 +146,11 @@ fn bind_second(frame: &mut GlesFrame<'_, '_>, texture: Option<u32>) -> Result<()
 }
 
 impl Pipeline {
+    /// The histogram measured since the last call, for the state (see [`super::histogram`]).
+    pub(crate) fn take_histogram(&mut self) -> Option<clamshell_state::session::presentation::Histogram> {
+        self.histogram.measured.take()
+    }
+
     pub(crate) fn new(renderer: &mut GlesRenderer, size: (i32, i32)) -> Result<Self, Error> {
         let texture = renderer.create_buffer(Fourcc::Abgr16161616f, size.into())?;
         let output = ColourDescription::default();
@@ -160,6 +167,7 @@ impl Pipeline {
             curves: Vec::new(),
             last_curves: Vec::new(),
             chains: Default::default(),
+            histogram: Default::default(),
         })
     }
     /// Each screen's encoding: the top's, then the second's.
@@ -197,6 +205,7 @@ impl Pipeline {
             self.first = true;
             self.revision = server.colour.revision;
         }
+        self.histogram.turn(renderer, server, std::time::Instant::now());
         self.curves.clear();
         // The surface holding each window's picture, if it takes passes before the scene (see `super::chain`): SMAA,
         // and with FSR and sharpening, FSR's upscale.

@@ -446,6 +446,9 @@ fn compose(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnM
     cursor.elements(server, renderer, elements)?;
     let (composed, changed) = pipeline.compose(server, renderer, elements)?;
     *states = composed;
+    if let Some(histogram) = pipeline.take_histogram() {
+        server.report_histogram(histogram);
+    }
     if std::mem::take(&mut server.screenshot_requested) {
         on_capture(pipeline.capture(renderer));
     }

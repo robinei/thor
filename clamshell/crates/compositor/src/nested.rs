@@ -119,6 +119,9 @@ pub fn run(
                         cursor.elements(server, backend.renderer(), &mut elements)?;
                         let composed_states =
                             if let Some(pipeline) = &mut colour_pipeline { Some(pipeline.compose(server, backend.renderer(), &mut elements)?.0) } else { None };
+                        if let Some(histogram) = colour_pipeline.as_mut().and_then(|pipeline| pipeline.take_histogram()) {
+                            server.report_histogram(histogram);
+                        }
                         let states;
                         {
                             let (renderer, mut framebuffer) = backend.bind()?;

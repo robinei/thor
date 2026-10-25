@@ -591,6 +591,11 @@ impl Server {
 
     /// Tells the state the screens' colours and the top screen's size when they change: a curve is shown
     /// within the colour, and a game's resolution is a fraction of the size.
+    /// Gives the state the histogram the colour pipeline measured (see [`crate::colour::histogram`]).
+    pub(crate) fn report_histogram(&mut self, histogram: clamshell_state::session::presentation::Histogram) {
+        self.core.handle(clamshell_state::Event::Reading(clamshell_state::Reading::Histogram(Box::new(histogram))));
+    }
+
     fn report_screens(&mut self) {
         let screens = clamshell_state::session::presentation::Screens {
             colour: self.colour.descriptions,

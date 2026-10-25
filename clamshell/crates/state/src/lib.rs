@@ -193,6 +193,8 @@ pub struct State {
     setting_slider: Option<Slider>,
     /// The screens, as the compositor last said (see [`Reading::Screens`]).
     screens: crate::session::presentation::Screens,
+    /// The last histogram the compositor measured (see [`Reading::Histogram`]).
+    histogram: Option<crate::session::presentation::Histogram>,
     /// Whether ClamShell's own compositor shows the windows (see [`Init::compositor`]).
     compositor: bool,
     /// Where the lists but shelf are scrolled.
@@ -229,6 +231,7 @@ impl State {
             curving: crate::curve::screens::Curving::new(init.curves),
             setting_slider: None,
             screens: Default::default(),
+            histogram: None,
             compositor: init.compositor,
             bottom: Bottom::new(init.window_rules),
             sys: Sys::new(init.twelve_hour),
@@ -712,6 +715,7 @@ impl State {
             Reading::Metrics(metrics) => self.sys.read_metrics(metrics),
             Reading::Frames { fps, frame_ms } => self.sys.frames(fps, frame_ms),
             Reading::Screens(screens) => self.screens = *screens,
+            Reading::Histogram(histogram) => self.histogram = Some(*histogram),
             Reading::Wifi(wifi) => self.radios.read_wifi(wifi),
             Reading::Bluetooth(bluetooth) => self.radios.read_bluetooth(bluetooth),
             Reading::Battery(battery) => self.sys.read_battery(battery),

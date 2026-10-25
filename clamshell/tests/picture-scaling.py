@@ -359,6 +359,21 @@ def main():
                 failures.append(f"pattern-{label}-launch")
             go_through("pattern", f"pattern-{label}", True, modes[-1])
             if resolution == "native":
+                # The tone curve's edit screen plots the picture's histogram: its colour is drawn there.
+                open_settings()
+                control("long", "setting", "curve")
+                control("tap", "curve-edit", "2")
+                time.sleep(1.5)
+                subprocess.run(["grim", "-o", "HEADLESS-1", str(directory / "pattern-curve-histogram.png")], env=host, check=True)
+                width, height, pixels = image()
+                plot = [(x, y) for y in range(0, height // 2) for x in range(screen[0], width)]
+                drawn = sum(1 for x, y in plot if pixels[(y * width + x) * 3:(y * width + x) * 3 + 3] == bytes([0x26, 0x26, 0x2e]))
+                print(f"{'ok' if drawn > 200 else 'FAIL'}: pattern-curve-histogram: {drawn} pixels of the histogram drawn", flush=True)
+                if drawn <= 200:
+                    failures.append("pattern-curve-histogram")
+                control("tap", "curve-back")
+                control("tap", "curve-back")
+            if resolution == "native":
                 open_settings()
                 set_setting("resolution", "1/2")
             else:
