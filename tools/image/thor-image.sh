@@ -32,7 +32,10 @@
 # hibernating (thor-firstboot, thor-system's). The test machine's: the same partitions, the FAT one its
 # /boot (Arch's kernel and initramfs there, systemd-boot's EFI/BOOT/BOOTX64.EFI).
 #
-# Environment: THOR_TIMEZONE (default UTC), THOR_LOCALE (default en_US.UTF-8).
+# Environment: THOR_TIMEZONE (default UTC), THOR_LOCALE (default en_US.UTF-8). For bringing up a device
+# (never in a published image): THOR_BRINGUP=1 leaves the session off at boot (/etc/thor/no-session:
+# the first console logs in to a shell; thor-session starts the session by hand), and THOR_SSH_KEY, a
+# public key file, is put in the user's authorized_keys with sshd on, for ssh from the first boot.
 set -euo pipefail
 TARGET=$1 IMAGE=$2 REPO=$3 CACHE=$4 ROCKNIX=${5:-} FIRMWARE=${6:-}
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -41,6 +44,8 @@ WORK=/var/tmp/thor-image
 ROOT=$WORK/root
 ZONE=${THOR_TIMEZONE:-UTC}
 LOCALE=${THOR_LOCALE:-en_US.UTF-8}
+SSH_KEY=${THOR_SSH_KEY:-}
+[ -z "$SSH_KEY" ] || grep -q '^ssh-\|^ecdsa-' "$SSH_KEY" || { echo "THOR_SSH_KEY: no public key in $SSH_KEY"; exit 1; }
 # The packages: the base system, an editor and a pager, and the Thor's (packages/thor: the metapackage
 # that is the whole system, kept current by pacman; the test machine's: the same session and system with
 # Arch's kernel).
@@ -56,7 +61,7 @@ case $TARGET in
         # SM8550's needs up to that, against the default 0.5 s); a panic reboots after 30 s (Thorch's). The
         # loader entry holds it; thor-boot copies
         # it into /KERNEL; the first boot adds resume= and resume_offset= (the swap file's place).
-        CMDLINE="root=LABEL=THOR_ROOT rw rootwait console=tty0 fbcon=rotate:1 allow_mismatched_32bit_el0 fw_devlink.strict=1 pcie_ports=compat irqaffinity=0-2 cgroup.memory=nokmem,nosocket nosoftlockup usbcore.interrupt_interval_override=045e:028e:2 psi=1 cgroup_disable=pressure ufshcd_core.uic_cmd_timeout=3000 panic=30"
+        CMDLINE="root=LABEL=THOR_ROOT rw rootwait console=tty0 fbcon=rotate:1 vconsole.font=ter-v32n allow_mismatched_32bit_el0 fw_devlink.strict=1 pcie_ports=compat irqaffinity=0-2 cgroup.memory=nokmem,nosocket nosoftlockup usbcore.interrupt_interval_override=045e:028e:2 psi=1 cgroup_disable=pressure ufshcd_core.uic_cmd_timeout=3000 panic=30"
         [ -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ] || { echo "needs qemu-user's binfmt for aarch64: qemu-user-static-binfmt"; exit 1; }
         [ -f "$FIRMWARE" ] || { echo "no thor-firmware package: $FIRMWARE"; exit 1; }
         ;;
@@ -65,7 +70,7 @@ case $TARGET in
         ARCH=x86_64
         # (QEMU's two screens' modes, the second forced on: QEMU enables an output only once its window
         # reports a size, which a headless one doesn't; tools/vm/vm.py's KERNEL_VIDEO.)
-        CMDLINE="root=LABEL=THOR_ROOT rw console=tty0 console=ttyS0 psi=1 cgroup_disable=pressure video=Virtual-1:1920x1080@60 video=Virtual-2:1240x1080@60e"
+        CMDLINE="root=LABEL=THOR_ROOT rw console=tty0 console=ttyS0 vconsole.font=ter-v32n psi=1 cgroup_disable=pressure video=Virtual-1:1920x1080@60 video=Virtual-2:1240x1080@60e"
         ;;
     *) echo "thor-image.sh thor|vm ..."; exit 2 ;;
 esac
@@ -161,6 +166,18 @@ printf '%%wheel ALL=(ALL:ALL) ALL\n' > "$ROOT/etc/sudoers.d/wheel"
 chmod 440 "$ROOT/etc/sudoers.d/wheel"
 # (sshd isn't: ClamShell's Remote login turns it on, once there is a password.)
 arch-chroot "$ROOT" systemctl enable NetworkManager bluetooth systemd-timesyncd > /dev/null
+if [ -n "${THOR_BRINGUP:-}" ]; then
+    mkdir -p "$ROOT/etc/thor"
+    echo "# Bring-up: the session doesn't start at boot (thor-session.sh). Remove to start it." > "$ROOT/etc/thor/no-session"
+    say "  bring-up: the session off at boot"
+fi
+if [ -n "$SSH_KEY" ]; then
+    install -d -m 700 "$ROOT/home/$USER_NAME/.ssh"
+    install -m 600 "$SSH_KEY" "$ROOT/home/$USER_NAME/.ssh/authorized_keys"
+    arch-chroot "$ROOT" chown -R "$USER_NAME:$USER_NAME" "/home/$USER_NAME/.ssh"
+    arch-chroot "$ROOT" systemctl enable sshd > /dev/null
+    say "  bring-up: sshd on, with $SSH_KEY"
+fi
 # Each card its own machine ID: an empty /etc/machine-id, which systemd fills at the first boot.
 : > "$ROOT/etc/machine-id"
 # UPower: the battery's history (ClamShell's battery mode shows the last day) and, nearly empty, hibernate

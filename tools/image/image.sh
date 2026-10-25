@@ -7,7 +7,11 @@
 #
 #   image.sh [thor [SIZE_GB]]   (default 12) into ~/.cache/thor-vm/thor-sd.img
 #   image.sh vm [SIZE_GB]       (default 32: room for the first boot's swap file) into ~/.cache/thor-vm/thor-vm.img
+#
+# THOR_TIMEZONE, THOR_LOCALE, THOR_BRINGUP and THOR_SSH_KEY are passed on to thor-image.sh (see there).
 set -euo pipefail
+# (sudo keeps only what it is given.)
+PASS=(THOR_TIMEZONE="${THOR_TIMEZONE:-}" THOR_LOCALE="${THOR_LOCALE:-}" THOR_BRINGUP="${THOR_BRINGUP:-}" THOR_SSH_KEY="${THOR_SSH_KEY:-}")
 HERE=$(cd "$(dirname "$0")" && pwd)
 CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/thor-vm
 TARGET=${1:-thor}
@@ -20,7 +24,7 @@ case $TARGET in
         release=$(basename "$firmware" | sed -E 's/^thor-firmware-([0-9]+)-.*/\1/')
         rocknix=$CACHE/rocknix/ROCKNIX-SM8550.aarch64-$release.tar
         rm -f "$IMAGE"; truncate -s "${SIZE}G" "$IMAGE"
-        sudo XDG_CACHE_HOME="${CACHE%/thor-vm}" bash "$HERE/thor-image.sh" thor "$IMAGE" "$CACHE/repo/thor" "$CACHE/pacman-aarch64" "$rocknix" "$firmware"
+        sudo XDG_CACHE_HOME="${CACHE%/thor-vm}" "${PASS[@]}" bash "$HERE/thor-image.sh" thor "$IMAGE" "$CACHE/repo/thor" "$CACHE/pacman-aarch64" "$rocknix" "$firmware"
         echo "$IMAGE: write it to an SD card (dd, bs=4M)"
         ;;
     vm)
@@ -28,7 +32,7 @@ case $TARGET in
         SIZE=${2:-32} IMAGE=$CACHE/thor-vm.img
         THOR_ARCH=x86_64 "$HERE/../repo/build.sh"
         rm -f "$IMAGE"; truncate -s "${SIZE}G" "$IMAGE"
-        sudo XDG_CACHE_HOME="${CACHE%/thor-vm}" bash "$HERE/thor-image.sh" vm "$IMAGE" "$CACHE/repo-x86_64/thor" "$CACHE/pacman-x86_64"
+        sudo XDG_CACHE_HOME="${CACHE%/thor-vm}" "${PASS[@]}" bash "$HERE/thor-image.sh" vm "$IMAGE" "$CACHE/repo-x86_64/thor" "$CACHE/pacman-x86_64"
         sudo chown "$(id -u):$(id -g)" "$IMAGE"
         echo "$IMAGE: tools/vm/vm.py thor-image starts it"
         ;;

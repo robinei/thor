@@ -178,10 +178,11 @@ exec exec uwsm finalize
 """
 
 BASH_PROFILE = """\
-# The session on the first console: sway through uwsm, by the repository's thor-session (as on the
-# device: logged out once it has run, the console staying with why when it can't go on).
+# The session on the first console: sway through uwsm, or ClamShell's compositor when /etc/thor/session
+# says clamshell, by the repository's thor-session with this machine's build (as on the device: logged
+# out once it has run, the console staying with why when it can't go on).
 if [ "$(tty)" = /dev/tty1 ] && uwsm check may-start; then
-    THOR_SWAY_CONFIG=~/.config/sway/config /mnt/thor/packages/thor-session/root/usr/bin/thor-session && exit
+    THOR_SWAY_CONFIG=~/.config/sway/config CLAMSHELL_BIN={program} CLAMSHELL_DEVICE=vm /mnt/thor/packages/thor-session/root/usr/bin/thor-session && exit
 fi
 """
 
@@ -242,7 +243,7 @@ RestartSec=2
 
 def session_files():
     return [
-        (f"/home/{USER}/.bash_profile", BASH_PROFILE),
+        (f"/home/{USER}/.bash_profile", BASH_PROFILE.replace("{program}", A.program)),
         (f"/home/{USER}/.config/sway/config", SWAY_CONFIG),
         (f"/home/{USER}/.config/systemd/user/clamshell.service", service()),
         (f"/home/{USER}/.config/systemd/user/mako.service", MAKO_SERVICE),
@@ -619,7 +620,8 @@ def thor_image(args):
         "-drive", f"file={disk},if=virtio,format=raw",
     ] + qemu_devices(args)
     print(f"starting {disk.name}: the top screen and the bottom one, a window each")
-    return subprocess.call([str(c) for c in cmd])
+    env = dict(os.environ, SDL_VIDEODRIVER="offscreen") if args.headless else None
+    return subprocess.call([str(c) for c in cmd], env=env)
 
 
 def sync(_args):
@@ -935,6 +937,7 @@ def main():
     p = sub.add_parser("thor-image", help="start the test machine's image (tools/image/image.sh vm)")
     p.add_argument("--fresh", action="store_true", help="from the built image again: a new first boot")
     p.add_argument("--pad", help="also pass a USB gamepad through (vendor:product)")
+    p.add_argument("--headless", action="store_true", help="without windows (the screens drawn offscreen)")
     p.set_defaults(func=thor_image)
     sub.add_parser("bluetooth", help="virtual Bluetooth controllers and a test device in the machine").set_defaults(func=bluetooth)
     args = parser.parse_args()

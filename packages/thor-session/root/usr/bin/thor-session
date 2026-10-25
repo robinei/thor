@@ -1,7 +1,9 @@
 #!/bin/sh
 # The session on the first console, as the login's profile starts it (once `uwsm check may-start`, which
-# looks at the login shell itself, says it may): sway through uwsm. Unless it can't
-# go on, then the console stays, saying why:
+# looks at the login shell itself, says it may): sway through uwsm, or, when /etc/thor/session says
+# `clamshell`, ClamShell's own compositor on the screens (`clamshell --drm`, its log in the journal as
+# `clamshell`; CLAMSHELL_BIN: another build of it, as the test machine's). Unless it can't go on, then the
+# console stays, saying why:
 #
 # - the session failed: it ended 3 times within 2 minutes (sway or uwsm dying as they start), so it isn't
 #   started again (a reboot starts the count anew, as does waiting 2 minutes);
@@ -42,8 +44,8 @@ now=$(date +%s)
 recent=$({ cat "$state/session-starts" 2> /dev/null; echo "$now"; } | awk -v now="$now" 'now - $1 < 120')
 printf '%s\n' "$recent" > "$state/session-starts"
 if [ "$(printf '%s\n' "$recent" | wc -l)" -gt 3 ]; then
-    echo "The session ended 3 times within 2 minutes: not started again. sway's last words:"
-    journalctl --user -n 15 -o cat --no-pager -u 'wayland-wm@*' -u 'wayland-wm-env@*' 
+    echo "The session ended 3 times within 2 minutes: not started again. Its last words:"
+    journalctl --user -n 15 -o cat --no-pager -u 'wayland-wm@*' -u 'wayland-wm-env@*' -t clamshell
     help
     exit 1
 fi
@@ -54,5 +56,10 @@ fi
 [ ! -x /usr/lib/thor/thor-home ] || /usr/lib/thor/thor-home
 [ ! -x /usr/lib/thor/thor-outputs ] || /usr/lib/thor/thor-outputs
 export XDG_CONFIG_DIRS=/usr/share/thor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}
+if [ "$(cat /etc/thor/session 2> /dev/null)" = clamshell ]; then
+    CLAMSHELL_SESSION=device CLAMSHELL_CONTROL="$XDG_RUNTIME_DIR/clamshell-control" \
+        systemd-cat -t clamshell "${CLAMSHELL_BIN:-/usr/bin/clamshell}" --drm
+    exit 0
+fi
 uwsm start -- sway -c "${THOR_SWAY_CONFIG:-/usr/share/thor/sway/config}"
 exit 0
