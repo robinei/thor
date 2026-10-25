@@ -31,6 +31,8 @@ use smithay::{
 pub struct Process {
     pub unit: Option<String>,
     pub pids: Vec<u32>,
+    /// The Steam game it belongs to, if Steam started it (see [`Server::tell_game_mode`]).
+    pub steam_app: Option<u32>,
 }
 
 pub(crate) struct ClientWindow {
@@ -74,8 +76,8 @@ pub(crate) struct Server {
     /// last sent.
     pub frames_due: Option<Instant>,
     frames_sent: (Option<f32>, Option<f32>),
-    /// The top output's mode as last set (see [`Server::sync_top_mode`]).
-    top_mode: Option<Size<i32, Logical>>,
+    /// The top output's instances clients bound, each told its game's mode (see [`Server::tell_game_mode`]).
+    pub(crate) top_bound: Vec<smithay::reexports::wayland_server::Weak<smithay::reexports::wayland_server::protocol::wl_output::WlOutput>>,
     /// The screens last told to the state (see [`Server::report_screens`]).
     screens_sent: Option<clamshell_state::session::presentation::Screens>,
     pub pointer_window: Option<i64>,
@@ -142,7 +144,7 @@ impl Server {
         let primary_selection = smithay::wayland::selection::primary_selection::PrimarySelectionState::new::<Self>(&dh);
         let data_control = smithay::wayland::selection::ext_data_control::DataControlState::new::<Self, _>(&dh, Some(&primary_selection), |_| true);
         let outputs = ["ClamShell-Top", "ClamShell-Bottom"].map(|name| {
-            let output = Output::new(
+            Output::new(
                 name.into(),
                 PhysicalProperties {
                     size: (0, 0).into(),
@@ -151,10 +153,12 @@ impl Server {
                     model: "Nested".into(),
                     serial_number: name.into(),
                 },
-            );
-            output.create_global::<Self>(&dh);
-            output
+            )
         });
+        // A game sees only the top screen: Wine lays out every output it is shown as a monitor, and a game
+        // may open on the second. A dual-screen emulator sees both (see `ClientState::top_only`).
+        outputs[0].create_global::<Self>(&dh);
+        outputs[1].create_global_with_filter::<Self, _>(&dh, |client| !ClientState::top_only(client));
         OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let trace = std::rc::Rc::new(std::cell::RefCell::new(crate::trace::Ring::new()));
         let observed = trace.clone();
@@ -192,7 +196,7 @@ impl Server {
             frames_due: None,
             frames_sent: (None, None),
             screens_sent: None,
-            top_mode: None,
+            top_bound: Vec::new(),
             pointer_window: None,
             pointer_buttons: Vec::new(),
             arrow_pressed: false,
@@ -246,10 +250,15 @@ impl Server {
             for old in output.modes().into_iter().filter(|old| *old != mode) {
                 output.delete_mode(old);
             }
-            // The top's mode follows the game on top again (see `sync_top_mode`).
-            self.top_mode = None;
             self.core.resize(screen, (w as u32, self.size.1 as u32), 1);
             self.core.record(screen, true);
+        }
+        // Games are told their own modes again, the screen's having been sent to everyone.
+        self.top_bound.retain(|output| output.upgrade().is_ok());
+        for output in self.top_bound.clone() {
+            if let Ok(output) = output.upgrade() {
+                self.tell_game_mode(&output);
+            }
         }
         self.sync_windows();
     }
@@ -319,8 +328,13 @@ impl Server {
                 .map(|data| (data.app_id.clone().unwrap_or_default(), data.title.clone().unwrap_or_default(), data.parent.clone()))
                 .unwrap_or_default()
         });
-        let process =
-            self.core.state().session().window(id).map(|window| Process { unit: window.unit.clone(), pids: window.pids.clone() }).unwrap_or_else(|| {
+        let process = self
+            .core
+            .state()
+            .session()
+            .window(id)
+            .map(|window| Process { unit: window.unit.clone(), pids: window.pids.clone(), steam_app: None })
+            .unwrap_or_else(|| {
                 surface
                     .wl_surface()
                     .client()
@@ -490,7 +504,6 @@ impl Server {
         self.update_idle(Instant::now());
         self.report_frames(Instant::now());
         self.report_screens();
-        self.sync_top_mode();
         self.core.run(Instant::now());
         while let Some(effect) = self.core.next_effect() {
             match effect {
@@ -540,24 +553,34 @@ impl Server {
         (w as i32, h as i32).into()
     }
 
-    /// The top output's mode as clients see it: the screen's size, or while a game with a lower resolution
-    /// has the window on top, that resolution, so that a game choosing from the display modes (Wine's,
-    /// Xwayland's) finds it as the largest. While ClamShell's own view is on top it stays as it was.
-    fn sync_top_mode(&mut self) {
-        let screen = Size::from((self.top_width, self.size.1));
-        let size = match self.core.state().session().top_window() {
-            Some(window) if self.windows.iter().any(|w| w.id == window.id) => self.fill_size(window.id, screen),
-            Some(_) => screen,
-            None => return,
-        };
-        if self.top_mode == Some(size) {
-            return;
+    /// Takes in a client that connected, knowing it by its process (see `running_of_process`): a game's is
+    /// shown only the top screen, at its resolution as it is now, so a change applies the next time the
+    /// game starts.
+    pub(crate) fn admit(&mut self, stream: std::os::unix::net::UnixStream) {
+        let Some(client) = insert_client(&mut self.dh, stream) else { return };
+        let process = client.get_credentials(&self.dh).ok().and_then(|c| u32::try_from(c.pid).ok()).map(|pid| (self.identify)(pid));
+        let game = process.and_then(|process| self.core.state().process_game(process.unit.as_deref(), process.steam_app));
+        if let Some(state) = client.get_data::<ClientState>() {
+            let _ = state.game.set(game);
         }
-        self.top_mode = Some(size);
-        let mode = Mode { size: (size.w, size.h).into(), refresh: self.refresh };
-        let [top, _] = &self.outputs;
-        top.change_current_state(Some(mode), None, None, None);
-        top.set_preferred(mode);
+    }
+
+    /// Tells a game's client that bound the top output the mode its resolution gives the screen, after the
+    /// screen's own that Smithay sent, so a game choosing from the display modes (Wine's) finds it as the
+    /// largest. The screen's
+    /// mode itself never changes for a game: Wine lays its monitors out by their modes, and the second
+    /// screen's monitor would move under the game's window.
+    pub(crate) fn tell_game_mode(&mut self, output: &smithay::reexports::wayland_server::protocol::wl_output::WlOutput) {
+        use smithay::reexports::wayland_server::{Resource, protocol::wl_output::Mode as WMode};
+        let Some((resolution, _)) = output.client().and_then(|client| client.get_data::<ClientState>()?.game.get().copied().flatten()) else { return };
+        let screen = (self.top_width.max(0) as u32, self.size.1.max(0) as u32);
+        let (w, h) = resolution.size_on(screen);
+        if (w, h) != screen && w > 0 && h > 0 {
+            output.mode(WMode::Current, w as i32, h as i32, self.refresh);
+            if output.version() >= 2 {
+                output.done();
+            }
+        }
     }
 
     /// Each screen's colour (the top's, the second's), described to clients (and told to the state, see
@@ -645,6 +668,17 @@ impl Server {
 #[derive(Default)]
 pub(crate) struct ClientState {
     pub compositor: CompositorClientState,
+    /// For a game's process, its resolution when it connected and whether it shows a window on the second
+    /// screen (see [`Server::admit`]).
+    pub game: std::sync::OnceLock<Option<(clamshell_state::settings::Resolution, bool)>>,
+}
+
+impl ClientState {
+    /// Whether the client sees only the top screen: a game's, unless it shows a window on the second screen
+    /// as a dual-screen emulator does.
+    fn top_only(client: &smithay::reexports::wayland_server::Client) -> bool {
+        client.get_data::<ClientState>().and_then(|state| state.game.get().copied().flatten()).is_some_and(|(_, dual)| !dual)
+    }
 }
 impl ClientData for ClientState {
     fn initialized(&self, _: ClientId) {}
@@ -656,8 +690,6 @@ impl ClientData for ClientState {
     }
 }
 
-pub(crate) fn insert_client(dh: &mut DisplayHandle, stream: std::os::unix::net::UnixStream) {
-    if let Err(error) = dh.insert_client(stream, Arc::new(ClientState::default())) {
-        log::warn!("compositor: accept client: {error}");
-    }
+pub(crate) fn insert_client(dh: &mut DisplayHandle, stream: std::os::unix::net::UnixStream) -> Option<smithay::reexports::wayland_server::Client> {
+    dh.insert_client(stream, Arc::new(ClientState::default())).inspect_err(|error| log::warn!("compositor: accept client: {error}")).ok()
 }

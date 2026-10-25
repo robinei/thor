@@ -15,7 +15,7 @@ use smithay::{
     wayland::socket::ListeningSocketSource,
 };
 
-use crate::server::{Process, Server, insert_client};
+use crate::server::{Process, Server};
 
 pub(crate) struct Base {
     pub event_loop: EventLoop<'static, Server>,
@@ -41,7 +41,7 @@ impl Base {
         let socket = ListeningSocketSource::new_auto()?;
         server.socket = socket.socket_name().to_string_lossy().into_owned();
         log::info!("compositor: WAYLAND_DISPLAY={}", server.socket);
-        event_loop.handle().insert_source(socket, |stream, _, server| insert_client(&mut server.dh, stream)).map_err(|e| e.error)?;
+        event_loop.handle().insert_source(socket, |stream, _, server| server.admit(stream)).map_err(|e| e.error)?;
         // The duplicated descriptor is only a readiness source. The closure owns the display, so dispatch
         // does not need an unsafe mutable borrow of calloop's Generic storage.
         let fd = display.as_fd().try_clone_to_owned()?;

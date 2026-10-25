@@ -238,6 +238,16 @@ impl Session {
         }
     }
 
+    /// The running entry a client's process belongs to, before it has a window: by its scope, else the
+    /// Steam game it is (Steam's game launcher starts it in Steam's scope, which ClamShell then follows).
+    pub fn running_of_process(&self, unit: Option<&str>, steam_app: Option<u32>) -> Option<&Running> {
+        let by_key = unit.and_then(Instance::key_of).and_then(|key| self.running.iter().find(|r| r.key == key));
+        by_key.or_else(|| {
+            let app_id = format!("{}{}", crate::session::instance::STEAM_APP_PREFIX, steam_app?);
+            self.running.iter().find(|r| r.app_id.as_deref() == Some(app_id.as_str()))
+        })
+    }
+
     /// The running entry a window belongs to, by the first of these that matches:
     ///
     /// - its app id (see [`crate::session::running::app_id_of`]), as for a Steam game that runs in Steam's

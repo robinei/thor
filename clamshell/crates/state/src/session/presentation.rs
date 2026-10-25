@@ -203,8 +203,8 @@ pub struct HdrPlot {
 impl super::windows::Window {
     /// How the window is shown: dialogs, popups and windows of a fixed size centred at their own size, other
     /// windows filling the screen, a game's scaled to it. `screen` is the sizes its screen may tell it it
-    /// has (the screen's own, and the resolution its game is set to): a window fixed at one of them fills
-    /// the screen too, as a game Wine shows as a window of the screen's mode.
+    /// has (what each resolution gives it): a window fixed at one of them fills the screen too, as a game
+    /// Wine shows as a window of the screen's mode.
     pub fn presentation(&self, game: bool, screen: &[(u32, u32)]) -> WindowPresentation {
         let fixed = self.limits.fixed_size().is_some_and(|size| !screen.contains(&size));
         let centred = self.parent.is_some() || self.role != WindowRole::Normal || fixed;
@@ -219,10 +219,16 @@ impl crate::State {
     pub fn window_presentation(&self, id: i64) -> Option<WindowPresentation> {
         let window = self.session().window(id)?;
         let game = self.session().running_of(window).and_then(|r| self.session().entry(self.shelf().library(), &r.id)).is_some_and(crate::Entry::is_game);
-        // What the top screen may tell its windows (see the compositor's top mode); the second's isn't known
-        // here, and games are shown on the top one.
-        let screen: Vec<(u32, u32)> =
-            self.top_size().filter(|_| !window.down).map(|top| vec![top, self.window_clarity(id).resolution.size_on(top)]).unwrap_or_default();
+        // What the top screen may tell its windows: a game is told its resolution when it starts, which may
+        // have changed since. The second's size isn't known here, and games are shown on the top one.
+        let screen: Vec<(u32, u32)> = self
+            .top_size()
+            .filter(|_| !window.down)
+            .map(|top| {
+                use crate::settings::{Choice, Resolution, Setting};
+                Setting::Resolution.choices().iter().map(|value| Resolution::of(*value).size_on(top)).collect()
+            })
+            .unwrap_or_default();
         Some(window.presentation(game, &screen))
     }
 
@@ -278,6 +284,16 @@ impl crate::State {
         };
         let v = self.settings_of(&running.id);
         Clarity { resolution: v.choice(), scaling: v.choice(), anti_aliasing: v.choice(), sharpen: v.get(Setting::Sharpen) }
+    }
+
+    /// The game a client's process is (see [`crate::session::Session::running_of_process`]): its resolution,
+    /// and whether it shows a window on the second screen (a dual-screen emulator, by its rule to move one
+    /// down). None for a process of anything else.
+    pub fn process_game(&self, unit: Option<&str>, steam_app: Option<u32>) -> Option<(crate::settings::Resolution, bool)> {
+        let running = self.session().running_of_process(unit, steam_app)?;
+        let game = self.session().entry(self.shelf().library(), &running.id).is_some_and(crate::Entry::is_game);
+        let dual = self.bottom().window_rules().list().iter().any(|rule| *rule.owner == *running.id);
+        game.then(|| (self.settings_of(&running.id).choice(), dual))
     }
 
     /// The frame rate cap for window `id`: the one in the settings in force for the program running it.

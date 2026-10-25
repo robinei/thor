@@ -696,7 +696,7 @@ impl Window {
                 .state()
                 .session()
                 .window(self.id)
-                .map(|v| Process { unit: v.unit.clone(), pids: v.pids.clone() })
+                .map(|v| Process { unit: v.unit.clone(), pids: v.pids.clone(), steam_app: None })
                 .unwrap_or_else(|| self.pid.map(|pid| (server.identify)(pid)).unwrap_or_default());
             let mut facts = self.properties.facts(self.id, parent, process);
             if !self.opened {

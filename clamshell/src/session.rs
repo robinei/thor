@@ -139,7 +139,11 @@ fn run_host(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Result<()
     };
     #[cfg(feature = "compositor")]
     if host != Host::Sway {
-        let identify = |pid| clamshell_compositor::Process { unit: clamshell_system::os::unit_of(pid), pids: clamshell_system::os::lineage(pid) };
+        let identify = |pid| clamshell_compositor::Process {
+            unit: clamshell_system::os::unit_of(pid),
+            pids: clamshell_system::os::lineage(pid),
+            steam_app: clamshell_system::os::steam_app_of(pid),
+        };
         let on_capture = move |captured: Result<clamshell_compositor::Capture, String>| {
             if let Some(handles) = capture_handles.borrow().as_ref() {
                 handles.save_screenshot(captured.map(|capture| wiring::ScreenshotPixels { size: capture.size, rgba: capture.rgba }));

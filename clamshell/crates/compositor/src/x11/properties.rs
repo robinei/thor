@@ -185,7 +185,7 @@ mod tests {
                 properties.update(&field.name, &GetPropertyReply { format: field.format, type_, value, ..GetPropertyReply::default() }, &atoms);
             }
             assert_eq!(properties.transient, fixture.parent, "{}", fixture.label);
-            let facts = properties.facts(5, fixture.parent.map(|_| 9), crate::Process { unit: Some("game.scope".into()), pids: vec![123] });
+            let facts = properties.facts(5, fixture.parent.map(|_| 9), crate::Process { unit: Some("game.scope".into()), pids: vec![123], steam_app: None });
             assert_eq!(facts.app_id, fixture.app, "{}", fixture.label);
             assert_eq!(facts.title, fixture.title, "{}", fixture.label);
             assert_eq!(facts.role, fixture.role, "{}", fixture.label);

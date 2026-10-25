@@ -101,7 +101,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
         display.handle(),
         false,
         || {},
-        |_| Process { unit: Some("test.service".into()), pids: vec![100] },
+        |_| Process { unit: Some("test.service".into()), pids: vec![100], steam_app: None },
         |_| {},
     )
     .unwrap();

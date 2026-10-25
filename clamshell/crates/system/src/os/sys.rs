@@ -73,6 +73,15 @@ pub fn same_process(pid: u32) -> bool {
     known.is_none_or(|start| start_time(pid) == Some(start))
 }
 
+/// The Steam game a process belongs to, by the `SteamAppId` Steam gives its games' environment.
+pub fn steam_app_of(pid: u32) -> Option<u32> {
+    steam_app_in(&fs::read(format!("/proc/{pid}/environ")).ok()?)
+}
+
+fn steam_app_in(environ: &[u8]) -> Option<u32> {
+    environ.split(|b| *b == 0).find_map(|var| std::str::from_utf8(var.strip_prefix(b"SteamAppId=")?).ok()?.parse().ok()).filter(|id| *id != 0)
+}
+
 /// A process, then its parent, and so on up to but not including pid 1, as far as /proc says.
 pub fn lineage(pid: u32) -> Vec<u32> {
     let mut out = Vec::new();
@@ -177,6 +186,13 @@ mod tests {
 #[cfg(test)]
 mod process_tests {
     use super::*;
+
+    #[test]
+    fn a_steam_game_is_known_by_its_app_id() {
+        assert_eq!(steam_app_in(b"HOME=/home/a\0SteamAppId=1478500\0SteamGameId=1478500\0"), Some(1478500));
+        assert_eq!(steam_app_in(b"SteamAppId=0\0"), None, "Steam's own client");
+        assert_eq!(steam_app_in(b"HOME=/home/a\0"), None);
+    }
 
     #[test]
     fn a_process_is_known_by_its_id_and_start() {

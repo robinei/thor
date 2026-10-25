@@ -110,13 +110,18 @@ the final pass samples, and whether it sharpens); everything a slider moves is a
 Branches on uniforms are fine (every pixel takes the same one). Shader compiles stutter on the Adreno,
 so variants are compiled when a window maps or a profile changes, never during play, and cached.
 
-**Resolution:** the game sees the chosen resolution as its screen. While it runs, the compositor reports
-its screen's mode as that size (as gamescope gives a game a smaller screen), so a game that picks from the
-display modes (most Proton games, through Wine) finds it as the largest and fills it in fullscreen, and
-its window is configured to it. The game may still choose less; Scaling shows whatever size its picture
-is at the screen's. The mode is the screen's for every client on it (Xwayland's included) while the game
-runs; since the compositor tells every window its size, other windows hardly notice. Outputs per game
-would avoid even that, if it ever matters.
+**Resolution:** the game sees the chosen resolution as its screen. A client is known by its process
+when it connects (its scope, or Steam's `SteamAppId` for a process Steam started), and a game's client
+is told, when it binds the top output, that resolution as the output's current mode, so a game that
+picks from the display modes (most Proton games, through Wine's Wayland driver) finds it as the largest
+and fills it in fullscreen. It is told once: a change applies the next time the game starts, since Wine
+lays its monitors out by their modes and a live change moves them under the game's window. The shared
+mode is the screen's and never changes. A game sees only the top output (Wine would make the second
+screen a monitor the game may open on), unless it shows a window on the second screen by a rule, as a
+dual-screen emulator does. A window fixed at a size a resolution gives the screen fills it, as Wine
+shows a game. The game may still choose less itself: Wine and Xwayland then send a smaller buffer scaled
+by a viewport, and Scaling and the passes take it as they take any picture smaller than shown.
+X11 games through Xwayland, one client for all of them, see the screen's size.
 
 **Layer 1:** ClamShell writes the game's `OptiScaler.ini` from its settings and starts it with
 Proton-CachyOS's `PROTON_USE_OPTISCALER=1`, under the compositor and under sway alike. No files are put
