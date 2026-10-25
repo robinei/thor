@@ -36,8 +36,11 @@ pub enum Setting {
     /// Sharpening of the game's picture by the compositor, in percent: 0 off, 25 to 100 its strength. CAS,
     /// or FSR's own with [`Scaling::Fsr`].
     Sharpen,
-    /// The HDR curve by its id (see [`crate::curve`]): SDR shown with HDR's range. 0 is Off. It is chosen
-    /// in the curve picker, and it works only under ClamShell's compositor.
+    /// The tone curve by its id (see [`crate::curve`]): how the game's colours are mapped to the screen's,
+    /// on every path (SDR into an HDR screen's headroom, HDR down to the screen's peak, SDR on SDR). 0 is
+    /// Default colours, as the game sends them. It is not an HDR switch: whether the output is HDR is the
+    /// screen's and the game's. It is chosen in the curve picker, and works only under ClamShell's
+    /// compositor.
     Curve,
     /// The second screen: 0 on but dimmed when untouched, 1 dark while a game runs until tapped, 2 off
     /// when idle. With 1 and 2 it is powered off on battery (see [`crate::bottom::screen`]).
@@ -419,7 +422,7 @@ impl Setting {
             Setting::Scaling => "Scaling",
             Setting::AntiAliasing => "Anti-aliasing",
             Setting::Sharpen => "Sharpen",
-            Setting::Curve => "HDR curve",
+            Setting::Curve => "Tone curve",
             Setting::BottomScreen => "Second screen",
             Setting::BigCores => "CPU cores",
             Setting::Fan => "Fan",

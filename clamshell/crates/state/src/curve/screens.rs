@@ -1,4 +1,4 @@
-//! The HDR curves' screens, shown over the settings tab: the picker ([`crate::profiles::picker`]) and a
+//! The tone curves' screens, shown over the settings tab: the picker ([`crate::profiles::picker`]) and a
 //! curve's edit screen, with a slider for each parameter ([`CurveParam`]). A slider changes the curve as
 //! it moves, so the game on the top screen shows each change at once, and the curves are saved when the
 //! finger lifts.

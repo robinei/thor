@@ -1,6 +1,8 @@
-//! HDR curves: SDR shown with HDR's range, for games (inverse tone mapping, as Special K does it rather
-//! than Windows' Auto HDR). A curve is a profile ([`crate::profiles`]): named and shared, or a game's own,
-//! chosen per game by [`crate::settings::Setting::Curve`]; 0 is Off, where SDR is shown as it is.
+//! Tone curves: a game's SDR or HDR mapped to the screen's SDR or HDR. SDR on an HDR screen is spread
+//! into its headroom (inverse tone mapping, as Special K does it rather than Windows' Auto HDR), HDR is
+//! brought down to the screen's peak, and SDR on SDR is shaped. A curve is a profile
+//! ([`crate::profiles`]): named and shared, or a game's own, chosen per game by
+//! [`crate::settings::Setting::Curve`]; 0 is Default colours, as the game sends them.
 //!
 //! The compositor applies the curve in force to the SDR surfaces of the game's windows, per pixel, on
 //! luminance so that hue is kept, with no classification of what is in the picture ([`Curve::map`] is the

@@ -1,4 +1,4 @@
-//! The HDR curves' screens, drawn over the settings tab. Their rules are on
+//! The tone curves' screens, drawn over the settings tab. Their rules are on
 //! [`clamshell_state::curve::screens::Curving`].
 //!
 //! - The picker and a curve's menu, the profiles' picker ([`super::profiles`]).

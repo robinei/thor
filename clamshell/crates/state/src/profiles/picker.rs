@@ -26,7 +26,7 @@ use crate::{Event, ListId};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kind {
     Keymap,
-    /// HDR curves (see [`crate::curve`]).
+    /// tone curves (see [`crate::curve`]).
     Curve,
 }
 

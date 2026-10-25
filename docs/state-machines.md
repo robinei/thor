@@ -313,9 +313,9 @@ LayerPicker, LayerMenu; Undo per keymap since the edit screen opened. One Back f
 | Calibrate from Edit; MakeOwn from Edit; Back from Load and the pickers; an empty name | `calibrate_on_the_edit_screen_calibrates_the_gyro`, `make_own_on_a_shared_keymaps_edit_screen`, `back_goes_up_from_load_and_the_pickers`, `an_empty_name_makes_nothing` |
 | Listened only while the route is Listen | `the_keymap_screens_stay_with_their_tab_and_listen_only_in_view` |
 
-## HDR curves (curve/)
+## Tone curves (curve/)
 
-Screens: the picker's (`profiles::picker`, as for keymaps; Off is the default, "SDR as it is"), then Edit
+Screens: the picker's (`profiles::picker`, as for keymaps; Default colours is the default, "Unchanged"; its hint says what a curve does: "Maps the game's SDR or HDR to the screen's"), then Edit
 (a slider per parameter). One Back for all of them (`Id::Profile(Curve, Back)`). The curve chosen is
 `Setting::Curve` (an id, 0 Off), per game or for all; it does something only under ClamShell's own
 compositor (`Init::compositor`), and its tile is drawn dimmed with "no effect" under sway.
@@ -396,7 +396,7 @@ anchored lists on their item and every list within its ends; Focus scrolls just 
 
 | Transition | Test |
 |---|---|
-| tile tap cycles the value at the level edited (global-only settings always global); a profile tile's (Keymap, HDR curve) steps through Default or Off, the level's own, then the named ones | `games_override_the_global_settings`, `a_profile_tile_steps_through_its_profiles_and_its_picker_resets` |
+| tile tap cycles the value at the level edited (global-only settings always global); a profile tile's (Keymap, tone curve) steps through Default or Default colours, the level's own, then the named ones | `games_override_the_global_settings`, `a_profile_tile_steps_through_its_profiles_and_its_picker_resets` |
 | tile long press opens its menu (`Prefs::menu`, list `Values`): its values, the one in force marked; a row sets it and closes; Reset (last, when the level chooses it itself, or All differs from stock) goes back to the level below's (`Panel::inherited_value`); Back closes. A profile tile's long press opens its picker, which ends with the same Reset | `a_tiles_menu_picks_a_value_and_resets_to_the_level_below`, `a_profile_tile_steps_…` |
 | Scope selects the level; Reset drops an item's overrides and env | `the_panel_offers_the_items_levels`, `a_runner_can_leave_its_items_without_settings_…` |
 | Env editor | `the_environment_editor_takes_the_keyboard` |

@@ -1,7 +1,7 @@
 # Picture: curves, anti-aliasing, upscaling, sharpening, frame generation
 
 How a game's picture is changed on its way to the screen, as one design: what the user sees and sets,
-and how the compositor and the launch do it. The HDR curve (`docs/compositor-mvp.md`, phase 2h) is the
+and how the compositor and the launch do it. The tone curve (`docs/compositor-mvp.md`, phase 2h) is the
 first part of it and is done; the rest follows the order in "Phases" below.
 
 ## Three layers
@@ -31,7 +31,7 @@ effects worth having are written for our shaders instead.
 Every setting is a tile in the settings grid (five columns, four rows), as the others are: a tap steps to
 the next value, a long press opens the tile's menu (below). No screens in between.
 
-- **Colour** (the HDR curve tile): the curve profile, as now: a game's own, Off, the named ones. Tapping
+- **Colour** (the tone curve tile): the curve profile, as now: a game's own, Default colours, the named ones. Tapping
   steps through them; the menu is the picker, with the edit screen (the plot and the curve's rows: black
   point, contrast, SDR white, highlights from, highlight peak, saturation, HDR game's peak). A LUT for
   colour grading, if it comes, is part of this profile.

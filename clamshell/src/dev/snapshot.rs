@@ -468,7 +468,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 ),
             ],
         ),
-        // The HDR curves for a game: the picker, a curve's sliders, and one held, on a top screen with the
+        // The tone curves for a game: the picker, a curve's sliders, and one held, on a top screen with the
         // Thor's panel and room above SDR white (the VM's HDR profile); then the game sending HDR.
         group(
             vec![

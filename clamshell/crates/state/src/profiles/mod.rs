@@ -1,4 +1,4 @@
-//! Profiles: what keymaps and HDR curves share. A profile is either named and shared by the games that
+//! Profiles: what keymaps and tone curves share. A profile is either named and shared by the games that
 //! choose it, or a game's own: unnamed, offered to that game alone, made from the profile in force for the
 //! game and kept while the game uses another one, until it is deleted. Contents move between the two
 //! kinds by copying: a named profile (or the none in force, id 0) can be loaded into a game's own, and a

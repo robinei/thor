@@ -132,9 +132,9 @@ pub struct Init {
     pub settings: Settings,
     /// The keymaps.
     pub keymaps: keymap::Keymaps,
-    /// The HDR curves.
+    /// The tone curves.
     pub curves: curve::Curves,
-    /// Whether ClamShell's own compositor shows the windows, rather than sway. Only it applies HDR curves.
+    /// Whether ClamShell's own compositor shows the windows, rather than sway. Only it applies tone curves.
     pub compositor: bool,
     /// The screens' brightness as it was left.
     pub brightness: Brightness,

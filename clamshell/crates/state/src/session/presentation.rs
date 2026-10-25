@@ -232,9 +232,9 @@ impl crate::State {
         Some(window.presentation(game, &screen))
     }
 
-    /// The HDR curve for window `id`'s SDR content: the curve chosen for the program running it, in its
-    /// settings in force (see [`crate::settings::Setting::Curve`]). None for Off, for a curve that is gone,
-    /// and for a window no launch runs.
+    /// The tone curve for window `id`'s content: the curve chosen for the program running it, in its
+    /// settings in force (see [`crate::settings::Setting::Curve`]). None for Default colours, for a curve
+    /// that is gone, and for a window no launch runs.
     pub fn window_curve(&self, id: i64) -> Option<crate::curve::Curve> {
         let window = self.session().window(id)?;
         let running = self.session().running_of(window)?;
