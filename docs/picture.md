@@ -38,8 +38,8 @@ The edit screen has three pages, switched by tabs under the header (and the shou
 - **Look:** the plot and the curve's rows, as now (black point, contrast, SDR white, highlights from,
   highlight peak, saturation, HDR game's peak).
 - **Clarity:** four settings, each on its own, combined into one chain (below):
-  - Resolution, asked of the game: Native (1920×1080 on the Thor), 1600×900, 1280×720, 960×540,
-    640×360; on another screen the same fractions of it (⅚, ⅔, ½, ⅓).
+  - Resolution, the screen as the game sees it: Native (1920×1080 on the Thor), 1600×900, 1280×720,
+    960×540, 640×360; on another screen the same fractions of it (⅚, ⅔, ½, ⅓).
   - Scaling, whenever the game's picture is smaller than the screen, whoever chose its size: Bilinear,
     Nearest, FSR. Nearest at ½ or ⅓ (960×540, 640×360 on the Thor) is exact integer scaling, which is
     why there is no integer setting; at the others it is uneven, and the row says so.
@@ -51,8 +51,8 @@ The edit screen has three pages, switched by tabs under the header (and the shou
   XeSS). Shown only once layer 1 is known to work on the device; until then not there.
 
 Rows that do nothing for this game are dimmed with why, never hidden (the curve's peak for an HDR game;
-Scaling with the picture at the screen's size; Resolution for a game that chooses its own; everything in
-layer 2 under sway, where the compositor isn't ours). No combination is refused: SMAA before Nearest blurs
+Scaling with the picture at the screen's size; everything in layer 2 under sway, where the compositor
+isn't ours). No combination is refused: SMAA before Nearest blurs
 pixel edges, and the presets are where the sensible combinations are. One rule keeps the layers from
 fighting: **with an upscaler in the game (In game's Upscaler, or the game's own temporal one), the
 compositor's anti-aliasing and scaling are off** and dimmed ("the game upscales"); sharpening stays,
@@ -63,28 +63,35 @@ so ("60 fps, 30 rendered"). The frame rate cap applies to frames shown.
 
 ## How it is done
 
-**Layer 2, per window, a short chain of passes, each there only when switched on:**
+**Layer 2, per window: SMAA when on, then one final pass, with one pass more only for FSR with
+sharpening.**
 
 1. SMAA at the game's own resolution: three passes (edges, blend weights, blending) with its two lookup
    textures. Fixed shaders, compiled once.
-2. Scaling to the size the window is shown at: FSR 1's EASU (one pass), or the final pass sampling with
-   Nearest or Bilinear. EASU works on the signal (gamma or PQ), so before decoding.
-3. The final pass, into the scene: RCAS or CAS on what it reads, then the decoding, the curve and the
-   conversion to the scene, as the input shader does now.
+2. The final pass, into the scene at the size the window is shown at: it samples the game's picture
+   (Nearest or Bilinear, as the texture is sampled; FSR 1's EASU, which reads the source around each
+   pixel; CAS in its scaling mode, which sharpens and scales at once), then decodes, applies the curve
+   and converts to the scene, as the input shader does now. EASU works on the signal (gamma or PQ), as
+   it is before decoding.
+3. Only with FSR and sharpening: RCAS reads the upscaled pixels around each pixel, so EASU writes to a
+   texture first and the final pass sharpens what it reads from it.
 
 The anti-aliasing comes first so that the upscale doesn't enlarge jagged edges (AMD's own advice for
-FSR 1); sharpening last, once. A stage switched off costs nothing: no pass, no texture. Intermediate
-textures exist only for windows that need them, kept between frames, sized to the game's buffer.
+FSR 1); sharpening once. A stage switched off costs nothing: no pass, no texture. Intermediate textures
+exist only for windows that need them, kept between frames, sized to the game's buffer.
 
-**Shaders:** a variant is compiled for what changes the structure (the surface's colour description, and
-whether the final pass sharpens); everything a slider moves is a uniform, so moving one never compiles.
+**Shaders:** a variant is compiled for what changes the structure (the surface's colour description, how
+the final pass samples, and whether it sharpens); everything a slider moves is a uniform, so moving one never compiles.
 Branches on uniforms are fine (every pixel takes the same one). Shader compiles stutter on the Adreno,
 so variants are compiled when a window maps or a profile changes, never during play, and cached.
 
-**Resolution:** the compositor already tells each window its size. A smaller resolution configures the
-game's window smaller and shows it at the screen's size through the Scaling stage. A game that sets its
-resolution itself (most Proton games, through Wine's display modes) ignores it; Scaling still applies to
-whatever size its picture is.
+**Resolution:** the game sees the chosen resolution as its screen. While it runs, the compositor reports
+its screen's mode as that size (as gamescope gives a game a smaller screen), so a game that picks from the
+display modes (most Proton games, through Wine) finds it as the largest and fills it in fullscreen, and
+its window is configured to it. The game may still choose less; Scaling shows whatever size its picture
+is at the screen's. The mode is the screen's for every client on it (Xwayland's included) while the game
+runs; since the compositor tells every window its size, other windows hardly notice. Outputs per game
+would avoid even that, if it ever matters.
 
 **Layer 1:** ClamShell writes the game's `OptiScaler.ini` from its profile and starts it with
 Proton-CachyOS's `PROTON_USE_OPTISCALER=1`, under the compositor and under sway alike. No files are put
