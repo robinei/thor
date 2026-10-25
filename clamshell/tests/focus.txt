@@ -159,6 +159,22 @@ Tab(Settings), Tab(Dock): vScope(Global)
 Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth): vScope(Runner)
 Tab(Wifi), Tab(Battery): vTile(Hud)
 -- screen as in settings-running.png
+== settings-menu.png (bottom; the pad on both screens)
+start "ff6"; back -
+-- bar as in bottom.png except
+Tab(Windows), PadMouse, Tab(Time): vValues[0]
+Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vBack
+Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vValues[0]
+-- screen
+Back: ^Tab(Settings) vValues[0] <Tab(Settings) >Tab(Dock)
+Values[0]: ^Control(Brightness) vValues[1] <Back >Tab(Windows)
+Values[1]: ^Values[0] vValues[2] <Back >Tab(Windows)
+Values[2]: ^Values[1] vValues[3] <Back >Tab(Windows)
+Values[3]: ^Values[2] vValues[4] <Back >Tab(Windows)
+Values[4]: ^Values[3] vValues[5] <Back >Tab(Windows)
+Values[5]: ^Values[4] vValues[6] <Back >Tab(Windows)
+Values[6]: ^Values[5] vValues[7] <Back >Tab(Windows)
+Values[7]: ^Values[6] v- <Back >Tab(Windows)
 == settings-env.png (bottom; the pad on both screens)
 start Key[2,8]; back Activate Editor(Cancel)
 -- bar as in bottom.png except
@@ -231,11 +247,10 @@ Editor(Save): ^PadMouse vKey[0,9] <Editor(Cancel) >Key[0,9]
 == status-low.png (bottom; the pad on both screens)
 start "ff6"; back -
 -- bar as in bottom.png except
-Tab(Windows), PadMouse, Tab(Time): vTile(Curve)
-Tab(Settings), Tab(Dock): vScope(Global)
-Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth): vScope(Runner)
-Tab(Wifi), Tab(Battery): vTile(Hud)
--- screen as in settings-running.png
+Tab(Windows), PadMouse, Tab(Time): vValues[0]
+Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vBack
+Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vValues[0]
+-- screen as in settings-menu.png
 == keymap-name.png (bottom; the pad on both screens)
 start Key[3,1]; back Activate Editor(Cancel)
 -- bar as in bottom.png except
@@ -394,6 +409,25 @@ Curves[3]: ^Curves[2] vCurves[4] <Profile(Curve, Back) >Curves[3].Edit
 Curves[3].Edit: ^Curves[2].Edit vCurves[4].Edit <Curves[3] >Tab(Windows)
 Curves[4]: ^Curves[3] v- <Profile(Curve, Back) >Curves[4].Edit
 Curves[4].Edit: ^Curves[3].Edit v- <Curves[4] >Tab(Windows)
+== curves-reset.png (bottom; the pad on both screens)
+start "ff6"; back Activate Profile(Curve, Back)
+-- bar as in bottom.png except
+Tab(Windows), PadMouse, Tab(Time): vProfile(Curve, New)
+Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vProfile(Curve, Back)
+Control(Brightness): vCurves[0]
+Tab(Bluetooth), Tab(Wifi), Tab(Battery): vProfile(Curve, New)
+-- screen
+Profile(Curve, Back): ^Tab(Settings) vCurves[0] <Tab(Settings) >Tab(Dock)
+Profile(Curve, New): ^PadMouse vCurves[0] <PadMouse >Tab(Windows)
+Curves[0]: ^Profile(Curve, Back) vCurves[1] <Profile(Curve, Back) >Profile(Curve, New)
+Curves[1]: ^Curves[0] vCurves[2] <Profile(Curve, Back) >Curves[2].Edit
+Curves[2]: ^Curves[1] vCurves[3] <Profile(Curve, Back) >Curves[2].Edit
+Curves[2].Edit: ^Curves[1] vCurves[3].Edit <Curves[2] >Tab(Windows)
+Curves[3]: ^Curves[2] vCurves[4] <Profile(Curve, Back) >Curves[3].Edit
+Curves[3].Edit: ^Curves[2].Edit vCurves[4].Edit <Curves[3] >Tab(Windows)
+Curves[4]: ^Curves[3] vCurves[5] <Profile(Curve, Back) >Curves[4].Edit
+Curves[4].Edit: ^Curves[3].Edit vCurves[5] <Curves[4] >Tab(Windows)
+Curves[5]: ^Curves[4] v- <Profile(Curve, Back) >Curves[4].Edit
 == curve-edit.png (bottom; the pad on both screens)
 start "ff6"; back Activate Profile(Curve, Back)
 -- bar as in bottom.png except
@@ -429,7 +463,16 @@ Tab(Windows), PadMouse, Tab(Time): vKm(New)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vKm(Back)
 Control(Brightness): vKeymaps[0]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(New)
--- screen as in keymaps.png
+-- screen
+Km(Back): ^Tab(Settings) vKeymaps[0] <Tab(Settings) >Tab(Dock)
+Km(New): ^PadMouse vKeymaps[0] <PadMouse >Tab(Windows)
+Keymaps[0]: ^Km(Back) vKeymaps[1] <Km(Back) >Km(New)
+Keymaps[1]: ^Keymaps[0] vKeymaps[2] <Km(Back) >Keymaps[2].Edit
+Keymaps[2]: ^Keymaps[1] vKeymaps[3] <Km(Back) >Keymaps[2].Edit
+Keymaps[2].Edit: ^Keymaps[1] vKeymaps[3].Edit <Keymaps[2] >Tab(Windows)
+Keymaps[3]: ^Keymaps[2] vKeymaps[4] <Km(Back) >Keymaps[3].Edit
+Keymaps[3].Edit: ^Keymaps[2].Edit vKeymaps[4] <Keymaps[3] >Tab(Windows)
+Keymaps[4]: ^Keymaps[3] v- <Km(Back) >Keymaps[3].Edit
 == keymap-edit-shared.png (bottom; the pad listening for inputs)
 == keymap-own.png (bottom; the pad on both screens)
 start Km(Back); back Activate Km(Back)
@@ -446,8 +489,9 @@ Keymaps[0].Edit: ^Km(New) vKeymaps[1] <Keymaps[0] >Tab(Windows)
 Keymaps[1]: ^Keymaps[0] vKeymaps[2] <Km(Back) >Keymaps[2].Edit
 Keymaps[2]: ^Keymaps[1] vKeymaps[3] <Km(Back) >Keymaps[2].Edit
 Keymaps[2].Edit: ^Keymaps[1] vKeymaps[3].Edit <Keymaps[2] >Tab(Windows)
-Keymaps[3]: ^Keymaps[2] v- <Km(Back) >Keymaps[3].Edit
-Keymaps[3].Edit: ^Keymaps[2].Edit v- <Keymaps[3] >Tab(Windows)
+Keymaps[3]: ^Keymaps[2] vKeymaps[4] <Km(Back) >Keymaps[3].Edit
+Keymaps[3].Edit: ^Keymaps[2].Edit vKeymaps[4] <Keymaps[3] >Tab(Windows)
+Keymaps[4]: ^Keymaps[3] v- <Km(Back) >Keymaps[3].Edit
 == keymap-own-menu.png (bottom; the pad on both screens)
 start "ff6"; back Activate Km(Back)
 -- bar as in bottom.png except

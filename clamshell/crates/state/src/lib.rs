@@ -347,6 +347,7 @@ impl State {
             sys: &self.sys,
             dock: &self.dock,
             pointer: &self.pointer,
+            menu_rows: self.menu_rows_len(),
         }
     }
 
@@ -1038,6 +1039,9 @@ impl State {
         if self.curving.screen_in(self.bottom.tab()).is_some() {
             return Some(crate::Id::Profile(ProfileKind::Curve, ProfileId::Back));
         }
+        if self.prefs.menu_in(self.bottom.tab()).is_some() {
+            return Some(crate::Id::Settings(SettingsId::Back));
+        }
         self.keymapping.screen_in(self.bottom.tab()).map(|_| crate::Id::Profile(ProfileKind::Keymap, ProfileId::Back))
     }
 
@@ -1109,11 +1113,19 @@ impl State {
             ListId::Wifi => self.radios.tap_network(i, long, self.bottom.editors_mut(), out),
             ListId::Bluetooth => self.radios.tap_device(i, long, out),
             ListId::Streams => self.levels.on_stream(i, part, out),
+            // A picker's Reset row is the settings': the level edited goes back to the one below's choice.
+            ListId::Keymaps | ListId::Curves if self.panel().is_profile_reset(ProfileKind::of_list(list), i) => {
+                if !long {
+                    self.change(ProfileKind::of_list(list).setting(), None, out);
+                }
+            }
             ListId::Keymaps => self.on_keymap_row(i, part, long, out),
             ListId::Curves => {
                 let cx = self.picker_cx(ProfileKind::Curve);
                 self.curving.on_row(i, part, long, &cx, self.bottom.editors_mut(), out);
             }
+            ListId::Values if !long => self.on_menu_row(i, out),
+            ListId::Values => {}
             ListId::Layers => self.on_layer_row(i, part, long, out),
             ListId::Time => self.sys.on_time_row(i, self.scrolls.get_mut(ListId::Time), out),
             // Its tiles are targets of their own.
@@ -1378,20 +1390,19 @@ impl State {
     /// A tap or long press in the settings tab.
     fn on_settings(&mut self, id: SettingsId, long: bool, out: &mut Out) {
         match id {
-            SettingsId::Tile(Setting::Keymap) if !long => self.keymapping.open_picker(),
-            SettingsId::Tile(Setting::Curve) if !long => self.curving.open_picker(),
+            // A long press opens the tile's menu: a profile tile's picker, or the values.
+            SettingsId::Tile(Setting::Keymap) if long => self.keymapping.open_picker(),
+            SettingsId::Tile(Setting::Curve) if long => self.curving.open_picker(),
+            SettingsId::Tile(setting) if long => self.prefs.open_menu(setting),
+            SettingsId::Tile(setting @ (Setting::Keymap | Setting::Curve)) => self.next_profile(ProfileKind::of(setting), out),
             SettingsId::Tile(setting) => {
-                let value = if long {
-                    None
-                } else {
-                    Some(if setting == Setting::Refresh {
-                        self.device.display_modes().next(self.panel().tile_value(setting))
-                    } else {
-                        setting.next(self.panel().tile_value(setting))
-                    })
-                };
-                self.change(setting, value, out);
+                let (len, now) = (self.menu_values_len(setting), self.panel().tile_value(setting));
+                let at = (0..len).find(|i| self.menu_value(setting, *i) == Some(now));
+                if let Some(next) = self.menu_value(setting, at.map_or(0, |i| (i + 1) % len.max(1))) {
+                    self.change(setting, Some(next), out);
+                }
             }
+            SettingsId::Back => self.prefs.close_menu(),
             SettingsId::Env => {
                 let entry = self.panel().editing().map(|g| g.id.clone());
                 self.prefs.open_env_editor(entry, self.bottom.editors_mut());
@@ -1403,6 +1414,63 @@ impl State {
                 }
                 out.effects.push(self.prefs.save_effect());
             }
+        }
+    }
+
+    /// The values a tile steps through and its menu lists, as their number and the one at `i`: the
+    /// screen's announced rates after "as is" for the refresh rate (see [`crate::device::display::DisplayModes`]), the setting's
+    /// choices for the others. Drawing reads them every frame, so nothing is allocated.
+    fn menu_values_len(&self, setting: Setting) -> usize {
+        match setting {
+            Setting::Refresh => 1 + self.device.display_modes().rates().len(),
+            _ => setting.choices().len(),
+        }
+    }
+
+    fn menu_value(&self, setting: Setting, i: usize) -> Option<u16> {
+        match (setting, i) {
+            (Setting::Refresh, 0) => Some(0),
+            (Setting::Refresh, i) => self.device.display_modes().rates().get(i - 1).copied(),
+            _ => setting.choices().get(i).copied(),
+        }
+    }
+
+    /// The rows of the open tile's menu: its values, then Reset when there is something to reset.
+    pub(crate) fn menu_rows_len(&self) -> usize {
+        self.prefs.menu().map_or(0, |setting| self.menu_values_len(setting) + usize::from(self.panel().resettable(setting)))
+    }
+
+    /// Row `i` of the open tile's menu: a value, or with `None`, Reset.
+    pub fn menu_row(&self, i: usize) -> Option<Option<u16>> {
+        let setting = self.prefs.menu()?;
+        match self.menu_value(setting, i) {
+            Some(value) => Some(Some(value)),
+            None => (i == self.menu_values_len(setting) && self.panel().resettable(setting)).then_some(None),
+        }
+    }
+
+    /// A row of the open tile's menu: its value is set where the panel edits, or Reset drops the level's
+    /// own; either closes the menu.
+    fn on_menu_row(&mut self, i: usize, out: &mut Out) {
+        let (Some(setting), Some(value)) = (self.prefs.menu(), self.menu_row(i)) else {
+            return;
+        };
+        self.change(setting, value, out);
+        self.prefs.close_menu();
+    }
+
+    /// A profile tile's tap: the next of `kind`'s profiles where the panel edits, after Default (or Off),
+    /// the level's own, and the named ones in order, then Default again.
+    fn next_profile(&mut self, kind: ProfileKind, out: &mut Out) {
+        let entry = self.panel().editing().map(|g| g.id.clone());
+        let ids: Vec<u16> = match kind {
+            ProfileKind::Keymap => profile_order(self.keymapping.keymaps(), entry.as_deref()),
+            ProfileKind::Curve => profile_order(self.curving.curves(), entry.as_deref()),
+        };
+        let now = self.panel().profile_chosen(kind);
+        let i = ids.iter().position(|id| *id == now).map_or(0, |i| (i + 1) % ids.len().max(1));
+        if let Some(next) = ids.get(i) {
+            self.choose_profile(kind, *next, out);
         }
     }
 
@@ -1518,4 +1586,11 @@ impl State {
     pub(crate) fn editor_mut(&mut self) -> Option<&mut crate::Editor> {
         self.bottom.editor_mut()
     }
+}
+
+/// The ids a profile tile steps through for `entry`'s level: Default (or Off), the level's own if it has
+/// one, then the named profiles in order.
+fn profile_order<B: Clone + Default + PartialEq>(profiles: &crate::profiles::Profiles<B>, entry: Option<&str>) -> Vec<u16> {
+    let own = entry.and_then(|e| profiles.own_of(e)).map(|p| p.id);
+    std::iter::once(0).chain(own).chain(profiles.named().map(|p| p.id)).collect()
 }

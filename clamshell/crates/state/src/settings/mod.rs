@@ -410,6 +410,33 @@ impl Setting {
         matches!(self, Setting::ChargeLimit | Setting::ScreenOff | Setting::Sleep)
     }
 
+    /// The setting's name, as its menu's title.
+    pub fn title(self) -> &'static str {
+        match self {
+            Setting::Power => "Power",
+            Setting::FpsCap => "Frame rate cap",
+            Setting::Refresh => "Refresh rate",
+            Setting::Hud => "HUD",
+            Setting::Resolution => "Resolution",
+            Setting::Scaling => "Scaling",
+            Setting::AntiAliasing => "Anti-aliasing",
+            Setting::Sharpen => "Sharpen",
+            Setting::Curve => "HDR curve",
+            Setting::BottomScreen => "Second screen",
+            Setting::BigCores => "CPU cores",
+            Setting::Fan => "Fan",
+            Setting::PadMouse => "Pad mouse",
+            Setting::Keymap => "Keymap",
+            Setting::Rumble => "Rumble",
+            Setting::CpuMax => "CPU limit",
+            Setting::GpuMax => "GPU limit",
+            Setting::ChargeLimit => "Charge limit",
+            Setting::ScreenOff => "Screens off",
+            Setting::Sleep => "Sleep",
+            Setting::Background => "In the background",
+        }
+    }
+
     /// What `value` does.
     pub fn impact(self, value: u16) -> Impact {
         if let Some(table) = self.table() {

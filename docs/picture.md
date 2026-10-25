@@ -111,7 +111,7 @@ ours.
 ## Phases
 
 1. **On the desktop, nested and on the VM:** the four clarity tiles on a 5×4 grid (done); the tiles'
-   menus, with profile tiles stepping through their profiles on a tap; then CAS and RCAS in the final
+   menus, with profile tiles stepping through their profiles on a tap (done); then CAS and RCAS in the final
    pass, Nearest and Bilinear, Resolution, EASU, SMAA, in that order. Each tested headless against
    reference images computed on the CPU (the shaders' arithmetic mirrored, as the curve's is), and by
    eye nested with a game.

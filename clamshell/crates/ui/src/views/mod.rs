@@ -200,7 +200,7 @@ mod tests {
             v
         };
         let screens: Vec<(&str, Vec<Event>)> = vec![
-            ("picker", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(Setting::Keymap)))]),
+            ("picker", vec![tap(Id::Tab(Tab::Settings)), PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Keymap))).into()]),
             ("menu", vec![Event::Pointer(PointerEvent::LongPress(ListId::Keymaps.row(2)))]),
             ("name", vec![tap(Id::Profile(clamshell_state::profiles::picker::Kind::Keymap, clamshell_state::profiles::picker::ProfileId::Rename))]),
             (
@@ -209,7 +209,7 @@ mod tests {
                     tap(Id::Editor(clamshell_state::EditorId::Cancel)),
                     tap(Id::Profile(Kind::Keymap, ProfileId::Back)),
                     tap(ListId::Keymaps.row(2)),
-                    tap(Id::Settings(SettingsId::Tile(Setting::Keymap))),
+                    PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Keymap))).into(),
                     Event::Pointer(PointerEvent::LongPress(ListId::Keymaps.row(2))),
                     tap(Id::Profile(clamshell_state::profiles::picker::Kind::Keymap, clamshell_state::profiles::picker::ProfileId::Delete)),
                 ],

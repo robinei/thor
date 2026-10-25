@@ -17,7 +17,7 @@ use crate::toolkit::widgets::{EditCell, HeaderRight, ListArea, ListRow};
 use crate::toolkit::{Frame, widgets};
 
 /// The height of a list row, as a fraction of the area's height.
-const ROW_H: f32 = 0.1;
+pub(super) const ROW_H: f32 = 0.1;
 
 /// What a kind's picker says.
 struct Words {
@@ -139,6 +139,10 @@ fn list(f: &mut Frame, kind: Kind, listing: Listing) {
             PickerRow::New => (None, w.new, Fmt::new()),
             PickerRow::Default => (Some(0), kind.default_name(), Fmt::of(format_args!("{}", w.default_note))),
             PickerRow::Named(id, name) => (Some(id), name, users(f, kind, id)),
+            PickerRow::Reset => {
+                let below = panel.below_name().unwrap_or("the default");
+                (None, "Reset", Fmt::of(format_args!("to {below}'s: {}", s.profile_name(kind, panel.inherited_value(kind.setting())))))
+            }
         };
         // A profile that no longer exists counts as Default.
         let mine = loading.is_none() && (id == Some(chosen) || (id == Some(0) && !s.profile_exists(kind, chosen)));

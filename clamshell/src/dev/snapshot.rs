@@ -175,7 +175,7 @@ fn curve_slide(param: clamshell_state::curve::CurveParam, by: f32) -> Vec<Event>
 
 /// A tap on the settings' keymap tile, which opens the picker.
 fn keymap_tile() -> Event {
-    tap(Id::Settings(SettingsId::Tile(Setting::Keymap)))
+    PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Keymap))).into()
 }
 
 fn tab(t: Tab) -> Event {
@@ -339,6 +339,12 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                     Bottom,
                     a_play("zelda-lttp", now - 60, 60, now).into_iter().chain([tap(Id::Settings(SettingsId::Scope(Scope::Content)))]).collect(),
                 ),
+                // A tile's menu (a long press), with the game's own choice: Reset to All's.
+                shot(
+                    "settings-menu.png",
+                    Bottom,
+                    taps(Setting::FpsCap, 2).chain([PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::FpsCap))).into()]).collect(),
+                ),
                 shot(
                     "settings-env.png",
                     Bottom,
@@ -459,9 +465,21 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
         // The HDR curves for a game: the picker, a curve's sliders, and one held, on a top screen with the
         // Thor's panel and room above SDR white (the VM's HDR profile); then the game sending HDR.
         group(
-            vec![ff6(), ff6(), Reading::Screens(Box::new(demo::screens())).into(), tab(Tab::Settings), tap(Id::Settings(SettingsId::Tile(Setting::Curve)))],
+            vec![
+                ff6(),
+                ff6(),
+                Reading::Screens(Box::new(demo::screens())).into(),
+                tab(Tab::Settings),
+                PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Curve))).into(),
+            ],
             vec![
                 shot("curves.png", Bottom, vec![]),
+                // A curve chosen for the game: the picker ends with Reset.
+                shot(
+                    "curves-reset.png",
+                    Bottom,
+                    vec![tap(ListId::Curves.row(2)), PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Curve))).into()],
+                ),
                 shot("curve-edit.png", Bottom, vec![tap(Id::Row { list: ListId::Curves, i: 2, part: clamshell_state::RowPart::Edit })]),
                 shot("curve-edit-slider.png", Bottom, curve_slide(clamshell_state::curve::CurveParam::Peak, 0.2)),
                 shot("curve-edit-hdr.png", Bottom, [vec![Slide::End.into()], demo::hdr_game("ff6", true)].concat()),
@@ -469,7 +487,13 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
         ),
         // An HDR game giving no peak: scRGB, its peak assumed.
         group(
-            vec![ff6(), ff6(), Reading::Screens(Box::new(demo::screens())).into(), tab(Tab::Settings), tap(Id::Settings(SettingsId::Tile(Setting::Curve)))],
+            vec![
+                ff6(),
+                ff6(),
+                Reading::Screens(Box::new(demo::screens())).into(),
+                tab(Tab::Settings),
+                PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Curve))).into(),
+            ],
             vec![shot(
                 "curve-edit-scrgb.png",
                 Bottom,

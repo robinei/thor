@@ -118,8 +118,11 @@ pub enum DockId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SettingsId {
-    /// A tile. A tap steps to the next value, and a long press goes back to the default.
+    /// A tile. A tap steps to the next value (a profile tile's to the next profile), and a long press opens
+    /// its menu: its values and Reset (a profile tile's, its picker).
     Tile(Setting),
+    /// Back from a tile's menu.
+    Back,
     /// The environment variables tile.
     Env,
     /// The panel's scope tabs.

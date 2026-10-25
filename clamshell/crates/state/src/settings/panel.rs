@@ -8,7 +8,7 @@ use std::sync::Arc;
 use crate::bottom::editor::{Editor, Editors, Purpose};
 use crate::effect::{Effect, Save};
 use crate::keymap::screens::Keymapping;
-use crate::profiles::picker::PickerRow;
+use crate::profiles::picker::{Owner, PickerRow};
 use crate::session::running::Front;
 use crate::settings::{Setting, Settings};
 use crate::{Session, Shelf};
@@ -36,12 +36,14 @@ pub enum TileOrigin {
     Global,
 }
 
-/// Every entry's settings, and the scope the settings panel edits. The scope is global whenever there is
-/// no item in context.
+/// Every entry's settings, the scope the settings panel edits, and the tile whose menu is open. The scope
+/// is global whenever there is no item in context.
 #[derive(Debug, Clone, Default)]
 pub struct Prefs {
     settings: Settings,
     scope: Scope,
+    /// The tile whose menu is open over the settings tab, by a long press: its values, and Reset.
+    menu: Option<Setting>,
 }
 
 impl Prefs {
@@ -60,6 +62,25 @@ impl Prefs {
 
     pub(crate) fn set_scope(&mut self, scope: Scope) {
         self.scope = scope;
+        self.menu = None;
+    }
+
+    /// The tile whose menu is open, if one is.
+    pub fn menu(&self) -> Option<Setting> {
+        self.menu
+    }
+
+    /// The menu open while the settings tab is the one shown (`tab`).
+    pub(crate) fn menu_in(&self, tab: crate::Tab) -> Option<Setting> {
+        self.menu.filter(|_| tab == crate::Tab::Settings)
+    }
+
+    pub(crate) fn open_menu(&mut self, setting: Setting) {
+        self.menu = Some(setting);
+    }
+
+    pub(crate) fn close_menu(&mut self) {
+        self.menu = None;
     }
 
     /// Sets `setting` for `entry`, or for all games (see [`Settings::set`]).
@@ -229,6 +250,36 @@ impl<'a> Panel<'a> {
         }
     }
 
+    /// The value `setting` has at the level edited without a choice of its own there: the level's below
+    /// (the runner's for an item, All's for a runner), or for All the stock value.
+    pub fn inherited_value(&self, setting: Setting) -> u16 {
+        match &self.editing {
+            Some(g) if !setting.global_only() => match self.runner.filter(|r| *r != &*g.id) {
+                Some(runner) => self.prefs.settings.of_in(runner, &[]).get(setting),
+                None => self.prefs.settings.global.get(setting),
+            },
+            _ => setting.default_value(),
+        }
+    }
+
+    /// What the level below the edited one is called, which Reset goes back to: the runner's title, or
+    /// All; none when All is edited, where Reset goes back to the stock value.
+    pub fn below_name(&self) -> Option<&'a str> {
+        let g = self.editing.as_ref()?;
+        let runner = self.levels.iter().flatten().find(|(scope, l)| *scope == Scope::Runner && l.id != g.id).map(|(_, l)| l.title);
+        Some(runner.unwrap_or("All"))
+    }
+
+    /// Whether Reset has something to do for `setting`: the level edited chooses it itself, or All differs
+    /// from the stock value.
+    pub fn resettable(&self, setting: Setting) -> bool {
+        match self.tile_origin(setting) {
+            TileOrigin::Own => true,
+            TileOrigin::Global => self.tile_value(setting) != setting.default_value(),
+            TileOrigin::Inherited => false,
+        }
+    }
+
     /// The keymap chosen for the scope edited; 0 is Default.
     pub fn keymap_chosen(&self) -> u16 {
         self.tile_value(Setting::Keymap)
@@ -245,10 +296,35 @@ impl<'a> Panel<'a> {
 
     /// Row `i` of `kind`'s picker, for what the panel edits.
     pub fn profile_row(&self, kind: crate::profiles::picker::Kind, i: usize) -> Option<PickerRow<'a>> {
-        match kind {
+        let row = match kind {
             crate::profiles::picker::Kind::Keymap => self.keymap_row(i),
             crate::profiles::picker::Kind::Curve => self.curving.row(i, self.entry()),
+        };
+        row.or_else(|| (i == self.profile_rows_len(kind) && self.picker_resettable(kind)).then_some(PickerRow::Reset))
+    }
+
+    /// The picker's rows of `kind`, without its Reset row.
+    fn profile_rows_len(&self, kind: crate::profiles::picker::Kind) -> usize {
+        match kind {
+            crate::profiles::picker::Kind::Keymap => self.keymapping.rows_len(self.entry()),
+            crate::profiles::picker::Kind::Curve => self.curving.rows_len(self.entry()),
         }
+    }
+
+    /// Whether the picker of `kind` ends with Reset: on its list of profiles, while the level edited
+    /// chooses one itself (see [`Panel::resettable`]).
+    fn picker_resettable(&self, kind: crate::profiles::picker::Kind) -> bool {
+        use crate::profiles::picker::{Kind, PickerScreen};
+        let list = match kind {
+            Kind::Keymap => self.keymapping.picker() == Some(PickerScreen::List),
+            Kind::Curve => self.curving.screen() == Some(crate::curve::screens::CurveScreen::Picker(PickerScreen::List)),
+        };
+        list && self.resettable(kind.setting())
+    }
+
+    /// Whether row `i` of the picker of `kind` is its Reset row.
+    pub(crate) fn is_profile_reset(&self, kind: crate::profiles::picker::Kind, i: usize) -> bool {
+        matches!(self.profile_row(kind, i), Some(PickerRow::Reset))
     }
 
     /// The profile of `kind` chosen for the scope edited; 0 is Default.
@@ -257,11 +333,13 @@ impl<'a> Panel<'a> {
     }
 
     pub(crate) fn keymap_rows_len(&self) -> usize {
-        self.keymapping.rows_len(self.entry())
+        let kind = crate::profiles::picker::Kind::Keymap;
+        self.profile_rows_len(kind) + usize::from(self.picker_resettable(kind))
     }
 
     pub(crate) fn curve_rows_len(&self) -> usize {
-        self.curving.rows_len(self.entry())
+        let kind = crate::profiles::picker::Kind::Curve;
+        self.profile_rows_len(kind) + usize::from(self.picker_resettable(kind))
     }
 
     /// Whether the panel edits a game that has no keymap of its own and so can make one.
@@ -422,6 +500,53 @@ mod tests {
     }
 
     #[test]
+    fn a_tiles_menu_picks_a_value_and_resets_to_the_level_below() {
+        let mut s = state();
+        let fps = Id::Settings(SettingsId::Tile(Setting::FpsCap));
+        tap(&mut s, Id::Tab(crate::Tab::Settings));
+        long(&mut s, fps.clone());
+        assert_eq!(s.prefs().menu(), Some(Setting::FpsCap));
+        assert_eq!(s.pad_back(), Some(Id::Settings(SettingsId::Back)));
+        // The cap's values, and no Reset while the game follows All's.
+        assert_eq!(s.lists().len(ListId::Values), Setting::FpsCap.choices().len());
+        assert_eq!(s.menu_row(3), Some(Some(45)));
+        tap(&mut s, ListId::Values.row(3));
+        assert_eq!((s.prefs().menu(), s.panel().tile_value(Setting::FpsCap)), (None, 45), "set, and closed");
+        assert_eq!(s.panel().tile_origin(Setting::FpsCap), TileOrigin::Own);
+        // Now with Reset, back to All's.
+        long(&mut s, fps.clone());
+        let reset = Setting::FpsCap.choices().len();
+        assert_eq!((s.lists().len(ListId::Values), s.menu_row(reset)), (reset + 1, Some(None)));
+        assert_eq!((s.panel().below_name(), s.panel().inherited_value(Setting::FpsCap)), (Some("All"), 0));
+        tap(&mut s, ListId::Values.row(reset as u16));
+        assert_eq!(s.panel().tile_origin(Setting::FpsCap), TileOrigin::Inherited);
+        // Back closes it.
+        long(&mut s, fps);
+        tap(&mut s, Id::Settings(SettingsId::Back));
+        assert_eq!(s.prefs().menu(), None);
+    }
+
+    #[test]
+    fn a_profile_tile_steps_through_its_profiles_and_its_picker_resets() {
+        let mut s = State::new(Init { curves: crate::curve::Curves::initial(), ..init() });
+        let tile = Id::Settings(SettingsId::Tile(Setting::Curve));
+        tap(&mut s, Id::Tab(crate::Tab::Settings));
+        // Off, then the three named ones, then Off again.
+        for want in [1, 2, 3, 0] {
+            tap(&mut s, tile.clone());
+            assert_eq!(s.panel().tile_value(Setting::Curve), want);
+        }
+        assert_eq!(s.panel().tile_origin(Setting::Curve), TileOrigin::Own, "Off chosen for the game");
+        // The picker (a long press) ends with Reset while the game chooses one itself.
+        long(&mut s, tile);
+        let rows = s.lists().len(ListId::Curves);
+        assert_eq!(s.panel().profile_row(crate::profiles::picker::Kind::Curve, rows - 1), Some(crate::profiles::picker::PickerRow::Reset));
+        tap(&mut s, ListId::Curves.row(rows as u16 - 1));
+        assert_eq!(s.panel().tile_origin(Setting::Curve), TileOrigin::Inherited);
+        assert_eq!(s.lists().len(ListId::Curves), rows - 1, "nothing to reset");
+    }
+
+    #[test]
     fn games_override_the_global_settings() {
         let mut s = state();
         scope(&mut s, Scope::Global);
@@ -440,9 +565,14 @@ mod tests {
         let fresh = state_with(saved);
         assert_eq!(fresh.settings_of("zelda-lttp"), zelda);
         assert_eq!(fresh.prefs().settings().global, s.prefs().settings().global);
-        // A long press drops one override, and Reset drops all of them.
+        // The tile's menu (a long press) drops one override with its Reset row, last, and Reset drops all
+        // of them.
         taps(&mut s, Setting::Rumble, 1);
         long(&mut s, Id::Settings(SettingsId::Tile(Setting::Power)));
+        assert_eq!(s.prefs().menu(), Some(Setting::Power));
+        assert_eq!(s.menu_row(3), Some(None), "after the three power profiles");
+        tap(&mut s, ListId::Values.row(3));
+        assert_eq!(s.prefs().menu(), None, "closed");
         assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Power), None);
         assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Rumble), Some(0));
         tap(&mut s, Id::Settings(SettingsId::Reset));

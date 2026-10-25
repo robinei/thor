@@ -39,6 +39,16 @@ impl Kind {
         }
     }
 
+    /// The kind whose setting `setting` is (the keymap's or the curve's).
+    pub(crate) fn of(setting: Setting) -> Kind {
+        if setting == Setting::Curve { Kind::Curve } else { Kind::Keymap }
+    }
+
+    /// The kind whose picker's list `list` is.
+    pub(crate) fn of_list(list: ListId) -> Kind {
+        if list == ListId::Curves { Kind::Curve } else { Kind::Keymap }
+    }
+
     /// The picker's list.
     pub fn list(self) -> ListId {
         match self {
@@ -110,6 +120,9 @@ pub enum PickerRow<'a> {
     Default,
     /// A named profile: its id and name.
     Named(u16, &'a str),
+    /// Back to the level below's choice, last, while the level edited chooses one itself (see
+    /// [`crate::Panel::resettable`]).
+    Reset,
 }
 
 /// Who uses a profile: whether all games do, as their default, and how many games have chosen it as their
@@ -259,6 +272,8 @@ pub(crate) fn on_row<O: Owner>(o: &mut O, i: usize, part: RowPart, long: bool, c
         PickerRow::New => Row::New,
         PickerRow::Default => Row::Default,
         PickerRow::Named(id, _) => Row::Named(id),
+        // The settings' (see `State::on_row`).
+        PickerRow::Reset => Row::New,
     });
     match screen {
         Some(PickerScreen::Load(own)) => {

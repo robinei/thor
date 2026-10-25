@@ -135,6 +135,11 @@ close 900
   PadActivity(false)
   PadRoute Ui
 -- settings.png
+Pointer(Activate(Settings(Tile(FpsCap))))
+  Save Settings
+Pointer(Activate(Settings(Tile(FpsCap))))
+  Save Settings
+-- settings-menu.png
 -- settings-env.png
 Pointer(Activate(Editor(Save)))
   Save Settings
@@ -489,6 +494,9 @@ Pointer(Activate(Tab(Settings)))
 Tick 1760000005
   Save Resume
 -- curves.png
+Pointer(Activate(Row { list: Curves, i: 2, part: Main }))
+  Save Settings
+-- curves-reset.png
 -- curve-edit.png
 -- curve-edit-slider.png
 Slide(End)

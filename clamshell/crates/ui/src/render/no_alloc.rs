@@ -193,12 +193,20 @@ fn warm_frames_do_not_allocate() {
             ],
         ),
         ("shelf, dragged part way", vec![Event::Shelf(ShelfEvent::Rows(3)), Event::List(ListEvent::Scroll(ListId::Shelf, 1.6))]),
-        ("keymap picker", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(Setting::Keymap)))]),
+        ("keymap picker", vec![tap(Id::Tab(Tab::Settings)), PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Keymap))).into()]),
+        (
+            "tile menu",
+            vec![
+                tap(Id::Tab(Tab::Settings)),
+                tap(Id::Settings(SettingsId::Tile(Setting::FpsCap))),
+                PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::FpsCap))).into(),
+            ],
+        ),
         (
             "keymap edit screen",
             vec![
                 tap(Id::Tab(Tab::Settings)),
-                tap(Id::Settings(SettingsId::Tile(Setting::Keymap))),
+                PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Keymap))).into(),
                 tap(Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit }),
             ],
         ),
@@ -206,7 +214,7 @@ fn warm_frames_do_not_allocate() {
             "keymap mouse",
             vec![
                 tap(Id::Tab(Tab::Settings)),
-                tap(Id::Settings(SettingsId::Tile(Setting::Keymap))),
+                PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Keymap))).into(),
                 tap(Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit }),
                 tap(Id::Keymap(KeymapId::Input(Input::Trigger(Side::Left)))),
                 tap(Id::Keymap(KeymapId::Target(Target::MouseParts))),
@@ -216,7 +224,7 @@ fn warm_frames_do_not_allocate() {
             "keymap picking a control",
             vec![
                 tap(Id::Tab(Tab::Settings)),
-                tap(Id::Settings(SettingsId::Tile(Setting::Keymap))),
+                PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Keymap))).into(),
                 tap(Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit }),
                 tap(Id::Keymap(KeymapId::Input(Input::Button(Button::A)))),
                 tap(Id::Keymap(KeymapId::Target(Target::Pick))),
@@ -226,7 +234,7 @@ fn warm_frames_do_not_allocate() {
             "keymap panel, a slider up, another layer",
             vec![
                 tap(Id::Tab(Tab::Settings)),
-                tap(Id::Settings(SettingsId::Tile(Setting::Keymap))),
+                PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Keymap))).into(),
                 tap(Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit }),
                 tap(Id::Keymap(KeymapId::Layer(Layer(1)))),
                 tap(Id::Keymap(KeymapId::Input(Input::Stick(Side::Left)))),
@@ -238,7 +246,7 @@ fn warm_frames_do_not_allocate() {
             "keymap key capture",
             vec![
                 tap(Id::Tab(Tab::Settings)),
-                tap(Id::Settings(SettingsId::Tile(Setting::Keymap))),
+                PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Keymap))).into(),
                 tap(Id::Row { list: ListId::Keymaps, i: 1, part: RowPart::Edit }),
                 tap(Id::Keymap(KeymapId::Input(Input::Stick(Side::Left)))),
                 tap(Id::Keymap(KeymapId::Target(Target::Keys))),
@@ -342,7 +350,7 @@ fn warm_frames_do_not_allocate() {
             "keymap name editor",
             vec![
                 tap(Id::Tab(Tab::Settings)),
-                tap(Id::Settings(SettingsId::Tile(Setting::Keymap))),
+                PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Keymap))).into(),
                 tap(Id::Profile(clamshell_state::profiles::picker::Kind::Keymap, clamshell_state::profiles::picker::ProfileId::New)),
                 key(Key::Char('a')),
             ],

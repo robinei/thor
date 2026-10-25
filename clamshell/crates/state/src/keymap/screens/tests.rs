@@ -52,7 +52,7 @@ fn row(i: u16) -> Id {
 
 fn picker(s: &mut State) {
     tap(s, Id::Tab(Tab::Settings));
-    tap(s, Id::Settings(SettingsId::Tile(Setting::Keymap)));
+    long(s, Id::Settings(SettingsId::Tile(Setting::Keymap)));
 }
 
 fn sent(fx: &[Effect]) -> Option<&Keymap> {

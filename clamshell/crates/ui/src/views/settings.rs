@@ -11,7 +11,7 @@
 use clamshell_state::bottom::editor::{Editor, KeymapName, Purpose};
 use clamshell_state::profiles::picker::ProfileName;
 use clamshell_state::settings::{Impact, Setting};
-use clamshell_state::{Id, Scope, SettingsId, State, TileOrigin};
+use clamshell_state::{Id, ListId, Scope, SettingsId, State, TileOrigin};
 
 use crate::gfx::icons::Icon;
 use crate::gfx::{Align, Rect, Rgb};
@@ -75,6 +75,9 @@ pub(super) fn draw(f: &mut Frame) {
     if let Some(screen) = f.s.curving().screen() {
         return super::curves::draw(f, screen);
     }
+    if let Some(setting) = f.s.prefs().menu() {
+        return menu(f, setting);
+    }
     let s = f.s;
     let panel = s.panel();
     let context = panel.context();
@@ -137,29 +140,66 @@ fn note(later: bool, no_effect: bool) -> &'static str {
     }
 }
 
+/// How `value` of `setting` reads, on its tile and in its menu: the keymap's and the curve's names, and
+/// the resolution's size on the top screen once the compositor has said it.
+fn value_text(s: &State, setting: Setting, value: u16) -> Fmt<32> {
+    let resolution: clamshell_state::settings::Resolution = clamshell_state::settings::Choice::of(value);
+    match setting {
+        Setting::Resolution if resolution != clamshell_state::settings::Resolution::Native && s.top_size().is_some() => {
+            let (w, h) = resolution.size_on(s.top_size().unwrap_or_default());
+            Fmt::of(format_args!("{w}×{h}"))
+        }
+        Setting::Keymap => Fmt::of(format_args!("{}", s.keymapping().name(value))),
+        Setting::Curve if value == 0 => Fmt::of(format_args!("HDR off")),
+        Setting::Curve => Fmt::of(format_args!("{}", s.curving().name(value))),
+        _ => {
+            let mut text = Fmt::new();
+            setting.describe(value, &mut text);
+            text
+        }
+    }
+}
+
+/// A tile's menu (a long press): its values, the one in force marked, and Reset to the level below when
+/// the level edited chooses one itself (see [`State::menu_row`]).
+fn menu(f: &mut Frame, setting: Setting) {
+    let s = f.s;
+    let panel = s.panel();
+    let scope = panel.editing().map_or("all", |g| g.title);
+    let title = Fmt::<128>::of(format_args!("{} for {scope}", setting.title()));
+    let area = widgets::header(f, Some(Id::Settings(SettingsId::Back)), &title, false, widgets::HeaderRight::None);
+    let list = widgets::ListArea::new(f, area, f.body().h * super::profiles::ROW_H);
+    list.hint(f, "Tap to choose");
+    let now = panel.tile_value(setting);
+    let back_to = value_text(s, setting, panel.inherited_value(setting));
+    let reset_note = match panel.below_name() {
+        Some(below) => Fmt::<64>::of(format_args!("to {below}'s: {}", back_to.as_str())),
+        None => Fmt::of(format_args!("to the default: {}", back_to.as_str())),
+    };
+    let rows = list.scrolled(f, ListId::Values, s.lists().len(ListId::Values));
+    for i in rows.shown() {
+        let Some(row) = s.menu_row(i) else {
+            continue;
+        };
+        let text = row.map(|value| value_text(s, setting, value));
+        let item = match (row, &text) {
+            (Some(value), Some(text)) => {
+                widgets::ListRow { label: text.as_str(), tone: Tone::high_if(value == now), mark: value == now, note: "", edit: widgets::EditCell::None }
+            }
+            _ => widgets::ListRow { label: "Reset", tone: Tone::Fn, mark: false, note: reset_note.as_str(), edit: widgets::EditCell::None },
+        };
+        widgets::list_row(f, ListId::Values.row(i as u16), rows.row(i), list.pad, list.size, item);
+    }
+    list.end(f, rows);
+}
+
 fn face(s: &State, tile: Tile) -> Face {
     let p = s.panel();
     let entry = p.editing().map(|g| g.id.clone());
     match tile {
         Tile::Setting(setting) => {
             let value = p.tile_value(setting);
-            // The keymap's and the curve's tiles show their names, and the resolution its size on the top
-            // screen once the compositor has said it.
-            let resolution: clamshell_state::settings::Resolution = clamshell_state::settings::Choice::of(value);
-            let text = match setting {
-                Setting::Resolution if resolution != clamshell_state::settings::Resolution::Native && s.top_size().is_some() => {
-                    let (w, h) = resolution.size_on(s.top_size().unwrap_or_default());
-                    Fmt::of(format_args!("{w}×{h}"))
-                }
-                Setting::Keymap => Fmt::of(format_args!("{}", s.keymapping().name(value))),
-                Setting::Curve if value == 0 => Fmt::of(format_args!("HDR off")),
-                Setting::Curve => Fmt::of(format_args!("{}", s.curving().name(value))),
-                _ => {
-                    let mut text = Fmt::new();
-                    setting.describe(value, &mut text);
-                    text
-                }
-            };
+            let text = value_text(s, setting, value);
             Face {
                 id: Id::Settings(SettingsId::Tile(setting)),
                 icon: Icon::for_setting(setting),

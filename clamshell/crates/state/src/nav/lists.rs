@@ -36,6 +36,8 @@ pub enum ListId {
     Time,
     /// The dock's rows of tiles, [`crate::session::dock::DOCK_COLUMNS`] to a row.
     Dock,
+    /// A settings tile's menu: its values, then Reset when there is something to reset.
+    Values,
 }
 
 /// Which part of a row a target is: the row itself, or one of its controls.
@@ -51,7 +53,7 @@ pub enum RowPart {
 }
 
 impl ListId {
-    pub const COUNT: usize = 10;
+    pub const COUNT: usize = 11;
     pub const ALL: [ListId; ListId::COUNT] = [
         ListId::Shelf,
         ListId::Wifi,
@@ -63,6 +65,7 @@ impl ListId {
         ListId::Layers,
         ListId::Time,
         ListId::Dock,
+        ListId::Values,
     ];
 
     pub fn index(self) -> usize {
@@ -136,6 +139,8 @@ pub struct Lists<'a> {
     pub(crate) sys: &'a Sys,
     pub(crate) dock: &'a Dock,
     pub(crate) pointer: &'a Pointer,
+    /// The open tile menu's rows (see [`crate::State::menu_row`]).
+    pub(crate) menu_rows: usize,
 }
 
 impl<'a> Lists<'a> {
@@ -169,6 +174,7 @@ impl<'a> Lists<'a> {
             ListId::Layers => RowsOf::Count(self.keymapping.layer_rows()),
             ListId::Time => RowsOf::Count(self.sys.time_rows()),
             ListId::Dock => RowsOf::Count(self.dock.items().len().div_ceil(crate::session::dock::DOCK_COLUMNS)),
+            ListId::Values => RowsOf::Count(self.menu_rows),
         }
     }
 

@@ -9,7 +9,7 @@ fn row(i: u16) -> Id {
 
 fn picker(s: &mut State) {
     tap(s, Id::Tab(Tab::Settings));
-    tap(s, Id::Settings(SettingsId::Tile(Setting::Curve)));
+    long(s, Id::Settings(SettingsId::Tile(Setting::Curve)));
 }
 
 fn profile(s: &mut State, id: ProfileId) -> Vec<Effect> {
