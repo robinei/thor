@@ -29,8 +29,6 @@ const ROW_TEXT: f32 = 0.8;
 const PLOT_NITS: f64 = 1000.0;
 /// Points along the plotted curve.
 const PLOT_STEPS: u16 = 96;
-/// The outline of the histogram's bars, so that dark ones show on black.
-const AXIS: Rgb = Rgb(0x2a2a30);
 /// The lines at the screen's peak and paper white.
 const AS_IS: Rgb = Rgb(0x4a4a54);
 /// The brightest grey a histogram bar is filled with, the light at the top of the plot; paper white is half
@@ -174,16 +172,8 @@ fn plot(f: &mut Frame, r: Rect, curve: &Curve, on: CurvePlot, size: f32) {
             }
         }
     };
-    // The greys first, under the lines and their labels: along the bottom each level's grey as the content
-    // is, the plot's base, and above it the picture's histogram when one is measured.
+    // The picture's histogram first, when one is measured, under the lines and their labels.
     let grey = grey_scale(inner, &y_of);
-    let strip = Rect::new(inner.x, inner.bottom() + 1.0, inner.w, (inner.h * 0.07).max(4.0));
-    let n = HISTOGRAM_BINS;
-    for i in 0..n {
-        let e = (i as f64 + 0.5) / n as f64;
-        let w = inner.w / n as f32;
-        f.c.fill(Rect::new(inner.x + i as f32 * w, strip.y, w + 0.5, strip.h), grey(shown(e, false)));
-    }
     if let Some(histogram) = on.histogram {
         histograms(f, inner, &histogram, on, &shown, &grey);
     }
@@ -210,10 +200,10 @@ fn plot(f: &mut Frame, r: Rect, curve: &Curve, on: CurvePlot, size: f32) {
             };
             // At the left, where the curve is low; the black's at the right, where it is high.
             let (x, align) = if nits <= on.black * REFERENCE_NITS { (inner.x, Align::End) } else { (inner.x + size * 0.4, Align::Start) };
-            // On black, so that the histogram's bars don't hide it.
+            // On a translucent black, so that the histogram's bars under it don't hide it.
             let tw = f.c.text_width(size, label.as_str());
             let tx = if align == Align::End { x + inner.w - size * 0.7 - tw } else { x };
-            f.c.fill(Rect::new(tx - size * 0.15, y - size * 1.45, tw + size * 0.3, size * 1.15), Rgb(0x000000));
+            f.c.fill(Rect::new(tx - size * 0.15, y - size * 1.45, tw + size * 0.3, size * 1.15), Rgb(0x000000).alpha(0.6));
             f.c.text_in(Rect::new(x, y - size * 1.5, inner.w - size * 0.7, size * 1.2), size, Tone::Dim, label.as_str(), align);
             last_label = y;
         }
@@ -247,10 +237,10 @@ fn grey_scale<'a>(inner: Rect, y_of: &'a dyn Fn(f64) -> f32) -> impl Fn(f64) -> 
 }
 
 /// The picture's histogram in the plot `inner`: where its pixels' levels are, as bars along the bottom
-/// (for HDR, those beyond the content's peak in the last), each filled with the grey (`grey`) of the light
-/// the curve gives it, over the base strip with each level's grey as the content is, so that a bar brighter
-/// or darker than the strip under it is brightened or darkened. Heights are square roots of the shares, so
-/// that few pixels still show.
+/// (for HDR, those beyond the content's peak in the last). A bar's left quarter is the grey (`grey`) of its
+/// level's light as the content is, the rest the grey of the light the curve gives it, so that a bar
+/// lighter or darker on the right than on the left is brightened or darkened. Heights are square roots of the shares,
+/// so that few pixels still show.
 fn histograms(f: &mut Frame, inner: Rect, histogram: &Histogram, on: CurvePlot, shown: &dyn Fn(f64, bool) -> f64, grey: &dyn Fn(f64) -> Rgb) {
     let n = HISTOGRAM_BINS;
     // A bin's middle level as the plot's: SDR's signal, or PQ's over the content's peak.
@@ -272,9 +262,10 @@ fn histograms(f: &mut Frame, inner: Rect, histogram: &Histogram, on: CurvePlot, 
     for (i, count) in columns.iter().enumerate().filter(|(_, c)| **c > 0) {
         let e = (i as f64 + 0.5) / n as f64;
         let bar = (*count as f32 / most as f32).sqrt() * inner.h * 0.4;
-        let r = Rect::new(inner.x + i as f32 * w, inner.bottom() - bar, w, bar);
-        f.c.fill(r, AXIS);
-        f.c.fill(r.inset(1.0), grey(shown(e, true)));
+        let (x, y) = (inner.x + i as f32 * w, inner.bottom() - bar);
+        let before = (w * 0.25).round().max(1.0);
+        f.c.fill(Rect::new(x, y, before, bar), grey(shown(e, false)));
+        f.c.fill(Rect::new(x + before, y, w - before + 0.5, bar), grey(shown(e, true)));
     }
 }
 
