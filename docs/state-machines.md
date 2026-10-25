@@ -328,8 +328,12 @@ compositor (`Init::compositor`), and its tile is drawn dimmed with "no effect" u
 | List: New → named → Edit, a curve that changes nothing | `a_new_curve_is_named_and_changes_nothing_until_edited` |
 
 The mapping (`Curve::map`, mirrored by the compositor's shader): black point, shadow contrast, decode,
-highlights above the start expanded to the peak with a smooth join, saturation around luminance; tested in
-`curve::tests`. The randomized test taps the curve screens and slides their parameters.
+highlights above the start expanded to the peak with a smooth join, saturation around luminance; on a
+screen within its headroom (`Curve::map_on`); an HDR game's light through `curve::map_hdr`, its highlights
+compressed from the knee into the screen's peak, its peak as given or as the curve's "HDR game's peak" sets
+it (`Curve::hdr_peak`); tested in `curve::tests`. The edit screen's plot follows `State::curve_plot`: the
+game's window's content and its screen's description (`Reading::Screens`). The randomized test taps the
+curve screens and slides their parameters.
 
 ## Shelf (shelf/)
 

@@ -397,7 +397,8 @@ Control(Curve(Contrast)): ^Control(Curve(Black)) vControl(Curve(White)) <Profile
 Control(Curve(White)): ^Control(Curve(Contrast)) vControl(Curve(Start)) <Profile(Curve, Back) >Tab(Windows)
 Control(Curve(Start)): ^Control(Curve(White)) vControl(Curve(Peak)) <Profile(Curve, Back) >Tab(Windows)
 Control(Curve(Peak)): ^Control(Curve(Start)) vControl(Curve(Saturation)) <Profile(Curve, Back) >Tab(Windows)
-Control(Curve(Saturation)): ^Control(Curve(Peak)) v- <Profile(Curve, Back) >Tab(Windows)
+Control(Curve(Saturation)): ^Control(Curve(Peak)) vControl(Curve(GamePeak)) <Profile(Curve, Back) >Tab(Windows)
+Control(Curve(GamePeak)): ^Control(Curve(Saturation)) v- <Profile(Curve, Back) >Tab(Windows)
 == curve-edit-slider.png (bottom; the pad on both screens)
 start "ff6"; back Activate Profile(Curve, Back)
 -- bar as in bottom.png except

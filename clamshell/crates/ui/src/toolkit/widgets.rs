@@ -377,6 +377,8 @@ const MENU_W: f32 = 0.45;
 pub(crate) enum HeaderRight<'a> {
     None,
     Action(Id, &'a str),
+    /// A dim note, as what a plot below shows.
+    Note(&'a str),
 }
 
 /// A screen's header at the top of the content area. It has a back arrow on the left, whose target is
@@ -401,6 +403,13 @@ pub(crate) fn header(f: &mut Frame, back: Option<Id>, title: &str, centred: bool
             let w = (f.c.text_width(size * 0.85, label) + pad * 2.0).min(bar.w * 0.4);
             let r = bar.take_right(w);
             f.text_button(id, r.centered(r.w, r.h * 0.8), size * 0.85, Tone::Fn, label, Align::Center);
+            w
+        }
+        HeaderRight::Note(note) => {
+            let small = f.text(Text::Small);
+            let w = (f.c.text_width(small, note) + pad).min(bar.w * 0.6);
+            let r = bar.take_right(w);
+            f.c.text_in(r, small, Tone::Dim, note, Align::End);
             w
         }
         HeaderRight::None => 0.0,

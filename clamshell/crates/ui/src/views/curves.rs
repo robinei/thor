@@ -43,12 +43,27 @@ fn edit(f: &mut Frame, id: u16) {
     let Some(curve) = s.curving().in_force(id).copied() else {
         return;
     };
-    let area = widgets::header(f, Some(Id::Profile(Kind::Curve, ProfileId::Back)), s.curving().name(id), false, HeaderRight::None);
+    let on = s.curve_plot();
+    // What the plot shows, beside the title: the game's signal, and its peak as set, declared or assumed.
+    let caption = match on.hdr {
+        Some(hdr) => {
+            let signal = if hdr.scrgb { "scRGB" } else { "PQ" };
+            if curve.game_peak > 0 {
+                Fmt::<64>::of(format_args!("HDR ({signal}) set to {} nits", curve.game_peak))
+            } else if hdr.declared {
+                Fmt::of(format_args!("HDR ({signal}) to {:.0} nits", hdr.nits))
+            } else {
+                Fmt::of(format_args!("HDR ({signal}), {:.0} nits assumed", hdr.nits))
+            }
+        }
+        None => Fmt::of(format_args!("SDR game")),
+    };
+    let area = widgets::header(f, Some(Id::Profile(Kind::Curve, ProfileId::Back)), s.curving().name(id), false, HeaderRight::Note(caption.as_str()));
     let size = f.text(Text::Small) * ROW_TEXT;
     let rh = f.body().h * ROW_H;
     let rows_h = rh * CurveParam::ALL.len() as f32;
     let pad = f.pad();
-    plot(f, Rect::new(area.x, area.y, area.w, (area.h - rows_h - pad).max(0.0)), &curve, s.curve_plot(), size);
+    plot(f, Rect::new(area.x, area.y, area.w, (area.h - rows_h - pad).max(0.0)), &curve, on, size);
     let mut col = Column::new(Rect::new(area.x, area.bottom() - rows_h, area.w, rows_h));
     // The track spans the screen's width, as the keymap parameters' sliders do.
     let body = f.body();
@@ -91,7 +106,7 @@ fn plot(f: &mut Frame, r: Rect, curve: &Curve, on: CurvePlot, size: f32) {
     if r.h < size * 3.0 {
         return;
     }
-    let inner = Rect::new(r.x + size * 0.5, r.y + size * 2.2, r.w - size, r.h - size * 2.7);
+    let inner = Rect::new(r.x + size * 0.5, r.y + size * 1.6, r.w - size, r.h - size * 2.1);
     let screen_nits = on.headroom * REFERENCE_NITS;
     let top_nits = PLOT_NITS.max(screen_nits).min(10000.0);
     f.c.line((inner.x, inner.bottom()), (inner.right(), inner.bottom()), 1.0, AXIS);
@@ -105,7 +120,7 @@ fn plot(f: &mut Frame, r: Rect, curve: &Curve, on: CurvePlot, size: f32) {
     for nits in [screen_nits, paper, on.black * REFERENCE_NITS] {
         let y = y_of(nits);
         f.c.line((inner.x, y), (inner.right(), y), 1.0, AS_IS);
-        if y - last_label >= size * 1.8 {
+        if y - last_label >= size * 1.35 {
             // The unit once, on the topmost.
             let unit = if last_label == f32::NEG_INFINITY { " nits" } else { "" };
             let label = if nits >= 10.0 {
@@ -121,23 +136,9 @@ fn plot(f: &mut Frame, r: Rect, curve: &Curve, on: CurvePlot, size: f32) {
             last_label = y;
         }
     }
-    // The game's signal, and its peak, as it declares it or as assumed.
-    let caption = match on.hdr {
-        Some(hdr) => {
-            let (signal, nits) = (if hdr.scrgb { "scRGB" } else { "PQ" }, hdr.nits);
-            if hdr.declared {
-                Fmt::<64>::of(format_args!("HDR game, {signal}, to {nits:.0} nits"))
-            } else {
-                Fmt::of(format_args!("HDR game, {signal}, peak not given ({nits:.0} nits assumed)"))
-            }
-        }
-        None => Fmt::of(format_args!("SDR game")),
-    };
-    // At the right, clear of the peak's label.
-    f.c.text_in(Rect::new(inner.x, r.y, inner.w - size * 0.3, size * 1.4), size, Tone::Dim, caption.as_str(), Align::End);
     // The light shown for level `e` (0 to 1) as it is, and through the curve.
     let shown = |e: f64, curved: bool| -> f64 {
-        match on.hdr.map(|hdr| hdr.peak) {
+        match on.hdr.map(|hdr| curve.hdr_peak(hdr.peak, hdr.reference)) {
             None if curved => curve.map_on([e, e, e], on.headroom)[1] * REFERENCE_NITS,
             None => Curve::default().map([e, e, e])[1] * REFERENCE_NITS,
             Some(peak) => {
@@ -178,5 +179,7 @@ fn shown(p: CurveParam, v: u16) -> Fmt<24> {
         CurveParam::Contrast => Fmt::of(format_args!("{}.{:02}", v / 100, v % 100)),
         CurveParam::White | CurveParam::Peak => Fmt::of(format_args!("{v} nits")),
         CurveParam::Start | CurveParam::Saturation => Fmt::of(format_args!("{v} %")),
+        CurveParam::GamePeak if v == 0 => Fmt::of(format_args!("As given")),
+        CurveParam::GamePeak => Fmt::of(format_args!("{v} nits")),
     }
 }

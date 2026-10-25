@@ -160,7 +160,12 @@ impl Pipeline {
             let colour = server.colour.surfaces.get(inner.id()).map(|colour| **colour).unwrap_or_default();
             let window = self.last_curves.iter().find(|(id, _, _)| id == inner.id());
             let (curve, headroom) = window.map_or((None, 1.0), |(_, curve, headroom)| (curve.as_ref(), *headroom));
-            let curve = (sdr(colour) || hdr(colour)).then(|| curve_uniforms(curve, headroom));
+            // An HDR surface's peak: the one its game's curve sets, else what it declares or is assumed.
+            let peak = hdr(colour).then(|| {
+                let given = colour.peak();
+                curve.map_or(given, |c| c.hdr_peak(given, f64::from(colour.luminances().reference))) as f32
+            });
+            let curve = (sdr(colour) || hdr(colour)).then(|| curve_uniforms(curve, headroom, peak));
             let program = match self.shaders.iter().find(|(description, _)| *description == colour) {
                 Some((_, program)) => program.clone(),
                 None => {
@@ -246,16 +251,18 @@ fn hdr(description: ColourDescription) -> bool {
     description.hdr()
 }
 
-/// An HDR curve as the input shaders' uniforms: black point, contrast, where highlights start and their
-/// peak (in units of white); then white over the reference, saturation, the screen's headroom, and whether
-/// a curve is on. Without one, an SDR surface is only decoded and an HDR one compressed into the screen.
-fn curve_uniforms(curve: Option<&Curve>, headroom: f32) -> [[f32; 4]; 2] {
+/// An HDR curve as the input shaders' uniforms: black point, contrast, where highlights start, and for an
+/// SDR surface their peak (in units of white), for an HDR one its own peak (`hdr_peak`, in units of its
+/// white); then white over the reference, saturation, the screen's headroom, and whether a curve is on.
+/// Without one, an SDR surface is only decoded and an HDR one compressed into the screen.
+fn curve_uniforms(curve: Option<&Curve>, headroom: f32, hdr_peak: Option<f32>) -> [[f32; 4]; 2] {
     let Some(c) = curve else {
-        return [[0.0, 1.0, 1.0, 1.0], [1.0, 1.0, headroom, 0.0]];
+        return [[0.0, 1.0, 1.0, hdr_peak.unwrap_or(1.0)], [1.0, 1.0, headroom, 0.0]];
     };
     let white = f32::from(c.white.max(1));
+    let peak = hdr_peak.unwrap_or(f32::from(c.peak.max(c.white)) / white);
     [
-        [f32::from(c.black) / 1000.0, f32::from(c.contrast) / 100.0, f32::from(c.start) / 100.0, f32::from(c.peak.max(c.white)) / white],
+        [f32::from(c.black) / 1000.0, f32::from(c.contrast) / 100.0, f32::from(c.start) / 100.0, peak],
         [white / REFERENCE_NITS as f32, f32::from(c.saturation) / 100.0, headroom, 1.0],
     ]
 }
@@ -304,8 +311,8 @@ fn shader(renderer: &mut GlesRenderer, description: ColourDescription, input: bo
     } else if input && hdr(description) {
         // An HDR surface, as clamshell_state::curve::map_hdr does it, in BT.2020: with a curve, the black
         // point and contrast on each channel's light below white, and the white; with or without one, the
-        // highlights above the knee compressed into the screen's peak when its own peak is beyond.
-        let peak = description.peak();
+        // highlights above the knee compressed into the screen's peak when its own peak (curve_a.w) is
+        // beyond.
         format!(
             "v = convert(v) * {scaling:.12};
     v = matrix * v;
@@ -322,9 +329,9 @@ fn shader(renderer: &mut GlesRenderer, description: ColourDescription, input: bo
     float room = curve_b.z / white;
     float k = min(on ? curve_a.z : 1.0, 0.75 * room);
     float e = y;
-    if ({peak:.12} > room && y > k) {{
+    if (curve_a.w > room && y > k) {{
         float x = y - k;
-        e = min(k + x / (1.0 + x * (1.0 / (room - k) - 1.0 / ({peak:.12} - k))), room);
+        e = min(k + x / (1.0 + x * (1.0 / (room - k) - 1.0 / (curve_a.w - k))), room);
     }}
     vec3 c = y > 0.0 ? v * (e / y) : vec3(0.0);
     v = max(vec3(e) + (c - vec3(e)) * (on ? curve_b.y : 1.0), vec3(0.0)) * white;"
@@ -401,8 +408,9 @@ mod tests {
 
     /// The HDR input shader's arithmetic, on light already in BT.2020 (1 at the content's reference
     /// white), as written in GLSL above.
-    fn shaded_hdr(light: [f64; 3], peak: f64, [a, b]: [[f32; 4]; 2]) -> [f64; 3] {
+    fn shaded_hdr(light: [f64; 3], [a, b]: [[f32; 4]; 2]) -> [f64; 3] {
         let (a, b) = (a.map(f64::from), b.map(f64::from));
+        let peak = a[3];
         let on = b[3] > 0.5;
         let white = if on { b[0].min(b[2]) } else { 1.0_f64.min(b[2]) };
         let v = light.map(|v| {
@@ -434,9 +442,9 @@ mod tests {
     }
 
     const CURVES: [Curve; 3] = [
-        Curve { black: 0, contrast: 100, white: 203, start: 100, peak: 203, saturation: 100 },
-        Curve { black: 20, contrast: 110, white: 203, start: 60, peak: 650, saturation: 105 },
-        Curve { black: 150, contrast: 70, white: 400, start: 30, peak: 1000, saturation: 50 },
+        Curve { black: 0, contrast: 100, white: 203, start: 100, peak: 203, saturation: 100, game_peak: 0 },
+        Curve { black: 20, contrast: 110, white: 203, start: 60, peak: 650, saturation: 105, game_peak: 0 },
+        Curve { black: 150, contrast: 70, white: 400, start: 30, peak: 1000, saturation: 50, game_peak: 1500 },
     ];
     /// An SDR screen, a 650-nit panel with SDR white at the reference, and room for anything.
     const HEADROOMS: [f64; 3] = [1.0, 650.0 / 203.0, 100.0];
@@ -446,13 +454,13 @@ mod tests {
         for curve in CURVES {
             for headroom in HEADROOMS {
                 for rgb in [[0.0, 0.0, 0.0], [0.03, 0.03, 0.03], [0.5, 0.4, 0.3], [1.0, 1.0, 1.0], [1.0, 0.2, 0.0], [0.9, 0.95, 1.0]] {
-                    let got = shaded(rgb, curve_uniforms(Some(&curve), headroom as f32));
+                    let got = shaded(rgb, curve_uniforms(Some(&curve), headroom as f32, None));
                     close(curve.map_on(rgb, headroom), got, &format!("{curve:?} {headroom} {rgb:?}"));
                 }
             }
         }
         // Without a curve the surface is only decoded.
-        assert_eq!(shaded([0.5, 0.5, 0.5], curve_uniforms(None, 1.0))[0], shaded([0.5, 0.5, 0.5], curve_uniforms(Some(&CURVES[0]), 1.0))[0]);
+        assert_eq!(shaded([0.5, 0.5, 0.5], curve_uniforms(None, 1.0, None))[0], shaded([0.5, 0.5, 0.5], curve_uniforms(Some(&CURVES[0]), 1.0, None))[0]);
     }
 
     #[test]
@@ -462,7 +470,9 @@ mod tests {
         for curve in CURVES.iter().map(Some).chain([None]) {
             for headroom in HEADROOMS {
                 for light in [[0.0, 0.0, 0.0], [0.01, 0.01, 0.01], [0.5, 0.4, 0.3], [1.0, 1.0, 1.0], [3.0, 2.0, 1.0], [peak, peak, peak], [6.0, 0.5, 0.2]] {
-                    let got = shaded_hdr(light, peak, curve_uniforms(curve, headroom as f32));
+                    // The game's peak as its curve sets it, or as given.
+                    let peak = curve.map_or(peak, |c| c.hdr_peak(peak, 203.0));
+                    let got = shaded_hdr(light, curve_uniforms(curve, headroom as f32, Some(peak as f32)));
                     close(map_hdr(curve, light, peak, headroom), got, &format!("{curve:?} {headroom} {light:?}"));
                 }
             }

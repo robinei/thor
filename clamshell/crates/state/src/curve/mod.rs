@@ -44,14 +44,20 @@ pub struct Curve {
     pub peak: u16,
     /// Saturation, in percent (100 changes nothing).
     pub saturation: u16,
+    /// An HDR game's peak, in its own nits, replacing what it declares or what is assumed when it gives
+    /// none (see [`Curve::hdr_peak`]); 0 takes it as given.
+    pub game_peak: u16,
 }
 
 /// A new curve changes nothing: SDR white at the reference, no expansion.
 impl Default for Curve {
     fn default() -> Curve {
-        Curve { black: 0, contrast: 100, white: REFERENCE_NITS as u16, start: 100, peak: REFERENCE_NITS as u16, saturation: 100 }
+        Curve { black: 0, contrast: 100, white: REFERENCE_NITS as u16, start: 100, peak: REFERENCE_NITS as u16, saturation: 100, game_peak: 0 }
     }
 }
+
+/// The lowest a game's peak can be set to, in nits: below it, highlights would hardly be HDR.
+pub const GAME_PEAK_MIN: u16 = 400;
 
 /// A curve's parameter, as its slider on the edit screen sets it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -62,10 +68,12 @@ pub enum CurveParam {
     Start,
     Peak,
     Saturation,
+    GamePeak,
 }
 
 impl CurveParam {
-    pub const ALL: [CurveParam; 6] = [CurveParam::Black, CurveParam::Contrast, CurveParam::White, CurveParam::Start, CurveParam::Peak, CurveParam::Saturation];
+    pub const ALL: [CurveParam; 7] =
+        [CurveParam::Black, CurveParam::Contrast, CurveParam::White, CurveParam::Start, CurveParam::Peak, CurveParam::Saturation, CurveParam::GamePeak];
 
     /// The parameter's range, and the step a slider moves it by. Slider positions are the value divided by
     /// the step, which keeps them within a slider's `u8`.
@@ -77,6 +85,8 @@ impl CurveParam {
             CurveParam::Start => (30, 100, 1),
             CurveParam::Peak => (200, 1000, 10),
             CurveParam::Saturation => (50, 150, 1),
+            // 0 is "as given"; the slider's next step is the lowest value.
+            CurveParam::GamePeak => (0, 10000, 50),
         }
     }
 
@@ -88,6 +98,7 @@ impl CurveParam {
             CurveParam::Start => c.start,
             CurveParam::Peak => c.peak,
             CurveParam::Saturation => c.saturation,
+            CurveParam::GamePeak => c.game_peak,
         }
     }
 
@@ -102,6 +113,7 @@ impl CurveParam {
             CurveParam::Start => c.start = value,
             CurveParam::Peak => c.peak = value,
             CurveParam::Saturation => c.saturation = value,
+            CurveParam::GamePeak => c.game_peak = if value == 0 { 0 } else { value.max(GAME_PEAK_MIN) },
         }
         match self {
             CurveParam::White => c.peak = c.peak.max(c.white),
@@ -130,11 +142,18 @@ impl CurveParam {
             CurveParam::Start => "Highlights from",
             CurveParam::Peak => "Highlight peak",
             CurveParam::Saturation => "Saturation",
+            CurveParam::GamePeak => "HDR game's peak",
         }
     }
 }
 
 impl Curve {
+    /// An HDR game's peak over its reference white (`reference`, in its nits): the one set, else the one
+    /// `given` (what it declares, or what is assumed).
+    pub fn hdr_peak(&self, given: f64, reference: f64) -> f64 {
+        if self.game_peak == 0 { given } else { f64::from(self.game_peak) / reference.max(1.0) }
+    }
+
     /// A pixel of SDR signal (`rgb`, each 0 to 1, sRGB's encoding) as linear light in the compositor's
     /// scene, where 1.0 is the reference white ([`REFERENCE_NITS`]), with no screen's limits. The colours
     /// are those of the input's primaries; the compositor converts them after.
@@ -237,7 +256,7 @@ pub type Curves = Profiles<Curve>;
 impl Curves {
     /// The curves there are before any were saved: three to start from.
     pub fn initial() -> Curves {
-        let curve = |black, contrast, white, start, peak, saturation| Curve { black, contrast, white, start, peak, saturation };
+        let curve = |black, contrast, white, start, peak, saturation| Curve { black, contrast, white, start, peak, saturation, game_peak: 0 };
         Curves::from_list(vec![
             Profile::with(1, "True black", curve(20, 110, 203, 60, 650, 105)),
             Profile::with(2, "Punchy", curve(10, 115, 220, 50, 1000, 115)),
@@ -296,6 +315,20 @@ mod tests {
         near(map_hdr(Some(&c), [1.0; 3], peak, headroom)[0], 300.0 / 203.0);
         // On an SDR screen it all goes into white.
         assert!(map_hdr(Some(&c), [peak; 3], peak, 1.0)[0] <= 1.0);
+    }
+
+    #[test]
+    fn an_hdr_games_peak_is_as_given_or_the_one_set() {
+        let mut c = Curve::default();
+        near(c.hdr_peak(49.26, 203.0), 49.26);
+        CurveParam::GamePeak.set(&mut c, 1000);
+        near(c.hdr_peak(49.26, 203.0), 1000.0 / 203.0);
+        // In the game's own nits: scRGB's white is 80.
+        near(c.hdr_peak(125.0, 80.0), 12.5);
+        CurveParam::GamePeak.set(&mut c, 50);
+        assert_eq!(c.game_peak, GAME_PEAK_MIN, "the slider's first step");
+        CurveParam::GamePeak.set(&mut c, 0);
+        assert_eq!(c.game_peak, 0, "as given");
     }
 
     #[test]

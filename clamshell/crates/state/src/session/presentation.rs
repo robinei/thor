@@ -172,6 +172,8 @@ pub struct HdrPlot {
     pub peak: f64,
     /// The same in the game's own nits (scRGB's white is 80, which is shown at the reference white).
     pub nits: f64,
+    /// Its white in its own nits.
+    pub reference: f64,
     /// Whether it declares its peak (MaxCLL or its mastering display's).
     pub declared: bool,
     /// Whether it is scRGB (linear light) rather than PQ.
@@ -231,6 +233,7 @@ impl crate::State {
         let hdr = colour.map(|colour| HdrPlot {
             peak: colour.peak(),
             nits: colour.peak() * f64::from(colour.luminances().reference),
+            reference: f64::from(colour.luminances().reference),
             declared: colour.declared_peak().is_some(),
             scrgb: colour.transfer == TransferFunction::Linear,
         });
