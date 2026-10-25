@@ -270,13 +270,19 @@ fn hdr(description: ColourDescription) -> bool {
 }
 
 /// A window's clarity as the input shaders' uniform: one texel of its buffer across and down, the
-/// sharpening's strength (0 to 1), and whether it is sampled nearest. Nothing without a buffer's size.
+/// sharpening's strength (0 to 1), and how it is sampled (0 bilinear, 1 nearest, 2 FSR's upscale).
+/// Nothing without a buffer's size.
 fn clarity_uniform(clarity: clamshell_state::session::presentation::Clarity, (w, h): (i32, i32)) -> [f32; 4] {
+    use clamshell_state::settings::Scaling;
     if w <= 0 || h <= 0 {
         return [0.0; 4];
     }
-    let nearest = clarity.scaling == clamshell_state::settings::Scaling::Nearest;
-    [1.0 / w as f32, 1.0 / h as f32, f32::from(clarity.sharpen.min(100)) / 100.0, f32::from(u8::from(nearest))]
+    let sampling = match clarity.scaling {
+        Scaling::Bilinear => 0.0,
+        Scaling::Nearest => 1.0,
+        Scaling::Fsr => 2.0,
+    };
+    [1.0 / w as f32, 1.0 / h as f32, f32::from(clarity.sharpen.min(100)) / 100.0, sampling]
 }
 
 /// An HDR curve as the input shaders' uniforms: black point, contrast, where highlights start, and for an
@@ -374,11 +380,91 @@ fn shader(renderer: &mut GlesRenderer, description: ColourDescription, input: bo
     };
     let uniforms = if curved { "uniform vec4 curve_a;\nuniform vec4 curve_b;\nuniform vec4 clarity;" } else { "" };
     // A window's picture as it is sampled, before decoding (see [`clarity_uniform`]): nearest snaps to the
-    // centre of one of its texels; sharpening is AMD's CAS on the four texels around, with the weight it
-    // adapts to their contrast, kept within the signal's range, or for linear light within the brightest
-    // of them (as `cas` in the tests).
+    // centre of one of its texels; FSR 1's upscale (EASU) weighs the twelve texels around along the edge
+    // their luma shows, kept within the four nearest (as `easu` in the tests); sharpening is AMD's CAS on
+    // the four texels around, with the weight it adapts to their contrast, kept within the signal's range,
+    // or for linear light within the brightest of them (as `cas` in the tests). With FSR, its own
+    // sharpening comes after, on what it upscaled.
     let fetch = if curved {
-        "vec4 fetch() {
+        "vec4 texel(vec2 at) { return texture2D(tex, (at + 0.5) * clarity.xy); }
+float luma(vec3 c) { return c.b * 0.5 + c.r * 0.5 + c.g; }
+void easu_set(inout vec2 dir, inout float len, float w, float a, float b, float c, float d, float e) {
+    float dc = d - c;
+    float cb = c - b;
+    float lx = 1.0 / max(max(abs(dc), abs(cb)), 0.000001);
+    float dx = d - b;
+    dir.x += dx * w;
+    lx = clamp(abs(dx) * lx, 0.0, 1.0);
+    len += lx * lx * w;
+    float ec = e - c;
+    float ca = c - a;
+    float ly = 1.0 / max(max(abs(ec), abs(ca)), 0.000001);
+    float dy = e - a;
+    dir.y += dy * w;
+    ly = clamp(abs(dy) * ly, 0.0, 1.0);
+    len += ly * ly * w;
+}
+void easu_tap(inout vec3 ac, inout float aw, vec2 off, vec2 dir, vec2 len2, float lob, float clp, vec3 c) {
+    vec2 v = vec2(off.x * dir.x + off.y * dir.y, off.x * -dir.y + off.y * dir.x) * len2;
+    float d2 = min(v.x * v.x + v.y * v.y, clp);
+    float wb = 0.4 * d2 - 1.0;
+    float wa = lob * d2 - 1.0;
+    wb *= wb;
+    wa *= wa;
+    float w = (1.5625 * wb - 0.5625) * wa;
+    ac += c * w;
+    aw += w;
+}
+vec4 easu() {
+    vec2 pp = v_coords / clarity.xy - 0.5;
+    vec2 fp = floor(pp);
+    pp -= fp;
+    vec3 b = texel(fp + vec2(0.0, -1.0)).rgb; vec3 c = texel(fp + vec2(1.0, -1.0)).rgb;
+    vec3 e = texel(fp + vec2(-1.0, 0.0)).rgb; vec4 f4 = texel(fp); vec3 f = f4.rgb;
+    vec3 g = texel(fp + vec2(1.0, 0.0)).rgb; vec3 h = texel(fp + vec2(2.0, 0.0)).rgb;
+    vec3 i = texel(fp + vec2(-1.0, 1.0)).rgb; vec3 j = texel(fp + vec2(0.0, 1.0)).rgb;
+    vec3 k = texel(fp + vec2(1.0, 1.0)).rgb; vec3 l = texel(fp + vec2(2.0, 1.0)).rgb;
+    vec3 n = texel(fp + vec2(0.0, 2.0)).rgb; vec3 o = texel(fp + vec2(1.0, 2.0)).rgb;
+    float bl = luma(b); float cl = luma(c); float el = luma(e); float fl = luma(f);
+    float gl = luma(g); float hl = luma(h); float il = luma(i); float jl = luma(j);
+    float kl = luma(k); float ll = luma(l); float nl = luma(n); float ol = luma(o);
+    vec2 dir = vec2(0.0);
+    float len = 0.0;
+    easu_set(dir, len, (1.0 - pp.x) * (1.0 - pp.y), bl, el, fl, gl, jl);
+    easu_set(dir, len, pp.x * (1.0 - pp.y), cl, fl, gl, hl, kl);
+    easu_set(dir, len, (1.0 - pp.x) * pp.y, fl, il, jl, kl, nl);
+    easu_set(dir, len, pp.x * pp.y, gl, jl, kl, ll, ol);
+    float dr = dir.x * dir.x + dir.y * dir.y;
+    bool zero = dr < 1.0 / 32768.0;
+    dr = zero ? 1.0 : inversesqrt(dr);
+    dir.x = zero ? 1.0 : dir.x;
+    dir *= dr;
+    len = len * 0.5;
+    len *= len;
+    float stretch = (dir.x * dir.x + dir.y * dir.y) / max(abs(dir.x), abs(dir.y));
+    vec2 len2 = vec2(1.0 + (stretch - 1.0) * len, 1.0 - 0.5 * len);
+    float lob = 0.5 + (0.25 - 0.04 - 0.5) * len;
+    float clp = 1.0 / lob;
+    vec3 ac = vec3(0.0);
+    float aw = 0.0;
+    easu_tap(ac, aw, vec2(0.0, -1.0) - pp, dir, len2, lob, clp, b);
+    easu_tap(ac, aw, vec2(1.0, -1.0) - pp, dir, len2, lob, clp, c);
+    easu_tap(ac, aw, vec2(-1.0, 1.0) - pp, dir, len2, lob, clp, i);
+    easu_tap(ac, aw, vec2(0.0, 1.0) - pp, dir, len2, lob, clp, j);
+    easu_tap(ac, aw, vec2(0.0, 0.0) - pp, dir, len2, lob, clp, f);
+    easu_tap(ac, aw, vec2(-1.0, 0.0) - pp, dir, len2, lob, clp, e);
+    easu_tap(ac, aw, vec2(1.0, 1.0) - pp, dir, len2, lob, clp, k);
+    easu_tap(ac, aw, vec2(2.0, 1.0) - pp, dir, len2, lob, clp, l);
+    easu_tap(ac, aw, vec2(2.0, 0.0) - pp, dir, len2, lob, clp, h);
+    easu_tap(ac, aw, vec2(1.0, 0.0) - pp, dir, len2, lob, clp, g);
+    easu_tap(ac, aw, vec2(1.0, 2.0) - pp, dir, len2, lob, clp, o);
+    easu_tap(ac, aw, vec2(0.0, 2.0) - pp, dir, len2, lob, clp, n);
+    vec3 lo = min(min(f, g), min(j, k));
+    vec3 hi = max(max(f, g), max(j, k));
+    return vec4(clamp(ac / aw, lo, hi), f4.a);
+}
+vec4 fetch() {
+    if (clarity.w > 1.5) { return easu(); }
     vec2 uv = v_coords;
     if (clarity.w > 0.5) { uv = (floor(uv / clarity.xy) + 0.5) * clarity.xy; }
     vec4 e = texture2D(tex, uv);
@@ -516,12 +602,90 @@ mod tests {
         }
     }
 
+    /// The input shader's FSR upscale (EASU) of a one-channel picture (`at` a texel's value, clamped at the
+    /// edges), at input position `pp` (texels, 0 at the first texel's centre), as written in GLSL above.
+    fn easu(at: &dyn Fn(i32, i32) -> f64, pp: (f64, f64)) -> f64 {
+        let (fx, fy) = (pp.0.floor(), pp.1.floor());
+        let (px, py) = (pp.0 - fx, pp.1 - fy);
+        let t = |dx: i32, dy: i32| at(fx as i32 + dx, fy as i32 + dy);
+        let [b, c, e, f, g, h, i, j, k, l, n, o] =
+            [t(0, -1), t(1, -1), t(-1, 0), t(0, 0), t(1, 0), t(2, 0), t(-1, 1), t(0, 1), t(1, 1), t(2, 1), t(0, 2), t(1, 2)];
+        // One channel: its luma is twice it, which changes no weight.
+        let lu = |v: f64| v * 2.0;
+        let (mut dir, mut len) = ((0.0, 0.0), 0.0);
+        let mut set = |w: f64, a: f64, b: f64, c: f64, d: f64, e: f64| {
+            let lx = 1.0 / (d - c).abs().max((c - b).abs()).max(0.000001);
+            dir.0 += (d - b) * w;
+            len += ((d - b).abs() * lx).clamp(0.0, 1.0).powi(2) * w;
+            let ly = 1.0 / (e - c).abs().max((c - a).abs()).max(0.000001);
+            dir.1 += (e - a) * w;
+            len += ((e - a).abs() * ly).clamp(0.0, 1.0).powi(2) * w;
+        };
+        set((1.0 - px) * (1.0 - py), lu(b), lu(e), lu(f), lu(g), lu(j));
+        set(px * (1.0 - py), lu(c), lu(f), lu(g), lu(h), lu(k));
+        set((1.0 - px) * py, lu(f), lu(i), lu(j), lu(k), lu(n));
+        set(px * py, lu(g), lu(j), lu(k), lu(l), lu(o));
+        let dr = dir.0 * dir.0 + dir.1 * dir.1;
+        let zero = dr < 1.0 / 32768.0;
+        let dr = if zero { 1.0 } else { 1.0 / dr.sqrt() };
+        if zero {
+            dir.0 = 1.0;
+        }
+        let dir = (dir.0 * dr, dir.1 * dr);
+        let len = (len * 0.5).powi(2);
+        let stretch = (dir.0 * dir.0 + dir.1 * dir.1) / dir.0.abs().max(dir.1.abs());
+        let len2 = (1.0 + (stretch - 1.0) * len, 1.0 - 0.5 * len);
+        let lob = 0.5 + (0.25 - 0.04 - 0.5) * len;
+        let clp = 1.0 / lob;
+        let (mut ac, mut aw) = (0.0, 0.0);
+        for (ox, oy, v) in [
+            (0.0, -1.0, b),
+            (1.0, -1.0, c),
+            (-1.0, 1.0, i),
+            (0.0, 1.0, j),
+            (0.0, 0.0, f),
+            (-1.0, 0.0, e),
+            (1.0, 1.0, k),
+            (2.0, 1.0, l),
+            (2.0, 0.0, h),
+            (1.0, 0.0, g),
+            (1.0, 2.0, o),
+            (0.0, 2.0, n),
+        ] {
+            let (x, y) = (ox - px, oy - py);
+            let (vx, vy) = ((x * dir.0 + y * dir.1) * len2.0, (x * -dir.1 + y * dir.0) * len2.1);
+            let d2 = (vx * vx + vy * vy).min(clp);
+            let (wb, wa) = ((0.4 * d2 - 1.0).powi(2), (lob * d2 - 1.0).powi(2));
+            let w = (1.5625 * wb - 0.5625) * wa;
+            ac += v * w;
+            aw += w;
+        }
+        (ac / aw).clamp(f.min(g).min(j).min(k), f.max(g).max(j).max(k))
+    }
+
+    #[test]
+    fn fsrs_upscale_keeps_flat_areas_and_edges_sharper_than_bilinear() {
+        // A flat picture stays flat.
+        let flat = |_: i32, _: i32| 0.4;
+        assert!((easu(&flat, (3.3, 2.7)) - 0.4).abs() < 1e-9);
+        // A vertical edge between texels 4 and 5, upscaled two times: just left of it EASU stays nearer the
+        // dark side than bilinear does, and never leaves the four nearest texels' range.
+        let edge = |x: i32, _: i32| if x <= 4 { 0.1 } else { 0.9 };
+        let pp = (4.25, 3.0);
+        let bilinear = 0.1 + (0.9 - 0.1) * 0.25;
+        let fsr = easu(&edge, pp);
+        assert!(fsr < bilinear && (0.1..=0.9).contains(&fsr), "{fsr} vs {bilinear}");
+        // On the texels themselves it gives them back.
+        assert!((easu(&edge, (4.0, 3.0)) - 0.1).abs() < 1e-6 && (easu(&edge, (5.0, 3.0)) - 0.9).abs() < 1e-6);
+    }
+
     #[test]
     fn the_clarity_uniform_steps_by_a_texel_and_says_how_to_sample() {
         use clamshell_state::session::presentation::Clarity;
         use clamshell_state::settings::Scaling;
         let nearest = Clarity { scaling: Scaling::Nearest, sharpen: 50, ..Clarity::default() };
         assert_eq!(clarity_uniform(nearest, (960, 540)), [1.0 / 960.0, 1.0 / 540.0, 0.5, 1.0]);
+        assert_eq!(clarity_uniform(Clarity { scaling: Scaling::Fsr, ..Clarity::default() }, (960, 540))[3], 2.0);
         assert_eq!(clarity_uniform(Clarity::default(), (960, 540))[2..], [0.0, 0.0], "bilinear, unsharpened");
         assert_eq!(clarity_uniform(nearest, (0, 0)), [0.0; 4], "no buffer: as it is");
     }
