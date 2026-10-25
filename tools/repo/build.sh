@@ -26,7 +26,7 @@ if [ "$ARCH" = aarch64 ]; then
     export THOR_REPO_DIR=$CACHE/repo
     [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring thor-ucm linux-thor thor-sensors clamshell thor-system thor-session thor thor-firmware)
     # (Made again when it predates what it holds now: C's headers.)
-    [ -e "$SYSROOT/usr/include/json-c/json.h" ] || "$HERE/sysroot.sh"
+    [ -e "$SYSROOT/usr/lib/libseat.so" ] || "$HERE/sysroot.sh"
 else
     export THOR_REPO_DIR=$CACHE/repo-$ARCH
     [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring clamshell thor-system thor-session)

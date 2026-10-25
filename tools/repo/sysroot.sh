@@ -1,6 +1,7 @@
 #!/bin/bash
 # The aarch64 sysroot ClamShell and thor-sensors are cross-compiled against on this PC (tools/repo/build.sh):
-# what linking ClamShell needs (glibc, libgcc, libxkbcommon, libdbus, their pkg-config files), and what
+# what linking ClamShell needs (glibc, libgcc, libxkbcommon, libdbus, and for its compositor libseat, libinput,
+# libudev and libgbm, their pkg-config files), and what
 # compiling C needs (glibc's and the kernel's headers; json-c, for thor-sensors' sscregistrygen), from Arch Linux ARM's packages,
 # installed by this PC's pacman with their signatures checked (tools/image/pacman-conf.sh's config and
 # keyring), under fakeroot, without their scripts, into a scratch root; the files linking needs copied
@@ -12,7 +13,7 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/thor-vm
 OUT=${1:-$CACHE/sysroot}
-PACKAGES=(glibc libgcc gcc libxkbcommon dbus systemd-libs linux-api-headers json-c)
+PACKAGES=(glibc libgcc gcc libxkbcommon dbus systemd-libs linux-api-headers json-c seatd libinput mesa)
 # What linking needs from /usr/lib (links kept as links), besides the libraries' own .so names.
 LIBS="crt1.o crti.o crtn.o Scrt1.o ld-linux-aarch64.so.1 libc.so libc.so.6 libc_nonshared.a libm.so libm.so.6
       libmvec.so libmvec.so.1 libdl.so.2 libpthread.so.0 librt.so.1 libutil.so.1 libgcc_s.so libgcc_s.so.1
@@ -38,8 +39,10 @@ for name in $LIBS; do
     cp -a "$lib/$name" "$OUT/usr/lib/"
 done
 cp -a "$lib"/libxkbcommon.so* "$lib"/libdbus-1.so* "$lib"/libjson-c.so* "$OUT/usr/lib/"
+cp -a "$lib"/libseat.so* "$lib"/libinput.so* "$lib"/libudev.so* "$lib"/libgbm.so* "$OUT/usr/lib/"
 # (dbus-1.pc requires libsystemd.pc.)
 cp -a "$lib/pkgconfig/dbus-1.pc" "$lib/pkgconfig/xkbcommon.pc" "$lib/pkgconfig/libsystemd.pc" "$lib/pkgconfig/json-c.pc" \
+    "$lib/pkgconfig/libseat.pc" "$lib/pkgconfig/libinput.pc" "$lib/pkgconfig/libudev.pc" "$lib/pkgconfig/gbm.pc" \
     "$OUT/usr/lib/pkgconfig/"
 # The headers (glibc's, the kernel's, json-c's, the rest's), for C.
 cp -a "$work/root/usr/include" "$OUT/usr/"

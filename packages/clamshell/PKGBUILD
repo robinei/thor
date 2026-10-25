@@ -8,7 +8,8 @@ pkgdesc="The AYN Thor's handheld session: game shelf, second screen, gamepad, th
 arch=(aarch64 x86_64)
 url=https://github.com/robinei/thor
 license=('MIT OR Apache-2.0')
-depends=(libxkbcommon dbus gcc-libs glibc)
+# (libseat, libinput, libudev and libgbm with EGL: its compositor, `clamshell --drm`.)
+depends=(libxkbcommon dbus gcc-libs glibc seatd libinput systemd-libs mesa)
 makedepends=(cargo git python)
 optdepends=('waydroid: Android apps (clamshell-android)')
 install=clamshell.install
@@ -31,7 +32,7 @@ _target() { echo "$CARCH-unknown-linux-gnu"; }
 build() {
     cd "$(_repo)/clamshell"
     # (CARGO_TARGET_DIR: a target dir kept between builds.)
-    CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$srcdir/target} cargo build --release --locked --target "$(_target)"
+    CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$srcdir/target} cargo build --release --locked --target "$(_target)" --features compositor
     # The licenses of what is built into the programs: the crates they link, the font.
     python3 "$(_repo)/tools/repo/third-party-licenses.py" . "$(_target)" > "$srcdir/THIRD-PARTY"
 }
