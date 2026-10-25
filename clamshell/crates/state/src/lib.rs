@@ -1151,8 +1151,12 @@ impl State {
         }
     }
 
-    /// A text field wants typing, or is done (see [`Bottom::text_input`]).
+    /// A text field wants typing, or is done (see [`Bottom::text_input`]). While the second screen shows
+    /// a window moved there, the keyboard doesn't come up over it: its tab is a tap away.
     fn text_input(&mut self, active: bool) {
+        if active && self.bottom.shows_windows(&self.session) {
+            return;
+        }
         if let Some(left) = self.bottom.text_input(active) {
             self.left_tab(left);
         }

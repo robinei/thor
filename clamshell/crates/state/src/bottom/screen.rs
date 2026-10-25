@@ -756,6 +756,21 @@ mod tests {
     }
 
     #[test]
+    fn the_keyboard_doesnt_come_up_over_a_window_shown_below() {
+        let mut s = emulator();
+        key(&mut s, DeviceKey::WindowDown);
+        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
+        assert!(s.bottom().shows_windows(s.session()));
+        s.applied(Event::TextInput(true));
+        assert_eq!(s.bottom().tab(), Tab::Windows, "the window keeps the screen");
+        // With nothing below, the windows' tab gives way to it.
+        let mut s = emulator();
+        tap(&mut s, crate::Id::Tab(Tab::Windows));
+        s.applied(Event::TextInput(true));
+        assert_eq!(s.bottom().tab(), Tab::Keyboard);
+    }
+
+    #[test]
     fn the_windows_tab_with_nothing_below_shows_no_window() {
         let mut s = emulator();
         key(&mut s, DeviceKey::BottomView);
