@@ -85,13 +85,24 @@ sharpening.**
 The anti-aliasing comes first so that the upscale doesn't enlarge jagged edges (AMD's own advice for
 FSR 1); sharpening once.
 
-Passes before the final one, by what is set, each the fewest it can be: none for sharpening (CAS),
-Nearest, Bilinear and FSR without sharpening (all in the final pass), nor for FSR shown one to one (it
-upscales nothing: sampled as it is, sharpened by CAS), nor for FXAA one to one unsharpened; one for FSR
-with sharpening (RCAS needs what EASU gave around each pixel, as in AMD's own two passes) and for FXAA
-with scaling or sharpening after it (anti-aliasing comes before both); three for SMAA. Textures between
-passes are bytes for SDR, half floats for HDR. Fusing SMAA's blending into the final pass would need a
-second texture in it, which Smithay's texture programs don't take. A stage switched off costs nothing: no pass, no texture. Intermediate textures
+Passes before the final one, by what is set, each the fewest it can be:
+
+| Set | Passes before the final one |
+|---|---|
+| Sharpening (CAS), Nearest, Bilinear, FSR unsharpened | none: all in the final pass |
+| FSR shown one to one | none: it upscales nothing, so it is sampled as it is and sharpened by CAS |
+| FXAA or SMAA's blending, shown one to one or Nearest, unsharpened | FXAA none; SMAA two (edges, weights), its blending in the final pass at the texel's centre |
+| FXAA with Bilinear, FSR or sharpening after it | one, at the game's resolution |
+| SMAA with Bilinear, FSR or sharpening after it | three, at the game's resolution |
+| FSR with sharpening | one more, EASU at the screen's resolution; RCAS in the final pass |
+
+Fusing further costs more than it saves: SMAA's blending or FXAA inside EASU would be done for each of
+EASU's 12 reads at the screen's resolution, where now it is done once per game pixel; EASU inside RCAS
+would be done five times per pixel, so AMD's own FSR 1 is two passes. Before scaling or sharpening the
+anti-aliased picture is read around each pixel, so it has to be in a texture. Textures between passes
+are bytes for SDR, half floats for HDR; SMAA's blending in the final pass binds its weights to a second
+texture unit around Smithay's draw (see Smithay below), and the window is then drawn whole each time
+its buffer changes, as the blending reaches past what the client damaged. A stage switched off costs nothing: no pass, no texture. Intermediate textures
 exist only for windows that need them, kept between frames, sized to the game's buffer.
 
 **Shaders:** a variant is compiled for what changes the structure (the surface's colour description, how
@@ -117,6 +128,22 @@ Resolution and Scaling replace it. The curve profiles stay as they are, as the c
 **Licences:** FSR 1 (EASU, RCAS) and CAS are MIT; SMAA is MIT with its lookup textures; the filters are
 ours.
 
+## Smithay
+
+Where Smithay (rev 24647fc) is in the way, worth contributing upstream:
+
+- Texture programs take one texture. Fusing a pass that reads a second texture (SMAA's weights) needs
+  raw GL around Smithay's draw: the texture bound to unit 1 before, unbound after, its sampler uniform
+  set to unit 1 on every draw of the program (left at unit 0 beside an external texture it is a GL
+  error). Upstream: textures as uniforms of custom programs (`UniformValue::Texture`), bound to units
+  after the first by the renderer.
+- Texture programs are GLSL ES 1.00 (`#version 100`, `texture2D`, no `textureLod` or offsets, no
+  integer maths). SMAA needs ES 3.00, so its passes are raw GL in their own framebuffer with their own
+  external-texture variant. Upstream: custom programs with a chosen version, the renderer's external and
+  debug variants made for it too.
+- A frame can't draw into a texture other than its target, so each pass is a frame of its own on its
+  texture. Not a cost in itself; noted for when passes are batched.
+
 ## Phases
 
 1. **On the desktop, nested and on the VM:** the four clarity tiles on a 5×4 grid (done); the tiles'
@@ -128,7 +155,9 @@ ours.
    they read the game's buffer as it is, an ordinary texture or an external one, copying it only when its
    client turned it; SMAA's picture is in bytes for SDR and half floats for HDR; in the VM it nearly triples
    the share of in-between tones across vkcube's edges), in that order. A window whose passes fail is shown
-   without them, logged once. Not yet tried: an external buffer through SMAA (none in the VM). FXAA
+   without them, logged once. Not yet tried: an external buffer through SMAA (none in the VM). SMAA's blending
+   in the final pass (done) when shown one to one or Nearest and unsharpened: in the VM vkcube's edges
+   have 56 to 59 % in-between tones, 49 % at 960×540 Nearest counted on game pixels. FXAA
    (done): in the final pass when the window is shown one to one and not sharpened after it, else one pass
    in the chain at the game's resolution; in the VM it gives 81 % in-between tones across vkcube's
    edges, SMAA 49 %, none 24 %. Each tested headless against

@@ -53,6 +53,9 @@ struct Converted {
     /// For an SDR or HDR surface's shader: its curve's uniforms (see [`curve_uniforms`]) and its clarity's
     /// (see [`clarity_uniform`]).
     curve: Option<[[f32; 4]; 3]>,
+    /// SMAA's blending weights, when its blending is done in this pass: bound to the second texture unit
+    /// while the element is drawn, as Smithay's programs take one texture (`docs/picture.md`).
+    smaa_blend: Option<GlesTexture>,
 }
 impl ElementTrait for Converted {
     fn id(&self) -> &Id {
@@ -74,6 +77,10 @@ impl ElementTrait for Converted {
         self.inner.location(scale)
     }
     fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
+        // SMAA's blending reaches past what the client damaged, along the edges it found: all of it.
+        if self.smaa_blend.is_some() && commit != Some(self.current_commit()) {
+            return DamageSet::from_slice(&[Rectangle::from_size(self.geometry(scale).size)]);
+        }
         self.inner.damage_since(scale, commit)
     }
     fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
@@ -96,13 +103,44 @@ impl RenderElement<GlesRenderer> for Converted {
         opaque: &[Rectangle<i32, Physical>],
         cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
-        let uniforms = self.curve.map_or_else(Vec::new, |[a, b, c]| vec![Uniform::new("curve_a", a), Uniform::new("curve_b", b), Uniform::new("clarity", c)]);
+        // The weights' sampler is always on the second unit: left on the first, beside an external
+        // texture, it would be a GL error at the draw.
+        let uniforms = self.curve.map_or_else(Vec::new, |[a, b, c]| {
+            let second = smithay::backend::renderer::gles::UniformValue::_1i(1);
+            vec![Uniform::new("curve_a", a), Uniform::new("curve_b", b), Uniform::new("clarity", c), Uniform::new("smaa_blend_tex", second)]
+        });
+        if let Some(weights) = &self.smaa_blend {
+            bind_second(frame, Some(weights.tex_id()))?;
+        }
         frame.override_default_tex_program(self.shader.clone(), uniforms);
         let result = self.inner.draw(frame, src, dst, damage, opaque, cache);
         frame.clear_tex_program_override();
+        if self.smaa_blend.is_some() {
+            bind_second(frame, None)?;
+        }
         result
     }
 }
+/// Binds `texture` to the second texture unit for the draw that follows, or unbinds it, filtered linearly as
+/// SMAA's blending samples it. Smithay's drawing binds its texture to the first unit and leaves the others.
+#[allow(unsafe_code)]
+fn bind_second(frame: &mut GlesFrame<'_, '_>, texture: Option<u32>) -> Result<(), GlesError> {
+    use smithay::backend::renderer::gles::ffi;
+    frame.with_context(|gl| {
+        // SAFETY: GL on Smithay's current context, on a texture of ours; the first unit is made active
+        // again, as Smithay expects it.
+        unsafe {
+            gl.ActiveTexture(ffi::TEXTURE1);
+            gl.BindTexture(ffi::TEXTURE_2D, texture.unwrap_or(0));
+            if texture.is_some() {
+                gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_MIN_FILTER, ffi::LINEAR as i32);
+                gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_MAG_FILTER, ffi::LINEAR as i32);
+            }
+            gl.ActiveTexture(ffi::TEXTURE0);
+        }
+    })
+}
+
 impl Pipeline {
     pub(crate) fn new(renderer: &mut GlesRenderer, size: (i32, i32)) -> Result<Self, Error> {
         let texture = renderer.create_buffer(Fourcc::Abgr16161616f, size.into())?;
@@ -160,7 +198,7 @@ impl Pipeline {
         self.curves.clear();
         // The windows' own surfaces whose pictures take passes before the scene (see `super::chain`): SMAA,
         // and with FSR and sharpening, FSR's upscale.
-        let mut chained: Vec<(Id, smithay::reexports::wayland_server::protocol::wl_surface::WlSurface, clamshell_state::settings::AntiAliasing, bool)> =
+        let mut chained: Vec<(Id, smithay::reexports::wayland_server::protocol::wl_surface::WlSurface, clamshell_state::settings::AntiAliasing, bool, bool)> =
             Vec::new();
         let state = server.core.state();
         for client in server.windows.iter().filter(|client| client.mapped && server.visible(client.id)) {
@@ -174,7 +212,11 @@ impl Pipeline {
             if one_to_one && clarity.scaling == clamshell_state::settings::Scaling::Fsr {
                 clarity.scaling = clamshell_state::settings::Scaling::Bilinear;
             }
-            let fxaa_here = clarity.anti_aliasing == clamshell_state::settings::AntiAliasing::Fxaa && one_to_one && clarity.sharpen == 0;
+            // Anti-aliasing at the texel's centre, as the window is shown one to one or nearest and nothing is
+            // sharpened after it, is done in the final pass: FXAA all of it, SMAA its blending.
+            let at_centre = (one_to_one || clarity.scaling == clamshell_state::settings::Scaling::Nearest) && clarity.sharpen == 0;
+            let fxaa_here = clarity.anti_aliasing == clamshell_state::settings::AntiAliasing::Fxaa && at_centre;
+            let smaa_fused = clarity.anti_aliasing == clamshell_state::settings::AntiAliasing::Smaa && at_centre;
             client.window.with_surfaces(|surface, states| {
                 let renderer_state = states.data_map.get::<smithay::backend::renderer::utils::RendererSurfaceStateUserData>();
                 let buffer = renderer_state.and_then(|state| state.lock().ok()?.buffer_size()).map_or((0, 0), |size| (size.w, size.h));
@@ -184,7 +226,7 @@ impl Pipeline {
             // FXAA done in the final pass takes no passes before it.
             let aa = if fxaa_here { clamshell_state::settings::AntiAliasing::Off } else { clarity.anti_aliasing };
             if let (true, Some(root)) = (upscale || aa != clamshell_state::settings::AntiAliasing::Off, client.window.root()) {
-                chained.push((Id::from_wayland_resource(&root), root, aa, upscale));
+                chained.push((Id::from_wayland_resource(&root), root, aa, upscale, smaa_fused));
             }
         }
         if self.curves != self.last_curves {
@@ -193,10 +235,10 @@ impl Pipeline {
             std::mem::swap(&mut self.curves, &mut self.last_curves);
         }
         let replaced = self.chains.run(renderer, elements, |id| {
-            chained.iter().find(|(chained, ..)| chained == id).map(|(id, surface, aa, upscale)| {
+            chained.iter().find(|(chained, ..)| chained == id).map(|(id, surface, aa, upscale, fused)| {
                 use clamshell_state::settings::AntiAliasing;
                 let hdr = server.colour.surfaces.get(id).is_some_and(|colour| colour.hdr());
-                super::chain::Want { surface, smaa: *aa == AntiAliasing::Smaa, fxaa: *aa == AntiAliasing::Fxaa, upscale: *upscale, hdr }
+                super::chain::Want { surface, smaa: *aa == AntiAliasing::Smaa, fxaa: *aa == AntiAliasing::Fxaa, upscale: *upscale, hdr, fuse: *fused }
             })
         })?;
         self.converted.clear();
@@ -211,9 +253,14 @@ impl Pipeline {
             });
             let curve = (sdr(colour) || hdr(colour)).then(|| {
                 let [a, b] = curve_uniforms(curve, headroom, peak);
-                // A picture the chain upscaled is sharpened one texel to a pixel (RCAS).
-                let clarity = match replaced.iter().find(|(id, _)| id == inner.id()) {
-                    Some((_, [x, y])) => [*x, *y, look.map_or(0.0, |look| f32::from(look.clarity.sharpen.min(100)) / 100.0), 3.0],
+                // A picture the chain upscaled is sharpened one texel to a pixel (RCAS); one whose SMAA weights
+                // it drew is blended here.
+                let clarity = match replaced.iter().find(|(id, _)| id == inner.id()).map(|(_, chained)| chained) {
+                    Some(super::chain::Chained::Upscaled([x, y])) => [*x, *y, look.map_or(0.0, |look| f32::from(look.clarity.sharpen.min(100)) / 100.0), 3.0],
+                    Some(super::chain::Chained::Weights(_)) => {
+                        let [x, y, _, _] = look.map_or([0.0; 4], |look| clarity_uniform(look.clarity, look.buffer, false));
+                        [x, y, 0.0, 5.0]
+                    }
                     None => look.map_or([0.0; 4], |look| clarity_uniform(look.clarity, look.buffer, look.fxaa_here)),
                 };
                 [a, b, clarity]
@@ -229,7 +276,11 @@ impl Pipeline {
                     program
                 }
             };
-            self.converted.push(Converted { inner, shader: program, curve });
+            let smaa_blend = match replaced.iter().find(|(id, _)| id == inner.id()).map(|(_, chained)| chained) {
+                Some(super::chain::Chained::Weights(weights)) => Some(weights.clone()),
+                _ => None,
+            };
+            self.converted.push(Converted { inner, shader: program, curve, smaa_blend });
         }
         let mut target = renderer.bind(&mut self.texture)?;
         let result = self.damage.render_output(renderer, &mut target, usize::from(!self.first), &self.converted, [0.0, 0.0, 0.0, 1.0])?;
@@ -305,7 +356,8 @@ fn hdr(description: ColourDescription) -> bool {
 
 /// A window's clarity as the input shaders' uniform: one texel of its buffer across and down, the
 /// sharpening's strength (0 to 1), and how it is sampled (0 bilinear, 1 nearest, 2 FSR's upscale; 3, from
-/// the chain, FSR's sharpening of what it upscaled, see [`super::chain`]; 4, `fxaa_here`, FXAA one to one).
+/// the chain, FSR's sharpening of what it upscaled, see [`super::chain`]; 4, `fxaa_here`, FXAA at the
+/// texel's centre; 5, from the chain, SMAA's blending at the texel's centre).
 /// Nothing without a buffer's size.
 fn clarity_uniform(clarity: clamshell_state::session::presentation::Clarity, (w, h): (i32, i32), fxaa_here: bool) -> [f32; 4] {
     use clamshell_state::settings::Scaling;
@@ -420,16 +472,36 @@ vec4 easu() {
 }
 ";
 
+/// SMAA's last pass, neighbourhood blending, done in the final pass (SMAA's `SMAANeighborhoodBlendingPS`,
+/// in GLSL ES 1.00): at texel centre `uv` of the picture `tex`, its blending weights from `smaa_blend`
+/// (the weights pass's texture, at the picture's size and orientation) choose the neighbour it is
+/// blended with, by bilinear sampling between the two.
+const SMAA_BLEND_GLSL: &str = "vec4 smaa_blend(vec2 uv) {
+    vec2 px = clarity.xy;
+    vec4 a;
+    a.x = texture2D(smaa_blend_tex, uv + vec2(px.x, 0.0)).a;
+    a.y = texture2D(smaa_blend_tex, uv + vec2(0.0, px.y)).g;
+    a.wz = texture2D(smaa_blend_tex, uv).xz;
+    if (dot(a, vec4(1.0)) < 0.00001) { return texture2D(tex, uv); }
+    bool h = max(a.x, a.z) > max(a.y, a.w);
+    vec4 offset = h ? vec4(a.x, 0.0, a.z, 0.0) : vec4(0.0, a.y, 0.0, a.w);
+    vec2 w = h ? a.xz : a.yw;
+    w /= dot(w, vec2(1.0));
+    vec4 coord = offset * vec4(px, -px) + uv.xyxy;
+    return w.x * texture2D(tex, coord.xy) + w.y * texture2D(tex, coord.zw);
+}
+";
+
 /// FXAA of a picture, on the texture `tex` whose texel size is `clarity.xy`: the edge's direction from the
 /// luma of the four diagonal neighbours, two samples along it blended, or four when that stays within the
 /// neighbours' range (as `fxaa` in the tests). It works on the signal, at the game's resolution.
-pub(super) const FXAA_GLSL: &str = "vec4 fxaa() {
+pub(super) const FXAA_GLSL: &str = "vec4 fxaa(vec2 uv) {
     vec2 px = clarity.xy;
-    vec4 m4 = texture2D(tex, v_coords);
-    vec3 nw = texture2D(tex, v_coords + vec2(-1.0, -1.0) * px).rgb;
-    vec3 ne = texture2D(tex, v_coords + vec2(1.0, -1.0) * px).rgb;
-    vec3 sw = texture2D(tex, v_coords + vec2(-1.0, 1.0) * px).rgb;
-    vec3 se = texture2D(tex, v_coords + vec2(1.0, 1.0) * px).rgb;
+    vec4 m4 = texture2D(tex, uv);
+    vec3 nw = texture2D(tex, uv + vec2(-1.0, -1.0) * px).rgb;
+    vec3 ne = texture2D(tex, uv + vec2(1.0, -1.0) * px).rgb;
+    vec3 sw = texture2D(tex, uv + vec2(-1.0, 1.0) * px).rgb;
+    vec3 se = texture2D(tex, uv + vec2(1.0, 1.0) * px).rgb;
     vec3 weights = vec3(0.299, 0.587, 0.114);
     float lnw = dot(nw, weights);
     float lne = dot(ne, weights);
@@ -442,8 +514,8 @@ pub(super) const FXAA_GLSL: &str = "vec4 fxaa() {
     float reduce = max((lnw + lne + lsw + lse) * (0.25 * 0.125), 1.0 / 128.0);
     float rcp = 1.0 / (min(abs(dir.x), abs(dir.y)) + reduce);
     dir = clamp(dir * rcp, vec2(-8.0), vec2(8.0)) * px;
-    vec3 a = 0.5 * (texture2D(tex, v_coords + dir * (1.0 / 3.0 - 0.5)).rgb + texture2D(tex, v_coords + dir * (2.0 / 3.0 - 0.5)).rgb);
-    vec3 b = a * 0.5 + 0.25 * (texture2D(tex, v_coords - dir * 0.5).rgb + texture2D(tex, v_coords + dir * 0.5).rgb);
+    vec3 a = 0.5 * (texture2D(tex, uv + dir * (1.0 / 3.0 - 0.5)).rgb + texture2D(tex, uv + dir * (2.0 / 3.0 - 0.5)).rgb);
+    vec3 b = a * 0.5 + 0.25 * (texture2D(tex, uv - dir * 0.5).rgb + texture2D(tex, uv + dir * 0.5).rgb);
     float lb = dot(b, weights);
     return vec4((lb < lmin || lb > lmax) ? a : b, m4.a);
 }
@@ -474,7 +546,10 @@ const RCAS_GLSL: &str = "vec4 rcas() {
 /// AMD's CAS on the four texels around, with the weight it adapts to their contrast, kept within the
 /// signal's range, or for linear light within the brightest of them (as `cas` in the tests).
 const FETCH_GLSL: &str = "vec4 fetch() {
-    if (clarity.w > 3.5) { return fxaa(); }
+    if (clarity.w > 3.5) {
+        vec2 centre = (floor(v_coords / clarity.xy) + 0.5) * clarity.xy;
+        return clarity.w > 4.5 ? smaa_blend(centre) : fxaa(centre);
+    }
     if (clarity.w > 2.5) { return rcas(); }
     if (clarity.w > 1.5) { return easu(); }
     vec2 uv = v_coords;
@@ -571,8 +646,12 @@ fn shader(renderer: &mut GlesRenderer, description: ColourDescription, input: bo
         // Above the screen's peak, each pixel is brought down whole, keeping its hue.
         format!("v = matrix * v; v /= {scaling:.12}; float m = max(max(v.r, v.g), v.b); if (m > 1.0) {{ v /= m; }} v = convert(v);")
     };
-    let uniforms = if curved { "uniform vec4 curve_a;\nuniform vec4 curve_b;\nuniform vec4 clarity;" } else { "" };
-    let fetch = if curved { [EASU_GLSL, FXAA_GLSL, RCAS_GLSL, FETCH_GLSL].concat() } else { "vec4 fetch() { return texture2D(tex, v_coords); }".to_owned() };
+    let uniforms = if curved { "uniform vec4 curve_a;\nuniform vec4 curve_b;\nuniform vec4 clarity;\nuniform sampler2D smaa_blend_tex;" } else { "" };
+    let fetch = if curved {
+        [EASU_GLSL, FXAA_GLSL, SMAA_BLEND_GLSL, RCAS_GLSL, FETCH_GLSL].concat()
+    } else {
+        "vec4 fetch() { return texture2D(tex, v_coords); }".to_owned()
+    };
     let source = format!(
         r#"#version 100
 //_DEFINES_
@@ -604,7 +683,12 @@ void main() {{
     gl_FragColor = vec4(v * sample.a, sample.a) * alpha;
 }}"#
     );
-    let names = [UniformName::new("curve_a", UniformType::_4f), UniformName::new("curve_b", UniformType::_4f), UniformName::new("clarity", UniformType::_4f)];
+    let names = [
+        UniformName::new("curve_a", UniformType::_4f),
+        UniformName::new("curve_b", UniformType::_4f),
+        UniformName::new("clarity", UniformType::_4f),
+        UniformName::new("smaa_blend_tex", UniformType::_1i),
+    ];
     Ok(renderer.compile_custom_texture_shader(source, if curved { &names } else { &[] })?)
 }
 

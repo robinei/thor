@@ -182,13 +182,15 @@ impl Smaa {
         Ok(Smaa { edges, weights, blending, external: None, area, search, framebuffer })
     }
 
-    /// Anti-aliases `color` (an external texture if `external`) into `out` through `edges` and `blend`, all
-    /// of `size`, in `color`'s orientation.
+    /// Anti-aliases `color` (an external texture if `external`) through `edges` and `blend`, all of `size`,
+    /// in `color`'s orientation: into `out`, or with none, up to the blending weights, the final pass
+    /// blending (`SMAA_BLEND_GLSL`).
     pub fn run(
         &mut self,
         renderer: &mut GlesRenderer,
         (color, external): (&GlesTexture, bool),
-        [edges, blend, out]: [&GlesTexture; 3],
+        [edges, blend]: [&GlesTexture; 2],
+        out: Option<&GlesTexture>,
         size: (i32, i32),
     ) -> Result<(), Error> {
         if external && self.external.is_none() {
@@ -203,7 +205,9 @@ impl Smaa {
         renderer.with_context(|gl| {
             draw(gl, fb, edges_pass, edges.tex_id(), size, &[color.tex_id()]);
             draw(gl, fb, &self.weights, blend.tex_id(), size, &[edges.tex_id(), self.area.tex_id(), self.search.tex_id()]);
-            draw(gl, fb, blending_pass, out.tex_id(), size, &[color.tex_id(), blend.tex_id()]);
+            if let Some(out) = out {
+                draw(gl, fb, blending_pass, out.tex_id(), size, &[color.tex_id(), blend.tex_id()]);
+            }
         })?;
         Ok(())
     }
