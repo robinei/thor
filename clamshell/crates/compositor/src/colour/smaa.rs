@@ -4,6 +4,11 @@
 //! Gutierrez's, under the MIT licence; `smaa/` holds its shader, its tables as raw bytes and its licence,
 //! from iryoku/smaa at 71c806a. Its shaders need OpenGL ES 3, so its passes are GL programs of their own,
 //! run in Smithay's context between its frames; they put back the bindings they change.
+//!
+//! The passes read the game's buffer as it is, so nothing is copied: SMAA's language is given by our own
+//! macros (its `SMAA_CUSTOM_SL`), and the picture (`colorTex`) is declared with the external sampler of a
+//! dmabuf the GPU can't render to, in a second variant of the passes that read it (by its declarations in
+//! SMAA's text: GLSL ES has no token pasting to do it by name).
 
 use clamshell_ui::Error;
 use smithay::backend::{
@@ -21,15 +26,53 @@ const AREA: &[u8] = include_bytes!("smaa/area.bin");
 /// The search table: 64 by 16, a byte a texel.
 const SEARCH: &[u8] = include_bytes!("smaa/search.bin");
 
-/// What every pass's source starts with: ES 3, SMAA's GLSL, its high preset, the render target's metrics
-/// as a uniform. `{stage}` leaves out the other stage's half of the shader.
-const HEADER: &str = "#version 300 es
-precision highp float;
+/// What every pass's source starts with after its version (and for an external picture, the extension
+/// for it): SMAA's high preset, the render target's metrics as a uniform, and SMAA's language as GLSL ES 3
+/// by our macros. Its textures are `sampler2D`s, but the picture's, `SAMPLER_colorTex`.
+const HEADER: &str = "precision highp float;
 precision highp int;
-#define SMAA_GLSL_3
 #define SMAA_PRESET_HIGH
 #define SMAA_RT_METRICS rt_metrics
 uniform vec4 rt_metrics;
+#define SMAA_CUSTOM_SL
+#define SMAATexture2D(tex) sampler2D tex
+#define SMAATexturePass2D(tex) tex
+#define SMAA_FLATTEN
+#define SMAA_BRANCH
+#define lerp(a, b, t) mix(a, b, t)
+#define saturate(a) clamp(a, 0.0, 1.0)
+#define mad(a, b, c) (a * b + c)
+#define float2 vec2
+#define float3 vec3
+#define float4 vec4
+#define int2 ivec2
+#define int3 ivec3
+#define int4 ivec4
+#define bool2 bvec2
+#define bool3 bvec3
+#define bool4 bvec4
+";
+
+/// SMAA's sampling as SMAA_GLSL_3 does it, for passes whose textures are all ordinary.
+const SAMPLING: &str = "#define SAMPLER_colorTex sampler2D
+#define SMAASampleLevelZero(tex, coord) textureLod(tex, coord, 0.0)
+#define SMAASampleLevelZeroPoint(tex, coord) textureLod(tex, coord, 0.0)
+#define SMAASampleLevelZeroOffset(tex, coord, offset) textureLodOffset(tex, coord, 0.0, offset)
+#define SMAASample(tex, coord) texture(tex, coord)
+#define SMAASamplePoint(tex, coord) texture(tex, coord)
+#define SMAASampleOffset(tex, coord, offset) texture(tex, coord, offset)
+";
+
+/// SMAA's sampling with the picture an external texture, which takes only `texture`: offsets in texels as
+/// coordinates, and a level of detail that changes nothing (the textures have one level, sampled the same
+/// way minified or magnified).
+const SAMPLING_EXTERNAL: &str = "#define SAMPLER_colorTex samplerExternalOES
+#define SMAASampleLevelZero(tex, coord) texture(tex, coord)
+#define SMAASampleLevelZeroPoint(tex, coord) texture(tex, coord)
+#define SMAASampleLevelZeroOffset(tex, coord, offset) texture(tex, coord + vec2(offset) * SMAA_RT_METRICS.xy)
+#define SMAASample(tex, coord) texture(tex, coord)
+#define SMAASamplePoint(tex, coord) texture(tex, coord)
+#define SMAASampleOffset(tex, coord, offset) texture(tex, coord + vec2(offset) * SMAA_RT_METRICS.xy)
 ";
 
 /// A full-screen triangle from the vertex's index alone, its texture coordinates 0 to 1 over the target.
@@ -47,7 +90,7 @@ void main() {
     v_offset = offset;
     gl_Position = vec4(v_texcoord * 2.0 - 1.0, 0.0, 1.0);
 }",
-    "uniform sampler2D color_tex;
+    "uniform SAMPLER_colorTex color_tex;
 in vec2 v_texcoord;
 in vec4 v_offset[3];
 out vec4 frag;
@@ -89,7 +132,7 @@ void main() {
     v_offset = offset;
     gl_Position = vec4(v_texcoord * 2.0 - 1.0, 0.0, 1.0);
 }",
-    "uniform sampler2D color_tex;
+    "uniform SAMPLER_colorTex color_tex;
 uniform sampler2D blend_tex;
 in vec2 v_texcoord;
 in vec4 v_offset;
@@ -99,17 +142,20 @@ void main() {
 }",
 );
 
-/// A pass's program, its metrics uniform, and its samplers by name with their filtering (nearest or not).
+/// A pass's program, its metrics uniform, and its samplers with their filtering (nearest or not) and
+/// their texture's target.
 struct Pass {
     program: u32,
     metrics: i32,
-    samplers: Vec<(i32, bool)>,
+    samplers: Vec<(i32, bool, u32)>,
 }
 
 pub(crate) struct Smaa {
     edges: Pass,
     weights: Pass,
     blending: Pass,
+    /// The passes that read the picture, for an external one: made the first time one comes.
+    external: Option<(Pass, Pass)>,
     area: GlesTexture,
     search: GlesTexture,
     framebuffer: u32,
@@ -123,33 +169,52 @@ impl Smaa {
         let area = renderer.import_memory(&area, Fourcc::Abgr8888, (160, 560).into(), false)?;
         let search = renderer.import_memory(&search, Fourcc::Abgr8888, (64, 16).into(), false)?;
         let built = renderer.with_context(|gl| -> Result<_, String> {
-            let edges = build(gl, EDGES, &[("color_tex", false)])?;
-            let weights = build(gl, WEIGHTS, &[("edges_tex", false), ("area_tex", false), ("search_tex", true)])?;
-            let blending = build(gl, BLENDING, &[("color_tex", false), ("blend_tex", false)])?;
+            let (edges, blending) = picture_passes(gl, false)?;
+            let weights = build(
+                gl,
+                WEIGHTS,
+                false,
+                &[("edges_tex", false, ffi::TEXTURE_2D), ("area_tex", false, ffi::TEXTURE_2D), ("search_tex", true, ffi::TEXTURE_2D)],
+            )?;
             Ok((edges, weights, blending, framebuffer(gl)))
         })?;
         let (edges, weights, blending, framebuffer) = built.map_err(|e| format!("smaa: {e}"))?;
-        Ok(Smaa { edges, weights, blending, area, search, framebuffer })
+        Ok(Smaa { edges, weights, blending, external: None, area, search, framebuffer })
     }
 
-    /// Anti-aliases `color` into `out` through `edges` and `blend`, all of `size`.
+    /// Anti-aliases `color` (an external texture if `external`) into `out` through `edges` and `blend`, all
+    /// of `size`, in `color`'s orientation.
     pub fn run(
-        &self,
+        &mut self,
         renderer: &mut GlesRenderer,
-        color: &GlesTexture,
-        edges: &GlesTexture,
-        blend: &GlesTexture,
-        out: &GlesTexture,
+        (color, external): (&GlesTexture, bool),
+        [edges, blend, out]: [&GlesTexture; 3],
         size: (i32, i32),
     ) -> Result<(), Error> {
+        if external && self.external.is_none() {
+            let built = renderer.with_context(|gl| picture_passes(gl, true))?;
+            self.external = Some(built.map_err(|e| format!("smaa: {e}"))?);
+        }
+        let (edges_pass, blending_pass) = match (&self.external, external) {
+            (Some((edges, blending)), true) => (edges, blending),
+            _ => (&self.edges, &self.blending),
+        };
         let fb = self.framebuffer;
         renderer.with_context(|gl| {
-            draw(gl, fb, &self.edges, edges.tex_id(), size, &[color.tex_id()]);
+            draw(gl, fb, edges_pass, edges.tex_id(), size, &[color.tex_id()]);
             draw(gl, fb, &self.weights, blend.tex_id(), size, &[edges.tex_id(), self.area.tex_id(), self.search.tex_id()]);
-            draw(gl, fb, &self.blending, out.tex_id(), size, &[color.tex_id(), blend.tex_id()]);
+            draw(gl, fb, blending_pass, out.tex_id(), size, &[color.tex_id(), blend.tex_id()]);
         })?;
         Ok(())
     }
+}
+
+/// The two passes that read the picture, edges and blending, for an ordinary texture or an external one.
+fn picture_passes(gl: &ffi::Gles2, external: bool) -> Result<(Pass, Pass), String> {
+    let color = if external { ffi::TEXTURE_EXTERNAL_OES } else { ffi::TEXTURE_2D };
+    let edges = build(gl, EDGES, external, &[("color_tex", false, color)])?;
+    let blending = build(gl, BLENDING, external, &[("color_tex", false, color), ("blend_tex", false, ffi::TEXTURE_2D)])?;
+    Ok((edges, blending))
 }
 
 /// Draws `pass` into `target` (a texture of `size`), reading `inputs` on its samplers in order.
@@ -166,21 +231,21 @@ fn draw(gl: &ffi::Gles2, framebuffer: u32, pass: &Pass, target: u32, (w, h): (i3
         gl.Clear(ffi::COLOR_BUFFER_BIT);
         gl.UseProgram(pass.program);
         gl.Uniform4f(pass.metrics, 1.0 / w as f32, 1.0 / h as f32, w as f32, h as f32);
-        for (unit, (&texture, &(sampler, nearest))) in inputs.iter().zip(&pass.samplers).enumerate() {
+        for (unit, (&texture, &(sampler, nearest, target))) in inputs.iter().zip(&pass.samplers).enumerate() {
             gl.ActiveTexture(ffi::TEXTURE0 + unit as u32);
-            gl.BindTexture(ffi::TEXTURE_2D, texture);
+            gl.BindTexture(target, texture);
             let filter = if nearest { ffi::NEAREST } else { ffi::LINEAR } as i32;
-            gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_MIN_FILTER, filter);
-            gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_MAG_FILTER, filter);
-            gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
-            gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
+            gl.TexParameteri(target, ffi::TEXTURE_MIN_FILTER, filter);
+            gl.TexParameteri(target, ffi::TEXTURE_MAG_FILTER, filter);
+            gl.TexParameteri(target, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
+            gl.TexParameteri(target, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
             gl.Uniform1i(sampler, unit as i32);
         }
         gl.DrawArrays(ffi::TRIANGLES, 0, 3);
         // Back as Smithay's drawing finds them: its frames set the rest (viewport, blending) themselves.
-        for unit in (0..inputs.len()).rev() {
+        for (unit, &(_, _, target)) in pass.samplers.iter().enumerate().take(inputs.len()).rev() {
             gl.ActiveTexture(ffi::TEXTURE0 + unit as u32);
-            gl.BindTexture(ffi::TEXTURE_2D, 0);
+            gl.BindTexture(target, 0);
         }
         gl.UseProgram(0);
         gl.FramebufferTexture2D(ffi::FRAMEBUFFER, ffi::COLOR_ATTACHMENT0, ffi::TEXTURE_2D, 0, 0);
@@ -198,11 +263,19 @@ fn framebuffer(gl: &ffi::Gles2) -> u32 {
     fb
 }
 
-/// Compiles and links a pass from its vertex and fragment parts, finding its uniforms.
+/// Compiles and links a pass from its vertex and fragment parts, for an external picture or not, finding
+/// its uniforms: its samplers by name, with their filtering and target.
 #[allow(unsafe_code)]
-fn build(gl: &ffi::Gles2, (vertex, fragment): (&str, &str), samplers: &[(&str, bool)]) -> Result<Pass, String> {
-    let vs = compile(gl, ffi::VERTEX_SHADER, &format!("{HEADER}#define SMAA_INCLUDE_PS 0\n{SHADER}\n{TRIANGLE}{vertex}"))?;
-    let fs = compile(gl, ffi::FRAGMENT_SHADER, &format!("{HEADER}#define SMAA_INCLUDE_VS 0\n{SHADER}\n{fragment}"))?;
+fn build(gl: &ffi::Gles2, (vertex, fragment): (&str, &str), external: bool, samplers: &[(&str, bool, u32)]) -> Result<Pass, String> {
+    let (version, sampling) = match external {
+        true => ("#version 300 es\n#extension GL_OES_EGL_image_external_essl3 : require\n", SAMPLING_EXTERNAL),
+        false => ("#version 300 es\n", SAMPLING),
+    };
+    let start = format!("{version}{HEADER}{sampling}");
+    // The picture's declarations with its own sampler type.
+    let shader = SHADER.replace("SMAATexture2D(colorTex)", "SAMPLER_colorTex colorTex");
+    let vs = compile(gl, ffi::VERTEX_SHADER, &format!("{start}#define SMAA_INCLUDE_PS 0\n{shader}\n{TRIANGLE}{vertex}"))?;
+    let fs = compile(gl, ffi::FRAGMENT_SHADER, &format!("{start}#define SMAA_INCLUDE_VS 0\n{shader}\n{fragment}"))?;
     // SAFETY: GL on Smithay's current context, with the shaders compiled above.
     unsafe {
         let program = gl.CreateProgram();
@@ -223,7 +296,7 @@ fn build(gl: &ffi::Gles2, (vertex, fragment): (&str, &str), samplers: &[(&str, b
             gl.GetUniformLocation(program, name.as_ptr())
         };
         let metrics = location("rt_metrics");
-        let samplers = samplers.iter().map(|(name, nearest)| (location(name), *nearest)).collect();
+        let samplers = samplers.iter().map(|(name, nearest, target)| (location(name), *nearest, *target)).collect();
         Ok(Pass { program, metrics, samplers })
     }
 }

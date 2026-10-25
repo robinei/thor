@@ -116,7 +116,10 @@ ours.
    the VM), EASU (done, in the final pass), RCAS (done: with Sharpen, EASU goes into a texture kept per
    window, `colour::chain`, and the final pass sharpens it), SMAA (done: the reference implementation's
    three passes, vendored in `colour/smaa/`, as ES 3 programs in Smithay's context, first in the chain;
-   in the VM it doubles the share of in-between tones across vkcube's edges), in that order. Each tested headless against
+   they read the game's buffer as it is, an ordinary texture or an external one, copying it only when its
+   client turned it; SMAA's picture is in bytes for SDR and half floats for HDR; in the VM it nearly triples
+   the share of in-between tones across vkcube's edges), in that order. A window whose passes fail is shown
+   without them, logged once. Not yet tried: an external buffer through SMAA (none in the VM). Each tested headless against
    reference images computed on the CPU (the shaders' arithmetic mirrored, as the curve's is), and by
    eye nested with a game.
 2. **On the device (phase 4 of the compositor plan):** each stage's GPU time on the Adreno at 1080p and

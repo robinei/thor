@@ -182,7 +182,10 @@ impl Pipeline {
             std::mem::swap(&mut self.curves, &mut self.last_curves);
         }
         let replaced = self.chains.run(renderer, elements, |id| {
-            chained.iter().find(|(chained, ..)| chained == id).map(|(_, surface, smaa, upscale)| super::chain::Want { surface, smaa: *smaa, upscale: *upscale })
+            chained.iter().find(|(chained, ..)| chained == id).map(|(id, surface, smaa, upscale)| {
+                let hdr = server.colour.surfaces.get(id).is_some_and(|colour| colour.hdr());
+                super::chain::Want { surface, smaa: *smaa, upscale: *upscale, hdr }
+            })
         })?;
         self.converted.clear();
         for inner in elements.drain(..) {

@@ -36,29 +36,45 @@ struct Chain {
     damage: DamageBag<i32, Buffer>,
 }
 
-/// SMAA's textures for a window: the picture copied out of its buffer, the edges, the blending weights,
-/// and the anti-aliased picture, all at the buffer's size.
+/// SMAA's textures for a window: the edges, the blending weights and the anti-aliased picture, all at the
+/// buffer's size, the picture in half floats for HDR content and in bytes for SDR; and the buffer copied
+/// out, for one that can't be read as it is (see [`Read`]).
 struct SmaaTextures {
-    color: GlesTexture,
     edges: GlesTexture,
     blend: GlesTexture,
     out: GlesTexture,
+    copy: Option<GlesTexture>,
     size: Size<i32, Buffer>,
+    hdr: bool,
+}
+
+/// How SMAA reads a window's buffer: as it is, an ordinary texture or an external one (a dmabuf the GPU
+/// can't render to, as Smithay tells them apart), or copied out first, as Smithay draws it, when neither
+/// is sure (a buffer its client turned, or one neither in shared memory nor a dmabuf).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Read {
+    Ordinary,
+    External,
+    Copy,
 }
 
 #[derive(Default)]
 pub(crate) struct Chains {
     chains: HashMap<Id, Chain>,
-    easu: Option<GlesTexProgram>,
-    smaa: Option<super::smaa::Smaa>,
+    easu: Option<Result<GlesTexProgram, String>>,
+    /// SMAA's programs once made, or why they couldn't be, which isn't tried again.
+    smaa: Option<Result<super::smaa::Smaa, String>>,
+    /// The windows whose passes failed, logged once.
+    failed: std::collections::HashSet<Id>,
 }
 
 /// What a window's surface element needs for its passes: the surface, whose buffer's texture they read,
-/// whether it is anti-aliased, and whether it is upscaled to be sharpened.
+/// whether it is anti-aliased, whether it is upscaled to be sharpened, and whether its content is HDR.
 pub(crate) struct Want<'a> {
     pub surface: &'a WlSurface,
     pub smaa: bool,
     pub upscale: bool,
+    pub hdr: bool,
 }
 
 impl Chains {
@@ -77,32 +93,31 @@ impl Chains {
         for element in elements.iter_mut() {
             let Some(want) = wants(element.id()) else { continue };
             let geometry = element.geometry(Scale::from(1.0));
-            let source =
-                smithay::backend::renderer::utils::with_renderer_surface_state(want.surface, |s| s.texture::<GlesTexture>(renderer.context_id()).cloned())
-                    .flatten();
-            let Some(source) = source.filter(|_| geometry.size.w > 0 && geometry.size.h > 0) else { continue };
+            let context = renderer.context_id();
+            let formats = renderer.egl_context().dmabuf_render_formats();
+            let source = smithay::backend::renderer::utils::with_renderer_surface_state(want.surface, |s| {
+                Some((s.texture::<GlesTexture>(context)?.clone(), read(s, formats)))
+            })
+            .flatten();
+            let Some((source, read)) = source.filter(|_| geometry.size.w > 0 && geometry.size.h > 0) else { continue };
             let id = element.id().clone();
             let commit = element.current_commit();
             let shown: Size<i32, Buffer> = (geometry.size.w, geometry.size.h).into();
             let mut chain = self.chains.remove(&id).unwrap_or(Chain { smaa: None, upscaled: None, size: shown, commit: None, damage: DamageBag::default() });
-            let source_size = source.size();
-            // The textures as the settings and sizes need them now; any that change are drawn again.
-            if want.smaa != chain.smaa.is_some() || chain.smaa.as_ref().is_some_and(|t| t.size != source_size) {
-                chain.smaa = want.smaa.then(|| smaa_textures(renderer, source_size)).transpose()?;
-                chain.commit = None;
+            // SMAA's picture is in the buffer's own orientation: one upside down is turned when shown.
+            let flipped = read != Read::Copy && source.is_y_inverted();
+            // A window whose passes fail is shown without them, as its buffer is; the failure is logged
+            // once, and again only after they have worked.
+            if let Err(error) = self.prepare(renderer, &mut chain, &want, &source, read, flipped, shown, commit) {
+                if self.failed.insert(id.clone()) {
+                    log::warn!("compositor: a window's picture passes failed, shown without them: {error}");
+                }
+                continue;
             }
-            let upscaled_size = chain.upscaled.as_ref().map(|t| t.size());
-            if want.upscale != upscaled_size.is_some() || upscaled_size.is_some_and(|size| size != shown) {
-                chain.upscaled = want.upscale.then(|| renderer.create_buffer(Fourcc::Abgr16161616f, shown)).transpose()?;
-                chain.commit = None;
-            }
-            if chain.commit != Some(commit) {
-                self.draw(renderer, &mut chain, &source)?;
-                chain.commit = Some(commit);
-            }
-            let texture = match (&chain.upscaled, &chain.smaa) {
-                (Some(texture), _) => texture.clone(),
-                (None, Some(smaa)) => smaa.out.clone(),
+            self.failed.remove(&id);
+            let (texture, transform) = match (&chain.upscaled, &chain.smaa) {
+                (Some(texture), _) => (texture.clone(), Transform::Normal),
+                (None, Some(smaa)) => (smaa.out.clone(), if flipped { Transform::Flipped180 } else { Transform::Normal }),
                 (None, None) => continue,
             };
             *element = Element::Ui(TextureRenderElement::from_texture_with_damage(
@@ -111,7 +126,7 @@ impl Chains {
                 geometry.loc.to_f64(),
                 texture,
                 1,
-                Transform::Normal,
+                transform,
                 None,
                 None,
                 Some((geometry.size.w, geometry.size.h).into()),
@@ -129,32 +144,78 @@ impl Chains {
         Ok(upscaled)
     }
 
-    /// Draws a window's passes from its buffer's texture `source`: SMAA, then the upscale, each if wanted.
-    fn draw(&mut self, renderer: &mut GlesRenderer, chain: &mut Chain, source: &GlesTexture) -> Result<(), Error> {
+    /// Makes a window's textures as its settings and sizes need them now, and draws its passes when they
+    /// changed or its buffer did.
+    #[allow(clippy::too_many_arguments)]
+    fn prepare(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        chain: &mut Chain,
+        want: &Want<'_>,
+        source: &GlesTexture,
+        read: Read,
+        flipped: bool,
+        shown: Size<i32, Buffer>,
+        commit: CommitCounter,
+    ) -> Result<(), Error> {
+        let source_size = source.size();
+        let smaa_now = chain.smaa.as_ref().map(|t| (t.size, t.hdr, t.copy.is_some()));
+        if want.smaa != smaa_now.is_some() || smaa_now.is_some_and(|now| now != (source_size, want.hdr, read == Read::Copy)) {
+            chain.smaa = None;
+            chain.commit = None;
+            chain.smaa = want.smaa.then(|| smaa_textures(renderer, source_size, want.hdr, read == Read::Copy)).transpose()?;
+        }
+        let upscaled_size = chain.upscaled.as_ref().map(|t| t.size());
+        if want.upscale != upscaled_size.is_some() || upscaled_size.is_some_and(|size| size != shown) {
+            chain.upscaled = None;
+            chain.commit = None;
+            chain.upscaled = want.upscale.then(|| renderer.create_buffer(Fourcc::Abgr16161616f, shown)).transpose()?;
+        }
+        if chain.commit != Some(commit) {
+            chain.commit = None;
+            self.draw(renderer, chain, source, read, flipped)?;
+            chain.commit = Some(commit);
+        }
+        Ok(())
+    }
+
+    /// Draws a window's passes from its buffer's texture `source`, read as `read` (and upside down if
+    /// `flipped`): SMAA, then the upscale, each if wanted.
+    fn draw(&mut self, renderer: &mut GlesRenderer, chain: &mut Chain, source: &GlesTexture, read: Read, flipped: bool) -> Result<(), Error> {
         let mut input = source.clone();
+        let mut input_turn = Transform::Normal;
         if let Some(t) = &mut chain.smaa {
             if self.smaa.is_none() {
-                self.smaa = Some(super::smaa::Smaa::new(renderer)?);
+                self.smaa = Some(super::smaa::Smaa::new(renderer).map_err(|e| e.to_string()));
             }
-            // SMAA reads an ordinary texture: the buffer's copied out first, as Smithay draws it (its own
-            // program takes external and turned buffers).
-            copy(renderer, &mut t.color, source)?;
-            if let Some(smaa) = &self.smaa {
-                smaa.run(renderer, &t.color, &t.edges, &t.blend, &t.out, (t.size.w, t.size.h))?;
+            let color = match &mut t.copy {
+                Some(copy) => {
+                    render(renderer, copy, source, None, Transform::Normal)?;
+                    copy.clone()
+                }
+                None => source.clone(),
+            };
+            match &mut self.smaa {
+                Some(Ok(smaa)) => smaa.run(renderer, (&color, read == Read::External), [&t.edges, &t.blend, &t.out], (t.size.w, t.size.h))?,
+                Some(Err(error)) => return Err(error.clone().into()),
+                None => {}
             }
             input = t.out.clone();
+            if flipped {
+                input_turn = Transform::Flipped180;
+            }
         }
         if let Some(target) = &mut chain.upscaled {
+            if self.easu.is_none() {
+                self.easu = Some(easu_program(renderer).map_err(|e| e.to_string()));
+            }
             let program = match &self.easu {
-                Some(program) => program.clone(),
-                None => {
-                    let program = easu_program(renderer)?;
-                    self.easu = Some(program.clone());
-                    program
-                }
+                Some(Ok(program)) => program.clone(),
+                Some(Err(error)) => return Err(error.clone().into()),
+                None => return Ok(()),
             };
             let texel = [1.0 / input.size().w as f32, 1.0 / input.size().h as f32];
-            render(renderer, target, &input, Some((&program, [Uniform::new("clarity", [texel[0], texel[1], 0.0, 2.0])])))?;
+            render(renderer, target, &input, Some((&program, [Uniform::new("clarity", [texel[0], texel[1], 0.0, 2.0])])), input_turn)?;
         }
         chain.size = chain.upscaled.as_ref().map_or_else(|| chain.smaa.as_ref().map_or(chain.size, |t| t.size), |t| t.size());
         chain.damage.add([Rectangle::from_size(chain.size)]);
@@ -162,29 +223,47 @@ impl Chains {
     }
 }
 
-/// SMAA's textures at `size`: the copied picture and the result in half floats, as the scene is, the edges
-/// and the weights in bytes, as SMAA's own are.
-fn smaa_textures(renderer: &mut GlesRenderer, size: Size<i32, Buffer>) -> Result<SmaaTextures, Error> {
+/// SMAA's textures at `size`: the edges and weights in bytes, as SMAA's own are; the picture, and the copy
+/// of the buffer if it takes one, in half floats for HDR content, as the scene is, else in bytes.
+fn smaa_textures(renderer: &mut GlesRenderer, size: Size<i32, Buffer>, hdr: bool, copy: bool) -> Result<SmaaTextures, Error> {
+    let picture = if hdr { Fourcc::Abgr16161616f } else { Fourcc::Abgr8888 };
     Ok(SmaaTextures {
-        color: renderer.create_buffer(Fourcc::Abgr16161616f, size)?,
         edges: renderer.create_buffer(Fourcc::Abgr8888, size)?,
         blend: renderer.create_buffer(Fourcc::Abgr8888, size)?,
-        out: renderer.create_buffer(Fourcc::Abgr16161616f, size)?,
+        out: renderer.create_buffer(picture, size)?,
+        copy: copy.then(|| renderer.create_buffer(picture, size)).transpose()?,
         size,
+        hdr,
     })
 }
 
-/// `source` copied into `target` as Smithay draws a texture.
-fn copy(renderer: &mut GlesRenderer, target: &mut GlesTexture, source: &GlesTexture) -> Result<(), Error> {
-    render(renderer, target, source, None)
+/// How SMAA reads the buffer of a surface whose state is `state` (see [`Read`]), `formats` the dmabuf
+/// formats the GPU renders to.
+fn read(state: &smithay::backend::renderer::utils::RendererSurfaceState, formats: &smithay::backend::allocator::format::FormatSet) -> Read {
+    use smithay::backend::renderer::{BufferType, buffer_type};
+    if state.buffer_transform() != Transform::Normal {
+        return Read::Copy;
+    }
+    let Some(buffer) = state.buffer() else { return Read::Copy };
+    match buffer_type(buffer) {
+        Some(BufferType::Shm) => Read::Ordinary,
+        Some(BufferType::Dma) => match smithay::wayland::dmabuf::get_dmabuf(buffer) {
+            Ok(dmabuf) if formats.contains(&smithay::backend::allocator::Buffer::format(dmabuf)) => Read::Ordinary,
+            Ok(_) => Read::External,
+            Err(_) => Read::Copy,
+        },
+        _ => Read::Copy,
+    }
 }
 
-/// `source` drawn over all of `target`, by `program` with its uniform, or as Smithay draws a texture.
+/// `source`, turned by `turn`, drawn over all of `target`, by `program` with its uniform, or as Smithay
+/// draws a texture.
 fn render(
     renderer: &mut GlesRenderer,
     target: &mut GlesTexture,
     source: &GlesTexture,
     program: Option<(&GlesTexProgram, [Uniform<'static>; 1])>,
+    turn: Transform,
 ) -> Result<(), Error> {
     let size = target.size();
     let size = (size.w, size.h).into();
@@ -196,7 +275,7 @@ fn render(
         Some((program, uniforms)) => (Some(*program), uniforms.as_slice()),
         None => (None, &[][..]),
     };
-    frame.render_texture_from_to(source, Rectangle::from_size(source.size()).to_f64(), whole, &[whole], &[], Transform::Normal, 1.0, program, uniforms)?;
+    frame.render_texture_from_to(source, Rectangle::from_size(source.size()).to_f64(), whole, &[whole], &[], turn, 1.0, program, uniforms)?;
     drop(frame.finish()?);
     Ok(())
 }
