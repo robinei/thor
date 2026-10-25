@@ -602,8 +602,14 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
          panels mounted turned (the Thor's), rotated with the output; ClamShell's package built with the
          compositor (its libraries in the aarch64 sysroot). The render device's dmabuf feedback is sent;
          the scanout tranche waits for direct scanout (phase 4).
-   - [ ] The session's services under the compositor (udiskie; notifications are phase 6), and the
-         watchdog and restart that clamshell.service gives under sway.
+   - [x] The session's services under the compositor (udiskie; notifications are phase 6), and the
+         watchdog and restart that clamshell.service gives under sway. Done: thor-session starts
+         `clamshell --drm` through uwsm, as sway (`uwsm start`); ClamShell runs `uwsm finalize` once it
+         listens, which gives the user manager WAYLAND_DISPLAY and DISPLAY and brings up
+         graphical-session.target, so udiskie starts; clamshell.service and thor-mako.service start only in
+         sway's session (`ConditionEnvironment=XDG_SESSION_DESKTOP=sway`). No watchdog or systemd restart:
+         a compositor restarting takes every window with it, so thor-session's count (3 ends within 2
+         minutes) stays the guard. Tried in the VM, both sessions.
    - [x] Frame statistics and the cap ("Frame statistics and limiting", section 3) on the DRM backend's
          page-flip timestamps: the per-window ring, the FPS tile and system info reading it, the cap
          pacing frame callbacks with FIFO forced at launch, the HUD as an overlay element; MangoHud not

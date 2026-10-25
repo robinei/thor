@@ -183,14 +183,22 @@ settled() {
     local uid
     uid=$(id -u "$USER_NAME" 2> /dev/null)
     check "a session for $USER_NAME" bash -c "loginctl list-sessions --no-legend | grep -qw $USER_NAME"
-    check "sway running" pgrep -u "$USER_NAME" -x sway
+    # The session's units: ClamShell's compositor as uwsm's main unit, or sway with ClamShell and mako
+    # beside it (/etc/thor/session); udiskie in both.
+    local units
+    if [ "$(cat /etc/thor/session 2> /dev/null)" = clamshell ]; then
+        units="wayland-wm@clamshell thor-udiskie"
+    else
+        check "sway running" pgrep -u "$USER_NAME" -x sway
+        units="clamshell thor-mako thor-udiskie"
+        [ -n "$uid" ] && check "sway's outputs written (thor-outputs)" test -s "/run/user/$uid/thor-outputs.conf"
+    fi
     if [ -n "$uid" ] && [ -d "/run/user/$uid" ]; then
         local unit
-        for unit in clamshell thor-mako; do
+        for unit in $units; do
             check "$unit active" runuser -u "$USER_NAME" -- env XDG_RUNTIME_DIR="/run/user/$uid" systemctl --user is-active -q "$unit"
         done
     fi
-    [ -n "$uid" ] && check "sway's outputs written (thor-outputs)" test -s "/run/user/$uid/thor-outputs.conf"
 
     # Sleep so far.
     [ -r /var/log/thor-wake.log ] && info "last wakes: $(tail -n 3 /var/log/thor-wake.log | tr '\n' ';')"

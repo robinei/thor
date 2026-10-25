@@ -2,6 +2,8 @@
 Description=mako, the notifications (ClamShell's low battery warning, apps'), on the main screen
 PartOf=graphical-session.target
 After=graphical-session.target
+# Only in sway's session: ClamShell's compositor has no layer-shell for it (its own notices come later).
+ConditionEnvironment=XDG_SESSION_DESKTOP=sway
 
 [Service]
 Type=dbus

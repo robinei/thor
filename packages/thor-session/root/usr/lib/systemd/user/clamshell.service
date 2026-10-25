@@ -6,6 +6,8 @@ After=graphical-session.target
 StartLimitIntervalSec=60
 StartLimitBurst=4
 OnFailure=clamshell-failed.service
+# Only in sway's session: in its own compositor's (clamshell --drm, uwsm's main unit), ClamShell is that.
+ConditionEnvironment=XDG_SESSION_DESKTOP=sway
 
 [Service]
 # Up once its screens are drawn; its main loop says it turns, and one that stops for 30 s (hung) is
