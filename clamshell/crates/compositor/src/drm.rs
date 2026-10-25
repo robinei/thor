@@ -5,7 +5,6 @@
 //! feedback clients get.
 
 use std::cell::RefCell;
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -94,7 +93,7 @@ struct Chosen {
 pub fn run(
     state: State,
     mut config: Config,
-    start: impl FnOnce(EventSender, PathBuf),
+    start: impl FnOnce(EventSender, crate::Displays),
     on_effect: impl FnMut(&Effect) + 'static,
     identify: impl Fn(u32) -> Process + 'static,
     on_capture: impl FnMut(Result<crate::Capture, String>) + 'static,

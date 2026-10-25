@@ -6,3 +6,4 @@ pub mod clipboard;
 pub(crate) mod icons;
 pub(crate) mod notify;
 pub mod tray;
+pub mod uwsm;

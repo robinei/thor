@@ -69,9 +69,10 @@ fn carry_out(command: Command) -> Result<(), String> {
         Command::Drm => {
             #[cfg(feature = "compositor")]
             {
-                // ClamShell is the session here, as under sway, but sway isn't there.
+                // ClamShell is the device's session here, as under sway, but sway isn't there.
                 let mut env = env;
                 env.sway = None;
+                env.device_session = true;
                 session::run_drm(&env, paths, &sources)
             }
             #[cfg(not(feature = "compositor"))]

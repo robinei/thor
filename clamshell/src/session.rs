@@ -145,7 +145,13 @@ fn run_host(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Result<()
                 handles.save_screenshot(captured.map(|capture| wiring::ScreenshotPixels { size: capture.size, rgba: capture.rgba }));
             }
         };
-        let start = |sender, display| start(sender, Some(display));
+        let start = |sender, displays: clamshell_compositor::Displays| {
+            // On the screens, ClamShell is uwsm's compositor unit, as sway is.
+            if host == Host::Drm {
+                clamshell_system::session::uwsm::finalize(&displays.wayland, &displays.x11);
+            }
+            start(sender, Some(displays.socket));
+        };
         let result = if host == Host::Drm {
             clamshell_compositor::run_drm(state, config, start, on_effect, identify, on_capture)
         } else {

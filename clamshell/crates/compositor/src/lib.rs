@@ -34,6 +34,15 @@ pub use server::Process;
 #[cfg(test)]
 mod tests;
 
+/// Where clients reach the compositor, for the system threads once it listens.
+pub struct Displays {
+    /// The Wayland socket's path, and its name (WAYLAND_DISPLAY).
+    pub socket: std::path::PathBuf,
+    pub wayland: String,
+    /// Xwayland's display (DISPLAY).
+    pub x11: String,
+}
+
 /// An opaque SDR capture of the presented scene, with the top row first.
 pub struct Capture {
     pub size: (u32, u32),

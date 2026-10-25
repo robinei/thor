@@ -67,12 +67,13 @@ impl Base {
     /// Starts Xwayland's socket, the system threads (`start`, with the socket's path) and the state, then
     /// runs the loop until the server exits. After each turn, `host` does its part (drawing what changed)
     /// and says when it next needs a turn.
-    pub fn run(self, start: impl FnOnce(EventSender, std::path::PathBuf), mut host: impl FnMut(&mut Server, Instant) -> Option<Instant>) -> Result<(), Error> {
+    pub fn run(self, start: impl FnOnce(EventSender, crate::Displays), mut host: impl FnMut(&mut Server, Instant) -> Option<Instant>) -> Result<(), Error> {
         let Base { mut event_loop, mut server, sender } = self;
         let mut x11 = crate::x11::Supervisor::new(event_loop.handle())?;
         server.x11_display = Some(x11.display());
         let runtime = std::env::var_os("XDG_RUNTIME_DIR").ok_or("compositor: XDG_RUNTIME_DIR is missing")?;
-        start(sender, std::path::PathBuf::from(runtime).join(&server.socket));
+        let socket = std::path::PathBuf::from(runtime).join(&server.socket);
+        start(sender, crate::Displays { socket, wayland: server.socket.clone(), x11: x11.display() });
         server.core.handle(Event::Start);
         let mut host_deadline = None;
         while !server.exit {

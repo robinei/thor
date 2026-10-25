@@ -24,7 +24,7 @@ use crate::{
 pub fn run(
     state: State,
     config: Config,
-    start: impl FnOnce(EventSender, std::path::PathBuf),
+    start: impl FnOnce(EventSender, crate::Displays),
     on_effect: impl FnMut(&Effect) + 'static,
     identify: impl Fn(u32) -> Process + 'static,
     mut on_capture: impl FnMut(Result<crate::Capture, String>) + 'static,
