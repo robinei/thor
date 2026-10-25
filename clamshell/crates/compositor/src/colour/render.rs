@@ -31,6 +31,8 @@ pub(crate) struct Pipeline {
     /// redraws the scene, since the surfaces themselves didn't.
     curves: Vec<(Id, Look)>,
     last_curves: Vec<(Id, Look)>,
+    /// The windows whose pictures take passes before the scene (FSR with sharpening), and their textures.
+    chains: super::chain::Chains,
 }
 
 /// How a window's surface is shown: the HDR curve of the game running it (or none), the headroom of its
@@ -114,6 +116,7 @@ impl Pipeline {
             first: true,
             curves: Vec::new(),
             last_curves: Vec::new(),
+            chains: Default::default(),
         })
     }
     /// Each screen's encoding: the top's, then the second's.
@@ -152,6 +155,9 @@ impl Pipeline {
             self.revision = server.colour.revision;
         }
         self.curves.clear();
+        // The windows' own surfaces whose pictures take FSR's upscale before the scene, so that the final
+        // pass can sharpen what it upscaled, with a texel of their buffers.
+        let mut chained: Vec<(Id, smithay::reexports::wayland_server::protocol::wl_surface::WlSurface, [f32; 2])> = Vec::new();
         let state = server.core.state();
         for client in server.windows.iter().filter(|client| client.mapped && server.visible(client.id)) {
             let curve = state.window_curve(client.id);
@@ -164,12 +170,22 @@ impl Pipeline {
                 let buffer = renderer_state.and_then(|state| state.lock().ok()?.buffer_size()).map_or((0, 0), |size| (size.w, size.h));
                 self.curves.push((Id::from_wayland_resource(surface), Look { curve, headroom, clarity, buffer }));
             });
+            let fsr = clarity.scaling == clamshell_state::settings::Scaling::Fsr && clarity.sharpen > 0;
+            if let (true, Some(root)) = (fsr, client.window.root()) {
+                let look = self.curves.iter().rev().find(|(id, _)| *id == Id::from_wayland_resource(&root)).map(|(_, look)| look.buffer);
+                if let Some((w, h)) = look.filter(|(w, h)| *w > 0 && *h > 0) {
+                    chained.push((Id::from_wayland_resource(&root), root, [1.0 / w as f32, 1.0 / h as f32]));
+                }
+            }
         }
         if self.curves != self.last_curves {
             self.damage = OutputDamageTracker::new(self.size, 1.0, Transform::Normal);
             self.first = true;
             std::mem::swap(&mut self.curves, &mut self.last_curves);
         }
+        let replaced = self.chains.run(renderer, elements, |id| {
+            chained.iter().find(|(chained, _, _)| chained == id).map(|(_, surface, texel)| super::chain::Want { surface, texel: *texel })
+        })?;
         self.converted.clear();
         for inner in elements.drain(..) {
             let colour = server.colour.surfaces.get(inner.id()).map(|colour| **colour).unwrap_or_default();
@@ -182,7 +198,12 @@ impl Pipeline {
             });
             let curve = (sdr(colour) || hdr(colour)).then(|| {
                 let [a, b] = curve_uniforms(curve, headroom, peak);
-                [a, b, look.map_or([0.0; 4], |look| clarity_uniform(look.clarity, look.buffer))]
+                // A picture the chain upscaled is sharpened one texel to a pixel (RCAS).
+                let clarity = match replaced.iter().find(|(id, _)| id == inner.id()) {
+                    Some((_, [x, y])) => [*x, *y, look.map_or(0.0, |look| f32::from(look.clarity.sharpen.min(100)) / 100.0), 3.0],
+                    None => look.map_or([0.0; 4], |look| clarity_uniform(look.clarity, look.buffer)),
+                };
+                [a, b, clarity]
             });
             let program = match self.shaders.iter().find(|(description, _)| *description == colour) {
                 Some((_, program)) => program.clone(),
@@ -270,7 +291,8 @@ fn hdr(description: ColourDescription) -> bool {
 }
 
 /// A window's clarity as the input shaders' uniform: one texel of its buffer across and down, the
-/// sharpening's strength (0 to 1), and how it is sampled (0 bilinear, 1 nearest, 2 FSR's upscale).
+/// sharpening's strength (0 to 1), and how it is sampled (0 bilinear, 1 nearest, 2 FSR's upscale; 3, from
+/// the chain, FSR's sharpening of what it upscaled, see [`super::chain`]).
 /// Nothing without a buffer's size.
 fn clarity_uniform(clarity: clamshell_state::session::presentation::Clarity, (w, h): (i32, i32)) -> [f32; 4] {
     use clamshell_state::settings::Scaling;
@@ -300,6 +322,133 @@ fn curve_uniforms(curve: Option<&Curve>, headroom: f32, hdr_peak: Option<f32>) -
         [white / REFERENCE_NITS as f32, f32::from(c.saturation) / 100.0, headroom, 1.0],
     ]
 }
+
+/// FSR 1's upscale (EASU) of a picture, with the GLSL it needs, on the texture `tex` whose texel size is
+/// `clarity.xy` (see [`clarity_uniform`]): the twelve texels around each pixel, weighed along the edge their
+/// luma shows and kept within the four nearest (as `easu` in the tests). It works on the signal, before
+/// decoding.
+pub(super) const EASU_GLSL: &str = "vec4 texel(vec2 at) { return texture2D(tex, (at + 0.5) * clarity.xy); }
+float luma(vec3 c) { return c.b * 0.5 + c.r * 0.5 + c.g; }
+void easu_set(inout vec2 dir, inout float len, float w, float a, float b, float c, float d, float e) {
+    float dc = d - c;
+    float cb = c - b;
+    float lx = 1.0 / max(max(abs(dc), abs(cb)), 0.000001);
+    float dx = d - b;
+    dir.x += dx * w;
+    lx = clamp(abs(dx) * lx, 0.0, 1.0);
+    len += lx * lx * w;
+    float ec = e - c;
+    float ca = c - a;
+    float ly = 1.0 / max(max(abs(ec), abs(ca)), 0.000001);
+    float dy = e - a;
+    dir.y += dy * w;
+    ly = clamp(abs(dy) * ly, 0.0, 1.0);
+    len += ly * ly * w;
+}
+void easu_tap(inout vec3 ac, inout float aw, vec2 off, vec2 dir, vec2 len2, float lob, float clp, vec3 c) {
+    vec2 v = vec2(off.x * dir.x + off.y * dir.y, off.x * -dir.y + off.y * dir.x) * len2;
+    float d2 = min(v.x * v.x + v.y * v.y, clp);
+    float wb = 0.4 * d2 - 1.0;
+    float wa = lob * d2 - 1.0;
+    wb *= wb;
+    wa *= wa;
+    float w = (1.5625 * wb - 0.5625) * wa;
+    ac += c * w;
+    aw += w;
+}
+vec4 easu() {
+    vec2 pp = v_coords / clarity.xy - 0.5;
+    vec2 fp = floor(pp);
+    pp -= fp;
+    vec3 b = texel(fp + vec2(0.0, -1.0)).rgb; vec3 c = texel(fp + vec2(1.0, -1.0)).rgb;
+    vec3 e = texel(fp + vec2(-1.0, 0.0)).rgb; vec4 f4 = texel(fp); vec3 f = f4.rgb;
+    vec3 g = texel(fp + vec2(1.0, 0.0)).rgb; vec3 h = texel(fp + vec2(2.0, 0.0)).rgb;
+    vec3 i = texel(fp + vec2(-1.0, 1.0)).rgb; vec3 j = texel(fp + vec2(0.0, 1.0)).rgb;
+    vec3 k = texel(fp + vec2(1.0, 1.0)).rgb; vec3 l = texel(fp + vec2(2.0, 1.0)).rgb;
+    vec3 n = texel(fp + vec2(0.0, 2.0)).rgb; vec3 o = texel(fp + vec2(1.0, 2.0)).rgb;
+    float bl = luma(b); float cl = luma(c); float el = luma(e); float fl = luma(f);
+    float gl = luma(g); float hl = luma(h); float il = luma(i); float jl = luma(j);
+    float kl = luma(k); float ll = luma(l); float nl = luma(n); float ol = luma(o);
+    vec2 dir = vec2(0.0);
+    float len = 0.0;
+    easu_set(dir, len, (1.0 - pp.x) * (1.0 - pp.y), bl, el, fl, gl, jl);
+    easu_set(dir, len, pp.x * (1.0 - pp.y), cl, fl, gl, hl, kl);
+    easu_set(dir, len, (1.0 - pp.x) * pp.y, fl, il, jl, kl, nl);
+    easu_set(dir, len, pp.x * pp.y, gl, jl, kl, ll, ol);
+    float dr = dir.x * dir.x + dir.y * dir.y;
+    bool zero = dr < 1.0 / 32768.0;
+    dr = zero ? 1.0 : inversesqrt(dr);
+    dir.x = zero ? 1.0 : dir.x;
+    dir *= dr;
+    len = len * 0.5;
+    len *= len;
+    float stretch = (dir.x * dir.x + dir.y * dir.y) / max(abs(dir.x), abs(dir.y));
+    vec2 len2 = vec2(1.0 + (stretch - 1.0) * len, 1.0 - 0.5 * len);
+    float lob = 0.5 + (0.25 - 0.04 - 0.5) * len;
+    float clp = 1.0 / lob;
+    vec3 ac = vec3(0.0);
+    float aw = 0.0;
+    easu_tap(ac, aw, vec2(0.0, -1.0) - pp, dir, len2, lob, clp, b);
+    easu_tap(ac, aw, vec2(1.0, -1.0) - pp, dir, len2, lob, clp, c);
+    easu_tap(ac, aw, vec2(-1.0, 1.0) - pp, dir, len2, lob, clp, i);
+    easu_tap(ac, aw, vec2(0.0, 1.0) - pp, dir, len2, lob, clp, j);
+    easu_tap(ac, aw, vec2(0.0, 0.0) - pp, dir, len2, lob, clp, f);
+    easu_tap(ac, aw, vec2(-1.0, 0.0) - pp, dir, len2, lob, clp, e);
+    easu_tap(ac, aw, vec2(1.0, 1.0) - pp, dir, len2, lob, clp, k);
+    easu_tap(ac, aw, vec2(2.0, 1.0) - pp, dir, len2, lob, clp, l);
+    easu_tap(ac, aw, vec2(2.0, 0.0) - pp, dir, len2, lob, clp, h);
+    easu_tap(ac, aw, vec2(1.0, 0.0) - pp, dir, len2, lob, clp, g);
+    easu_tap(ac, aw, vec2(1.0, 2.0) - pp, dir, len2, lob, clp, o);
+    easu_tap(ac, aw, vec2(0.0, 2.0) - pp, dir, len2, lob, clp, n);
+    vec3 lo = min(min(f, g), min(j, k));
+    vec3 hi = max(max(f, g), max(j, k));
+    return vec4(clamp(ac / aw, lo, hi), f4.a);
+}
+";
+
+/// FSR 1's sharpening (RCAS) of what EASU upscaled, one texel to a pixel (`clarity.xy` its texel size,
+/// `clarity.z` the strength, 0 to 1, as AMD's sharpness from 2 stops down to none): a negative lobe from the
+/// four texels around, limited so that it never rings beyond them (as `rcas` in the tests).
+const RCAS_GLSL: &str = "vec4 rcas() {
+    vec4 e4 = texture2D(tex, v_coords);
+    vec3 e = e4.rgb;
+    vec3 b = texture2D(tex, v_coords - vec2(0.0, clarity.y)).rgb;
+    vec3 h = texture2D(tex, v_coords + vec2(0.0, clarity.y)).rgb;
+    vec3 d = texture2D(tex, v_coords - vec2(clarity.x, 0.0)).rgb;
+    vec3 f = texture2D(tex, v_coords + vec2(clarity.x, 0.0)).rgb;
+    vec3 mn4 = min(min(b, d), min(f, h));
+    vec3 mx4 = max(max(b, d), max(f, h));
+    vec3 hit_min = min(mn4, e) / max(4.0 * mx4, vec3(0.000001));
+    vec3 hit_max = (1.0 - max(mx4, e)) / min(4.0 * mn4 - 4.0, vec3(-0.000001));
+    vec3 lobes = max(-hit_min, hit_max);
+    float lobe = max(-0.1875, min(max(max(lobes.r, lobes.g), lobes.b), 0.0)) * exp2(-2.0 * (1.0 - clarity.z));
+    return vec4((lobe * (b + d + f + h) + e) / (4.0 * lobe + 1.0), e4.a);
+}
+";
+
+/// A window's picture as the final pass samples it, before decoding (see [`clarity_uniform`]): RCAS on
+/// EASU's texture, EASU itself, or nearest (snapped to the centre of a texel) or bilinear, sharpened then by
+/// AMD's CAS on the four texels around, with the weight it adapts to their contrast, kept within the
+/// signal's range, or for linear light within the brightest of them (as `cas` in the tests).
+const FETCH_GLSL: &str = "vec4 fetch() {
+    if (clarity.w > 2.5) { return rcas(); }
+    if (clarity.w > 1.5) { return easu(); }
+    vec2 uv = v_coords;
+    if (clarity.w > 0.5) { uv = (floor(uv / clarity.xy) + 0.5) * clarity.xy; }
+    vec4 e = texture2D(tex, uv);
+    if (clarity.z > 0.0) {
+        vec3 b = texture2D(tex, uv - vec2(0.0, clarity.y)).rgb;
+        vec3 h = texture2D(tex, uv + vec2(0.0, clarity.y)).rgb;
+        vec3 d = texture2D(tex, uv - vec2(clarity.x, 0.0)).rgb;
+        vec3 f = texture2D(tex, uv + vec2(clarity.x, 0.0)).rgb;
+        vec3 mn = min(min(min(d, e.rgb), min(f, b)), h);
+        vec3 mx = max(max(max(d, e.rgb), max(f, b)), h);
+        vec3 amp = sqrt(clamp(min(mn, 2.0 - mx) / max(mx, vec3(0.00001)), 0.0, 1.0));
+        vec3 w = amp * (-1.0 / mix(8.0, 5.0, clarity.z));
+        e.rgb = clamp(((b + d + f + h) * w + e.rgb) / (1.0 + 4.0 * w), vec3(0.0), max(mx, vec3(1.0)));
+    }
+    return e;
+}";
 
 fn shader(renderer: &mut GlesRenderer, description: ColourDescription, input: bool) -> Result<GlesTexProgram, Error> {
     let (from, to) = if input { (description.primaries, ColourPrimaries::Bt2020) } else { (ColourPrimaries::Bt2020, description.primaries) };
@@ -379,111 +528,7 @@ fn shader(renderer: &mut GlesRenderer, description: ColourDescription, input: bo
         format!("v = matrix * v; v /= {scaling:.12}; float m = max(max(v.r, v.g), v.b); if (m > 1.0) {{ v /= m; }} v = convert(v);")
     };
     let uniforms = if curved { "uniform vec4 curve_a;\nuniform vec4 curve_b;\nuniform vec4 clarity;" } else { "" };
-    // A window's picture as it is sampled, before decoding (see [`clarity_uniform`]): nearest snaps to the
-    // centre of one of its texels; FSR 1's upscale (EASU) weighs the twelve texels around along the edge
-    // their luma shows, kept within the four nearest (as `easu` in the tests); sharpening is AMD's CAS on
-    // the four texels around, with the weight it adapts to their contrast, kept within the signal's range,
-    // or for linear light within the brightest of them (as `cas` in the tests). With FSR, its own
-    // sharpening comes after, on what it upscaled.
-    let fetch = if curved {
-        "vec4 texel(vec2 at) { return texture2D(tex, (at + 0.5) * clarity.xy); }
-float luma(vec3 c) { return c.b * 0.5 + c.r * 0.5 + c.g; }
-void easu_set(inout vec2 dir, inout float len, float w, float a, float b, float c, float d, float e) {
-    float dc = d - c;
-    float cb = c - b;
-    float lx = 1.0 / max(max(abs(dc), abs(cb)), 0.000001);
-    float dx = d - b;
-    dir.x += dx * w;
-    lx = clamp(abs(dx) * lx, 0.0, 1.0);
-    len += lx * lx * w;
-    float ec = e - c;
-    float ca = c - a;
-    float ly = 1.0 / max(max(abs(ec), abs(ca)), 0.000001);
-    float dy = e - a;
-    dir.y += dy * w;
-    ly = clamp(abs(dy) * ly, 0.0, 1.0);
-    len += ly * ly * w;
-}
-void easu_tap(inout vec3 ac, inout float aw, vec2 off, vec2 dir, vec2 len2, float lob, float clp, vec3 c) {
-    vec2 v = vec2(off.x * dir.x + off.y * dir.y, off.x * -dir.y + off.y * dir.x) * len2;
-    float d2 = min(v.x * v.x + v.y * v.y, clp);
-    float wb = 0.4 * d2 - 1.0;
-    float wa = lob * d2 - 1.0;
-    wb *= wb;
-    wa *= wa;
-    float w = (1.5625 * wb - 0.5625) * wa;
-    ac += c * w;
-    aw += w;
-}
-vec4 easu() {
-    vec2 pp = v_coords / clarity.xy - 0.5;
-    vec2 fp = floor(pp);
-    pp -= fp;
-    vec3 b = texel(fp + vec2(0.0, -1.0)).rgb; vec3 c = texel(fp + vec2(1.0, -1.0)).rgb;
-    vec3 e = texel(fp + vec2(-1.0, 0.0)).rgb; vec4 f4 = texel(fp); vec3 f = f4.rgb;
-    vec3 g = texel(fp + vec2(1.0, 0.0)).rgb; vec3 h = texel(fp + vec2(2.0, 0.0)).rgb;
-    vec3 i = texel(fp + vec2(-1.0, 1.0)).rgb; vec3 j = texel(fp + vec2(0.0, 1.0)).rgb;
-    vec3 k = texel(fp + vec2(1.0, 1.0)).rgb; vec3 l = texel(fp + vec2(2.0, 1.0)).rgb;
-    vec3 n = texel(fp + vec2(0.0, 2.0)).rgb; vec3 o = texel(fp + vec2(1.0, 2.0)).rgb;
-    float bl = luma(b); float cl = luma(c); float el = luma(e); float fl = luma(f);
-    float gl = luma(g); float hl = luma(h); float il = luma(i); float jl = luma(j);
-    float kl = luma(k); float ll = luma(l); float nl = luma(n); float ol = luma(o);
-    vec2 dir = vec2(0.0);
-    float len = 0.0;
-    easu_set(dir, len, (1.0 - pp.x) * (1.0 - pp.y), bl, el, fl, gl, jl);
-    easu_set(dir, len, pp.x * (1.0 - pp.y), cl, fl, gl, hl, kl);
-    easu_set(dir, len, (1.0 - pp.x) * pp.y, fl, il, jl, kl, nl);
-    easu_set(dir, len, pp.x * pp.y, gl, jl, kl, ll, ol);
-    float dr = dir.x * dir.x + dir.y * dir.y;
-    bool zero = dr < 1.0 / 32768.0;
-    dr = zero ? 1.0 : inversesqrt(dr);
-    dir.x = zero ? 1.0 : dir.x;
-    dir *= dr;
-    len = len * 0.5;
-    len *= len;
-    float stretch = (dir.x * dir.x + dir.y * dir.y) / max(abs(dir.x), abs(dir.y));
-    vec2 len2 = vec2(1.0 + (stretch - 1.0) * len, 1.0 - 0.5 * len);
-    float lob = 0.5 + (0.25 - 0.04 - 0.5) * len;
-    float clp = 1.0 / lob;
-    vec3 ac = vec3(0.0);
-    float aw = 0.0;
-    easu_tap(ac, aw, vec2(0.0, -1.0) - pp, dir, len2, lob, clp, b);
-    easu_tap(ac, aw, vec2(1.0, -1.0) - pp, dir, len2, lob, clp, c);
-    easu_tap(ac, aw, vec2(-1.0, 1.0) - pp, dir, len2, lob, clp, i);
-    easu_tap(ac, aw, vec2(0.0, 1.0) - pp, dir, len2, lob, clp, j);
-    easu_tap(ac, aw, vec2(0.0, 0.0) - pp, dir, len2, lob, clp, f);
-    easu_tap(ac, aw, vec2(-1.0, 0.0) - pp, dir, len2, lob, clp, e);
-    easu_tap(ac, aw, vec2(1.0, 1.0) - pp, dir, len2, lob, clp, k);
-    easu_tap(ac, aw, vec2(2.0, 1.0) - pp, dir, len2, lob, clp, l);
-    easu_tap(ac, aw, vec2(2.0, 0.0) - pp, dir, len2, lob, clp, h);
-    easu_tap(ac, aw, vec2(1.0, 0.0) - pp, dir, len2, lob, clp, g);
-    easu_tap(ac, aw, vec2(1.0, 2.0) - pp, dir, len2, lob, clp, o);
-    easu_tap(ac, aw, vec2(0.0, 2.0) - pp, dir, len2, lob, clp, n);
-    vec3 lo = min(min(f, g), min(j, k));
-    vec3 hi = max(max(f, g), max(j, k));
-    return vec4(clamp(ac / aw, lo, hi), f4.a);
-}
-vec4 fetch() {
-    if (clarity.w > 1.5) { return easu(); }
-    vec2 uv = v_coords;
-    if (clarity.w > 0.5) { uv = (floor(uv / clarity.xy) + 0.5) * clarity.xy; }
-    vec4 e = texture2D(tex, uv);
-    if (clarity.z > 0.0) {
-        vec3 b = texture2D(tex, uv - vec2(0.0, clarity.y)).rgb;
-        vec3 h = texture2D(tex, uv + vec2(0.0, clarity.y)).rgb;
-        vec3 d = texture2D(tex, uv - vec2(clarity.x, 0.0)).rgb;
-        vec3 f = texture2D(tex, uv + vec2(clarity.x, 0.0)).rgb;
-        vec3 mn = min(min(min(d, e.rgb), min(f, b)), h);
-        vec3 mx = max(max(max(d, e.rgb), max(f, b)), h);
-        vec3 amp = sqrt(clamp(min(mn, 2.0 - mx) / max(mx, vec3(0.00001)), 0.0, 1.0));
-        vec3 w = amp * (-1.0 / mix(8.0, 5.0, clarity.z));
-        e.rgb = clamp(((b + d + f + h) * w + e.rgb) / (1.0 + 4.0 * w), vec3(0.0), max(mx, vec3(1.0)));
-    }
-    return e;
-}"
-    } else {
-        "vec4 fetch() { return texture2D(tex, v_coords); }"
-    };
+    let fetch = if curved { [EASU_GLSL, RCAS_GLSL, FETCH_GLSL].concat() } else { "vec4 fetch() { return texture2D(tex, v_coords); }".to_owned() };
     let source = format!(
         r#"#version 100
 //_DEFINES_
@@ -661,6 +706,30 @@ mod tests {
             aw += w;
         }
         (ac / aw).clamp(f.min(g).min(j).min(k), f.max(g).max(j).max(k))
+    }
+
+    /// The final pass's FSR sharpening (RCAS) for one channel: the centre `e` and the texels above, left,
+    /// right and below it, at strength `s` (0 to 1), as written in GLSL above.
+    fn rcas(e: f64, [b, d, f, h]: [f64; 4], s: f64) -> f64 {
+        let (mn4, mx4) = (b.min(d).min(f).min(h), b.max(d).max(f).max(h));
+        let hit_min = mn4.min(e) / (4.0 * mx4).max(0.000001);
+        let hit_max = (1.0 - mx4.max(e)) / (4.0 * mn4 - 4.0).min(-0.000001);
+        let lobe = (-hit_min).max(hit_max).clamp(-0.1875, 0.0) * (-2.0 * (1.0 - s)).exp2();
+        (lobe * (b + d + f + h) + e) / (4.0 * lobe + 1.0)
+    }
+
+    #[test]
+    fn fsrs_sharpening_leaves_flat_areas_and_sharpens_edges_without_ringing_past_them() {
+        assert!((rcas(0.4, [0.4; 4], 1.0) - 0.4).abs() < 1e-9);
+        let (light, dark) = (rcas(0.8, [0.8, 0.2, 0.8, 0.8], 1.0), rcas(0.2, [0.2, 0.8, 0.2, 0.2], 1.0));
+        assert!(light > 0.8 && dark < 0.2, "{light} {dark}");
+        assert!(rcas(0.8, [0.8, 0.2, 0.8, 0.8], 0.25) < light, "weaker at a lower strength");
+        for e in [0.0, 0.2, 0.5, 1.0] {
+            for n in [0.0, 0.5, 1.0] {
+                let v = rcas(e, [n, e, n, e], 1.0);
+                assert!((-1e-9..=1.0 + 1e-9).contains(&v), "{e} {n}: {v}");
+            }
+        }
     }
 
     #[test]

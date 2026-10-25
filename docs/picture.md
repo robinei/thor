@@ -113,7 +113,8 @@ ours.
 1. **On the desktop, nested and on the VM:** the four clarity tiles on a 5×4 grid (done); the tiles'
    menus, with profile tiles stepping through their profiles on a tap (done); then CAS, Nearest and
    Bilinear in the final pass (done), Resolution (done: vkcube at ½ with Nearest measured as exact 2× in
-   the VM), EASU (done, in the final pass; sharpening with FSR waits for RCAS), RCAS, SMAA, in that order. Each tested headless against
+   the VM), EASU (done, in the final pass), RCAS (done: with Sharpen, EASU goes into a texture kept per
+   window, `colour::chain`, and the final pass sharpens it), SMAA, in that order. Each tested headless against
    reference images computed on the CPU (the shaders' arithmetic mirrored, as the curve's is), and by
    eye nested with a game.
 2. **On the device (phase 4 of the compositor plan):** each stage's GPU time on the Adreno at 1080p and
