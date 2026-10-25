@@ -95,35 +95,65 @@ impl UiFrame {
     }
 }
 
-pub(crate) struct ArrowFrame {
-    frame: UiFrame,
-    last: Option<clamshell_ui::window_arrows::WindowArrows>,
+/// What the compositor draws over the windows on the top screen: the window arrows while Home is held,
+/// and the HUD.
+pub(crate) struct Overlays {
+    arrows: UiFrame,
+    last_arrows: Option<clamshell_ui::window_arrows::WindowArrows>,
+    hud: UiFrame,
+    last_hud: Option<clamshell_ui::hud::HudLine>,
+    hud_cache: clamshell_ui::DrawCache,
 }
-impl ArrowFrame {
+impl Overlays {
     pub fn new(size: (u32, u32)) -> Result<Self, Error> {
-        Ok(Self { frame: UiFrame::new(size)?, last: None })
+        Ok(Self {
+            arrows: UiFrame::new(size)?,
+            last_arrows: None,
+            hud: UiFrame::new(clamshell_ui::hud::HudLine::size(size.1))?,
+            last_hud: None,
+            hud_cache: clamshell_ui::DrawCache::load(),
+        })
     }
-    fn update(&mut self, server: &Server, renderer: &mut GlesRenderer) -> Result<Option<Element>, Error> {
+    fn update(&mut self, server: &Server, renderer: &mut GlesRenderer, out: &mut Vec<Element>) -> Result<(), Error> {
         let size = (server.top_width as u32, server.size.1 as u32);
         let arrows = clamshell_ui::window_arrows::WindowArrows::new(server.core.state(), size);
-        if self.frame.pixmap.width() != size.0 || self.frame.pixmap.height() != size.1 {
+        if self.arrows.pixmap.width() != size.0 || self.arrows.pixmap.height() != size.1 {
             *self = Self::new(size)?;
         }
-        if self.last != Some(arrows) {
+        if self.last_arrows != Some(arrows) {
             if arrows.visible {
-                arrows.draw(self.frame.pixmap.as_mut());
-                self.frame.upload(renderer, clamshell_ui::Bounds::of_size(size))?;
+                arrows.draw(self.arrows.pixmap.as_mut());
+                self.arrows.upload(renderer, clamshell_ui::Bounds::of_size(size))?;
             }
-            self.last = Some(arrows);
+            self.last_arrows = Some(arrows);
         }
-        Ok(arrows.visible.then(|| self.frame.element(renderer, 0, None)).flatten())
+        if arrows.visible
+            && let Some(element) = self.arrows.element(renderer, 0, None)
+        {
+            out.push(element);
+        }
+        let hud = clamshell_ui::hud::HudLine::of(server.core.state(), size.1);
+        if self.last_hud != hud {
+            if let Some(hud) = &hud {
+                hud.draw(self.hud.pixmap.as_mut(), &mut self.hud_cache);
+                let (w, h) = (self.hud.pixmap.width(), self.hud.pixmap.height());
+                self.hud.upload(renderer, clamshell_ui::Bounds::of_size((w, h)))?;
+            }
+            self.last_hud = hud;
+        }
+        if self.last_hud.is_some()
+            && let Some(element) = self.hud.element(renderer, 0, None)
+        {
+            out.push(element);
+        }
+        Ok(())
     }
 }
 
 pub(crate) fn elements(
     server: &mut Server,
     frames: &mut [UiFrame; 2],
-    arrows: &mut ArrowFrame,
+    overlays: &mut Overlays,
     renderer: &mut GlesRenderer,
     out: &mut Vec<Element>,
 ) -> Result<(), Error> {
@@ -132,9 +162,7 @@ pub(crate) fn elements(
     bottom.update(&mut server.core, Screen::Bottom, renderer)?;
     server.core.frames_done();
     out.clear();
-    if let Some(element) = arrows.update(server, renderer)? {
-        out.push(element);
-    }
+    overlays.update(server, renderer, out)?;
     let state = server.core.state();
     let show_bottom = state.bottom().shows_windows(state.session());
     if let Some(element) = bottom.element(renderer, server.top_width, show_bottom.then(|| server.area(true).loc.y)) {

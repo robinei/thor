@@ -150,6 +150,15 @@ impl crate::State {
         self.curving().in_force(chosen).copied()
     }
 
+    /// The HUD for window `id`: the one in the settings in force for the program running it. Off for a
+    /// window no launch runs.
+    pub fn window_hud(&self, id: i64) -> crate::settings::Hud {
+        let Some(running) = self.session().window(id).and_then(|window| self.session().running_of(window)) else {
+            return crate::settings::Hud::Off;
+        };
+        self.settings_of(&running.id).choice()
+    }
+
     /// The frame rate cap for window `id`: the one in the settings in force for the program running it.
     /// None for no cap, and for a window no launch runs.
     pub fn window_fps_cap(&self, id: i64) -> Option<u16> {

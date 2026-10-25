@@ -19,6 +19,7 @@
 
 mod core;
 mod gfx;
+pub mod hud;
 mod input;
 mod platform;
 mod render;
@@ -28,6 +29,7 @@ mod views;
 pub mod window_arrows;
 
 pub use crate::core::{Core, TextField};
+pub use gfx::canvas::DrawCache;
 pub use gfx::record::Bounds;
 pub use input::{End, Source};
 pub use platform::run;
@@ -39,7 +41,6 @@ use clamshell_state::bottom::touch::TouchLayout;
 use clamshell_state::{Event, State};
 use smithay_client_toolkit::reexports::calloop::channel;
 
-use gfx::DrawCache;
 use gfx::images::Images;
 use render::{Placement, Retained};
 

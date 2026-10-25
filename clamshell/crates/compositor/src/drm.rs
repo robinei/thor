@@ -36,7 +36,7 @@ use smithay::{
 use crate::{
     base::Base,
     colour::render::Pipeline,
-    render::{self, ArrowFrame, UiFrame},
+    render::{self, Overlays, UiFrame},
     server::{Process, Server},
 };
 
@@ -75,7 +75,7 @@ struct Drawing {
     pipeline: Pipeline,
     screens: Vec<Screen>,
     frames: [UiFrame; 2],
-    arrows: ArrowFrame,
+    overlays: Overlays,
     cursor: crate::cursor::Cursor,
     elements: Vec<render::Element>,
     /// The scene's elements as last composed.
@@ -182,7 +182,7 @@ pub fn run(
         pipeline,
         screens,
         frames: [UiFrame::new(top_ui)?, UiFrame::new(bottom_ui)?],
-        arrows: ArrowFrame::new(top_ui)?,
+        overlays: Overlays::new(top_ui)?,
         cursor: crate::cursor::Cursor::new(),
         elements: Vec::new(),
         states: RenderElementStates::default(),
@@ -436,8 +436,8 @@ fn compose(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnM
     server.frame();
     server.sync_pointer_capture(|_| Ok::<(), std::convert::Infallible>(()));
     server.import_dmabufs(&mut drawing.renderer);
-    let Drawing { renderer, pipeline, screens, frames, arrows, cursor, elements, states } = drawing;
-    render::elements(server, frames, arrows, renderer, elements)?;
+    let Drawing { renderer, pipeline, screens, frames, overlays, cursor, elements, states } = drawing;
+    render::elements(server, frames, overlays, renderer, elements)?;
     cursor.elements(server, renderer, elements)?;
     let (composed, changed) = pipeline.compose(server, renderer, elements)?;
     *states = composed;

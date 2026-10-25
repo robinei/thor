@@ -18,11 +18,13 @@ use env::parse_env;
 pub enum Setting {
     /// The power profile, which sets CPU and GPU frequency caps: 0 Battery, 1 Balanced, 2 Performance.
     Power,
-    /// The most frames per second, using MangoHud's limiter. 0 means no cap.
+    /// The most frames per second: the compositor paces the window's frames, or under sway MangoHud's
+    /// limiter does. 0 means no cap.
     FpsCap,
     /// The main screen's refresh rate in Hz. 0 leaves it as it is.
     Refresh,
-    /// MangoHud's overlay: 0 off, 1 the frame rate only, 2 the full overlay.
+    /// The HUD over the game: 0 off, 1 the frame rate only, 2 the full HUD (the compositor's: the frame
+    /// rate and frame time; under sway, MangoHud's overlay).
     Hud,
     /// Rendering below the screen's resolution through gamescope: 0 native, 1 FSR from 720p, 2 FSR from
     /// 540p, 3 integer scaling.
@@ -173,7 +175,7 @@ choices!(
 );
 
 choices!(
-    /// [`Setting::Hud`]: MangoHud's overlay.
+    /// [`Setting::Hud`]: the HUD over the game.
     Hud for Hud, default Off {
         Off = 0, "HUD off", Stock;
         Fps = 1, "HUD FPS", Changes;

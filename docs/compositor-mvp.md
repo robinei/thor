@@ -603,11 +603,17 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
          output; ClamShell's package built with the compositor (its libraries in the aarch64 sysroot).
    - [ ] The session's services under the compositor (udiskie; notifications are phase 6), and the
          watchdog and restart that clamshell.service gives under sway.
-   - [ ] Frame statistics and the cap ("Frame statistics and limiting", section 3) on the DRM backend's
+   - [x] Frame statistics and the cap ("Frame statistics and limiting", section 3) on the DRM backend's
          page-flip timestamps: the per-window ring, the FPS tile and system info reading it, the cap
          pacing frame callbacks with FIFO forced at launch, the HUD as an overlay element; MangoHud not
          launched under the compositor. Tested headless with injected flips and in the VM with `--gl`
-         (`vkcube` and a capped client); exact pacing measured on the device (phase 4).
+         (`vkcube` and a capped client); exact pacing measured on the device (phase 4). Done: a frame is
+         a new buffer on the window's surface, counted when a flip (nested: a submission) shows it; the
+         top screen's window gives `Reading::Frames` every half second while it draws. vkcube in the VM
+         reads 60 fps uncapped, 30 and 40 capped (40 on 60 Hz: two refreshes, then one), the cap
+         following the tile live. "HUD FPS" shows the frame rate, "Full HUD" adds the frame time.
+         Not done: frames replaced before being shown and frames shown late (no view reads them yet);
+         Waydroid's Wayland filter still writes its frame log, which nothing reads under the compositor.
    - [x] `tools/vm/vm.py --gl`: the x86_64 VM with `virtio-gpu-gl-pci` (`venus=on,blob=on,hostmem=...`)
          and `-display sdl,gl=on` (`egl-headless` when headless), so the guest has OpenGL through virgl
          and Vulkan through Venus (the guest's `vulkan-virtio`), both on the host's GPU. The compositor's

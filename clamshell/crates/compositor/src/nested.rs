@@ -15,7 +15,7 @@ use smithay::{
 
 use crate::{
     base::Base,
-    render::{self, ArrowFrame, UiFrame},
+    render::{self, Overlays, UiFrame},
     server::{Process, Server},
 };
 
@@ -53,7 +53,7 @@ pub fn run(
     let top_size = server.core.size(clamshell_ui::Screen::Top).0;
     let bottom_size = server.core.size(clamshell_ui::Screen::Bottom).0;
     let mut frames = [UiFrame::new(top_size)?, UiFrame::new(bottom_size)?];
-    let mut arrows = ArrowFrame::new(top_size)?;
+    let mut overlays = Overlays::new(top_size)?;
     let mut elements = Vec::new();
     let mut submitted = false;
     let mut refresh_known = false;
@@ -114,7 +114,7 @@ pub fn run(
                         // window target even when the scene has not otherwise changed.
                         let age = if submitted && !imported { backend.buffer_age().unwrap_or(0) } else { 0 };
                         let capturing = std::mem::take(&mut server.screenshot_requested);
-                        render::elements(server, &mut frames, &mut arrows, backend.renderer(), &mut elements)?;
+                        render::elements(server, &mut frames, &mut overlays, backend.renderer(), &mut elements)?;
                         cursor.elements(server, backend.renderer(), &mut elements)?;
                         let composed_states =
                             if let Some(pipeline) = &mut colour_pipeline { Some(pipeline.compose(server, backend.renderer(), &mut elements)?.0) } else { None };
