@@ -27,17 +27,27 @@ pub(crate) struct Pipeline {
     outputs: [(ColourDescription, GlesTexProgram); 2],
     revision: u64,
     first: bool,
-    /// Each shown window's surfaces with the HDR curve of the game running it (or none) and the headroom
-    /// of its screen, this frame and the last: a change redraws the scene, since the surfaces themselves
-    /// didn't.
-    curves: Vec<(Id, Option<Curve>, f32)>,
-    last_curves: Vec<(Id, Option<Curve>, f32)>,
+    /// Each shown window's surfaces with how the game running it is shown, this frame and the last: a change
+    /// redraws the scene, since the surfaces themselves didn't.
+    curves: Vec<(Id, Look)>,
+    last_curves: Vec<(Id, Look)>,
+}
+
+/// How a window's surface is shown: the HDR curve of the game running it (or none), the headroom of its
+/// screen, its clarity settings, and the size of the surface's buffer, which sampling steps by.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Look {
+    curve: Option<Curve>,
+    headroom: f32,
+    clarity: clamshell_state::session::presentation::Clarity,
+    buffer: (i32, i32),
 }
 struct Converted {
     inner: Element,
     shader: GlesTexProgram,
-    /// For an SDR or HDR surface's shader: its curve's uniforms (see [`curve_uniforms`]).
-    curve: Option<[[f32; 4]; 2]>,
+    /// For an SDR or HDR surface's shader: its curve's uniforms (see [`curve_uniforms`]) and its clarity's
+    /// (see [`clarity_uniform`]).
+    curve: Option<[[f32; 4]; 3]>,
 }
 impl ElementTrait for Converted {
     fn id(&self) -> &Id {
@@ -81,7 +91,7 @@ impl RenderElement<GlesRenderer> for Converted {
         opaque: &[Rectangle<i32, Physical>],
         cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
-        let uniforms = self.curve.map_or_else(Vec::new, |[a, b]| vec![Uniform::new("curve_a", a), Uniform::new("curve_b", b)]);
+        let uniforms = self.curve.map_or_else(Vec::new, |[a, b, c]| vec![Uniform::new("curve_a", a), Uniform::new("curve_b", b), Uniform::new("clarity", c)]);
         frame.override_default_tex_program(self.shader.clone(), uniforms);
         let result = self.inner.draw(frame, src, dst, damage, opaque, cache);
         frame.clear_tex_program_override();
@@ -148,7 +158,12 @@ impl Pipeline {
             // What the screen shows, as clients are told: nested, the host's real peak rather than the
             // PQ signal we send it.
             let headroom = server.colour.screen(state.session().window(client.id).is_some_and(|w| w.down)).headroom() as f32;
-            client.window.with_surfaces(|surface, _| self.curves.push((Id::from_wayland_resource(surface), curve, headroom)));
+            let clarity = state.window_clarity(client.id);
+            client.window.with_surfaces(|surface, states| {
+                let renderer_state = states.data_map.get::<smithay::backend::renderer::utils::RendererSurfaceStateUserData>();
+                let buffer = renderer_state.and_then(|state| state.lock().ok()?.buffer_size()).map_or((0, 0), |size| (size.w, size.h));
+                self.curves.push((Id::from_wayland_resource(surface), Look { curve, headroom, clarity, buffer }));
+            });
         }
         if self.curves != self.last_curves {
             self.damage = OutputDamageTracker::new(self.size, 1.0, Transform::Normal);
@@ -158,14 +173,17 @@ impl Pipeline {
         self.converted.clear();
         for inner in elements.drain(..) {
             let colour = server.colour.surfaces.get(inner.id()).map(|colour| **colour).unwrap_or_default();
-            let window = self.last_curves.iter().find(|(id, _, _)| id == inner.id());
-            let (curve, headroom) = window.map_or((None, 1.0), |(_, curve, headroom)| (curve.as_ref(), *headroom));
+            let look = self.last_curves.iter().find(|(id, _)| id == inner.id()).map(|(_, look)| *look);
+            let (curve, headroom) = look.as_ref().map_or((None, 1.0), |look| (look.curve.as_ref(), look.headroom));
             // An HDR surface's peak: the one its game's curve sets, else what it declares or is assumed.
             let peak = hdr(colour).then(|| {
                 let given = colour.peak();
                 curve.map_or(given, |c| c.hdr_peak(given, f64::from(colour.luminances().reference))) as f32
             });
-            let curve = (sdr(colour) || hdr(colour)).then(|| curve_uniforms(curve, headroom, peak));
+            let curve = (sdr(colour) || hdr(colour)).then(|| {
+                let [a, b] = curve_uniforms(curve, headroom, peak);
+                [a, b, look.map_or([0.0; 4], |look| clarity_uniform(look.clarity, look.buffer))]
+            });
             let program = match self.shaders.iter().find(|(description, _)| *description == colour) {
                 Some((_, program)) => program.clone(),
                 None => {
@@ -249,6 +267,16 @@ fn sdr(description: ColourDescription) -> bool {
 /// and its highlights compressed into the screen (`curve::map_hdr`).
 fn hdr(description: ColourDescription) -> bool {
     description.hdr()
+}
+
+/// A window's clarity as the input shaders' uniform: one texel of its buffer across and down, the
+/// sharpening's strength (0 to 1), and whether it is sampled nearest. Nothing without a buffer's size.
+fn clarity_uniform(clarity: clamshell_state::session::presentation::Clarity, (w, h): (i32, i32)) -> [f32; 4] {
+    if w <= 0 || h <= 0 {
+        return [0.0; 4];
+    }
+    let nearest = clarity.scaling == clamshell_state::settings::Scaling::Nearest;
+    [1.0 / w as f32, 1.0 / h as f32, f32::from(clarity.sharpen.min(100)) / 100.0, f32::from(u8::from(nearest))]
 }
 
 /// An HDR curve as the input shaders' uniforms: black point, contrast, where highlights start, and for an
@@ -344,7 +372,32 @@ fn shader(renderer: &mut GlesRenderer, description: ColourDescription, input: bo
         // Above the screen's peak, each pixel is brought down whole, keeping its hue.
         format!("v = matrix * v; v /= {scaling:.12}; float m = max(max(v.r, v.g), v.b); if (m > 1.0) {{ v /= m; }} v = convert(v);")
     };
-    let uniforms = if curved { "uniform vec4 curve_a;\nuniform vec4 curve_b;" } else { "" };
+    let uniforms = if curved { "uniform vec4 curve_a;\nuniform vec4 curve_b;\nuniform vec4 clarity;" } else { "" };
+    // A window's picture as it is sampled, before decoding (see [`clarity_uniform`]): nearest snaps to the
+    // centre of one of its texels; sharpening is AMD's CAS on the four texels around, with the weight it
+    // adapts to their contrast, kept within the signal's range, or for linear light within the brightest
+    // of them (as `cas` in the tests).
+    let fetch = if curved {
+        "vec4 fetch() {
+    vec2 uv = v_coords;
+    if (clarity.w > 0.5) { uv = (floor(uv / clarity.xy) + 0.5) * clarity.xy; }
+    vec4 e = texture2D(tex, uv);
+    if (clarity.z > 0.0) {
+        vec3 b = texture2D(tex, uv - vec2(0.0, clarity.y)).rgb;
+        vec3 h = texture2D(tex, uv + vec2(0.0, clarity.y)).rgb;
+        vec3 d = texture2D(tex, uv - vec2(clarity.x, 0.0)).rgb;
+        vec3 f = texture2D(tex, uv + vec2(clarity.x, 0.0)).rgb;
+        vec3 mn = min(min(min(d, e.rgb), min(f, b)), h);
+        vec3 mx = max(max(max(d, e.rgb), max(f, b)), h);
+        vec3 amp = sqrt(clamp(min(mn, 2.0 - mx) / max(mx, vec3(0.00001)), 0.0, 1.0));
+        vec3 w = amp * (-1.0 / mix(8.0, 5.0, clarity.z));
+        e.rgb = clamp(((b + d + f + h) * w + e.rgb) / (1.0 + 4.0 * w), vec3(0.0), max(mx, vec3(1.0)));
+    }
+    return e;
+}"
+    } else {
+        "vec4 fetch() { return texture2D(tex, v_coords); }"
+    };
     let source = format!(
         r#"#version 100
 //_DEFINES_
@@ -364,8 +417,9 @@ varying vec2 v_coords;
 uniform float tint;
 #endif
 vec3 convert(vec3 v) {{ return {expression}; }}
+{fetch}
 void main() {{
-    vec4 sample = texture2D(tex, v_coords);
+    vec4 sample = fetch();
 #if defined(NO_ALPHA)
     sample.a = 1.0;
 #endif
@@ -375,7 +429,7 @@ void main() {{
     gl_FragColor = vec4(v * sample.a, sample.a) * alpha;
 }}"#
     );
-    let names = [UniformName::new("curve_a", UniformType::_4f), UniformName::new("curve_b", UniformType::_4f)];
+    let names = [UniformName::new("curve_a", UniformType::_4f), UniformName::new("curve_b", UniformType::_4f), UniformName::new("clarity", UniformType::_4f)];
     Ok(renderer.compile_custom_texture_shader(source, if curved { &names } else { &[] })?)
 }
 
@@ -433,6 +487,43 @@ mod tests {
         }
         let c = if y > 0.0 { v.map(|x| x * e / y) } else { [0.0; 3] };
         c.map(|x| (e + (x - e) * if on { b[1] } else { 1.0 }).max(0.0) * white)
+    }
+
+    /// The input shader's sharpening (CAS) for one channel: the centre `e` and the texels above, left,
+    /// right and below it, at `sharpness` (0 to 1), as written in GLSL above.
+    fn cas(e: f64, [b, d, f, h]: [f64; 4], sharpness: f64) -> f64 {
+        let mn = b.min(d).min(e).min(f).min(h);
+        let mx = b.max(d).max(e).max(f).max(h);
+        let amp = (mn.min(2.0 - mx) / mx.max(0.00001)).clamp(0.0, 1.0).sqrt();
+        let w = amp * (-1.0 / (8.0 + (5.0 - 8.0) * sharpness));
+        (((b + d + f + h) * w + e) / (1.0 + 4.0 * w)).clamp(0.0, mx.max(1.0))
+    }
+
+    #[test]
+    fn sharpening_leaves_flat_areas_and_raises_edges_within_range() {
+        // Flat: nothing changes.
+        assert!((cas(0.4, [0.4; 4], 1.0) - 0.4).abs() < 1e-9);
+        // An edge: the brighter side brighter, the darker side darker, more with more sharpness.
+        let (light, dark) = ([0.8, 0.2, 0.8, 0.8], [0.2, 0.8, 0.2, 0.2]);
+        assert!(cas(0.8, light, 0.5) > 0.8 && cas(0.8, light, 1.0) > cas(0.8, light, 0.5));
+        assert!(cas(0.2, dark, 1.0) < 0.2);
+        // Never below black nor above the signal's range (above the brightest texel, for linear light).
+        for e in [0.0, 0.1, 0.5, 0.9, 1.0] {
+            for n in [0.0, 0.3, 1.0] {
+                let v = cas(e, [n, e, n, e], 1.0);
+                assert!((0.0..=1.0 + 1e-9).contains(&v), "{e} {n}: {v}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_clarity_uniform_steps_by_a_texel_and_says_how_to_sample() {
+        use clamshell_state::session::presentation::Clarity;
+        use clamshell_state::settings::Scaling;
+        let nearest = Clarity { scaling: Scaling::Nearest, sharpen: 50, ..Clarity::default() };
+        assert_eq!(clarity_uniform(nearest, (960, 540)), [1.0 / 960.0, 1.0 / 540.0, 0.5, 1.0]);
+        assert_eq!(clarity_uniform(Clarity::default(), (960, 540))[2..], [0.0, 0.0], "bilinear, unsharpened");
+        assert_eq!(clarity_uniform(nearest, (0, 0)), [0.0; 4], "no buffer: as it is");
     }
 
     fn close(want: [f64; 3], got: [f64; 3], what: &str) {

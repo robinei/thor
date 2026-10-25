@@ -175,6 +175,16 @@ pub struct CurvePlot {
     pub black: f64,
 }
 
+/// How a window's picture is shown: its clarity settings (see [`crate::State::window_clarity`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Clarity {
+    pub resolution: crate::settings::Resolution,
+    pub scaling: crate::settings::Scaling,
+    pub anti_aliasing: crate::settings::AntiAliasing,
+    /// The sharpening's strength in percent, 0 for none.
+    pub sharpen: u16,
+}
+
 /// An HDR game's content in a curve's plot.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HdrPlot {
@@ -248,6 +258,17 @@ impl crate::State {
             scrgb: colour.transfer == TransferFunction::Linear,
         });
         CurvePlot { hdr, headroom: screen.headroom(), black }
+    }
+
+    /// How window `id`'s picture is shown (`docs/picture.md`): the clarity settings in force for the program
+    /// running it; the defaults (native, bilinear, nothing more) for a window no launch runs.
+    pub fn window_clarity(&self, id: i64) -> Clarity {
+        use crate::settings::Setting;
+        let Some(running) = self.session().window(id).and_then(|window| self.session().running_of(window)) else {
+            return Clarity::default();
+        };
+        let v = self.settings_of(&running.id);
+        Clarity { resolution: v.choice(), scaling: v.choice(), anti_aliasing: v.choice(), sharpen: v.get(Setting::Sharpen) }
     }
 
     /// The frame rate cap for window `id`: the one in the settings in force for the program running it.
