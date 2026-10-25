@@ -14,7 +14,9 @@ pub(crate) struct State {
     pub revision: u64,
     pub descriptions: [ColourDescription; 2],
     pub preferred: ColourDescription,
-    pub identity: u32,
+    /// The identities clients are given for each screen's description; the top's is the preferred one's.
+    /// Equal only while the descriptions are.
+    pub identities: [u32; 2],
     pub next_identity: u32,
     pub outputs: Vec<WpColorManagementOutputV1>,
     pub feedback: Vec<WpColorManagementSurfaceFeedbackV1>,
@@ -27,7 +29,7 @@ impl Default for State {
             revision: 0,
             descriptions: [ColourDescription::default(); 2],
             preferred: ColourDescription::default(),
-            identity: 1,
+            identities: [1, 1],
             next_identity: 2,
             outputs: Vec::new(),
             feedback: Vec::new(),
@@ -36,15 +38,28 @@ impl Default for State {
 }
 
 impl State {
+    /// One description for both screens, as the nested host's window has.
     pub fn set_output(&mut self, description: ColourDescription) {
+        self.set_outputs([description; 2]);
+    }
+
+    /// Each screen's description (the top's, the second's), which clients are told for its output. The
+    /// preferred one, which surfaces are told, is the top's, where games are.
+    pub fn set_outputs(&mut self, descriptions: [ColourDescription; 2]) {
         use smithay::reexports::wayland_server::Resource;
-        if self.preferred == description {
+        if self.descriptions == descriptions && self.preferred == descriptions[0] {
             return;
         }
-        self.preferred = description;
-        self.descriptions = [description; 2];
-        self.identity = self.next_identity;
-        self.next_identity = self.next_identity.wrapping_add(1).max(1);
+        self.preferred = descriptions[0];
+        self.descriptions = descriptions;
+        let mut next = || {
+            let identity = self.next_identity;
+            self.next_identity = self.next_identity.wrapping_add(1).max(1);
+            identity
+        };
+        let top = next();
+        let [first, second] = descriptions;
+        self.identities = [top, if second == first { top } else { next() }];
         self.revision = self.revision.wrapping_add(1);
         self.outputs.retain(Resource::is_alive);
         self.feedback.retain(Resource::is_alive);
@@ -52,7 +67,7 @@ impl State {
             output.image_description_changed();
         }
         for feedback in &self.feedback {
-            feedback.preferred_changed(self.identity);
+            feedback.preferred_changed(self.identities[0]);
         }
     }
 }

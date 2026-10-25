@@ -554,8 +554,25 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
           and the output's primaries applied (on the Thor, sRGB mapped into the top panel's wider gamut;
           the panels' colour facts come from the device profile, `docs/device-profiles.md`; nested, from
           the host's preferred description). Done nested: a half-float linear BT.2020 scene at reference
-          white, encoded once for the output. The device's panels' descriptions from the profile follow with
-          the DRM backend (phase 3).
+          white, encoded once for the output. On the DRM backend each screen is encoded for its own panel
+          and described to clients as it (each output its own description and identity; the preferred one,
+          which surfaces are told, the top's), from the device profile: the panel's primaries, gamma 2.2,
+          its peak, and where SDR white goes (`sdr_white`; at the peak, no headroom, until the panel is
+          driven brighter in 4h). Above a panel's peak a pixel is brought down whole, keeping its hue. The
+          VM's `vm-hdr` profile gives the virtual screens the Thor's panels with SDR white at 203 nits on
+          the top, for the HDR paths on DRM.
+    - [x] The curve on every path, the owner's decision (2026-10-25): SDR and HDR content, HDR and SDR
+          screens alike, in two stages. Per window, content to scene, limited by its screen's headroom:
+          SDR's signal through the curve with white at most the screen's peak and highlights expanding no
+          further (`Curve::map_on`); HDR's light (PQ, scRGB) with the black point and contrast on each
+          channel below white (gamma 2.2 standing in for a signal), white at the curve's, and its own
+          highlights compressed from the knee (the curve's start, at most three quarters of the peak) into
+          the screen's peak when its peak (MaxCLL, else the mastering or nominal maximum) is beyond
+          (`curve::map_hdr`); without a curve, an HDR window only compressed. Per screen: the gamut,
+          the hue-keeping limit, the encoding. On an SDR screen a curve leaves its black point, contrast
+          and saturation; the shaders' arithmetic is tested against the state's on SDR, 650-nit and
+          unlimited screens. Left: the edit screen plotting the curve on the game's screen, and an HDR
+          game's (it plots SDR's now).
     - [ ] Scanout knowing about colour: a surface whose description matches the output passes through
           untouched (constraint 3). With the DRM backend (phase 3): the nested host has no scanout.
     - [x] SDR to HDR for games (inverse tone mapping, as Special K does rather than Windows' Auto HDR): a
@@ -671,7 +688,8 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
           they are compressed into the panel's peak from the same knee, with the black point, contrast,
           paper white (SDR white) and saturation meaning the same. Off for an HDR game is plain tone
           mapping into the panel. The edit screen plots whichever applies to the game's output. Tried
-          first on the desktop with a game that has an HDR mode (2h's Proton test).
+          first on the desktop with a game that has an HDR mode (2h's Proton test). The compositor's half
+          is done (2h, "The curve on every path"); left: trying it with real HDR games, and on the panels.
     - [ ] SDR to HDR on the device: 2h's curve into the panel's headroom; in the display hardware's
           per-plane lookup tables if they can hold it, so a game keeps direct scanout, else in the shader
           (every frame composited: measure the cost); highlight limits against heat and burn-in, static HUD

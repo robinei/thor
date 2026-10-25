@@ -24,7 +24,7 @@ use std::{
 use wayland_client::{
     Connection, Dispatch, QueueHandle, delegate_noop,
     globals::{GlobalListContents, registry_queue_init},
-    protocol::{wl_compositor, wl_registry, wl_surface},
+    protocol::{wl_compositor, wl_output, wl_registry, wl_surface},
 };
 #[derive(Default)]
 struct Client {
@@ -33,6 +33,8 @@ struct Client {
     features: Vec<u32>,
     preferred: u32,
     information: bool,
+    /// Each description's information: its luminances (max, reference).
+    luminances: Vec<(u32, u32)>,
 }
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Client {
     fn event(_: &mut Self, _: &wl_registry::WlRegistry, _: wl_registry::Event, _: &GlobalListContents, _: &Connection, _: &QueueHandle<Self>) {}
@@ -62,8 +64,10 @@ impl Dispatch<WpColorManagementSurfaceFeedbackV1, ()> for Client {
 }
 impl Dispatch<WpImageDescriptionInfoV1, ()> for Client {
     fn event(state: &mut Self, _: &WpImageDescriptionInfoV1, event: info::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
-        if matches!(event, info::Event::Done) {
-            state.information = true;
+        match event {
+            info::Event::Done => state.information = true,
+            info::Event::Luminances { max_lum, reference_lum, .. } => state.luminances.push((max_lum, reference_lum)),
+            _ => {}
         }
     }
 }
@@ -71,6 +75,8 @@ delegate_noop!(Client:ignore wl_compositor::WlCompositor);
 delegate_noop!(Client:ignore wl_surface::WlSurface);
 delegate_noop!(Client:ignore WpColorManagementSurfaceV1);
 delegate_noop!(Client:ignore WpImageDescriptionCreatorParamsV1);
+delegate_noop!(Client:ignore wl_output::WlOutput);
+delegate_noop!(Client:ignore smithay::reexports::wayland_protocols::wp::color_management::v1::client::wp_color_management_output_v1::WpColorManagementOutputV1);
 fn server() -> (Display<Server>, Server) {
     let display = Display::new().unwrap();
     let config = Config { bottom_output: "bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
@@ -190,4 +196,47 @@ fn an_invalid_colour_request_disconnects_its_client_without_ending_the_server() 
     thread.join().unwrap();
     assert!(!server.exit);
     assert!(server.colour.surfaces.is_empty());
+}
+
+#[test]
+fn each_screen_is_described_as_its_panel_and_the_top_is_preferred() {
+    let (mut display, mut server) = server();
+    let profile = clamshell_device::Profile::vm_hdr();
+    let panels = [ColourDescription::from(profile.top.colour), ColourDescription::from(profile.bottom.colour)];
+    server.colour.set_outputs(panels);
+    assert_ne!(server.colour.identities[0], server.colour.identities[1], "different descriptions, different identities");
+    let (server_socket, client_socket) = UnixStream::pair().unwrap();
+    display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
+    let thread = std::thread::spawn(move || {
+        let connection = Connection::from_socket(client_socket).unwrap();
+        let (globals, mut queue) = registry_queue_init::<Client>(&connection).unwrap();
+        let qh = queue.handle();
+        let manager: WpColorManagerV1 = globals.bind(&qh, 1..=1, ()).unwrap();
+        let outputs: Vec<wl_output::WlOutput> = globals
+            .contents()
+            .with_list(|list| list.iter().filter(|g| g.interface == "wl_output").map(|g| globals.registry().bind(g.name, 1, &qh, ())).collect());
+        let mut client = Client::default();
+        for output in &outputs {
+            manager.get_output(output, &qh, ()).get_image_description(&qh, ()).get_information(&qh, ());
+            queue.roundtrip(&mut client).unwrap();
+        }
+        let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
+        let surface = compositor.create_surface(&qh, ());
+        let feedback = manager.get_surface_feedback(&surface, &qh, ());
+        feedback.get_preferred_parametric(&qh, ()).get_information(&qh, ());
+        queue.roundtrip(&mut client).unwrap();
+        (client.luminances, client.ready, client.preferred)
+    });
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !thread.is_finished() && Instant::now() < deadline {
+        display.dispatch_clients(&mut server).unwrap();
+        server.turn();
+        server.dh.flush_clients().unwrap();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let (luminances, ready, preferred) = thread.join().unwrap();
+    // The top: 650 nits with SDR white at 203; the second: unprofiled, SDR's 80 at its peak.
+    assert_eq!(luminances, [(650, 203), (80, 80), (650, 203)], "the outputs', then the preferred");
+    assert_eq!(ready, [server.colour.identities[0], server.colour.identities[1], server.colour.identities[0]]);
+    assert_eq!(preferred, server.colour.identities[0]);
 }

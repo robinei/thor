@@ -112,7 +112,12 @@ impl From<clamshell_device::colour::PanelColour> for ColourDescription {
     fn from(panel: clamshell_device::colour::PanelColour) -> Self {
         let xy = |value: clamshell_device::colour::Xy| (value.x as i32, value.y as i32);
         let primaries = ColourPrimaries::Custom([xy(panel.primaries.red), xy(panel.primaries.green), xy(panel.primaries.blue), xy(panel.primaries.white)]);
-        let luminance = panel.luminance.map(|value| ColourLuminance { min: value.black.saturating_mul(10), max: value.peak / 1000, reference: 80 });
+        // SDR white at the panel's, or at its peak without headroom.
+        let luminance = panel.luminance.map(|value| ColourLuminance {
+            min: value.black.saturating_mul(10),
+            max: value.peak / 1000,
+            reference: panel.sdr_white.unwrap_or(value.peak).min(value.peak) / 1000,
+        });
         let target = panel.luminance.map(|value| ColourTarget {
             primaries: Some(primaries),
             luminance: Some((value.black.saturating_mul(10), value.peak / 1000)),

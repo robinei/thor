@@ -112,7 +112,7 @@ impl Dispatch2<WpColorManagerV1, Server> for Manager {
             }
             manager::Request::GetSurfaceFeedback { id, surface } => {
                 let resource = init.init(id, Surface(surface.downgrade()));
-                resource.preferred_changed(state.colour.identity);
+                resource.preferred_changed(state.colour.identities[0]);
                 state.colour.feedback.retain(Resource::is_alive);
                 state.colour.feedback.push(resource);
             }
@@ -177,13 +177,17 @@ impl Dispatch2<WpColorManagementSurfaceV1, Server> for Surface {
         }
     }
 }
-fn describe(state: &mut Server, id: New<WpImageDescriptionV1>, colour: ColourDescription, information: bool, init: &mut DataInit<'_, Server>) {
-    let identity = if information {
-        state.colour.identity
-    } else {
-        let identity = state.colour.next_identity;
-        state.colour.next_identity = state.colour.next_identity.wrapping_add(1).max(1);
-        identity
+/// A description given to a client: a screen's, with its identity (`screen`, from which its information
+/// can be read), or one the client made, with a new one.
+fn describe(state: &mut Server, id: New<WpImageDescriptionV1>, colour: ColourDescription, screen: Option<usize>, init: &mut DataInit<'_, Server>) {
+    let information = screen.is_some();
+    let identity = match screen {
+        Some(index) => state.colour.identities.get(index).copied().unwrap_or(state.colour.identities[0]),
+        None => {
+            let identity = state.colour.next_identity;
+            state.colour.next_identity = state.colour.next_identity.wrapping_add(1).max(1);
+            identity
+        }
     };
     let resource = init.init(id, Description { colour: Arc::new(colour), information, identity });
     resource.ready(identity);
@@ -205,7 +209,7 @@ impl Dispatch2<WpColorManagementSurfaceFeedbackV1, Server> for Surface {
                     object.post_error(feedback::Error::Inert, "surface was destroyed");
                     return;
                 }
-                describe(state, image_description, state.colour.preferred, true, init);
+                describe(state, image_description, state.colour.preferred, Some(0), init);
             }
             _ => {}
         }
@@ -223,7 +227,7 @@ impl Dispatch2<WpColorManagementOutputV1, Server> for Output {
     ) {
         if let output::Request::GetImageDescription { image_description } = request {
             let colour = state.colour.descriptions.get(self.0).copied().unwrap_or_default();
-            describe(state, image_description, colour, true, init);
+            describe(state, image_description, colour, Some(self.0), init);
         }
     }
 }
@@ -385,7 +389,7 @@ impl Dispatch2<WpImageDescriptionCreatorParamsV1, Server> for Creator {
                     let resource = init.init(image_description, Description { colour: Arc::new(colour), information: false, identity: 0 });
                     resource.failed(image::Cause::Unsupported, "unsupported primary matrix or white point".into());
                 } else {
-                    describe(state, image_description, colour, false, init);
+                    describe(state, image_description, colour, None, init);
                 }
             }
             _ => {}

@@ -14,6 +14,13 @@
 //! 4. Highlights above the start (a fraction of white) expand towards the peak, along a curve that joins
 //!    the line below the start smoothly.
 //! 5. Saturation, around the luminance.
+//!
+//! On a screen, the curve is limited by what the screen can show ([`Curve::map_on`]): SDR white goes no
+//! higher than its peak, and highlights expand no further. On an SDR screen that leaves the black point,
+//! contrast and saturation. An HDR game's light goes through the same curve ([`map_hdr`]): the black point,
+//! contrast, white and saturation mean the same, and its own highlights are compressed into the screen's
+//! peak from the knee where SDR's would start expanding. Without a curve an HDR game is only compressed
+//! into the screen.
 
 pub mod screens;
 
@@ -129,15 +136,22 @@ impl CurveParam {
 
 impl Curve {
     /// A pixel of SDR signal (`rgb`, each 0 to 1, sRGB's encoding) as linear light in the compositor's
-    /// scene, where 1.0 is the reference white ([`REFERENCE_NITS`]). The colours are those of the input's
-    /// primaries; the compositor converts them after.
+    /// scene, where 1.0 is the reference white ([`REFERENCE_NITS`]), with no screen's limits. The colours
+    /// are those of the input's primaries; the compositor converts them after.
     pub fn map(&self, rgb: [f64; 3]) -> [f64; 3] {
+        self.map_on(rgb, f64::INFINITY)
+    }
+
+    /// [`Curve::map`] on a screen with `headroom`: its peak over the reference white (1 for an SDR
+    /// screen). SDR white goes no higher than the peak, and highlights expand no further than it.
+    pub fn map_on(&self, rgb: [f64; 3], headroom: f64) -> [f64; 3] {
         let black = f64::from(self.black) / 1000.0;
         let contrast = f64::from(self.contrast) / 100.0;
         let white = f64::from(self.white);
         let start = f64::from(self.start) / 100.0;
-        // The peak in units of white.
-        let peak = f64::from(self.peak.max(self.white)) / white.max(1.0);
+        let to_scene = (white / REFERENCE_NITS).min(headroom);
+        // The peak in units of white, within the screen's.
+        let peak = (f64::from(self.peak.max(self.white)) / white.max(1.0)).min(headroom / to_scene).max(1.0);
         let linear = rgb.map(|e| {
             let e = ((e - black) / (1.0 - black).max(1e-6)).clamp(0.0, 1.0).powf(contrast);
             srgb_decode(e)
@@ -146,9 +160,54 @@ impl Curve {
         let expanded = expand(y, start, peak);
         let scale = if y > 0.0 { expanded / y } else { 0.0 };
         let saturation = f64::from(self.saturation) / 100.0;
-        let to_scene = white / REFERENCE_NITS;
         linear.map(|c| ((expanded + (c * scale - expanded) * saturation).max(0.0)) * to_scene)
     }
+}
+
+/// An HDR game's light (linear, 1 at its reference white, BT.2020's primaries) as the compositor shows it
+/// on a screen with `headroom` (its peak over the reference white). With a curve: the black point and
+/// contrast on each channel's light below white, as on SDR's signal (with gamma 2.2 standing in for it);
+/// white at the curve's white, within the screen's peak; saturation around the luminance. With or
+/// without one, the highlights above the knee (the curve's start, or white; at most three quarters of the
+/// screen's peak) are compressed into the screen's peak when the game's own (`content_peak`, the same
+/// units) is beyond it.
+pub fn map_hdr(curve: Option<&Curve>, light: [f64; 3], content_peak: f64, headroom: f64) -> [f64; 3] {
+    let (black, contrast, white, start, saturation) = match curve {
+        Some(c) => (
+            f64::from(c.black) / 1000.0,
+            f64::from(c.contrast) / 100.0,
+            f64::from(c.white) / REFERENCE_NITS,
+            f64::from(c.start) / 100.0,
+            f64::from(c.saturation) / 100.0,
+        ),
+        None => (0.0, 1.0, 1.0, 1.0, 1.0),
+    };
+    let to_scene = white.min(headroom);
+    let light = light.map(|v| {
+        if curve.is_none() || v > 1.0 {
+            return v.max(0.0);
+        }
+        let e = v.max(0.0).powf(1.0 / 2.2);
+        ((e - black) / (1.0 - black).max(1e-6)).clamp(0.0, 1.0).powf(contrast).powf(2.2)
+    });
+    let y = 0.2627 * light[0] + 0.6780 * light[1] + 0.0593 * light[2];
+    let compressed = compress(y, start, content_peak, headroom / to_scene);
+    let scale = if y > 0.0 { compressed / y } else { 0.0 };
+    light.map(|c| ((compressed + (c * scale - compressed) * saturation).max(0.0)) * to_scene)
+}
+
+/// Luminance `y` with what is above the knee compressed so that the content's `peak` reaches the screen's
+/// (`target`), all in units of white: unchanged below the knee and when the content fits, else
+/// `k + x / (1 + x (1/T - 1/X))`, with `x`, `X` and `T` how far `y`, the content's peak and the target are
+/// above the knee. Its slope is 1 at the knee, it rises all the way, and the content's peak lands on the
+/// target. The knee is at most three quarters of the target, so that something is left to compress into.
+pub fn compress(y: f64, knee: f64, peak: f64, target: f64) -> f64 {
+    let knee = knee.min(0.75 * target);
+    if peak <= target || y <= knee {
+        return y;
+    }
+    let (x, content, room) = (y - knee, peak - knee, target - knee);
+    (knee + x / (1.0 + x * (1.0 / room - 1.0 / content))).min(target)
 }
 
 /// Luminance `y` (1 at white) with highlights above `start` expanded so that 1 reaches `peak`: below the
@@ -193,6 +252,50 @@ mod tests {
 
     fn near(a: f64, b: f64) {
         assert!((a - b).abs() < 1e-9, "{a} != {b}");
+    }
+
+    #[test]
+    fn on_a_screen_white_and_highlights_stay_within_its_peak() {
+        let c = Curve { white: 300, start: 60, peak: 1000, ..Curve::default() };
+        // On an SDR screen: white at the screen's white, no expansion, the rest of the curve applies.
+        let sdr = Curve { white: 203, ..c };
+        near(c.map_on([1.0, 1.0, 1.0], 1.0)[0], 1.0);
+        near(c.map_on([0.5, 0.5, 0.5], 1.0)[0], sdr.map_on([0.5, 0.5, 0.5], 1.0)[0]);
+        // On a screen with 650 nits' headroom the highlights reach its peak, not the curve's.
+        near(c.map_on([1.0, 1.0, 1.0], 650.0 / 203.0)[0], 650.0 / 203.0);
+        // With room enough, as without a screen.
+        near(c.map_on([1.0, 1.0, 1.0], 10.0)[0], c.map([1.0, 1.0, 1.0])[0]);
+    }
+
+    #[test]
+    fn an_hdr_games_highlights_are_compressed_into_the_screen_from_the_knee() {
+        let headroom = 650.0 / 203.0;
+        // Off, a game reaching 1000 nits: its peak lands on the screen's, white and below unchanged.
+        let peak = 1000.0 / 203.0;
+        near(map_hdr(None, [peak; 3], peak, headroom)[0], headroom);
+        near(map_hdr(None, [1.0; 3], peak, headroom)[0], 1.0);
+        near(map_hdr(None, [0.2; 3], peak, headroom)[0], 0.2);
+        // A game within the screen's peak is left as it is.
+        near(map_hdr(None, [3.0; 3], 3.0, headroom)[0], 3.0);
+        // It rises all the way, smoothly from the knee.
+        let mut last = 0.0;
+        for i in 0..=500 {
+            let y = compress(f64::from(i) / 100.0, 1.0, peak, headroom);
+            assert!(y >= last && y <= headroom);
+            last = y;
+        }
+        let d = 1e-6;
+        assert!(((compress(1.0 + d, 1.0, peak, headroom) - 1.0) / d - 1.0).abs() < 1e-3);
+        // A new curve changes nothing, as for SDR.
+        for v in [0.0, 0.05, 0.5, 1.0, 2.0, 4.0] {
+            near(map_hdr(Some(&Curve::default()), [v; 3], peak, headroom)[0], map_hdr(None, [v; 3], peak, headroom)[0]);
+        }
+        // The black point and white mean what they do for SDR: the floor to black, white to the curve's.
+        let c = Curve { black: 50, white: 300, ..Curve::default() };
+        near(map_hdr(Some(&c), [0.001; 3], peak, headroom)[0], 0.0);
+        near(map_hdr(Some(&c), [1.0; 3], peak, headroom)[0], 300.0 / 203.0);
+        // On an SDR screen it all goes into white.
+        assert!(map_hdr(Some(&c), [peak; 3], peak, 1.0)[0] <= 1.0);
     }
 
     #[test]

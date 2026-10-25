@@ -9,6 +9,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use clamshell_device::{Profile, Rotation, ScreenRole, TouchSelector};
+use clamshell_state::session::presentation::ColourDescription;
 use clamshell_state::{Effect, State};
 use clamshell_ui::{Config, Error, EventSender};
 use smithay::{
@@ -130,8 +131,13 @@ pub fn run(
     server.refresh = i32::try_from(top.mode.vrefresh()).unwrap_or(60).saturating_mul(1000);
     server.resize(server.size);
     server.advertise_dmabuf(&renderer);
-    let pipeline = Pipeline::new(&mut renderer, server.size)?;
+    let mut pipeline = Pipeline::new(&mut renderer, server.size)?;
     crate::colour::protocol::install(&server.dh);
+    // Each screen encoded for its panel, and described to clients as it, from the device profile.
+    let panels = [ColourDescription::from(profile.top.colour), ColourDescription::from(profile.bottom.colour)];
+    pipeline.set_outputs(&mut renderer, panels)?;
+    server.colour.set_outputs(panels);
+    log::info!("drm: panels' colour: top {:?}, second {:?}", panels[0], panels[1]);
 
     let renderer_formats = renderer.dmabuf_formats();
     let mut screens = Vec::new();
@@ -461,7 +467,7 @@ fn present(drawing: &mut Drawing, server: &Server, index: usize) -> Result<(), E
     let (mut buffer, _age) = screen.surface.next_buffer().map_err(|e| format!("{:?} screen: {e}", screen.role))?;
     let sync = {
         let mut target = renderer.bind(&mut buffer)?;
-        pipeline.present_part(renderer, &mut target, screen.part, screen.size, screen.transform)?
+        pipeline.present_part(renderer, &mut target, screen.role == ScreenRole::Bottom, screen.part, screen.size, screen.transform)?
     };
     screen.surface.queue_buffer(Some(sync), None, states.clone()).map_err(|e| format!("{:?} screen: {e}", screen.role))?;
     screen.pending = true;

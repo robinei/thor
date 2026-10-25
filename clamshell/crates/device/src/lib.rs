@@ -140,6 +140,19 @@ impl Profile {
             preview: preview::Preview::reference(),
         }
     }
+    /// The test machine with the Thor's panels' colour (`CLAMSHELL_DEVICE=vm-hdr`), its top panel's SDR
+    /// white at the reference (203 nits) so that its headroom to the peak is used: the HDR paths on the
+    /// DRM backend, seen through the virtual screens.
+    pub const fn vm_hdr() -> Self {
+        let thor = Self::thor();
+        let vm = Self::vm();
+        Self {
+            name: "vm-hdr",
+            top: Screen { colour: colour::PanelColour { sdr_white: Some(203_000), ..thor.top.colour }, ..vm.top },
+            bottom: Screen { colour: thor.bottom.colour, ..vm.bottom },
+            ..vm
+        }
+    }
     /// Unknown physical connectors remain unmatched; desktop views still draw as ordinary windows.
     pub const fn generic() -> Self {
         Self {
@@ -178,6 +191,7 @@ impl Profile {
         match forced.unwrap_or(detected) {
             "thor" => Ok(Self::thor()),
             "vm" => Ok(Self::vm()),
+            "vm-hdr" => Ok(Self::vm_hdr()),
             "generic" => Ok(Self::generic()),
             unknown => Err(unknown),
         }
@@ -195,6 +209,10 @@ mod tests {
         assert_eq!(Profile::identify(None, b"", "Microsoft Corporation", "Virtual Machine"), Ok(Profile::generic()));
         assert_eq!(Profile::identify(Some("vm"), b"ayn,thor\0", "", ""), Ok(Profile::vm()));
         assert_eq!(Profile::identify(Some("generic"), b"ayn,thor\0", "", ""), Ok(Profile::generic()));
+        assert_eq!(Profile::identify(Some("vm-hdr"), b"", "QEMU", ""), Ok(Profile::vm_hdr()));
+        let hdr = Profile::vm_hdr();
+        assert_eq!((hdr.top.connector, hdr.top.colour.sdr_white), ("Virtual-1", Some(203_000)));
+        assert_eq!(hdr.bottom.colour, Profile::thor().bottom.colour);
         assert_eq!(Profile::identify(Some("unknown"), b"ayn,thor\0", "", ""), Err("unknown"));
     }
     #[test]

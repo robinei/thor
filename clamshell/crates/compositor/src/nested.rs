@@ -102,7 +102,7 @@ pub fn run(
                                 host.describe(planned);
                             }
                             if let Some(encoding) = host.encoding() {
-                                pipeline.set_output(backend.renderer(), encoding)?;
+                                pipeline.set_outputs(backend.renderer(), [encoding; 2])?;
                             }
                             if let Some(advertised) = host.advertised() {
                                 server.colour.set_output(advertised);

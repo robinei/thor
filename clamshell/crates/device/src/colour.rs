@@ -32,6 +32,10 @@ pub struct PanelColour {
     pub link_bits_per_channel: Option<u8>,
     /// The compositor can tone-map highlights into panel headroom; this is not a PQ/HLG link.
     pub hdr_capable: bool,
+    /// Where SDR white is shown, in millinits, the rest up to the peak being headroom for highlights.
+    /// None: at the peak, no headroom. The Thor's panels have none until the panel is driven brighter for
+    /// HDR content with SDR drawn dimmer to match (phase 4h).
+    pub sdr_white: Option<u32>,
 }
 const D65: Xy = Xy { x: 312700, y: 329000 };
 impl PanelColour {
@@ -43,6 +47,7 @@ impl PanelColour {
             luminance: None,
             link_bits_per_channel: None,
             hdr_capable: false,
+            sdr_white: None,
         }
     }
     /// ICNA3520 starting facts from gamescope's Thor profile (Armada PR #261), not new measurements.
@@ -53,6 +58,7 @@ impl PanelColour {
             luminance: Some(Luminance { peak: 650000, frame_average: 650000, black: 2 }),
             link_bits_per_channel: Some(8),
             hdr_capable: true,
+            sdr_white: None,
         }
     }
 }

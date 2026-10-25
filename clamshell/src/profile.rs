@@ -40,5 +40,6 @@ fn colour(colour: clamshell_device::colour::PanelColour) -> serde_json::Value {
         "transfer": match colour.transfer { Transfer::Gamma22 => "gamma22" },
         "luminance_millinits": colour.luminance.map(|luminance| serde_json::json!({ "peak": luminance.peak, "frame_average": luminance.frame_average, "black": luminance.black })),
         "link_bits_per_channel": colour.link_bits_per_channel, "hdr_capable": colour.hdr_capable,
+        "sdr_white_millinits": colour.sdr_white,
     })
 }

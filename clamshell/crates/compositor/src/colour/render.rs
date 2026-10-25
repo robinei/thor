@@ -23,19 +23,20 @@ pub(crate) struct Pipeline {
     damage: OutputDamageTracker,
     shaders: Vec<(ColourDescription, GlesTexProgram)>,
     converted: Vec<Converted>,
-    output: ColourDescription,
-    output_shader: GlesTexProgram,
+    /// Each screen's encoding (the top's, the second's), and its shader.
+    outputs: [(ColourDescription, GlesTexProgram); 2],
     revision: u64,
     first: bool,
-    /// Each window's surfaces with the HDR curve of the game running it, this frame and the last: a
-    /// curve that changes redraws the scene, since the surfaces themselves didn't.
-    curves: Vec<(Id, Curve)>,
-    last_curves: Vec<(Id, Curve)>,
+    /// Each shown window's surfaces with the HDR curve of the game running it (or none) and the headroom
+    /// of its screen, this frame and the last: a change redraws the scene, since the surfaces themselves
+    /// didn't.
+    curves: Vec<(Id, Option<Curve>, f32)>,
+    last_curves: Vec<(Id, Option<Curve>, f32)>,
 }
 struct Converted {
     inner: Element,
     shader: GlesTexProgram,
-    /// For an SDR surface's shader: its curve's uniforms (see [`curve_uniforms`]), off without one.
+    /// For an SDR or HDR surface's shader: its curve's uniforms (see [`curve_uniforms`]).
     curve: Option<[[f32; 4]; 2]>,
 }
 impl ElementTrait for Converted {
@@ -98,20 +99,34 @@ impl Pipeline {
             damage: OutputDamageTracker::new(size, 1.0, Transform::Normal),
             shaders: Vec::new(),
             converted: Vec::new(),
-            output,
-            output_shader,
+            outputs: [(output, output_shader.clone()), (output, output_shader)],
             revision: 0,
             first: true,
             curves: Vec::new(),
             last_curves: Vec::new(),
         })
     }
-    pub(crate) fn set_output(&mut self, renderer: &mut GlesRenderer, output: ColourDescription) -> Result<(), Error> {
-        if self.output != output {
-            self.output_shader = shader(renderer, output, false)?;
-            self.output = output;
+    /// Each screen's encoding: the top's, then the second's.
+    pub(crate) fn set_outputs(&mut self, renderer: &mut GlesRenderer, outputs: [ColourDescription; 2]) -> Result<(), Error> {
+        for ((current, program), output) in self.outputs.iter_mut().zip(outputs) {
+            if *current != output {
+                *program = shader(renderer, output, false)?;
+                *current = output;
+            }
         }
         Ok(())
+    }
+
+    /// Screen `down`'s encoding (the second's, or the top's) and its shader.
+    fn output(&self, down: bool) -> &(ColourDescription, GlesTexProgram) {
+        let [top, bottom] = &self.outputs;
+        if down { bottom } else { top }
+    }
+
+    /// What screen `down` (the second, or the top) shows above the reference white: its peak over it.
+    fn headroom(&self, down: bool) -> f32 {
+        let luminance = self.output(down).0.luminances();
+        (luminance.max as f32 / luminance.reference.max(1) as f32).max(1.0)
     }
     /// Draws what changed in the scene. Returns the elements' states, and the part of the scene that
     /// changed, if anything did.
@@ -122,9 +137,9 @@ impl Pipeline {
         elements: &mut Vec<Element>,
     ) -> Result<(RenderElementStates, Option<Rectangle<i32, Physical>>), Error> {
         if self.size != server.size {
-            let output = self.output;
+            let outputs = self.outputs.clone().map(|(description, _)| description);
             *self = Self::new(renderer, server.size)?;
-            self.set_output(renderer, output)?;
+            self.set_outputs(renderer, outputs)?;
         }
         if self.revision != server.colour.revision {
             self.damage = OutputDamageTracker::new(self.size, 1.0, Transform::Normal);
@@ -132,10 +147,11 @@ impl Pipeline {
             self.revision = server.colour.revision;
         }
         self.curves.clear();
+        let state = server.core.state();
         for client in server.windows.iter().filter(|client| client.mapped && server.visible(client.id)) {
-            if let Some(curve) = server.core.state().window_curve(client.id) {
-                client.window.with_surfaces(|surface, _| self.curves.push((Id::from_wayland_resource(surface), curve)));
-            }
+            let curve = state.window_curve(client.id);
+            let headroom = self.headroom(state.session().window(client.id).is_some_and(|w| w.down));
+            client.window.with_surfaces(|surface, _| self.curves.push((Id::from_wayland_resource(surface), curve, headroom)));
         }
         if self.curves != self.last_curves {
             self.damage = OutputDamageTracker::new(self.size, 1.0, Transform::Normal);
@@ -145,7 +161,9 @@ impl Pipeline {
         self.converted.clear();
         for inner in elements.drain(..) {
             let colour = server.colour.surfaces.get(inner.id()).map(|colour| **colour).unwrap_or_default();
-            let curve = sdr(colour).then(|| curve_uniforms(self.last_curves.iter().find(|(id, _)| id == inner.id()).map(|(_, c)| c)));
+            let window = self.last_curves.iter().find(|(id, _, _)| id == inner.id());
+            let (curve, headroom) = window.map_or((None, 1.0), |(_, curve, headroom)| (curve.as_ref(), *headroom));
+            let curve = (sdr(colour) || hdr(colour)).then(|| curve_uniforms(curve, headroom));
             let program = match self.shaders.iter().find(|(description, _)| *description == colour) {
                 Some((_, program)) => program.clone(),
                 None => {
@@ -170,8 +188,9 @@ impl Pipeline {
     pub(crate) fn redraw_all(&mut self) {
         self.first = true;
     }
+    /// The whole scene in the top screen's encoding, as the nested host shows both screens in one window.
     pub(crate) fn present(&self, renderer: &mut GlesRenderer, target: &mut GlesTarget<'_>) -> Result<(), Error> {
-        self.present_with(renderer, target, &self.output_shader)
+        self.present_with(renderer, target, &self.output(false).1)
     }
     fn present_with(&self, renderer: &mut GlesRenderer, target: &mut GlesTarget<'_>, program: &GlesTexProgram) -> Result<(), Error> {
         let mut frame = renderer.render(target, self.size.into(), Transform::Flipped180)?;
@@ -191,12 +210,14 @@ impl Pipeline {
         drop(frame.finish()?);
         Ok(())
     }
-    /// Draws `part` of the scene onto an output's framebuffer, `size` before the output's `transform`
-    /// (a panel mounted turned), returning when the GPU will be done with it.
+    /// Draws `part` of the scene onto screen `down`'s framebuffer (the second, or the top) in its
+    /// encoding, `size` before the output's `transform` (a panel mounted turned), returning when the GPU
+    /// will be done with it.
     pub(crate) fn present_part(
         &self,
         renderer: &mut GlesRenderer,
         target: &mut GlesTarget<'_>,
+        down: bool,
         part: Rectangle<i32, Buffer>,
         size: smithay::utils::Size<i32, Physical>,
         transform: Transform,
@@ -204,7 +225,7 @@ impl Pipeline {
         let mut frame = renderer.render(target, size, transform)?;
         let whole = Rectangle::from_size(transform.transform_size(size));
         frame.clear([0.0, 0.0, 0.0, 1.0].into(), &[whole])?;
-        frame.render_texture_from_to(&self.texture, part.to_f64(), whole, &[whole], &[], Transform::Normal, 1.0, Some(&self.output_shader), &[])?;
+        frame.render_texture_from_to(&self.texture, part.to_f64(), whole, &[whole], &[], Transform::Normal, 1.0, Some(&self.output(down).1), &[])?;
         Ok(frame.finish()?)
     }
 
@@ -216,23 +237,29 @@ impl Pipeline {
         crate::render::capture(renderer, &target, self.size)
     }
 }
-/// Whether a surface of `description` is SDR, which an HDR curve applies to: an sRGB or power-law
-/// signal. PQ, HLG and linear light (scRGB's) are left as they are.
+/// Whether a surface of `description` is SDR: an sRGB or power-law signal, the curve applied to its signal
+/// (`Curve::map_on`).
 fn sdr(description: ColourDescription) -> bool {
     matches!(description.transfer, TransferFunction::Srgb | TransferFunction::Gamma(_))
 }
 
-/// An HDR curve as the SDR input shader's uniforms: black point, contrast, where highlights start and their
-/// peak (in units of white); then white over the reference, saturation, and whether a curve is on. Without
-/// one, the shader leaves the surface as it is.
-fn curve_uniforms(curve: Option<&Curve>) -> [[f32; 4]; 2] {
+/// Whether a surface of `description` is HDR: PQ or linear light (scRGB's), the curve applied to its light
+/// and its highlights compressed into the screen (`curve::map_hdr`).
+fn hdr(description: ColourDescription) -> bool {
+    matches!(description.transfer, TransferFunction::Pq | TransferFunction::Linear)
+}
+
+/// An HDR curve as the input shaders' uniforms: black point, contrast, where highlights start and their
+/// peak (in units of white); then white over the reference, saturation, the screen's headroom, and whether
+/// a curve is on. Without one, an SDR surface is only decoded and an HDR one compressed into the screen.
+fn curve_uniforms(curve: Option<&Curve>, headroom: f32) -> [[f32; 4]; 2] {
     let Some(c) = curve else {
-        return [[0.0, 1.0, 1.0, 1.0], [1.0, 1.0, 0.0, 0.0]];
+        return [[0.0, 1.0, 1.0, 1.0], [1.0, 1.0, headroom, 0.0]];
     };
     let white = f32::from(c.white.max(1));
     [
         [f32::from(c.black) / 1000.0, f32::from(c.contrast) / 100.0, f32::from(c.start) / 100.0, f32::from(c.peak.max(c.white)) / white],
-        [white / REFERENCE_NITS as f32, f32::from(c.saturation) / 100.0, 0.0, 1.0],
+        [white / REFERENCE_NITS as f32, f32::from(c.saturation) / 100.0, headroom, 1.0],
     ]
 }
 
@@ -256,28 +283,64 @@ fn shader(renderer: &mut GlesRenderer, description: ColourDescription, input: bo
         _ => return Err("unsupported colour transfer".into()),
     };
     let scaling = if description.transfer == TransferFunction::Pq { 1.0 } else { f64::from(description.luminances().max) / reference };
-    // An SDR surface's HDR curve, as clamshell_state::curve::Curve::map does it: on the signal, the black
-    // point and contrast; on the light, highlights expanded on luminance and saturation around it.
-    let curved = input && sdr(description);
-    let conversion = if curved {
+    // An SDR surface's HDR curve, as clamshell_state::curve::Curve::map_on does it: on the signal, the
+    // black point and contrast; on the light, highlights expanded on luminance within the screen's peak
+    // (curve_b.z) and saturation around it.
+    let curved = input && (sdr(description) || hdr(description));
+    let conversion = if input && sdr(description) {
         format!(
             "bool on = curve_b.w > 0.5;
     if (on) {{ v = pow(clamp((v - curve_a.x) / max(1.0 - curve_a.x, 0.000001), 0.0, 1.0), vec3(curve_a.y)); }}
     v = convert(v) * {scaling:.12};
     if (on) {{
+        float white = min(curve_b.x, curve_b.z);
+        float p = max(min(curve_a.w, curve_b.z / white), 1.0);
         float y = dot(v, vec3(0.2126, 0.7152, 0.0722));
         float s = curve_a.z;
         float t = (y - s) / max(1.0 - s, 0.000001);
-        float e = (y > s && s < 1.0) ? s + (1.0 - s) * t + (curve_a.w - 1.0) * t * t : y;
+        float e = (y > s && s < 1.0) ? s + (1.0 - s) * t + (p - 1.0) * t * t : y;
         vec3 c = y > 0.0 ? v * (e / y) : vec3(0.0);
-        v = max(vec3(e) + (c - vec3(e)) * curve_b.y, vec3(0.0)) * curve_b.x;
+        v = max(vec3(e) + (c - vec3(e)) * curve_b.y, vec3(0.0)) * white;
     }}
     v = matrix * v;"
         )
+    } else if input && hdr(description) {
+        // An HDR surface, as clamshell_state::curve::map_hdr does it, in BT.2020: with a curve, the black
+        // point and contrast on each channel's light below white, and the white; with or without one, the
+        // highlights above the knee compressed into the screen's peak when its own peak is beyond.
+        let target = description.target.unwrap_or_default();
+        let peak = target.max_cll.or(target.luminance.map(|(_, maximum)| maximum)).unwrap_or(description.luminances().max);
+        let peak = f64::from(peak) / reference.max(1.0);
+        format!(
+            "v = convert(v) * {scaling:.12};
+    v = matrix * v;
+    bool on = curve_b.w > 0.5;
+    float white = on ? min(curve_b.x, curve_b.z) : min(1.0, curve_b.z);
+    if (on) {{
+        vec3 g = pow(clamp(v, 0.0, 1.0), vec3(1.0 / 2.2));
+        g = pow(pow(clamp((g - curve_a.x) / max(1.0 - curve_a.x, 0.000001), 0.0, 1.0), vec3(curve_a.y)), vec3(2.2));
+        v = mix(g, v, step(vec3(1.0), v));
+    }} else {{
+        v = max(v, vec3(0.0));
+    }}
+    float y = dot(v, vec3(0.2627, 0.6780, 0.0593));
+    float room = curve_b.z / white;
+    float k = min(on ? curve_a.z : 1.0, 0.75 * room);
+    float e = y;
+    if ({peak:.12} > room && y > k) {{
+        float x = y - k;
+        e = min(k + x / (1.0 + x * (1.0 / (room - k) - 1.0 / ({peak:.12} - k))), room);
+    }}
+    vec3 c = y > 0.0 ? v * (e / y) : vec3(0.0);
+    v = max(vec3(e) + (c - vec3(e)) * (on ? curve_b.y : 1.0), vec3(0.0)) * white;"
+        )
     } else if input {
         format!("v = convert(v) * {scaling:.12}; v = matrix * v;")
-    } else {
+    } else if description.transfer == TransferFunction::Pq {
         format!("v = matrix * v; v /= {scaling:.12}; v = convert(v);")
+    } else {
+        // Above the screen's peak, each pixel is brought down whole, keeping its hue.
+        format!("v = matrix * v; v /= {scaling:.12}; float m = max(max(v.r, v.g), v.b); if (m > 1.0) {{ v /= m; }} v = convert(v);")
     };
     let uniforms = if curved { "uniform vec4 curve_a;\nuniform vec4 curve_b;" } else { "" };
     let source = format!(
@@ -330,31 +393,84 @@ mod tests {
         }
         v = v.map(decode);
         if on {
+            let white = b[0].min(b[2]);
+            let p = a[3].min(b[2] / white).max(1.0);
             let y = 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
             let (s, t) = (a[2], (y - a[2]) / (1.0 - a[2]).max(0.000001));
-            let e = if y > s && s < 1.0 { s + (1.0 - s) * t + (a[3] - 1.0) * t * t } else { y };
+            let e = if y > s && s < 1.0 { s + (1.0 - s) * t + (p - 1.0) * t * t } else { y };
             let c = if y > 0.0 { v.map(|x| x * e / y) } else { [0.0; 3] };
-            v = c.map(|x| (e + (x - e) * b[1]).max(0.0) * b[0]);
+            v = c.map(|x| (e + (x - e) * b[1]).max(0.0) * white);
         }
         v
     }
 
+    /// The HDR input shader's arithmetic, on light already in BT.2020 (1 at the content's reference
+    /// white), as written in GLSL above.
+    fn shaded_hdr(light: [f64; 3], peak: f64, [a, b]: [[f32; 4]; 2]) -> [f64; 3] {
+        let (a, b) = (a.map(f64::from), b.map(f64::from));
+        let on = b[3] > 0.5;
+        let white = if on { b[0].min(b[2]) } else { 1.0_f64.min(b[2]) };
+        let v = light.map(|v| {
+            if !on {
+                return v.max(0.0);
+            }
+            if v >= 1.0 {
+                return v;
+            }
+            let g = v.clamp(0.0, 1.0).powf(1.0 / 2.2);
+            ((g - a[0]) / (1.0 - a[0]).max(0.000001)).clamp(0.0, 1.0).powf(a[1]).powf(2.2)
+        });
+        let y = 0.2627 * v[0] + 0.6780 * v[1] + 0.0593 * v[2];
+        let room = b[2] / white;
+        let k = (if on { a[2] } else { 1.0 }).min(0.75 * room);
+        let mut e = y;
+        if peak > room && y > k {
+            let x = y - k;
+            e = (k + x / (1.0 + x * (1.0 / (room - k) - 1.0 / (peak - k)))).min(room);
+        }
+        let c = if y > 0.0 { v.map(|x| x * e / y) } else { [0.0; 3] };
+        c.map(|x| (e + (x - e) * if on { b[1] } else { 1.0 }).max(0.0) * white)
+    }
+
+    fn close(want: [f64; 3], got: [f64; 3], what: &str) {
+        for (w, g) in want.iter().zip(got) {
+            assert!((w - g).abs() < 1e-5, "{what}: {want:?} != {got:?}");
+        }
+    }
+
+    const CURVES: [Curve; 3] = [
+        Curve { black: 0, contrast: 100, white: 203, start: 100, peak: 203, saturation: 100 },
+        Curve { black: 20, contrast: 110, white: 203, start: 60, peak: 650, saturation: 105 },
+        Curve { black: 150, contrast: 70, white: 400, start: 30, peak: 1000, saturation: 50 },
+    ];
+    /// An SDR screen, a 650-nit panel with SDR white at the reference, and room for anything.
+    const HEADROOMS: [f64; 3] = [1.0, 650.0 / 203.0, 100.0];
+
     #[test]
-    fn the_shaders_uniforms_give_the_states_curve() {
-        let curves = [
-            Curve::default(),
-            Curve { black: 20, contrast: 110, white: 203, start: 60, peak: 650, saturation: 105 },
-            Curve { black: 150, contrast: 70, white: 400, start: 30, peak: 1000, saturation: 50 },
-        ];
-        for curve in curves {
-            for rgb in [[0.0, 0.0, 0.0], [0.03, 0.03, 0.03], [0.5, 0.4, 0.3], [1.0, 1.0, 1.0], [1.0, 0.2, 0.0], [0.9, 0.95, 1.0]] {
-                let (want, got) = (curve.map(rgb), shaded(rgb, curve_uniforms(Some(&curve))));
-                for (w, g) in want.iter().zip(got) {
-                    assert!((w - g).abs() < 1e-5, "{curve:?} {rgb:?}: {want:?} != {got:?}");
+    fn the_sdr_shaders_uniforms_give_the_states_curve_on_each_screen() {
+        for curve in CURVES {
+            for headroom in HEADROOMS {
+                for rgb in [[0.0, 0.0, 0.0], [0.03, 0.03, 0.03], [0.5, 0.4, 0.3], [1.0, 1.0, 1.0], [1.0, 0.2, 0.0], [0.9, 0.95, 1.0]] {
+                    let got = shaded(rgb, curve_uniforms(Some(&curve), headroom as f32));
+                    close(curve.map_on(rgb, headroom), got, &format!("{curve:?} {headroom} {rgb:?}"));
                 }
             }
         }
         // Without a curve the surface is only decoded.
-        assert_eq!(shaded([0.5, 0.5, 0.5], curve_uniforms(None))[0], shaded([0.5, 0.5, 0.5], curve_uniforms(Some(&Curve::default())))[0]);
+        assert_eq!(shaded([0.5, 0.5, 0.5], curve_uniforms(None, 1.0))[0], shaded([0.5, 0.5, 0.5], curve_uniforms(Some(&CURVES[0]), 1.0))[0]);
+    }
+
+    #[test]
+    fn the_hdr_shaders_uniforms_give_the_states_mapping_on_each_screen() {
+        use clamshell_state::curve::map_hdr;
+        let peak = 1000.0 / 203.0;
+        for curve in CURVES.iter().map(Some).chain([None]) {
+            for headroom in HEADROOMS {
+                for light in [[0.0, 0.0, 0.0], [0.01, 0.01, 0.01], [0.5, 0.4, 0.3], [1.0, 1.0, 1.0], [3.0, 2.0, 1.0], [peak, peak, peak], [6.0, 0.5, 0.2]] {
+                    let got = shaded_hdr(light, peak, curve_uniforms(curve, headroom as f32));
+                    close(map_hdr(curve, light, peak, headroom), got, &format!("{curve:?} {headroom} {light:?}"));
+                }
+            }
+        }
     }
 }
