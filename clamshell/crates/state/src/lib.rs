@@ -584,7 +584,7 @@ impl State {
             self.left_tab(left);
         }
         self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
-        self.session.follow_front_launch(&mut windows);
+        self.session.follow_front_launch(self.clock.mono(), &mut windows);
         self.session.follow_replacement(self.clock.mono(), &mut windows);
         self.session.follow_quitting(self.clock.mono(), self.shelf.library(), out);
         self.session.follow_front(self.clock.mono(), out);

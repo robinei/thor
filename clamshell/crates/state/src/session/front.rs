@@ -1,14 +1,19 @@
 //! What is in front: the Home button, and what takes a closed window's place, which is what was in front
-//! before it.
+//! before it, until the program of the closed window shows another.
 
 use crate::out::Out;
 use crate::{EntryAct, Event, Instance, Session, WindowCommand};
+
+/// How long a program whose window in front closed, still running, is waited for to show another (see
+/// [`Session::follow_front`]): Steam replacing its update dialog with its window takes a while.
+pub(crate) const REWAIT_SECS: u64 = 30;
 
 impl Session {
     /// Runs after every event. If the window in front when the last pass ran (see
     /// [`Session::followed`]) closed and nothing of its workspace is left, goes back to what was in front
     /// before it, with shelf as the last resort; otherwise sway would leave the empty workspace in front. The workspace is remembered in case a
-    /// window appears on it soon after (see [`Session::follow_replacement`]).
+    /// window appears on it soon after (see [`Session::follow_replacement`]). If its program still runs,
+    /// its next window is shown as a launch's first is, for [`REWAIT_SECS`].
     pub(crate) fn follow_front(&mut self, now: u64, out: &mut Out) {
         let windows = &self.windows;
         let Some(was) = &self.followed_front else { return };
@@ -23,7 +28,19 @@ impl Session {
             Some(group) => self.focus(&group, out),
             None => self.command(WindowCommand::ShowShelf, out),
         }
+        if let Some(instance) = closed.then(|| self.still_running(&was)).flatten() {
+            self.set_front_launch(instance, Some(now + REWAIT_SECS));
+        }
         self.closed_front = closed.then_some((was, now));
+    }
+
+    /// The launch to wait for again on workspace `ws`, if its entry still runs: its scope, or for an entry
+    /// known by app id or process (none of whose windows need be in its scope), the entry.
+    fn still_running(&self, ws: &str) -> Option<Instance> {
+        let key = Instance::key_of(ws)?;
+        let running = self.running.iter().find(|r| r.key == key)?;
+        let scope = self.units.iter().find(|unit| unit.key() == Some(key)).cloned();
+        scope.or_else(|| running.outside().then(|| Instance::Run { key: key.to_owned(), secs: running.start, n: 0 }))
     }
 
     /// Whether shelf is in front on the main screen, as it is before the compositor reports a window.
@@ -119,6 +136,29 @@ mod tests {
         s.applied(Event::tick(103));
         let fx = s.observed(vec![shelf_window(true), win(4, "waydroid.org.fdroid.fdroid", &app, false)]);
         assert_eq!(window_effects(fx), vec![], "too late: it stays behind");
+    }
+
+    /// A program still running whose window in front closed, as Steam's update dialog does before its
+    /// window comes, is waited for: its next window is shown though it comes later than a replacement
+    /// would, and another program's window opening meanwhile stays behind. After [`REWAIT_SECS`] it isn't.
+    #[test]
+    fn a_running_programs_next_window_is_shown_after_its_window_in_front_closed() {
+        let mut s = state();
+        s.applied(Event::tick(1000));
+        let zelda = launch(&mut s, "zelda-lttp");
+        let window = |id, focused| Window { unit: zelda.unit(), ..win(id, "zelda3", &zelda.workspace(), focused) };
+        s.observed(vec![shelf_window(false), window(3, true)]);
+        assert_eq!(window_effects(s.observed(vec![shelf_window(false)])), [Effect::Window(WindowCommand::ShowShelf)]);
+        s.applied(Event::tick(1010));
+        assert!(!s.session().opening_focus(&foot()), "another program's window opens behind");
+        let fx = s.observed(vec![shelf_window(true), window(4, false)]);
+        assert_eq!(window_effects(fx), [focus(4)]);
+        // Closed again, and its next window comes too late.
+        s.observed(vec![shelf_window(false), window(4, true)]);
+        s.observed(vec![shelf_window(false)]);
+        s.applied(Event::tick(1011 + super::REWAIT_SECS));
+        let fx = s.observed(vec![shelf_window(true), window(5, false)]);
+        assert_eq!(window_effects(fx), [], "too late: it stays behind");
     }
 
     #[test]

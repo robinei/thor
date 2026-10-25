@@ -356,7 +356,7 @@ impl Session {
         let Some(r) = new.last() else {
             return false;
         };
-        self.front_launch = Some(Instance::Run { key: r.key.clone(), secs: clock.unix(), n: 0 });
+        self.set_front_launch(Instance::Run { key: r.key.clone(), secs: clock.unix(), n: 0 }, None);
         self.running.extend(new);
         true
     }
@@ -592,7 +592,7 @@ impl Session {
         let instance = Instance::Run { key, secs: clock.unix(), n: self.next_instance() };
         self.launching.push(Launching { entry, instance: instance.clone(), app_id, at: clock.mono() });
         if start == Start::Front {
-            self.front_launch = Some(instance.clone());
+            self.set_front_launch(instance.clone(), None);
         }
         instance
     }
@@ -985,6 +985,22 @@ mod tests {
         let ff6 = Instance::workspace_of(&key("ff6"));
         assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![7], to: ff6 })), "the game's, not Steam's: {fx:?}");
         assert_eq!(s.session().running_of(&window).map(|r| &*r.id), Some("ff6"));
+    }
+
+    /// While a Steam game's launch waits for its window, Steam's own windows (raised by the launch, or a
+    /// dialog of Steam's) open behind; the game's comes in front.
+    #[test]
+    fn steams_windows_open_behind_a_steam_games_launch() {
+        let mut s = steam_ff6();
+        let steam = Instance::Run { key: key("desktop:steam"), secs: 1, n: 0 };
+        s.applied(Event::Units(vec![steam.clone()]));
+        let client = Window { unit: steam.unit(), ..win(5, "steam", &steam.workspace(), true) };
+        s.observed(vec![client.clone()]);
+        launch(&mut s, "ff6");
+        assert!(!s.session().opening_focus(&Window { id: 6, ..client.clone() }), "Steam's window");
+        assert!(!s.session().opening_focus(&Window { id: 6, parent: Some(5), ..client.clone() }), "a dialog of Steam's");
+        let game = Window { unit: steam.unit(), ..win(7, "steam_app_620", "", false) };
+        assert!(s.session().opening_focus(&game), "the game's, though in Steam's scope");
     }
 
     /// Another tool than the Device view is asked of the system; an id the library doesn't have plays

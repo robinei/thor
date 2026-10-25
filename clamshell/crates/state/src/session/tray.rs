@@ -130,7 +130,7 @@ impl Session {
         let Some(r) = self.running(entry) else {
             return false;
         };
-        self.front_launch = Some(Instance::Run { key: r.key.clone(), secs: clock.unix(), n: 0 });
+        self.set_front_launch(Instance::Run { key: r.key.clone(), secs: clock.unix(), n: 0 }, None);
         out.effects.push(Effect::Tray(TrayCommand::Activate(key)));
         true
     }

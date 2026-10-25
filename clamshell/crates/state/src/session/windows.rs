@@ -413,9 +413,10 @@ mod tests {
         assert!(s.session().opening_focus(&next));
         let other_launch = Window { unit: Some("clamshell-run-one-1-2.scope".into()), ..next.clone() };
         assert!(!s.session().opening_focus(&other_launch));
+        assert!(s.session().opening_focus(&Window { parent: Some(7), ..next.clone() }), "a dialog of the program in front");
         s.applied(Event::Home);
         assert!(!s.session().opening_focus(&next));
-        assert!(s.session().opening_focus(&Window { parent: Some(7), ..next }));
+        assert!(!s.session().opening_focus(&Window { parent: Some(7), ..next }), "a dialog of a program behind stays behind");
         assert!(s.session().opening_focus(&win(9, "foot", "outside", false)));
     }
 

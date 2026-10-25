@@ -47,7 +47,9 @@ matching windows use the rule and displace the current bottom occupant.
 
 The foreground launch intent (`front_launch`) and two-second replacement history are domain rules:
 an explicitly requested launch may show its first window, and a splash may be replaced without losing
-its place. They are not acknowledgements of sway commands. Placement and exact focus commands remain
+its place. When the window in front closes and its program still runs, the intent is set again for that
+program for `REWAIT_SECS` (30), so its next window comes in front however late, as Steam's window after
+its update dialog (`a_running_programs_next_window_is_shown_after_its_window_in_front_closed`). They are not acknowledgements of sway commands. Placement and exact focus commands remain
 effects for the sway executor; the in-process compositor reads the committed state instead.
 
 Live ids are unique, at most one top window is selected and one window placed below, remembered
@@ -678,9 +680,12 @@ shrink only when necessary. Rendering and pointer input share the same viewport,
 black around the client does not activate the shelf behind it. Colour metadata is reserved for future
 colour management; the host does not advertise HDR.
 
-An external client's first window selects itself. A first window of our own scope waits for foreground
-launch intent; a later window may select itself only when that program is shown. Dialogs may select
-themselves. Tests: `compositor_opening_focus_respects_launch_intent_and_shown_program`, the presentation
+While a launch waits for its window, only its own windows select themselves (in its scope, of its entry
+by app id or process, or a dialog of one); others open behind, as Steam's windows behind a Steam game's
+launch (`steams_windows_open_behind_a_steam_games_launch`). Otherwise an external client's first window
+selects itself, a first window of our own scope waits for foreground launch intent, and a later window
+may select itself only when that program is shown. A dialog selects itself when its parent's program is
+shown. Tests: `compositor_opening_focus_respects_launch_intent_and_shown_program`, the presentation
 policy tests, metadata-change and Home-tap tests in session/windows, and the randomized state test.
 The headless compositor protocol test checks first configure, fixed-size child placement and close;
 geometry tests check native sizing, fitting and inverse coordinates. `tests/nested-compositor.py` checks

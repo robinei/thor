@@ -46,8 +46,12 @@ pub struct Session {
     recent: Vec<String>,
     /// The selected window of each top group, retained while the group is hidden.
     selected: Vec<(String, i64)>,
-    /// The launch to show when its first window appears.
+    /// The launch to show when its first window appears. Until then, other programs' new windows open
+    /// behind (see [`Session::opening_focus`]).
     front_launch: Option<Instance>,
+    /// When a front launch waiting again gives up: one set for a program still running whose window in
+    /// front closed (see [`Session::follow_front`]).
+    front_launch_until: Option<u64>,
     /// The workspace whose window in front closed, leaving it empty, and when (see
     /// [`Session::follow_replacement`]).
     closed_front: Option<(String, u64)>,
@@ -174,15 +178,37 @@ impl Session {
         self.top_window().is_some_and(|front| !front.is_shelf() && self.windows.iter().any(|w| !w.down && w.id != front.id && w.workspace == front.workspace))
     }
 
-    /// Initial selection for a compositor that has no external focus observation. First windows of
-    /// our scopes follow foreground launch intent; later windows of the shown program may select
-    /// themselves. An unowned launch or a dialog is shown at once.
+    /// Initial selection for a compositor that has no external focus observation. While a launch waits for
+    /// its window, only its own windows come in front. A dialog comes in front if its parent's program is
+    /// in front. First windows of our scopes follow foreground launch intent; later windows of the shown
+    /// program may select themselves. An unowned program's window is shown at once.
     pub fn opening_focus(&self, window: &Window) -> bool {
+        if let Some(instance) = &self.front_launch {
+            return self.of_launch(instance, window);
+        }
+        if let Some(parent) = window.parent.and_then(|id| self.window(id)) {
+            return self.top_window().is_some_and(|top| top.workspace == parent.workspace);
+        }
         if window.parent.is_some() || !window.unit.as_deref().is_some_and(Instance::is_launch_unit) {
             return true;
         }
         let key = window.unit.as_deref().and_then(Instance::key_of);
         self.top_window().is_some_and(|top| Instance::key_of(&top.workspace) == key) && self.windows.iter().any(|old| old.unit == window.unit)
+    }
+
+    /// Whether `window` is one of launch `instance`'s: in its scope, of its entry by app id or process, or
+    /// a dialog of one on its workspace.
+    fn of_launch(&self, instance: &Instance, window: &Window) -> bool {
+        let running = self.running.iter().find(|r| Some(r.key.as_str()) == instance.key());
+        let in_scope = window.unit.as_deref().and_then(|unit| unit.strip_suffix(".scope")).is_some_and(|unit| instance.is(unit));
+        let parent = window.parent.and_then(|id| self.window(id)).is_some_and(|parent| instance.on(&parent.workspace));
+        in_scope || parent || running.is_some_and(|r| r.owns(window) || r.fathered(window))
+    }
+
+    /// Makes `instance` the launch to show when its window appears, waiting until `until` if given.
+    pub(crate) fn set_front_launch(&mut self, instance: Instance, until: Option<u64>) {
+        self.front_launch = Some(instance);
+        self.front_launch_until = until;
     }
 
     pub(crate) fn step_window(&mut self, next: bool, out: &mut Out) {
@@ -386,7 +412,10 @@ impl Session {
     /// Shows the workspace of the launch just started, once its own first window is there. The entry's
     /// workspace may already have windows of its other launches. An entry known by its app id has no scope
     /// of ours, so any of its windows counts.
-    pub(crate) fn follow_front_launch(&mut self, out: &mut Out) {
+    pub(crate) fn follow_front_launch(&mut self, now: u64, out: &mut Out) {
+        if self.front_launch_until.is_some_and(|until| now > until) {
+            self.cancel_front_launch();
+        }
         let Some(instance) = &self.front_launch else { return };
         let outside = self
             .running
