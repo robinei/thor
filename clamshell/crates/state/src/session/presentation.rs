@@ -149,12 +149,34 @@ impl crate::State {
         let chosen = self.settings_of(&running.id).get(crate::settings::Setting::Curve);
         self.curving().in_force(chosen).copied()
     }
+
+    /// The frame rate cap for window `id`: the one in the settings in force for the program running it.
+    /// None for no cap, and for a window no launch runs.
+    pub fn window_fps_cap(&self, id: i64) -> Option<u16> {
+        let window = self.session().window(id)?;
+        let running = self.session().running_of(window)?;
+        Some(self.settings_of(&running.id).get(crate::settings::Setting::FpsCap)).filter(|cap| *cap > 0)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::session::windows::Window;
+
+    #[test]
+    fn a_windows_fps_cap_is_the_one_set_for_its_program() {
+        use crate::testkit::*;
+        use crate::{Id, SettingsId, Tab, settings::Setting};
+        let mut s = state();
+        launch(&mut s, "zelda-lttp");
+        show_window(&mut s, "zelda-lttp", 7);
+        assert_eq!(s.window_fps_cap(7), None, "no cap");
+        tap(&mut s, Id::Tab(Tab::Settings));
+        tap(&mut s, Id::Settings(SettingsId::Tile(Setting::FpsCap)));
+        assert_eq!(s.window_fps_cap(7), Some(30));
+        assert_eq!(s.window_fps_cap(99), None, "no such window");
+    }
     #[test]
     fn dialogs_and_fixed_windows_are_centred_and_games_fit_ignored_sizes() {
         let mut window = Window::default();

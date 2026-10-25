@@ -3,8 +3,11 @@
 //! nested). Kept in a fixed ring per window, with no allocation per frame. The window in front on the
 //! top screen gives the frame rate the FPS tile and the system info show (`Reading::Frames`), as
 //! MangoHud's log does under sway.
+//!
+//! A window with a frame rate cap gets its frame callbacks at the cap's pace ([`Frames::pace`]), which
+//! clients presenting in FIFO follow: Mesa's Vulkan WSI, EGL with a swap interval, Xwayland's Present.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Frames shown longer ago than this don't count toward the frame rate.
 const SPAN: Duration = Duration::from_secs(1);
@@ -21,11 +24,13 @@ pub(crate) struct Frames {
     len: usize,
     /// A new buffer was committed and not shown yet.
     fresh: bool,
+    /// Under a cap: when the next frame callback is due.
+    paced: Option<Instant>,
 }
 
 impl Default for Frames {
     fn default() -> Self {
-        Frames { shown: [Duration::ZERO; RING], next: 0, len: 0, fresh: false }
+        Frames { shown: [Duration::ZERO; RING], next: 0, len: 0, fresh: false, paced: None }
     }
 }
 
@@ -46,6 +51,26 @@ impl Frames {
         }
         self.next = (self.next + 1) % RING;
         self.len = (self.len + 1).min(RING);
+    }
+
+    /// Whether the window waiting for a frame callback gets it at `now`, under a cap of `cap` frames a second (None:
+    /// always) on a screen showing a frame every `refresh`. A capped window gets them at the cap's
+    /// period on average: on a 60 Hz screen, a 40 fps cap gives two refreshes, then one, and so on. They
+    /// come a quarter of a refresh early, since flips are when they are sent. Otherwise, the time they
+    /// are due.
+    pub fn pace(&mut self, cap: Option<u16>, refresh: Duration, now: Instant) -> Result<(), Instant> {
+        let Some(cap) = cap else {
+            self.paced = None;
+            return Ok(());
+        };
+        let period = Duration::from_secs(1) / u32::from(cap.max(1));
+        let due = self.paced.unwrap_or(now);
+        if now + refresh / 4 < due {
+            return Err(due);
+        }
+        // Behind by more than a period (the window was hidden, or the cap just set): start again from now.
+        self.paced = Some(if due + period < now { now + period } else { due + period });
+        Ok(())
     }
 
     /// The frames shown in the last [`SPAN`] before `now` per second, and the mean time between them in
@@ -96,6 +121,26 @@ mod tests {
         assert_eq!(fps, 50.0);
         assert!(frame_ms.is_some_and(|ms| (ms - 20.0).abs() < 0.01), "{frame_ms:?}");
         assert_eq!(f.rate(ms(89 * 20 + 2000)), (0.0, None), "a window that stopped drawing");
+    }
+
+    /// The refreshes at which a cap sends frame callbacks, over `n` refreshes from flips every `refresh`.
+    fn paced(cap: u16, refresh: Duration, n: u32) -> Vec<u32> {
+        let (mut f, start) = (Frames::default(), Instant::now());
+        (0..n).filter(|i| f.pace(Some(cap), refresh, start + refresh * *i).is_ok()).collect()
+    }
+
+    #[test]
+    fn a_cap_paces_frame_callbacks_on_the_screens_refreshes() {
+        let hz60 = Duration::from_secs(1) / 60;
+        assert_eq!(paced(30, hz60, 8), [0, 2, 4, 6]);
+        assert_eq!(paced(60, hz60, 4), [0, 1, 2, 3]);
+        assert_eq!(paced(120, hz60, 3), [0, 1, 2], "a cap over the refresh: every refresh");
+        assert_eq!(paced(40, hz60, 7), [0, 2, 3, 5, 6], "40 on 60 Hz: two refreshes then one");
+        assert_eq!(paced(40, Duration::from_secs(1) / 120, 7), [0, 3, 6], "40 on 120 Hz: every third");
+        let (mut f, now) = (Frames::default(), Instant::now());
+        assert_eq!(f.pace(None, hz60, now), Ok(()), "no cap");
+        assert_eq!(f.pace(Some(30), hz60, now), Ok(()));
+        assert_eq!(f.pace(Some(30), hz60, now + hz60), Err(now + Duration::from_secs(1) / 30), "held until due");
     }
 
     #[test]

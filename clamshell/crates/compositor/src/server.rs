@@ -517,6 +517,38 @@ impl Server {
         self.popups.cleanup();
     }
 
+    /// Frame callbacks for the windows shown on the top screen or the second (`down`; None: both, as
+    /// nested), a capped window's at its cap's pace (see [`crate::frames::Frames::pace`]) on a screen
+    /// showing a frame every `refresh`. Returns when a callback held back is due.
+    pub fn frame_callbacks(&mut self, down: Option<bool>, refresh: std::time::Duration, now: Instant) -> Option<Instant> {
+        let shown: Vec<_> = self.windows.iter().map(|client| client.mapped && self.visible(client.id)).collect();
+        let state = self.core.state();
+        let [top, bottom] = &self.outputs;
+        let time = self.started.elapsed();
+        let mut held: Option<Instant> = None;
+        for (client, shown) in self.windows.iter_mut().zip(shown) {
+            let on_down = state.session().window(client.id).is_some_and(|w| w.down);
+            if !shown || down.is_some_and(|down| down != on_down) {
+                continue;
+            }
+            // A capped window uses its turn only while it waits for a callback, so that one drawing
+            // slower than its cap isn't held back further.
+            let cap = state.window_fps_cap(client.id);
+            let waiting = client.window.root().is_some_and(|root| {
+                with_states(&root, |states| !states.cached_state.get::<smithay::wayland::compositor::SurfaceAttributes>().current().frame_callbacks.is_empty())
+            });
+            let paced = if cap.is_some() && !waiting { Ok(()) } else { client.frames.pace(cap, refresh, now) };
+            match paced {
+                Ok(()) => {
+                    let output = if on_down { bottom } else { top };
+                    client.window.send_frame(output, time, Some(std::time::Duration::ZERO), |_, _| Some(output.clone()));
+                }
+                Err(due) => held = Some(held.map_or(due, |held| held.min(due))),
+            }
+        }
+        held
+    }
+
     /// Sends the frame rate of the window on the top screen every [`crate::frames::REPORT`], while it
     /// draws: none for a window that drew nothing in the last second, so that the FPS tile measures no
     /// game rather than 0.

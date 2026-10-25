@@ -83,8 +83,12 @@ impl Handles {
             },
             Effect::Launch { entry, instance, launch, settings, env } => {
                 log::info!("launching {entry}");
-                // MangoHud's first, so a game's own variables can still override it.
-                let mut game_env = self.tuning.apply(settings, Some(entry)).map(|config| crate::readings::mangohud::env(&config)).unwrap_or_default();
+                // MangoHud's (under sway) or FIFO's (a cap under the compositor) first, so a game's own
+                // variables can still override them.
+                let mut game_env = match self.tuning.apply(settings, Some(entry)) {
+                    Some(config) => crate::readings::mangohud::env(&config),
+                    None => self.tuning.fifo_env(settings),
+                };
                 game_env.extend(env.iter().cloned());
                 // The variables for the grabbed controller go first, so a game's own may override them.
                 game_env.splice(0..0, self.pad_taken.env());

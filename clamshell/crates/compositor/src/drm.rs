@@ -58,6 +58,8 @@ struct Screen {
     /// The commits its last frame callbacks answered, and when an idle screen may send the next ones.
     answered: u64,
     next_callbacks: Option<Instant>,
+    /// When a capped window's frame callback held back is due.
+    held: Option<Instant>,
     /// Whether it is on, as the state last asked.
     on: bool,
     /// The connector's modes of the screen's size, the one it started with, and the refresh last asked
@@ -158,6 +160,7 @@ pub fn run(
             dirty: true,
             answered: 0,
             next_callbacks: None,
+            held: None,
             on: true,
             modes: chosen.modes.clone(),
             start_mode: chosen.mode,
@@ -343,18 +346,7 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
     if let Some(states) = states {
         server.present_flip(&states, time, down, screen.interval, metadata.map_or(0, |m| u64::from(m.sequence)));
     }
-    callbacks(server, down);
-}
-
-/// Frame callbacks for the windows shown on the top screen or the second (`down`).
-fn callbacks(server: &Server, down: bool) {
-    let [top, bottom] = &server.outputs;
-    let output = if down { bottom } else { top };
-    for client in server.windows.iter().filter(|w| w.mapped && server.visible(w.id)) {
-        if server.core.state().session().window(client.id).is_some_and(|w| w.down) == down {
-            client.window.send_frame(output, server.started.elapsed(), Some(Duration::ZERO), |_, _| Some(output.clone()));
-        }
-    }
+    screen.held = server.frame_callbacks(Some(down), screen.interval, Instant::now());
 }
 
 /// Composes what changed in the scene and shows it on each screen whose part changed and that has no
@@ -371,6 +363,13 @@ fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(
         let Some(screen) = drawing.screens.get_mut(index) else {
             continue;
         };
+        let down = screen.role == ScreenRole::Bottom;
+        if screen.held.is_some_and(|at| at <= now) {
+            screen.held = server.frame_callbacks(Some(down), screen.interval, now);
+        }
+        if let Some(held) = screen.held {
+            due = Some(due.map_or(held, |due| due.min(held)));
+        }
         if screen.pending {
             continue;
         }
@@ -386,7 +385,7 @@ fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(
                 _ => {
                     screen.answered = server.commits;
                     screen.next_callbacks = Some(now + screen.interval);
-                    callbacks(server, screen.role == ScreenRole::Bottom);
+                    screen.held = server.frame_callbacks(Some(down), screen.interval, now);
                 }
             }
         }
