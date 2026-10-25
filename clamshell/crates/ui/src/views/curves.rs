@@ -198,12 +198,12 @@ fn plot(f: &mut Frame, r: Rect, curve: &Curve, on: CurvePlot, size: f32) {
     f.c.text_in(text_at(peak_y - size * 1.5), size, Tone::Dim, label(screen_nits, " nits").as_str(), Align::Start);
     if paper_y - peak_y >= 1.0 {
         f.c.line((inner.x, paper_y), (inner.right(), paper_y), 1.0, AS_IS);
-        f.c.text_in(text_at(paper_y + size * 0.3), size, Tone::Dim, label(paper, "").as_str(), Align::Start);
+        f.c.text_in(text_at(paper_y + size * 0.3), size, Tone::Dim, label(paper, " nits").as_str(), Align::Start);
     }
     // The screen's black, only labelled, below the plot at the right: its line would lie under the
     // histogram's bars.
     let black = on.black * REFERENCE_NITS;
-    f.c.text_in(Rect::new(inner.x, inner.bottom() + size * 0.2, inner.w, size * 1.2), size, Tone::Dim, label(black, "").as_str(), Align::End);
+    f.c.text_in(Rect::new(inner.x, inner.bottom() + size * 0.2, inner.w, size * 1.2), size, Tone::Dim, label(black, " nits").as_str(), Align::End);
     let line = |f: &mut Frame, curved: bool, width: f32, colour: Rgb| {
         let mut last = (inner.x, y_of(shown(0.0, curved)));
         for i in 1..=PLOT_STEPS {
