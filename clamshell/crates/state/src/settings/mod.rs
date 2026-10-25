@@ -203,10 +203,10 @@ choices!(
 );
 
 impl Resolution {
-    /// The size it gives on a screen of `size`, rounded to even pixels.
+    /// The size it gives on a screen of `size`: the screen's own for Native, else rounded to even pixels.
     pub fn size_on(self, (w, h): (u32, u32)) -> (u32, u32) {
         let (num, den) = match self {
-            Resolution::Native => (1, 1),
+            Resolution::Native => return (w, h),
             Resolution::FiveSixths => (5, 6),
             Resolution::TwoThirds => (2, 3),
             Resolution::Half => (1, 2),
@@ -680,6 +680,7 @@ mod tests {
         assert_eq!(Resolution::Half.size_on(thor), (960, 540));
         assert_eq!(Resolution::Third.size_on(thor), (640, 360));
         assert_eq!(Resolution::TwoThirds.size_on((960, 540)), (640, 360), "nested, half size");
+        assert_eq!(Resolution::Native.size_on((1200, 675)), (1200, 675), "an odd screen stays its own size");
         assert_eq!(Setting::Sharpen.next(100), 0);
         assert!(Setting::Scaling.compositor_only() && !Setting::FpsCap.compositor_only());
     }
