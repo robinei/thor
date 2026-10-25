@@ -231,6 +231,9 @@ choices!(
     /// [`Setting::AntiAliasing`]: anti-aliasing at the game's own resolution, before scaling.
     AntiAliasing for AntiAliasing, default Off {
         Off = 0, "AA off", Stock;
+        /// One pass, softer: edges and fine detail alike.
+        Fxaa = 2, "FXAA", Costs;
+        /// Three passes, finding edges by their patterns and leaving detail.
         Smaa = 1, "SMAA", Costs;
     }
 );

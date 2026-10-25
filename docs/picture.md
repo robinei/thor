@@ -43,7 +43,8 @@ the next value, a long press opens the tile's menu (below). No screens in betwee
     Nearest, FSR (a CRT look, if it comes, is one more). Nearest at ½ or ⅓ (960×540, 640×360 on the
     Thor) is exact integer scaling, which is why there is no integer setting; at the others it is
     uneven, and the tile says so.
-  - Anti-aliasing: Off, SMAA.
+  - Anti-aliasing: Off, FXAA, SMAA. FXAA is one pass and softer (it smooths fine detail and text along
+    with edges); SMAA finds edges by their patterns and leaves detail, in three passes.
   - Sharpen: Off, 25, 50, 75, 100 %. CAS, or FSR's own sharpening (RCAS) when Scaling is FSR, so it is
     never sharpened twice.
   Defaults: Native, Bilinear, Off, Off.
@@ -119,7 +120,10 @@ ours.
    they read the game's buffer as it is, an ordinary texture or an external one, copying it only when its
    client turned it; SMAA's picture is in bytes for SDR and half floats for HDR; in the VM it nearly triples
    the share of in-between tones across vkcube's edges), in that order. A window whose passes fail is shown
-   without them, logged once. Not yet tried: an external buffer through SMAA (none in the VM). Each tested headless against
+   without them, logged once. Not yet tried: an external buffer through SMAA (none in the VM). FXAA
+   (done): in the final pass when the window is shown one to one and not sharpened after it, else one pass
+   in the chain at the game's resolution; in the VM it gives 81 % in-between tones across vkcube's
+   edges, SMAA 49 %, none 24 %. Each tested headless against
    reference images computed on the CPU (the shaders' arithmetic mirrored, as the curve's is), and by
    eye nested with a game.
 2. **On the device (phase 4 of the compositor plan):** each stage's GPU time on the Adreno at 1080p and

@@ -29,6 +29,8 @@ use crate::render::Element;
 /// it is shown if it sharpens FSR's upscale, and the buffer commit they were drawn from.
 struct Chain {
     smaa: Option<SmaaTextures>,
+    /// FXAA's picture at the buffer's size, the right way up.
+    fxaa: Option<GlesTexture>,
     upscaled: Option<GlesTexture>,
     /// The size of the texture shown last: the upscaled one's, else SMAA's.
     size: Size<i32, Buffer>,
@@ -62,6 +64,7 @@ enum Read {
 pub(crate) struct Chains {
     chains: HashMap<Id, Chain>,
     easu: Option<Result<GlesTexProgram, String>>,
+    fxaa: Option<Result<GlesTexProgram, String>>,
     /// SMAA's programs once made, or why they couldn't be, which isn't tried again.
     smaa: Option<Result<super::smaa::Smaa, String>>,
     /// The windows whose passes failed, logged once.
@@ -73,6 +76,7 @@ pub(crate) struct Chains {
 pub(crate) struct Want<'a> {
     pub surface: &'a WlSurface,
     pub smaa: bool,
+    pub fxaa: bool,
     pub upscale: bool,
     pub hdr: bool,
 }
@@ -103,7 +107,8 @@ impl Chains {
             let id = element.id().clone();
             let commit = element.current_commit();
             let shown: Size<i32, Buffer> = (geometry.size.w, geometry.size.h).into();
-            let mut chain = self.chains.remove(&id).unwrap_or(Chain { smaa: None, upscaled: None, size: shown, commit: None, damage: DamageBag::default() });
+            let mut chain =
+                self.chains.remove(&id).unwrap_or(Chain { smaa: None, fxaa: None, upscaled: None, size: shown, commit: None, damage: DamageBag::default() });
             // SMAA's picture is in the buffer's own orientation: one upside down is turned when shown.
             let flipped = read != Read::Copy && source.is_y_inverted();
             // A window whose passes fail is shown without them, as its buffer is; the failure is logged
@@ -115,10 +120,11 @@ impl Chains {
                 continue;
             }
             self.failed.remove(&id);
-            let (texture, transform) = match (&chain.upscaled, &chain.smaa) {
-                (Some(texture), _) => (texture.clone(), Transform::Normal),
-                (None, Some(smaa)) => (smaa.out.clone(), if flipped { Transform::Flipped180 } else { Transform::Normal }),
-                (None, None) => continue,
+            let (texture, transform) = match (&chain.upscaled, &chain.smaa, &chain.fxaa) {
+                (Some(texture), _, _) => (texture.clone(), Transform::Normal),
+                (None, Some(smaa), _) => (smaa.out.clone(), if flipped { Transform::Flipped180 } else { Transform::Normal }),
+                (None, None, Some(fxaa)) => (fxaa.clone(), Transform::Normal),
+                (None, None, None) => continue,
             };
             *element = Element::Ui(TextureRenderElement::from_texture_with_damage(
                 id.clone(),
@@ -165,6 +171,13 @@ impl Chains {
             chain.commit = None;
             chain.smaa = want.smaa.then(|| smaa_textures(renderer, source_size, want.hdr, read == Read::Copy)).transpose()?;
         }
+        let picture = if want.hdr { Fourcc::Abgr16161616f } else { Fourcc::Abgr8888 };
+        let fxaa_now = chain.fxaa.as_ref().map(|t| (t.size(), t.format()));
+        if want.fxaa != fxaa_now.is_some() || fxaa_now.is_some_and(|now| now != (source_size, Some(picture))) {
+            chain.fxaa = None;
+            chain.commit = None;
+            chain.fxaa = want.fxaa.then(|| renderer.create_buffer(picture, source_size)).transpose()?;
+        }
         let upscaled_size = chain.upscaled.as_ref().map(|t| t.size());
         if want.upscale != upscaled_size.is_some() || upscaled_size.is_some_and(|size| size != shown) {
             chain.upscaled = None;
@@ -205,9 +218,23 @@ impl Chains {
                 input_turn = Transform::Flipped180;
             }
         }
+        if let Some(target) = &mut chain.fxaa {
+            if self.fxaa.is_none() {
+                self.fxaa = Some(pass_program(renderer, "fxaa", super::render::FXAA_GLSL).map_err(|e| e.to_string()));
+            }
+            let program = match &self.fxaa {
+                Some(Ok(program)) => program.clone(),
+                Some(Err(error)) => return Err(error.clone().into()),
+                None => return Ok(()),
+            };
+            // Drawn as Smithay draws the buffer, so the right way up whatever the buffer is.
+            let texel = [1.0 / source.size().w as f32, 1.0 / source.size().h as f32];
+            render(renderer, target, source, Some((&program, [Uniform::new("clarity", [texel[0], texel[1], 0.0, 0.0])])), Transform::Normal)?;
+            input = target.clone();
+        }
         if let Some(target) = &mut chain.upscaled {
             if self.easu.is_none() {
-                self.easu = Some(easu_program(renderer).map_err(|e| e.to_string()));
+                self.easu = Some(pass_program(renderer, "easu", super::render::EASU_GLSL).map_err(|e| e.to_string()));
             }
             let program = match &self.easu {
                 Some(Ok(program)) => program.clone(),
@@ -217,7 +244,8 @@ impl Chains {
             let texel = [1.0 / input.size().w as f32, 1.0 / input.size().h as f32];
             render(renderer, target, &input, Some((&program, [Uniform::new("clarity", [texel[0], texel[1], 0.0, 2.0])])), input_turn)?;
         }
-        chain.size = chain.upscaled.as_ref().map_or_else(|| chain.smaa.as_ref().map_or(chain.size, |t| t.size), |t| t.size());
+        let anti_aliased = chain.smaa.as_ref().map(|t| t.size).or(chain.fxaa.as_ref().map(|t| t.size()));
+        chain.size = chain.upscaled.as_ref().map(|t| t.size()).or(anti_aliased).unwrap_or(chain.size);
         chain.damage.add([Rectangle::from_size(chain.size)]);
         Ok(())
     }
@@ -280,8 +308,9 @@ fn render(
     Ok(())
 }
 
-/// The EASU pass's program: the picture upscaled, its signal as it is (decoding comes in the final pass).
-fn easu_program(renderer: &mut GlesRenderer) -> Result<GlesTexProgram, Error> {
+/// A pass's program: `glsl` defining the function `main` draws with (`easu` or `fxaa`), its signal as it is
+/// (decoding comes in the final pass).
+fn pass_program(renderer: &mut GlesRenderer, main: &str, glsl: &str) -> Result<GlesTexProgram, Error> {
     let source = format!(
         r#"#version 100
 //_DEFINES_
@@ -300,11 +329,10 @@ varying vec2 v_coords;
 #if defined(DEBUG_FLAGS)
 uniform float tint;
 #endif
-{easu}
+{glsl}
 void main() {{
-    gl_FragColor = easu() * alpha;
-}}"#,
-        easu = super::render::EASU_GLSL
+    gl_FragColor = {main}() * alpha;
+}}"#
     );
     Ok(renderer.compile_custom_texture_shader(source, &[UniformName::new("clarity", UniformType::_4f)])?)
 }

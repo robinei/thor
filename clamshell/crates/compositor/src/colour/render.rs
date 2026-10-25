@@ -43,6 +43,9 @@ struct Look {
     headroom: f32,
     clarity: clamshell_state::session::presentation::Clarity,
     buffer: (i32, i32),
+    /// FXAA in the final pass, as the window is shown one to one and not sharpened after it: no texture
+    /// between.
+    fxaa_here: bool,
 }
 struct Converted {
     inner: Element,
@@ -157,7 +160,8 @@ impl Pipeline {
         self.curves.clear();
         // The windows' own surfaces whose pictures take passes before the scene (see `super::chain`): SMAA,
         // and with FSR and sharpening, FSR's upscale.
-        let mut chained: Vec<(Id, smithay::reexports::wayland_server::protocol::wl_surface::WlSurface, bool, bool)> = Vec::new();
+        let mut chained: Vec<(Id, smithay::reexports::wayland_server::protocol::wl_surface::WlSurface, clamshell_state::settings::AntiAliasing, bool)> =
+            Vec::new();
         let state = server.core.state();
         for client in server.windows.iter().filter(|client| client.mapped && server.visible(client.id)) {
             let curve = state.window_curve(client.id);
@@ -165,15 +169,18 @@ impl Pipeline {
             // PQ signal we send it.
             let headroom = server.colour.screen(state.session().window(client.id).is_some_and(|w| w.down)).headroom() as f32;
             let clarity = state.window_clarity(client.id);
+            let one_to_one = server.geometry(client.id).is_some_and(|g| g.scale == 1.0);
+            let fxaa_here = clarity.anti_aliasing == clamshell_state::settings::AntiAliasing::Fxaa && one_to_one && clarity.sharpen == 0;
             client.window.with_surfaces(|surface, states| {
                 let renderer_state = states.data_map.get::<smithay::backend::renderer::utils::RendererSurfaceStateUserData>();
                 let buffer = renderer_state.and_then(|state| state.lock().ok()?.buffer_size()).map_or((0, 0), |size| (size.w, size.h));
-                self.curves.push((Id::from_wayland_resource(surface), Look { curve, headroom, clarity, buffer }));
+                self.curves.push((Id::from_wayland_resource(surface), Look { curve, headroom, clarity, buffer, fxaa_here }));
             });
             let upscale = clarity.scaling == clamshell_state::settings::Scaling::Fsr && clarity.sharpen > 0;
-            let smaa = clarity.anti_aliasing == clamshell_state::settings::AntiAliasing::Smaa;
-            if let (true, Some(root)) = (upscale || smaa, client.window.root()) {
-                chained.push((Id::from_wayland_resource(&root), root, smaa, upscale));
+            // FXAA done in the final pass takes no passes before it.
+            let aa = if fxaa_here { clamshell_state::settings::AntiAliasing::Off } else { clarity.anti_aliasing };
+            if let (true, Some(root)) = (upscale || aa != clamshell_state::settings::AntiAliasing::Off, client.window.root()) {
+                chained.push((Id::from_wayland_resource(&root), root, aa, upscale));
             }
         }
         if self.curves != self.last_curves {
@@ -182,9 +189,10 @@ impl Pipeline {
             std::mem::swap(&mut self.curves, &mut self.last_curves);
         }
         let replaced = self.chains.run(renderer, elements, |id| {
-            chained.iter().find(|(chained, ..)| chained == id).map(|(id, surface, smaa, upscale)| {
+            chained.iter().find(|(chained, ..)| chained == id).map(|(id, surface, aa, upscale)| {
+                use clamshell_state::settings::AntiAliasing;
                 let hdr = server.colour.surfaces.get(id).is_some_and(|colour| colour.hdr());
-                super::chain::Want { surface, smaa: *smaa, upscale: *upscale, hdr }
+                super::chain::Want { surface, smaa: *aa == AntiAliasing::Smaa, fxaa: *aa == AntiAliasing::Fxaa, upscale: *upscale, hdr }
             })
         })?;
         self.converted.clear();
@@ -202,7 +210,7 @@ impl Pipeline {
                 // A picture the chain upscaled is sharpened one texel to a pixel (RCAS).
                 let clarity = match replaced.iter().find(|(id, _)| id == inner.id()) {
                     Some((_, [x, y])) => [*x, *y, look.map_or(0.0, |look| f32::from(look.clarity.sharpen.min(100)) / 100.0), 3.0],
-                    None => look.map_or([0.0; 4], |look| clarity_uniform(look.clarity, look.buffer)),
+                    None => look.map_or([0.0; 4], |look| clarity_uniform(look.clarity, look.buffer, look.fxaa_here)),
                 };
                 [a, b, clarity]
             });
@@ -293,14 +301,15 @@ fn hdr(description: ColourDescription) -> bool {
 
 /// A window's clarity as the input shaders' uniform: one texel of its buffer across and down, the
 /// sharpening's strength (0 to 1), and how it is sampled (0 bilinear, 1 nearest, 2 FSR's upscale; 3, from
-/// the chain, FSR's sharpening of what it upscaled, see [`super::chain`]).
+/// the chain, FSR's sharpening of what it upscaled, see [`super::chain`]; 4, `fxaa_here`, FXAA one to one).
 /// Nothing without a buffer's size.
-fn clarity_uniform(clarity: clamshell_state::session::presentation::Clarity, (w, h): (i32, i32)) -> [f32; 4] {
+fn clarity_uniform(clarity: clamshell_state::session::presentation::Clarity, (w, h): (i32, i32), fxaa_here: bool) -> [f32; 4] {
     use clamshell_state::settings::Scaling;
     if w <= 0 || h <= 0 {
         return [0.0; 4];
     }
     let sampling = match clarity.scaling {
+        _ if fxaa_here => 4.0,
         Scaling::Bilinear => 0.0,
         Scaling::Nearest => 1.0,
         Scaling::Fsr => 2.0,
@@ -407,6 +416,35 @@ vec4 easu() {
 }
 ";
 
+/// FXAA of a picture, on the texture `tex` whose texel size is `clarity.xy`: the edge's direction from the
+/// luma of the four diagonal neighbours, two samples along it blended, or four when that stays within the
+/// neighbours' range (as `fxaa` in the tests). It works on the signal, at the game's resolution.
+pub(super) const FXAA_GLSL: &str = "vec4 fxaa() {
+    vec2 px = clarity.xy;
+    vec4 m4 = texture2D(tex, v_coords);
+    vec3 nw = texture2D(tex, v_coords + vec2(-1.0, -1.0) * px).rgb;
+    vec3 ne = texture2D(tex, v_coords + vec2(1.0, -1.0) * px).rgb;
+    vec3 sw = texture2D(tex, v_coords + vec2(-1.0, 1.0) * px).rgb;
+    vec3 se = texture2D(tex, v_coords + vec2(1.0, 1.0) * px).rgb;
+    vec3 weights = vec3(0.299, 0.587, 0.114);
+    float lnw = dot(nw, weights);
+    float lne = dot(ne, weights);
+    float lsw = dot(sw, weights);
+    float lse = dot(se, weights);
+    float lm = dot(m4.rgb, weights);
+    float lmin = min(lm, min(min(lnw, lne), min(lsw, lse)));
+    float lmax = max(lm, max(max(lnw, lne), max(lsw, lse)));
+    vec2 dir = vec2(-((lnw + lne) - (lsw + lse)), (lnw + lsw) - (lne + lse));
+    float reduce = max((lnw + lne + lsw + lse) * (0.25 * 0.125), 1.0 / 128.0);
+    float rcp = 1.0 / (min(abs(dir.x), abs(dir.y)) + reduce);
+    dir = clamp(dir * rcp, vec2(-8.0), vec2(8.0)) * px;
+    vec3 a = 0.5 * (texture2D(tex, v_coords + dir * (1.0 / 3.0 - 0.5)).rgb + texture2D(tex, v_coords + dir * (2.0 / 3.0 - 0.5)).rgb);
+    vec3 b = a * 0.5 + 0.25 * (texture2D(tex, v_coords - dir * 0.5).rgb + texture2D(tex, v_coords + dir * 0.5).rgb);
+    float lb = dot(b, weights);
+    return vec4((lb < lmin || lb > lmax) ? a : b, m4.a);
+}
+";
+
 /// FSR 1's sharpening (RCAS) of what EASU upscaled, one texel to a pixel (`clarity.xy` its texel size,
 /// `clarity.z` the strength, 0 to 1, as AMD's sharpness from 2 stops down to none): a negative lobe from the
 /// four texels around, limited so that it never rings beyond them (as `rcas` in the tests).
@@ -432,6 +470,7 @@ const RCAS_GLSL: &str = "vec4 rcas() {
 /// AMD's CAS on the four texels around, with the weight it adapts to their contrast, kept within the
 /// signal's range, or for linear light within the brightest of them (as `cas` in the tests).
 const FETCH_GLSL: &str = "vec4 fetch() {
+    if (clarity.w > 3.5) { return fxaa(); }
     if (clarity.w > 2.5) { return rcas(); }
     if (clarity.w > 1.5) { return easu(); }
     vec2 uv = v_coords;
@@ -529,7 +568,7 @@ fn shader(renderer: &mut GlesRenderer, description: ColourDescription, input: bo
         format!("v = matrix * v; v /= {scaling:.12}; float m = max(max(v.r, v.g), v.b); if (m > 1.0) {{ v /= m; }} v = convert(v);")
     };
     let uniforms = if curved { "uniform vec4 curve_a;\nuniform vec4 curve_b;\nuniform vec4 clarity;" } else { "" };
-    let fetch = if curved { [EASU_GLSL, RCAS_GLSL, FETCH_GLSL].concat() } else { "vec4 fetch() { return texture2D(tex, v_coords); }".to_owned() };
+    let fetch = if curved { [EASU_GLSL, FXAA_GLSL, RCAS_GLSL, FETCH_GLSL].concat() } else { "vec4 fetch() { return texture2D(tex, v_coords); }".to_owned() };
     let source = format!(
         r#"#version 100
 //_DEFINES_
@@ -719,6 +758,40 @@ mod tests {
         (lobe * (b + d + f + h) + e) / (4.0 * lobe + 1.0)
     }
 
+    /// FXAA of a one-channel picture (`at` a texel's value, between texels bilinear, clamped at the edges)
+    /// at texel `(x, y)`, as written in GLSL above.
+    fn fxaa(at: &dyn Fn(i32, i32) -> f64, (x, y): (i32, i32)) -> f64 {
+        let sample = |sx: f64, sy: f64| {
+            let (fx, fy) = (sx.floor(), sy.floor());
+            let (tx, ty) = (sx - fx, sy - fy);
+            let t = |dx: i32, dy: i32| at(fx as i32 + dx, fy as i32 + dy);
+            (t(0, 0) * (1.0 - tx) + t(1, 0) * tx) * (1.0 - ty) + (t(0, 1) * (1.0 - tx) + t(1, 1) * tx) * ty
+        };
+        // One channel: its luma is the value, as the weights sum to 1.
+        let (m, nw, ne, sw, se) = (at(x, y), at(x - 1, y - 1), at(x + 1, y - 1), at(x - 1, y + 1), at(x + 1, y + 1));
+        let lmin = m.min(nw).min(ne).min(sw).min(se);
+        let lmax = m.max(nw).max(ne).max(sw).max(se);
+        let dir = (-((nw + ne) - (sw + se)), (nw + sw) - (ne + se));
+        let reduce = ((nw + ne + sw + se) * (0.25 * 0.125)).max(1.0 / 128.0);
+        let rcp = 1.0 / (dir.0.abs().min(dir.1.abs()) + reduce);
+        let dir = ((dir.0 * rcp).clamp(-8.0, 8.0), (dir.1 * rcp).clamp(-8.0, 8.0));
+        let along = |k: f64| sample(f64::from(x) + dir.0 * k, f64::from(y) + dir.1 * k);
+        let a = 0.5 * (along(1.0 / 3.0 - 0.5) + along(2.0 / 3.0 - 0.5));
+        let b = a * 0.5 + 0.25 * (along(-0.5) + along(0.5));
+        if b < lmin || b > lmax { a } else { b }
+    }
+
+    #[test]
+    fn fxaa_leaves_flat_areas_and_softens_a_jagged_edge_within_its_range() {
+        assert!((fxaa(&|_, _| 0.4, (5, 5)) - 0.4).abs() < 1e-9);
+        // A diagonal staircase: dark below the line y = x, light above.
+        let stair = |x: i32, y: i32| if y < x { 0.9 } else { 0.1 };
+        let v = fxaa(&stair, (5, 5));
+        assert!(v > 0.1 && v < 0.9, "a pixel on the edge gets an in-between tone: {v}");
+        let inside = fxaa(&stair, (5, 9));
+        assert!((inside - 0.1).abs() < 1e-9, "far from the edge it stays: {inside}");
+    }
+
     #[test]
     fn fsrs_sharpening_leaves_flat_areas_and_sharpens_edges_without_ringing_past_them() {
         assert!((rcas(0.4, [0.4; 4], 1.0) - 0.4).abs() < 1e-9);
@@ -754,10 +827,11 @@ mod tests {
         use clamshell_state::session::presentation::Clarity;
         use clamshell_state::settings::Scaling;
         let nearest = Clarity { scaling: Scaling::Nearest, sharpen: 50, ..Clarity::default() };
-        assert_eq!(clarity_uniform(nearest, (960, 540)), [1.0 / 960.0, 1.0 / 540.0, 0.5, 1.0]);
-        assert_eq!(clarity_uniform(Clarity { scaling: Scaling::Fsr, ..Clarity::default() }, (960, 540))[3], 2.0);
-        assert_eq!(clarity_uniform(Clarity::default(), (960, 540))[2..], [0.0, 0.0], "bilinear, unsharpened");
-        assert_eq!(clarity_uniform(nearest, (0, 0)), [0.0; 4], "no buffer: as it is");
+        assert_eq!(clarity_uniform(nearest, (960, 540), false), [1.0 / 960.0, 1.0 / 540.0, 0.5, 1.0]);
+        assert_eq!(clarity_uniform(Clarity { scaling: Scaling::Fsr, ..Clarity::default() }, (960, 540), false)[3], 2.0);
+        assert_eq!(clarity_uniform(Clarity::default(), (960, 540), false)[2..], [0.0, 0.0], "bilinear, unsharpened");
+        assert_eq!(clarity_uniform(Clarity::default(), (960, 540), true)[3], 4.0, "FXAA one to one");
+        assert_eq!(clarity_uniform(nearest, (0, 0), false), [0.0; 4], "no buffer: as it is");
     }
 
     fn close(want: [f64; 3], got: [f64; 3], what: &str) {
