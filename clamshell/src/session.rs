@@ -99,7 +99,13 @@ fn run_host(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Result<()
         // Settings, keymaps, curves, window rules, brightness, the dock, where shelf was.
         ..saved(&paths)
     });
-    let preview = env.profile.preview.half();
+    // Nested, the screens are the device's own sizes, as pixels of the host's window; the other hosts take
+    // theirs from the outputs.
+    #[cfg(feature = "compositor")]
+    let nested = host == Host::Nested;
+    #[cfg(not(feature = "compositor"))]
+    let nested = false;
+    let preview = if nested { env.profile.preview } else { env.profile.preview.half() };
     let config = Config {
         bottom_output: env.bottom_output.clone(),
         top_size: preview.top,

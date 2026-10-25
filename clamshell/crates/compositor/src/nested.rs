@@ -9,7 +9,7 @@ use smithay::{
         renderer::{Frame, Renderer, damage::OutputDamageTracker, gles::GlesRenderer},
         winit::{self, WinitEvent},
     },
-    reexports::winit::{dpi::LogicalSize, window::WindowAttributes},
+    reexports::winit::{dpi::PhysicalSize, window::WindowAttributes},
     utils::{Rectangle, Transform},
 };
 
@@ -33,7 +33,8 @@ pub fn run(
     let server = &mut base.server;
 
     let attributes =
-        WindowAttributes::default().with_title("ClamShell nested").with_surface_size(LogicalSize::new(f64::from(server.size.0), f64::from(server.size.1)));
+        // In the host's pixels, so the screens are as many pixels as the device's, whatever the host's scale.
+        WindowAttributes::default().with_title("ClamShell nested").with_surface_size(PhysicalSize::new(server.size.0 as u32, server.size.1 as u32));
     let (mut backend, events) = winit::init_from_attributes::<GlesRenderer>(attributes)?;
     server.advertise_dmabuf(backend.renderer());
     let mut colour_pipeline = match crate::colour::render::Pipeline::new(backend.renderer(), server.size) {
