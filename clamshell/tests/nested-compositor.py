@@ -534,6 +534,36 @@ time.sleep(300)
             assert re.search(r"zwp_linux_dmabuf_feedback_v1#\d+\.format_table\(", protocol), "Vulkan WSI must receive the feedback format table"
             assert re.search(r"zwp_linux_dmabuf_feedback_v1#\d+\.done\(", protocol), "Vulkan WSI must receive complete feedback"
             shot("vulkan-top")
+            # SMAA shown one to one, unsharpened: its blending in the final pass, its weights bound to the
+            # second texture unit around Smithay's draw (docs/picture.md, Smithay).
+            def in_between():
+                width, data = 750, window_region(False)
+                luma = [data[i] * 3 + data[i + 1] * 6 + data[i + 2] for i in range(0, len(data), 3)]
+                edges = mids = 0
+                for y in range(1, len(luma) // width - 1):
+                    for x in range(width):
+                        up, c, down = luma[(y - 1) * width + x], luma[y * width + x], luma[(y + 1) * width + x]
+                        if abs(up - down) > 250:
+                            edges += 1
+                            mids += min(up, down) + 40 < c < max(up, down) - 40
+                return mids / max(edges, 1)
+            def averaged():
+                values = []
+                for _ in range(8):
+                    values.append(in_between())
+                    time.sleep(0.1)
+                return sum(values) / len(values)
+            plain = averaged()
+            control("tab", "settings")
+            control("tap", "setting", "aa")
+            control("tap", "setting", "aa")
+            animating(False, "Vulkan swapchain keeps presenting with SMAA")
+            time.sleep(0.5)
+            smaa = averaged()
+            assert smaa > plain + 0.15, f"SMAA must blend the Vulkan client's edges: {plain:.2f} of edge pixels in between without, {smaa:.2f} with"
+            assert "picture passes failed" not in (directory / "compositor.log").read_text(), "SMAA's passes must not fail"
+            shot("vulkan-smaa")
+            control("tap", "setting", "aa")
             control("window", "down")
             wait(lambda: pixels()[0] is True, "previous client visible above the Vulkan client")
             animating(True, "Vulkan swapchain keeps presenting below after resize")
@@ -568,7 +598,7 @@ time.sleep(300)
         assert recorded["after"]["windows"] == 0
         assert not any(r["input"].get("Window", {}).get("Opened", {}).get("app_id") == "HiddenX11Helper" for r in recorded["records"] if isinstance(r["input"], dict)), "input-only X11 helpers never enter the window model"
         if args.gpu:
-            print("ok: Vulkan WSI animation, resize, close, dmabuf feedback and native submission; EGL native submission", flush=True)
+            print("ok: Vulkan WSI animation, resize, close, dmabuf feedback, native submission and SMAA blended in the final pass; EGL native submission", flush=True)
         print("ok: PQ, linear and SDR EGL colour conversion; compositor cursor and damage, in-process screenshot, window-event export, clipboard isolation and persistence, presentation feedback, lazy Xwayland, X11 presentation and crash recovery, Wayland EGL and shm rendering, bottom-slot move, return and Home", flush=True)
     finally:
         # Kill the entire isolated group even when its leader already exited, so a stopped
