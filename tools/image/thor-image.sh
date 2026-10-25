@@ -66,7 +66,9 @@ case $TARGET in
         [ -f "$FIRMWARE" ] || { echo "no thor-firmware package: $FIRMWARE"; exit 1; }
         ;;
     vm)
-        PACKAGES+=(linux thor-system thor-session clamshell thor-keyring)
+        # (vulkan-virtio, mesa-utils and vulkan-tools: Vulkan on the host's GPU and its checks, with
+        # tools/vm/vm.py thor-image --gl.)
+        PACKAGES+=(linux thor-system thor-session clamshell thor-keyring vulkan-virtio mesa-utils vulkan-tools)
         ARCH=x86_64
         # (QEMU's two screens' modes, the second forced on: QEMU enables an output only once its window
         # reports a size, which a headless one doesn't; tools/vm/vm.py's KERNEL_VIDEO.)

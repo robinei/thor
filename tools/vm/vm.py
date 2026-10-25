@@ -481,13 +481,18 @@ def image(_args):
 
 
 def qemu_devices(args):
-    """What both machines have (and the test machine's image): the screens, input, network, sockets."""
+    """What both machines have (and the test machine's image): the screens, input, network, sockets. With
+    --gl, the host's GPU as well: OpenGL through virgl and Vulkan through Venus (the guest's vulkan-virtio),
+    which needs the guest's memory shared with the host."""
+    gl = getattr(args, "gl", False)
+    gpu = "virtio-gpu-gl-pci" if gl else "virtio-gpu-pci"
+    venus = ",venus=on,blob=on,hostmem=2G" if gl else ""
     common = [
         "-smp", "4", "-m", "4G",
         "-nic", f"user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:{A.ssh_port}-:22",
         "-virtfs", f"local,path={REPO},mount_tag=thor,security_model=none,readonly=on",
         # Two screens: Virtual-1 (top) and Virtual-2 (bottom).
-        "-device", f"virtio-gpu-pci,id=video0,max_outputs=2,xres={TOP[0]},yres={TOP[1]}",
+        "-device", f"{gpu},id=video0,max_outputs=2,xres={TOP[0]},yres={TOP[1]}{venus}",
         "-device", "virtio-keyboard-pci",
         # The host mouse as an absolute pointer on each screen's window, and a touchscreen on the bottom.
         "-device", "virtio-tablet-pci,display=video0,head=0",
@@ -499,9 +504,11 @@ def qemu_devices(args):
         "-monitor", f"unix:{A.state / 'monitor.sock'},server,nowait",
         # QMP, for input from here (touch, pointer, keys: input-send-event).
         "-qmp", f"unix:{A.state / 'qmp.sock'},server,nowait",
-        # Each screen is an SDL window (offscreen when headless).
-        "-display", "sdl",
+        # Each screen is an SDL window (offscreen when headless; with --gl, drawn by EGL alone when headless).
+        "-display", ("egl-headless" if getattr(args, "headless", False) else "sdl,gl=on") if gl else "sdl",
     ]
+    if gl:
+        common += ["-object", "memory-backend-memfd,id=mem,size=4G,share=on", "-machine", "memory-backend=mem"]
     if args.pad:
         vendor, product = args.pad.split(":")
         common += ["-device", f"usb-host,vendorid=0x{vendor},productid=0x{product}"]
@@ -620,7 +627,7 @@ def thor_image(args):
         "-drive", f"file={disk},if=virtio,format=raw",
     ] + qemu_devices(args)
     print(f"starting {disk.name}: the top screen and the bottom one, a window each")
-    env = dict(os.environ, SDL_VIDEODRIVER="offscreen") if args.headless else None
+    env = dict(os.environ, SDL_VIDEODRIVER="offscreen") if args.headless and not args.gl else None
     return subprocess.call([str(c) for c in cmd], env=env)
 
 
@@ -887,6 +894,7 @@ def main():
     sub.add_parser("image").set_defaults(func=image)
     p = sub.add_parser("run")
     p.add_argument("--headless", action="store_true")
+    p.add_argument("--gl", action="store_true", help="the host's GPU in the machine: OpenGL (virgl) and Vulkan (Venus)")
     p.add_argument("--pad", metavar="VENDOR:PRODUCT")
     p.set_defaults(func=start)
     p = sub.add_parser("ssh")
@@ -941,6 +949,7 @@ def main():
     p.add_argument("--fresh", action="store_true", help="from the built image again: a new first boot")
     p.add_argument("--pad", help="also pass a USB gamepad through (vendor:product)")
     p.add_argument("--headless", action="store_true", help="without windows (the screens drawn offscreen)")
+    p.add_argument("--gl", action="store_true", help="the host's GPU in the machine: OpenGL (virgl) and Vulkan (Venus)")
     p.set_defaults(func=thor_image)
     sub.add_parser("bluetooth", help="virtual Bluetooth controllers and a test device in the machine").set_defaults(func=bluetooth)
     args = parser.parse_args()
