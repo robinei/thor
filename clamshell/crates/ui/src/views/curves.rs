@@ -156,7 +156,8 @@ fn plot(f: &mut Frame, r: Rect, curve: &Curve, on: CurvePlot, size: f32) {
     if r.h < size * 3.0 {
         return;
     }
-    let inner = Rect::new(r.x + size * 0.5, r.y + size * 1.6, r.w - size, r.h - size * 2.1);
+    // On whole pixels, so that the histogram's bars have sharp edges; room below for the black's label.
+    let inner = Rect::new((r.x + size * 0.5).round(), (r.y + size * 1.6).round(), (r.w - size).round(), (r.h - size * 3.0).round());
     let screen_nits = on.headroom * REFERENCE_NITS;
     let top_nits = PLOT_NITS.max(screen_nits).min(10000.0);
     let top = pq(top_nits);
@@ -198,13 +199,13 @@ fn plot(f: &mut Frame, r: Rect, curve: &Curve, on: CurvePlot, size: f32) {
             } else {
                 Fmt::of(format_args!("{nits:.3}{unit}"))
             };
-            // At the left, where the curve is low; the black's at the right, where it is high.
-            let (x, align) = if nits <= on.black * REFERENCE_NITS { (inner.x, Align::End) } else { (inner.x + size * 0.4, Align::Start) };
-            // On a translucent black, so that the histogram's bars under it don't hide it.
-            let tw = f.c.text_width(size, label.as_str());
-            let tx = if align == Align::End { x + inner.w - size * 0.7 - tw } else { x };
-            f.c.fill(Rect::new(tx - size * 0.15, y - size * 1.45, tw + size * 0.3, size * 1.15), Rgb(0x000000).alpha(0.6));
-            f.c.text_in(Rect::new(x, y - size * 1.5, inner.w - size * 0.7, size * 1.2), size, Tone::Dim, label.as_str(), align);
+            // Above its line at the left, where the curve is low; the black's below the plot at the right,
+            // under the histogram's bars.
+            if black {
+                f.c.text_in(Rect::new(inner.x, inner.bottom() + size * 0.2, inner.w, size * 1.2), size, Tone::Dim, label.as_str(), Align::End);
+            } else {
+                f.c.text_in(Rect::new(inner.x + size * 0.4, y - size * 1.5, inner.w - size * 0.7, size * 1.2), size, Tone::Dim, label.as_str(), Align::Start);
+            }
             last_label = y;
         }
     }
@@ -262,10 +263,13 @@ fn histograms(f: &mut Frame, inner: Rect, histogram: &Histogram, on: CurvePlot, 
     for (i, count) in columns.iter().enumerate().filter(|(_, c)| **c > 0) {
         let e = (i as f64 + 0.5) / n as f64;
         let bar = (*count as f32 / most as f32).sqrt() * inner.h * 0.4;
-        let (x, y) = (inner.x + i as f32 * w, inner.bottom() - bar);
-        let before = (w * 0.25).round().max(1.0);
-        f.c.fill(Rect::new(x, y, before, bar), grey(shown(e, false)));
-        f.c.fill(Rect::new(x + before, y, w - before + 0.5, bar), grey(shown(e, true)));
+        // Edges on whole pixels, so that no pixel is partly filled.
+        let (x, right) = ((inner.x + i as f32 * w).round(), (inner.x + (i + 1) as f32 * w).round());
+        let y = (inner.bottom() - bar).round();
+        let (width, height) = (right - x, inner.bottom() - y);
+        let before = (width * 0.25).round().max(1.0);
+        f.c.fill(Rect::new(x, y, before, height), grey(shown(e, false)));
+        f.c.fill(Rect::new(x + before, y, width - before, height), grey(shown(e, true)));
     }
 }
 

@@ -347,8 +347,8 @@ for `State::histogram_window`). The plot draws the levels along the bottom, each
 of the light the curve gives it (black to paper white the darker half of the greys, paper white to the
 screen's peak the lighter) but for its left quarter, the grey of its light as the content is, so a bar
 lighter or darker on the right than on the left is brightened or darkened. There are no axis lines. The
-curve is orange and the content as it is blue, to stand out from the greys; labels are on translucent
-black. `tests/picture-scaling.py` checks the histogram is drawn for the test
+curve is orange and the content as it is blue, to stand out from the greys. The bars' edges are on
+whole pixels, and the screen's black is labelled below them. `tests/picture-scaling.py` checks the histogram is drawn for the test
 pattern, and `curve-edit-histogram.png` shows one. The randomized test taps the
 curve screens and slides their parameters.
 
