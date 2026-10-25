@@ -43,7 +43,7 @@ impl Icon {
             Setting::Scaling => Icon::Scaling,
             Setting::AntiAliasing => Icon::AntiAlias,
             Setting::Sharpen => Icon::Sharpen,
-            Setting::Curve => Icon::Brightness,
+            Setting::Curve | Setting::HdrPeak => Icon::Brightness,
             Setting::BottomScreen => Icon::ScreenOff,
             Setting::BigCores => Icon::Cores,
             Setting::Fan => Icon::Fan,

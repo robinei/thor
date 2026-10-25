@@ -13,13 +13,14 @@
 //! 2. Shadow contrast: a power on the signal, darkening (above 1) or lifting (below 1) the shadows and
 //!    midtones.
 //! 3. The signal is decoded to light, with the game's white at the SDR white in nits.
-//! 4. Highlights above the start (a fraction of white) expand towards the peak, along a curve that joins
-//!    the line below the start smoothly.
+//! 4. Highlights above the start (a fraction of white) expand into the screen's room above white, as far
+//!    as the curve says (a share of that room, so a curve means the same on any screen), along a curve
+//!    that joins the line below the start smoothly.
 //! 5. Saturation, around the luminance.
 //!
 //! On a screen, the curve is limited by what the screen can show ([`Curve::map_on`]): SDR white goes no
-//! higher than its peak, and highlights expand no further. On an SDR screen that leaves the black point,
-//! contrast and saturation. An HDR game's light goes through the same curve ([`map_hdr`]): the black point,
+//! higher than its peak, and highlights expand no further. On an SDR screen there is no room, which leaves
+//! the black point, contrast and saturation. An HDR game's light goes through the same curve ([`map_hdr`]): the black point,
 //! contrast, white and saturation mean the same, and its own highlights are compressed into the screen's
 //! peak from the knee where SDR's would start expanding. Without a curve an HDR game is only compressed
 //! into the screen.
@@ -30,6 +31,9 @@ use crate::profiles::{Profile, Profiles};
 
 /// The nits the compositor's linear scene has at 1.0, its reference white (BT.2408's 203).
 pub const REFERENCE_NITS: f64 = 203.0;
+
+/// The screen [`Curve::map`] shows a curve on: a 1000-nit one.
+pub const REFERENCE_SCREEN_NITS: f64 = 1000.0;
 
 /// What a curve holds: its parameters, in the units described on each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -42,24 +46,19 @@ pub struct Curve {
     pub white: u16,
     /// Where highlights start expanding, as a percent of white (100: no expansion).
     pub start: u16,
-    /// What the brightest highlights expand to, in nits (at or above white).
-    pub peak: u16,
+    /// How far the brightest highlights expand into the screen's room above white, in percent: 0 not at
+    /// all, 100 to the screen's peak.
+    pub highlights: u16,
     /// Saturation, in percent (100 changes nothing).
     pub saturation: u16,
-    /// An HDR game's peak, in its own nits, replacing what it declares or what is assumed when it gives
-    /// none (see [`Curve::hdr_peak`]); 0 takes it as given.
-    pub game_peak: u16,
 }
 
 /// A new curve changes nothing: SDR white at the reference, no expansion.
 impl Default for Curve {
     fn default() -> Curve {
-        Curve { black: 0, contrast: 100, white: REFERENCE_NITS as u16, start: 100, peak: REFERENCE_NITS as u16, saturation: 100, game_peak: 0 }
+        Curve { black: 0, contrast: 100, white: REFERENCE_NITS as u16, start: 100, highlights: 0, saturation: 100 }
     }
 }
-
-/// The lowest a game's peak can be set to, in nits: below it, highlights would hardly be HDR.
-pub const GAME_PEAK_MIN: u16 = 400;
 
 /// A curve's parameter, as its slider on the edit screen sets it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -68,14 +67,13 @@ pub enum CurveParam {
     Contrast,
     White,
     Start,
-    Peak,
+    Highlights,
     Saturation,
-    GamePeak,
 }
 
 impl CurveParam {
-    pub const ALL: [CurveParam; 7] =
-        [CurveParam::Black, CurveParam::Contrast, CurveParam::White, CurveParam::Start, CurveParam::Peak, CurveParam::Saturation, CurveParam::GamePeak];
+    pub const ALL: [CurveParam; 6] =
+        [CurveParam::Black, CurveParam::Contrast, CurveParam::White, CurveParam::Start, CurveParam::Highlights, CurveParam::Saturation];
 
     /// The parameter's range, and the step a slider moves it by. Slider positions are the value divided by
     /// the step, which keeps them within a slider's `u8`.
@@ -85,10 +83,8 @@ impl CurveParam {
             CurveParam::Contrast => (70, 150, 1),
             CurveParam::White => (100, 400, 5),
             CurveParam::Start => (30, 100, 1),
-            CurveParam::Peak => (200, 1000, 10),
+            CurveParam::Highlights => (0, 100, 5),
             CurveParam::Saturation => (50, 150, 1),
-            // 0 is "as given"; the slider's next step is the lowest value.
-            CurveParam::GamePeak => (0, 10000, 50),
         }
     }
 
@@ -98,13 +94,12 @@ impl CurveParam {
             CurveParam::Contrast => c.contrast,
             CurveParam::White => c.white,
             CurveParam::Start => c.start,
-            CurveParam::Peak => c.peak,
+            CurveParam::Highlights => c.highlights,
             CurveParam::Saturation => c.saturation,
-            CurveParam::GamePeak => c.game_peak,
         }
     }
 
-    /// Sets the parameter, within its range. The peak stays at or above white, moving with it.
+    /// Sets the parameter, within its range.
     pub fn set(self, c: &mut Curve, value: u16) {
         let (lo, hi, _) = self.range();
         let value = value.clamp(lo, hi);
@@ -113,14 +108,8 @@ impl CurveParam {
             CurveParam::Contrast => c.contrast = value,
             CurveParam::White => c.white = value,
             CurveParam::Start => c.start = value,
-            CurveParam::Peak => c.peak = value,
+            CurveParam::Highlights => c.highlights = value,
             CurveParam::Saturation => c.saturation = value,
-            CurveParam::GamePeak => c.game_peak = if value == 0 { 0 } else { value.max(GAME_PEAK_MIN) },
-        }
-        match self {
-            CurveParam::White => c.peak = c.peak.max(c.white),
-            CurveParam::Peak => c.white = c.white.min(c.peak),
-            _ => {}
         }
     }
 
@@ -142,37 +131,35 @@ impl CurveParam {
             CurveParam::Contrast => "Shadow contrast",
             CurveParam::White => "SDR white",
             CurveParam::Start => "Highlights from",
-            CurveParam::Peak => "Highlight peak",
+            CurveParam::Highlights => "Highlights to",
             CurveParam::Saturation => "Saturation",
-            CurveParam::GamePeak => "HDR game's peak",
         }
     }
 }
 
 impl Curve {
-    /// An HDR game's peak over its reference white (`reference`, in its nits): the one set, else the one
-    /// `given` (what it declares, or what is assumed).
-    pub fn hdr_peak(&self, given: f64, reference: f64) -> f64 {
-        if self.game_peak == 0 { given } else { f64::from(self.game_peak) / reference.max(1.0) }
+    /// A pixel of SDR signal (`rgb`, each 0 to 1, sRGB's encoding) as linear light in the compositor's
+    /// scene, where 1.0 is the reference white ([`REFERENCE_NITS`]), on a [`REFERENCE_SCREEN_NITS`] screen.
+    /// The colours are those of the input's primaries; the compositor converts them after.
+    pub fn map(&self, rgb: [f64; 3]) -> [f64; 3] {
+        self.map_on(rgb, REFERENCE_SCREEN_NITS / REFERENCE_NITS)
     }
 
-    /// A pixel of SDR signal (`rgb`, each 0 to 1, sRGB's encoding) as linear light in the compositor's
-    /// scene, where 1.0 is the reference white ([`REFERENCE_NITS`]), with no screen's limits. The colours
-    /// are those of the input's primaries; the compositor converts them after.
-    pub fn map(&self, rgb: [f64; 3]) -> [f64; 3] {
-        self.map_on(rgb, f64::INFINITY)
+    /// The brightest highlights' level in units of white, on a screen whose room above white is `room`
+    /// (its peak over where white is shown): that share of the room.
+    pub fn peak_in(&self, room: f64) -> f64 {
+        1.0 + (room - 1.0).max(0.0) * f64::from(self.highlights.min(100)) / 100.0
     }
 
     /// [`Curve::map`] on a screen with `headroom`: its peak over the reference white (1 for an SDR
-    /// screen). SDR white goes no higher than the peak, and highlights expand no further than it.
+    /// screen). SDR white goes no higher than the peak, and highlights expand into the room above it.
     pub fn map_on(&self, rgb: [f64; 3], headroom: f64) -> [f64; 3] {
         let black = f64::from(self.black) / 1000.0;
         let contrast = f64::from(self.contrast) / 100.0;
         let white = f64::from(self.white);
         let start = f64::from(self.start) / 100.0;
         let to_scene = (white / REFERENCE_NITS).min(headroom);
-        // The peak in units of white, within the screen's.
-        let peak = (f64::from(self.peak.max(self.white)) / white.max(1.0)).min(headroom / to_scene).max(1.0);
+        let peak = self.peak_in(headroom / to_scene);
         let linear = rgb.map(|e| {
             let e = ((e - black) / (1.0 - black).max(1e-6)).clamp(0.0, 1.0).powf(contrast);
             srgb_decode(e)
@@ -258,11 +245,11 @@ pub type Curves = Profiles<Curve>;
 impl Curves {
     /// The curves there are before any were saved: three to start from.
     pub fn initial() -> Curves {
-        let curve = |black, contrast, white, start, peak, saturation| Curve { black, contrast, white, start, peak, saturation, game_peak: 0 };
+        let curve = |black, contrast, white, start, highlights, saturation| Curve { black, contrast, white, start, highlights, saturation };
         Curves::from_list(vec![
-            Profile::with(1, "True black", curve(20, 110, 203, 60, 650, 105)),
-            Profile::with(2, "Punchy", curve(10, 115, 220, 50, 1000, 115)),
-            Profile::with(3, "Gentle", curve(0, 100, 203, 80, 400, 100)),
+            Profile::with(1, "True black", curve(20, 110, 203, 60, 60, 105)),
+            Profile::with(2, "Punchy", curve(10, 115, 220, 50, 100, 115)),
+            Profile::with(3, "Gentle", curve(0, 100, 203, 80, 25, 100)),
         ])
     }
 }
@@ -277,15 +264,20 @@ mod tests {
 
     #[test]
     fn on_a_screen_white_and_highlights_stay_within_its_peak() {
-        let c = Curve { white: 300, start: 60, peak: 1000, ..Curve::default() };
+        let c = Curve { white: 300, start: 60, highlights: 100, ..Curve::default() };
         // On an SDR screen: white at the screen's white, no expansion, the rest of the curve applies.
         let sdr = Curve { white: 203, ..c };
         near(c.map_on([1.0, 1.0, 1.0], 1.0)[0], 1.0);
         near(c.map_on([0.5, 0.5, 0.5], 1.0)[0], sdr.map_on([0.5, 0.5, 0.5], 1.0)[0]);
-        // On a screen with 650 nits' headroom the highlights reach its peak, not the curve's.
+        // All the room: the highlights reach the screen's peak, whatever it is.
         near(c.map_on([1.0, 1.0, 1.0], 650.0 / 203.0)[0], 650.0 / 203.0);
-        // With room enough, as without a screen.
-        near(c.map_on([1.0, 1.0, 1.0], 10.0)[0], c.map([1.0, 1.0, 1.0])[0]);
+        near(c.map_on([1.0, 1.0, 1.0], 10.0)[0], 10.0);
+        // Half of it: halfway from white to the peak, on any screen.
+        let half = Curve { highlights: 50, ..c };
+        let white = 300.0 / 203.0;
+        for headroom in [650.0 / 203.0, 10.0] {
+            near(half.map_on([1.0, 1.0, 1.0], headroom)[0], white + (headroom - white) / 2.0);
+        }
     }
 
     #[test]
@@ -320,20 +312,6 @@ mod tests {
     }
 
     #[test]
-    fn an_hdr_games_peak_is_as_given_or_the_one_set() {
-        let mut c = Curve::default();
-        near(c.hdr_peak(49.26, 203.0), 49.26);
-        CurveParam::GamePeak.set(&mut c, 1000);
-        near(c.hdr_peak(49.26, 203.0), 1000.0 / 203.0);
-        // In the game's own nits: scRGB's white is 80.
-        near(c.hdr_peak(125.0, 80.0), 12.5);
-        CurveParam::GamePeak.set(&mut c, 50);
-        assert_eq!(c.game_peak, GAME_PEAK_MIN, "the slider's first step");
-        CurveParam::GamePeak.set(&mut c, 0);
-        assert_eq!(c.game_peak, 0, "as given");
-    }
-
-    #[test]
     fn a_new_curve_changes_nothing() {
         let c = Curve::default();
         for e in [0.0, 0.04, 0.2, 0.5, 0.8, 1.0] {
@@ -359,9 +337,9 @@ mod tests {
 
     #[test]
     fn highlights_expand_to_the_peak_smoothly_and_midtones_stay() {
-        let c = Curve { white: 203, start: 60, peak: 812, ..Curve::default() };
-        // White reaches the peak: four times the reference.
-        near(c.map([1.0, 1.0, 1.0])[0], 4.0);
+        let c = Curve { white: 203, start: 60, highlights: 100, ..Curve::default() };
+        // White reaches the reference screen's peak.
+        near(c.map([1.0, 1.0, 1.0])[0], REFERENCE_SCREEN_NITS / REFERENCE_NITS);
         // Below the start nothing changes.
         let mid = srgb_decode(0.5);
         assert!(mid < 0.6);
@@ -381,7 +359,7 @@ mod tests {
 
     #[test]
     fn hue_is_kept_and_saturation_works_around_luminance() {
-        let c = Curve { start: 50, peak: 600, ..Curve::default() };
+        let c = Curve { start: 50, highlights: 50, ..Curve::default() };
         let [r, g, b] = c.map([1.0, 0.8, 0.6]);
         let [r0, g0, b0] = Curve::default().map([1.0, 0.8, 0.6]);
         near(r / g, r0 / g0);
@@ -393,16 +371,12 @@ mod tests {
     }
 
     #[test]
-    fn white_on_its_own_moves_the_picture_and_the_peak_keeps_above_it() {
-        let c = Curve { white: 406, peak: 406, ..Curve::default() };
+    fn white_on_its_own_moves_the_picture_and_highlights_stay_within_range() {
+        let c = Curve { white: 406, ..Curve::default() };
         near(c.map([1.0, 1.0, 1.0])[0], 2.0);
         let mut c = Curve::default();
-        CurveParam::White.set(&mut c, 300);
-        assert_eq!((c.white, c.peak), (300, 300));
-        CurveParam::Peak.set(&mut c, 250);
-        assert_eq!((c.white, c.peak), (250, 250), "a peak below white brings white down");
-        CurveParam::Peak.set(&mut c, 5000);
-        assert_eq!(c.peak, 1000, "within range");
+        CurveParam::Highlights.set(&mut c, 500);
+        assert_eq!(c.highlights, 100, "within range");
     }
 
     #[test]

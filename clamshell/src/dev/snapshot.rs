@@ -487,7 +487,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                     vec![tap(ListId::Curves.row(2)), PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Curve))).into()],
                 ),
                 shot("curve-edit.png", Bottom, vec![tap(Id::Row { list: ListId::Curves, i: 2, part: clamshell_state::RowPart::Edit })]),
-                shot("curve-edit-slider.png", Bottom, curve_slide(clamshell_state::curve::CurveParam::Peak, 0.2)),
+                shot("curve-edit-slider.png", Bottom, curve_slide(clamshell_state::curve::CurveParam::Highlights, 0.2)),
                 shot("curve-edit-hdr.png", Bottom, [vec![Slide::End.into()], demo::hdr_game("ff6", true)].concat()),
             ],
         ),

@@ -577,8 +577,10 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
           game's PQ signal up to the peak it declares, with lines at the screen's peak, paper white and
           black, labelled in nits. A game's declared peak (MaxCLL, else its mastering display's) is often
           missing or a fixed value; without one PQ's 10000 nits is assumed, which compresses more than
-          needed but never clips. The curve's "HDR game's peak" replaces it (as given by default; 400 to
-          10000 nits); the edit screen's header says the game's signal and where its peak comes from.
+          needed but never clips. The program's setting "HDR content peak" replaces it (as declared by
+          default; 400 to 4000 nits), whatever curve is chosen: it was first a curve parameter, which a
+          shared curve carried to every game using it (2026-10-25); the edit screen's header says the
+          content's signal and where its peak comes from.
           Measuring it from the frames is for later, with the black floor.
     - [ ] Scanout knowing about colour: a surface whose description matches the output passes through
           untouched (constraint 3). With the DRM backend (phase 3): the nested host has no scanout.

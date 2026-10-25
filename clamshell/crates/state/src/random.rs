@@ -640,7 +640,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 let control = match rng.below(3) {
                     0 => Control::Volume,
                     1 => Control::Brightness,
-                    _ => Control::Curve(crate::curve::CurveParam::ALL.get(rng.below(6)).copied().unwrap_or(crate::curve::CurveParam::Peak)),
+                    _ => Control::Curve(crate::curve::CurveParam::ALL.get(rng.below(6)).copied().unwrap_or(crate::curve::CurveParam::Highlights)),
                 };
                 Slide::Start { control, x: rng.below(100) as f32, width: 100.0 }.into()
             }

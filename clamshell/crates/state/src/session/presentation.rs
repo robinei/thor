@@ -196,6 +196,8 @@ pub struct HdrPlot {
     pub reference: f64,
     /// Whether it declares its peak (MaxCLL or its mastering display's).
     pub declared: bool,
+    /// Whether its peak is the one set for it (see [`crate::settings::Setting::HdrPeak`]).
+    pub set: bool,
     /// Whether it is scRGB (linear light) rather than PQ.
     pub scrgb: bool,
 }
@@ -265,14 +267,29 @@ impl crate::State {
         let screen = self.screen_colour(window.is_some_and(|w| w.down));
         let luminance = screen.luminances();
         let black = f64::from(luminance.min) / 10000.0 / f64::from(luminance.reference.max(1));
-        let hdr = colour.map(|colour| HdrPlot {
-            peak: colour.peak(),
-            nits: colour.peak() * f64::from(colour.luminances().reference),
-            reference: f64::from(colour.luminances().reference),
-            declared: colour.declared_peak().is_some(),
-            scrgb: colour.transfer == TransferFunction::Linear,
+        // The content's peak: the one set for the program edited (at the level edited), else what it
+        // declares or is assumed.
+        let set = self.panel().tile_value(crate::settings::Setting::HdrPeak);
+        let hdr = colour.map(|colour| {
+            let reference = f64::from(colour.luminances().reference);
+            let nits = if set > 0 { f64::from(set) } else { colour.peak() * reference };
+            HdrPlot {
+                peak: nits / reference.max(1.0),
+                nits,
+                reference,
+                declared: colour.declared_peak().is_some(),
+                set: set > 0,
+                scrgb: colour.transfer == TransferFunction::Linear,
+            }
         });
         CurvePlot { hdr, headroom: screen.headroom(), black }
+    }
+
+    /// The HDR content peak set for window `id`'s program, in the content's nits (see
+    /// [`crate::settings::Setting::HdrPeak`]): 0 takes what it declares, as for a window no launch runs.
+    pub fn window_hdr_peak(&self, id: i64) -> u16 {
+        let running = self.session().window(id).and_then(|window| self.session().running_of(window));
+        running.map_or(0, |running| self.settings_of(&running.id).get(crate::settings::Setting::HdrPeak))
     }
 
     /// How window `id`'s picture is shown (`docs/picture.md`): the clarity settings in force for the program

@@ -73,15 +73,15 @@ fn a_slider_changes_the_curve_as_it_moves_and_saves_once_when_lifted() {
     tap(&mut s, Id::Row { list: ListId::Curves, i: 2, part: RowPart::Edit });
     assert_eq!(s.curving().screen(), Some(CurveScreen::Edit(1)));
     let before = *s.curving().in_force(1).unwrap();
-    assert!(s.applied(Slide::Start { control: Control::Curve(CurveParam::Peak), x: 300.0, width: 620.0 }.into()).is_empty());
+    assert!(s.applied(Slide::Start { control: Control::Curve(CurveParam::Highlights), x: 300.0, width: 620.0 }.into()).is_empty());
     let slider = s.curving().slider().unwrap();
-    assert_eq!(slider.start, CurveParam::Peak.position(before.peak));
+    assert_eq!(slider.start, CurveParam::Highlights.position(before.highlights));
     // Moving right raises the peak at once, without saving yet.
     let fx = s.applied(Slide::To { x: 360.0 }.into());
     assert!(saved(&fx).is_none(), "{fx:?}");
     let moved = *s.curving().in_force(1).unwrap();
-    assert!(moved.peak > before.peak, "{moved:?}");
-    assert_eq!(CurveParam::Peak.position(moved.peak), s.curving().slider().unwrap().value);
+    assert!(moved.highlights > before.highlights, "{moved:?}");
+    assert_eq!(CurveParam::Highlights.position(moved.highlights), s.curving().slider().unwrap().value);
     let fx = s.applied(Slide::End.into());
     assert_eq!(saved(&fx).and_then(|c| c.get(1)).map(|p| p.body), Some(moved));
     assert_eq!(s.curving().slider(), None);
@@ -149,4 +149,25 @@ fn a_windows_curve_is_the_one_chosen_for_the_game_running_it_and_follows_its_sli
     s.applied(Slide::To { x: 200.0 }.into());
     assert_eq!(s.window_curve(7).map(|c| c.black), Some(0), "slid all the way down");
     assert_eq!(s.window_curve(99), None, "no such window");
+}
+
+/// HDR content's peak is the program's setting, not a curve's: its row on the edit screen steps through its
+/// values for the game edited, and choosing another curve keeps it.
+#[test]
+fn the_hdr_content_peak_is_the_games_setting_and_outlives_its_curve() {
+    let mut s = new_state();
+    picker(&mut s);
+    tap(&mut s, Id::Row { list: ListId::Curves, i: 2, part: RowPart::Edit });
+    assert_eq!(s.curving().screen(), Some(CurveScreen::Edit(1)));
+    let peak = || Id::Settings(SettingsId::Tile(Setting::HdrPeak));
+    let set = |s: &State| s.prefs().settings().overrides_of("zelda-lttp").get(Setting::HdrPeak);
+    assert_eq!(set(&s), None, "as declared, by default");
+    tap(&mut s, peak());
+    assert_eq!(set(&s), Some(400));
+    assert_eq!(s.curving().screen(), Some(CurveScreen::Edit(1)), "the edit screen stays");
+    assert_eq!(s.curving().in_force(1).copied(), Curves::initial().get(1).map(|p| p.body), "the curve itself is unchanged");
+    // Another curve for the game: the peak stays.
+    profile(&mut s, ProfileId::Back);
+    tap(&mut s, row(3));
+    assert_eq!((chosen(&s), set(&s)), (Some(2), Some(400)));
 }

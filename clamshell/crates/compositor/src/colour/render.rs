@@ -46,6 +46,8 @@ struct Look {
     /// FXAA in the final pass, as the window is shown one to one and not sharpened after it: no texture
     /// between.
     fxaa_here: bool,
+    /// The HDR content peak set for its program, in the content's nits; 0 takes what it declares.
+    hdr_peak: u16,
 }
 struct Converted {
     inner: Element,
@@ -207,6 +209,7 @@ impl Pipeline {
             // PQ signal we send it.
             let headroom = server.colour.screen(state.session().window(client.id).is_some_and(|w| w.down)).headroom() as f32;
             let mut clarity = state.window_clarity(client.id);
+            let hdr_peak = state.window_hdr_peak(client.id);
             // The game's picture: the window's surface with the largest buffer (Wine draws it in a subsurface
             // over the toplevel's), and whether that buffer is its surface's size (Xwayland and Wine show a
             // mode a game picked as a smaller buffer scaled by a viewport).
@@ -237,7 +240,7 @@ impl Pipeline {
             client.window.with_surfaces(|surface, states| {
                 let renderer_state = states.data_map.get::<smithay::backend::renderer::utils::RendererSurfaceStateUserData>();
                 let buffer = renderer_state.and_then(|state| state.lock().ok()?.buffer_size()).map_or((0, 0), |size| (size.w, size.h));
-                self.curves.push((Id::from_wayland_resource(surface), Look { curve, headroom, clarity, buffer, fxaa_here }));
+                self.curves.push((Id::from_wayland_resource(surface), Look { curve, headroom, clarity, buffer, fxaa_here, hdr_peak }));
             });
             let upscale = clarity.scaling == clamshell_state::settings::Scaling::Fsr && clarity.sharpen > 0;
             // FXAA done in the final pass takes no passes before it.
@@ -263,10 +266,10 @@ impl Pipeline {
             let colour = server.colour.surfaces.get(inner.id()).map(|colour| **colour).unwrap_or_default();
             let look = self.last_curves.iter().find(|(id, _)| id == inner.id()).map(|(_, look)| *look);
             let (curve, headroom) = look.as_ref().map_or((None, 1.0), |look| (look.curve.as_ref(), look.headroom));
-            // An HDR surface's peak: the one its game's curve sets, else what it declares or is assumed.
-            let peak = hdr(colour).then(|| {
-                let given = colour.peak();
-                curve.map_or(given, |c| c.hdr_peak(given, f64::from(colour.luminances().reference))) as f32
+            // An HDR surface's peak: the one set for its program, else what it declares or is assumed.
+            let peak = hdr(colour).then(|| match look.map_or(0, |look| look.hdr_peak) {
+                0 => colour.peak() as f32,
+                set => f32::from(set) / colour.luminances().reference.max(1) as f32,
             });
             let curve = (sdr(colour) || hdr(colour)).then(|| {
                 let [a, b] = curve_uniforms(curve, headroom, peak);
@@ -390,16 +393,18 @@ fn clarity_uniform(clarity: clamshell_state::session::presentation::Clarity, (w,
     [1.0 / w as f32, 1.0 / h as f32, f32::from(clarity.sharpen.min(100)) / 100.0, sampling]
 }
 
-/// An HDR curve as the input shaders' uniforms: black point, contrast, where highlights start, and for an
-/// SDR surface their peak (in units of white), for an HDR one its own peak (`hdr_peak`, in units of its
-/// white); then white over the reference, saturation, the screen's headroom, and whether a curve is on.
+/// A tone curve as the input shaders' uniforms: black point, contrast, where highlights start, and for an
+/// SDR surface their peak (in units of white: the curve's share of the screen's room above white), for an
+/// HDR one its own peak (`hdr_peak`, in units of its white); then white over the reference, saturation,
+/// the screen's headroom, and whether a curve is on.
 /// Without one, an SDR surface is only decoded and an HDR one compressed into the screen.
 fn curve_uniforms(curve: Option<&Curve>, headroom: f32, hdr_peak: Option<f32>) -> [[f32; 4]; 2] {
     let Some(c) = curve else {
         return [[0.0, 1.0, 1.0, hdr_peak.unwrap_or(1.0)], [1.0, 1.0, headroom, 0.0]];
     };
     let white = f32::from(c.white.max(1));
-    let peak = hdr_peak.unwrap_or(f32::from(c.peak.max(c.white)) / white);
+    let to_scene = (f64::from(white) / REFERENCE_NITS).min(f64::from(headroom));
+    let peak = hdr_peak.unwrap_or(c.peak_in(f64::from(headroom) / to_scene) as f32);
     [
         [f32::from(c.black) / 1000.0, f32::from(c.contrast) / 100.0, f32::from(c.start) / 100.0, peak],
         [white / REFERENCE_NITS as f32, f32::from(c.saturation) / 100.0, headroom, 1.0],
@@ -946,9 +951,9 @@ mod tests {
     }
 
     const CURVES: [Curve; 3] = [
-        Curve { black: 0, contrast: 100, white: 203, start: 100, peak: 203, saturation: 100, game_peak: 0 },
-        Curve { black: 20, contrast: 110, white: 203, start: 60, peak: 650, saturation: 105, game_peak: 0 },
-        Curve { black: 150, contrast: 70, white: 400, start: 30, peak: 1000, saturation: 50, game_peak: 1500 },
+        Curve { black: 0, contrast: 100, white: 203, start: 100, highlights: 0, saturation: 100 },
+        Curve { black: 20, contrast: 110, white: 203, start: 60, highlights: 60, saturation: 105 },
+        Curve { black: 150, contrast: 70, white: 400, start: 30, highlights: 100, saturation: 50 },
     ];
     /// An SDR screen, a 650-nit panel with SDR white at the reference, and room for anything.
     const HEADROOMS: [f64; 3] = [1.0, 650.0 / 203.0, 100.0];
@@ -974,8 +979,6 @@ mod tests {
         for curve in CURVES.iter().map(Some).chain([None]) {
             for headroom in HEADROOMS {
                 for light in [[0.0, 0.0, 0.0], [0.01, 0.01, 0.01], [0.5, 0.4, 0.3], [1.0, 1.0, 1.0], [3.0, 2.0, 1.0], [peak, peak, peak], [6.0, 0.5, 0.2]] {
-                    // The game's peak as its curve sets it, or as given.
-                    let peak = curve.map_or(peak, |c| c.hdr_peak(peak, 203.0));
                     let got = shaded_hdr(light, curve_uniforms(curve, headroom as f32, Some(peak as f32)));
                     close(map_hdr(curve, light, peak, headroom), got, &format!("{curve:?} {headroom} {light:?}"));
                 }

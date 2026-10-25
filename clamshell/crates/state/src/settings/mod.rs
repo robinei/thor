@@ -42,6 +42,11 @@ pub enum Setting {
     /// screen's and the game's. It is chosen in the curve picker, and works only under ClamShell's
     /// compositor.
     Curve,
+    /// HDR content's peak, in its own nits, in place of what it declares (or what is assumed when it
+    /// declares none): 0 takes what it declares. It is a fact about the content, so it is the program's
+    /// setting rather than a curve's, and applies whatever curve is chosen. Edited on the tone curve's edit
+    /// screen; the compositor's alone.
+    HdrPeak,
     /// The second screen: 0 on but dimmed when untouched, 1 dark while a game runs until tapped, 2 off
     /// when idle. With 1 and 2 it is powered off on battery (see [`crate::bottom::screen`]).
     BottomScreen,
@@ -295,7 +300,7 @@ choices!(
     }
 );
 
-pub const COUNT: usize = 21;
+pub const COUNT: usize = 22;
 
 /// What a value does, for the tile's colour. It is the stock value and does nothing, or it saves power
 /// or eases the load, costs power, or changes how the game looks or plays.
@@ -319,6 +324,7 @@ names!(Setting {
     AntiAliasing: "aa";
     Sharpen: "sharpen";
     Curve: "curve";
+    HdrPeak: "hdrpeak";
     BottomScreen: "bottom";
     BigCores: "bigcores";
     Fan: "fan";
@@ -359,7 +365,9 @@ impl Setting {
             Setting::PadMouse => Some(&MouseAtLaunch::TABLE),
             Setting::Rumble => Some(&RumbleStrength::TABLE),
             Setting::Background => Some(&InBackground::TABLE),
-            Setting::FpsCap | Setting::Refresh | Setting::Keymap | Setting::Curve | Setting::CpuMax | Setting::GpuMax | Setting::Sharpen => None,
+            Setting::FpsCap | Setting::Refresh | Setting::Keymap | Setting::Curve | Setting::HdrPeak | Setting::CpuMax | Setting::GpuMax | Setting::Sharpen => {
+                None
+            }
             Setting::ChargeLimit | Setting::ScreenOff | Setting::Sleep => None,
         }
     }
@@ -376,6 +384,7 @@ impl Setting {
             Setting::Keymap | Setting::Curve => &[0],
             Setting::CpuMax | Setting::GpuMax => &[0, 40, 50, 60, 70, 80, 90, 100],
             Setting::Sharpen => &[0, 25, 50, 75, 100],
+            Setting::HdrPeak => &[0, 400, 600, 800, 1000, 1500, 2000, 4000],
             Setting::ChargeLimit => &[100, 90, 80, 0],
             Setting::ScreenOff => &[1, 2, 5, 10, 0],
             Setting::Sleep => &[5, 15, 30, 60, 0],
@@ -397,7 +406,7 @@ impl Setting {
 
     /// Whether only ClamShell's own compositor does it: under sway it does nothing.
     pub fn compositor_only(self) -> bool {
-        matches!(self, Setting::Curve | Setting::Resolution | Setting::Scaling | Setting::AntiAliasing | Setting::Sharpen)
+        matches!(self, Setting::Curve | Setting::HdrPeak | Setting::Resolution | Setting::Scaling | Setting::AntiAliasing | Setting::Sharpen)
     }
 
     /// Whether the setting works through the launch's own process, as MangoHud's cap and HUD do. An app
@@ -423,6 +432,7 @@ impl Setting {
             Setting::AntiAliasing => "Anti-aliasing",
             Setting::Sharpen => "Sharpen",
             Setting::Curve => "Tone curve",
+            Setting::HdrPeak => "HDR content peak",
             Setting::BottomScreen => "Second screen",
             Setting::BigCores => "CPU cores",
             Setting::Fan => "Fan",
@@ -450,7 +460,7 @@ impl Setting {
             (Setting::Refresh, 120) | (Setting::CpuMax | Setting::GpuMax, 100) => Impact::Costs,
             // Never, or later than the default, costs power. Sooner saves it.
             (Setting::ScreenOff | Setting::Sleep, v) if v == 0 || v > self.default_value() => Impact::Costs,
-            (Setting::Keymap | Setting::Curve | Setting::Sharpen, _) => Impact::Changes,
+            (Setting::Keymap | Setting::Curve | Setting::HdrPeak | Setting::Sharpen, _) => Impact::Changes,
             _ => Impact::Saves,
         }
     }
@@ -475,6 +485,7 @@ impl Setting {
             // The tile shows the keymap's name.
             (Setting::Keymap, v) => return number(buf, "Keymap ", v, ""),
             (Setting::Curve, 0) => "Off",
+            (Setting::HdrPeak, 0) => "As declared",
             // The tile shows the curve's name.
             (Setting::Curve, v) => return number(buf, "Curve ", v, ""),
             (Setting::CpuMax, 0) => "CPU auto",
@@ -490,6 +501,7 @@ impl Setting {
             (Setting::CpuMax, v) => return number(buf, "CPU ", v, " %"),
             (Setting::GpuMax, v) => return number(buf, "GPU ", v, " %"),
             (Setting::Sharpen, v) => return number(buf, "Sharpen ", v, " %"),
+            (Setting::HdrPeak, v) => return number(buf, "", v, " nits"),
             (Setting::ChargeLimit, v) => return number(buf, "Charge to ", v, " %"),
             (Setting::ScreenOff, v) => return number(buf, "Off after ", v, " min"),
             (Setting::Sleep, v) => return number(buf, "Sleep after ", v, " min"),

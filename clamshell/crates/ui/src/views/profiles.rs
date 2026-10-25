@@ -61,7 +61,7 @@ fn words(kind: Kind) -> Words {
             load_hint: "Its values replace the own curve's",
             save_title: "Save own curve as",
             save_hint: "A new curve, or one whose values it replaces",
-            pick_hint: "Maps the game's SDR or HDR to the screen's · Long press a curve for its menu",
+            pick_hint: "Maps the content's SDR or HDR to the screen's · Long press a curve for its menu",
             overwrite: "Its values become the own curve's.",
             overwrite_used: "Its values become the own curve's, for every game using it",
         },

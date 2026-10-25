@@ -10,7 +10,8 @@ use clamshell_state::curve::screens::CurveScreen;
 use clamshell_state::curve::{Curve, CurveParam, REFERENCE_NITS, map_hdr};
 use clamshell_state::profiles::picker::{Kind, ProfileId};
 use clamshell_state::session::presentation::CurvePlot;
-use clamshell_state::{Control, Id};
+use clamshell_state::settings::Setting;
+use clamshell_state::{Control, Id, SettingsId};
 
 use crate::gfx::{Align, Column, Rect, Rgb};
 use crate::toolkit::format::Fmt;
@@ -48,20 +49,21 @@ fn edit(f: &mut Frame, id: u16) {
     let caption = match on.hdr {
         Some(hdr) => {
             let signal = if hdr.scrgb { "scRGB" } else { "PQ" };
-            if curve.game_peak > 0 {
-                Fmt::<64>::of(format_args!("HDR ({signal}) set to {} nits", curve.game_peak))
+            if hdr.set {
+                Fmt::<64>::of(format_args!("HDR ({signal}) set to {:.0} nits", hdr.nits))
             } else if hdr.declared {
                 Fmt::of(format_args!("HDR ({signal}) to {:.0} nits", hdr.nits))
             } else {
                 Fmt::of(format_args!("HDR ({signal}), {:.0} nits assumed", hdr.nits))
             }
         }
-        None => Fmt::of(format_args!("SDR game")),
+        None => Fmt::of(format_args!("SDR content")),
     };
     let area = widgets::header(f, Some(Id::Profile(Kind::Curve, ProfileId::Back)), s.curving().name(id), false, HeaderRight::Note(caption.as_str()));
     let size = f.text(Text::Small) * ROW_TEXT;
     let rh = f.body().h * ROW_H;
-    let rows_h = rh * CurveParam::ALL.len() as f32;
+    // The curve's parameters, then the content's HDR peak, the program's setting.
+    let rows_h = rh * (CurveParam::ALL.len() + 1) as f32;
     let pad = f.pad();
     plot(f, Rect::new(area.x, area.y, area.w, (area.h - rows_h - pad).max(0.0)), &curve, on, size);
     let mut col = Column::new(Rect::new(area.x, area.bottom() - rows_h, area.w, rows_h));
@@ -86,6 +88,16 @@ fn edit(f: &mut Frame, id: u16) {
             }
         });
         f.track(track);
+    }
+    // A tap steps through its values at the level edited, as its tile would.
+    if let Some(row) = col.next(rh) {
+        let setting = Setting::HdrPeak;
+        let value = s.panel().tile_value(setting);
+        let mut text = Fmt::<32>::new();
+        setting.describe(value, &mut text);
+        f.button(Id::Settings(SettingsId::Tile(setting)), row, Look::ROW, |f| {
+            widgets::value_row(f, row, size, setting.title(), text.as_str(), value != setting.default_value());
+        });
     }
     // A held slider is drawn last, so its card covers the rows below it.
     if let Some((row, sl, p)) = held {
@@ -138,7 +150,7 @@ fn plot(f: &mut Frame, r: Rect, curve: &Curve, on: CurvePlot, size: f32) {
     }
     // The light shown for level `e` (0 to 1) as it is, and through the curve.
     let shown = |e: f64, curved: bool| -> f64 {
-        match on.hdr.map(|hdr| curve.hdr_peak(hdr.peak, hdr.reference)) {
+        match on.hdr.map(|hdr| hdr.peak) {
             None if curved => curve.map_on([e, e, e], on.headroom)[1] * REFERENCE_NITS,
             None => Curve::default().map([e, e, e])[1] * REFERENCE_NITS,
             Some(peak) => {
@@ -177,9 +189,10 @@ fn shown(p: CurveParam, v: u16) -> Fmt<24> {
     match p {
         CurveParam::Black => Fmt::of(format_args!("{}.{} %", v / 10, v % 10)),
         CurveParam::Contrast => Fmt::of(format_args!("{}.{:02}", v / 100, v % 100)),
-        CurveParam::White | CurveParam::Peak => Fmt::of(format_args!("{v} nits")),
+        CurveParam::White => Fmt::of(format_args!("{v} nits")),
+        CurveParam::Highlights if v == 0 => Fmt::of(format_args!("White")),
+        CurveParam::Highlights if v >= 100 => Fmt::of(format_args!("The screen's peak")),
+        CurveParam::Highlights => Fmt::of(format_args!("{v} % of the room")),
         CurveParam::Start | CurveParam::Saturation => Fmt::of(format_args!("{v} %")),
-        CurveParam::GamePeak if v == 0 => Fmt::of(format_args!("As given")),
-        CurveParam::GamePeak => Fmt::of(format_args!("{v} nits")),
     }
 }

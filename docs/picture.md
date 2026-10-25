@@ -33,8 +33,10 @@ the next value, a long press opens the tile's menu (below). No screens in betwee
 
 - **Colour** (the tone curve tile): the curve profile, as now: a game's own, Default colours, the named ones. Tapping
   steps through them; the menu is the picker, with the edit screen (the plot and the curve's rows: black
-  point, contrast, SDR white, highlights from, highlight peak, saturation, HDR game's peak). A LUT for
-  colour grading, if it comes, is part of this profile.
+  point, contrast, SDR white, highlights from, highlights to (a share of the screen's room above white,
+  so a curve means the same on any screen), saturation), and below them the program's HDR content peak,
+  a setting of its own rather than the curve's. A LUT for colour grading, if it comes, is part of this
+  profile.
 - **Clarity**, four ordinary settings, each a tile, with the All / runner / game levels every setting
   has (Nearest set once on a pixel-art emulator's runner, 1280×720 on one heavy game, the rest inherited):
   - Resolution, the screen as the game sees it: Native (1920×1080 on the Thor), 1600×900, 1280×720,
