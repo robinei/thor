@@ -31,12 +31,21 @@ impl Geometry {
     }
 }
 
-pub(crate) fn configure_size(window: &Window, policy: WindowPresentation, area: Size<i32, Logical>, current: Size<i32, Logical>) -> Option<Size<i32, Logical>> {
+/// The size a window is configured to in `area`: a fixed size as it is, a fullscreen window `fill` (the
+/// area, or the resolution its game is set to, which [`Geometry`] scales up to the area), and any other its
+/// own size within the area.
+pub(crate) fn configure_size(
+    window: &Window,
+    policy: WindowPresentation,
+    area: Size<i32, Logical>,
+    fill: Size<i32, Logical>,
+    current: Size<i32, Logical>,
+) -> Option<Size<i32, Logical>> {
     if let Some((w, h)) = window.limits.fixed_size() {
         return Some((i32::try_from(w).unwrap_or(i32::MAX), i32::try_from(h).unwrap_or(i32::MAX)).into());
     }
     if policy.layout == WindowLayout::Fullscreen {
-        return Some(area);
+        return Some(fill);
     }
     (current.w > 0 && current.h > 0).then(|| (current.w.min(area.w), current.h.min(area.h)).into())
 }
@@ -66,6 +75,19 @@ mod tests {
         assert_eq!(small.scale, 0.5);
         assert_eq!(small.surface_coords((1270.0, 290.0).into()), (620.0, 500.0).into());
         let fixed = Window { limits: WindowLimits { min: (1240, 1000), max: (1240, 1000) }, ..Window::default() };
-        assert_eq!(configure_size(&fixed, fixed.presentation(false), (620, 500).into(), (0, 0).into()), Some((1240, 1000).into()));
+        assert_eq!(configure_size(&fixed, fixed.presentation(false), (620, 500).into(), (620, 500).into(), (0, 0).into()), Some((1240, 1000).into()));
+    }
+
+    #[test]
+    fn a_fullscreen_game_at_a_lower_resolution_is_configured_to_it_and_scaled_up() {
+        let game = Window::default();
+        let policy = game.presentation(true);
+        let size = configure_size(&game, policy, (1920, 1080).into(), (1280, 720).into(), (0, 0).into()).unwrap();
+        assert_eq!(size, (1280, 720).into());
+        let geometry = Geometry::new(Rectangle::from_size((1920, 1080).into()), Rectangle::from_size(size), policy).unwrap();
+        assert_eq!((geometry.scale, geometry.origin), (1.5, (0.0, 0.0).into()), "filling the screen");
+        // A dialog keeps its own size.
+        let dialog = Window { parent: Some(1), ..Window::default() };
+        assert_eq!(configure_size(&dialog, dialog.presentation(true), (1920, 1080).into(), (1280, 720).into(), (400, 300).into()), Some((400, 300).into()));
     }
 }

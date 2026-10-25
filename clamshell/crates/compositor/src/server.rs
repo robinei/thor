@@ -14,7 +14,7 @@ use smithay::{
         backend::{ClientData, ClientId, DisconnectReason},
         protocol::wl_surface::WlSurface,
     },
-    utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Transform},
+    utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Size, Transform},
     wayland::{
         compositor::{CompositorClientState, CompositorState, with_states},
         input_method::InputMethodSeat,
@@ -74,6 +74,8 @@ pub(crate) struct Server {
     /// last sent.
     pub frames_due: Option<Instant>,
     frames_sent: (Option<f32>, Option<f32>),
+    /// The top output's mode as last set (see [`Server::sync_top_mode`]).
+    top_mode: Option<Size<i32, Logical>>,
     /// The screens last told to the state (see [`Server::report_screens`]).
     screens_sent: Option<clamshell_state::session::presentation::Screens>,
     pub pointer_window: Option<i64>,
@@ -190,6 +192,7 @@ impl Server {
             frames_due: None,
             frames_sent: (None, None),
             screens_sent: None,
+            top_mode: None,
             pointer_window: None,
             pointer_buttons: Vec::new(),
             arrow_pressed: false,
@@ -239,6 +242,8 @@ impl Server {
             let mode = Mode { size: (w, self.size.1).into(), refresh: self.refresh };
             output.change_current_state(Some(mode), Some(Transform::Normal), None, Some((x, 0).into()));
             output.set_preferred(mode);
+            // The top's mode follows the game on top again (see `sync_top_mode`).
+            self.top_mode = None;
             self.core.resize(screen, (w as u32, self.size.1 as u32), 1);
             self.core.record(screen, true);
         }
@@ -386,7 +391,8 @@ impl Server {
             if let Some(surface) = client.window.toplevel() {
                 let area = self.area(window.down);
                 let Some(policy) = client.presentation else { continue };
-                let size = crate::geometry::configure_size(window, policy, area.size, client.window.geometry().size);
+                let fill = self.fill_size(client.id, area.size);
+                let size = crate::geometry::configure_size(window, policy, area.size, fill, client.window.geometry().size);
                 surface.with_pending_state(|pending| {
                     pending.size = size;
                     pending.bounds = Some(area.size);
@@ -480,6 +486,7 @@ impl Server {
         self.update_idle(Instant::now());
         self.report_frames(Instant::now());
         self.report_screens();
+        self.sync_top_mode();
         self.core.run(Instant::now());
         while let Some(effect) = self.core.next_effect() {
             match effect {
@@ -519,6 +526,34 @@ impl Server {
         }
         self.sync_windows();
         self.popups.cleanup();
+    }
+
+    /// What a fullscreen window `id` fills in an area of `area`: the area, or the resolution its game is set
+    /// to (a fraction of it, `docs/picture.md`), which the window is then scaled up from.
+    pub fn fill_size(&self, id: i64, area: Size<i32, Logical>) -> Size<i32, Logical> {
+        let resolution = self.core.state().window_clarity(id).resolution;
+        let (w, h) = resolution.size_on((area.w.max(0) as u32, area.h.max(0) as u32));
+        (w as i32, h as i32).into()
+    }
+
+    /// The top output's mode as clients see it: the screen's size, or while a game with a lower resolution
+    /// has the window on top, that resolution, so that a game choosing from the display modes (Wine's,
+    /// Xwayland's) finds it as the largest. While ClamShell's own view is on top it stays as it was.
+    fn sync_top_mode(&mut self) {
+        let screen = Size::from((self.top_width, self.size.1));
+        let size = match self.core.state().session().top_window() {
+            Some(window) if self.windows.iter().any(|w| w.id == window.id) => self.fill_size(window.id, screen),
+            Some(_) => screen,
+            None => return,
+        };
+        if self.top_mode == Some(size) {
+            return;
+        }
+        self.top_mode = Some(size);
+        let mode = Mode { size: (size.w, size.h).into(), refresh: self.refresh };
+        let [top, _] = &self.outputs;
+        top.change_current_state(Some(mode), None, None, None);
+        top.set_preferred(mode);
     }
 
     /// Each screen's colour (the top's, the second's), described to clients (and told to the state, see

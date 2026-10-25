@@ -743,7 +743,8 @@ impl Window {
         }
         let Some(policy) = self.policy else { return Ok(()) };
         let area = server.area(model.down);
-        let size = crate::geometry::configure_size(model, policy, area.size, (i32::from(self.size.0), i32::from(self.size.1)).into())
+        let fill = server.fill_size(self.id, area.size);
+        let size = crate::geometry::configure_size(model, policy, area.size, fill, (i32::from(self.size.0), i32::from(self.size.1)).into())
             .unwrap_or((i32::from(self.size.0), i32::from(self.size.1)).into());
         let offset: smithay::utils::Point<i32, smithay::utils::Logical> =
             if policy.layout == WindowLayout::Centred { ((area.size.w - size.w).max(0) / 2, (area.size.h - size.h).max(0) / 2).into() } else { (0, 0).into() };
