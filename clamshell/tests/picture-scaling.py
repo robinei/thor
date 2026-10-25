@@ -54,7 +54,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--gpu", action="store_true", help="the host on GLES")
     parser.add_argument("--keep", action="store_true", help="leave the session running at the end")
-    parser.add_argument("--only", choices=["pattern", "sdl-wayland", "sdl-x11"], help="run only this game's cases")
+    parser.add_argument("--only", choices=["pattern", "pattern-pq", "pattern-linear", "sdl-wayland", "sdl-x11"],
+                        help="run only this game's cases")
     args = parser.parse_args()
     for path in [BIN, PATTERN]:
         if not path.exists():
@@ -80,7 +81,8 @@ def main():
     games.mkdir()
     # Each game: a file the runner starts through the wrapper, its commands from a FIFO, its output to a file.
     # SDL logs its video subsystem to the game's .err, for what it did with a mode.
-    kinds = {"pattern": [str(PATTERN)], "sdl-wayland": ["env", "SDL_VIDEO_DRIVER=wayland", "SDL_LOGGING=video=debug", str(sdl)],
+    kinds = {"pattern": [str(PATTERN)], "pattern-pq": [str(PATTERN), "--colour", "pq"],
+             "pattern-linear": [str(PATTERN), "--colour", "linear"], "sdl-wayland": ["env", "SDL_VIDEO_DRIVER=wayland", "SDL_LOGGING=video=debug", str(sdl)],
              "sdl-x11": ["env", "SDL_VIDEO_DRIVER=x11", "SDL_LOGGING=video=debug", str(sdl)]}
     wrapper = directory / "run-game.sh"
     wrapper.write_text("#!/bin/sh\n"
@@ -115,7 +117,7 @@ def main():
            "WLR_BACKENDS": "headless", "WLR_HEADLESS_OUTPUTS": "1", "WLR_RENDERER": "gles2" if args.gpu else "pixman",
            "WLR_LIBINPUT_NO_DEVICES": "1", "LIBGL_ALWAYS_SOFTWARE": "0" if args.gpu else "1", "CLAMSHELL_STEAM": "off",
            "CLAMSHELL_CONTROL": str(directory / "control"), "CLAMSHELL_BACKLIGHTS": str(directory / "backlights"),
-           "CLAMSHELL_GAMEPAD": str(directory / "no-controller"), "RUST_LOG": "info"}
+           "CLAMSHELL_GAMEPAD": str(directory / "no-controller"), "RUST_LOG": os.environ.get("RUST_LOG", "info")}
     env["DBUS_SESSION_BUS_ADDRESS"] = os.environ.get("DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{os.getuid()}/bus")
     for key in ["SWAYSOCK", "WAYLAND_DISPLAY", "DISPLAY", "WAYLAND_SOCKET", "CLAMSHELL_SESSION"]:
         env.pop(key, None)
@@ -182,7 +184,8 @@ def main():
             os.write(fifos[name], (line + "\n").encode())
 
         def running(name):
-            return subprocess.run(["pgrep", "-f", f"^{kinds[name][-1]}( |$)"], capture_output=True).returncode == 0
+            program = next(a for a in kinds[name] if a.startswith("/"))
+            return subprocess.run(["pgrep", "-f", f"^{program}( |$)"], capture_output=True).returncode == 0
 
         settings = {"resolution": "native", "scaling": "bilinear", "aa": "off", "sharpen": 0}
 
@@ -337,6 +340,27 @@ def main():
             for key, value in [("scaling", "bilinear"), ("aa", "off"), ("sharpen", 0)]:
                 set_setting(key, value)
 
+        def check_histogram(name):
+            """The tone curve's edit screen plots the picture's histogram: its bars, pure greys, are drawn
+            there (everything else on the screen is tinted or black)."""
+            open_settings()
+            control("long", "setting", "curve")
+            control("tap", "curve-edit", "2")
+            time.sleep(1.5)
+            subprocess.run(["grim", "-o", "HEADLESS-1", str(directory / f"{name}-curve-histogram.png")], env=host, check=True)
+            width, height, pixels = image()
+            plot = [(x, y) for y in range(0, height // 2) for x in range(screen[0], width)]
+
+            def neutral(x, y):
+                r, g, b = pixels[(y * width + x) * 3:(y * width + x) * 3 + 3]
+                return r == g == b and r > 8
+            drawn = sum(1 for x, y in plot if neutral(x, y))
+            print(f"{'ok' if drawn > 200 else 'FAIL'}: {name}-curve-histogram: {drawn} pixels of the histogram drawn", flush=True)
+            if drawn <= 200:
+                failures.append(f"{name}-curve-histogram")
+            control("tap", "curve-back")
+            control("tap", "curve-back")
+
         # pattern-game: at Native, then relaunched at 1/2.
         for resolution in ["native", "1/2"] if args.only in (None, "pattern") else []:
             launch("pattern")
@@ -359,24 +383,7 @@ def main():
                 failures.append(f"pattern-{label}-launch")
             go_through("pattern", f"pattern-{label}", True, modes[-1])
             if resolution == "native":
-                # The tone curve's edit screen plots the picture's histogram: its colour is drawn there.
-                open_settings()
-                control("long", "setting", "curve")
-                control("tap", "curve-edit", "2")
-                time.sleep(1.5)
-                subprocess.run(["grim", "-o", "HEADLESS-1", str(directory / "pattern-curve-histogram.png")], env=host, check=True)
-                width, height, pixels = image()
-                plot = [(x, y) for y in range(0, height // 2) for x in range(screen[0], width)]
-                # Its bars and strip are pure greys; everything else on the screen is tinted or black.
-                def neutral(x, y):
-                    r, g, b = pixels[(y * width + x) * 3:(y * width + x) * 3 + 3]
-                    return r == g == b and r > 8
-                drawn = sum(1 for x, y in plot if neutral(x, y))
-                print(f"{'ok' if drawn > 200 else 'FAIL'}: pattern-curve-histogram: {drawn} pixels of the histogram drawn", flush=True)
-                if drawn <= 200:
-                    failures.append("pattern-curve-histogram")
-                control("tap", "curve-back")
-                control("tap", "curve-back")
+                check_histogram("pattern")
             if resolution == "native":
                 open_settings()
                 set_setting("resolution", "1/2")
@@ -384,6 +391,16 @@ def main():
                 open_settings()
                 set_setting("resolution", "native")
             quit("pattern")
+
+        # HDR content: the pattern as PQ, and as linear light (scRGB's), at Native.
+        for name in [n for n in ["pattern-pq", "pattern-linear"] if args.only in (None, n)]:
+            launch(name)
+            wait(lambda: any(l.startswith("mode") for l in output(name)), f"{name}'s modes")
+            modes = [tuple(map(int, l.split()[1:])) for l in output(name) if l.startswith("mode ")]
+            screen = screen or modes[0]
+            go_through(name, name, False, modes[-1])
+            check_histogram(name)
+            quit(name)
 
         # SDL, on Wayland and on X11: at the desktop's size, then a lower mode it lists.
         for name in [n for n in ["sdl-wayland", "sdl-x11"] if args.only in (None, n)]:
@@ -435,7 +452,8 @@ def main():
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
         for name in kinds:
-            subprocess.run(["pkill", "-f", f"^{kinds[name][-1]}( |$)"], capture_output=True)
+            program = next(a for a in kinds[name] if a.startswith("/"))
+            subprocess.run(["pkill", "-f", f"^{program}( |$)"], capture_output=True)
     sys.exit(1 if failures else 0)
 
 

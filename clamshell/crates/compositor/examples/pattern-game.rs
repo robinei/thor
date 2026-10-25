@@ -1,7 +1,10 @@
 //! A game as Wine shows one, drawing a test pattern: a fullscreen toplevel of a fixed size, the screen's
 //! mode, and the picture in a subsurface above it scaled to that size by a viewport. It prints the outputs
 //! it sees (`output NAME`) and the top's modes (`mode W H`, the last the current one), and reads commands:
-//! `render W H` draws the picture at that size, `quit` ends it.
+//! `render W H` draws the picture at that size, `quit` ends it. With `--colour pq` the picture is HDR: PQ
+//! with BT.2020's primaries, declared through colour management, its white at 1000 nits; with `--colour
+//! linear`, linear light as scRGB is (1.0 is 80 nits). Both are 8 bits a channel, so they band, which
+//! doesn't matter for the checks.
 //!
 //! The pattern shows what scaling, anti-aliasing and sharpening do. Kept fixed for the checks: corner
 //! blocks of 16 pixels (red top left, green top right, blue bottom left, yellow bottom right), a 1-pixel
@@ -12,6 +15,12 @@
 //! upscaling and sharpening); bottom right, a grey ramp over a hard step and a soft one (banding, and
 //! sharpening's halos). `tests/sdl-pattern.c` draws the same.
 
+use smithay::reexports::wayland_protocols::wp::color_management::v1::client::{
+    wp_color_management_surface_v1::WpColorManagementSurfaceV1,
+    wp_color_manager_v1::{self as colour_manager, WpColorManagerV1},
+    wp_image_description_creator_params_v1::WpImageDescriptionCreatorParamsV1,
+    wp_image_description_v1::{self as image, WpImageDescriptionV1},
+};
 use smithay::reexports::wayland_protocols::{
     wp::viewporter::client::{wp_viewport, wp_viewporter},
     xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base},
@@ -34,7 +43,48 @@ type Seen = (wl_output::WlOutput, String, Vec<(i32, i32)>);
 struct Client {
     outputs: Vec<Seen>,
     configured: bool,
+    described: Option<bool>,
 }
+
+/// How the picture's channels are encoded (see the module's comment).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Signal {
+    Srgb,
+    Pq,
+    Linear,
+}
+
+impl Signal {
+    /// A channel of the pattern, in sRGB's encoding, in this one.
+    fn encode(self, c: u8) -> u8 {
+        let light = || {
+            let e = f64::from(c) / 255.0;
+            if e <= 0.04045 { e / 12.92 } else { ((e + 0.055) / 1.055).powf(2.4) }
+        };
+        let byte = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+        match self {
+            Signal::Srgb => c,
+            Signal::Pq => {
+                let p = (light() * 1000.0 / 10000.0).powf(2610.0 / 16384.0);
+                byte(((3424.0 / 4096.0 + 2413.0 / 128.0 * p) / (1.0 + 2392.0 / 128.0 * p)).powf(2523.0 / 32.0))
+            }
+            Signal::Linear => byte(light()),
+        }
+    }
+}
+
+impl Dispatch<WpImageDescriptionV1, ()> for Client {
+    fn event(state: &mut Self, _: &WpImageDescriptionV1, event: image::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+        match event {
+            image::Event::Ready { .. } => state.described = Some(true),
+            image::Event::Failed { .. } => state.described = Some(false),
+            _ => {}
+        }
+    }
+}
+delegate_noop!(Client: ignore WpColorManagerV1);
+delegate_noop!(Client: ignore WpColorManagementSurfaceV1);
+delegate_noop!(Client: ignore WpImageDescriptionCreatorParamsV1);
 
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Client {
     fn event(_: &mut Self, _: &wl_registry::WlRegistry, _: wl_registry::Event, _: &GlobalListContents, _: &Connection, _: &QueueHandle<Self>) {}
@@ -136,12 +186,12 @@ fn pixel(x: i32, y: i32, w: i32, h: i32) -> [u8; 3] {
     }
 }
 
-/// The pattern at `w`×`h`, as XRGB8888 (little-endian: blue, green, red, unused).
-fn pattern(w: i32, h: i32) -> Vec<u8> {
+/// The pattern at `w`×`h` encoded as `signal`, as XRGB8888 (little-endian: blue, green, red, unused).
+fn pattern(w: i32, h: i32, signal: Signal) -> Vec<u8> {
     let mut pixels = Vec::with_capacity((w * h * 4) as usize);
     for y in 0..h {
         for x in 0..w {
-            let [r, g, b] = pixel(x, y, w, h);
+            let [r, g, b] = pixel(x, y, w, h).map(|c| signal.encode(c));
             pixels.extend_from_slice(&[b, g, r, 255]);
         }
     }
@@ -158,6 +208,12 @@ fn buffer(shm: &wl_shm::WlShm, qh: &QueueHandle<Client>, (w, h): (i32, i32), pix
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = std::env::args().collect();
+    let signal = match args.iter().position(|a| a == "--colour").and_then(|i| args.get(i + 1)).map(String::as_str) {
+        Some("pq") => Signal::Pq,
+        Some("linear") => Signal::Linear,
+        _ => Signal::Srgb,
+    };
     let connection = Connection::connect_to_env()?;
     let (globals, mut queue) = registry_queue_init::<Client>(&connection)?;
     let qh = queue.handle();
@@ -209,8 +265,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     subsurface.set_desync();
     let viewport = viewporter.get_viewport(&picture, &qh, ());
     viewport.set_destination(mode.0, mode.1);
+    // HDR: the picture's colour declared.
+    if signal != Signal::Srgb {
+        let manager: WpColorManagerV1 = globals.bind(&qh, 1..=1, ())?;
+        let control = manager.get_surface(&picture, &qh, ());
+        let creator = manager.create_parametric_creator(&qh, ());
+        let pq = signal == Signal::Pq;
+        creator.set_primaries_named(if pq { colour_manager::Primaries::Bt2020 } else { colour_manager::Primaries::Srgb });
+        creator.set_tf_named(if pq { colour_manager::TransferFunction::St2084Pq } else { colour_manager::TransferFunction::ExtLinear });
+        let description = creator.create(&qh, ());
+        while client.described.is_none() {
+            queue.roundtrip(&mut client)?;
+        }
+        if client.described != Some(true) {
+            return Err("the colour description failed".into());
+        }
+        control.set_image_description(&description, colour_manager::RenderIntent::Perceptual);
+    }
     let draw = move |size: (i32, i32)| -> std::io::Result<()> {
-        picture.attach(Some(&buffer(&shm, &qh, size, &pattern(size.0, size.1))?), 0, 0);
+        picture.attach(Some(&buffer(&shm, &qh, size, &pattern(size.0, size.1, signal))?), 0, 0);
         picture.damage_buffer(0, 0, size.0, size.1);
         picture.commit();
         Ok(())
