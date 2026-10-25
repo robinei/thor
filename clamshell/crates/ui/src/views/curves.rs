@@ -11,9 +11,10 @@ use clamshell_state::curve::{Curve, CurveParam, REFERENCE_NITS, map_hdr};
 use clamshell_state::profiles::picker::{Kind, ProfileId};
 use clamshell_state::session::presentation::CurvePlot;
 use clamshell_state::settings::Setting;
-use clamshell_state::{Control, Id, SettingsId};
 
-use crate::gfx::{Align, Column, Rect, Rgb};
+use clamshell_state::{Control, Id, Source, State};
+
+use crate::gfx::{Align, Column, Keep, Rect, Rgb};
 use crate::toolkit::format::Fmt;
 use crate::toolkit::style::{Look, Text, Tone};
 use crate::toolkit::widgets::{HeaderRight, HeldSlider};
@@ -62,8 +63,9 @@ fn edit(f: &mut Frame, id: u16) {
     let area = widgets::header(f, Some(Id::Profile(Kind::Curve, ProfileId::Back)), s.curving().name(id), false, HeaderRight::Note(caption.as_str()));
     let size = f.text(Text::Small) * ROW_TEXT;
     let rh = f.body().h * ROW_H;
-    // The curve's parameters, then the content's HDR peak, the program's setting.
-    let rows_h = rh * (CurveParam::ALL.len() + 1) as f32;
+    // The curve's parameters, then, under a caption, the content's HDR peak: the program's setting.
+    let caption_h = rh * 0.8;
+    let rows_h = rh * (CurveParam::ALL.len() + 1) as f32 + caption_h;
     let pad = f.pad();
     plot(f, Rect::new(area.x, area.y, area.w, (area.h - rows_h - pad).max(0.0)), &curve, on, size);
     let mut col = Column::new(Rect::new(area.x, area.bottom() - rows_h, area.w, rows_h));
@@ -89,22 +91,56 @@ fn edit(f: &mut Frame, id: u16) {
         });
         f.track(track);
     }
-    // A tap steps through its values at the level edited, as its tile would.
+    // Set apart from the curve, which may be shared: the content's HDR peak, the setting of the level the
+    // picker was opened from. Its slider starts at Default, which writes nothing there; the caption says
+    // where the value is read from, or that it is written to the level, and follows the slider. It does
+    // nothing for SDR content.
+    let setting = Setting::HdrPeak;
+    let source = s.panel().source(setting);
+    if let Some(caption) = col.next(caption_h) {
+        let note = if on.hdr.is_none() { " · no effect on SDR content" } else { "" };
+        let text = match source {
+            Source::Written(level) => Fmt::<96>::of(format_args!("Written to {level}{note}")),
+            Source::Read(level) => Fmt::of(format_args!("Read from {level}{note}")),
+            Source::Defaults => Fmt::of(format_args!("Read from defaults{note}")),
+        };
+        let inner = caption.inset(size * 0.4);
+        f.c.text_fit(Rect::new(inner.x, caption.y + caption.h * 0.3, inner.w, caption.h * 0.7), size * 0.8, Tone::Dim, text.as_str(), Keep::Start);
+    }
+    let mut held_setting = None;
     if let Some(row) = col.next(rh) {
-        let setting = Setting::HdrPeak;
-        let value = s.panel().tile_value(setting);
-        let mut text = Fmt::<32>::new();
-        setting.describe(value, &mut text);
-        f.button(Id::Settings(SettingsId::Tile(setting)), row, Look::ROW, |f| {
-            widgets::value_row(f, row, size, setting.title(), text.as_str(), value != setting.default_value());
+        let control = Control::Setting(setting);
+        let sl = s.setting_slider().filter(|sl| sl.control == control);
+        let written = matches!(source, Source::Written(_));
+        let text = setting_text(s, setting, written);
+        if let Some(sl) = sl {
+            held_setting = Some((row, sl, text));
+        }
+        f.button(Id::Control(control), row, Look::ROW, |f| {
+            if sl.is_none() {
+                widgets::value_row(f, row, size, setting.title(), text.as_str(), written);
+            }
         });
+        f.track(track);
     }
     // A held slider is drawn last, so its card covers the rows below it.
+    let within = Rect::new(track.x0, area.y, track.w, area.h);
     if let Some((row, sl, p)) = held {
         let text = Fmt::<48>::of(format_args!("{} {}", p.label(), shown(p, p.value(sl.value)).as_str()));
-        let within = Rect::new(track.x0, area.y, track.w, area.h);
         widgets::held_slider(f, HeldSlider { slider: &sl, x0: track.x0, cy: row.y + row.h / 2.0, h: row.h * 0.75, within, icon: None, text: &text });
     }
+    if let Some((row, sl, value)) = held_setting {
+        let text = Fmt::<64>::of(format_args!("{} {}", setting.title(), value.as_str()));
+        widgets::held_slider(f, HeldSlider { slider: &sl, x0: track.x0, cy: row.y + row.h / 2.0, h: row.h * 0.75, within, icon: None, text: &text });
+    }
+}
+
+/// A setting's value at the level edited, as its row shows it: written there, its value; else Default,
+/// with the value it reads.
+fn setting_text(s: &State, setting: Setting, written: bool) -> Fmt<48> {
+    let mut value = Fmt::<32>::new();
+    setting.describe(s.panel().tile_value(setting), &mut value);
+    if written { Fmt::of(format_args!("{}", value.as_str())) } else { Fmt::of(format_args!("Default · {}", value.as_str())) }
 }
 
 /// The curve: the game's levels along, the light its screen shows for them up to [`PLOT_NITS`] (or the

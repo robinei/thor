@@ -204,6 +204,6 @@ fn draw_slider(f: &mut Frame, slider: Slider, w: f32, bar_h: f32) {
 fn level_icon(f: &Frame, control: Control, value: u8) -> Icon {
     match control {
         Control::Volume => Icon::volume(value, f.s.levels().muted()),
-        Control::Brightness | Control::Param(_) | Control::Curve(_) => Icon::Brightness,
+        Control::Brightness | Control::Param(_) | Control::Curve(_) | Control::Setting(_) => Icon::Brightness,
     }
 }

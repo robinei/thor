@@ -489,6 +489,15 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot("curve-edit.png", Bottom, vec![tap(Id::Row { list: ListId::Curves, i: 2, part: clamshell_state::RowPart::Edit })]),
                 shot("curve-edit-slider.png", Bottom, curve_slide(clamshell_state::curve::CurveParam::Highlights, 0.2)),
                 shot("curve-edit-hdr.png", Bottom, [vec![Slide::End.into()], demo::hdr_game("ff6", true)].concat()),
+                // The content's HDR peak held and slid off Default: written to the game.
+                shot(
+                    "curve-edit-peak.png",
+                    Bottom,
+                    vec![
+                        Slide::Start { control: Control::Setting(Setting::HdrPeak), x: 620.0, width: 1240.0 }.into(),
+                        Slide::To { x: 620.0 + 0.4 * 1240.0 }.into(),
+                    ],
+                ),
             ],
         ),
         // An HDR game giving no peak: scRGB, its peak assumed.

@@ -19,6 +19,9 @@ pub enum Control {
     Param(crate::keymap::Param),
     /// A parameter of the curve on the curve edit screen (see [`crate::curve::screens`]).
     Curve(crate::curve::CurveParam),
+    /// A setting at the level the settings panel edits, through its stops (see [`crate::State::setting_stop`]):
+    /// Default, which writes nothing there, then its values.
+    Setting(crate::settings::Setting),
 }
 
 impl Control {
@@ -27,7 +30,7 @@ impl Control {
         match self {
             Control::Volume => Some(Level::Volume),
             Control::Brightness => Some(Level::Brightness),
-            Control::Param(_) | Control::Curve(_) => None,
+            Control::Param(_) | Control::Curve(_) | Control::Setting(_) => None,
         }
     }
 }

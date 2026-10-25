@@ -25,6 +25,17 @@ pub enum Scope {
     Content,
 }
 
+/// Where a setting's value at the level edited is from (see [`Panel::source`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source<'a> {
+    /// The level edited sets it itself: the level's name.
+    Written(&'a str),
+    /// A level below sets it: that level's name.
+    Read(&'a str),
+    /// No level sets it: the stock value.
+    Defaults,
+}
+
 /// Where a settings tile's value comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TileOrigin {
@@ -268,6 +279,29 @@ impl<'a> Panel<'a> {
         let g = self.editing.as_ref()?;
         let runner = self.levels.iter().flatten().find(|(scope, l)| *scope == Scope::Runner && l.id != g.id).map(|(_, l)| l.title);
         Some(runner.unwrap_or("All"))
+    }
+
+    /// Where `setting`'s value at the level edited is from: written there (its own), or read from the
+    /// level below that sets it, or from the defaults when none does.
+    pub fn source(&self, setting: Setting) -> Source<'a> {
+        let level = self.editing.as_ref().map_or("All", |g| g.title);
+        match self.tile_origin(setting) {
+            TileOrigin::Own => Source::Written(level),
+            TileOrigin::Global if self.tile_value(setting) != setting.default_value() => Source::Written(level),
+            TileOrigin::Global => Source::Defaults,
+            TileOrigin::Inherited => {
+                let set_by = |id: &str| self.prefs.settings.overrides_of(id).get(setting).is_some();
+                let runner = self
+                    .editing
+                    .as_ref()
+                    .and_then(|g| self.levels.iter().flatten().find(|(scope, l)| *scope == Scope::Runner && l.id != g.id && set_by(&l.id)));
+                match runner {
+                    Some((_, l)) => Source::Read(l.title),
+                    None if self.prefs.settings.global.get(setting) != setting.default_value() => Source::Read("All"),
+                    None => Source::Defaults,
+                }
+            }
+        }
     }
 
     /// Whether Reset has something to do for `setting`: the level edited chooses it itself, or All differs

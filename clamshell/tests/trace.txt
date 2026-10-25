@@ -514,6 +514,9 @@ Units [ff6_09d141]
 Windows [open game on clamshell-run-ff6_09d141, order [30]]
   PadRoute Game
 -- curve-edit-hdr.png
+Slide(To { x: 1116.0 })
+  Apply settings of ff6
+-- curve-edit-peak.png
 == group curve-edit-scrgb.png
 Start
   Window DownRules 0 rules

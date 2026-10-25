@@ -324,6 +324,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
             );
             ids.extend(row(ListId::Curves, s.lists().len(ListId::Curves)));
             ids.extend(crate::curve::CurveParam::ALL.map(|p| Id::Control(Control::Curve(p))));
+            ids.push(Id::Control(Control::Setting(Setting::HdrPeak)));
         }
         Tab::Settings => match s.keymapping().screen() {
             None => {
@@ -637,9 +638,10 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             0 => LevelEvent::Step(Level::Volume, if rng.one_in(2) { 1 } else { -1 }).into(),
             1 => LevelEvent::Set(Level::Brightness, rng.below(101) as u8).into(),
             2 => {
-                let control = match rng.below(3) {
+                let control = match rng.below(4) {
                     0 => Control::Volume,
                     1 => Control::Brightness,
+                    2 => Control::Setting(Setting::HdrPeak),
                     _ => Control::Curve(crate::curve::CurveParam::ALL.get(rng.below(6)).copied().unwrap_or(crate::curve::CurveParam::Highlights)),
                 };
                 Slide::Start { control, x: rng.below(100) as f32, width: 100.0 }.into()

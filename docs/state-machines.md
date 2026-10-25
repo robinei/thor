@@ -334,8 +334,10 @@ highlights above the start expanded into the curve's share of the screen's room 
 (`Curve::peak_in`) with a smooth join, saturation around luminance; on a screen within its headroom
 (`Curve::map_on`); HDR content's light through `curve::map_hdr`, its highlights compressed from the knee
 into the screen's peak, its peak as declared or as the program's "HDR content peak" setting sets it
-(`State::window_hdr_peak`, edited on the edit screen's last row, a tap stepping through its values as its
-tile would: `the_hdr_content_peak_is_the_games_setting_and_outlives_its_curve`); tested in
+(`State::window_hdr_peak`), edited on the edit screen's last row under a caption saying where its value is
+read from or that it is written to the level the picker was opened from: a slider (`Control::Setting`,
+`State::setting_stop`) whose first stop, Default, writes nothing there
+(`the_hdr_content_peak_is_the_games_setting_slid_from_default_and_outlives_its_curve`); tested in
 `curve::tests`. The edit screen's plot follows `State::curve_plot`: the
 game's window's content and its screen's description (`Reading::Screens`). The randomized test taps the
 curve screens and slides their parameters.
