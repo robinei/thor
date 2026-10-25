@@ -587,11 +587,22 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
     - [ ] Tests: headless, a PQ client's pixels converted as expected, SDR content unchanged, the UI at
           reference white (done: unit tests and PQ, linear and sRGB EGL fixtures in the nested test);
           nested, mpv (`gpu-next`, `--target-colorspace-hint=yes`) playing a PQ clip, compared by eye with
-          the same clip in mpv directly on KWin (a synthetic clip: a 0-1000 nit ramp, patches from 1 to
+          the same clip in mpv directly on KWin (done 2026-10-25: they look the same) (a synthetic clip: a 0-1000 nit ramp, patches from 1 to
           1000 nits, a moving 1000-nit highlight); a Proton game with HDR through Wine's Wayland driver.
 3. **The generic DRM backend, on the VM:** udev, DRM, GBM, GLES, libseat, libinput, two outputs, power,
    refresh, dmabuf feedback with scanout tranches. The VM image boots either compositor; the VM suite
    checks both.
+   - [x] `clamshell --drm`: libseat, DRM and GBM with GLES, libinput, both screens from the device profile
+         (the kernel's mode kept, turned as mounted), each shown its part of the one composed scene and
+         drawn only when that part changed; flips give presentation feedback and frame callbacks; VT
+         switching. Tried in the bring-up image (llvmpipe): both screens right, about 1 % CPU idle, clicks,
+         touch, keys, a Wayland client (foot) shown and moved to the second screen.
+   - [x] The session switch: `/etc/thor/session` saying `clamshell` runs it on tty1 instead of sway.
+   - [ ] Output power and refresh as the state asks (`Effect::Outputs`, `Effect::Refresh`); dmabuf
+         feedback with the scanout tranches; touch on panels mounted turned (the Thor's), rotated with the
+         output; ClamShell's package built with the compositor (its libraries in the aarch64 sysroot).
+   - [ ] The session's services under the compositor (udiskie; notifications are phase 6), and the
+         watchdog and restart that clamshell.service gives under sway.
    - [ ] Frame statistics and the cap ("Frame statistics and limiting", section 3) on the DRM backend's
          page-flip timestamps: the per-window ring, the FPS tile and system info reading it, the cap
          pacing frame callbacks with FIFO forced at launch, the HUD as an overlay element; MangoHud not
