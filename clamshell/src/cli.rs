@@ -11,6 +11,8 @@ pub enum Command {
     DevicePanel,
     /// `--nested`: the experimental in-process compositor (built with `--features compositor`).
     Nested,
+    /// `--drm`: the in-process compositor on the machine's own screens, from a VT.
+    Drm,
     /// `--run FILE`: become a launched job's program. Sway's exec starts us this way (see
     /// clamshell_system::launch::job).
     RunJob(PathBuf),
@@ -55,6 +57,7 @@ used by ClamShell itself:
   --clipboard get|set  the clipboard's text (Waydroid's clipboard sharing)
 for development:
   --nested             in-process nested compositor (built with --features compositor)
+  --drm                the in-process compositor on the screens, from a VT (the same build)
   --snapshot DIR       both screens' views drawn into DIR (built with --features dev)
   --library            the library as it reads, written out
   --tray               the tray icons there are, written out
@@ -68,6 +71,7 @@ pub fn parse(args: &[String]) -> Option<Command> {
         [device, what] if device == "device" && what == "outputs" => Command::DeviceOutputs,
         [device, what] if device == "device" && what == "panel" => Command::DevicePanel,
         [flag] if flag == "--nested" => Command::Nested,
+        [flag] if flag == "--drm" => Command::Drm,
         [flag, file] if flag == "--run" => Command::RunJob(file.into()),
         [flag, appid] if flag == "--follow-steam" => Command::FollowSteam(appid.parse().ok()?),
         #[cfg(any(test, feature = "dev"))]
@@ -99,6 +103,7 @@ mod tests {
         assert_eq!(parse(&args("device panel")), Some(Command::DevicePanel));
         assert_eq!(parse(&args("device unknown")), None);
         assert_eq!(parse(&args("--nested")), Some(Command::Nested));
+        assert_eq!(parse(&args("--drm")), Some(Command::Drm));
         assert_eq!(parse(&args("--snapshot /tmp/s")), Some(Command::Snapshot("/tmp/s".into())));
         assert_eq!(parse(&args("--run /run/j.json")), Some(Command::RunJob("/run/j.json".into())));
         assert_eq!(parse(&args("--follow-steam 620")), Some(Command::FollowSteam(620)));

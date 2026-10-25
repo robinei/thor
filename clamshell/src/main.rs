@@ -66,6 +66,17 @@ fn carry_out(command: Command) -> Result<(), String> {
             #[cfg(not(feature = "compositor"))]
             Err("--nested requires a build with --features compositor".into())
         }
+        Command::Drm => {
+            #[cfg(feature = "compositor")]
+            {
+                // ClamShell is the session here, as under sway, but sway isn't there.
+                let mut env = env;
+                env.sway = None;
+                session::run_drm(&env, paths, &sources)
+            }
+            #[cfg(not(feature = "compositor"))]
+            Err("--drm requires a build with --features compositor".into())
+        }
         // `job::run` returns only if the job's program couldn't take over.
         Command::RunJob(file) => Err(format!("{}: {}", file.display(), job::run(&file))),
         Command::Ctl(words) if words == ["help"] => {

@@ -5,17 +5,26 @@ use clamshell_state::{Event as StateEvent, WindowEvent, device::buttons::DeviceK
 use clamshell_ui::{End, Screen, Source};
 use smithay::{
     backend::input::{
-        AbsolutePositionEvent, Axis, ButtonState, Event, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
-        TouchEvent,
+        AbsolutePositionEvent, Axis, ButtonState, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
+        PointerMotionEvent, TouchEvent,
     },
-    backend::winit::WinitInput,
     input::{
         keyboard::FilterResult,
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
     reexports::wayland_server::protocol::wl_surface::WlSurface,
-    utils::{Logical, Point, SERIAL_COUNTER},
+    utils::{Logical, Point, Rectangle, SERIAL_COUNTER},
 };
+
+/// How a host delivers input.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Host {
+    /// A desktop window: absolute motion places the free cursor, and relative motion only reaches
+    /// clients. Otherwise (libinput's mice) relative motion moves the cursor.
+    pub absolute_cursor: bool,
+    /// Whether the host ends each touch frame; winit doesn't, so each of its touch events is one.
+    pub touch_frames: bool,
+}
 
 pub(crate) struct Hit {
     pub window: i64,
@@ -25,7 +34,9 @@ pub(crate) struct Hit {
 }
 
 impl Server {
-    pub fn input(&mut self, event: InputEvent<WinitInput>) {
+    /// An input event from a host. `area` is where an absolute device (a touchscreen, a tablet, the
+    /// nested window) lies in the scene.
+    pub(crate) fn input<B: InputBackend>(&mut self, event: InputEvent<B>, host: Host, area: impl Fn(&B::Device) -> Rectangle<f64, Logical>) {
         self.idle.input(std::time::Instant::now());
         match event {
             InputEvent::Keyboard { event, .. } => {
@@ -40,6 +51,13 @@ impl Server {
                                 if !down {
                                     server.core.handle(StateEvent::HomeTap);
                                 }
+                            }
+                            return FilterResult::Intercept(());
+                        }
+                        // XF86Switch_VT_1 to _12: the keymap gives these for Ctrl+Alt+F1..F12.
+                        if (0x1008_fe01..=0x1008_fe0c).contains(&sym.raw()) {
+                            if down {
+                                server.vt_switch = Some((sym.raw() - 0x1008_fe00) as i32);
                             }
                             return FilterResult::Intercept(());
                         }
@@ -64,12 +82,12 @@ impl Server {
             }
             InputEvent::PointerMotion { event } => {
                 self.validate_capture();
-                let delta = PointerMotionEvent::<WinitInput>::delta(&event);
-                let unaccelerated = PointerMotionEvent::<WinitInput>::delta_unaccel(&event);
-                let time = Event::<WinitInput>::time(&event);
+                let delta = PointerMotionEvent::<B>::delta(&event);
+                let unaccelerated = PointerMotionEvent::<B>::delta_unaccel(&event);
+                let time = Event::<B>::time(&event);
                 // Winit can report absolute and relative events for one physical movement.
                 // Its absolute event positions the free cursor; captured motion is relative-only.
-                if self.capture.is_some() {
+                if self.capture.is_some() || !host.absolute_cursor {
                     self.pointer_relative(delta, unaccelerated, time);
                 } else {
                     self.relative_motion(delta, unaccelerated, time);
@@ -78,7 +96,9 @@ impl Server {
             InputEvent::PointerMotionAbsolute { event, .. } => {
                 self.validate_capture();
                 if self.capture.is_none() {
-                    self.pointer_absolute(event.position_transformed(self.size.into()), event.time());
+                    let area = area(&event.device());
+                    let at = event.position_transformed(area.size.to_i32_round());
+                    self.pointer_absolute(area.loc + at, event.time());
                 }
             }
             InputEvent::PointerButton { event, .. } => {
@@ -151,19 +171,27 @@ impl Server {
                     self.core.wheel(screen, position, vertical.signum() as i32);
                 }
             }
-            // Winit gives physical window coordinates and no touch frame events. These are the
-            // same coordinates as our nested framebuffer; finish each host event as one frame.
+            // Positions are within the device's area of the scene. Winit sends no frame events, so each
+            // of its touch events ends a frame.
             InputEvent::TouchDown { event } => {
-                self.touch_down(event.slot(), (event.x(), event.y()).into(), event.time());
-                self.touch_frame();
+                let area = area(&event.device());
+                self.touch_down(event.slot(), area.loc + event.position_transformed(area.size.to_i32_round()), event.time());
+                if !host.touch_frames {
+                    self.touch_frame();
+                }
             }
             InputEvent::TouchMotion { event } => {
-                self.touch_motion(event.slot(), (event.x(), event.y()).into(), event.time());
-                self.touch_frame();
+                let area = area(&event.device());
+                self.touch_motion(event.slot(), area.loc + event.position_transformed(area.size.to_i32_round()), event.time());
+                if !host.touch_frames {
+                    self.touch_frame();
+                }
             }
             InputEvent::TouchUp { event } => {
                 self.touch_up(event.slot(), event.time());
-                self.touch_frame();
+                if !host.touch_frames {
+                    self.touch_frame();
+                }
             }
             InputEvent::TouchCancel { .. } => self.touch_cancel(),
             InputEvent::TouchFrame { .. } => self.touch_frame(),

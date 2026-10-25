@@ -47,6 +47,7 @@ impl CompositorHandler for Server {
     }
     fn commit(&mut self, surface: &WlSurface) {
         on_commit_buffer_handler::<Self>(surface);
+        self.commits = self.commits.wrapping_add(1);
         let id = smithay::backend::renderer::element::Id::from_wayland_resource(surface);
         let current = crate::colour::protocol::current(surface);
         let previous = match current.clone() {

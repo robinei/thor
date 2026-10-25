@@ -57,17 +57,35 @@ pub(crate) fn saved(paths: &Paths) -> Init {
     }
 }
 
+/// What shows the windows.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Host {
+    /// sway, with ClamShell a client of it.
+    Sway,
+    /// ClamShell's compositor in a window on a desktop.
+    #[cfg(feature = "compositor")]
+    Nested,
+    /// ClamShell's compositor on the machine's screens.
+    #[cfg(feature = "compositor")]
+    Drm,
+}
+
 /// Runs the session: the state from what was saved, the UI, and the system threads.
 pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources) -> Result<(), String> {
-    run_host(env, paths, sources, false)
+    run_host(env, paths, sources, Host::Sway)
 }
 
 #[cfg(feature = "compositor")]
 pub(crate) fn run_nested(env: &Env, paths: Paths, sources: &Sources) -> Result<(), String> {
-    run_host(env, paths, sources, true)
+    run_host(env, paths, sources, Host::Nested)
 }
 
-fn run_host(env: &Env, paths: Paths, sources: &Sources, nested: bool) -> Result<(), String> {
+#[cfg(feature = "compositor")]
+pub(crate) fn run_drm(env: &Env, paths: Paths, sources: &Sources) -> Result<(), String> {
+    run_host(env, paths, sources, Host::Drm)
+}
+
+fn run_host(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Result<(), String> {
     let loaded = library::load(sources);
     // Metadata to fetch once the threads run, if there is somewhere to keep it.
     let fetch = paths.art.clone().map(|art| meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art });
@@ -77,7 +95,7 @@ fn run_host(env: &Env, paths: Paths, sources: &Sources, nested: bool) -> Result<
         start_tab: env.start_tab,
         pad_mouse: env.pad_mouse,
         device_session: env.device_session,
-        compositor: nested,
+        compositor: host != Host::Sway,
         // Settings, keymaps, curves, window rules, brightness, the dock, where shelf was.
         ..saved(&paths)
     });
@@ -119,22 +137,21 @@ fn run_host(env: &Env, paths: Paths, sources: &Sources, nested: bool) -> Result<
         }
     };
     #[cfg(feature = "compositor")]
-    if nested {
-        return clamshell_compositor::run(
-            state,
-            config,
-            |sender, display| start(sender, Some(display)),
-            on_effect,
-            |pid| clamshell_compositor::Process { unit: clamshell_system::os::unit_of(pid), pids: clamshell_system::os::lineage(pid) },
-            move |captured| {
-                if let Some(handles) = capture_handles.borrow().as_ref() {
-                    handles.save_screenshot(captured.map(|capture| wiring::ScreenshotPixels { size: capture.size, rgba: capture.rgba }));
-                }
-            },
-        )
-        .map_err(|e| e.to_string());
+    if host != Host::Sway {
+        let identify = |pid| clamshell_compositor::Process { unit: clamshell_system::os::unit_of(pid), pids: clamshell_system::os::lineage(pid) };
+        let on_capture = move |captured: Result<clamshell_compositor::Capture, String>| {
+            if let Some(handles) = capture_handles.borrow().as_ref() {
+                handles.save_screenshot(captured.map(|capture| wiring::ScreenshotPixels { size: capture.size, rgba: capture.rgba }));
+            }
+        };
+        let start = |sender, display| start(sender, Some(display));
+        let result = if host == Host::Drm {
+            clamshell_compositor::run_drm(state, config, start, on_effect, identify, on_capture)
+        } else {
+            clamshell_compositor::run(state, config, start, on_effect, identify, on_capture)
+        };
+        return result.map_err(|e| e.to_string());
     }
-    let _ = nested;
     let result = clamshell_ui::run(state, config, |sender| start(sender, None), on_effect);
     result.map_err(|e| e.to_string())
 }

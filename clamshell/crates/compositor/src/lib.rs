@@ -5,9 +5,11 @@
 //! facts as Wayland ones in one adapter. See `docs/compositor-mvp.md`, "Keeping the app tail small".
 
 mod activation;
+mod base;
 mod colour;
 mod cursor;
 mod dmabuf;
+mod drm;
 mod geometry;
 mod handlers;
 mod idle;
@@ -24,6 +26,7 @@ mod touch;
 pub mod trace;
 mod x11;
 
+pub use drm::run as run_drm;
 pub use nested::run;
 pub use server::Process;
 

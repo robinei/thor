@@ -1,27 +1,22 @@
 //! A desktop window containing two logical outputs. It never takes control of the host session.
 
-use std::os::fd::AsFd;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use clamshell_state::{Effect, Event, State};
+use clamshell_state::{Effect, State};
 use clamshell_ui::{Config, Error, EventSender};
 use smithay::{
     backend::{
         renderer::{Frame, Renderer, damage::OutputDamageTracker, gles::GlesRenderer},
         winit::{self, WinitEvent},
     },
-    reexports::{
-        calloop::{EventLoop, Interest, Mode, PostAction, channel, generic::Generic, ping},
-        wayland_server::Display,
-        winit::{dpi::LogicalSize, window::WindowAttributes},
-    },
+    reexports::winit::{dpi::LogicalSize, window::WindowAttributes},
     utils::{Rectangle, Transform},
-    wayland::socket::ListeningSocketSource,
 };
 
 use crate::{
+    base::Base,
     render::{self, ArrowFrame, UiFrame},
-    server::{Process, Server, insert_client},
+    server::{Process, Server},
 };
 
 /// Runs the experimental nested compositor. Launch environments are scoped to its socket; the
@@ -34,34 +29,8 @@ pub fn run(
     identify: impl Fn(u32) -> Process + 'static,
     mut on_capture: impl FnMut(Result<crate::Capture, String>) + 'static,
 ) -> Result<(), Error> {
-    let mut event_loop: EventLoop<Server> = EventLoop::try_new()?;
-    let mut display = Display::<Server>::new()?;
-    let (wake, woken) = ping::make_ping()?;
-    event_loop.handle().insert_source(woken, |_, _, _| {}).map_err(|e| e.error)?;
-    let mut server = Server::new(state, config, display.handle(), false, move || wake.ping(), identify, on_effect)?;
-    let socket = ListeningSocketSource::new_auto()?;
-    server.socket = socket.socket_name().to_string_lossy().into_owned();
-    log::info!("nested compositor: WAYLAND_DISPLAY={}", server.socket);
-    event_loop.handle().insert_source(socket, |stream, _, server| insert_client(&mut server.dh, stream)).map_err(|e| e.error)?;
-    // The duplicated descriptor is only a readiness source. The closure owns the display, so dispatch
-    // does not need an unsafe mutable borrow of calloop's Generic storage.
-    let fd = display.as_fd().try_clone_to_owned()?;
-    event_loop
-        .handle()
-        .insert_source(Generic::new(fd, Interest::READ, Mode::Level), move |_, _, server| {
-            display.dispatch_clients(server)?;
-            Ok(PostAction::Continue)
-        })
-        .map_err(|e| e.error)?;
-    let (sender, receiver) = EventSender::channel();
-    event_loop
-        .handle()
-        .insert_source(receiver, |event, _, server| {
-            if let channel::Event::Msg(event) = event {
-                server.core.handle(event);
-            }
-        })
-        .map_err(|e| e.error)?;
+    let mut base = Base::new(state, config, false, identify, on_effect)?;
+    let server = &mut base.server;
 
     let attributes =
         WindowAttributes::default().with_title("ClamShell nested").with_surface_size(LogicalSize::new(f64::from(server.size.0), f64::from(server.size.1)));
@@ -89,7 +58,7 @@ pub fn run(
     let mut submitted = false;
     let mut refresh_known = false;
     let mut damage = OutputDamageTracker::new(backend.window_size(), 1.0, Transform::Flipped180);
-    event_loop
+    base.event_loop
         .handle()
         .insert_source(events, move |event, _, server| {
             let result: Result<(), Error> = (|| {
@@ -106,7 +75,11 @@ pub fn run(
                             server.touch_cancel();
                         }
                     }
-                    WinitEvent::Input(event) => server.input(event),
+                    WinitEvent::Input(event) => {
+                        // The window is the whole scene, its touch and pointer positions within it.
+                        let whole = Rectangle::from_size((f64::from(server.size.0), f64::from(server.size.1)).into());
+                        server.input(event, crate::input::Host { absolute_cursor: true, touch_frames: false }, |_| whole);
+                    }
                     WinitEvent::CloseRequested => server.exit = true,
                     WinitEvent::Redraw => {
                         // The host tells which monitor shows the window only after it is shown, so ask
@@ -144,7 +117,7 @@ pub fn run(
                         render::elements(server, &mut frames, &mut arrows, backend.renderer(), &mut elements)?;
                         cursor.elements(server, backend.renderer(), &mut elements)?;
                         let composed_states =
-                            if let Some(pipeline) = &mut colour_pipeline { Some(pipeline.compose(server, backend.renderer(), &mut elements)?) } else { None };
+                            if let Some(pipeline) = &mut colour_pipeline { Some(pipeline.compose(server, backend.renderer(), &mut elements)?.0) } else { None };
                         let states;
                         {
                             let (renderer, mut framebuffer) = backend.bind()?;
@@ -190,27 +163,8 @@ pub fn run(
             }
         })
         .map_err(|e| e.error)?;
-    let mut x11 = crate::x11::Supervisor::new(event_loop.handle())?;
-    server.x11_display = Some(x11.display());
-    let runtime = std::env::var_os("XDG_RUNTIME_DIR").ok_or("nested compositor: XDG_RUNTIME_DIR is missing")?;
-    start(sender, std::path::PathBuf::from(runtime).join(&server.socket));
-    server.core.handle(Event::Start);
-    while !server.exit {
-        let now = Instant::now();
-        x11.turn(&mut server, now);
-        let wait = server
-            .core
-            .deadline()
-            .into_iter()
-            .chain(server.cursor_activity.deadline(now))
-            .chain(x11.deadline())
-            .min()
-            .map(|at| at.saturating_duration_since(now));
-        event_loop.dispatch(wait, &mut server)?;
-        server.turn();
-        server.dh.flush_clients()?;
-    }
-    Ok(())
+    // The window redraws at each of the host's frames, so it needs no turns of its own.
+    base.run(start, |_, _| None)
 }
 
 /// The refresh of the monitor showing the window, in mHz, once the host says.

@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Libraries ClamShell links, and the time zones (the snapshots draw a clock)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libdbus-1-dev libxkbcommon-dev pkg-config tzdata
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libdbus-1-dev libxkbcommon-dev libseat-dev libinput-dev libudev-dev libgbm-dev libdrm-dev pkg-config tzdata
       # The version the workspace declares (rust-version), so a newer clippy's lints don't fail a build
       # that passed locally.
       - uses: dtolnay/rust-toolchain@master

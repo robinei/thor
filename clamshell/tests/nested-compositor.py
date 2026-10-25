@@ -80,7 +80,7 @@ def main():
         spawn([str(BIN), "--nested"], "compositor", host)
 
         def socket_name():
-            match = re.search(r"nested compositor: WAYLAND_DISPLAY=(\S+)", (directory / "compositor.log").read_text())
+            match = re.search(r"compositor: WAYLAND_DISPLAY=(\S+)", (directory / "compositor.log").read_text())
             return match.group(1) if match else None
 
         nested_socket = wait(socket_name, "nested Wayland socket")

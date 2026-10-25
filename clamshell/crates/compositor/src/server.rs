@@ -73,6 +73,10 @@ pub(crate) struct Server {
     pub pointer_buttons: Vec<u32>,
     pub arrow_pressed: bool,
     pub keyboard_home: bool,
+    /// A VT asked for with Ctrl+Alt+F1..F12, for the host whose seat can switch.
+    pub vt_switch: Option<i32>,
+    /// Commits so far, for a host to tell when clients want frame callbacks without a visible change.
+    pub commits: u64,
     pub keyboard_source: smithay::input::keyboard::KeyboardSource,
     pub touches: [Option<crate::touch::Contact>; 32],
     pub touch_pending: bool,
@@ -176,6 +180,8 @@ impl Server {
             pointer_buttons: Vec::new(),
             arrow_pressed: false,
             keyboard_home: false,
+            vt_switch: None,
+            commits: 0,
             keyboard_source: smithay::input::keyboard::KeyboardSource::new_auxiliary(),
             touches: std::array::from_fn(|_| None),
             touch_pending: false,

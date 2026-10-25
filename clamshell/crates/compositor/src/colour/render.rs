@@ -113,7 +113,14 @@ impl Pipeline {
         }
         Ok(())
     }
-    pub(crate) fn compose(&mut self, server: &Server, renderer: &mut GlesRenderer, elements: &mut Vec<Element>) -> Result<RenderElementStates, Error> {
+    /// Draws what changed in the scene. Returns the elements' states, and the part of the scene that
+    /// changed, if anything did.
+    pub(crate) fn compose(
+        &mut self,
+        server: &Server,
+        renderer: &mut GlesRenderer,
+        elements: &mut Vec<Element>,
+    ) -> Result<(RenderElementStates, Option<Rectangle<i32, Physical>>), Error> {
         if self.size != server.size {
             let output = self.output;
             *self = Self::new(renderer, server.size)?;
@@ -153,9 +160,15 @@ impl Pipeline {
             self.converted.push(Converted { inner, shader: program, curve });
         }
         let mut target = renderer.bind(&mut self.texture)?;
-        let states = self.damage.render_output(renderer, &mut target, usize::from(!self.first), &self.converted, [0.0, 0.0, 0.0, 1.0])?.states;
+        let result = self.damage.render_output(renderer, &mut target, usize::from(!self.first), &self.converted, [0.0, 0.0, 0.0, 1.0])?;
+        let changed = result.damage.and_then(|d| d.iter().copied().reduce(|a, b| a.merge(b)));
+        let states = result.states;
         self.first = false;
-        Ok(states)
+        Ok((states, changed))
+    }
+    /// Draws the whole scene at the next compose, as after the screens were away.
+    pub(crate) fn redraw_all(&mut self) {
+        self.first = true;
     }
     pub(crate) fn present(&self, renderer: &mut GlesRenderer, target: &mut GlesTarget<'_>) -> Result<(), Error> {
         self.present_with(renderer, target, &self.output_shader)
@@ -178,6 +191,23 @@ impl Pipeline {
         drop(frame.finish()?);
         Ok(())
     }
+    /// Draws `part` of the scene onto an output's framebuffer, `size` before the output's `transform`
+    /// (a panel mounted turned), returning when the GPU will be done with it.
+    pub(crate) fn present_part(
+        &self,
+        renderer: &mut GlesRenderer,
+        target: &mut GlesTarget<'_>,
+        part: Rectangle<i32, Buffer>,
+        size: smithay::utils::Size<i32, Physical>,
+        transform: Transform,
+    ) -> Result<smithay::backend::renderer::sync::SyncPoint, Error> {
+        let mut frame = renderer.render(target, size, transform)?;
+        let whole = Rectangle::from_size(transform.transform_size(size));
+        frame.clear([0.0, 0.0, 0.0, 1.0].into(), &[whole])?;
+        frame.render_texture_from_to(&self.texture, part.to_f64(), whole, &[whole], &[], Transform::Normal, 1.0, Some(&self.output_shader), &[])?;
+        Ok(frame.finish()?)
+    }
+
     pub fn capture(&self, renderer: &mut GlesRenderer) -> Result<crate::Capture, String> {
         let program = shader(renderer, ColourDescription::default(), false).map_err(|error| error.to_string())?;
         let mut texture: GlesTexture = renderer.create_buffer(Fourcc::Abgr8888, self.size.into()).map_err(|error| error.to_string())?;
