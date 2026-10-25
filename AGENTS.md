@@ -100,6 +100,12 @@ Rules for living with what apps do (`docs/compositor-mvp.md`, "Keeping the app t
 - X11 is translated into the same window facts as Wayland in one adapter; the state never sees X11.
 - Each app bug fixed adds a case to the real-client tests.
 
+Smithay comes from our fork, `github.com/robinei/smithay`, branch `thor`: an upstream commit with our
+patches on top as a clean series, each written as it would be proposed upstream (Smithay's subject
+style, a DCO sign-off). Updating means rebasing the series onto a newer upstream commit and
+force-pushing, never merging. The commit `Cargo.toml` pins is tagged `thor-N` on the fork, so older
+commits of this repository still build after a rebase.
+
 ## Checking
 
 - `tools/check.sh` (fmt, clippy for debug, dev and release builds, all tests including the snapshots,

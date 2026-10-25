@@ -12,7 +12,7 @@ description = "ClamShell's in-process compositor, developed nested on the deskto
 clamshell-device.workspace = true
 clamshell-state.workspace = true
 clamshell-ui.workspace = true
-smithay = { git = "https://github.com/Smithay/smithay", rev = "24647fc8d00131eb7f388efed26e35ea316b0018", default-features = false, features = ["backend_winit", "backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_libseat", "desktop", "wayland_frontend"] }
+smithay = { git = "https://github.com/robinei/smithay", rev = "1ca7f763c2667bcf4c3f0f9f9211664fabb0191b", default-features = false, features = ["backend_winit", "backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_libseat", "desktop", "wayland_frontend"] }
 tiny-skia.workspace = true
 log.workspace = true
 serde.workspace = true
