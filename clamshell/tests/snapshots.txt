@@ -61,7 +61,7 @@ settings-env.png e7ed86aa4833095c
 settings-global.png 21cc9d855acab9c5
 settings-menu.png 72af12303e2b3a9a
 settings-running.png cde1318f05637ed2
-settings.png f940f72eb4812941
+settings.png 5688c1c1c47f267a
 slider.png 77831e534b0c5416
 status-low.png ccb3226080159312
 sysinfo.png 90ff58d91e07de6b

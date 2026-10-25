@@ -219,10 +219,11 @@ impl Resolution {
 
 choices!(
     /// [`Setting::Scaling`]: how a picture smaller than its screen is brought to the screen's size.
-    /// Nearest at 1/2 or 1/3 size is exact integer scaling.
+    /// Nearest+Integer shows it at the largest whole multiple that fits, nearest-neighbour, so every pixel
+    /// is a square of whole screen pixels; 1/2 and 1/3 of the Thor's screen fill it.
     Scaling for Scaling, default Bilinear {
         Bilinear = 0, "Bilinear", Stock;
-        Nearest = 1, "Nearest", Changes;
+        Nearest = 1, "Nearest+Integer", Changes;
         Fsr = 2, "FSR", Changes;
     }
 );

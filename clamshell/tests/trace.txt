@@ -134,6 +134,8 @@ close 900
   Window ShowShelf
   PadActivity(false)
   PadRoute Ui
+Pointer(Activate(Settings(Tile(Scaling))))
+  Save Settings
 -- settings.png
 Pointer(Activate(Settings(Tile(FpsCap))))
   Save Settings

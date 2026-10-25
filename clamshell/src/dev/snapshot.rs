@@ -334,10 +334,15 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                         .chain(taps(Setting::ChargeLimit, 2))
                         .collect(),
                 ),
+                // With Scaling's longest value, Nearest+Integer.
                 shot(
                     "settings.png",
                     Bottom,
-                    a_play("zelda-lttp", now - 60, 60, now).into_iter().chain([tap(Id::Settings(SettingsId::Scope(Scope::Content)))]).collect(),
+                    a_play("zelda-lttp", now - 60, 60, now)
+                        .into_iter()
+                        .chain([tap(Id::Settings(SettingsId::Scope(Scope::Content)))])
+                        .chain(taps(Setting::Scaling, 1))
+                        .collect(),
                 ),
                 // A tile's menu (a long press), with the game's own choice: Reset to All's.
                 shot(

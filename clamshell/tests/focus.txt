@@ -152,7 +152,7 @@ Tile(GpuMax): ^Tile(Fan) v- <Tile(CpuMax) >Tile(Background)
 Tile(Background): ^Tile(PadMouse) v- <Tile(GpuMax) >Env
 Env: ^Tile(Keymap) v- <Tile(Background) >Tile(Rumble)
 == settings.png (bottom; the pad on both screens)
-start "ff6"; back -
+start Tile(Scaling); back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time): vTile(Curve)
 Tab(Settings), Tab(Dock): vScope(Global)

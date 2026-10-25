@@ -40,9 +40,12 @@ the next value, a long press opens the tile's menu (below). No screens in betwee
   - Resolution, the screen as the game sees it: Native (1920×1080 on the Thor), 1600×900, 1280×720,
     960×540, 640×360; on another screen the same fractions of it (⅚, ⅔, ½, ⅓). The tile shows the size.
   - Scaling, whenever the game's picture is smaller than the screen, whoever chose its size: Bilinear,
-    Nearest, FSR (a CRT look, if it comes, is one more). Nearest at ½ or ⅓ (960×540, 640×360 on the
-    Thor) is exact integer scaling, which is why there is no integer setting; at the others it is
-    uneven, and the tile says so.
+    Nearest+Integer, FSR (a CRT look, if it comes, is one more). Nearest+Integer shows the picture at
+    the largest whole multiple of its buffer that fits, centred, so every pixel is a square of whole
+    screen pixels; nearest at any other factor makes pixels of uneven width, which shimmer. ½ and ⅓
+    (960×540, 640×360 on the Thor) fill the screen; a game's own 640×480 shows at 2× between bars. A
+    picture of another shape than its window (a mode stretched over the screen) is fitted in its own
+    shape with Bilinear and FSR too.
   - Anti-aliasing: Off, FXAA, SMAA. FXAA is one pass and softer (it smooths fine detail and text along
     with edges); SMAA finds edges by their patterns and leaves detail, in three passes.
   - Sharpen: Off, 25, 50, 75, 100 %. CAS, or FSR's own sharpening (RCAS) when Scaling is FSR, so it is

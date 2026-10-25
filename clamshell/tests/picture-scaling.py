@@ -236,17 +236,22 @@ def main():
         # The top screen's size: the screen as a game at Native is told it.
         screen = None
 
-        def check(case, expected_mode=None):
+        def check(case, expected_mode=None, integer=False):
             """The picture fills the top screen, of `screen`, or for a mode of another shape (more than 2 %
             off) is fitted in it and centred between black bars: each corner block touches the picture's
             corner, the border shows at Native, and the magenta cross is there once each way, near the
-            middle."""
+            middle. With `integer` (Nearest+Integer) it is the largest whole multiple of the mode that fits,
+            centred."""
             time.sleep(0.8)
             subprocess.run(["grim", "-o", "HEADLESS-1", str(directory / f"{case}.png")], env=host, check=True)
             width, height, pixels = image()
             sw, sh = screen
             x0, y0, w, h = 0, 0, sw, sh
-            if expected_mode and abs((expected_mode[0] / expected_mode[1]) / (sw / sh) - 1) > 0.02:
+            times = min(sw // expected_mode[0], sh // expected_mode[1]) if expected_mode and integer else 0
+            if times >= 1:
+                w, h = expected_mode[0] * times, expected_mode[1] * times
+                x0, y0 = (sw - w) // 2, (sh - h) // 2
+            elif expected_mode and abs((expected_mode[0] / expected_mode[1]) / (sw / sh) - 1) > 0.02:
                 fit = min(sw / expected_mode[0], sh / expected_mode[1])
                 w, h = round(expected_mode[0] * fit), round(expected_mode[1] * fit)
                 x0, y0 = (sw - w) // 2, (sh - h) // 2
@@ -328,7 +333,7 @@ def main():
                 set_setting("scaling", scaling)
                 set_setting("aa", aa)
                 set_setting("sharpen", sharpen)
-                check(f"{prefix}-{scaling}-{aa}-sharpen{sharpen}", mode)
+                check(f"{prefix}-{scaling}-{aa}-sharpen{sharpen}", mode, integer=scaling == "nearest")
             for key, value in [("scaling", "bilinear"), ("aa", "off"), ("sharpen", 0)]:
                 set_setting(key, value)
 
