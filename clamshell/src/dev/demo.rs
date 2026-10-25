@@ -59,6 +59,27 @@ pub fn window_below() -> Vec<Event> {
     )]
 }
 
+/// The screens as the compositor describes them with the VM's HDR profile: the Thor's top panel with
+/// SDR white at the reference, 650 nits at its peak; its second panel, SDR.
+pub fn screens() -> [clamshell_state::session::presentation::ColourDescription; 2] {
+    let profile = clamshell_state::Profile::vm_hdr();
+    [profile.top.colour.into(), profile.bottom.colour.into()]
+}
+
+/// `entry` running, with its window on the top screen sending HDR: PQ, mastered to 1000 nits.
+pub fn hdr_game(entry: &str) -> Vec<Event> {
+    use clamshell_state::session::presentation::{ColourDescription, ColourPrimaries, ColourTarget, TransferFunction};
+    let launch = run(entry, 0);
+    let colour = ColourDescription {
+        primaries: ColourPrimaries::Bt2020,
+        transfer: TransferFunction::Pq,
+        luminance: None,
+        target: Some(ColourTarget { luminance: Some((0, 1000)), max_cll: Some(1000), ..ColourTarget::default() }),
+    };
+    let window = Window { colour: Some(std::sync::Arc::new(colour)), ..window_of(30, "game", &launch, true, false) };
+    vec![Event::Units(vec![launch]), clamshell_state::session::windows::changes(&[], &[window])]
+}
+
 /// Four networks in range, one connected.
 pub fn wifi() -> Wifi {
     Wifi {

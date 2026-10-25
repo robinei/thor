@@ -189,6 +189,8 @@ pub struct State {
     /// The keymaps and their screens (see [`crate::keymap::screens`]).
     keymapping: Keymapping,
     curving: crate::curve::screens::Curving,
+    /// Each screen's colour, as the compositor last said (see [`Reading::Screens`]).
+    screens: [crate::session::presentation::ColourDescription; 2],
     /// Whether ClamShell's own compositor shows the windows (see [`Init::compositor`]).
     compositor: bool,
     /// Where the lists but shelf are scrolled.
@@ -223,6 +225,7 @@ impl State {
             prefs: Prefs::new(init.settings),
             keymapping: Keymapping::new(init.keymaps),
             curving: crate::curve::screens::Curving::new(init.curves),
+            screens: Default::default(),
             compositor: init.compositor,
             bottom: Bottom::new(init.window_rules),
             sys: Sys::new(init.twelve_hour),
@@ -308,6 +311,12 @@ impl State {
 
     pub fn keymapping(&self) -> &Keymapping {
         &self.keymapping
+    }
+
+    /// Screen `down`'s colour (the second's, or the top's), as the compositor describes it.
+    pub fn screen_colour(&self, down: bool) -> crate::session::presentation::ColourDescription {
+        let [top, bottom] = self.screens;
+        if down { bottom } else { top }
     }
 
     pub fn curving(&self) -> &crate::curve::screens::Curving {
@@ -693,6 +702,7 @@ impl State {
             Reading::Icon { entry, path } => self.session.set_icon(&entry, path),
             Reading::Metrics(metrics) => self.sys.read_metrics(metrics),
             Reading::Frames { fps, frame_ms } => self.sys.frames(fps, frame_ms),
+            Reading::Screens(screens) => self.screens = *screens,
             Reading::Wifi(wifi) => self.radios.read_wifi(wifi),
             Reading::Bluetooth(bluetooth) => self.radios.read_bluetooth(bluetooth),
             Reading::Battery(battery) => self.sys.read_battery(battery),

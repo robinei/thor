@@ -571,8 +571,13 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
           (`curve::map_hdr`); without a curve, an HDR window only compressed. Per screen: the gamut,
           the hue-keeping limit, the encoding. On an SDR screen a curve leaves its black point, contrast
           and saturation; the shaders' arithmetic is tested against the state's on SDR, 650-nit and
-          unlimited screens. Left: the edit screen plotting the curve on the game's screen, and an HDR
-          game's (it plots SDR's now).
+          unlimited screens. The compositor tells the state each screen's description as clients get it
+          (`Reading::Screens`; nested, the host's real peak), and the curve is limited by that, not by the
+          signal sent. The edit screen plots what the game's screen shows: an SDR game's signal, or an HDR
+          game's PQ signal up to the peak it declares, with lines at the screen's peak, paper white and
+          black, labelled in nits. A game's declared peak (MaxCLL, else its mastering display's) is often
+          missing or a fixed value; without one PQ's 10000 nits is assumed, which compresses more than
+          needed but never clips. Measuring it from the frames is for later, with the black floor.
     - [ ] Scanout knowing about colour: a surface whose description matches the output passes through
           untouched (constraint 3). With the DRM backend (phase 3): the nested host has no scanout.
     - [x] SDR to HDR for games (inverse tone mapping, as Special K does rather than Windows' Auto HDR): a

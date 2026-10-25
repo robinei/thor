@@ -195,6 +195,9 @@ pub enum Reading {
     Time(crate::status::time::TimeZones),
     /// The account, while the Device view is open and after a change (see [`crate::device::account`]).
     Account(crate::device::account::Account),
+    /// Each screen's colour as the compositor describes it to clients (the top's, the second's), at the
+    /// start and when it changes: what a curve is shown within.
+    Screens(Box<[crate::session::presentation::ColourDescription; 2]>),
 }
 
 /// A press on a target from touch, the mouse or the pad's A, and pad focus changes.

@@ -84,6 +84,26 @@ impl Default for ColourDescription {
     }
 }
 impl ColourDescription {
+    /// Whether it describes HDR content: PQ, or linear light (scRGB's).
+    pub fn hdr(self) -> bool {
+        matches!(self.transfer, TransferFunction::Pq | TransferFunction::Linear)
+    }
+
+    /// The brightest it declares, over its reference white: its MaxCLL, else its mastering display's
+    /// peak, else its nominal maximum (10000 nits for linear light, which has none).
+    pub fn peak(self) -> f64 {
+        let luminance = self.luminances();
+        let target = self.target.unwrap_or_default();
+        let nominal = if self.transfer == TransferFunction::Linear { 10000 } else { luminance.max };
+        let peak = target.max_cll.or(target.luminance.map(|(_, maximum)| maximum)).unwrap_or(nominal);
+        f64::from(peak) / f64::from(luminance.reference.max(1))
+    }
+
+    /// For a screen's description: what it shows above its reference white, at least 1.
+    pub fn headroom(self) -> f64 {
+        self.peak().max(1.0)
+    }
+
     pub fn luminances(self) -> ColourLuminance {
         self.luminance.unwrap_or(match self.transfer {
             TransferFunction::Pq => ColourLuminance { min: 50, max: 10000, reference: 203 },
@@ -128,6 +148,17 @@ impl From<clamshell_device::colour::PanelColour> for ColourDescription {
     }
 }
 
+/// What a curve's plot shows (see [`crate::State::curve_plot`]), in units of the reference white.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CurvePlot {
+    /// For HDR content, the brightest it declares; None for SDR.
+    pub hdr_peak: Option<f64>,
+    /// What the screen shows above the reference white.
+    pub headroom: f64,
+    /// The screen's black.
+    pub black: f64,
+}
+
 impl super::windows::Window {
     pub fn presentation(&self, game: bool) -> WindowPresentation {
         let centred = self.parent.is_some() || self.role != WindowRole::Normal || self.limits.fixed_size().is_some();
@@ -162,6 +193,23 @@ impl crate::State {
             return crate::settings::Hud::Off;
         };
         self.settings_of(&running.id).choice()
+    }
+
+    /// What a curve's plot shows for the program whose settings are edited: whether its window on screen
+    /// shows HDR content and how bright it declares, and its screen's headroom. Without a window, SDR
+    /// content on the top screen.
+    pub fn curve_plot(&self) -> CurvePlot {
+        let panel = self.panel();
+        let program = panel.editing().map(|program| program.id.clone());
+        let window = program.as_deref().and_then(|id| {
+            let mut windows = self.session().windows_of(id);
+            windows.find(|w| !w.down).or_else(|| self.session().windows_of(id).next())
+        });
+        let colour = window.and_then(|w| w.colour.as_deref().copied()).filter(|colour| colour.hdr());
+        let screen = self.screen_colour(window.is_some_and(|w| w.down));
+        let luminance = screen.luminances();
+        let black = f64::from(luminance.min) / 10000.0 / f64::from(luminance.reference.max(1));
+        CurvePlot { hdr_peak: colour.map(ColourDescription::peak), headroom: screen.headroom(), black }
     }
 
     /// The frame rate cap for window `id`: the one in the settings in force for the program running it.

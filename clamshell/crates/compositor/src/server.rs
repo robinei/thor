@@ -517,6 +517,14 @@ impl Server {
         self.popups.cleanup();
     }
 
+    /// Each screen's colour (the top's, the second's): described to clients, and told to the state, which
+    /// shows a curve within it.
+    pub fn describe_screens(&mut self, descriptions: [clamshell_state::session::presentation::ColourDescription; 2]) {
+        if self.colour.set_outputs(descriptions) {
+            self.core.handle(clamshell_state::Event::Reading(clamshell_state::Reading::Screens(Box::new(descriptions))));
+        }
+    }
+
     /// Frame callbacks for the windows shown on the top screen or the second (`down`; None: both, as
     /// nested), a capped window's at its cap's pace (see [`crate::frames::Frames::pace`]) on a screen
     /// showing a frame every `refresh`. Returns when a callback held back is due.

@@ -123,11 +123,6 @@ impl Pipeline {
         if down { bottom } else { top }
     }
 
-    /// What screen `down` (the second, or the top) shows above the reference white: its peak over it.
-    fn headroom(&self, down: bool) -> f32 {
-        let luminance = self.output(down).0.luminances();
-        (luminance.max as f32 / luminance.reference.max(1) as f32).max(1.0)
-    }
     /// Draws what changed in the scene. Returns the elements' states, and the part of the scene that
     /// changed, if anything did.
     pub(crate) fn compose(
@@ -150,7 +145,9 @@ impl Pipeline {
         let state = server.core.state();
         for client in server.windows.iter().filter(|client| client.mapped && server.visible(client.id)) {
             let curve = state.window_curve(client.id);
-            let headroom = self.headroom(state.session().window(client.id).is_some_and(|w| w.down));
+            // What the screen shows, as clients are told: nested, the host's real peak rather than the
+            // PQ signal we send it.
+            let headroom = server.colour.screen(state.session().window(client.id).is_some_and(|w| w.down)).headroom() as f32;
             client.window.with_surfaces(|surface, _| self.curves.push((Id::from_wayland_resource(surface), curve, headroom)));
         }
         if self.curves != self.last_curves {
@@ -246,7 +243,7 @@ fn sdr(description: ColourDescription) -> bool {
 /// Whether a surface of `description` is HDR: PQ or linear light (scRGB's), the curve applied to its light
 /// and its highlights compressed into the screen (`curve::map_hdr`).
 fn hdr(description: ColourDescription) -> bool {
-    matches!(description.transfer, TransferFunction::Pq | TransferFunction::Linear)
+    description.hdr()
 }
 
 /// An HDR curve as the input shaders' uniforms: black point, contrast, where highlights start and their
@@ -308,9 +305,7 @@ fn shader(renderer: &mut GlesRenderer, description: ColourDescription, input: bo
         // An HDR surface, as clamshell_state::curve::map_hdr does it, in BT.2020: with a curve, the black
         // point and contrast on each channel's light below white, and the white; with or without one, the
         // highlights above the knee compressed into the screen's peak when its own peak is beyond.
-        let target = description.target.unwrap_or_default();
-        let peak = target.max_cll.or(target.luminance.map(|(_, maximum)| maximum)).unwrap_or(description.luminances().max);
-        let peak = f64::from(peak) / reference.max(1.0);
+        let peak = description.peak();
         format!(
             "v = convert(v) * {scaling:.12};
     v = matrix * v;

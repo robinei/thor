@@ -105,7 +105,7 @@ pub fn run(
                                 pipeline.set_outputs(backend.renderer(), [encoding; 2])?;
                             }
                             if let Some(advertised) = host.advertised() {
-                                server.colour.set_output(advertised);
+                                server.describe_screens([advertised; 2]);
                             }
                         }
                         sync_capture(server, backend.window());

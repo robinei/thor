@@ -491,6 +491,13 @@ Tick 1760000005
 -- curves.png
 -- curve-edit.png
 -- curve-edit-slider.png
+Slide(End)
+  Save Curves(..)
+Units [ff6_09d141]
+  Apply settings of ff6
+Windows [open game on clamshell-run-ff6_09d141, order [30]]
+  PadRoute Game
+-- curve-edit-hdr.png
 == group keymaps-chosen.png
 Start
   Window DownRules 0 rules

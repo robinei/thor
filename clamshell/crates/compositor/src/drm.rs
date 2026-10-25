@@ -136,7 +136,7 @@ pub fn run(
     // Each screen encoded for its panel, and described to clients as it, from the device profile.
     let panels = [ColourDescription::from(profile.top.colour), ColourDescription::from(profile.bottom.colour)];
     pipeline.set_outputs(&mut renderer, panels)?;
-    server.colour.set_outputs(panels);
+    server.describe_screens(panels);
     log::info!("drm: panels' colour: top {:?}, second {:?}", panels[0], panels[1]);
 
     let renderer_formats = renderer.dmabuf_formats();

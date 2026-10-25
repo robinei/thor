@@ -38,17 +38,12 @@ impl Default for State {
 }
 
 impl State {
-    /// One description for both screens, as the nested host's window has.
-    pub fn set_output(&mut self, description: ColourDescription) {
-        self.set_outputs([description; 2]);
-    }
-
     /// Each screen's description (the top's, the second's), which clients are told for its output. The
-    /// preferred one, which surfaces are told, is the top's, where games are.
-    pub fn set_outputs(&mut self, descriptions: [ColourDescription; 2]) {
+    /// preferred one, which surfaces are told, is the top's, where games are. Returns whether it changed.
+    pub fn set_outputs(&mut self, descriptions: [ColourDescription; 2]) -> bool {
         use smithay::reexports::wayland_server::Resource;
         if self.descriptions == descriptions && self.preferred == descriptions[0] {
-            return;
+            return false;
         }
         self.preferred = descriptions[0];
         self.descriptions = descriptions;
@@ -69,6 +64,13 @@ impl State {
         for feedback in &self.feedback {
             feedback.preferred_changed(self.identities[0]);
         }
+        true
+    }
+
+    /// Screen `down`'s description (the second's, or the top's).
+    pub fn screen(&self, down: bool) -> ColourDescription {
+        let [top, bottom] = self.descriptions;
+        if down { bottom } else { top }
     }
 }
 
