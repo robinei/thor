@@ -136,6 +136,12 @@ close 900
   PadRoute Ui
 Pointer(Activate(Settings(Tile(Scaling))))
   Save Settings
+Pointer(Activate(Settings(Tile(Resolution))))
+  Save Settings
+Pointer(Activate(Settings(Tile(Resolution))))
+  Save Settings
+Pointer(Activate(Settings(Tile(Resolution))))
+  Save Settings
 -- settings.png
 Pointer(Activate(Settings(Tile(FpsCap))))
   Save Settings

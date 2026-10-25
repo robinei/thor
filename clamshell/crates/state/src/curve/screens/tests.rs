@@ -44,7 +44,7 @@ fn the_tile_opens_the_picker_and_a_row_chooses_a_curve_for_the_game() {
     picker(&mut s);
     tap(&mut s, row(1));
     assert_eq!(chosen(&s), Some(0));
-    assert_eq!(s.curving().name(0), "Off");
+    assert_eq!(s.curving().name(0), "Default colours");
 }
 
 #[test]

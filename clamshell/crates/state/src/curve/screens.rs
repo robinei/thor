@@ -72,7 +72,7 @@ impl Curving {
         self.curves.row(self.picker_screen(), i, entry)
     }
 
-    /// A curve's name: "Own curve" for a game's own, and "Off" for none or for one that is gone.
+    /// A curve's name: "Own curve" for a game's own, and "Default colours" for none or for one that is gone.
     pub fn name(&self, id: u16) -> &str {
         self.curves.shown_name(id, Kind::Curve)
     }

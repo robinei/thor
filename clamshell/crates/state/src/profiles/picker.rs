@@ -78,7 +78,7 @@ impl Kind {
     pub fn default_name(self) -> &'static str {
         match self {
             Kind::Keymap => "Default",
-            Kind::Curve => "Off",
+            Kind::Curve => "Default colours",
         }
     }
 }
