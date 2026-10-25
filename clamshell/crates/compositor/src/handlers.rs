@@ -14,7 +14,7 @@ use smithay::{
     utils::Serial,
     wayland::{
         buffer::BufferHandler,
-        compositor::{CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface},
+        compositor::{self, CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface},
         output::OutputHandler,
         pointer_constraints::PointerConstraintsHandler,
         selection::{
@@ -46,6 +46,10 @@ impl CompositorHandler for Server {
         self.colour.surfaces.remove(&smithay::backend::renderer::element::Id::from_wayland_resource(surface));
     }
     fn commit(&mut self, surface: &WlSurface) {
+        // Before the buffer handler takes it: a new buffer on a window's own surface is a frame.
+        let new_buffer = compositor::with_states(surface, |states| {
+            matches!(states.cached_state.get::<compositor::SurfaceAttributes>().current().buffer, Some(compositor::BufferAssignment::NewBuffer(_)))
+        });
         on_commit_buffer_handler::<Self>(surface);
         self.commits = self.commits.wrapping_add(1);
         let id = smithay::backend::renderer::element::Id::from_wayland_resource(surface);
@@ -63,6 +67,9 @@ impl CompositorHandler for Server {
                 root = parent;
             }
             if let Some(client) = self.windows.iter_mut().find(|w| w.window.root().as_ref() == Some(&root)) {
+                if new_buffer && root == *surface {
+                    client.frames.committed();
+                }
                 client.window.on_commit();
                 let mapped = with_renderer_surface_state(&root, |state| state.buffer().is_some()).unwrap_or(false);
                 if client.mapped && !mapped && client.window.toplevel().is_some() {

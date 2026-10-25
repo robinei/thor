@@ -40,6 +40,7 @@ pub(crate) struct ClientWindow {
     pub mapped: bool,
     pub title_dirty: bool,
     pub presentation: Option<clamshell_state::session::presentation::WindowPresentation>,
+    pub frames: crate::frames::Frames,
 }
 
 pub(crate) struct Server {
@@ -69,6 +70,10 @@ pub(crate) struct Server {
     pub host_focused: bool,
     pub cursor: smithay::input::pointer::CursorImageStatus,
     pub cursor_activity: crate::cursor::Activity,
+    /// When the frame rate of the window in front is next sent, while there is one to send, and what was
+    /// last sent.
+    pub frames_due: Option<Instant>,
+    frames_sent: (Option<f32>, Option<f32>),
     pub pointer_window: Option<i64>,
     pub pointer_buttons: Vec<u32>,
     pub arrow_pressed: bool,
@@ -180,6 +185,8 @@ impl Server {
             host_focused: true,
             cursor: smithay::input::pointer::CursorImageStatus::default_named(),
             cursor_activity: crate::cursor::Activity::default(),
+            frames_due: None,
+            frames_sent: (None, None),
             pointer_window: None,
             pointer_buttons: Vec::new(),
             arrow_pressed: false,
@@ -265,6 +272,7 @@ impl Server {
             mapped: false,
             title_dirty: false,
             presentation: None,
+            frames: Default::default(),
         });
         self.next_id = next;
     }
@@ -467,6 +475,7 @@ impl Server {
         }
         self.expire_activation_tokens(Instant::now());
         self.update_idle(Instant::now());
+        self.report_frames(Instant::now());
         self.core.run(Instant::now());
         while let Some(effect) = self.core.next_effect() {
             match effect {
@@ -506,6 +515,24 @@ impl Server {
         }
         self.sync_windows();
         self.popups.cleanup();
+    }
+
+    /// Sends the frame rate of the window on the top screen every [`crate::frames::REPORT`], while it
+    /// draws: none for a window that drew nothing in the last second, so that the FPS tile measures no
+    /// game rather than 0.
+    fn report_frames(&mut self, now: Instant) {
+        if self.frames_due.is_some_and(|due| due > now) {
+            return;
+        }
+        let at = self.clock.now().into();
+        let top = self.core.state().session().top_window().map(|w| w.id);
+        let rate = self.windows.iter().find(|w| w.mapped && Some(w.id) == top).map(|w| w.frames.rate(at));
+        let reading = rate.filter(|(fps, _)| *fps > 0.0).map_or((None, None), |(fps, ms)| (Some(fps), ms));
+        if reading != self.frames_sent {
+            self.frames_sent = reading;
+            self.core.handle(clamshell_state::Event::Reading(clamshell_state::Reading::Frames { fps: reading.0, frame_ms: reading.1 }));
+        }
+        self.frames_due = reading.0.is_some().then(|| now + crate::frames::REPORT);
     }
 
     pub fn visible(&self, id: i64) -> bool {

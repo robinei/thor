@@ -731,6 +731,7 @@ impl Window {
                 mapped,
                 title_dirty: false,
                 presentation: server.core.state().window_presentation(self.id),
+                frames: Default::default(),
             });
         }
     }

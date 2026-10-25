@@ -121,6 +121,7 @@ fn run_host(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Result<()
         clipboard_display: None,
         bottom_output: env.bottom_output.clone(),
         backlights: env.backlights.clone(),
+        compositor: host != Host::Sway,
     };
     let start = move |sender: EventSender, display| {
         system_config.clipboard_display = display;

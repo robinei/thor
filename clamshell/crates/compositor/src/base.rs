@@ -83,6 +83,7 @@ impl Base {
                 .deadline()
                 .into_iter()
                 .chain(server.cursor_activity.deadline(now))
+                .chain(server.frames_due)
                 .chain(x11.deadline())
                 .chain(host_deadline)
                 .min()

@@ -48,6 +48,9 @@ pub struct Config {
     pub bottom_output: String,
     /// The backlights' folder: /sys/class/backlight, or a stand-in.
     pub backlights: PathBuf,
+    /// Whether ClamShell is the compositor, which measures and caps frames itself: games aren't started
+    /// with MangoHud then.
+    pub compositor: bool,
 }
 
 /// A thread with commands, or a stand-in that takes none if it couldn't be started.
@@ -113,7 +116,9 @@ pub fn start<S: Sink + Clone>(
         detached("meta", meta::spawn(fetch, &fetching, sink.clone()));
     }
     let rescan = rescanner(sources.clone(), paths.clone(), fetching.clone(), sink.clone());
-    detached("frames", frames::spawn(paths.mangohud.clone(), sink.clone()));
+    if !env.compositor {
+        detached("frames", frames::spawn(paths.mangohud.clone(), sink.clone()));
+    }
     let touchpad = started("touchpad", touchpad::spawn(layout));
     // Watch input on every device for idle, and the hardware keys in the device's own session.
     detached("input watch", crate::input::watch::spawn(env.device_session, sink.clone()));
@@ -167,7 +172,11 @@ pub fn start<S: Sink + Clone>(
     let browse = started("browse", crate::files::browse::spawn_browse(browsing, sink.clone()));
     let files = started("files", crate::files::ops::spawn_ops(sources.home.clone(), sink.clone()));
     let wifi = started("wifi", wifi::spawn(sink));
-    let tuning = Tuning { hardware: started("tuning", tuning::spawn(env.profile.charge)), pad: pad.clone(), mangohud: paths.mangohud.clone() };
+    let tuning = Tuning {
+        hardware: started("tuning", tuning::spawn(env.profile.charge)),
+        pad: pad.clone(),
+        mangohud: (!env.compositor).then(|| paths.mangohud.clone()),
+    };
     tuning.apply(global, None);
     let store = paths.state_dir.as_deref().and_then(|dir| Writer::spawn(Store::open(dir)).map_err(|e| log::error!("store thread: {e}")).ok());
     Handles {

@@ -8,13 +8,13 @@ use crate::input::pad;
 use crate::os::worker::Worker;
 use crate::readings::mangohud;
 
-/// Where the settings in force go: the hardware thread, the pad, and a game's MangoHud config in
-/// `mangohud`.
+/// Where the settings in force go: the hardware thread, the pad, and under sway a game's MangoHud config
+/// in `mangohud` (the compositor measures and caps frames itself).
 #[derive(Clone)]
 pub struct Tuning {
     pub hardware: Worker<Values>,
     pub pad: Worker<pad::Command>,
-    pub mangohud: PathBuf,
+    pub mangohud: Option<PathBuf>,
 }
 
 impl Tuning {
@@ -29,12 +29,12 @@ impl Tuning {
     }
 
     /// Applies the settings in force, `game`'s or the global ones without a game, to the hardware and the
-    /// pad's rumble. For a game it also writes its MangoHud config, which is reloaded live if the game
-    /// runs, and returns the config's path for its launch.
+    /// pad's rumble. For a game under sway it also writes its MangoHud config, which is reloaded live if
+    /// the game runs, and returns the config's path for its launch.
     pub fn apply(&self, v: &Values, game: Option<&str>) -> Option<PathBuf> {
         self.hardware.send(*v);
         self.pad.send(pad::Command::Rumble(v.choice()));
-        let game = game?;
-        mangohud::config(&self.mangohud, game, v.get(Setting::FpsCap), v.choice()).map_err(|e| log::warn!("MangoHud config: {e}")).ok()
+        let (game, dir) = (game?, self.mangohud.as_ref()?);
+        mangohud::config(dir, game, v.get(Setting::FpsCap), v.choice()).map_err(|e| log::warn!("MangoHud config: {e}")).ok()
     }
 }

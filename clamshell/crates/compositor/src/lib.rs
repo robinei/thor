@@ -10,6 +10,7 @@ mod colour;
 mod cursor;
 mod dmabuf;
 mod drm;
+mod frames;
 mod geometry;
 mod handlers;
 mod idle;
