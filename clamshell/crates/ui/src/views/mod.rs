@@ -53,6 +53,20 @@ pub fn top(f: &mut Frame, screen: Rect) {
     }
 }
 
+/// The windows' tab: the window moved down, which the compositor shows below the bar, or with none
+/// there, how to move one there.
+fn windows(f: &mut Frame, body: Rect) {
+    if f.s.bottom().shows_windows(f.s.session()) {
+        return;
+    }
+    let size = f.text(crate::toolkit::style::Text::Body);
+    let line = size * 1.6;
+    let mid = body.y + body.h / 2.0;
+    let at = |y: f32| Rect::new(body.x, y, body.w, line);
+    f.c.text_in(at(mid - line), size, crate::toolkit::style::Tone::Normal, "Nothing here", crate::gfx::Align::Center);
+    f.c.text_in(at(mid), size * 0.85, crate::toolkit::style::Tone::Dim, "Home with the right stick down moves a window here", crate::gfx::Align::Center);
+}
+
 /// The second screen: the bar, the open tab below it, and the slider over both while one is moving.
 /// While a game wants the screen dark, nothing is drawn. The frame starts black (see `render`).
 pub fn bottom(f: &mut Frame, screen: Rect) {
@@ -84,6 +98,7 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
         Tab::Volume => levels::draw_volume(f),
         Tab::Brightness => levels::draw_brightness(f),
         Tab::Time => time::draw(f),
+        Tab::Windows => windows(f, body),
     }
     // While pointing, the area below the bar is a touchpad and its contents are faded. The touchpad tab
     // has nothing to fade.

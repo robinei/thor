@@ -86,7 +86,7 @@ fn tab_button(s: &State, tab: Tab) -> (Id, Icon, Tone) {
             };
             (Id::Tab(tab), icon, if open { Tone::Accent } else { tone })
         }
-        Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad | Tab::Sysinfo | Tab::Time => {
+        Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad | Tab::Sysinfo | Tab::Time | Tab::Windows => {
             (Id::Tab(tab), Icon::for_tab(tab), if open { Tone::Accent } else { Tone::Dim })
         }
     }
@@ -102,11 +102,20 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
         let side = (bar_h * ICON).min(r.w * 0.8);
         f.button(id, r, Look::ICON, |f| f.c.icon(icon, r.square_center(side), tone));
     };
-    // On the right: the hidden windows' button, the pad mouse, the clock, and the line before them.
+    // On the right: the windows' tab, the pad mouse, the clock, and the line before them. The windows'
+    // tab is lit while open, stands out while a window of the program in front is below behind another
+    // tab, and is dim with nothing below.
     let windows = bar.take_right(bar_h * SLOT);
-    if f.s.bottom().hidden_down(f.s.session()).is_some() {
-        icon_button(f, Id::BottomWindows, windows, Icon::Windows, Tone::Fn);
-    }
+    let tone = if f.s.bottom().tab() == Tab::Windows {
+        Tone::Accent
+    } else if f.s.bottom().hidden_down(f.s.session()).is_some() {
+        Tone::Fn
+    } else if f.s.session().windows_down().next().is_some() {
+        Tone::Normal
+    } else {
+        Tone::Dim
+    };
+    icon_button(f, Id::Tab(Tab::Windows), windows, Icon::Windows, tone);
     let mouse = bar.take_right(bar_h * SLOT);
     let tone = if f.s.pad().mouse_on() { Tone::Accent } else { Tone::Dim };
     icon_button(f, Id::PadMouse, mouse, Icon::Mouse, tone);

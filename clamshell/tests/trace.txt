@@ -71,6 +71,15 @@ Start
   Keymap 0 "Default"
   PadRoute Ui
 -- bottom.png
+== group windows-empty.png
+Start
+  Window DownRules 0 rules
+  Watch Metrics on
+  Keymap 0 "Default"
+  PadRoute Ui
+Pointer(Activate(Tab(Windows)))
+  Watch Metrics off
+-- windows-empty.png
 == group settings-running.png
 Start
   Window DownRules 0 rules

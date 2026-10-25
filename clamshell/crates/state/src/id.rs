@@ -65,9 +65,6 @@ pub enum Id {
     Device(DeviceId),
     /// The battery tab's list of what is using the machine (see [`crate::status::battery`]).
     Battery(BatteryId),
-    /// The bar's button that shows the front program's windows on the bottom screen when ClamShell's
-    /// view is hiding them.
-    BottomWindows,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

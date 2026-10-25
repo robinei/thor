@@ -245,7 +245,7 @@ const TABS: [Tab; 11] =
 
 /// The bar's targets, always shown.
 fn bar() -> Vec<Id> {
-    let mut ids = vec![Id::PadMouse, Id::Blank, Id::Control(Control::Volume), Id::Control(Control::Brightness), Id::BottomWindows];
+    let mut ids = vec![Id::PadMouse, Id::Blank, Id::Control(Control::Volume), Id::Control(Control::Brightness)];
     ids.extend(TABS.map(Id::Tab));
     ids
 }
@@ -380,6 +380,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
             ids.extend((0..s.levels().audio().outputs.len() as u16).map(|i| Id::Audio(AudioId::Output(i))));
             ids.extend((0..s.lists().len(ListId::Streams).min(4) as u16).map(|i| Id::Row { list: ListId::Streams, i, part: RowPart::Mute }));
         }
+        Tab::Windows => {}
         Tab::Time => {
             ids.extend([TimeId::Back, TimeId::Zone, TimeId::Ntp, TimeId::TwelveHour].map(Id::Time));
             ids.extend(row(ListId::Time, s.lists().len(ListId::Time)));

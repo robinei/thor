@@ -35,6 +35,8 @@ pub enum Tab {
     Battery,
     /// The clock's tab, for the time zone.
     Time,
+    /// The windows moved down to the second screen, shown below the bar, or how to move one there.
+    Windows,
 }
 
 // In the bar's order.
@@ -50,12 +52,14 @@ names!(Tab {
     Wifi: "wifi";
     Battery: "battery";
     Time: "time";
+    Windows: "windows";
 });
 
 impl Tab {
-    /// Whether the tab has its own button in the bar. The time tab's button is the clock.
+    /// Whether the tab has a button among the bar's spread ones. The time tab's button is the clock, and
+    /// the windows' tab's is at the bar's right end.
     pub fn in_bar(self) -> bool {
-        self != Tab::Time
+        !matches!(self, Tab::Time | Tab::Windows)
     }
 
     /// What the tab watches while open, meaning what is read from the system for it.
@@ -68,7 +72,7 @@ impl Tab {
             Tab::Battery => Some(Watch::Battery),
             Tab::Time => Some(Watch::Time),
             Tab::Sysinfo => Some(Watch::Metrics),
-            Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad => None,
+            Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad | Tab::Windows => None,
         }
     }
 }
@@ -104,6 +108,10 @@ pub struct Bottom {
     clipboard: Option<std::sync::Arc<str>>,
     /// The tab chosen changed and isn't saved yet (see [`crate::Resume`]).
     unsaved: bool,
+    /// The tab the windows' tab was opened from, which Home + right stick press goes back to.
+    before_windows: Tab,
+    /// The tab left as a window moved down, not yet settled (see [`Bottom::take_left`]).
+    left: Option<Tab>,
 }
 
 impl Bottom {
@@ -165,6 +173,9 @@ impl Bottom {
             return None;
         }
         self.unsaved = true;
+        if tab == Tab::Windows {
+            self.before_windows = self.tab;
+        }
         Some(std::mem::replace(&mut self.tab, tab))
     }
 

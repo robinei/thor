@@ -101,7 +101,7 @@ pub(crate) enum Timer {
 /// shelf's targets on the main screen, where a finger is where it means, and the bar's and the dark
 /// screen's targets.
 pub(crate) fn points(id: &Id) -> bool {
-    !matches!(id, Id::Shelf(_) | Id::Tab(_) | Id::Control(_) | Id::PadMouse | Id::BottomWindows | Id::Wake)
+    !matches!(id, Id::Shelf(_) | Id::Tab(_) | Id::Control(_) | Id::PadMouse | Id::Wake)
 }
 
 /// What the caller does.

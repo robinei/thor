@@ -205,11 +205,16 @@ them_for_a_moment`, `a_screenshot_is_asked_for_…`, `a_window_moved_down_…`; 
 
 ### View, power and dim (bottom/screen.rs)
 
-State: `screen{windows, off, idle_off}`, `used_at`, `dimmed`, `woken`, `sent_down`, `window_rules`.
+State: `screen{off, idle_off}`, `used_at`, `dimmed`, `woken`, `sent_down`, `window_rules`; the windows
+moved down are shown in their own tab, `Tab::Windows` (the bar's rightmost button), with `before_windows`
+the tab it was opened from and `left` a tab left as a window moved down, settled after the window rules
+as any tab left (`left_tab`).
 
 | Transition | Test |
 |---|---|
-| Home + right stick press: show ClamShell's view or the windows moved down | `a_window_moved_down_is_shown_there_and_remembered` |
+| Home + right stick press: to the windows' tab, or from it back to the tab it was opened from; with nothing moved down the tab says how to move a window there | `a_window_moved_down_is_shown_there_and_remembered`, `the_windows_tab_with_nothing_below_shows_no_window` |
+| a window moved down (by hand or by its rule), from any tab: the windows' tab opens, the screen turns on | `moving_a_window_down_from_another_tab_opens_the_windows_tab_with_the_screen_on` |
+| the windows' tab button: lit while open, standing out while the front program's window is below another tab, dim with nothing below | `the_windows_tab_shows_the_window_below_and_marks_one_hidden_by_another_tab` |
 | WindowDown: the selected top window moves down without needing keyboard focus; the old bottom window returns to its group, the screen shows it, a rule is added (notice, `Save(WindowRules)`, `DownRules`) | same; `a_programs_only_window_is_remembered_by_its_app_id_alone`; `window_down_with_no_window_in_front_does_nothing` |
 | WindowUp: the visible down window goes back, its rule is forgotten | same; `moving_another_window_down_swaps_the_single_bottom_slot` |
 | settle: a window matching a rule moves down once | `a_rule_sends_the_window_down_when_its_program_opens_it_again` |
@@ -283,7 +288,7 @@ Tests: `home_flicks_once_and_neutralises_the_games_stick_until_it_returns`,
 `losing_the_controller_releases_home_for_the_state`. The VM `pad_windows` check exercises real evdev
 routing, tab switching and bottom-slot swaps; nested sway checks the same placement through IPC.
 
-Home + right stick press switches the bottom view; Home + Start controls bottom power; Home + R1 is
+Home + right stick press switches to the windows' tab and back; Home + Start controls bottom power; Home + R1 is
 still Screenshot; Home + B closes or quits. Select and the D-pad no longer move windows or switch the
 bottom view. Tests: `home_chords_use_the_right_stick_and_not_select_or_the_dpad`, the existing B and R1
 chord tests. Sway keeps its tab bar, with no arrow overlay; the in-process compositor draws its arrows

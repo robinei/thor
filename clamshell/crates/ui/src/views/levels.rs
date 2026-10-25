@@ -107,13 +107,7 @@ pub(super) fn draw_volume(f: &mut Frame) {
     let mute = row.take_left(name_w);
     let number_r = row.take_right(number_w);
     let muted = s.levels().muted();
-    f.button(Id::Audio(AudioId::MuteOutput), mute, Look::ROW, |f| {
-        let icon = Icon::volume(s.levels().volume().unwrap_or(0), muted);
-        let x = mute.x + z.pad * 0.5;
-        f.c.icon(icon, Rect::new(x, mute.y + (mute.h - z.icon) / 2.0, z.icon, z.icon), mute_tone(muted));
-        let label = Rect::new(x + z.icon * 1.4, mute.y, mute.w, mute.h);
-        f.c.text_in(label, z.text, mute_tone(muted), if muted { "Muted" } else { "Volume" }, Align::Start);
-    });
+    mute_button(f, &z, Id::Audio(AudioId::MuteOutput), mute, s.levels().volume().unwrap_or(0), muted, if muted { "Muted" } else { "Volume" });
     level(f, Level::Volume, row, muted);
     number(f, number_r, s.levels().volume(), "", z.text);
     col.skip(z.pad * 0.5);
@@ -161,18 +155,26 @@ pub(super) fn draw_volume(f: &mut Frame) {
         let Some(stream) = streams.get(i) else {
             continue;
         };
+        // As the output's row: its mute button with its name, its track, its number.
         let mut row = rows.row(i);
         let name = row.take_left(name_w);
-        let mute = row.take_right(number_w);
-        let tone = if stream.muted { Tone::Dim } else { Tone::Normal };
-        f.c.text_fit(Rect::new(name.x, name.y, name_w - z.pad, name.h), z.text, tone, &stream.app, Keep::Start);
+        let number_r = row.take_right(number_w);
         let i = i as u16;
+        mute_button(f, &z, Id::Row { list: ListId::Streams, i, part: RowPart::Mute }, name, stream.volume, stream.muted, &stream.app);
         level(f, Level::Stream(i), row, stream.muted);
-        f.button(Id::Row { list: ListId::Streams, i, part: RowPart::Mute }, mute, Look::ROW, |f| {
-            f.c.icon(Icon::volume(stream.volume, stream.muted), mute.square_center(z.icon), mute_tone(stream.muted));
-        });
+        number(f, number_r, Some(stream.volume), "", z.text);
     }
     rows.end(f, area.right() + z.pad * 0.4);
+}
+
+/// A volume's mute button: its speaker, showing the level or that it is muted, and its name.
+fn mute_button(f: &mut Frame, z: &Sizes, id: Id, r: Rect, volume: u8, muted: bool, label: &str) {
+    f.button(id, r, Look::ROW, |f| {
+        let x = r.x + z.pad * 0.5;
+        f.c.icon(Icon::volume(volume, muted), Rect::new(x, r.y + (r.h - z.icon) / 2.0, z.icon, z.icon), mute_tone(muted));
+        let text = Rect::new(x + z.icon * 1.4, r.y, (r.right() - x - z.icon * 1.4 - z.pad * 0.5).max(0.0), r.h);
+        f.c.text_fit(text, z.text, mute_tone(muted), label, Keep::Start);
+    });
 }
 
 pub(super) fn draw_brightness(f: &mut Frame) {

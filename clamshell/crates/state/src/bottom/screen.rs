@@ -120,9 +120,6 @@ impl WindowRules {
 /// What the bottom screen shows, besides being on or off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct BottomScreen {
-    /// Whether the bottom screen shows the windows moved down (the tab sway shows) over ClamShell's
-    /// view, rather than ClamShell's view.
-    windows: bool,
     /// Turned off with Home+Start.
     off: bool,
     /// Turned off by itself, when idle or dark on battery ([`Bottom::follow_power`]).
@@ -185,14 +182,15 @@ impl Bottom {
         self.dimmed = !self.shows_windows(session) && self.idle_for(clock.mono()) >= DIM_AFTER;
     }
 
-    /// Whether the bottom screen shows the windows moved there instead of ClamShell's view.
+    /// Whether the bottom screen shows the windows moved there: the windows' tab is open and there are
+    /// some. With none, the tab shows how to move one there.
     pub fn shows_windows(&self, session: &Session) -> bool {
         self.shows(session.windows_down().next().is_some())
     }
 
     /// Whether the bottom screen shows the windows moved there, when there are any (`any_down`).
     fn shows(&self, any_down: bool) -> bool {
-        self.screen.windows && any_down
+        self.tab == super::Tab::Windows && any_down
     }
 
     /// Whether the bottom screen is turned off, by hand or by itself.
@@ -262,9 +260,10 @@ impl Bottom {
         }
     }
 
-    /// Moves a window down and shows it there, turning the bottom screen on again if it was off.
+    /// Moves a window down and shows it there, in the windows' tab, from whichever tab was open, turning
+    /// the bottom screen on again if it was off.
     pub(crate) fn show_down(&mut self, id: i64, session: &mut Session, out: &mut Out) {
-        self.screen.windows = true;
+        self.open_windows_tab();
         session.command(WindowCommand::Down(id), out);
         self.screen.off = false;
     }
@@ -291,12 +290,22 @@ impl Bottom {
         out.effects.push(self.window_rules.effect());
     }
 
-    /// Home + right stick press switches the bottom screen between the windows moved there and ClamShell's view. It
-    /// does nothing when no window is down.
-    pub(crate) fn toggle_view(&mut self, session: &Session) {
-        if session.windows_down().next().is_some() {
-            self.screen.windows = !self.screen.windows;
+    /// Opens the windows' tab as a window moves there. The tab left is settled later (see
+    /// [`Bottom::take_left`]), since this can happen while windows are followed.
+    fn open_windows_tab(&mut self) {
+        if let Some(left) = self.choose_tab(super::Tab::Windows) {
+            self.left = Some(left);
         }
+    }
+
+    /// The tab left as a window moved down, for State to settle as any tab left (`left_tab`).
+    pub(crate) fn take_left(&mut self) -> Option<super::Tab> {
+        self.left.take()
+    }
+
+    /// The tab Home + right stick press goes to: the windows' tab, or from it the tab it was opened from.
+    pub(crate) fn view_toggled(&self) -> super::Tab {
+        if self.tab == super::Tab::Windows { self.before_windows } else { super::Tab::Windows }
     }
 
     /// A window of the program in front on the top screen that is on the bottom screen but hidden by
@@ -313,7 +322,7 @@ impl Bottom {
     /// A tap on a program whose windows are all on the bottom screen shows them there, with its first
     /// tab in view, turning the bottom screen on again if it was off by hand.
     pub(crate) fn show_program_down(&mut self, window: i64, session: &mut Session, out: &mut Out) {
-        self.screen.windows = true;
+        self.open_windows_tab();
         session.command(WindowCommand::ShowDown(window), out);
         self.screen.off = false;
     }
@@ -363,11 +372,12 @@ impl Bottom {
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+    use crate::Tab;
     use crate::device::buttons::DeviceKey;
     use crate::session::running::{Origin, Running};
     use crate::settings::{Choice, Setting};
     use crate::testkit::Applied;
-    use crate::testkit::state;
+    use crate::testkit::{state, tap};
     use crate::{Event, State};
 
     fn win(id: i64, unit: &str, title: &str, focused: bool, down: bool) -> Window {
@@ -423,7 +433,8 @@ mod tests {
     #[test]
     fn a_window_moved_down_is_shown_there_and_remembered() {
         let mut s = emulator();
-        assert_eq!(key(&mut s, DeviceKey::BottomView), vec![], "nothing down: nothing to switch to");
+        // Nothing down: the windows' tab opens all the same, saying how to move one there.
+        assert_eq!(key(&mut s, DeviceKey::BottomView), vec![Effect::Watch(crate::Watch::Metrics, false)]);
         assert!(!s.bottom().shows_windows(s.session()));
         let fx = key(&mut s, DeviceKey::WindowDown);
         assert_eq!(fx[0], Effect::Window(WindowCommand::Down(2)));
@@ -498,17 +509,21 @@ mod tests {
     }
 
     #[test]
-    fn the_front_programs_windows_hidden_below_are_offered_and_shown() {
+    fn the_windows_tab_shows_the_window_below_and_marks_one_hidden_by_another_tab() {
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
         s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
+        assert_eq!(s.bottom().tab(), Tab::Windows);
         assert_eq!(s.bottom().hidden_down(s.session()), None, "shown");
+        // Home + right stick press goes back to the tab it came from: the window is then hidden there.
         key(&mut s, DeviceKey::BottomView);
-        assert_eq!(s.bottom().hidden_down(s.session()), Some(2), "ClamShell's view over them");
-        let fx = s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::BottomWindows)));
-        assert_eq!(fx, vec![Effect::Window(WindowCommand::ShowDown(2)), Effect::Watch(crate::Watch::Metrics, false)], "its view not seen: not watched");
+        assert_eq!(s.bottom().tab(), Tab::Sysinfo);
+        assert_eq!(s.bottom().hidden_down(s.session()), Some(2), "ClamShell's view over it");
+        // Its tab shows it again.
+        let fx = tap(&mut s, crate::Id::Tab(Tab::Windows));
+        assert_eq!(fx, vec![Effect::Watch(crate::Watch::Metrics, false)], "the tab left isn't watched");
         assert!(s.bottom().shows_windows(s.session()));
-        // With another program in front, the bar doesn't offer these windows.
+        // With another program in front, its window below isn't marked as hidden.
         key(&mut s, DeviceKey::BottomView);
         s.observed(vec![win(1, GAME, "Top", false, false), win(2, GAME, "Bottom", false, true), win(3, "clamshell-run-x_1-1-0.scope", "x", true, false)]);
         assert_eq!(s.bottom().hidden_down(s.session()), None);
@@ -725,17 +740,28 @@ mod tests {
     }
 
     #[test]
-    fn showing_the_windows_below_turns_the_screen_on_if_off_by_hand() {
+    fn moving_a_window_down_from_another_tab_opens_the_windows_tab_with_the_screen_on() {
         let mut s = emulator();
-        key(&mut s, DeviceKey::WindowDown);
-        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
-        key(&mut s, DeviceKey::BottomView);
+        tap(&mut s, crate::Id::Tab(Tab::Settings));
         key(&mut s, DeviceKey::BottomPower);
         assert!(s.bottom().off());
-        let fx = s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::BottomWindows)));
-        assert_eq!(fx.first(), Some(&Effect::Window(WindowCommand::ShowDown(2))), "{fx:?}");
-        assert_eq!(power(&fx), Some(true), "not shown on a dark panel");
-        assert!(!s.bottom().off());
+        let fx = key(&mut s, DeviceKey::WindowDown);
+        assert_eq!(s.bottom().tab(), Tab::Windows, "{fx:?}");
+        assert!(!s.bottom().off(), "not moved to a dark panel");
+        s.observed(vec![win(1, GAME, "Top", false, false), win(2, GAME, "Bottom", true, true)]);
         assert!(s.bottom().shows_windows(s.session()));
+        // Back to the settings, where it was moved from.
+        key(&mut s, DeviceKey::BottomView);
+        assert_eq!(s.bottom().tab(), Tab::Settings);
+    }
+
+    #[test]
+    fn the_windows_tab_with_nothing_below_shows_no_window() {
+        let mut s = emulator();
+        key(&mut s, DeviceKey::BottomView);
+        assert_eq!(s.bottom().tab(), Tab::Windows, "opened even with nothing below: it says how to move one");
+        assert!(!s.bottom().shows_windows(s.session()));
+        key(&mut s, DeviceKey::BottomView);
+        assert_eq!(s.bottom().tab(), Tab::Sysinfo);
     }
 }

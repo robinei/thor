@@ -76,7 +76,8 @@ Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Colle
 == bottom.png (bottom; the pad on both screens)
 start "zelda-lttp"; back -
 -- bar
-PadMouse: ^"celeste" v- <Tab(Time) >-
+Tab(Windows): ^"celeste" v- <PadMouse >-
+PadMouse: ^"celeste" v- <Tab(Time) >Tab(Windows)
 Tab(Time): ^"celeste" v- <Tab(Battery) >PadMouse
 Tab(Settings): ^"celeste" v- <- >Tab(Dock)
 Tab(Dock): ^"celeste" v- <Tab(Settings) >Tab(Keyboard)
@@ -88,10 +89,13 @@ Control(Brightness): ^"celeste" v- <Control(Volume) >Tab(Bluetooth)
 Tab(Bluetooth): ^"celeste" v- <Control(Brightness) >Tab(Wifi)
 Tab(Wifi): ^"celeste" v- <Tab(Bluetooth) >Tab(Battery)
 Tab(Battery): ^"celeste" v- <Tab(Wifi) >Tab(Time)
+== windows-empty.png (bottom; the pad on both screens)
+start Tab(Windows); back -
+-- bar as in bottom.png
 == settings-running.png (bottom; the pad on both screens)
 start Tile(Hud); back -
 -- bar as in bottom.png except
-PadMouse, Tab(Time): vTile(Hud)
+Tab(Windows), PadMouse, Tab(Time): vTile(Hud)
 Tab(Settings), Tab(Dock): vScope(Global)
 Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth): vScope(Runner)
 Tab(Wifi), Tab(Battery): vTile(Refresh)
@@ -101,23 +105,23 @@ Scope(Runner): ^Tab(Touchpad) vTile(Power) <Scope(Global) >Tab(Touchpad)
 Tile(Power): ^Scope(Global) vTile(Curve) <Scope(Global) >Tile(FpsCap)
 Tile(FpsCap): ^Scope(Runner) vTile(BottomScreen) <Tile(Power) >Tile(Refresh)
 Tile(Refresh): ^Scope(Runner) vTile(BigCores) <Tile(FpsCap) >Tile(Hud)
-Tile(Hud): ^PadMouse vTile(Fan) <Tile(Refresh) >PadMouse
+Tile(Hud): ^PadMouse vTile(Fan) <Tile(Refresh) >Tab(Windows)
 Tile(Curve): ^Tile(Power) vTile(PadMouse) <Scope(Global) >Tile(BottomScreen)
 Tile(BottomScreen): ^Tile(FpsCap) vTile(Keymap) <Tile(Curve) >Tile(BigCores)
 Tile(BigCores): ^Tile(Refresh) vTile(Rumble) <Tile(BottomScreen) >Tile(Fan)
-Tile(Fan): ^Tile(Hud) vTile(CpuMax) <Tile(BigCores) >PadMouse
+Tile(Fan): ^Tile(Hud) vTile(CpuMax) <Tile(BigCores) >Tab(Windows)
 Tile(PadMouse): ^Tile(Curve) vTile(GpuMax) <Scope(Global) >Tile(Keymap)
 Tile(Keymap): ^Tile(BottomScreen) vTile(Background) <Tile(PadMouse) >Tile(Rumble)
 Tile(Rumble): ^Tile(BigCores) vEnv <Tile(Keymap) >Tile(CpuMax)
-Tile(CpuMax): ^Tile(Fan) vReset <Tile(Rumble) >PadMouse
+Tile(CpuMax): ^Tile(Fan) vReset <Tile(Rumble) >Tab(Windows)
 Tile(GpuMax): ^Tile(PadMouse) v- <Scope(Global) >Tile(Background)
 Tile(Background): ^Tile(Keymap) v- <Tile(GpuMax) >Env
 Env: ^Tile(Rumble) v- <Tile(Background) >Reset
-Reset: ^Tile(CpuMax) v- <Env >PadMouse
+Reset: ^Tile(CpuMax) v- <Env >Tab(Windows)
 == settings-global.png (bottom; the pad on both screens)
 start "ff6"; back -
 -- bar as in bottom.png except
-PadMouse, Tab(Time): vTile(Hud)
+Tab(Windows), PadMouse, Tab(Time): vTile(Hud)
 Tab(Settings), Tab(Dock): vScope(Global)
 Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth): vScope(Runner)
 Tab(Wifi), Tab(Battery): vTile(Refresh)
@@ -127,22 +131,22 @@ Scope(Runner): ^Tab(Touchpad) vTile(Power) <Scope(Global) >Tab(Touchpad)
 Tile(Power): ^Scope(Global) vTile(Curve) <Scope(Global) >Tile(FpsCap)
 Tile(FpsCap): ^Scope(Runner) vTile(BottomScreen) <Tile(Power) >Tile(Refresh)
 Tile(Refresh): ^Scope(Runner) vTile(BigCores) <Tile(FpsCap) >Tile(Hud)
-Tile(Hud): ^PadMouse vTile(Fan) <Tile(Refresh) >PadMouse
+Tile(Hud): ^PadMouse vTile(Fan) <Tile(Refresh) >Tab(Windows)
 Tile(Curve): ^Tile(Power) vTile(PadMouse) <Scope(Global) >Tile(BottomScreen)
 Tile(BottomScreen): ^Tile(FpsCap) vTile(Keymap) <Tile(Curve) >Tile(BigCores)
 Tile(BigCores): ^Tile(Refresh) vTile(Rumble) <Tile(BottomScreen) >Tile(Fan)
-Tile(Fan): ^Tile(Hud) vTile(CpuMax) <Tile(BigCores) >PadMouse
+Tile(Fan): ^Tile(Hud) vTile(CpuMax) <Tile(BigCores) >Tab(Windows)
 Tile(PadMouse): ^Tile(Curve) vTile(GpuMax) <Scope(Global) >Tile(Keymap)
 Tile(Keymap): ^Tile(BottomScreen) vTile(Background) <Tile(PadMouse) >Tile(Rumble)
 Tile(Rumble): ^Tile(BigCores) vEnv <Tile(Keymap) >Tile(CpuMax)
-Tile(CpuMax): ^Tile(Fan) vEnv <Tile(Rumble) >PadMouse
+Tile(CpuMax): ^Tile(Fan) vEnv <Tile(Rumble) >Tab(Windows)
 Tile(GpuMax): ^Tile(PadMouse) v- <Scope(Global) >Tile(Background)
 Tile(Background): ^Tile(Keymap) v- <Tile(GpuMax) >Env
 Env: ^Tile(Rumble) v- <Tile(Background) >Tile(CpuMax)
 == settings.png (bottom; the pad on both screens)
 start "ff6"; back -
 -- bar as in bottom.png except
-PadMouse, Tab(Time): vTile(Hud)
+Tab(Windows), PadMouse, Tab(Time): vTile(Hud)
 Tab(Settings), Tab(Dock): vScope(Global)
 Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth): vScope(Runner)
 Tab(Wifi), Tab(Battery): vTile(Refresh)
@@ -150,7 +154,7 @@ Tab(Wifi), Tab(Battery): vTile(Refresh)
 == settings-env.png (bottom; the pad on both screens)
 start Key[2,8]; back Activate Editor(Cancel)
 -- bar as in bottom.png except
-PadMouse: vEditor(Save) >Editor(Save)
+Tab(Windows), PadMouse: vEditor(Save)
 Tab(Time): vEditor(Cancel)
 Tab(Settings): vKey[0,0]
 Tab(Dock): vKey[0,1]
@@ -165,7 +169,7 @@ Key[0,5]: ^Editor(Cancel) vKey[1,5] <Key[0,4] >Key[0,6]
 Key[0,6]: ^Editor(Cancel) vKey[1,6] <Key[0,5] >Key[0,7]
 Key[0,7]: ^Editor(Cancel) vKey[1,7] <Key[0,6] >Key[0,8]
 Key[0,8]: ^Editor(Save) vKey[1,8] <Key[0,7] >Key[0,9]
-Key[0,9]: ^Editor(Save) vKey[1,9] <Key[0,8] >-
+Key[0,9]: ^Editor(Save) vKey[1,9] <Key[0,8] >Tab(Windows)
 Key[1,0]: ^Key[0,0] vKey[2,0] <Tab(Settings) >Key[1,1]
 Key[1,1]: ^Key[0,1] vKey[2,1] <Key[1,0] >Key[1,2]
 Key[1,2]: ^Key[0,2] vKey[2,2] <Key[1,1] >Key[1,3]
@@ -175,7 +179,7 @@ Key[1,5]: ^Key[0,5] vKey[2,5] <Key[1,4] >Key[1,6]
 Key[1,6]: ^Key[0,6] vKey[2,6] <Key[1,5] >Key[1,7]
 Key[1,7]: ^Key[0,7] vKey[2,7] <Key[1,6] >Key[1,8]
 Key[1,8]: ^Key[0,8] vKey[2,8] <Key[1,7] >Key[1,9]
-Key[1,9]: ^Key[0,9] vKey[2,9] <Key[1,8] >-
+Key[1,9]: ^Key[0,9] vKey[2,9] <Key[1,8] >Tab(Windows)
 Key[2,0]: ^Key[1,0] vKey[3,0] <Tab(Settings) >Key[2,1]
 Key[2,1]: ^Key[1,1] vKey[3,1] <Key[2,0] >Key[2,2]
 Key[2,2]: ^Key[1,2] vKey[3,2] <Key[2,1] >Key[2,3]
@@ -185,7 +189,7 @@ Key[2,5]: ^Key[1,5] vKey[3,5] <Key[2,4] >Key[2,6]
 Key[2,6]: ^Key[1,6] vKey[3,6] <Key[2,5] >Key[2,7]
 Key[2,7]: ^Key[1,7] vKey[3,7] <Key[2,6] >Key[2,8]
 Key[2,8]: ^Key[1,8] vKey[3,8] <Key[2,7] >Key[2,9]
-Key[2,9]: ^Key[1,9] vKey[3,9] <Key[2,8] >-
+Key[2,9]: ^Key[1,9] vKey[3,9] <Key[2,8] >Tab(Windows)
 Key[3,0]: ^Key[2,0] vKey[4,0] <Tab(Settings) >Key[3,1]
 Key[3,1]: ^Key[2,1] vKey[4,1] <Key[3,0] >Key[3,2]
 Key[3,2]: ^Key[2,2] vKey[4,1] <Key[3,1] >Key[3,3]
@@ -195,7 +199,7 @@ Key[3,5]: ^Key[2,5] vKey[4,4] <Key[3,4] >Key[3,6]
 Key[3,6]: ^Key[2,6] vKey[4,5] <Key[3,5] >Key[3,7]
 Key[3,7]: ^Key[2,7] vKey[4,6] <Key[3,6] >Key[3,8]
 Key[3,8]: ^Key[2,8] vKey[4,7] <Key[3,7] >Key[3,9]
-Key[3,9]: ^Key[2,9] vKey[4,8] <Key[3,8] >-
+Key[3,9]: ^Key[2,9] vKey[4,8] <Key[3,8] >Tab(Windows)
 Key[4,0]: ^Key[3,0] vKey[5,0] <Key[3,0] >Key[4,1]
 Key[4,1]: ^Key[3,1] vKey[5,1] <Key[4,0] >Key[4,2]
 Key[4,2]: ^Key[3,3] vKey[5,2] <Key[4,1] >Key[4,3]
@@ -212,14 +216,14 @@ Key[5,3]: ^Key[4,3] v- <Key[5,2] >Key[5,4]
 Key[5,4]: ^Key[4,5] v- <Key[5,3] >Key[5,5]
 Key[5,5]: ^Key[4,6] v- <Key[5,4] >Key[5,6]
 Key[5,6]: ^Key[4,7] v- <Key[5,5] >Key[5,7]
-Key[5,7]: ^Key[4,8] v- <Key[5,6] >-
+Key[5,7]: ^Key[4,8] v- <Key[5,6] >Tab(Windows)
 -- screen
 Editor(Cancel): ^Tab(Time) vKey[0,7] <Key[0,7] >Editor(Save)
 Editor(Save): ^PadMouse vKey[0,9] <Editor(Cancel) >Key[0,9]
 == status-low.png (bottom; the pad on both screens)
 start "ff6"; back -
 -- bar as in bottom.png except
-PadMouse, Tab(Time): vTile(Hud)
+Tab(Windows), PadMouse, Tab(Time): vTile(Hud)
 Tab(Settings), Tab(Dock): vScope(Global)
 Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth): vScope(Runner)
 Tab(Wifi), Tab(Battery): vTile(Refresh)
@@ -227,7 +231,7 @@ Tab(Wifi), Tab(Battery): vTile(Refresh)
 == keymap-name.png (bottom; the pad on both screens)
 start Key[3,1]; back Activate Editor(Cancel)
 -- bar as in bottom.png except
-PadMouse: vEditor(Save) >Editor(Save)
+Tab(Windows), PadMouse: vEditor(Save)
 Tab(Time): vEditor(Cancel)
 Tab(Settings): vKey[0,0]
 Tab(Dock): vKey[0,1]
@@ -244,21 +248,20 @@ Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness)
 == keymap-layer-picker.png (bottom; the pad on both screens)
 start "zelda-lttp"; back Activate Km(Back)
 -- bar as in bottom.png except
-PadMouse: vKm(Back) >Km(Back)
-Tab(Time): vKm(Back)
+Tab(Windows), PadMouse, Tab(Time): vKm(Back)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vLayers[0]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(Back)
 -- screen
-Km(Back): ^PadMouse vLayers[0].Edit <PadMouse >Layers[0].Edit
+Km(Back): ^PadMouse vLayers[0].Edit <PadMouse >Tab(Windows)
 Layers[0]: ^Control(Volume) vLayers[1] <Tab(Settings) >Layers[0].Edit
-Layers[0].Edit: ^Km(Back) vLayers[1].Edit <Layers[0] >-
+Layers[0].Edit: ^Km(Back) vLayers[1].Edit <Layers[0] >Tab(Windows)
 Layers[1]: ^Layers[0] vLayers[2] <Tab(Settings) >Layers[1].Edit
-Layers[1].Edit: ^Layers[0].Edit vLayers[2] <Layers[1] >-
+Layers[1].Edit: ^Layers[0].Edit vLayers[2] <Layers[1] >Tab(Windows)
 Layers[2]: ^Layers[1] v- <Tab(Settings) >Layers[1].Edit
 == keymap-layer-menu.png (bottom; the pad on both screens)
 start Km(LayerOnce); back Activate Km(Back)
 -- bar as in bottom.png except
-PadMouse, Tab(Time): vKm(LayerOnce)
+Tab(Windows), PadMouse, Tab(Time): vKm(LayerOnce)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vKm(Back)
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(LayerOnce)
 -- screen
@@ -270,7 +273,7 @@ Km(DeleteLayer): ^Km(Clear) v- <Km(Back) >Tab(Touchpad)
 == keymap-layer-clear.png (bottom; the pad on both screens)
 start "zelda-lttp"; back Activate Km(Back)
 -- bar as in bottom.png except
-PadMouse, Tab(Time): vKm(ConfirmClear)
+Tab(Windows), PadMouse, Tab(Time): vKm(ConfirmClear)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vKm(Back)
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(ConfirmClear)
 -- screen
@@ -279,32 +282,29 @@ Km(ConfirmClear): ^Km(Back) vKm(Back) <Km(Back) >Tab(Touchpad)
 == keymap-layers.png (bottom; the pad on both screens)
 start "zelda-lttp"; back Activate Km(Back)
 -- bar as in bottom.png except
-PadMouse: vKm(Back) >Km(Back)
-Tab(Time): vKm(Back)
+Tab(Windows), PadMouse, Tab(Time): vKm(Back)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vLayers[0]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(Back)
 -- screen
-Km(Back): ^PadMouse vLayers[0] <PadMouse >-
+Km(Back): ^PadMouse vLayers[0] <PadMouse >Tab(Windows)
 Layers[0]: ^Control(Brightness) vLayers[1] <Tab(Settings) >Km(Back)
 Layers[1]: ^Layers[0] v- <Tab(Settings) >Km(Back)
 == keymap-edit-layer-key.png (bottom; the pad listening for inputs)
 == keymap-layer-list.png (bottom; the pad on both screens)
 start "zelda-lttp"; back Activate Km(Back)
 -- bar as in bottom.png except
-PadMouse: vKm(Back) >Km(Back)
-Tab(Time): vKm(Back)
+Tab(Windows), PadMouse, Tab(Time): vKm(Back)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vLayers[0]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(Back)
 -- screen as in keymap-layer-picker.png
 == keymap-mouse.png (bottom; the pad on both screens)
 start "zelda-lttp"; back Activate Km(Back)
 -- bar as in bottom.png except
-PadMouse: vKm(Back) >Km(Back)
-Tab(Time): vKm(Back)
+Tab(Windows), PadMouse, Tab(Time): vKm(Back)
 Tab(Settings), Tab(Dock), Tab(Keyboard): vKm(Target(To(Mouse(Left))))
 Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(Back)
 -- screen
-Km(Back): ^PadMouse vKm(Target(To(Mouse(Right)))) <PadMouse >-
+Km(Back): ^PadMouse vKm(Target(To(Mouse(Right)))) <PadMouse >Tab(Windows)
 Km(Target(To(Mouse(Left)))): ^Km(Target(To(Wheel(Left)))) vKm(Target(To(Wheel(Down)))) <Km(Target(To(Mouse(Forward)))) >Km(Target(To(Mouse(Right))))
 Km(Target(To(Mouse(Right)))): ^Km(Target(To(Wheel(Right)))) vKm(Target(To(Wheel(Down)))) <Km(Target(To(Mouse(Left)))) >Tab(Wifi)
 Km(Target(To(Mouse(Middle)))): ^Km(Target(To(Wheel(Up)))) vKm(Target(To(Wheel(Down)))) <Km(Target(To(Wheel(Left)))) >Km(Target(To(Wheel(Right))))
@@ -321,7 +321,7 @@ Km(Target(To(Mouse(Back)))): ^Km(Target(To(Mouse(Forward)))) v- <Km(Target(To(Mo
 == keymap-capture.png (bottom; the pad on both screens)
 start Key[5,2]; back Activate Km(Back)
 -- bar as in bottom.png except
-PadMouse: vKm(Done) >Km(Done)
+Tab(Windows), PadMouse: vKm(Done)
 Tab(Time): vKm(Back)
 Tab(Settings): vKey[0,0]
 Tab(Dock): vKey[0,1]
@@ -336,24 +336,23 @@ Km(Done): ^PadMouse vKey[0,9] <Km(Back) >Key[0,9]
 == keymaps.png (bottom; the pad on both screens)
 start Km(Back); back Activate Km(Back)
 -- bar as in bottom.png except
-PadMouse: vKm(New) >Km(New)
-Tab(Time): vKm(New)
+Tab(Windows), PadMouse, Tab(Time): vKm(New)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vKm(Back)
 Control(Brightness): vKeymaps[0]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(New)
 -- screen
 Km(Back): ^Tab(Settings) vKeymaps[0] <Tab(Settings) >Tab(Dock)
-Km(New): ^PadMouse vKeymaps[0] <PadMouse >Keymaps[2].Edit
+Km(New): ^PadMouse vKeymaps[0] <PadMouse >Tab(Windows)
 Keymaps[0]: ^Km(Back) vKeymaps[1] <Km(Back) >Km(New)
 Keymaps[1]: ^Keymaps[0] vKeymaps[2] <Km(Back) >Keymaps[2].Edit
 Keymaps[2]: ^Keymaps[1] vKeymaps[3] <Km(Back) >Keymaps[2].Edit
-Keymaps[2].Edit: ^Keymaps[1] vKeymaps[3].Edit <Keymaps[2] >-
+Keymaps[2].Edit: ^Keymaps[1] vKeymaps[3].Edit <Keymaps[2] >Tab(Windows)
 Keymaps[3]: ^Keymaps[2] v- <Km(Back) >Keymaps[3].Edit
-Keymaps[3].Edit: ^Keymaps[2].Edit v- <Keymaps[3] >-
+Keymaps[3].Edit: ^Keymaps[2].Edit v- <Keymaps[3] >Tab(Windows)
 == keymap-menu.png (bottom; the pad on both screens)
 start "ff6"; back Activate Km(Back)
 -- bar as in bottom.png except
-PadMouse, Tab(Time): vKm(Edit)
+Tab(Windows), PadMouse, Tab(Time): vKm(Edit)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vKm(Back)
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(Edit)
 -- screen
@@ -365,51 +364,49 @@ Km(Delete): ^Km(Duplicate) v- <Km(Back) >Tab(Touchpad)
 == keymap-delete.png (bottom; the pad on both screens)
 start "ff6"; back Activate Km(Back)
 -- bar as in bottom.png except
-PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(Back)
+Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(Back)
 -- screen
 Km(Back): ^Tab(Settings) vKm(ConfirmDelete) <Tab(Settings) >Tab(Dock)
 Km(ConfirmDelete): ^Km(Back) v- <Km(Back) >Tab(Touchpad)
 == curves.png (bottom; the pad on both screens)
 start "ff6"; back Activate Profile(Curve, Back)
 -- bar as in bottom.png except
-PadMouse: vProfile(Curve, New) >Profile(Curve, New)
-Tab(Time): vProfile(Curve, New)
+Tab(Windows), PadMouse, Tab(Time): vProfile(Curve, New)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vProfile(Curve, Back)
 Control(Brightness): vCurves[0]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vProfile(Curve, New)
 -- screen
 Profile(Curve, Back): ^Tab(Settings) vCurves[0] <Tab(Settings) >Tab(Dock)
-Profile(Curve, New): ^PadMouse vCurves[0] <PadMouse >Curves[2].Edit
+Profile(Curve, New): ^PadMouse vCurves[0] <PadMouse >Tab(Windows)
 Curves[0]: ^Profile(Curve, Back) vCurves[1] <Profile(Curve, Back) >Profile(Curve, New)
 Curves[1]: ^Curves[0] vCurves[2] <Profile(Curve, Back) >Curves[2].Edit
 Curves[2]: ^Curves[1] vCurves[3] <Profile(Curve, Back) >Curves[2].Edit
-Curves[2].Edit: ^Curves[1] vCurves[3].Edit <Curves[2] >-
+Curves[2].Edit: ^Curves[1] vCurves[3].Edit <Curves[2] >Tab(Windows)
 Curves[3]: ^Curves[2] vCurves[4] <Profile(Curve, Back) >Curves[3].Edit
-Curves[3].Edit: ^Curves[2].Edit vCurves[4].Edit <Curves[3] >-
+Curves[3].Edit: ^Curves[2].Edit vCurves[4].Edit <Curves[3] >Tab(Windows)
 Curves[4]: ^Curves[3] v- <Profile(Curve, Back) >Curves[4].Edit
-Curves[4].Edit: ^Curves[3].Edit v- <Curves[4] >-
+Curves[4].Edit: ^Curves[3].Edit v- <Curves[4] >Tab(Windows)
 == curve-edit.png (bottom; the pad on both screens)
 start "ff6"; back Activate Profile(Curve, Back)
 -- bar as in bottom.png except
-PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vProfile(Curve, Back)
+Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vProfile(Curve, Back)
 -- screen
 Profile(Curve, Back): ^Tab(Settings) vControl(Curve(Black)) <Tab(Settings) >Tab(Dock)
-Control(Curve(Black)): ^Profile(Curve, Back) vControl(Curve(Contrast)) <Profile(Curve, Back) >PadMouse
-Control(Curve(Contrast)): ^Control(Curve(Black)) vControl(Curve(White)) <Profile(Curve, Back) >PadMouse
-Control(Curve(White)): ^Control(Curve(Contrast)) vControl(Curve(Start)) <Profile(Curve, Back) >PadMouse
-Control(Curve(Start)): ^Control(Curve(White)) vControl(Curve(Peak)) <Profile(Curve, Back) >PadMouse
-Control(Curve(Peak)): ^Control(Curve(Start)) vControl(Curve(Saturation)) <Profile(Curve, Back) >PadMouse
-Control(Curve(Saturation)): ^Control(Curve(Peak)) v- <Profile(Curve, Back) >PadMouse
+Control(Curve(Black)): ^Profile(Curve, Back) vControl(Curve(Contrast)) <Profile(Curve, Back) >Tab(Windows)
+Control(Curve(Contrast)): ^Control(Curve(Black)) vControl(Curve(White)) <Profile(Curve, Back) >Tab(Windows)
+Control(Curve(White)): ^Control(Curve(Contrast)) vControl(Curve(Start)) <Profile(Curve, Back) >Tab(Windows)
+Control(Curve(Start)): ^Control(Curve(White)) vControl(Curve(Peak)) <Profile(Curve, Back) >Tab(Windows)
+Control(Curve(Peak)): ^Control(Curve(Start)) vControl(Curve(Saturation)) <Profile(Curve, Back) >Tab(Windows)
+Control(Curve(Saturation)): ^Control(Curve(Peak)) v- <Profile(Curve, Back) >Tab(Windows)
 == curve-edit-slider.png (bottom; the pad on both screens)
 start "ff6"; back Activate Profile(Curve, Back)
 -- bar as in bottom.png except
-PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vProfile(Curve, Back)
+Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vProfile(Curve, Back)
 -- screen as in curve-edit.png
 == keymaps-chosen.png (bottom; the pad on both screens)
 start "ff6"; back Activate Km(Back)
 -- bar as in bottom.png except
-PadMouse: vKm(New) >Km(New)
-Tab(Time): vKm(New)
+Tab(Windows), PadMouse, Tab(Time): vKm(New)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vKm(Back)
 Control(Brightness): vKeymaps[0]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(New)
@@ -418,25 +415,24 @@ Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(New)
 == keymap-own.png (bottom; the pad on both screens)
 start Km(Back); back Activate Km(Back)
 -- bar as in bottom.png except
-PadMouse: vKm(New) >Km(New)
-Tab(Time): vKm(New)
+Tab(Windows), PadMouse, Tab(Time): vKm(New)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vKm(Back)
 Control(Brightness): vKeymaps[0]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(New)
 -- screen
 Km(Back): ^Tab(Settings) vKeymaps[0] <Tab(Settings) >Tab(Dock)
-Km(New): ^PadMouse vKeymaps[0].Edit <PadMouse >Keymaps[0].Edit
+Km(New): ^PadMouse vKeymaps[0].Edit <PadMouse >Tab(Windows)
 Keymaps[0]: ^Km(Back) vKeymaps[1] <Km(Back) >Keymaps[0].Edit
-Keymaps[0].Edit: ^Km(New) vKeymaps[1] <Keymaps[0] >-
+Keymaps[0].Edit: ^Km(New) vKeymaps[1] <Keymaps[0] >Tab(Windows)
 Keymaps[1]: ^Keymaps[0] vKeymaps[2] <Km(Back) >Keymaps[2].Edit
 Keymaps[2]: ^Keymaps[1] vKeymaps[3] <Km(Back) >Keymaps[2].Edit
-Keymaps[2].Edit: ^Keymaps[1] vKeymaps[3].Edit <Keymaps[2] >-
+Keymaps[2].Edit: ^Keymaps[1] vKeymaps[3].Edit <Keymaps[2] >Tab(Windows)
 Keymaps[3]: ^Keymaps[2] v- <Km(Back) >Keymaps[3].Edit
-Keymaps[3].Edit: ^Keymaps[2].Edit v- <Keymaps[3] >-
+Keymaps[3].Edit: ^Keymaps[2].Edit v- <Keymaps[3] >Tab(Windows)
 == keymap-own-menu.png (bottom; the pad on both screens)
 start "ff6"; back Activate Km(Back)
 -- bar as in bottom.png except
-PadMouse, Tab(Time): vKm(Edit)
+Tab(Windows), PadMouse, Tab(Time): vKm(Edit)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vKm(Back)
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(Edit)
 -- screen
@@ -448,8 +444,7 @@ Km(Delete): ^Km(SaveAs) v- <Km(Back) >Tab(Touchpad)
 == keymap-own-kept.png (bottom; the pad on both screens)
 start "ff6"; back Activate Km(Back)
 -- bar as in bottom.png except
-PadMouse: vKm(New) >Km(New)
-Tab(Time): vKm(New)
+Tab(Windows), PadMouse, Tab(Time): vKm(New)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vKm(Back)
 Control(Brightness): vKeymaps[0]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(New)
@@ -457,25 +452,25 @@ Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(New)
 == keymap-load.png (bottom; the pad on both screens)
 start "ff6"; back Activate Km(Back)
 -- bar as in bottom.png except
-PadMouse, Tab(Time): vKeymaps[0]
+Tab(Windows), PadMouse, Tab(Time): vKeymaps[0]
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vKm(Back)
 Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKeymaps[0]
 -- screen
 Km(Back): ^Tab(Settings) vKeymaps[0] <Tab(Settings) >Tab(Dock)
-Keymaps[0]: ^Control(Brightness) vKeymaps[1] <Km(Back) >PadMouse
-Keymaps[1]: ^Keymaps[0] vKeymaps[2] <Km(Back) >PadMouse
-Keymaps[2]: ^Keymaps[1] v- <Km(Back) >PadMouse
+Keymaps[0]: ^Control(Brightness) vKeymaps[1] <Km(Back) >Tab(Windows)
+Keymaps[1]: ^Keymaps[0] vKeymaps[2] <Km(Back) >Tab(Windows)
+Keymaps[2]: ^Keymaps[1] v- <Km(Back) >Tab(Windows)
 == keymap-save.png (bottom; the pad on both screens)
 start "ff6"; back Activate Km(Back)
 -- bar as in bottom.png except
-PadMouse, Tab(Time): vKeymaps[0]
+Tab(Windows), PadMouse, Tab(Time): vKeymaps[0]
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vKm(Back)
 Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKeymaps[0]
 -- screen as in keymap-load.png
 == keymap-replace.png (bottom; the pad on both screens)
 start "ff6"; back Activate Km(Back)
 -- bar as in bottom.png except
-PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(Back)
+Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(Back)
 -- screen
 Km(Back): ^Tab(Settings) vKm(ConfirmSave) <Tab(Settings) >Tab(Dock)
 Km(ConfirmSave): ^Km(Back) v- <Km(Back) >Tab(Touchpad)
@@ -483,7 +478,7 @@ Km(ConfirmSave): ^Km(Back) v- <Km(Back) >Tab(Touchpad)
 == launcher.png (bottom; the pad on both screens)
 start Tab(Dock); back -
 -- bar as in bottom.png except
-PadMouse, Tab(Time): vDock[2]
+Tab(Windows), PadMouse, Tab(Time): vDock[2]
 Tab(Settings), Tab(Dock), Tab(Keyboard): vDock[0]
 Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vDock[1]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vDock[2]
@@ -494,7 +489,7 @@ Dock[2]: ^Tab(Wifi) v- <Dock[1] >Tab(Wifi)
 == launcher-running.png (bottom; the pad on the second screen)
 start Tab(Dock); back -
 -- bar as in bottom.png except
-PadMouse, Tab(Time): ^- vDock[3]
+Tab(Windows), PadMouse, Tab(Time): ^- vDock[3]
 Tab(Settings), Tab(Dock), Tab(Keyboard): ^- vDock[0]
 Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): ^- vDock[1]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vDock[2]
@@ -502,30 +497,22 @@ Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vDock[2]
 Dock[0]: ^Tab(Dock) v- <Tab(Settings) >Dock[1]
 Dock[1]: ^Tab(Sysinfo) v- <Dock[0] >Dock[2]
 Dock[2]: ^Tab(Wifi) v- <Dock[1] >Dock[3]
-Dock[3]: ^PadMouse v- <Dock[2] >PadMouse
+Dock[3]: ^PadMouse v- <Dock[2] >Tab(Windows)
 == bar-window-below.png (bottom; the pad on the second screen)
 start Tab(Dock); back -
 -- bar as in bottom.png except
-PadMouse: ^- vDock[3] >BottomWindows
-Tab(Time): ^- vDock[3]
+Tab(Windows), PadMouse, Tab(Time): ^- vDock[3]
 Tab(Settings), Tab(Dock), Tab(Keyboard): ^- vDock[0]
 Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): ^- vDock[1]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vDock[2]
--- screen
-BottomWindows: ^- vDock[3] <PadMouse >-
-Dock[0]: ^Tab(Dock) v- <Tab(Settings) >Dock[1]
-Dock[1]: ^Tab(Sysinfo) v- <Dock[0] >Dock[2]
-Dock[2]: ^Tab(Wifi) v- <Dock[1] >Dock[3]
-Dock[3]: ^PadMouse v- <Dock[2] >BottomWindows
+-- screen as in launcher-running.png
 == dock-menu.png (bottom; the pad on the second screen)
 start Tab(Dock); back -
 -- bar as in bottom.png except
-PadMouse: ^- vDock(CloseWindow) >BottomWindows
-Tab(Time): ^- vDock(CloseWindow)
+Tab(Windows), PadMouse, Tab(Time): ^- vDock(CloseWindow)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): ^- vDock(Back)
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vDock(CloseWindow)
 -- screen
-BottomWindows: ^- vDock(CloseWindow) <PadMouse >-
 Dock(Back): ^Tab(Settings) vDock(CloseWindow) <Tab(Settings) >Tab(Dock)
 Dock(CloseWindow): ^Dock(Back) vDock(Pin) <Dock(Back) >Tab(Touchpad)
 Dock(Pin): ^Dock(CloseWindow) vDock(Autostart) <Dock(Back) >Tab(Touchpad)
@@ -537,12 +524,11 @@ Dock(ForceKill): ^Dock(Quit) v- <Dock(Back) >Tab(Touchpad)
 == wifi.png (bottom; the pad on both screens)
 start Tab(Wifi); back -
 -- bar as in bottom.png except
-PadMouse: vWifi(Power) >Wifi(Power)
-Tab(Time): vWifi(Power)
+Tab(Windows), PadMouse, Tab(Time): vWifi(Power)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth): vWifi[0]
 Tab(Wifi), Tab(Battery): vWifi(Power)
 -- screen
-Wifi(Power): ^PadMouse vWifi[0] <PadMouse >-
+Wifi(Power): ^PadMouse vWifi[0] <PadMouse >Tab(Windows)
 Wifi[0]: ^Control(Brightness) vWifi[1] <Tab(Settings) >Wifi(Power)
 Wifi[1]: ^Wifi[0] vWifi[2] <Tab(Settings) >Wifi(Power)
 Wifi[2]: ^Wifi[1] vWifi[3] <Tab(Settings) >Wifi(Power)
@@ -550,12 +536,11 @@ Wifi[3]: ^Wifi[2] v- <Tab(Settings) >Wifi(Power)
 == wifi-crowded.png (bottom; the pad on both screens)
 start Tab(Wifi); back -
 -- bar as in bottom.png except
-PadMouse: vWifi(Power) >Wifi(Power)
-Tab(Time): vWifi(Power)
+Tab(Windows), PadMouse, Tab(Time): vWifi(Power)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth): vWifi[0]
 Tab(Wifi), Tab(Battery): vWifi(Power)
 -- screen
-Wifi(Power): ^PadMouse vWifi[0] <PadMouse >-
+Wifi(Power): ^PadMouse vWifi[0] <PadMouse >Tab(Windows)
 Wifi[0]: ^Control(Brightness) vWifi[1] <Tab(Settings) >Wifi(Power)
 Wifi[1]: ^Wifi[0] vWifi[2] <Tab(Settings) >Wifi(Power)
 Wifi[2]: ^Wifi[1] vWifi[3] <Tab(Settings) >Wifi(Power)
@@ -567,12 +552,11 @@ Wifi[7]: ^Wifi[6] vWifi[8] <Tab(Settings) >Wifi(Power)
 == wifi-scrolled.png (bottom; the pad on both screens)
 start Tab(Wifi); back -
 -- bar as in bottom.png except
-PadMouse: vWifi(Power) >Wifi(Power)
-Tab(Time): vWifi(Power)
+Tab(Windows), PadMouse, Tab(Time): vWifi(Power)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth): vWifi[3]
 Tab(Wifi), Tab(Battery): vWifi(Power)
 -- screen
-Wifi(Power): ^PadMouse vWifi[3] <Wifi[3] >-
+Wifi(Power): ^PadMouse vWifi[3] <Wifi[3] >Tab(Windows)
 Wifi[3]: ^Wifi[2] vWifi[4] <Tab(Settings) >Wifi(Power)
 Wifi[4]: ^Wifi[3] vWifi[5] <Tab(Settings) >Wifi(Power)
 Wifi[5]: ^Wifi[4] vWifi[6] <Tab(Settings) >Wifi(Power)
@@ -585,11 +569,11 @@ Wifi[11]: ^Wifi[10] vWifi[12] <Tab(Settings) >Wifi(Power)
 == battery.png (bottom; the pad on both screens)
 start Tab(Battery); back -
 -- bar as in bottom.png except
-PadMouse, Tab(Time): vTile(Sleep)
+Tab(Windows), PadMouse, Tab(Time): vTile(Sleep)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vTile(ChargeLimit)
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vTile(ScreenOff)
 -- screen
-Tile(Sleep): ^PadMouse vBattery(Spender(0)) <Tile(ScreenOff) >PadMouse
+Tile(Sleep): ^PadMouse vBattery(Spender(0)) <Tile(ScreenOff) >Tab(Windows)
 Tile(ScreenOff): ^Tab(Wifi) vBattery(Spender(0)) <Tile(ChargeLimit) >Tile(Sleep)
 Tile(ChargeLimit): ^Control(Volume) vBattery(Spender(0)) <Tab(Sysinfo) >Tile(ScreenOff)
 Battery(Spender(0)): ^Tile(ChargeLimit) vBattery(Spender(1)) <Tile(ChargeLimit) >Tile(Sleep)
@@ -599,31 +583,31 @@ Battery(Spender(4)): ^Battery(Spender(2)) v- <Tile(ChargeLimit) >Tile(Sleep)
 == time.png (bottom; the pad on both screens)
 start Tab(Time); back -
 -- bar as in bottom.png except
-PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vTime(Zone)
+Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vTime(Zone)
 -- screen
-Time(Zone): ^Control(Brightness) vTime(Ntp) <Tab(Settings) >PadMouse
-Time(Ntp): ^Time(Zone) vTime(TwelveHour) <Tab(Settings) >PadMouse
-Time(TwelveHour): ^Time(Ntp) v- <Tab(Settings) >PadMouse
+Time(Zone): ^Control(Brightness) vTime(Ntp) <Tab(Settings) >Tab(Windows)
+Time(Ntp): ^Time(Zone) vTime(TwelveHour) <Tab(Settings) >Tab(Windows)
+Time(TwelveHour): ^Time(Ntp) v- <Tab(Settings) >Tab(Windows)
 == time-zones.png (bottom; the pad on both screens)
 start "zelda-lttp"; back Activate Time(Back)
 -- bar as in bottom.png except
-PadMouse, Tab(Time): vTime[0]
+Tab(Windows), PadMouse, Tab(Time): vTime[0]
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vTime(Back)
 Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vTime[0]
 -- screen
 Time(Back): ^Tab(Settings) vTime[0] <Tab(Settings) >Tab(Dock)
-Time[0]: ^Control(Brightness) vTime[1] <Time(Back) >PadMouse
-Time[1]: ^Time[0] vTime[2] <Time(Back) >PadMouse
-Time[2]: ^Time[1] vTime[3] <Time(Back) >PadMouse
-Time[3]: ^Time[2] vTime[4] <Time(Back) >PadMouse
-Time[4]: ^Time[3] vTime[5] <Time(Back) >PadMouse
-Time[5]: ^Time[4] vTime[6] <Time(Back) >PadMouse
-Time[6]: ^Time[5] vTime[7] <Time(Back) >PadMouse
-Time[7]: ^Time[6] vTime[8] <Time(Back) >PadMouse
+Time[0]: ^Control(Brightness) vTime[1] <Time(Back) >Tab(Windows)
+Time[1]: ^Time[0] vTime[2] <Time(Back) >Tab(Windows)
+Time[2]: ^Time[1] vTime[3] <Time(Back) >Tab(Windows)
+Time[3]: ^Time[2] vTime[4] <Time(Back) >Tab(Windows)
+Time[4]: ^Time[3] vTime[5] <Time(Back) >Tab(Windows)
+Time[5]: ^Time[4] vTime[6] <Time(Back) >Tab(Windows)
+Time[6]: ^Time[5] vTime[7] <Time(Back) >Tab(Windows)
+Time[7]: ^Time[6] vTime[8] <Time(Back) >Tab(Windows)
 == time-europe.png (bottom; the pad on both screens)
 start Time[7]; back Activate Time(Back)
 -- bar as in bottom.png except
-PadMouse, Tab(Time): vTime[0]
+Tab(Windows), PadMouse, Tab(Time): vTime[0]
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vTime(Back)
 Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vTime[0]
 -- screen as in time-zones.png
@@ -652,7 +636,7 @@ start Device(Sticks); back Activate Device(Close)
 == device-password.png (bottom; the pad on both screens)
 start Key[2,4]; back Activate Editor(Cancel)
 -- bar as in bottom.png except
-PadMouse: ^Device(Close) vEditor(Save) >Editor(Save)
+Tab(Windows), PadMouse: ^Device(Close) vEditor(Save)
 Tab(Time): ^Device(Close) vEditor(Cancel)
 Tab(Settings): ^Device(Close) vKey[0,0]
 Tab(Dock): ^Device(Close) vKey[0,1]
@@ -662,7 +646,7 @@ Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness)
 == time-by-hand.png (bottom; the pad on both screens)
 start Time(TwelveHour); back -
 -- bar as in bottom.png except
-PadMouse: vTime(Step(Minute, true)) >Time(Step(Minute, true))
+Tab(Windows), PadMouse: vTime(Step(Minute, true))
 Tab(Time): vTime(Step(Hour, true))
 Tab(Settings), Tab(Dock), Tab(Keyboard): vTime(Step(Day, true))
 Tab(Touchpad), Tab(Sysinfo): vTime(Step(Month, true))
@@ -677,20 +661,19 @@ Time(Step(Year, true)): ^Control(Brightness) vTime(Step(Year, false)) <Time(Step
 Time(Step(Year, false)): ^Time(Step(Year, true)) vTime(Zone) <Time(Step(Month, false)) >Time(Zone)
 Time(Step(Hour, true)): ^Tab(Battery) vTime(Step(Hour, false)) <Tab(Wifi) >Time(Step(Minute, true))
 Time(Step(Hour, false)): ^Time(Step(Hour, true)) vTime(Zone) <Time(Zone) >Time(Step(Minute, false))
-Time(Step(Minute, true)): ^PadMouse vTime(Step(Minute, false)) <Time(Step(Hour, true)) >-
-Time(Step(Minute, false)): ^Time(Step(Minute, true)) vTime(Zone) <Time(Step(Hour, false)) >-
+Time(Step(Minute, true)): ^PadMouse vTime(Step(Minute, false)) <Time(Step(Hour, true)) >Tab(Windows)
+Time(Step(Minute, false)): ^Time(Step(Minute, true)) vTime(Zone) <Time(Step(Hour, false)) >Tab(Windows)
 Time(Zone): ^Time(Step(Year, false)) vTime(Ntp) <Time(Step(Day, false)) >Time(Step(Hour, false))
 Time(Ntp): ^Time(Zone) vTime(TwelveHour) <Time(Step(Day, false)) >Time(Step(Hour, false))
 Time(TwelveHour): ^Time(Ntp) v- <Time(Step(Day, false)) >Time(Step(Hour, false))
 == bluetooth.png (bottom; the pad on both screens)
 start Tab(Bluetooth); back -
 -- bar as in bottom.png except
-PadMouse: vBluetooth(Power) >Bluetooth(Power)
-Tab(Time): vBluetooth(Power)
+Tab(Windows), PadMouse, Tab(Time): vBluetooth(Power)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth): vBluetooth[0]
 Tab(Wifi), Tab(Battery): vBluetooth(Power)
 -- screen
-Bluetooth(Power): ^PadMouse vBluetooth[0] <PadMouse >-
+Bluetooth(Power): ^PadMouse vBluetooth[0] <PadMouse >Tab(Windows)
 Bluetooth[0]: ^Control(Brightness) vBluetooth[1] <Tab(Settings) >Bluetooth(Power)
 Bluetooth[1]: ^Bluetooth[0] vBluetooth[2] <Tab(Settings) >Bluetooth(Power)
 Bluetooth[2]: ^Bluetooth[1] vBluetooth[3] <Tab(Settings) >Bluetooth(Power)
@@ -698,25 +681,24 @@ Bluetooth[3]: ^Bluetooth[2] v- <Tab(Settings) >Bluetooth(Power)
 == volume.png (bottom; the pad on both screens)
 start "zelda-lttp"; back -
 -- bar as in bottom.png except
-PadMouse: vLevel(Volume) >Streams[0].Mute
-Tab(Time): vLevel(Volume)
+Tab(Windows), PadMouse, Tab(Time): vLevel(Volume)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo): vAudio(MuteOutput)
 Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vLevel(Volume)
 -- screen
 Audio(MuteOutput): ^Tab(Keyboard) vAudio(Output(0)) <Tab(Settings) >Level(Volume)
 Level(Volume): ^Tab(Bluetooth) vAudio(Output(0)) <[Step Volume -1] >[Step Volume 1]
 Audio(Output(0)): ^Level(Volume) vAudio(Output(1)) <Audio(MuteOutput) >Level(Volume)
-Audio(Output(1)): ^Audio(Output(0)) vStreams[0].Level <Audio(MuteOutput) >Streams[0].Level
+Audio(Output(1)): ^Audio(Output(0)) vStreams[0].Level <Streams[0].Mute >Streams[0].Level
+Streams[0].Mute: ^Audio(Output(1)) vStreams[1].Mute <Tab(Settings) >Streams[0].Level
 Streams[0].Level: ^Audio(Output(1)) vStreams[1].Level <[Step Stream(0) -1] >[Step Stream(0) 1]
-Streams[0].Mute: ^Audio(Output(1)) vStreams[1].Mute <Streams[0].Level >-
+Streams[1].Mute: ^Streams[0].Mute vStreams[2].Mute <Tab(Settings) >Streams[1].Level
 Streams[1].Level: ^Streams[0].Level vStreams[2].Level <[Step Stream(1) -1] >[Step Stream(1) 1]
-Streams[1].Mute: ^Streams[0].Mute vStreams[2].Mute <Streams[1].Level >-
+Streams[2].Mute: ^Streams[1].Mute v- <Tab(Settings) >Streams[2].Level
 Streams[2].Level: ^Streams[1].Level v- <[Step Stream(2) -1] >[Step Stream(2) 1]
-Streams[2].Mute: ^Streams[1].Mute v- <Streams[2].Level >-
 == brightness.png (bottom; the pad on both screens)
 start "zelda-lttp"; back -
 -- bar as in bottom.png except
-PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vLevel(Brightness)
+Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vLevel(Brightness)
 -- screen
 Level(Brightness): ^Tab(Wifi) vBacklights[0].Level <[Step Brightness -1] >[Step Brightness 1]
 Backlights[0].Level: ^Level(Brightness) vBacklights[1].Level <[Step Backlight(0) -1] >[Step Backlight(0) 1]
@@ -724,7 +706,7 @@ Backlights[1].Level: ^Backlights[0].Level v- <[Step Backlight(1) -1] >[Step Back
 == slider.png (bottom; the pad on both screens)
 start Tab(Dock); back -
 -- bar as in bottom.png except
-PadMouse, Tab(Time): vDock[2]
+Tab(Windows), PadMouse, Tab(Time): vDock[2]
 Tab(Settings), Tab(Dock), Tab(Keyboard): vDock[0]
 Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vDock[1]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vDock[2]
@@ -732,8 +714,8 @@ Tab(Bluetooth), Tab(Wifi), Tab(Battery): vDock[2]
 == keyboard.png (bottom; the pad on both screens)
 start Tab(Keyboard); back -
 -- bar as in bottom.png except
-PadMouse: vKey[0,8] >Key[0,9]
-Tab(Time): vKey[0,8]
+Tab(Windows): vKey[0,9]
+PadMouse, Tab(Time): vKey[0,8]
 Tab(Settings): vKey[0,0]
 Tab(Dock), Tab(Keyboard): vKey[0,1]
 Tab(Touchpad): vKey[0,2]
@@ -750,14 +732,15 @@ Key[0,4]: ^Control(Volume)
 Key[0,5]: ^Tab(Bluetooth)
 Key[0,6]: ^Tab(Wifi)
 Key[0,7]: ^Tab(Battery)
-Key[0,8], Key[0,9]: ^PadMouse
+Key[0,8]: ^PadMouse
+Key[0,9]: ^Tab(Windows)
 Key[4,0]: <Key[5,0]
 Key[4,8]: >Key[5,7]
 == keyboard-fn.png (bottom; the pad on both screens)
 start Key[5,0]; back -
 -- bar as in bottom.png except
-PadMouse: vKey[0,8] >Key[0,9]
-Tab(Time): vKey[0,8]
+Tab(Windows): vKey[0,9]
+PadMouse, Tab(Time): vKey[0,8]
 Tab(Settings): vKey[0,0]
 Tab(Dock), Tab(Keyboard): vKey[0,1]
 Tab(Touchpad): vKey[0,2]
@@ -774,14 +757,15 @@ Key[0,4]: ^Control(Volume)
 Key[0,5]: ^Tab(Bluetooth)
 Key[0,6]: ^Tab(Wifi)
 Key[0,7]: ^Tab(Battery)
-Key[0,8], Key[0,9]: ^PadMouse
+Key[0,8]: ^PadMouse
+Key[0,9]: ^Tab(Windows)
 Key[4,0]: <Key[5,0]
 Key[4,8]: >Key[5,7]
 == keyboard-mods.png (bottom; the pad on both screens)
 start Key[4,0]; back -
 -- bar as in bottom.png except
-PadMouse: vKey[0,8] >Key[0,9]
-Tab(Time): vKey[0,8]
+Tab(Windows): vKey[0,9]
+PadMouse, Tab(Time): vKey[0,8]
 Tab(Settings): vKey[0,0]
 Tab(Dock), Tab(Keyboard): vKey[0,1]
 Tab(Touchpad): vKey[0,2]
@@ -798,14 +782,15 @@ Key[0,4]: ^Control(Volume)
 Key[0,5]: ^Tab(Bluetooth)
 Key[0,6]: ^Tab(Wifi)
 Key[0,7]: ^Tab(Battery)
-Key[0,8], Key[0,9]: ^PadMouse
+Key[0,8]: ^PadMouse
+Key[0,9]: ^Tab(Windows)
 Key[4,0]: <Key[5,0]
 Key[4,8]: >Key[5,7]
 == keyboard-caps.png (bottom; the pad on both screens)
 start Key[0,2]; back -
 -- bar as in bottom.png except
-PadMouse: vKey[0,8] >Key[0,9]
-Tab(Time): vKey[0,8]
+Tab(Windows): vKey[0,9]
+PadMouse, Tab(Time): vKey[0,8]
 Tab(Settings): vKey[0,0]
 Tab(Dock), Tab(Keyboard): vKey[0,1]
 Tab(Touchpad): vKey[0,2]
@@ -822,22 +807,23 @@ Key[0,4]: ^Control(Volume)
 Key[0,5]: ^Tab(Bluetooth)
 Key[0,6]: ^Tab(Wifi)
 Key[0,7]: ^Tab(Battery)
-Key[0,8], Key[0,9]: ^PadMouse
+Key[0,8]: ^PadMouse
+Key[0,9]: ^Tab(Windows)
 Key[4,0]: <Key[5,0]
 Key[4,8]: >Key[5,7]
 == touchpad.png (bottom; the pad on the second screen)
 start PadMouse; back -
 -- bar as in bottom.png except
-PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^-
+Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^-
 == sysinfo.png (bottom; the pad on the second screen)
 start Tab(Sysinfo); back -
 -- bar as in bottom.png except
-PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^-
+Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^-
 == keyboard-back.png (bottom; the pad on the second screen)
 start Tab(Keyboard); back -
 -- bar as in bottom.png except
-PadMouse: ^- vKey[0,8] >Key[0,9]
-Tab(Time): ^- vKey[0,8]
+Tab(Windows): ^- vKey[0,9]
+PadMouse, Tab(Time): ^- vKey[0,8]
 Tab(Settings): ^- vKey[0,0]
 Tab(Dock), Tab(Keyboard): ^- vKey[0,1]
 Tab(Touchpad): ^- vKey[0,2]
@@ -854,14 +840,15 @@ Key[0,4]: ^Control(Volume)
 Key[0,5]: ^Tab(Bluetooth)
 Key[0,6]: ^Tab(Wifi)
 Key[0,7]: ^Tab(Battery)
-Key[0,8], Key[0,9]: ^PadMouse
+Key[0,8]: ^PadMouse
+Key[0,9]: ^Tab(Windows)
 Key[4,0]: <Key[5,0]
 Key[4,8]: >Key[5,7]
 == keyboard-pressed.png (bottom; the pad on the second screen)
 start Key[4,0]; back -
 -- bar as in bottom.png except
-PadMouse: ^- vKey[0,8] >Key[0,9]
-Tab(Time): ^- vKey[0,8]
+Tab(Windows): ^- vKey[0,9]
+PadMouse, Tab(Time): ^- vKey[0,8]
 Tab(Settings): ^- vKey[0,0]
 Tab(Dock), Tab(Keyboard): ^- vKey[0,1]
 Tab(Touchpad): ^- vKey[0,2]
@@ -878,6 +865,7 @@ Key[0,4]: ^Control(Volume)
 Key[0,5]: ^Tab(Bluetooth)
 Key[0,6]: ^Tab(Wifi)
 Key[0,7]: ^Tab(Battery)
-Key[0,8], Key[0,9]: ^PadMouse
+Key[0,8]: ^PadMouse
+Key[0,9]: ^Tab(Windows)
 Key[4,0]: <Key[5,0]
 Key[4,8]: >Key[5,7]

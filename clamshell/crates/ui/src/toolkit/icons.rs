@@ -23,6 +23,7 @@ impl Icon {
             Tab::Bluetooth => Icon::Bluetooth { connected: false },
             // Its button in the bar is the clock.
             Tab::Time => Icon::Gauge,
+            Tab::Windows => Icon::Windows,
         }
     }
 

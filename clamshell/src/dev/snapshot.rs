@@ -308,6 +308,8 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
             ],
         ),
         group(vec![], vec![shot("bottom.png", Bottom, vec![])]),
+        // The windows' tab with nothing moved down: how to move a window there.
+        group(vec![], vec![shot("windows-empty.png", Bottom, vec![tab(Tab::Windows)])]),
         // The settings while a game runs.
         group(
             vec![ff6(), ff6()],

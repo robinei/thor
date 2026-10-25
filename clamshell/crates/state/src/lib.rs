@@ -564,6 +564,10 @@ impl State {
         self.session.follow_windows(&self.clock, self.shelf.library(), &mut self.plays, &mut windows);
         self.record_plays(&mut windows);
         self.bottom.follow_window_rules(&mut self.session, self.shelf.library(), out);
+        // A window moved down opened the windows' tab; the tab it left settles as any tab left.
+        if let Some(left) = self.bottom.take_left() {
+            self.left_tab(left);
+        }
         self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
         self.session.follow_front_launch(&mut windows);
         self.session.follow_replacement(self.clock.mono(), &mut windows);
@@ -935,11 +939,6 @@ impl State {
                     None => {}
                 }
             }
-            Id::BottomWindows => {
-                if let Some(window) = self.bottom.hidden_down(&self.session) {
-                    self.bottom.show_program_down(window, &mut self.session, out);
-                }
-            }
             Id::Time(id) => self.sys.on_time(id, self.scrolls.get_mut(ListId::Time), out),
             Id::Device(id) => {
                 self.device.tap(id, self.clock.mono(), &mut self.pointer, self.shelf.selected(), out);
@@ -1239,7 +1238,7 @@ impl State {
                 return;
             }
             DeviceKey::Screenshot => return out.effects.push(Effect::Screenshot),
-            DeviceKey::BottomView => return self.bottom.toggle_view(&self.session),
+            DeviceKey::BottomView => return self.choose_tab(self.bottom.view_toggled()),
             DeviceKey::CloseWindow => return self.session.close_front_window(self.bottom.shows_windows(&self.session), out),
             DeviceKey::Quit => return self.session.quit_front(self.bottom.shows_windows(&self.session), out),
             DeviceKey::BottomPower => return self.bottom.toggle_power(self.power(), self.clock.mono()),
