@@ -923,7 +923,7 @@ class Checks:
             return
         self.check("  the first start made the Nintendo layout", keymap_named("Nintendo layout") is not None, saved_keymaps())
         since = now()
-        for line in ["tab settings", "tap scope game", "tap setting keymap", "tap keymap-new", "type Check", "tap save"]:
+        for line in ["tab settings", "tap scope game", "long setting keymap", "tap keymap-new", "type Check", "tap save"]:
             control(line)
         listening = logged(since, "PadRoute(Listen)", 3)
         self.check("  named; the edit screen listens to the pad", listening, journal(since)[-300:])
@@ -977,7 +977,7 @@ class Checks:
         self.check("  the gyro with LB held moves the pointer", moved > 100, f"pointer moved {moved} px")
         # The gyro's speed slid up on the edit screen's panel, the game still running: further.
         since = now()
-        for line in ["tab settings", "tap setting keymap", f"tap keymap-edit {row}", "tap map-from gyro", "slide speed 300 450"]:
+        for line in ["tab settings", "long setting keymap", f"tap keymap-edit {row}", "tap map-from gyro", "slide speed 300 450"]:
             control(line)
         sent = logged(since, f"pad: keymap {ident} (Check)", 3)
         out = capture(f"evtest {mouse}", 2.5, lambda: pad("press lb", "gyro 0 -60 0", "sleep 600", "gyro 0 0 0", "release lb"))
@@ -989,7 +989,7 @@ class Checks:
             control(line)
         # Default for the game again: everything as on the pad.
         since = now()
-        for line in ["tab settings", "tap setting keymap", "tap keymap 1"]:
+        for line in ["tab settings", "long setting keymap", "tap keymap 1"]:
             control(line)
         self.check("  Default chosen, sent to the pad", logged(since, "pad: keymap 0 (Default)", 3), journal(since)[-300:])
         out = capture(both, 2, lambda: press("a", 150))
@@ -1003,7 +1003,7 @@ class Checks:
         A, and Back let go while A is held, read from the virtual keyboard; then the layer made Once."""
         if not self.check("keymap layers: the fake pad grabbed", plug_pad()):
             return
-        for line in ["tab settings", "tap scope game", "tap setting keymap", "tap keymap-new", "type Layers", "tap save",
+        for line in ["tab settings", "tap scope game", "long setting keymap", "tap keymap-new", "type Layers", "tap save",
                      "tap map-from a", "tap map-to key", "tap key ctrl", "tap key x",
                      "tap keymap-layers", "tap new-layer", "type held", "tap save", "tap map-from a", "tap map-to key", "tap key ctrl",
                      "tap key y", "tap keymap-layers", "tap keymap-layer base", "tap map-from back", "tap map-to layers", "tap to-layer 1",
@@ -1046,7 +1046,7 @@ class Checks:
                    "KEY_Y0" in got and "KEY_X1" in got and not held(got), f"{got}")
         # The layer made Once in its menu, the game still running: Back tapped, then A twice: Ctrl+Y, then
         # Ctrl+X; the controller buzzes as the layer is armed and as it goes off.
-        for line in ["tab settings", "tap setting keymap", f"tap keymap-edit {rows}", "tap keymap-layers", "long keymap-layer 1",
+        for line in ["tab settings", "long setting keymap", f"tap keymap-edit {rows}", "tap keymap-layers", "long keymap-layer 1",
                      "tap layer-once", "tap keymap-back", "tap keymap-back", "tap keymap-back", "tap keymap-back"]:
             control(line)
         k = keymap_named("Layers")
@@ -1068,7 +1068,7 @@ class Checks:
         made through the screens; in a game, read from the virtual keyboard."""
         if not self.check("keymap actuations: the fake pad grabbed", plug_pad()):
             return
-        for line in ["tab settings", "tap scope game", "tap setting keymap", "tap keymap-new", "type Acts", "tap save",
+        for line in ["tab settings", "tap scope game", "long setting keymap", "tap keymap-new", "type Acts", "tap save",
                      "tap map-from a", "tap map-to key", "tap key x", "tap keymap-act hold", "tap map-to key", "tap key e",
                      "tap map-from b", "tap keymap-act double", "tap map-to key", "tap key z",
                      "tap map-from y", "tap map-to key", "tap key t", "tap toggle", "tap keymap-back"]:
