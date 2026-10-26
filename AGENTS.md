@@ -1,9 +1,9 @@
 # Working on thor
 
 Linux for the AYN Thor, a two-screen handheld: ClamShell (`clamshell/`, the program that is the device's
-session) and the system around it, shipped as pacman packages (`packages/`). The README describes the
-crates, the library format, how to run and how to check; `docs/` holds the design notes and the device
-plan (`docs/thor-gameplan.md`).
+session) and the system around it, shipped as pacman packages (`packages/`). The README says what it
+is, the library format, and how to build, run and check; `docs/architecture.md` how ClamShell is put
+together; `docs/` holds the other design notes and the device plan (`docs/thor-gameplan.md`).
 
 ## Principles
 

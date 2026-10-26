@@ -40,7 +40,8 @@ Not aims (decided, so they are not reopened by accident):
   by hand; ClamShell reads it and doesn't rewrite it.
 - Reading older ClamShell formats. Nobody else runs it yet, so formats change outright.
 
-This README is kept short while things change. How each part behaves is in its module's documentation
+How it is built is in `docs/architecture.md`, and how work on it is done in `AGENTS.md`; `docs/README.md`
+lists the other design notes. How each part behaves is in its module's documentation
 (`cargo doc --open --document-private-items` in `clamshell/`) and in its tests.
 
 ## How it is made
@@ -53,38 +54,17 @@ deciding the design, reviewing the work and setting the rules it follows (`AGENT
 - the snapshot test pins each screen's pixels, the pad's focus moves and the effects of scripted
   scenarios, and a randomized test checks the state's invariants after every event;
 - `docs/state-machines.md` describes each feature's states and transitions, with the test that pins each
-  one, and records the decisions taken on what looked wrong, with what would make us revisit them;
-- reviews by agents new to the code, and their findings, are kept in `docs/`.
-
-## Architecture
-
-ClamShell is one process with one state, in the style of the Elm architecture. Every input becomes an
-`Event`; `State::apply` changes the state and returns `Effect`s; threads carry those out and report back
-with events; the UI draws from the state.
-
-```
-input, readings, windows ─▶ Event ─▶ State::apply ─┬─▶ the UI redraws only what changed
-                               ▲                    └─▶ Effects ─▶ system threads (systemd, D-Bus, …)
-                               └───────────────────────────────── results as events ◀┘
-```
-
-- **The state** does no I/O. It is made of areas (shelf, session, the second screen, radios, settings,
-  ...) that own their data; `State` coordinates them. An event is handled, the state is settled (what
-  depends on history: launches, windows, idle), and what the outside should have is compared with what it
-  was last sent, so only differences go out.
-- **The UI** records each screen's drawing as a list of commands after every event and redraws only the
-  rectangle where the list changed; an idle tick costs about 0.02 ms and commits nothing.
-- **Throughout:** no panics (denied by the lints), no silent failures (logged), and no allocation when
-  handling an event or drawing a frame (enforced by tests).
-
-`docs/architecture.md` explains it in full, with what checks each part; `docs/state-machines.md` describes
-each feature's states and transitions and the test that pins each.
+  one;
+- reviews by agents new to the code, their findings and the decisions taken on them are kept in
+  `docs/history/`.
 
 ## ClamShell
 
 `clamshell/` is one process with one in-memory state for shelf (the game list on the top screen), the
 second screen (the bar and its tabs), the input path (the controller, the pad mouse, the touchpad, the
-on-screen keyboard), and the games' settings and keymaps.
+on-screen keyboard), and the games' settings and keymaps. It is also the Wayland compositor the games
+and programs show their windows in. Its crates, the cycle they make and the rules the code follows are in
+`docs/architecture.md`.
 
 It is made to be dependable, light and quick, to start and while it runs. Measured on a desktop PC
 (the Thor's numbers will come with the device):
@@ -96,31 +76,11 @@ It is made to be dependable, light and quick, to start and while it runs. Measur
   hours of use. A frame takes 0.1-0.6 ms to draw; when an event changes nothing visible, checking costs
   about 0.02 ms and nothing is drawn or sent to the compositor. Handling an event or drawing a frame
   allocates no memory.
-- **Dependable:** it can't panic (the lints forbid what could), a failure it handles is logged, and its
-  behaviour is pinned by the tests described under Checking and in `docs/architecture.md`.
 
-Rust, a Cargo workspace:
-
-| Crate | What |
-|---|---|
-| `crates/state` | the state and its rules: events in, effects out; no I/O |
-| `crates/system` | threads that watch the system and send events, and carry out effects (systemd, NetworkManager, BlueZ, evdev/uinput, sysfs); the game library from disk |
-| `crates/library` | the library's model (entries, groups, tabs), sorting, name patterns, and the parts of Steam's formats that need no disk |
-| `crates/ui` | ClamShell's own screens: CPU drawing (tiny-skia, fontdue), the views, pad navigation, drawn into pixmaps the compositor shows; the font built in (Noto Sans, SIL Open Font License 1.1: `crates/ui/fonts/OFL.txt`) |
-| `crates/compositor` | the Wayland compositor (Smithay): the screens through DRM and libinput (`--drm`) or a desktop window (`--nested`), windows, input, Xwayland, frame pacing, screenshots |
-| `crates/device` | facts the hardware can't announce: the screens' connectors and rotation, the panels' colour, charging, the fan, the gyro, the inputs |
-| `crates/fan` | the fan daemon `clamshell-fan`: a system service on the device, the fan's speed from the temperatures in the mode the Fan setting picks (its curves in `crates/fan/src/curve.rs`); and its library `clamshell_fan_mode`, the modes as ClamShell writes them, which clamshell-state uses |
-| `src/` | the program around them: the command line, the environment, the threads, the control pipe, the snapshots |
-
-No panics by construction: `unwrap`, `expect`, `panic!` and slice indexing are denied outside tests. A
-failure that is handled by falling back (a file that can't be read, a service's error) is logged. A
-lookup that can't fail (an index the code itself made) still needs a fallback the lints accept, which
-never runs; where a bug could make it run, a `debug_assert!` catches it in tests.
-
-Beside the workspace are `android/` (the Waydroid session's script and its clipboard bridge, which the package
-installs) and `tests/` (the nested compositor and picture tests with their test programs, the device profiles'
-test, and the snapshots' references). The settings of the programs the session runs (foot, mpv, RetroArch) are
-in `packages/thor-session/root/`.
+Beside the Cargo workspace are `android/` (the Waydroid session's script and its clipboard bridge, which the
+package installs) and `tests/` (the nested compositor and picture tests with their test programs, the device
+profiles' test, and the snapshots' references). The settings of the programs the session runs (foot, mpv,
+RetroArch) are in `packages/thor-session/root/`.
 
 ## The library
 
@@ -181,13 +141,15 @@ What ClamShell keeps (play time, favourites, settings, keymaps, window rules, th
 was, brightness) is in JSON files in `~/.local/share/clamshell`, readable and editable by hand; which
 file holds what: `crates/system/src/store.rs`.
 
-## Running
+## Building and running
+
+ClamShell is a Cargo workspace in `clamshell/` (Rust 1.95 or later); `cargo build` there builds it.
 
     cd clamshell
     cargo run -- --nested                       # the session in a window of this desktop: both screens
     cargo run --features dev -- --snapshot DIR  # every screen as PNG files at the Thor's size, no Wayland
     cargo run -- ctl help                       # the control pipe's commands (a running ClamShell takes them)
-    tools/nested-session.sh                     # as on the device: the nested session as a user unit
+    ../tools/nested-session.sh                  # as on the device: the nested session as a user unit
                                                 # (clamshell-nested.service), with this desktop's library
 
 On the device, `clamshell --drm` runs on the screens from the first console (`thor-session`); `clamshell`
@@ -196,56 +158,43 @@ without arguments prints its usage.
 In shelf, Y makes the selected entry a favourite (the Favourites tab) or not, and X pins it to the dock
 or unpins it; a pinned folder (a series) opens in shelf from the dock.
 
-On a desktop, keys stand in for the pad: arrows move the focus, Enter is A, Backspace B, Tab View, Q and
-E the shoulders, F is Y, P is X, C Start, Home and End the triggers; a controller's Guide button is the
-Thor's Home button.
+On a desktop, keys stand in for the pad while no window has the keyboard: arrows move the focus, Enter or
+Space is A, Backspace B, Tab View, Q and E the shoulders, F is Y, P is X, C Start, Home and End the
+triggers. Whatever has the keyboard, F12 is the Thor's Home button (a tap shows shelf), F11 moves the window
+in front down to the second screen and F10 brings it back up. A controller's Guide button is Home too.
+
+`clamshell ctl screenshot`, or Home+R1, saves a screenshot of both screens. `clamshell ctl window events
+FILE` writes the windows and the last 256 window events as JSON, which
+`clamshell_compositor::trace::Recording::replay` checks against a state fixture with the same library,
+rules and launch context.
 
 ## Checking
 
-- `tools/check.sh`: formatting, clippy with warnings as errors (the `dev` build too), the tests (the
-  snapshots among them), and the documentation; about a minute. Every commit passes it:
-  `git config core.hooksPath tools/hooks` makes it the pre-commit hook.
+- `tools/check.sh`: formatting, clippy with warnings as errors (the `dev` and release builds too), the
+  tests (the snapshots among them), and the documentation; about a minute. Every commit passes it:
+  `git config core.hooksPath tools/hooks` makes it the pre-commit hook. A plain `cargo test` in
+  `clamshell/` runs only the binary's tests.
 - Snapshots: the tests walk a scenario through every screen (`clamshell/src/dev/snapshot.rs`) and
-  compare three references in `clamshell/tests/`: `snapshots.txt`, hashes of each screen's pixels;
-  `focus.txt`, where the pad's focus goes on each screen (where it starts, what B does, and up, down,
-  left and right from each target), worked out by the UI's own pad functions; and `trace.txt`, the
-  effects of the scenario's events, one line each. The focus is also held to rules: every target
-  reachable from where the pad starts, no target the focus can't leave, no move onto a target that
-  isn't shown, and up and down step through shelf's list. On a difference the failure prints the text
-  diff and the paths of the screens drawn, with the pad's moves drawn over a screen whose focus
-  changed. Look at those images and the diff; update the references (`CLAMSHELL_UPDATE_SNAPSHOTS=1
-  cargo test -p clamshell snapshots`) only if every difference follows from the intended change, and
-  say in the commit what changed and why. A change meant to keep behaviour (a refactor, a rename)
-  leaves the trace untouched, so any trace difference there is a regression; an unexpected difference
-  is a bug.
+  compare three references in `clamshell/tests/`: the screens' pixel hashes, where the pad's focus goes
+  on each, and the scenario's effects. On a difference the failure prints the text diff and the paths of
+  the screens drawn, with the pad's moves drawn over a screen whose focus changed. When and how to update
+  the references is in `AGENTS.md`, "Checking".
 - `clamshell/tests/nested-compositor.py` (after `cargo build` and `cargo build -p clamshell-compositor
-  --examples`): ClamShell nested in a headless sway, which only hosts its window, with real clients: clipboard
-  isolation and persistence, the cursor, screenshots, Xwayland started on demand and after a crash, X11
-  windows, moves between the screens. `--gpu`, on a desktop with a render node and a Vulkan driver (and
-  Wayland-capable `vkcube`), requires native dmabuf submission. It prints the directory with its screenshots
-  and protocol logs.
+  --examples`): ClamShell nested in a headless sway, which only hosts its window, with real clients:
+  Wayland and X11 windows, Xwayland started on demand and after a crash, menus, the clipboard, the
+  cursor, notifications, screenshots, moves between the screens. `--gpu`, on a desktop with a render
+  node and a Vulkan driver (and Wayland-capable `vkcube`), requires native dmabuf submission. It prints
+  the directory with its screenshots and protocol logs.
 - `clamshell/tests/picture-scaling.py` (after `cargo build` and `cargo build -p clamshell-compositor
   --example pattern-game`): test games launched from shelf, their pictures checked to fill the top screen
-  at each Resolution and Scaling. Both need sway (as the host), Xwayland and grim; the first also foot.
-- `tools/vm/vm-test.sh`: the VM suite end to end, about twenty minutes; before pushing. The virtual Thor is
-  `tools/vm/vm.py` (QEMU/KVM, both screens, a fake controller with a gyro and rumble, simulated Wi-Fi and
-  Bluetooth; `tools/vm/vm.py --help`), and its checks `tools/vm/vm-checks.py` (`--list`). Its session is
-  the device's, `clamshell.service` (the VM's build, `CLAMSHELL_DEVICE=vm`) started by the repository's
-  thor-session: `vm.py restart` ends it for the autologin to start again, and as the device's session it
-  sleeps when idle (`vm.py wake`).
-
-Relative-pointer and pointer-lock behaviour is tested headless by injecting relative input, independent
-of the nested host. The pinned winit backend is absolute-only, so nested mode omits relative-pointer
-and pointer-constraints globals; the DRM backend has them, from libinput. A winit raw-motion forwarding
-patch is being prepared upstream separately. Builds and CI use the pinned dependency without a local
-Cargo source override.
-
-For window diagnostics, `clamshell ctl window events /tmp/window-events.json` exports the windows and the
-last 256 window inputs. `clamshell_compositor::trace::Recording::replay` checks the recording against a
-state fixture with the matching library, rules and launch context.
-
-The screenshot chord or `clamshell ctl screenshot` captures the compositor's scene and saves it through
-the system worker. The nested compositor test checks this export and continued rendering afterward.
+  at each Resolution and Scaling. Both need sway (as the host), Xwayland and grim; the first also foot,
+  dbus-daemon and gdbus, the second a C compiler and SDL 3.
+- `tools/vm/vm-test.sh`: the VM suite end to end, about twenty minutes, for what nothing else can check.
+  The virtual Thor is `tools/vm/vm.py` (QEMU/KVM, both screens, a fake controller with a gyro and rumble,
+  simulated Wi-Fi and Bluetooth; `tools/vm/vm.py --help`), and its checks `tools/vm/vm-checks.py`
+  (`--list`). Its session is the device's, `clamshell.service` (the VM's build, `CLAMSHELL_DEVICE=vm`)
+  started by the repository's thor-session: `vm.py restart` ends it for the autologin to start again, and
+  as the device's session it sleeps when idle (`vm.py wake`).
 
 ## The device's system
 

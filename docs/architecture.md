@@ -31,13 +31,13 @@ readings, ticks, windows, units ─▶ Event ───┤
 | Crate | Role |
 |---|---|
 | `crates/state` | the state and its rules; events in, effects out; no I/O, no threads |
-| `crates/system` | a thread per outside concern (systemd and launches, the controller, Wi-Fi, Bluetooth, sound, storage, files, ...), each turning effects into actions and what it sees into events |
-| `crates/ui` | the UI without a backend (`ui::Core`): owns `State`, draws the views into pixmaps, turns input into events |
+| `crates/system` | a thread per outside concern (systemd and launches, the controller, Wi-Fi, Bluetooth, sound, storage, files, ...), each turning effects into actions and what it sees into events; the game library read from disk |
+| `crates/ui` | the UI without a backend (`ui::Core`): owns `State`, draws the views into pixmaps on the CPU (tiny-skia, fontdue, the built-in Noto Sans), turns input into events |
 | `crates/compositor` | the Wayland compositor (Smithay): hosts the UI and runs the event loop; the screens through DRM and libinput (`--drm`) or a window on a desktop (`--nested`), the windows, Xwayland |
-| `crates/device` | facts the hardware can't announce: the screens' connectors and rotation, the panels, the fan, the gyro |
-| `crates/library` | the game library's model, sorting and parsing, without disk access |
-| `crates/fan` | the fan daemon, a separate system service, and the small library with its mode protocol |
-| `src/` | the program: starts the threads, connects effects to them, the command line and the control pipe |
+| `crates/device` | facts the hardware can't announce: the screens' connectors and rotation, the panels, charging, the fan's curves (`fan.rs`), the gyro, the controls (`docs/device-profiles.md`) |
+| `crates/library` | the game library's model (entries, groups, tabs), sorting, name patterns, and the parts of Steam's formats that need no disk |
+| `crates/fan` | the fan daemon `clamshell-fan`, a system service setting the fan's speed from the temperatures by the curve of the mode the Fan setting picks, and the small library with its mode protocol (`clamshell_fan_mode`) |
+| `src/` | the program: starts the threads, connects effects to them, the command line, the control pipe and the snapshots |
 
 The UI and the system crate don't depend on each other: the binary hands the compositor a closure that
 passes each effect to the system crate's dispatcher.
