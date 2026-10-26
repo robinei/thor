@@ -364,7 +364,7 @@ impl Server {
                 surface
                     .wl_surface()
                     .client()
-                    .and_then(|c| c.get_credentials(&self.dh).ok())
+                    .and_then(|c| c.get_credentials(&self.dh).inspect_err(|e| log::warn!("compositor: window {id}: its client's process unknown: {e}")).ok())
                     .and_then(|c| u32::try_from(c.pid).ok())
                     .map(|pid| (self.identify)(pid))
                     .unwrap_or_default()
@@ -412,8 +412,8 @@ impl Server {
         if !client.opened {
             let mut facts = self.facts(&toplevel, id);
             let colour = facts.colour.as_ref().map_or("unspecified".to_string(), |c| format!("{:?} {:?}", c.primaries, c.transfer));
-            log::info!("compositor: window {id} opens: {:?} {:?}, focused {}, colour {colour}", facts.app_id, facts.title, facts.focused);
             facts.focused = self.core.state().session().opening_focus(&facts);
+            log::info!("compositor: window {id} opens: {:?} {:?}, focused {}, colour {colour}", facts.app_id, facts.title, facts.focused);
             self.core.handle(WindowEvent::Opened(facts).into());
             if let Some(client) = self.windows.get_mut(index) {
                 client.opened = true;
@@ -603,7 +603,12 @@ impl Server {
     /// game starts.
     pub(crate) fn admit(&mut self, stream: std::os::unix::net::UnixStream) {
         let Some(client) = insert_client(&mut self.dh, stream) else { return };
-        let process = client.get_credentials(&self.dh).ok().and_then(|c| u32::try_from(c.pid).ok()).map(|pid| (self.identify)(pid));
+        let process = client
+            .get_credentials(&self.dh)
+            .inspect_err(|e| log::warn!("compositor: a client's process unknown, so it is taken as no game's: {e}"))
+            .ok()
+            .and_then(|c| u32::try_from(c.pid).ok())
+            .map(|pid| (self.identify)(pid));
         let game = process.as_ref().and_then(|process| self.core.state().process_game(process.unit.as_deref(), process.steam_app));
         if let Some(state) = client.get_data::<ClientState>() {
             let _ = state.game.set(game);

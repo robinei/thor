@@ -129,7 +129,7 @@ pub fn run(
     let (mut session, notifier) = LibSeatSession::new().map_err(|e| format!("drm: no seat: {e}"))?;
     let seat = session.seat();
     let gpu = smithay::backend::udev::primary_gpu(&seat)?
-        .or_else(|| smithay::backend::udev::all_gpus(&seat).ok()?.into_iter().next())
+        .or_else(|| smithay::backend::udev::all_gpus(&seat).inspect_err(|e| log::warn!("drm: listing the seat's GPUs: {e}")).ok()?.into_iter().next())
         .ok_or("drm: no GPU on the seat")?;
     log::info!("drm: {} on seat {seat}", gpu.display());
     let fd = session.open(&gpu, OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK).map_err(|e| format!("drm: {}: {e}", gpu.display()))?;
@@ -349,9 +349,9 @@ fn choose(drm: &DrmDevice, profile: &Profile, role: ScreenRole, taken: Option<cr
         // The mode the kernel set (its command line's video=, or the panel's own), else the preferred one.
         let current = info
             .current_encoder()
-            .and_then(|e| drm.get_encoder(e).ok()?.crtc())
+            .and_then(|e| drm.get_encoder(e).inspect_err(|error| log::warn!("drm: {name}: its encoder: {error}")).ok()?.crtc())
             .filter(|c| Some(*c) != taken)
-            .and_then(|c| Some((c, drm.get_crtc(c).ok()?.mode()?)));
+            .and_then(|c| Some((c, drm.get_crtc(c).inspect_err(|error| log::warn!("drm: {name}: its CRTC: {error}")).ok()?.mode()?)));
         let same_size = |mode: smithay::reexports::drm::control::Mode| info.modes().iter().filter(|m| m.size() == mode.size()).copied().collect();
         let millimetres = info.size();
         if let Some((crtc, mode)) = current {
@@ -367,7 +367,7 @@ fn choose(drm: &DrmDevice, profile: &Profile, role: ScreenRole, taken: Option<cr
         let crtc = info
             .encoders()
             .iter()
-            .filter_map(|&e| drm.get_encoder(e).ok())
+            .filter_map(|&e| drm.get_encoder(e).inspect_err(|error| log::warn!("drm: {name}: an encoder: {error}")).ok())
             .flat_map(|e| resources.filter_crtcs(e.possible_crtcs()))
             .find(|c| Some(*c) != taken)
             .ok_or_else(|| format!("drm: no CRTC for {name}"))?;

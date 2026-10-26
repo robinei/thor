@@ -3,7 +3,8 @@
 //! seconds that the loop is still turning; and a status line for `systemctl status`: what runs.
 //!
 //! If the loop stops, through a deadlock or a call that never returns, systemd restarts ClamShell after
-//! the watchdog's time. What it launched runs on in its own scopes, and the restarted ClamShell finds it.
+//! the watchdog's time. What it launched keeps its services, and the restarted ClamShell finds what still
+//! runs, though a program with a window ends with its display.
 //! Outside systemd there is no socket and nothing is sent.
 
 use std::os::unix::net::UnixDatagram;
@@ -25,7 +26,12 @@ impl Notifier {
     /// systemd's socket, if ClamShell runs as a notifying service. `NOTIFY_SOCKET` must be a path. An
     /// abstract socket (`@…`) isn't the user manager's and isn't used.
     pub fn new() -> Notifier {
-        let path = std::env::var_os("NOTIFY_SOCKET").map(std::path::PathBuf::from).filter(|p| p.is_absolute());
+        let path = std::env::var_os("NOTIFY_SOCKET").map(std::path::PathBuf::from).filter(|p| {
+            if !p.is_absolute() {
+                log::warn!("notify: NOTIFY_SOCKET {} isn't a path: systemd isn't told this is up", p.display());
+            }
+            p.is_absolute()
+        });
         let socket = path.and_then(|p| UnixDatagram::unbound().inspect_err(|e| log::warn!("notify {}: {e}", p.display())).ok().map(|s| (s, p)));
         Notifier { socket, ready: false, last: None, status: None }
     }

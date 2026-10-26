@@ -36,7 +36,8 @@ impl Socket {
                     // A dead lock owner cannot have a live listener. Leave occupied/unknown slots alone.
                     let path = directory.join(format!("X{number}"));
                     let _ = fs::remove_file(path);
-                    if fs::remove_file(&lock).is_err() {
+                    if let Err(e) = fs::remove_file(&lock) {
+                        log::warn!("compositor: X11 display :{number}'s stale lock {}: {e}; trying the next display", lock.display());
                         continue;
                     }
                     match OpenOptions::new().write(true).create_new(true).open(&lock) {
