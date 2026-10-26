@@ -175,19 +175,39 @@ pub(crate) fn on_restart(told: impl Fn(&'static str) + Send + 'static) {
 /// again: at once, then after waits that double to [`RESTART_MOST`] while it keeps panicking soon after
 /// starting. Before it runs again, [`on_restart`]'s function is told.
 pub(crate) fn restarted(name: &'static str, mut body: impl FnMut()) {
-    let mut delay = Duration::ZERO;
+    let mut backoff = Backoff::default();
     loop {
         let started = Instant::now();
         if std::panic::catch_unwind(std::panic::AssertUnwindSafe(&mut body)).is_ok() {
             return;
         }
-        let wait = if started.elapsed() >= RESTART_CALM { Duration::ZERO } else { delay };
-        delay = (wait * 2).clamp(RESTART_FIRST, RESTART_MOST);
+        let wait = backoff.after(started.elapsed());
         log::error!("{name}: panicked; starting it again in {} ms", wait.as_millis());
         thread::sleep(wait);
-        if let Some(told) = crate::os::lock(&RESTARTS).as_ref() {
-            told(name);
-        }
+        tell_restarted(name);
+    }
+}
+
+/// Tells [`on_restart`]'s function that thread `name` runs again after a panic.
+fn tell_restarted(name: &'static str) {
+    if let Some(told) = crate::os::lock(&RESTARTS).as_ref() {
+        told(name);
+    }
+}
+
+/// The wait before running again after a panic: none at first, then doubling from [`RESTART_FIRST`] to
+/// [`RESTART_MOST`] while the runs keep panicking soon after starting; none again after a calm run.
+#[derive(Debug, Default)]
+struct Backoff {
+    delay: Duration,
+}
+
+impl Backoff {
+    /// The wait after a run of `ran` that panicked.
+    fn after(&mut self, ran: Duration) -> Duration {
+        let wait = if ran >= RESTART_CALM { Duration::ZERO } else { self.delay };
+        self.delay = (wait * 2).clamp(RESTART_FIRST, RESTART_MOST);
+        wait
     }
 }
 
@@ -336,6 +356,10 @@ pub(crate) trait Service {
         false
     }
 
+    /// Called after a panic while connecting or running (the panic hook has logged it), before connecting
+    /// again: lets go of what the run held outside, which its unwinding didn't.
+    fn panicked(&mut self) {}
+
     /// Waits for the next command while the service is down, for at most `retry`. A service that has
     /// other things to answer in the meantime waits on those too.
     fn wait_while_down(&mut self, commands: &Receiver<Self::Command>, retry: Duration) -> Next<Self::Command> {
@@ -345,18 +369,25 @@ pub(crate) trait Service {
 
 /// Runs `service` until the UI or every command sender is gone. It connects and runs while the service
 /// is up. While the service is down, it waits `retry` or for a command before trying again. A panic while
-/// connecting or running (the panic hook has logged it) is taken as the service lost: it is connected
-/// again, so a thread doesn't end for good on one bad reply.
+/// connecting or running (the panic hook has logged it) doesn't end the thread: the service lets go of
+/// what the run held ([`Service::panicked`]), the UI is told as for a thread started again
+/// ([`on_restart`]), and it connects again at once, or after the waits of a run of panics ([`Backoff`]).
 pub(crate) fn supervise<S: Service>(service: &mut S, commands: &Receiver<S::Command>, retry: Duration) {
     let mut quiet = Quiet::default();
+    let mut backoff = Backoff::default();
     loop {
+        let started = Instant::now();
         let turn = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_once(service, commands, &mut quiet)));
         let told = match turn {
             Ok(Some(told)) => told,
             Ok(None) => return,
             Err(_) => {
-                log::error!("{}: panicked; connecting again", S::NAME);
-                Ok(())
+                let wait = backoff.after(started.elapsed());
+                log::error!("{}: panicked; connecting again in {} ms", S::NAME, wait.as_millis());
+                service.panicked();
+                thread::sleep(wait);
+                tell_restarted(S::NAME);
+                continue;
             }
         };
         if told.is_err() {
@@ -465,6 +496,7 @@ mod tests {
     /// A service whose first connection panics, then connects and ends.
     struct Panicky {
         connects: u32,
+        let_go: u32,
     }
 
     impl Service for Panicky {
@@ -488,14 +520,34 @@ mod tests {
         fn command_while_down(&mut self, _: ()) -> Result<(), Closed> {
             Ok(())
         }
+
+        fn panicked(&mut self) {
+            self.let_go += 1;
+        }
+    }
+
+    /// After a panic the service lets go of what the run held and is connected again at once, not after
+    /// `retry` as when it is down.
+    #[test]
+    fn a_service_that_panics_lets_go_and_is_connected_again_at_once() {
+        let (_keep, commands) = mpsc::channel();
+        let mut panicky = Panicky { connects: 0, let_go: 0 };
+        let started = Instant::now();
+        supervise(&mut panicky, &commands, Duration::from_secs(60));
+        assert_eq!(panicky.connects, 2, "connected again after the panic, then ended as it was told");
+        assert_eq!(panicky.let_go, 1);
+        assert!(started.elapsed() < Duration::from_secs(5), "{:?}", started.elapsed());
     }
 
     #[test]
-    fn a_service_that_panics_is_connected_again() {
-        let (_keep, commands) = mpsc::channel();
-        let mut panicky = Panicky { connects: 0 };
-        supervise(&mut panicky, &commands, Duration::from_millis(10));
-        assert_eq!(panicky.connects, 2, "connected again after the panic, then ended as it was told");
+    fn the_wait_after_a_panic_is_none_then_doubles_to_its_most_and_none_after_a_calm_run() {
+        let mut backoff = Backoff::default();
+        let soon = Duration::from_secs(1);
+        let waits: Vec<Duration> = (0..7).map(|_| backoff.after(soon)).collect();
+        let ms = |n: u64| Duration::from_millis(n);
+        assert_eq!(waits, [ms(0), ms(250), ms(500), ms(1000), ms(2000), ms(4000), ms(5000)]);
+        assert_eq!(backoff.after(RESTART_CALM), Duration::ZERO, "a calm run starts over");
+        assert_eq!(backoff.after(soon), RESTART_FIRST);
     }
 
     #[test]

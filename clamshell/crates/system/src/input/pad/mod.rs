@@ -385,6 +385,19 @@ impl<S: Sink> Service for PadThread<S> {
         Ok(())
     }
 
+    /// A panic ended the run: what its route held is let go (the router went with the unwinding), and Home
+    /// counts as up.
+    fn panicked(&mut self) {
+        if let Some(devices) = self.devices.as_mut()
+            && let Err(e) = devices.rest()
+        {
+            log::warn!("pad: letting go after a panic: {e}");
+        }
+        if self.sink.send(Event::HomeHeld(false)).is_err() {
+            log::debug!("pad: the UI is gone");
+        }
+    }
+
     /// No controller plugged in is a normal state.
     fn expected(e: &io::Error) -> bool {
         e.kind() == io::ErrorKind::NotFound

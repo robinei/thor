@@ -129,6 +129,8 @@ pub(crate) struct VirtualDevices {
     /// The untouched pad, with every button up and every axis at rest. It is shown while no controller is
     /// there.
     neutral: Vec<Raw>,
+    /// Every key and button of the virtual mouse and keyboard up.
+    mouse_up: Vec<Raw>,
 }
 
 impl VirtualDevices {
@@ -136,12 +138,16 @@ impl VirtualDevices {
         let mut neutral: Vec<Raw> = pad_keys(&caps, controls).map(|k| Raw::key(k, Press::Up)).collect();
         neutral.extend(pad_axes(&caps).iter().map(|(code, a)| Raw::abs(*code, rest(a))));
         neutral.push(Raw::REPORT);
-        Ok(VirtualDevices { pad: virtual_pad(&caps, controls)?, mouse: virtual_mouse()?, made_for: caps, neutral })
+        let mut mouse_up: Vec<Raw> = mouse_device_keys().into_iter().map(|k| Raw::key(k, Press::Up)).collect();
+        mouse_up.push(Raw::REPORT);
+        Ok(VirtualDevices { pad: virtual_pad(&caps, controls)?, mouse: virtual_mouse()?, made_for: caps, neutral, mouse_up })
     }
 
-    /// Puts the virtual pad at rest when the controller is gone. The pad itself stays.
+    /// Puts the virtual pad at rest and lets go of every key and button of the virtual mouse and keyboard,
+    /// when the controller is gone or its run ended in a panic. The devices themselves stay.
     pub(crate) fn rest(&mut self) -> io::Result<()> {
-        emit(&mut self.pad, &self.neutral)
+        emit(&mut self.pad, &self.neutral)?;
+        emit(&mut self.mouse, &self.mouse_up)
     }
 }
 
