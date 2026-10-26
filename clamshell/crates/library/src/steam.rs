@@ -39,8 +39,12 @@ impl Value {
 /// Parses Valve's KeyValues text (`"key" "value"`, `"key" { ... }`, `//` comments) into one block for the
 /// whole file.
 pub fn parse_vdf(text: &str) -> Value {
-    parse_block(&mut tokenize(text).into_iter().peekable())
+    parse_block(&mut tokenize(text).into_iter().peekable(), 0)
 }
+
+/// How deep blocks are read. Steam's files nest a few levels; a deeper block is skipped, so that a
+/// damaged file can't take the stack.
+const MAX_DEPTH: usize = 32;
 
 #[derive(Debug, Clone, PartialEq)]
 enum Token {
@@ -85,13 +89,14 @@ fn tokenize(text: &str) -> Vec<Token> {
     tokens
 }
 
-fn parse_block(tokens: &mut std::iter::Peekable<std::vec::IntoIter<Token>>) -> Value {
+fn parse_block(tokens: &mut std::iter::Peekable<std::vec::IntoIter<Token>>, depth: usize) -> Value {
     let mut items = Vec::new();
     while let Some(t) = tokens.next() {
         match t {
             Token::Str(key) => match tokens.next() {
                 Some(Token::Str(v)) => items.push((key, Value::Str(v))),
-                Some(Token::Open) => items.push((key, parse_block(tokens))),
+                Some(Token::Open) if depth < MAX_DEPTH => items.push((key, parse_block(tokens, depth + 1))),
+                Some(Token::Open) => skip_block(tokens),
                 _ => break,
             },
             Token::Close => break,
@@ -99,6 +104,21 @@ fn parse_block(tokens: &mut std::iter::Peekable<std::vec::IntoIter<Token>>) -> V
         }
     }
     Value::Block(items)
+}
+
+/// Skips the rest of a block whose opening brace was taken, with the blocks in it.
+fn skip_block(tokens: &mut impl Iterator<Item = Token>) {
+    let mut open = 1usize;
+    for t in tokens {
+        match t {
+            Token::Open => open += 1,
+            Token::Close => open -= 1,
+            Token::Str(_) => {}
+        }
+        if open == 0 {
+            return;
+        }
+    }
 }
 
 /// The library folders `libraryfolders.vdf` lists, in its order.
@@ -125,6 +145,15 @@ pub fn manifest(vdf: &Value) -> Option<(u32, &str)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A file nested deeper than Steam's ever are is read to its depth bound, and what follows the deep
+    /// block is still read, without the stack growing with the nesting.
+    #[test]
+    fn a_deeply_nested_file_is_read_to_a_bound() {
+        let deep = String::from("\"a\" {") + &"\"b\" {".repeat(100_000) + &"}".repeat(100_001) + " \"after\" \"yes\"";
+        let vdf = parse_vdf(&deep);
+        assert_eq!(vdf.str("after"), Some("yes"));
+    }
 
     const MANIFEST: &str = "\"AppState\"\n{\n\t\"appid\"\t\t\"1245620\"\n\t\"name\"\t\t\"ELDEN RING\"\n\t\"StateFlags\"\t\t\"4\"\n\t\"InstalledDepots\"\n\t{\n\t\t\"1245621\"\n\t\t{\n\t\t\t\"size\"\t\t\"1\"\n\t\t}\n\t}\n}\n";
 
