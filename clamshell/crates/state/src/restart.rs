@@ -38,7 +38,7 @@ impl State {
             | Thread::Browse
             | Thread::Brightness => self.sent.resend(Resend::Restarted(thread)),
             // Everything saved, written again. A play being recorded is lost.
-            Thread::Store => out.effects.extend(self.save_effects()),
+            Thread::Store => self.save_everything(out),
             Thread::Icons => self.session.find_icons_again(out),
             Thread::Files => self.shelf.files_interrupted(&mut self.pointer, self.bottom.notice_mut(), now, out),
             Thread::Freezer => self.session.freeze_again(out),
@@ -67,9 +67,9 @@ impl State {
         }
     }
 
-    /// Everything the store holds that the state saves, as saves.
-    fn save_effects(&self) -> Vec<Effect> {
-        let mut saves = vec![
+    /// Saves everything the store holds that the state saves.
+    fn save_everything(&self, out: &mut Out) {
+        out.effects.extend([
             self.prefs.save_effect(),
             self.keymapping.save_effect(),
             self.curving.save_effect(),
@@ -81,11 +81,10 @@ impl State {
             self.session.autostart_save(),
             Effect::Save(Save::TwelveHour(self.sys.twelve_hour())),
             Effect::Save(Save::Sticks(self.device.calibrations().clone())),
-        ];
+        ]);
         if !self.device.first_start() {
-            saves.push(Effect::Save(Save::FirstStartDone));
+            out.effects.push(Effect::Save(Save::FirstStartDone));
         }
-        saves
     }
 }
 

@@ -83,15 +83,12 @@ impl State {
     /// the level's own, and the named ones in order, then Default again.
     fn next_profile(&mut self, kind: ProfileKind, out: &mut Out) {
         let entry = self.panel().editing().map(|g| g.id.clone());
-        let ids: Vec<u16> = match kind {
-            ProfileKind::Keymap => profile_order(self.keymapping.keymaps(), entry.as_deref()),
-            ProfileKind::Curve => profile_order(self.curving.curves(), entry.as_deref()),
-        };
         let now = self.panel().profile_chosen(kind);
-        let i = ids.iter().position(|id| *id == now).map_or(0, |i| (i + 1) % ids.len().max(1));
-        if let Some(next) = ids.get(i) {
-            self.choose_profile(kind, *next, out);
-        }
+        let next = match kind {
+            ProfileKind::Keymap => next_profile(self.keymapping.keymaps(), entry.as_deref(), now),
+            ProfileKind::Curve => next_profile(self.curving.curves(), entry.as_deref(), now),
+        };
+        self.choose_profile(kind, next, out);
     }
 
     /// Changes `setting` where the panel edits, in the game's overrides or the global settings. It is set
@@ -166,9 +163,10 @@ impl State {
     }
 }
 
-/// The ids a profile tile steps through for `entry`'s level: Default (or Off), the level's own if it has
-/// one, then the named profiles in order.
-fn profile_order<B: Clone + Default + PartialEq>(profiles: &crate::profiles::Profiles<B>, entry: Option<&str>) -> Vec<u16> {
+/// The profile after `now` that a profile tile steps to for `entry`'s level, through Default (or Off,
+/// 0), the level's own if it has one, then the named profiles in order, and back to Default.
+fn next_profile<B: Clone + Default + PartialEq>(profiles: &crate::profiles::Profiles<B>, entry: Option<&str>, now: u16) -> u16 {
     let own = entry.and_then(|e| profiles.own_of(e)).map(|p| p.id);
-    std::iter::once(0).chain(own).chain(profiles.named().map(|p| p.id)).collect()
+    let order = || std::iter::once(0).chain(own).chain(profiles.named().map(|p| p.id));
+    order().position(|id| id == now).and_then(|i| order().nth(i + 1)).unwrap_or(0)
 }

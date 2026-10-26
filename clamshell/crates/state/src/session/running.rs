@@ -647,7 +647,8 @@ impl Session {
         let runner = g.runner.as_ref().map(|r| &*r.key);
         let values = settings.of_in(&entry, runner.as_slice());
         // The cap's variables first, so the entry's own may override them.
-        let mut env = cap_env(&values);
+        let mut env = Vec::new();
+        cap_env(&values, &mut env);
         settings.env_in(&entry, runner.as_slice(), &mut env);
         // If its runner, and so its container, is paused, it is resumed first.
         self.resume_runner_of(&entry, library, out);
@@ -738,11 +739,10 @@ impl Session {
 /// cap: in mailbox or immediate it wouldn't. Mesa's Vulkan WSI, and GL's swap interval kept at 1 or more
 /// (`vblank_mode` 3). Set at launch, so a cap set while the game runs reaches only games presenting in
 /// FIFO already.
-fn cap_env(values: &crate::settings::Values) -> Vec<(String, String)> {
-    if values.get(crate::settings::Setting::FpsCap) == 0 {
-        return Vec::new();
+fn cap_env(values: &crate::settings::Values, env: &mut Vec<(String, String)>) {
+    if values.get(crate::settings::Setting::FpsCap) != 0 {
+        env.extend([("MESA_VK_WSI_PRESENT_MODE".into(), "fifo".into()), ("vblank_mode".into(), "3".into())]);
     }
-    vec![("MESA_VK_WSI_PRESENT_MODE".into(), "fifo".into()), ("vblank_mode".into(), "3".into())]
 }
 
 #[cfg(test)]
