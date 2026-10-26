@@ -145,7 +145,7 @@ pub fn detached(name: &str, body: impl FnOnce() + Send + 'static) -> io::Result<
 
 /// Starts a long-lived thread that takes no commands, started again after a panic ([`restarted`]). It
 /// ends when `body` returns, usually when the UI is gone.
-pub(crate) fn lasting(name: &'static str, mut body: impl FnMut() + Send + 'static) -> io::Result<()> {
+pub fn lasting(name: &'static str, mut body: impl FnMut() + Send + 'static) -> io::Result<()> {
     start(name, move || restarted(name, &mut body)).map(drop)
 }
 

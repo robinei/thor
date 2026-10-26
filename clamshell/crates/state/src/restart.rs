@@ -49,8 +49,10 @@ impl State {
             Thread::BluetoothConnect => {}
             // Nothing the state sent them stands: they read the system afresh as they start (the units
             // are listed again, input devices and the clipboard watched again, the saved clipboard
-            // offered again), or carry out one command at a time (a sound, the touchpad's fingers).
+            // offered again), or carry out one command at a time (a sound, the touchpad's fingers). The
+            // control pipe's line being read is lost.
             Thread::PadDevices
+            | Thread::Control
             | Thread::Tray
             | Thread::Sound
             | Thread::Units
