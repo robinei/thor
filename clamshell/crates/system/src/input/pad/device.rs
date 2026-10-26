@@ -7,7 +7,7 @@ use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
 use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, FFEffectCode, InputEvent, InputId, KeyCode, RelativeAxisCode, UinputAbsSetup};
 
-use super::remap::{AYN_KEY, BACK_KEY};
+use super::codes::{AYN_KEY, BACK_KEY};
 use super::route::{Axis, PadSnapshot, Ranges, mouse_device_keys};
 use crate::os::evdev::device::{self, DeviceSpec};
 use crate::os::evdev::{Press, Range, Raw, keyset};

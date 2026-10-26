@@ -4,6 +4,7 @@ use crate::input::pad::route::{Axis, PadRouter};
 use crate::os::evdev::Range;
 use clamshell_state::PadRoute;
 use clamshell_state::bottom::keyboard::{Key, Named};
+use clamshell_state::keymap::{Button, MouseButton};
 
 const STICK_MAX: i32 = 32767;
 

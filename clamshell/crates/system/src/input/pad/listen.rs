@@ -9,7 +9,7 @@ use clamshell_state::Event;
 use clamshell_state::keymap::{Dir, Input, Side};
 use evdev::AbsoluteAxisCode;
 
-use super::remap::{HALF, button_of, stick_axes, trigger_axis};
+use super::codes::{HALF, button_of, stick_axes, trigger_axis};
 use super::route::{Mapping, Out, Ranges};
 use crate::os::evdev::{Press, Raw};
 

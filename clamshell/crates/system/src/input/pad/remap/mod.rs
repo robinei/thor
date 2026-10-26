@@ -35,7 +35,7 @@
 
 use std::time::{Duration, Instant};
 
-use clamshell_state::keymap::{Actuation, Binding, Button, Chord, Dir, Input, Keymap, Kind, Layer, MouseButton, Output, PadOut, Side};
+use clamshell_state::keymap::{Actuation, Binding, Chord, Dir, Input, Keymap, Kind, Layer, Output, PadOut, Side};
 use evdev::{AbsoluteAxisCode, KeyCode, RelativeAxisCode};
 
 use super::motion::Rate;
@@ -44,168 +44,17 @@ use super::rumble::Buzz;
 use crate::input::keyboard::{MODIFIERS, chord_keys};
 use crate::os::evdev::{Press, Raw};
 
-/// A stick or trigger counts as pushed, as a direction or a button, past this.
-pub(crate) const HALF: f32 = 0.5;
-/// Pointer speed of a stick at full deflection in pixels per second, at speeds 0, 25, 50, 75 and 100.
-/// Speeds in between are in proportion. Below full deflection, the binding's deadzone and curve apply.
-const STICK_POINTER: [f32; 5] = [500.0, 900.0, 1400.0, 2100.0, 3000.0];
-/// The gyro on the pointer: pixels per degree turned, at the same speeds.
-const GYRO_POINTER: [f32; 5] = [6.0, 10.0, 15.0, 22.0, 32.0];
-/// The gyro on a stick: degrees per second for full deflection, at the same speeds.
-const GYRO_STICK: [f32; 5] = [240.0, 160.0, 100.0, 60.0, 35.0];
-/// Which way tilting the device like a steering wheel (roll) turns compared with rotating it (yaw), when
-/// a binding turns by tilting. The Thor's sign is still to be tested on the device
-/// (docs/thor-gameplan.md).
-const ROLL_TURNS: f32 = 1.0;
+mod actuate;
+mod analog;
+
+pub(crate) use super::codes::*;
+use actuate::*;
+use analog::*;
+
 /// How often a stick on the pointer moves it.
 const POINTER_EVERY: Duration = Duration::from_millis(8);
 /// High-resolution wheel units per notch, by the kernel's convention.
 const NOTCH: i32 = 120;
-/// A second press within this of letting go makes a double.
-const DOUBLE_WINDOW: Duration = Duration::from_millis(300);
-/// A press that is decided only after letting go, because the input has a hold or a double, is sent as
-/// a tap this long.
-const TAP: Duration = Duration::from_millis(60);
-
-/// Where a digital input's press is.
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Phase {
-    Up,
-    /// Down since then, and not yet known to be a press, a hold or a double.
-    Deciding(Instant),
-    /// Let go then after a short press. A second press soon makes a double.
-    Waiting(Instant),
-    /// An actuation that is on while held, or for a tap until `until`.
-    On {
-        act: Actuation,
-        until: Option<Instant>,
-    },
-}
-
-/// A binding's on and off: whether its actuation is on now, its toggle's state, and since when it has
-/// been on. Turbo's beat counts from then.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-struct Beat {
-    raw: bool,
-    latched: bool,
-    since: Option<Instant>,
-}
-
-impl Beat {
-    /// Follows the actuation's current state, `raw`. A toggle flips each time the actuation starts.
-    fn follow(&mut self, raw: bool, toggle: bool, now: Instant) {
-        let rising = raw && !self.raw;
-        self.raw = raw;
-        if toggle {
-            if rising {
-                self.latched = !self.latched;
-                self.since = self.latched.then_some(now);
-            }
-        } else {
-            self.latched = false;
-            if rising {
-                self.since = Some(now);
-            }
-        }
-    }
-
-    /// Whether the output is on: the actuation's or the toggle's state, beating at `turbo` per second.
-    fn on(&self, b: &Binding, now: Instant) -> bool {
-        let on = if b.toggle { self.latched } else { self.raw };
-        match (on, b.turbo, self.since) {
-            (false, ..) => false,
-            (true, 0, _) | (true, _, None) => true,
-            (true, rate, Some(since)) => (now.saturating_duration_since(since).as_nanos() / half_beat(rate)).is_multiple_of(2),
-        }
-    }
-
-    /// When its turbo next turns on or off. None if there is no turbo or it is off.
-    fn next_beat(&self, b: &Binding, now: Instant) -> Option<Instant> {
-        let on = if b.toggle { self.latched } else { self.raw };
-        let since = self.since.filter(|_| on && b.turbo > 0)?;
-        let half = half_beat(b.turbo);
-        let n = now.saturating_duration_since(since).as_nanos() / half + 1;
-        Some(since + Duration::from_nanos(u64::try_from(n * half).unwrap_or(u64::MAX)))
-    }
-}
-
-/// Half a turbo beat at `rate` per second, in nanoseconds. The output is on for one half and off for the
-/// other.
-fn half_beat(rate: u8) -> u128 {
-    500_000_000 / u128::from(rate.max(1))
-}
-
-/// A digital input's actuations: the phase of its press, and each actuation's beat.
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Actuator {
-    input: Input,
-    phase: Phase,
-    beats: [Beat; 4],
-    /// When the phase moves on by itself: at a hold's time, a double's window or a tap's end.
-    due: Option<Instant>,
-}
-
-impl Actuator {
-    fn new(input: Input) -> Actuator {
-        Actuator { input, phase: Phase::Up, beats: [Beat::default(); 4], due: None }
-    }
-
-    /// Moves the phase on, given whether the input is on at `now`, its hold's time if it has a hold's
-    /// binding, and whether it has a double's.
-    fn step(&mut self, on: bool, hold: Option<Duration>, double: bool, now: Instant) {
-        // A press during a tap starts a new one, so this goes round twice at most.
-        for _ in 0..2 {
-            let next = match self.phase {
-                Phase::Up if on && hold.is_none() && !double => Phase::On { act: Actuation::Press, until: None },
-                Phase::Up if on => Phase::Deciding(now),
-                Phase::Up => Phase::Up,
-                Phase::Deciding(at) if on => match hold {
-                    Some(t) if now >= at + t => Phase::On { act: Actuation::Hold, until: None },
-                    Some(_) => Phase::Deciding(at),
-                    None if double && now < at + DOUBLE_WINDOW => Phase::Deciding(at),
-                    // Held past the window with no hold, it is a press after all.
-                    None => Phase::On { act: Actuation::Press, until: None },
-                },
-                Phase::Deciding(_) if double => Phase::Waiting(now),
-                Phase::Deciding(_) => Phase::On { act: Actuation::Press, until: Some(now + TAP) },
-                Phase::Waiting(_) if on => Phase::On { act: Actuation::Double, until: None },
-                Phase::Waiting(at) if now >= at + DOUBLE_WINDOW => Phase::On { act: Actuation::Press, until: Some(now + TAP) },
-                Phase::Waiting(at) => Phase::Waiting(at),
-                Phase::On { until: None, .. } if !on => Phase::Up,
-                Phase::On { until: Some(_), .. } if on => {
-                    self.phase = Phase::Up;
-                    continue;
-                }
-                Phase::On { until: Some(t), .. } if now >= t => Phase::Up,
-                p @ Phase::On { .. } => p,
-            };
-            self.phase = next;
-            break;
-        }
-        self.due = match self.phase {
-            Phase::Deciding(at) => Some(hold.map_or(at + DOUBLE_WINDOW, |t| at + t)),
-            Phase::Waiting(at) => Some(at + DOUBLE_WINDOW),
-            Phase::On { until, .. } => until,
-            Phase::Up => None,
-        };
-    }
-
-    /// Whether `act` is on now, as the phase says.
-    fn actuated(&self, act: Actuation) -> bool {
-        matches!(self.phase, Phase::On { act: a, .. } if a == act)
-    }
-
-    fn beat(&self, act: Actuation) -> Beat {
-        self.beats.get(act as usize).copied().unwrap_or_default()
-    }
-}
-
-/// The normalised Back role. Physical codes are translated from the device profile before routing.
-pub(crate) const BACK_KEY: KeyCode = KeyCode(clamshell_device::input::BACK_ROLE);
-
-/// The normalised auxiliary-button role, emitted by the profile's GPIO-key reader.
-pub(crate) const AYN_KEY: KeyCode = KeyCode(clamshell_device::input::AUXILIARY_ROLE);
-
 /// A binding to a layer that is on. It holds the input and actuation it belongs to, and the binding as it
 /// was when it came on. That binding is kept while on, whatever the layers since make of the input. It
 /// also holds how the layer is on, and the first input the layer maps that acted while it was on, which
@@ -284,127 +133,6 @@ impl Gathered {
             _ => {}
         }
     }
-}
-
-/// The controller's codes for a button. The back buttons go by several names.
-fn button_codes(b: Button) -> &'static [KeyCode] {
-    match b {
-        Button::A => &[KeyCode::BTN_SOUTH],
-        Button::B => &[KeyCode::BTN_EAST],
-        Button::X => &[KeyCode::BTN_WEST],
-        Button::Y => &[KeyCode::BTN_NORTH],
-        Button::LB => &[KeyCode::BTN_TL],
-        Button::RB => &[KeyCode::BTN_TR],
-        Button::View => &[KeyCode::BTN_SELECT],
-        Button::Menu => &[KeyCode::BTN_START],
-        Button::LS => &[KeyCode::BTN_THUMBL],
-        Button::RS => &[KeyCode::BTN_THUMBR],
-        Button::Back => &[BACK_KEY],
-        Button::Ayn => &[AYN_KEY],
-        // BTN_TRIGGER_HAPPY1-4 are xpad's paddles, and BTN_GRIPL/R/L2/R2 newer kernels' back buttons.
-        Button::L4 => &[KeyCode::BTN_TRIGGER_HAPPY1, KeyCode(0x224)],
-        Button::R4 => &[KeyCode::BTN_TRIGGER_HAPPY2, KeyCode(0x225)],
-        Button::L5 => &[KeyCode::BTN_TRIGGER_HAPPY3, KeyCode(0x226)],
-        Button::R5 => &[KeyCode::BTN_TRIGGER_HAPPY4, KeyCode(0x227)],
-    }
-}
-
-/// The code a button has on the pad games see. That is its own code, except that AYN is Guide there.
-fn pad_code(b: Button) -> Option<KeyCode> {
-    match b {
-        Button::Ayn => Some(KeyCode::BTN_MODE),
-        b => button_codes(b).first().copied(),
-    }
-}
-
-/// The button a controller's code is, if it is one.
-pub(crate) fn button_of(code: KeyCode) -> Option<Button> {
-    Button::ALL.into_iter().find(|b| button_codes(*b).contains(&code))
-}
-
-/// The D-pad as buttons, for controllers without a hat.
-fn dpad_code(d: Dir) -> KeyCode {
-    match d {
-        Dir::Up => KeyCode::BTN_DPAD_UP,
-        Dir::Down => KeyCode::BTN_DPAD_DOWN,
-        Dir::Left => KeyCode::BTN_DPAD_LEFT,
-        Dir::Right => KeyCode::BTN_DPAD_RIGHT,
-    }
-}
-
-pub(crate) fn stick_axes(s: Side) -> (AbsoluteAxisCode, AbsoluteAxisCode) {
-    match s {
-        Side::Left => (AbsoluteAxisCode::ABS_X, AbsoluteAxisCode::ABS_Y),
-        Side::Right => (AbsoluteAxisCode::ABS_RX, AbsoluteAxisCode::ABS_RY),
-    }
-}
-
-pub(crate) fn trigger_axis(s: Side) -> AbsoluteAxisCode {
-    match s {
-        Side::Left => AbsoluteAxisCode::ABS_Z,
-        Side::Right => AbsoluteAxisCode::ABS_RZ,
-    }
-}
-
-const HAT: [AbsoluteAxisCode; 2] = [AbsoluteAxisCode::ABS_HAT0X, AbsoluteAxisCode::ABS_HAT0Y];
-
-fn mouse_code(m: MouseButton) -> KeyCode {
-    match m {
-        MouseButton::Left => KeyCode::BTN_LEFT,
-        MouseButton::Right => KeyCode::BTN_RIGHT,
-        MouseButton::Middle => KeyCode::BTN_MIDDLE,
-        MouseButton::Back => KeyCode::BTN_SIDE,
-        MouseButton::Forward => KeyCode::BTN_EXTRA,
-    }
-}
-
-/// The mouse buttons a keymap may press. The virtual mouse has them.
-pub(crate) fn mouse_codes() -> [KeyCode; 5] {
-    MouseButton::ALL.map(mouse_code)
-}
-
-/// Whether the remapping handles this event. If not, it passes through.
-pub(crate) fn known(raw: Raw) -> bool {
-    if let Some((code, _)) = raw.as_key() {
-        return button_of(code).is_some() || Dir::ALL.into_iter().any(|d| dpad_code(d) == code);
-    }
-    raw.as_abs().is_some_and(|(axis, _)| {
-        HAT.contains(&axis) || Side::ALL.into_iter().any(|s| trigger_axis(s) == axis || stick_axes(s).0 == axis || stick_axes(s).1 == axis)
-    })
-}
-
-/// The value for a speed from 0 to 100 in a table of five values, for speeds 0, 25, 50, 75 and 100.
-/// Speeds in between are in proportion.
-fn step(table: &[f32; 5], speed: u8) -> f32 {
-    let at = f32::from(speed.min(100)) / 25.0;
-    let i = (at.floor() as usize).min(3);
-    let (Some(a), Some(b)) = (table.get(i), table.get(i + 1)) else {
-        return 1.0;
-    };
-    a + (b - a) * (at - i as f32)
-}
-
-/// A value from 0 to 1 with its deadzone and full point applied, both in percent. It is 0 up to the
-/// deadzone, 1 from the full point, and stretched in between.
-fn range(v: f32, deadzone: u8, full: u8) -> f32 {
-    let (dz, full) = (f32::from(deadzone) / 100.0, f32::from(full.max(deadzone.saturating_add(1))) / 100.0);
-    ((v - dz) / (full - dz).max(0.01)).clamp(0.0, 1.0)
-}
-
-/// A stick's position, each axis -1 to 1 with y down, tuned by its binding. The axes are inverted as set,
-/// and the distance from the middle goes through the deadzone, the full point and the curve. The
-/// direction is kept.
-fn tune_stick((x, y): (f32, f32), b: &Binding) -> (f32, f32) {
-    let (x, y) = (if b.invert_x { -x } else { x }, if b.invert_y { -y } else { y });
-    if b.deadzone == 0 && b.full >= 100 && b.curve == 0 {
-        return (x, y);
-    }
-    let len = x.hypot(y);
-    if len <= 0.0 {
-        return (0.0, 0.0);
-    }
-    let tuned = range(len.min(1.0), b.deadzone, b.full).powf(1.0 + 2.0 * f32::from(b.curve) / 100.0);
-    (x / len * tuned, y / len * tuned)
 }
 
 /// What every output should be now. The default is the pad at rest: nothing pressed, nothing moved.
@@ -1120,44 +848,6 @@ fn chord_down(keys: &mut Vec<KeyCode>, chord: &Chord) {
             keys.push(k);
         }
     }
-}
-
-/// The signs for the gyro's motion across and up/down, inverted as its binding says.
-fn gyro_signs(b: &Binding) -> (f32, f32) {
-    (if b.invert_x { -1.0 } else { 1.0 }, if b.invert_y { -1.0 } else { 1.0 })
-}
-
-/// The gyro's turning in degrees per second, inverted as the binding says, and tightened. Across is yaw,
-/// plus roll when the binding turns by tilting, and up and down is pitch. Turning slower than the
-/// tightening is scaled down in proportion, so half the tightening turns at a quarter. That way a hand's
-/// tremor fades without a hard edge.
-fn gyro_turn(b: &Binding, r: Rate) -> (f32, f32) {
-    let (sx, sy) = gyro_signs(b);
-    let across = if b.twist { r.yaw + ROLL_TURNS * r.roll } else { r.yaw };
-    let (x, y) = (sx * across, sy * r.pitch);
-    let tight = f32::from(b.tighten) / 10.0;
-    let speed = x.hypot(y);
-    let k = if tight > 0.0 && speed < tight { speed / tight } else { 1.0 };
-    (x * k, y * k)
-}
-
-/// The gyro's acceleration: 1 for slow turns, rising to 3 at 100 % for turns as fast as its "fastest
-/// at".
-fn gyro_gain(b: &Binding, (x, y): (f32, f32)) -> f32 {
-    let at = f32::from(b.accel_at.max(1));
-    1.0 + 2.0 * f32::from(b.accel) / 100.0 * (x.hypot(y) / at).min(1.0)
-}
-
-/// A stick's deflection, each axis -1 to 1, kept within the circle and starting at `min` percent. That
-/// way a game's own stick deadzone doesn't swallow small motion.
-fn stick_from(x: f32, y: f32, min: u8) -> (f32, f32) {
-    let m = x.hypot(y);
-    if m <= 0.0 {
-        return (0.0, 0.0);
-    }
-    let min = f32::from(min) / 100.0;
-    let to = min + (1.0 - min) * m.min(1.0);
-    (x / m * to, y / m * to)
 }
 
 #[cfg(test)]

@@ -16,8 +16,8 @@
 //!
 //! The home button (BTN_MODE) is ours and goes to the program as [`Event::Home`]. Holding it and then
 //! pressing Back with a game in front gives the game's Guide (see [`route`]). The Back button
-//! ([`remap::BACK_KEY`]) is a keymap input in the game and means back on ClamShell's screens. The AYN
-//! button ([`remap::AYN_KEY`]) is on the Thor's GPIO keys and is read alongside the controller
+//! ([`codes::BACK_KEY`]) is a keymap input in the game and means back on ClamShell's screens. The AYN
+//! button ([`codes::AYN_KEY`]) is on the Thor's GPIO keys and is read alongside the controller
 //! ([`device::AuxiliaryKey`]). It is also a keymap input in the game, and Guide by default, as on the pad.
 //!
 //! The virtual devices outlive the controller. If it is unplugged or fails, the pad stays, at rest,
@@ -26,6 +26,7 @@
 
 mod calibrate;
 mod calibrator;
+mod codes;
 mod device;
 mod listen;
 pub(crate) mod motion;
