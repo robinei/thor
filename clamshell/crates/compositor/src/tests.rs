@@ -311,7 +311,7 @@ fn an_xdg_window_is_placed_and_configured_before_its_first_buffer() {
 
 #[test]
 fn a_windows_presentation_is_worked_out_again_only_when_the_state_changes() {
-    use clamshell_state::session::presentation::{WindowLayout, WindowRole};
+    use clamshell_state::presentation::{WindowLayout, WindowRole};
     let (mut display, mut server) = ServerBuilder::new().started();
     let client = spawn_client(&mut display, launched(), |globals, mut queue, steps| {
         let _window = open_toplevel(&globals, &mut queue, &mut Client::default(), "test", None);

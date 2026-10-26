@@ -603,7 +603,7 @@ then go nowhere, logged once (system crate, `a_thread_that_keeps_panicking_soon_
 The compositor's side of the windows: `windows.rs` (facts, configure, the presentation cache, titles),
 `handlers.rs` (the xdg-shell and commit callbacks), `geometry.rs` (one transform for drawing and input),
 `input.rs` (`hit`, `ui_at`), `render.rs`, `server.rs` (its turn, `frame`, `reject_client`), `clients.rs`,
-`trace.rs`; in the state, `session/presentation.rs` (the presentation policy) and `Session::opening_focus`.
+`trace.rs`; in the state, `presentation/` (the presentation policy) and `Session::opening_focus`.
 They run the same way under the nested host (`nested.rs`) and the DRM host (`drm.rs`). The state's side of
 the same windows is under Session, "Window lifecycle and placement".
 
@@ -648,7 +648,7 @@ A dialog of a window on the bottom screen is placed on the top screen
 (`a_dialog_of_a_window_below_shows_on_top_while_its_parent_stays_below`; the compositor test above checks it
 with a real fixed-size child).
 
-### Presentation and geometry (session/presentation.rs, geometry.rs)
+### Presentation and geometry (state/presentation/, geometry.rs)
 
 The state gives each window a presentation: a layout (Fullscreen or Centred) and a scale (Fit, Integer,
 Stretch, Native). With the Size setting at Default, a main window (no parent, role Normal) fills the

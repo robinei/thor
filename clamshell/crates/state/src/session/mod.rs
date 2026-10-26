@@ -9,7 +9,6 @@ pub mod enqueue;
 pub(crate) mod found;
 mod front;
 pub mod instance;
-pub mod presentation;
 pub mod program;
 pub(crate) mod running;
 pub mod tray;

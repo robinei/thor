@@ -19,6 +19,8 @@
 //! - [`idle`]: the screens dimmed and off, and sleep, with no input ([`Idle`]);
 //! - [`status`]: the system readings ([`Sys`]), covering status, metrics, the battery and the time;
 //! - [`notifications`]: the desktop notifications shown over the bottom screen ([`Notifications`]);
+//! - [`presentation`]: what the compositor said of the screens and Xwayland, and the window presentation
+//!   policy;
 //! - [`keymap`]: keymaps and their screens;
 //! - [`nav`]: focus and presses ([`Pointer`]), the lists, and the pad's routing ([`Pad`]);
 //! - [`kit`]: generic parts the areas build on, which know nothing about them.
@@ -62,6 +64,7 @@ pub mod levels;
 pub mod nav;
 pub mod notifications;
 pub(crate) mod out;
+pub mod presentation;
 pub mod profiles;
 pub mod radios;
 #[cfg(test)]
@@ -186,7 +189,7 @@ pub struct State {
     /// The keymaps and their screens (see [`crate::keymap::screens`]).
     keymapping: Keymapping,
     curving: crate::curve::screens::Curving,
-    presentation: crate::session::presentation::Presentation,
+    presentation: crate::presentation::Presentation,
     /// Where the lists but shelf are scrolled.
     scrolls: Scrolls,
     clock: Clock,
@@ -312,7 +315,7 @@ impl State {
         &self.keymapping
     }
 
-    pub fn presentation(&self) -> &crate::session::presentation::Presentation {
+    pub fn presentation(&self) -> &crate::presentation::Presentation {
         &self.presentation
     }
 

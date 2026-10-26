@@ -2,10 +2,8 @@
 //! hints, type, state, protocols) read into the window facts the state knows, the same as a Wayland window's.
 //! An app's X11 quirk is fixed here, in the translation, and tested with its properties as input.
 
-use clamshell_state::session::{
-    presentation::{WindowLimits, WindowRole},
-    windows::WindowFacts,
-};
+use clamshell_state::presentation::{WindowLimits, WindowRole};
+use clamshell_state::session::windows::WindowFacts;
 use x11rb_protocol::protocol::xproto::{AtomEnum, GetPropertyReply};
 
 pub(super) const NAMES: &[&str] = &[

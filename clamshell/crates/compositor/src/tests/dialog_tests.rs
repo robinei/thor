@@ -1,7 +1,7 @@
 //! A toplevel marked a dialog by `xdg_dialog_v1` has the dialog role, also when marked after it opened.
 
 use super::*;
-use clamshell_state::session::presentation::WindowRole;
+use clamshell_state::presentation::WindowRole;
 use smithay::reexports::wayland_protocols::xdg::dialog::v1::client::{xdg_dialog_v1, xdg_wm_dialog_v1};
 
 delegate_noop!(Client: ignore xdg_wm_dialog_v1::XdgWmDialogV1);

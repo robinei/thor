@@ -435,7 +435,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             };
             // Some through Xwayland, some of those a dialog, a splash or a utility, as their properties say.
             if rng.one_in(3) {
-                use crate::session::presentation::WindowRole;
+                use crate::presentation::WindowRole;
                 window.x11 = true;
                 window.role = *rng.pick(&[WindowRole::Normal, WindowRole::Dialog, WindowRole::Splash, WindowRole::Utility])?;
                 if let Some(kept) = w.windows.iter_mut().find(|k| k.id == window.id) {
@@ -729,7 +729,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 5 => Event::HomeHeld(rng.one_in(2)),
                 6 => Event::PadActive,
                 7 => {
-                    use crate::session::presentation::{WindowLimits, WindowRole};
+                    use crate::presentation::{WindowLimits, WindowRole};
                     let mut window = window;
                     window.limits = if rng.one_in(2) { WindowLimits { min: (640, 480), max: (640, 480) } } else { WindowLimits::default() };
                     window.colour = rng

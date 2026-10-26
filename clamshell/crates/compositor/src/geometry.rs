@@ -3,10 +3,8 @@
 //! configured to. Drawing and input use the same [`Geometry`], so a touch lands where the picture is drawn,
 //! and the black around a window is no window's.
 
-use clamshell_state::session::{
-    presentation::{WindowLayout, WindowPresentation, WindowScale},
-    windows::WindowFacts,
-};
+use clamshell_state::presentation::{WindowLayout, WindowPresentation, WindowScale};
+use clamshell_state::session::windows::WindowFacts;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -99,7 +97,7 @@ pub(crate) fn configure_size(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use clamshell_state::{session::presentation::WindowLimits, settings::Size};
+    use clamshell_state::{presentation::WindowLimits, settings::Size};
     #[test]
     fn fitting_preserves_aspect_and_uses_the_same_inverse_for_input() {
         let viewport = Rectangle::from_size((960, 540).into());

@@ -30,8 +30,8 @@ pub(crate) struct ClientWindow {
 /// ([`Server::sync_windows`]), not on every frame and commit.
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct Shown {
-    pub presentation: Option<clamshell_state::session::presentation::WindowPresentation>,
-    pub clarity: clamshell_state::session::presentation::Clarity,
+    pub presentation: Option<clamshell_state::presentation::WindowPresentation>,
+    pub clarity: clamshell_state::presentation::Clarity,
     pub curve: Option<clamshell_state::curve::Curve>,
     pub hdr_peak: u16,
     pub fps_cap: Option<u16>,
@@ -108,16 +108,16 @@ impl Server {
             unit: process.unit,
             pids: process.pids,
             limits,
-            role: if dialog { clamshell_state::session::presentation::WindowRole::Dialog } else { clamshell_state::session::presentation::WindowRole::Normal },
+            role: if dialog { clamshell_state::presentation::WindowRole::Dialog } else { clamshell_state::presentation::WindowRole::Normal },
             ..WindowFacts::default()
         }
     }
 
-    fn size_limits(surface: &ToplevelSurface) -> clamshell_state::session::presentation::WindowLimits {
+    fn size_limits(surface: &ToplevelSurface) -> clamshell_state::presentation::WindowLimits {
         with_states(surface.wl_surface(), |states| {
             let mut cached = states.cached_state.get::<SurfaceCachedState>();
             let current = cached.current();
-            clamshell_state::session::presentation::WindowLimits {
+            clamshell_state::presentation::WindowLimits {
                 min: (current.min_size.w.max(0) as u32, current.min_size.h.max(0) as u32),
                 max: (current.max_size.w.max(0) as u32, current.max_size.h.max(0) as u32),
             }
@@ -191,7 +191,7 @@ impl Server {
                     pending.size = size;
                     pending.bounds = Some(area.size);
                     use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
-                    if policy.layout == clamshell_state::session::presentation::WindowLayout::Fullscreen {
+                    if policy.layout == clamshell_state::presentation::WindowLayout::Fullscreen {
                         pending.states.set(State::Fullscreen);
                     } else {
                         pending.states.unset(State::Fullscreen);
@@ -268,7 +268,7 @@ impl Server {
 
 /// What a fullscreen window fills in an area of `area`: the area, or the resolution its game is set to (a
 /// fraction of it, `docs/picture.md`), which the window is then scaled up from.
-pub(crate) fn fill_size(clarity: clamshell_state::session::presentation::Clarity, area: Size<i32, Logical>) -> Size<i32, Logical> {
+pub(crate) fn fill_size(clarity: clamshell_state::presentation::Clarity, area: Size<i32, Logical>) -> Size<i32, Logical> {
     let (w, h) = clarity.resolution.size_on((area.w.max(0) as u32, area.h.max(0) as u32));
     (w as i32, h as i32).into()
 }

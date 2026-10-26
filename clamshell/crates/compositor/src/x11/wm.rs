@@ -8,7 +8,7 @@ use super::{
     transport::Transport,
 };
 use crate::{Process, server::Server, surface::Surface, windows::ClientWindow};
-use clamshell_state::{WindowEvent, session::presentation::WindowLayout};
+use clamshell_state::{WindowEvent, presentation::WindowLayout};
 use smithay::{
     backend::renderer::utils::with_renderer_surface_state,
     reexports::wayland_server::protocol::wl_surface::WlSurface,
@@ -80,7 +80,7 @@ struct Window {
     dirty: bool,
     refresh: u16,
     revision: Option<u64>,
-    policy: Option<clamshell_state::session::presentation::WindowPresentation>,
+    policy: Option<clamshell_state::presentation::WindowPresentation>,
 }
 #[derive(Default)]
 pub(super) struct Wm {
@@ -1194,7 +1194,7 @@ mod tests {
     fn x11_facts_deferred_to_the_frame_keep_an_adopted_unit_and_settle_with_their_title() {
         let Placed { mut server, mut wm, mut wire, id, .. } = placed();
         wm.windows[0].properties.name = "dialog title".into();
-        wm.windows[0].properties.role = clamshell_state::session::presentation::WindowRole::Dialog;
+        wm.windows[0].properties.role = clamshell_state::presentation::WindowRole::Dialog;
         wm.windows[0].dirty = true;
         wm.settle(&mut wire, &mut server).unwrap();
         let mut adopted = server.core.state().session().window(id).unwrap().facts.clone();
@@ -1204,7 +1204,7 @@ mod tests {
         server.frame();
         let window = server.core.state().session().window(id).unwrap();
         assert_eq!(window.title, "dialog title");
-        assert_eq!(window.role, clamshell_state::session::presentation::WindowRole::Dialog);
+        assert_eq!(window.role, clamshell_state::presentation::WindowRole::Dialog);
         assert_eq!(window.unit.as_deref(), Some("adopted.scope"));
         assert_eq!(window.pids, vec![456], "deferred metadata cannot undo scope adoption");
         let recording = server.trace.borrow().snapshot(server.core.state());

@@ -351,7 +351,7 @@ fn touching_a_home_arrow_consumes_the_release_but_direct_home_still_shows_shelf(
 #[test]
 fn presentation_facts_and_colour_do_not_change_placement_or_selection() {
     use crate::colour::{ColourDescription, ColourPrimaries, TransferFunction};
-    use crate::session::presentation::{WindowLayout, WindowLimits, WindowRole};
+    use crate::presentation::{WindowLayout, WindowLimits, WindowRole};
     let mut s = state();
     let one = launch_of("one");
     let window = win_of(7, "one", &one);

@@ -309,8 +309,8 @@ pub struct WindowFacts {
     pub app_id: String,
     pub title: String,
     pub parent: Option<i64>,
-    pub limits: super::presentation::WindowLimits,
-    pub role: super::presentation::WindowRole,
+    pub limits: crate::presentation::WindowLimits,
+    pub role: crate::presentation::WindowRole,
     /// Whether it is an X11 window, shown through Xwayland.
     pub x11: bool,
     pub colour: Option<Arc<crate::colour::ColourDescription>>,

@@ -112,7 +112,7 @@ pub struct Clarity {
     pub sharpen: u16,
 }
 
-impl super::windows::WindowFacts {
+impl crate::session::windows::WindowFacts {
     /// How the window is shown at `size` (see [`crate::settings::Size`]): dialogs, popups and windows of a
     /// fixed size centred at their own size, other windows filling the screen, a game's scaled to it.
     /// `screen` is the sizes its screen may tell it it has (what each resolution gives it, and an X11

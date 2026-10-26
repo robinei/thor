@@ -206,7 +206,7 @@ pub enum Reading {
     /// The account, while the Device view is open and after a change (see [`crate::device::account`]).
     Account(crate::device::account::Account),
     /// The screens as the compositor has them, at the start and when they change.
-    Screens(Box<crate::session::presentation::Screens>),
+    Screens(Box<crate::presentation::Screens>),
     /// Where the pixels of the plotted window's picture are (see [`crate::State::histogram_window`]).
     Histogram(Box<crate::colour::Histogram>),
     /// The compositor told a game's process, known by its unit or Steam's app id, that its screen has this

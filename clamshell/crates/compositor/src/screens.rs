@@ -34,7 +34,7 @@ pub(crate) struct Screens {
     /// The top output's instances clients bound, each told its game's mode (see [`Server::tell_game_mode`]).
     pub top_bound: Vec<Weak<WlOutput>>,
     /// The screens last told to the state (see [`Server::report_screens`]).
-    sent: Option<clamshell_state::session::presentation::Screens>,
+    sent: Option<clamshell_state::presentation::Screens>,
 }
 
 impl Screens {
@@ -121,7 +121,7 @@ impl Server {
     /// Tells the state the screens' colours and the top screen's size when they change: a curve is shown
     /// within the colour, and a game's resolution is a fraction of the size.
     pub(crate) fn report_screens(&mut self) {
-        let screens = clamshell_state::session::presentation::Screens {
+        let screens = clamshell_state::presentation::Screens {
             colour: self.colour.descriptions,
             top_size: (self.screens.top_width.max(0) as u32, self.screens.size.1.max(0) as u32),
         };

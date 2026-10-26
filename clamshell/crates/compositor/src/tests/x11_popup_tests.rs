@@ -4,10 +4,7 @@ use crate::{
     surface::{Surface, X11Popup},
     windows::ClientWindow,
 };
-use clamshell_state::{
-    WindowEvent,
-    session::{presentation::WindowLimits, windows::WindowFacts},
-};
+use clamshell_state::{WindowEvent, presentation::WindowLimits, session::windows::WindowFacts};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::{backend::input::InputTime, utils::Point};
 

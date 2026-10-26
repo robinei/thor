@@ -47,7 +47,7 @@ pub(crate) struct Pipeline {
 struct Look {
     curve: Option<Curve>,
     headroom: f32,
-    clarity: clamshell_state::session::presentation::Clarity,
+    clarity: clamshell_state::presentation::Clarity,
     buffer: (i32, i32),
     /// FXAA in the final pass, as the window is shown one to one and not sharpened after it: no texture
     /// between.
@@ -413,7 +413,7 @@ pub(super) fn hdr(description: ColourDescription) -> bool {
 /// the chain, FSR's sharpening of what it upscaled, see [`super::chain`]; 4, `fxaa_here`, FXAA at the
 /// texel's centre; 5, from the chain, SMAA's blending at the texel's centre).
 /// Nothing without a buffer's size.
-fn clarity_uniform(clarity: clamshell_state::session::presentation::Clarity, (w, h): (i32, i32), fxaa_here: bool) -> [f32; 4] {
+fn clarity_uniform(clarity: clamshell_state::presentation::Clarity, (w, h): (i32, i32), fxaa_here: bool) -> [f32; 4] {
     use clamshell_state::settings::Scaling;
     if w <= 0 || h <= 0 {
         return [0.0; 4];
@@ -677,7 +677,7 @@ mod tests {
 
     #[test]
     fn the_clarity_uniform_steps_by_a_texel_and_says_how_to_sample() {
-        use clamshell_state::session::presentation::Clarity;
+        use clamshell_state::presentation::Clarity;
         use clamshell_state::settings::Scaling;
         let nearest = Clarity { scaling: Scaling::Fsr, integer: true, sharpen: 50, ..Clarity::default() };
         assert_eq!(clarity_uniform(nearest, (960, 540), false), [1.0 / 960.0, 1.0 / 540.0, 0.5, 1.0], "integer: nearest, whatever the scaling");
