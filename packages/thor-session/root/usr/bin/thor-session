@@ -34,6 +34,9 @@ fi
 # /usr/share/thor/xdg; the user's in ~/.config come first still).
 [ ! -x /usr/lib/thor/thor-home ] || /usr/lib/thor/thor-home
 export XDG_CONFIG_DIRS=/usr/share/thor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}
+# The desktop's name, by which xdg-desktop-portal picks its portals (clamshell-portals.conf) and apps
+# know where they run.
+export XDG_CURRENT_DESKTOP=ClamShell XDG_SESSION_DESKTOP=ClamShell
 # This login's environment for the user manager and the bus, which ClamShell and what it starts get (less
 # the shell's own variables).
 env -u PWD -u OLDPWD -u SHLVL -u _ dbus-update-activation-environment --systemd --all

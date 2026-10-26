@@ -1,8 +1,8 @@
 # The AYN Thor's session around ClamShell (root/, as installed): the first console's autologin into
 # ClamShell's compositor as a user service (thor-session, clamshell.service), udiskie as a user service of
 # the session, the home's starting files where missing (thor-home: the starter library, the dock's pins,
-# mpv's and RetroArch's configs), foot's config, Steam's starter and setup, the Maintenance app. Built from
-# the checkout this PKGBUILD is in.
+# mpv's and RetroArch's configs), foot's config, the desktop portals' choice (GTK's), Steam's starter and
+# setup, the Maintenance app. Built from the checkout this PKGBUILD is in.
 pkgname=thor-session
 pkgver=r570.5759033
 pkgrel=1
@@ -15,7 +15,7 @@ license=('MIT OR Apache-2.0')
 # (PipeWire, ALSA's default device through it too), X programs (Xwayland), removable storage (udisks2, udiskie; exFAT's tools), archives browsed
 # (ratarmount), opening files (xdg-utils, imv, zathura); the starter library's players
 # (RetroArch with its cores and XMB's assets, mpv; ffmpeg's ffprobe for videos' lengths).
-depends=(clamshell thor-system dbus foot udiskie xorg-xwayland mesa noto-fonts python python-pillow curl unzip
+depends=(clamshell thor-system dbus xdg-desktop-portal-gtk foot udiskie xorg-xwayland mesa noto-fonts python python-pillow curl unzip
          networkmanager bluez upower pipewire pipewire-alsa pipewire-pulse wireplumber udisks2 exfatprogs ratarmount xdg-utils
          imv zathura zathura-pdf-mupdf mpv ffmpeg
          retroarch retroarch-assets-xmb retroarch-assets-glui retroarch-assets-ozone libretro-core-info
