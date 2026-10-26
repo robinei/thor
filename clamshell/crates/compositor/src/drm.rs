@@ -435,12 +435,16 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
 fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(Result<crate::Capture, String>), now: Instant) -> Option<Instant> {
     outputs(drawing, server);
     // Commits timed for no later than the top screen's next frame go ahead before it is composed; the
-    // loop wakes a refresh before the next one held is due, to compose it in time.
+    // loop wakes a refresh before the next one held is due, to compose it in time, or, within a refresh
+    // of it already, at the next refresh, when the frame shown then is composed (not at once again).
     let timed = drawing.screens.iter().find(|s| s.role == ScreenRole::Top).map(|top| {
         let clock = server.clock.now();
-        let held = server.release_timed_commits(top.next_shown(clock));
-        let wait = held.map(|at| Duration::from(at).saturating_sub(Duration::from(clock)).saturating_sub(top.interval));
-        wait.map(|wait| now + wait)
+        let next = top.next_shown(clock);
+        let held = server.release_timed_commits(next);
+        held.map(|at| {
+            let wait = Duration::from(at).saturating_sub(Duration::from(clock)).saturating_sub(top.interval);
+            now + if wait.is_zero() { Duration::from(next).saturating_sub(Duration::from(clock)) } else { wait }
+        })
     });
     if let Err(error) = compose(drawing, server, on_capture) {
         log::warn!("drm: drawing: {error}");
@@ -457,7 +461,8 @@ fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(
         if screen.held.is_some_and(|at| at <= now) && !screen.pending {
             screen.held = server.frame_callbacks(Some(down), screen.interval, now);
         }
-        if let Some(held) = screen.held {
+        // (While a frame is queued its flip sends them: not a wake now, which would turn the loop until it.)
+        if let Some(held) = screen.held.filter(|_| !screen.pending) {
             due = Some(due.map_or(held, |due| due.min(held)));
         }
         if screen.pending {
