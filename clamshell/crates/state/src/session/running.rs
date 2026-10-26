@@ -217,7 +217,7 @@ impl Session {
         // A launch the launcher never answered is given up, so that it can be launched again.
         while let Some(i) = self.launching.iter().position(|l| now >= l.at + LAUNCH_WAIT) {
             let l = self.launching.remove(i);
-            if self.front_launch.as_ref() == Some(&l.instance) {
+            if self.front_launch.as_ref().is_some_and(|f| f.instance == l.instance) {
                 self.front_launch = None;
             }
             let title = library.entry(&l.entry).map_or_else(|| l.entry.to_string(), |g| g.title.clone());

@@ -24,6 +24,14 @@ use instance::Instance;
 use running::{Front, Launching, Running};
 use windows::{Group, Window, WindowFacts, WindowPlace};
 
+/// The launch to show when its first window appears, and when waiting for it gives up: set for a program
+/// still running whose window in front closed (see [`Session::follow_front`]); none for a launch.
+#[derive(Debug, Clone)]
+pub(crate) struct FrontLaunch {
+    instance: Instance,
+    until: Option<u64>,
+}
+
 /// How soon after the window in front closed a new window in its group is shown again, in seconds.
 pub(crate) const REOPEN_SECS: u64 = 2;
 
@@ -61,10 +69,7 @@ pub struct Session {
     selected: Vec<(Group, i64)>,
     /// The launch to show when its first window appears. Until then, other programs' new windows open
     /// behind (see [`Session::opening_focus`]).
-    front_launch: Option<Instance>,
-    /// When a front launch waiting again gives up: one set for a program still running whose window in
-    /// front closed (see [`Session::follow_front`]).
-    front_launch_until: Option<u64>,
+    front_launch: Option<FrontLaunch>,
     /// The group whose window in front closed, leaving it empty, and when (see
     /// [`Session::follow_replacement`]).
     closed_front: Option<(Group, u64)>,
@@ -204,7 +209,7 @@ impl Session {
     /// units follow foreground launch intent; later windows of the shown program may select themselves.
     /// An unowned program's window is shown at once.
     pub(crate) fn opening_focus(&self, window: &WindowFacts) -> bool {
-        if let Some(instance) = &self.front_launch {
+        if let Some(FrontLaunch { instance, .. }) = &self.front_launch {
             return self.of_launch(instance, window);
         }
         if let Some(parent) = window.parent.and_then(|id| self.window(id)) {
@@ -228,8 +233,7 @@ impl Session {
 
     /// Makes `instance` the launch to show when its window appears, waiting until `until` if given.
     pub(crate) fn set_front_launch(&mut self, instance: Instance, until: Option<u64>) {
-        self.front_launch = Some(instance);
-        self.front_launch_until = until;
+        self.front_launch = Some(FrontLaunch { instance, until });
     }
 
     pub(crate) fn step_window(&mut self, next: bool) {
@@ -414,7 +418,7 @@ impl Session {
     /// The launch to show when its first window appears.
     #[cfg(test)]
     pub(crate) fn front_launch(&self) -> Option<&Instance> {
-        self.front_launch.as_ref()
+        self.front_launch.as_ref().map(|f| &f.instance)
     }
 
     /// The counter for a new instance's name (see [`crate::session::instance::Instance`]).
@@ -472,10 +476,10 @@ impl Session {
     /// may already have windows of its other launches. An entry known by its app id has no unit
     /// of ours, so any of its windows counts.
     pub(crate) fn follow_front_launch(&mut self, now: u64) {
-        if self.front_launch_until.is_some_and(|until| now > until) {
+        if self.front_launch.as_ref().is_some_and(|f| f.until.is_some_and(|until| now > until)) {
             self.cancel_front_launch();
         }
-        let Some(instance) = &self.front_launch else { return };
+        let Some(FrontLaunch { instance, .. }) = &self.front_launch else { return };
         let outside = self.running.iter().find(|r| r.key == instance.key).is_some_and(|r| r.outside() || matches!(r.origin, running::Origin::Windows { .. }));
         if !outside && !self.units.contains(instance) && !self.launching.iter().any(|l| l.instance == *instance) {
             self.front_launch = None;
