@@ -22,6 +22,8 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -31,6 +33,11 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 CLAMSHELL = ROOT / "clamshell"
 BIN = CLAMSHELL / "target/debug/clamshell"
+WINDOWS = ["wine-wayland", "wine-x11", "wine-hdr"]
+# The Windows game's process, as Wine names it, anchored so that no other command line mentioning it
+# matches: by the Unix path it was started with, or a Windows path to it.
+def windows_process(exe):
+    return "^(" + re.escape(str(exe)) + r"|[A-Z]:\\.*\\wine-pattern\.exe)( |$)"
 PATTERN = CLAMSHELL / "target/debug/examples/pattern-game"
 
 RESOLUTIONS = ["native", "5/6", "2/3", "1/2", "1/3"]
@@ -54,7 +61,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--gpu", action="store_true", help="the host on GLES")
     parser.add_argument("--keep", action="store_true", help="leave the session running at the end")
-    parser.add_argument("--only", choices=["pattern", "pattern-pq", "pattern-linear", "sdl-wayland", "sdl-x11"],
+    parser.add_argument("--only", choices=["pattern", "pattern-pq", "pattern-linear", "sdl-wayland", "sdl-x11", *WINDOWS],
                         help="run only this game's cases")
     args = parser.parse_args()
     for path in [BIN, PATTERN]:
@@ -66,6 +73,31 @@ def main():
     sdl = directory / "sdl-pattern"
     flags = subprocess.run(["pkg-config", "--cflags", "--libs", "sdl3"], capture_output=True, text=True, check=True).stdout.split()
     subprocess.run(["cc", "-O2", "-o", str(sdl), str(CLAMSHELL / "tests/sdl-pattern.c"), *flags, "-lm"], check=True)
+    # The Windows game, under Wine with DXVK, in a prefix kept between runs: made, and DXVK put in it by
+    # winetricks, the first time. Without Mono and Gecko, which the game doesn't use and whose installers
+    # would ask. Without zig, Wine or winetricks those cases are skipped.
+    exe = directory / "wine-pattern.exe"
+    prefix = Path.home() / ".cache/clamshell-tests/wine"
+    wine_env = ["env", f"WINEPREFIX={prefix}", "WINEDEBUG=-all", "WINEDLLOVERRIDES=mscoree,mshtml="]
+    windows = all(shutil.which(tool) for tool in ["zig", "wine", "winetricks"])
+    if not windows:
+        print("note: no zig, wine or winetricks: the Wine cases are skipped", flush=True)
+    else:
+        built = subprocess.run(["zig", "cc", "-target", "x86_64-windows-gnu", "-O2", str(CLAMSHELL / "tests/wine-pattern.c"),
+                                "-o", str(exe), "-ld3d11", "-ldxgi"])
+        if built.returncode != 0:
+            sys.exit("the Windows game didn't build")
+        # Bounded, so a prefix that asks for something (a dialog) fails instead of waiting.
+        def winetricks(*arguments, limit):
+            try:
+                return subprocess.run([*wine_env, "winetricks", *arguments], capture_output=True, text=True, timeout=limit)
+            except subprocess.TimeoutExpired:
+                subprocess.run(["wineserver", "-k"], env={**os.environ, "WINEPREFIX": str(prefix)}, capture_output=True)
+                sys.exit(f"winetricks {' '.join(arguments)} took over {limit} s in {prefix}")
+        if "dxvk" not in winetricks("list-installed", limit=180).stdout.split():
+            print("making the Wine prefix with DXVK", flush=True)
+            if winetricks("-q", "dxvk", limit=600).returncode != 0:
+                sys.exit(f"winetricks didn't put DXVK in {prefix}")
 
     runtime = directory / "runtime"
     runtime.mkdir(mode=0o700)
@@ -84,6 +116,16 @@ def main():
     kinds = {"pattern": [str(PATTERN)], "pattern-pq": [str(PATTERN), "--colour", "pq"],
              "pattern-linear": [str(PATTERN), "--colour", "linear"], "sdl-wayland": ["env", "SDL_VIDEO_DRIVER=wayland", "SDL_LOGGING=video=debug", str(sdl)],
              "sdl-x11": ["env", "SDL_VIDEO_DRIVER=x11", "SDL_LOGGING=video=debug", str(sdl)]}
+    if windows:
+        # Wine's Wayland driver is used when there is no X display. With it, about one run in three, Wine 11.20's
+        # process breaks while its swapchain is made anew for a mode (libwayland's "Proxy requested for unref
+        # has no references", or malloc's heap corruption, in the game's .err): its window goes, or it
+        # crashes, and that mode's cases fail. The compositor sees no protocol error.
+        kinds.update({
+            "wine-wayland": ["env", "-u", "DISPLAY", *wine_env[1:], "wine", str(exe)],
+            "wine-x11": [*wine_env, "wine", str(exe)],
+            "wine-hdr": ["env", "-u", "DISPLAY", *wine_env[1:], "DXVK_HDR=1", "wine", str(exe), "--hdr"],
+        })
     wrapper = directory / "run-game.sh"
     wrapper.write_text("#!/bin/sh\n"
                        "# The game named by its file, its commands from <name>.in, its output to <name>.out.\n"
@@ -184,8 +226,9 @@ def main():
             os.write(fifos[name], (line + "\n").encode())
 
         def running(name):
-            program = next(a for a in kinds[name] if a.startswith("/"))
-            return subprocess.run(["pgrep", "-f", f"^{program}( |$)"], capture_output=True).returncode == 0
+            # Wine's games are known by the program they run; the others by their own.
+            program = windows_process(exe) if name in WINDOWS else "^" + next(a for a in kinds[name] if a.startswith("/")) + "( |$)"
+            return subprocess.run(["pgrep", "-f", program], capture_output=True).returncode == 0
 
         settings = {"resolution": "native", "scaling": "bilinear", "aa": "off", "sharpen": 0}
 
@@ -229,7 +272,7 @@ def main():
             if not found:
                 raise RuntimeError(f"{name}: not found on shelf (selection {selection()!r})")
             control("tap", "launch")
-            wait(lambda: running(name), f"{name} started")
+            wait(lambda: running(name), f"{name} started", 300 if name in WINDOWS else 10)
 
         def quit(name):
             send(name, "quit")
@@ -340,6 +383,17 @@ def main():
             for key, value in [("scaling", "bilinear"), ("aa", "off"), ("sharpen", 0)]:
                 set_setting(key, value)
 
+        def check_colour(name, expected):
+            """The game's window has the colour it declares, as the compositor last logged a window's: its
+            primaries and transfer function, such as "Bt2020 Pq"."""
+            lines = [l.replace(", colour ", "'s colour is ") for l in (directory / "compositor.log").read_text().splitlines()
+                     if "compositor: window" in l and "colour" in l]
+            last = lines[-1] if lines else "none logged"
+            ok = last.endswith(expected)
+            print(f"{'ok' if ok else 'FAIL'}: {name}-colour: {last.split('compositor: ')[-1]}", flush=True)
+            if not ok:
+                failures.append(f"{name}-colour")
+
         def check_histogram(name):
             """The tone curve's edit screen plots the picture's histogram: its bars, pure greys, are drawn
             there (everything else on the screen is tinted or black)."""
@@ -399,23 +453,29 @@ def main():
             modes = [tuple(map(int, l.split()[1:])) for l in output(name) if l.startswith("mode ")]
             screen = screen or modes[0]
             go_through(name, name, False, modes[-1])
+            check_colour(name, {"pattern-pq": "Bt2020 Pq", "pattern-linear": "Srgb Linear"}[name])
             check_histogram(name)
             quit(name)
 
-        # SDL, on Wayland and on X11: at the desktop's size, then a lower mode it lists.
-        for name in [n for n in ["sdl-wayland", "sdl-x11"] if args.only in (None, n)]:
+        def mode_game(name, hdr=False):
+            """A game choosing its own mode: at the desktop's size, then a lower mode it lists, each through
+            the sampled settings; for HDR also the curve's histogram."""
+            nonlocal screen
             launch(name)
-            wait(lambda: any(l.startswith("size") for l in output(name)), f"{name} drawing")
+            wait(lambda: any(l.startswith("size") for l in output(name)), f"{name} drawing", 300 if name in WINDOWS else 10)
             lines = output(name)
             desktop = next(tuple(map(int, l.split()[1:])) for l in lines if l.startswith("desktop "))
             listed = [tuple(map(int, l.split()[1:])) for l in lines if l.startswith("mode ")]
             print(f"{name}: desktop {desktop}, modes {listed}", flush=True)
-            # Without pattern-game's run (--only), the screen is taken as SDL's desktop.
+            # Without pattern-game's run (--only), the screen is taken as the game's desktop.
             screen = screen or desktop
             if desktop != screen:
-                print(f"FAIL: {name}-desktop-size: SDL's desktop {desktop}, the screen {screen}", flush=True)
+                print(f"FAIL: {name}-desktop-size: the game's desktop {desktop}, the screen {screen}", flush=True)
                 failures.append(f"{name}-desktop-size")
             go_through(name, f"{name}-desktop", False, desktop)
+            if hdr:
+                check_colour(name, "Bt2020 Pq")
+                check_histogram(name)
             lower = [m for m in listed if m[0] < desktop[0]]
             if not lower:
                 print(f"FAIL: {name}-lower: no mode lower than the desktop's listed", flush=True)
@@ -435,6 +495,10 @@ def main():
                 go_through(name, f"{name}-mode{target[0]}x{target[1]}", False, target)
             quit(name)
 
+        # SDL, on Wayland and on X11; Windows' game under Wine.
+        for name in [n for n in ["sdl-wayland", "sdl-x11", *WINDOWS] if args.only in (None, n) and n in kinds]:
+            mode_game(name, hdr=name == "wine-hdr")
+
         print(f"{'FAIL' if failures else 'ok'}: {len(failures)} failed{': ' + ', '.join(failures) if failures else ''}", flush=True)
         if args.keep:
             print(f"kept running; WAYLAND_DISPLAY={parent_socket} XDG_RUNTIME_DIR={runtime}; Ctrl+C ends it", flush=True)
@@ -452,8 +516,11 @@ def main():
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
         for name in kinds:
-            program = next(a for a in kinds[name] if a.startswith("/"))
-            subprocess.run(["pkill", "-f", f"^{program}( |$)"], capture_output=True)
+            program = windows_process(exe) if name in WINDOWS else "^" + next(a for a in kinds[name] if a.startswith("/")) + "( |$)"
+            subprocess.run(["pkill", "-f", program], capture_output=True)
+        # Wine's server.
+        if windows:
+            subprocess.run(["wineserver", "-k"], env={**os.environ, "WINEPREFIX": str(prefix)}, capture_output=True)
     sys.exit(1 if failures else 0)
 
 
