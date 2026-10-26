@@ -32,8 +32,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Client {
 #[test]
 fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() {
     let mut display = Display::<Server>::new().unwrap();
-    let config =
-        Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
+    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
     let mut server = Server::new(State::new(Init::default()), config, display.handle(), true, || {}, |_| Process::default(), |_| {}).unwrap();
     server.core.handle(Event::Start);
     server.frame();

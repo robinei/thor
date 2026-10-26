@@ -79,7 +79,7 @@ delegate_noop!(Client:ignore wl_output::WlOutput);
 delegate_noop!(Client:ignore smithay::reexports::wayland_protocols::wp::color_management::v1::client::wp_color_management_output_v1::WpColorManagementOutputV1);
 fn server() -> (Display<Server>, Server) {
     let display = Display::new().unwrap();
-    let config = Config { bottom_output: "bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
+    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
     let server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
     super::protocol::install(&display.handle());
     (display, server)

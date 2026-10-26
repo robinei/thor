@@ -157,13 +157,7 @@ fn server() -> (smithay::reexports::wayland_server::Display<Server>, Server) {
     let display = smithay::reexports::wayland_server::Display::<Server>::new().unwrap();
     let server = Server::new(
         clamshell_state::State::new(clamshell_state::Init::default()),
-        clamshell_ui::Config {
-            bottom_output: "ClamShell-Bottom".into(),
-            top_size: (960, 540),
-            bottom_size: (620, 540),
-            bottom_panel: false,
-            touch_layout: std::sync::Arc::default(),
-        },
+        clamshell_ui::Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: std::sync::Arc::default() },
         display.handle(),
         false,
         || {},

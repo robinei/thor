@@ -6,12 +6,13 @@ license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 publish.workspace = true
-description = "ClamShell's drawing: both screens on Wayland, immediate mode with tiny-skia"
+description = "ClamShell's drawing: both screens, immediate mode with tiny-skia"
 
 [dependencies]
 resvg.workspace = true
 clamshell-state.workspace = true
-smithay-client-toolkit.workspace = true
+calloop.workspace = true
+xkeysym.workspace = true
 jiff.workspace = true
 tiny-skia.workspace = true
 fontdue.workspace = true

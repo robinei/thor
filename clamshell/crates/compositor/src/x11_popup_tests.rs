@@ -14,8 +14,7 @@ use smithay::{backend::input::InputTime, utils::Point};
 #[test]
 fn x11_popups_share_parent_scaling_keep_tooltips_passive_and_cancel_dismissed_contacts() {
     let mut display = Display::<Server>::new().unwrap();
-    let config =
-        Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
+    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
     let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
     server.core.handle(Event::Start);
     server.frame();

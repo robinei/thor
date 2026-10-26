@@ -93,8 +93,7 @@ enum Report {
 #[test]
 fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
     let mut display = Display::<Server>::new().unwrap();
-    let config =
-        Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
+    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
     let mut server = Server::new(
         State::new(Init::default()),
         config,
@@ -332,8 +331,7 @@ delegate_noop!(Client: ignore wl_seat::WlSeat);
 fn touch_contacts_keep_independent_surfaces_and_native_coordinates() {
     use smithay::backend::input::InputTime;
     let mut display = Display::<Server>::new().unwrap();
-    let config =
-        Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
+    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
     let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
     server.core.handle(Event::Start);
     server.frame();
@@ -457,8 +455,7 @@ fn touching_a_home_arrow_switches_once_and_consumes_home_release() {
     use clamshell_state::{WindowEvent, session::windows::Window};
     use smithay::backend::input::InputTime;
     let display = Display::<Server>::new().unwrap();
-    let config =
-        Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
+    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
     let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
     server.core.handle(Event::Start);
     for (id, focused) in [(1, true), (2, false)] {
@@ -503,8 +500,7 @@ fn a_rejected_dmabuf_disconnects_only_its_client() {
 
 fn client_error_is_isolated(dmabuf_error: bool) {
     let mut display = Display::<Server>::new().unwrap();
-    let config =
-        Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
+    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
     let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
     use smithay::backend::allocator::{Format, Fourcc, Modifier};
     server.advertise_dmabuf_formats(
@@ -619,8 +615,7 @@ fn screenshots_are_consumed_by_the_host_instead_of_the_parent_capture_tool() {
     let display = Display::<Server>::new().unwrap();
     let forwarded = Rc::new(RefCell::new(Vec::new()));
     let effects = forwarded.clone();
-    let config =
-        Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
+    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
     let mut server = Server::new(
         State::new(Init::default()),
         config,
@@ -672,7 +667,7 @@ mod x11_popup_tests;
 #[test]
 fn requested_preview_geometry_sets_the_initial_canvas_and_resize_ratio() {
     let display = Display::<Server>::new().unwrap();
-    let config = Config { bottom_output: "bottom".into(), top_size: (800, 600), bottom_size: (400, 600), bottom_panel: false, touch_layout: Arc::default() };
+    let config = Config { top_size: (800, 600), bottom_size: (400, 600), touch_layout: Arc::default() };
     let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
     assert_eq!(server.size, (1200, 600));
     assert_eq!(server.top_width, 800);

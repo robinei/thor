@@ -73,8 +73,7 @@ fn host(mode: CaptureMode, modes: &mut Vec<CaptureMode>, deny: bool, rejected: &
 #[test]
 fn relative_motion_and_constraints_follow_geometry_home_regions_and_host_focus() {
     let mut display = Display::<Server>::new().unwrap();
-    let config =
-        Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
+    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
     let mut server = Server::new(State::new(Init::default()), config, display.handle(), true, || {}, |_| Process::default(), |_| {}).unwrap();
     server.core.handle(Event::Start);
     server.frame();
@@ -295,8 +294,7 @@ fn relative_motion_and_constraints_follow_geometry_home_regions_and_host_focus()
 #[test]
 fn a_host_that_cannot_release_capture_ends_the_unusable_session() {
     let display = Display::<Server>::new().unwrap();
-    let config =
-        Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
+    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
     let mut server = Server::new(State::new(Init::default()), config, display.handle(), true, || {}, |_| Process::default(), |_| {}).unwrap();
     // The client capture ended, but releasing the last applied host capture fails.
     server.host_capture = CaptureMode::Locked;

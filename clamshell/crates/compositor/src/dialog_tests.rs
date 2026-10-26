@@ -10,8 +10,7 @@ delegate_noop!(Client: ignore xdg_dialog_v1::XdgDialogV1);
 #[test]
 fn a_toplevel_marked_a_dialog_has_the_dialog_role() {
     let mut display = Display::<Server>::new().unwrap();
-    let config =
-        Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
+    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
     let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
     server.core.handle(Event::Start);
     server.frame();

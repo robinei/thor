@@ -1,45 +1,36 @@
-//! The Wayland side. There are two views, the main (top) screen and the second (bottom) screen, both
-//! drawn on the CPU into shm buffers. After every event each visible view is recorded and compared with
-//! its last frame; only one that changed is drawn, only where it changed, at most once per frame
-//! callback. Between events the program sleeps.
-//!
-//! The top view is an xdg toplevel, which sway rules make fullscreen in its own workspace. The bottom
-//! view is a layer-shell surface on the second screen's output when that output exists (`DSI-1` on the
-//! Thor). Otherwise it is a panel in a corner of the desktop or a second ordinary window, so it runs on
-//! any desktop.
+//! ClamShell's own screens: the main (top) screen and the second (bottom) screen, both drawn on the CPU
+//! into pixmaps, which the compositor shows. After every event each screen is recorded and compared with
+//! its last frame; only one that changed is drawn, only where it changed.
 //!
 //! The crate's layers:
 //! - `gfx` draws geometry, the canvas, text, icons and images, and holds no state;
 //! - `toolkit` is the immediate-mode kit the screens are drawn with;
 //! - `views` are the screens themselves, and `render` draws one frame of them;
 //! - `input` turns presses and the pad into events (the pure parts);
-//! - `core` is all of it without a backend: the state, the event queue, input by screen, timers as
-//!   deadlines, and each screen drawn into a pixmap ([`Core`]);
-//! - `platform` hosts the core as a Wayland client, with its event loop.
+//! - `core` is all of it, for the compositor to host: the state, the event queue, input by screen, timers
+//!   as deadlines, and each screen drawn into a pixmap ([`Core`]).
 
 mod core;
 mod gfx;
 pub mod hud;
 mod input;
-mod platform;
 mod render;
 mod screens;
 mod toolkit;
 mod views;
 pub mod window_arrows;
 
-pub use crate::core::{Core, TextField};
+pub use crate::core::Core;
 pub use gfx::canvas::DrawCache;
 pub use gfx::record::Bounds;
 pub use input::{End, Source};
-pub use platform::run;
 pub use screens::Screen;
 
 use std::sync::{Arc, Mutex};
 
+use calloop::channel;
 use clamshell_state::bottom::touch::TouchLayout;
 use clamshell_state::{Event, State};
-use smithay_client_toolkit::reexports::calloop::channel;
 
 use gfx::images::Images;
 use render::{Placement, Retained};
@@ -47,21 +38,15 @@ use render::{Placement, Retained};
 pub type Error = Box<dyn std::error::Error>;
 
 pub struct Config {
-    /// Output that gets the bottom view as a layer-shell surface; without it, the bottom view is a window.
-    pub bottom_output: String,
-    /// Logical sizes when shown as windows (on a desktop).
+    /// The screens' logical sizes.
     pub top_size: (u32, u32),
     pub bottom_size: (u32, u32),
-    /// When the second screen's output is missing (on a desktop), show the bottom view as a panel in a
-    /// corner instead of a window. Tapping its keyboard then leaves the keyboard focus on the app being
-    /// typed into.
-    pub bottom_panel: bool,
     /// Where the touchpad area and the bar's targets are, for the touchpad tab's input side. It is
     /// updated with every frame of the second screen.
     pub touch_layout: Arc<Mutex<TouchLayout>>,
 }
 
-/// Sends events into the UI's event loop from other threads.
+/// Sends events into the compositor's event loop from other threads.
 #[derive(Clone)]
 pub struct EventSender(channel::Sender<Event>);
 
@@ -72,7 +57,7 @@ impl EventSender {
         (Self(sender), receiver)
     }
 
-    /// False once the UI has exited.
+    /// False once the compositor has exited.
     pub fn send(&self, event: Event) -> bool {
         self.0.send(event).is_ok()
     }

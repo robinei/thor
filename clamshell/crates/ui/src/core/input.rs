@@ -2,7 +2,7 @@
 //! releases, the pad and keys.
 
 use clamshell_state::{Event, Id, ListEvent, PadInput, PointerEvent, ShelfEvent, State};
-use smithay_client_toolkit::seat::keyboard::Keysym;
+use xkeysym::Keysym;
 
 use crate::Screen;
 use crate::input::focus::{self, PadPress};

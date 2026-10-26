@@ -58,8 +58,7 @@ impl Dispatch<zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1, ()> for Cl
 fn an_accepted_import_completes_once_and_an_empty_frame_has_no_import_work() {
     use smithay::backend::allocator::{Format, Fourcc, Modifier};
     let mut display = Display::<Server>::new().unwrap();
-    let config =
-        Config { bottom_output: "ClamShell-Bottom".into(), top_size: (960, 540), bottom_size: (620, 540), bottom_panel: false, touch_layout: Arc::default() };
+    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
     let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
     server.advertise_dmabuf_formats([Format { code: Fourcc::Xrgb8888, modifier: Modifier::Linear }], None);
     let (server_socket, client_socket) = UnixStream::pair().unwrap();

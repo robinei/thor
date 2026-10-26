@@ -1,6 +1,5 @@
 //! The UI without a backend: the state and the event queue, the input machines, the timers as deadlines,
-//! and each screen recorded and drawn into a pixmap. A host shows it: today the Wayland client in
-//! `platform`. The host
+//! and each screen recorded and drawn into a pixmap. The compositor hosts it:
 //! - gives it input by screen ([`Core::press`], [`Core::pad`], ...) and the screens' sizes;
 //! - runs it when its deadline comes and after each turn of its loop ([`Core::run`]);
 //! - draws a screen that is due when a frame can be shown: [`Core::record`], then [`Core::draw`] into a
@@ -13,7 +12,7 @@ mod input;
 use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use clamshell_state::bottom::touch::{Contact, Pointing, TouchLayout};
 use clamshell_state::{Effect, Event, Id, ShelfEvent, State};
@@ -29,18 +28,6 @@ use crate::input::{Action, EventClock, Input, Source, Timer};
 use crate::render::{self, Placement, ScreenFrames};
 use crate::screens::{Screen, Screens};
 use crate::toolkit::Target;
-
-/// How long a text field must stay let go before the keyboard goes back.
-const SETTLE: Duration = Duration::from_millis(400);
-
-/// What the input method said about apps' text fields, once a batch of its events is complete.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TextField {
-    /// A field wants typing (true) or was let go (false).
-    Active(bool),
-    /// Another input method has the seat. Any field is treated as let go at once.
-    Gone,
-}
 
 /// What came back from the font finder's and the image decoder's threads.
 enum Arrival {
@@ -99,10 +86,6 @@ pub struct Core {
     contacts: Vec<Contact>,
     /// Where the pad's focus was on each screen, so View can switch back to it.
     focus_memory: Screens<Option<Id>>,
-    /// Whether an app's text field wants typing, as the state was last told, and when a field let go is
-    /// to be told.
-    text_active: bool,
-    text_settle: Option<Instant>,
     /// Where the touchpad area and the bar's targets are, for the touchpad tab's input side.
     touch_layout: Arc<Mutex<TouchLayout>>,
     bottom_density: Option<(f32, f32)>,
@@ -149,8 +132,6 @@ impl Core {
             clock: EventClock::default(),
             contacts: Vec::new(),
             focus_memory: Screens::default(),
-            text_active: false,
-            text_settle: None,
             touch_layout,
             bottom_density: None,
             effects: Vec::new(),
@@ -216,7 +197,7 @@ impl Core {
 
     /// When the core is next to run ([`Core::run`]) for a timer, if one is running.
     pub fn deadline(&self) -> Option<Instant> {
-        self.timers.iter().map(|&(_, _, at)| at).chain(self.text_settle).min()
+        self.timers.iter().map(|&(_, _, at)| at).min()
     }
 
     /// Runs what is due at `now`, which the host does after each turn of its loop: takes in the fonts
@@ -232,18 +213,10 @@ impl Core {
             }
             self.changed();
         }
-        loop {
-            let timer = self.timers.iter().enumerate().filter(|(_, t)| t.2 <= now).min_by_key(|(_, t)| t.2).map(|(i, t)| (i, t.2));
-            let settle = self.text_settle.filter(|&at| at <= now);
-            match (timer, settle) {
-                (Some((i, at)), settle) if settle.is_none_or(|settle| at <= settle) => {
-                    let (source, timer, _) = self.timers.swap_remove(i);
-                    let actions = self.input.timer(source, timer, &self.state, now);
-                    self.run_actions(actions);
-                }
-                (_, Some(_)) => self.settle_text(),
-                (_, None) => break,
-            }
+        while let Some(i) = self.timers.iter().enumerate().filter(|(_, t)| t.2 <= now).min_by_key(|(_, t)| t.2).map(|(i, _)| i) {
+            let (source, timer, _) = self.timers.swap_remove(i);
+            let actions = self.input.timer(source, timer, &self.state, now);
+            self.run_actions(actions);
         }
         if !self.contacts.is_empty() {
             let contacts = std::mem::take(&mut self.contacts);
@@ -269,30 +242,6 @@ impl Core {
                 }
                 Action::Point(..) => {}
             }
-        }
-    }
-
-    /// Tells the state about an app's text field. This happens at once when a field wants typing or the
-    /// input method is gone, and after [`SETTLE`] when a field was let go, so moving between fields
-    /// doesn't make the keyboard bounce.
-    pub fn text_field(&mut self, field: TextField) {
-        self.text_settle = None;
-        match field {
-            TextField::Active(true) | TextField::Gone => {
-                let active = field == TextField::Active(true);
-                if std::mem::replace(&mut self.text_active, active) != active {
-                    self.handle(Event::TextInput(active));
-                }
-            }
-            TextField::Active(false) if self.text_active => self.text_settle = Some(Instant::now() + SETTLE),
-            TextField::Active(false) => {}
-        }
-    }
-
-    fn settle_text(&mut self) {
-        self.text_settle = None;
-        if std::mem::replace(&mut self.text_active, false) {
-            self.handle(Event::TextInput(false));
         }
     }
 

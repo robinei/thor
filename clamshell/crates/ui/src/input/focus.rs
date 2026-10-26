@@ -10,7 +10,7 @@ use clamshell_state::bottom::keyboard;
 use clamshell_state::levels::Level;
 use clamshell_state::profiles::picker::{Kind, ProfileId};
 use clamshell_state::{DockId, EditorId, Event, Id, LevelEvent, PadInput, PointerEvent, RowPart, ShelfEvent, ShelfId, State, Tab};
-use smithay_client_toolkit::seat::keyboard::Keysym;
+use xkeysym::Keysym;
 
 use crate::gfx::Rect;
 use crate::input::nav::{self, Dir, NavTarget};
