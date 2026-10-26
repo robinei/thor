@@ -18,13 +18,12 @@ use env::parse_env;
 pub enum Setting {
     /// The power profile, which sets CPU and GPU frequency caps: 0 Battery, 1 Balanced, 2 Performance.
     Power,
-    /// The most frames per second: the compositor paces the window's frames, or under sway MangoHud's
-    /// limiter does. 0 means no cap.
+    /// The most frames per second: the compositor paces the window's frames. 0 means no cap.
     FpsCap,
     /// The main screen's refresh rate in Hz. 0 leaves it as it is.
     Refresh,
-    /// The HUD over the game: 0 off, 1 the frame rate only, 2 the full HUD (the compositor's: the frame
-    /// rate and frame time; under sway, MangoHud's overlay).
+    /// The HUD over the game, the compositor's: 0 off, 1 the frame rate only, 2 the frame rate and frame
+    /// time.
     Hud,
     /// The screen as the game sees it (see [`Resolution`]): the screen's own size or a fraction of it, which
     /// [`Setting::Scaling`] shows at the screen's size. The compositor's alone (`docs/picture.md`).
@@ -424,15 +423,11 @@ impl Setting {
         }
     }
 
-    /// Whether only ClamShell's own compositor does it: under sway it does nothing.
-    pub fn compositor_only(self) -> bool {
-        matches!(self, Setting::Curve | Setting::HdrPeak | Setting::Resolution | Setting::Scaling | Setting::Size | Setting::AntiAliasing | Setting::Sharpen)
-    }
-
-    /// Whether the setting works through the launch's own process, as MangoHud's cap and HUD do. An app
-    /// that the launch hands over to another program (see [`crate::Panel::handed_over`]) doesn't get it.
+    /// Whether the setting works through the launch's own process, as the cap does (a capped game
+    /// presents in FIFO, told at its launch). An app that the launch hands over to another program (see
+    /// [`crate::Panel::handed_over`]) doesn't get it.
     pub fn through_launch(self) -> bool {
-        matches!(self, Setting::FpsCap | Setting::Hud)
+        matches!(self, Setting::FpsCap)
     }
 
     /// Whether the setting applies only to all games, not per game.
@@ -719,7 +714,6 @@ mod tests {
         assert_eq!(Resolution::TwoThirds.size_on((960, 540)), (640, 360), "nested, half size");
         assert_eq!(Resolution::Native.size_on((1200, 675)), (1200, 675), "an odd screen stays its own size");
         assert_eq!(Setting::Sharpen.next(100), 0);
-        assert!(Setting::Scaling.compositor_only() && !Setting::FpsCap.compositor_only());
     }
 
     #[test]

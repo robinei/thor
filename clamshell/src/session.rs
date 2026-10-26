@@ -79,7 +79,6 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
         start_tab: env.start_tab,
         pad_mouse: env.pad_mouse,
         device_session,
-        compositor: true,
         // Settings, keymaps, curves, window rules, brightness, the dock, where shelf was.
         ..saved(&paths)
     });

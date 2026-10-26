@@ -204,17 +204,14 @@ fn face(s: &State, tile: Tile) -> Face {
                 active: (setting != Setting::Refresh || !s.device().display_modes().rates().is_empty())
                     && (setting != Setting::Fan || s.profile().fan.is_some())
                     && !(setting.through_launch() && p.handed_over())
-                    && (!setting.compositor_only() || s.compositor())
                     && !overruled,
-                // Only ClamShell's own compositor shows a game's picture differently; under sway these do
-                // nothing.
-                note: if setting == Setting::Resolution && s.compositor() && s.resolution_waits() {
+                note: if setting == Setting::Resolution && s.resolution_waits() {
                     "next start"
                 } else if setting == Setting::Refresh && value == 0 && s.device().display_modes().refresh_for(0, p.tile_value(Setting::FpsCap)) != 0 {
                     // As is, but a rate the cap divides while it is set.
                     "for the cap"
                 } else {
-                    note((setting.through_launch() && p.handed_over()) || (setting.compositor_only() && !s.compositor()) || overruled)
+                    note((setting.through_launch() && p.handed_over()) || overruled)
                 },
             }
         }

@@ -134,8 +134,6 @@ pub struct Init {
     pub keymaps: keymap::Keymaps,
     /// The tone curves.
     pub curves: curve::Curves,
-    /// Whether ClamShell's own compositor shows the windows, rather than sway. Only it applies tone curves.
-    pub compositor: bool,
     /// The screens' brightness as it was left.
     pub brightness: Brightness,
     /// The dock's pinned entries, in order.
@@ -197,8 +195,6 @@ pub struct State {
     histogram: Option<crate::session::presentation::Histogram>,
     /// The sizes of Xwayland's modes (see [`Reading::XwaylandModes`]).
     xwayland_modes: Vec<(u32, u32)>,
-    /// Whether ClamShell's own compositor shows the windows (see [`Init::compositor`]).
-    compositor: bool,
     /// Where the lists but shelf are scrolled.
     scrolls: Scrolls,
     clock: Clock,
@@ -235,7 +231,6 @@ impl State {
             screens: Default::default(),
             histogram: None,
             xwayland_modes: Vec::new(),
-            compositor: init.compositor,
             bottom: Bottom::new(init.window_rules),
             sys: Sys::new(init.twelve_hour),
             levels: Levels::new(init.brightness),
@@ -335,11 +330,6 @@ impl State {
 
     pub fn curving(&self) -> &crate::curve::screens::Curving {
         &self.curving
-    }
-
-    /// Whether ClamShell's own compositor shows the windows (see [`Init::compositor`]).
-    pub fn compositor(&self) -> bool {
-        self.compositor
     }
 
     /// The lists, their rows and where each is scrolled (see [`Lists`]).
