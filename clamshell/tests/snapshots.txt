@@ -65,7 +65,7 @@ settings-menu.png 72af12303e2b3a9a
 settings-running.png c6357ffbbc651800
 settings.png 46003af734927d73
 slider.png 77831e534b0c5416
-status-low.png ccb3226080159312
+status-low.png 81be53bc80a79215
 sysinfo.png 90ff58d91e07de6b
 time-by-hand.png 869d358dca37b9e8
 time-europe.png 76b432811acfc06d

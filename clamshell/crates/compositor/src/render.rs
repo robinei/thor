@@ -101,11 +101,11 @@ impl UiFrame {
     }
 }
 
-/// The scene's elements, front first: the overlay over the window on the top screen (the HUD and the
-/// window arrows), the UI's screens, and the windows shown. `frames` are the top screen's, the second's
-/// and the overlay's.
-pub(crate) fn elements(server: &mut Server, frames: &mut [UiFrame; 3], renderer: &mut GlesRenderer, out: &mut Vec<Element>) -> Result<(), Error> {
-    let [top, bottom, overlay] = frames;
+/// The scene's elements, front first: the screens' overlays (over the top screen's window the HUD and
+/// the window arrows, over the second screen the notifications), the UI's screens, and the windows
+/// shown. `frames` are the top screen's, the second's, and their overlays'.
+pub(crate) fn elements(server: &mut Server, frames: &mut [UiFrame; 4], renderer: &mut GlesRenderer, out: &mut Vec<Element>) -> Result<(), Error> {
+    let [top, bottom, overlay, overlay_below] = frames;
     // The top screen's view isn't shown while a window covers it, so it isn't drawn either: it stays stale
     // in the core, and is drawn where it changed once uncovered (the texture holds the last frame drawn).
     let state = server.core.state();
@@ -114,13 +114,16 @@ pub(crate) fn elements(server: &mut Server, frames: &mut [UiFrame; 3], renderer:
         top.update(&mut server.core, Screen::Top, renderer)?;
     }
     bottom.update(&mut server.core, Screen::Bottom, renderer)?;
-    overlay.update(&mut server.core, Layer::Overlay, renderer)?;
+    overlay.update(&mut server.core, Layer::Overlay(Screen::Top), renderer)?;
+    overlay_below.update(&mut server.core, Layer::Overlay(Screen::Bottom), renderer)?;
     server.core.frames_done();
     out.clear();
-    if let Some(area) = server.core.overlay_area()
-        && let Some(element) = overlay.element(renderer, 0, Some(area))
-    {
-        out.push(element);
+    for (frame, screen, x) in [(&*overlay_below, Screen::Bottom, server.top_width), (&*overlay, Screen::Top, 0)] {
+        if let Some(area) = server.core.overlay_area(screen)
+            && let Some(element) = frame.element(renderer, x, Some(area))
+        {
+            out.push(element);
+        }
     }
     let state = server.core.state();
     let show_bottom = state.bottom().shows_windows(state.session());

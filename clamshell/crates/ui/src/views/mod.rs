@@ -21,6 +21,7 @@ mod editor;
 mod keyboard;
 mod keymaps;
 mod levels;
+mod notifications;
 mod overlay;
 mod profiles;
 mod radio;
@@ -54,11 +55,14 @@ pub fn top(f: &mut Frame, screen: Rect) {
     }
 }
 
-/// Over the window on the top screen, over all of `screen`: the HUD and the window arrows. The frame
-/// starts clear (see `render`).
-pub fn overlay(f: &mut Frame, screen: Rect) {
+/// Over what `which` shows, over all of `screen`: on the top screen the HUD and the window arrows, over
+/// the window; on the bottom screen the notifications. The frame starts clear (see `render`).
+pub fn overlay(f: &mut Frame, screen: Rect, which: crate::Screen) {
     f.body = screen;
-    overlay::draw(f, screen);
+    match which {
+        crate::Screen::Top => overlay::draw(f, screen),
+        crate::Screen::Bottom => notifications::draw(f, screen),
+    }
 }
 
 /// The windows' tab: the window moved down, which the compositor shows below the bar, or with none

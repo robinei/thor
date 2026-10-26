@@ -46,8 +46,8 @@ impl State {
     }
 
     /// Whether the bottom screen is lit, so that what is over it is seen: it is on, and so are the
-    /// screens.
-    pub(crate) fn bottom_lit(&self) -> bool {
+    /// screens. Notifications are drawn, and their times run, only then.
+    pub fn bottom_lit(&self) -> bool {
         !self.bottom.off() && !self.device.calibrating() && self.idle.stage() < Stage::Off
     }
 }

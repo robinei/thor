@@ -47,7 +47,8 @@ pub(crate) struct Server {
     screens_sent: Option<clamshell_state::session::presentation::Screens>,
     pub pointer_window: Option<i64>,
     pub pointer_buttons: Vec<u32>,
-    pub arrow_pressed: bool,
+    /// The left button came down on an overlay's target, which acted at once; its release is not passed on.
+    pub overlay_pressed: bool,
     pub keyboard_home: bool,
     /// A VT asked for with Ctrl+Alt+F1..F12, for the host whose seat can switch.
     pub vt_switch: Option<i32>,
@@ -144,7 +145,7 @@ impl Server {
             top_bound: Vec::new(),
             pointer_window: None,
             pointer_buttons: Vec::new(),
-            arrow_pressed: false,
+            overlay_pressed: false,
             keyboard_home: false,
             vt_switch: None,
             screens_on: [true; 2],

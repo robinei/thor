@@ -507,8 +507,9 @@ Interactions: a critical notification wakes the screens as input does (`idle.own
 bottom screen on (`Bottom::light`: off by hand or by itself, or dark for a game), routed through
 `State::notify`; an ordinary one waits (tests `a_critical_notification_wakes_the_screens_and_turns_the_bottom_screen_on`,
 `a_critical_notification_lights_a_screen_dark_for_a_game`). A tap on one is input and a use of the bottom
-screen. Taps reach the state from the UI's overlay as the press comes down (`Core::press_overlay`), not
-through the pointer's presses. What the bus thread does (the name, `Notify` answered with the id,
+screen. Taps reach the state from the bottom screen's overlay as the press comes down
+(`Core::press_overlay`), not through the pointer's presses; the overlay draws them, and so offers them to
+touch, only while the bottom screen is lit (ui `the_newest_three_show_below_the_bar_each_with_its_close_mark`). What the bus thread does (the name, `Notify` answered with the id,
 `replaces_id`, the signals) is checked by its parsing tests and by the nested compositor test, which sends
 one with `gdbus` and closes it.
 
@@ -818,11 +819,14 @@ real client pixels across top, bottom, return and Home. The remaining protocols 
 
 ### Compositor touch routing (compositor/touch)
 
-A contact starts on a client surface, a UI screen, a Home arrow, or black. Client contacts retain their
-surface and inverse geometry from down until up; each slot has its own target, so both screens can be
-touched simultaneously. Motion across screens keeps that target. UI contacts use the existing Core
-press/move/release path on their initial screen. Arrows, the targets of the overlay's frame drawn last
-(`Core::press_overlay`), switch once on down and consume the contact;
+A contact starts on a client surface, a UI screen, an overlay's target, or black. Client contacts retain
+their surface and inverse geometry from down until up; each slot has its own target, so both screens can
+be touched simultaneously. Motion across screens keeps that target. UI contacts use the existing Core
+press/move/release path on their initial screen. An overlay's targets, those of the screen's overlay
+frame drawn last (`Core::press_overlay`), act once on down and consume the contact: a Home arrow
+switches windows, a notification is tapped, its close mark dismisses it (tests
+`touching_a_home_arrow_switches_once_and_consumes_home_release`,
+`touching_a_notification_taps_it_and_its_close_mark_dismisses_it`);
 black stays ignored even when the finger moves over a client. Unknown motion/up events do nothing.
 Tracking is bounded to 32 simultaneous contacts; additional downs are ignored. Reusing an active slot
 cancels the previous sequence before accepting the new down.

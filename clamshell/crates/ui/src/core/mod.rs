@@ -3,8 +3,8 @@
 //! - gives it input by screen ([`Core::press`], [`Core::pad`], ...) and the screens' sizes;
 //! - runs it when its deadline comes and after each turn of its loop ([`Core::run`]);
 //! - draws a screen that is due when a frame can be shown: [`Core::record`], then [`Core::draw`] into a
-//!   pixmap of the screen's size, then [`Core::frames_done`]; and the same for the overlay over the
-//!   window on the top screen ([`Layer::Overlay`]), shown where it draws ([`Core::overlay_area`]);
+//!   pixmap of the screen's size, then [`Core::frames_done`]; and the same for each screen's overlay
+//!   ([`Layer::Overlay`]), shown where it draws ([`Core::overlay_area`]);
 //! - carries out the effects, in order ([`Core::next_effect`]): the screens' power, the refresh rate and
 //!   quitting itself, the rest through the system crate.
 
@@ -76,8 +76,8 @@ pub struct Core {
     images: Images,
     arrivals: Receiver<Arrival>,
     screens: Screens<ScreenCore>,
-    /// What is drawn over the window on the top screen, at the top screen's size.
-    overlay: ScreenCore,
+    /// What is drawn over each screen, at its size.
+    overlays: Screens<ScreenCore>,
     input: Input,
     /// The presses' running timers, each with when it fires.
     timers: Vec<(Source, Timer, Instant)>,
@@ -130,7 +130,7 @@ impl Core {
             images,
             arrivals,
             screens: Screens::default(),
-            overlay: ScreenCore::default(),
+            overlays: Screens::default(),
             input: Input::default(),
             timers: Vec::new(),
             clock: EventClock::default(),
@@ -252,27 +252,23 @@ impl Core {
     /// What the screens show may have changed, so each is recorded again before its next frame and drawn
     /// if it changed.
     pub(crate) fn changed(&mut self) {
-        for (_, screen) in self.screens.iter_mut() {
+        for (_, screen) in self.screens.iter_mut().chain(self.overlays.iter_mut()) {
             screen.stale = true;
         }
-        self.overlay.stale = true;
     }
 
-    /// `screen`'s logical size and integer scale, as the host shows it. It is recorded again, and with
-    /// the top screen the overlay.
+    /// `screen`'s logical size and integer scale, as the host shows it. It is recorded again, and its
+    /// overlay too.
     pub fn resize(&mut self, screen: Screen, size: (u32, u32), scale: u32) {
-        let s = &mut self.screens[screen];
-        (s.size, s.scale, s.stale) = (size, scale.max(1), true);
-        if screen == Screen::Top {
-            let o = &mut self.overlay;
-            (o.size, o.scale, o.stale) = (size, scale.max(1), true);
+        for s in [&mut self.screens[screen], &mut self.overlays[screen]] {
+            (s.size, s.scale, s.stale) = (size, scale.max(1), true);
         }
     }
 
     fn layer(&self, layer: Layer) -> &ScreenCore {
         match layer {
             Layer::Screen(screen) => &self.screens[screen],
-            Layer::Overlay => &self.overlay,
+            Layer::Overlay(screen) => &self.overlays[screen],
         }
     }
 
@@ -308,7 +304,7 @@ impl Core {
         let layer = layer.into();
         let s = match layer {
             Layer::Screen(screen) => &mut self.screens[screen],
-            Layer::Overlay => &mut self.overlay,
+            Layer::Overlay(screen) => &mut self.overlays[screen],
         };
         let size_px = (s.size.0 * s.scale, s.size.1 * s.scale);
         let at = Placement { size_px, scale: s.scale, drift: render::orbit(self.state.clock().unix()) };
@@ -328,15 +324,15 @@ impl Core {
     pub fn draw(&mut self, layer: impl Into<Layer>, pixmap: PixmapMut, held: u64, damage: Bounds) -> u64 {
         let s = match layer.into() {
             Layer::Screen(screen) => &mut self.screens[screen],
-            Layer::Overlay => &mut self.overlay,
+            Layer::Overlay(screen) => &mut self.overlays[screen],
         };
         s.frames.draw(pixmap, held, damage, &mut self.fonts, &self.images)
     }
 
-    /// Where the overlay's frame drawn last draws, in buffer pixels: the part of it to show over the
-    /// window. None when it draws nothing.
-    pub fn overlay_area(&self) -> Option<Bounds> {
-        let drawn = &self.overlay.frames.retained.drawn;
+    /// Where `screen`'s overlay's frame drawn last draws, in buffer pixels: the part of it to show over
+    /// what the screen shows. None when it draws nothing.
+    pub fn overlay_area(&self, screen: Screen) -> Option<Bounds> {
+        let drawn = &self.overlays[screen].frames.retained.drawn;
         let ink = drawn.ink().intersect(Bounds::of_size(drawn.size()));
         (!ink.is_empty()).then_some(ink)
     }

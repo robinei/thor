@@ -21,12 +21,13 @@ impl Screen {
     }
 }
 
-/// What the core records and draws: a screen, or the overlay, drawn over the windows on the top screen
-/// (the HUD and the window arrows) at the top screen's size.
+/// What the core records and draws: a screen, or a screen's overlay at that screen's size, drawn over
+/// what the screen shows, a window or ClamShell's view: on the top screen the HUD and the window arrows,
+/// on the bottom screen the notifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Layer {
     Screen(Screen),
-    Overlay,
+    Overlay(Screen),
 }
 
 impl From<Screen> for Layer {

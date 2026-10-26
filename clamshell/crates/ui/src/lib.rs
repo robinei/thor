@@ -43,14 +43,17 @@ pub struct Config {
     pub touch_layout: Arc<Mutex<TouchLayout>>,
 }
 
-/// Renders one screen without Wayland, at `size` logical pixels and integer `scale`, to a PNG file.
-/// For checking layouts and for automated tests. Returns the events a live frame would send the state,
-/// such as the shelf's rows and the lists' rows.
+/// Renders one screen without Wayland, at `size` logical pixels and integer `scale`, to a PNG file, with
+/// its overlay over it as the compositor shows it. For checking layouts and for automated tests. Returns
+/// the events a live frame would send the state, such as the shelf's rows and the lists' rows.
 pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, path: &std::path::Path) -> Result<Vec<Event>, Error> {
     let at = Placement { size_px: (size.0 * scale, size.1 * scale), scale, drift: (0, 0) };
+    let (mut fonts, mut images) = (DrawCache::load(), Images::synchronous());
     let mut pixmap = tiny_skia::Pixmap::new(at.size_px.0, at.size_px.1).ok_or("no pixmap")?;
-    let mut retained = Retained::default();
-    let rendered = render::render(pixmap.as_mut(), &mut retained, at, screen.into(), state, &mut DrawCache::load(), &mut Images::synchronous())?;
+    let rendered = render::render(pixmap.as_mut(), &mut Retained::default(), at, screen.into(), state, &mut fonts, &mut images)?;
+    let mut overlay = tiny_skia::Pixmap::new(at.size_px.0, at.size_px.1).ok_or("no pixmap")?;
+    render::render(overlay.as_mut(), &mut Retained::default(), at, Layer::Overlay(screen), state, &mut fonts, &mut images)?;
+    pixmap.draw_pixmap(0, 0, overlay.as_ref(), &tiny_skia::PixmapPaint::default(), tiny_skia::Transform::identity(), None);
     pixmap.save_png(path)?;
     Ok(render::frame_events(state, &rendered))
 }

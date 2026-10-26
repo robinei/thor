@@ -2,7 +2,7 @@
 //! releases, the pad and keys.
 
 use clamshell_state::device::buttons::DeviceKey;
-use clamshell_state::{Event, Id, ListEvent, PadInput, PointerEvent, ShelfEvent, State};
+use clamshell_state::{Event, Id, ListEvent, NotificationEvent, PadInput, PointerEvent, ShelfEvent, State};
 use xkeysym::Keysym;
 
 use crate::Screen;
@@ -41,15 +41,21 @@ impl Core {
         self.run_actions(actions);
     }
 
-    /// A finger or button comes down at `position` on the top screen, over its window: it presses the
-    /// overlay's target there, if there is one, and says whether there was. The window arrows act as they
-    /// are pressed, as the pad's window keys do.
-    pub fn press_overlay(&mut self, (x, y): (f64, f64)) -> bool {
-        let found = self.overlay.frames.retained.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).map(|t| t.id.clone());
+    /// A finger or button comes down at `position` on `screen`: it presses the target of the screen's
+    /// overlay there, if there is one, and says whether there was. Overlay targets act as they are
+    /// pressed: the window arrows as the pad's window keys do, a notification is tapped, and its close
+    /// mark dismisses it.
+    pub fn press_overlay(&mut self, screen: Screen, (x, y): (f64, f64)) -> bool {
+        let found = self.overlays[screen].frames.retained.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).map(|t| t.id.clone());
         let Some(id) = found else { return false };
-        if let Id::WindowArrow { next } = id {
-            let key = if next { DeviceKey::WindowNext } else { DeviceKey::WindowPrevious };
-            self.handle(Event::Device(key));
+        match id {
+            Id::WindowArrow { next } => {
+                let key = if next { DeviceKey::WindowNext } else { DeviceKey::WindowPrevious };
+                self.handle(Event::Device(key));
+            }
+            Id::Notification { id, close: false } => self.handle(NotificationEvent::Tapped(id).into()),
+            Id::Notification { id, close: true } => self.handle(NotificationEvent::Dismissed(id).into()),
+            _ => {}
         }
         true
     }

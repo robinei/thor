@@ -85,21 +85,21 @@ impl Retained {
 }
 
 /// Records `layer` for `state` into `retained.next`, and moves its targets and the touchpad area into
-/// surface pixels. A screen's frame starts with the whole buffer black, the overlay's clear.
+/// surface pixels. A screen's frame starts with the whole buffer black, an overlay's clear.
 pub(crate) fn record(retained: &mut Retained, at: Placement, layer: Layer, state: &State, fonts: &mut DrawCache, images: &mut Images) -> FrameOut {
     let scale = at.scale.max(1);
     let ((lw, lh), offset) = inset(at.size_px, scale, at.drift);
     let mut out = {
         let mut canvas = Canvas::new(&mut retained.next, at.size_px, scale as f32, fonts).with_offset(offset);
-        // The views paint on black and have no background of their own; the overlay shows the windows
-        // under it.
-        canvas.clear(if layer == Layer::Overlay { tiny_skia::Color::TRANSPARENT } else { crate::toolkit::style::BG.into() });
+        // The views paint on black and have no background of their own; an overlay shows what is under
+        // it.
+        canvas.clear(if matches!(layer, Layer::Overlay(_)) { tiny_skia::Color::TRANSPARENT } else { crate::toolkit::style::BG.into() });
         let mut f = Frame::new(&mut canvas, state, images, &mut retained.scratch, &mut retained.targets);
         let layout = Rect::new(0.0, 0.0, lw, lh);
         match layer {
             Layer::Screen(Screen::Top) => views::top(&mut f, layout),
             Layer::Screen(Screen::Bottom) => views::bottom(&mut f, layout),
-            Layer::Overlay => views::overlay(&mut f, layout),
+            Layer::Overlay(screen) => views::overlay(&mut f, layout, screen),
         }
         f.finish()
     };

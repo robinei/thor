@@ -110,6 +110,8 @@ pub enum Icon {
     Archive,
     /// Shelf's row mark for an entry that is running: a dot.
     Dot,
+    /// Closes or dismisses something, such as a notification: a cross.
+    Close,
 }
 
 impl Icon {
@@ -396,6 +398,10 @@ pub fn draw(c: &mut Painter, icon: Icon, r: Rect, color: Color) {
         Icon::ChevronBack => p.line(&[(15.0, 5.0), (8.0, 12.0), (15.0, 19.0)], 2.2),
         Icon::Check => p.line(&[(4.5, 12.5), (9.5, 17.5), (19.5, 6.5)], 2.4),
         Icon::Dot => p.dot(12.0, 12.0, 4.5),
+        Icon::Close => {
+            p.line(&[(6.0, 6.0), (18.0, 18.0)], LINE);
+            p.line(&[(18.0, 6.0), (6.0, 18.0)], LINE);
+        }
         Icon::Archive => {
             p.frame((3.5, 4.0, 17.0, 5.0), 1.0, LINE);
             p.frame((4.5, 9.0, 15.0, 11.5), 1.0, LINE);
@@ -681,12 +687,13 @@ mod tests {
             Icon::App,
             Icon::Archive,
             Icon::Dot,
+            Icon::Close,
         ];
         let mut seen = std::collections::HashSet::new();
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 60, "a variant is missing from the list");
+        assert_eq!(seen.len(), 61, "a variant is missing from the list");
         all
     }
 
@@ -753,6 +760,7 @@ mod tests {
             Icon::AntiAlias => 63,
             Icon::Sharpen => 64,
             Icon::ChevronBack => 66,
+            Icon::Close => 67,
         }
     }
 

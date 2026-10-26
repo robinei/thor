@@ -472,7 +472,7 @@ fn touching_a_home_arrow_switches_once_and_consumes_home_release() {
     server.core.handle(Event::HomeHeld(true));
     assert!(server.core.state().session().has_other_top_window());
     // The arrows are drawn, as they are before they can be seen and touched.
-    assert!(server.core.record(clamshell_ui::Layer::Overlay, false).is_some());
+    assert!(server.core.record(clamshell_ui::Layer::Overlay(clamshell_ui::Screen::Top), false).is_some());
     let time = InputTime::from_millis(10);
     let point = (server.top_width as f64 - 20.0, server.size.1 as f64 / 2.0).into();
     server.touch_down(Some(0).into(), point, time);
@@ -486,6 +486,44 @@ fn touching_a_home_arrow_switches_once_and_consumes_home_release() {
     server.core.handle(Event::HomeHeld(false));
     server.core.handle(Event::HomeTap);
     assert_eq!(server.core.state().session().top_window().map(|w| w.id), Some(2));
+}
+
+#[test]
+fn touching_a_notification_taps_it_and_its_close_mark_dismisses_it() {
+    use clamshell_state::{Notification, NotificationEvent, NotificationId, Urgency};
+    use smithay::backend::input::InputTime;
+    let display = Display::<Server>::new().unwrap();
+    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
+    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
+    server.core.handle(Event::Start);
+    for id in [1, 2] {
+        let n = Notification {
+            id: NotificationId::Bus(id),
+            app: "mail".into(),
+            summary: format!("note {id}"),
+            body: String::new(),
+            urgency: Urgency::Normal,
+            action: Some("default".into()),
+            timeout_ms: 0,
+        };
+        server.core.handle(NotificationEvent::Notified(Box::new(n)).into());
+    }
+    // Drawn, as they are before they can be seen and touched.
+    let bottom = clamshell_ui::Layer::Overlay(clamshell_ui::Screen::Bottom);
+    assert!(server.core.record(bottom, false).is_some());
+    let time = InputTime::from_millis(10);
+    // The newest, 2, is the first row below the bar; its close mark is at the row's right end.
+    let close = (f64::from(server.top_width) + 600.0, 100.0).into();
+    server.touch_down(Some(0).into(), close, time);
+    server.touch_up(Some(0).into(), time);
+    let held = |server: &Server| server.core.state().notifications().iter().map(|n| n.id).collect::<Vec<_>>();
+    assert_eq!(held(&server), [NotificationId::Bus(1)], "the close mark dismissed 2");
+    assert!(server.core.record(bottom, false).is_some());
+    let row = (f64::from(server.top_width) + 100.0, 100.0).into();
+    server.touch_down(Some(0).into(), row, time);
+    server.touch_up(Some(0).into(), time);
+    assert!(held(&server).is_empty(), "a tap on the row dismissed 1");
+    assert!(server.touches.iter().all(Option::is_none));
 }
 
 mod keyboard_tests;

@@ -78,6 +78,20 @@ fn calibrating() -> Progress {
     Progress { phase: Phase::LetGo, now: [0; 4], seen: [rest; 4], min: -1024, max: 1024 }
 }
 
+/// A program's notification, which stays until dismissed; the third is critical.
+fn notification(id: u32) -> Event {
+    let n = clamshell_state::Notification {
+        id: clamshell_state::NotificationId::Bus(id),
+        app: "mail".into(),
+        summary: format!("New mail {id}"),
+        body: "From Ann: about tomorrow\nSecond line".into(),
+        urgency: if id == 3 { clamshell_state::Urgency::Critical } else { clamshell_state::Urgency::Normal },
+        action: Some("default".into()),
+        timeout_ms: 0,
+    };
+    clamshell_state::NotificationEvent::Notified(Box::new(n)).into()
+}
+
 fn tap(id: Id) -> Event {
     Event::Pointer(PointerEvent::Activate(id))
 }
@@ -131,7 +145,8 @@ fn warm_frames_do_not_allocate() {
     let mut images = crate::gfx::images::Images::synchronous();
     let mut top = Screen1::new(Screen::Top, Placement { size_px: (1920, 1080), scale: 1, drift: (1, -2) });
     let mut bottom = Screen1::new(Screen::Bottom, Placement { size_px: (1240, 1080), scale: 1, drift: (-3, 0) });
-    let mut overlay = Screen1::new(crate::screens::Layer::Overlay, Placement { size_px: (1920, 1080), scale: 1, drift: (1, -2) });
+    let mut overlay = Screen1::new(crate::screens::Layer::Overlay(Screen::Top), Placement { size_px: (1920, 1080), scale: 1, drift: (1, -2) });
+    let mut below = Screen1::new(crate::screens::Layer::Overlay(Screen::Bottom), Placement { size_px: (1240, 1080), scale: 1, drift: (-3, 0) });
 
     let cases: Vec<(&str, Vec<Event>)> = vec![
         ("sysinfo", vec![]),
@@ -173,6 +188,7 @@ fn warm_frames_do_not_allocate() {
                 clamshell_state::WindowEvent::Activate(7).into(),
             ],
         ),
+        ("notifications", (1..=5).map(notification).collect()),
         (
             "window arrows, Home held",
             vec![
@@ -444,7 +460,8 @@ fn warm_frames_do_not_allocate() {
     // For the cases that are easy to get wrong: the state each must reach, so that it tests the screen it
     // is named for.
     type Reached = fn(&State) -> bool;
-    let reached: [(&str, Reached); 8] = [
+    let reached: [(&str, Reached); 9] = [
+        ("notifications", |s| s.notifications().len() == 5 && s.bottom_lit()),
         ("window arrows, Home held", |s| s.session().home_held() && s.session().has_other_top_window()),
         ("keymap name editor", |s| s.bottom().editor().is_some()),
         ("shelf, an open group", |s| s.shelf().group().is_some()),
@@ -483,6 +500,7 @@ fn warm_frames_do_not_allocate() {
                 top.draw(s, &mut cache, &mut images);
                 bottom.draw(s, &mut cache, &mut images);
                 overlay.draw(s, &mut cache, &mut images);
+                below.draw(s, &mut cache, &mut images);
             }
             let n = allocs() - before;
             // The first rounds fill the glyph cache and size the vectors.

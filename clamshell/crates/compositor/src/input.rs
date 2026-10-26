@@ -132,9 +132,9 @@ impl Server {
             }
             InputEvent::PointerButton { event, .. } => {
                 log::debug!("compositor: button {:#x} {:?} at {:?}", event.button_code(), event.state(), self.pointer);
-                if event.button_code() == 0x110 && self.arrow_pressed {
+                if event.button_code() == 0x110 && self.overlay_pressed {
                     if event.state() == ButtonState::Released {
-                        self.arrow_pressed = false;
+                        self.overlay_pressed = false;
                     }
                     return;
                 }
@@ -143,8 +143,9 @@ impl Server {
                         let hit = self.hit(self.pointer);
                         self.dismiss_menu_outside(hit.as_ref().map(|hit| hit.window));
                         self.dismiss_x11_menus_outside(hit.as_ref().map(|hit| &hit.surface));
-                        if event.button_code() == 0x110 && self.pointer.x < self.top_width as f64 && self.core.press_overlay((self.pointer.x, self.pointer.y)) {
-                            self.arrow_pressed = true;
+                        let (screen, position) = self.screen_position(self.pointer);
+                        if event.button_code() == 0x110 && self.core.press_overlay(screen, position) {
+                            self.overlay_pressed = true;
                             self.sync_windows();
                             return;
                         }
@@ -272,7 +273,8 @@ impl Server {
         self.screen_position(self.pointer)
     }
 
-    fn screen_position(&self, point: Point<f64, Logical>) -> (Screen, (f64, f64)) {
+    /// The screen `point` is on, and where on it.
+    pub(crate) fn screen_position(&self, point: Point<f64, Logical>) -> (Screen, (f64, f64)) {
         if point.x < self.top_width as f64 { (Screen::Top, (point.x, point.y)) } else { (Screen::Bottom, (point.x - self.top_width as f64, point.y)) }
     }
 }

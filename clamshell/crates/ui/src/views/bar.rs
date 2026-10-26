@@ -92,9 +92,14 @@ fn tab_button(s: &State, tab: Tab) -> (Id, Icon, Tone) {
     }
 }
 
+/// The bar's height on `screen`.
+pub(super) fn height(screen: Rect) -> f32 {
+    (screen.h * BAR_H).max(20.0)
+}
+
 /// Draws the bar along the top of `screen` and returns the area below it.
 pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
-    let bar_h = (screen.h * BAR_H).max(20.0);
+    let bar_h = height(screen);
     let mut body = screen;
     let mut bar = body.take_top(bar_h);
     let icon_button = |f: &mut Frame, id: Id, r: Rect, icon: Icon, tone: Tone| {

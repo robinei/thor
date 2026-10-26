@@ -100,8 +100,8 @@ struct Drawing {
     renderer: GlesRenderer,
     pipeline: Pipeline,
     screens: Vec<Screen>,
-    /// The top screen's UI, the second's, and the overlay over the top screen's window.
-    frames: [UiFrame; 3],
+    /// The top screen's UI, the second's, and their overlays.
+    frames: [UiFrame; 4],
     cursor: crate::cursor::Cursor,
     elements: Vec<render::Element>,
     /// The scene's elements as last composed.
@@ -232,7 +232,7 @@ pub fn run(
         renderer,
         pipeline,
         screens,
-        frames: [UiFrame::new(top_ui)?, UiFrame::new(bottom_ui)?, UiFrame::new(top_ui)?],
+        frames: [UiFrame::new(top_ui)?, UiFrame::new(bottom_ui)?, UiFrame::new(top_ui)?, UiFrame::new(bottom_ui)?],
         cursor: crate::cursor::Cursor::new(),
         elements: Vec::new(),
         states: RenderElementStates::default(),
