@@ -348,6 +348,8 @@ pub struct Window {
     pub parent: Option<i64>,
     pub limits: super::presentation::WindowLimits,
     pub role: super::presentation::WindowRole,
+    /// Whether it is an X11 window, shown through Xwayland.
+    pub x11: bool,
     pub colour: Option<Arc<super::presentation::ColourDescription>>,
     /// Whether this is the selected top content. Keyboard focus is independent: see
     /// [`Session::keyboard_focus`]. On opening, the backend may supply an initial focus observation.

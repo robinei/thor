@@ -195,6 +195,8 @@ pub struct State {
     screens: crate::session::presentation::Screens,
     /// The last histogram the compositor measured (see [`Reading::Histogram`]).
     histogram: Option<crate::session::presentation::Histogram>,
+    /// The sizes of Xwayland's modes (see [`Reading::XwaylandModes`]).
+    xwayland_modes: Vec<(u32, u32)>,
     /// Whether ClamShell's own compositor shows the windows (see [`Init::compositor`]).
     compositor: bool,
     /// Where the lists but shelf are scrolled.
@@ -232,6 +234,7 @@ impl State {
             setting_slider: None,
             screens: Default::default(),
             histogram: None,
+            xwayland_modes: Vec::new(),
             compositor: init.compositor,
             bottom: Bottom::new(init.window_rules),
             sys: Sys::new(init.twelve_hour),
@@ -717,6 +720,7 @@ impl State {
             Reading::Screens(screens) => self.screens = *screens,
             Reading::Histogram(histogram) => self.histogram = Some(*histogram),
             Reading::Told { unit, steam_app, resolution } => self.session.told(unit.as_deref(), steam_app, resolution),
+            Reading::XwaylandModes(modes) => self.xwayland_modes = modes,
             Reading::Wifi(wifi) => self.radios.read_wifi(wifi),
             Reading::Bluetooth(bluetooth) => self.radios.read_bluetooth(bluetooth),
             Reading::Battery(battery) => self.sys.read_battery(battery),

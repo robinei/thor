@@ -238,8 +238,9 @@ impl crate::State {
         let window = self.session().window(id)?;
         let game = self.session().running_of(window).and_then(|r| self.session().entry(self.shelf().library(), &r.id)).is_some_and(crate::Entry::is_game);
         // What the top screen may tell its windows: a game is told its resolution when it starts, which may
-        // have changed since. The second's size isn't known here, and games are shown on the top one.
-        let screen: Vec<(u32, u32)> = self
+        // have changed since, and an X11 game the modes Xwayland offers, one of which it may switch to. The
+        // second's size isn't known here, and games are shown on the top one.
+        let mut screen: Vec<(u32, u32)> = self
             .top_size()
             .filter(|_| !window.down)
             .map(|top| {
@@ -247,6 +248,9 @@ impl crate::State {
                 Setting::Resolution.choices().iter().map(|value| Resolution::of(*value).size_on(top)).collect()
             })
             .unwrap_or_default();
+        if window.x11 && !window.down {
+            screen.extend(&self.xwayland_modes);
+        }
         Some(window.presentation(game, &screen))
     }
 

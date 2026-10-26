@@ -21,7 +21,7 @@ use std::{
 };
 use x11rb_protocol::{
     id_allocator::IdAllocator,
-    protocol::{composite, res, xproto::*},
+    protocol::{composite, randr, res, xproto::*},
     x11_utils::{Request, Serialize, TryParse},
 };
 
@@ -40,6 +40,9 @@ enum Query {
     Pid(i64),
     Attributes(i64),
     OwnershipBarrier,
+    RandrExtension,
+    RandrVersion,
+    RandrModes,
 }
 /// The server time for a focus change. The X server ignores a focus request older than the last focus
 /// change, which an active client may have made itself, so each change waits for a fresh time: an empty
@@ -86,6 +89,8 @@ pub(super) struct Wm {
     extension_done: bool,
     composite: Option<u8>,
     composite_done: bool,
+    /// RandR's opcode, for the modes.
+    randr: Option<u8>,
     pub ready: bool,
     focus: Option<u32>,
     stamp: Stamp,
@@ -127,6 +132,7 @@ impl Wm {
                 self.query(wire, InternAtomRequest { only_if_exists: false, name: name.as_bytes().into() }, 0, Query::Atom(name), now)?;
             }
             self.query(wire, QueryExtensionRequest { name: b"X-Resource".as_slice().into() }, 0, Query::Extension, now)?;
+            self.query(wire, QueryExtensionRequest { name: b"RANDR".as_slice().into() }, 0, Query::RandrExtension, now)?;
         }
         if self.started && self.composite.is_none() && !self.pending.iter().any(|p| matches!(p.kind, Query::CompositeExtension)) {
             self.query(wire, QueryExtensionRequest { name: b"Composite".as_slice().into() }, 0, Query::CompositeExtension, now)?;
@@ -325,6 +331,10 @@ impl Wm {
                     self.forget(id, server);
                     return Ok(());
                 }
+                Query::RandrExtension | Query::RandrVersion | Query::RandrModes => {
+                    log::warn!("compositor: Xwayland's modes can't be read: a game's window at one is shown at its own size");
+                    return Ok(());
+                }
                 _ => return Err(io::Error::other("XWM initialisation request rejected")),
             }
         }
@@ -351,6 +361,31 @@ impl Wm {
                     Query::CompositeVersion,
                     now,
                 )?;
+            }
+            Query::RandrExtension => {
+                let reply = QueryExtensionReply::try_parse(bytes).map_err(io::Error::other)?.0;
+                if !reply.present {
+                    log::warn!("compositor: Xwayland lacks RandR: a game's window at one of its modes is shown at its own size");
+                    return Ok(());
+                }
+                self.randr = Some(reply.major_opcode);
+                self.query(wire, randr::QueryVersionRequest { major_version: 1, minor_version: 3 }, reply.major_opcode, Query::RandrVersion, now)?;
+            }
+            Query::RandrVersion => {
+                randr::QueryVersionReply::try_parse(bytes).map_err(io::Error::other)?;
+                let root = wire.setup.as_ref().and_then(|setup| setup.roots.first()).map(|root| root.root);
+                if let (Some(opcode), Some(window)) = (self.randr, root) {
+                    self.query(wire, randr::GetScreenResourcesCurrentRequest { window }, opcode, Query::RandrModes, now)?;
+                }
+            }
+            Query::RandrModes => {
+                let reply = randr::GetScreenResourcesCurrentReply::try_parse(bytes).map_err(io::Error::other)?.0;
+                // Read once, at the start: they are the common sizes no larger than the screen.
+                let mut modes: Vec<(u32, u32)> = reply.modes.iter().map(|mode| (u32::from(mode.width), u32::from(mode.height))).collect();
+                modes.sort_unstable();
+                modes.dedup();
+                log::info!("compositor: Xwayland's modes: {modes:?}");
+                server.core.handle(clamshell_state::Event::Reading(clamshell_state::Reading::XwaylandModes(modes)));
             }
             Query::CompositeVersion => {
                 composite::QueryVersionReply::try_parse(bytes).map_err(io::Error::other)?;

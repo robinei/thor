@@ -202,6 +202,9 @@ pub enum Reading {
     /// The compositor told a game's process, known by its scope or Steam's app id, that its screen has this
     /// resolution, when it connected (see [`crate::State::process_game`]).
     Told { unit: Option<String>, steam_app: Option<u32>, resolution: crate::settings::Resolution },
+    /// The sizes of the modes Xwayland offers X11 clients, read when it starts: a game switching to one
+    /// shows a window of that size (see [`crate::State::window_presentation`]).
+    XwaylandModes(Vec<(u32, u32)>),
 }
 
 /// A press on a target from touch, the mouse or the pad's A, and pad focus changes.
