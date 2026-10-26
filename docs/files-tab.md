@@ -46,12 +46,12 @@ what is typed, here as in every tab.
 A file that is a library entry's (a ROM, a film the sources scanned) opens as that entry: its plays,
 Recent, where mpv left it. Any other file opens with the first `sources` entry whose `match` or `items`
 (their last part, any case) fits its name (an `.sfc` in RetroArch, an `.mkv` in mpv, wherever it is), else
-`xdg-open`; either way as a launch of its own, in its own slice and workspace, on the dock while it runs.
+`xdg-open`; either way as a launch of its own, in its own slice and group, on the dock while it runs.
 
 `xdg-open` often hands the file to a program not ours (an app's running instance, D-Bus activation) and
 ends at once, so nothing of the launch is left to follow. Such a launch runs on by its windows, as a game
-Steam runs does: a new window of no launch of ours that comes up within 15 seconds is moved to its
-workspace (never left on shelf's), and it ends when that window closes (or when none came). Its dock tile
+Steam runs does: a new window of no launch of ours that comes up within 15 seconds is put in its
+group (never left on shelf's), and it ends when that window closes (or when none came). Its dock tile
 shows the picture of the app whose window it is (the desktop file named by the window's app id, or whose
 program it is), for display only.
 

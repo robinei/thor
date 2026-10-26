@@ -12,7 +12,7 @@ The starter library.json opens them with the Android runner, `clamshell/android/
 - Starts the Waydroid session if it isn't running (a user unit, `waydroid-session`, bound to the Wayland
   filter's unit, see below; it stays up when apps quit). The first launch after a session start takes
   12–20 s, Android's boot; later ones about 1 s. On a cold start Waydroid opens the app's window, closes it
-  and opens another; ClamShell shows a window that comes on the workspace whose window in front closed
+  and opens another; ClamShell shows a window that comes in the group whose window in front closed
   within 2 s.
 - Starts the app full-screen through adb (a user unit, `clamshell-adb`), as Android's shell user. Waydroid's
   own launch opens apps as Android's floating windows, phone-sized in the middle of the window.
@@ -76,8 +76,8 @@ the size the window already has. A resize still reaches Waydroid. (The fix belon
 hotplug only when the size changed.)
 
 If the compositor ends a connection (it quit, or dropped Waydroid), the filter ends, and the Waydroid
-session with it (bound to the filter's unit): Waydroid can't go on without its display. Tried: with sway
-restarted under a running Android, Android's system crashed when it next drew (`system_server` restarted)
+session with it (bound to the filter's unit): Waydroid can't go on without its display. Tried when the session was sway
+(before 2026-10-26): with sway restarted under a running Android, Android's system crashed when it next drew (`system_server` restarted)
 and its network didn't come back.
 
 It does one more thing for Android's windows:

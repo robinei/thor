@@ -1153,7 +1153,7 @@ class Checks:
     # process control
 
     def _launch_test_game(self):
-        """The Test tab's first game (test.game, an idle mpv window) launched from shelf; its workspace,
+        """The Test tab's first game (test.game, an idle mpv window) launched from shelf; its group,
         once in front (none if it didn't come)."""
         # (Its collection's place depends on which are shown: Recent and Favourites only with entries.)
         for collection in range(4):
@@ -1195,10 +1195,10 @@ class Checks:
         until(lambda: not [u for u in units("run-") if u.endswith((".service", ".scope"))], 10)
 
     def _foot_outside(self, how):
-        """foot started outside ClamShell (`how`: a command starting it): whether it came in front on its
-        entry's workspace, and a reader of its process's cgroup."""
+        """foot started outside ClamShell (`how`: a command starting it): whether it came in front in its
+        entry's group, and a reader of its process's cgroup."""
         sh("pkill -x foot || true")
-        # (Gone, its entry ended, shelf in front: a window opening on an entry's workspace is that entry's.)
+        # (Gone, its entry ended, shelf in front: a window opening in an entry's group is that entry's.)
         until(lambda: not sh("pgrep -x foot || true").strip() and not [u for u in units("run-foot") if u.endswith((".service", ".scope"))]
               and front() == "shelf", 10)
         sh(how)
@@ -1207,17 +1207,17 @@ class Checks:
         return on, lambda: sh(f"cat /proc/{pid}/cgroup 2>/dev/null").strip() if pid else ""
 
     def found_window(self):
-        """A window started outside ClamShell: its entry's (foot's desktop file), on its workspace, in
+        """A window started outside ClamShell: its entry's (foot's desktop file), in its group, in
         front, its process moved into a scope of ours: from a desktop's app scope (as a launcher starts
         one), and from a login session's (as from a terminal over ssh)."""
         adopt = lambda since: [line for line in journal(since).splitlines() if "adopt" in line][-3:]
         since = now()
         on, cgroup = self._foot_outside("setsid -f systemd-run --user --scope --quiet --collect --unit=app-thor-checks-foot.scope foot >/dev/null 2>&1")
-        self.check("found: a window started outside ClamShell (an app scope) is its entry's, on its workspace, in front", on, f"front {front()!r}")
+        self.check("found: a window started outside ClamShell (an app scope) is its entry's, in its group, in front", on, f"front {front()!r}")
         self.check("  its process moved into a scope of ours", until(lambda: "clamshell-run-foot_" in cgroup(), 5), f"{cgroup()!r}; {adopt(since)}")
         since = now()
         on, cgroup = self._foot_outside("setsid -f foot >/dev/null 2>&1")
-        self.check("  one started in a login session too, on its workspace, in front", on, f"front {front()!r}")
+        self.check("  one started in a login session too, in its group, in front", on, f"front {front()!r}")
         self.check("  its process moved into a scope of ours", until(lambda: "clamshell-run-foot_" in cgroup(), 5), f"{cgroup()!r}; {adopt(since)}")
         sh("pkill -x foot || true")
 
