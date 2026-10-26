@@ -222,21 +222,14 @@ impl Pipeline {
             // The game's picture: the window's surface with the largest buffer (Wine draws it in a subsurface
             // over the toplevel's), and whether that buffer is its surface's size (Xwayland and Wine show a
             // mode a game picked as a smaller buffer scaled by a viewport).
-            let mut picture: Option<(smithay::reexports::wayland_server::protocol::wl_surface::WlSurface, i64, bool)> = None;
-            client.window.with_surfaces(|surface, states| {
-                let renderer_state = states.data_map.get::<smithay::backend::renderer::utils::RendererSurfaceStateUserData>();
-                let sizes = renderer_state.and_then(|state| {
-                    let state = state.lock().ok()?;
-                    state.buffer_size().zip(state.surface_size())
+            // The picture's surface (see `Surface::picture_surface`), and whether it shows its buffer unscaled.
+            let picture = client.window.picture_surface().map(|surface| {
+                let unscaled = smithay::backend::renderer::utils::with_renderer_surface_state(&surface, |state| {
+                    state.buffer_size().zip(state.surface_size()).is_some_and(|(buffer, shown)| buffer.w == shown.w && buffer.h == shown.h)
                 });
-                if let Some((buffer, shown)) = sizes {
-                    let area = i64::from(buffer.w) * i64::from(buffer.h);
-                    if picture.as_ref().is_none_or(|(_, largest, _)| area > *largest) {
-                        picture = Some((surface.clone(), area, buffer.w == shown.w && buffer.h == shown.h));
-                    }
-                }
+                (surface, unscaled.unwrap_or(false))
             });
-            let one_to_one = server.geometry(client.id).is_some_and(|g| g.one_to_one()) && picture.as_ref().is_some_and(|(_, _, unscaled)| *unscaled);
+            let one_to_one = server.geometry(client.id).is_some_and(|g| g.one_to_one()) && picture.as_ref().is_some_and(|(_, unscaled)| *unscaled);
             // FSR shown one to one would upscale nothing: sampled as it is, its sharpening CAS's.
             if one_to_one && clarity.scaling == clamshell_state::settings::Scaling::Fsr {
                 clarity.scaling = clamshell_state::settings::Scaling::Bilinear;

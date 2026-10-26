@@ -86,21 +86,15 @@ impl Measure {
 
     fn measure(&mut self, renderer: &mut GlesRenderer, server: &Server, window: i64) -> Result<(), String> {
         let Some(client) = server.windows.iter().find(|w| w.id == window && w.mapped) else { return Ok(()) };
-        // The picture: the surface with the largest buffer (Wine draws a game in a subsurface).
+        // The picture's surface's texture (Wine draws a game in a subsurface).
+        let Some(surface) = client.window.picture_surface() else { return Ok(()) };
         let context = renderer.context_id();
-        let mut picture: Option<(GlesTexture, i64, Id)> = None;
-        client.window.with_surfaces(|surface, states| {
+        let source = smithay::wayland::compositor::with_states(&surface, |states| {
             let state = states.data_map.get::<RendererSurfaceStateUserData>();
-            let texture = state.and_then(|state| state.lock().ok()?.texture::<GlesTexture>(context.clone()).cloned());
-            if let Some(texture) = texture {
-                let size = smithay::backend::renderer::Texture::size(&texture);
-                let area = i64::from(size.w) * i64::from(size.h);
-                if picture.as_ref().is_none_or(|(_, largest, _)| area > *largest) {
-                    picture = Some((texture, area, Id::from_wayland_resource(surface)));
-                }
-            }
+            state.and_then(|state| state.lock().ok()?.texture::<GlesTexture>(context).cloned())
         });
-        let Some((source, _, id)) = picture else { return Ok(()) };
+        let Some(source) = source else { return Ok(()) };
+        let id = Id::from_wayland_resource(&surface);
         let colour = server.colour.surfaces.get(&id).map(|colour| **colour).unwrap_or_default();
         let hdr = colour.hdr();
         let kind = match colour.transfer {

@@ -18,17 +18,21 @@ pub(crate) struct Geometry {
 /// How a game's picture is shown (see [`Geometry::new`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct Picture {
-    /// The size of its buffer, in the window's surface with the largest one (see `Surface::picture_size`).
+    /// The size of its buffer, the part shown (see `Surface::picture`).
     pub size: Option<Size<i32, Logical>>,
+    /// Where it is shown in its window, in the window's surface's coordinates: all of it, or for Wine's at a
+    /// mode of another shape, part, between Wine's own bars.
+    pub place: Option<Rectangle<i32, Logical>>,
     /// Shown at the largest whole multiple of that size that fits (Nearest+Integer).
     pub integer: bool,
 }
 
 impl Geometry {
-    /// The window of `native` geometry in `viewport`, as `policy` says. For a game's fullscreen window, its
-    /// `picture`: a buffer whose shape is more than 2 % off the window's (a mode a viewport stretches over
-    /// the screen) is fitted in its own shape, between bars, and with `integer` the picture is shown at the
-    /// largest whole multiple of its buffer that fits (fitted as usual if even once doesn't).
+    /// The window of `native` geometry in `viewport`, as `policy` says. For a game's fullscreen window, it is
+    /// its `picture`'s place that is fitted (the window around it, Wine's bars, follows): a buffer whose
+    /// shape is more than 2 % off its place's (a mode a viewport stretches over the screen) is fitted in its
+    /// own shape, between bars, and with `integer` the picture is shown at the largest whole multiple of its
+    /// buffer that fits (fitted as usual if even once doesn't).
     pub fn new(viewport: Rectangle<i32, Logical>, native: Rectangle<i32, Logical>, policy: WindowPresentation, picture: Picture) -> Option<Self> {
         if native.size.w <= 0 || native.size.h <= 0 {
             return None;
@@ -36,8 +40,9 @@ impl Geometry {
         // Only a game's: a video player's viewport may stretch on purpose (anamorphic video).
         let game = policy.layout == WindowLayout::Fullscreen && policy.scale == WindowScale::Fit;
         let buffer = picture.size.filter(|b| b.w > 0 && b.h > 0 && game);
+        let frame = picture.place.filter(|p| p.size.w > 0 && p.size.h > 0 && buffer.is_some()).unwrap_or(native);
         let ratio = |s: Size<i32, Logical>| s.w as f64 / s.h as f64;
-        let shape = buffer.filter(|b| (ratio(*b) / ratio(native.size) - 1.0).abs() > 0.02).unwrap_or(native.size);
+        let shape = buffer.filter(|b| (ratio(*b) / ratio(frame.size) - 1.0).abs() > 0.02).unwrap_or(frame.size);
         let whole = buffer.filter(|_| picture.integer).and_then(|b| {
             let times = (viewport.size.w / b.w).min(viewport.size.h / b.h);
             (times >= 1).then(|| Size::<i32, Logical>::from((b.w * times, b.h * times)))
@@ -50,11 +55,12 @@ impl Geometry {
             },
             |s| (s.w as f64, s.h as f64),
         );
-        let scale = Scale::from((shown.0 / native.size.w as f64, shown.1 / native.size.h as f64));
-        // Whole pixels, so that a picture shown at a whole multiple keeps its pixels' edges.
-        let x = viewport.loc.x as f64 + ((viewport.size.w as f64 - native.size.w as f64 * scale.x) / 2.0).floor() - native.loc.x as f64 * scale.x;
-        let y = viewport.loc.y as f64 + ((viewport.size.h as f64 - native.size.h as f64 * scale.y) / 2.0).floor() - native.loc.y as f64 * scale.y;
-        Some(Self { viewport, native, origin: (x.round(), y.round()).into(), scale })
+        let scale = Scale::from((shown.0 / frame.size.w as f64, shown.1 / frame.size.h as f64));
+        // The picture's corner on a whole pixel, so that a picture shown at a whole multiple keeps its pixels'
+        // edges: the window's too, and the picture's offset in it rounded as it is drawn.
+        let x = viewport.loc.x as f64 + ((viewport.size.w as f64 - shown.0) / 2.0).floor() - (frame.loc.x as f64 * scale.x).round();
+        let y = viewport.loc.y as f64 + ((viewport.size.h as f64 - shown.1) / 2.0).floor() - (frame.loc.y as f64 * scale.y).round();
+        Some(Self { viewport, native, origin: (x, y).into(), scale })
     }
 
     pub fn surface_coords(&self, position: Point<f64, Logical>) -> Point<f64, Logical> {
@@ -136,7 +142,7 @@ mod tests {
         // Xwayland shows a 640x480 mode as a window of the screen's size; it is fitted as 4:3, centred.
         let policy = Window::default().presentation(true, &[]);
         let screen = Rectangle::from_size((960, 540).into());
-        let stretched = Picture { size: Some((640, 480).into()), integer: false };
+        let stretched = Picture { size: Some((640, 480).into()), place: None, integer: false };
         let geometry = Geometry::new(screen, screen, policy, stretched).unwrap();
         assert_eq!(geometry.scale, Scale::from((0.75, 1.0)));
         assert_eq!(geometry.origin, (120.0, 0.0).into());
@@ -152,7 +158,7 @@ mod tests {
     fn integer_scaling_shows_the_largest_whole_multiple_of_the_picture() {
         let game = Window::default().presentation(true, &[]);
         let thor = Rectangle::from_size((1920, 1080).into());
-        let whole = |size: (i32, i32)| Picture { size: Some(size.into()), integer: true };
+        let whole = |size: (i32, i32)| Picture { size: Some(size.into()), place: None, integer: true };
         // A 640x480 mode stretched over the screen: twice, 1280x960, centred.
         let g = Geometry::new(thor, thor, game, whole((640, 480))).unwrap();
         assert_eq!((g.scale, g.origin), (Scale::from((1280.0 / 1920.0, 960.0 / 1080.0)), (320.0, 60.0).into()));
@@ -167,5 +173,24 @@ mod tests {
         // Larger than the screen: fitted as usual.
         assert_eq!(Geometry::new(thor, thor, game, whole((2560, 1440))).unwrap().scale, Scale::from(1.0));
         assert_eq!(Geometry::new(thor, Rectangle::from_size((2560, 1440).into()), game, whole((2560, 1440))).unwrap().scale, Scale::from(0.75));
+    }
+
+    #[test]
+    fn a_picture_in_part_of_its_window_is_what_is_fitted() {
+        // Wine's 640x480 mode: shown at 720x540 between its own bars in a 960x540 window.
+        let game = Window::default().presentation(true, &[]);
+        let screen = Rectangle::from_size((960, 540).into());
+        let wine = |integer| Picture { size: Some((640, 480).into()), place: Some(Rectangle::new((120, 0).into(), (720, 540).into())), integer };
+        let g = Geometry::new(screen, screen, game, wine(false)).unwrap();
+        assert_eq!((g.scale, g.origin), (Scale::from(1.0), (0.0, 0.0).into()), "already fitted: as it is");
+        // Nearest+Integer: once, 640x480, centred; the window around it follows.
+        let g = Geometry::new(screen, screen, game, wine(true)).unwrap();
+        assert_eq!(g.scale, Scale::from((640.0 / 720.0, 480.0 / 540.0)));
+        let corner = g.origin + Point::from(((120.0 * g.scale.x).round(), 0.0));
+        assert_eq!(corner, (160.0, 30.0).into(), "the picture's corner, as drawn");
+        // On a larger screen, the picture fills its height.
+        let thor = Rectangle::from_size((1920, 1080).into());
+        let g = Geometry::new(thor, screen, game, wine(false)).unwrap();
+        assert_eq!((g.scale, g.surface_coords((240.0, 0.0).into())), (Scale::from(2.0), (120.0, 0.0).into()));
     }
 }

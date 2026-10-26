@@ -119,36 +119,45 @@ impl Surface {
             }
         }
     }
-    /// The surface holding the window's picture: the one with the largest buffer (Wine draws a game in a
-    /// subsurface; Xwayland, SDL and Wine show a mode a game picked as a buffer a viewport stretches).
+    /// The surface holding the window's picture: the topmost surface covering at least half as much of the
+    /// screen as the largest. Wine draws a game in a subsurface above its window's own buffer, which covers
+    /// the screen while the game, at a mode of another shape, covers less; Xwayland, SDL and Wine show a
+    /// mode a game picked as a buffer a viewport stretches, or crops. Smaller surfaces above, such as
+    /// overlays, aren't the picture.
     pub fn picture_surface(&self) -> Option<WlSurface> {
-        let mut picture: Option<(WlSurface, i64)> = None;
+        let mut surfaces: Vec<(WlSurface, i64)> = Vec::new();
+        // Topmost first, as Smithay goes through them.
         self.with_surfaces(|surface, states| {
-            let state = states.data_map.get::<smithay::backend::renderer::utils::RendererSurfaceStateUserData>();
-            let buffer = state.and_then(|state| state.lock().ok()?.buffer_size());
-            if let Some(buffer) = buffer {
-                let area = i64::from(buffer.w) * i64::from(buffer.h);
-                if picture.as_ref().is_none_or(|(_, largest)| area > *largest) {
-                    picture = Some((surface.clone(), area));
-                }
+            if let Some(view) = Self::view(states) {
+                surfaces.push((surface.clone(), i64::from(view.dst.w) * i64::from(view.dst.h)));
             }
         });
-        picture.map(|(surface, _)| surface)
+        let largest = surfaces.iter().map(|(_, area)| *area).max()?;
+        surfaces.into_iter().find(|(_, area)| area * 2 >= largest).map(|(surface, _)| surface)
     }
 
-    /// The size of the window's picture (see [`Surface::picture_surface`]).
-    pub fn picture_size(&self) -> Option<smithay::utils::Size<i32, smithay::utils::Logical>> {
-        let mut picture: Option<smithay::utils::Size<i32, smithay::utils::Logical>> = None;
-        self.with_surfaces(|_, states| {
-            let state = states.data_map.get::<smithay::backend::renderer::utils::RendererSurfaceStateUserData>();
-            let buffer = state.and_then(|state| state.lock().ok()?.buffer_size());
-            if let Some(buffer) = buffer
-                && picture.is_none_or(|largest| i64::from(buffer.w) * i64::from(buffer.h) > i64::from(largest.w) * i64::from(largest.h))
-            {
-                picture = Some(buffer);
-            }
-        });
-        picture
+    /// The window's picture: the size of the part of its buffer shown, and where it is shown in the
+    /// window, in its root surface's coordinates (see [`Surface::picture_surface`]).
+    pub fn picture(&self) -> Option<(smithay::utils::Size<i32, smithay::utils::Logical>, smithay::utils::Rectangle<i32, smithay::utils::Logical>)> {
+        let surface = self.picture_surface()?;
+        let view = smithay::wayland::compositor::with_states(&surface, Self::view)?;
+        let shown = (view.src.size.w.round() as i32, view.src.size.h.round() as i32).into();
+        // Its offset from its parent's, and theirs up to the root's.
+        let mut at = view.offset;
+        let mut parent = smithay::wayland::compositor::get_parent(&surface);
+        while let Some(surface) = parent {
+            at += smithay::wayland::compositor::with_states(&surface, Self::view).map(|view| view.offset).unwrap_or_default();
+            parent = smithay::wayland::compositor::get_parent(&surface);
+        }
+        Some((shown, smithay::utils::Rectangle::new(at, view.dst)))
+    }
+
+    /// How a surface with a buffer shows it.
+    fn view(states: &SurfaceData) -> Option<smithay::backend::renderer::utils::SurfaceView> {
+        let state = states.data_map.get::<smithay::backend::renderer::utils::RendererSurfaceStateUserData>()?;
+        let state = state.lock().ok()?;
+        state.buffer_size()?;
+        state.view()
     }
     pub fn send_frame(&self, output: &Output, time: Duration, throttle: Option<Duration>, f: impl FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy) {
         match self {

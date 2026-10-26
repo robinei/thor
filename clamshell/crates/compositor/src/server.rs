@@ -368,8 +368,8 @@ impl Server {
         })
     }
 
-    /// A window's colour, as the state has it: the description of the surface holding its picture (the one
-    /// with the largest buffer: Wine declares a game's on the subsurface it draws in), else its toplevel's.
+    /// A window's colour, as the state has it: the description of the surface holding its picture (see
+    /// `Surface::picture`: Wine declares a game's on the subsurface it draws in), else its toplevel's.
     pub(crate) fn window_colour(&self, window: &crate::surface::Surface) -> Option<std::sync::Arc<clamshell_state::session::presentation::ColourDescription>> {
         use smithay::backend::renderer::element::Id;
         let picture = window.picture_surface().map(|surface| Id::from_wayland_resource(&surface));
@@ -681,7 +681,8 @@ impl Server {
         let window = self.core.state().session().window(id)?;
         let client = self.windows.iter().find(|w| w.id == id && w.mapped)?;
         let integer = self.core.state().window_clarity(id).scaling == clamshell_state::settings::Scaling::Nearest;
-        let picture = crate::geometry::Picture { size: client.window.picture_size(), integer };
+        let (size, place) = client.window.picture().unzip();
+        let picture = crate::geometry::Picture { size, place, integer };
         crate::geometry::Geometry::new(self.area(window.down), client.window.geometry(), client.presentation?, picture)
     }
 }

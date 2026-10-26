@@ -50,7 +50,12 @@ impl CompositorHandler for Server {
         let new_buffer = compositor::with_states(surface, |states| {
             matches!(states.cached_state.get::<compositor::SurfaceAttributes>().current().buffer, Some(compositor::BufferAssignment::NewBuffer(_)))
         });
+        // The area it covers, which decides which surface holds its window's picture (see
+        // `Surface::picture`).
+        let covers = || with_renderer_surface_state(surface, |state| state.buffer().and(state.view()).map(|view| view.dst)).flatten();
+        let covered = covers();
         on_commit_buffer_handler::<Self>(surface);
+        let picture_may_move = covers() != covered;
         self.commits = self.commits.wrapping_add(1);
         let id = smithay::backend::renderer::element::Id::from_wayland_resource(surface);
         let current = crate::colour::protocol::current(surface);
@@ -84,8 +89,9 @@ impl CompositorHandler for Server {
             }
         }
         self.open_on_commit(surface);
-        // A subsurface's colour may be its window's (see `Server::window_colour`).
-        if previous != current && get_parent(surface).is_some() {
+        // A subsurface's colour may be its window's (see `Server::window_colour`): when it changes, or the
+        // window's picture may have moved to or from it.
+        if (previous != current || picture_may_move) && get_parent(surface).is_some() {
             let mut root = surface.clone();
             while let Some(parent) = get_parent(&root) {
                 root = parent;
