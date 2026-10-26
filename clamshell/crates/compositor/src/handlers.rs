@@ -129,7 +129,10 @@ impl CompositorHandler for Server {
                 None => self.pacing.committed.elsewhere = true,
             }
             if let Some(client) = client {
-                if new_buffer && root == *surface {
+                // A frame is a new buffer on the window's root, or on a subsurface drawn apart from it (not
+                // synchronised: here only those come), as Wine's Wayland driver and pattern-game draw a
+                // game's picture.
+                if new_buffer {
                     client.frames.committed();
                 }
                 client.window.on_commit();

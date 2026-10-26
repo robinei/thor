@@ -204,3 +204,57 @@ fn the_top_windows_new_buffers_shown_are_its_frame_rate() {
     assert_eq!(fps, Some(10.0), "ten frames in the last second");
     assert!(frame_ms.is_some_and(|ms| (ms - 20.0).abs() < 0.01), "{frame_ms:?}");
 }
+
+/// A game whose picture is a subsurface drawn apart from its window (Wine's Wayland driver, pattern-game)
+/// has that subsurface's new buffers as its frame rate: its window's root stays as it was.
+#[test]
+fn a_pictures_subsurface_new_buffers_are_its_frame_rate() {
+    let (mut display, mut server) = ServerBuilder::new().started();
+    const STEPS: u32 = 10;
+    let client = spawn_client(&mut display, ClientState::default(), move |globals, mut queue, steps| {
+        let qh = queue.handle();
+        let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
+        let subcompositor: wl_subcompositor::WlSubcompositor = globals.bind(&qh, 1..=1, ()).unwrap();
+        let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
+        let shm: wl_shm::WlShm = globals.bind(&qh, 1..=1, ()).unwrap();
+        let surface = compositor.create_surface(&qh, ());
+        let xdg = shell.get_xdg_surface(&surface, &qh, ());
+        let top = xdg.get_toplevel(&qh, ());
+        top.set_app_id("frames-test".into());
+        surface.commit();
+        let mut client = Client::default();
+        queue.roundtrip(&mut client).unwrap();
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(&vec![0xff; 960 * 540 * 4]).unwrap();
+        let pool = shm.create_pool(file.as_fd(), 960 * 540 * 4, &qh, ());
+        let buffer = pool.create_buffer(0, 960, 540, 960 * 4, wl_shm::Format::Abgr8888, &qh, ());
+        let picture = compositor.create_surface(&qh, ());
+        let sub = subcompositor.get_subsurface(&picture, &surface, &qh, ());
+        sub.set_desync();
+        surface.attach(Some(&buffer), 0, 0);
+        surface.commit();
+        queue.roundtrip(&mut client).unwrap();
+        for step in 0..STEPS {
+            picture.attach(Some(&buffer), 0, 0);
+            picture.commit();
+            queue.roundtrip(&mut client).unwrap();
+            steps.step(step);
+        }
+    });
+    let start: Duration = server.clock.now().into();
+    let mut measured = None;
+    client.serve(&mut display, &mut server, Server::frame, |_, server, step| {
+        let mut rendered = RenderElementStates::default();
+        let root = server.windows[0].window.root().unwrap();
+        let state =
+            RenderElementState { visible_area: 1, presentation_state: RenderElementPresentationState::Rendering { reason: None }, needs_capture: false };
+        rendered.states.insert((&root).into(), state);
+        server.present_submission(&rendered, (start + Duration::from_millis(20) * step).into());
+        if step == STEPS - 1 {
+            server.pacing.frames_due = None;
+            server.turn();
+            measured = server.core.state().sys().metrics().fps;
+        }
+    });
+    assert!(measured.is_some_and(|fps| fps >= 9.0), "{measured:?}");
+}
