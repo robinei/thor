@@ -121,7 +121,7 @@ Branches on uniforms are fine (every pixel takes the same one). Shader compiles 
 so variants are compiled when a window maps or a profile changes, never during play, and cached.
 
 **Resolution:** the game sees the chosen resolution as its screen. A client is known by its process
-when it connects (its scope, or Steam's `SteamAppId` for a process Steam started), and a game's client
+when it connects (its unit: a launch's service, or the scope a found program was moved into; or Steam's `SteamAppId` for a process Steam started), and a game's client
 is told, when it binds the top output, that resolution as the output's current mode, so a game that
 picks from the display modes (most Proton games, through Wine's Wayland driver) finds it as the largest
 and fills it in fullscreen. It is told once: a change applies the next time the game starts, since Wine
@@ -144,7 +144,8 @@ ours.
 
 ## Smithay
 
-Where Smithay (rev 24647fc) is in the way, worth contributing upstream:
+Where Smithay (the commit `clamshell/crates/compositor/Cargo.toml` pins, 1ca7f76 when this was last checked) is
+in the way, worth contributing upstream:
 
 - Texture programs take one texture. Fusing a pass that reads a second texture (SMAA's weights) needs
   raw GL around Smithay's draw: the texture bound to unit 1 before, unbound after, its sampler uniform
