@@ -446,8 +446,14 @@ fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(
             now + if wait.is_zero() { Duration::from(next).saturating_sub(Duration::from(clock)) } else { wait }
         })
     });
-    if let Err(error) = compose(drawing, server, on_capture) {
-        log::warn!("drm: drawing: {error}");
+    // Nothing to compose with both screens off, unless for a screenshot; the frame's own work (the X11
+    // windows' changes to the state) goes on.
+    if drawing.screens.iter().any(|screen| screen.on) || server.screenshot_requested {
+        if let Err(error) = compose(drawing, server, on_capture) {
+            log::warn!("drm: drawing: {error}");
+        }
+    } else {
+        server.frame();
     }
     let composed = server.commits;
     let mut due: Option<Instant> = timed.flatten();
@@ -590,8 +596,7 @@ struct Areas {
 
 impl Areas {
     fn role(&self, device: &InputDevice) -> ScreenRole {
-        let id = identifier(device);
-        let named = self.profile.touchscreens.iter().find(|t| matches!(t.selector, TouchSelector::Named(n) if n == id));
+        let named = self.profile.touchscreens.iter().find(|t| matches!(t.selector, TouchSelector::Named(n) if names(n, device)));
         let touch = device.has_capability(DeviceCapability::Touch.into());
         named
             .or_else(|| touch.then(|| self.profile.touchscreens.iter().find(|t| t.selector == TouchSelector::All)).flatten())
@@ -614,8 +619,34 @@ fn identifier(device: &InputDevice) -> String {
     format!("{}:{}:{}", device.id_vendor(), device.id_product(), device.name().replace(' ', "_"))
 }
 
+/// Whether `identifier` (as [`identifier`] makes it) names `device`, compared without allocating: this is
+/// asked for every absolute input event.
+fn names(identifier: &str, device: &InputDevice) -> bool {
+    names_ids(identifier, device.id_vendor(), device.id_product(), &device.name())
+}
+
+/// [`names`], for a device's vendor, product and name.
+fn names_ids(identifier: &str, vendor: u32, product: u32, name: &str) -> bool {
+    let mut parts = identifier.splitn(3, ':');
+    let number = |part: Option<&str>| part.and_then(|p| p.parse::<u32>().ok());
+    let (ours, theirs) = ((number(parts.next()), number(parts.next())), (Some(vendor), Some(product)));
+    let named = parts.next().unwrap_or("");
+    ours == theirs && named.len() == name.len() && named.bytes().zip(name.bytes()).all(|(a, b)| a == b || (a == b'_' && b == b' '))
+}
+
 #[cfg(test)]
-mod next_shown_tests {
+mod tests {
+    #[test]
+    fn a_device_is_named_by_its_ids_and_its_name_with_underscores() {
+        use super::names_ids;
+        assert!(names_ids("0:0:top_touchscreen", 0, 0, "top touchscreen"));
+        assert!(names_ids("1575:3:QEMU_Virtio_Tablet", 1575, 3, "QEMU Virtio Tablet"));
+        assert!(!names_ids("1575:3:QEMU_Virtio_Tablet", 1575, 4, "QEMU Virtio Tablet"), "another product");
+        assert!(!names_ids("0:0:top_touchscreen", 0, 0, "top touchscreens"));
+        assert!(!names_ids("0:0:top touchscreen", 0, 0, "top_touchscreen"), "an underscore in the name stays one");
+        assert!(!names_ids("nonsense", 0, 0, ""));
+    }
+
     #[test]
     fn the_second_screens_density_is_its_panels_or_else_the_profiles() {
         let size = Size::from((1240, 1080));

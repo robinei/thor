@@ -106,9 +106,11 @@ impl Chains {
         wants: impl Fn(&Id) -> Option<Want<'a>>,
     ) -> Result<Vec<(Id, Chained)>, Error> {
         let mut kept = Vec::new();
+        let mut wanting = Vec::new();
         let mut chained = Vec::new();
         for element in elements.iter_mut() {
             let Some(want) = wants(element.id()) else { continue };
+            wanting.push(element.id().clone());
             let geometry = element.geometry(Scale::from(1.0));
             let context = renderer.context_id();
             let formats = renderer.egl_context().dmabuf_render_formats();
@@ -176,6 +178,8 @@ impl Chains {
             self.chains.insert(id, chain);
         }
         self.chains.retain(|id, _| kept.contains(id));
+        // A window gone, or no longer wanting passes, is forgotten as failed too.
+        self.failed.retain(|id| wanting.contains(id));
         Ok(chained)
     }
 
