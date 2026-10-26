@@ -1,8 +1,9 @@
-//! Our launches as systemd sees them: the user manager's scopes named `clamshell-run-*`, read over D-Bus
-//! (org.freedesktop.systemd1). They are listed at start, and again whenever the manager signals that a
-//! unit of ours is coming, starting or going.
+//! Our launches as systemd sees them: the user manager's units named `clamshell-run-*`, read over D-Bus
+//! (org.freedesktop.systemd1). A launch is a service; a program found running and taken in is a scope.
+//! They are listed at start, and again whenever the manager signals that a unit of ours is coming,
+//! starting or going.
 //!
-//! This is the truth for what runs. A scope lives as long as any of its processes, whatever its windows
+//! This is the truth for what runs. A unit lives as long as any of its processes, whatever its windows
 //! do, and it survives a restart of ClamShell. When the session ends, they all stop, because their slices are
 //! stopped after it: by thor-session on the device, and by the nested session's unit on the desktop.
 
@@ -81,7 +82,7 @@ pub(super) fn with_manager<T>(call: impl FnOnce(&mut Bus) -> Result<T, Error>) -
     result
 }
 
-/// Our running scopes, which are dock app instances and games, sorted by name.
+/// Our running units, which are dock app instances and games, sorted by name.
 fn list(bus: &mut Bus) -> dbus::Result<Vec<Instance>> {
     let rows = units(bus, &PATTERNS)?;
     let mut names: Vec<String> = rows.into_iter().filter(|row| !matches!(row.3.as_str(), "inactive" | "failed")).map(|row| row.0).collect();
@@ -89,7 +90,7 @@ fn list(bus: &mut Bus) -> dbus::Result<Vec<Instance>> {
     Ok(names.iter().filter_map(|n| Instance::from_unit(n)).collect())
 }
 
-/// Sends [`Event::Units`] at start and after every change of our scopes, and connects again if the bus
+/// Sends [`Event::Units`] at start and after every change of our units, and connects again if the bus
 /// goes. At start, after the first list, it sends [`Event::Frozen`] with our slices that are found
 /// frozen. An earlier ClamShell froze them, when suspending or pausing a hidden game, and they are held
 /// as suspended.
@@ -130,7 +131,7 @@ impl<S: Sink> Service for Units<S> {
         Ok(bus)
     }
 
-    /// Lists the scopes, and again at each signal about one of ours, until the bus closes.
+    /// Lists the units, and again at each signal about one of ours, until the bus closes.
     fn run_while_up(&mut self, mut bus: Bus, _: &Receiver<Infallible>) -> Result<(), Ended<Error>> {
         let mut last = Changed::default();
         if let Some(units) = last.offer(list(&mut bus)?) {
@@ -157,8 +158,8 @@ impl<S: Sink> Service for Units<S> {
 }
 
 /// The unit a manager signal is about, for the signals that change what runs: a unit loaded (UnitNew), a
-/// unit gone (UnitRemoved) and a job done (JobRemoved). JobRemoved matters because a scope's start job
-/// ends once the scope runs. At UnitNew the scope is still inactive, so a list made then can miss it.
+/// unit gone (UnitRemoved) and a job done (JobRemoved). JobRemoved matters because a unit's start job
+/// ends once the unit runs. At UnitNew the unit is still inactive, so a list made then can miss it.
 fn unit_of_signal(message: &Message) -> Option<String> {
     match &*message.member()? {
         "UnitNew" | "UnitRemoved" => {
@@ -182,10 +183,11 @@ pub(super) fn get_unit(bus: &mut Bus, name: &str) -> dbus::Result<Path<'static>>
     Ok(path)
 }
 
-/// Moves running processes into the scope `unit`, creating it (in `slice`, if given) if it doesn't
-/// exist. This is for a program started by another program, such as a Steam game started by Steam's
-/// launcher: in a scope of its own it is counted, frozen and ended as the launch, separately from its
-/// starter. Anything it starts later is in the scope too.
+/// Moves running processes into `unit`, creating it as a scope (in `slice`, if given) if it isn't loaded.
+/// This is for a program started by another program, such as a Steam game started by Steam's launcher
+/// (moved into the launch's service) or a program found by its tray icon (moved into a scope of ours):
+/// in a unit of ours it is counted, frozen and ended as the launch, separately from its starter. Anything
+/// it starts later is in the unit too.
 pub fn adopt(unit: &str, slice: Option<&str>, pids: &[u32]) -> Result<(), Error> {
     with_manager(|bus| {
         if loaded(bus, unit) {
@@ -203,7 +205,7 @@ pub fn adopt(unit: &str, slice: Option<&str>, pids: &[u32]) -> Result<(), Error>
     })
 }
 
-/// Thaws a launch's slice before it starts, because systemd starts no scope in a slice left frozen.
+/// Thaws a launch's slice before it starts, because systemd starts no unit in a slice left frozen.
 pub fn thaw_slice(slice: &str) {
     if let Err(e) = with_manager(|m| {
         thaw_now(m, slice);
@@ -259,12 +261,12 @@ mod live {
     use std::thread;
     use std::time::Instant;
 
-    /// Needs a user session, so a desktop. Lists our scopes without changing anything. Run it by hand
+    /// Needs a user session, so a desktop. Lists our units without changing anything. Run it by hand
     /// with `--ignored --nocapture`.
     #[test]
     #[ignore = "needs a user session"]
     #[allow(clippy::unwrap_used)]
-    fn lists_our_scopes() {
+    fn lists_our_units() {
         let mut bus = Bus::session().unwrap();
         println!("{:?}", list(&mut bus).unwrap());
     }

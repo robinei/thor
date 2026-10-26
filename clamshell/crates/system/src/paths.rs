@@ -81,7 +81,7 @@ impl Paths {
         self.sockets.join(clamshell_state::session::instance::Instance::socket_of(key))
     }
 
-    /// Whether there is a systemd user session to put apps and games in scopes of.
+    /// Whether there is a systemd user session to run apps and games as units of.
     pub fn has_user_systemd(&self) -> bool {
         self.runtime.as_deref().is_some_and(|d| d.join("systemd/private").exists())
     }

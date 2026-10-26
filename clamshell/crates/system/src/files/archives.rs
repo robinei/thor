@@ -38,7 +38,7 @@ impl Mounts {
     pub fn new(cache: Option<PathBuf>) -> Mounts {
         let root = std::env::var_os("XDG_RUNTIME_DIR").map(|d| PathBuf::from(d).join("clamshell/archives"));
         // Clean up after an earlier ClamShell: stop its services, detach any mount left, remove the dirs.
-        if let Err(e) = crate::launch::scopes::stop_matching("clamshell-archive-*.service") {
+        if let Err(e) = crate::launch::units::stop_matching("clamshell-archive-*.service") {
             log::warn!("archives: stopping those left before: {e}");
         }
         if let Some(root) = &root {
@@ -115,7 +115,7 @@ impl Mounts {
             let used = in_use.iter().any(|p| *p == archive || p.starts_with(dir));
             if !used {
                 log::info!("archives: {} unmounted", archive.display());
-                if let Err(e) = crate::launch::scopes::end(&unit_of(archive), false) {
+                if let Err(e) = crate::launch::units::end(&unit_of(archive), false) {
                     log::warn!("archives: {}: {e}", archive.display());
                     detach(dir);
                 }
@@ -138,7 +138,7 @@ fn unit_of(archive: &Path) -> String {
 /// Whether service `unit` is running or starting. If the user manager can't be asked, it counts as
 /// stopped, so a mount isn't waited for forever.
 fn active(unit: &str) -> bool {
-    crate::launch::scopes::is_active(unit).unwrap_or_else(|e| {
+    crate::launch::units::is_active(unit).unwrap_or_else(|e| {
         log::warn!("archives: {unit}: {e}");
         false
     })

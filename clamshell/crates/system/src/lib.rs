@@ -4,7 +4,7 @@
 //!
 //! - `input`: the controller's path (evdev, uinput, the gyro), the virtual touchpad and keyboard, and the
 //!   devices watched for idle and hardware keys;
-//! - [`launch`]: launches in systemd scopes, Steam's games, the freezer, mpv;
+//! - [`launch`]: launches as systemd services, Steam's games, the freezer, mpv;
 //! - [`library`]: reading the library's sources and fetching metadata;
 //! - `files`: browsing and file operations for the Files tab, the trash, mounts and archives;
 //! - `audio`: PipeWire;

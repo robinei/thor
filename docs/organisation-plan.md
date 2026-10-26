@@ -46,7 +46,7 @@ system/src/
   os/        worker, command, dbus, sys, cgroup, drm, qrtr, evdev/, fs, text, http, xdg
   wiring/    mod.rs (start, from the binary's wiring.rs), handles, settings (the Tuning router)
   input/     watch, keyboard, pad/ (sensor_hub/{mod, wire}), touchpad/
-  launch/    launcher, steam, job, scopes (was units), freezer, mpv
+  launch/    launcher, steam, job, units, freezer, mpv
   library/   as now, plus meta/{mod, libretro, tmdb, steam, steamgriddb, probe, titles, cache}
   files/     browse, ops, trash, mounts, archives
   audio/     mixer, sound, pipewire

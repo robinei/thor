@@ -3,12 +3,12 @@
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::scopes::{SYSTEMD, call, get_unit, with_manager};
+use super::units::{SYSTEMD, call, get_unit, with_manager};
 use crate::os::cgroup;
 use crate::os::dbus::Bus;
 use crate::os::worker;
 
-/// Freezes or thaws a unit. For a slice that means every scope in it. The cgroup freezer stops the
+/// Freezes or thaws a unit. For a slice that means every unit in it. The cgroup freezer stops the
 /// processes where they are, without their knowing. The freezer thread does this one unit after another,
 /// acting only on each unit's latest request, thaws first. A freeze waits while the slice works without
 /// drawing ([`working_without_drawing`]), for example while it loads or compiles shaders and the user has

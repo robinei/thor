@@ -102,7 +102,7 @@ def main():
 
     runtime = directory / "runtime"
     runtime.mkdir(mode=0o700)
-    # The user's systemd manager and bus, through which ClamShell starts games in scopes of their own.
+    # The user's systemd manager and bus, through which ClamShell starts games as services of their own.
     for name in ["systemd", "bus"]:
         (runtime / name).symlink_to(f"/run/user/{os.getuid()}/{name}")
     data = directory / "data/clamshell"

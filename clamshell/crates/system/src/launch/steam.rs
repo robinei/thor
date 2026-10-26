@@ -1,14 +1,14 @@
 //! Steam's games. A game is started with `steam -gamepadui -silent -applaunch <id>`. If Steam is running, the
 //! command is handed to it. Otherwise Steam is started with the command as a launch of Steam's desktop
-//! entry, in that entry's scope, so Steam is on the dock and outlives ClamShell. That start doesn't get
+//! entry, in a launch of that entry, so Steam is on the dock and outlives ClamShell. That start doesn't get
 //! the game's environment, because it would become Steam's own environment for every game it starts:
 //! only the displays to open (`WAYLAND_DISPLAY`, `DISPLAY`), the session's rather than ClamShell's own
 //! (nested, the desktop's).
 //!
-//! The launch's own scope holds a follower (`clamshell --follow-steam <id>`, [`follow`]). It moves Steam's
-//! launcher for the game (`reaper SteamLaunch AppId=<id>`) and what it started into its scope. It does
+//! The launch's own service holds a follower (`clamshell --follow-steam <id>`, [`follow`]). It moves Steam's
+//! launcher for the game (`reaper SteamLaunch AppId=<id>`) and what it started into its service. It does
 //! the same for any later launcher, since Steam may run a setup first and then the game. It keeps going
-//! as long as a launcher runs or ran within [`STEAM_GAP`], and then it ends. The scope ends with the
+//! as long as a launcher runs or ran within [`STEAM_GAP`], and then it ends. The service ends with the
 //! game's last process. This way the game is counted, frozen and ended separately from Steam for as long
 //! as it runs.
 //!
@@ -24,7 +24,7 @@ use clamshell_state::Instance;
 
 use super::job::{self, Job};
 use super::launcher::{Error, Request, parents, with_descendants};
-use super::scopes;
+use super::units;
 use crate::os::{cgroup, sys};
 
 /// How long Steam may take to start a game, since it may need to start or update first. The follower
@@ -37,7 +37,7 @@ const STEAM_START: Duration = Duration::from_secs(120);
 const STEAM_GAP: Duration = Duration::from_secs(10);
 
 /// Starts a Steam game. Steam is asked to start it, unless its launcher already runs because it was
-/// started in Steam itself. Then the launch's scope is started with the follower in it. See the module
+/// started in Steam itself. Then the launch's service is started with the follower in it. See the module
 /// docs.
 pub(super) fn start(request: &Request, appid: u32) -> Result<(), Error> {
     if steam_running(&format!("AppId={appid}")) {
@@ -51,8 +51,8 @@ pub(super) fn start(request: &Request, appid: u32) -> Result<(), Error> {
     Ok(job::start(&job)?)
 }
 
-/// `clamshell --follow-steam <id>`, run in a Steam game's launch scope. It moves Steam's launcher for the
-/// game, and what it started, into this scope for as long as a launcher runs or ran within [`STEAM_GAP`].
+/// `clamshell --follow-steam <id>`, run in a Steam game's launch service. It moves Steam's launcher for the
+/// game, and what it started, into this service for as long as a launcher runs or ran within [`STEAM_GAP`].
 /// The first launcher must appear within [`STEAM_START`]. Then it ends. See the module docs.
 pub fn follow(appid: u32) {
     let marker = format!("AppId={appid}");
@@ -95,16 +95,16 @@ pub(super) fn ask_steam(request: &Request, appid: u32) -> Result<(), Error> {
 }
 
 /// Moves Steam's launchers for a game (`launchers`, with `marker` in their command line), and what they
-/// started, into the launch's scope `unit` if they aren't in it yet.
+/// started, into the launch's unit `unit` if they aren't in it yet.
 pub(super) fn gather(marker: &str, unit: &str, slice: Option<&str>, launchers: &[u32]) {
     let outside = |pid: &u32| cgroup::unit_of(*pid).is_none_or(|u| u != unit);
     let pids: Vec<u32> = with_descendants(launchers, &parents()).into_iter().filter(outside).collect();
     if pids.is_empty() {
         return;
     }
-    match scopes::adopt(unit, slice, &pids) {
+    match units::adopt(unit, slice, &pids) {
         Ok(()) => log::info!("launcher: Steam's {marker} in {unit} ({} processes)", pids.len()),
-        Err(e) => log::warn!("launcher: Steam's {marker}: its own scope: {e}"),
+        Err(e) => log::warn!("launcher: Steam's {marker}: its own unit: {e}"),
     }
 }
 

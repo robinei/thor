@@ -39,7 +39,7 @@ fn activate(id: i64) -> Event {
 /// A game, two terminals and a browser running, with their windows. The second terminal is in front.
 pub fn running() -> Vec<Event> {
     let (game, t1, t2, web) = (run("zelda-lttp", 0), run("desktop:foot", 1), run("desktop:foot", 2), run("desktop:firefox", 3));
-    // Their scopes as systemd lists them, which marks them as running.
+    // Their units as systemd lists them, which marks them as running.
     vec![
         Event::Units(vec![game.clone(), t1.clone(), t2.clone(), web.clone()]),
         opened(vec![window_of(5, "retroarch", &game), window_of(7, "foot", &t1), window_of(8, "foot", &t2), window_of(9, "firefox", &web)]),

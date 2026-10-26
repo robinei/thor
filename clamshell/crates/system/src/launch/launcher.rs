@@ -1,11 +1,10 @@
 //! Starting entries: games, apps, films. Each launch is started and then left alone. Whether it runs,
-//! and when it has ended, comes from systemd's list of our scopes (see [`crate::launch::scopes`] and
-//! clamshell-state's `running`). The launcher reports only a launch that couldn't start because its scope
-//! never appeared. Each start runs on a thread of its own, so launches start side by side.
+//! and when it has ended, comes from systemd's list of our units (see [`crate::launch::units`] and
+//! clamshell-state's `running`). The launcher reports only a launch that systemd didn't start. Each start runs on a thread of its own, so launches start side by side.
 //!
-//! - A program, with its arguments filled in by the library, runs in its own systemd scope (`systemd-run
-//!   --user --scope`), so restarting ClamShell doesn't end it.
-//! - A Steam game is handed to Steam and followed in its launch's scope. See [`crate::launch::steam`].
+//! - A program, with its arguments filled in by the library, runs as its own systemd service
+//!   ([`crate::launch::job`]), so restarting ClamShell doesn't end it.
+//! - A Steam game is handed to Steam and followed in its launch's service. See [`crate::launch::steam`].
 //!
 //! Where mpv left a video is also read here when its play ends, at the state's request (`ReadPosition`).
 
@@ -21,7 +20,7 @@ use rustix::process::{Pid, Signal};
 
 use crate::Sink;
 use crate::launch::job::{self, Job};
-use crate::launch::{scopes, steam};
+use crate::launch::{steam, units};
 use crate::os::worker::{self, Worker};
 use crate::os::{cgroup, sys};
 
@@ -37,7 +36,7 @@ pub enum Command {
 
 pub struct Request {
     pub entry: Arc<str>,
-    /// The launch's scope, from the state.
+    /// The launch's unit, from the state.
     pub instance: Instance,
     pub launch: Launch,
     /// The game's environment: the controller's, the cap's and its own variables. The displays follow.
@@ -59,7 +58,7 @@ pub struct Config {
 pub enum Error {
     Io(io::Error),
     Job(job::Error),
-    Units(scopes::Error),
+    Units(units::Error),
     NoCommand,
     EmptyCommand,
     Panicked,
@@ -90,8 +89,8 @@ impl From<job::Error> for Error {
     }
 }
 
-impl From<scopes::Error> for Error {
-    fn from(e: scopes::Error) -> Self {
+impl From<units::Error> for Error {
+    fn from(e: units::Error) -> Self {
         Error::Units(e)
     }
 }
@@ -120,9 +119,9 @@ pub fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worker<Comma
     })
 }
 
-/// Starts the game a request is for. It is done once the game's scope is there.
+/// Starts the game a request is for. It is done once systemd has started the game's service.
 fn start(config: &Config, request: &Request) -> Result<(), Error> {
-    scopes::thaw_slice(&request.instance.slice());
+    units::thaw_slice(&request.instance.slice());
     match &request.launch {
         Launch::Program { argv, .. } if argv.is_empty() => Err(Error::EmptyCommand),
         Launch::Program { argv, workdir } => start_program(config, request, argv.clone(), workdir.clone()),
@@ -159,7 +158,7 @@ pub fn end_run(key: &str, force: bool) {
     let slice = Instance::slice_of(key);
     let ended = worker::detached("end", move || {
         log::info!("{slice}: {}", if force { "force kill" } else { "stop" });
-        if let Err(e) = scopes::end(&slice, force) {
+        if let Err(e) = units::end(&slice, force) {
             log::warn!("{slice}: {e}");
         }
     });
@@ -185,7 +184,7 @@ pub fn adopt(instance: Instance, pid: u32) {
             return;
         }
         let pids = with_descendants(&[pid], &parents());
-        match scopes::adopt(&unit, Some(instance.slice().as_str()), &pids) {
+        match units::adopt(&unit, Some(instance.slice().as_str()), &pids) {
             Ok(()) => log::info!("adopt: process {pid} from {group} in {unit} ({} processes)", pids.len()),
             Err(e) => log::warn!("adopt: process {pid}: {e}"),
         }

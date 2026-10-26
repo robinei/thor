@@ -667,7 +667,7 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       ClamShell isn't killed by its watchdog (30 s) while a heavy game loads.
 - [ ] Steam's games, with the client that runs (see "Steam"; the follower and the found-window lineage
       were only seen on x86, a game itself is FEX or Proton's either way): a game started
-      from ClamShell runs in its launch's scope (`systemd-cgls --user`), Steam's launcher for it found
+      from ClamShell runs in its launch's service (`systemd-cgls --user`), Steam's launcher for it found
       by its arguments (`pgrep -af SteamLaunch`: `SteamLaunch` and `AppId=<id>` as arguments of their
       own, as `steam_launchers` in `launcher.rs` expects, whatever FEX puts before them); the entry ends
       when the game does; a game started from Steam's own window is found by its window and followed the

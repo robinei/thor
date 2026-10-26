@@ -147,7 +147,7 @@ on its tile), quit or killed.
 
 A ClamShell started again (an update, a crash) leaves our slices as it finds them: one found frozen
 (suspended, or paused hidden by the one before) is held as suspended, so a suspended game stays so. A slice is
-thawed before a launch into it (systemd starts no scope in a frozen slice). Tried in the nested session: Foot
+thawed before a launch into it (systemd starts no unit in a frozen slice). Tried in the nested session: Foot
 suspended, ClamShell restarted in the same sway, still frozen, resumed with its window.
 
 Android's apps share one container, so the Android runner is paused as a whole (its `pause` and `resume`,
@@ -158,7 +158,7 @@ filter (see android.md).
 
 ## Start with ClamShell
 
-In an entry's dock menu (saved): once ClamShell knows what runs (systemd's first list of its scopes),
+In an entry's dock menu (saved): once ClamShell knows what runs (systemd's first list of its units),
 each such entry that doesn't run is launched on its own workspace, not shown. What a restarted ClamShell
 finds running isn't started twice.
 

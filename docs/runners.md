@@ -166,7 +166,7 @@ its file is renamed or deleted meanwhile.
 
 Programs' tray icons (StatusNotifierItem over D-Bus: Steam's, and any other program's) are on the dock
 too. ClamShell is the session's tray watcher where nothing else is (the Thor), else reads the one there (a
-desktop around the nested session). An icon is the running entry's whose scope its process is in. A
+desktop around the nested session). An icon is the running entry's whose unit its process is in. A
 program ClamShell didn't start runs as an entry found by its icon: the desktop file named as the icon's
 id (`desktop:steam`), else one of its own named as the icon. Like any running entry it has its workspace:
 its windows (those of the icon's process, and of processes it started) are moved there wherever they
@@ -174,13 +174,13 @@ open. A tile with an icon has a mark in its top left corner (three bars) that op
 the long-press menu has it as Menu. A tap shows the program's windows, or (none open) asks it to show
 itself (Steam started silently), its window shown on its workspace. Quit closes its windows, then asks
 the icon's process to end (SIGTERM); Force kill kills it. A window's entry is found by its app id first
-(a Steam game's, though it runs in Steam's scope), then its scope, its process, its workspace.
+(a Steam game's, though it runs in Steam's unit), then its unit, its process, its workspace.
 `clamshell --tray` lists the icons and their menus; `cargo run -p clamshell-system --example fake_tray`
 is a program with one, for testing (activated, it opens a terminal).
 
 ## Launches
 
-Each launch is a systemd scope in its item's slice: whatever it starts stays in it (forking and
+Each launch is a systemd service in its item's slice: whatever it starts stays in it (forking and
 detaching don't leave a cgroup), so Quit (the windows closed, then the slice stopped) and Force kill reach
 it all, windows or not. What gets out is what a program has another manager start: D-Bus activation, an
 instance already running elsewhere. A file's launch that hands over and ends runs on by its windows (see
@@ -188,7 +188,7 @@ files-tab.md); Quit closes them, Force kill can't reach them. On the Thor nothin
 way.
 
 Two kinds of entry run in another program's processes on purpose, and are known by their windows' app id:
-Steam's games (`steam_app_<id>`, in Steam's scope) and the entries of a runner with `handover` (their
+Steam's games (`steam_app_<id>`, in Steam's unit) and the entries of a runner with `handover` (their
 desktop file's name: Waydroid's apps, in the Waydroid session). Alike for both:
 
 - Their windows are found by their app id and put on their entry's workspace as they open; one opening while

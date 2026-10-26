@@ -19,7 +19,7 @@ use crate::Sink;
 use crate::audio::{mixer, sound};
 use crate::display::brightness::{self, Backlights};
 use crate::input::{pad, touchpad};
-use crate::launch::{launcher, scopes};
+use crate::launch::{launcher, units};
 use crate::library::meta::cache::Cache;
 use crate::library::{self, Sources, meta};
 use crate::network::{bluetooth, wifi};
@@ -99,7 +99,7 @@ pub fn start<S: Sink + Clone>(
 ) -> Handles {
     let backlights = Backlights::new(env.backlights.clone());
     if !paths.has_user_systemd() {
-        log::error!("no systemd user manager: ClamShell needs one to run apps and games (in scopes of their own)");
+        log::error!("no systemd user manager: ClamShell needs one to run apps and games (as services of their own)");
     }
     // A thread started again after a panic is sent again what it lost.
     let told = sink.clone();
@@ -118,7 +118,7 @@ pub fn start<S: Sink + Clone>(
     let touchpad = started("touchpad", touchpad::spawn(layout));
     // Watch input on every device for idle, and the hardware keys in the device's own session.
     detached("input watch", crate::input::watch::spawn(env.device_session, sink.clone()));
-    detached("units", scopes::spawn(sink.clone()));
+    detached("units", units::spawn(sink.clone()));
     // Games start from the launcher, each on a thread of its own, so several start side by side. Plays
     // go to the database.
     let launcher = started(
