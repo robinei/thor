@@ -8,12 +8,15 @@ use crate::Session;
 impl Session {
     /// Runs after any event. The program in force follows the one in front, or, when that is gone, the
     /// latest that runs. Returns whether it changed, and so its settings are to be applied.
-    pub(crate) fn follow_program(&mut self) -> bool {
+    pub(crate) fn follow_program(&mut self, now: u64) -> bool {
         let front = self.top_window().and_then(|w| self.owner_of(w));
         let kept = self.program.clone().filter(|p| self.running(p).is_some());
         let program = front.or(kept).or_else(|| self.running.last().map(|r| r.id.clone()));
         let changed = crate::kit::replace(&mut self.program, program);
-        let launch = self.refresh_launch.take().filter(|e| !changed && (self.is_launching(e) || self.running(e).is_some()));
+        let launch = self.refresh_launch.take().filter(|(e, at)| {
+            let waiting = self.is_launching(e) || (self.running(e).is_some() && self.windows_of(e).next().is_none());
+            !changed && waiting && now.saturating_sub(*at) < crate::session::running::LAUNCH_WAIT
+        });
         self.refresh_launch = launch;
         changed
     }

@@ -633,7 +633,7 @@ impl Session {
         self.resume_runner_of(&entry, library, out);
         let instance = self.begin_launch(entry.clone(), key, app_id, clock, start);
         out.effects.push(Effect::Save(Save::Resume(Resume::at(shelf, tab))));
-        self.refresh_launch = Some(entry.clone());
+        self.refresh_launch = Some((entry.clone(), clock.mono()));
         out.effects.push(Effect::Launch { entry, instance, settings: values, env, launch });
         None
     }

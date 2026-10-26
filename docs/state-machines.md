@@ -490,9 +490,11 @@ the pad's route and a refresh rate the settings want go out at the first event (
 `what_the_outside_starts_without_goes_out_at_the_first_event`); Start sends none of them again.
 
 The main screen's refresh rate needs no resend: sync sends `Wanted::refresh` whenever it differs from
-what was sent (the calibration's rate, else the rate of the entry launched last until the program in
-force changes, else the settings'; tests `the_refresh_rate_follows_a_launch_at_once_then_the_settings_in_force`,
-`the_refresh_rate_goes_back_when_a_launch_fails`, `a_refresh_calibration_sets_the_screens_and_then_gives_them_back`).
+what was sent (the calibration's rate, else the rate of the entry launched last while its window is yet
+to show: until the program in force changes, it has a window, it is gone, or `LAUNCH_WAIT` has passed;
+else the settings'. Tests `the_refresh_rate_follows_a_launch_at_once_then_the_settings_in_force`,
+`the_refresh_rate_goes_back_when_a_launch_fails`, `the_refresh_rate_goes_back_when_a_launch_shows_no_window`,
+`a_refresh_calibration_sets_the_screens_and_then_gives_them_back`).
 
 ### A system thread started again (restart.rs)
 
@@ -559,7 +561,7 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    keymap in force; Status is watched iff the screens are on; Account iff the UI is up and the Device
    view is open; the last Apply is `(program, in_force)`; the last Outputs is (screens on, bottom on);
    the last Refresh is the calibration's rate while it runs, else the rate of the entry launched last
-   until the program in force changes, else the rate of the settings in force, at the modes known.
+   while its window is yet to show, else the rate of the settings in force, at the modes known.
    Once ClamShell set a brightness level, the last Brightness is that level, or a third of it (at
    least 1) while dimmed.
 3. **Pad route:** consistent with claimant, listening and dock move; reconciling again changes nothing;

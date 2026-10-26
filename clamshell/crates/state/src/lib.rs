@@ -540,7 +540,7 @@ impl State {
         let policy = crate::device::idle::Policy::of(&self.prefs.settings().global, self.session.device_session());
         let refreshing = self.device.calibrating();
         self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), out);
-        let changed = self.session.follow_program();
+        let changed = self.session.follow_program(self.clock.mono());
         self.bottom.follow_power(self.power(), self.clock.mono());
         if changed {
             self.follow_pad_mouse();

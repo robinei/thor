@@ -397,6 +397,28 @@ fn the_refresh_rate_follows_a_launch_at_once_then_the_settings_in_force() {
     assert_eq!(refresh(&crate::testkit::end(&mut s, "zelda-lttp")), [0], "ended: the global rate, as is");
 }
 
+/// A launch whose window doesn't show (a tray program, or one whose windows go below) holds the main
+/// screen's rate only for the launch's wait: the program in front gets its rate back.
+#[test]
+fn the_refresh_rate_goes_back_when_a_launch_shows_no_window() {
+    let mut settings = crate::settings::Settings::default();
+    settings.set(Some(&"zelda-lttp".into()), Setting::Refresh, Some(60));
+    let mut s = State::new(Init { settings, ..init() });
+    s.ui_up();
+    let refresh =
+        |fx: &[Effect]| fx.iter().filter_map(|e| if let Effect::Compositor(Compositor::Refresh(hz)) = e { Some(*hz) } else { None }).collect::<Vec<_>>();
+    s.applied(Event::tick(1000));
+    crate::testkit::launch(&mut s, "ff6");
+    crate::testkit::show_window(&mut s, "ff6", 5);
+    let mut fx = tap(&mut s, entry("zelda-lttp"));
+    fx.extend(tap(&mut s, entry("zelda-lttp")));
+    assert_eq!(refresh(&fx), [60], "at the launch: {fx:?}");
+    let fx = crate::testkit::start(&mut s, "zelda-lttp");
+    assert!(refresh(&fx).is_empty(), "running, its window to come: {fx:?}");
+    assert!(refresh(&s.applied(Event::tick(1000 + crate::session::running::LAUNCH_WAIT - 1))).is_empty());
+    assert_eq!(refresh(&s.applied(Event::tick(1000 + crate::session::running::LAUNCH_WAIT))), [0], "ff6's again");
+}
+
 /// A launch that fails gives the main screen back to the settings in force.
 #[test]
 fn the_refresh_rate_goes_back_when_a_launch_fails() {

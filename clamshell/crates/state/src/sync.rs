@@ -36,7 +36,7 @@ pub(crate) struct Wanted<'a> {
     pub(crate) program: Option<&'a Arc<str>>,
     pub(crate) settings: Values,
     /// The main screen's refresh rate in Hz: the running refresh rate calibration's, else the settings'
-    /// of the entry launched last until the program in force changes ([`crate::Session::refresh_launch`]),
+    /// of the entry launched last while its window is yet to show ([`crate::Session::refresh_launch`]),
     /// else the settings in force's: their Refresh, or under a frame rate cap one it divides (see
     /// [`crate::device::display::DisplayModes::refresh_for`]).
     pub(crate) refresh: u16,
