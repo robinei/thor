@@ -118,3 +118,54 @@ fn a_barrier_goes_once_its_frame_is_shown_and_a_timed_commit_at_its_time() {
     });
     assert_eq!(checked, 3);
 }
+
+/// A capped window's timed commit goes ahead at once, whatever its time: its cap paces it, and Mesa,
+/// which takes a frame shown later than it asked for as missed, would move its times on further each
+/// frame the cap holds back (see [`Server::release_timed_commits`]).
+#[test]
+fn a_capped_windows_timed_commit_goes_ahead_at_once() {
+    let mut settings = clamshell_state::settings::Settings::default();
+    settings.set(None, clamshell_state::settings::Setting::FpsCap, Some(30));
+    let state = State::new(Init { settings, device_session: true, ..Init::default() });
+    let identify = |pid| Process { unit: Some("app-game.scope".into()), pids: vec![pid], steam_app: None };
+    let (mut display, mut server) = ServerBuilder::new().state(state).identify(identify).started();
+    let client = spawn_client(&mut display, ClientState::default(), move |globals, mut queue, steps| {
+        let qh = queue.handle();
+        let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
+        let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
+        let shm: wl_shm::WlShm = globals.bind(&qh, 1..=1, ()).unwrap();
+        let timing: wp_commit_timing_manager_v1::WpCommitTimingManagerV1 = globals.bind(&qh, 1..=1, ()).unwrap();
+        let surface = compositor.create_surface(&qh, ());
+        let xdg = shell.get_xdg_surface(&surface, &qh, ());
+        let top = xdg.get_toplevel(&qh, ());
+        top.set_app_id("game".into());
+        surface.commit();
+        let mut client = Client::default();
+        queue.roundtrip(&mut client).unwrap();
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(&vec![0xff; 64 * 64 * 4]).unwrap();
+        let pool = shm.create_pool(file.as_fd(), 64 * 64 * 4, &qh, ());
+        let buffer = pool.create_buffer(0, 64, 64, 64 * 4, wl_shm::Format::Abgr8888, &qh, ());
+        surface.attach(Some(&buffer), 0, 0);
+        surface.commit();
+        queue.roundtrip(&mut client).unwrap();
+        steps.step(Step::Shown);
+        let timer = timing.get_timer(&surface, &qh, ());
+        timer.set_timestamp(0, 1000, 0);
+        surface.attach(Some(&buffer), 0, 0);
+        surface.commit();
+        queue.roundtrip(&mut client).unwrap();
+        steps.step(Step::Timed);
+    });
+    let checked = client.serve(&mut display, &mut server, Server::frame, |display, server, step| match step {
+        Step::Shown => assert_eq!(server.windows.first().map(|w| w.shown.fps_cap), Some(Some(30)), "capped"),
+        Step::Timed => {
+            let commits = server.pacing.commits;
+            assert_eq!(server.release_timed_commits(Duration::from_secs(500).into()), None, "nothing held");
+            display.dispatch_clients(server).unwrap();
+            assert!(server.pacing.commits > commits, "applied before its time");
+        }
+        Step::Barrier => panic!("no barrier"),
+    });
+    assert_eq!(checked, 2);
+}

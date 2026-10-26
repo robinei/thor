@@ -101,6 +101,10 @@ impl ServerBuilder {
         }
     }
 
+    pub(crate) fn state(self, state: State) -> ServerBuilder {
+        ServerBuilder { state, ..self }
+    }
+
     pub(crate) fn sizes(self, top_size: (u32, u32), bottom_size: (u32, u32)) -> ServerBuilder {
         ServerBuilder { config: Config { top_size, bottom_size, ..self.config }, ..self }
     }
