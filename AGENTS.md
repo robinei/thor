@@ -45,7 +45,8 @@ readings, ticks, windows, units ─▶ Event ───┤
   Bluetooth, sound, the store, files, ...). Each takes its own commands on a channel (`os::worker`; a
   thread that polls devices is also woken by an eventfd bell) and sends events back through a `Sink`. No
   thread touches `State`. A thread that panics is started again, at once and then after growing waits,
-  and the state sends it again what it had been sent (`crates/state/src/restart.rs`).
+  and the state sends it again what it had been sent (`crates/state/src/restart.rs`); one that panics
+  five times, each soon after its start, is given up, logged.
 - **The compositor's thread** runs the event loop, the state and the drawing. It does no blocking work:
   files, process walks, D-Bus calls and waiting on the GPU belong to a thread. It draws only what
   changed.
