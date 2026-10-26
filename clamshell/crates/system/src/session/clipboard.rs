@@ -238,7 +238,12 @@ impl Keeper {
                     let kept = kept.clone();
                     let (conn, manager, device, qh) = (self.conn.clone(), self.manager.clone(), self.device.clone(), qh.clone());
                     let reading = worker::detached("clipboard read", move || {
+                        // Text too long to keep, not UTF-8 or unread: what was kept isn't the clipboard any more,
+                        // and isn't offered again when the program that copied quits.
                         let Some(text) = read.inspect_err(|e| log::warn!("clipboard: reading the copied text: {e}")).ok().and_then(read_text) else {
+                            if kept.text().take().is_some() {
+                                (kept.on_read)(None);
+                            }
                             return;
                         };
                         let changed = kept.text().as_ref() != Some(&text);
