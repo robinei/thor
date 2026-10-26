@@ -60,10 +60,10 @@ keymaps.png 63e26cb07145d9bc
 launcher-running.png 624e321e48d68f3b
 launcher.png 55e4074b488f027f
 settings-env.png e7ed86aa4833095c
-settings-global.png d11b6b645a13005b
+settings-global.png 9f3f15a7ff55ba22
 settings-menu.png 72af12303e2b3a9a
-settings-running.png 038b1818c8d9e9a4
-settings.png 6e4fc8c87295874a
+settings-running.png 82521d330a4781d5
+settings.png 1f42075b41b5e4c3
 slider.png 77831e534b0c5416
 status-low.png ccb3226080159312
 sysinfo.png 90ff58d91e07de6b

@@ -369,9 +369,9 @@ mod tests {
                         visible > 1.0 && (visible - area.h / targets.iter().find_map(|t| t.list).map_or(1.0, |l| l.row_h)).abs() < 1e-3,
                         "{case}: {visible}"
                     );
-                    let rows: Vec<&Target> = targets.iter().filter(|t| clamshell_state::ListId::of(&t.id).is_some_and(|(l, _)| l == list)).collect();
+                    let rows: Vec<&Target> = targets.iter().filter(|t| state.lists().of(&t.id).is_some_and(|(l, _)| l == list)).collect();
                     assert!(!rows.is_empty(), "{case}: rows drawn");
-                    let first = rows.iter().filter_map(|t| clamshell_state::ListId::of(&t.id)).map(|(_, i)| i).min();
+                    let first = rows.iter().filter_map(|t| state.lists().of(&t.id)).map(|(_, i)| i).min();
                     assert_eq!(first, Some(scrolled as usize), "{case}: the first row shown");
                     for (i, a) in targets.iter().enumerate() {
                         assert!(a.rect.w > 0.0 && a.rect.h > 0.0, "{case}: {:?} has no size", a.id);

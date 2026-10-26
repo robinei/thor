@@ -38,6 +38,8 @@ pub enum ListId {
     Dock,
     /// A settings tile's menu: its values, then Reset when there is something to reset.
     Values,
+    /// The settings grid's rows of tiles, [`crate::GRID_COLUMNS`] to a row (see [`crate::Panel::grid`]).
+    Settings,
 }
 
 /// Which part of a row a target is: the row itself, or one of its controls.
@@ -53,7 +55,7 @@ pub enum RowPart {
 }
 
 impl ListId {
-    pub const COUNT: usize = 11;
+    pub const COUNT: usize = 12;
     pub const ALL: [ListId; ListId::COUNT] = [
         ListId::Shelf,
         ListId::Wifi,
@@ -66,6 +68,7 @@ impl ListId {
         ListId::Time,
         ListId::Dock,
         ListId::Values,
+        ListId::Settings,
     ];
 
     pub fn index(self) -> usize {
@@ -75,30 +78,6 @@ impl ListId {
     /// Row `i`'s main target.
     pub fn row(self, i: u16) -> Id {
         Id::Row { list: self, i, part: RowPart::Main }
-    }
-
-    /// The list and row a target is in, if it belongs to a row. For a dock tile, this is its row of
-    /// tiles.
-    pub fn of(id: &Id) -> Option<(ListId, usize)> {
-        match id {
-            Id::Row { list, i, .. } => Some((*list, usize::from(*i))),
-            Id::Dock(crate::DockId::Entry(i)) => Some((ListId::Dock, usize::from(*i) / crate::session::dock::DOCK_COLUMNS)),
-            _ => None,
-        }
-    }
-
-    /// The same part as the row target `id`, but in row `i`, for moving up or down. A dock tile moves to
-    /// the same column, or to the row's last tile. `dock_len` is how many tiles there are.
-    pub fn sibling(id: &Id, i: u16, dock_len: usize) -> Option<Id> {
-        match id {
-            Id::Row { list, part, .. } => Some(Id::Row { list: *list, i, part: *part }),
-            Id::Dock(crate::DockId::Entry(at)) => {
-                let tile =
-                    (usize::from(i) * crate::session::dock::DOCK_COLUMNS + usize::from(*at) % crate::session::dock::DOCK_COLUMNS).min(dock_len.checked_sub(1)?);
-                Some(Id::Dock(crate::DockId::Entry(u16::try_from(tile).ok()?)))
-            }
-            _ => None,
-        }
     }
 
     /// Whether the list rests on whole rows. Shelf does: a drag or fling ends by settling on a row.
@@ -175,6 +154,38 @@ impl<'a> Lists<'a> {
             ListId::Time => RowsOf::Count(self.sys.time_rows()),
             ListId::Dock => RowsOf::Count(self.dock.items().len().div_ceil(crate::session::dock::DOCK_COLUMNS)),
             ListId::Values => RowsOf::Count(self.menu_rows),
+            ListId::Settings => RowsOf::Count(self.panel().grid().count().div_ceil(crate::GRID_COLUMNS)),
+        }
+    }
+
+    /// The list and row a target is in, if it belongs to a row. For a tile of the dock or the settings
+    /// grid, this is its row of tiles.
+    pub fn of(&self, id: &Id) -> Option<(ListId, usize)> {
+        match id {
+            Id::Row { list, i, .. } => Some((*list, usize::from(*i))),
+            Id::Dock(DockId::Entry(i)) => Some((ListId::Dock, usize::from(*i) / crate::session::dock::DOCK_COLUMNS)),
+            Id::Settings(tile) => self.panel().grid().position(|t| t == *tile).map(|i| (ListId::Settings, i / crate::GRID_COLUMNS)),
+            _ => None,
+        }
+    }
+
+    /// The same part as the row target `id`, but in row `i`, for moving up or down. A tile moves to the
+    /// same column, or to the row's last tile.
+    pub fn sibling(&self, id: &Id, i: usize) -> Option<Id> {
+        // The tile in the same column of row `i` of a grid of `len` tiles, `columns` to a row.
+        let tile = |at: usize, columns: usize, len: usize| (i * columns + at % columns).min(len.checked_sub(1)?).into();
+        match id {
+            Id::Row { list, part, .. } => Some(Id::Row { list: *list, i: u16::try_from(i).ok()?, part: *part }),
+            Id::Dock(DockId::Entry(at)) => {
+                let tile: Option<usize> = tile(usize::from(*at), crate::session::dock::DOCK_COLUMNS, self.dock.items().len());
+                Some(Id::Dock(DockId::Entry(u16::try_from(tile?).ok()?)))
+            }
+            Id::Settings(at) => {
+                let grid = self.panel().grid();
+                let tile: Option<usize> = tile(grid.clone().position(|t| t == *at)?, crate::GRID_COLUMNS, grid.clone().count());
+                grid.clone().nth(tile?).map(Id::Settings)
+            }
+            _ => None,
         }
     }
 
@@ -325,11 +336,21 @@ mod tests {
     }
 
     #[test]
-    fn a_dock_tile_a_row_down_keeps_its_column() {
+    fn a_tile_a_row_down_keeps_its_column() {
+        let mut s = crate::testkit::state();
         let tile = |i| Id::Dock(DockId::Entry(i));
-        assert_eq!(ListId::of(&tile(6)), Some((ListId::Dock, 1)));
-        assert_eq!(ListId::sibling(&tile(6), 2, 20), Some(tile(10)));
-        assert_eq!(ListId::sibling(&tile(7), 2, 10), Some(tile(9)), "the last row short: its last tile");
-        assert_eq!(ListId::sibling(&tile(0), 1, 0), None);
+        assert_eq!(s.lists().of(&tile(6)), Some((ListId::Dock, 1)));
+        assert_eq!(s.lists().sibling(&tile(0), 1), None, "an empty dock");
+        // The settings grid: Power, then a row down FPS cap's column's tile, Scaling.
+        let power = Id::Settings(crate::id::SettingsId::Tile(crate::settings::Setting::Power));
+        assert_eq!(s.lists().of(&power), Some((ListId::Settings, 0)));
+        let below = s.lists().sibling(&power, 1);
+        assert_eq!(below, Some(Id::Settings(crate::id::SettingsId::Tile(crate::settings::Setting::Resolution))));
+        // The last row short: its last tile.
+        let last = s.lists().len(ListId::Settings) - 1;
+        let fan = Id::Settings(crate::id::SettingsId::Tile(crate::settings::Setting::Fan));
+        assert_eq!(s.lists().sibling(&fan, last), Some(Id::Settings(crate::id::SettingsId::Tile(crate::settings::Setting::BigCores))));
+        s.applied(ListEvent::Visible(ListId::Settings, 4.0).into());
+        assert_eq!(s.lists().scroll(ListId::Settings).offset(), 0.0);
     }
 }

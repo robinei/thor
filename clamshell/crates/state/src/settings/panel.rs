@@ -144,6 +144,38 @@ pub struct Program<'a> {
     pub title: &'a str,
 }
 
+/// How many tiles a row of the settings grid has.
+pub const GRID_COLUMNS: usize = 5;
+
+/// The settings grid's tiles, the most used first, in rows of [`GRID_COLUMNS`]: four rows show at once and
+/// the grid scrolls. On a program's tab Reset comes before the last, CPU cores, to show with the others.
+/// The settings for the device rather than a program, the charge limit and idle, are on the battery tab.
+const GRID: [crate::id::SettingsId; 20] = {
+    use crate::id::SettingsId::{Env, Tile};
+    [
+        Tile(Setting::Power),
+        Tile(Setting::FpsCap),
+        Tile(Setting::Refresh),
+        Tile(Setting::Hud),
+        Tile(Setting::Curve),
+        Tile(Setting::Resolution),
+        Tile(Setting::Scaling),
+        Tile(Setting::Size),
+        Tile(Setting::AntiAliasing),
+        Tile(Setting::Sharpen),
+        Tile(Setting::Keymap),
+        Tile(Setting::PadMouse),
+        Tile(Setting::BottomScreen),
+        Tile(Setting::Background),
+        Env,
+        Tile(Setting::Fan),
+        Tile(Setting::CpuMax),
+        Tile(Setting::GpuMax),
+        Tile(Setting::Rumble),
+        Tile(Setting::BigCores),
+    ]
+};
+
 /// The settings panel as it is now: the item in context, the levels it offers, what it edits, and the
 /// keymaps' picker for it. Built by [`Panel::new`]; it doesn't allocate, since the UI builds it while
 /// drawing.
@@ -213,6 +245,13 @@ impl<'a> Panel<'a> {
     /// Text`). There is only its own for an item without a runner, such as ClamShell's tools.
     pub fn levels(&self) -> &[Option<(Scope, Program<'a>)>; 2] {
         &self.levels
+    }
+
+    /// The settings grid's tiles, in order (see [`GRID`]).
+    pub fn grid(&self) -> impl Iterator<Item = crate::id::SettingsId> + Clone + use<> {
+        let (most, last) = GRID.split_at(GRID.len() - 1);
+        let reset = self.editing().is_some().then_some(crate::id::SettingsId::Reset);
+        most.iter().copied().chain(reset).chain(last.iter().copied())
     }
 
     /// What the panel edits now: the level of the chosen scope, or none for All. Content edits the

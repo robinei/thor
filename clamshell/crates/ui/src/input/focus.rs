@@ -9,7 +9,7 @@
 use clamshell_state::bottom::keyboard;
 use clamshell_state::levels::Level;
 use clamshell_state::profiles::picker::{Kind, ProfileId};
-use clamshell_state::{DockId, EditorId, Event, Id, LevelEvent, ListId, PadInput, PointerEvent, RowPart, ShelfEvent, ShelfId, State, Tab};
+use clamshell_state::{DockId, EditorId, Event, Id, LevelEvent, PadInput, PointerEvent, RowPart, ShelfEvent, ShelfId, State, Tab};
 use smithay_client_toolkit::seat::keyboard::Keysym;
 
 use crate::gfx::Rect;
@@ -180,11 +180,11 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
     // In a scrolled list, up and down go to the row above or below, whether it is shown or not; the
     // list scrolls to it. Past either end, the focus moves on by direction.
     if let (Some(focus), Dir::Up | Dir::Down) = (s.pointer().focus(), dir)
-        && let Some((list, i)) = ListId::of(focus)
+        && let Some((list, i)) = s.lists().of(focus)
         && drawn_on(d, None, focus)
     {
         let next = if dir == Dir::Up { i.checked_sub(1) } else { Some(i + 1).filter(|&n| n < s.lists().len(list)) };
-        if let Some(id) = next.and_then(|n| u16::try_from(n).ok()).and_then(|n| ListId::sibling(focus, n, s.dock().items().len())) {
+        if let Some(id) = next.and_then(|n| s.lists().sibling(focus, n)) {
             // A row that is drawn without that part, such as a keymap without Edit, gets the focus on
             // the row itself.
             let id = match id {
@@ -343,7 +343,7 @@ pub(crate) fn desktop_key(sym: Keysym) -> Option<PadInput> {
 mod tests {
     use super::*;
     use clamshell_state::settings::Setting;
-    use clamshell_state::{Init, SettingsId};
+    use clamshell_state::{Init, ListId, SettingsId};
 
     /// Targets on each screen, with both screens 100 by 100.
     struct Fake(Screens<Vec<Target>>);

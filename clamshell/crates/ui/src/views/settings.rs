@@ -1,4 +1,5 @@
-//! Settings: a grid of tiles on black, one per setting, each an icon over its value. A tap steps to the
+//! Settings: a grid of tiles on black, one per setting, each an icon over its value, four rows at a time;
+//! the rest scroll into view. A tap steps to the
 //! next value, and a long press goes back to the default. The icon's colour says what the value does:
 //! grey for the stock value, green when it saves power, amber when it costs power, blue when it changes
 //! how the game looks or plays.
@@ -11,12 +12,13 @@
 use clamshell_state::bottom::editor::{Editor, KeymapName, Purpose};
 use clamshell_state::profiles::picker::ProfileName;
 use clamshell_state::settings::{Impact, Setting};
-use clamshell_state::{Id, ListId, Scope, SettingsId, State, TileOrigin};
+use clamshell_state::{GRID_COLUMNS, Id, ListId, Scope, SettingsId, State, TileOrigin};
 
 use crate::gfx::icons::Icon;
 use crate::gfx::{Align, Rect, Rgb};
 use crate::toolkit::Frame;
 use crate::toolkit::format::{Fmt, Variables};
+use crate::toolkit::scroll::Scrolled;
 use crate::toolkit::style::{self, Text, Tone};
 use crate::toolkit::widgets::{self, TileFace, TileShape};
 
@@ -24,7 +26,7 @@ use crate::toolkit::widgets::{self, TileFace, TileShape};
 const TABS_H: f32 = 0.1;
 /// The largest width of a tab label, as a fraction of the area's width. Longer titles are cut.
 const TAB_MAX: f32 = 0.5;
-const COLUMNS: usize = 5;
+/// How many rows of tiles show at once; the grid scrolls.
 const ROWS: usize = 4;
 /// The icon's size and top, as fractions of a tile's height. Values are not cut, since they are short; in
 /// a narrow window a long one runs over the tile's edges.
@@ -40,29 +42,17 @@ enum Tile {
     Reset,
 }
 
-/// The grid, in order. On a game's tab, Reset follows. The settings for the device rather than a game,
-/// the charge limit and idle, are on the battery tab. Five columns and four rows hold it all with Reset.
-const GRID: [Tile; 19] = [
-    Tile::Setting(Setting::Power),
-    Tile::Setting(Setting::FpsCap),
-    Tile::Setting(Setting::Refresh),
-    Tile::Setting(Setting::Hud),
-    Tile::Setting(Setting::Curve),
-    Tile::Setting(Setting::Resolution),
-    Tile::Setting(Setting::Scaling),
-    Tile::Setting(Setting::AntiAliasing),
-    Tile::Setting(Setting::Sharpen),
-    Tile::Setting(Setting::BottomScreen),
-    Tile::Setting(Setting::BigCores),
-    Tile::Setting(Setting::Fan),
-    Tile::Setting(Setting::PadMouse),
-    Tile::Setting(Setting::Keymap),
-    Tile::Setting(Setting::Rumble),
-    Tile::Setting(Setting::CpuMax),
-    Tile::Setting(Setting::GpuMax),
-    Tile::Setting(Setting::Background),
-    Tile::Env,
-];
+impl Tile {
+    /// The grid's tile for `id` (see [`clamshell_state::Panel::grid`]).
+    fn of(id: SettingsId) -> Option<Tile> {
+        match id {
+            SettingsId::Tile(setting) => Some(Tile::Setting(setting)),
+            SettingsId::Env => Some(Tile::Env),
+            SettingsId::Reset => Some(Tile::Reset),
+            SettingsId::Back | SettingsId::Scope(_) => None,
+        }
+    }
+}
 
 pub(super) fn draw(f: &mut Frame) {
     let body = f.body();
@@ -214,13 +204,14 @@ fn face(s: &State, tile: Tile) -> Face {
                 active: (setting != Setting::Refresh || !s.device().display_modes().rates().is_empty())
                     && (setting != Setting::Fan || s.profile().fan.is_some())
                     && !(setting.through_launch() && p.handed_over())
-                    && (!setting.compositor_only() || s.compositor()),
+                    && (!setting.compositor_only() || s.compositor())
+                    && !overruled,
                 // Only ClamShell's own compositor shows a game's picture differently; under sway these do
                 // nothing.
                 note: if setting == Setting::Resolution && s.compositor() && s.resolution_waits() {
                     "next start"
                 } else {
-                    note((setting.through_launch() && p.handed_over()) || (setting.compositor_only() && !s.compositor()))
+                    note((setting.through_launch() && p.handed_over()) || (setting.compositor_only() && !s.compositor()) || overruled)
                 },
             }
         }

@@ -113,7 +113,7 @@ pub use session::Session;
 pub use session::dock::{Dock, DockItem};
 pub use session::instance::Instance;
 pub use session::running::{Front, Launching, Origin, Running};
-pub use settings::panel::{Panel, Prefs, Program, Scope, Source, TileOrigin};
+pub use settings::panel::{GRID_COLUMNS, Panel, Prefs, Program, Scope, Source, TileOrigin};
 pub use shelf::{Cursor, Shelf};
 pub use status::time::{ClockField, TimePage, TimeRow, TimeZones};
 pub use status::{Status, Sys};
@@ -1140,8 +1140,8 @@ impl State {
             ListId::Values => {}
             ListId::Layers => self.on_layer_row(i, part, long, out),
             ListId::Time => self.sys.on_time_row(i, self.scrolls.get_mut(ListId::Time), out),
-            // Its tiles are targets of their own.
-            ListId::Dock => {}
+            // Their tiles are targets of their own.
+            ListId::Dock | ListId::Settings => {}
             // A shelf game's row is its game's target, and a backlight's row is only its level.
             ListId::Shelf | ListId::Backlights => {}
         }
@@ -1149,7 +1149,7 @@ impl State {
 
     /// The pad's focus moved to `id`. If it is a list row, the list scrolls to show it.
     fn show_focused(&mut self, id: &Id) {
-        if let Some((list, i)) = ListId::of(id) {
+        if let Some((list, i)) = self.lists().of(id) {
             self.move_list(list, |s, len| s.show(i, len));
         }
     }
