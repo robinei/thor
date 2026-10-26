@@ -2,7 +2,7 @@
 //!
 //! Clients are told their size and place and nothing waits on them: a window ignoring its size is
 //! scaled. A client's error ends that client, never the server. X11 windows become the same window
-//! facts as Wayland ones in one adapter. See `docs/compositor-mvp.md`, "Keeping the app tail small".
+//! facts as Wayland ones in one adapter. See `docs/architecture.md`, "Living with what apps do".
 
 mod activation;
 mod base;

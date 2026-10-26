@@ -536,17 +536,17 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       keymap edit screen with its labels).
 - [ ] The buttons' codes (`evtest` on the controller): which physical button sends `BTN_MODE`, which
       ClamShell treats as Home (Home is on the left, the AYN button in the middle), and what the AYN
-      and Back buttons send. The Home chords (`docs/compositor-mvp.md`, "The Home chords") assume Home
+      and Back buttons send. The Home chords (`docs/history/compositor-mvp.md`, "The Home chords") assume Home
       is the left one.
 - [ ] GPU: Freedreno (the compositor's GLES) and Turnip (`vkcube`, a game); the compositor's frame rate
       in sysinfo.
 - [ ] Direct scanout. The spec sheet gives the panels as 1080x1920 (main, 120 Hz) and 1080x1240 (second, 60
       Hz): natively portrait, mounted sideways, as our configs' transforms assume. Confirm with the
       connectors' native modes. Rotated, ClamShell's compositor composites a fullscreen game every frame (it
-      always composes for now: `docs/compositor-mvp.md`, phase 4): measure what that pass costs at 120 Hz (GPU
+      always composes for now: `docs/history/compositor-mvp.md`, phase 4): measure what that pass costs at 120 Hz (GPU
       time, power). Whether the display engine's planes rotate RGB buffers by 90° (`drm_info`: each plane's
       rotation property and values): if so, gamescope (which uses it) could show games without a composition
-      pass. From the kernel's source (2026-10-23, `docs/compositor-mvp.md` section 4): Armada's patch 0066
+      pass. From the kernel's source (2026-10-23, `docs/history/compositor-mvp.md` section 4): Armada's patch 0066
       (ROCKNIX) gives the VIG planes 90°/270° rotation for UBWC buffers only, 8888 and 2101010 formats, height
       up to 1088; a rotated fullscreen plane on the top panel takes two of the four VIG pipes. ClamShell's
       compositor would use it with direct scanout (Smithay tries it); sway doesn't. That is the preferred way,
@@ -576,7 +576,7 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       content at about 200 (about 1.7 stops of headroom), the panel at the top of its brightness: do the
       highlights look better, without banding, heat or burn-in worries (a cap or time limit on highlights
       if needed). Only if it pays: a headroom output mode in ClamShell's compositor
-      (`docs/compositor-mvp.md`, 4h).
+      (`docs/history/compositor-mvp.md`, 4h).
 - [ ] Wi-Fi from the Wi-Fi mode (NetworkManager): scan, join with a password, forget; polkit lets the
       session's user do it (tested in the VM as an autologin session user, not on the device).
 - [ ] Bluetooth: does the chip work with ROCKNIX's kernel and firmware? Then the Bluetooth mode: pair

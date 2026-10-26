@@ -106,7 +106,7 @@ updates that document in the same change, and:
 
 ## The compositor (crates/compositor)
 
-Rules for living with what apps do (`docs/compositor-mvp.md`, "Keeping the app tail small"):
+Rules for living with what apps do (`docs/architecture.md`, "Living with what apps do"):
 
 - Enforce, never negotiate: a window is told its size and place; one that ignores them is scaled, and
   nothing waits on a client.

@@ -1308,7 +1308,7 @@ WM_DELETE_WINDOW closes a supporting client, otherwise KillClient ends it.
 Late replies use unique model ids, so XID reuse cannot modify a replacement. Selection/focus/placement
 remain state rules. The clipboard bridge imports and exports both seat selections; there is no
 drag and drop. The clipboard bridge's INCR and asynchronous transfer plan is explicit in
-`docs/compositor-mvp.md`; the implemented export transitions and tests are described below.
+`docs/history/compositor-mvp.md`; the implemented export transitions and tests are described below.
 
 Property fixtures check ordinary and fixed transient windows, all supported roles, malformed types,
 negative sizes and property deletion, plus focus protocols/hints. Socket-pair tests check partial

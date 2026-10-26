@@ -162,7 +162,7 @@ Helpers that exist but are bypassed:
       `bluetooth::{Device, Kind, Action}` (module paths tell them apart, as `io::Error` and
       `fmt::Error`), and locals named `game`.
 - [x] Commit messages: short imperative scoped subjects, one concern each (from 2026-10-22 on).
-- [x] `docs/review-2026-10.md` framed as the design record it is.
+- [x] `docs/history/review-2026-10.md` framed as the design record it is.
 - [x] Cargo metadata: `description`, `repository`, `publish = false`, `rust-version`.
 - [x] The config folders beside the workspace and `.claude/commands/maintain.md` (the device's maintenance
       playbook) described in the README.

@@ -1,7 +1,7 @@
 # Picture: curves, anti-aliasing, upscaling, sharpening, frame generation
 
 How a game's picture is changed on its way to the screen, as one design: what the user sees and sets,
-and how the compositor and the launch do it. The tone curve (`docs/compositor-mvp.md`, phase 2h) is the
+and how the compositor and the launch do it. The tone curve (`docs/history/compositor-mvp.md`, phase 2h) is the
 first part of it and is done; the rest follows the order in "Phases" below.
 
 ## Three layers

@@ -1,7 +1,6 @@
 # Architecture
 
-How ClamShell is put together, and what keeps it honest. About 48,000 lines of Rust (state 16k, system
-17k, ui 11k, the rest small) and 627 tests. The README says how to run and check it; `AGENTS.md` holds the
+How ClamShell is put together, and what keeps it honest. The README says how to run and check it; `AGENTS.md` holds the
 rules changes follow; `docs/state-machines.md` describes each feature's behaviour.
 
 ## The cycle
@@ -92,6 +91,38 @@ window effect is closing one (`Compositor::Close`). Shelf is not a window: it is
 is. A metadata change cannot restore an old placement. Foreground launch intent and recent-group history
 are session rules. The detailed transitions and their tests are in `docs/state-machines.md`.
 
+## Living with what apps do
+
+Apps will do odd things with their windows, Steam and Proton above all. The tail can't be avoided, but
+each oddity should be harmless to the session, found by us before the user meets it, fixed in one place,
+and fixed once. Seven rules:
+
+1. **Enforce, never negotiate.** The compositor tells a window its size and doesn't wait for agreement:
+   a window that ignores it is scaled, positions it asks for are ignored, there is no stacking to request,
+   and nothing waits on a client's acknowledgement. A misbehaving client can only make its own window look
+   wrong, never placement, the other screen or the session.
+2. **A client's error stays the client's.** Anything a client sends that we can't handle ends that
+   client's connection, logged, never a crash. Xwayland is a supervised child: if it dies it is restarted;
+   the X11 apps go, the session and the Wayland games stay.
+3. **X11's oddities in one place.** The X11 adapter is a translation from a window's X11 properties to the
+   same window facts the Wayland side produces (role, parent, size limits, title, identity, shown or not);
+   the state never sees X11. An app quirk is a fact derived wrongly, fixed in that translation, and tested
+   with the recorded properties as input and the expected facts as output, without running the app.
+4. **The user can always get out.** Home goes through our pad router before any client sees it: Home
+   returns to the shelf, Home+B closes the window, held it ends the program, whatever the window
+   does. The worst case of an app bug is pressing Home.
+5. **Bugs fixed once stay fixed.** A set of real clients in the headless harness (a Wayland app, an X11
+   app, a fixed-size dialog, a window ignoring its size, one that hides and reappears, a menu), growing by
+   a case with each app bug fixed. On the device, a fixed-size ring of the last few hundred window events,
+   dumped by a control command, replays as a state test; the maintenance agent can attach a dump to a
+   report.
+6. **Defaults that avoid the hard paths:** games through Wine's Wayland driver, so most game traffic never
+   reaches Xwayland, and Steam in Big Picture mode (`-gamepadui`): one fullscreen controller-driven window
+   instead of the desktop client's many windows and menus.
+7. **Not yet built:** a randomized client that maps, unmaps, resizes, asks for fullscreen and opens
+   menus, with the session's invariants checked after every step, as the randomized state test does one
+   layer up.
+
 ## The UI
 
 - **Core and host.** `ui::Core` is the UI without a backend: the state and the event queue, input routed
@@ -149,14 +180,14 @@ listed, and ClamShell can be restarted without losing track.
 | Layer | What it catches | When it runs |
 |---|---|---|
 | clippy (debug, dev and release builds), rustfmt, rustdoc with warnings as errors | lint violations, the no-panic rules, broken doc links | every commit and CI |
-| unit tests per area (most of the 627) | each transition and interaction in `docs/state-machines.md`, with effects asserted in order | every commit and CI |
+| unit tests per area | each transition and interaction in `docs/state-machines.md`, with effects asserted in order | every commit and CI |
 | randomized event-sequence test | invariants after every event over thousands of generated events: sync has nothing left to send, the pad's route and the session consistent, lists within their ends, ... | every commit and CI; more seeds by hand |
 | snapshot test: pixels, focus, trace | every screen's pixels; where the pad's focus goes on every screen, with reachability rules; the effects of scripted scenarios | every commit and CI |
 | damaged frames against whole frames | partial redraws identical to full ones, pixel for pixel, across every scenario | every commit and CI |
 | allocation tests | the event path and frame drawing allocate nothing | every commit and CI |
 | `clamshell/tests/nested-compositor.py` | ClamShell's compositor nested (in a headless sway as the host) with real clients: Wayland and X11 windows, Xwayland's restart, the clipboard, screenshots, moves between the screens | by hand, for compositor behaviour |
-| `clamshell/tests/picture-scaling.py` | test games launched from shelf, their pictures filling the top screen at each Resolution and Scaling | by hand, for the picture |
-| `tools/vm/vm-test.sh` (about 120 checks) | the whole device image in QEMU: a fake controller with gyro and rumble, simulated Wi-Fi and Bluetooth, sleep and wake, the session's files | by hand, for changes to devices, services and the session |
+| `clamshell/tests/picture-scaling.py` (`--gpu` for the Wine games) | test games launched from shelf, their pictures filling the top screen at each Resolution and Scaling | by hand, for the picture |
+| `tools/vm/vm-test.sh` | the whole device image in QEMU: a fake controller with gyro and rumble, simulated Wi-Fi and Bluetooth, sleep and wake, the session's files | by hand, for changes to devices, services and the session |
 
 Every commit passes `tools/check.sh` (the first six rows) through the pre-commit hook, and CI runs it again
 on GitHub.
