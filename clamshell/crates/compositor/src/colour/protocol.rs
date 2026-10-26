@@ -1,6 +1,6 @@
 //! Parametric colour-management objects. Invalid requests disconnect only their client.
 use crate::server::Server;
-use clamshell_state::session::presentation::{ColourDescription, ColourLuminance, ColourPrimaries, ColourTarget, TransferFunction};
+use clamshell_state::colour::{ColourDescription, ColourLuminance, ColourPrimaries, ColourTarget, TransferFunction};
 use smithay::{
     reexports::{
         wayland_protocols::wp::color_management::v1::server::{

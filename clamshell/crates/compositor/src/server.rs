@@ -423,7 +423,7 @@ impl Server {
 
     /// A window's colour, as the state has it: the description of the surface holding its picture (see
     /// `Surface::picture`: Wine declares a game's on the subsurface it draws in), else its toplevel's.
-    pub(crate) fn window_colour(&self, window: &crate::surface::Surface) -> Option<std::sync::Arc<clamshell_state::session::presentation::ColourDescription>> {
+    pub(crate) fn window_colour(&self, window: &crate::surface::Surface) -> Option<std::sync::Arc<clamshell_state::colour::ColourDescription>> {
         use smithay::backend::renderer::element::Id;
         let picture = window.picture_surface().map(|surface| Id::from_wayland_resource(&surface));
         let root = window.root().map(|surface| Id::from_wayland_resource(&surface));
@@ -649,14 +649,14 @@ impl Server {
 
     /// Each screen's colour (the top's, the second's), described to clients (and told to the state, see
     /// [`Server::report_screens`]).
-    pub fn describe_screens(&mut self, descriptions: [clamshell_state::session::presentation::ColourDescription; 2]) {
+    pub fn describe_screens(&mut self, descriptions: [clamshell_state::colour::ColourDescription; 2]) {
         self.colour.set_outputs(descriptions);
     }
 
     /// Tells the state the screens' colours and the top screen's size when they change: a curve is shown
     /// within the colour, and a game's resolution is a fraction of the size.
     /// Gives the state the histogram the colour pipeline measured (see [`crate::colour::histogram`]).
-    pub(crate) fn report_histogram(&mut self, histogram: clamshell_state::session::presentation::Histogram) {
+    pub(crate) fn report_histogram(&mut self, histogram: clamshell_state::colour::Histogram) {
         self.core.handle(clamshell_state::Event::Reading(clamshell_state::Reading::Histogram(Box::new(histogram))));
     }
 

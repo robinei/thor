@@ -2,7 +2,7 @@
 use crate::server::{ClientState, Process, Server};
 use clamshell_state::{
     Init, State,
-    session::presentation::{ColourDescription, ColourLuminance, ColourPrimaries, TransferFunction},
+    colour::{ColourDescription, ColourLuminance, ColourPrimaries, TransferFunction},
 };
 use clamshell_ui::Config;
 use smithay::reexports::{

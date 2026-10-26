@@ -50,6 +50,7 @@
 
 pub mod bottom;
 mod clock;
+pub mod colour;
 pub mod curve;
 pub mod device;
 mod effect;
@@ -195,7 +196,7 @@ pub struct State {
     /// The screens, as the compositor last said (see [`Reading::Screens`]).
     screens: crate::session::presentation::Screens,
     /// The last histogram the compositor measured (see [`Reading::Histogram`]).
-    histogram: Option<crate::session::presentation::Histogram>,
+    histogram: Option<crate::colour::Histogram>,
     /// The sizes of Xwayland's modes (see [`Reading::XwaylandModes`]).
     xwayland_modes: Vec<(u32, u32)>,
     /// Where the lists but shelf are scrolled.
@@ -316,7 +317,7 @@ impl State {
     }
 
     /// Screen `down`'s colour (the second's, or the top's), as the compositor describes it.
-    pub fn screen_colour(&self, down: bool) -> crate::session::presentation::ColourDescription {
+    pub fn screen_colour(&self, down: bool) -> crate::colour::ColourDescription {
         let [top, bottom] = self.screens.colour;
         if down { bottom } else { top }
     }

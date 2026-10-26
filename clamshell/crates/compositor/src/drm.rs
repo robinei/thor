@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use crate::EventSender;
 use clamshell_device::{Profile, Rotation, ScreenRole, TouchSelector};
-use clamshell_state::session::presentation::ColourDescription;
+use clamshell_state::colour::ColourDescription;
 use clamshell_state::{Effect, State};
 use clamshell_ui::{Config, Error};
 use smithay::{

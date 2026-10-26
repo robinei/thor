@@ -204,7 +204,7 @@ pub enum Reading {
     /// The screens as the compositor has them, at the start and when they change.
     Screens(Box<crate::session::presentation::Screens>),
     /// Where the pixels of the plotted window's picture are (see [`crate::State::histogram_window`]).
-    Histogram(Box<crate::session::presentation::Histogram>),
+    Histogram(Box<crate::colour::Histogram>),
     /// The compositor told a game's process, known by its scope or Steam's app id, that its screen has this
     /// resolution, when it connected (see [`crate::State::process_game`]).
     Told { unit: Option<String>, steam_app: Option<u32>, resolution: crate::settings::Resolution },

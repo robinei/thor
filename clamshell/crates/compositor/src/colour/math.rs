@@ -1,4 +1,4 @@
-use clamshell_state::session::presentation::{ColourDescription, ColourPrimaries, TransferFunction};
+use clamshell_state::colour::{ColourDescription, ColourPrimaries, TransferFunction};
 
 type Matrix = [[f64; 3]; 3];
 

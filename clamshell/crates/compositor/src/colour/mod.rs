@@ -7,7 +7,7 @@ pub(crate) mod host;
 pub(crate) mod protocol;
 pub(crate) mod render;
 pub(crate) mod smaa;
-use clamshell_state::session::presentation::ColourDescription;
+use clamshell_state::colour::ColourDescription;
 use smithay::reexports::wayland_protocols::wp::color_management::v1::server::{
     wp_color_management_output_v1::WpColorManagementOutputV1, wp_color_management_surface_feedback_v1::WpColorManagementSurfaceFeedbackV1,
 };

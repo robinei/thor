@@ -1,7 +1,7 @@
 //! Surfaces decode into a retained half-float scene before the host encoding is applied once.
 use crate::{render::Element, server::Server};
+use clamshell_state::colour::{ColourDescription, ColourPrimaries, TransferFunction};
 use clamshell_state::curve::{Curve, REFERENCE_NITS};
-use clamshell_state::session::presentation::{ColourDescription, ColourPrimaries, TransferFunction};
 use clamshell_ui::Error;
 use smithay::{
     backend::{
@@ -147,7 +147,7 @@ fn bind_second(frame: &mut GlesFrame<'_, '_>, texture: Option<u32>) -> Result<()
 
 impl Pipeline {
     /// The histogram measured since the last call, for the state (see [`super::histogram`]).
-    pub(crate) fn take_histogram(&mut self) -> Option<clamshell_state::session::presentation::Histogram> {
+    pub(crate) fn take_histogram(&mut self) -> Option<clamshell_state::colour::Histogram> {
         self.histogram.measured.take()
     }
 

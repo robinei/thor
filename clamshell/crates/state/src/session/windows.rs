@@ -315,7 +315,7 @@ pub struct WindowFacts {
     pub role: super::presentation::WindowRole,
     /// Whether it is an X11 window, shown through Xwayland.
     pub x11: bool,
-    pub colour: Option<Arc<super::presentation::ColourDescription>>,
+    pub colour: Option<Arc<crate::colour::ColourDescription>>,
     /// The systemd unit its process runs in.
     pub unit: Option<String>,
     /// Its process, then that process's parent, and so on, leaving out pid 1. A program found by its tray
@@ -706,7 +706,8 @@ mod tests {
 
     #[test]
     fn presentation_facts_and_colour_do_not_change_placement_or_selection() {
-        use crate::session::presentation::{ColourDescription, ColourPrimaries, TransferFunction, WindowLayout, WindowLimits, WindowRole};
+        use crate::colour::{ColourDescription, ColourPrimaries, TransferFunction};
+        use crate::session::presentation::{WindowLayout, WindowLimits, WindowRole};
         let mut s = state();
         let one = launch_of("one");
         let window = win_of(7, "one", &one);
@@ -715,7 +716,7 @@ mod tests {
         let colour = ColourDescription {
             primaries: ColourPrimaries::Bt2020,
             transfer: TransferFunction::Pq,
-            luminance: Some(crate::session::presentation::ColourLuminance { min: 10, max: 1000, reference: 203 }),
+            luminance: Some(crate::colour::ColourLuminance { min: 10, max: 1000, reference: 203 }),
             target: None,
         };
         let changed =

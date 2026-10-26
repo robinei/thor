@@ -1,5 +1,5 @@
 //! A separate queue on winit's connection; winit remains the sole reader of the host socket.
-use clamshell_state::session::presentation::{ColourDescription, ColourLuminance, ColourPrimaries, ColourTarget, TransferFunction};
+use clamshell_state::colour::{ColourDescription, ColourLuminance, ColourPrimaries, ColourTarget, TransferFunction};
 use smithay::reexports::{
     wayland_protocols::wp::color_management::v1::client::{
         wp_color_management_surface_feedback_v1::{self as feedback, WpColorManagementSurfaceFeedbackV1},

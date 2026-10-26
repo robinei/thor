@@ -5,7 +5,7 @@
 
 use std::time::{Duration, Instant};
 
-use clamshell_state::session::presentation::{HISTOGRAM_BINS, Histogram};
+use clamshell_state::colour::{HISTOGRAM_BINS, Histogram};
 use smithay::{
     backend::{
         allocator::Fourcc,
@@ -109,7 +109,7 @@ impl Measure {
         let hdr = colour.hdr();
         let kind = match colour.transfer {
             _ if !hdr => 0.0,
-            clamshell_state::session::presentation::TransferFunction::Pq => 1.0,
+            clamshell_state::colour::TransferFunction::Pq => 1.0,
             _ => 2.0,
         };
         let to_reference = 203.0 / colour.luminances().reference.max(1) as f32;

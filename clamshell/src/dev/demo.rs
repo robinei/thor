@@ -73,7 +73,7 @@ pub fn screens() -> clamshell_state::session::presentation::Screens {
 /// An SDR game's window for `entry`, and a histogram of its picture as a game's might be: mostly dark
 /// and mid tones, some highlights, and a spike of clipped white.
 pub fn sdr_game_measured(entry: &str) -> Vec<Event> {
-    use clamshell_state::session::presentation::{HISTOGRAM_BINS, Histogram};
+    use clamshell_state::colour::{HISTOGRAM_BINS, Histogram};
     let launch = run(entry, 0);
     let window = window_of(30, "game", &launch);
     let mut bins = [0u16; HISTOGRAM_BINS];
@@ -90,7 +90,7 @@ pub fn sdr_game_measured(entry: &str) -> Vec<Event> {
 }
 
 pub fn hdr_game(entry: &str, declared: bool) -> Vec<Event> {
-    use clamshell_state::session::presentation::{ColourDescription, ColourPrimaries, ColourTarget, TransferFunction};
+    use clamshell_state::colour::{ColourDescription, ColourPrimaries, ColourTarget, TransferFunction};
     let launch = run(entry, 0);
     let colour = if declared {
         ColourDescription {

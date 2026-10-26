@@ -6,10 +6,11 @@
 //!   against the game as it is, then a row for each parameter. A finger held or slid on a row brings up
 //!   its slider, and the game on the top screen follows as it moves.
 
+use clamshell_state::colour::{HISTOGRAM_BINS, Histogram};
 use clamshell_state::curve::screens::CurveScreen;
 use clamshell_state::curve::{Curve, CurveParam, REFERENCE_NITS, map_hdr};
 use clamshell_state::profiles::picker::{Kind, ProfileId};
-use clamshell_state::session::presentation::{CurvePlot, HISTOGRAM_BINS, Histogram};
+use clamshell_state::session::presentation::CurvePlot;
 use clamshell_state::settings::Setting;
 
 use clamshell_state::{Control, Id, Source, State};
