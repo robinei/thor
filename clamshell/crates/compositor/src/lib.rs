@@ -1,6 +1,6 @@
 //! ClamShell's Wayland compositor: it hosts the UI (`clamshell_ui::Core`) and runs the event loop, with the
 //! clients' windows and Xwayland, on the machine's own screens ([`run_drm`]) or in a window on a desktop
-//! ([`run`]), where both screens are shown side by side.
+//! ([`run_nested`]), where both screens are shown side by side.
 //!
 //! Clients are told their size and place and nothing waits on them: a window ignoring its size is
 //! scaled. A client's error ends that client, never the server. X11 windows become the same window
@@ -38,7 +38,7 @@ use smithay::reexports::calloop::channel;
 
 pub use clients::Process;
 pub use drm::run as run_drm;
-pub use nested::run;
+pub use nested::run as run_nested;
 pub use notify::{Held, Readiness};
 
 #[cfg(test)]
