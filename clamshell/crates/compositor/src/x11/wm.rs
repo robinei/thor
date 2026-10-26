@@ -925,6 +925,50 @@ mod tests {
         wm.windows[2].properties.transient = Some(20);
         assert_eq!(wm.popup_owner(&wm.windows[3], Some(other), None), None, "a mapped menu cannot change owner");
     }
+    /// Xwayland gives a window's surface a 64-bit serial: through `xwayland_shell_v1` on the Wayland side,
+    /// and in `WL_SURFACE_SERIAL` as two 32-bit halves, low first, on the X11 side. The window is paired
+    /// with the surface committed with that serial, once both have come.
+    #[test]
+    fn a_window_is_paired_with_the_surface_committed_with_its_serial() {
+        use smithay::reexports::wayland_protocols::xwayland::shell::v1::client::xwayland_shell_v1;
+        use wayland_client::{Proxy, protocol::wl_compositor};
+        let (mut display, mut server) = crate::tests::ServerBuilder::new().build();
+        let xwayland = crate::clients::ClientState { xwayland: true, ..crate::clients::ClientState::default() };
+        let client = crate::tests::spawn_client(&mut display, xwayland, |globals, mut queue, steps| {
+            let qh = queue.handle();
+            let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
+            let shell: xwayland_shell_v1::XwaylandShellV1 = globals.bind(&qh, 1..=1, ()).unwrap();
+            let surface = compositor.create_surface(&qh, ());
+            let role = shell.get_xwayland_surface(&surface, &qh, ());
+            role.set_serial(7, 1);
+            surface.commit();
+            queue.roundtrip(&mut crate::tests::Client::default()).unwrap();
+            steps.step(surface.id().protocol_id());
+        });
+        let (socket, _peer) = UnixStream::pair().unwrap();
+        let mut wire = Transport::new(socket, Instant::now()).unwrap();
+        let mut wm = Wm { root: 1, owner: 2, atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()), ..Wm::default() };
+        wm.discover(10, Rectangle::from_size((400, 300).into()), false, &mut wire, &mut server).unwrap();
+        let peer = client.peer.clone();
+        let checked = client.serve(
+            &mut display,
+            &mut server,
+            |_| {},
+            |_, server, id| {
+                let surface: WlSurface = peer.object_from_protocol_id(&server.dh, id).unwrap();
+                wm.pair_surfaces(server);
+                assert!(wm.windows[0].surface.is_none(), "no serial for the window yet");
+                let message = ClientMessageEvent::new(32, 10, wm.atoms.get("WL_SURFACE_SERIAL"), [7, 1, 0, 0, 0]);
+                wm.event(&<[u8; 32]>::from(&message), &mut wire, server).unwrap();
+                assert_eq!(wm.windows[0].serial, Some(0x1_0000_0007));
+                wm.pair_surfaces(server);
+                assert_eq!(wm.windows[0].surface.as_ref(), Some(&surface));
+                assert!(super::super::shell::take(server, 0x1_0000_0007).is_none(), "taken once");
+            },
+        );
+        assert_eq!(checked, 1);
+    }
+
     #[test]
     fn placement_is_committed_and_configured_before_mapping_and_focus() {
         use std::io::Read;
