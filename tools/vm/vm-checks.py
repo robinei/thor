@@ -17,6 +17,8 @@ number of failed checks. Standard library only.
 
 import argparse
 import json
+import os
+import re
 import shlex
 import subprocess
 import sys
@@ -39,6 +41,11 @@ CONFIG = f"{CHECKS_DIR}/config/clamshell"
 DATA = f"{CHECKS_DIR}/data/clamshell"
 BACKLIGHT = f"{CHECKS_DIR}/backlight/panel"
 DROP_IN = "$XDG_RUNTIME_DIR/systemd/user/clamshell.service.d/thor-checks.conf"
+# PipeWire's null sink, the machine having no audio device, if it isn't there, at half volume.
+NULL_SINK = """wpctl status | grep -q thor-checks-sink || wpctl status | grep -q 'Test sink' || pw-cli create-node adapter \\
+    '{ factory.name=support.null-audio-sink node.name=thor-checks-sink node.description="Test sink" media.class=Audio/Sink object.linger=true audio.position=[FL FR] }' > /dev/null 2>&1
+sleep 0.5
+wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.5 2>/dev/null"""
 # The bar's icons, in the bottom screen's pixels (their centres; the burn-in orbit moves them a few
 # pixels).
 BAR_Y = 45
@@ -363,10 +370,7 @@ echo 100 > {BACKLIGHT}/max_brightness; echo 50 > {BACKLIGHT}/brightness
 mkdir -p $(dirname {DROP_IN})
 printf '%s\\n' '[Service]' 'Environment=XDG_CONFIG_HOME={CHECKS_DIR}/config' 'Environment=XDG_DATA_HOME={CHECKS_DIR}/data' \\
     'Environment=CLAMSHELL_BACKLIGHTS={CHECKS_DIR}/backlight' > {DROP_IN}
-wpctl status | grep -q thor-checks-sink || wpctl status | grep -q 'Test sink' || pw-cli create-node adapter \\
-    '{{ factory.name=support.null-audio-sink node.name=thor-checks-sink node.description="Test sink" media.class=Audio/Sink object.linger=true audio.position=[FL FR] }}' > /dev/null 2>&1
-sleep 0.5
-wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.5 2>/dev/null
+{NULL_SINK}
 systemctl --user stop 'clamshell-run-*' 'app-graphical-clamshell-run-*' 2>/dev/null || true
 systemctl --user daemon-reload
 systemctl --user reset-failed clamshell; systemctl --user restart clamshell
@@ -1267,6 +1271,106 @@ class Checks:
         got = sh(f"timeout 5 {program} --clipboard get").strip()
         self.check("  a text set by a program that quit can still be pasted", got == "kept-by-clamshell", f"got {got!r}")
 
+    # A long run
+
+    def soak(self):
+        """ClamShell used for a long while (SOAK_MINUTES, 30 by default), in rounds of what a user does: a
+        game launched and quit, a program started outside it and ended, a text copied, a notification
+        shown and closed, tabs opened; every fifth round an X11 window, Xwayland killed under it, and
+        another. Its memory, open files and threads are read after each round, and must not grow once it
+        has settled (the first three rounds); it must not restart, panic or give up a thread. Sleep is left out: QEMU sometimes
+        resets the machine after a resume (see gyro_sleep). Not among the checks run by default."""
+        minutes = float(os.environ.get("SOAK_MINUTES", "30"))
+        pid = sh("systemctl --user show -P MainPID clamshell").strip()
+        def sample():
+            status = sh(f"cat /proc/{pid}/status 2>/dev/null")
+            field = lambda name: int(next((l.split()[1] for l in status.splitlines() if l.startswith(name + ":")), "0"))
+            return field("VmRSS"), int(sh(f"ls /proc/{pid}/fd 2>/dev/null | wc -l").strip() or 0), field("Threads")
+        def notify(n):
+            call = ("gdbus call --session --dest org.freedesktop.Notifications --object-path /org/freedesktop/Notifications "
+                    "--method org.freedesktop.Notifications.")
+            match = re.search(r"uint32 (\d+)", sh(call + f"Notify soak 0 '' 'Round {n}' 'from the soak' '[]' '{{}}' 0"))
+            if not match:
+                return False
+            sh(call + f"CloseNotification {match.group(1)}")
+            return True
+        launches = lambda: [u for u in units("run-") if u.endswith(".service")]
+        tabs = ["wifi", "bluetooth", "time", "keyboard", "touchpad", "dock"]
+        samples, missed = [], []
+        end = time.monotonic() + minutes * 60
+        n = 0
+        while time.monotonic() < end:
+            n += 1
+            steps = {}
+            steps["game"] = bool(self._launch_test_game())
+            time.sleep(2)
+            control("window quit")
+            steps["game quit"] = until(lambda: not launches(), 10)
+            steps["foot adopted"], _ = self._foot_outside("setsid -f foot >/dev/null 2>&1")
+            sh("pkill -x foot || true")
+            sh(f"printf soak-{n} | timeout 10 {vm.A.program} --clipboard set")
+            steps["clipboard"] = sh(f"timeout 5 {vm.A.program} --clipboard get").strip() == f"soak-{n}"
+            steps["notification"] = notify(n)
+            steps["tabs"] = all(self.open_tab(name) for name in tabs)
+            if n % 5 == 0:
+                # (Xwayland starts with its first client: an X11 window, Xwayland killed under it, another.)
+                x11 = ("export $(systemctl --user show-environment | grep '^DISPLAY='); "
+                       "setsid -f mpv --vo=x11 --force-window=immediate --idle=yes >/dev/null 2>&1")
+                shown = lambda: any(w.get("app_id") == "mpv" for w in windows())
+                sh(x11)
+                steps["X11 window"] = until(shown, 15)
+                sh("pkill -x Xwayland || true")
+                until(lambda: not shown(), 10)
+                sh(x11)
+                steps["X11 window after Xwayland was killed"] = until(shown, 15)
+                sh("pkill -x mpv || true")
+            failed = [name for name, ok in steps.items() if not ok]
+            missed += [f"round {n}: {name}" for name in failed]
+            samples.append(sample())
+            rss, fds, threads = samples[-1]
+            print(f"        round {n}: {rss // 1024} MB, {fds} files, {threads} threads" + (f"; missed {failed}" if failed else ""), flush=True)
+            self.reset()
+        same = sh("systemctl --user show -P MainPID clamshell").strip() == pid
+        self.check(f"soak: {n} rounds in {minutes:g} minutes, ClamShell not restarted", same and n > 3, f"pid {pid}, rounds {n}")
+        if n <= 3:
+            return
+        self.check("  every round's steps worked", not missed, "; ".join(missed[:10]))
+        (rss0, fds0, threads0), (rss1, fds1, threads1) = samples[2], samples[-1]
+        self.check("  its memory doesn't grow once settled (at most 10 % and 20 MB)", rss1 <= rss0 * 1.1 + 20 * 1024,
+                   f"{rss0 // 1024} MB after round 3, {rss1 // 1024} MB at the end; all: {[s[0] // 1024 for s in samples]}")
+        self.check("  its open files don't grow (at most 5)", fds1 <= fds0 + 5, f"{fds0} -> {fds1}; all: {[s[1] for s in samples]}")
+        self.check("  its threads don't grow (at most 2)", threads1 <= threads0 + 2, f"{threads0} -> {threads1}; all: {[s[2] for s in samples]}")
+        bad = [l for l in journal(self.started).splitlines() if "] panic in " in l or "given up" in l]
+        self.check("  no panics and no thread given up", not bad, "; ".join(bad[:3]))
+
+    def faults(self):
+        """The services ClamShell uses, restarted under it: PipeWire (its sink made again, as a device's
+        would come back), NetworkManager and BlueZ. Each works through ClamShell again afterwards (their
+        own checks, run again), with ClamShell not restarted, panicking or giving up a thread. Not among
+        the checks run by default: it restarts the machine's services."""
+        pid = sh("systemctl --user show -P MainPID clamshell").strip()
+        since = now()
+        print("  PipeWire restarted:")
+        sh(f"systemctl --user restart pipewire pipewire-pulse wireplumber; sleep 2; {NULL_SINK}")
+        self.reset()
+        self.volume_slide()
+        print("  NetworkManager restarted:")
+        sh("sudo systemctl restart NetworkManager")
+        # (Until it sees the test network again, which the Wi-Fi check joins before ClamShell forgets it.)
+        until(lambda: "ThorTest" in sh("nmcli -t -f SSID dev wifi list --rescan yes 2>/dev/null"), 30, 2)
+        self.reset()
+        self.wifi_forget()
+        print("  BlueZ restarted:")
+        sh("sudo systemctl restart bluetooth")
+        until(lambda: "Powered: yes" in sh("bluetoothctl show 2>/dev/null"), 20)
+        # (The test device's registration went with bluetoothd: it is set up again, as at the start.)
+        subprocess.run([sys.executable, str(Path(vm.__file__)), "bluetooth"], capture_output=True, text=True)
+        self.reset()
+        self.bluetooth()
+        self.check("faults: ClamShell not restarted through them", sh("systemctl --user show -P MainPID clamshell").strip() == pid, f"pid {pid}")
+        bad = [l for l in journal(since).splitlines() if "] panic in " in l or "given up" in l]
+        self.check("  no panics and no thread given up", not bad, "; ".join(bad[:3]))
+
     # Bluetooth
 
     def gyro_sleep(self):
@@ -1328,6 +1432,8 @@ CHECKS = ["confirm_key", "session_units", "shelf_scroll", "bar_tap", "time_zone"
           "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
           "keymap_actuations", "rumble", "launch_and_quit", "pause_hidden", "found_window", "tray_program", "clipboard",
           "bluetooth", "gyro_sleep"]
+# Checks run only when named.
+OPT_IN = ["soak", "faults"]
 
 
 def main():
@@ -1337,14 +1443,14 @@ def main():
     parser.add_argument("--keep", action="store_true", help="leave ClamShell in its test environment afterwards")
     args = parser.parse_args()
     if args.list:
-        print("\n".join(CHECKS))
+        print("\n".join(CHECKS + [f"{name} (only when named)" for name in OPT_IN]))
         return 0
     chosen = args.checks or CHECKS
-    unknown = [c for c in chosen if c not in CHECKS]
+    unknown = [c for c in chosen if c not in CHECKS + OPT_IN]
     if unknown:
         parser.error(f"no check {', '.join(unknown)} (--list)")
     inputs = Inputs()
-    started = setup(bluetooth="bluetooth" in chosen)
+    started = setup(bluetooth="bluetooth" in chosen or "faults" in chosen)
     checks = Checks(inputs, started)
     try:
         for name in chosen:
