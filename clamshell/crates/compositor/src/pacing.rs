@@ -103,10 +103,20 @@ impl Server {
         self.feedback(rendered, time, None, Refresh::Unknown, 0, Kind::empty());
     }
 
-    /// A page flip on the top screen or the second (`down`): the hardware's time, the screen's refresh
-    /// and the flip's sequence, for the windows shown there.
-    pub(crate) fn present_flip(&mut self, rendered: &RenderElementStates, time: Time<Monotonic>, down: bool, refresh: std::time::Duration, sequence: u64) {
-        self.feedback(rendered, time, Some(down), Refresh::Fixed(refresh), sequence, Kind::Vsync | Kind::HwClock | Kind::HwCompletion);
+    /// A page flip on the top screen or the second (`down`): its time (the hardware's, `hw_clock`, or
+    /// else the clock's as the flip was seen), the screen's refresh and the flip's sequence, for the
+    /// windows shown there.
+    pub(crate) fn present_flip(
+        &mut self,
+        rendered: &RenderElementStates,
+        time: Time<Monotonic>,
+        hw_clock: bool,
+        down: bool,
+        refresh: std::time::Duration,
+        sequence: u64,
+    ) {
+        let clock = if hw_clock { Kind::HwClock } else { Kind::empty() };
+        self.feedback(rendered, time, Some(down), Refresh::Fixed(refresh), sequence, Kind::Vsync | Kind::HwCompletion | clock);
     }
 
     /// The windows shown get their presentation feedback, and a frame counted if a new buffer was shown.

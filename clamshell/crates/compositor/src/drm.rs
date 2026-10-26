@@ -425,9 +425,9 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
             None
         }
     };
-    let time: Time<Monotonic> = match metadata.map(|m| m.time) {
-        Some(DrmEventTime::Monotonic(at)) => at.into(),
-        _ => server.clock.now(),
+    let (time, hw_clock): (Time<Monotonic>, bool) = match metadata.map(|m| m.time) {
+        Some(DrmEventTime::Monotonic(at)) => (at.into(), true),
+        _ => (server.clock.now(), false),
     };
     let down = screen.role == ScreenRole::Bottom;
     screen.flipped = Some(time);
@@ -435,7 +435,7 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
         server.frame_shown(states, Some(down));
     }
     if let Some(states) = states {
-        server.present_flip(&states, time, down, screen.interval, metadata.map_or(0, |m| u64::from(m.sequence)));
+        server.present_flip(&states, time, hw_clock, down, screen.interval, metadata.map_or(0, |m| u64::from(m.sequence)));
     }
     screen.held = server.frame_callbacks(Some(down), screen.interval, Instant::now());
 }
