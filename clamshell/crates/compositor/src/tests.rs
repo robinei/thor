@@ -658,6 +658,8 @@ mod activation_tests;
 #[path = "pointer_tests.rs"]
 mod pointer_tests;
 
+#[path = "pacing_tests.rs"]
+mod pacing_tests;
 #[path = "presentation_tests.rs"]
 mod presentation_tests;
 
