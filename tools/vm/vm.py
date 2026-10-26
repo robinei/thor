@@ -178,6 +178,8 @@ def session_files():
     return [
         (f"/home/{USER}/.bash_profile", BASH_PROFILE),
         (f"/home/{USER}/.config/systemd/user/clamshell.service", service()),
+        (f"/home/{USER}/.config/systemd/user/session.slice.d/thor.conf",
+         (REPO / "packages/thor-session/root/usr/lib/systemd/user/session.slice.d/thor.conf").read_text()),
         (f"/home/{USER}/.config/foot/foot.ini", (REPO / "packages/thor-session/root/usr/share/thor/xdg/foot/foot.ini").read_text()),
     ]
 
