@@ -15,6 +15,7 @@
 //! [`crate::session::tray`]) also has Menu, which shows its program's own menu as a page of the same kind,
 //! with each submenu as another page.
 
+use crate::Compositor;
 use std::sync::Arc;
 
 use crate::effect::{Effect, Save};
@@ -207,7 +208,7 @@ impl Dock {
             DockId::OpenAnother => EntryAct::OpenAnother,
             DockId::CloseWindow => {
                 if let Some(w) = session.entry_window(&entry) {
-                    out.effects.push(Effect::Close(vec![w]));
+                    out.effects.push(Effect::Compositor(Compositor::Close(vec![w])));
                 }
                 return;
             }
@@ -466,14 +467,14 @@ mod tests {
         long(&mut s, dock(0));
         assert!(!s.opens_another("zelda-lttp") && tap(&mut s, Id::Dock(DockId::OpenAnother)) == vec![closed()], "a game: not another");
         long(&mut s, dock(0));
-        assert_eq!(tap(&mut s, Id::Dock(DockId::CloseWindow)), vec![Effect::Close(vec![5]), closed()]);
+        assert_eq!(tap(&mut s, Id::Dock(DockId::CloseWindow)), vec![Effect::Compositor(Compositor::Close(vec![5])), closed()]);
         long(&mut s, dock(0));
-        assert_eq!(tap(&mut s, Id::Dock(DockId::Quit)), vec![Effect::Close(vec![5]), closed()]);
+        assert_eq!(tap(&mut s, Id::Dock(DockId::Quit)), vec![Effect::Compositor(Compositor::Close(vec![5])), closed()]);
         long(&mut s, dock(0));
         assert_eq!(tap(&mut s, Id::Dock(DockId::ForceKill)), vec![Effect::EndRun { key, force: true }, closed()]);
         // Home with B closes the window in front; held, it quits the window's entry.
-        assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::CloseWindow)), vec![Effect::Close(vec![5])]);
-        assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::Quit)), vec![Effect::Close(vec![5])]);
+        assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::CloseWindow)), vec![Effect::Compositor(Compositor::Close(vec![5]))]);
+        assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::Quit)), vec![Effect::Compositor(Compositor::Close(vec![5]))]);
     }
 
     /// Back at the top of an entry's tray menu goes back to its own menu. Leaving the tab closes both.
@@ -546,7 +547,7 @@ mod tests {
         s.observed(vec![foot()]);
         s.applied(Event::Device(DeviceKey::WindowDown));
         assert!(s.bottom().shows_windows(s.session()));
-        assert_eq!(s.applied(Event::Device(DeviceKey::CloseWindow)), vec![Effect::Close(vec![foot().id])]);
+        assert_eq!(s.applied(Event::Device(DeviceKey::CloseWindow)), vec![Effect::Compositor(Compositor::Close(vec![foot().id]))]);
         // With ClamShell's view on the bottom screen instead, there is nothing to close.
         s.applied(Event::Device(DeviceKey::BottomView));
         assert_eq!(s.applied(Event::Device(DeviceKey::CloseWindow)), vec![]);

@@ -179,6 +179,7 @@ impl Bottom {
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+    use crate::Compositor;
     use crate::Tab;
     use crate::bottom::notice::NoticeKind;
     use crate::device::buttons::DeviceKey;
@@ -331,7 +332,7 @@ mod tests {
 
     fn power(fx: &[Effect]) -> Option<bool> {
         fx.iter().find_map(|e| match e {
-            Effect::Outputs { top: true, bottom } => Some(*bottom),
+            Effect::Compositor(Compositor::Outputs { top: true, bottom }) => Some(*bottom),
             _ => None,
         })
     }
@@ -361,9 +362,9 @@ mod tests {
         // touch, at the same time.
         let fx = s.applied(Event::tick(1060 + DIM_AFTER + OFF_AFTER));
         assert!(s.bottom().off());
-        assert!(fx.contains(&Effect::Outputs { top: false, bottom: false }), "{fx:?}");
+        assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: false, bottom: false })), "{fx:?}");
         let fx = s.applied(Event::Idle(IdleEvent::DeviceInput));
-        assert!(fx.contains(&Effect::Outputs { top: true, bottom: false }), "{fx:?}");
+        assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: false })), "{fx:?}");
     }
 
     #[test]
@@ -467,12 +468,12 @@ mod tests {
     #[test]
     fn the_bottom_screen_turns_off_and_on() {
         let mut s = emulator();
-        let off = vec![Effect::Outputs { top: true, bottom: false }, Effect::Watch(crate::Watch::Metrics, false)];
+        let off = vec![Effect::Compositor(Compositor::Outputs { top: true, bottom: false }), Effect::Watch(crate::Watch::Metrics, false)];
         assert_eq!(key(&mut s, DeviceKey::BottomPower), off, "nothing seen: not watched");
         assert!(s.bottom().off());
         // A window moved down turns it on again.
         let fx = key(&mut s, DeviceKey::WindowDown);
-        assert!(fx.contains(&Effect::Outputs { top: true, bottom: true }), "{fx:?}");
+        assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: true })), "{fx:?}");
         assert!(!s.bottom().off());
     }
 

@@ -32,6 +32,7 @@ pub enum DeviceKey {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Compositor;
     use crate::bottom::notice::NoticeKind;
     use crate::levels::Sound;
     use crate::levels::slider::Control;
@@ -69,7 +70,7 @@ mod tests {
     #[test]
     fn a_screenshot_is_asked_for_and_its_result_shown() {
         let mut s = state();
-        assert_eq!(s.applied(Event::Device(DeviceKey::Screenshot)), vec![Effect::Screenshot]);
+        assert_eq!(s.applied(Event::Device(DeviceKey::Screenshot)), vec![Effect::Compositor(Compositor::Screenshot)]);
         s.applied(Event::Screenshot(Ok("/home/thor/Pictures/Screenshots/a.png".into())));
         assert!(matches!(s.bottom().notice().map(|n| &n.what), Some(NoticeKind::Screenshot(Ok(_)))));
     }

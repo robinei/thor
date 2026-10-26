@@ -21,6 +21,7 @@
 //! kill ends it at once. What is in front, whether shelf, a running entry or another window, decides where
 //! the pad goes, what Home does and what the settings page edits.
 
+use crate::Compositor;
 use std::sync::Arc;
 
 use clamshell_library::{Launch, ids};
@@ -647,7 +648,7 @@ impl Session {
         self.quitting.retain(|q| q.entry != *entry);
         self.quitting.push(crate::session::Quitting { entry: entry.clone(), ended: false, stop, asked: now });
         if !windows.is_empty() {
-            out.effects.push(Effect::Close(windows));
+            out.effects.push(Effect::Compositor(Compositor::Close(windows)));
         }
         self.follow_quitting(now, library, out);
     }
@@ -821,7 +822,7 @@ mod tests {
         let window = |id, title: &str| WindowFacts { title: title.into(), ..win_of(id, "zelda3", &zelda) };
         s.observed(vec![window(1, "game")]);
         let id: std::sync::Arc<str> = "zelda-lttp".into();
-        assert_eq!(quit(&mut s, &id), vec![Effect::Close(vec![1])]);
+        assert_eq!(quit(&mut s, &id), vec![Effect::Compositor(Compositor::Close(vec![1]))]);
         let fx = s.observed(vec![window(2, "Save changes?")]);
         assert!(!fx.iter().any(|e| matches!(e, Effect::EndRun { .. })), "a window left: waits");
         let fx = s.observed(vec![]);
@@ -1210,7 +1211,7 @@ mod tests {
         // Quit closes its window. It ends with the window, and its runner's stop runs then, once.
         let stop = Effect::RunnerCommand(vec!["stop".into(), "firefox".into()]);
         let fx = quit(&mut s, "desktop:firefox");
-        assert!(fx.contains(&Effect::Close(vec![6])) && !fx.contains(&stop), "{fx:?}");
+        assert!(fx.contains(&Effect::Compositor(Compositor::Close(vec![6]))) && !fx.contains(&stop), "{fx:?}");
         let fx = s.observed(vec![]);
         assert!(fx.contains(&stop), "{fx:?}");
         assert!(!s.observed(vec![]).contains(&stop), "once");

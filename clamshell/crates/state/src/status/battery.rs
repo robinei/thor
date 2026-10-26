@@ -157,6 +157,7 @@ impl Sys {
 mod tests {
     use super::Group;
     use super::*;
+    use crate::Compositor;
     use crate::id::BatteryId;
     use crate::testkit::*;
     use crate::*;
@@ -234,7 +235,7 @@ mod tests {
         tap(&mut s, Id::Battery(BatteryId::Spender(1)));
         assert_eq!(s.sys().spender_menu(), None, "an app that isn't an entry running: no menu");
         tap(&mut s, Id::Battery(BatteryId::Spender(0)));
-        assert_eq!(tap(&mut s, Id::Battery(BatteryId::Quit)), vec![Effect::Close(vec![6])]);
+        assert_eq!(tap(&mut s, Id::Battery(BatteryId::Quit)), vec![Effect::Compositor(Compositor::Close(vec![6]))]);
         // Settings that go through the launch's own process don't reach it either.
         tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Global)));
         assert!(!s.panel().handed_over(), "All");

@@ -33,7 +33,7 @@ fact cannot overwrite a newer state decision.
 
 Placing is the session's own: the steps in the Effects columns here and below (Focus, ShowShelf, Move,
 Down, Up, Return) are its window commands (`WindowCommand`), applied to the state during
-`apply`, not effects sent out. The only window effect is closing (`Effect::Close`). Shelf is not a
+`apply`, not effects sent out. The only window effect is closing (`Compositor::Close`). Shelf is not a
 window: it is in front when no top window is shown, and ShowShelf deselects the top windows.
 
 | From | Event / condition | To | Effects | Test |

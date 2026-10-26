@@ -1,6 +1,7 @@
 //! What is in front: the Home button, and what takes a closed window's place, which is what was in front
 //! before it, until the program of the closed window shows another.
 
+use crate::Compositor;
 use crate::out::Out;
 use crate::session::windows::{Group, WindowCommand};
 use crate::{Effect, EntryAct, Event, Instance, Session};
@@ -61,7 +62,7 @@ impl Session {
     /// Home with B, released at once, asks that window (see [`Session::home_b_window`]) to close.
     pub(crate) fn close_front_window(&mut self, shows_windows: bool, out: &mut Out) {
         if let Some(w) = self.home_b_window(shows_windows) {
-            out.effects.push(Effect::Close(vec![w.id]));
+            out.effects.push(Effect::Compositor(Compositor::Close(vec![w.id])));
         }
     }
 
@@ -73,7 +74,7 @@ impl Session {
         };
         match self.running_of(w) {
             Some(r) => out.events.push(Event::Entry(r.id.clone(), EntryAct::Quit)),
-            None => out.effects.push(Effect::Close(vec![w.id])),
+            None => out.effects.push(Effect::Compositor(Compositor::Close(vec![w.id]))),
         }
     }
 }

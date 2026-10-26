@@ -1,6 +1,7 @@
 //! Real xdg-shell traffic through a socket pair, without a GPU or a host compositor.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 
+use clamshell_state::Compositor;
 use std::io::Write;
 use std::os::fd::AsFd;
 use std::os::unix::net::UnixStream;
@@ -638,7 +639,7 @@ fn screenshots_are_consumed_by_the_host_instead_of_the_parent_capture_tool() {
     server.frame();
     assert!(std::mem::take(&mut server.screenshot_requested));
     assert!(!std::mem::take(&mut server.screenshot_requested), "several requests before a frame need one capture");
-    assert!(!forwarded.borrow().iter().any(|effect| matches!(effect, clamshell_state::Effect::Screenshot)));
+    assert!(!forwarded.borrow().iter().any(|effect| matches!(effect, clamshell_state::Effect::Compositor(Compositor::Screenshot))));
     server.core.handle(Event::Device(DeviceKey::Screenshot));
     server.frame();
     assert!(server.screenshot_requested, "a later frame can capture again");

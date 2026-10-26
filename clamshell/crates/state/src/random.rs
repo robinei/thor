@@ -14,6 +14,7 @@
 //! `RANDOM_SEEDS=n` runs seeds 1 to n, `RANDOM_SEED=x` that seed alone, and `RANDOM_EVENTS` sets the events
 //! per seed.
 
+use crate::Compositor;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -132,12 +133,12 @@ impl World {
             match e {
                 Effect::Launch { entry, instance, .. } => self.launches.push((entry.clone(), instance.clone())),
                 Effect::EndRun { key, .. } => self.ending.push(key.clone()),
-                Effect::Close(ids) => self.closing.extend(ids),
+                Effect::Compositor(Compositor::Close(ids)) => self.closing.extend(ids),
                 Effect::CalibrateSticks => self.sticks = true,
                 Effect::CalibrateGyro => self.gyro = true,
                 Effect::CalibrateRefresh => self.refresh = true,
                 Effect::Account(_) => self.account = true,
-                Effect::Screenshot => self.screenshot = true,
+                Effect::Compositor(Compositor::Screenshot) => self.screenshot = true,
                 Effect::Sleep => self.asleep = true,
                 _ => {}
             }
@@ -727,8 +728,8 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
             Effect::Apply { entry, settings } => sent.apply = Some((entry.clone(), *settings)),
             Effect::Watch(Watch::Status, on) => sent.status = *on,
             Effect::Watch(Watch::Account, on) => sent.account = *on,
-            Effect::Outputs { top, bottom } => sent.outputs = (*top, *bottom),
-            Effect::Refresh(hz) => sent.refresh = *hz,
+            Effect::Compositor(Compositor::Outputs { top, bottom }) => sent.outputs = (*top, *bottom),
+            Effect::Compositor(Compositor::Refresh(hz)) => sent.refresh = *hz,
             _ => {}
         }
         if let Effect::Launch { settings, .. } | Effect::Apply { settings, .. } = e {

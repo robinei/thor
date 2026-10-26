@@ -61,7 +61,7 @@ const SLEEP_RETRY: u64 = 300;
 
 /// What the compositor reports, where it reports anything.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum Compositor {
+enum Reported {
     /// It doesn't report, because it lacks the idle protocol, or hasn't reported yet.
     #[default]
     Silent,
@@ -71,7 +71,7 @@ enum Compositor {
 
 #[derive(Debug, Default)]
 pub struct Idle {
-    compositor: Compositor,
+    compositor: Reported,
     /// The input devices are being read.
     watching: bool,
     /// The latest input on a device or to ClamShell itself.
@@ -114,8 +114,8 @@ impl Idle {
                 self.last_input = now;
             }
             IdleEvent::DeviceInput | IdleEvent::KeptAwake => self.last_input = now,
-            IdleEvent::CompositorQuiet => self.compositor = Compositor::QuietSince(now.saturating_sub(NOTIFY_AFTER)),
-            IdleEvent::CompositorInput => self.compositor = Compositor::Busy,
+            IdleEvent::CompositorQuiet => self.compositor = Reported::QuietSince(now.saturating_sub(NOTIFY_AFTER)),
+            IdleEvent::CompositorInput => self.compositor = Reported::Busy,
             IdleEvent::Busy => self.sleep_not_before = now + SLEEP_RETRY,
         }
     }
@@ -128,8 +128,8 @@ impl Idle {
     /// Back from sleep, or the clock was first read, at `now`. Treated as if there had just been input.
     pub(crate) fn resumed(&mut self, now: u64) {
         self.last_input = now;
-        if let Compositor::QuietSince(_) = self.compositor {
-            self.compositor = Compositor::QuietSince(now);
+        if let Reported::QuietSince(_) = self.compositor {
+            self.compositor = Reported::QuietSince(now);
         }
     }
 
@@ -137,16 +137,16 @@ impl Idle {
     /// if no source can tell.
     fn since(&self) -> Option<u64> {
         match self.compositor {
-            Compositor::Busy => None,
-            Compositor::QuietSince(t) => Some(t.max(self.last_input)),
-            Compositor::Silent if self.watching => Some(self.last_input),
-            Compositor::Silent => None,
+            Reported::Busy => None,
+            Reported::QuietSince(t) => Some(t.max(self.last_input)),
+            Reported::Silent if self.watching => Some(self.last_input),
+            Reported::Silent => None,
         }
     }
 
     /// How long there has been no input at `now`, or none if no source can tell.
     fn idle_for(&self, now: u64) -> Option<u64> {
-        if self.compositor == Compositor::Busy {
+        if self.compositor == Reported::Busy {
             return Some(0);
         }
         Some(now.saturating_sub(self.since()?))
@@ -224,6 +224,7 @@ impl Idle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Compositor;
     use crate::State;
     use crate::testkit::Applied;
 
@@ -297,12 +298,16 @@ mod tests {
         assert_eq!(brightness(&s.applied(Event::tick(1270))), Some(20), "dimmed to a third");
         assert_eq!(
             s.applied(Event::tick(1300)),
-            vec![Effect::Outputs { top: false, bottom: true }, Effect::Watch(crate::Watch::Status, false), Effect::Watch(crate::Watch::Metrics, false)]
+            vec![
+                Effect::Compositor(Compositor::Outputs { top: false, bottom: true }),
+                Effect::Watch(crate::Watch::Status, false),
+                Effect::Watch(crate::Watch::Metrics, false)
+            ]
         );
         assert!(!s.applied(Event::tick(1900)).contains(&Effect::Sleep), "not the device's session");
         // On input the screens come back at their brightness, and the press that woke them does nothing.
         let fx = s.applied(Event::Idle(IdleEvent::DeviceInput));
-        assert!(fx.contains(&Effect::Outputs { top: true, bottom: true }) && brightness(&fx) == Some(60), "{fx:?}");
+        assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: true })) && brightness(&fx) == Some(60), "{fx:?}");
         assert!(fx.contains(&Effect::Watch(crate::Watch::Metrics, true)), "watched again: {fx:?}");
         assert!(fx.contains(&Effect::Watch(crate::Watch::Status, true)), "the bar's status too: {fx:?}");
         // In the device's session it sleeps.
@@ -361,7 +366,7 @@ mod tests {
         // Busy, such as with a download: it doesn't sleep, the screens stay off, and sleep is tried again
         // after the retry time.
         let fx = s.applied(Event::Idle(IdleEvent::Busy));
-        assert!(!fx.iter().any(|e| matches!(e, Effect::Outputs { top: true, .. })), "{fx:?}");
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Compositor(Compositor::Outputs { top: true, .. }))), "{fx:?}");
         assert_eq!(s.idle().stage(), Stage::Off);
         assert!(!s.applied(Event::tick(1900 + SLEEP_RETRY - 1)).contains(&Effect::Sleep));
         assert!(s.applied(Event::tick(1900 + SLEEP_RETRY)).contains(&Effect::Sleep));
@@ -375,7 +380,7 @@ mod tests {
         s.applied(Event::Idle(IdleEvent::Watching(true)));
         s.applied(Event::Idle(IdleEvent::CompositorQuiet));
         let fx = s.applied(Event::tick(1_792_060_000));
-        assert!(!fx.iter().any(|e| matches!(e, Effect::Outputs { top: false, .. })), "not off at once: {fx:?}");
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Compositor(Compositor::Outputs { top: false, .. }))), "not off at once: {fx:?}");
         assert_eq!(s.idle().stage(), Stage::Awake);
     }
 
@@ -387,7 +392,7 @@ mod tests {
         s.applied(Event::Idle(IdleEvent::Watching(true)));
         // The clock is set a day forward, by hand or by NTP, and it is neither asleep nor off.
         let fx = s.applied(Event::Tick { unix_secs: 1000 + 86_400, mono_secs: 1001 });
-        assert!(!fx.contains(&Effect::Sleep) && !fx.iter().any(|e| matches!(e, Effect::Outputs { top: false, .. })), "{fx:?}");
+        assert!(!fx.contains(&Effect::Sleep) && !fx.iter().any(|e| matches!(e, Effect::Compositor(Compositor::Outputs { top: false, .. }))), "{fx:?}");
         assert_eq!(s.idle().stage(), Stage::Awake);
         // Set back again, idle still counts on.
         assert!(s.applied(Event::Tick { unix_secs: 500, mono_secs: 1900 }).contains(&Effect::Sleep));
@@ -406,7 +411,7 @@ mod tests {
         assert_eq!(s.idle().stage(), Stage::Off);
         let fx = tap(&mut s, entry("metroid-zm"));
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("zelda-lttp"), "not selected");
-        assert!(fx.contains(&Effect::Outputs { top: true, bottom: true }), "woken: {fx:?}");
+        assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: true })), "woken: {fx:?}");
         s.applied(Event::tick(1301));
         tap(&mut s, entry("metroid-zm"));
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("zelda-lttp"), "within a second of waking");
@@ -447,7 +452,7 @@ mod tests {
         assert!(s.applied(Event::tick(5000)).is_empty(), "not asked again");
         assert_eq!(s.idle().stage(), Stage::Asleep);
         let fx = s.applied(Event::Idle(IdleEvent::DeviceInput));
-        assert!(fx.contains(&Effect::Outputs { top: true, bottom: true }), "{fx:?}");
+        assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: true })), "{fx:?}");
     }
 
     #[test]

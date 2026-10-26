@@ -87,7 +87,7 @@ be shown); opened and changed carry only what the compositor knows of the window
 whether a new window comes in front is the state's to decide. Placing windows (focusing one, moving it
 between groups, down to the second screen or back) is done during `State::apply`; the compositor reads
 the result from the state after apply, so a new window is placed before it is first shown. The only
-window effect is closing one (`Effect::Close`). Shelf is not a window: it is in front when no top window
+window effect is closing one (`Compositor::Close`). Shelf is not a window: it is in front when no top window
 is. A metadata change cannot restore an old placement. Foreground launch intent and recent-group history
 are session rules. The detailed transitions and their tests are in `docs/state-machines.md`.
 

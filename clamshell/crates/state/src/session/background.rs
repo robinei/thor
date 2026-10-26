@@ -292,6 +292,7 @@ impl Session {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::Compositor;
     use crate::settings::{Choice, Setting};
     use crate::testkit::*;
     use crate::{Event, State, WindowEvent};
@@ -334,7 +335,7 @@ mod tests {
         s.applied(Event::tick(t + 1 + GRACE));
         assert!(s.session().paused("zelda-lttp"));
         let id: Arc<str> = "zelda-lttp".into();
-        assert_eq!(quit(&mut s, &id), vec![freeze(&key, false), Effect::Close(vec![3])]);
+        assert_eq!(quit(&mut s, &id), vec![freeze(&key, false), Effect::Compositor(Compositor::Close(vec![3]))]);
         // With its window gone it ends, and it isn't paused meanwhile even though it is hidden.
         s.observed(vec![]);
         s.applied(Event::tick(t + 3 * GRACE));

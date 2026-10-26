@@ -4,6 +4,7 @@
 //! leaves the outside in an unknown state, such as the UI starting, has some of it sent again
 //! ([`Resend`]).
 
+use crate::Compositor;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -69,7 +70,7 @@ pub(crate) struct Sent {
     stage: Stage,
     /// The program in force and its settings as they were applied last, or None to apply them again.
     applied: Option<(Option<Arc<str>>, Values)>,
-    /// The screens' power as `Effect::Outputs` has it (whether they are on, and the bottom one while
+    /// The screens' power as `Compositor::Outputs` has it (whether they are on, and the bottom one while
     /// they are), or None to set it again.
     outputs: Option<(bool, bool)>,
     /// The main screen's refresh rate.
@@ -255,7 +256,7 @@ impl Sent {
     fn outputs(&mut self, w: &Wanted, out: &mut Out) {
         let outputs = (w.stage < Stage::Off, w.bottom_on);
         if self.outputs.replace(outputs) != Some(outputs) {
-            out.effects.push(Effect::Outputs { top: outputs.0, bottom: outputs.1 });
+            out.effects.push(Effect::Compositor(Compositor::Outputs { top: outputs.0, bottom: outputs.1 }));
         }
     }
 
@@ -282,7 +283,7 @@ impl Sent {
         };
         if let Some(hz) = hz.filter(|&hz| hz != self.refresh) {
             self.refresh = hz;
-            out.effects.push(Effect::Refresh(hz));
+            out.effects.push(Effect::Compositor(Compositor::Refresh(hz)));
         }
     }
 

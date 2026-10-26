@@ -1,4 +1,5 @@
 use super::*;
+use crate::Compositor;
 use crate::bottom::keyboard::{Modifier, find};
 use crate::keymap::{Button, Dir, MouseButton, Side};
 use crate::levels::slider::Control;
@@ -122,7 +123,7 @@ fn a_new_keymap_is_named_edited_and_mapped() {
     assert_eq!(s.pad().route(), PadRoute::Ui, "the pad moves the focus there");
     key(&mut s, Key::Mod(Modifier::Ctrl));
     let fx = key(&mut s, Key::Char('x'));
-    assert!(fx.iter().all(|e| !matches!(e, Effect::Key(_))), "not typed into an app");
+    assert!(fx.iter().all(|e| !matches!(e, Effect::Compositor(Compositor::Key(_)))), "not typed into an app");
     assert_eq!(s.keymapping().screen(), Some(Screen::Edit(2)), "done: back to the inputs");
     let a = s.keymapping().keymaps().get(2).unwrap().get(Input::Button(Button::A)).copied();
     assert_eq!(a.map(|b| b.output), Some(Output::Key(Chord { ctrl: true, ..Chord::of(Key::Char('x')) })));

@@ -424,6 +424,7 @@ impl<'a> Panel<'a> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
+    use crate::Compositor;
     use crate::bottom::keyboard::{Key, Named, find};
     use crate::settings::{self, Choice, PowerProfile, Setting};
     use crate::testkit::*;
@@ -443,17 +444,17 @@ mod tests {
         assert_eq!(s.prefs().settings().global.get(Setting::Refresh), 60);
         // Persist the requested choice before applying it; the output request follows hardware settings.
         assert!(
-            matches!(effects.as_slice(), [Effect::Save(Save::Settings(_)), Effect::Apply { entry: None, settings }, Effect::Refresh(60)] if settings.get(Setting::Refresh) == 60),
+            matches!(effects.as_slice(), [Effect::Save(Save::Settings(_)), Effect::Apply { entry: None, settings }, Effect::Compositor(Compositor::Refresh(60))] if settings.get(Setting::Refresh) == 60),
             "{effects:?}"
         );
         let effects = taps(&mut s, Setting::Refresh, 1);
         assert_eq!(s.prefs().settings().global.get(Setting::Refresh), 75);
-        assert!(effects.iter().any(|effect| matches!(effect, Effect::Refresh(75))));
+        assert!(effects.iter().any(|effect| matches!(effect, Effect::Compositor(Compositor::Refresh(75)))));
         assert!(s.applied(Event::DisplayModes(Default::default())).is_empty());
         assert_eq!(s.prefs().settings().global.get(Setting::Refresh), 75, "hotplug never overwrites a saved choice");
         let effects = taps(&mut s, Setting::Refresh, 1);
         assert_eq!(s.prefs().settings().global.get(Setting::Refresh), 0);
-        assert!(effects.iter().any(|effect| matches!(effect, Effect::Refresh(0))));
+        assert!(effects.iter().any(|effect| matches!(effect, Effect::Compositor(Compositor::Refresh(0)))));
         let mut replacement = crate::device::display::DisplayModes::default();
         replacement.add(144000);
         assert!(s.applied(Event::DisplayModes(replacement)).is_empty());

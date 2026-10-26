@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use clamshell_state::{Effect, State, WindowEvent, session::windows::WindowFacts};
+use clamshell_state::{Compositor, Effect, State, WindowEvent, session::windows::WindowFacts};
 use clamshell_ui::{Config, Core, Error, Screen};
 use smithay::{
     desktop::{PopupManager, Window as SurfaceWindow},
@@ -117,8 +117,9 @@ pub(crate) struct Server {
     pub vt_switch: Option<i32>,
     /// Commits so far, for a host to tell when clients want frame callbacks without a visible change.
     pub commits: u64,
-    /// Whether the state wants the top screen and the second on (`Effect::Outputs`), and the top
-    /// screen's refresh in Hz, 0 for the rate it had at start (`Effect::Refresh`), for a host with screens.
+    /// Whether the state wants the top screen and the second on (`Compositor::Outputs`), and the top
+    /// screen's refresh in Hz, 0 for the rate it had at start (`Compositor::Refresh`), for a host with
+    /// screens.
     pub screens_on: [bool; 2],
     pub refresh_wanted: u16,
     pub keyboard_source: smithay::input::keyboard::KeyboardSource,
@@ -578,11 +579,15 @@ impl Server {
         self.report_screens();
         self.core.run(Instant::now());
         while let Some(effect) = self.core.next_effect() {
-            match effect {
-                Effect::DumpWindowEvents(ref path) => crate::trace::save(self.trace.borrow().snapshot(self.core.state()), path.clone()),
-                Effect::Screenshot => self.screenshot_requested = true,
-                Effect::Quit => self.exit = true,
-                Effect::Close(ref ids) => {
+            let Effect::Compositor(own) = effect else {
+                (self.on_effect)(&effect);
+                continue;
+            };
+            match own {
+                Compositor::DumpWindowEvents(path) => crate::trace::save(self.trace.borrow().snapshot(self.core.state()), path),
+                Compositor::Screenshot => self.screenshot_requested = true,
+                Compositor::Quit => self.exit = true,
+                Compositor::Close(ids) => {
                     self.x11_close.extend(ids.iter().copied().filter(|id| {
                         self.core.state().session().window(*id).is_some()
                             && self.windows.iter().all(|window| window.id != *id || window.window.toplevel().is_none())
@@ -594,10 +599,9 @@ impl Server {
                     }
                 }
                 // The second screen is on only while the screens are.
-                Effect::Outputs { top, bottom } => self.screens_on = [top, top && bottom],
-                Effect::Refresh(hz) => self.refresh_wanted = hz,
-                Effect::Key(ref stroke) => self.stroke(stroke),
-                _ => (self.on_effect)(&effect),
+                Compositor::Outputs { top, bottom } => self.screens_on = [top, top && bottom],
+                Compositor::Refresh(hz) => self.refresh_wanted = hz,
+                Compositor::Key(stroke) => self.stroke(&stroke),
             }
         }
         self.sync_windows();

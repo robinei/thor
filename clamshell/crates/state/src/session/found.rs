@@ -129,6 +129,7 @@ impl Session {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::Compositor;
     use crate::testkit::*;
     use crate::{Event, Init, State};
 
@@ -223,7 +224,7 @@ mod tests {
         assert!(!fx.iter().any(|e| matches!(e, Effect::Adopt { .. })), "{fx:?}");
         // Quit closes its windows, and that is all.
         let id: Arc<str> = "window:org.other".into();
-        assert_eq!(quit(&mut s, &id), vec![Effect::Close(vec![6])]);
+        assert_eq!(quit(&mut s, &id), vec![Effect::Compositor(Compositor::Close(vec![6]))]);
         let fx = s.observed(vec![mine]);
         assert!(!fx.iter().any(|e| matches!(e, Effect::EndProcesses { .. } | Effect::EndRun { .. })), "{fx:?}");
         assert!(s.session().running("window:org.other").is_none());

@@ -96,7 +96,7 @@ use sync::{Resend, Sent, Wanted};
 // What other crates use to talk to the state: the events and effects and what they carry, the ids, and
 // the groups the getters return.
 pub use clock::Clock;
-pub use effect::{Effect, Save, Watch};
+pub use effect::{Compositor, Effect, Save, Watch};
 pub use event::{EntryAct, Event, KeymapEvent, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide, Thread};
 pub use id::{AudioId, BatteryId, BtId, DeviceId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, TimeId, WifiId};
 pub use resume::Resume;
@@ -429,7 +429,7 @@ impl State {
             Event::BottomTouched => self.bottom.used(&self.session, &self.clock),
             Event::Frozen(keys) => self.session.found_frozen(keys),
             Event::Paste => self.bottom.paste(),
-            Event::DumpWindowEvents(path) => out.effects.push(Effect::DumpWindowEvents(path)),
+            Event::DumpWindowEvents(path) => out.effects.push(Effect::Compositor(Compositor::DumpWindowEvents(path))),
             Event::Screenshot(result) => self.bottom.notice_mut().show(NoticeKind::Screenshot(result), now),
             Event::Sticks(event) => self.device.sticks_event(event, now, out),
             Event::RefreshCalibrated(result) => self.refresh_calibrated(result),
@@ -759,7 +759,7 @@ impl State {
     /// Quitting ClamShell: where shelf and the second screen are is saved first.
     fn quit(&mut self, out: &mut Out) {
         out.effects.push(Effect::Save(Save::Resume(self.resume())));
-        out.effects.push(Effect::Quit);
+        out.effects.push(Effect::Compositor(Compositor::Quit));
     }
 
     /// Something done to entry `id`.
@@ -906,7 +906,7 @@ impl State {
                     Some(stroke) if self.session.front() == crate::session::running::Front::Shelf => {
                         self.shelf.find(stroke, &mut self.pointer, out);
                     }
-                    Some(stroke) => out.effects.push(Effect::Key(stroke)),
+                    Some(stroke) => out.effects.push(Effect::Compositor(Compositor::Key(stroke))),
                     None => {}
                 }
             }
@@ -1223,7 +1223,7 @@ impl State {
                 }
                 return;
             }
-            DeviceKey::Screenshot => return out.effects.push(Effect::Screenshot),
+            DeviceKey::Screenshot => return out.effects.push(Effect::Compositor(Compositor::Screenshot)),
             DeviceKey::BottomView => return self.choose_tab(self.bottom.view_toggled()),
             DeviceKey::CloseWindow => return self.session.close_front_window(self.bottom.shows_windows(&self.session), out),
             DeviceKey::Quit => return self.session.quit_front(self.bottom.shows_windows(&self.session), out),

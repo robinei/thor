@@ -34,16 +34,12 @@ pub enum Effect {
     Keymap(crate::keymap::Keymap),
     /// Write one of ClamShell's files.
     Save(Save),
-    /// A key press for the focused app, through the virtual keyboard.
-    Key(Stroke),
     /// The fingers pointing in one touch frame, for the virtual touchpad.
     Touchpad(Vec<crate::bottom::touch::Contact>),
     /// Where the controller's input goes now.
     PadRoute(PadRoute),
     /// Report the first game-pad input while the top window lacks keyboard focus.
     PadActivity(bool),
-    /// Ask these windows to close, as their own close buttons would.
-    Close(Vec<i64>),
     /// End an entry's slice, which holds all its launches. Normally it is stopped: systemd asks its
     /// processes to end, then kills what is left after its timeout. With `force` it is killed at once.
     EndRun {
@@ -122,24 +118,8 @@ pub enum Effect {
     Bluetooth(bluetooth::Command),
     /// Start (true) or stop reading something for a tab while it is open.
     Watch(Watch, bool),
-    /// The screens' power, sent when it changes and when it is to be set again (the same value twice
-    /// means set it again). `top` is whether the screens are on, which idle turns off together; `bottom`
-    /// is whether the second screen is on while they are (see [`crate::Bottom::off`]). The compositor
-    /// carries it out.
-    Outputs {
-        top: bool,
-        bottom: bool,
-    },
-    /// The main screen's refresh rate in Hz, where 0 means the rate it had at start. It follows the
-    /// settings in force, and a launch's settings from the moment it starts, so the rate changes before
-    /// the game's window shows. The UI sets it.
-    Refresh(u16),
     /// Sleep, for idle in the device's session. Suspends, then hibernates where the system can.
     Sleep,
-    /// Save both screens to a file. The result comes back as [`crate::Event::Screenshot`].
-    Screenshot,
-    /// Export the in-process compositor's bounded window-event ring.
-    DumpWindowEvents(std::path::PathBuf),
     /// Ask the account helper to do something (see [`crate::device::account`]). A change is reported and
     /// the account is then read again.
     Account(crate::device::account::AccountCommand),
@@ -166,6 +146,30 @@ pub enum Effect {
     /// Calibrate the top screen's refresh rate with thor-panel-calibration. The end comes back as
     /// [`crate::Event::RefreshCalibrated`].
     CalibrateRefresh,
+    /// What the compositor carries out itself. The system's dispatcher passes it by.
+    Compositor(Compositor),
+}
+
+/// The effects the compositor carries out itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Compositor {
+    /// A key press for the focused app, through the virtual keyboard.
+    Key(Stroke),
+    /// Ask these windows to close, as their own close buttons would.
+    Close(Vec<i64>),
+    /// The screens' power, sent when it changes and when it is to be set again (the same value twice
+    /// means set it again). `top` is whether the screens are on, which idle turns off together; `bottom`
+    /// is whether the second screen is on while they are (see [`crate::Bottom::off`]).
+    Outputs { top: bool, bottom: bool },
+    /// The main screen's refresh rate in Hz, where 0 means the rate it had at start. It follows the
+    /// settings in force, and a launch's settings from the moment it starts, so the rate changes before
+    /// the game's window shows.
+    Refresh(u16),
+    /// Save both screens to a file. The result comes back as [`crate::Event::Screenshot`].
+    Screenshot,
+    /// Export the in-process compositor's bounded window-event ring.
+    DumpWindowEvents(std::path::PathBuf),
+    /// End ClamShell.
     Quit,
 }
 

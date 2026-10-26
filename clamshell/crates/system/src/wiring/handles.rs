@@ -129,7 +129,6 @@ impl Handles {
             Effect::EndProcesses { pids, force } => launcher::end_processes(pids, *force),
             Effect::Freeze { slice, frozen } => crate::launch::freezer::freeze(slice.clone(), *frozen),
             Effect::Tray(command) => self.tray.send(command.clone()),
-            Effect::DumpWindowEvents(_) => log::debug!("window events: available in the in-process compositor"),
             Effect::AskAwake(argv) => self.system.send(crate::device::Command::AskAwake(argv.clone())),
             Effect::Sleep => self.system.send(crate::device::Command::Sleep),
             Effect::Account(command) => self.system.send(crate::device::Command::Account(command.clone())),
@@ -141,9 +140,8 @@ impl Handles {
             Effect::Notify { summary, body, urgent } => {
                 self.system.send(crate::device::Command::Notify { summary: summary.clone(), body: body.clone(), urgent: *urgent })
             }
-            // The compositor's own: closing windows, the on-screen keyboard's keys, the screens' power and
-            // refresh rate, screenshots, quitting.
-            Effect::Close(_) | Effect::Key(_) | Effect::Outputs { .. } | Effect::Refresh(_) | Effect::Screenshot | Effect::Quit => {}
+            // The compositor carries out its own.
+            Effect::Compositor(_) => {}
         }
     }
 

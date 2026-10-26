@@ -261,6 +261,7 @@ impl Device {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Compositor;
     use crate::id::DeviceId;
     use crate::testkit::*;
     use crate::{EditorId, Event, Init, Reading, State};
@@ -511,7 +512,7 @@ mod tests {
     #[test]
     fn the_refresh_calibration_runs_once_at_a_time_and_says_how_it_went() {
         let mut s = State::new(init());
-        assert_eq!(tap(&mut s, DeviceId::Refresh), vec![Effect::CalibrateRefresh, Effect::Outputs { top: true, bottom: false }]);
+        assert_eq!(tap(&mut s, DeviceId::Refresh), vec![Effect::CalibrateRefresh, Effect::Compositor(Compositor::Outputs { top: true, bottom: false })]);
         assert!(tap(&mut s, DeviceId::Refresh).is_empty());
         s.applied(Event::RefreshCalibrated(Ok("120 Hz: 118.630 -> 120.089 Hz".into())));
         assert!(matches!(s.device().refresh(), Refresh::Done(Ok(_))));

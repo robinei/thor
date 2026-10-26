@@ -1,6 +1,7 @@
 //! Tests of the state that span features: launches starting and ending, the library's problems, the
 //! start and the tick.
 
+use crate::Compositor;
 use crate::settings::Setting;
 use crate::testkit::*;
 use crate::*;
@@ -182,7 +183,7 @@ fn queued_events_are_handled_in_order_with_what_they_queue_first() {
         .iter()
         .map(|e| match e {
             Effect::Launch { .. } => "launch",
-            Effect::Screenshot => "screenshot",
+            Effect::Compositor(Compositor::Screenshot) => "screenshot",
             _ => "other",
         })
         .filter(|k| *k != "other")
@@ -333,9 +334,12 @@ fn back_from_sleep_applies_the_settings_again_and_wakes_the_screens() {
     let global = s.prefs().settings().global;
     assert_eq!(s.idle().stage(), crate::device::idle::Stage::Awake);
     assert!(fx.contains(&Effect::Apply { entry: None, settings: global }), "{fx:?}");
-    assert!(fx.contains(&Effect::Outputs { top: true, bottom: true }), "{fx:?}");
+    assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: true })), "{fx:?}");
     assert!(fx.iter().any(|e| matches!(e, Effect::Brightness { level: 60, .. })), "undimmed: {fx:?}");
-    assert!(!s.applied(Event::Resumed).iter().any(|e| matches!(e, Effect::Outputs { .. })), "awake already: the screens aren't sent again");
+    assert!(
+        !s.applied(Event::Resumed).iter().any(|e| matches!(e, Effect::Compositor(Compositor::Outputs { .. }))),
+        "awake already: the screens aren't sent again"
+    );
 }
 
 /// The refresh rate calibration has the bottom screen off while it runs, and the main screen at the rates
@@ -343,20 +347,21 @@ fn back_from_sleep_applies_the_settings_again_and_wakes_the_screens() {
 /// settings say, and the bottom screen on, or off when it was turned off by hand.
 #[test]
 fn a_refresh_calibration_sets_the_screens_and_then_gives_them_back() {
-    let refresh = |fx: &[Effect]| fx.iter().filter_map(|e| if let Effect::Refresh(hz) = e { Some(*hz) } else { None }).collect::<Vec<_>>();
+    let refresh =
+        |fx: &[Effect]| fx.iter().filter_map(|e| if let Effect::Compositor(Compositor::Refresh(hz)) = e { Some(*hz) } else { None }).collect::<Vec<_>>();
     let mut s = state();
     s.applied(Event::tick(1000));
     let fx = s.applied(PointerEvent::Activate(Id::Device(DeviceId::Refresh)).into());
-    assert!(fx.contains(&Effect::Outputs { top: true, bottom: false }), "{fx:?}");
+    assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: false })), "{fx:?}");
     assert_eq!(refresh(&s.applied(Event::CalibrationRate(60))), [60]);
     let fx = s.applied(Event::RefreshCalibrated(Ok("done".into())));
-    assert!(fx.contains(&Effect::Outputs { top: true, bottom: true }), "{fx:?}");
+    assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: true })), "{fx:?}");
     assert_eq!(refresh(&fx), [0], "the rate as it was");
     let fx = s.applied(Event::Device(crate::device::buttons::DeviceKey::BottomPower));
-    assert!(fx.contains(&Effect::Outputs { top: true, bottom: false }), "{fx:?}");
+    assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: false })), "{fx:?}");
     s.applied(PointerEvent::Activate(Id::Device(DeviceId::Refresh)).into());
     let fx = s.applied(Event::RefreshCalibrated(Ok("done".into())));
-    assert!(!fx.iter().any(|e| matches!(e, Effect::Outputs { .. })), "off by hand, it stays off: {fx:?}");
+    assert!(!fx.iter().any(|e| matches!(e, Effect::Compositor(Compositor::Outputs { .. }))), "off by hand, it stays off: {fx:?}");
     assert!(s.applied(Event::CalibrationRate(120)).is_empty(), "none runs: the rate isn't changed");
 }
 
@@ -369,7 +374,8 @@ fn the_refresh_rate_follows_a_launch_at_once_then_the_settings_in_force() {
     settings.set(Some(&"zelda-lttp".into()), Setting::Refresh, Some(60));
     let mut s = State::new(Init { settings, ..init() });
     s.ui_up();
-    let refresh = |fx: &[Effect]| fx.iter().filter_map(|e| if let Effect::Refresh(hz) = e { Some(*hz) } else { None }).collect::<Vec<_>>();
+    let refresh =
+        |fx: &[Effect]| fx.iter().filter_map(|e| if let Effect::Compositor(Compositor::Refresh(hz)) = e { Some(*hz) } else { None }).collect::<Vec<_>>();
     let mut fx = tap(&mut s, entry("zelda-lttp"));
     fx.extend(tap(&mut s, entry("zelda-lttp")));
     assert!(fx.iter().any(|e| matches!(e, Effect::Launch { .. })), "{fx:?}");
@@ -387,11 +393,15 @@ fn the_screens_power_is_sent_when_it_changes() {
     let mut s = state();
     s.applied(Event::tick(1000));
     s.applied(Event::Idle(IdleEvent::Watching(true)));
-    let outputs = |fx: &[Effect]| fx.iter().filter(|e| matches!(e, Effect::Outputs { .. })).cloned().collect::<Vec<_>>();
+    let outputs = |fx: &[Effect]| fx.iter().filter(|e| matches!(e, Effect::Compositor(Compositor::Outputs { .. }))).cloned().collect::<Vec<_>>();
     let key = |s: &mut State| s.applied(Event::Device(crate::device::buttons::DeviceKey::BottomPower));
-    assert_eq!(outputs(&key(&mut s)), [Effect::Outputs { top: true, bottom: false }], "the bottom one by hand");
-    assert_eq!(outputs(&s.applied(Event::tick(1300))), [Effect::Outputs { top: false, bottom: false }], "off for idle");
-    assert_eq!(outputs(&s.applied(Event::Idle(IdleEvent::DeviceInput))), [Effect::Outputs { top: true, bottom: false }], "back, the bottom one still off");
+    assert_eq!(outputs(&key(&mut s)), [Effect::Compositor(Compositor::Outputs { top: true, bottom: false })], "the bottom one by hand");
+    assert_eq!(outputs(&s.applied(Event::tick(1300))), [Effect::Compositor(Compositor::Outputs { top: false, bottom: false })], "off for idle");
+    assert_eq!(
+        outputs(&s.applied(Event::Idle(IdleEvent::DeviceInput))),
+        [Effect::Compositor(Compositor::Outputs { top: true, bottom: false })],
+        "back, the bottom one still off"
+    );
     assert!(outputs(&s.applied(Event::tick(1301))).is_empty(), "once");
 }
 
@@ -459,7 +469,10 @@ fn dumping_window_events_is_one_backend_effect_without_changing_windows() {
     use crate::testkit::*;
     let mut s = state();
     let before = s.session().windows().to_vec();
-    assert_eq!(s.applied(crate::Event::DumpWindowEvents("events.json".into())), vec![crate::Effect::DumpWindowEvents("events.json".into())]);
+    assert_eq!(
+        s.applied(crate::Event::DumpWindowEvents("events.json".into())),
+        vec![crate::Effect::Compositor(Compositor::DumpWindowEvents("events.json".into()))]
+    );
     assert_eq!(s.session().windows(), before);
 }
 

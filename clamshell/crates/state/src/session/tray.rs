@@ -152,6 +152,7 @@ pub(crate) fn tray_entry(library: &Library, t: &TrayItem) -> Entry {
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+    use crate::Compositor;
     use crate::id::{DockId, Id};
     use crate::testkit::*;
     use crate::{Event, State};
@@ -212,7 +213,7 @@ mod tests {
         assert!(s.dock().menu().is_none());
         // Quit closes its windows, then asks its process to end. Force kill kills it.
         let id: Arc<str> = "desktop:firefox".into();
-        assert_eq!(quit(&mut s, &id), vec![Effect::Close(vec![6])]);
+        assert_eq!(quit(&mut s, &id), vec![Effect::Compositor(Compositor::Close(vec![6]))]);
         let fx = s.observed(vec![]);
         assert!(fx.contains(&Effect::EndProcesses { pids: vec![77], force: false }), "{fx:?}");
         assert_eq!(force_kill(&mut s, "desktop:firefox"), vec![Effect::EndProcesses { pids: vec![77], force: true }]);
@@ -291,7 +292,7 @@ mod tests {
         let r = s.session().running("desktop:foot").unwrap();
         assert_eq!((r.tray().map(|k| &**k), r.pid()), (Some(":1.8/d"), None), "its icon, not the process");
         let id: Arc<str> = "desktop:foot".into();
-        assert_eq!(quit(&mut s, &id), vec![Effect::Close(vec![6])]);
+        assert_eq!(quit(&mut s, &id), vec![Effect::Compositor(Compositor::Close(vec![6]))]);
         let fx = s.observed(vec![in_waydroid(5, "firefox")]);
         assert!(!fx.iter().any(|e| matches!(e, Effect::EndProcesses { .. })), "{fx:?}");
     }
