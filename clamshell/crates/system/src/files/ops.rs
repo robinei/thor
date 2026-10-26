@@ -24,11 +24,12 @@ const PROGRESS: Duration = Duration::from_millis(250);
 const EXTRACT_STALL: Duration = Duration::from_secs(120);
 
 /// Starts the files thread. It runs each operation, then sends what was done or what went wrong.
-pub(crate) fn spawn_ops(home: Option<PathBuf>, sink: impl Sink) -> io::Result<Worker<FileOp>> {
+/// `data_home` is where the home Trash is.
+pub(crate) fn spawn_ops(data_home: Option<PathBuf>, sink: impl Sink) -> io::Result<Worker<FileOp>> {
     Worker::spawn(clamshell_state::Thread::Files.name(), move |ops| {
         for op in ops {
             log::info!("files: {op:?}");
-            let result = run(&op, home.as_deref(), &sink);
+            let result = run(&op, data_home.as_deref(), &sink);
             if let Err(e) = &result {
                 log::warn!("files: {e}");
             }
@@ -43,7 +44,7 @@ pub(super) fn name_of(path: &Path) -> String {
     path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned())
 }
 
-fn run(op: &FileOp, home: Option<&Path>, sink: &impl Sink) -> Result<String, String> {
+fn run(op: &FileOp, data_home: Option<&Path>, sink: &impl Sink) -> Result<String, String> {
     match op {
         FileOp::Rename { path, name } => {
             let to = path.with_file_name(name);
@@ -60,7 +61,7 @@ fn run(op: &FileOp, home: Option<&Path>, sink: &impl Sink) -> Result<String, Str
         FileOp::Paste { path, into, cut } => paste(path, into, *cut, sink),
         FileOp::Extract { archive, name } => extract(archive, name, sink),
         FileOp::Trash(path) => {
-            trash(path, home)?;
+            trash(path, data_home)?;
             Ok(format!("Moved {} to the Trash", name_of(path)))
         }
         FileOp::Restore(path) => {

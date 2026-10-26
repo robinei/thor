@@ -28,16 +28,18 @@ pub(crate) struct Browsing {
     pub(crate) probe: Box<dyn Fn(Vec<crate::library::meta::Wanted>) + Send>,
     /// Where archives' indexes are kept (see [`crate::files::archives`]).
     pub(crate) cache: Option<PathBuf>,
+    /// ClamShell's runtime folder, where archives are mounted.
+    pub(crate) runtime: Option<PathBuf>,
 }
 
 /// Starts the browse thread, which lists and watches the folder each command names (see [`Browsing`]).
 pub(crate) fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<BrowseCommand>> {
-    let Browsing { config, home, art, probe, cache } = browsing;
+    let Browsing { config, home, art, probe, cache, runtime } = browsing;
     let bell = Bell::new()?;
     let theirs = bell.clone();
     Worker::spawn_belled(clamshell_state::Thread::Browse.name(), bell, move |commands| {
         let bell = &theirs;
-        let mut archives = crate::files::archives::Mounts::new(cache.clone());
+        let mut archives = crate::files::archives::Mounts::new(runtime.as_deref(), cache.clone());
         // The videos' lengths and frames are read from this at each listing that has videos.
         let store = art.as_deref().map(crate::library::meta::cache::Cache::open);
         let mut in_use: Vec<PathBuf> = Vec::new();

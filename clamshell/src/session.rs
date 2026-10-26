@@ -123,6 +123,7 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
             clipboard_display: displays.socket,
             displays: vec![("WAYLAND_DISPLAY".into(), displays.wayland.clone()), ("DISPLAY".into(), displays.x11.clone())],
             backlights: env.backlights.clone(),
+            charge_limit: env.charge_limit.clone(),
         };
         if let Some(path) = env.control.as_ref().or(paths.control.as_ref()) {
             control::spawn(path.clone(), LoopSink(sender.clone()));

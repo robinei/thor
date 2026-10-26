@@ -52,6 +52,8 @@ pub(crate) struct Config {
     /// The compositor's displays (`WAYLAND_DISPLAY`, `DISPLAY`), given to every launch after its own
     /// variables.
     pub displays: Vec<(String, String)>,
+    /// HOME, where a launch that names no working directory runs.
+    pub home: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -153,7 +155,7 @@ fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir:
         slice: Some(request.unit.slice()),
         argv: argv.into_iter().map(Into::into).collect(),
         env,
-        workdir,
+        workdir: workdir.or_else(|| config.home.clone()),
         properties: vec![],
     };
     Ok(job::start(&job)?)
@@ -265,7 +267,7 @@ mod tests {
     use std::time::Duration;
 
     fn config() -> Config {
-        Config { watch_later: Vec::new(), sockets: std::env::temp_dir(), displays: Vec::new() }
+        Config { watch_later: Vec::new(), sockets: std::env::temp_dir(), displays: Vec::new(), home: None }
     }
 
     /// Starts a service on this machine's user manager. Run it by hand with `--ignored`.

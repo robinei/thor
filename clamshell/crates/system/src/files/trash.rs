@@ -9,12 +9,9 @@ use std::path::{Path, PathBuf};
 use super::ops::{free_name, name_of};
 use crate::os::{sys, text};
 
-/// The home Trash: `$XDG_DATA_HOME/Trash`, or else `~/.local/share/Trash`.
-pub(super) fn home_trash(home: Option<&Path>) -> Option<PathBuf> {
-    match std::env::var_os("XDG_DATA_HOME").filter(|d| !d.is_empty()) {
-        Some(data) => Some(PathBuf::from(data).join("Trash")),
-        None => home.map(|h| h.join(".local/share/Trash")),
-    }
+/// The home Trash, in the data home (`$XDG_DATA_HOME`, else `~/.local/share`).
+pub(super) fn home_trash(data_home: Option<&Path>) -> Option<PathBuf> {
+    data_home.map(|d| d.join("Trash"))
 }
 
 /// The mount point of the filesystem `path` is on: the longest mount point it is under.
@@ -24,10 +21,10 @@ pub(super) fn mount_point(path: &Path) -> PathBuf {
 
 /// Moves `path` to the Trash. That is the home Trash if `path` is on the same filesystem, or else its
 /// filesystem's `.Trash-<uid>`, where the path is recorded relative to the filesystem's top.
-pub(super) fn trash(path: &Path, home: Option<&Path>) -> Result<(), String> {
+pub(super) fn trash(path: &Path, data_home: Option<&Path>) -> Result<(), String> {
     let path = path.canonicalize().map_err(|e| format!("{}: {e}", name_of(path)))?;
     let dev = |p: &Path| fs::metadata(p).map(|m| m.dev()).ok();
-    let home_trash = home_trash(home).ok_or("no home dir")?;
+    let home_trash = home_trash(data_home).ok_or("no home dir")?;
     let on_home = dev(&path) == home_trash.ancestors().find_map(dev);
     let (trash, recorded) = if on_home {
         (home_trash, path.clone())
@@ -122,18 +119,15 @@ mod tests {
         let home = dir.join("home");
         fs::create_dir_all(home.join("docs")).unwrap();
         fs::write(home.join("docs/a b.txt"), "x").unwrap();
-        // XDG_DATA_HOME may be set, in which case the home Trash is there and the test is skipped.
-        let trash_dir = home_trash(Some(&home)).unwrap();
-        if !trash_dir.starts_with(&home) {
-            return;
-        }
-        trash(&home.join("docs/a b.txt"), Some(&home)).unwrap();
+        let data = home.join(".local/share");
+        let trash_dir = home_trash(Some(&data)).unwrap();
+        trash(&home.join("docs/a b.txt"), Some(&data)).unwrap();
         assert!(!home.join("docs/a b.txt").exists());
         let record = fs::read_to_string(trash_dir.join("info/a b.txt.trashinfo")).unwrap();
         assert!(record.contains("Path=") && record.contains("a%20b.txt"), "{record}");
         // The same name again gets a different name in the Trash.
         fs::write(home.join("docs/a b.txt"), "y").unwrap();
-        trash(&home.join("docs/a b.txt"), Some(&home)).unwrap();
+        trash(&home.join("docs/a b.txt"), Some(&data)).unwrap();
         assert_eq!(fs::read_dir(trash_dir.join("files")).unwrap().count(), 2);
         let to = restore(&trash_dir.join("files/a b.txt")).unwrap();
         assert_eq!(to, home.join("docs/a b.txt").canonicalize().unwrap());

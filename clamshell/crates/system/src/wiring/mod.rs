@@ -43,6 +43,8 @@ pub struct Config {
     pub displays: Vec<(String, String)>,
     /// The backlights' folder: /sys/class/backlight, or a stand-in.
     pub backlights: PathBuf,
+    /// How the charge limit is held, if not as detected (see `power::tuning::spawn`).
+    pub charge_limit: Option<String>,
 }
 
 /// A thread with commands, or a stand-in that takes none if it couldn't be started.
@@ -109,7 +111,12 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, la
     let launcher = started(
         "launcher",
         launcher::spawn(
-            launcher::Config { watch_later: paths.watch_later.clone(), sockets: paths.sockets.clone(), displays: env.displays.clone() },
+            launcher::Config {
+                watch_later: paths.watch_later.clone(),
+                sockets: paths.sockets.clone(),
+                displays: env.displays.clone(),
+                home: paths.home.clone(),
+            },
             sink.clone(),
         ),
     );
@@ -127,7 +134,7 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, la
     let bluetooth = started("bluetooth", bluetooth::spawn(sink.clone()));
     let tray = started("tray", crate::session::tray::spawn(sink.clone()));
     let notifications = started("notifications", crate::session::notifications::spawn(sink.clone()));
-    log_failed_start("clipboard", crate::session::clipboard::spawn(Some(env.clipboard_display.clone()), sink.clone()));
+    log_failed_start("clipboard", crate::session::clipboard::spawn(paths.own_runtime.as_deref(), Some(env.clipboard_display.clone()), sink.clone()));
     let icons = started("icons", crate::session::icons::spawn(sink.clone()));
     let system = started(
         "system",
@@ -148,11 +155,12 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, la
         art: paths.art.clone(),
         probe,
         cache: paths.art.as_deref().and_then(std::path::Path::parent).map(std::path::PathBuf::from),
+        runtime: paths.own_runtime.clone(),
     };
     let browse = started("browse", crate::files::browse::spawn_browse(browsing, sink.clone()));
-    let files = started("files", crate::files::ops::spawn_ops(sources.home.clone(), sink.clone()));
+    let files = started("files", crate::files::ops::spawn_ops(paths.data_home.clone(), sink.clone()));
     let wifi = started("wifi", wifi::spawn(sink));
-    let tuning = Tuning { hardware: started("tuning", tuning::spawn(env.profile.charge)), pad: pad.clone() };
+    let tuning = Tuning { hardware: started("tuning", tuning::spawn(env.profile.charge, env.charge_limit.clone())), pad: pad.clone() };
     tuning.apply(global);
     let store = paths.state_dir.as_deref().and_then(|dir| Writer::spawn(Store::open(dir)).map_err(|e| log::error!("store thread: {e}")).ok());
     Handles {

@@ -70,7 +70,7 @@ const UNIT_OWN: [&str; 13] = [
 ];
 
 /// The `systemd-run` that starts a job as the service `<unit>.service`, in its slice if it has one, in
-/// its workdir or else HOME, with its environment. `systemd-run` returns once systemd has started it, or
+/// its workdir or else /, with its environment. `systemd-run` returns once systemd has started it, or
 /// failed to.
 pub(crate) fn command(job: &Job) -> Option<Command> {
     let (program, args) = job.argv.split_first()?;
@@ -86,7 +86,7 @@ pub(crate) fn command(job: &Job) -> Option<Command> {
     if let Some(slice) = &job.slice {
         cmd.arg(format!("--slice={slice}"));
     }
-    let workdir = job.workdir.clone().unwrap_or_else(|| std::env::var_os("HOME").map_or_else(|| PathBuf::from("/"), PathBuf::from));
+    let workdir = job.workdir.clone().unwrap_or_else(|| PathBuf::from("/"));
     cmd.arg(format!("--working-directory={}", workdir.display()));
     // ClamShell's own environment, as a program it started itself would have it (a service starts with
     // the user manager's: a ClamShell run with its own runtime or config dirs, nested or in a test, would

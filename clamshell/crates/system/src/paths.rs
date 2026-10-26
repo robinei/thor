@@ -19,6 +19,13 @@ pub struct Paths {
     pub(crate) sockets: PathBuf,
     /// $XDG_RUNTIME_DIR, where systemd's user manager has its socket.
     pub runtime: Option<PathBuf>,
+    /// ClamShell's own folder there, $XDG_RUNTIME_DIR/clamshell: the clipboard kept, archives mounted,
+    /// the launches' sockets.
+    pub(crate) own_runtime: Option<PathBuf>,
+    /// HOME: a launch's working directory when it names none, mpv's `~`.
+    pub(crate) home: Option<PathBuf>,
+    /// $XDG_DATA_HOME, else ~/.local/share: the home Trash is there.
+    pub(crate) data_home: Option<PathBuf>,
     /// The control pipe `clamshell ctl` writes to ($XDG_RUNTIME_DIR/clamshell-control).
     pub control: Option<PathBuf>,
     /// Where screenshots go (~/Pictures/Screenshots).
@@ -61,11 +68,16 @@ impl Paths {
     pub fn new(base: &Base) -> Paths {
         let config = base.xdg(base.config_home.as_ref(), ".config");
         let data = base.xdg(base.data_home.as_ref(), ".local/share");
-        let state_dir = data.map(|d| d.join("clamshell"));
+        let state_dir = data.as_ref().map(|d| d.join("clamshell"));
         let art = base.xdg(base.cache_home.as_ref(), ".cache").map(|c| c.join("clamshell/art"));
-        let watch_later = crate::launch::mpv::watch_later_dirs(config.as_deref(), base.xdg(base.state_home.as_ref(), ".local/state").as_deref());
+        let state_home = base.xdg(base.state_home.as_ref(), ".local/state");
+        let watch_later = crate::launch::mpv::watch_later_dirs(config.as_deref(), state_home.as_deref(), base.home.as_deref());
+        let own_runtime = base.runtime.as_ref().map(|r| r.join("clamshell"));
         Paths {
-            sockets: base.runtime.clone().unwrap_or_else(std::env::temp_dir).join("clamshell/sockets"),
+            sockets: own_runtime.clone().unwrap_or_else(|| std::env::temp_dir().join("clamshell")).join("sockets"),
+            own_runtime,
+            home: base.home.clone(),
+            data_home: data,
             runtime: base.runtime.clone(),
             control: base.runtime.as_ref().map(|r| r.join("clamshell-control")),
             screenshots: base.home.as_ref().map(|h| h.join("Pictures/Screenshots")),

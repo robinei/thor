@@ -34,10 +34,10 @@ pub(crate) struct Mounts {
 }
 
 impl Mounts {
-    /// Mounts go under `$XDG_RUNTIME_DIR/clamshell/archives` and indexes in `cache`. Mounts left there
-    /// by an earlier ClamShell are unmounted.
-    pub(crate) fn new(cache: Option<PathBuf>) -> Mounts {
-        let root = std::env::var_os("XDG_RUNTIME_DIR").map(|d| PathBuf::from(d).join("clamshell/archives"));
+    /// Mounts go under `runtime`'s `archives` (ClamShell's runtime folder) and indexes in `cache`. Mounts
+    /// left there by an earlier ClamShell are unmounted.
+    pub(crate) fn new(runtime: Option<&Path>, cache: Option<PathBuf>) -> Mounts {
+        let root = runtime.map(|d| d.join("archives"));
         // Clean up after an earlier ClamShell: stop its services, detach any mount left, remove the dirs.
         if let Err(e) = crate::launch::units::stop_matching("clamshell-archive-*.service") {
             log::warn!("archives: stopping those left before: {e}");
@@ -197,7 +197,7 @@ mod tests {
         fs::write(dir.join("inside.txt"), "hello").unwrap();
         let zip = dir.join("a.zip");
         assert!(std::process::Command::new("bsdtar").arg("-C").arg(dir).args(["-a", "-cf"]).arg(&zip).arg("inside.txt").status().unwrap().success());
-        let mut mounts = Mounts::new(None);
+        let mut mounts = Mounts::new(None, None);
         let at = mounts.mount(&zip).unwrap();
         assert_eq!(fs::read_to_string(at.join("inside.txt")).unwrap(), "hello");
         mounts.keep(&[]);

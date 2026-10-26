@@ -25,6 +25,9 @@ pub struct Env {
     /// CLAMSHELL_BACKLIGHTS: a folder laid out like /sys/class/backlight to use instead, for tests and
     /// for desktops without a backlight.
     pub backlights: PathBuf,
+    /// CLAMSHELL_CHARGE_LIMIT: how the charge limit is held (threshold, firmware, current), when not as
+    /// detected.
+    pub charge_limit: Option<String>,
     /// HOME and the XDG base directories, where ClamShell's files go (see [`clamshell_system::paths`]).
     pub base: Base,
 }
@@ -43,6 +46,7 @@ impl Env {
             pad_mouse: flag("CLAMSHELL_PAD_MOUSE", "1"),
             control: path("CLAMSHELL_CONTROL"),
             backlights: path("CLAMSHELL_BACKLIGHTS").unwrap_or_else(|| PathBuf::from("/sys/class/backlight")),
+            charge_limit: var("CLAMSHELL_CHARGE_LIMIT"),
             base: Base::from_env(),
         })
     }

@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 
 /// The folders mpv keeps positions in, with the one mpv.conf names first.
-pub(crate) fn watch_later_dirs(config_home: Option<&Path>, state_home: Option<&Path>) -> Vec<PathBuf> {
+pub(crate) fn watch_later_dirs(config_home: Option<&Path>, state_home: Option<&Path>, home: Option<&Path>) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     let conf = config_home.map(|c| c.join("mpv/mpv.conf"));
     let read = |c: PathBuf| {
@@ -29,7 +29,7 @@ pub(crate) fn watch_later_dirs(config_home: Option<&Path>, state_home: Option<&P
                 let dir = match (dir.strip_prefix("~~state/"), dir.strip_prefix("~~/"), dir.strip_prefix("~/")) {
                     (Some(rest), _, _) => state_home.map(|s| s.join("mpv").join(rest)),
                     (_, Some(rest), _) => config_home.map(|c| c.join("mpv").join(rest)),
-                    (_, _, Some(rest)) => std::env::var_os("HOME").map(|h| PathBuf::from(h).join(rest)),
+                    (_, _, Some(rest)) => home.map(|h| h.join(rest)),
                     _ => Some(PathBuf::from(dir)),
                 };
                 dirs.extend(dir);
@@ -102,7 +102,7 @@ mod tests {
         let (config, state) = (root.join("config"), root.join("state"));
         std::fs::create_dir_all(config.join("mpv")).unwrap();
         std::fs::write(config.join("mpv/mpv.conf"), "save-position-on-quit=yes\nwatch-later-dir=~~state/places\n").unwrap();
-        let dirs = watch_later_dirs(Some(&config), Some(&state));
+        let dirs = watch_later_dirs(Some(&config), Some(&state), None);
         assert_eq!(dirs, [state.join("mpv/places"), state.join("mpv/watch_later"), config.join("mpv/watch_later")]);
         let film = Path::new("/videos/Film.mkv");
         assert_eq!(position(&dirs, film), None, "none kept");

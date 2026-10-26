@@ -52,8 +52,8 @@ const SET_WAIT: Duration = Duration::from_secs(5);
 /// Where the kept text is also written, so that a ClamShell started again after an update or a crash
 /// offers it. It is in the user's runtime directory, which only they can read and which is gone at a
 /// reboot. An explicit nested display gets a separate file, leaving the parent session's text alone.
-fn saved(display: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
-    let directory = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR")?).join("clamshell");
+fn saved(runtime: Option<&std::path::Path>, display: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
+    let directory = runtime?;
     Some(match display {
         Some(socket) => directory.join("compositor").join(socket.file_name()?).join("clipboard"),
         None => directory.join("clipboard"),
@@ -62,9 +62,10 @@ fn saved(display: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
 
 /// Keeps the clipboard (see the module's doc) on a thread of its own, as long as the compositor is
 /// there. It starts with the text an earlier ClamShell kept, offered if the clipboard is empty.
-/// `display` selects the nested server explicitly; None uses the session's environment.
-pub(crate) fn spawn(display: Option<std::path::PathBuf>, sink: impl Sink + Clone + 'static) -> io::Result<()> {
-    let saved = saved(display.as_deref());
+/// `display` selects the nested server explicitly; None uses the session's environment. The text is kept
+/// under `runtime`, ClamShell's runtime folder.
+pub(crate) fn spawn(runtime: Option<&std::path::Path>, display: Option<std::path::PathBuf>, sink: impl Sink + Clone + 'static) -> io::Result<()> {
+    let saved = saved(runtime, display.as_deref());
     worker::lasting(clamshell_state::Thread::Clipboard.name(), move || {
         let before = saved
             .as_ref()

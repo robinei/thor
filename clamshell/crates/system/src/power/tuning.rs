@@ -85,10 +85,6 @@ enum Hold {
 }
 
 impl Hold {
-    fn from_env(policy: ChargePolicy) -> Hold {
-        Self::selected(std::env::var("CLAMSHELL_CHARGE_LIMIT").ok().as_deref(), policy)
-    }
-
     fn selected(value: Option<&str>, policy: ChargePolicy) -> Hold {
         match value {
             Some("threshold") => Hold::Threshold,
@@ -155,11 +151,12 @@ fn big_cpus(clusters: &[(u64, Vec<u32>)]) -> Vec<u32> {
 }
 
 /// Starts the hardware thread. It applies the settings it is sent, only the latest when several wait.
-/// With a charge limit or Bypass on, it sees to the battery again every [`CHARGE_AGAIN`].
-pub(crate) fn spawn(policy: ChargePolicy) -> io::Result<Worker<Values>> {
+/// With a charge limit or Bypass on, it sees to the battery again every [`CHARGE_AGAIN`]. `method`
+/// overrides how the limit is held (`CLAMSHELL_CHARGE_LIMIT`: threshold, firmware, current).
+pub(crate) fn spawn(policy: ChargePolicy, method: Option<String>) -> io::Result<Worker<Values>> {
     Worker::spawn(clamshell_state::Thread::Tuning.name(), move |commands| {
         let (mut quiet, mut known, mut last) = (Quiet::default(), Vec::new(), None::<Values>);
-        let mut charge = Charge { hold: Hold::from_env(policy), switches: policy.switches, held: false };
+        let mut charge = Charge { hold: Hold::selected(method.as_deref(), policy), switches: policy.switches, held: false };
         log::info!(
             "charge limit held by {}",
             match charge.hold {
