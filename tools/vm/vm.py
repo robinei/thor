@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """A virtual Thor: a QEMU machine with the device's session around ClamShell, for testing what
-doesn't need the real hardware. Two displays at the Thor's sizes (sway on real DRM outputs), a touchscreen
-and a mouse-driven absolute pointer on the bottom one, a fake battery and Wi-Fi, uinput for our virtual
-devices, ClamShell as a user service started by sway, and this repository shared read-only.
+doesn't need the real hardware. Two displays at the Thor's sizes (ClamShell's compositor on real DRM
+outputs), a touchscreen and a mouse-driven absolute pointer on the bottom one, a fake battery and Wi-Fi,
+uinput for our virtual devices, ClamShell as the session's user service, and this repository shared
+read-only.
 
   tools/vm/vm.py image          make a fresh machine (downloads its system first)
   tools/vm/vm.py run            start the machine (the first start provisions it)
-  tools/vm/vm.py run --headless without windows (the screens drawn offscreen; ssh and grim still work)
+  tools/vm/vm.py run --headless without windows (the screens drawn offscreen; ssh and screenshots still work)
   tools/vm/vm.py run --pad 045e:028e   also pass a USB gamepad through (vendor:product)
   tools/vm/vm.py ssh [command]  a shell, or a command, in the machine
   tools/vm/vm.py build          build ClamShell in the machine (aarch64: there is no host build)
-  tools/vm/vm.py restart        restart ClamShell in the machine (after a build)
+  tools/vm/vm.py restart        start the machine's session again (after a build)
   tools/vm/vm.py wake           wake the machine from sleep
-  tools/vm/vm.py sync           write this script's session and system files (sway config, service, rules) into the machine
+  tools/vm/vm.py sync           write this script's session and system files (login, service, rules) into the machine
   tools/vm/vm.py touch tap|hold|down|move|up|slide ...   the bottom screen's touchscreen, in its pixels
   tools/vm/vm.py pointer X Y [--head 0|1] [--click left]  the absolute pointer on a screen
   tools/vm/vm.py key a shift+b ret                        keys (QEMU's names)
@@ -60,8 +61,8 @@ BOTTOM = (1240, 1080)
 KERNEL_VIDEO = f"video=Virtual-1:{TOP[0]}x{TOP[1]}@60 video=Virtual-2:{BOTTOM[0]}x{BOTTOM[1]}@60e"
 # Packages the session needs.
 PACKAGES = [
-    "sway", "mako", "foot", "xorg-xwayland", "mesa", "pipewire", "pipewire-pulse", "wireplumber",
-    "grim", "python", "libinput-tools", "evtest", "iw", "noto-fonts",
+    "foot", "xorg-xwayland", "mesa", "pipewire", "pipewire-pulse", "wireplumber",
+    "python", "libinput-tools", "evtest", "iw", "noto-fonts",
     # The checks' stand-in game: a window that doesn't ask for text input (foot does, which brings up the
     # keyboard and gives it the pad). Drawn without a GPU (--vo=wlshm): the VM has none.
     "mpv",
@@ -74,8 +75,6 @@ PACKAGES = [
     # Archives browsed (FUSE) and removable storage ejected, as on the device (a missing one is a
     # library problem).
     "ratarmount", "udisks2",
-    # The session through uwsm, as on the device.
-    "uwsm",
 ]
 # The simulated radios: wlan0 the device's, wlan1 and wlan2 access points (see TEST_AP).
 TEST_NETWORKS = "ThorTest (WPA2, password thortest123) and ThorOpen (open)"
@@ -160,98 +159,25 @@ def ssh_key():
     sys.exit("no ssh key in ~/.ssh (ssh-keygen -t ed25519)")
 
 
-SWAY_CONFIG = f"""\
-# The virtual Thor: the main screen on top, the second screen under it (as on the device). The machine
-# is here; how a ClamShell session behaves is the repository's clamshell.conf (as on the device).
-include /mnt/thor/clamshell/sway/clamshell.conf
-output Virtual-1 mode {TOP[0]}x{TOP[1]} position 0 0
-output Virtual-2 mode --custom {BOTTOM[0]}x{BOTTOM[1]} position 0 {TOP[1]}
-# The host's mouse: an absolute pointer per screen window (QEMU binds each to its display head).
-input "1575:3:QEMU_Virtio_Tablet" map_to_output Virtual-1
-input "1575:1:QEMU_QEMU_USB_Tablet" map_to_output Virtual-2
-# The touchscreen is the second screen's (it is also a pointer, for single touches).
-input "1575:3:QEMU_Virtio_MultiTouch" map_to_output Virtual-2
-input type:touch map_to_output Virtual-2
-# ClamShell and mako are user services of graphical-session.target, which uwsm reaches once sway is up
-# and has put its environment in the user manager's: this (as on the device).
-exec exec uwsm finalize
-"""
-
 BASH_PROFILE = """\
-# The session on the first console: sway through uwsm, or ClamShell's compositor when /etc/thor/session
-# says clamshell, by the repository's thor-session with this machine's build (as on the device: logged
-# out once it has run, the console staying with why when it can't go on).
-if [ "$(tty)" = /dev/tty1 ] && uwsm check may-start; then
-    THOR_SWAY_CONFIG=~/.config/sway/config CLAMSHELL_BIN={program} CLAMSHELL_DEVICE=vm /mnt/thor/packages/thor-session/root/usr/bin/thor-session && exit
+# The session on the first console: ClamShell's compositor by the repository's thor-session, its service
+# this machine's (as on the device: logged out once it has run, the console staying with why when it
+# can't go on).
+if [ "$(tty)" = /dev/tty1 ] && ! systemctl --user -q is-active clamshell.service; then
+    /mnt/thor/packages/thor-session/root/usr/bin/thor-session && exit
 fi
 """
 
-CLAMSHELL_FAILED = """\
-[Unit]
-Description=ClamShell failed: the session ends, the console says why
-
-[Service]
-Type=oneshot
-ExecStart=/mnt/thor/packages/thor-session/root/usr/bin/thor-session --clamshell-failed
-"""
-
-# No GPU acceleration in the machine: sway draws with the pixman renderer (uwsm's environment for the
-# session).
-UWSM_ENV = "export WLR_RENDERER=pixman\n"
-
-MAKO_SERVICE = """\
-[Unit]
-Description=mako, the notifications
-PartOf=graphical-session.target
-After=graphical-session.target
-
-[Service]
-Type=dbus
-BusName=org.freedesktop.Notifications
-ExecStart=/usr/bin/mako
-Restart=on-failure
-Slice=session-graphical.slice
-"""
-
-# ClamShell and mako wanted by the session's target (a drop-in: these are written as files).
-SESSION_WANTS = "[Unit]\nWants=clamshell.service mako.service\n"
-
-
 def service():
-    return f"""\
-[Unit]
-Description=ClamShell
-PartOf=graphical-session.target
-After=graphical-session.target
-StartLimitIntervalSec=60
-StartLimitBurst=4
-OnFailure=clamshell-failed.service
-
-[Service]
-Slice=session-graphical.slice
-Type=notify
-NotifyAccess=main
-WatchdogSec=30
-# Tests drive it through this pipe (tools/vm/vm.py ssh -- 'echo mode wifi > $XDG_RUNTIME_DIR/clamshell-control').
-ExecStart={A.program}
-Environment=CLAMSHELL_DEVICE=vm
-Environment=CLAMSHELL_CONTROL=%t/clamshell-control
-Restart=on-failure
-RestartSec=2
-"""
+    """The device's clamshell.service, with this machine's build and profile."""
+    unit = (REPO / "packages/thor-session/root/usr/lib/systemd/user/clamshell.service").read_text()
+    return unit.replace("ExecStart=/usr/bin/clamshell --drm", f"ExecStart={A.program} --drm\nEnvironment=CLAMSHELL_DEVICE=vm")
 
 
 def session_files():
     return [
-        (f"/home/{USER}/.bash_profile", BASH_PROFILE.replace("{program}", A.program)),
-        (f"/home/{USER}/.config/sway/config", SWAY_CONFIG),
+        (f"/home/{USER}/.bash_profile", BASH_PROFILE),
         (f"/home/{USER}/.config/systemd/user/clamshell.service", service()),
-        (f"/home/{USER}/.config/systemd/user/mako.service", MAKO_SERVICE),
-        (f"/home/{USER}/.config/systemd/user/clamshell-failed.service", CLAMSHELL_FAILED),
-        (f"/home/{USER}/.config/systemd/user/graphical-session.target.d/thor-vm.conf", SESSION_WANTS),
-        (f"/home/{USER}/.config/uwsm/env", UWSM_ENV),
-        # (Where mako looks, also when D-Bus starts it for a notification.)
-        (f"/home/{USER}/.config/mako/config", (REPO / "packages/thor-session/root/usr/share/thor/mako/config").read_text()),
         (f"/home/{USER}/.config/foot/foot.ini", (REPO / "packages/thor-session/root/usr/share/thor/xdg/foot/foot.ini").read_text()),
     ]
 
@@ -582,7 +508,7 @@ def mark_provisioned(qemu):
 
 def ssh_ok():
     """The user can log in (on ARM, before the program is built, the service can't run yet)."""
-    return subprocess.run(ssh_args(["test", "-f", f"/home/{USER}/.config/sway/config"], quiet=True),
+    return subprocess.run(ssh_args(["test", "-f", f"/home/{USER}/.config/systemd/user/clamshell.service"], quiet=True),
                           capture_output=True).returncode == 0
 
 
@@ -639,8 +565,7 @@ def sync(_args):
         subprocess.run(ssh_args(["sudo mkdir -p $(dirname " + path + ") && sudo tee " + path + " > /dev/null"]), input=content, text=True,
                        check=True)
         print(f"wrote {path}")
-    reload = "systemctl --user daemon-reload; SWAYSOCK=$(ls /run/user/$(id -u)/sway-ipc.*.sock) swaymsg reload"
-    subprocess.run(ssh_args([reload]), check=False)
+    subprocess.run(ssh_args(["systemctl --user daemon-reload"]), check=False)
 
 
 def wake(_args):
@@ -876,8 +801,14 @@ def bluetooth(_args):
 
 
 def restart(_args):
+    """Ends the session, which the console's autologin starts again, and waits for ClamShell."""
     # (Its starts counted from here: a deliberate restart isn't a failure, see thor-session.)
-    run(ssh_args(["sh", "-c", "systemctl --user reset-failed clamshell.service; systemctl --user restart clamshell.service"]))
+    run(ssh_args(["rm -f $XDG_RUNTIME_DIR/clamshell/session-starts; systemctl --user stop clamshell.service"]))
+    for _ in range(60):
+        time.sleep(1)
+        if subprocess.run(ssh_args(["systemctl", "--user", "is-active", "-q", "clamshell.service"], quiet=True)).returncode == 0:
+            return
+    sys.exit("ClamShell didn't start again")
 
 
 def reset(_args):

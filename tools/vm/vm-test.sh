@@ -27,8 +27,7 @@ for _ in $(seq 1 60); do
     sleep 4
 done
 [ -n "$up" ] || { echo "the VM didn't start ClamShell (log: $LOG)"; exit 1; }
-# (sway reloaded by the sync drops the rules ClamShell gave it, so ClamShell starts again and gives them
-# anew.)
+# (The session again, with the unit as synced.)
 python3 tools/vm/vm.py restart > /dev/null
 sleep 3
 python3 tools/vm/vm.py bluetooth
