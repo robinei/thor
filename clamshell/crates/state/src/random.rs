@@ -152,10 +152,6 @@ impl World {
         self.windows.push(window.clone());
         window
     }
-
-    fn window(&mut self, app_id: &str, unit: Option<String>) -> Event {
-        WindowEvent::Opened(self.open(app_id, unit, None)).into()
-    }
 }
 
 /// What the effects so far say the outside has, for invariants 2 and 11.
@@ -174,6 +170,9 @@ struct Sent {
     refresh_wanted: u16,
     /// Each slice's last Freeze.
     frozen: HashMap<String, bool>,
+    /// The freezer was started again in this event: every slice is sent as it should be, whatever it was
+    /// sent last.
+    freezer_restarted: bool,
     /// Keys ended (not forced) since their last quit or launch.
     ended: Vec<String>,
     /// The focus ring was shown by a hold on shelf's entry, with the pad elsewhere.
@@ -414,16 +413,28 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
         // A window opens: a launch's (a program may open several), a Steam game's, a handed-over app's,
         // or a stray one.
         53..=60 if w.windows.len() > 8 => return None,
-        53..=60 => match rng.below(6) {
-            0 => w.window("steam_app_620", Some("app-steam.scope".into())),
-            1 => w.window("firefox", None),
-            2 => w.window("foot", None),
-            _ => {
-                let unit = rng.pick(&w.units)?.clone();
-                let app = format!("app-{}", unit.key);
-                w.window(&app, Some(unit.unit()))
+        53..=60 => {
+            let mut window = match rng.below(6) {
+                0 => w.open("steam_app_620", Some("app-steam.scope".into()), None),
+                1 => w.open("firefox", None, None),
+                2 => w.open("foot", None, None),
+                _ => {
+                    let unit = rng.pick(&w.units)?.clone();
+                    let app = format!("app-{}", unit.key);
+                    w.open(&app, Some(unit.unit()), None)
+                }
+            };
+            // Some through Xwayland, some of those a dialog, a splash or a utility, as their properties say.
+            if rng.one_in(3) {
+                use crate::session::presentation::WindowRole;
+                window.x11 = true;
+                window.role = *rng.pick(&[WindowRole::Normal, WindowRole::Dialog, WindowRole::Splash, WindowRole::Utility])?;
+                if let Some(kept) = w.windows.iter_mut().find(|k| k.id == window.id) {
+                    *kept = window.clone();
+                }
             }
-        },
+            WindowEvent::Opened(window).into()
+        }
         // A window closes, by itself or as asked.
         61..=64 => {
             let id = match w.closing.pop() {
@@ -624,6 +635,8 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
         96 => Event::Fetching(rng.one_in(2)),
         97 if rng.one_in(4) => Event::Library(Box::new(library.clone())),
         97 => Event::DumpWindowEvents("window-events.json".into()),
+        // A system thread started again after a panic.
+        98 if rng.one_in(2) => Event::Restarted(*rng.pick(&crate::Thread::ALL)?),
         98 => Event::Enqueue,
         99 => {
             let window = rng.pick(&w.windows)?.clone();
@@ -891,8 +904,10 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
         match e {
             Effect::Freeze { slice, frozen } => {
                 let last = sent.frozen.insert(slice.clone(), *frozen);
-                ensure!(last != Some(*frozen), "11: slice {slice} frozen {frozen} twice");
-                ensure!(last.is_some() || *frozen, "11: slice {slice} thawed, never frozen");
+                if !sent.freezer_restarted {
+                    ensure!(last != Some(*frozen), "11: slice {slice} frozen {frozen} twice");
+                    ensure!(last.is_some() || *frozen, "11: slice {slice} thawed, never frozen");
+                }
             }
             Effect::EndRun { key, force: false } => {
                 ensure!(!sent.ended.contains(key), "11: {key} ended twice for one quit");
@@ -965,6 +980,7 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
             history.remove(0);
         }
         effects.clear();
+        sent.freezer_restarted = matches!(event, Event::Restarted(crate::Thread::Freezer));
         s.apply(event, &mut effects);
         world.follow(&effects);
         if let Err(e) = check(&mut s, &mut sent, &effects, &before, i >= 1) {

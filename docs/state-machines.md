@@ -535,7 +535,8 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
 9. **Keymaps:** the open screen's keymap exists; its layer exists; every keymap id in the settings exists.
 10. **Settings:** no empty override; no global-only setting in overrides.
 11. **Effect stream across events:** Freeze alternates per slice, starting frozen, while a scope of it is
-    listed (a slice whose scopes are all gone is gone, and starts thawed again); no second EndRun (not
+    listed (a slice whose scopes are all gone is gone, and starts thawed again), except after the freezer
+    is started again (`Event::Restarted`), when every slice is sent as it should be; no second EndRun (not
     forced) for a key until it is quit again or launched; at most one RecordPlay per entry per event, and
     only for an entry that ran before it; no Launch for an entry already launching (one given up in the
     same event may be launched again, as a Steam game whose window is there is).
