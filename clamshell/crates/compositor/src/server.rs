@@ -287,7 +287,7 @@ impl Server {
         self.touch_cancel();
         self.size = (width.max(4), height.max(4));
         let (top, bottom) = self.preview_widths;
-        self.top_width = ((u64::from(self.size.0 as u32) * u64::from(top) / (u64::from(top) + u64::from(bottom))) as i32).clamp(2, self.size.0 - 2);
+        self.top_width = ((u64::from(self.size.0 as u32) * u64::from(top) / (u64::from(top) + u64::from(bottom)).max(1)) as i32).clamp(2, self.size.0 - 2);
         for (screen, output, x, w) in
             [(Screen::Top, &self.outputs[0], 0, self.top_width), (Screen::Bottom, &self.outputs[1], self.top_width, self.size.0 - self.top_width)]
         {
