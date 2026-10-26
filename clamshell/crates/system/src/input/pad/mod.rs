@@ -350,6 +350,8 @@ impl<S: Sink> Service for PadThread<S> {
         let mut c = c;
         let mut out = Out::default();
         let mut router = PadRouter::new(c.ranges, std::mem::take(&mut c.snapshot), self.route, self.keymap.clone(), &mut out);
+        // The state's watch for game input stands across reconnections, as the route and keymap do.
+        router.watch_activity(self.watch_activity);
         let result = self.route_events(&mut c, &mut router, &mut out, commands);
         // A calibration in progress when the controller went is given up, and the state is told so it
         // doesn't wait for it.
