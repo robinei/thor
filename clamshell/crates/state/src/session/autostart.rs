@@ -24,7 +24,12 @@ impl Session {
             }
             None => self.autostart.push(id),
         }
-        out.effects.push(Effect::Save(Save::Autostart(self.autostart.clone())));
+        out.effects.push(self.autostart_save());
+    }
+
+    /// Saves the entries started with ClamShell.
+    pub(crate) fn autostart_save(&self) -> Effect {
+        Effect::Save(Save::Autostart(self.autostart.clone()))
     }
 
     /// The first time what runs is known, adds to `due` the entries to start that the library has and

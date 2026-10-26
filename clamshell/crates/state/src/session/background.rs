@@ -240,6 +240,14 @@ impl Session {
         }
     }
 
+    /// The freezer was started again after a panic, and the request it was carrying out may be lost: each
+    /// of our entries' slices is frozen or thawed again as it is paused or not.
+    pub(crate) fn freeze_again(&self, out: &mut Out) {
+        for r in self.running.iter().filter(|r| r.origin == Origin::Ours) {
+            out.effects.push(Effect::Freeze { slice: Instance::slice_of(&r.key), frozen: self.background.entries.is_paused(&r.key) });
+        }
+    }
+
     /// Whether entry `id` can be suspended: it runs in a slice of ours, and isn't suspended or quitting (a
     /// frozen program couldn't close its windows).
     pub fn suspendable(&self, id: &str) -> bool {
@@ -519,5 +527,16 @@ mod tests {
         s.observed(vec![win_of(3, "zelda3", &zelda)]);
         assert!(!s.observed(vec![]).iter().any(|e| matches!(e, Effect::EndRun { .. })));
         crate::testkit::end(&mut s, "zelda-lttp");
+    }
+
+    #[test]
+    fn a_restarted_freezer_is_sent_each_slice_as_it_is() {
+        let mut s = state();
+        let (zelda, celeste) = (launch(&mut s, "zelda-lttp"), launch(&mut s, "celeste"));
+        s.applied(Event::tick(100));
+        s.observed(vec![win_of(3, "zelda3", &zelda)]);
+        s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::Suspend));
+        let fx = s.applied(Event::Restarted(crate::Thread::Freezer));
+        assert!(fx.contains(&freeze(&zelda.key, true)) && fx.contains(&freeze(&celeste.key, false)), "{fx:?}");
     }
 }

@@ -126,7 +126,12 @@ impl Session {
     /// A rule was added or forgotten. That is shown in a notice, and the rules are saved.
     fn window_rules_changed(&self, added: bool, notice: &mut NoticeSlot, now: u64, out: &mut Out) {
         notice.show(NoticeKind::BottomRule(added), now);
-        out.effects.push(Effect::Save(Save::WindowRules(self.window_rules.clone())));
+        out.effects.push(self.window_rules_save());
+    }
+
+    /// Saves the window rules.
+    pub(crate) fn window_rules_save(&self) -> Effect {
+        Effect::Save(Save::WindowRules(self.window_rules.clone()))
     }
 
     /// Runs after every event. A window whose program has a rule for it is sent down, once. Returns

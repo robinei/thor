@@ -119,6 +119,9 @@ pub enum Event {
     /// The running refresh rate calibration asks for the main screen at this rate, in Hz (`clamshell ctl
     /// calibration rate HZ`).
     CalibrationRate(u16),
+    /// A system thread was started again after a panic, having lost what it held (see
+    /// [`crate::restart`]).
+    Restarted(Thread),
     /// A change requested of the account helper is done, with what it did, or failed, with the reason. A
     /// new account reading follows (see [`crate::device::account`]).
     AccountChanged(Result<String, String>),
@@ -300,5 +303,108 @@ impl Event {
     /// A tick at `secs` on both clocks, for tests and demos where the clocks never jump.
     pub fn tick(secs: u64) -> Event {
         Event::Tick { unix_secs: secs, mono_secs: secs }
+    }
+}
+
+/// The system's long-lived threads, by the names they run under. Each is started again after a panic
+/// ([`Event::Restarted`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Thread {
+    Pad,
+    PadDevices,
+    Tuning,
+    Mixer,
+    Battery,
+    Metrics,
+    Status,
+    Wifi,
+    Bluetooth,
+    BluetoothConnect,
+    Tray,
+    Brightness,
+    Sound,
+    Store,
+    System,
+    Launcher,
+    Icons,
+    Files,
+    Browse,
+    Freezer,
+    Units,
+    Touchpad,
+    Clock,
+    InputWatch,
+    Clipboard,
+    Sleep,
+    WaylandFilter,
+}
+
+impl Thread {
+    pub const ALL: [Thread; 27] = [
+        Thread::Pad,
+        Thread::PadDevices,
+        Thread::Tuning,
+        Thread::Mixer,
+        Thread::Battery,
+        Thread::Metrics,
+        Thread::Status,
+        Thread::Wifi,
+        Thread::Bluetooth,
+        Thread::BluetoothConnect,
+        Thread::Tray,
+        Thread::Brightness,
+        Thread::Sound,
+        Thread::Store,
+        Thread::System,
+        Thread::Launcher,
+        Thread::Icons,
+        Thread::Files,
+        Thread::Browse,
+        Thread::Freezer,
+        Thread::Units,
+        Thread::Touchpad,
+        Thread::Clock,
+        Thread::InputWatch,
+        Thread::Clipboard,
+        Thread::Sleep,
+        Thread::WaylandFilter,
+    ];
+
+    /// The name the thread runs under.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Thread::Pad => "pad",
+            Thread::PadDevices => "pad devices",
+            Thread::Tuning => "tuning",
+            Thread::Mixer => "mixer",
+            Thread::Battery => "battery",
+            Thread::Metrics => "metrics",
+            Thread::Status => "status",
+            Thread::Wifi => "wifi",
+            Thread::Bluetooth => "bluetooth",
+            Thread::BluetoothConnect => "bluetooth-connect",
+            Thread::Tray => "tray",
+            Thread::Brightness => "brightness",
+            Thread::Sound => "sound",
+            Thread::Store => "store",
+            Thread::System => "system",
+            Thread::Launcher => "launcher",
+            Thread::Icons => "icons",
+            Thread::Files => "files",
+            Thread::Browse => "browse",
+            Thread::Freezer => "freezer",
+            Thread::Units => "units",
+            Thread::Touchpad => "touchpad",
+            Thread::Clock => "clock",
+            Thread::InputWatch => "input watch",
+            Thread::Clipboard => "clipboard",
+            Thread::Sleep => "sleep",
+            Thread::WaylandFilter => "wayland filter",
+        }
+    }
+
+    /// The thread running under `name`.
+    pub fn named(name: &str) -> Option<Thread> {
+        Thread::ALL.into_iter().find(|t| t.name() == name)
     }
 }

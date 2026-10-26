@@ -299,8 +299,13 @@ impl Levels {
     /// Saves the brightness once it has stopped changing for a moment.
     pub(crate) fn save_due(&mut self, now: u64, out: &mut Out) {
         if self.unsaved.due(now, SAVE_AFTER) {
-            out.effects.push(Effect::Save(Save::Brightness(self.brightness.clone())));
+            out.effects.push(self.brightness_save());
         }
+    }
+
+    /// Saves the brightness.
+    pub(crate) fn brightness_save(&self) -> Effect {
+        Effect::Save(Save::Brightness(self.brightness.clone()))
     }
 
     /// The volume tab's buttons.

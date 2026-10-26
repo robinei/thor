@@ -428,6 +428,15 @@ impl Shelf {
 
     /// What the files thread said. A listing drops the selected entries that are gone. A notice says how
     /// an operation ended.
+    /// The files thread was started again after a panic: the operation it was carrying out, the oldest
+    /// sent, ends as failed, since it may be half done. Those after it wait in its channel still.
+    pub(crate) fn files_interrupted(&mut self, pointer: &mut Pointer, notice: &mut NoticeSlot, now: u64, out: &mut Out) {
+        if !self.files.running.is_empty() {
+            let failed = FilesEvent::Done(Err("Stopped partway: the files thread failed".into()));
+            self.on_files(failed, pointer, notice, now, out);
+        }
+    }
+
     pub(crate) fn on_files(&mut self, event: FilesEvent, pointer: &mut Pointer, notice: &mut NoticeSlot, now: u64, out: &mut Out) {
         match event {
             FilesEvent::Listed { folder, entries } => {
@@ -839,5 +848,29 @@ mod tests {
         let fx = tap(&mut s, Id::Editor(crate::EditorId::Save));
         assert_eq!(s.bottom().tab(), before);
         assert!(fx.contains(&Effect::Files(FileOp::Rename { path: "/Home/a.txt".into(), name: "a.txt".into() })), "{fx:?}");
+    }
+
+    #[test]
+    fn a_restarted_files_thread_fails_the_operation_it_had_and_browse_lists_again() {
+        let mut s = files_state();
+        tap(&mut s, Id::Shelf(ShelfId::Launch));
+        let two = ["a", "b"].map(|n| entry(&format!("browse:Home/{n}"), false, BrowseKind::Plain)).to_vec();
+        listed(&mut s, "browse:Home", two);
+        tap(&mut s, Id::Shelf(ShelfId::File(FileAction::Trash)));
+        s.applied(ShelfEvent::ListStep(1).into());
+        tap(&mut s, Id::Shelf(ShelfId::File(FileAction::Trash)));
+        s.applied(Event::Files(FilesEvent::Busy { what: "Trashing a".into(), fraction: 0.5 }));
+        s.applied(Event::Restarted(crate::Thread::Files));
+        assert!(matches!(crate::testkit::notice(&s), Some(NoticeKind::Files(Err(_)))), "{:?}", crate::testkit::notice(&s));
+        assert!(s.shelf().files().busy().is_some(), "b waits in the thread's channel still");
+        s.applied(Event::Files(FilesEvent::Done(Ok("Moved b to the Trash".into()))));
+        assert_eq!(s.shelf().files().busy(), None);
+        // Nothing runs: nothing more fails.
+        s.applied(Event::Files(FilesEvent::Done(Ok("Moved b to the Trash".into()))));
+        let fx = s.applied(Event::Restarted(crate::Thread::Files));
+        assert!(matches!(crate::testkit::notice(&s), Some(NoticeKind::Files(Ok(_)))), "{fx:?}");
+        let fx = s.applied(Event::Restarted(crate::Thread::Browse));
+        assert!(fx.iter().any(|e| matches!(e, Effect::Browse(BrowseCommand::Open(Some(b))) if &*b.folder == "browse:Home")), "{fx:?}");
+        assert!(fx.iter().any(|e| matches!(e, Effect::Browse(BrowseCommand::InUse(_)))), "{fx:?}");
     }
 }

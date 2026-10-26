@@ -60,6 +60,7 @@ pub mod radios;
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod random;
+mod restart;
 pub(crate) mod resume;
 pub mod session;
 pub mod settings;
@@ -96,7 +97,7 @@ use sync::{Resend, Sent, Wanted};
 // the groups the getters return.
 pub use clock::Clock;
 pub use effect::{Effect, Save, Watch};
-pub use event::{EntryAct, Event, KeymapEvent, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
+pub use event::{EntryAct, Event, KeymapEvent, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide, Thread};
 pub use id::{AudioId, BatteryId, BtId, DeviceId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, TimeId, WifiId};
 pub use resume::Resume;
 pub use session::windows::{WindowEvent, WindowPlace};
@@ -432,6 +433,7 @@ impl State {
             Event::Screenshot(result) => self.bottom.notice_mut().show(NoticeKind::Screenshot(result), now),
             Event::Sticks(event) => self.device.sticks_event(event, now, out),
             Event::RefreshCalibrated(result) => self.refresh_calibrated(result),
+            Event::Restarted(thread) => self.restarted(thread, now, out),
             Event::CalibrationRate(hz) => self.device.calibration_asks(hz),
             Event::CalibrateGyro => self.calibrate_gyro(out),
             Event::GyroCalibrated(ok) => self.bottom.notice_mut().show(NoticeKind::Gyro(Some(ok)), now),

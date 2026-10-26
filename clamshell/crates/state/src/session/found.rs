@@ -82,11 +82,7 @@ impl Session {
             if focused {
                 self.focus(&r.group());
             }
-            if r.id.starts_with(ids::WINDOW)
-                && let Some(app_id) = &r.app_id
-            {
-                out.effects.push(Effect::FindIcon { entry: r.id.clone(), app_id: app_id.to_string() });
-            }
+            out.effects.extend(find_icon(r));
         }
         let adopt: Vec<(String, u32)> = new.iter().filter_map(|r| Some((r.key.clone(), r.pid()?))).collect();
         self.running.extend(new);
@@ -113,6 +109,20 @@ pub(crate) fn window_entry(library: &Library, w: &WindowFacts, pid: u32) -> Entr
 pub(crate) fn found_entry(library: &Library, name: &str, own: impl FnOnce() -> Entry) -> Entry {
     let named = |g: &&Entry| ids::desktop_file(&g.id).is_some_and(|d| d.eq_ignore_ascii_case(name));
     library.entries.iter().find(named).cloned().unwrap_or_else(own)
+}
+
+/// The icon to look for, for an entry found by its window.
+fn find_icon(r: &Running) -> Option<Effect> {
+    let app_id = r.app_id.as_ref().filter(|_| r.id.starts_with(ids::WINDOW))?;
+    Some(Effect::FindIcon { entry: r.id.clone(), app_id: app_id.to_string() })
+}
+
+impl Session {
+    /// The icons thread was started again after a panic, and the lookup it was doing may be lost: the
+    /// icons of the entries found by their windows are looked for again.
+    pub(crate) fn find_icons_again(&self, out: &mut Out) {
+        out.effects.extend(self.running.iter().filter_map(find_icon));
+    }
 }
 
 #[cfg(test)]

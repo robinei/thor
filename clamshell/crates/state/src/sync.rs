@@ -14,7 +14,7 @@ use crate::out::Out;
 use crate::settings::{Setting, Values};
 use crate::shelf::files::{Browse, BrowseCommand};
 use crate::shelf::{Shelf, ShelfView};
-use crate::{Levels, PadRoute, Running};
+use crate::{Levels, PadRoute, Running, Thread};
 
 /// What the outside should have as things are now. It is built after every event, so it holds
 /// references and small values only.
@@ -61,10 +61,10 @@ pub(crate) struct Wanted<'a> {
 pub(crate) struct Sent {
     /// What shelf showed when the entries it shows were last asked for first.
     fetch_view: Option<ShelfView>,
-    /// The folder listed and watched.
-    browsing: Option<Browse>,
-    /// A hash of the files in use (see [`BrowseCommand::InUse`]); 0 for none.
-    in_use: u64,
+    /// The folder listed and watched, or None to send it again.
+    browsing: Option<Option<Browse>>,
+    /// A hash of the files in use (see [`BrowseCommand::InUse`]), 0 for none, or None to send them again.
+    in_use: Option<u64>,
     /// The idle stage the screens were last set for.
     stage: Stage,
     /// The program in force and its settings as they were applied last, or None to apply them again.
@@ -76,10 +76,11 @@ pub(crate) struct Sent {
     refresh: u16,
     /// The UI is up (it has sent Start). Before that, no tab or account is watched.
     ui_up: bool,
-    /// The bar's status isn't watched, since the screens are off (see [`Watch::Status`]).
-    status_off: bool,
-    /// The account is watched.
-    account: bool,
+    /// The bar's status isn't watched, since the screens are off (see [`Watch::Status`]), or None to
+    /// send it again.
+    status_off: Option<bool>,
+    /// The account is watched, or None to send it again.
+    account: Option<bool>,
     /// The open tab's watch.
     tab: Option<Watch>,
     /// The keymap in force as last sent to the pad, by its id and version, or None to send it again.
@@ -89,7 +90,8 @@ pub(crate) struct Sent {
     keymap_sent: Option<crate::keymap::Keymap>,
     /// Where the pad was last sent, or None to send it again.
     route: Option<PadRoute>,
-    pad_activity: bool,
+    /// Whether the pad tells of activity, or None to send it again.
+    pad_activity: Option<bool>,
 }
 
 impl Default for Sent {
@@ -98,21 +100,21 @@ impl Default for Sent {
     fn default() -> Sent {
         Sent {
             fetch_view: None,
-            browsing: None,
-            in_use: 0,
+            browsing: Some(None),
+            in_use: Some(0),
             stage: Stage::Awake,
             applied: None,
             outputs: Some((true, true)),
             refresh: 0,
             ui_up: false,
-            status_off: false,
-            account: false,
+            status_off: Some(false),
+            account: Some(false),
             tab: None,
             keymap: None,
             #[cfg(debug_assertions)]
             keymap_sent: None,
             route: None,
-            pad_activity: false,
+            pad_activity: Some(false),
         }
     }
 }
@@ -131,6 +133,9 @@ pub(crate) enum Resend {
     /// The refresh rate calibration set the main screen's rates while it ran: it is set as the settings
     /// want again.
     RefreshCalibrated,
+    /// A system thread was started again after a panic (see [`crate::Thread`]): what it had been sent is
+    /// sent again.
+    Restarted(Thread),
 }
 
 impl Sent {
@@ -141,6 +146,21 @@ impl Sent {
             Resend::FetchFirst => self.fetch_view = None,
             Resend::Resumed => self.applied = None,
             Resend::RefreshCalibrated => self.applied = None,
+            Resend::Restarted(thread) => match thread {
+                // The rumble's strength comes with the settings applied.
+                Thread::Pad => (self.keymap, self.route, self.pad_activity, self.applied) = (None, None, None, None),
+                Thread::Tuning => self.applied = None,
+                // The system thread reads the time and the account as their views open.
+                Thread::Mixer | Thread::Battery | Thread::Metrics | Thread::Status | Thread::Wifi | Thread::Bluetooth | Thread::System => {
+                    (self.tab, self.status_off, self.account) = (None, None, None);
+                    // Sleep asked again, if it was asked last: the device may not have slept.
+                    if thread == Thread::System && self.stage == Stage::Asleep {
+                        self.stage = Stage::Off;
+                    }
+                }
+                Thread::Browse => (self.browsing, self.in_use) = (None, None),
+                _ => {}
+            },
         }
     }
 
@@ -197,9 +217,10 @@ impl Sent {
     /// dropped when there is none. The files in use are told when they change.
     fn browse(&mut self, w: &Wanted, out: &mut Out) {
         let open = w.browsed.map(|(folder, dir)| (folder, dir, w.hidden));
-        if self.browsing.as_ref().map(|b| (&b.folder, b.dir.as_path(), b.hidden)) != open {
-            self.browsing = open.map(|(folder, dir, hidden)| Browse { folder: folder.clone(), dir: dir.to_path_buf(), hidden });
-            out.effects.push(Effect::Browse(BrowseCommand::Open(self.browsing.clone())));
+        if self.browsing.as_ref().map(|b| b.as_ref().map(|b| (&b.folder, b.dir.as_path(), b.hidden))) != Some(open) {
+            let browsing = open.map(|(folder, dir, hidden)| Browse { folder: folder.clone(), dir: dir.to_path_buf(), hidden });
+            out.effects.push(Effect::Browse(BrowseCommand::Open(browsing.clone())));
+            self.browsing = Some(browsing);
         }
         // Compared by a hash, so that nothing is collected while they stay the same.
         let in_use = w.shelf.in_use(w.running);
@@ -210,8 +231,7 @@ impl Sent {
             any = true;
         }
         let hash = if any { std::hash::Hasher::finish(&hasher) } else { 0 };
-        if hash != self.in_use {
-            self.in_use = hash;
+        if self.in_use.replace(hash) != Some(hash) {
             out.effects.push(Effect::Browse(BrowseCommand::InUse(in_use.map(PathBuf::from).collect())));
         }
     }
@@ -270,11 +290,11 @@ impl Sent {
     /// and the UI is up, and the open tab's watch while the tab can be seen and the UI is up.
     fn watches(&mut self, w: &Wanted, out: &mut Out) {
         let screens_off = w.stage >= Stage::Off;
-        if screens_off != std::mem::replace(&mut self.status_off, screens_off) {
+        if self.status_off.replace(screens_off) != Some(screens_off) {
             out.effects.push(Effect::Watch(Watch::Status, !screens_off));
         }
         let account = self.ui_up && w.device_open;
-        if account != std::mem::replace(&mut self.account, account) {
+        if self.account.replace(account) != Some(account) {
             out.effects.push(Effect::Watch(Watch::Account, account));
         }
         let seen = self.ui_up && w.bottom_seen && !screens_off;
@@ -312,8 +332,7 @@ impl Sent {
 
     /// The pad goes where it is wanted (see [`crate::Pad::reconcile`]).
     fn pad_route(&mut self, w: &Wanted, out: &mut Out) {
-        if self.pad_activity != w.pad_activity {
-            self.pad_activity = w.pad_activity;
+        if self.pad_activity.replace(w.pad_activity) != Some(w.pad_activity) {
             out.effects.push(Effect::PadActivity(w.pad_activity));
         }
         if self.route.replace(w.route) != Some(w.route) {
