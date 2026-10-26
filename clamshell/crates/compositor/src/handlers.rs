@@ -81,6 +81,7 @@ impl CompositorHandler for Server {
                     client.mapped = false;
                     client.opened = false;
                     client.title_dirty = false;
+                    log::info!("compositor: window {} unmaps", client.id);
                     self.core.handle(WindowEvent::Closed(client.id).into());
                     self.sync_windows();
                     return;
@@ -136,6 +137,7 @@ impl XdgShellHandler for Server {
     }
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         if let Some(id) = self.surface_id(surface.wl_surface()) {
+            log::info!("compositor: window {id} closes");
             self.core.handle(WindowEvent::Closed(id).into());
             self.windows.retain(|w| w.id != id);
             self.sync_windows();

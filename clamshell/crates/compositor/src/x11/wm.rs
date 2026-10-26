@@ -701,6 +701,14 @@ impl Window {
             let mut facts = self.properties.facts(self.id, parent, process);
             if !self.opened {
                 facts.focused = server.core.state().session().opening_focus(&facts);
+                log::info!(
+                    "compositor: X11 window {} opens: {:?} {:?}, focused {}, limits {:?}",
+                    self.id,
+                    facts.app_id,
+                    facts.title,
+                    facts.focused,
+                    facts.limits
+                );
                 server.core.handle(WindowEvent::Opened(facts.clone()).into());
                 self.opened = true;
                 self.sent = Some(facts);
@@ -756,6 +764,13 @@ impl Window {
             if policy.layout == WindowLayout::Centred { ((area.size.w - size.w).max(0) / 2, (area.size.h - size.h).max(0) / 2).into() } else { (0, 0).into() };
         let geometry = Rectangle::new(area.loc + offset, size);
         if self.configured != Some(geometry) || self.layout != Some(policy.layout) {
+            log::debug!(
+                "X11 configure {} to {geometry:?}: {:?}, limits {:?}, emulated {:?}",
+                self.id,
+                policy.layout,
+                self.properties.limits,
+                self.properties.emulated
+            );
             wire.request(
                 ConfigureWindowRequest {
                     window: self.xid,

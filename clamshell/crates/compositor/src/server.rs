@@ -384,6 +384,8 @@ impl Server {
         let id = client.id;
         if !client.opened {
             let mut facts = self.facts(&toplevel, id);
+            let colour = facts.colour.as_ref().map_or("unspecified".to_string(), |c| format!("{:?} {:?}", c.primaries, c.transfer));
+            log::info!("compositor: window {id} opens: {:?} {:?}, focused {}, colour {colour}", facts.app_id, facts.title, facts.focused);
             facts.focused = self.core.state().session().opening_focus(&facts);
             self.core.handle(WindowEvent::Opened(facts).into());
             if let Some(client) = self.windows.get_mut(index) {
@@ -392,7 +394,14 @@ impl Server {
         } else {
             let limits = Self::size_limits(&toplevel);
             let colour = self.windows.get(index).and_then(|client| self.window_colour(&client.window));
-            if self.core.state().session().window(id).is_some_and(|old| old.limits != limits || old.colour != colour) {
+            let old = self.core.state().session().window(id).map(|old| (old.limits, old.colour.clone()));
+            if let Some((_, old_colour)) = &old
+                && *old_colour != colour
+            {
+                let shown = colour.as_ref().map(|c| format!("{:?} {:?}", c.primaries, c.transfer));
+                log::info!("compositor: window {id}'s colour is now {}", shown.as_deref().unwrap_or("unspecified"));
+            }
+            if old.is_some_and(|(old_limits, old_colour)| old_limits != limits || old_colour != colour) {
                 self.core.handle(WindowEvent::Changed(self.facts(&toplevel, id)).into());
             }
         }
