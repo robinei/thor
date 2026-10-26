@@ -27,7 +27,7 @@ impl State {
                 let entry = self.panel().editing().map(|g| g.id.clone());
                 self.prefs.open_env_editor(entry, self.bottom.editors_mut());
             }
-            SettingsId::Scope(scope) => self.prefs.set_scope(scope),
+            SettingsId::Scope(level) => self.prefs.set_level(level),
             SettingsId::Reset => {
                 if let Some(id) = self.panel().editing().map(|g| g.id.clone()) {
                     self.prefs.reset(&id);

@@ -45,8 +45,8 @@ fn taps(s: &mut State, setting: Setting, n: usize) -> Vec<Effect> {
     fx
 }
 
-fn scope(s: &mut State, scope: Scope) {
-    tap(s, Id::Settings(SettingsId::Scope(scope)));
+fn level(s: &mut State, level: SettingsLevel) {
+    tap(s, Id::Settings(SettingsId::Scope(level)));
 }
 
 fn state_with(settings: &settings::Settings) -> State {
@@ -81,16 +81,16 @@ fn the_panel_offers_the_items_levels() {
         g.runner = Some(clamshell_library::RunnerOf::new("video", "Video", true));
     }
     let mut s = State::new(Init { library: Some(library), ..init() });
-    let levels = |s: &State| s.panel().levels().iter().flatten().map(|(scope, l)| (*scope, l.title.to_owned())).collect::<Vec<_>>();
-    assert_eq!(levels(&s), [(Scope::Runner, "A Link to the Past".to_owned())], "a game with no runner: its own, as its runner");
+    let levels = |s: &State| s.panel().levels().iter().flatten().map(|(level, l)| (*level, l.title.to_owned())).collect::<Vec<_>>();
+    assert_eq!(levels(&s), [(SettingsLevel::Runner, "A Link to the Past".to_owned())], "a game with no runner: its own, as its runner");
     tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
-    assert_eq!(levels(&s), [(Scope::Runner, "Video".to_owned())], "a series: its runner's only");
+    assert_eq!(levels(&s), [(SettingsLevel::Runner, "Video".to_owned())], "a series: its runner's only");
     tap(&mut s, Id::Shelf(ShelfId::Launch));
     tap(&mut s, Id::Shelf(ShelfId::Launch));
     let title = "1. The Shores of the Cosmic Ocean".to_owned();
-    assert_eq!(levels(&s), [(Scope::Runner, "Video".to_owned()), (Scope::Content, title.clone())]);
+    assert_eq!(levels(&s), [(SettingsLevel::Runner, "Video".to_owned()), (SettingsLevel::Content, title.clone())]);
     assert_eq!(s.panel().editing().map(|p| p.title), Some(title.as_str()), "its own by default");
-    scope(&mut s, Scope::Runner);
+    level(&mut s, SettingsLevel::Runner);
     assert_eq!(s.panel().editing().map(|p| p.id.clone()), Some(runner_key("video")));
     taps(&mut s, Setting::Power, 1);
     assert_eq!(s.prefs().settings().overrides_of("runner:video").get(Setting::Power), Some(2), "kept by the runner");
@@ -104,8 +104,8 @@ fn a_runner_can_leave_its_items_without_settings_of_their_own() {
         g.runner = Some(clamshell_library::RunnerOf::new("snes", "SNES", false));
     }
     let s = State::new(Init { library: Some(library), ..init() });
-    let levels = s.panel().levels().iter().flatten().map(|(scope, l)| (*scope, l.title)).collect::<Vec<_>>();
-    assert_eq!(levels, [(Scope::Runner, "SNES")]);
+    let levels = s.panel().levels().iter().flatten().map(|(level, l)| (*level, l.title)).collect::<Vec<_>>();
+    assert_eq!(levels, [(SettingsLevel::Runner, "SNES")]);
     assert_eq!(s.panel().editing().map(|p| p.id.clone()), Some(runner_key("snes")), "the item's tab: its runner's");
 }
 
@@ -198,9 +198,9 @@ fn a_profile_tile_steps_through_its_profiles_and_its_picker_resets() {
 #[test]
 fn games_override_the_global_settings() {
     let mut s = state();
-    scope(&mut s, Scope::Global);
+    level(&mut s, SettingsLevel::Global);
     taps(&mut s, Setting::FpsCap, 4); // 30, 40, 45, 60
-    scope(&mut s, Scope::Content);
+    level(&mut s, SettingsLevel::Content);
     let fx = taps(&mut s, Setting::Power, 1); // Balanced -> Performance
     let Some(Effect::Save(Save::Settings(saved))) = fx.first() else {
         panic!("{fx:?}");
@@ -257,7 +257,7 @@ fn a_running_game_takes_changes_at_once() {
     let fx = taps(&mut s, Setting::FpsCap, 1);
     assert!(fx.iter().any(|e| matches!(e, Effect::Apply { entry: Some(g), settings } if &**g == "zelda-lttp" && settings.get(Setting::FpsCap) == 30)));
     // A global change reaches it only where it doesn't override.
-    scope(&mut s, Scope::Global);
+    level(&mut s, SettingsLevel::Global);
     assert!(!taps(&mut s, Setting::FpsCap, 1).iter().any(|e| matches!(e, Effect::Apply { .. })), "its own cap stays: nothing to apply");
     let fx = taps(&mut s, Setting::Power, 1);
     assert!(fx.iter().any(|e| matches!(e, Effect::Apply { settings, .. } if settings.get(Setting::Power) == 2)));

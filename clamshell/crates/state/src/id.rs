@@ -14,7 +14,7 @@ use crate::bottom::keyboard::KeyPos;
 use crate::levels::Level;
 use crate::levels::slider::Control;
 use crate::settings::Setting;
-use crate::settings::panel::Scope;
+use crate::settings::panel::SettingsLevel;
 use crate::status::time::ClockField;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -138,8 +138,8 @@ pub enum SettingsId {
     Back,
     /// The environment variables tile.
     Env,
-    /// The panel's scope tabs.
-    Scope(Scope),
+    /// The panel's level tabs.
+    Scope(SettingsLevel),
     /// Drops the overrides of the game in context.
     Reset,
 }

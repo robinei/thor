@@ -29,7 +29,7 @@ use crate::radios::bluetooth::{Bluetooth, Device as BtDevice, Kind};
 use crate::radios::wifi::{Network, Wifi};
 use crate::session::windows::WindowFacts;
 use crate::settings::Setting;
-use crate::settings::panel::Scope;
+use crate::settings::panel::SettingsLevel;
 use crate::setup::{SticksEvent, TopView};
 use crate::*;
 
@@ -289,7 +289,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
         Tab::Settings => match s.keymapping().screen() {
             None => {
                 ids.extend(Setting::ALL.map(|t| Id::Settings(SettingsId::Tile(t))));
-                ids.extend([Scope::Global, Scope::Runner, Scope::Content].map(|c| Id::Settings(SettingsId::Scope(c))));
+                ids.extend([SettingsLevel::Global, SettingsLevel::Runner, SettingsLevel::Content].map(|c| Id::Settings(SettingsId::Scope(c))));
                 ids.extend([SettingsId::Reset, SettingsId::Env].map(Id::Settings));
             }
             Some(_) => {

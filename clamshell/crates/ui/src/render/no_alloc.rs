@@ -18,8 +18,8 @@ use clamshell_state::setup::account::Account;
 use clamshell_state::setup::sticks::{Phase, Progress, StickAxis};
 use clamshell_state::status::battery;
 use clamshell_state::{
-    DockId, EditorId, Event, Id, Init, KeymapId, LaunchUnit, ListEvent, ListId, PointerEvent, Reading, RowPart, Scope, SettingsId, ShelfEvent, ShelfId, Slide,
-    State, Status, Tab, Target, TimeZones, levels,
+    DockId, EditorId, Event, Id, Init, KeymapId, LaunchUnit, ListEvent, ListId, PointerEvent, Reading, RowPart, SettingsId, SettingsLevel, ShelfEvent, ShelfId,
+    Slide, State, Status, Tab, Target, TimeZones, levels,
 };
 
 use crate::Screen;
@@ -152,7 +152,7 @@ fn warm_frames_do_not_allocate() {
         ("sysinfo", vec![]),
         ("settings", vec![Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Settings)))]),
         ("settings, a changed tile", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(Setting::FpsCap)))]),
-        ("settings, all games", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Scope(Scope::Global)))]),
+        ("settings, all games", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Scope(SettingsLevel::Global)))]),
         ("environment editor", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Env)), key(Key::Char('a'))]),
         (
             "environment saved",

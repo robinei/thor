@@ -379,11 +379,11 @@ mod tests {
         slide(&mut s, -5000.0);
         assert_eq!(set(&s), None);
         // All's value, read by the game; at All, Default is the stock value, not a stop of its own.
-        tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Global)));
+        tap(&mut s, Id::Settings(SettingsId::Scope(SettingsLevel::Global)));
         assert_eq!(s.setting_stops(Setting::HdrPeak), 8);
         slide(&mut s, 5000.0);
         assert_eq!(s.prefs().settings().global.get(Setting::HdrPeak), 4000);
-        tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Content)));
+        tap(&mut s, Id::Settings(SettingsId::Scope(SettingsLevel::Content)));
         assert_eq!(s.panel().source(Setting::HdrPeak), Source::Read("All"));
     }
 }

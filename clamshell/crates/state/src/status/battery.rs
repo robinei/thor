@@ -237,9 +237,9 @@ mod tests {
         tap(&mut s, Id::Battery(BatteryId::Spender(0)));
         assert_eq!(tap(&mut s, Id::Battery(BatteryId::Quit)), vec![Effect::Compositor(Compositor::Close(vec![6]))]);
         // Settings that go through the launch's own process don't reach it either.
-        tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Global)));
+        tap(&mut s, Id::Settings(SettingsId::Scope(SettingsLevel::Global)));
         assert!(!s.panel().handed_over(), "All");
-        tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Runner)));
+        tap(&mut s, Id::Settings(SettingsId::Scope(SettingsLevel::Runner)));
         assert!(s.panel().handed_over());
     }
 

@@ -211,7 +211,7 @@ mod tests {
     fn the_pad_mouse_follows_the_game_in_front_unless_switched_by_hand() {
         let mut s = state();
         tap(&mut s, entry("zelda-lttp"));
-        tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Content)));
+        tap(&mut s, Id::Settings(SettingsId::Scope(SettingsLevel::Content)));
         tap(&mut s, Id::Settings(SettingsId::Tile(crate::settings::Setting::PadMouse)));
         crate::testkit::start(&mut s, "zelda-lttp");
         assert_eq!(s.pad().mouse(), PadMouse::ByGame, "the game wants it");

@@ -13,12 +13,12 @@ use crate::session::running::Front;
 use crate::settings::{Setting, Settings};
 use crate::{Session, Shelf};
 
-/// What the settings panel edits: the global settings (All), the runner of the item in context, or the
+/// The level the settings panel edits: the global settings (All), the runner of the item in context, or the
 /// item itself. The item can be a game, an app or a film, but not a browsed file or a folder, nor an
 /// item of a runner without item settings. Content edits the runner's level when the item has no level
 /// of its own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum Scope {
+pub enum SettingsLevel {
     Global,
     Runner,
     #[default]
@@ -47,12 +47,12 @@ pub enum TileOrigin {
     Global,
 }
 
-/// Every entry's settings, the scope the settings panel edits, and the tile whose menu is open. The scope
+/// Every entry's settings, the level the settings panel edits, and the tile whose menu is open. The level
 /// is global whenever there is no item in context.
 #[derive(Debug, Clone, Default)]
 pub struct Prefs {
     settings: Settings,
-    scope: Scope,
+    level: SettingsLevel,
     /// The tile whose menu is open over the settings tab, by a long press: its values, and Reset.
     menu: Option<Setting>,
     /// A setting's slider held, if one is.
@@ -78,13 +78,13 @@ impl Prefs {
         &self.settings
     }
 
-    /// The scope chosen in the settings panel (see [`Panel::scope_shown`] for the one it shows).
-    pub fn scope(&self) -> Scope {
-        self.scope
+    /// The level chosen in the settings panel (see [`Panel::level_shown`] for the one it shows).
+    pub fn level(&self) -> SettingsLevel {
+        self.level
     }
 
-    pub(crate) fn set_scope(&mut self, scope: Scope) {
-        self.scope = scope;
+    pub(crate) fn set_level(&mut self, level: SettingsLevel) {
+        self.level = level;
         self.menu = None;
     }
 
@@ -197,7 +197,7 @@ pub struct Panel<'a> {
     keymapping: &'a Keymapping,
     curving: &'a crate::curve::screens::Curving,
     context: Option<Program<'a>>,
-    levels: [Option<(Scope, Program<'a>)>; 2],
+    levels: [Option<(SettingsLevel, Program<'a>)>; 2],
     editing: Option<Program<'a>>,
     /// The level the edited one takes its settings from before its own, which is its runner's.
     runner: Option<&'a str>,
@@ -226,18 +226,18 @@ impl<'a> Panel<'a> {
         let levels = match (&context, entry) {
             (Some(item), Some(g)) => match &g.runner {
                 Some(r) => {
-                    let runner = Some((Scope::Runner, Program { id: r.key.clone(), title: &r.name }));
-                    let own = (r.item_settings && g.browsed.is_none() && !g.is_group()).then(|| (Scope::Content, item.clone()));
+                    let runner = Some((SettingsLevel::Runner, Program { id: r.key.clone(), title: &r.name }));
+                    let own = (r.item_settings && g.browsed.is_none() && !g.is_group()).then(|| (SettingsLevel::Content, item.clone()));
                     [runner, own]
                 }
-                None => [Some((Scope::Runner, item.clone())), None],
+                None => [Some((SettingsLevel::Runner, item.clone())), None],
             },
             _ => [None, None],
         };
-        let scope = prefs.scope;
+        let level = prefs.level;
         let editing = match &levels {
-            _ if scope == Scope::Global => None,
-            [Some((s, p)), _] if *s == scope => Some(p.clone()),
+            _ if level == SettingsLevel::Global => None,
+            [Some((s, p)), _] if *s == level => Some(p.clone()),
             [runner, own] => own.as_ref().or(runner.as_ref()).map(|(_, p)| p.clone()),
         };
         let runner = editing.as_ref().and_then(|p| entry_of(&p.id)).and_then(|g| g.runner.as_ref()).map(|r| &*r.key);
@@ -255,7 +255,7 @@ impl<'a> Panel<'a> {
     /// these are its runner's and its own (`All | SNES | Zelda`, `All | Desktop | Spotify`). There is only
     /// its runner's for a browsed file, a folder, or a runner's item without item settings (`All |
     /// Text`). There is only its own for an item without a runner, such as ClamShell's tools.
-    pub fn levels(&self) -> &[Option<(Scope, Program<'a>)>; 2] {
+    pub fn levels(&self) -> &[Option<(SettingsLevel, Program<'a>)>; 2] {
         &self.levels
     }
 
@@ -266,22 +266,22 @@ impl<'a> Panel<'a> {
         most.iter().copied().chain(reset).chain(last.iter().copied())
     }
 
-    /// What the panel edits now: the level of the chosen scope, or none for All. Content edits the
+    /// What the panel edits now: the program at the chosen level, or none for All. Content edits the
     /// runner's level when the item has none of its own.
     pub fn editing(&self) -> Option<&Program<'a>> {
         self.editing.as_ref()
     }
 
-    /// The scope chosen.
-    pub fn scope(&self) -> Scope {
-        self.prefs.scope
+    /// The level chosen.
+    pub fn level(&self) -> SettingsLevel {
+        self.prefs.level
     }
 
-    /// The scope the panel shows as chosen: the one chosen, or the level that stands in for it.
-    pub fn scope_shown(&self) -> Scope {
+    /// The level the panel shows as chosen: the one chosen, or the level that stands in for it.
+    pub fn level_shown(&self) -> SettingsLevel {
         match &self.editing {
-            None => Scope::Global,
-            Some(p) => self.levels.iter().flatten().find(|(_, l)| l.id == p.id).map_or(Scope::Global, |(scope, _)| *scope),
+            None => SettingsLevel::Global,
+            Some(p) => self.levels.iter().flatten().find(|(_, l)| l.id == p.id).map_or(SettingsLevel::Global, |(level, _)| *level),
         }
     }
 
@@ -328,7 +328,7 @@ impl<'a> Panel<'a> {
     /// All; none when All is edited, where Reset goes back to the stock value.
     pub fn below_name(&self) -> Option<&'a str> {
         let g = self.editing.as_ref()?;
-        let runner = self.levels.iter().flatten().find(|(scope, l)| *scope == Scope::Runner && l.id != g.id).map(|(_, l)| l.title);
+        let runner = self.levels.iter().flatten().find(|(level, l)| *level == SettingsLevel::Runner && l.id != g.id).map(|(_, l)| l.title);
         Some(runner.unwrap_or("All"))
     }
 
@@ -345,7 +345,7 @@ impl<'a> Panel<'a> {
                 let runner = self
                     .editing
                     .as_ref()
-                    .and_then(|g| self.levels.iter().flatten().find(|(scope, l)| *scope == Scope::Runner && l.id != g.id && set_by(&l.id)));
+                    .and_then(|g| self.levels.iter().flatten().find(|(level, l)| *level == SettingsLevel::Runner && l.id != g.id && set_by(&l.id)));
                 match runner {
                     Some((_, l)) => Source::Read(l.title),
                     None if self.prefs.settings.global.get(setting) != setting.default_value() => Source::Read("All"),
@@ -407,7 +407,7 @@ impl<'a> Panel<'a> {
         matches!(self.profile_row(kind, i), Some(PickerRow::Reset))
     }
 
-    /// The profile of `kind` chosen for the scope edited; 0 is Default.
+    /// The profile of `kind` chosen for the level edited; 0 is Default.
     pub fn profile_chosen(&self, kind: crate::profiles::picker::Kind) -> u16 {
         self.tile_value(kind.setting())
     }

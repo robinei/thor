@@ -16,8 +16,8 @@ use clamshell_state::levels::Level;
 use clamshell_state::settings::Setting;
 use clamshell_state::setup::SticksEvent;
 use clamshell_state::{
-    Dock, EditorId, Event, Id, Init, KeymapId, LevelEvent, Library, ListEvent, ListId, PointerEvent, Reading, Scope, SettingsId, ShelfEvent, ShelfId, Slide,
-    State, Status, Tab, Target, TimeId,
+    Dock, EditorId, Event, Id, Init, KeymapId, LevelEvent, Library, ListEvent, ListId, PointerEvent, Reading, SettingsId, SettingsLevel, ShelfEvent, ShelfId,
+    Slide, State, Status, Tab, Target, TimeId,
 };
 use clamshell_ui::Screen;
 
@@ -332,7 +332,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot(
                     "settings-global.png",
                     Bottom,
-                    [tap(Id::Settings(SettingsId::Scope(Scope::Global)))]
+                    [tap(Id::Settings(SettingsId::Scope(SettingsLevel::Global)))]
                         .into_iter()
                         .chain(taps(Setting::Power, 1))
                         .chain(taps(Setting::Rumble, 2))
@@ -345,7 +345,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                     Bottom,
                     a_play("zelda-lttp", now - 60, 60, now)
                         .into_iter()
-                        .chain([tap(Id::Settings(SettingsId::Scope(Scope::Content))), Reading::Screens(Box::new(demo::screens())).into()])
+                        .chain([tap(Id::Settings(SettingsId::Scope(SettingsLevel::Content))), Reading::Screens(Box::new(demo::screens())).into()])
                         .chain(taps(Setting::Scaling, 1))
                         .chain(taps(Setting::Resolution, 3))
                         .collect(),

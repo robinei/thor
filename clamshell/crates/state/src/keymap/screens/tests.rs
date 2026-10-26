@@ -61,7 +61,7 @@ fn sent(fx: &[Effect]) -> Option<&Keymap> {
 }
 
 #[test]
-fn the_picker_chooses_a_keymap_for_the_scope_edited() {
+fn the_picker_chooses_a_keymap_for_the_level_edited() {
     let mut s = State::new(Init { keymaps: Keymaps::initial(), ..init() });
     picker(&mut s);
     assert_eq!(s.keymapping().screen(), Some(Screen::Picker(PickerScreen::List)));
@@ -244,7 +244,7 @@ fn rename_duplicate_and_delete_with_games_using_it() {
     let mut s = State::new(Init { keymaps: Keymaps::initial(), ..init() });
     picker(&mut s);
     tap(&mut s, row(2));
-    tap(&mut s, Id::Settings(SettingsId::Scope(Scope::Global)));
+    tap(&mut s, Id::Settings(SettingsId::Scope(SettingsLevel::Global)));
     picker(&mut s);
     tap(&mut s, row(1));
     assert_eq!(s.prefs().settings().users(Setting::Keymap, 1), Users { all_entries: true, entries: 1 });

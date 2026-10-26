@@ -1,6 +1,6 @@
 //! The second screen. Its tabs are chosen from the bar, and the last one chosen stays, also across
 //! restarts. This module also holds what belongs to the screen rather than to a tab's subject: the
-//! editor over the keyboard, the settings panel's scope, the keyboard a text field brought up, and the
+//! editor over the keyboard, the settings panel's level, the keyboard a text field brought up, and the
 //! screen going dark while a game runs.
 //!
 //! Volume and brightness open from their controls, and Bluetooth, Wi-Fi and Battery from their status

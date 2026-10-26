@@ -120,7 +120,7 @@ pub use session::Session;
 pub use session::dock::{Dock, DockItem};
 pub use session::launch_unit::LaunchUnit;
 pub use session::running::{Front, Launching, Origin, Running};
-pub use settings::panel::{GRID_COLUMNS, Panel, Prefs, Program, Scope, Source, TileOrigin};
+pub use settings::panel::{GRID_COLUMNS, Panel, Prefs, Program, SettingsLevel, Source, TileOrigin};
 pub use shelf::{Cursor, Shelf};
 pub use status::time::{ClockField, TimePage, TimeRow, TimeZones};
 pub use status::{Status, Sys};
@@ -184,7 +184,7 @@ pub struct State {
     pointer: Pointer,
     sys: Sys,
     notifications: Notifications,
-    /// Every entry's settings, and the scope the settings panel edits.
+    /// Every entry's settings, and the level the settings panel edits.
     prefs: Prefs,
     keyboard: Keyboard,
     /// The keymaps and their screens (see [`crate::keymap::screens`]).

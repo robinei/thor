@@ -12,7 +12,7 @@ use clamshell_state::{
     BtId, DockId, EditorId, Event, Id, KeymapId, LevelEvent, ListId, PadInput, PointerEvent, RowPart, SettingsId, ShelfEvent, ShelfId, Slide, Tab, Target,
     WifiId,
 };
-use clamshell_state::{ClockField, Scope, TimeId};
+use clamshell_state::{ClockField, SettingsLevel, TimeId};
 
 use super::{Form, ParseError, arg, control, form, name_err, number};
 
@@ -191,9 +191,9 @@ pub const TARGETS: &[Form<Id>] = &[
     form("device N", "Bluetooth's device row N", |a| Ok(ListId::Bluetooth.row(number(arg(a, 0))?))),
     form("bluetooth-power", "Bluetooth's switch", |_| Ok(Id::Bluetooth(BtId::Power))),
     form("pad-mouse", "the bar's pad mouse switch", |_| Ok(Id::PadMouse)),
-    form("scope game", "the settings' item's own tab (a game's, a film's)", |_| Ok(Id::Settings(SettingsId::Scope(Scope::Content)))),
-    form("scope runner", "the settings' runner's tab (an app's own)", |_| Ok(Id::Settings(SettingsId::Scope(Scope::Runner)))),
-    form("scope all", "the settings' all games tab", |_| Ok(Id::Settings(SettingsId::Scope(Scope::Global)))),
+    form("scope game", "the settings' item's own tab (a game's, a film's)", |_| Ok(Id::Settings(SettingsId::Scope(SettingsLevel::Content)))),
+    form("scope runner", "the settings' runner's tab (an app's own)", |_| Ok(Id::Settings(SettingsId::Scope(SettingsLevel::Runner)))),
+    form("scope all", "the settings' all games tab", |_| Ok(Id::Settings(SettingsId::Scope(SettingsLevel::Global)))),
     form("setting KEY", "a settings tile by its key (power, fps, keymap, ...)", |a| {
         let key = arg(a, 0);
         Ok(Id::Settings(SettingsId::Tile(Setting::from_name(key).ok_or_else(|| name_err(key))?)))

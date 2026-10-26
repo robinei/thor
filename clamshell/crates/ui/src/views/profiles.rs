@@ -8,7 +8,7 @@
 //!   new profile first, and saving over a named one asks first.
 
 use clamshell_state::profiles::picker::{Kind, PickerRow, PickerScreen, ProfileId};
-use clamshell_state::{Id, RowPart, Scope};
+use clamshell_state::{Id, RowPart, SettingsLevel};
 
 use crate::gfx::{Rect, Span};
 use crate::toolkit::format::Fmt;
@@ -111,15 +111,15 @@ fn list(f: &mut Frame, kind: Kind, listing: Listing) {
     let s = f.s;
     let w = words(kind);
     let panel = s.panel();
-    let scope = match (panel.scope(), panel.editing()) {
-        (Scope::Runner | Scope::Content, Some(entry)) => entry.title,
+    let edited = match (panel.level(), panel.editing()) {
+        (SettingsLevel::Runner | SettingsLevel::Content, Some(entry)) => entry.title,
         _ => "all",
     };
     let (area, hint) = match listing {
         Listing::Load => (header(f, kind, w.load_title, HeaderRight::None), w.load_hint),
         Listing::Save => (header(f, kind, w.save_title, HeaderRight::None), w.save_hint),
         Listing::Pick => {
-            let title = Fmt::<128>::of(format_args!("{} for {scope}", w.title));
+            let title = Fmt::<128>::of(format_args!("{} for {edited}", w.title));
             (header(f, kind, &title, HeaderRight::Action(Id::Profile(kind, ProfileId::New), "New")), w.pick_hint)
         }
     };

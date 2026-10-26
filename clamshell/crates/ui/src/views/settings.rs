@@ -4,7 +4,7 @@
 //! grey for the stock value, green when it saves power, amber when it costs power, blue when it changes
 //! how the game looks or plays.
 //!
-//! Tabs along the top choose the scope: All games (the defaults) and the current game, which is the
+//! Tabs along the top choose the level: All games (the defaults) and the current game, which is the
 //! running one or else the shelf's selection. A game's own choices override the defaults one by one.
 //! Those tiles carry a dot, and the rest show the default's value dimmed. Changes reach a running game at
 //! once. The environment tile opens an editor over the on-screen keyboard.
@@ -12,7 +12,7 @@
 use clamshell_state::bottom::editor::{Editor, KeymapName, Purpose};
 use clamshell_state::profiles::picker::ProfileName;
 use clamshell_state::settings::{Impact, Setting};
-use clamshell_state::{GRID_COLUMNS, Id, ListId, Scope, SettingsId, State, TileOrigin};
+use clamshell_state::{GRID_COLUMNS, Id, ListId, SettingsId, SettingsLevel, State, TileOrigin};
 
 use crate::gfx::icons::Icon;
 use crate::gfx::{Align, Rect, Rgb};
@@ -22,7 +22,7 @@ use crate::toolkit::scroll::Scrolled;
 use crate::toolkit::style::{self, Text, Tone};
 use crate::toolkit::widgets::{self, TileFace, TileShape};
 
-/// The height of the scope tabs' row, as a fraction of the area's height.
+/// The height of the level tabs' row, as a fraction of the area's height.
 const TABS_H: f32 = 0.1;
 /// The largest width of a tab label, as a fraction of the area's width. Longer titles are cut.
 const TAB_MAX: f32 = 0.5;
@@ -72,7 +72,7 @@ pub(super) fn draw(f: &mut Frame) {
     let panel = s.panel();
     let context = panel.context();
     let entry = panel.editing();
-    let shown = panel.scope_shown();
+    let shown = panel.level_shown();
     let pad = f.pad();
     let mut grid = style::content(body);
     let bar = grid.take_top(f.body().h * TABS_H);
@@ -81,8 +81,8 @@ pub(super) fn draw(f: &mut Frame) {
     // right.
     let inner = pad * 0.8;
     let levels = panel.levels();
-    let tabs = std::iter::once((Scope::Global, "All")).chain(levels.iter().flatten().map(|(scope, level)| (*scope, level.title)));
-    let items = tabs.map(|(scope, name)| (Id::Settings(SettingsId::Scope(scope)), None, name, scope == shown));
+    let tabs = std::iter::once((SettingsLevel::Global, "All")).chain(levels.iter().flatten().map(|(level, program)| (*level, program.title)));
+    let items = tabs.map(|(level, name)| (Id::Settings(SettingsId::Scope(level)), None, name, level == shown));
     let tabs_area = Rect::new(bar.x - inner, bar.y, bar.w + inner, bar.h);
     let tabs_end = widgets::tabs(f, tabs_area, f.text(Text::Heading), inner, bar.w * TAB_MAX, items);
     let running = context.is_some_and(|g| s.session().program() == Some(&g.id));
@@ -158,8 +158,8 @@ fn value_text(s: &State, setting: Setting, value: u16) -> Fmt<32> {
 fn menu(f: &mut Frame, setting: Setting) {
     let s = f.s;
     let panel = s.panel();
-    let scope = panel.editing().map_or("all", |g| g.title);
-    let title = Fmt::<128>::of(format_args!("{} for {scope}", setting.title()));
+    let edited = panel.editing().map_or("all", |g| g.title);
+    let title = Fmt::<128>::of(format_args!("{} for {edited}", setting.title()));
     let area = widgets::header(f, Some(Id::Settings(SettingsId::Back)), &title, false, widgets::HeaderRight::None);
     let list = widgets::ListArea::new(f, area, f.body().h * super::profiles::ROW_H);
     list.hint(f, "Tap to choose");

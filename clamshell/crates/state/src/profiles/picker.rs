@@ -141,7 +141,7 @@ impl Users {
 }
 
 /// What the picker reads from elsewhere: the game the settings panel edits, if any, and the profile chosen
-/// for its scope.
+/// for its level.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct PickerCx {
     pub(crate) entry: Option<Arc<str>>,
@@ -264,7 +264,7 @@ fn name_profile(editors: &mut Editors, kind: Kind, action: ProfileName, text: St
     editors.open(Editor { purpose: Purpose::ProfileName(kind, action), text });
 }
 
-/// A row of the picker. A tap chooses it for the scope being edited and closes the picker, a long press
+/// A row of the picker. A tap chooses it for the level being edited and closes the picker, a long press
 /// opens the profile's menu, and its Edit button opens its edit screen. The game's row, when the game has
 /// no profile of its own, makes one.
 pub(crate) fn on_row<O: Owner>(o: &mut O, i: usize, part: RowPart, long: bool, cx: &PickerCx, editors: &mut Editors, out: &mut Out) {
