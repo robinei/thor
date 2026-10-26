@@ -137,10 +137,13 @@ commits of this repository still build after a rebase.
   if every difference follows from the intended change, and say what and why in the commit. A
   behaviour-preserving change (refactor, rename) leaves the trace untouched, so a trace diff there is a
   regression; an unexpected difference is a bug.
-- Real clients in the compositor: `clamshell/tests/nested-compositor.py`. `tools/nested-session.sh` runs
+- Real clients in the compositor: `clamshell/tests/nested-compositor.py`, and the desktop's own apps in
+  `clamshell/tests/real-apps.py` (both on `tests/nested_env.py`). `tools/nested-session.sh` runs
   ClamShell as on the device, nested in a window on the desktop.
 - The VM suite (`tools/vm/vm-test.sh`, about twenty minutes) is the exception, for what nothing else can
   check: the pad and real input devices, the session's files, D-Bus services. Say why when running it.
+  Two of its checks run only when named: `soak` (a long run, `SOAK_MINUTES`, 30 by default) and `faults`
+  (the services ClamShell uses restarted under it).
 - In shell wait loops, anchor `pgrep -f` patterns (`'^qemu-system'`): an unanchored one matches the loop
   itself and never ends.
 

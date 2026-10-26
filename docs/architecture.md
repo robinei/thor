@@ -192,8 +192,9 @@ listed, and ClamShell can be restarted without losing track.
 | damaged frames against whole frames | partial redraws identical to full ones, pixel for pixel, across every scenario | every commit and CI |
 | allocation tests | the event path and frame drawing allocate nothing | every commit and CI |
 | `clamshell/tests/nested-compositor.py` | ClamShell's compositor nested (in a headless sway as the host) with real clients: Wayland and X11 windows, Xwayland's restart, the clipboard, screenshots, moves between the screens | by hand, for compositor behaviour |
+| `clamshell/tests/real-apps.py` | real apps installed on the desktop (RetroArch, Firefox, Wine's Notepad, Lutris, Heroic) in nested ClamShell: each one's window in front, drawn, no compositor error, ended when ClamShell closes it | by hand, for compositor behaviour |
 | `clamshell/tests/picture-scaling.py` (`--gpu` for the Wine games) | test games launched from shelf, their pictures filling the top screen at each Resolution and Scaling | by hand, for the picture |
-| `tools/vm/vm-test.sh` | the whole device image in QEMU: a fake controller with gyro and rumble, simulated Wi-Fi and Bluetooth, sleep and wake, the session's files | by hand, for changes to devices, services and the session |
+| `tools/vm/vm-test.sh` | the whole device image in QEMU: a fake controller with gyro and rumble, simulated Wi-Fi and Bluetooth, sleep and wake, the session's files; named only: `soak` (a long run: memory, files and threads don't grow) and `faults` (PipeWire, NetworkManager and BlueZ restarted under ClamShell) | by hand, for changes to devices, services and the session |
 
 Every commit passes `tools/check.sh` (the first six rows) through the pre-commit hook, and CI runs it again
 on GitHub.
