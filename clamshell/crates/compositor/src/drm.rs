@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use crate::EventSender;
-use clamshell_device::{Profile, Rotation, ScreenRole, TouchSelector};
+use clamshell_device::{Profile, Rotation, ScreenRole, TouchSelector, Touchscreen};
 use clamshell_state::colour::ColourDescription;
 use clamshell_state::{Effect, State};
 use clamshell_ui::{Config, Error};
@@ -489,12 +489,14 @@ fn step(
             due = earlier(due, screen.held);
         }
     }
-    // Commits let through after composing (a FIFO barrier the cap let go) are composed at once, not at
-    // the next wake-up for something else.
-    if server.pacing.commits != composed {
-        due = Some(now);
-    }
-    due
+    after_compose(due, composed, server.pacing.commits, now)
+}
+
+/// When the loop wakes next, `due` as the screens' turns say, with `composed` the commit count composed
+/// and `commits` the count now: commits let through after composing (a FIFO barrier the cap let go) are
+/// composed at once, not at the next wake-up for something else.
+fn after_compose(due: Option<Instant>, composed: u64, commits: u64, now: Instant) -> Option<Instant> {
+    if commits != composed { Some(now) } else { due }
 }
 
 /// When the loop wakes for a commit timed for `at` (the clock's times since boot), the top screen's next
@@ -585,27 +587,46 @@ fn screen_turn(timing: Timing, now: Instant) -> Turn {
     turn
 }
 
+/// What of a screen's state its power changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Power {
+    on: bool,
+    dirty: bool,
+    pending: bool,
+}
+
+/// A screen turned on or off as `wanted`, if that changes it: no frame is queued on it any more (turned
+/// off, its flip won't come; turned on, it starts afresh), and turned on it is to be drawn whole, since
+/// its last frame is gone.
+fn switched(power: Power, wanted: bool) -> Option<Power> {
+    (power.on != wanted).then_some(Power { on: wanted, dirty: power.dirty || wanted, pending: false })
+}
+
+/// The mode for a refresh rate of `hz` asked for: `start` for 0 (the screen's own), else the one of
+/// `modes` whose rate is nearest (see [`nearest`]), or `start` if there are none.
+fn mode_for<'a, T>(modes: &'a [T], start: &'a T, rate: impl Fn(&T) -> u32, hz: u32) -> &'a T {
+    if hz == 0 { start } else { nearest(modes, rate, hz).unwrap_or(start) }
+}
+
 /// Turns each screen off or on, and the top screen to the refresh, as the state last asked.
 fn outputs(drawing: &mut Drawing, server: &mut Server) {
     for screen in &mut drawing.screens {
         let index = usize::from(screen.role == ScreenRole::Bottom);
         let wanted = server.screens_on.get(index).copied().unwrap_or(true);
-        if wanted != screen.on {
+        if let Some(power) = switched(Power { on: screen.on, dirty: screen.dirty, pending: screen.pending }, wanted) {
             log::info!("drm: {:?} screen {}", screen.role, if wanted { "on" } else { "off" });
-            screen.on = wanted;
+            Power { on: screen.on, dirty: screen.dirty, pending: screen.pending } = power;
             if wanted {
                 // The next frame turns it back on.
                 screen.surface.reset_buffers();
-                screen.dirty = true;
             } else if let Err(error) = screen.surface.surface().clear() {
                 log::warn!("drm: turning the {:?} screen off: {error}", screen.role);
             }
-            screen.pending = false;
         }
         if screen.role == ScreenRole::Top && server.refresh_wanted != screen.refresh {
             screen.refresh = server.refresh_wanted;
             let hz = u32::from(screen.refresh);
-            let mode = if hz == 0 { screen.start_mode } else { nearest(&screen.modes, |m| m.vrefresh(), hz).copied().unwrap_or(screen.start_mode) };
+            let mode = *mode_for(&screen.modes, &screen.start_mode, |m| m.vrefresh(), hz);
             if hz != 0 && mode.vrefresh() != hz {
                 log::info!("drm: top screen: no mode at {hz} Hz, the nearest at {} Hz", mode.vrefresh());
             }
@@ -680,21 +701,30 @@ struct Areas {
 
 impl Areas {
     fn role(&self, device: &InputDevice) -> ScreenRole {
-        let named = self.profile.touchscreens.iter().find(|t| matches!(t.selector, TouchSelector::Named(n) if names(n, device)));
         let touch = device.has_capability(DeviceCapability::Touch.into());
-        named
-            .or_else(|| touch.then(|| self.profile.touchscreens.iter().find(|t| t.selector == TouchSelector::All)).flatten())
-            .map_or(ScreenRole::Top, |t| t.screen)
+        screen_of(self.profile.touchscreens, touch, |identifier| names(identifier, device))
     }
 
     /// The device's screen's area in the scene, and how its panel is turned.
     fn of(&self, device: &InputDevice) -> (Rectangle<f64, Logical>, Transform) {
         let role = self.role(device);
-        let area = match role {
-            ScreenRole::Top => Rectangle::from_size(self.top.to_f64()),
-            ScreenRole::Bottom => Rectangle::new((f64::from(self.top.w), 0.0).into(), self.bottom.to_f64()),
-        };
-        (area, transform(self.profile.screen(role).rotation))
+        (area(role, self.top, self.bottom), transform(self.profile.screen(role).rotation))
+    }
+}
+
+/// The screen of an absolute input device: the one of the profile's `touchscreens` that names it (by
+/// `named`, see [`names`]), else, for a touchscreen (`touch`), the catch-all's, else the top screen.
+fn screen_of(touchscreens: &[Touchscreen], touch: bool, named: impl Fn(&str) -> bool) -> ScreenRole {
+    let by_name = touchscreens.iter().find(|t| matches!(t.selector, TouchSelector::Named(n) if named(n)));
+    by_name.or_else(|| touch.then(|| touchscreens.iter().find(|t| t.selector == TouchSelector::All)).flatten()).map_or(ScreenRole::Top, |t| t.screen)
+}
+
+/// Screen `role`'s area in the scene, the screens being `top` and `bottom` in size: the top screen's at
+/// the origin, the bottom one's to its right.
+fn area(role: ScreenRole, top: Size<i32, Logical>, bottom: Size<i32, Logical>) -> Rectangle<f64, Logical> {
+    match role {
+        ScreenRole::Top => Rectangle::from_size(top.to_f64()),
+        ScreenRole::Bottom => Rectangle::new((f64::from(top.w), 0.0).into(), bottom.to_f64()),
     }
 }
 
@@ -790,6 +820,58 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn commits_let_through_after_composing_are_composed_at_once() {
+        let now = Instant::now();
+        let later = Some(now + Duration::from_millis(8));
+        assert_eq!(after_compose(later, 5, 5, now), later, "none: as the screens say");
+        assert_eq!(after_compose(None, 5, 5, now), None);
+        assert_eq!(after_compose(later, 5, 6, now), Some(now), "one let through: now");
+        assert_eq!(after_compose(None, 5, 6, now), Some(now));
+    }
+
+    #[test]
+    fn a_screen_turned_on_is_drawn_whole_and_one_switched_has_no_frame_queued() {
+        let off = Power { on: false, dirty: false, pending: true };
+        assert_eq!(switched(off, true), Some(Power { on: true, dirty: true, pending: false }), "on: drawn whole");
+        let on = Power { on: true, dirty: true, pending: true };
+        assert_eq!(switched(on, false), Some(Power { on: false, dirty: true, pending: false }), "off: its flip won't come");
+        assert_eq!(switched(on, true), None, "unchanged");
+        assert_eq!(switched(off, false), None);
+    }
+
+    #[test]
+    fn the_mode_for_a_refresh_is_the_nearest_or_the_screens_own() {
+        let (modes, start) = ([60, 90, 120], 120);
+        assert_eq!(mode_for(&modes, &start, |r| *r, 0), &120, "0: the screen's own");
+        assert_eq!(mode_for(&modes, &start, |r| *r, 60), &60);
+        assert_eq!(mode_for(&modes, &start, |r| *r, 50), &60, "the nearest");
+        assert_eq!(mode_for(&modes, &start, |r| *r, 100), &90);
+        assert_eq!(mode_for(&[], &start, |r| *r, 60), &120, "none of its size: its own");
+    }
+
+    #[test]
+    fn an_input_device_is_on_the_screen_the_profile_names_it_on() {
+        let thor = Profile::thor().touchscreens;
+        let named = |identifier: &'static str| move |n: &str| n == identifier;
+        assert_eq!(screen_of(thor, true, named("0:0:top_touchscreen")), ScreenRole::Top);
+        assert_eq!(screen_of(thor, true, named("0:0:bottom_touchscreen")), ScreenRole::Bottom);
+        assert_eq!(screen_of(thor, true, named("1:2:a_stray_touchscreen")), ScreenRole::Top, "unnamed, no catch-all: the top screen");
+        let catch_all = [Touchscreen { selector: TouchSelector::All, screen: ScreenRole::Bottom }];
+        assert_eq!(screen_of(&catch_all, true, named("1:2:a_touchscreen")), ScreenRole::Bottom, "a touchscreen: the catch-all's");
+        assert_eq!(screen_of(&catch_all, false, named("1:2:a_tablet")), ScreenRole::Top, "a tablet nobody named: the top screen");
+        let both = [Touchscreen { selector: TouchSelector::Named("1:2:pen"), screen: ScreenRole::Top }, catch_all[0]];
+        assert_eq!(screen_of(&both, true, named("1:2:pen")), ScreenRole::Top, "named before the catch-all");
+        assert_eq!(screen_of(&[], true, named("0:0:x")), ScreenRole::Top);
+    }
+
+    #[test]
+    fn the_bottom_screens_area_is_right_of_the_top_screens() {
+        let (top, bottom) = (Size::from((1920, 1080)), Size::from((1240, 1080)));
+        assert_eq!(area(ScreenRole::Top, top, bottom), Rectangle::from_size(Size::from((1920.0, 1080.0))));
+        assert_eq!(area(ScreenRole::Bottom, top, bottom), Rectangle::new((1920.0, 0.0).into(), Size::from((1240.0, 1080.0))));
+    }
 
     #[test]
     fn a_frame_is_shown_at_the_next_refresh_after_the_last_flip() {
