@@ -44,13 +44,6 @@ impl DisplayModes {
         }
         self.rates().iter().rev().copied().find(|rate| rate.is_multiple_of(cap)).unwrap_or(0)
     }
-    /// Zero restores the original mode; an absent saved rate starts again there.
-    pub fn next(&self, current: u16) -> u16 {
-        if current == 0 {
-            return self.rates().first().copied().unwrap_or(0);
-        }
-        self.rates().iter().position(|rate| *rate == current).and_then(|index| self.rates().get(index + 1)).copied().unwrap_or(0)
-    }
 }
 
 #[cfg(test)]
@@ -59,12 +52,10 @@ mod tests {
     #[test]
     fn rates_are_bounded_sorted_deduplicated_and_never_invented() {
         let mut modes = DisplayModes::default();
-        assert_eq!(modes.next(0), 0);
         for rate in [120000, 59940, 60000, 90000, -1, 0] {
             assert!(modes.add(rate));
         }
         assert_eq!(modes.rates(), &[60, 90, 120]);
-        assert_eq!([modes.next(0), modes.next(60), modes.next(90), modes.next(120), modes.next(75)], [60, 90, 120, 0, 0]);
         for rate in 1..=1000 {
             modes.add(rate * 1000);
         }
