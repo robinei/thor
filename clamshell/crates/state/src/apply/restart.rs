@@ -36,7 +36,8 @@ impl State {
             | Thread::Bluetooth
             | Thread::System
             | Thread::Browse
-            | Thread::Brightness => self.sent.resend(Resend::Restarted(thread)),
+            | Thread::Brightness
+            | Thread::Touchpad => self.sent.resend(Resend::Restarted(thread)),
             // Everything saved, written again. A play being recorded is lost.
             Thread::Store => self.save_everything(out),
             Thread::Icons => self.session.find_icons_again(out),
@@ -49,14 +50,13 @@ impl State {
             Thread::BluetoothConnect => {}
             // Nothing the state sent them stands: they read the system afresh as they start (the units
             // are listed again, input devices and the clipboard watched again, the saved clipboard
-            // offered again), or carry out one command at a time (a sound, the touchpad's fingers). The
-            // control pipe's line being read is lost.
+            // offered again), or carry out one command at a time (a sound). The control pipe's line being
+            // read is lost.
             Thread::PadDevices
             | Thread::Control
             | Thread::Tray
             | Thread::Sound
             | Thread::Units
-            | Thread::Touchpad
             | Thread::Clock
             | Thread::InputWatch
             | Thread::Clipboard
@@ -194,6 +194,16 @@ mod tests {
         s.applied(crate::LevelEvent::Set(crate::Level::Brightness, 70).into());
         let fx = s.applied(Event::Restarted(Thread::Brightness));
         assert!(fx.iter().any(|e| matches!(e, Effect::Brightness { level: 70, .. })), "{fx:?}");
+    }
+
+    #[test]
+    fn a_restarted_touchpad_thread_is_sent_the_second_screens_layout() {
+        use crate::presentation::{Panel, Screens};
+        let mut s = started(init());
+        let bottom = Panel { pixels: (1240, 1080), millimetres: Some((75, 65)), ..Panel::default() };
+        s.applied(crate::Reading::Screens(Box::new(Screens { top: Panel::default(), bottom })).into());
+        let fx = s.applied(Event::Restarted(Thread::Touchpad));
+        assert!(fx.iter().any(|e| matches!(e, Effect::SizeTouchpad(Some(_)))), "{fx:?}");
     }
 
     #[test]

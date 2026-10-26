@@ -158,12 +158,9 @@ pub fn run(
 
     let mut base = Base::new(state, config, true, identify, on_effect, quit)?;
     let server = &mut base.server;
-    let millimetres = bottom.millimetres.map(|(w, h)| {
-        transform(profile.bottom.rotation).transform_size(Size::<i32, Physical>::from((i32::try_from(w).unwrap_or(0), i32::try_from(h).unwrap_or(0))))
-    });
-    let density = bottom_density(bottom_size, millimetres, profile.bottom_pixels_per_mm_hint());
-    log::info!("drm: second screen's density {density:?} pixels/mm (the touchpad's)");
-    server.core.set_bottom_density(density);
+    server.screens.millimetres =
+        [crate::screens::shown_millimetres(top.millimetres, &profile.top), crate::screens::shown_millimetres(bottom.millimetres, &profile.bottom)];
+    log::info!("drm: the screens' millimetres {:?} (connector {:?}, {:?})", server.screens.millimetres, top.millimetres, bottom.millimetres);
     // No host window takes the focus away: pointer capture is always possible.
     server.pointer.host_focused = true;
     server.screens.refresh = i32::try_from(top.mode.vrefresh()).unwrap_or(60).saturating_mul(1000);
@@ -397,16 +394,6 @@ fn tap(device: &mut smithay::reexports::input::Device) {
     }
     if set {
         log::info!("drm: ClamShell's touchpad taps and drags");
-    }
-}
-
-/// The second screen's pixels per millimetre, which the virtual touchpad's acceleration needs: from its
-/// panel's size as its connector gives it, turned as the screen is, else the profile's figure for the
-/// panel.
-fn bottom_density(size: Size<i32, Logical>, millimetres: Option<Size<i32, Physical>>, hint: Option<f32>) -> Option<(f32, f32)> {
-    match millimetres {
-        Some(mm) if mm.w > 0 && mm.h > 0 && size.w > 0 && size.h > 0 => Some((size.w as f32 / mm.w as f32, size.h as f32 / mm.h as f32)),
-        _ => hint.map(|density| (density, density)),
     }
 }
 
@@ -864,14 +851,6 @@ mod tests {
         assert!(!names_ids("0:0:top_touchscreen", 0, 0, "top touchscreens"));
         assert!(!names_ids("0:0:top touchscreen", 0, 0, "top_touchscreen"), "an underscore in the name stays one");
         assert!(!names_ids("nonsense", 0, 0, ""));
-    }
-
-    #[test]
-    fn the_second_screens_density_is_its_panels_or_else_the_profiles() {
-        let size = Size::from((1240, 1080));
-        assert_eq!(bottom_density(size, Some(Size::from((124, 108))), Some(16.5)), Some((10.0, 10.0)), "the connector's size first");
-        assert_eq!(bottom_density(size, Some(Size::from((0, 0))), Some(16.5)), Some((16.5, 16.5)));
-        assert_eq!(bottom_density(size, None, None), None);
     }
 
     use super::*;

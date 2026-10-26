@@ -220,6 +220,7 @@ State: `items{id, pinned}`, `menu`, `tray` (submenu path), `moving`, `unsaved`.
 | `EditOnKeyboard(e)` with an editor on Keyboard → refused, KeyboardBusy notice | `a_second_editor_for_the_keyboard_is_refused_and_what_is_typed_stays` |
 | an editor on Keyboard saved or cancelled → back from the keyboard, unless another took its place (the new password after the current one) | renaming test (Save); device `the_password_editor_goes_back_where_it_came_from`; file name Cancel: `a_text_field_done_leaves_an_editor_on_the_keyboard_open`, files `a_new_folder_is_named_on_the_keyboard` |
 | Pointing contacts → pointing, `Touchpad` effect; idle → off | `it_points_until_idle_…` |
+| `Reading::Screens` with the second screen's pixels and millimetres → `SizeTouchpad(layout)`, again only when it changes; without millimetres → `SizeTouchpad(None)` | `the_touchpad_is_sized_when_the_screens_are_known` |
 
 Editor: one per tab; Char appends, Backspace pops, Enter saves, Esc cancels, Ctrl+V and Paste insert the
 clipboard as one line. Tests: `typing_editing_and_finishing`, `a_password_being_typed_stays_out_of_logs`,
@@ -584,6 +585,7 @@ then go nowhere, logged once (system crate, `a_thread_that_keeps_panicking_soon_
   `a_restarted_system_thread_is_asked_to_sleep_again_after_the_retry`)
 - `--Restarted(Brightness)--> [Brightness]` if ClamShell set a level, dimmed if idle dimmed it (tested
   `a_restarted_brightness_thread_is_sent_the_level_clamshell_set`)
+- `--Restarted(Touchpad)--> [SizeTouchpad]` (tested `a_restarted_touchpad_thread_is_sent_the_second_screens_layout`)
 - `--Restarted(Store)--> [Save of everything saved]` (tested `a_restarted_store_is_sent_everything_saved`)
 - `files running --Restarted(Files)--> the oldest operation done, failed [notice]`; the rest run (tested
   `a_restarted_files_thread_fails_the_operation_it_had_and_browse_lists_again`)
@@ -1394,7 +1396,7 @@ the fact stays unknown and its UI is dimmed, not hidden.
 | Fact | Precedence | Test |
 |---|---|---|
 | the screens (`drm.rs` `choose`) | the connector the profile names; the mode the kernel set, else the preferred one, else the first; turned by the profile's rotation | the VM suite (Virtual-1 and -2); on the device (DSI-2, DSI-1) |
-| the second screen's density, for the virtual touchpad (`drm.rs` `bottom_density`, `system/input/touchpad`) | the connector's millimetres, turned, else the profile's hint (the Thor's only, 16.5 px/mm), else none and no virtual touchpad; nested, the hint only | compositor `the_second_screens_density_is_its_panels_or_else_the_profiles`, device `only_a_known_physical_panel_supplies_a_density_hint`, touchpad `both_reported_axes_are_kept_and_unknown_resolution_is_not_guessed`; VM `touchpad` |
+| each screen's size in millimetres (`screens.rs` `shown_millimetres`), and from it the second screen's density, the virtual touchpad's resolution (`Panel::pixels_per_mm`) | the connector's millimetres, else the profile's (the Thor's bottom panel only, 65 by 75), turned as the screen is; else none, and no virtual touchpad; nested, the profile's only. The density is the longer side's, pixels taken as square | compositor `a_panels_millimetres_are_its_connectors_else_the_profiles_turned_as_shown`, state `a_panels_density_is_its_longer_sides_taking_pixels_as_square`; VM `touchpad` |
 | a backlight's label (`levels` `backlight_label`) | the backlights found; one named as the profile's top or bottom hint reads "Top screen" or "Bottom screen", any other its kernel name | levels `the_thors_backlights_by_their_screens` |
 | an absolute input device's screen (`drm.rs` `screen_of`) | the profile's entry for it; else, for a touchscreen, the profile's catch-all; else the top screen | compositor `an_input_device_is_on_the_screen_the_profile_names_it_on` |
 | the auxiliary button (`system/input/pad/device.rs`) | an evdev device of the profile's name and key, looked for when a controller opens; its presses become the auxiliary role; without the hint, none | device `physical_back_codes_are_normalised_and_missing_auxiliary_controls_stay_absent`; VM `pad_guide` |
@@ -1500,7 +1502,8 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    the last Refresh is the calibration's rate while it runs, else the rate of the entry launched last
    while its window is yet to show, else the rate of the settings in force, at the modes known.
    Once ClamShell set a brightness level, the last Brightness is that level, or a third of it (at
-   least 1) while dimmed.
+   least 1) while dimmed. The last SizeTouchpad is the second screen's layout, or None while its
+   pixels or millimetres aren't known.
    At most one tab's watch is on, and it is the open tab's (or the battery's, for the dock's menu).
 3. **Pad route:** consistent with claimant, listening and dock move; reconciling again changes nothing;
    the focus ring shows only when the route is Ui, or after a hold on shelf's selected entry opened its

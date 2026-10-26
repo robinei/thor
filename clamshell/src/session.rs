@@ -3,10 +3,8 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 
 use clamshell_compositor::EventSender;
-use clamshell_state::bottom::touch::TouchLayout;
 use clamshell_state::curve::Curves;
 use clamshell_state::keymap::Keymaps;
 use clamshell_state::settings::Values;
@@ -87,8 +85,7 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
     // Nested, the screens are the device's own sizes, as pixels of the host's window; on the screens,
     // they are taken from the outputs.
     let preview = if host == Host::Nested { env.profile.preview } else { env.profile.preview.half() };
-    let config = Config { top_size: preview.top, bottom_size: preview.bottom, touch_layout: Arc::default() };
-    let layout = config.touch_layout.clone();
+    let config = Config { top_size: preview.top, bottom_size: preview.bottom };
     let global = state.prefs().settings().global;
     // The threads send to the compositor's event loop, so they start once it exists. Effects are
     // dispatched only after that.
@@ -128,7 +125,7 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
         if let Some(path) = env.control.as_ref().or(paths.control.as_ref()) {
             control::spawn(path.clone(), LoopSink(sender.clone()));
         }
-        *started.borrow_mut() = Some(start(&system_config, &paths, sources, layout, &global, sender));
+        *started.borrow_mut() = Some(start(&system_config, &paths, sources, &global, sender));
     };
     let result = match host {
         Host::Drm => clamshell_compositor::run_drm(state, config, start, on_effect, identify, on_capture, quit),
@@ -187,9 +184,9 @@ impl Sink for LoopSink {
 }
 
 /// Starts every system thread, sending to `sender` (see `clamshell_system::wiring::start`).
-pub fn start(config: &wiring::Config, paths: &Paths, sources: &Sources, layout: Arc<Mutex<TouchLayout>>, global: &Values, sender: EventSender) -> Handles {
+pub fn start(config: &wiring::Config, paths: &Paths, sources: &Sources, global: &Values, sender: EventSender) -> Handles {
     let sink = LoopSink(sender);
-    wiring::start(config, paths, sources, layout, global, sink)
+    wiring::start(config, paths, sources, global, sink)
 }
 
 #[cfg(test)]

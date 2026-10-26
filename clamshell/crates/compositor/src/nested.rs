@@ -39,9 +39,9 @@ pub fn run(
 ) -> Result<(), Error> {
     let mut base = Base::new(state, config, false, identify, on_effect, quit)?;
     let server = &mut base.server;
-    // The screens are the device's own pixels: its second screen's density, if the profile knows it.
-    let density = server.core.state().profile().bottom_pixels_per_mm_hint();
-    server.core.set_bottom_density(density.map(|density| (density, density)));
+    // The screens are the device's own pixels, on its panels, if the profile knows their size.
+    let profile = *server.core.state().profile();
+    server.screens.millimetres = [crate::screens::shown_millimetres(None, &profile.top), crate::screens::shown_millimetres(None, &profile.bottom)];
 
     let attributes =
         // In the host's pixels, so the screens are as many pixels as the device's, whatever the host's scale.

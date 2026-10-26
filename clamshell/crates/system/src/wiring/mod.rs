@@ -6,9 +6,7 @@ mod settings;
 
 use std::io;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
-use clamshell_state::bottom::touch::TouchLayout;
 use clamshell_state::settings::Values;
 
 pub use handles::Handles;
@@ -90,7 +88,7 @@ fn rescanner<S: Sink + Clone>(sources: Sources, paths: Paths, queue: meta::Queue
 /// Starts every system thread, sending to `sink`, and applies the global settings, which are in force
 /// until a game brings its own. `layout` is the touch layout the UI keeps up to date. The library is read
 /// on a thread, as the Tools tab's rescan reads it, and sent with what its metadata fetch finds.
-pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, layout: Arc<Mutex<TouchLayout>>, global: &Values, sink: S) -> Handles {
+pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, global: &Values, sink: S) -> Handles {
     let backlights = Backlights::new(env.backlights.clone());
     if !paths.has_user_systemd() {
         log::error!("no systemd user manager: ClamShell needs one to run apps and games (as services of their own)");
@@ -102,7 +100,7 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, la
     let fetching = meta::Queue::default();
     let rescan = rescanner(sources.clone(), paths.clone(), fetching.clone(), sink.clone());
     rescan(false);
-    let touchpad = started("touchpad", touchpad::spawn(layout));
+    let touchpad = started("touchpad", touchpad::spawn());
     // Watch input on every device for idle, and the hardware keys in the device's own session.
     log_failed_start("input watch", crate::input::watch::spawn(env.device_session, sink.clone()));
     log_failed_start("units", units::spawn(sink.clone()));

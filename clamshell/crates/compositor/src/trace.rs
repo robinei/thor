@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn recorded_window_batches_and_chords_replay_through_state() {
         let ring = Rc::new(RefCell::new(Ring::new()));
-        let mut core = Core::new(State::new(Init::default()), Default::default(), || {}).unwrap();
+        let mut core = Core::new(State::new(Init::default()), || {}).unwrap();
         let observed = ring.clone();
         core.observe_events(move |event, state| observed.borrow_mut().record(event, state));
         core.handle(Event::Start);

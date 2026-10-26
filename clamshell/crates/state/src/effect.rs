@@ -36,6 +36,9 @@ pub enum Effect {
     Save(Save),
     /// The fingers pointing in one touch frame, for the virtual touchpad.
     Touchpad(Vec<crate::bottom::touch::Contact>),
+    /// Make the virtual touchpad the second screen's size and resolution, or none while they aren't
+    /// known. It is made before any finger, since libinput takes a moment to see a new device.
+    SizeTouchpad(Option<crate::bottom::touch::TouchLayout>),
     /// Where the controller's input goes now.
     PadRoute(PadRoute),
     /// Report the first game-pad input while the top window lacks keyboard focus.

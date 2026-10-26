@@ -26,9 +26,6 @@ pub use gfx::record::Bounds;
 pub use input::{End, Source};
 pub use screens::{Layer, Screen};
 
-use std::sync::{Arc, Mutex};
-
-use clamshell_state::bottom::touch::TouchLayout;
 #[cfg(any(test, feature = "dev"))]
 use clamshell_state::{Event, State};
 
@@ -43,9 +40,6 @@ pub struct Config {
     /// The screens' logical sizes.
     pub top_size: (u32, u32),
     pub bottom_size: (u32, u32),
-    /// Where the touchpad area and the bar's targets are, for the touchpad tab's input side. It is
-    /// updated with every frame of the second screen.
-    pub touch_layout: Arc<Mutex<TouchLayout>>,
 }
 
 /// Renders one screen without Wayland, at `size` logical pixels and integer `scale`, to a PNG file, with

@@ -8,6 +8,7 @@ use crate::Compositor;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::bottom::touch::TouchLayout;
 use crate::effect::{Effect, Watch};
 use crate::idle::Stage;
 use crate::keymap::screens::Keymapping;
@@ -56,6 +57,8 @@ pub(crate) struct Wanted<'a> {
     /// Where the pad goes.
     pub(crate) route: PadRoute,
     pub(crate) pad_activity: bool,
+    /// The virtual touchpad's size and resolution (see [`crate::presentation::Presentation::touchpad`]).
+    pub(crate) touchpad: Option<TouchLayout>,
 }
 
 /// What the outside was last sent.
@@ -95,6 +98,8 @@ pub(crate) struct Sent {
     route: Option<PadRoute>,
     /// Whether the pad tells of activity, or None to send it again.
     pad_activity: Option<bool>,
+    /// The virtual touchpad's layout, or None to send it again.
+    touchpad: Option<Option<TouchLayout>>,
 }
 
 impl Default for Sent {
@@ -118,6 +123,7 @@ impl Default for Sent {
             keymap_sent: None,
             route: None,
             pad_activity: Some(false),
+            touchpad: Some(None),
         }
     }
 }
@@ -153,6 +159,7 @@ impl Sent {
                 Thread::Browse => (self.browsing, self.in_use) = (None, None),
                 // The thread holds nothing; the backlights keep their level. Sent again if ClamShell set one.
                 Thread::Brightness => self.brightness = None,
+                Thread::Touchpad => self.touchpad = None,
                 _ => {}
             },
         }
@@ -179,6 +186,7 @@ impl Sent {
         self.watches(w, out);
         self.keymap(w, out);
         self.pad_route(w, out);
+        self.touchpad(w, out);
     }
 
     /// While metadata is being fetched and what shelf shows has changed, asks for the shown entries'
@@ -322,6 +330,13 @@ impl Sent {
         }
         if self.route.replace(w.route) != Some(w.route) {
             out.effects.push(Effect::PadRoute(w.route));
+        }
+    }
+
+    /// The virtual touchpad is made again when the second screen's size or resolution changes.
+    fn touchpad(&mut self, w: &Wanted, out: &mut Out) {
+        if self.touchpad.replace(w.touchpad) != Some(w.touchpad) {
+            out.effects.push(Effect::SizeTouchpad(w.touchpad));
         }
     }
 }

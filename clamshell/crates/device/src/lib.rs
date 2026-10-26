@@ -16,6 +16,9 @@ pub struct Screen {
     /// Role hint only: backlights themselves are discovered at runtime.
     pub backlight: Option<&'static str>,
     pub colour: PanelColour,
+    /// The panel's width and height in millimetres, in its own orientation as its connector gives them,
+    /// for a connector that gives none.
+    pub millimetres: Option<(u16, u16)>,
 }
 /// Clockwise orientation of the physical panel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,8 +82,6 @@ pub struct DeviceProfile {
     pub top: Screen,
     pub bottom: Screen,
     pub touchscreens: &'static [Touchscreen],
-    /// Fallback pixels per millimetre, in tenths, only when the output reports no physical dimensions.
-    pub bottom_density_tenths: Option<u16>,
     pub refresh_calibration: Option<RefreshCalibration>,
     pub controls: input::Controls,
     pub sensor_hub: Option<gyro::SensorHub>,
@@ -98,15 +99,22 @@ impl DeviceProfile {
     pub const fn thor() -> Self {
         Self {
             name: "thor",
-            top: Screen { connector: "DSI-2", rotation: Rotation::Clockwise90, backlight: Some("ae96000.dsi.0"), colour: PanelColour::icna3520() },
+            top: Screen {
+                connector: "DSI-2",
+                rotation: Rotation::Clockwise90,
+                backlight: Some("ae96000.dsi.0"),
+                colour: PanelColour::icna3520(),
+                millimetres: None,
+            },
             bottom: Screen {
                 connector: "DSI-1",
                 rotation: Rotation::Clockwise90,
                 backlight: Some("ae94000.dsi.0"),
                 colour: PanelColour { link_bits_per_channel: Some(8), ..PanelColour::srgb() },
+                // 1080 by 1240 pixels, at 16.5 per millimetre.
+                millimetres: Some((65, 75)),
             },
             touchscreens: THOR_TOUCH,
-            bottom_density_tenths: Some(165),
             refresh_calibration: Some(THOR_REFRESH),
             controls: input::Controls::thor(),
             sensor_hub: Some(gyro::SensorHub::thor()),
@@ -119,10 +127,9 @@ impl DeviceProfile {
     pub const fn vm() -> Self {
         Self {
             name: "vm",
-            top: Screen { connector: "Virtual-1", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb() },
-            bottom: Screen { connector: "Virtual-2", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb() },
+            top: Screen { connector: "Virtual-1", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb(), millimetres: None },
+            bottom: Screen { connector: "Virtual-2", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb(), millimetres: None },
             touchscreens: VM_TOUCH,
-            bottom_density_tenths: None,
             refresh_calibration: None,
             controls: input::Controls::thor(),
             sensor_hub: None,
@@ -149,10 +156,9 @@ impl DeviceProfile {
     pub const fn generic() -> Self {
         Self {
             name: "generic",
-            top: Screen { connector: "ClamShell-Top", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb() },
-            bottom: Screen { connector: "ClamShell-Bottom", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb() },
+            top: Screen { connector: "ClamShell-Top", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb(), millimetres: None },
+            bottom: Screen { connector: "ClamShell-Bottom", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb(), millimetres: None },
             touchscreens: &[],
-            bottom_density_tenths: None,
             refresh_calibration: None,
             controls: input::Controls::generic(),
             sensor_hub: None,
@@ -161,9 +167,6 @@ impl DeviceProfile {
             control_layout: layout::ControlLayout::standard(),
             preview: preview::Preview::reference(),
         }
-    }
-    pub fn bottom_pixels_per_mm_hint(&self) -> Option<f32> {
-        self.bottom_density_tenths.map(|density| density as f32 / 10.0)
     }
     pub const fn screen(&self, role: ScreenRole) -> Screen {
         match role {
@@ -206,12 +209,6 @@ mod tests {
         assert_eq!((hdr.top.connector, hdr.top.colour.sdr_white), ("Virtual-1", Some(203_000)));
         assert_eq!(hdr.bottom.colour, DeviceProfile::thor().bottom.colour);
         assert_eq!(DeviceProfile::identify(Some("unknown"), b"ayn,thor\0", "", ""), Err("unknown"));
-    }
-    #[test]
-    fn only_a_known_physical_panel_supplies_a_density_hint() {
-        assert_eq!(DeviceProfile::thor().bottom_pixels_per_mm_hint(), Some(16.5));
-        assert_eq!(DeviceProfile::vm().bottom_pixels_per_mm_hint(), None);
-        assert_eq!(DeviceProfile::generic().bottom_pixels_per_mm_hint(), None);
     }
     #[test]
     fn profiles_always_name_distinct_top_and_bottom_screens() {

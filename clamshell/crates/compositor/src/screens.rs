@@ -1,8 +1,8 @@
 //! The two screens as clients see them: one output each, side by side in one scene (the top screen on
 //! the left), their sizes, the refresh rate told to clients, and what the state wants of the screens'
-//! power and rate for a host to carry out. A host sets the scene's size and the refresh; the server
-//! lays out the outputs, tells the UI each screen's size, and tells the state the top screen's size and
-//! the screens' colours.
+//! power and rate for a host to carry out. A host sets the scene's size, the refresh and the panels'
+//! millimetres; the server lays out the outputs, tells the UI each screen's size, and tells the state
+//! each screen's colour, pixels and millimetres.
 
 use clamshell_ui::{Config, Screen};
 use smithay::{
@@ -31,6 +31,8 @@ pub(crate) struct Screens {
     /// The top screen's refresh the state wants in Hz, 0 for the rate it had at start
     /// (`Compositor::Refresh`), for a host with screens.
     pub refresh_wanted: u16,
+    /// Each screen's size in millimetres as it is shown, if known (see [`shown_millimetres`]).
+    pub millimetres: [Option<(u32, u32)>; 2],
     /// The top output's instances clients bound, each told its game's mode (see [`Server::tell_game_mode`]).
     pub top_bound: Vec<Weak<WlOutput>>,
     /// The screens last told to the state (see [`Server::report_screens`]).
@@ -64,6 +66,7 @@ impl Screens {
             refresh: 60_000,
             on: [true; 2],
             refresh_wanted: 0,
+            millimetres: [None; 2],
             top_bound: Vec::new(),
             sent: None,
         }
@@ -118,16 +121,45 @@ impl Server {
         self.colour.set_outputs(descriptions);
     }
 
-    /// Tells the state the screens' colours and the top screen's size when they change: a curve is shown
-    /// within the colour, and a game's resolution is a fraction of the size.
+    /// Tells the state each screen's colour, pixels and millimetres when they change: a curve is shown
+    /// within the colour, a game's resolution is a fraction of the top screen's size, and the virtual
+    /// touchpad is the second screen's.
     pub(crate) fn report_screens(&mut self) {
-        let screens = clamshell_state::presentation::Screens {
-            colour: self.colour.descriptions,
-            top_size: (self.screens.top_width.max(0) as u32, self.screens.size.1.max(0) as u32),
+        use clamshell_state::presentation::{Panel, Screens};
+        let [top_colour, bottom_colour] = self.colour.descriptions;
+        let height = self.screens.size.1.max(0) as u32;
+        let [top_mm, bottom_mm] = self.screens.millimetres;
+        let screens = Screens {
+            top: Panel { colour: top_colour, pixels: (self.screens.top_width.max(0) as u32, height), millimetres: top_mm },
+            bottom: Panel { colour: bottom_colour, pixels: ((self.screens.size.0 - self.screens.top_width).max(0) as u32, height), millimetres: bottom_mm },
         };
         if self.screens.sent != Some(screens) {
             self.screens.sent = Some(screens);
             self.core.handle(clamshell_state::Event::Reading(clamshell_state::Reading::Screens(Box::new(screens))));
         }
+    }
+}
+
+/// A panel's size in millimetres as it is shown: as its connector `reported` it, else as the device
+/// profile has it, turned as the screen is. A connector's 0 by 0 is taken as saying nothing.
+pub(crate) fn shown_millimetres(reported: Option<(u32, u32)>, screen: &clamshell_device::Screen) -> Option<(u32, u32)> {
+    let (w, h) = reported.filter(|(w, h)| *w > 0 && *h > 0).or_else(|| screen.millimetres.map(|(w, h)| (u32::from(w), u32::from(h))))?;
+    Some(match screen.rotation {
+        clamshell_device::Rotation::Normal => (w, h),
+        clamshell_device::Rotation::Clockwise90 => (h, w),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_panels_millimetres_are_its_connectors_else_the_profiles_turned_as_shown() {
+        let thor = clamshell_device::DeviceProfile::thor().bottom;
+        assert_eq!(shown_millimetres(Some((60, 70)), &thor), Some((70, 60)), "the connector's first");
+        assert_eq!(shown_millimetres(Some((0, 0)), &thor), Some((75, 65)), "0 by 0 says nothing");
+        assert_eq!(shown_millimetres(None, &thor), Some((75, 65)));
+        assert_eq!(shown_millimetres(None, &clamshell_device::DeviceProfile::vm().bottom), None);
     }
 }

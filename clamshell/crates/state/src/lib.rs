@@ -616,6 +616,7 @@ impl State {
             keymapping: &self.keymapping,
             route: self.pad.route(),
             pad_activity: self.session.top_window().is_some_and(|w| Some(w.id) != self.session.keyboard_focus()),
+            touchpad: self.presentation.touchpad(),
         }
     }
 

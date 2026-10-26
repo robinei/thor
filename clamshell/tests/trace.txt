@@ -125,6 +125,8 @@ Units []
   Apply settings of all
 close 900
   PadRoute Ui
+Reading Screens
+  SizeTouchpad(Some(TouchLayout { pixels: (1240, 1080), resolution: 17 }))
 Pointer(Activate(Settings(Tile(Scaling))))
   Save Settings
 Pointer(Activate(Settings(Tile(Resolution))))
@@ -486,6 +488,8 @@ Start
 Pointer(Activate(Shelf(Entry("ff6"))))
   Launch ff6 as ff6_09d141
   Save Resume
+Reading Screens
+  SizeTouchpad(Some(TouchLayout { pixels: (1240, 1080), resolution: 17 }))
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Tick 1760000005
@@ -515,6 +519,8 @@ Start
 Pointer(Activate(Shelf(Entry("ff6"))))
   Launch ff6 as ff6_09d141
   Save Resume
+Reading Screens
+  SizeTouchpad(Some(TouchLayout { pixels: (1240, 1080), resolution: 17 }))
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Tick 1760000005
@@ -533,6 +539,8 @@ Start
 Pointer(Activate(Shelf(Entry("ff6"))))
   Launch ff6 as ff6_09d141
   Save Resume
+Reading Screens
+  SizeTouchpad(Some(TouchLayout { pixels: (1240, 1080), resolution: 17 }))
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Tick 1760000005

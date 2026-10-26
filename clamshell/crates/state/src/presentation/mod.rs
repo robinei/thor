@@ -49,11 +49,30 @@ pub struct WindowPresentation {
 /// The screens as the compositor has them (see [`crate::Reading::Screens`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Screens {
-    /// Each screen's colour as clients are told it (the top's, the second's): what a curve is shown
-    /// within.
-    pub colour: [crate::colour::ColourDescription; 2],
-    /// The top screen's size in pixels, which a game's resolution is a fraction of.
-    pub top_size: (u32, u32),
+    pub top: Panel,
+    pub bottom: Panel,
+}
+
+/// One screen as the compositor has it, turned as it is shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Panel {
+    /// Its colour as clients are told it: what a curve is shown within.
+    pub colour: crate::colour::ColourDescription,
+    /// Its size in pixels. A game's resolution is a fraction of the top screen's; the second screen's is
+    /// the virtual touchpad's.
+    pub pixels: (u32, u32),
+    /// Its size in millimetres, from its connector or else the device profile, if either says.
+    pub millimetres: Option<(u32, u32)>,
+}
+
+impl Panel {
+    /// Its pixels per millimetre. Pixels are taken as square, and the density is the longer side's, whose
+    /// whole millimetres are the smaller share of it.
+    pub fn pixels_per_mm(&self) -> Option<f32> {
+        let (mm_w, mm_h) = self.millimetres?;
+        let (pixels, mm) = if mm_w >= mm_h { (self.pixels.0, mm_w) } else { (self.pixels.1, mm_h) };
+        (pixels > 0 && mm > 0).then(|| pixels as f32 / mm as f32)
+    }
 }
 
 /// What the compositor said that windows are presented on: the screens, the top screen's refresh rates,
@@ -89,17 +108,24 @@ impl Presentation {
 
     /// Screen `down`'s colour (the second's, or the top's), as the compositor describes it.
     pub(crate) fn screen_colour(&self, down: bool) -> crate::colour::ColourDescription {
-        let [top, bottom] = self.screens.colour;
-        if down { bottom } else { top }
+        if down { self.screens.bottom.colour } else { self.screens.top.colour }
     }
 
     /// The top screen's size, once the compositor has said.
     pub fn top_size(&self) -> Option<(u32, u32)> {
-        Some(self.screens.top_size).filter(|(w, h)| *w > 0 && *h > 0)
+        Some(self.screens.top.pixels).filter(|(w, h)| *w > 0 && *h > 0)
     }
 
     pub fn display_modes(&self) -> &modes::DisplayModes {
         &self.display_modes
+    }
+
+    /// The second screen, as the virtual touchpad has it, once the compositor has said its size in pixels
+    /// and in millimetres.
+    pub(crate) fn touchpad(&self) -> Option<crate::bottom::touch::TouchLayout> {
+        let bottom = self.screens.bottom;
+        let resolution = bottom.pixels_per_mm()?.round().max(1.0) as u32;
+        (bottom.pixels.0 > 0 && bottom.pixels.1 > 0).then_some(crate::bottom::touch::TouchLayout { pixels: bottom.pixels, resolution })
     }
 
     pub fn histogram(&self) -> Option<crate::colour::Histogram> {
@@ -245,6 +271,18 @@ impl crate::State {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_panels_density_is_its_longer_sides_taking_pixels_as_square() {
+        let panel = |pixels, millimetres| Panel { pixels, millimetres, ..Panel::default() };
+        // 1240 by 1080 pixels on 75 by 65 mm: 16.53 by 16.62 per mm, the difference only the rounding of
+        // whole millimetres.
+        assert_eq!(panel((1240, 1080), Some((75, 65))).pixels_per_mm(), Some(1240.0 / 75.0));
+        assert_eq!(panel((1080, 1240), Some((65, 75))).pixels_per_mm(), Some(1240.0 / 75.0), "turned, the same side");
+        assert_eq!(panel((1240, 1080), None).pixels_per_mm(), None);
+        assert_eq!(panel((0, 0), Some((75, 65))).pixels_per_mm(), None);
+        assert_eq!(panel((1240, 1080), Some((0, 0))).pixels_per_mm(), None);
+    }
     use crate::session::windows::WindowFacts;
     use crate::settings::Size;
 

@@ -177,6 +177,8 @@ struct Sent {
     watched: Vec<Watch>,
     /// The last Brightness's level.
     brightness: Option<u8>,
+    /// The last SizeTouchpad.
+    touchpad: Option<crate::bottom::touch::TouchLayout>,
     /// Each slice's last Freeze.
     frozen: HashMap<String, bool>,
     /// The freezer was started again in this event: every slice is sent as it should be, whatever it was
@@ -643,6 +645,17 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             3 => Slide::To { x: rng.below(100) as f32 }.into(),
             _ => Slide::End.into(),
         },
+        // The screens as the compositor says them: the second's size changes as a nested window is resized.
+        94 if rng.one_in(3) => {
+            use crate::presentation::{Panel, Screens};
+            let pixels = (rng.below(1300) as u32, rng.below(1100) as u32);
+            let millimetres = (!rng.one_in(3)).then(|| (rng.below(80) as u32, rng.below(70) as u32));
+            Reading::Screens(Box::new(Screens {
+                top: Panel { pixels: (1920, 1080), ..Panel::default() },
+                bottom: Panel { pixels, millimetres, ..Panel::default() },
+            }))
+            .into()
+        }
         94 => {
             let mut modes = crate::presentation::modes::DisplayModes::default();
             for _ in 0..rng.below(5) {
@@ -802,6 +815,7 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
             Effect::Compositor(Compositor::Outputs { top, bottom }) => sent.outputs = (*top, *bottom),
             Effect::Compositor(Compositor::Refresh(hz)) => sent.refresh = *hz,
             Effect::Brightness { level, .. } => sent.brightness = Some(*level),
+            Effect::SizeTouchpad(layout) => sent.touchpad = *layout,
             _ => {}
         }
     }
@@ -835,6 +849,8 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
     ensure!(sent.refresh == refresh, "2: refresh sent {}, the calibration's, the last launch's or in force {refresh}", sent.refresh);
     let apply = (s.session().program().cloned(), s.in_force());
     ensure!(sent.apply.as_ref() == Some(&apply), "2: applied {:?}, in force {:?}", sent.apply, apply);
+    let touchpad = s.presentation().touchpad();
+    ensure!(sent.touchpad == touchpad, "2: touchpad sent {:?}, the second screen's {touchpad:?}", sent.touchpad);
 
     // 3. The pad's route.
     ensure!(

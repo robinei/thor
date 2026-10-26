@@ -11,11 +11,11 @@
 mod input;
 
 use std::collections::VecDeque;
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use clamshell_state::bottom::touch::{Contact, Pointing, TouchLayout};
+use clamshell_state::bottom::touch::{Contact, Pointing};
 use clamshell_state::{Effect, Event, Id, ShelfEvent, State};
 use tiny_skia::PixmapMut;
 
@@ -89,9 +89,6 @@ pub struct Core {
     contacts: Vec<Contact>,
     /// Where the pad's focus was on each screen, so View can switch back to it.
     focus_memory: Screens<Option<Id>>,
-    /// Where the touchpad area and the bar's targets are, for the touchpad tab's input side.
-    touch_layout: Arc<Mutex<TouchLayout>>,
-    bottom_density: Option<(f32, f32)>,
     /// The effects of the event being handled, kept to be reused for the next one.
     effects: Vec<Effect>,
     /// The effects not yet taken by the host, in order.
@@ -108,7 +105,7 @@ impl Core {
     /// The core for `state`. Fonts for characters the built-in one lacks are found, and images decoded,
     /// on threads of their own; `wake` is called from those threads when something came back, so that
     /// the host runs the core.
-    pub fn new(state: State, touch_layout: Arc<Mutex<TouchLayout>>, wake: impl Fn() + Send + Sync + 'static) -> Result<Core, Error> {
+    pub fn new(state: State, wake: impl Fn() + Send + Sync + 'static) -> Result<Core, Error> {
         let (arrived, arrivals) = std::sync::mpsc::channel();
         let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(wake);
         let fonts = {
@@ -136,8 +133,6 @@ impl Core {
             clock: EventClock::default(),
             contacts: Vec::new(),
             focus_memory: Screens::default(),
-            touch_layout,
-            bottom_density: None,
             effects: Vec::new(),
             outbox: VecDeque::new(),
             queue: EventQueue::default(),
@@ -272,14 +267,6 @@ impl Core {
         }
     }
 
-    /// Host-reported logical pixels per millimetre. Buffer scale is applied when publishing a frame.
-    pub fn set_bottom_density(&mut self, density: Option<(f32, f32)>) {
-        if self.bottom_density != density {
-            self.bottom_density = density;
-            self.screens[Screen::Bottom].stale = true;
-        }
-    }
-
     /// `layer`'s logical size and its scale.
     pub fn size(&self, layer: impl Into<Layer>) -> ((u32, u32), u32) {
         let s = self.layer(layer.into());
@@ -311,9 +298,6 @@ impl Core {
         let out = s.frames.record(at, layer, &self.state, &mut self.fonts, &mut self.images);
         s.stale = false;
         s.body = out.touchpad_area;
-        if layer == Layer::Screen(Screen::Bottom) {
-            publish(&self.touch_layout, (size_px.0 as f32, size_px.1 as f32), self.bottom_density.map(|(x, y)| (x * s.scale as f32, y * s.scale as f32)));
-        }
         self.rows = self.rows.or(out.list_rows.filter(|&rows| rows != self.state.shelf().rows()));
         self.lists.extend(render::list_changes(&self.state, &out));
         if whole { Some(Bounds::of_size(size_px)) } else { s.frames.damage() }
@@ -353,17 +337,6 @@ fn tell(to: &Sender<Arrival>, wake: &dyn Fn(), arrival: Arrival) -> bool {
     let sent = to.send(arrival).is_ok();
     wake();
     sent
-}
-
-/// Tells the virtual touchpad the second screen's size, in pixels.
-fn publish(touch: &Mutex<TouchLayout>, screen: (f32, f32), density: Option<(f32, f32)>) {
-    match touch.lock() {
-        Ok(mut layout) => {
-            layout.screen = screen;
-            layout.pixels_per_mm = density;
-        }
-        Err(e) => log::trace!("touch layout: {e}"),
-    }
 }
 
 /// The events waiting to be handled. Events are handled one at a time: one that comes while another is

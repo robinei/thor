@@ -94,7 +94,7 @@ impl ServerBuilder {
     pub(crate) fn new() -> ServerBuilder {
         ServerBuilder {
             state: State::new(Init::default()),
-            config: Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() },
+            config: Config { top_size: (960, 540), bottom_size: (620, 540) },
             relative_motion: false,
             identify: Box::new(|_| Process::default()),
             on_effect: Box::new(|_| {}),
@@ -106,7 +106,7 @@ impl ServerBuilder {
     }
 
     pub(crate) fn sizes(self, top_size: (u32, u32), bottom_size: (u32, u32)) -> ServerBuilder {
-        ServerBuilder { config: Config { top_size, bottom_size, ..self.config }, ..self }
+        ServerBuilder { config: Config { top_size, bottom_size }, ..self }
     }
 
     /// With relative pointer motion, as on a host that gives it.
@@ -672,7 +672,7 @@ fn touching_a_notification_taps_it_and_its_close_mark_dismisses_it() {
     use clamshell_state::{Notification, NotificationEvent, NotificationId, Urgency};
     use smithay::backend::input::InputTime;
     let display = Display::<Server>::new().unwrap();
-    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
+    let config = Config { top_size: (960, 540), bottom_size: (620, 540) };
     let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
     server.core.handle(Event::Start);
     for id in [1, 2] {

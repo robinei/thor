@@ -70,6 +70,7 @@ impl Handles {
             }
             Effect::PadActivity(watch) => self.pad.send(pad::Command::WatchActivity(*watch)),
             Effect::Touchpad(contacts) => self.touchpad.send(touchpad::Command::Contacts(contacts.clone())),
+            Effect::SizeTouchpad(layout) => self.touchpad.send(touchpad::Command::Layout(*layout)),
             Effect::Launch { entry, unit, launch, settings, env } => {
                 log::info!("launching {entry}");
                 self.tuning.apply(settings);

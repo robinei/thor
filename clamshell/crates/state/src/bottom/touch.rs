@@ -15,13 +15,13 @@
 //! The UI decides which fingers point, in its input state machine. The state keeps whether it is
 //! pointing.
 
-/// What the virtual touchpad needs from the second screen's layout: its size in pixels, which the
-/// touchscreen covers. The UI updates it with every frame of the second screen.
-#[derive(Debug, Clone, Default, PartialEq)]
+/// What the virtual touchpad needs of the second screen: its size in pixels, which the touchscreen
+/// covers, and its resolution, the whole pixels per millimetre (see
+/// [`crate::presentation::Panel::pixels_per_mm`]), which libinput's acceleration goes by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TouchLayout {
-    pub screen: (f32, f32),
-    /// Measured buffer pixels per millimetre, when the host reports physical dimensions.
-    pub pixels_per_mm: Option<(f32, f32)>,
+    pub pixels: (u32, u32),
+    pub resolution: u32,
 }
 
 /// How many fingers (slots) a touchpad tracks.
@@ -70,5 +70,22 @@ mod tests {
         s.applied(Pointing::Contacts(vec![contact]).into());
         s.applied(Event::TextInput(true));
         assert!(!s.bottom().pointing(), "a field took focus: typing");
+    }
+
+    /// The touchpad is made as soon as the second screen's size in pixels and millimetres are known, and
+    /// again only when they change.
+    #[test]
+    fn the_touchpad_is_sized_when_the_screens_are_known() {
+        use crate::presentation::{Panel, Screens};
+        let mut s = crate::testkit::state();
+        let screens = |pixels, millimetres| Screens { top: Panel::default(), bottom: Panel { pixels, millimetres, ..Panel::default() } };
+        let read = |s: &mut crate::State, screens| s.applied(crate::Reading::Screens(Box::new(screens)).into());
+        assert!(read(&mut s, screens((1240, 1080), None)).is_empty(), "no millimetres: no touchpad");
+        let fx = read(&mut s, screens((1240, 1080), Some((75, 65))));
+        assert_eq!(fx, vec![Effect::SizeTouchpad(Some(TouchLayout { pixels: (1240, 1080), resolution: 17 }))]);
+        assert!(read(&mut s, screens((1240, 1080), Some((75, 65)))).is_empty());
+        let fx = read(&mut s, screens((620, 540), Some((75, 65))));
+        assert_eq!(fx, vec![Effect::SizeTouchpad(Some(TouchLayout { pixels: (620, 540), resolution: 8 }))], "a nested window made smaller");
+        assert_eq!(read(&mut s, screens((620, 540), None)), vec![Effect::SizeTouchpad(None)]);
     }
 }
