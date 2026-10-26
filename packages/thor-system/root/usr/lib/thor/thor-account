@@ -6,11 +6,14 @@
 #
 #   thor-account status       "password set|none" and "ssh on|off", a line each
 #   thor-account password     stdin: the new password (only while none is set), or the current one and
-#                             the new one, a line each
+#                             the new one, a line each. The first password is set only once Volume Up is
+#                             pressed on a physical device within 20 s (`clamshell device confirm`): any
+#                             process of the session's user could run this helper, and only someone holding
+#                             the device can press the key.
 #   thor-account ssh on|off   sshd enabled and started, or disabled and stopped (on: only with a password)
 #
-# Errors: exit 1 and a line on stderr: "wrong password", "too short" (under 8 characters), "set a password
-# first", "failed".
+# Errors: exit 1 and a line on stderr: "wrong password", "too short" (under 8 characters), "Volume Up not
+# pressed", "set a password first", "failed".
 #
 # The password is sudo's and ssh's: Remote login takes it (sshd's 50-thor.conf: thor only, 3 tries per
 # connection), and through it a key can be added (~/.ssh/authorized_keys); at least 8 characters, as it
@@ -44,6 +47,8 @@ case ${1:-} in
                 || fail "wrong password"
         else
             IFS= read -r new || fail "failed"
+            [ "${#new}" -ge 8 ] || fail "too short"
+            /usr/bin/clamshell device confirm 2> /dev/null || fail "Volume Up not pressed"
         fi
         [ "${#new}" -ge 8 ] || fail "too short"
         printf '%s:%s\n' "$user" "$new" | chpasswd 2> /dev/null || fail "failed"

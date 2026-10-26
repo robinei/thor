@@ -71,6 +71,9 @@ pub struct Device {
     /// When remote login was turned on or off (monotonic seconds), until the helper answers. Another tap
     /// waits for the answer, or for [`ANSWER_WAIT`] to pass without one.
     ssh_asked: Option<u64>,
+    /// A first password was sent, and the helper waits for Volume Up to be pressed on the device, until it
+    /// answers (see [`account`]).
+    confirming: bool,
 }
 
 /// How long a request of the Device view waits for its answer, in seconds, before another tap may ask
@@ -161,9 +164,21 @@ impl Device {
         self.account = account;
     }
 
-    /// The account helper answered a change. Its reading follows.
+    /// A first password was sent: the helper sets it once Volume Up is pressed.
+    pub(crate) fn first_password_sent(&mut self) {
+        self.confirming = true;
+    }
+
+    /// Whether the helper waits for Volume Up to be pressed, to set the first password.
+    pub fn confirming(&self) -> bool {
+        self.confirming
+    }
+
+    /// The account helper answered a change, or can't any more (its thread was started again). Its
+    /// reading follows.
     pub(crate) fn account_changed(&mut self) {
         self.ssh_asked = None;
+        self.confirming = false;
     }
 
     /// A tap on one of the Device view's targets at `now` (monotonic seconds). Closing it gives the focus
@@ -516,5 +531,19 @@ mod tests {
         assert!(tap(&mut s, DeviceId::Refresh).is_empty());
         s.applied(Event::RefreshCalibrated(Ok("120 Hz: 118.630 -> 120.089 Hz".into())));
         assert!(matches!(s.device().refresh(), Refresh::Done(Ok(_))));
+    }
+
+    /// A first password waits for Volume Up to be pressed until the helper answers, whatever it says.
+    #[test]
+    fn a_first_password_waits_for_volume_up_until_the_helper_answers() {
+        let mut s = state();
+        s.applied(Event::Reading(Reading::Account(crate::device::account::Account { available: true, password: false, ssh: false })));
+        let fx = s.applied(Event::EditOnKeyboard(Editor { purpose: Purpose::AccountPassword(PasswordStep::New { current: None }), text: "secret12".into() }));
+        assert!(!s.device().confirming(), "not before it is set: {fx:?}");
+        let fx = crate::testkit::tap(&mut s, crate::Id::Editor(crate::EditorId::Save));
+        assert!(fx.iter().any(|e| matches!(e, Effect::Account(AccountCommand::Password { current: None, .. }))), "{fx:?}");
+        assert!(s.device().confirming());
+        s.applied(Event::AccountChanged(Err("Volume Up not pressed".into())));
+        assert!(!s.device().confirming());
     }
 }

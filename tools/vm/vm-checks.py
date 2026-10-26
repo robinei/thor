@@ -1221,6 +1221,18 @@ class Checks:
         self.check("  its process moved into a scope of ours", until(lambda: "clamshell-run-foot_" in cgroup(), 5), f"{cgroup()!r}; {adopt(since)}")
         sh("pkill -x foot || true")
 
+    def confirm_key(self):
+        """The first password's confirmation (`clamshell device confirm`, run as root by thor-account):
+        Volume Up on a physical device ends it at once; with no press it gives up after 20 s."""
+        sh(f"sudo rm -f /tmp/confirm.status; (sudo {vm.A.program} device confirm; echo $? > /tmp/confirm.status) > /dev/null 2>&1 &")
+        time.sleep(1.5)
+        self.i.qmp.command("send-key", keys=[{"type": "qcode", "data": "volumeup"}])
+        done = until(lambda: sh("cat /tmp/confirm.status 2>/dev/null || true").strip() != "", 5)
+        self.check("confirm: Volume Up on the virtio keyboard confirms", done and sh("cat /tmp/confirm.status").strip() == "0",
+                   sh("cat /tmp/confirm.status 2>/dev/null || true").strip())
+        status = sh(f"sudo {vm.A.program} device confirm > /dev/null 2>&1; echo $?").strip()
+        self.check("  with no press it fails", status == "1", status)
+
     def session_units(self):
         """The session as systemd sees it: the displays given to the user manager for its services, the
         status line, and the compositor's own tapping on ClamShell's touchpad."""
@@ -1312,7 +1324,7 @@ GLib.MainLoop().run()
 
 
 
-CHECKS = ["session_units", "shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "pad_windows",
+CHECKS = ["confirm_key", "session_units", "shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "pad_windows",
           "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
           "keymap_actuations", "rumble", "launch_and_quit", "pause_hidden", "found_window", "tray_program", "clipboard",
           "bluetooth", "gyro_sleep"]

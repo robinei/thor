@@ -73,6 +73,11 @@ fn carry_out(command: Command) -> Result<(), String> {
     let paths = Paths::new(&env.base);
     let sources = Sources::new(&paths, env.base.home.as_deref(), env.steam);
     match command {
+        Command::DeviceConfirm => match clamshell_system::input::confirm::volume_up(std::time::Duration::from_secs(20)) {
+            Ok(true) => Ok(()),
+            Ok(false) => Err("Volume Up wasn't pressed".into()),
+            Err(e) => Err(format!("confirm: {e}")),
+        },
         Command::DevicePanel => {
             println!("{}", profile::panel(&env.profile));
             Ok(())

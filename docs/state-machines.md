@@ -269,6 +269,7 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 | open while the UI is up → `Watch(Account)` on; closed → off | `the_account_is_watched_while_the_view_is_open` |
 | Wifi / Zone rows → their tab, its watch | `the_wifi_and_zone_rows_open_their_tabs` |
 | Password → editor for the current then the new password → `Account(Password)` | `the_password_is_typed_below_the_current_one_first` |
+| the first password sent → confirming (the row says to press Volume Up) until AccountChanged, whatever it says; the helper sets it only once Volume Up is pressed on a physical device (`clamshell device confirm`, VM check `confirm_key`) | `a_first_password_waits_for_volume_up_until_the_helper_answers` |
 | Ssh with a password → `Account(Ssh)`; further taps do nothing until AccountChanged, at most 30 s | `remote_login_needs_a_password`, `remote_login_waits_for_its_answer_before_another_tap`, `remote_login_is_asked_again_after_30_s_without_an_answer` |
 | Sticks → `CalibrateSticks`; progress; done saves or fails; further taps do nothing until done, or 30 s without progress | `a_sticks_calibration_shows_its_progress_…`, `the_sticks_calibration_waits_for_its_end_before_another_tap`, `the_sticks_calibration_is_asked_again_after_30_s_without_word` |
 | Gyro → notice + `CalibrateGyro`; result notice; without one the notice goes after 30 s | `the_gyros_hold_still_shows_until_it_answers_at_most_30_s` |

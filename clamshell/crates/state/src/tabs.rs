@@ -76,7 +76,12 @@ impl State {
                     self.shelf.run_file_op(op, out);
                 }
             }
-            (Done::Save, Purpose::AccountPassword(step)) => crate::device::account::password_typed(step, editor.text, self.bottom.editors_mut(), out),
+            (Done::Save, Purpose::AccountPassword(step)) => {
+                if step == (crate::device::account::PasswordStep::New { current: None }) {
+                    self.device.first_password_sent();
+                }
+                crate::device::account::password_typed(step, editor.text, self.bottom.editors_mut(), out);
+            }
         }
         if on_keyboard && self.bottom.editor().is_none() {
             self.back_from_keyboard();

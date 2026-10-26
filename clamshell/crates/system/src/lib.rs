@@ -26,7 +26,7 @@ mod audio;
 mod display;
 mod errands;
 mod files;
-mod input;
+pub mod input;
 pub mod launch;
 pub mod library;
 mod network;

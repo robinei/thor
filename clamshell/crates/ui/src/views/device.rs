@@ -74,7 +74,12 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     let account = s.device().account();
     let password = col.take(row_h);
     if account.available {
-        let value = if account.password { "Set" } else { "Not set" };
+        // The helper sets a first password once Volume Up is pressed on the device itself.
+        let value = match (s.device().confirming(), account.password) {
+            (true, _) => "Press Volume Up to confirm",
+            (false, true) => "Set",
+            (false, false) => "Not set",
+        };
         f.button(Id::Device(DeviceId::Password), password, Look::ROW, |f| widgets::value_row(f, password, size, "Password", value, account.password));
     } else {
         widgets::value_row(f, password, size, "Password", "Unavailable", false);
