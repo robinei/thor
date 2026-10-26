@@ -65,7 +65,13 @@ pub(crate) fn spawn(screenshots: Option<PathBuf>, calibration: Option<&'static s
 /// Carries out one command. Returns `Closed` once the UI is gone.
 fn carry_out(command: Command, screenshots: Option<&PathBuf>, calibration: Option<&'static str>, sink: &(impl Sink + Clone)) -> Result<(), Closed> {
     match command {
-        Command::SaveScreenshot(pixels) => sink.send(Event::Screenshot(pixels.and_then(|pixels| screenshot::save(screenshots, pixels)))),
+        Command::SaveScreenshot(pixels) => {
+            let saved = pixels.and_then(|pixels| screenshot::save(screenshots, pixels));
+            if let Err(e) = &saved {
+                log::warn!("screenshot: {e}");
+            }
+            sink.send(Event::Screenshot(saved))
+        }
         // Busy means something is working that the user left running, such as a download or a build.
         Command::Sleep => match sleep::busy() {
             Some(why) => {
