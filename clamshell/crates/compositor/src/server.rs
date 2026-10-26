@@ -17,37 +17,58 @@ use smithay::{
 use crate::clients::Process;
 use crate::windows::ClientWindow;
 
+/// The compositor: the UI's core it hosts, the clients' windows and the protocols' states, the screens,
+/// input, and what a host reads after each turn.
 pub(crate) struct Server {
+    /// The UI and the state it owns.
     pub core: Core,
+    /// The screens' colour and the colour protocols' objects.
     pub colour: crate::colour::State,
     pub dh: DisplayHandle,
     /// The event loop's handle, for a commit's buffer to wake it when ready (see `CompositorHandler::new_surface`).
     pub loop_handle: Option<smithay::reexports::calloop::LoopHandle<'static, Server>>,
+    /// Smithay's states of the protocols served.
     pub protocols: crate::protocols::Protocols,
+    /// The clock presentation feedback and commit timing are told in.
     pub clock: smithay::utils::Clock<smithay::utils::Monotonic>,
+    /// Clients' dmabufs to import with the renderer before the next drawing (see `dmabuf`).
     pub pending_imports: Vec<(smithay::backend::allocator::dmabuf::Dmabuf, smithay::wayland::dmabuf::ImportNotifier)>,
+    /// The one seat, with a keyboard, a pointer and touch.
     pub seat: Seat<Self>,
     pub popups: PopupManager,
+    /// The xdg menu open, with its grab (see `popup`).
     pub menu: Option<crate::popup::Menu>,
+    /// The clients' windows, in stacking order, the frontmost last.
     pub windows: Vec<ClientWindow>,
     pub screens: crate::screens::Screens,
     pub pointer: crate::pointer::Pointer,
-    pub pacing: crate::pacing::Pacing,
+    pub touch: crate::touch::Touches,
+    /// Whether the desktop's Home key (F12) is down.
     pub keyboard_home: bool,
     /// A VT asked for with Ctrl+Alt+F1..F12, for the host whose seat can switch.
     pub vt_switch: Option<i32>,
+    /// The source the on-screen keyboard's keys are sent from, apart from a host's keyboard.
     pub keyboard_source: smithay::input::keyboard::KeyboardSource,
-    pub touch: crate::touch::Touches,
+    pub pacing: crate::pacing::Pacing,
+    /// Whether the event loop ends: the state quit, or a failure left no way on.
     pub exit: bool,
+    /// Whether the state asked for a screenshot, which the host takes with its next drawing.
     pub screenshot_requested: bool,
+    /// When the server began, the time frame callbacks and cursor animations count from.
     pub started: Instant,
     pub idle: crate::idle::Idle,
+    /// The state's revision the windows' `shown` was last worked out at (see [`Server::sync_windows`]).
     pub presentation_revision: Option<u64>,
+    /// The last window events, dumped by `Compositor::DumpWindowEvents` (see `trace`).
     pub trace: std::rc::Rc<std::cell::RefCell<crate::trace::Ring>>,
+    /// The Wayland socket's name (WAYLAND_DISPLAY).
     pub socket: String,
-    pub on_effect: Box<dyn FnMut(&Effect)>,
-    pub(crate) identities: crate::clients::Identities,
-    pub(crate) next_id: i64,
+    /// Where the effects that aren't the compositor's own go.
+    on_effect: Box<dyn FnMut(&Effect)>,
+    /// The clients' processes, identified off this thread (see `clients`).
+    pub identities: crate::clients::Identities,
+    /// The id the next window gets, Wayland's and X11's alike.
+    pub next_id: i64,
     pub x11: crate::x11::Bridge,
 }
 
