@@ -371,6 +371,8 @@ def main():
             if problems:
                 line += f" -- {'; '.join(problems)}"
                 failures.append(case)
+                # What the compositor's windows did up to it, for finding out why.
+                control("window", "events", str(directory / f"{case}.events.json"))
             print(line, flush=True)
 
         def combos(full):
