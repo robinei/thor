@@ -1,6 +1,6 @@
 //! What ClamShell tells systemd when it runs as a service (`Type=notify`, `WatchdogSec=`): that it is up
-//! once its loop has turned once, with its socket listening and the system threads started, and every
-//! few seconds that the loop is still turning.
+//! once its loop has turned once, with its socket listening and the system threads started; every few
+//! seconds that the loop is still turning; and a status line for `systemctl status`: what runs.
 //!
 //! If the loop stops, through a deadlock or a call that never returns, systemd restarts ClamShell after
 //! the watchdog's time. What it launched runs on in its own scopes, and the restarted ClamShell finds it.
@@ -17,6 +17,8 @@ pub struct Notifier {
     socket: Option<(UnixDatagram, std::path::PathBuf)>,
     ready: bool,
     last: Option<Instant>,
+    /// The status last sent: running entries, windows, whether Xwayland runs.
+    status: Option<(usize, usize, bool)>,
 }
 
 impl Notifier {
@@ -25,7 +27,7 @@ impl Notifier {
     pub fn new() -> Notifier {
         let path = std::env::var_os("NOTIFY_SOCKET").map(std::path::PathBuf::from).filter(|p| p.is_absolute());
         let socket = path.and_then(|p| UnixDatagram::unbound().inspect_err(|e| log::warn!("notify {}: {e}", p.display())).ok().map(|s| (s, p)));
-        Notifier { socket, ready: false, last: None }
+        Notifier { socket, ready: false, last: None, status: None }
     }
 
     /// Called after each turn of the main loop. Reports that the program is up the first time, and that
@@ -38,6 +40,16 @@ impl Notifier {
             self.last = Some(Instant::now());
             self.send("WATCHDOG=1");
         }
+    }
+
+    /// What `systemctl status` shows under the unit, sent when it changes: the running entries, the
+    /// windows, and whether Xwayland runs.
+    pub fn status(&mut self, running: usize, windows: usize, xwayland: bool) {
+        if self.socket.is_none() || self.status.replace((running, windows, xwayland)) == Some((running, windows, xwayland)) {
+            return;
+        }
+        let xwayland = if xwayland { "Xwayland running" } else { "Xwayland not started" };
+        self.send(&format!("STATUS={running} running, {windows} windows, {xwayland}"));
     }
 
     /// When the loop is next to turn at the latest, for the next report: never outside systemd.

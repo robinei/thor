@@ -97,6 +97,8 @@ impl Base {
             host_deadline = host(&mut server, Instant::now());
             server.dh.flush_clients()?;
             notifier.turned();
+            let session = server.core.state().session();
+            notifier.status(session.running_entries().len(), session.windows().len(), x11.running());
         }
         Ok(())
     }

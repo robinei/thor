@@ -77,6 +77,11 @@ impl Supervisor {
         );
         Ok(())
     }
+    /// Whether Xwayland runs (it starts on the first X11 client).
+    pub fn running(&self) -> bool {
+        self.running.is_some()
+    }
+
     pub fn deadline(&self) -> Option<Instant> {
         self.retry
             .into_iter()
