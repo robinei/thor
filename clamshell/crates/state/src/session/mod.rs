@@ -33,6 +33,10 @@ pub struct Session {
     running: Vec<Running>,
     /// The id of the program in force (see [`crate::session::program`]).
     program: Option<Arc<str>>,
+    /// The entry launched last, until the program in force changes or it is gone: the main screen's
+    /// refresh rate follows its settings from its launch, before its window shows (see
+    /// [`Session::refresh_launch`]).
+    refresh_launch: Option<Arc<str>>,
     /// Launches asked for that haven't started.
     launching: Vec<Launching>,
     /// The compositor's windows.
@@ -151,6 +155,12 @@ impl Session {
     /// The program in force: an entry's id.
     pub fn program(&self) -> Option<&Arc<str>> {
         self.program.as_ref()
+    }
+
+    /// The entry launched last whose settings the main screen's refresh rate follows, ahead of the
+    /// program in force's, until the program in force changes.
+    pub(crate) fn refresh_launch(&self) -> Option<&Arc<str>> {
+        self.refresh_launch.as_ref()
     }
 
     pub fn windows(&self) -> &[Window] {

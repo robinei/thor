@@ -166,9 +166,8 @@ struct Sent {
     account: bool,
     /// The last Outputs.
     outputs: (bool, bool),
-    /// The last Refresh, and the refresh rate of the last Launch or Apply, which it follows.
+    /// The last Refresh.
     refresh: u16,
-    refresh_wanted: u16,
     /// Each slice's last Freeze.
     frozen: HashMap<String, bool>,
     /// The freezer was started again in this event: every slice is sent as it should be, whatever it was
@@ -690,7 +689,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
 /// Sync run again: what it sends now (invariant 1 wants nothing).
 fn sync_again(s: &mut State) -> Vec<Effect> {
     let mut out = Out::default();
-    s.sync(&mut out, 0);
+    s.sync(&mut out);
     out.effects
 }
 
@@ -732,9 +731,6 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
             Effect::Compositor(Compositor::Refresh(hz)) => sent.refresh = *hz,
             _ => {}
         }
-        if let Effect::Launch { settings, .. } | Effect::Apply { settings, .. } = e {
-            sent.refresh_wanted = s.device().display_modes().refresh_for(settings.get(Setting::Refresh), settings.get(Setting::FpsCap));
-        }
     }
     if started {
         ensure!(sent.route == Some(s.pad().route()), "2: route sent {:?}, state {:?}", sent.route, s.pad().route());
@@ -747,8 +743,10 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
     // (The refresh rate calibration keeps the bottom screen off while it runs.)
     let outputs = (screens_on, !s.bottom().off() && !s.device().calibrating());
     ensure!(sent.outputs == outputs, "2: outputs sent {:?}, state {outputs:?}", sent.outputs);
-    let refresh = s.device().calibration_rate().unwrap_or(sent.refresh_wanted);
-    ensure!(sent.refresh == refresh, "2: refresh sent {}, the calibration's or last launched or applied {refresh}", sent.refresh);
+    let settings = s.session().refresh_launch().map_or_else(|| s.in_force(), |id| s.settings_of(id));
+    let rate = s.device().display_modes().refresh_for(settings.get(Setting::Refresh), settings.get(Setting::FpsCap));
+    let refresh = s.device().calibration_rate().unwrap_or(rate);
+    ensure!(sent.refresh == refresh, "2: refresh sent {}, the calibration's, the last launch's or in force {refresh}", sent.refresh);
     let apply = (s.session().program().cloned(), s.in_force());
     ensure!(sent.apply.as_ref() == Some(&apply), "2: applied {:?}, in force {:?}", sent.apply, apply);
 
@@ -942,14 +940,7 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
     let init = Init { library: library(), keymaps: crate::keymap::Keymaps::initial(), device_session: true, first_start: rng.one_in(3), ..Init::default() };
     let mut s = State::new(init);
     let refresh = s.in_force().get(Setting::Refresh);
-    let mut sent = Sent {
-        apply: Some((s.session().program().cloned(), s.in_force())),
-        status: true,
-        outputs: (true, true),
-        refresh,
-        refresh_wanted: refresh,
-        ..Sent::default()
-    };
+    let mut sent = Sent { apply: Some((s.session().program().cloned(), s.in_force())), status: true, outputs: (true, true), refresh, ..Sent::default() };
     let mut world = World::new();
     let mut clock = 1000;
     let mut history: Vec<String> = Vec::new();

@@ -385,6 +385,22 @@ fn the_refresh_rate_follows_a_launch_at_once_then_the_settings_in_force() {
     assert_eq!(refresh(&crate::testkit::end(&mut s, "zelda-lttp")), [0], "ended: the global rate, as is");
 }
 
+/// A launch that fails gives the main screen back to the settings in force.
+#[test]
+fn the_refresh_rate_goes_back_when_a_launch_fails() {
+    let mut settings = crate::settings::Settings::default();
+    settings.set(Some(&"zelda-lttp".into()), Setting::Refresh, Some(60));
+    let mut s = State::new(Init { settings, ..init() });
+    s.ui_up();
+    let refresh =
+        |fx: &[Effect]| fx.iter().filter_map(|e| if let Effect::Compositor(Compositor::Refresh(hz)) = e { Some(*hz) } else { None }).collect::<Vec<_>>();
+    let mut fx = tap(&mut s, entry("zelda-lttp"));
+    fx.extend(tap(&mut s, entry("zelda-lttp")));
+    assert_eq!(refresh(&fx), [60], "at the launch: {fx:?}");
+    let fx = s.applied(Event::Launch(crate::LaunchEvent::LaunchFailed("zelda-lttp".into())));
+    assert_eq!(refresh(&fx), [0], "{fx:?}");
+}
+
 /// The screens' power is sent when it changes: the bottom one alone while they are on, and both for idle,
 /// with the bottom one as it is set.
 #[test]

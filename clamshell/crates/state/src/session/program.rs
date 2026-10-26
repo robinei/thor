@@ -12,6 +12,9 @@ impl Session {
         let front = self.top_window().and_then(|w| self.owner_of(w));
         let kept = self.program.clone().filter(|p| self.running(p).is_some());
         let program = front.or(kept).or_else(|| self.running.last().map(|r| r.id.clone()));
-        crate::kit::replace(&mut self.program, program)
+        let changed = crate::kit::replace(&mut self.program, program);
+        let launch = self.refresh_launch.take().filter(|e| !changed && (self.is_launching(e) || self.running(e).is_some()));
+        self.refresh_launch = launch;
+        changed
     }
 }

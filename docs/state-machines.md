@@ -516,7 +516,8 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
 2. **What was sent mirrors the state:** the last PadRoute is `pad().route()`; the last Keymap is the
    keymap in force; Status is watched iff the screens are on; Account iff the UI is up and the Device
    view is open; the last Apply is `(program, in_force)`; the last Outputs is (screens on, bottom on);
-   the last Refresh is the rate of the last Launch or Apply.
+   the last Refresh is the calibration's rate while it runs, else the rate of the entry launched last
+   until the program in force changes, else the rate of the settings in force, at the modes known.
 3. **Pad route:** consistent with claimant, listening and dock move; reconciling again changes nothing;
    the focus ring shows only when the route is Ui, or after a hold on shelf's selected entry opened its
    actions with the pad elsewhere, until the next touch hides it (the ring is what shows the actions are

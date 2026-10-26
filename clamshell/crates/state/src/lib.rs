@@ -362,10 +362,9 @@ impl State {
     /// ([`State::sync`]).
     pub fn apply(&mut self, event: Event, effects: &mut Vec<Effect>) {
         let mut out = Out { effects: std::mem::take(effects), events: std::mem::take(&mut self.queue) };
-        let mark = out.effects.len();
         self.apply_event(event, &mut out);
         self.settle(&mut out);
-        self.sync(&mut out, mark);
+        self.sync(&mut out);
         // Both are taken, so neither is left marked.
         if self.shelf.take_unsaved() | self.bottom.take_unsaved() {
             self.resume.touch(self.clock.mono());
@@ -594,7 +593,6 @@ impl State {
         };
         let settings = self.in_force();
         Wanted {
-            modes: *self.device.display_modes(),
             shelf: &self.shelf,
             fetch_view: self.shelf.fetch_first(),
             browsed: self.shelf.browsed(),
@@ -604,10 +602,9 @@ impl State {
             levels: &self.levels,
             program: self.session.program(),
             settings,
-            launched: None,
+            refresh: self.refresh_wanted(&settings),
             // Off while the refresh rate calibration runs, so only the main screen's vblanks come.
             bottom_on: !self.bottom.off() && !self.device.calibrating(),
-            calibration: self.device.calibration_rate(),
             bottom_seen: !self.bottom.shows_windows(&self.session) && !self.bottom.off(),
             tab,
             device_open: self.device.is_open(),
@@ -618,15 +615,10 @@ impl State {
         }
     }
 
-    /// Sends the outside what differs from what it was last sent. The event's effects start at `mark`.
-    fn sync(&mut self, out: &mut Out, mark: usize) {
+    /// Sends the outside what differs from what it was last sent.
+    fn sync(&mut self, out: &mut Out) {
         let mut sent = std::mem::take(&mut self.sent);
-        let modes = *self.device.display_modes();
-        let launched = out.effects.get(mark..).unwrap_or_default().iter().rev().find_map(|e| match e {
-            Effect::Launch { settings, .. } => Some(modes.refresh_for(settings.get(Setting::Refresh), settings.get(Setting::FpsCap))),
-            _ => None,
-        });
-        sent.sync(&Wanted { launched, ..self.wanted() }, out);
+        sent.sync(&self.wanted(), out);
         self.sent = sent;
     }
 
@@ -711,11 +703,10 @@ impl State {
         self.sent.resend(Resend::Resumed);
     }
 
-    /// The refresh rate calibration ended. It had turned the bottom screen off while it ran, so that
-    /// screen's power is set again.
+    /// The refresh rate calibration ended: the bottom screen comes on again and the main screen's rate
+    /// is the settings' again, as sync finds.
     fn refresh_calibrated(&mut self, result: Result<String, String>) {
         self.device.refresh_done(result);
-        self.sent.resend(Resend::RefreshCalibrated);
     }
 
     /// The UI is up. Sends what was waiting for it: the dock if pins were dropped at start, the
@@ -944,6 +935,16 @@ impl State {
 
     /// The settings in force: those of the program in force (see [`crate::session::program`]), or else
     /// the global ones.
+    /// The main screen's refresh rate (see [`crate::sync::Wanted::refresh`]), with `in_force` the
+    /// settings in force.
+    fn refresh_wanted(&self, in_force: &Values) -> u16 {
+        if let Some(hz) = self.device.calibration_rate() {
+            return hz;
+        }
+        let settings = self.session.refresh_launch().map_or(*in_force, |id| self.settings_of(id));
+        self.device.display_modes().refresh_for(settings.get(Setting::Refresh), settings.get(Setting::FpsCap))
+    }
+
     pub fn in_force(&self) -> Values {
         self.session.program().as_ref().map_or(self.prefs.settings().global, |id| self.settings_of(id))
     }
@@ -1561,7 +1562,7 @@ impl State {
     #[cfg(test)]
     pub(crate) fn ui_up(&mut self) {
         self.sent.ui_started();
-        self.sync(&mut Out::default(), 0);
+        self.sync(&mut Out::default());
     }
 
     /// Handles `event` without the steps that follow it, and returns the effects it pushed.

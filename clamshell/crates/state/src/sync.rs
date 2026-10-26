@@ -35,14 +35,13 @@ pub(crate) struct Wanted<'a> {
     /// The program in force and the settings in force (see [`crate::State::in_force`]).
     pub(crate) program: Option<&'a Arc<str>>,
     pub(crate) settings: Values,
-    /// The refresh rate of the last entry launched by the event being handled, if one was.
-    pub(crate) launched: Option<u16>,
-    /// The screen's refresh rates (see [`crate::device::display::DisplayModes::refresh_for`]).
-    pub(crate) modes: crate::device::display::DisplayModes,
+    /// The main screen's refresh rate in Hz: the running refresh rate calibration's, else the settings'
+    /// of the entry launched last until the program in force changes ([`crate::Session::refresh_launch`]),
+    /// else the settings in force's: their Refresh, or under a frame rate cap one it divides (see
+    /// [`crate::device::display::DisplayModes::refresh_for`]).
+    pub(crate) refresh: u16,
     /// The bottom screen is on (see [`crate::Bottom::off`]).
     pub(crate) bottom_on: bool,
-    /// The main screen's rate the running refresh rate calibration asked for.
-    pub(crate) calibration: Option<u16>,
     /// ClamShell's view is on the bottom screen, and that screen is on.
     pub(crate) bottom_seen: bool,
     /// What the open tab watches.
@@ -131,9 +130,6 @@ pub(crate) enum Resend {
     /// Back from sleep, which may have reset what the settings set, such as frequency caps and cores: they
     /// are applied again.
     Resumed,
-    /// The refresh rate calibration set the main screen's rates while it ran: it is set as the settings
-    /// want again.
-    RefreshCalibrated,
     /// A system thread was started again after a panic (see [`crate::Thread`]): what it had been sent is
     /// sent again.
     Restarted(Thread),
@@ -146,7 +142,6 @@ impl Sent {
             Resend::Start => (self.keymap, self.route) = (None, None),
             Resend::FetchFirst => self.fetch_view = None,
             Resend::Resumed => self.applied = None,
-            Resend::RefreshCalibrated => self.applied = None,
             Resend::Restarted(thread) => match thread {
                 // The rumble's strength comes with the settings applied.
                 Thread::Pad => (self.keymap, self.route, self.pad_activity, self.applied) = (None, None, None, None),
@@ -169,7 +164,7 @@ impl Sent {
     pub(crate) fn new(w: &Wanted) -> Sent {
         Sent {
             applied: Some((w.program.cloned(), w.settings)),
-            refresh: w.modes.refresh_for(w.settings.get(Setting::Refresh), w.settings.get(Setting::FpsCap)),
+            refresh: w.refresh,
             keymap: Some(w.keymap),
             route: Some(w.route),
             #[cfg(debug_assertions)]
@@ -192,8 +187,8 @@ impl Sent {
         self.fetch_first(w, out);
         self.browse(w, out);
         self.idle(w, out);
-        let applied = self.settings(w, out);
-        self.refresh(w, applied, out);
+        self.settings(w, out);
+        self.refresh(w, out);
         self.watches(w, out);
         self.keymap(w, out);
         self.pad_route(w, out);
@@ -262,28 +257,19 @@ impl Sent {
 
     /// The settings in force are applied when the program in force changes, and when they change.
     /// Returns whether they were.
-    fn settings(&mut self, w: &Wanted, out: &mut Out) -> bool {
+    fn settings(&mut self, w: &Wanted, out: &mut Out) {
         if self.applied.as_ref().is_some_and(|(program, settings)| program.as_ref() == w.program && *settings == w.settings) {
-            return false;
+            return;
         }
         self.applied = Some((w.program.cloned(), w.settings));
         out.effects.push(Effect::Apply { entry: w.program.cloned(), settings: w.settings });
-        true
     }
 
-    /// The main screen's refresh rate follows the settings of the last entry launched, from its launch,
-    /// and the settings in force when they are applied, whichever came last: their Refresh, or under a
-    /// frame rate cap one it divides (see [`crate::device::display::DisplayModes::refresh_for`]). The
-    /// refresh rate calibration's rate goes before either while it runs.
-    fn refresh(&mut self, w: &Wanted, applied: bool, out: &mut Out) {
-        let hz = match w.calibration {
-            Some(hz) => Some(hz),
-            None if applied => Some(w.modes.refresh_for(w.settings.get(Setting::Refresh), w.settings.get(Setting::FpsCap))),
-            None => w.launched,
-        };
-        if let Some(hz) = hz.filter(|&hz| hz != self.refresh) {
-            self.refresh = hz;
-            out.effects.push(Effect::Compositor(Compositor::Refresh(hz)));
+    /// The main screen's refresh rate (see [`Wanted::refresh`]).
+    fn refresh(&mut self, w: &Wanted, out: &mut Out) {
+        if w.refresh != self.refresh {
+            self.refresh = w.refresh;
+            out.effects.push(Effect::Compositor(Compositor::Refresh(w.refresh)));
         }
     }
 
