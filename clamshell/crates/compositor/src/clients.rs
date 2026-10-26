@@ -89,7 +89,8 @@ impl Identities {
         self.next = self.next.wrapping_add(1);
         self.waiting.push((token, waiting));
         let (identify, sender, wake) = (self.identify.clone(), self.send.clone(), self.wake.clone());
-        let spawned = std::thread::Builder::new().name("identify".into()).spawn(move || {
+        // At the ordinary priority, not the compositor thread's raised one (see `clamshell_ui::threads`).
+        let spawned = clamshell_ui::threads::start("identify", move || {
             if sender.send((token, identify(pid))).is_ok() {
                 wake();
             }
