@@ -37,17 +37,22 @@ the next value, a long press opens the tile's menu (below). No screens in betwee
   so a curve means the same on any screen), saturation), and below them the program's HDR content peak,
   a setting of its own rather than the curve's. A LUT for colour grading, if it comes, is part of this
   profile.
-- **Clarity**, four ordinary settings, each a tile, with the All / runner / game levels every setting
-  has (Nearest set once on a pixel-art emulator's runner, 1280×720 on one heavy game, the rest inherited):
+- **Clarity**, five ordinary settings, each a tile, with the All / runner / game levels every setting
+  has (Integer set once on a pixel-art emulator's runner, 1280×720 on one heavy game, the rest inherited):
   - Resolution, the screen as the game sees it: Native (1920×1080 on the Thor), 1600×900, 1280×720,
     960×540, 640×360; on another screen the same fractions of it (⅚, ⅔, ½, ⅓). The tile shows the size.
   - Scaling, whenever the game's picture is smaller than the screen, whoever chose its size: Bilinear,
-    Nearest+Integer, FSR (a CRT look, if it comes, is one more). Nearest+Integer shows the picture at
-    the largest whole multiple of its buffer that fits, centred, so every pixel is a square of whole
-    screen pixels; nearest at any other factor makes pixels of uneven width, which shimmer. ½ and ⅓
-    (960×540, 640×360 on the Thor) fill the screen; a game's own 640×480 shows at 2× between bars. A
-    picture of another shape than its window (a mode stretched over the screen) is fitted in its own
-    shape with Bilinear and FSR too.
+    FSR (a CRT look, if it comes, is one more).
+  - Size, for a program's main windows (not its dialogs or popups): Default (a game's fitted in its
+    picture's shape, any other program's at its own size, a window of a fixed size other than one its
+    screen told it centred), Fit, Integer and Stretch, these three whatever the window's size. Integer
+    shows the picture at the largest whole multiple of its buffer that fits, centred and nearest-neighbour
+    whatever Scaling says (which it dims), so every pixel is a square of whole screen pixels; nearest at
+    any other factor makes pixels of uneven width, which shimmer. ½ and ⅓ (960×540, 640×360 on the Thor)
+    fill the screen; a game's own 640×480 shows at 2× between bars. Stretch fills the screen, its shape
+    aside. A picture of another shape than its window (a mode stretched over the screen, or Wine's between
+    its own bars) is fitted in its own shape at the other sizes. An X11 game's window fixed at one of
+    Xwayland's modes (Wine switching mode under X11) counts as at a size its screen told it.
   - Anti-aliasing: Off, FXAA, SMAA. FXAA is one pass and softer (it smooths fine detail and text along
     with edges); SMAA finds edges by their patterns and leaves detail, in three passes.
   - Sharpen: Off, 25, 50, 75, 100 %. CAS, or FSR's own sharpening (RCAS) when Scaling is FSR, so it is
@@ -63,7 +68,7 @@ Reset for a whole level stays its own tile.
 
 Tiles that do nothing for this game are dimmed with why, never hidden (Scaling with the picture at the
 screen's size; everything in layer 2 under sway, where the compositor isn't ours); so are rows of the
-curve's edit screen (the curve's peak for an HDR game). No combination is refused: SMAA before Nearest
+curve's edit screen (the curve's peak for an HDR game). No combination is refused: SMAA before Integer
 blurs pixel edges, and the levels are where the sensible combinations are kept. One rule keeps the layers
 from fighting: **with an upscaler in the game (In game's Upscaler, or the game's own temporal one), the
 compositor's anti-aliasing and scaling are off** and dimmed ("the game upscales"); sharpening stays,
@@ -94,9 +99,9 @@ Passes before the final one, by what is set, each the fewest it can be:
 
 | Set | Passes before the final one |
 |---|---|
-| Sharpening (CAS), Nearest, Bilinear, FSR unsharpened | none: all in the final pass |
+| Sharpening (CAS), Integer, Bilinear, FSR unsharpened | none: all in the final pass |
 | FSR shown one to one | none: it upscales nothing, so it is sampled as it is and sharpened by CAS |
-| FXAA or SMAA's blending, shown one to one or Nearest, unsharpened | FXAA none; SMAA two (edges, weights), its blending in the final pass at the texel's centre |
+| FXAA or SMAA's blending, shown one to one or at Integer, unsharpened | FXAA none; SMAA two (edges, weights), its blending in the final pass at the texel's centre |
 | FXAA with Bilinear, FSR or sharpening after it | one, at the game's resolution |
 | SMAA with Bilinear, FSR or sharpening after it | three, at the game's resolution |
 | FSR with sharpening | one more, EASU at the screen's resolution; RCAS in the final pass |
@@ -177,8 +182,8 @@ Where Smithay (rev 24647fc) is in the way, worth contributing upstream:
    least half as much as the largest (Wine draws a game in a subsurface, between its own bars at a mode of
    another shape), whose colour is also the window's and whose place is what is fitted; a buffer a viewport
    scales counts as scaled; a game is told its Resolution when its client connects and sees only the top
-   screen (a change applies at its next start, which the tile says); Nearest is Nearest+Integer; a mode
-   stretched over the screen keeps its shape. The harness launches test games as games in a nested
+   screen (a change applies at its next start, which the tile says); Nearest became Nearest+Integer,
+   then the Size tile's Integer; a mode stretched over the screen keeps its shape. The harness launches test games as games in a nested
    session and checks every picture: `pattern-game` as Wine shows a game, SDR, PQ and linear light;
    `sdl-pattern` on Wayland and X11, switching modes; `wine-pattern` under Wine with DXVK, on Wayland and
    X11, and HDR10 on Wayland. Scaling, anti-aliasing and sharpening compare PQ's signal for linear light. The tone curve's edit screen plots the picture's histogram.
