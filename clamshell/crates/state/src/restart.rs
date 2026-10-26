@@ -112,6 +112,51 @@ mod tests {
         assert!(!fx.iter().any(|e| matches!(e, Effect::Watch(Watch::Audio | Watch::Status, false))), "{fx:?}");
     }
 
+    /// The settings thread applies the settings in force; started again, it is sent them, once.
+    #[test]
+    fn a_restarted_tuning_thread_is_sent_the_settings_in_force() {
+        let mut s = started(init());
+        let settings = s.prefs().settings().global;
+        assert_eq!(s.applied(Event::Restarted(Thread::Tuning)), vec![Effect::Apply { entry: None, settings }]);
+        assert!(s.applied(Event::tick(1)).is_empty(), "once");
+    }
+
+    /// Each reader started again is sent the watch of the tab open that it serves (see the system crate's
+    /// `Handles::watch`), and the bar's status watch, whichever reader it is.
+    #[test]
+    fn each_restarted_reader_is_sent_its_tabs_watch() {
+        let cases = [
+            (Thread::Mixer, Tab::Volume, Watch::Audio),
+            (Thread::Mixer, Tab::Brightness, Watch::Backlights),
+            (Thread::Wifi, Tab::Wifi, Watch::Wifi),
+            (Thread::Bluetooth, Tab::Bluetooth, Watch::Bluetooth),
+            (Thread::Battery, Tab::Battery, Watch::Battery),
+            (Thread::Metrics, Tab::Sysinfo, Watch::Metrics),
+            (Thread::System, Tab::Time, Watch::Time),
+        ];
+        for (thread, tab, watch) in cases {
+            let mut s = started(init());
+            tap(&mut s, Id::Tab(tab));
+            let fx = s.applied(Event::Restarted(thread));
+            assert!(fx.contains(&Effect::Watch(watch, true)) && fx.contains(&Effect::Watch(Watch::Status, true)), "{thread:?}: {fx:?}");
+            assert!(!fx.iter().any(|e| matches!(e, Effect::Watch(w, false) if *w == watch || *w == Watch::Status)), "{thread:?}: {fx:?}");
+        }
+        let mut s = started(init());
+        let fx = s.applied(Event::Restarted(Thread::Status));
+        assert!(fx.contains(&Effect::Watch(Watch::Status, true)), "{fx:?}");
+    }
+
+    /// The system thread reads the account while the Device view is open; started again, it is told to
+    /// read it again.
+    #[test]
+    fn a_restarted_system_thread_is_sent_the_account_watch() {
+        let mut s = started(crate::Init { first_start: true, ..init() });
+        assert!(s.device().is_open());
+        let fx = s.applied(Event::Restarted(Thread::System));
+        assert!(fx.contains(&Effect::Watch(Watch::Account, true)), "{fx:?}");
+        assert!(!s.applied(Event::Restarted(Thread::Pad)).contains(&Effect::Watch(Watch::Account, true)), "only the readers' restart");
+    }
+
     #[test]
     fn a_restarted_system_thread_is_asked_to_sleep_again() {
         let mut s = started(crate::Init { device_session: true, ..init() });

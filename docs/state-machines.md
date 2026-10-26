@@ -545,9 +545,10 @@ sent again, or what waits on it ends:
 
 - `idle --Restarted(Pad)--> [Keymap, PadRoute, PadActivity, Apply]` (the pad keeps its virtual devices
   through the restart; tested `a_restarted_pad_is_sent_its_keymap_route_and_settings`)
-- `--Restarted(Tuning)--> [Apply]`
+- `--Restarted(Tuning)--> [Apply]` (tested `a_restarted_tuning_thread_is_sent_the_settings_in_force`)
 - `--Restarted(Mixer | Battery | Metrics | Status | Wifi | Bluetooth)--> [Watch(tab, true), Watch(Status, ..), Watch(Account, ..)]`
-  (tested `a_restarted_reader_is_sent_the_watches`)
+  (tested `a_restarted_reader_is_sent_the_watches`; each thread with the tab it serves,
+  `each_restarted_reader_is_sent_its_tabs_watch`; the account's, `a_restarted_system_thread_is_sent_the_account_watch`)
 - `Asleep --Restarted(System)--> [watches, Sleep]`; awake, only the watches (tested
   `a_restarted_system_thread_is_asked_to_sleep_again`)
 - `--Restarted(Brightness)--> [Brightness]` if ClamShell set a level, dimmed if idle dimmed it (tested
