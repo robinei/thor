@@ -121,7 +121,10 @@ Branches on uniforms are fine (every pixel takes the same one). Shader compiles 
 so variants are compiled when a window maps or a profile changes, never during play, and cached.
 
 **Resolution:** the game sees the chosen resolution as its screen. A client is known by its process
-when it connects (its unit: a launch's service, or the scope a found program was moved into; or Steam's `SteamAppId` for a process Steam started), and a game's client
+when it connects (its unit: a launch's service, or the scope a found program was moved into; or Steam's
+`SteamAppId` for a process Steam started), read on a thread of its own before the client is taken in, so
+that its first request is already answered as its game's (reading a process's environment can wait on
+the process). A game's client
 is told, when it binds the top output, that resolution as the output's current mode, so a game that
 picks from the display modes (most Proton games, through Wine's Wayland driver) finds it as the largest
 and fills it in fullscreen. It is told once: a change applies the next time the game starts, since Wine

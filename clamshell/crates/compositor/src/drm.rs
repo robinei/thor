@@ -126,7 +126,7 @@ pub fn run(
     mut config: Config,
     start: impl FnOnce(EventSender, crate::Displays),
     on_effect: impl FnMut(&Effect) + 'static,
-    identify: impl Fn(u32) -> Process + 'static,
+    identify: impl Fn(u32) -> Process + Send + Sync + 'static,
     on_capture: impl FnMut(Result<clamshell_state::ScreenshotPixels, String>) + 'static,
     quit: crate::QuitSignals,
 ) -> Result<(), Error> {

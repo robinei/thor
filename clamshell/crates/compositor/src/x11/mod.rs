@@ -40,6 +40,8 @@ pub(crate) struct Bridge {
     pub changes: Vec<WindowFacts>,
     /// Xwayland's surfaces by the serial it gave them, until their window is paired (see `x11::shell`).
     pub serials: Vec<(u64, smithay::reexports::wayland_server::protocol::wl_surface::WlSurface)>,
+    /// X11 windows' processes as identified, for the adapter (see [`crate::clients::Identities`]).
+    pub identified: Vec<(i64, crate::clients::Process)>,
 }
 
 impl Server {

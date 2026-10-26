@@ -74,7 +74,7 @@ pub(crate) struct Server {
     pub trace: std::rc::Rc<std::cell::RefCell<crate::trace::Ring>>,
     pub socket: String,
     pub on_effect: Box<dyn FnMut(&Effect)>,
-    pub(crate) identify: Box<dyn Fn(u32) -> Process>,
+    pub(crate) identities: crate::clients::Identities,
     pub(crate) next_id: i64,
     pub x11: crate::x11::Bridge,
 }
@@ -86,7 +86,7 @@ impl Server {
         dh: DisplayHandle,
         relative_motion: bool,
         wake: impl Fn() + Send + Sync + 'static,
-        identify: impl Fn(u32) -> Process + 'static,
+        identify: impl Fn(u32) -> Process + Send + Sync + 'static,
         on_effect: impl FnMut(&Effect) + 'static,
     ) -> Result<Self, Error> {
         let preview_widths = (config.top_size.0.max(1), config.bottom_size.0.max(1));
@@ -118,7 +118,9 @@ impl Server {
         OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let trace = std::rc::Rc::new(std::cell::RefCell::new(crate::trace::Ring::new()));
         let observed = trace.clone();
-        let mut core = Core::new(state, config.touch_layout, wake)?;
+        let wake: std::sync::Arc<dyn Fn() + Send + Sync> = std::sync::Arc::new(wake);
+        let identities = crate::clients::Identities::new(identify, wake.clone());
+        let mut core = Core::new(state, config.touch_layout, move || wake())?;
         core.observe_events(move |event, state| observed.borrow_mut().record(event, state));
         let mut server = Self {
             clock,
@@ -165,7 +167,7 @@ impl Server {
             trace,
             socket: String::new(),
             on_effect: Box::new(on_effect),
-            identify: Box::new(identify),
+            identities,
             next_id: 1,
             x11: Default::default(),
         };
@@ -242,6 +244,7 @@ impl Server {
     }
 
     pub fn turn(&mut self) {
+        self.take_identified();
         // A destructor event must follow the dispatch that installs the new object's data.
         // Sending it from get_information itself removes the object before wayland-backend installs it.
         for information in self.colour.information.drain(..) {

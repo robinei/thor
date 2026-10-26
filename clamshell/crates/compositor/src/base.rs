@@ -32,7 +32,7 @@ impl Base {
         state: State,
         config: Config,
         relative_motion: bool,
-        identify: impl Fn(u32) -> Process + 'static,
+        identify: impl Fn(u32) -> Process + Send + Sync + 'static,
         on_effect: impl FnMut(&Effect) + 'static,
         quit: crate::QuitSignals,
     ) -> Result<Base, Error> {

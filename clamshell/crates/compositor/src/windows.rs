@@ -95,13 +95,8 @@ impl Server {
             .window(id)
             .map(|window| Process { unit: window.unit.clone(), pids: window.pids.clone(), steam_app: None })
             .unwrap_or_else(|| {
-                surface
-                    .wl_surface()
-                    .client()
-                    .and_then(|c| c.get_credentials(&self.dh).inspect_err(|e| log::warn!("compositor: window {id}: its client's process unknown: {e}")).ok())
-                    .and_then(|c| u32::try_from(c.pid).ok())
-                    .map(|pid| (self.identify)(pid))
-                    .unwrap_or_default()
+                // Its client's, identified before it was admitted.
+                surface.wl_surface().client().and_then(|c| c.get_data::<crate::clients::ClientState>()?.process.clone()).unwrap_or_default()
             });
         let limits = Self::size_limits(surface);
         WindowFacts {

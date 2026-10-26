@@ -86,7 +86,7 @@ pub(crate) struct ServerBuilder {
     state: State,
     config: Config,
     relative_motion: bool,
-    identify: Box<dyn Fn(u32) -> Process>,
+    identify: Box<dyn Fn(u32) -> Process + Send + Sync>,
     on_effect: Box<dyn FnMut(&clamshell_state::Effect)>,
 }
 
@@ -114,8 +114,8 @@ impl ServerBuilder {
         ServerBuilder { relative_motion: true, ..self }
     }
 
-    /// With each client's process as `identify` says, by its pid.
-    pub(crate) fn identify(self, identify: impl Fn(u32) -> Process + 'static) -> ServerBuilder {
+    /// With each process as `identify` says, by its pid (see [`crate::clients::Identities`]).
+    pub(crate) fn identify(self, identify: impl Fn(u32) -> Process + Send + Sync + 'static) -> ServerBuilder {
         ServerBuilder { identify: Box::new(identify), ..self }
     }
 
@@ -229,9 +229,9 @@ enum Report {
 
 #[test]
 fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
-    let (mut display, mut server) =
-        ServerBuilder::new().identify(|_| Process { unit: Some("test.service".into()), pids: vec![100], steam_app: None }).started();
-    let client = spawn_client(&mut display, ClientState::default(), |globals, mut queue, steps| {
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let process = Process { unit: Some("test.service".into()), pids: vec![100], steam_app: None };
+    let client = spawn_client(&mut display, ClientState { process: Some(process), ..ClientState::default() }, |globals, mut queue, steps| {
         let qh = queue.handle();
         let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
         let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
@@ -722,6 +722,7 @@ mod activation_tests;
 
 mod pointer_tests;
 
+mod identify_tests;
 mod pacing_tests;
 mod presentation_tests;
 

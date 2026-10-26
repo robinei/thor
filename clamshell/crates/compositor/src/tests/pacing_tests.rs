@@ -127,9 +127,9 @@ fn a_capped_windows_timed_commit_goes_ahead_at_once() {
     let mut settings = clamshell_state::settings::Settings::default();
     settings.set(None, clamshell_state::settings::Setting::FpsCap, Some(30));
     let state = State::new(Init { settings, device_session: true, ..Init::default() });
-    let identify = |pid| Process { unit: Some("app-game.scope".into()), pids: vec![pid], steam_app: None };
-    let (mut display, mut server) = ServerBuilder::new().state(state).identify(identify).started();
-    let client = spawn_client(&mut display, ClientState::default(), move |globals, mut queue, steps| {
+    let (mut display, mut server) = ServerBuilder::new().state(state).started();
+    let process = Process { unit: Some("app-game.scope".into()), pids: vec![100], steam_app: None };
+    let client = spawn_client(&mut display, ClientState { process: Some(process), ..ClientState::default() }, move |globals, mut queue, steps| {
         let qh = queue.handle();
         let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
         let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();

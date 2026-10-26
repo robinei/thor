@@ -58,6 +58,9 @@ struct Window {
     popup_parent: Option<i64>,
     properties: Properties,
     pid: Option<u32>,
+    /// Its process, once identified (see [`crate::clients::Identities`]); waited for as one of the
+    /// outstanding answers.
+    process: Process,
     outstanding: usize,
     wants_map: bool,
     queried: bool,
@@ -118,10 +121,20 @@ impl Wm {
         self.dispatch_events(wire, server)?;
         self.query_window_properties(wire, now)?;
         self.sync_selection(wire, server, now)?;
+        self.take_identified(server);
         self.settle(wire, server)?;
         self.settle_menus(wire, server)?;
         server.sync_windows();
         Ok(())
+    }
+    /// The windows' processes identified since the last turn.
+    fn take_identified(&mut self, server: &mut Server) {
+        for (id, process) in server.x11.identified.drain(..) {
+            if let Some(window) = self.windows.iter_mut().find(|w| w.id == id) {
+                window.process = process;
+                window.outstanding = window.outstanding.saturating_sub(1);
+            }
+        }
     }
     fn start_setup(&mut self, wire: &mut Transport, now: Instant) -> io::Result<()> {
         if !self.started && wire.setup.is_some() {
@@ -423,7 +436,6 @@ impl Wm {
             Query::Pid(id) => {
                 let reply = res::QueryClientIdsReply::try_parse(bytes).map_err(io::Error::other)?.0;
                 if let Some(window) = self.windows.iter_mut().find(|w| w.id == id) {
-                    window.outstanding = window.outstanding.saturating_sub(1);
                     window.pid = reply
                         .ids
                         .iter()
@@ -431,6 +443,11 @@ impl Wm {
                         .and_then(|v| v.value.first())
                         .copied()
                         .filter(|pid| *pid > 1);
+                    // The window waits on for its process (see `take_identified`).
+                    match window.pid {
+                        Some(pid) => server.identities.ask(pid, crate::clients::Waiting::X11Window(id)),
+                        None => window.outstanding = window.outstanding.saturating_sub(1),
+                    }
                 }
             }
         }
@@ -458,6 +475,7 @@ impl Wm {
             popup_parent: None,
             properties: Properties::default(),
             pid: None,
+            process: Process::default(),
             outstanding: PROPERTIES.len() + 2,
             wants_map: false,
             queried: false,
@@ -746,7 +764,7 @@ impl Window {
                 .session()
                 .window(self.id)
                 .map(|v| Process { unit: v.unit.clone(), pids: v.pids.clone(), steam_app: None })
-                .unwrap_or_else(|| self.pid.map(|pid| (server.identify)(pid)).unwrap_or_default());
+                .unwrap_or_else(|| self.process.clone());
             let facts = self.properties.facts(self.id, parent, process);
             if !self.opened {
                 server.core.handle(WindowEvent::Opened(facts.clone()).into());
@@ -924,6 +942,54 @@ mod tests {
         assert_eq!(wm.popup_owner(&wm.windows[3], Some(parent), None), None, "transient cycles are bounded");
         wm.windows[2].properties.transient = Some(20);
         assert_eq!(wm.popup_owner(&wm.windows[3], Some(other), None), None, "a mapped menu cannot change owner");
+    }
+    /// A window opens only once its process is identified, off the compositor's thread, so its facts carry
+    /// its unit and processes; a window gone before the answer is forgotten with it, and one whose client
+    /// has no process id doesn't wait.
+    #[test]
+    fn a_window_opens_once_its_process_is_identified() {
+        let identify = |pid| Process { unit: Some("app-x11.scope".into()), pids: vec![pid, 1000], steam_app: None };
+        let (_display, mut server) = crate::tests::ServerBuilder::new().identify(identify).build();
+        let (socket, _peer) = UnixStream::pair().unwrap();
+        let now = Instant::now();
+        let mut wire = Transport::new(socket, now).unwrap();
+        let mut wm = Wm { root: 1, owner: 2, atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()), ..Wm::default() };
+        let pid_reply = |pid: Option<u32>| {
+            let ids = pid
+                .map(|pid| res::ClientIdValue { spec: res::ClientIdSpec { client: 10, mask: res::ClientIdMask::LOCAL_CLIENT_PID }, value: vec![pid] })
+                .into_iter()
+                .collect();
+            let length = if pid.is_some() { 4 } else { 0 };
+            Serialize::serialize(&res::QueryClientIdsReply { sequence: 0, length, ids })
+        };
+        for xid in [10, 20, 30] {
+            wm.discover(xid, Rectangle::from_size((400, 300).into()), false, &mut wire, &mut server).unwrap();
+        }
+        for window in &mut wm.windows {
+            // Only the process id's answer outstanding.
+            window.outstanding = 1;
+            window.wants_map = true;
+        }
+        let [waits, gone, no_pid] = [0, 1, 2].map(|i| wm.windows[i].id);
+        wm.reply(Query::Pid(waits), &pid_reply(Some(4321)), &mut wire, &mut server, now).unwrap();
+        wm.reply(Query::Pid(gone), &pid_reply(Some(4322)), &mut wire, &mut server, now).unwrap();
+        wm.reply(Query::Pid(no_pid), &pid_reply(None), &mut wire, &mut server, now).unwrap();
+        wm.settle(&mut wire, &mut server).unwrap();
+        let session = server.core.state().session();
+        assert!(session.window(waits).is_none() && session.window(gone).is_none(), "waiting for their processes");
+        assert_eq!(session.window(no_pid).map(|w| w.unit.clone()), Some(None), "nothing to wait for");
+        wm.forget(gone, &mut server);
+        let until = Instant::now() + Duration::from_secs(5);
+        while server.x11.identified.len() < 2 && Instant::now() < until {
+            server.take_identified();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        wm.take_identified(&mut server);
+        wm.settle(&mut wire, &mut server).unwrap();
+        let window = server.core.state().session().window(waits).unwrap();
+        assert_eq!((window.unit.as_deref(), window.pids.clone()), (Some("app-x11.scope"), vec![4321, 1000]));
+        assert!(server.core.state().session().window(gone).is_none(), "forgotten with its answer");
+        assert_eq!(wm.windows.len(), 2);
     }
     /// Xwayland gives a window's surface a 64-bit serial: through `xwayland_shell_v1` on the Wayland side,
     /// and in `WL_SURFACE_SERIAL` as two 32-bit halves, low first, on the X11 side. The window is paired
