@@ -158,7 +158,13 @@ pub(crate) fn elements(
     out: &mut Vec<Element>,
 ) -> Result<(), Error> {
     let [top, bottom] = frames;
-    top.update(&mut server.core, Screen::Top, renderer)?;
+    // The top screen's view isn't shown while a window covers it, so it isn't drawn either: it stays stale
+    // in the core, and is drawn where it changed once uncovered (the texture holds the last frame drawn).
+    let state = server.core.state();
+    let covered = server.windows.iter().any(|w| w.mapped && server.visible(w.id) && state.session().window(w.id).is_some_and(|w| !w.down));
+    if !covered {
+        top.update(&mut server.core, Screen::Top, renderer)?;
+    }
     bottom.update(&mut server.core, Screen::Bottom, renderer)?;
     server.core.frames_done();
     out.clear();
@@ -168,9 +174,7 @@ pub(crate) fn elements(
     if let Some(element) = bottom.element(renderer, server.top_width, show_bottom.then(|| server.area(true).loc.y)) {
         out.push(element);
     }
-    if !server.windows.iter().any(|w| w.mapped && server.visible(w.id) && state.session().window(w.id).is_some_and(|w| !w.down))
-        && let Some(element) = top.element(renderer, 0, None)
-    {
+    if !covered && let Some(element) = top.element(renderer, 0, None) {
         out.push(element);
     }
     for client in server.windows.iter().filter(|w| w.mapped && server.visible(w.id)) {
