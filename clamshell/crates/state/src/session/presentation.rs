@@ -375,10 +375,10 @@ impl crate::State {
     /// and whether it shows a window on the second screen (a dual-screen emulator, by its rule to move one
     /// down). None for a process of anything else.
     pub fn process_game(&self, unit: Option<&str>, steam_app: Option<u32>) -> Option<(crate::settings::Resolution, bool)> {
-        let running = self.session().running_of_process(unit, steam_app)?;
-        let game = self.session().entry(self.shelf().library(), &running.id).is_some_and(crate::Entry::is_game);
-        let dual = self.bottom().window_rules().list().iter().any(|rule| *rule.owner == *running.id);
-        game.then(|| (self.settings_of(&running.id).choice(), dual))
+        let id = self.session().entry_of_process(unit, steam_app)?;
+        let game = self.session().entry(self.shelf().library(), &id).is_some_and(crate::Entry::is_game);
+        let dual = self.bottom().window_rules().list().iter().any(|rule| *rule.owner == *id);
+        game.then(|| (self.settings_of(&id).choice(), dual))
     }
 
     /// The frame rate cap for window `id`: the one in the settings in force for the program running it.
@@ -439,6 +439,21 @@ mod tests {
         let set: Resolution = crate::settings::Choice::of(s.panel().tile_value(Setting::Resolution));
         s.applied(crate::Event::Reading(crate::Reading::Told { unit, steam_app: None, resolution: set }));
         assert!(!s.resolution_waits());
+    }
+    /// A launch's program can connect before systemd lists its unit, as a service's program starts with
+    /// it: it is its game's already, and the resolution it was told is kept once it runs.
+    #[test]
+    fn a_game_connecting_before_its_unit_is_listed_is_its_entrys() {
+        use crate::testkit::*;
+        use crate::{Effect, settings::Resolution};
+        let mut s = state();
+        let mut fx = tap(&mut s, entry("zelda-lttp"));
+        fx.extend(tap(&mut s, entry("zelda-lttp")));
+        let unit = fx.iter().find_map(|e| if let Effect::Launch { instance, .. } = e { instance.unit() } else { None });
+        assert!(s.process_game(unit.as_deref(), None).is_some(), "a game, though its unit isn't listed yet");
+        s.applied(crate::Event::Reading(crate::Reading::Told { unit, steam_app: None, resolution: Resolution::Half }));
+        start(&mut s, "zelda-lttp");
+        assert_eq!(s.session().running_entries().iter().find(|r| &*r.id == "zelda-lttp").and_then(|r| r.told), Some(Resolution::Half));
     }
     #[test]
     fn dialogs_and_fixed_windows_are_centred_and_games_fit_ignored_sizes() {

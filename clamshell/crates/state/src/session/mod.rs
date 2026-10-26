@@ -279,7 +279,21 @@ impl Session {
         let id = self.running_of_process(unit, steam_app).map(|r| r.id.clone());
         if let Some(running) = id.and_then(|id| self.running.iter_mut().find(|r| r.id == id)) {
             running.told = Some(resolution);
+        } else if let Some(key) = unit.and_then(Instance::key_of)
+            && let Some(launching) = self.launching.iter_mut().find(|l| l.instance.key() == Some(key))
+        {
+            // Still starting: its program can connect before systemd lists its unit.
+            launching.told = Some(resolution);
         }
+    }
+
+    /// The entry a client's process (by its unit, or Steam's app id) belongs to: one running, or a launch
+    /// still starting, whose program can connect before systemd lists its unit.
+    pub fn entry_of_process(&self, unit: Option<&str>, steam_app: Option<u32>) -> Option<Arc<str>> {
+        self.running_of_process(unit, steam_app).map(|r| r.id.clone()).or_else(|| {
+            let key = unit.and_then(Instance::key_of)?;
+            self.launching.iter().find(|l| l.instance.key() == Some(key)).map(|l| l.entry.clone())
+        })
     }
 
     /// The running entry a window belongs to, by the first of these that matches:

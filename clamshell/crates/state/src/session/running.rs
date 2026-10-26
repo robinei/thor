@@ -156,6 +156,9 @@ pub struct Launching {
     pub app_id: Option<Arc<str>>,
     /// When it was asked for, in monotonic seconds.
     pub at: u64,
+    /// The resolution its process was told as it connected, before its unit was listed (see
+    /// [`Running::told`]).
+    pub told: Option<crate::settings::Resolution>,
 }
 
 /// How long a launch waits for an answer from the launcher, its scope or its failure, in seconds, before
@@ -226,7 +229,7 @@ impl Session {
                     // An entry gone from the library meanwhile is known by its id alone.
                     let known = library.entry(&l.entry).cloned();
                     let entry = known.clone().unwrap_or_else(|| Entry::new(&l.entry, &l.entry));
-                    let r = Running { app_id: l.app_id, ..Running::of(&entry, Origin::Ours, now) };
+                    let r = Running { app_id: l.app_id, told: l.told, ..Running::of(&entry, Origin::Ours, now) };
                     self.running.push(Running { entry: r.entry.filter(|_| known.is_some()), ..r });
                 }
             }
@@ -586,7 +589,7 @@ impl Session {
     /// front, its workspace is shown once its first window appears.
     fn begin_launch(&mut self, entry: Arc<str>, key: String, app_id: Option<Arc<str>>, clock: &Clock, start: Start) -> Instance {
         let instance = Instance::Run { key, secs: clock.unix(), n: self.next_instance() };
-        self.launching.push(Launching { entry, instance: instance.clone(), app_id, at: clock.mono() });
+        self.launching.push(Launching { entry, instance: instance.clone(), app_id, at: clock.mono(), told: None });
         if start == Start::Front {
             self.set_front_launch(instance.clone(), None);
         }
