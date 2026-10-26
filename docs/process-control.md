@@ -70,14 +70,14 @@ back once put right.
 
 ## Entries and how long they run
 
-What runs is shown and controlled as entries (the dock's): one per program, each with a workspace.
+What runs is shown and controlled as entries (the dock's): one per program, each with its group of windows.
 
 - A launch of ClamShell's is a transient service of the user manager (`systemd-run --user`,
   `clamshell-run-<key>-<secs>-<n>.service`): started once its program runs (`Type=exec`), running as long
   as any of its processes does (`ExitType=cgroup`, as a launcher script's game outlives it), its output in
   the journal as the unit's (`journalctl --user -u <unit>`), in its entry's slice. Restarting ClamShell
   doesn't end it, though a program with a window ends with its compositor. Its windows, found by the unit,
-  go to the entry's workspace; an entry may run several (another tab each). An entry runs while systemd
+  are the entry's group; an entry may run several (another tab each). An entry runs while systemd
   lists a unit of it, from the user manager's signals: its launch's unit appearing starts it, the last one
   gone ends it, its play recorded from its start to then (launches side by side are one play; a video's
   place read then, as mpv left it). The launcher only starts launches, and says so of one systemd didn't
@@ -98,7 +98,7 @@ What runs is shown and controlled as entries (the dock's): one per program, each
   by its launcher process, not its cgroup.
 - A program ClamShell didn't start is found by its tray icon, or by a window no entry has; anything with
   a window is on the dock. Its entry: the library's desktop entry named as the icon's id or the window's
-  app id, else one of its own (`tray:…`, `window:<app id>`). Its windows go to its workspace (shown if
+  app id, else one of its own (`tray:…`, `window:<app id>`). Its windows are its group (shown if
   one was in front). In the device session its process and those it started are moved into a scope of
   the entry's, named as a launch's service is but `.scope`, since a service can't take in processes that
   already run (systemd's StartTransientUnit with their PIDs, or AttachProcessesToUnit into one there
@@ -159,7 +159,7 @@ filter (see android.md).
 ## Start with ClamShell
 
 In an entry's dock menu (saved): once ClamShell knows what runs (systemd's first list of its units),
-each such entry that doesn't run is launched on its own workspace, not shown. What a restarted ClamShell
+each such entry that doesn't run is launched, not shown. What a restarted ClamShell
 finds running isn't started twice.
 
 ## What the user sees

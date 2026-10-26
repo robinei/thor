@@ -12,7 +12,8 @@ in small steps. ClamShell keeps assuming two screens, a top and a bottom one.
    what can't be detected. Reported or measured facts take precedence over profile hints; unknown
    values stay unknown rather than receiving nominal desktop or VM defaults.
 2. **One place maps the device to its facts, in code.** A `Profile` is a struct of typed facts, built by
-   one constructor per device (`Profile::thor()`, `Profile::vm()`, `Profile::generic()`). Facts can point
+   one constructor per device (`Profile::thor()`, `Profile::vm()`, `Profile::generic()`, and
+   `Profile::vm_hdr()`, the VM with the Thor's panels' colour, only when forced). Facts can point
    at tables in code: the keymap screen's control layout, the fan curves, the sensor hub's axis matrix.
 3. **The device is identified once.** At start, from the device tree's `compatible` (DMI on x86, or
    `CLAMSHELL_DEVICE` to force one), mapped to a constructor by one match. That is the only place in the
@@ -32,15 +33,15 @@ in small steps. ClamShell keeps assuming two screens, a top and a bottom one.
 
 `crates/device`, a leaf crate with no dependencies and no I/O beyond what identification needs (reading
 `compatible` stays in the callers: the system crate and the fan daemon). The state crate depends on it,
-and through it the UI and compositor; the system crate and the fan daemon depend on it directly. It is
+and through it the UI; the system crate, the compositor and the fan daemon depend on it directly. It is
 its own crate because the fan daemon, a separate service, needs its curves from it, and the state crate
 already depends on the fan crate (its mode protocol).
 
-## What moves into it
+## What moved into it
 
-From the inventory of 2026-10-24 (paths under `clamshell/` unless noted):
+From the inventory of 2026-10-24 (paths under `clamshell/` unless noted), with where each fact was then:
 
-| Fact | Today |
+| Fact | Where it was |
 |---|---|
 | The screens' connectors: top DSI-2, bottom DSI-1 (VM: Virtual-1, Virtual-2), both turned 90° | `src/config.rs:47` default `DSI-1`; `packages/thor-session/.../thor-outputs`; `packages/thor-system/.../thor-panel-calibration` |
 | The touchscreen of each screen (`top_touchscreen`, `bottom_touchscreen`) | `thor-outputs` |

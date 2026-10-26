@@ -35,6 +35,11 @@ The first runner whose patterns match a file's name opens it. A runner has:
   have settings of their own.
 - `enqueue`: what to write to the control socket to add a file to a launch while it runs (`{path}` the
   file, as a JSON string's contents); its items then have Enqueue (below). It needs `{socket}` in `launch`.
+- `pause`, `resume`: commands that pause and resume all its entries at once, for entries sharing one
+  container (Waydroid's); used when its In the background setting is Pauses hidden (see
+  process-control.md).
+- `awake`: a command that succeeds while its app on screen keeps the screen on in a way the compositor
+  doesn't see (Android's keep-screen-on for a video); run before the screens dim.
 
 A runner says nothing about where things are or show: that is the sources' and places' (below).
 
@@ -161,20 +166,19 @@ starter library.json's Video and Music:
 A tile per item started: `README.md`, Spotify, Zelda, never the runner. The runner shows as the tile's
 picture where the item has none of its own (a window `xdg-open` handed to an app: that app's icon) and as
 the settings tab. An item running shows again rather than starting twice; each file opened is its own
-tile and workspace. A running item keeps the title and picture it had at its launch, so its tile stays if
+tile and group of windows. A running item keeps the title and picture it had at its launch, so its tile stays if
 its file is renamed or deleted meanwhile.
 
 Programs' tray icons (StatusNotifierItem over D-Bus: Steam's, and any other program's) are on the dock
 too. ClamShell is the session's tray watcher where nothing else is (the Thor), else reads the one there (a
 desktop around the nested session). An icon is the running entry's whose unit its process is in. A
 program ClamShell didn't start runs as an entry found by its icon: the desktop file named as the icon's
-id (`desktop:steam`), else one of its own named as the icon. Like any running entry it has its workspace:
-its windows (those of the icon's process, and of processes it started) are moved there wherever they
-open. A tile with an icon has a mark in its top left corner (three bars) that opens the program's menu;
+id (`desktop:steam`), else one of its own named as the icon. Like any running entry it has its group:
+its windows (those of the icon's process, and of processes it started) are in it wherever they open. A tile with an icon has a mark in its top left corner (three bars) that opens the program's menu;
 the long-press menu has it as Menu. A tap shows the program's windows, or (none open) asks it to show
-itself (Steam started silently), its window shown on its workspace. Quit closes its windows, then asks
+itself (Steam started silently), and its window is shown. Quit closes its windows, then asks
 the icon's process to end (SIGTERM); Force kill kills it. A window's entry is found by its app id first
-(a Steam game's, though it runs in Steam's unit), then its unit, its process, its workspace.
+(a Steam game's, though it runs in Steam's unit), then its unit, its process, its group.
 `clamshell --tray` lists the icons and their menus; `cargo run -p clamshell-system --example fake_tray`
 is a program with one, for testing (activated, it opens a terminal).
 
@@ -191,7 +195,7 @@ Two kinds of entry run in another program's processes on purpose, and are known 
 Steam's games (`steam_app_<id>`, in Steam's unit) and the entries of a runner with `handover` (their
 desktop file's name: Waydroid's apps, in the Waydroid session). Alike for both:
 
-- Their windows are found by their app id and put on their entry's workspace as they open; one opening while
+- Their windows are found by their app id and put in their entry's group as they open; one opening while
   the entry doesn't run (a game started in Steam, an Android app opened by another) starts it, shown.
 - Such an entry runs once: launching it again shows it.
 - It runs on by its windows after its launch ends, until the last closes; its play counts until then.
