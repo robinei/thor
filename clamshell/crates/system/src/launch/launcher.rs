@@ -148,7 +148,14 @@ fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir:
         Ok(exe) => env.push(("CLAMSHELL".to_owned(), exe.to_string_lossy().into_owned())),
         Err(e) => log::warn!("launcher: finding this program's path: {e}"),
     }
-    let job = Job { unit: request.unit.name(), slice: Some(request.unit.slice()), argv, env, workdir };
+    let job = Job {
+        unit: request.unit.name(),
+        slice: Some(request.unit.slice()),
+        argv: argv.into_iter().map(Into::into).collect(),
+        env,
+        workdir,
+        properties: vec![],
+    };
     Ok(job::start(&job)?)
 }
 

@@ -13,6 +13,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::launch::job::{self, Job};
 use crate::os::command;
 
 /// The file name endings browsed as archives, in lowercase.
@@ -71,22 +72,34 @@ impl Mounts {
         let dir = root.join(format!("{:016x}", hash(archive)));
         fs::create_dir_all(&dir).map_err(|e| format!("Opening {name}: {e}"))?;
         let unit = unit_of(archive);
-        let mut args: Vec<OsString> = ["--user", "--quiet", "--collect", "--slice=background-graphical.slice"].map(OsString::from).into();
-        args.push(format!("--unit={unit}").into());
-        // When the service stops or crashes, the mount is detached lazily.
-        args.push(format!("--property=ExecStopPost=/usr/bin/fusermount3 -uz {}", dir.display()).into());
-        args.extend(["ratarmount", "--foreground"].map(OsString::from));
+        let mut argv: Vec<OsString> = ["ratarmount", "--foreground"].map(OsString::from).into();
         if let Some(index) = &self.index {
             if let Err(e) = fs::create_dir_all(index) {
                 log::warn!("archives: {}: {e}", index.display());
             }
-            args.extend(["--index-folders".into(), index.into()]);
+            argv.extend(["--index-folders".into(), index.into()]);
         }
-        args.extend([archive.into(), dir.clone().into()]);
-        let started = command::run("systemd-run", &args, None, command::LIMIT).map_err(|e| format!("Opening {name}: {e}"))?.status;
+        argv.extend([archive.into(), dir.clone().into()]);
+        let job = Job {
+            unit: unit.clone(),
+            slice: Some("background-graphical.slice".into()),
+            argv,
+            env: vec![],
+            workdir: None,
+            // When the service stops or crashes, the mount is detached lazily.
+            properties: vec![format!("ExecStopPost=/usr/bin/fusermount3 -uz {}", dir.display())],
+        };
+        let started = match job::start(&job) {
+            Ok(()) => true,
+            Err(job::Error::Io(e)) => return Err(format!("Opening {name}: {e}")),
+            Err(e) => {
+                log::warn!("archives: {}: {e}", archive.display());
+                false
+            }
+        };
         // It is mounted once its dir is a mount, and has failed once the service isn't running. There is
         // no time limit, since a big compressed tar is read through for its index first.
-        let mounted = started.success()
+        let mounted = started
             && loop {
                 if mounted_under(root).contains(&dir) {
                     break true;

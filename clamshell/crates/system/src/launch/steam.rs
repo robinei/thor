@@ -47,7 +47,14 @@ pub(super) fn start(request: &Request, appid: u32) -> Result<(), Error> {
     }
     let follower = std::env::current_exe()?.to_string_lossy().into_owned();
     let argv = vec![follower, "--follow-steam".to_owned(), appid.to_string()];
-    let job = Job { unit: request.unit.name(), slice: Some(request.unit.slice()), argv, env: vec![], workdir: None };
+    let job = Job {
+        unit: request.unit.name(),
+        slice: Some(request.unit.slice()),
+        argv: argv.into_iter().map(Into::into).collect(),
+        env: vec![],
+        workdir: None,
+        properties: vec![],
+    };
     Ok(job::start(&job)?)
 }
 
@@ -83,7 +90,14 @@ pub(super) fn ask_steam(request: &Request, appid: u32) -> Result<(), Error> {
     if !steam_client_running() {
         let unit = LaunchUnit { key: clamshell_library::key_of(STEAM_ENTRY), secs: crate::time::clock::unix_secs(), n: 0 };
         let displays = env.iter().filter(|(k, _)| k == "WAYLAND_DISPLAY" || k == "DISPLAY").cloned().collect();
-        let job = Job { unit: unit.name(), slice: Some(unit.slice()), argv, env: displays, workdir: None };
+        let job = Job {
+            unit: unit.name(),
+            slice: Some(unit.slice()),
+            argv: argv.into_iter().map(Into::into).collect(),
+            env: displays,
+            workdir: None,
+            properties: vec![],
+        };
         log::info!("launcher: Steam isn't running: starting it in {}", job.unit);
         job::start(&job)?;
     } else {

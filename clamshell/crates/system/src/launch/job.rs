@@ -1,7 +1,10 @@
-//! Starting a program as a launch of ours, an app or a game, as a transient systemd service of the
-//! user manager: its output in the journal as the unit's, its processes in its cgroup, and systemd
-//! starting and stopping it. ClamShell needs a systemd user manager for this.
+//! Starting a program as a transient systemd service of the user manager: a launch of ours, an app or a
+//! game, and an archive's mount (see `files::archives`). Its output is in the journal as the
+//! unit's, its processes in its cgroup, and systemd starts and stops it. ClamShell needs a systemd user
+//! manager for this. (A program found running is moved into a scope over D-Bus instead, see
+//! [`crate::launch::units::adopt`]: `systemd-run` only starts new processes.)
 
+use std::ffi::OsString;
 use std::fmt;
 use std::io;
 use std::os::unix::process::CommandExt;
@@ -17,10 +20,12 @@ pub(crate) struct Job {
     /// The slice its service goes in, if any. A dock app's slice holds all its instances.
     pub(crate) slice: Option<String>,
     /// Program and arguments.
-    pub(crate) argv: Vec<String>,
+    pub(crate) argv: Vec<OsString>,
     /// Its environment, beside ClamShell's own.
     pub(crate) env: Vec<(String, String)>,
     pub(crate) workdir: Option<PathBuf>,
+    /// More of the service's properties, as `Name=value`.
+    pub(crate) properties: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -75,6 +80,7 @@ pub(crate) fn command(job: &Job) -> Option<Command> {
     // of its processes does, as a launcher script's game outlives it; delegated, so what runs in it may
     // move processes into it, as a Steam game's follower moves Steam's launcher.
     cmd.args(["--service-type=exec", "--property=ExitType=cgroup", "--property=Delegate=yes"]);
+    cmd.args(job.properties.iter().map(|p| format!("--property={p}")));
     // (The arguments as they are: systemd-run would expand `$` in them.)
     cmd.arg("--expand-environment=no");
     if let Some(slice) = &job.slice {
@@ -119,6 +125,7 @@ mod tests {
             argv: vec!["prog".into(), "a b,c;d $HOME".into()],
             env: vec![("K".into(), "v w".into())],
             workdir: Some("/tmp".into()),
+            properties: vec!["ExecStopPost=/bin/true".into()],
         };
         let cmd = command(&job).unwrap();
         let args: Vec<&str> = cmd.get_args().filter_map(|a| a.to_str()).collect();
@@ -131,13 +138,21 @@ mod tests {
         assert!(args.contains(&"--property=ExitType=cgroup"), "running while any of its processes does: {args:?}");
         assert!(args.contains(&"--service-type=exec"), "started once its program runs: {args:?}");
         assert!(args.contains(&"--property=Delegate=yes"), "delegated, for the Steam follower: {args:?}");
+        assert!(args.contains(&"--property=ExecStopPost=/bin/true"), "its own properties: {args:?}");
     }
 
     /// Starts services on this machine's user manager. Run it by hand with `--ignored`.
     #[test]
     #[ignore = "needs a user manager; starts services"]
     fn a_job_starts_as_a_service_and_one_that_cant_run_fails() {
-        let job = Job { unit: format!("clamshell-run-jobtest-{}-1", std::process::id()), slice: None, argv: vec!["true".into()], env: vec![], workdir: None };
+        let job = Job {
+            unit: format!("clamshell-run-jobtest-{}-1", std::process::id()),
+            slice: None,
+            argv: vec!["true".into()],
+            env: vec![],
+            workdir: None,
+            properties: vec![],
+        };
         let empty = Job { argv: vec![], ..job.clone() };
         assert!(matches!(start(&empty), Err(Error::EmptyCommand)));
         start(&job).unwrap();

@@ -2,7 +2,7 @@
 //! `units` watches and ends their units, `freezer` pauses them, and `mpv` reads where mpv left a video.
 
 pub(crate) mod freezer;
-mod job;
+pub(crate) mod job;
 pub(crate) mod launcher;
 pub(crate) mod mpv;
 pub mod steam;
