@@ -21,17 +21,17 @@ use crate::os::worker::{Bell, Worker};
 /// open, and `home` is the home dir for `~/`. `art` is the art cache, holding videos' lengths and frames
 /// as for scanned entries. `probe` has the videos not read yet read in the background; their results
 /// arrive as metadata.
-pub struct Browsing {
-    pub config: Option<PathBuf>,
-    pub home: Option<PathBuf>,
-    pub art: Option<PathBuf>,
-    pub probe: Box<dyn Fn(Vec<crate::library::meta::Wanted>) + Send>,
+pub(crate) struct Browsing {
+    pub(crate) config: Option<PathBuf>,
+    pub(crate) home: Option<PathBuf>,
+    pub(crate) art: Option<PathBuf>,
+    pub(crate) probe: Box<dyn Fn(Vec<crate::library::meta::Wanted>) + Send>,
     /// Where archives' indexes are kept (see [`crate::files::archives`]).
-    pub cache: Option<PathBuf>,
+    pub(crate) cache: Option<PathBuf>,
 }
 
 /// Starts the browse thread, which lists and watches the folder each command names (see [`Browsing`]).
-pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<BrowseCommand>> {
+pub(crate) fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<BrowseCommand>> {
     let Browsing { config, home, art, probe, cache } = browsing;
     let bell = Bell::new()?;
     let theirs = bell.clone();
@@ -169,7 +169,7 @@ fn changed(fd: &rustix::fd::OwnedFd) -> bool {
 /// names. Folders come first, then the rest by name. Hidden entries (`.name`) are included only if
 /// `hidden`. A picture is its own art. A file opens with the first of `runners` that opens its name, with
 /// `~/` in its command expanded against `home`.
-pub fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, hidden: bool) -> Vec<Entry> {
+fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, hidden: bool) -> Vec<Entry> {
     let read = match fs::read_dir(dir) {
         Ok(read) => read,
         Err(e) => {

@@ -12,7 +12,7 @@ use crate::time::wake;
 use crate::{Closed, Sink};
 
 /// Seconds since the epoch on the wall clock at `t` (0 before the epoch).
-pub fn unix_secs_at(t: SystemTime) -> u64 {
+pub(crate) fn unix_secs_at(t: SystemTime) -> u64 {
     t.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
@@ -23,12 +23,12 @@ pub fn unix_secs() -> u64 {
 
 /// Seconds on a monotonic clock, counted from the first call, which is at the program's start. The clock
 /// stops while the system sleeps.
-pub fn mono_secs() -> u64 {
+pub(crate) fn mono_secs() -> u64 {
     static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
     START.get_or_init(std::time::Instant::now).elapsed().as_secs()
 }
 
-pub fn spawn(sink: impl Sink) -> io::Result<()> {
+pub(crate) fn spawn(sink: impl Sink) -> io::Result<()> {
     worker::lasting(clamshell_state::Thread::Clock.name(), move || {
         let _ = tick(&sink);
     })

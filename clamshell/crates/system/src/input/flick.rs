@@ -12,15 +12,15 @@ pub(crate) struct Flick {
 
 impl Flick {
     /// An off-centre stick must return before its first flick counts.
-    pub fn begin(&mut self, [x, y]: [f32; 2]) {
+    pub(crate) fn begin(&mut self, [x, y]: [f32; 2]) {
         self.armed = x.abs().max(y.abs()) < REARM;
     }
 
-    pub fn centered([x, y]: [f32; 2]) -> bool {
+    pub(crate) fn centered([x, y]: [f32; 2]) -> bool {
         x.abs().max(y.abs()) < REARM
     }
 
-    pub fn update(&mut self, [x, y]: [f32; 2]) -> Option<Dir> {
+    pub(crate) fn update(&mut self, [x, y]: [f32; 2]) -> Option<Dir> {
         let distance = x.abs().max(y.abs());
         if distance < REARM {
             self.armed = true;

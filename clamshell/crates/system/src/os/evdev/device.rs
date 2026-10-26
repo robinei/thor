@@ -4,11 +4,9 @@
 use std::fmt;
 use std::io;
 use std::path::PathBuf;
-use std::time::Duration;
 
 use evdev::raw_stream::RawDevice;
 use evdev::{AbsoluteAxisCode, EventType, KeyCode, SynchronizationCode};
-use rustix::event::{PollFd, PollFlags};
 
 use super::Raw;
 
@@ -48,7 +46,7 @@ impl fmt::Display for DeviceSpec {
 /// Opens the device `spec` asks for, or else the first that `looks_right`. When searching, a device named
 /// in `ours`, one of our own virtual devices, is never chosen. If none is found, the error is of kind
 /// NotFound (`no <what>`).
-pub fn open(spec: &DeviceSpec, what: &str, looks_right: impl Fn(&RawDevice) -> bool, ours: &[&str]) -> io::Result<RawDevice> {
+pub(crate) fn open(spec: &DeviceSpec, what: &str, looks_right: impl Fn(&RawDevice) -> bool, ours: &[&str]) -> io::Result<RawDevice> {
     if let DeviceSpec::Path(path) = spec {
         return RawDevice::open(path);
     }
@@ -77,38 +75,28 @@ type AxisValues = Vec<(AbsoluteAxisCode, i32)>;
 
 /// A grabbed device, read without blocking. Nothing else sees its events while we hold it, and it is let
 /// go when dropped.
-pub struct Grabbed {
+pub(crate) struct Grabbed {
     device: RawDevice,
     /// The kernel dropped events (SYN_DROPPED), so everything until the next report is left out.
     skipping: bool,
 }
 
 impl Grabbed {
-    pub fn new(mut device: RawDevice) -> io::Result<Grabbed> {
+    pub(crate) fn new(mut device: RawDevice) -> io::Result<Grabbed> {
         device.grab()?;
         let flags = rustix::fs::fcntl_getfl(&device)?;
         rustix::fs::fcntl_setfl(&device, flags | rustix::fs::OFlags::NONBLOCK)?;
         Ok(Grabbed { device, skipping: false })
     }
 
-    pub fn device(&self) -> &RawDevice {
+    pub(crate) fn device(&self) -> &RawDevice {
         &self.device
-    }
-
-    /// Waits up to `timeout` for events to read, or less if a signal interrupts the wait.
-    pub fn wait(&self, timeout: Duration) -> io::Result<()> {
-        let timeout = crate::os::sys::timespec(timeout);
-        let mut fds = [PollFd::new(&self.device, PollFlags::IN)];
-        match rustix::event::poll(&mut fds, Some(&timeout)) {
-            Ok(_) | Err(rustix::io::Errno::INTR) => Ok(()),
-            Err(e) => Err(e.into()),
-        }
     }
 
     /// Appends the waiting events, if any, to `out`. Returns whether the kernel dropped some because its
     /// buffer overran (SYN_DROPPED). In that case what was read no longer adds up to the device's state
     /// (see [`Grabbed::state`]). The partial report after a drop is left out, as the kernel asks.
-    pub fn fetch(&mut self, out: &mut Vec<Raw>) -> io::Result<bool> {
+    pub(crate) fn fetch(&mut self, out: &mut Vec<Raw>) -> io::Result<bool> {
         let events = match self.device.fetch_events() {
             Ok(events) => events,
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(false),
@@ -128,7 +116,7 @@ impl Grabbed {
     }
 
     /// The device's current state: the keys held and the axes' values.
-    pub fn state(&self) -> io::Result<(Vec<KeyCode>, AxisValues)> {
+    pub(crate) fn state(&self) -> io::Result<(Vec<KeyCode>, AxisValues)> {
         let keys = self.device.get_key_state()?.iter().collect();
         let abs = self.device.get_abs_state()?;
         let axes = self

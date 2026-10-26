@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 /// The XDG data dirs, the user's first.
-pub fn data_dirs() -> Vec<PathBuf> {
+pub(crate) fn data_dirs() -> Vec<PathBuf> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let user = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).or_else(|| home.map(|h| h.join(".local/share")));
     let system = std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
@@ -17,7 +17,7 @@ const SIZES: [u32; 8] = [512, 256, 192, 128, 96, 64, 48, 32];
 
 /// An icon's image file. An absolute path is used as it is. Otherwise the largest image in the themes is
 /// found, scalable ones first, and then the pixmaps folders are tried.
-pub fn find_icon(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
+pub(crate) fn find_icon(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
     let path = Path::new(name);
     if path.is_absolute() {
         return path.is_file().then(|| path.to_path_buf());

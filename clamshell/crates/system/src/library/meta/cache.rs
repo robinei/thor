@@ -16,22 +16,22 @@ use crate::os::fs::{read_json, write_json};
 
 /// A video's length and a frame of it, as probed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Probe {
-    pub seconds: Option<u32>,
-    pub frame: Option<PathBuf>,
+pub(crate) struct Probe {
+    pub(crate) seconds: Option<u32>,
+    pub(crate) frame: Option<PathBuf>,
 }
 
 /// What was fetched about an entry, from where (as [`crate::library::meta::How::source`] gives it) and
 /// when.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Fetched {
-    pub source: String,
-    pub at: u64,
-    pub meta: Meta,
+pub(crate) struct Fetched {
+    pub(crate) source: String,
+    pub(crate) at: u64,
+    pub(crate) meta: Meta,
 }
 
 /// The cache's files.
-pub struct Cache {
+pub(crate) struct Cache {
     dir: PathBuf,
 }
 
@@ -55,7 +55,7 @@ struct ProbeFile {
 }
 
 impl Cache {
-    pub fn open(dir: &Path) -> Cache {
+    pub(crate) fn open(dir: &Path) -> Cache {
         Cache { dir: dir.to_path_buf() }
     }
 
@@ -76,27 +76,27 @@ impl Cache {
     }
 
     /// What was fetched about each entry, from where and when.
-    pub fn metas(&self) -> HashMap<String, Fetched> {
+    pub(crate) fn metas(&self) -> HashMap<String, Fetched> {
         self.read_all::<MetaFile>("-meta.json").into_iter().map(|(_, m)| (m.id, Fetched { source: m.source, at: m.fetched, meta: m.meta })).collect()
     }
 
     /// Saves what was fetched about `id` from `source` at `at`. An empty `meta` records a miss.
-    pub fn save_meta(&self, id: &str, source: &str, at: u64, meta: &Meta) -> io::Result<()> {
+    pub(crate) fn save_meta(&self, id: &str, source: &str, at: u64, meta: &Meta) -> io::Result<()> {
         let file = MetaFile { id: id.to_owned(), source: source.to_owned(), fetched: at, meta: meta.clone() };
         write_json(&self.dir.join(format!("{}-meta.json", key_of(id))), &file)
     }
 
     /// The videos' lengths and frames, by id. A length is none if ffprobe couldn't tell.
-    pub fn probes(&self) -> HashMap<String, Probe> {
+    pub(crate) fn probes(&self) -> HashMap<String, Probe> {
         self.read_all::<ProbeFile>("-probe.json").into_iter().map(|(_, p)| (p.id, Probe { seconds: p.seconds, frame: p.frame })).collect()
     }
 
-    pub fn save_probe(&self, id: &str, seconds: Option<u32>, frame: Option<&Path>) -> io::Result<()> {
+    pub(crate) fn save_probe(&self, id: &str, seconds: Option<u32>, frame: Option<&Path>) -> io::Result<()> {
         write_json(&self.dir.join(format!("{}-probe.json", key_of(id))), &ProbeFile { id: id.to_owned(), seconds, frame: frame.map(Path::to_path_buf) })
     }
 
     /// Forgets the misses, where nothing was found, so they are fetched again. Returns how many.
-    pub fn forget_misses(&self) -> usize {
+    pub(crate) fn forget_misses(&self) -> usize {
         let misses = self.read_all::<MetaFile>("-meta.json").into_iter().filter(|(_, m)| m.meta == Meta::default());
         misses.filter(|(path, _)| fs::remove_file(path).inspect_err(|e| log::warn!("meta: removing {}: {e}", path.display())).is_ok()).count()
     }

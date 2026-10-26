@@ -16,14 +16,14 @@ use crate::{Closed, Sink};
 
 /// What to read. Each is read while its tab is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Command {
+pub(crate) enum Command {
     Audio(bool),
     Backlights(bool),
 }
 
 const READ_EVERY: Duration = Duration::from_secs(1);
 
-pub fn spawn(backlights: Backlights, sink: impl Sink) -> io::Result<Worker<Command>> {
+pub(crate) fn spawn(backlights: Backlights, sink: impl Sink) -> io::Result<Worker<Command>> {
     Worker::spawn(clamshell_state::Thread::Mixer.name(), move |commands| {
         let _ = follow(&backlights, commands, &sink);
     })
@@ -74,7 +74,7 @@ fn read_audio() -> Audio {
 }
 
 /// The default output's volume (0-100) and whether it is muted.
-pub fn read_volume() -> Option<(u8, bool)> {
+pub(crate) fn read_volume() -> Option<(u8, bool)> {
     dump().as_ref().and_then(default_volume)
 }
 

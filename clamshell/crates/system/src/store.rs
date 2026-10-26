@@ -149,7 +149,7 @@ impl Store {
     }
 
     /// Every entry's plays, summed up.
-    pub fn plays(&self) -> HashMap<String, Plays> {
+    pub(crate) fn plays(&self) -> HashMap<String, Plays> {
         let mut out: HashMap<String, Plays> = HashMap::new();
         let path = self.file("plays.jsonl");
         let text = match fs::read_to_string(&path) {
@@ -173,7 +173,7 @@ impl Store {
     }
 
     /// Adds a play of `id`. The line is appended whole in one write and flushed to the disk.
-    pub fn add_play(&self, id: &str, start: u64, duration: u64) -> io::Result<()> {
+    fn add_play(&self, id: &str, start: u64, duration: u64) -> io::Result<()> {
         fs::create_dir_all(&self.dir)?;
         let mut line = serde_json::to_string(&Play { id: id.to_owned(), start, duration }).map_err(io::Error::other)?;
         line.push('\n');
@@ -182,7 +182,7 @@ impl Store {
         file.sync_data()
     }
 
-    pub fn favourites(&self) -> HashSet<String> {
+    pub(crate) fn favourites(&self) -> HashSet<String> {
         read_json::<Vec<String>>(&self.file("favourites.json")).unwrap_or_default().into_iter().collect()
     }
 
@@ -378,7 +378,7 @@ fn screen_file(id: &str) -> String {
 }
 
 /// A write for the [`Writer`].
-pub enum Write {
+pub(crate) enum Write {
     Save(Save),
     /// A play of entry `id`.
     Play {
@@ -391,13 +391,13 @@ pub enum Write {
 /// Makes the state's writes in order on a thread of their own. When dropped, it finishes the writes
 /// already sent. Its thread is joined, which [`crate::os::worker::Worker`] doesn't do, so the last writes
 /// are made before the program exits.
-pub struct Writer {
+pub(crate) struct Writer {
     tx: Option<Sender<Write>>,
     thread: Option<JoinHandle<()>>,
 }
 
 impl Writer {
-    pub fn spawn(mut store: Store) -> io::Result<Writer> {
+    pub(crate) fn spawn(mut store: Store) -> io::Result<Writer> {
         let (tx, rx) = mpsc::channel::<Write>();
         let thread = crate::os::worker::start("store", move || {
             crate::os::worker::restarted(clamshell_state::Thread::Store.name(), || {
@@ -415,7 +415,7 @@ impl Writer {
         Ok(Writer { tx: Some(tx), thread: Some(thread) })
     }
 
-    pub fn send(&self, write: Write) {
+    pub(crate) fn send(&self, write: Write) {
         if self.tx.as_ref().is_none_or(|tx| tx.send(write).is_err()) {
             log::warn!("store: its thread is gone: not written");
         }

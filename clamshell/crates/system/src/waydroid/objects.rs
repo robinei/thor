@@ -48,7 +48,7 @@ pub(super) enum Pass {
 
 /// The settings ClamShell gives the proxy (see the module docs), read again at most every second.
 #[derive(Debug, Default)]
-pub struct Settings {
+pub(crate) struct Settings {
     dir: Option<PathBuf>,
     read: Option<Instant>,
     /// The caption's height in pixels. 0 means the caption is shown.
@@ -101,7 +101,7 @@ pub(super) struct Objects {
 }
 
 impl Objects {
-    pub fn new(settings_dir: Option<PathBuf>) -> Objects {
+    pub(crate) fn new(settings_dir: Option<PathBuf>) -> Objects {
         Objects { settings: Settings { dir: settings_dir, ..Settings::default() }, ..Objects::default() }
     }
 

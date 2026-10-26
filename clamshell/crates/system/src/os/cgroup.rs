@@ -15,24 +15,24 @@ pub fn unit_of(pid: u32) -> Option<String> {
 }
 
 /// A process's cgroup path in the unified hierarchy (`/user.slice/…/app.slice/foo.scope`).
-pub fn path_of(pid: u32) -> Option<String> {
+pub(crate) fn path_of(pid: u32) -> Option<String> {
     parse_path(&sys::text(format!("/proc/{pid}/cgroup"))?).map(str::to_owned)
 }
 
 /// Where cgroup `path` (`/user.slice/…`) is in the cgroup filesystem.
-pub fn dir(path: &str) -> PathBuf {
+pub(crate) fn dir(path: &str) -> PathBuf {
     Path::new("/sys/fs/cgroup").join(path.trim_start_matches('/'))
 }
 
 /// A cgroup's CPU time so far in microseconds, including its subgroups.
-pub fn cpu_usec(dir: &Path) -> Option<u64> {
+pub(crate) fn cpu_usec(dir: &Path) -> Option<u64> {
     let stat = sys::text(dir.join("cpu.stat"))?;
     stat.lines().find_map(|l| l.strip_prefix("usage_usec ")).and_then(|v| v.trim().parse().ok())
 }
 
 /// The GPU time so far of a cgroup's processes, including its subgroups, in nanoseconds. Each DRM client
 /// is counted once.
-pub fn gpu_ns(dir: &Path) -> u64 {
+pub(crate) fn gpu_ns(dir: &Path) -> u64 {
     let mut clients = HashMap::new();
     let mut dirs = vec![dir.to_path_buf()];
     while let Some(d) = dirs.pop() {

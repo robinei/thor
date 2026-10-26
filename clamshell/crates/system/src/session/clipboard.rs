@@ -63,7 +63,7 @@ fn saved(display: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
 /// Keeps the clipboard (see the module's doc) on a thread of its own, as long as the compositor is
 /// there. It starts with the text an earlier ClamShell kept, offered if the clipboard is empty.
 /// `display` selects the nested server explicitly; None uses the session's environment.
-pub fn spawn(display: Option<std::path::PathBuf>, sink: impl Sink + Clone + 'static) -> io::Result<()> {
+pub(crate) fn spawn(display: Option<std::path::PathBuf>, sink: impl Sink + Clone + 'static) -> io::Result<()> {
     let saved = saved(display.as_deref());
     worker::lasting(clamshell_state::Thread::Clipboard.name(), move || {
         let before = saved

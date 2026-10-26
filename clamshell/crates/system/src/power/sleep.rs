@@ -31,7 +31,7 @@ const NOT_SLEPT: Duration = Duration::from_secs(10);
 const RETRY: Duration = Duration::from_secs(30);
 
 /// The thread holding sleep for the pad (see the module doc).
-pub fn spawn_hold(pad: Worker<pad::Command>) -> std::io::Result<()> {
+pub(crate) fn spawn_hold(pad: Worker<pad::Command>) -> std::io::Result<()> {
     worker::lasting(clamshell_state::Thread::Sleep.name(), move || {
         loop {
             if let Err(e) = hold(&pad) {
@@ -103,7 +103,7 @@ const BUSY_NET: f64 = 100_000.0;
 /// Whether the machine is busy now, measured over a few seconds, and why. It looks at the CPU use of all
 /// the user's processes, meaning the user manager's cgroup with ClamShell's launches and Steam, and at
 /// the network's traffic.
-pub fn busy() -> Option<String> {
+pub(crate) fn busy() -> Option<String> {
     let user = user_cgroup();
     let cpu = || user.as_deref().and_then(cgroup::cpu_usec);
     let net = || {
@@ -140,7 +140,7 @@ fn user_cgroup() -> Option<PathBuf> {
 
 /// Suspends through logind. Where the system can, because it has a swap file to hibernate to, it
 /// suspends and then hibernates after a while (logind's HibernateDelaySec). Otherwise it just suspends.
-pub fn suspend() {
+pub(crate) fn suspend() {
     let logind = |bus: &mut dbus::Bus, method: &str| bus.call::<(String,)>(LOGIN1, LOGIN1_PATH, MANAGER, method, ());
     let slept = dbus::Bus::system().and_then(|mut bus| {
         let (method, interactive) = if logind(&mut bus, "CanSuspendThenHibernate")?.0 == "yes" {

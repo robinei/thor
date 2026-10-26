@@ -14,16 +14,16 @@ pub(super) const MEDIA: &str = "/run/media/";
 /// A mounted removable filesystem: its device, mount point, type, label and UUID. The label and UUID
 /// are empty if there is none.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Mount {
-    pub device: String,
-    pub dir: PathBuf,
-    pub fs: String,
-    pub label: String,
-    pub uuid: String,
+pub(crate) struct Mount {
+    pub(crate) device: String,
+    pub(crate) dir: PathBuf,
+    pub(crate) fs: String,
+    pub(crate) label: String,
+    pub(crate) uuid: String,
 }
 
 /// The mounted removable filesystems under `/run/media`, in the order they were mounted.
-pub fn media_mounts() -> Vec<Mount> {
+pub(crate) fn media_mounts() -> Vec<Mount> {
     let named = |dir: &str| -> Vec<(String, PathBuf)> {
         fs::read_dir(dir)
             .inspect_err(|e| log::debug!("mounts: {dir}: {e}"))

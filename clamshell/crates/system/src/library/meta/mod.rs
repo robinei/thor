@@ -58,21 +58,21 @@ const THREADS: usize = 4;
 const LISTS_KEPT: std::time::Duration = std::time::Duration::from_secs(30 * 86_400);
 
 /// How long after a miss, when nothing was found, to try again, in seconds.
-pub const RETRY_MISS: u64 = 30 * 86_400;
+pub(crate) const RETRY_MISS: u64 = 30 * 86_400;
 
 /// The services' keys, from library.json's `keys`.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Keys {
     #[serde(default)]
-    pub tmdb: Option<String>,
+    pub(crate) tmdb: Option<String>,
     #[serde(default)]
-    pub steamgriddb: Option<String>,
+    pub(crate) steamgriddb: Option<String>,
 }
 
 /// Where an entry's metadata comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum How {
+pub(crate) enum How {
     /// libretro's thumbnails of this system, named as its folder there.
     Libretro(String),
     /// TMDB, a film (`movie`) or a series (`tv`).
@@ -89,7 +89,7 @@ pub enum How {
 impl How {
     /// Parses library.json's `metadata` field: `libretro:<system>`, `tmdb:movie`, `tmdb:tv` or
     /// `steamgriddb`. `steam`, a Steam game's store page, needs the app id and is handled by the library.
-    pub fn parse(field: &str) -> Option<How> {
+    pub(crate) fn parse(field: &str) -> Option<How> {
         if field == "steamgriddb" {
             return Some(How::SteamGridDb);
         }
@@ -101,7 +101,7 @@ impl How {
     }
 
     /// The form saved with what was found. The entry is fetched again when this changes.
-    pub fn source(&self) -> String {
+    pub(crate) fn source(&self) -> String {
         match self {
             How::Libretro(system) => format!("libretro:{system}"),
             How::Tmdb(kind) => format!("tmdb:{kind}"),
@@ -115,15 +115,15 @@ impl How {
 /// An entry to fetch for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Wanted {
-    pub id: Arc<str>,
+    pub(crate) id: Arc<str>,
     /// The entry's key, which names its files in the art cache.
-    pub key: String,
-    pub title: String,
+    pub(crate) key: String,
+    pub(crate) title: String,
     /// The entry's file in its content dir, for the checksum.
-    pub file: Option<PathBuf>,
-    pub how: How,
+    pub(crate) file: Option<PathBuf>,
+    pub(crate) how: How,
     /// Whether it has art of its own already, so no cover is wanted.
-    pub art: bool,
+    pub(crate) art: bool,
 }
 
 /// What a fetch needs.
@@ -143,7 +143,7 @@ pub struct Queue {
 
 impl Queue {
     /// Moves these entries to the front, in this order, if they are still waiting.
-    pub fn first(&self, ids: &[Arc<str>]) {
+    pub(crate) fn first(&self, ids: &[Arc<str>]) {
         let mut q = crate::os::lock(&self.waiting);
         for id in ids.iter().rev() {
             if let Some(at) = q.iter().position(|w| w.id == *id)

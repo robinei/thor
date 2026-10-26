@@ -22,7 +22,7 @@ const HELPER: &str = "/usr/lib/thor/thor-account";
 const HELPER_LIMIT: Duration = Duration::from_secs(30);
 
 /// The account as the helper reads it. It is unavailable if there is no helper or it fails.
-pub fn read() -> Account {
+pub(crate) fn read() -> Account {
     if !Path::new(HELPER).exists() {
         return Account::default();
     }
@@ -43,7 +43,7 @@ fn parse(out: &str) -> Account {
 
 /// Asks the helper for a change. Returns what it did, or why it didn't. [`AccountCommand::Read`] is
 /// handled by [`read`].
-pub fn change(command: &AccountCommand) -> Result<String, String> {
+pub(crate) fn change(command: &AccountCommand) -> Result<String, String> {
     if !Path::new(HELPER).exists() {
         return Err("Not on this system".to_owned());
     }

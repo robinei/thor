@@ -46,7 +46,7 @@ struct Suid {
 }
 
 /// The sensor hub's gyro, while there is one.
-pub struct SensorHub {
+pub(crate) struct SensorHub {
     socket: OwnedFd,
     facts: HubFacts,
     /// The hub's service node and port, once the name service has given them.
@@ -61,7 +61,7 @@ pub struct SensorHub {
 impl SensorHub {
     /// Uses the profile's hub after normal evdev motion discovery found none. Service availability
     /// remains asynchronous: firmware can announce the hub after startup or resume.
-    pub fn find(facts: Option<HubFacts>) -> Option<SensorHub> {
+    pub(crate) fn find(facts: Option<HubFacts>) -> Option<SensorHub> {
         let facts = facts?;
         let hub = (|| {
             let (socket, node) = qrtr::socket()?;

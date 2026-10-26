@@ -29,7 +29,7 @@ const HIDDEN_EVERY: Duration = Duration::from_secs(5);
 
 /// Starts the metrics thread. Its commands say whether the metrics can be seen; they are read at once
 /// when they become visible.
-pub fn spawn(sink: impl Sink) -> io::Result<Worker<Shown>> {
+pub(crate) fn spawn(sink: impl Sink) -> io::Result<Worker<Shown>> {
     Worker::spawn(clamshell_state::Thread::Metrics.name(), move |commands| {
         let _ = follow(&sink, commands);
     })

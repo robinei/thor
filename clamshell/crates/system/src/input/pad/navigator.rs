@@ -18,7 +18,7 @@ const STICK_DIRECTION: f32 = 0.6;
 const TRIGGER_PULLED: f32 = 0.5;
 
 #[derive(Debug)]
-pub struct Navigator {
+pub(crate) struct Navigator {
     stick_range: Range,
     trigger_range: Range,
     /// The left and right triggers pulled.
@@ -30,7 +30,7 @@ pub struct Navigator {
 }
 
 impl Navigator {
-    pub fn new(stick_range: Range, trigger_range: Range) -> Self {
+    pub(crate) fn new(stick_range: Range, trigger_range: Range) -> Self {
         Navigator { stick_range, trigger_range, pulled: (false, false), hat: (0, 0), stick: (0.0, 0.0), held: None, next: None }
     }
 

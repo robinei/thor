@@ -14,14 +14,14 @@ use super::route::{Mapping, Out, Ranges};
 use crate::os::evdev::{Press, Raw};
 
 #[derive(Debug)]
-pub struct Listener {
+pub(crate) struct Listener {
     ranges: Ranges,
     /// The directions and triggers now past half. Each counts once until let go.
     pushed: Vec<Input>,
 }
 
 impl Listener {
-    pub fn new(ranges: Ranges) -> Listener {
+    pub(crate) fn new(ranges: Ranges) -> Listener {
         Listener { ranges, pushed: Vec::new() }
     }
 

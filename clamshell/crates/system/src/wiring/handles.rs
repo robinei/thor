@@ -14,37 +14,37 @@ use crate::store::{Write, Writer};
 
 /// The threads, and the one device, that effects go to.
 pub struct Handles {
-    pub paths: Paths,
+    pub(crate) paths: Paths,
     /// Where saves go. `None` if there is no state dir or its thread couldn't start, and then nothing is
     /// kept.
-    pub store: Option<Writer>,
+    pub(crate) store: Option<Writer>,
     /// The entries waiting for their metadata.
-    pub fetching: crate::library::meta::Queue,
+    pub(crate) fetching: crate::library::meta::Queue,
     /// Reads the library again on a thread, and fetches what it wants. With `true` the metadata misses
     /// are forgotten first.
-    pub rescan: Box<dyn Fn(bool)>,
-    pub touchpad: Worker<touchpad::Command>,
-    pub mixer: Worker<mixer::Command>,
-    pub wifi: Worker<wifi::Request>,
-    pub bluetooth: Worker<bluetooth::Request>,
-    pub tray: Worker<clamshell_state::session::tray::TrayCommand>,
-    pub metrics: Worker<Shown>,
+    pub(crate) rescan: Box<dyn Fn(bool)>,
+    pub(crate) touchpad: Worker<touchpad::Command>,
+    pub(crate) mixer: Worker<mixer::Command>,
+    pub(crate) wifi: Worker<wifi::Request>,
+    pub(crate) bluetooth: Worker<bluetooth::Request>,
+    pub(crate) tray: Worker<clamshell_state::session::tray::TrayCommand>,
+    pub(crate) metrics: Worker<Shown>,
     /// The bar's status, read often while the screens are on.
-    pub status: Worker<Shown>,
-    pub icons: Worker<(std::sync::Arc<str>, String)>,
-    pub battery: Worker<Shown>,
-    pub pad: Worker<pad::Command>,
+    pub(crate) status: Worker<Shown>,
+    pub(crate) icons: Worker<(std::sync::Arc<str>, String)>,
+    pub(crate) battery: Worker<Shown>,
+    pub(crate) pad: Worker<pad::Command>,
     /// The controller the pad thread grabbed. Launched SDL programs are told to ignore it.
-    pub pad_taken: pad::Taken,
-    pub launcher: Worker<launcher::Command>,
-    pub sound: Worker<clamshell_state::Sound>,
-    pub brightness: Worker<brightness::Command>,
-    pub tuning: Tuning,
+    pub(crate) pad_taken: pad::Taken,
+    pub(crate) launcher: Worker<launcher::Command>,
+    pub(crate) sound: Worker<clamshell_state::Sound>,
+    pub(crate) brightness: Worker<brightness::Command>,
+    pub(crate) tuning: Tuning,
     /// Screenshots, sleep and the other one-off requests (see [`crate::errands`]).
-    pub system: Worker<crate::errands::Command>,
+    pub(crate) system: Worker<crate::errands::Command>,
     /// Lists and watches the folder open in the browser.
-    pub browse: Worker<clamshell_state::shelf::files::BrowseCommand>,
-    pub files: Worker<clamshell_state::shelf::files::FileOp>,
+    pub(crate) browse: Worker<clamshell_state::shelf::files::BrowseCommand>,
+    pub(crate) files: Worker<clamshell_state::shelf::files::FileOp>,
 }
 
 impl Handles {

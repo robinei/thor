@@ -11,20 +11,20 @@ use std::process::{Child, Command, Stdio};
 use crate::os::worker;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Job {
+pub(crate) struct Job {
     /// The service's name (without `.service`).
-    pub unit: String,
+    pub(crate) unit: String,
     /// The slice its service goes in, if any. A dock app's slice holds all its instances.
-    pub slice: Option<String>,
+    pub(crate) slice: Option<String>,
     /// Program and arguments.
-    pub argv: Vec<String>,
+    pub(crate) argv: Vec<String>,
     /// Its environment, beside ClamShell's own.
-    pub env: Vec<(String, String)>,
-    pub workdir: Option<PathBuf>,
+    pub(crate) env: Vec<(String, String)>,
+    pub(crate) workdir: Option<PathBuf>,
 }
 
 #[derive(Debug)]
-pub enum Error {
+pub(crate) enum Error {
     Io(io::Error),
     EmptyCommand,
     /// systemd didn't start it, as `systemd-run` said (its error is in ClamShell's log).
@@ -67,7 +67,7 @@ const UNIT_OWN: [&str; 13] = [
 /// The `systemd-run` that starts a job as the service `<unit>.service`, in its slice if it has one, in
 /// its workdir or else HOME, with its environment. `systemd-run` returns once systemd has started it, or
 /// failed to.
-pub fn command(job: &Job) -> Option<Command> {
+pub(crate) fn command(job: &Job) -> Option<Command> {
     let (program, args) = job.argv.split_first()?;
     let mut cmd = Command::new("systemd-run");
     cmd.args(["--user", "--quiet", "--collect", &format!("--unit={}", job.unit)]);
@@ -92,14 +92,14 @@ pub fn command(job: &Job) -> Option<Command> {
 }
 
 /// Waits for a child on a thread of its own, so it is reaped whenever it ends.
-pub fn reap(mut child: Child) {
+pub(crate) fn reap(mut child: Child) {
     if let Err(e) = worker::detached("reaper", move || drop(child.wait())) {
         log::warn!("reaper: {e}");
     }
 }
 
 /// Starts a job's service, returning once systemd has started it.
-pub fn start(job: &Job) -> Result<(), Error> {
+pub(crate) fn start(job: &Job) -> Result<(), Error> {
     let mut cmd = command(job).ok_or(Error::EmptyCommand)?;
     // In its own process group, our signals, such as a Ctrl-C in a terminal, don't reach it.
     let status = cmd.stdin(Stdio::null()).process_group(0).status()?;

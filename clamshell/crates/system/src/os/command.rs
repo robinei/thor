@@ -9,22 +9,22 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 /// How long a tool may take, unless a call says otherwise.
-pub const LIMIT: Duration = Duration::from_secs(3);
+pub(crate) const LIMIT: Duration = Duration::from_secs(3);
 
 /// How long the output may still take to arrive once the program has ended. A process it started may
 /// hold the pipes open, so after this the output is given up rather than waited for.
 const DRAIN: Duration = Duration::from_secs(1);
 
 /// How a program ended.
-pub struct Ran {
-    pub status: ExitStatus,
-    pub stdout: Vec<u8>,
-    pub stderr: Vec<u8>,
+pub(crate) struct Ran {
+    pub(crate) status: ExitStatus,
+    pub(crate) stdout: Vec<u8>,
+    pub(crate) stderr: Vec<u8>,
 }
 
 impl Ran {
     /// The first non-empty line of standard error, trimmed. It usually says what went wrong.
-    pub fn said(&self) -> String {
+    pub(crate) fn said(&self) -> String {
         let err = String::from_utf8_lossy(&self.stderr);
         err.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or_default().to_owned()
     }
@@ -32,7 +32,7 @@ impl Ran {
 
 /// Runs `program` with `args` and `input` on its standard input, for at most `limit`. Returns how it
 /// ended, or an error if it couldn't start or ran past the limit and was killed.
-pub fn run<S: AsRef<OsStr>>(program: &str, args: &[S], input: Option<&[u8]>, limit: Duration) -> Result<Ran, String> {
+pub(crate) fn run<S: AsRef<OsStr>>(program: &str, args: &[S], input: Option<&[u8]>, limit: Duration) -> Result<Ran, String> {
     let mut child = Command::new(program)
         .args(args)
         .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
@@ -96,7 +96,7 @@ fn drain(program: &str, pipe: Option<impl Read + Send + 'static>) -> mpsc::Recei
 
 /// Runs `program` with `args` within [`LIMIT`] and returns its standard output if it succeeded. Failures
 /// are logged.
-pub fn output(program: &str, args: &[&str]) -> Option<Vec<u8>> {
+pub(crate) fn output(program: &str, args: &[&str]) -> Option<Vec<u8>> {
     match run(program, args, None, LIMIT) {
         Ok(ran) if ran.status.success() => Some(ran.stdout),
         Ok(ran) => {

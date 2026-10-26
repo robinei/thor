@@ -6,24 +6,24 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 /// A file's text, if it can be read.
-pub fn text(path: impl AsRef<Path>) -> Option<String> {
+pub(crate) fn text(path: impl AsRef<Path>) -> Option<String> {
     fs::read_to_string(path).ok()
 }
 
 /// A file's value, ignoring surrounding whitespace, if it can be read and parsed.
-pub fn read<T: FromStr>(path: impl AsRef<Path>) -> Option<T> {
+pub(crate) fn read<T: FromStr>(path: impl AsRef<Path>) -> Option<T> {
     text(path)?.trim().parse().ok()
 }
 
 /// The entries of a directory, such as the devices of a sysfs class, sorted. Empty if it can't be read.
-pub fn entries(dir: impl AsRef<Path>) -> Vec<PathBuf> {
+pub(crate) fn entries(dir: impl AsRef<Path>) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = fs::read_dir(dir).map(|d| d.flatten().map(|e| e.path()).collect()).unwrap_or_default();
     out.sort();
     out
 }
 
 /// Every process: its pid and its /proc dir.
-pub fn processes() -> impl Iterator<Item = (u32, PathBuf)> {
+pub(crate) fn processes() -> impl Iterator<Item = (u32, PathBuf)> {
     fs::read_dir("/proc").into_iter().flatten().flatten().filter_map(|e| Some((e.file_name().to_str()?.parse().ok()?, e.path())))
 }
 
@@ -35,12 +35,12 @@ fn start_time(pid: u32) -> Option<u64> {
 }
 
 /// The parent of process `pid`, from the 4th field of `/proc/<pid>/stat`.
-pub fn parent(pid: u32) -> Option<u32> {
+fn parent(pid: u32) -> Option<u32> {
     parent_in(&text(format!("/proc/{pid}/stat"))?)
 }
 
 /// The parent in a `/proc/<pid>/stat` file's text.
-pub fn parent_in(stat: &str) -> Option<u32> {
+pub(crate) fn parent_in(stat: &str) -> Option<u32> {
     stat_field(stat, 4)
 }
 
@@ -56,7 +56,7 @@ fn stat_field<T: std::str::FromStr>(stat: &str, n: usize) -> Option<T> {
 static SEEN: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<u32, u64>>> = std::sync::LazyLock::new(Default::default);
 
 /// Remembers the start time of process `pid`, seen as a window's or a tray icon's, and returns it.
-pub fn saw(pid: u32) -> Option<u64> {
+pub(crate) fn saw(pid: u32) -> Option<u64> {
     let start = start_time(pid)?;
     let mut seen = crate::os::lock(&SEEN);
     // Keep the map bounded by forgetting everything now and then, including windows long gone.
@@ -68,7 +68,7 @@ pub fn saw(pid: u32) -> Option<u64> {
 }
 
 /// Whether process `pid` is the one last seen with that id. A process never seen counts as the same.
-pub fn same_process(pid: u32) -> bool {
+pub(crate) fn same_process(pid: u32) -> bool {
     let known = crate::os::lock(&SEEN).get(&pid).copied();
     known.is_none_or(|start| start_time(pid) == Some(start))
 }
@@ -98,20 +98,20 @@ pub fn lineage(pid: u32) -> Vec<u32> {
 }
 
 /// `d` as poll(2)'s timeout.
-pub fn timespec(d: std::time::Duration) -> rustix::event::Timespec {
+pub(crate) fn timespec(d: std::time::Duration) -> rustix::event::Timespec {
     rustix::event::Timespec { tv_sec: i64::try_from(d.as_secs()).unwrap_or(i64::MAX), tv_nsec: i64::from(d.subsec_nanos()) }
 }
 
 /// A line of the mount table.
-pub struct MountLine {
-    pub device: String,
-    pub dir: PathBuf,
-    pub fs: String,
+pub(crate) struct MountLine {
+    pub(crate) device: String,
+    pub(crate) dir: PathBuf,
+    pub(crate) fs: String,
 }
 
 /// The mount table from /proc/self/mounts, in the order mounted, with its names unescaped (`\040` is a
 /// space).
-pub fn mount_table() -> Vec<MountLine> {
+pub(crate) fn mount_table() -> Vec<MountLine> {
     let text = text("/proc/self/mounts").unwrap_or_default();
     text.lines()
         .filter_map(|line| {
@@ -129,7 +129,7 @@ const POWER_SUPPLY: &str = "/sys/class/power_supply";
 
 /// The battery that powers the system: the first power supply of type Battery that doesn't belong to a
 /// device. A mouse's or a headset's battery has the scope Device.
-pub fn system_battery() -> Option<PathBuf> {
+pub(crate) fn system_battery() -> Option<PathBuf> {
     system_battery_in(Path::new(POWER_SUPPLY))
 }
 
@@ -140,7 +140,7 @@ fn system_battery_in(class: &Path) -> Option<PathBuf> {
 }
 
 /// Every power supply, for settings only some of them have, such as the charge limit.
-pub fn power_supplies() -> Vec<PathBuf> {
+pub(crate) fn power_supplies() -> Vec<PathBuf> {
     entries(POWER_SUPPLY)
 }
 

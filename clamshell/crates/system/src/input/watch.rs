@@ -120,7 +120,7 @@ fn device_key(raw: Raw) -> Option<DeviceKey> {
 
 /// A non-blocking inotify watch of /dev/input. It sees a device's node appear and udev give it its
 /// permissions, and either means look again. The pad thread has a watch of its own.
-pub fn devices_watch() -> Option<rustix::fd::OwnedFd> {
+pub(crate) fn devices_watch() -> Option<rustix::fd::OwnedFd> {
     let fd = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).inspect_err(|e| log::warn!("inotify: {e}")).ok()?;
     inotify::add_watch(&fd, "/dev/input", inotify::WatchFlags::CREATE | inotify::WatchFlags::ATTRIB | inotify::WatchFlags::MOVED_TO)
         .inspect_err(|e| log::warn!("inotify: watching /dev/input: {e}"))
@@ -130,7 +130,7 @@ pub fn devices_watch() -> Option<rustix::fd::OwnedFd> {
 
 /// Starts watching. With `hardware_keys` it takes the device's hardware keys, which is for the device's
 /// own session only.
-pub fn spawn(hardware_keys: bool, sink: impl Sink) -> io::Result<()> {
+pub(crate) fn spawn(hardware_keys: bool, sink: impl Sink) -> io::Result<()> {
     worker::lasting(clamshell_state::Thread::InputWatch.name(), move || {
         if let Err(Closed) = watch(hardware_keys, &sink) {
             log::debug!("input watch: the UI is gone");

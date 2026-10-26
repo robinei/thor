@@ -14,7 +14,7 @@ use crate::os::worker;
 /// drawing ([`working_without_drawing`]), for example while it loads or compiles shaders and the user has
 /// switched away to wait. A later request for the unit, such as a thaw when it is shown again, ends the
 /// wait.
-pub fn freeze(unit: String, frozen: bool) {
+pub(crate) fn freeze(unit: String, frozen: bool) {
     static FREEZER: std::sync::OnceLock<Option<std::sync::mpsc::Sender<(String, bool)>>> = std::sync::OnceLock::new();
     let sender = FREEZER.get_or_init(|| {
         let (send, receive) = std::sync::mpsc::channel();

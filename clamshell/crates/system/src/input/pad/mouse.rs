@@ -20,7 +20,7 @@ const HI_RES_NOTCH: f32 = 120.0;
 /// A trigger pressed past this fraction of full is a held button.
 const TRIGGER: f32 = 0.5;
 /// How often motion is sent while a stick is deflected: 125 Hz, a common mouse rate.
-pub const MOTION_EVERY: Duration = Duration::from_millis(8);
+const MOTION_EVERY: Duration = Duration::from_millis(8);
 
 /// A stick vector after the radial deadzone and the curve. Its length is 0 at the deadzone's edge and 1
 /// at full deflection.
@@ -34,7 +34,7 @@ fn shape((x, y): (f32, f32)) -> (f32, f32) {
 }
 
 #[derive(Debug)]
-pub struct PadMouse {
+pub(crate) struct PadMouse {
     ranges: Ranges,
     left: (f32, f32),
     right: (f32, f32),
@@ -47,17 +47,17 @@ pub struct PadMouse {
 }
 
 impl PadMouse {
-    pub fn new(ranges: Ranges) -> Self {
+    pub(crate) fn new(ranges: Ranges) -> Self {
         PadMouse { ranges, left: (0.0, 0.0), right: (0.0, 0.0), trigger_down: false, carry: (0.0, 0.0), scroll_carry: (0.0, 0.0), last: None }
     }
 
     /// Whether a stick is out of its deadzone, in which case motion needs ticks.
-    pub fn moving(&self) -> bool {
+    fn moving(&self) -> bool {
         shape(self.left) != (0.0, 0.0) || shape(self.right) != (0.0, 0.0)
     }
 
     /// Motion for `dt` of stick deflection: the pointer from the left stick, scrolling from the right.
-    pub fn motion(&mut self, dt: Duration, out: &mut Out) {
+    pub(crate) fn motion(&mut self, dt: Duration, out: &mut Out) {
         let secs = dt.as_secs_f32();
         let (mx, my) = shape(self.left);
         self.carry.0 += mx * MAX_SPEED * secs;

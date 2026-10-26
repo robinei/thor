@@ -26,7 +26,7 @@ fn wakeup_files(input: &Path) -> Vec<PathBuf> {
 
 /// Turns the power key's wakeup off when the lid is closed (`true`) and on when it is open, where it
 /// differs.
-pub fn closed(closed: bool) {
+pub(crate) fn closed(closed: bool) {
     set_in(Path::new("/sys/class/input"), closed);
 }
 

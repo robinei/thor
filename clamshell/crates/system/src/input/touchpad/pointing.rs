@@ -7,7 +7,7 @@ use evdev::{AbsoluteAxisCode, KeyCode};
 use crate::os::evdev::{Press, Raw};
 
 /// The number of slots, or fingers, tracked.
-pub const SLOTS: usize = clamshell_state::bottom::touch::SLOTS as usize;
+pub(crate) const SLOTS: usize = clamshell_state::bottom::touch::SLOTS as usize;
 /// BTN_TOOL_FINGER, _DOUBLETAP, _TRIPLETAP and _QUADTAP say how many fingers are on the touchpad.
 const TOOLS: [KeyCode; 4] = [KeyCode::BTN_TOOL_FINGER, KeyCode::BTN_TOOL_DOUBLETAP, KeyCode::BTN_TOOL_TRIPLETAP, KeyCode::BTN_TOOL_QUADTAP];
 
@@ -31,14 +31,14 @@ fn finger_keys(before: usize, fingers: usize, out: &mut Vec<Raw>) {
 
 /// Where each finger pointing is, by slot, and the last tracking id given.
 #[derive(Debug, Default)]
-pub struct Fingers {
+pub(crate) struct Fingers {
     down: [Option<(i32, i32)>; SLOTS],
     last_id: i32,
 }
 
 impl Fingers {
     /// Whether a finger is down.
-    pub fn any(&self) -> bool {
+    pub(crate) fn any(&self) -> bool {
         self.count() > 0
     }
 
@@ -53,7 +53,7 @@ impl Fingers {
     /// One touch frame's contacts as one touchpad frame, on a touchpad of `size` pixels. That is each
     /// slot's events, then the touch and finger-count keys and the first finger's position where they
     /// changed. A frame in which only fingers that weren't down move or lift gives nothing.
-    pub fn frame(&mut self, contacts: &[Contact], size: (i32, i32)) -> Vec<crate::os::evdev::Raw> {
+    pub(crate) fn frame(&mut self, contacts: &[Contact], size: (i32, i32)) -> Vec<crate::os::evdev::Raw> {
         let (before, first) = (self.count(), self.first());
         let mut out = Vec::new();
         for &c in contacts {

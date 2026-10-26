@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 
 /// The folders mpv keeps positions in, with the one mpv.conf names first.
-pub fn watch_later_dirs(config_home: Option<&Path>, state_home: Option<&Path>) -> Vec<PathBuf> {
+pub(crate) fn watch_later_dirs(config_home: Option<&Path>, state_home: Option<&Path>) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     let conf = config_home.map(|c| c.join("mpv/mpv.conf"));
     let read = |c: PathBuf| {
@@ -43,7 +43,7 @@ pub fn watch_later_dirs(config_home: Option<&Path>, state_home: Option<&Path>) -
 
 /// Where mpv left `file`, in seconds, if it kept a position, and when it did so. The time is the
 /// watch_later file's, in seconds since the epoch.
-pub fn position(dirs: &[PathBuf], file: &Path) -> Option<(u32, u64)> {
+pub(crate) fn position(dirs: &[PathBuf], file: &Path) -> Option<(u32, u64)> {
     let path = file.to_string_lossy();
     let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let names = [md5_hex(path.as_bytes()), md5_hex(name.as_bytes())];
@@ -66,7 +66,7 @@ fn md5_hex(data: &[u8]) -> String {
 /// Writes `lines`, which are mpv JSON IPC commands, to a launch's control socket at `socket`, one per
 /// line. Then as many lines are read back, or none for a while, so the player reads them all before the
 /// connection closes.
-pub fn enqueue(socket: &std::path::Path, lines: &[String]) -> std::io::Result<()> {
+pub(crate) fn enqueue(socket: &std::path::Path, lines: &[String]) -> std::io::Result<()> {
     use std::io::{BufRead, Write};
     let mut stream = std::os::unix::net::UnixStream::connect(socket)?;
     stream.set_write_timeout(Some(std::time::Duration::from_secs(2)))?;

@@ -19,7 +19,7 @@ use crate::time::timedated;
 use crate::{Closed, Sink};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Command {
+pub(crate) enum Command {
     SaveScreenshot(Result<screenshot::Pixels, String>),
     Sleep,
     Notify {
@@ -58,7 +58,7 @@ fn awake(argv: &[String]) -> bool {
 /// Screenshots go to the folder `screenshots`, which is made if needed. Anything that may take seconds
 /// (the account's helper, a runner's awake check, the panel's calibration) runs on a thread of its own,
 /// so a screenshot or sleep asked for meanwhile doesn't wait for it.
-pub fn spawn(screenshots: Option<PathBuf>, calibration: Option<&'static str>, sink: impl Sink + Clone) -> io::Result<Worker<Command>> {
+pub(crate) fn spawn(screenshots: Option<PathBuf>, calibration: Option<&'static str>, sink: impl Sink + Clone) -> io::Result<Worker<Command>> {
     Worker::spawn(clamshell_state::Thread::System.name(), move |commands| {
         // Our last notification, which the next one replaces. For example, a lower battery warning
         // replaces the earlier one.

@@ -9,12 +9,12 @@ use clamshell_library::steam::{self, parse_vdf};
 use clamshell_library::{Entry, Launch};
 
 /// Steam's data folder under `home`, if Steam is installed.
-pub fn default_root(home: &Path) -> Option<PathBuf> {
+pub(crate) fn default_root(home: &Path) -> Option<PathBuf> {
     [home.join(".local/share/Steam"), home.join(".steam/steam")].into_iter().find(|p| p.join("steamapps").is_dir())
 }
 
 /// The installed games of every Steam library folder.
-pub fn games(root: &Path) -> Vec<Entry> {
+pub(crate) fn games(root: &Path) -> Vec<Entry> {
     let mut libraries = vec![root.to_path_buf()];
     let folders = root.join("steamapps/libraryfolders.vdf");
     if let Ok(text) = fs::read_to_string(&folders).inspect_err(|e| {

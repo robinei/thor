@@ -18,16 +18,16 @@ use evdev::{EventSummary, FFEffect, FFEffectCode, FFEffectData, FFEffectKind, FF
 /// A short buzz of the controller's own, not a game's. `On` means a layer that stays on came on or was
 /// armed. `Off` means the pad is back in the layers beneath, because one went off or was used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Buzz {
+pub(crate) enum Buzz {
     On,
     Off,
 }
 
 impl Buzz {
-    pub const LENGTH: Duration = Duration::from_millis(40);
+    pub(crate) const LENGTH: Duration = Duration::from_millis(40);
 
     /// The motors' strengths (0-65535). Coming on uses the light motor, going off the heavy one.
-    pub fn level(self) -> (u16, u16) {
+    pub(crate) fn level(self) -> (u16, u16) {
         match self {
             Buzz::On => (0, 40_000),
             Buzz::Off => (30_000, 0),
@@ -36,7 +36,7 @@ impl Buzz {
 }
 
 /// How many effects a game may upload to the virtual pad at once.
-pub const EFFECTS_MAX: u32 = 16;
+pub(crate) const EFFECTS_MAX: u32 = 16;
 
 /// A rumble effect a game uploaded: its id, the motors' strengths (0-65535), and how long it plays. A
 /// length of 0 plays until stopped.
@@ -51,7 +51,7 @@ struct Uploaded {
 /// The effects games uploaded to the virtual pad, which of them are playing and until when if they end
 /// by themselves, and the gain the games set (0-65535).
 #[derive(Debug, Clone, PartialEq)]
-pub struct Effects {
+pub(crate) struct Effects {
     uploaded: Vec<Uploaded>,
     playing: Vec<(i16, Option<Instant>)>,
     gain: u16,
@@ -66,7 +66,7 @@ impl Default for Effects {
 impl Effects {
     /// Answers the virtual pad's waiting force-feedback requests, uploads and erases, and follows its play
     /// and stop events, at `now`. The virtual pad's file is non-blocking.
-    pub fn serve(&mut self, pad: &mut VirtualDevice, now: Instant) -> io::Result<()> {
+    pub(crate) fn serve(&mut self, pad: &mut VirtualDevice, now: Instant) -> io::Result<()> {
         let events: Vec<InputEvent> = match pad.fetch_events() {
             Ok(events) => events.collect(),
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(()),
@@ -118,7 +118,7 @@ impl Effects {
 
     /// The motors' strengths now (0-65535): the strongest of the effects playing, times the gain. Effects
     /// that ended are dropped.
-    pub fn level(&mut self, now: Instant) -> (u16, u16) {
+    pub(crate) fn level(&mut self, now: Instant) -> (u16, u16) {
         self.playing.retain(|(_, until)| until.is_none_or(|t| now < t));
         let mut level = (0u16, 0u16);
         for (id, _) in &self.playing {
@@ -131,14 +131,14 @@ impl Effects {
     }
 
     /// When the next effect playing ends by itself.
-    pub fn next_end(&self) -> Option<Instant> {
+    pub(crate) fn next_end(&self) -> Option<Instant> {
         self.playing.iter().filter_map(|(_, until)| *until).min()
     }
 }
 
 /// The motors' strengths (strong, weak). Each is the stronger of the games' `effects`, while `in_game`
 /// says the game has the pad, and the keymap's `buzz`, scaled by the Rumble setting.
-pub fn mix(effects: (u16, u16), in_game: bool, buzz: Option<(u16, u16)>, setting: RumbleStrength) -> (u16, u16) {
+pub(crate) fn mix(effects: (u16, u16), in_game: bool, buzz: Option<(u16, u16)>, setting: RumbleStrength) -> (u16, u16) {
     let (mut strong, mut weak) = if in_game { effects } else { (0, 0) };
     if let Some((s, w)) = buzz {
         (strong, weak) = (strong.max(s), weak.max(w));
@@ -147,7 +147,7 @@ pub fn mix(effects: (u16, u16), in_game: bool, buzz: Option<(u16, u16)>, setting
 }
 
 /// A strength scaled by the Rumble setting.
-pub fn scale(v: u16, setting: RumbleStrength) -> u16 {
+fn scale(v: u16, setting: RumbleStrength) -> u16 {
     let thirds = match setting {
         RumbleStrength::Off => 0,
         RumbleStrength::Low => 1,
@@ -159,7 +159,7 @@ pub fn scale(v: u16, setting: RumbleStrength) -> u16 {
 
 /// The real controller's rumble: one FF_RUMBLE effect, uploaded when the controller is taken over and
 /// changed and played as the level changes.
-pub struct Rumble {
+pub(crate) struct Rumble {
     effect: FFEffect,
     level: (u16, u16),
 }
@@ -178,7 +178,7 @@ fn effect(strong: u16, weak: u16) -> FFEffectData {
 impl Rumble {
     /// The controller's rumble, if it supports FF_RUMBLE. The effect keeps a handle of its own on the
     /// device.
-    pub fn of(real: &mut RawDevice) -> io::Result<Option<Rumble>> {
+    pub(crate) fn of(real: &mut RawDevice) -> io::Result<Option<Rumble>> {
         if !real.supported_ff().is_some_and(|ff| ff.contains(FFEffectCode::FF_RUMBLE)) {
             return Ok(None);
         }
@@ -188,7 +188,7 @@ impl Rumble {
 
     /// Sets the motors to these strengths (0-65535 each). Both at 0 stops them. Only a change reaches the
     /// device.
-    pub fn set(&mut self, strong: u16, weak: u16) -> io::Result<()> {
+    pub(crate) fn set(&mut self, strong: u16, weak: u16) -> io::Result<()> {
         if (strong, weak) == self.level {
             return Ok(());
         }

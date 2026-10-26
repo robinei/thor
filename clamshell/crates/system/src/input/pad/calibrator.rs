@@ -20,7 +20,7 @@ const GIVE_UP: u64 = 20_000;
 
 /// A running calibration. It is fed the axes' raw values with their time in ms.
 #[derive(Debug, Clone)]
-pub struct Calibrator {
+pub(crate) struct Calibrator {
     min: i32,
     max: i32,
     started: Option<u64>,
@@ -33,7 +33,7 @@ pub struct Calibrator {
 
 /// What a sample did to a calibration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Step {
+pub(crate) enum Step {
     Going(Progress),
     Done(Sticks),
     /// Given up, because the sticks weren't let go or weren't turned far enough in time.
@@ -42,14 +42,14 @@ pub enum Step {
 
 impl Calibrator {
     /// A calibration of sticks whose range is `min`..`max`.
-    pub fn new(min: i32, max: i32) -> Calibrator {
+    pub(crate) fn new(min: i32, max: i32) -> Calibrator {
         let mid = (min + max) / 2;
         let axis = StickAxis { low: mid, centre: mid, high: mid };
         Calibrator { min, max, started: None, phase: Phase::LetGo, still: None, seen: [axis; AXES], now: [mid; AXES] }
     }
 
     /// The axes' raw values `now`, at `at` ms.
-    pub fn sample(&mut self, now: [i32; AXES], at: u64) -> Step {
+    pub(crate) fn sample(&mut self, now: [i32; AXES], at: u64) -> Step {
         let started = *self.started.get_or_insert(at);
         self.now = now;
         // How long the sticks have been still, meaning every axis within STILL of its range over that
@@ -109,7 +109,7 @@ impl Calibrator {
         }
     }
 
-    pub fn progress(&self) -> Progress {
+    fn progress(&self) -> Progress {
         Progress { phase: self.phase, now: self.now, seen: self.seen, min: self.min, max: self.max }
     }
 }

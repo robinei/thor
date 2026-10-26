@@ -33,7 +33,7 @@ use std::time::{Duration, Instant};
 pub struct Closed;
 
 /// A thread's command channel. Sending to a thread that has ended is logged once (`<name> is gone`).
-pub struct Worker<C> {
+pub(crate) struct Worker<C> {
     name: &'static str,
     tx: Option<Sender<C>>,
     gone: Arc<AtomicBool>,
@@ -51,20 +51,20 @@ impl<C> Clone for Worker<C> {
 /// and when woken it clears the bell and takes its commands with try_recv. Without the bell it would have
 /// to wake now and then to look.
 #[derive(Clone)]
-pub struct Bell(Arc<OwnedFd>);
+pub(crate) struct Bell(Arc<OwnedFd>);
 
 impl Bell {
-    pub fn new() -> io::Result<Bell> {
+    pub(crate) fn new() -> io::Result<Bell> {
         let fd = rustix::event::eventfd(0, rustix::event::EventfdFlags::CLOEXEC | rustix::event::EventfdFlags::NONBLOCK)?;
         Ok(Bell(Arc::new(fd)))
     }
 
     /// The fd to wait on. It is readable once the bell has rung.
-    pub fn fd(&self) -> BorrowedFd<'_> {
+    pub(crate) fn fd(&self) -> BorrowedFd<'_> {
         self.0.as_fd()
     }
 
-    pub fn ring(&self) {
+    pub(crate) fn ring(&self) {
         if let Err(e) = rustix::io::write(&*self.0, &1u64.to_ne_bytes()) {
             log::warn!("ringing a thread's bell: {e}");
         }
@@ -72,7 +72,7 @@ impl Bell {
 
     /// Resets the bell, however often it rang. The bell carries no message. Whatever rang it is waiting
     /// in the command channel, or is for the ringer to say.
-    pub fn clear(&self) {
+    pub(crate) fn clear(&self) {
         let mut count = [0u8; 8];
         if let Err(e) = rustix::io::read(&*self.0, &mut count)
             && e != rustix::io::Errno::AGAIN
@@ -85,17 +85,17 @@ impl Bell {
 /// A command for a reader thread: whether what it reads is shown. While it is, the thread reads often.
 /// While it isn't, the thread reads seldom or not at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Shown(pub bool);
+pub(crate) struct Shown(pub(crate) bool);
 
 /// A command reached no thread.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Gone;
+pub(crate) struct Gone;
 
 impl<C: Send + 'static> Worker<C> {
     /// Starts a thread named `name` running `body` with the receiving end of its command channel. The
     /// thread ends when `body` returns, usually when every sender is dropped. After a panic `body` runs
     /// again ([`restarted`]), so what it makes at its start is made afresh, and what it captured is kept.
-    pub fn spawn(name: &'static str, mut body: impl FnMut(&Receiver<C>) + Send + 'static) -> io::Result<Worker<C>> {
+    pub(crate) fn spawn(name: &'static str, mut body: impl FnMut(&Receiver<C>) + Send + 'static) -> io::Result<Worker<C>> {
         let (tx, rx) = mpsc::channel();
         start(name, move || restarted(name, || body(&rx)))?;
         Ok(Worker { name, tx: Some(tx), gone: Arc::default(), bell: None })
@@ -103,7 +103,7 @@ impl<C: Send + 'static> Worker<C> {
 
     /// Like [`Worker::spawn`], for a thread that waits on files: its commands ring `bell`, which `body`
     /// holds a clone of to wait on.
-    pub fn spawn_belled(name: &'static str, bell: Bell, mut body: impl FnMut(&Receiver<C>) + Send + 'static) -> io::Result<Worker<C>> {
+    pub(crate) fn spawn_belled(name: &'static str, bell: Bell, mut body: impl FnMut(&Receiver<C>) + Send + 'static) -> io::Result<Worker<C>> {
         let (tx, rx) = mpsc::channel();
         start(name, move || restarted(name, || body(&rx)))?;
         Ok(Worker { name, tx: Some(tx), gone: Arc::default(), bell: Some(bell) })
@@ -112,17 +112,17 @@ impl<C: Send + 'static> Worker<C> {
 
 impl<C> Worker<C> {
     /// Stands in for a thread that couldn't be started. Commands go nowhere, which is logged once.
-    pub fn gone(name: &'static str) -> Worker<C> {
+    pub(crate) fn gone(name: &'static str) -> Worker<C> {
         Worker { name, tx: None, gone: Arc::default(), bell: None }
     }
 
     /// Sends a command. If the thread has ended, this is logged once.
-    pub fn send(&self, command: C) {
+    pub(crate) fn send(&self, command: C) {
         let _ = self.try_send(command);
     }
 
     /// Sends a command, or returns `Gone` if the thread has ended. That is also logged once.
-    pub fn try_send(&self, command: C) -> Result<(), Gone> {
+    pub(crate) fn try_send(&self, command: C) -> Result<(), Gone> {
         let sent = self.tx.as_ref().is_some_and(|tx| tx.send(command).is_ok());
         if sent {
             if let Some(bell) = &self.bell {
@@ -145,13 +145,13 @@ pub fn detached(name: &str, body: impl FnOnce() + Send + 'static) -> io::Result<
 
 /// Starts a long-lived thread that takes no commands, started again after a panic ([`restarted`]). It
 /// ends when `body` returns, usually when the UI is gone.
-pub fn lasting(name: &'static str, mut body: impl FnMut() + Send + 'static) -> io::Result<()> {
+pub(crate) fn lasting(name: &'static str, mut body: impl FnMut() + Send + 'static) -> io::Result<()> {
     start(name, move || restarted(name, &mut body)).map(drop)
 }
 
 /// What `work` gives, or what `fallback` gives if it panics (the panic hook has logged it): for a
 /// short-lived thread whose answer the UI waits for, which then gets one.
-pub fn or_on_panic<T>(work: impl FnOnce() -> T, fallback: impl FnOnce() -> T) -> T {
+pub(crate) fn or_on_panic<T>(work: impl FnOnce() -> T, fallback: impl FnOnce() -> T) -> T {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)).unwrap_or_else(|_| fallback())
 }
 
@@ -167,14 +167,14 @@ static RESTARTS: std::sync::Mutex<Option<Restarts>> = std::sync::Mutex::new(None
 
 /// Sets what is told when a thread is started again after a panic, so that the UI sends it again what
 /// it had been sent and lost.
-pub fn on_restart(told: impl Fn(&'static str) + Send + 'static) {
+pub(crate) fn on_restart(told: impl Fn(&'static str) + Send + 'static) {
     *crate::os::lock(&RESTARTS) = Some(Box::new(told));
 }
 
 /// Runs `body` until it returns. A panic in it (the panic hook has logged it) is logged and `body` runs
 /// again: at once, then after waits that double to [`RESTART_MOST`] while it keeps panicking soon after
 /// starting. Before it runs again, [`on_restart`]'s function is told.
-pub fn restarted(name: &'static str, mut body: impl FnMut()) {
+pub(crate) fn restarted(name: &'static str, mut body: impl FnMut()) {
     let mut delay = Duration::ZERO;
     loop {
         let started = Instant::now();
@@ -194,7 +194,7 @@ pub fn restarted(name: &'static str, mut body: impl FnMut()) {
 /// Starts a thread named `name` running `body`, at the ordinary priority whichever thread started it:
 /// the compositor's thread runs raised (see [`crate::session::priority`]), and a new thread would
 /// inherit that, ahead of the game.
-pub fn start<T: Send + 'static>(name: &str, body: impl FnOnce() -> T + Send + 'static) -> io::Result<thread::JoinHandle<T>> {
+pub(crate) fn start<T: Send + 'static>(name: &str, body: impl FnOnce() -> T + Send + 'static) -> io::Result<thread::JoinHandle<T>> {
     thread::Builder::new().name(name.into()).spawn(move || {
         ordinary_priority();
         body()
@@ -217,7 +217,7 @@ fn ordinary_priority() {
 
 /// What woke a thread waiting for its next command.
 #[derive(Debug, PartialEq, Eq)]
-pub enum Next<C> {
+pub(crate) enum Next<C> {
     Command(C),
     /// The period passed without one.
     Elapsed,
@@ -226,7 +226,7 @@ pub enum Next<C> {
 }
 
 /// Waits for the next command, for at most `every`. With `None` it waits until one comes.
-pub fn next<C>(commands: &Receiver<C>, every: Option<Duration>) -> Next<C> {
+pub(crate) fn next<C>(commands: &Receiver<C>, every: Option<Duration>) -> Next<C> {
     let received = match every {
         Some(every) => commands.recv_timeout(every),
         None => commands.recv().map_err(|_| RecvTimeoutError::Disconnected),
@@ -240,7 +240,7 @@ pub fn next<C>(commands: &Receiver<C>, every: Option<Duration>) -> Next<C> {
 
 /// A reading that is sent only when it differs from the last one sent.
 #[derive(Debug)]
-pub struct Changed<T> {
+pub(crate) struct Changed<T> {
     last: Option<T>,
 }
 
@@ -251,13 +251,8 @@ impl<T> Default for Changed<T> {
 }
 
 impl<T: PartialEq + Clone> Changed<T> {
-    /// As if `value` had been sent already.
-    pub fn starting(value: T) -> Self {
-        Changed { last: Some(value) }
-    }
-
     /// Returns `value` if it differs from the last one offered, and makes it the last. Otherwise `None`.
-    pub fn offer(&mut self, value: T) -> Option<T> {
+    pub(crate) fn offer(&mut self, value: T) -> Option<T> {
         if self.last.as_ref() == Some(&value) {
             return None;
         }
@@ -267,14 +262,14 @@ impl<T: PartialEq + Clone> Changed<T> {
 
     /// Lets the next offer through whatever it is. This is used after a pause, so that what changed in
     /// the meantime is shown.
-    pub fn forget(&mut self) {
+    pub(crate) fn forget(&mut self) {
         self.last = None;
     }
 }
 
 /// How a run with the service up ended, if not for good.
 #[derive(Debug)]
-pub enum Ended<E> {
+pub(crate) enum Ended<E> {
     /// The UI is gone, so the thread ends.
     Closed,
     /// The service failed or went away.
@@ -308,7 +303,7 @@ pub(crate) use lost_on;
 
 /// A thread that talks to a service. It connects, runs while the service is up, and says what to do while
 /// it is down. It is driven by [`supervise`].
-pub trait Service {
+pub(crate) trait Service {
     type Command;
     /// What a connection gives, such as the bus and its proxies or a grabbed device.
     type Session;
@@ -352,7 +347,7 @@ pub trait Service {
 /// is up. While the service is down, it waits `retry` or for a command before trying again. A panic while
 /// connecting or running (the panic hook has logged it) is taken as the service lost: it is connected
 /// again, so a thread doesn't end for good on one bad reply.
-pub fn supervise<S: Service>(service: &mut S, commands: &Receiver<S::Command>, retry: Duration) {
+pub(crate) fn supervise<S: Service>(service: &mut S, commands: &Receiver<S::Command>, retry: Duration) {
     let mut quiet = Quiet::default();
     loop {
         let turn = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_once(service, commands, &mut quiet)));
@@ -405,7 +400,7 @@ fn run_once<S: Service>(service: &mut S, commands: &Receiver<S::Command>, quiet:
 }
 
 /// Supervises a service that takes no commands and follows only the service's own signals or events.
-pub fn supervise_alone<S: Service<Command = Infallible>>(service: &mut S, retry: Duration) {
+pub(crate) fn supervise_alone<S: Service<Command = Infallible>>(service: &mut S, retry: Duration) {
     // Keep a sender for as long as this runs, so that waiting for a command means waiting `retry`.
     let (_keep, commands) = mpsc::channel();
     supervise(service, &commands, retry);
@@ -414,12 +409,12 @@ pub fn supervise_alone<S: Service<Command = Infallible>>(service: &mut S, retry:
 /// Warns about the first failure in a run and logs the rest at debug, so a service that stays away, or a
 /// file that stays read-only, is mentioned once and not at every retry.
 #[derive(Debug, Default)]
-pub struct Quiet {
+pub(crate) struct Quiet {
     warned: bool,
 }
 
 impl Quiet {
-    pub fn failed(&mut self, context: &str, error: &dyn Display) {
+    pub(crate) fn failed(&mut self, context: &str, error: &dyn Display) {
         if self.warned {
             log::debug!("{context}: {error}");
         } else {
@@ -429,14 +424,14 @@ impl Quiet {
     }
 
     /// Records a success, so the next failure is worth a warning again.
-    pub fn ok(&mut self) {
+    pub(crate) fn ok(&mut self) {
         self.warned = false;
     }
 }
 
 /// The first command and every command waiting behind it, keeping only the latest of each kind, in the
 /// order the kinds first came. While a finger slides, requests come faster than they can be carried out.
-pub fn coalesce<C, K: PartialEq>(first: C, commands: &Receiver<C>, kind: impl Fn(&C) -> K) -> Vec<C> {
+pub(crate) fn coalesce<C, K: PartialEq>(first: C, commands: &Receiver<C>, kind: impl Fn(&C) -> K) -> Vec<C> {
     let mut kept: Vec<C> = Vec::new();
     for c in std::iter::once(first).chain(commands.try_iter()) {
         match kept.iter_mut().find(|k| kind(k) == kind(&c)) {
@@ -448,7 +443,7 @@ pub fn coalesce<C, K: PartialEq>(first: C, commands: &Receiver<C>, kind: impl Fn
 }
 
 /// A thread that carries out commands as they come, coalescing them ([`coalesce`]) when several wait.
-pub fn spawn_coalescing<C: Send + 'static, K: PartialEq + 'static>(
+pub(crate) fn spawn_coalescing<C: Send + 'static, K: PartialEq + 'static>(
     name: &'static str,
     kind: fn(&C) -> K,
     mut carry_out: impl FnMut(C) + Send + 'static,

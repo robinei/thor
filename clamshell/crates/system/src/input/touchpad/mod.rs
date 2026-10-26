@@ -21,14 +21,14 @@ use crate::os::worker::{self, Next, Worker};
 const LAYOUT_EVERY: std::time::Duration = std::time::Duration::from_millis(100);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Command {
+pub(crate) enum Command {
     /// The fingers pointing in one touch frame.
     Contacts(Vec<Contact>),
 }
 
 /// Forwards the fingers pointing to the virtual touchpad. `layout` holds the second screen's size, kept
 /// up to date by the UI.
-pub fn spawn(layout: Arc<Mutex<TouchLayout>>) -> io::Result<Worker<Command>> {
+pub(crate) fn spawn(layout: Arc<Mutex<TouchLayout>>) -> io::Result<Worker<Command>> {
     Worker::spawn(clamshell_state::Thread::Touchpad.name(), move |commands| {
         let mut touchpad = Touchpad { layout: layout.clone(), pad: None, fingers: pointing::Fingers::default() };
         touchpad.make();

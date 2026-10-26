@@ -3,10 +3,10 @@
 //! [`crate::store`]). The model is in clamshell-library.
 
 pub(crate) mod content;
-pub(crate) mod desktop;
+mod desktop;
 pub mod meta;
 pub(crate) mod runners;
-pub(crate) mod steam;
+mod steam;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -21,20 +21,20 @@ use crate::paths::Paths;
 #[derive(Debug, Clone, Default)]
 pub struct Sources {
     /// library.json.
-    pub config: Option<PathBuf>,
+    pub(crate) config: Option<PathBuf>,
     /// The home dir, for `~/` in library.json.
-    pub home: Option<PathBuf>,
+    pub(crate) home: Option<PathBuf>,
     /// Steam's data dir.
-    pub steam: Option<PathBuf>,
+    steam: Option<PathBuf>,
     /// ClamShell's state dir, for play time and favourites.
-    pub state: Option<PathBuf>,
+    state: Option<PathBuf>,
     /// The art cache, for what was fetched about entries and videos' lengths.
-    pub art: Option<PathBuf>,
+    art: Option<PathBuf>,
     /// The XDG data dirs, whose `applications` dirs hold the installed apps' desktop files (see
     /// [`crate::library::desktop`]).
-    pub data_dirs: Vec<PathBuf>,
+    data_dirs: Vec<PathBuf>,
     /// Where mpv keeps videos' places.
-    pub watch_later: Vec<PathBuf>,
+    watch_later: Vec<PathBuf>,
 }
 
 impl Sources {

@@ -9,23 +9,23 @@ const COMPONENT: &AsciiSet = &NON_ALPHANUMERIC.remove(b'-').remove(b'.').remove(
 const PATH: &AsciiSet = &COMPONENT.remove(b'/');
 
 /// `text` percent-encoded as one part of a URL.
-pub fn percent_encode(text: &str) -> String {
+pub(crate) fn percent_encode(text: &str) -> String {
     utf8_percent_encode(text, COMPONENT).to_string()
 }
 
 /// A path percent-encoded, with its slashes kept.
-pub fn percent_encode_path(text: &str) -> String {
+pub(crate) fn percent_encode_path(text: &str) -> String {
     utf8_percent_encode(text, PATH).to_string()
 }
 
 /// Percent-encoding undone. A `%` not followed by two hex digits stays as it is.
-pub fn percent_decode(text: &str) -> String {
+pub(crate) fn percent_decode(text: &str) -> String {
     percent_decode_str(text).decode_utf8_lossy().into_owned()
 }
 
 /// Replaces escapes such as `\040` (in mounts) and `\x20` (in udev's names) with the characters they
 /// stand for.
-pub fn unescape(text: &str) -> String {
+pub(crate) fn unescape(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;

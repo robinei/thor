@@ -34,7 +34,7 @@ const RETRY: Duration = Duration::from_secs(10);
 /// What this thread is asked: to watch, looking for devices, while the Bluetooth tab is open, and to
 /// carry out the state's commands.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Request {
+pub(crate) enum Request {
     Watch(bool),
     Do(Command),
 }
@@ -108,7 +108,7 @@ impl Shared {
     }
 }
 
-pub fn spawn(sink: impl Sink) -> io::Result<Worker<Request>> {
+pub(crate) fn spawn(sink: impl Sink) -> io::Result<Worker<Request>> {
     let mut thread = BtThread { sink, shared: Shared::default() };
     Worker::spawn(clamshell_state::Thread::Bluetooth.name(), move |commands| worker::supervise(&mut thread, commands, RETRY))
 }

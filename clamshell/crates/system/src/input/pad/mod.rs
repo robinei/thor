@@ -59,7 +59,7 @@ use motion::{EvdevMotion, MotionSource, Sample};
 use route::{Out, PadRouter, Ranges};
 use rumble::{Buzz, Effects, Rumble};
 
-pub use route::{Mapping, PadSnapshot};
+pub(crate) use route::PadSnapshot;
 
 /// How often a missing controller is looked for, besides whenever /dev/input changes because a device was
 /// plugged in ([`Command::Look`]). If /dev/input can't be watched, it is every second.
@@ -67,7 +67,7 @@ const RETRY: Duration = Duration::from_secs(30);
 const RETRY_UNWATCHED: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone)]
-pub enum Command {
+pub(crate) enum Command {
     Route(PadRoute),
     WatchActivity(bool),
     /// The keymap in force. Default has no bindings.
@@ -93,7 +93,7 @@ pub enum Command {
 
 /// A command's acknowledgement, sent once the command is carried out.
 #[derive(Debug, Clone)]
-pub struct Ack(pub std::sync::mpsc::Sender<()>);
+pub(crate) struct Ack(pub(crate) std::sync::mpsc::Sender<()>);
 
 lost_on!(io::Error);
 
@@ -102,7 +102,7 @@ lost_on!(io::Error);
 /// than the controller, which is grabbed and so silent to them. mpv, for one, opens only the first
 /// controller it finds.
 #[derive(Debug, Clone, Default)]
-pub struct Taken(Arc<Mutex<Option<(u16, u16)>>>);
+pub(crate) struct Taken(Arc<Mutex<Option<(u16, u16)>>>);
 
 impl Taken {
     fn set(&self, ids: (u16, u16)) {
@@ -111,7 +111,7 @@ impl Taken {
 
     /// The variable for a launch, if a controller was grabbed. It is left out if the controller has the
     /// virtual pad's ids, since ignoring those would hide the virtual pad too.
-    pub fn env(&self) -> Option<(String, String)> {
+    pub(crate) fn env(&self) -> Option<(String, String)> {
         let (vendor, product) = (*crate::os::lock(&self.0))?;
         ((vendor, product) != device::VIRTUAL_IDS).then(|| ("SDL_GAMECONTROLLER_IGNORE_DEVICES".to_owned(), format!("0x{vendor:04x}/0x{product:04x}")))
     }
@@ -120,7 +120,7 @@ impl Taken {
 /// Owns the controller whenever one is connected, with its ids in `taken`. `spec` comes from
 /// CLAMSHELL_GAMEPAD. Without a controller it looks again when /dev/input changes, and also every
 /// [`RETRY`].
-pub fn spawn(
+pub(crate) fn spawn(
     spec: DeviceSpec,
     controls: clamshell_device::input::Controls,
     sensor_hub: Option<clamshell_device::gyro::SensorHub>,

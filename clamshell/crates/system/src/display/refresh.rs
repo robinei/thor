@@ -9,7 +9,7 @@ const CALIBRATION_LIMIT: Duration = Duration::from_secs(600);
 
 /// Runs thor-panel-calibration. Returns the lines in which it reports the rates it found, or why it
 /// failed.
-pub fn calibrate_refresh(program: Option<&str>) -> Result<String, String> {
+pub(crate) fn calibrate_refresh(program: Option<&str>) -> Result<String, String> {
     let program = program.ok_or_else(|| "refresh calibration unavailable for this panel".to_owned())?;
     let out = command::run::<&str>(program, &[], None, CALIBRATION_LIMIT)?;
     let text = |b: &[u8]| String::from_utf8_lossy(b).trim().to_owned();

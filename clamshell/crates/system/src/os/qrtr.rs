@@ -12,10 +12,10 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 /// The address family (linux/socket.h).
 const AF_QIPCRTR: libc::c_int = 42;
 /// The name service's port, on every node.
-pub const PORT_CTRL: u32 = 0xffff_fffe;
+pub(crate) const PORT_CTRL: u32 = 0xffff_fffe;
 /// Commands in control packets (linux/qrtr.h).
-pub const NEW_SERVER: u32 = 4;
-pub const DEL_SERVER: u32 = 5;
+pub(crate) const NEW_SERVER: u32 = 4;
+pub(crate) const DEL_SERVER: u32 = 5;
 const NEW_LOOKUP: u32 = 10;
 
 /// struct sockaddr_qrtr.
@@ -30,7 +30,7 @@ struct Addr {
 const ADDR_LEN: libc::socklen_t = std::mem::size_of::<Addr>() as libc::socklen_t;
 
 /// A non-blocking QRTR datagram socket, and its node.
-pub fn socket() -> io::Result<(OwnedFd, u32)> {
+pub(crate) fn socket() -> io::Result<(OwnedFd, u32)> {
     #[allow(unsafe_code)]
     // SAFETY: socket(2) with constant arguments; a valid descriptor is owned from here on.
     let fd = unsafe {
@@ -52,7 +52,7 @@ pub fn socket() -> io::Result<(OwnedFd, u32)> {
 }
 
 /// Sends a datagram to `node`:`port`.
-pub fn send_to(fd: &OwnedFd, node: u32, port: u32, data: &[u8]) -> io::Result<()> {
+pub(crate) fn send_to(fd: &OwnedFd, node: u32, port: u32, data: &[u8]) -> io::Result<()> {
     let to = Addr { family: AF_QIPCRTR as libc::sa_family_t, node, port };
     #[allow(unsafe_code)]
     // SAFETY: sendto(2) reads `data.len()` bytes of `data` and ADDR_LEN bytes of `to`.
@@ -62,7 +62,7 @@ pub fn send_to(fd: &OwnedFd, node: u32, port: u32, data: &[u8]) -> io::Result<()
 
 /// Reads a datagram into `buf`. Returns its length and where it came from (node, port), or `None` when
 /// nothing is waiting.
-pub fn recv_from(fd: &OwnedFd, buf: &mut [u8]) -> io::Result<Option<(usize, u32, u32)>> {
+pub(crate) fn recv_from(fd: &OwnedFd, buf: &mut [u8]) -> io::Result<Option<(usize, u32, u32)>> {
     let mut from = Addr::default();
     let mut len = ADDR_LEN;
     #[allow(unsafe_code)]
@@ -77,7 +77,7 @@ pub fn recv_from(fd: &OwnedFd, buf: &mut [u8]) -> io::Result<Option<(usize, u32,
 
 /// Asks the name service on our `node` to tell this socket where `service` is, and to tell it again
 /// whenever the service comes or goes.
-pub fn lookup(fd: &OwnedFd, node: u32, service: u32) -> io::Result<()> {
+pub(crate) fn lookup(fd: &OwnedFd, node: u32, service: u32) -> io::Result<()> {
     let mut pkt = [0u8; 20];
     pkt[..4].copy_from_slice(&NEW_LOOKUP.to_le_bytes());
     pkt[4..8].copy_from_slice(&service.to_le_bytes());
@@ -85,7 +85,7 @@ pub fn lookup(fd: &OwnedFd, node: u32, service: u32) -> io::Result<()> {
 }
 
 /// A control packet from the name service: its command and the server's service, node and port.
-pub fn control(pkt: &[u8]) -> Option<(u32, u32, u32, u32)> {
+pub(crate) fn control(pkt: &[u8]) -> Option<(u32, u32, u32, u32)> {
     let word = |i: usize| pkt.get(i..i + 4).and_then(|b| b.try_into().ok()).map(u32::from_le_bytes);
     Some((word(0)?, word(4)?, word(12)?, word(16)?))
 }

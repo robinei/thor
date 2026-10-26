@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 pub use ::dbus::arg::{AppendAll, PropMap, RefArg, Variant};
 use ::dbus::arg::{Arg, Get, ReadAll};
 use ::dbus::channel::{BusType, Channel};
-pub use ::dbus::message::MessageType;
+use ::dbus::message::MessageType;
 pub use ::dbus::{Message, Path};
 
 /// How long a call may take unless the bus is given another limit. This is libdbus' own default.
@@ -58,12 +58,12 @@ impl From<::dbus::arg::TypeMismatchError> for Error {
 impl Error {
     /// Whether the bus failed, as opposed to the service answering with an error. After a bus failure a
     /// kept connection is made again.
-    pub fn is_bus_failure(&self) -> bool {
+    pub(crate) fn is_bus_failure(&self) -> bool {
         matches!(self, Error::Bus(_))
     }
 
     /// The part worth showing a person: the service's own message, if it gave one.
-    pub fn message(&self) -> &str {
+    pub(crate) fn message(&self) -> &str {
         match self {
             Error::Method { message, .. } if !message.is_empty() => message,
             Error::Method { name, .. } => name,
@@ -72,7 +72,7 @@ impl Error {
     }
 
     /// Whether the service isn't on the bus at all, because it isn't installed or isn't running.
-    pub fn is_absent(&self) -> bool {
+    pub(crate) fn is_absent(&self) -> bool {
         matches!(self, Error::Method { name, .. } if matches!(name.as_str(), "org.freedesktop.DBus.Error.ServiceUnknown" | "org.freedesktop.DBus.Error.NameHasNoOwner"))
     }
 }
@@ -96,7 +96,7 @@ pub struct Bus {
 }
 
 impl Bus {
-    pub fn system() -> Result<Bus> {
+    pub(crate) fn system() -> Result<Bus> {
         Bus::open(BusType::System)
     }
 
@@ -111,7 +111,7 @@ impl Bus {
     }
 
     /// Makes calls fail after `timeout` instead of [`TIMEOUT`].
-    pub fn with_timeout(mut self, timeout: Duration) -> Bus {
+    pub(crate) fn with_timeout(mut self, timeout: Duration) -> Bus {
         self.timeout = timeout;
         self
     }
@@ -127,7 +127,7 @@ impl Bus {
 
     /// The connection's socket, to poll for reading alongside other files. When it is readable, call
     /// [`Bus::signals`], which also answers calls to us.
-    pub fn fd(&self) -> BorrowedFd<'_> {
+    pub(crate) fn fd(&self) -> BorrowedFd<'_> {
         // SAFETY: the descriptor is the channel's socket, open as long as the channel is; the borrow
         // can't outlive `self`, which owns the channel.
         #[allow(unsafe_code)]
@@ -145,7 +145,7 @@ impl Bus {
     }
 
     /// Like [`Bus::call`], but neither asks for nor waits for a reply.
-    pub fn call_noreply(&mut self, dest: &str, path: &str, interface: &str, method: &str, args: impl AppendAll) -> Result<()> {
+    pub(crate) fn call_noreply(&mut self, dest: &str, path: &str, interface: &str, method: &str, args: impl AppendAll) -> Result<()> {
         let mut message = Message::new_method_call(dest, path, interface, method).map_err(Error::Reply)?;
         message.append_all(args);
         message.set_no_reply(true);
@@ -153,30 +153,30 @@ impl Bus {
     }
 
     /// A property, read fresh.
-    pub fn get<T: Arg + for<'z> Get<'z>>(&mut self, dest: &str, path: &str, interface: &str, name: &str) -> Result<T> {
+    pub(crate) fn get<T: Arg + for<'z> Get<'z>>(&mut self, dest: &str, path: &str, interface: &str, name: &str) -> Result<T> {
         let (Variant(value),): (Variant<T>,) = self.call(dest, path, PROPERTIES, "Get", (interface, name))?;
         Ok(value)
     }
 
-    pub fn set<T: Arg + ::dbus::arg::Append>(&mut self, dest: &str, path: &str, interface: &str, name: &str, value: T) -> Result<()> {
+    pub(crate) fn set<T: Arg + ::dbus::arg::Append>(&mut self, dest: &str, path: &str, interface: &str, name: &str, value: T) -> Result<()> {
         self.call(dest, path, PROPERTIES, "Set", (interface, name, Variant(value)))
     }
 
     /// All of an object's properties of `interface`.
-    pub fn get_all(&mut self, dest: &str, path: &str, interface: &str) -> Result<PropMap> {
+    pub(crate) fn get_all(&mut self, dest: &str, path: &str, interface: &str) -> Result<PropMap> {
         let (all,): (PropMap,) = self.call(dest, path, PROPERTIES, "GetAll", (interface,))?;
         Ok(all)
     }
 
     /// Makes the signals that `rule` matches come to this connection, where they are kept for
     /// [`Bus::signals`].
-    pub fn add_match(&mut self, rule: &str) -> Result<()> {
+    pub(crate) fn add_match(&mut self, rule: &str) -> Result<()> {
         self.signals.get_or_insert_default();
         self.call("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "AddMatch", (rule,))
     }
 
     /// Sends a message, such as a signal or a reply.
-    pub fn send(&mut self, message: Message) -> Result<()> {
+    pub(crate) fn send(&mut self, message: Message) -> Result<()> {
         self.channel.send(message).map_err(|()| Error::Bus("couldn't send".into()))?;
         self.channel.flush();
         Ok(())
@@ -184,7 +184,7 @@ impl Bus {
 
     /// Handles what came since the last look without waiting. Calls to us are answered, and the signals
     /// kept since then are returned. Fails once the bus has closed.
-    pub fn signals(&mut self) -> Result<Vec<Message>> {
+    pub(crate) fn signals(&mut self) -> Result<Vec<Message>> {
         self.read(Some(Duration::ZERO))?;
         Ok(self.signals.as_mut().map(|s| s.drain(..).collect()).unwrap_or_default())
     }
@@ -271,23 +271,23 @@ impl Bus {
 }
 
 /// A bus connection kept between calls. It connects when first needed, and again after the bus fails.
-pub struct Kept {
+pub(crate) struct Kept {
     session: bool,
     bus: Option<Bus>,
 }
 
 impl Kept {
     /// A kept connection to the system bus.
-    pub const fn system() -> Kept {
+    pub(crate) const fn system() -> Kept {
         Kept { session: false, bus: None }
     }
 
     /// A kept connection to the session bus.
-    pub const fn session() -> Kept {
+    pub(crate) const fn session() -> Kept {
         Kept { session: true, bus: None }
     }
 
-    pub fn get(&mut self) -> Result<&mut Bus> {
+    pub(crate) fn get(&mut self) -> Result<&mut Bus> {
         let bus = match self.bus.take() {
             Some(bus) => bus,
             None if self.session => Bus::session()?,
@@ -298,7 +298,7 @@ impl Kept {
 
     /// Reports that a call through it failed. If the bus failed, the connection is dropped and the next
     /// call connects again.
-    pub fn failed(&mut self, error: &Error) {
+    pub(crate) fn failed(&mut self, error: &Error) {
         if error.is_bus_failure() {
             self.bus = None;
         }
@@ -307,23 +307,23 @@ impl Kept {
 
 /// An object's properties, as GetAll, GetManagedObjects or GetSettings give them.
 #[derive(Debug, Clone, Copy)]
-pub struct Props<'a>(pub &'a PropMap);
+pub(crate) struct Props<'a>(pub(crate) &'a PropMap);
 
 impl Props<'_> {
-    pub fn str(&self, key: &str) -> Option<String> {
+    pub(crate) fn str(&self, key: &str) -> Option<String> {
         self.0.get(key).and_then(|v| v.0.as_str()).map(str::to_owned)
     }
 
     /// A boolean property; false when missing.
-    pub fn flag(&self, key: &str) -> bool {
+    pub(crate) fn flag(&self, key: &str) -> bool {
         self.0.get(key).and_then(|v| ::dbus::arg::cast::<bool>(&v.0)).copied().unwrap_or(false)
     }
 
-    pub fn bytes(&self, key: &str) -> Option<Vec<u8>> {
+    pub(crate) fn bytes(&self, key: &str) -> Option<Vec<u8>> {
         self.0.get(key).and_then(|v| ::dbus::arg::cast::<Vec<u8>>(&v.0)).cloned()
     }
 
-    pub fn path(&self, key: &str) -> Option<String> {
+    pub(crate) fn path(&self, key: &str) -> Option<String> {
         self.0.get(key).and_then(|v| ::dbus::arg::cast::<Path<'static>>(&v.0)).map(|p| p.to_string())
     }
 }

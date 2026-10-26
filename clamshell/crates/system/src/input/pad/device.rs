@@ -15,12 +15,12 @@ use clamshell_device::input::{AuxiliaryKey as AuxiliaryHint, Controls};
 
 const VIRTUAL_PAD: &str = "clamshell pad (Xbox 360)";
 /// The virtual pad's USB ids, which are a wired Xbox 360 controller's.
-pub const VIRTUAL_IDS: (u16, u16) = (0x045e, 0x028e);
+pub(crate) const VIRTUAL_IDS: (u16, u16) = (0x045e, 0x028e);
 const VIRTUAL_MOUSE: &str = "clamshell pad mouse";
 
 /// The configured controller, or else the first device other than our own with gamepad buttons and two
 /// sticks.
-pub fn find(spec: &DeviceSpec) -> io::Result<RawDevice> {
+pub(crate) fn find(spec: &DeviceSpec) -> io::Result<RawDevice> {
     let gamepad = |d: &RawDevice| {
         d.supported_keys().is_some_and(|k| k.contains(KeyCode::BTN_SOUTH)) && d.supported_absolute_axes().is_some_and(|a| a.contains(AbsoluteAxisCode::ABS_RX))
     };
@@ -29,13 +29,13 @@ pub fn find(spec: &DeviceSpec) -> io::Result<RawDevice> {
 
 /// The device the Thor's AYN button is on, its GPIO keys. It is read alongside the controller for that one
 /// key. It isn't grabbed, so other keys on it go where they would.
-pub struct AuxiliaryKey {
+pub(crate) struct AuxiliaryKey {
     device: RawDevice,
     code: KeyCode,
 }
 
 impl AuxiliaryKey {
-    pub fn find(hint: Option<AuxiliaryHint>) -> Option<AuxiliaryKey> {
+    pub(crate) fn find(hint: Option<AuxiliaryHint>) -> Option<AuxiliaryKey> {
         let hint = hint?;
         let code = KeyCode(hint.code);
         let device = evdev::raw_stream::enumerate()
@@ -50,12 +50,12 @@ impl AuxiliaryKey {
         Some(AuxiliaryKey { device, code })
     }
 
-    pub fn device(&self) -> &RawDevice {
+    pub(crate) fn device(&self) -> &RawDevice {
         &self.device
     }
 
     /// Appends the AYN button's waiting presses, each with its report.
-    pub fn fetch(&mut self, out: &mut Vec<Raw>) -> io::Result<()> {
+    pub(crate) fn fetch(&mut self, out: &mut Vec<Raw>) -> io::Result<()> {
         match self.device.fetch_events() {
             Ok(events) => {
                 for e in events.filter(|e| e.event_type() == evdev::EventType::KEY && e.code() == self.code.0) {
@@ -71,9 +71,9 @@ impl AuxiliaryKey {
 
 /// A controller's buttons and axes, each axis with its range and current value.
 #[derive(Debug, Clone)]
-pub struct Capabilities {
-    pub keys: Vec<KeyCode>,
-    pub axes: Vec<(AbsoluteAxisCode, AbsInfo)>,
+pub(crate) struct Capabilities {
+    keys: Vec<KeyCode>,
+    axes: Vec<(AbsoluteAxisCode, AbsInfo)>,
 }
 
 /// Equal means the same buttons and axes with the same ranges. The axes' current values don't count, so
@@ -86,7 +86,7 @@ impl PartialEq for Capabilities {
 }
 
 impl Capabilities {
-    pub fn of(real: &RawDevice) -> io::Result<Capabilities> {
+    pub(crate) fn of(real: &RawDevice) -> io::Result<Capabilities> {
         let abs = real.get_abs_state()?;
         let axes = real
             .supported_absolute_axes()
@@ -104,12 +104,12 @@ impl Capabilities {
         self.axes.iter().find(|(c, _)| *c == code).map_or(Range::STICK, |(_, a)| Range { min: a.minimum(), max: a.maximum() })
     }
 
-    pub fn ranges(&self) -> Ranges {
+    pub(crate) fn ranges(&self) -> Ranges {
         Ranges { stick: self.range(AbsoluteAxisCode::ABS_X), trigger: self.range(AbsoluteAxisCode::ABS_RZ) }
     }
 
     /// The axes as they are now.
-    pub fn snapshot(&self) -> PadSnapshot {
+    pub(crate) fn snapshot(&self) -> PadSnapshot {
         PadSnapshot::new(self.axes.iter().map(|(code, a)| Axis { code: *code, value: a.value(), rest: rest(a) }).collect())
     }
 }
@@ -122,17 +122,17 @@ fn rest(axis: &AbsInfo) -> i32 {
 /// The virtual devices, kept while the controller comes and goes through an unplug or an error, so games
 /// never see their pad go. They are made for the first controller, and made again only for one with
 /// other buttons or axes.
-pub struct VirtualDevices {
-    pub made_for: Capabilities,
-    pub pad: VirtualDevice,
-    pub mouse: VirtualDevice,
+pub(crate) struct VirtualDevices {
+    pub(crate) made_for: Capabilities,
+    pub(crate) pad: VirtualDevice,
+    pub(crate) mouse: VirtualDevice,
     /// The untouched pad, with every button up and every axis at rest. It is shown while no controller is
     /// there.
     neutral: Vec<Raw>,
 }
 
 impl VirtualDevices {
-    pub fn new(caps: Capabilities, controls: Controls) -> io::Result<VirtualDevices> {
+    pub(crate) fn new(caps: Capabilities, controls: Controls) -> io::Result<VirtualDevices> {
         let mut neutral: Vec<Raw> = pad_keys(&caps, controls).map(|k| Raw::key(k, Press::Up)).collect();
         neutral.extend(pad_axes(&caps).iter().map(|(code, a)| Raw::abs(*code, rest(a))));
         neutral.push(Raw::REPORT);
@@ -140,7 +140,7 @@ impl VirtualDevices {
     }
 
     /// Puts the virtual pad at rest when the controller is gone. The pad itself stays.
-    pub fn rest(&mut self) -> io::Result<()> {
+    pub(crate) fn rest(&mut self) -> io::Result<()> {
         emit(&mut self.pad, &self.neutral)
     }
 }
@@ -150,7 +150,7 @@ impl VirtualDevices {
 /// place. The left button sends BTN_X, which is the code Linux calls BTN_NORTH, and PB-OS found rsinput's
 /// top button sending BTN_WEST, which is BTN_Y. Linux and ClamShell go by place: BTN_WEST is the left
 /// button and BTN_NORTH the top one.
-pub fn letter_codes(controls: Controls, name: &str, phys: &str) -> bool {
+pub(crate) fn letter_codes(controls: Controls, name: &str, phys: &str) -> bool {
     let inputs = match std::fs::read_dir("/sys/class/input") {
         Ok(inputs) => inputs,
         Err(e) => {
@@ -173,14 +173,14 @@ pub fn letter_codes(controls: Controls, name: &str, phys: &str) -> bool {
 /// Swaps X and Y between the two conventions. The swap is the same either way. Coming in, it turns a
 /// [`letter_codes`] controller's events into ClamShell's. Going out, it turns ClamShell's into the
 /// virtual pad's, which games read as an Xbox 360 pad's, by letter as xpad does.
-pub fn swap_xy(events: &mut [Raw]) {
+pub(crate) fn swap_xy(events: &mut [Raw]) {
     for e in events.iter_mut().filter(|e| e.kind == evdev::EventType::KEY) {
         e.code = swap_key(KeyCode(e.code)).0;
     }
 }
 
 /// [`swap_xy`] for one key.
-pub fn swap_key(key: KeyCode) -> KeyCode {
+pub(crate) fn swap_key(key: KeyCode) -> KeyCode {
     match key {
         KeyCode::BTN_NORTH => KeyCode::BTN_WEST,
         KeyCode::BTN_WEST => KeyCode::BTN_NORTH,
@@ -189,7 +189,7 @@ pub fn swap_key(key: KeyCode) -> KeyCode {
 }
 
 /// Emits events on a virtual device.
-pub fn emit(device: &mut VirtualDevice, events: &[Raw]) -> io::Result<()> {
+pub(crate) fn emit(device: &mut VirtualDevice, events: &[Raw]) -> io::Result<()> {
     let events: Vec<InputEvent> = events.iter().map(|&r| r.into()).collect();
     device.emit(&events)
 }
@@ -281,7 +281,7 @@ mod letter_tests {
     }
 }
 
-pub fn normalise_controls(controls: Controls, raws: &mut [Raw]) {
+pub(crate) fn normalise_controls(controls: Controls, raws: &mut [Raw]) {
     for raw in raws.iter_mut().filter(|raw| raw.kind == evdev::EventType::KEY) {
         raw.code = controls.normalise_button(raw.code);
     }

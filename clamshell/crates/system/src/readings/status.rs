@@ -22,7 +22,7 @@ const UNSEEN_EVERY: Duration = Duration::from_secs(60);
 
 /// Starts the status thread. Its commands say whether the screens are on (see
 /// [`clamshell_state::Watch::Status`]).
-pub fn spawn(backlights: Backlights, sink: impl Sink) -> io::Result<Worker<Shown>> {
+pub(crate) fn spawn(backlights: Backlights, sink: impl Sink) -> io::Result<Worker<Shown>> {
     Worker::spawn(clamshell_state::Thread::Status.name(), move |seen| {
         let _ = follow(&backlights, &sink, seen);
     })

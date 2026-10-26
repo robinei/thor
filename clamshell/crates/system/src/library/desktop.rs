@@ -15,12 +15,12 @@ use crate::os::xdg;
 /// An installed app or game: its entry, and the fields library.json's desktop rules match it by (see
 /// [`crate::library::content::Rule`]).
 #[derive(Debug, Clone)]
-pub struct Desktop {
+pub(crate) struct Desktop {
     /// The desktop file's id (its name without `.desktop`).
-    pub id: String,
-    pub name: String,
-    pub categories: Vec<String>,
-    pub game: clamshell_library::Entry,
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) categories: Vec<String>,
+    pub(crate) game: clamshell_library::Entry,
 }
 
 /// The `[Desktop Entry]` keys we use.
@@ -60,7 +60,7 @@ const NOT_GAMES: &[&str] = &[
 /// The installed apps and games as library entries, with ids `desktop:<id>`. For each id, the first
 /// desktop file in `dirs` is used, the user's dir coming first. Only applications with a command that
 /// aren't hidden are included, and not Steam's game shortcuts.
-pub fn entries(dirs: &[PathBuf]) -> Vec<Desktop> {
+pub(crate) fn entries(dirs: &[PathBuf]) -> Vec<Desktop> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for dir in dirs {
@@ -117,7 +117,7 @@ pub fn entries(dirs: &[PathBuf]) -> Vec<Desktop> {
 }
 
 /// The command of the desktop file at `path`, if it has one. This is for an app opened from the Files tab.
-pub fn command(path: &Path) -> Option<clamshell_library::Launch> {
+pub(crate) fn command(path: &Path) -> Option<clamshell_library::Launch> {
     let entry = parse(&fs::read_to_string(path).inspect_err(|e| log::debug!("desktop: {}: {e}", path.display())).ok()?);
     let argv = exec_args(&entry.exec);
     (!argv.is_empty()).then(|| clamshell_library::Launch::Program { argv, workdir: (!entry.path.is_empty()).then(|| PathBuf::from(&entry.path)) })

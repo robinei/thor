@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 
 /// Writes `bytes` to `path` whole. They go to a file beside it, which is flushed to the disk and then
 /// renamed over it. The folder is synced too, so the rename lasts.
-pub fn write_file(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn write_file(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let dir = path.parent().ok_or_else(|| io::Error::other("no folder"))?;
     fs::create_dir_all(dir)?;
     let mut part = path.as_os_str().to_owned();
@@ -24,14 +24,14 @@ pub fn write_file(path: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 /// Writes `value` as pretty JSON, whole ([`write_file`]).
-pub fn write_json(path: &Path, value: &impl Serialize) -> io::Result<()> {
+pub(crate) fn write_json(path: &Path, value: &impl Serialize) -> io::Result<()> {
     let mut text = serde_json::to_string_pretty(value).map_err(io::Error::other)?;
     text.push('\n');
     write_file(path, text.as_bytes())
 }
 
 /// Reads a file as `T`. Returns none if the file isn't there or doesn't parse, which is logged.
-pub fn read_json<T: DeserializeOwned>(path: &Path) -> Option<T> {
+pub(crate) fn read_json<T: DeserializeOwned>(path: &Path) -> Option<T> {
     let text = fs::read_to_string(path)
         .map_err(|e| {
             if e.kind() != io::ErrorKind::NotFound {

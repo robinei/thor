@@ -15,12 +15,12 @@ use crate::os::worker::{self, Quiet, Worker};
 /// The backlights: the devices of a sysfs class directory. That is /sys/class/backlight, or another
 /// directory laid out the same way for tests and for desktops without one.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Backlights {
+pub(crate) struct Backlights {
     dir: PathBuf,
 }
 
 impl Backlights {
-    pub fn new(dir: PathBuf) -> Backlights {
+    pub(crate) fn new(dir: PathBuf) -> Backlights {
         Backlights { dir }
     }
 
@@ -29,12 +29,12 @@ impl Backlights {
     }
 
     /// The backlights' names, in order.
-    pub fn names(&self) -> Vec<String> {
+    pub(crate) fn names(&self) -> Vec<String> {
         self.devices().iter().filter_map(|dir| Some(dir.file_name()?.to_str()?.to_owned())).collect()
     }
 
     /// The first backlight's brightness, 0-100, or `None` without a backlight.
-    pub fn level(&self) -> Option<u8> {
+    pub(crate) fn level(&self) -> Option<u8> {
         let dir = self.devices().into_iter().next()?;
         let max = sys::read::<u32>(dir.join("max_brightness"))?.max(1);
         let now = sys::read::<u32>(dir.join("brightness"))?;
@@ -45,9 +45,9 @@ impl Backlights {
 /// Sets each backlight to `level` times its share, both 0-100. Shares are by backlight name, and a
 /// backlight not listed has a share of 100.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Command {
-    pub level: u8,
-    pub shares: Vec<Share>,
+pub(crate) struct Command {
+    pub(crate) level: u8,
+    pub(crate) shares: Vec<Share>,
 }
 
 /// A level times a share, both 0-100, as a backlight's raw value. It is never 0, which turns some panels
@@ -58,7 +58,7 @@ fn raw(level: u8, share: u8, max: u32) -> u32 {
 }
 
 /// Starts the thread that sets the brightness. Only the latest of the waiting commands is carried out.
-pub fn spawn(backlights: Backlights) -> io::Result<Worker<Command>> {
+pub(crate) fn spawn(backlights: Backlights) -> io::Result<Worker<Command>> {
     let mut setter = Setter::default();
     worker::spawn_coalescing(
         clamshell_state::Thread::Brightness.name(),

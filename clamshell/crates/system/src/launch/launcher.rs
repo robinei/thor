@@ -25,7 +25,7 @@ use crate::os::worker::{self, Worker};
 use crate::os::{cgroup, sys};
 
 /// What the launcher is asked.
-pub enum Command {
+pub(crate) enum Command {
     Launch(Request),
     /// Read where mpv left video `file` of `entry`, and send it as `LaunchEvent::Position`.
     ReadPosition {
@@ -34,28 +34,28 @@ pub enum Command {
     },
 }
 
-pub struct Request {
-    pub entry: Arc<str>,
+pub(crate) struct Request {
+    pub(crate) entry: Arc<str>,
     /// The launch's unit, from the state.
-    pub instance: Instance,
-    pub launch: Launch,
+    pub(crate) instance: Instance,
+    pub(crate) launch: Launch,
     /// The game's environment: the controller's, the cap's and its own variables. The displays follow.
-    pub env: Vec<(String, String)>,
+    pub(crate) env: Vec<(String, String)>,
 }
 
 #[derive(Clone)]
-pub struct Config {
+pub(crate) struct Config {
     /// Where mpv keeps the positions of videos.
-    pub watch_later: Vec<PathBuf>,
+    pub(crate) watch_later: Vec<PathBuf>,
     /// Where the launches' control sockets go, which a command gets as `{socket}`.
-    pub sockets: PathBuf,
+    pub(crate) sockets: PathBuf,
     /// The compositor's displays (`WAYLAND_DISPLAY`, `DISPLAY`), given to every launch after its own
     /// variables.
     pub displays: Vec<(String, String)>,
 }
 
 #[derive(Debug)]
-pub enum Error {
+pub(crate) enum Error {
     Io(io::Error),
     Job(job::Error),
     Units(units::Error),
@@ -95,7 +95,7 @@ impl From<units::Error> for Error {
     }
 }
 
-pub fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worker<Command>> {
+pub(crate) fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worker<Command>> {
     Worker::spawn(clamshell_state::Thread::Launcher.name(), move |commands| {
         for command in commands {
             let (config, sink) = (config.clone(), sink.clone());
@@ -154,7 +154,7 @@ fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir:
 /// Ends an entry's slice with all its launches. Normally the slice is stopped: systemd asks its processes
 /// to end and kills what is left after its timeout. With `force` they are killed at once. This runs on a
 /// thread of its own, because stopping waits for the processes.
-pub fn end_run(key: &str, force: bool) {
+pub(crate) fn end_run(key: &str, force: bool) {
     let slice = Instance::slice_of(key);
     let ended = worker::detached("end", move || {
         log::info!("{slice}: {}", if force { "force kill" } else { "stop" });
@@ -171,7 +171,7 @@ pub fn end_run(key: &str, force: bool) {
 /// started are moved into `instance`'s scope, in its entry's slice, on a thread of its own. A program run
 /// by a systemd service is left alone, because the service would lose it, and so is one already in a
 /// scope of ours.
-pub fn adopt(instance: Instance, pid: u32) {
+pub(crate) fn adopt(instance: Instance, pid: u32) {
     let done = worker::detached("adopt", move || {
         let unit = instance.scope();
         if !sys::same_process(pid) {
@@ -195,7 +195,7 @@ pub fn adopt(instance: Instance, pid: u32) {
 }
 
 /// Asks the processes of a program not started by ClamShell to end (SIGTERM), or kills them.
-pub fn end_processes(pids: &[u32], force: bool) {
+pub(crate) fn end_processes(pids: &[u32], force: bool) {
     // Only signal processes that are still the ones seen, since a process that is gone may have left its
     // id to another.
     let pids: Vec<u32> = pids.iter().copied().filter(|&p| sys::same_process(p)).collect();
@@ -214,7 +214,7 @@ pub fn end_processes(pids: &[u32], force: bool) {
 
 /// Runs a runner's `stop`, `pause` or `resume` command without waiting for it. Waydroid's runner uses
 /// these to have Android stop an app or freeze it.
-pub fn runner_command(argv: &[String]) {
+pub(crate) fn runner_command(argv: &[String]) {
     let Some((program, args)) = argv.split_first() else {
         return;
     };

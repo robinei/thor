@@ -13,7 +13,7 @@ use crate::os::worker::Worker;
 use crate::os::xdg;
 
 /// Starts the icons thread. Each request is an entry and the app id to look up.
-pub fn spawn(sink: impl Sink) -> io::Result<Worker<(Arc<str>, String)>> {
+pub(crate) fn spawn(sink: impl Sink) -> io::Result<Worker<(Arc<str>, String)>> {
     Worker::spawn(clamshell_state::Thread::Icons.name(), move |requests: &std::sync::mpsc::Receiver<(Arc<str>, String)>| {
         let dirs = xdg::data_dirs();
         for (entry, app_id) in requests {

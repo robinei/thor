@@ -22,19 +22,19 @@
 //! `errands` is the "system" thread, which carries out the state's one-off requests (a screenshot,
 //! sleep, the clock, the account, ...) through the modules above.
 
-pub(crate) mod audio;
-pub(crate) mod display;
-pub(crate) mod errands;
-pub(crate) mod files;
-pub(crate) mod input;
+mod audio;
+mod display;
+mod errands;
+mod files;
+mod input;
 pub mod launch;
 pub mod library;
-pub(crate) mod network;
+mod network;
 pub mod os;
 pub mod paths;
-pub(crate) mod power;
+mod power;
 pub mod profile;
-pub mod readings;
+mod readings;
 pub mod session;
 pub mod store;
 pub mod time;
@@ -46,7 +46,6 @@ use std::sync::mpsc;
 use clamshell_state::Event;
 
 pub use os::worker::Closed;
-pub use wiring::Handles;
 
 /// Where system threads deliver events: the UI's event loop.
 pub trait Sink: Send + 'static {

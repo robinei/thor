@@ -9,7 +9,7 @@ use super::route::{Mapping, Out, release_mouse_keys};
 use crate::os::evdev::{Raw, hat_keys};
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Typing;
+pub(crate) struct Typing;
 
 impl Mapping for Typing {
     fn event(&mut self, raw: Raw, _: Instant, out: &mut Out) {

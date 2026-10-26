@@ -8,39 +8,39 @@ use evdev::{AbsoluteAxisCode, AttributeSet, EventType, InputEvent, KeyCode, Rela
 
 /// One evdev event as the kernel reports it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Raw {
-    pub kind: EventType,
-    pub code: u16,
-    pub value: i32,
+pub(crate) struct Raw {
+    pub(crate) kind: EventType,
+    pub(crate) code: u16,
+    pub(crate) value: i32,
 }
 
 impl Raw {
     /// The end of a report (SYN_REPORT). The events before it belong together.
-    pub const REPORT: Raw = Raw { kind: EventType::SYNCHRONIZATION, code: 0, value: 0 };
+    pub(crate) const REPORT: Raw = Raw { kind: EventType::SYNCHRONIZATION, code: 0, value: 0 };
 
-    pub fn key(code: KeyCode, press: Press) -> Raw {
+    pub(crate) fn key(code: KeyCode, press: Press) -> Raw {
         Raw { kind: EventType::KEY, code: code.0, value: press.value() }
     }
 
-    pub fn abs(code: AbsoluteAxisCode, value: i32) -> Raw {
+    pub(crate) fn abs(code: AbsoluteAxisCode, value: i32) -> Raw {
         Raw { kind: EventType::ABSOLUTE, code: code.0, value }
     }
 
-    pub fn rel(code: RelativeAxisCode, value: i32) -> Raw {
+    pub(crate) fn rel(code: RelativeAxisCode, value: i32) -> Raw {
         Raw { kind: EventType::RELATIVE, code: code.0, value }
     }
 
     /// A key event's key and press.
-    pub fn as_key(self) -> Option<(KeyCode, Press)> {
+    pub(crate) fn as_key(self) -> Option<(KeyCode, Press)> {
         (self.kind == EventType::KEY).then(|| (KeyCode(self.code), Press::from_value(self.value)))
     }
 
     /// An absolute axis event's axis and value.
-    pub fn as_abs(self) -> Option<(AbsoluteAxisCode, i32)> {
+    pub(crate) fn as_abs(self) -> Option<(AbsoluteAxisCode, i32)> {
         (self.kind == EventType::ABSOLUTE).then_some((AbsoluteAxisCode(self.code), self.value))
     }
 
-    pub fn is_report(self) -> bool {
+    pub(crate) fn is_report(self) -> bool {
         self == Raw::REPORT
     }
 }
@@ -59,7 +59,7 @@ impl From<Raw> for InputEvent {
 
 /// A key event's value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Press {
+pub(crate) enum Press {
     Up,
     Down,
     /// The kernel's autorepeat of a held key.
@@ -68,7 +68,7 @@ pub enum Press {
 
 impl Press {
     /// 0 is up, 1 is down, and 2 or more is a repeat.
-    pub fn from_value(value: i32) -> Press {
+    fn from_value(value: i32) -> Press {
         match value {
             ..=0 => Press::Up,
             1 => Press::Down,
@@ -76,7 +76,7 @@ impl Press {
         }
     }
 
-    pub fn value(self) -> i32 {
+    pub(crate) fn value(self) -> i32 {
         match self {
             Press::Up => 0,
             Press::Down => 1,
@@ -85,24 +85,24 @@ impl Press {
     }
 
     /// Whether the key is down, including a repeat while held.
-    pub fn held(self) -> bool {
+    pub(crate) fn held(self) -> bool {
         self != Press::Up
     }
 }
 
 /// An absolute axis' raw range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Range {
-    pub min: i32,
-    pub max: i32,
+pub(crate) struct Range {
+    pub(crate) min: i32,
+    pub(crate) max: i32,
 }
 
 impl Range {
     /// A stick's full range on most controllers. It is assumed when a controller doesn't give one.
-    pub const STICK: Range = Range { min: -32768, max: 32767 };
+    pub(crate) const STICK: Range = Range { min: -32768, max: 32767 };
 
     /// A value as -1..1 from the middle, for sticks.
-    pub fn centered(self, v: i32) -> f32 {
+    pub(crate) fn centered(self, v: i32) -> f32 {
         let mid = (self.min as f32 + self.max as f32) / 2.0;
         let half = ((self.max - self.min) as f32 / 2.0).max(1.0);
         ((v as f32 - mid) / half).clamp(-1.0, 1.0)
@@ -110,41 +110,36 @@ impl Range {
 
     /// How far along the range a value is: 0 at its minimum and 1 at its maximum. A value outside the
     /// range, such as a touch at the screen's very edge, goes beyond 0 or 1.
-    pub fn fraction(self, v: i32) -> f32 {
+    fn fraction(self, v: i32) -> f32 {
         (v - self.min) as f32 / (self.max - self.min).max(1) as f32
     }
 
     /// A value as 0..1, for triggers.
-    pub fn unit(self, v: i32) -> f32 {
+    pub(crate) fn unit(self, v: i32) -> f32 {
         self.fraction(v).clamp(0.0, 1.0)
     }
 }
 
 /// An area of a screen in pixels: from (x0, y0) to (x1, y1).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct Rect {
-    pub x0: f32,
-    pub y0: f32,
-    pub x1: f32,
-    pub y1: f32,
+pub(crate) struct Rect {
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
 }
 
 impl Rect {
     /// Makes a rect from corners as the touch layout gives them: (x0, y0, x1, y1).
-    pub fn from_corners((x0, y0, x1, y1): (f32, f32, f32, f32)) -> Rect {
+    pub(crate) fn from_corners((x0, y0, x1, y1): (f32, f32, f32, f32)) -> Rect {
         Rect { x0, y0, x1, y1 }
     }
 
-    /// Whether it has no area, which means it isn't laid out yet.
-    pub fn is_empty(&self) -> bool {
-        !(self.x1 > self.x0 && self.y1 > self.y0)
-    }
-
-    pub fn width(&self) -> f32 {
+    pub(crate) fn width(&self) -> f32 {
         self.x1 - self.x0
     }
 
-    pub fn height(&self) -> f32 {
+    pub(crate) fn height(&self) -> f32 {
         self.y1 - self.y0
     }
 }
@@ -152,7 +147,7 @@ impl Rect {
 /// The D-pad as arrow keys. A hat axis reports -1, 0 or 1. This returns the key for that direction
 /// pressed, the opposite key released, and the report. Any other axis gives `None`. Letting go reports 0,
 /// which releases both.
-pub fn hat_keys(axis: AbsoluteAxisCode, value: i32) -> Option<[Raw; 3]> {
+pub(crate) fn hat_keys(axis: AbsoluteAxisCode, value: i32) -> Option<[Raw; 3]> {
     let (minus, plus) = match axis {
         AbsoluteAxisCode::ABS_HAT0X => (KeyCode::KEY_LEFT, KeyCode::KEY_RIGHT),
         AbsoluteAxisCode::ABS_HAT0Y => (KeyCode::KEY_UP, KeyCode::KEY_DOWN),
@@ -163,7 +158,7 @@ pub fn hat_keys(axis: AbsoluteAxisCode, value: i32) -> Option<[Raw; 3]> {
 }
 
 /// A device's keys, as uinput takes them.
-pub fn keyset(keys: &[KeyCode]) -> AttributeSet<KeyCode> {
+pub(crate) fn keyset(keys: &[KeyCode]) -> AttributeSet<KeyCode> {
     keys.iter().copied().collect()
 }
 
@@ -194,11 +189,5 @@ mod tests {
         assert_eq!(hat_keys(AbsoluteAxisCode::ABS_HAT0Y, -1), Some([up(true), down, Raw::REPORT]));
         assert_eq!(hat_keys(AbsoluteAxisCode::ABS_HAT0Y, 0), Some([up(false), down, Raw::REPORT]));
         assert_eq!(hat_keys(AbsoluteAxisCode::ABS_X, 1), None);
-    }
-
-    #[test]
-    fn rects() {
-        let r = Rect::from_corners((0.0, 100.0, 1000.0, 800.0));
-        assert!(!r.is_empty() && Rect::default().is_empty());
     }
 }

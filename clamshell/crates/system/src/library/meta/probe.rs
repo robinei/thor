@@ -28,7 +28,7 @@ impl Shared {
 }
 
 /// A video's length in seconds, from ffprobe.
-pub fn duration(file: &Path) -> Option<u32> {
+fn duration(file: &Path) -> Option<u32> {
     let mut args: Vec<&OsStr> = ["-n", "19", "ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0"].map(OsStr::new).into();
     args.push(file.as_os_str());
     let out = command::run("nice", &args, None, PROBE_LIMIT).inspect_err(|e| log::debug!("probe: {}: {e}", file.display())).ok()?;
@@ -50,7 +50,7 @@ const FRAMES_LOOKED_AT: u32 = 60;
 /// place. The frame is the most representative of the [`FRAMES_LOOKED_AT`] keyframes from `at` seconds
 /// on, picked by ffmpeg's `thumbnail` filter; using only keyframes keeps it quick. Returns whether it
 /// worked.
-pub fn frame(file: &Path, at: u32, out: &Path) -> bool {
+fn frame(file: &Path, at: u32, out: &Path) -> bool {
     if let Some(dir) = out.parent()
         && let Err(e) = std::fs::create_dir_all(dir)
     {

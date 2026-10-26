@@ -45,7 +45,7 @@ fn units(bus: &mut Bus, patterns: &[&str]) -> dbus::Result<Vec<UnitRow>> {
 }
 
 #[derive(Debug)]
-pub enum Error {
+pub(crate) enum Error {
     Bus(dbus::Error),
     /// The manager's signals ended because the bus connection closed.
     SignalsEnded,
@@ -94,7 +94,7 @@ fn list(bus: &mut Bus) -> dbus::Result<Vec<Instance>> {
 /// goes. At start, after the first list, it sends [`Event::Frozen`] with our slices that are found
 /// frozen. An earlier ClamShell froze them, when suspending or pausing a hidden game, and they are held
 /// as suspended.
-pub fn spawn(sink: impl Sink) -> io::Result<()> {
+pub(crate) fn spawn(sink: impl Sink) -> io::Result<()> {
     let mut units = Units { sink, frozen: None, looked: false };
     worker::lasting(clamshell_state::Thread::Units.name(), move || worker::supervise_alone(&mut units, RETRY))
 }
@@ -188,7 +188,7 @@ pub(super) fn get_unit(bus: &mut Bus, name: &str) -> dbus::Result<Path<'static>>
 /// (moved into the launch's service) or a program found by its tray icon (moved into a scope of ours):
 /// in a unit of ours it is counted, frozen and ended as the launch, separately from its starter. Anything
 /// it starts later is in the unit too.
-pub fn adopt(unit: &str, slice: Option<&str>, pids: &[u32]) -> Result<(), Error> {
+pub(crate) fn adopt(unit: &str, slice: Option<&str>, pids: &[u32]) -> Result<(), Error> {
     with_manager(|bus| {
         if loaded(bus, unit) {
             call::<()>(bus, "AttachProcessesToUnit", (unit, "", pids.to_vec()))?;
@@ -206,7 +206,7 @@ pub fn adopt(unit: &str, slice: Option<&str>, pids: &[u32]) -> Result<(), Error>
 }
 
 /// Thaws a launch's slice before it starts, because systemd starts no unit in a slice left frozen.
-pub fn thaw_slice(slice: &str) {
+pub(crate) fn thaw_slice(slice: &str) {
     if let Err(e) = with_manager(|m| {
         thaw_now(m, slice);
         Ok(())
@@ -217,7 +217,7 @@ pub fn thaw_slice(slice: &str) {
 
 /// Ends `unit`, such as an entry's slice with all its launches. Normally it is stopped: systemd asks its
 /// processes to end, then kills what is left after its timeout. With `force` they are killed at once.
-pub fn end(unit: &str, force: bool) -> Result<(), Error> {
+pub(crate) fn end(unit: &str, force: bool) -> Result<(), Error> {
     const SIGKILL: i32 = 9;
     with_manager(|bus| {
         match force {
@@ -229,7 +229,7 @@ pub fn end(unit: &str, force: bool) -> Result<(), Error> {
 }
 
 /// Stops every running unit whose name matches `pattern`, a glob as `ListUnitsByPatterns` takes it.
-pub fn stop_matching(pattern: &str) -> Result<(), Error> {
+pub(crate) fn stop_matching(pattern: &str) -> Result<(), Error> {
     with_manager(|bus| {
         for row in units(bus, &[pattern])? {
             if !matches!(row.3.as_str(), "inactive" | "failed") {
@@ -241,7 +241,7 @@ pub fn stop_matching(pattern: &str) -> Result<(), Error> {
 }
 
 /// Whether unit `unit` is running or on its way there.
-pub fn is_active(unit: &str) -> Result<bool, Error> {
+pub(crate) fn is_active(unit: &str) -> Result<bool, Error> {
     with_manager(|bus| Ok(units(bus, &[unit])?.iter().any(|row| matches!(row.3.as_str(), "active" | "activating" | "reloading"))))
 }
 

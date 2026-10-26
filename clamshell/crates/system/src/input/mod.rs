@@ -2,7 +2,7 @@
 //! activity and hardware keys.
 
 mod flick;
-pub(crate) mod keyboard;
+mod keyboard;
 pub(crate) mod pad;
 pub(crate) mod touchpad;
 pub(crate) mod watch;

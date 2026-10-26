@@ -4,4 +4,4 @@
 pub(crate) mod battery;
 pub(crate) mod metrics;
 pub(crate) mod status;
-pub(crate) mod usage;
+mod usage;

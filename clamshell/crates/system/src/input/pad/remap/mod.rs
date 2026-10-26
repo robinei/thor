@@ -45,7 +45,7 @@ use crate::input::keyboard::{MODIFIERS, chord_keys};
 use crate::os::evdev::{Press, Raw};
 
 /// A stick or trigger counts as pushed, as a direction or a button, past this.
-pub const HALF: f32 = 0.5;
+pub(crate) const HALF: f32 = 0.5;
 /// Pointer speed of a stick at full deflection in pixels per second, at speeds 0, 25, 50, 75 and 100.
 /// Speeds in between are in proportion. Below full deflection, the binding's deadzone and curve apply.
 const STICK_POINTER: [f32; 5] = [500.0, 900.0, 1400.0, 2100.0, 3000.0];
@@ -58,14 +58,14 @@ const GYRO_STICK: [f32; 5] = [240.0, 160.0, 100.0, 60.0, 35.0];
 /// (docs/thor-gameplan.md).
 const ROLL_TURNS: f32 = 1.0;
 /// How often a stick on the pointer moves it.
-pub const POINTER_EVERY: Duration = Duration::from_millis(8);
+const POINTER_EVERY: Duration = Duration::from_millis(8);
 /// High-resolution wheel units per notch, by the kernel's convention.
 const NOTCH: i32 = 120;
 /// A second press within this of letting go makes a double.
-pub const DOUBLE_WINDOW: Duration = Duration::from_millis(300);
+const DOUBLE_WINDOW: Duration = Duration::from_millis(300);
 /// A press that is decided only after letting go, because the input has a hold or a double, is sent as
 /// a tap this long.
-pub const TAP: Duration = Duration::from_millis(60);
+const TAP: Duration = Duration::from_millis(60);
 
 /// Where a digital input's press is.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -201,10 +201,10 @@ impl Actuator {
 }
 
 /// The normalised Back role. Physical codes are translated from the device profile before routing.
-pub const BACK_KEY: KeyCode = KeyCode(clamshell_device::input::BACK_ROLE);
+pub(crate) const BACK_KEY: KeyCode = KeyCode(clamshell_device::input::BACK_ROLE);
 
 /// The normalised auxiliary-button role, emitted by the profile's GPIO-key reader.
-pub const AYN_KEY: KeyCode = KeyCode(clamshell_device::input::AUXILIARY_ROLE);
+pub(crate) const AYN_KEY: KeyCode = KeyCode(clamshell_device::input::AUXILIARY_ROLE);
 
 /// A binding to a layer that is on. It holds the input and actuation it belongs to, and the binding as it
 /// was when it came on. That binding is kept while on, whatever the layers since make of the input. It
@@ -318,7 +318,7 @@ fn pad_code(b: Button) -> Option<KeyCode> {
 }
 
 /// The button a controller's code is, if it is one.
-pub fn button_of(code: KeyCode) -> Option<Button> {
+pub(crate) fn button_of(code: KeyCode) -> Option<Button> {
     Button::ALL.into_iter().find(|b| button_codes(*b).contains(&code))
 }
 
@@ -332,14 +332,14 @@ fn dpad_code(d: Dir) -> KeyCode {
     }
 }
 
-pub fn stick_axes(s: Side) -> (AbsoluteAxisCode, AbsoluteAxisCode) {
+pub(crate) fn stick_axes(s: Side) -> (AbsoluteAxisCode, AbsoluteAxisCode) {
     match s {
         Side::Left => (AbsoluteAxisCode::ABS_X, AbsoluteAxisCode::ABS_Y),
         Side::Right => (AbsoluteAxisCode::ABS_RX, AbsoluteAxisCode::ABS_RY),
     }
 }
 
-pub fn trigger_axis(s: Side) -> AbsoluteAxisCode {
+pub(crate) fn trigger_axis(s: Side) -> AbsoluteAxisCode {
     match s {
         Side::Left => AbsoluteAxisCode::ABS_Z,
         Side::Right => AbsoluteAxisCode::ABS_RZ,
@@ -359,12 +359,12 @@ fn mouse_code(m: MouseButton) -> KeyCode {
 }
 
 /// The mouse buttons a keymap may press. The virtual mouse has them.
-pub fn mouse_codes() -> [KeyCode; 5] {
+pub(crate) fn mouse_codes() -> [KeyCode; 5] {
     MouseButton::ALL.map(mouse_code)
 }
 
 /// Whether the remapping handles this event. If not, it passes through.
-pub fn known(raw: Raw) -> bool {
+pub(crate) fn known(raw: Raw) -> bool {
     if let Some((code, _)) = raw.as_key() {
         return button_of(code).is_some() || Dir::ALL.into_iter().any(|d| dpad_code(d) == code);
     }
@@ -422,7 +422,7 @@ struct Wanted {
 }
 
 /// The remapping, and what it last sent.
-pub struct Remap {
+pub(crate) struct Remap {
     keymap: Keymap,
     ranges: Ranges,
     sent: Wanted,
@@ -440,7 +440,7 @@ pub struct Remap {
 }
 
 impl Remap {
-    pub fn new(ranges: Ranges) -> Remap {
+    pub(crate) fn new(ranges: Ranges) -> Remap {
         Remap {
             keymap: Keymap::default(),
             ranges,
@@ -455,7 +455,7 @@ impl Remap {
     }
 
     /// Puts a new keymap in force. What it makes of the controller now replaces what the old one held.
-    pub fn set_keymap(&mut self, keymap: Keymap, snap: &PadSnapshot, live: bool, out: &mut Out) {
+    pub(crate) fn set_keymap(&mut self, keymap: Keymap, snap: &PadSnapshot, live: bool, out: &mut Out) {
         self.keymap = keymap;
         if live {
             self.update(snap, Instant::now(), out);
@@ -464,7 +464,7 @@ impl Remap {
 
     /// Lets go of everything sent, on leaving the game or when the controller is gone. The keyboard's and
     /// mouse's keys go up, and the pad's buttons go up and its axes to rest.
-    pub fn release(&mut self, out: &mut Out) {
+    pub(crate) fn release(&mut self, out: &mut Out) {
         let rest = Wanted { pad_axes: self.sent.pad_axes.iter().map(|&(a, _)| (a, self.axis_rest(a))).collect(), ..Wanted::default() };
         self.send(rest, out);
         self.sent = Wanted::default();
@@ -481,7 +481,7 @@ impl Remap {
     }
 
     /// Takes the outputs to be what the keymap makes of `snap` already, without sending anything.
-    pub fn prime(&mut self, snap: &PadSnapshot) {
+    pub(crate) fn prime(&mut self, snap: &PadSnapshot) {
         let now = Instant::now();
         self.actuate(snap, now);
         self.sent = self.wanted(snap, now);
@@ -489,7 +489,7 @@ impl Remap {
     }
 
     /// The controller's state changed to `snap` at `now`, and the outputs follow.
-    pub fn update(&mut self, snap: &PadSnapshot, now: Instant, out: &mut Out) {
+    pub(crate) fn update(&mut self, snap: &PadSnapshot, now: Instant, out: &mut Out) {
         self.actuate(snap, now);
         let wanted = self.wanted(snap, now);
         self.send(wanted, out);
@@ -741,7 +741,7 @@ impl Remap {
 
     /// Takes the gyro's current rate, `dt` after its last sample. The pointer moves by it, or a stick
     /// follows it.
-    pub fn motion(&mut self, rate: Rate, dt: f32, snap: &PadSnapshot, out: &mut Out) {
+    pub(crate) fn motion(&mut self, rate: Rate, dt: f32, snap: &PadSnapshot, out: &mut Out) {
         self.gyro = rate;
         if let Some(b) = self.gyro_binding(snap)
             && b.output == Output::Pointer
@@ -760,7 +760,7 @@ impl Remap {
     /// Handles time passing. Actuations move on at a hold's time, a double's window, a tap's end or
     /// turbo's beat, and sticks on the pointer move it. Returns when to tick next, if anything waits for
     /// time.
-    pub fn tick(&mut self, now: Instant, snap: &PadSnapshot, out: &mut Out) -> Option<Instant> {
+    pub(crate) fn tick(&mut self, now: Instant, snap: &PadSnapshot, out: &mut Out) -> Option<Instant> {
         if !self.actuators.is_empty() {
             self.update(snap, now, out);
         }

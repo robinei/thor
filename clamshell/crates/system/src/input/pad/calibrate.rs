@@ -32,10 +32,10 @@ fn index(code: AbsoluteAxisCode) -> Option<usize> {
 
 /// A controller's sticks: their current raw values, their calibration if any, and any calibration in
 /// progress.
-pub struct StickState {
+pub(crate) struct StickState {
     range: Range,
     raw: [i32; AXES],
-    pub sticks: Option<Sticks>,
+    pub(crate) sticks: Option<Sticks>,
     calibrating: Option<Calibrating>,
 }
 
@@ -47,7 +47,7 @@ struct Calibrating {
 }
 
 /// What a calibration said.
-pub enum Said {
+pub(crate) enum Said {
     Progress(clamshell_state::device::sticks::Progress),
     Done(Option<Sticks>),
 }
@@ -55,7 +55,7 @@ pub enum Said {
 impl StickState {
     /// The state for a controller whose sticks' range is `range`, with its current axes in `snapshot` and
     /// its calibration in `sticks`. The snapshot's stick values are corrected.
-    pub fn new(range: Range, sticks: Option<Sticks>, snapshot: &mut PadSnapshot) -> StickState {
+    pub(crate) fn new(range: Range, sticks: Option<Sticks>, snapshot: &mut PadSnapshot) -> StickState {
         let raw = STICK_AXES.map(|c| snapshot.value(c).unwrap_or((range.min + range.max) / 2));
         let state = StickState { range, raw, sticks, calibrating: None };
         for (i, &code) in STICK_AXES.iter().enumerate() {
@@ -67,7 +67,7 @@ impl StickState {
     }
 
     /// Whether a calibration is in progress.
-    pub fn calibrating(&self) -> bool {
+    pub(crate) fn calibrating(&self) -> bool {
         self.calibrating.is_some()
     }
 
@@ -76,14 +76,14 @@ impl StickState {
     }
 
     /// Starts a calibration now.
-    pub fn calibrate(&mut self, now: Instant) {
+    pub(crate) fn calibrate(&mut self, now: Instant) {
         self.calibrating = Some(Calibrating { calibrator: Calibrator::new(self.range.min, self.range.max), started: now, reported: now });
     }
 
     /// Takes the stick events from the controller's events. Their raw values are kept and the events are
     /// corrected, with a value past an extreme widening the calibration. During a calibration the stick
     /// events are taken out instead. Other events stay.
-    pub fn take(&mut self, raws: &mut Vec<Raw>) {
+    pub(crate) fn take(&mut self, raws: &mut Vec<Raw>) {
         let calibrating = self.calibrating.is_some();
         raws.retain_mut(|r| {
             let Some((code, value)) = r.as_abs() else { return true };
@@ -104,7 +104,7 @@ impl StickState {
 
     /// Steps a calibration in progress at `now`. Returns what it says, which is progress now and then or
     /// its end, and when to look again.
-    pub fn step(&mut self, now: Instant) -> (Option<Said>, Option<Instant>) {
+    pub(crate) fn step(&mut self, now: Instant) -> (Option<Said>, Option<Instant>) {
         let Some(Calibrating { calibrator, started, reported }) = self.calibrating.as_mut() else { return (None, None) };
         let ms = u64::try_from(now.saturating_duration_since(*started).as_millis()).unwrap_or(u64::MAX);
         match calibrator.sample(self.raw, ms) {

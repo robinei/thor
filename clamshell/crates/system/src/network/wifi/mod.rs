@@ -37,7 +37,7 @@ const RETRY: Duration = Duration::from_secs(10);
 /// What this thread is asked: to watch while the Wi-Fi tab is open, which scans now and keeps the list
 /// fresh, and to carry out the state's commands.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Request {
+pub(crate) enum Request {
     Watch(bool),
     Do(Command),
 }
@@ -65,7 +65,7 @@ impl From<dbus::Error> for Error {
 
 lost_on!(Error: dbus::Error);
 
-pub fn spawn(sink: impl Sink) -> io::Result<Worker<Request>> {
+pub(crate) fn spawn(sink: impl Sink) -> io::Result<Worker<Request>> {
     let mut thread = WifiThread { sink, state: WifiState::default() };
     Worker::spawn(clamshell_state::Thread::Wifi.name(), move |commands| worker::supervise(&mut thread, commands, RETRY))
 }

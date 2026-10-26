@@ -104,18 +104,18 @@ use serde::Deserialize;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Config {
+pub(crate) struct Config {
     /// The declared places, with their ids (referred to as `@id`), icons and pictures. They also set the
     /// tabs' order and declare ClamShell's own tabs.
     #[serde(default)]
-    pub places: Vec<Place>,
+    pub(crate) places: Vec<Place>,
     #[serde(default)]
-    pub runners: Vec<super::runners::Runner>,
+    pub(crate) runners: Vec<super::runners::Runner>,
     /// Where entries come from, and where they go.
     #[serde(default)]
-    pub sources: Vec<Source>,
+    pub(crate) sources: Vec<Source>,
     #[serde(default)]
-    pub keys: crate::library::meta::Keys,
+    pub(crate) keys: crate::library::meta::Keys,
 }
 
 /// Where entries come from, by `type`, and where they go. The types are a scanned dir (`dir`), a browsed
@@ -127,7 +127,7 @@ pub struct Config {
 /// Entries no source takes are left out.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
-pub enum Source {
+pub(crate) enum Source {
     Dir(Scan),
     Browse(BrowseRoot),
     Desktop(Rule),
@@ -151,23 +151,23 @@ pub enum Source {
 /// Image file paths starting with `~/` are in the home dir; others are relative to library.json's dir.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Place {
-    pub id: String,
-    pub path: String,
+pub(crate) struct Place {
+    pub(crate) id: String,
+    pub(crate) path: String,
     #[serde(default)]
-    pub icon: Option<String>,
+    pub(crate) icon: Option<String>,
     #[serde(default)]
-    pub picture: Option<String>,
+    pub(crate) picture: Option<String>,
     #[serde(default)]
-    pub recent: Option<bool>,
+    pub(crate) recent: Option<bool>,
     #[serde(default, rename = "type")]
-    pub kind: Option<OwnTab>,
+    pub(crate) kind: Option<OwnTab>,
 }
 
 /// One of ClamShell's own tabs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum OwnTab {
+pub(crate) enum OwnTab {
     /// The entries played last, except those in a place with `recent: false`.
     Recent,
     Favourites,
@@ -177,7 +177,7 @@ pub enum OwnTab {
 
 /// `place` with a declared place's id (`@snes`, `@snes/RPG`) replaced by its path. Errs if the id isn't
 /// declared.
-pub fn resolve(place: &str, places: &[Place]) -> Result<String, String> {
+pub(crate) fn resolve(place: &str, places: &[Place]) -> Result<String, String> {
     let Some(reference) = place.trim().strip_prefix('@') else {
         return Ok(place.to_owned());
     };
@@ -191,11 +191,11 @@ pub fn resolve(place: &str, places: &[Place]) -> Result<String, String> {
 /// whose entries can be restored or deleted.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct BrowseRoot {
-    pub place: String,
-    pub dir: String,
+pub(crate) struct BrowseRoot {
+    pub(crate) place: String,
+    pub(crate) dir: String,
     #[serde(default)]
-    pub trash: bool,
+    pub(crate) trash: bool,
 }
 
 /// A removable source. The remaining mounted removable filesystems that match all of its `label`, `uuid`
@@ -204,22 +204,22 @@ pub struct BrowseRoot {
 /// `{label}` is replaced by the filesystem's label, or its UUID if it has none.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct MountRule {
+pub(crate) struct MountRule {
     #[serde(default)]
-    pub label: Option<String>,
+    label: Option<String>,
     #[serde(default)]
-    pub uuid: Option<String>,
+    uuid: Option<String>,
     #[serde(default)]
-    pub fs: Option<String>,
+    fs: Option<String>,
     #[serde(default)]
-    pub place: Option<String>,
+    pub(crate) place: Option<String>,
     #[serde(default)]
-    pub hide: bool,
+    pub(crate) hide: bool,
 }
 
 impl MountRule {
     /// Whether it matches a filesystem with this label, UUID and type.
-    pub fn matches(&self, label: &str, uuid: &str, fs: &str) -> bool {
+    pub(crate) fn matches(&self, label: &str, uuid: &str, fs: &str) -> bool {
         On { label: self.label.clone(), uuid: self.uuid.clone(), fs: self.fs.clone() }.matches(label, uuid, fs)
     }
 }
@@ -234,26 +234,26 @@ impl MountRule {
 /// for a Steam source.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Rule {
+pub(crate) struct Rule {
     #[serde(default)]
-    pub id: Option<String>,
+    id: Option<String>,
     #[serde(default)]
-    pub name: Option<String>,
+    name: Option<String>,
     #[serde(default)]
-    pub categories: Option<String>,
+    categories: Option<String>,
     #[serde(default)]
-    pub place: Option<String>,
+    pub(crate) place: Option<String>,
     #[serde(default)]
-    pub hide: bool,
+    pub(crate) hide: bool,
     #[serde(default)]
-    pub runner: Option<String>,
+    pub(crate) runner: Option<String>,
     #[serde(default)]
-    pub metadata: Option<String>,
+    pub(crate) metadata: Option<String>,
 }
 
 impl Rule {
     /// Whether it matches an entry with this id, name and categories.
-    pub fn matches(&self, id: &str, name: &str, categories: &[String]) -> bool {
+    pub(crate) fn matches(&self, id: &str, name: &str, categories: &[String]) -> bool {
         let glob = |pattern: &str, value: &str| pattern::matches(&pattern.to_lowercase(), &value.to_lowercase());
         self.id.as_deref().is_none_or(|p| glob(p, id))
             && self.name.as_deref().is_none_or(|p| glob(p, name))
@@ -270,41 +270,41 @@ impl Rule {
 /// name matches (see [`super::runners`]).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Scan {
-    pub id: String,
-    pub dir: String,
+pub(crate) struct Scan {
+    pub(crate) id: String,
+    pub(crate) dir: String,
     /// Where its entries go: a tab (`Games`) or a folder in one (`Games/SNES`, `@snes`).
-    pub place: String,
+    pub(crate) place: String,
     #[serde(default, rename = "match")]
-    pub patterns: Vec<String>,
+    pub(crate) patterns: Vec<String>,
     #[serde(default)]
-    pub items: Vec<String>,
+    pub(crate) items: Vec<String>,
     #[serde(default)]
-    pub metadata: Option<String>,
+    pub(crate) metadata: Option<String>,
     #[serde(default)]
-    pub runner: Option<String>,
+    pub(crate) runner: Option<String>,
     /// The removable filesystem `dir` is on: the first mounted one matching this. `dir` is then a path
     /// inside it (`roms/snes`), and the source is away while none is mounted.
     #[serde(default)]
-    pub on: Option<On>,
+    pub(crate) on: Option<On>,
 }
 
 /// A removable filesystem, matched by its `label`, `uuid` and `fs`. These are globs in any case, and an
 /// unset one matches anything.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct On {
+pub(crate) struct On {
     #[serde(default)]
-    pub label: Option<String>,
+    label: Option<String>,
     #[serde(default)]
-    pub uuid: Option<String>,
+    uuid: Option<String>,
     #[serde(default)]
-    pub fs: Option<String>,
+    fs: Option<String>,
 }
 
 impl On {
     /// Whether it matches a filesystem with this label, UUID and type.
-    pub fn matches(&self, label: &str, uuid: &str, fs: &str) -> bool {
+    pub(crate) fn matches(&self, label: &str, uuid: &str, fs: &str) -> bool {
         let glob = |pattern: &str, value: &str| pattern::matches(&pattern.to_lowercase(), &value.to_lowercase());
         self.label.as_deref().is_none_or(|p| glob(p, label))
             && self.uuid.as_deref().is_none_or(|p| glob(p, uuid))
@@ -313,11 +313,11 @@ impl On {
 }
 
 /// How a scanned file opens: its command and its runner, if a runner opens it.
-pub type Open<'a> = dyn Fn(&Path) -> Option<(Launch, clamshell_library::RunnerOf)> + 'a;
+type Open<'a> = dyn Fn(&Path) -> Option<(Launch, clamshell_library::RunnerOf)> + 'a;
 
 /// A place's tab and the path of folders in it, which is empty for the tab's top. `Games/Handhelds/GBA`
 /// gives Games and `Handhelds/GBA`. Slashes at the ends and spaces around the parts are ignored.
-pub fn place(place: &str) -> (&str, &str) {
+pub(crate) fn place(place: &str) -> (&str, &str) {
     let place = place.trim().trim_matches('/');
     match place.split_once('/') {
         Some((tab, path)) => (tab.trim(), path.trim().trim_matches('/')),
@@ -327,7 +327,7 @@ pub fn place(place: &str) -> (&str, &str) {
 
 /// The config at `file`. It is the default if the file is missing or doesn't parse; in the second case,
 /// what is wrong with it is returned too.
-pub fn read_config(file: &Path) -> (Config, Option<String>) {
+pub(crate) fn read_config(file: &Path) -> (Config, Option<String>) {
     let Ok(text) = fs::read_to_string(file).inspect_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             log::debug!("library: {}: {e}", file.display());
@@ -349,7 +349,7 @@ pub fn read_config(file: &Path) -> (Config, Option<String>) {
 /// Scans `source` and appends its entries to `games`, groups before their items. Its dir is a path as is,
 /// already expanded by the caller. Each file opens as `open` says, and a group with its first entry's
 /// runner. Returns the indices of the top-level entries.
-pub fn scan(source: &Scan, games: &mut Vec<Entry>, open: &Open) -> Vec<usize> {
+pub(crate) fn scan(source: &Scan, games: &mut Vec<Entry>, open: &Open) -> Vec<usize> {
     let dir = PathBuf::from(&source.dir);
     if !dir.is_dir() {
         log::info!("library: {}: no dir {}", source.id, dir.display());
@@ -511,7 +511,7 @@ fn art(path: &Path, dir: &Path) -> Option<PathBuf> {
 /// A file's or folder's own picture, whether scanned or browsed. For a folder, it is a `poster`, `cover`
 /// or `folder` image in it. For a file, it is `<name>.<image>` beside it, or else the file itself if it is
 /// an image.
-pub fn picture_of(path: &Path) -> Option<PathBuf> {
+pub(crate) fn picture_of(path: &Path) -> Option<PathBuf> {
     if path.is_dir() {
         return folder_art(path);
     }
@@ -554,7 +554,7 @@ pub(crate) fn expand_dir(dir: &str, home: Option<&Path>) -> Result<PathBuf, Stri
 /// Expands `$NAME`, `${NAME}` and `${NAME:-default}` in `text` using `lookup`. The default is used when
 /// the variable is unset or empty, and is expanded itself. A `$` followed by anything else stays as it is.
 /// Errs with the name of a variable that has no value and no default.
-pub(crate) fn expand_vars(text: &str, lookup: &dyn Fn(&str) -> Option<String>) -> Result<String, String> {
+fn expand_vars(text: &str, lookup: &dyn Fn(&str) -> Option<String>) -> Result<String, String> {
     let name_len =
         |s: &str| s.char_indices().find(|&(i, c)| !(c == '_' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit()))).map_or(s.len(), |(i, _)| i);
     let mut out = String::new();

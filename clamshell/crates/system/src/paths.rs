@@ -7,33 +7,33 @@ use std::path::PathBuf;
 pub struct Paths {
     /// The file listing the library's content directories: ~/.config/clamshell/library.json. See
     /// [`crate::library::content`].
-    pub library: Option<PathBuf>,
+    pub(crate) library: Option<PathBuf>,
     /// ClamShell's own data, ~/.local/share/clamshell. See [`crate::store`].
     pub state_dir: Option<PathBuf>,
     /// Fetched covers and screenshots, ~/.cache/clamshell/art. See [`crate::library::meta`].
     pub art: Option<PathBuf>,
     /// Where mpv keeps the position of videos quit before the end. See [`crate::launch::mpv`].
-    pub watch_later: Vec<PathBuf>,
+    pub(crate) watch_later: Vec<PathBuf>,
     /// The launches' control sockets, which a command gets as `{socket}`. They are in
     /// $XDG_RUNTIME_DIR/clamshell/sockets.
-    pub sockets: PathBuf,
+    pub(crate) sockets: PathBuf,
     /// $XDG_RUNTIME_DIR, where systemd's user manager has its socket.
     pub runtime: Option<PathBuf>,
     /// The control pipe `clamshell ctl` writes to ($XDG_RUNTIME_DIR/clamshell-control).
     pub control: Option<PathBuf>,
     /// Where screenshots go (~/Pictures/Screenshots).
-    pub screenshots: Option<PathBuf>,
+    pub(crate) screenshots: Option<PathBuf>,
 }
 
 /// The environment the paths come from.
 #[derive(Debug, Clone, Default)]
 pub struct Base {
     pub home: Option<PathBuf>,
-    pub config_home: Option<PathBuf>,
-    pub data_home: Option<PathBuf>,
-    pub cache_home: Option<PathBuf>,
-    pub state_home: Option<PathBuf>,
-    pub runtime: Option<PathBuf>,
+    config_home: Option<PathBuf>,
+    data_home: Option<PathBuf>,
+    cache_home: Option<PathBuf>,
+    state_home: Option<PathBuf>,
+    runtime: Option<PathBuf>,
 }
 
 impl Base {
@@ -77,12 +77,12 @@ impl Paths {
     }
 
     /// The control socket for launches of entry `key`. See [`clamshell_state::session::enqueue`].
-    pub fn socket(&self, key: &str) -> PathBuf {
+    pub(crate) fn socket(&self, key: &str) -> PathBuf {
         self.sockets.join(clamshell_state::session::instance::Instance::socket_of(key))
     }
 
     /// Whether there is a systemd user session to run apps and games as units of.
-    pub fn has_user_systemd(&self) -> bool {
+    pub(crate) fn has_user_systemd(&self) -> bool {
         self.runtime.as_deref().is_some_and(|d| d.join("systemd/private").exists())
     }
 }

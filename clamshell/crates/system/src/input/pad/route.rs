@@ -37,7 +37,7 @@ const MOUSE_DEVICE_KEYS: [KeyCode; 9] = [
 
 /// Every key the virtual mouse has: its own, for the pad mouse and typing, and those a keymap may press,
 /// which are the keyboard's keys and the mouse's side buttons.
-pub fn mouse_device_keys() -> Vec<KeyCode> {
+pub(crate) fn mouse_device_keys() -> Vec<KeyCode> {
     let mut keys = MOUSE_DEVICE_KEYS.to_vec();
     keys.extend(mouse_codes());
     keys.extend(crate::input::keyboard::all_keys());
@@ -48,26 +48,26 @@ pub fn mouse_device_keys() -> Vec<KeyCode> {
 
 /// Lets go of every key of the virtual mouse that the pad mouse and typing use. The kernel passes on only
 /// the ones that were down.
-pub fn release_mouse_keys(out: &mut Out) {
+pub(crate) fn release_mouse_keys(out: &mut Out) {
     out.mouse.extend(MOUSE_DEVICE_KEYS.iter().map(|&k| Raw::key(k, Press::Up)));
     out.mouse.push(Raw::REPORT);
 }
 
 /// What the pad's events become.
 #[derive(Debug, Default, PartialEq)]
-pub struct Out {
+pub(crate) struct Out {
     /// For the game's virtual pad.
-    pub pad: Vec<Raw>,
+    pub(crate) pad: Vec<Raw>,
     /// For the virtual mouse: pointer, buttons, wheel, and the keys the pad types or a keymap presses.
-    pub mouse: Vec<Raw>,
+    pub(crate) mouse: Vec<Raw>,
     /// For the state.
-    pub events: Vec<Event>,
+    pub(crate) events: Vec<Event>,
     /// For the controller's motors.
-    pub buzz: Option<super::rumble::Buzz>,
+    pub(crate) buzz: Option<super::rumble::Buzz>,
 }
 
 /// A way of turning the pad's events into something else, while its route is in force.
-pub trait Mapping {
+pub(crate) trait Mapping {
     /// One controller event at `now`.
     fn event(&mut self, raw: Raw, now: Instant, out: &mut Out);
 
@@ -82,34 +82,34 @@ pub trait Mapping {
 /// The sticks' and the triggers' ranges. They are read from the left stick's x axis and the right
 /// trigger, since each pair's axes share one range.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Ranges {
-    pub stick: Range,
-    pub trigger: Range,
+pub(crate) struct Ranges {
+    pub(crate) stick: Range,
+    pub(crate) trigger: Range,
 }
 
 /// The controller's state as last seen. It is used to blank the virtual pad while the pad is away from
 /// the game, and to restore it when it comes back.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct PadSnapshot {
+pub(crate) struct PadSnapshot {
     keys: Vec<KeyCode>,
     axes: Vec<Axis>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Axis {
-    pub code: AbsoluteAxisCode,
-    pub value: i32,
+pub(crate) struct Axis {
+    pub(crate) code: AbsoluteAxisCode,
+    pub(crate) value: i32,
     /// The axis' value at rest: the middle of a stick (0), or the bottom of a trigger.
-    pub rest: i32,
+    pub(crate) rest: i32,
 }
 
 impl PadSnapshot {
     /// The axes as they are when the controller is taken over. Keys are assumed up.
-    pub fn new(axes: Vec<Axis>) -> PadSnapshot {
+    pub(crate) fn new(axes: Vec<Axis>) -> PadSnapshot {
         PadSnapshot { keys: Vec::new(), axes }
     }
 
-    pub fn update(&mut self, raw: Raw) {
+    pub(crate) fn update(&mut self, raw: Raw) {
         if let Some((key, press)) = raw.as_key() {
             self.keys.retain(|&k| k != key);
             if press.held() {
@@ -123,7 +123,7 @@ impl PadSnapshot {
     }
 
     /// Events that make a pad look like this state if `real`, or else like an untouched pad.
-    pub fn events(&self, real: bool, out: &mut Vec<Raw>) {
+    fn events(&self, real: bool, out: &mut Vec<Raw>) {
         self.events_where(real, |_| true, out);
     }
 
@@ -139,12 +139,12 @@ impl PadSnapshot {
     }
 
     /// Whether a key is held.
-    pub fn held(&self, key: KeyCode) -> bool {
+    pub(crate) fn held(&self, key: KeyCode) -> bool {
         self.keys.contains(&key)
     }
 
     /// An axis' value, if the controller has it.
-    pub fn value(&self, code: AbsoluteAxisCode) -> Option<i32> {
+    pub(crate) fn value(&self, code: AbsoluteAxisCode) -> Option<i32> {
         self.axes.iter().find(|a| a.code == code).map(|a| a.value)
     }
 }
@@ -189,7 +189,7 @@ enum Home {
 /// Back on its own is an input of the keymap in the game ([`remap`]), and back ([`PadInput::Back`]) on
 /// ClamShell's screens. With the pad mouse or typing, View is ClamShell's too, to move the pad to the
 /// second screen.
-pub struct PadRouter {
+pub(crate) struct PadRouter {
     route: PadRoute,
     watch_activity: bool,
     home: Home,
@@ -219,7 +219,7 @@ pub struct PadRouter {
 impl PadRouter {
     /// A router for a controller just taken over, with its ranges and current axes, and the pad going to
     /// `route`. Away from the game, the virtual pad is blanked. `keymap` is the keymap in force.
-    pub fn new(ranges: Ranges, snapshot: PadSnapshot, route: PadRoute, keymap: Keymap, out: &mut Out) -> PadRouter {
+    pub(crate) fn new(ranges: Ranges, snapshot: PadSnapshot, route: PadRoute, keymap: Keymap, out: &mut Out) -> PadRouter {
         let mut remap = Remap::new(ranges);
         remap.set_keymap(keymap, &snapshot, false, out);
         let mut router = PadRouter {
@@ -269,13 +269,13 @@ impl PadRouter {
 
     /// Puts a new keymap in force. It applies at once while the game has the pad, and what the old one
     /// held is let go.
-    pub fn set_keymap(&mut self, keymap: Keymap, out: &mut Out) {
+    pub(crate) fn set_keymap(&mut self, keymap: Keymap, out: &mut Out) {
         let live = self.route == PadRoute::Game;
         self.with_game_snapshot(|remap, snapshot| remap.set_keymap(keymap, snapshot, live, out));
     }
 
     /// Handles a gyro sample, which goes to the keymap while the game has the pad.
-    pub fn motion(&mut self, sample: Sample, out: &mut Out) {
+    pub(crate) fn motion(&mut self, sample: Sample, out: &mut Out) {
         let dt = interval(self.gyro_at, sample.at);
         self.gyro_at = Some(sample.at);
         // Calibrate on every route, so it learns at rest whatever the pad does.
@@ -290,13 +290,13 @@ impl PadRouter {
 
     /// Calibrates the gyro from its next samples, with the device held still. [`Event::GyroCalibrated`]
     /// says how it went.
-    pub fn calibrate(&mut self) {
+    pub(crate) fn calibrate(&mut self) {
         self.calibration.ask();
     }
 
     /// Called when the controller is gone. Whatever the route holds down outside the game's pad is let
     /// go.
-    pub fn lose(&mut self, out: &mut Out) {
+    pub(crate) fn lose(&mut self, out: &mut Out) {
         if self.home != Home::Up {
             out.events.push(Event::HomeHeld(false));
         }
@@ -307,13 +307,13 @@ impl PadRouter {
     }
 
     /// Arms one activity report for the next game input after keyboard focus leaves the top window.
-    pub fn watch_activity(&mut self, watch: bool) {
+    pub(crate) fn watch_activity(&mut self, watch: bool) {
         self.watch_activity = watch;
     }
 
     /// Moves the pad to route `to`. The mapping it leaves lets go of what it holds. The virtual pad is
     /// blanked when the pad leaves the game, and shows the controller again when it comes back.
-    pub fn set_route(&mut self, to: PadRoute, out: &mut Out) {
+    pub(crate) fn set_route(&mut self, to: PadRoute, out: &mut Out) {
         let from = self.route;
         if from == to {
             return;
@@ -341,7 +341,7 @@ impl PadRouter {
     /// dropped some of its events. `down` is the keys held and `axes` the axes' values. What was let go in
     /// the meantime is let go and what was pressed is pressed. Home's press comes before the others and
     /// its release after.
-    pub fn resync(&self, down: &[KeyCode], axes: &[(AbsoluteAxisCode, i32)], out: &mut Vec<Raw>) {
+    pub(crate) fn resync(&self, down: &[KeyCode], axes: &[(AbsoluteAxisCode, i32)], out: &mut Vec<Raw>) {
         let start = out.len();
         let mut held: Vec<KeyCode> = self.snapshot.keys.iter().chain(&self.taken).copied().collect();
         held.sort_by_key(|k| k.0);
@@ -359,7 +359,7 @@ impl PadRouter {
     }
 
     /// One controller event at `now`.
-    pub fn event(&mut self, raw: Raw, now: Instant, out: &mut Out) {
+    pub(crate) fn event(&mut self, raw: Raw, now: Instant, out: &mut Out) {
         let key = raw.as_key();
         let held = matches!(self.home, Home::Held { .. });
         match key {
@@ -531,7 +531,7 @@ impl PadRouter {
 
     /// Ticks the mapping in force, and quits the program in front once Home with B is held long enough.
     /// Returns when to tick next, if needed.
-    pub fn tick(&mut self, now: Instant, out: &mut Out) -> Option<Instant> {
+    pub(crate) fn tick(&mut self, now: Instant, out: &mut Out) -> Option<Instant> {
         if self.closing.is_some_and(|at| now >= at) {
             self.closing = None;
             out.events.push(Event::Device(DeviceKey::Quit));

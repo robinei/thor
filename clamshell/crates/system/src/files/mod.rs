@@ -14,7 +14,7 @@
 //!
 //! An archive is browsed as a folder through its mount (see [`crate::files::archives`]).
 
-pub(crate) mod archives;
+mod archives;
 pub(crate) mod browse;
 pub(crate) mod mounts;
 pub(crate) mod ops;

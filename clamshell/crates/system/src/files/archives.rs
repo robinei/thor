@@ -19,13 +19,13 @@ use crate::os::command;
 const ENDINGS: [&str; 13] = [".zip", ".7z", ".rar", ".tar", ".tgz", ".txz", ".tbz2", ".tar.gz", ".tar.xz", ".tar.zst", ".tar.bz2", ".tar.lz4", ".tzst"];
 
 /// Whether file name `name` is an archive.
-pub fn is_archive(name: &str) -> bool {
+pub(crate) fn is_archive(name: &str) -> bool {
     let lower = name.to_lowercase();
     ENDINGS.iter().any(|e| lower.ends_with(e) && lower.len() > e.len())
 }
 
 /// The mounted archives, and where they are mounted.
-pub struct Mounts {
+pub(crate) struct Mounts {
     /// Where they are mounted, each in a dir of its own, and where their indexes are kept.
     root: Option<PathBuf>,
     index: Option<PathBuf>,
@@ -35,7 +35,7 @@ pub struct Mounts {
 impl Mounts {
     /// Mounts go under `$XDG_RUNTIME_DIR/clamshell/archives` and indexes in `cache`. Mounts left there
     /// by an earlier ClamShell are unmounted.
-    pub fn new(cache: Option<PathBuf>) -> Mounts {
+    pub(crate) fn new(cache: Option<PathBuf>) -> Mounts {
         let root = std::env::var_os("XDG_RUNTIME_DIR").map(|d| PathBuf::from(d).join("clamshell/archives"));
         // Clean up after an earlier ClamShell: stop its services, detach any mount left, remove the dirs.
         if let Err(e) = crate::launch::units::stop_matching("clamshell-archive-*.service") {
@@ -62,7 +62,7 @@ impl Mounts {
     }
 
     /// Where `archive` is mounted, mounting it now if it isn't. Errs with what went wrong if it can't be.
-    pub fn mount(&mut self, archive: &Path) -> Result<PathBuf, String> {
+    pub(crate) fn mount(&mut self, archive: &Path) -> Result<PathBuf, String> {
         if let Some((_, dir)) = self.mounted.iter().find(|(a, _)| a == archive) {
             return Ok(dir.clone());
         }
@@ -110,7 +110,7 @@ impl Mounts {
 
     /// Unmounts the archives `in_use` doesn't need. An archive is needed if a path in `in_use` is the
     /// archive or is inside its mount.
-    pub fn keep(&mut self, in_use: &[&Path]) {
+    pub(crate) fn keep(&mut self, in_use: &[&Path]) {
         self.mounted.retain(|(archive, dir)| {
             let used = in_use.iter().any(|p| *p == archive || p.starts_with(dir));
             if !used {

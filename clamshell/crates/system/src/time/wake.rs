@@ -8,7 +8,7 @@ use std::time::Duration;
 use rustix::time::{ClockId, clock_gettime};
 
 /// Time spent asleep since boot.
-pub fn slept() -> Duration {
+pub(crate) fn slept() -> Duration {
     let as_duration = |t: rustix::time::Timespec| Duration::new(t.tv_sec.max(0) as u64, t.tv_nsec.clamp(0, 999_999_999) as u32);
     as_duration(clock_gettime(ClockId::Boottime)).saturating_sub(as_duration(clock_gettime(ClockId::Monotonic)))
 }
@@ -18,17 +18,17 @@ const AT_LEAST: Duration = Duration::from_secs(1);
 
 /// Notices a sleep between two checks.
 #[derive(Debug)]
-pub struct Watch {
+pub(crate) struct Watch {
     last: Duration,
 }
 
 impl Watch {
-    pub fn new(slept: Duration) -> Self {
+    pub(crate) fn new(slept: Duration) -> Self {
         Watch { last: slept }
     }
 
     /// Whether the system slept since the last check, given the time slept so far.
-    pub fn woke(&mut self, slept: Duration) -> bool {
+    pub(crate) fn woke(&mut self, slept: Duration) -> bool {
         let woke = slept >= self.last + AT_LEAST;
         if woke || slept < self.last {
             self.last = slept;

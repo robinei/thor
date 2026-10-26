@@ -5,24 +5,24 @@ use std::collections::HashMap;
 
 use crate::os::dbus::{Message, Path, PropMap};
 
-pub const SERVICE: &str = "org.bluez";
-pub const ADAPTER: &str = "org.bluez.Adapter1";
-pub const DEVICE: &str = "org.bluez.Device1";
-pub const AGENT_MANAGER: &str = "org.bluez.AgentManager1";
-pub const AGENT_PATH: &str = "/org/clamshell/agent";
+pub(crate) const SERVICE: &str = "org.bluez";
+pub(crate) const ADAPTER: &str = "org.bluez.Adapter1";
+pub(crate) const DEVICE: &str = "org.bluez.Device1";
+pub(crate) const AGENT_MANAGER: &str = "org.bluez.AgentManager1";
+pub(crate) const AGENT_PATH: &str = "/org/clamshell/agent";
 
 /// Every object BlueZ has, with its interfaces' properties.
-pub type ManagedObjects = HashMap<Path<'static>, HashMap<String, PropMap>>;
+pub(crate) type ManagedObjects = HashMap<Path<'static>, HashMap<String, PropMap>>;
 
 /// A device's object path: the adapter's path, then `dev_` and the address with underscores.
-pub fn device_path(adapter: &str, address: &str) -> String {
+pub(crate) fn device_path(adapter: &str, address: &str) -> String {
     format!("{adapter}/dev_{}", address.replace(':', "_"))
 }
 
 /// The pairing agent (org.bluez.Agent1 at [`AGENT_PATH`]), served while pairing. It has no screen or
 /// keyboard to show or type a code with, and it confirms whatever BlueZ asks, since the user asked to
 /// pair. Returns its reply to a call, if the call is for it.
-pub fn agent(call: &Message) -> Option<Message> {
+pub(crate) fn agent(call: &Message) -> Option<Message> {
     if call.path().as_deref() != Some(AGENT_PATH) || call.interface().as_deref() != Some("org.bluez.Agent1") {
         return None;
     }

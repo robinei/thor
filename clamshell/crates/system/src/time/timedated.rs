@@ -11,7 +11,7 @@ const PATH: &str = "/org/freedesktop/timedate1";
 const IFACE: &str = "org.freedesktop.timedate1";
 
 /// The time zone and the ones to choose from, with `error` from setting it, if any.
-pub fn read_time(error: Option<String>) -> TimeZones {
+pub(crate) fn read_time(error: Option<String>) -> TimeZones {
     let read = || -> dbus::Result<_> {
         let mut bus = Bus::system()?;
         let props = bus.get_all(DEST, PATH, IFACE)?;
@@ -49,13 +49,13 @@ fn call(method: &str, what: &dyn std::fmt::Display, args: impl dbus::AppendAll) 
     }
 }
 
-pub fn set_ntp(on: bool) -> Result<(), String> {
+pub(crate) fn set_ntp(on: bool) -> Result<(), String> {
     call("SetNTP", &on, (on, false))
 }
 
 /// Moves the clock one step of `field` forward (`by` 1) or back (-1) in local time. A month on from the
 /// 31st lands on the next month's last day.
-pub fn step_clock(field: clamshell_state::ClockField, by: i8) -> Result<(), String> {
+pub(crate) fn step_clock(field: clamshell_state::ClockField, by: i8) -> Result<(), String> {
     use clamshell_state::ClockField;
     let now = jiff::Zoned::now();
     let by = i64::from(by);
@@ -73,7 +73,7 @@ pub fn step_clock(field: clamshell_state::ClockField, by: i8) -> Result<(), Stri
 
 /// Sets the system's time zone. Returns the service's message if it failed, as when polkit refuses or the
 /// zone is unknown.
-pub fn set_time_zone(zone: &str) -> Result<(), String> {
+pub(crate) fn set_time_zone(zone: &str) -> Result<(), String> {
     call("SetTimezone", &zone, (zone, false))
 }
 

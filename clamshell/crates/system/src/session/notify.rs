@@ -4,7 +4,7 @@ use crate::os::dbus;
 
 /// Sends a notification through the session bus' notification daemon, replacing notification `replaces`
 /// unless it is 0. Returns its id.
-pub fn notify(replaces: u32, summary: &str, body: &str, urgent: bool) -> dbus::Result<u32> {
+pub(crate) fn notify(replaces: u32, summary: &str, body: &str, urgent: bool) -> dbus::Result<u32> {
     // Urgency 1 is normal and 2 is critical, which stays until dismissed. Timeout -1 uses the daemon's own.
     let hints = dbus::PropMap::from([("urgency".to_owned(), dbus::value(if urgent { 2u8 } else { 1u8 }))]);
     let actions: Vec<&str> = Vec::new();

@@ -37,7 +37,7 @@ fn fraction(power: PowerProfile) -> f64 {
 
 /// The frequency to cap at: `fraction` of the way from `min` to `max`. If there is a list of available
 /// steps, it is rounded down to one, but never below the lowest.
-pub fn pick(available: &[u64], min: u64, max: u64, fraction: f64) -> u64 {
+fn pick(available: &[u64], min: u64, max: u64, fraction: f64) -> u64 {
     let target = min + ((max.saturating_sub(min)) as f64 * fraction) as u64;
     let mut steps: Vec<u64> = available.to_vec();
     steps.sort_unstable();
@@ -77,7 +77,7 @@ const CHARGE_RESUME: u64 = 5;
 /// quirk says its firmware only honours the charge current. An explicit environment override permits
 /// trying other methods. Bypass always sets the current to zero where supported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Hold {
+enum Hold {
     Detected,
     Current,
     Threshold,
@@ -111,7 +111,7 @@ impl Hold {
 /// Whether charging is held, with the current at 0. `limit` is the charge limit held by the current: 0 is
 /// Bypass, always held, and 100 is never held. `level` is the battery's level, and `was` whether it was
 /// held.
-pub fn held(limit: u16, level: Option<u64>, was: bool) -> bool {
+pub(crate) fn held(limit: u16, level: Option<u64>, was: bool) -> bool {
     let limit = u64::from(limit);
     match (limit, level) {
         (0, _) => true,
@@ -156,7 +156,7 @@ fn big_cpus(clusters: &[(u64, Vec<u32>)]) -> Vec<u32> {
 
 /// Starts the hardware thread. It applies the settings it is sent, only the latest when several wait.
 /// With a charge limit or Bypass on, it sees to the battery again every [`CHARGE_AGAIN`].
-pub fn spawn(policy: ChargePolicy) -> io::Result<Worker<Values>> {
+pub(crate) fn spawn(policy: ChargePolicy) -> io::Result<Worker<Values>> {
     Worker::spawn(clamshell_state::Thread::Tuning.name(), move |commands| {
         let (mut quiet, mut known, mut last) = (Quiet::default(), Vec::new(), None::<Values>);
         let mut charge = Charge { hold: Hold::from_env(policy), switches: policy.switches, held: false };

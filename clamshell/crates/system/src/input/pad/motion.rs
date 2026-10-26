@@ -20,10 +20,10 @@ use evdev::{AbsoluteAxisCode, EventType, MiscCode, PropType};
 /// pitch about the left-right axis (ABS_RX), yaw about the up axis (ABS_RY), roll about the axis
 /// toward the player (ABS_RZ).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct Rate {
-    pub pitch: f32,
-    pub yaw: f32,
-    pub roll: f32,
+pub(crate) struct Rate {
+    pub(crate) pitch: f32,
+    pub(crate) yaw: f32,
+    pub(crate) roll: f32,
 }
 
 impl Rate {
@@ -91,7 +91,7 @@ impl Run {
 /// ([`STILL`], [`STILL_SPREAD`], [`STILL_FOR`]). It is also learnt on request ([`Calibration::ask`]) over
 /// the next [`CALIBRATE_FOR`] seconds, as long as the device is held still enough.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct Calibration {
+pub(crate) struct Calibration {
     bias: Rate,
     still: Option<Run>,
     asked: Asked,
@@ -108,13 +108,13 @@ enum Asked {
 
 impl Calibration {
     /// Calibrates from the next samples. [`Calibration::correct`] says how it went.
-    pub fn ask(&mut self) {
+    pub(crate) fn ask(&mut self) {
         self.asked = Asked::First;
     }
 
     /// Corrects a sample's rate, `dt` seconds after the last sample, by taking off the offset. When a
     /// requested calibration ends, also returns whether it succeeded.
-    pub fn correct(&mut self, rate: Rate, dt: f32) -> (Rate, Option<bool>) {
+    pub(crate) fn correct(&mut self, rate: Rate, dt: f32) -> (Rate, Option<bool>) {
         let mut done = None;
         let gathering = match self.asked {
             Asked::No => None,
@@ -157,13 +157,13 @@ impl Calibration {
 
 /// One reading: the rate, and when it was taken by the sensor's clock.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Sample {
-    pub rate: Rate,
-    pub at: Duration,
+pub(crate) struct Sample {
+    pub(crate) rate: Rate,
+    pub(crate) at: Duration,
 }
 
 /// Where angular velocity comes from.
-pub trait MotionSource: Send {
+pub(crate) trait MotionSource: Send {
     /// The file descriptor to wait on for samples.
     fn fd(&self) -> BorrowedFd<'_>;
 
@@ -172,7 +172,7 @@ pub trait MotionSource: Send {
 }
 
 /// A motion sensor's evdev device.
-pub struct EvdevMotion {
+pub(crate) struct EvdevMotion {
     device: RawDevice,
     /// Units per degree per second, for RX, RY and RZ.
     resolution: [f32; 3],
@@ -191,7 +191,7 @@ fn is_motion(d: &RawDevice) -> bool {
 
 /// Whether `motion` is `controller`'s. It is if its name starts with the controller's, since drivers call
 /// it `<controller> Motion Sensors`, or if their physical paths differ only in the last part.
-pub fn pairs(controller: (&str, &str), motion: (&str, &str)) -> bool {
+fn pairs(controller: (&str, &str), motion: (&str, &str)) -> bool {
     let (c_name, c_phys) = controller;
     let (m_name, m_phys) = motion;
     let stem = |p: &str| p.rsplit_once('/').map_or(p, |(s, _)| s).to_owned();
@@ -201,7 +201,7 @@ pub fn pairs(controller: (&str, &str), motion: (&str, &str)) -> bool {
 impl EvdevMotion {
     /// The motion sensor of the controller named `name` with physical path `phys`, or else the only one
     /// there is.
-    pub fn find(name: &str, phys: &str) -> Option<EvdevMotion> {
+    pub(crate) fn find(name: &str, phys: &str) -> Option<EvdevMotion> {
         let sensors: Vec<RawDevice> = evdev::raw_stream::enumerate().map(|(_, d)| d).filter(is_motion).collect();
         let paired = sensors.iter().position(|d| pairs((name, phys), (d.name().unwrap_or(""), d.physical_path().unwrap_or(""))));
         let chosen = match paired {
@@ -261,7 +261,7 @@ impl MotionSource for EvdevMotion {
 
 /// The time between two samples in seconds. A first sample, or a clock that wrapped (MSC_TIMESTAMP is 32
 /// bits of microseconds), gives 0. A long gap is capped at 50 ms.
-pub fn interval(last: Option<Duration>, at: Duration) -> f32 {
+pub(crate) fn interval(last: Option<Duration>, at: Duration) -> f32 {
     const MAX: f32 = 0.05;
     match last {
         Some(last) if at > last => at.saturating_sub(last).as_secs_f32().min(MAX),

@@ -35,7 +35,7 @@ fn parse_fdinfo(text: &str) -> Option<(u64, u64)> {
 
 /// The DRM clients a process has open, with their GPU time. `process` is its /proc dir. A client open
 /// through several file descriptors counts once. Only our user's processes can be read.
-pub fn clients(process: &Path) -> HashMap<u64, u64> {
+pub(crate) fn clients(process: &Path) -> HashMap<u64, u64> {
     let mut clients = HashMap::new();
     let dir = process.join("fd");
     let fds = match fs::read_dir(&dir) {
@@ -57,7 +57,7 @@ pub fn clients(process: &Path) -> HashMap<u64, u64> {
 }
 
 /// The GPU time of every DRM client this user can see, each counted once. `None` if there are none.
-pub fn total_ns() -> Option<u64> {
+pub(crate) fn total_ns() -> Option<u64> {
     let mut seen = HashSet::new();
     let mut total = None::<u64>;
     for (_, dir) in sys::processes() {
