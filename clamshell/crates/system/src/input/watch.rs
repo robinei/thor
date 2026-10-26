@@ -18,8 +18,8 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use clamshell_state::DeviceKey;
 use clamshell_state::Event;
-use clamshell_state::device::buttons::DeviceKey;
 use clamshell_state::idle::IdleEvent;
 use evdev::raw_stream::RawDevice;
 use evdev::{AbsoluteAxisCode, EventType, KeyCode, PropType, SwitchCode, SynchronizationCode};

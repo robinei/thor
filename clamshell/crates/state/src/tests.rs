@@ -214,7 +214,7 @@ fn the_screens_go_off_before_the_device_sleeps() {
 #[test]
 fn queued_events_are_handled_in_order_with_what_they_queue_first() {
     let mut s = state();
-    let fx = s.handle_as_queued(vec![PointerEvent::Activate(Id::Shelf(ShelfId::Launch)).into(), Event::Device(crate::device::buttons::DeviceKey::Screenshot)]);
+    let fx = s.handle_as_queued(vec![PointerEvent::Activate(Id::Shelf(ShelfId::Launch)).into(), Event::Device(crate::DeviceKey::Screenshot)]);
     let kinds: Vec<&str> = fx
         .iter()
         .map(|e| match e {
@@ -405,7 +405,7 @@ fn a_refresh_calibration_sets_the_screens_and_then_gives_them_back() {
     let fx = s.applied(Event::RefreshCalibrated(Ok("done".into())));
     assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: true })), "{fx:?}");
     assert_eq!(refresh(&fx), [0], "the rate as it was");
-    let fx = s.applied(Event::Device(crate::device::buttons::DeviceKey::BottomPower));
+    let fx = s.applied(Event::Device(crate::DeviceKey::BottomPower));
     assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: false })), "{fx:?}");
     s.applied(PointerEvent::Activate(Id::Device(DeviceId::Refresh)).into());
     let fx = s.applied(Event::RefreshCalibrated(Ok("done".into())));
@@ -480,7 +480,7 @@ fn the_screens_power_is_sent_when_it_changes() {
     s.applied(Event::tick(1000));
     s.applied(Event::Idle(IdleEvent::Watching(true)));
     let outputs = |fx: &[Effect]| fx.iter().filter(|e| matches!(e, Effect::Compositor(Compositor::Outputs { .. }))).cloned().collect::<Vec<_>>();
-    let key = |s: &mut State| s.applied(Event::Device(crate::device::buttons::DeviceKey::BottomPower));
+    let key = |s: &mut State| s.applied(Event::Device(crate::DeviceKey::BottomPower));
     assert_eq!(outputs(&key(&mut s)), [Effect::Compositor(Compositor::Outputs { top: true, bottom: false })], "the bottom one by hand");
     assert_eq!(outputs(&s.applied(Event::tick(1300))), [Effect::Compositor(Compositor::Outputs { top: false, bottom: false })], "off for idle");
     assert_eq!(

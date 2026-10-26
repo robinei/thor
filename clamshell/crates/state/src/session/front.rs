@@ -167,7 +167,7 @@ mod tests {
         s.applied(WindowEvent::Activate(2).into());
         // With its window moved to the bottom screen and shelf in front, there is nothing to go back to on
         // the main screen.
-        s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
+        s.applied(Event::Device(crate::DeviceKey::WindowDown));
         assert!(s.session().shelf_in_front());
         assert_eq!(s.applied(Event::Home), vec![]);
     }

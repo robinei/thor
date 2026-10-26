@@ -4,7 +4,7 @@
 //! events go in, and events for the virtual devices and the state come out, so switching routes is
 //! tested here. Whatever a mapping holds down is let go when the pad leaves it.
 
-use clamshell_state::device::buttons::DeviceKey;
+use clamshell_state::DeviceKey;
 use std::time::Instant;
 
 use clamshell_state::{Event, PadInput, PadRoute};

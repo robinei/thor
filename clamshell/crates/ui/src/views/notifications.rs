@@ -66,7 +66,7 @@ fn draw_one(f: &mut Frame, n: &Notification, row: Rect, pad: f32, title: f32, sm
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
-    use clamshell_state::device::buttons::DeviceKey;
+    use clamshell_state::DeviceKey;
     use clamshell_state::{Event, Id, Init, Notification, NotificationEvent, NotificationId, State, Urgency};
 
     use crate::gfx::DrawCache;

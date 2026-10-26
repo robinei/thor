@@ -2,8 +2,8 @@
 //! the names of the pad buttons, keys, and keymap inputs and outputs that the commands take.
 
 use clamshell_state::Control;
+use clamshell_state::DeviceKey;
 use clamshell_state::bottom::keyboard::{self, Key, Modifier, Named};
-use clamshell_state::device::buttons::DeviceKey;
 use clamshell_state::keymap::{Actuation, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
 use clamshell_state::levels::Level;
 use clamshell_state::profiles::picker::{Kind, ProfileId};

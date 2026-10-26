@@ -18,8 +18,8 @@ use crate::Compositor;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::DeviceKey;
 use crate::bottom::keyboard::{KeyPos, slot};
-use crate::device::buttons::DeviceKey;
 use crate::device::{SticksEvent, TopView};
 use crate::idle::{IdleEvent, Stage};
 use crate::keymap::{Button, Input};

@@ -1,7 +1,7 @@
 //! Routes input, by the screen it is on, to the pure machines: presses, the wheel, pointer motion and
 //! releases, the pad and keys.
 
-use clamshell_state::device::buttons::DeviceKey;
+use clamshell_state::DeviceKey;
 use clamshell_state::{Event, Id, ListEvent, NotificationEvent, PadInput, PointerEvent, ShelfEvent, State};
 use xkeysym::Keysym;
 

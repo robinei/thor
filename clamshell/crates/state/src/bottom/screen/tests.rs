@@ -1,8 +1,8 @@
 use super::*;
 use crate::Compositor;
+use crate::DeviceKey;
 use crate::Tab;
 use crate::bottom::notice::NoticeKind;
-use crate::device::buttons::DeviceKey;
 use crate::effect::{Effect, Save};
 use crate::session::below::WindowRule;
 use crate::session::instance::Instance;

@@ -5,7 +5,7 @@
 //! target there. Touch continues in `touch`, the pointer's capture in `pointer`.
 
 use crate::server::Server;
-use clamshell_state::{Event as StateEvent, WindowEvent, device::buttons::DeviceKey};
+use clamshell_state::{DeviceKey, Event as StateEvent, WindowEvent};
 use clamshell_ui::{End, Screen, Source};
 use smithay::{
     backend::input::{

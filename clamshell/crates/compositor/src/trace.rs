@@ -5,7 +5,7 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
-use clamshell_state::{Event, State, WindowEvent, device::buttons::DeviceKey};
+use clamshell_state::{DeviceKey, Event, State, WindowEvent};
 use serde::{Deserialize, Serialize};
 
 const CAPACITY: usize = 256;

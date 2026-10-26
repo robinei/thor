@@ -577,22 +577,22 @@ fn show_of_an_entry_whose_windows_are_all_below_shows_them_there() {
     let mut s = state();
     let zelda = launch(&mut s, "zelda-lttp");
     s.observed(vec![win_of(3, "zelda3", &zelda)]);
-    s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
-    s.applied(Event::Device(crate::device::buttons::DeviceKey::BottomView));
+    s.applied(Event::Device(crate::DeviceKey::WindowDown));
+    s.applied(Event::Device(crate::DeviceKey::BottomView));
     assert!(!s.bottom().shows_windows(s.session()));
     show(&mut s, "zelda-lttp");
     assert!(s.bottom().shows_windows(s.session()));
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(3));
     assert!(s.session().shelf_in_front());
-    s.applied(Event::Device(crate::device::buttons::DeviceKey::BottomView));
+    s.applied(Event::Device(crate::DeviceKey::BottomView));
     assert!(!s.bottom().shows_windows(s.session()));
     tap(&mut s, Id::Dock(DockId::Entry(0)));
     assert!(s.bottom().shows_windows(s.session()), "the dock tile's tap: the same");
     assert!(s.session().shelf_in_front());
     // The bottom screen turned off by hand comes on again for them.
-    s.applied(Event::Device(crate::device::buttons::DeviceKey::BottomPower));
+    s.applied(Event::Device(crate::DeviceKey::BottomPower));
     assert!(s.bottom().off());
-    s.applied(Event::Device(crate::device::buttons::DeviceKey::BottomView));
+    s.applied(Event::Device(crate::DeviceKey::BottomView));
     tap(&mut s, Id::Dock(DockId::Entry(0)));
     assert!(!s.bottom().off() && s.bottom().shows_windows(s.session()), "on again");
     // With a window of it on the main screen, that is shown.

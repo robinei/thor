@@ -12,7 +12,6 @@
 //! - Done, at the first start.
 
 pub mod account;
-pub mod buttons;
 pub mod sticks;
 
 use crate::DeviceId;

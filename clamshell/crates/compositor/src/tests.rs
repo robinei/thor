@@ -8,7 +8,7 @@ use std::os::unix::net::UnixStream;
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
-use clamshell_state::{Event, Init, State, device::buttons::DeviceKey, session::windows::WindowPlace};
+use clamshell_state::{DeviceKey, Event, Init, State, session::windows::WindowPlace};
 use clamshell_ui::Config;
 use smithay::reexports::{
     wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base},

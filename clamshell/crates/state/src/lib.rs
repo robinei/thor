@@ -15,7 +15,7 @@
 //! - [`levels`]: volume and brightness, and the slider that sets them;
 //! - [`radios`]: Wi-Fi and Bluetooth;
 //! - [`settings`]: the settings table and panel, the environment variables, and the fan mode;
-//! - [`device`]: the Device view, the account, stick calibration, and the device buttons;
+//! - [`device`]: the Device view, the account, and stick calibration;
 //! - [`idle`]: the screens dimmed and off, and sleep, with no input ([`Idle`]);
 //! - [`status`]: the system readings ([`Sys`]), covering status, metrics, the battery and the time;
 //! - [`notifications`]: the desktop notifications shown over the bottom screen ([`Notifications`]);
@@ -98,6 +98,7 @@ use sync::{Sent, Wanted};
 
 // What other crates use to talk to the state: the events and effects and what they carry, the ids, and
 // the groups the getters return.
+pub use apply::keys::DeviceKey;
 pub use clock::Clock;
 pub use effect::{Compositor, Effect, Save, ScreenshotPixels, Watch};
 pub use event::{EntryAct, Event, KeymapEvent, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide, Thread};

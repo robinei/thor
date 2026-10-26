@@ -1,5 +1,5 @@
 use super::*;
-use crate::device::buttons::DeviceKey;
+use crate::DeviceKey;
 use crate::testkit::*;
 use crate::{Effect, Event};
 
