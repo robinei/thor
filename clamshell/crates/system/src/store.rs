@@ -14,7 +14,7 @@
 //!   - `window-rules.json`, `dock.json`, `autostart.json`, `favourites.json`, `resume.json` (where shelf
 //!     and the second screen were), `sticks.json` (the sticks' calibrations, by controller),
 //!     `brightness.json`, `clock.json`, and `first-start.json` (whether the first start is over, see
-//!     `clamshell_state::device`).
+//!     `clamshell_state::setup`).
 //! - `plays.jsonl` has one line per play: the entry's id, the start in seconds since the epoch and the
 //!   duration in seconds. Lines are appended, and a line cut short is skipped.
 //!
