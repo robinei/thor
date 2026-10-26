@@ -65,6 +65,10 @@ pub(crate) struct Measure {
     failed: bool,
     /// The last histogram measured, for the state.
     pub measured: Option<Histogram>,
+    /// A readback started and not yet read: its pixels and what they are of (the window, whether HDR).
+    /// It is read at the next turn, by when the GPU has done the copy, so the compositor's thread doesn't
+    /// wait for it.
+    reading: Option<(<GlesRenderer as ExportMem>::TextureMapping, i64, bool)>,
 }
 
 impl Measure {
@@ -72,6 +76,12 @@ impl Measure {
     pub fn turn(&mut self, renderer: &mut GlesRenderer, server: &Server, now: Instant) {
         if self.failed {
             return;
+        }
+        if let Some((mapping, window, hdr)) = self.reading.take() {
+            match renderer.map_texture(&mapping) {
+                Ok(bytes) => self.measured = Some(histogram(bytes, window, hdr)),
+                Err(error) => log::warn!("compositor: the curve's histogram: reading it back: {error}"),
+            }
         }
         let Some(window) = server.core.state().histogram_window() else { return };
         if self.last.is_some_and(|last| now < last + EVERY) {
@@ -120,14 +130,18 @@ impl Measure {
         let bound = renderer.bind(target).map_err(|e| e.to_string())?;
         let mapping = renderer.copy_framebuffer(&bound, Rectangle::from_size(SIZE.into()), Fourcc::Abgr8888).map_err(|e| e.to_string())?;
         drop(bound);
-        let bytes = renderer.map_texture(&mapping).map_err(|e| e.to_string())?;
-        let levels: Vec<u8> = bytes.chunks_exact(4).map(|pixel| pixel.first().copied().unwrap_or(0)).collect();
-        let (x0, y0, x1, y1) = picture_within(&levels, SIZE.0 as usize, SIZE.1 as usize);
-        let width = SIZE.0 as usize;
-        let inside = (y0..y1).flat_map(|y| (x0..x1).map(move |x| y * width + x)).filter_map(|i| levels.get(i).copied());
-        self.measured = Some(Histogram { window, hdr, bins: count(inside) });
+        self.reading = Some((mapping, window, hdr));
         Ok(())
     }
+}
+
+/// The histogram of a readback's `bytes` (RGBA, the level in red) of `window`'s picture.
+fn histogram(bytes: &[u8], window: i64, hdr: bool) -> Histogram {
+    let levels: Vec<u8> = bytes.chunks_exact(4).map(|pixel| pixel.first().copied().unwrap_or(0)).collect();
+    let (x0, y0, x1, y1) = picture_within(&levels, SIZE.0 as usize, SIZE.1 as usize);
+    let width = SIZE.0 as usize;
+    let inside = (y0..y1).flat_map(|y| (x0..x1).map(move |x| y * width + x)).filter_map(|i| levels.get(i).copied());
+    Histogram { window, hdr, bins: count(inside) }
 }
 
 /// The part of a `width` by `height` grid of levels that is picture, as columns `x0..x1` and rows `y0..y1`:
