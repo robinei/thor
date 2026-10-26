@@ -1221,6 +1221,16 @@ class Checks:
         self.check("  its process moved into a scope of ours", until(lambda: "clamshell-run-foot_" in cgroup(), 5), f"{cgroup()!r}; {adopt(since)}")
         sh("pkill -x foot || true")
 
+    def session_units(self):
+        """The session as systemd sees it: the displays given to the user manager for its services, the
+        status line, and the compositor's own tapping on ClamShell's touchpad."""
+        environment = sh("systemctl --user show-environment")
+        self.check("session: the user manager has the displays", "WAYLAND_DISPLAY=" in environment and "\nDISPLAY=" in "\n" + environment,
+                   environment.strip()[-200:])
+        status = sh("systemctl --user show -P StatusText clamshell").strip()
+        self.check("  systemctl status says what runs", "running" in status and "windows" in status, repr(status))
+        self.check("  the compositor taps and drags on ClamShell's touchpad", "ClamShell's touchpad taps and drags" in sh("journalctl --user -b -u clamshell -o cat --no-pager"))
+
     def tray_program(self):
         """A program with a tray icon, started outside ClamShell (an app scope): an entry found by it, its
         process moved into a scope of ours."""
@@ -1302,7 +1312,7 @@ GLib.MainLoop().run()
 
 
 
-CHECKS = ["shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "pad_windows",
+CHECKS = ["session_units", "shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "pad_windows",
           "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
           "keymap_actuations", "rumble", "launch_and_quit", "pause_hidden", "found_window", "tray_program", "clipboard",
           "bluetooth", "gyro_sleep"]
