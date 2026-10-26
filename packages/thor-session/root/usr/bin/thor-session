@@ -1,10 +1,11 @@
 #!/bin/sh
-# The session on the first console, as the login's profile starts it (once `uwsm check may-start`, which
-# looks at the login shell itself, says it may): through uwsm, ClamShell's compositor on the screens
-# (`clamshell --drm`, its log in the journal as uwsm's unit, `wayland-wm@clamshell.service`;
-# CLAMSHELL_BIN: another build of it, as the test machine's). Unless it can't go on: when it ended 3 times
-# within 2 minutes (ClamShell or uwsm dying as they start), it isn't started again (a reboot starts the
-# count anew, as does waiting 2 minutes), and the console stays, saying why.
+# The session on the first console, as the login's profile starts it: ClamShell's compositor on the
+# screens, as the user service clamshell.service (`clamshell --drm`, its log in the journal as the unit's),
+# with this login's environment. Unless it can't go on, then the console stays, saying why:
+#
+# - the session failed: it ended 3 times within 2 minutes, so it isn't started again (a reboot starts the
+#   count anew, as does waiting 2 minutes);
+# - ClamShell failed: systemd gave up restarting it (failing 4 times within a minute).
 #
 # Exit status: 0 once a session ran and ended (the profile logs out: the console's autologin starts a
 # new one), 1 when the console is to stay (said why).
@@ -24,7 +25,7 @@ recent=$({ cat "$state/session-starts" 2> /dev/null; echo "$now"; } | awk -v now
 printf '%s\n' "$recent" > "$state/session-starts"
 if [ "$(printf '%s\n' "$recent" | wc -l)" -gt 3 ]; then
     echo "The session ended 3 times within 2 minutes: not started again. Its last words:"
-    journalctl --user -n 15 -o cat --no-pager -u 'wayland-wm@*' -u 'wayland-wm-env@*' -t clamshell
+    journalctl --user -n 15 -o cat --no-pager -u clamshell.service
     help
     exit 1
 fi
@@ -33,6 +34,22 @@ fi
 # /usr/share/thor/xdg; the user's in ~/.config come first still).
 [ ! -x /usr/lib/thor/thor-home ] || /usr/lib/thor/thor-home
 export XDG_CONFIG_DIRS=/usr/share/thor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}
-# uwsm's main unit: ClamShell finalizes it once it listens, which starts the session's services (udiskie).
-uwsm start -- "${CLAMSHELL_BIN:-/usr/bin/clamshell}" --drm
+# This login's environment for the user manager and the bus, which ClamShell and what it starts get (less
+# the shell's own variables).
+env -u PWD -u OLDPWD -u SHLVL -u _ dbus-update-activation-environment --systemd --all
+# Until ClamShell ends, or systemd stops restarting it (its failures counted from this session's start).
+# A start that fails, or a ClamShell that fails, returns while systemd restarts it: waited for again
+# until the unit has failed for good.
+state() { systemctl --user show --property=ActiveState --value clamshell.service; }
+systemctl --user reset-failed clamshell.service 2> /dev/null
+while ! systemctl --user start --wait clamshell.service 2> /dev/null && [ "$(state)" != failed ]; do :; done
+# The session's displays out of the environment, and what it launched and mounted stopped.
+systemctl --user unset-environment WAYLAND_DISPLAY DISPLAY
+systemctl --user stop app-graphical.slice background-graphical.slice
+if [ "$(state)" = failed ]; then
+    echo "ClamShell failed again and again, and systemd stopped restarting it ($(date '+%H:%M:%S')). Its last words:"
+    journalctl --user -u clamshell.service -n 15 -o cat --no-pager
+    help
+    exit 1
+fi
 exit 0

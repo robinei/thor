@@ -1,0 +1,24 @@
+[Unit]
+Description=ClamShell, the session on the screens
+# Started by thor-session from the first console's login, with the login's environment (its
+# XDG_SESSION_ID is how ClamShell takes the seat). Up once it listens and has given the user manager its
+# displays, which brings up the graphical session and its services (udiskie); they stop with it.
+BindsTo=graphical-session.target
+Before=graphical-session.target
+Wants=graphical-session-pre.target
+After=graphical-session-pre.target
+# Failing 4 times within a minute, given up: then the session ends and the console says why
+# (thor-session).
+StartLimitIntervalSec=60
+StartLimitBurst=4
+
+[Service]
+# Up once its loop turns; it says so every few seconds, and one that stops for 30 s (hung) is restarted:
+# what it launched runs on in its scopes.
+Type=notify
+NotifyAccess=main
+WatchdogSec=30
+ExecStart=/usr/bin/clamshell --drm
+Restart=on-failure
+RestartSec=2
+Slice=session.slice

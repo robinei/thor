@@ -109,9 +109,9 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
         }
     };
     let start = move |sender: EventSender, displays: clamshell_compositor::Displays| {
-        // On the screens, ClamShell is uwsm's compositor unit.
+        // On the screens, the session's services and what the bus starts are given the displays.
         if host == Host::Drm {
-            clamshell_system::session::uwsm::finalize(&displays.wayland, &displays.x11);
+            clamshell_system::session::environment::export(&displays.wayland, &displays.x11);
         }
         let system_config = wiring::Config {
             profile: env.profile,

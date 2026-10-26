@@ -4,7 +4,7 @@
 //! nothing uses it: the open folder isn't in it, and no copied entry or running launch's file is in it.
 //!
 //! Each mount is a service of its own, `clamshell-archive-<hash>.service`, running ratarmount in the
-//! foreground in uwsm's `background-graphical.slice`. Unmounting means stopping the service. After it
+//! foreground in the session's `background-graphical.slice`. Unmounting means stopping the service. After it
 //! stops or crashes the mount is detached lazily, so none is left behind, and the session ending stops
 //! them all. The indexes are kept in the cache, not beside the archives. Services left by an earlier
 //! ClamShell are stopped at start.

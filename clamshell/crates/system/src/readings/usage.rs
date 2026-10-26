@@ -111,7 +111,7 @@ fn read_processes() -> HashMap<u32, Counters> {
 
 /// Whether a process may be ended from the battery tab. ClamShell itself and the session's own processes
 /// may not. The session's own are those in:
-/// - `session.slice`, which under uwsm holds ClamShell, udiskie, PipeWire and the bus;
+/// - `session.slice`, which holds ClamShell, udiskie, PipeWire and the bus;
 /// - a login session's scope;
 /// - the user manager's own scope;
 /// - ClamShell's service.
