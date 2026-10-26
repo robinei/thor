@@ -324,7 +324,8 @@ mod tests {
         let t = 101 + 2 * GRACE;
         s.applied(Event::tick(t));
         assert!(s.session().paused("zelda-lttp"));
-        assert_eq!(show(&mut s, "zelda-lttp"), vec![freeze(&key, false)]);
+        // The pad goes to it, shown, after the event.
+        assert_eq!(show(&mut s, "zelda-lttp"), vec![freeze(&key, false), Effect::PadRoute(crate::PadRoute::Game)]);
         assert_eq!(s.session().top_window().map(|w| w.id), Some(3));
         // It is paused again after being hidden for the grace period anew. Quitting thaws it, so that it
         // can answer its window's closing.

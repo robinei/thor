@@ -157,14 +157,14 @@ pub fn launch(s: &mut State, id: &str) -> Instance {
     instance.unwrap()
 }
 
-/// Quit on entry `id`, as from its dock menu, with what it does at once.
+/// Quit on entry `id`, as from its dock menu, with what it does.
 pub fn quit(s: &mut State, id: &str) -> Vec<Effect> {
-    s.handle(Event::Entry(id.into(), EntryAct::Quit))
+    s.applied(Event::Entry(id.into(), EntryAct::Quit))
 }
 
 /// Force kill on entry `id`, with what it does.
 pub fn force_kill(s: &mut State, id: &str) -> Vec<Effect> {
-    s.handle(Event::Entry(id.into(), EntryAct::ForceKill))
+    s.applied(Event::Entry(id.into(), EntryAct::ForceKill))
 }
 
 /// Launches entry `id` again, as the dock's Open another does, with what that does at once.
@@ -174,9 +174,9 @@ pub fn launch_now(s: &mut State, id: &str) -> Vec<Effect> {
     out.effects
 }
 
-/// Shows running entry `id`, as a tap on its dock tile does, with what that does at once.
+/// Shows running entry `id`, as a tap on its dock tile does, with what that does.
 pub fn show(s: &mut State, id: &str) -> Vec<Effect> {
-    s.handle(Event::Entry(id.into(), EntryAct::Show))
+    s.applied(Event::Entry(id.into(), EntryAct::Show))
 }
 
 /// Setting up tests: what the tests reach in State past its events.

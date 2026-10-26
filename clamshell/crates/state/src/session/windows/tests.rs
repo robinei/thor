@@ -449,7 +449,8 @@ fn activating_a_program_reveals_its_bottom_window_without_moving_or_focusing_it(
     s.applied(Event::Device(DeviceKey::WindowDown));
     s.applied(Event::Device(DeviceKey::BottomView));
     assert!(!s.bottom().shows_windows(s.session()));
-    assert!(show(&mut s, "zelda-lttp").is_empty());
+    // Only the tab its window covers stops being watched.
+    assert_eq!(show(&mut s, "zelda-lttp"), vec![Effect::Watch(crate::Watch::Metrics, false)]);
     assert_eq!(s.session().keyboard_focus(), Some(7));
     assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(8));
