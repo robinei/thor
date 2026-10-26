@@ -15,7 +15,7 @@ pub fn get(url: &str, headers: &[&str]) -> Option<Vec<u8>> {
     for h in headers {
         config.push_str(&format!("header = {}\n", quoted(h)));
     }
-    let out = command::run("curl", &["-sfL", "--max-time", "30", "-A", "ClamShell", "-K", "-"], Some(config.as_bytes()), CURL_LIMIT)
+    let out = command::run("curl", &["-sfL", "--max-time", "30", "--max-filesize", "64M", "-A", "ClamShell", "-K", "-"], Some(config.as_bytes()), CURL_LIMIT)
         .inspect_err(|e| log::warn!("{}: {e}", shown(url)))
         .ok()?;
     if !out.status.success() {
