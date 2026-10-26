@@ -1,6 +1,6 @@
 use super::*;
 use crate::Compositor;
-use crate::DeviceKey;
+use crate::HardwareKey;
 use crate::Tab;
 use crate::bottom::notice::NoticeKind;
 use crate::effect::{Effect, Save};
@@ -37,8 +37,8 @@ fn emulator() -> State {
     s
 }
 
-fn key(s: &mut State, k: DeviceKey) -> Vec<Effect> {
-    s.applied(Event::Device(k))
+fn key(s: &mut State, k: HardwareKey) -> Vec<Effect> {
+    s.applied(Event::HardwareKey(k))
 }
 
 #[test]
@@ -47,7 +47,7 @@ fn a_programs_only_window_is_remembered_by_its_app_id_alone() {
     s.add_run(running("melonds", "melonds_1"), emu());
     s.observed(vec![win(2, GAME, "Page one")]);
     s.applied(crate::WindowEvent::Activate(2).into());
-    let fx = key(&mut s, DeviceKey::WindowDown);
+    let fx = key(&mut s, HardwareKey::WindowDown);
     let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: None };
     assert!(matches!(&fx[0], Effect::Save(Save::WindowRules(r)) if r.list() == [rule.clone()]), "{fx:?}");
     // A different title next time, such as a page or a command, still matches.
@@ -58,9 +58,9 @@ fn a_programs_only_window_is_remembered_by_its_app_id_alone() {
 fn a_window_moved_down_is_shown_there_and_remembered() {
     let mut s = emulator();
     // Nothing down: the windows' tab opens all the same, saying how to move one there.
-    assert_eq!(key(&mut s, DeviceKey::BottomView), vec![Effect::Watch(crate::Watch::Metrics, false)]);
+    assert_eq!(key(&mut s, HardwareKey::BottomView), vec![Effect::Watch(crate::Watch::Metrics, false)]);
     assert!(!s.bottom().shows_windows(s.session()));
-    let fx = key(&mut s, DeviceKey::WindowDown);
+    let fx = key(&mut s, HardwareKey::WindowDown);
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(2));
     assert_eq!(s.session().top_window().map(|w| w.id), Some(1));
     // The title is included, since the emulator has another window with the same app id.
@@ -69,10 +69,10 @@ fn a_window_moved_down_is_shown_there_and_remembered() {
     assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::BottomRule(true)));
     assert!(s.bottom().shows_windows(s.session()));
     // Moving up acts even when ClamShell's own view covers the bottom window.
-    key(&mut s, DeviceKey::BottomView);
+    key(&mut s, HardwareKey::BottomView);
     assert!(!s.bottom().shows_windows(s.session()));
     // Up moves it back to its group, forgets the rule, and shows ClamShell's view below.
-    let fx = key(&mut s, DeviceKey::WindowUp);
+    let fx = key(&mut s, HardwareKey::WindowUp);
     assert_eq!(s.session().place(2), Some(WindowPlace::Top(Some(&group_of(&emu())))));
     assert!(matches!(&fx[0], Effect::Save(Save::WindowRules(r)) if r.list().is_empty()), "{fx:?}");
     assert!(!s.bottom().shows_windows(s.session()), "none down: ClamShell's view");
@@ -81,7 +81,7 @@ fn a_window_moved_down_is_shown_there_and_remembered() {
 #[test]
 fn a_rule_sends_the_window_down_when_its_program_opens_it_again() {
     let mut s = emulator();
-    key(&mut s, DeviceKey::WindowDown);
+    key(&mut s, HardwareKey::WindowDown);
     let rules = s.session().window_rules().clone();
     // A fresh start with the rules. The game's windows open on top, and the one the rule names goes
     // down, once.
@@ -98,7 +98,7 @@ fn a_rule_sends_the_window_down_when_its_program_opens_it_again() {
     s.applied(Event::Units(vec![emu()]));
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(8));
     let mut s = emulator();
-    key(&mut s, DeviceKey::WindowDown);
+    key(&mut s, HardwareKey::WindowDown);
     // Another game's window with that title doesn't match the rule.
     s.add_run(running("other", "other_2"), LaunchUnit { key: "other_2".into(), secs: 5, n: 2 });
     s.observed(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom")]);
@@ -108,15 +108,15 @@ fn a_rule_sends_the_window_down_when_its_program_opens_it_again() {
 #[test]
 fn moving_another_window_down_swaps_the_single_bottom_slot() {
     let mut s = emulator();
-    key(&mut s, DeviceKey::WindowDown);
+    key(&mut s, HardwareKey::WindowDown);
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(2));
-    key(&mut s, DeviceKey::WindowDown);
+    key(&mut s, HardwareKey::WindowDown);
     assert_eq!(s.session().place(2), Some(WindowPlace::Top(Some(&group_of(&emu())))));
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(1));
     assert_eq!(s.session().top_window().map(|w| w.id), Some(2));
-    key(&mut s, DeviceKey::BottomView);
+    key(&mut s, HardwareKey::BottomView);
     assert!(!s.bottom().shows_windows(s.session()));
-    key(&mut s, DeviceKey::WindowUp);
+    key(&mut s, HardwareKey::WindowUp);
     assert_eq!(s.session().place(1), Some(WindowPlace::Top(Some(&group_of(&emu())))));
     assert_eq!(s.session().bottom_window(), None);
     assert!(!s.bottom().shows_windows(s.session()));
@@ -126,11 +126,11 @@ fn moving_another_window_down_swaps_the_single_bottom_slot() {
 #[test]
 fn the_windows_tab_shows_the_window_below_and_marks_one_hidden_by_another_tab() {
     let mut s = emulator();
-    key(&mut s, DeviceKey::WindowDown);
+    key(&mut s, HardwareKey::WindowDown);
     assert_eq!(s.bottom().tab(), Tab::Windows);
     assert_eq!(s.bottom().hidden_down(s.session()), None, "shown");
     // Home + right stick press goes back to the tab it came from: the window is then hidden there.
-    key(&mut s, DeviceKey::BottomView);
+    key(&mut s, HardwareKey::BottomView);
     assert_eq!(s.bottom().tab(), Tab::Sysinfo);
     assert_eq!(s.bottom().hidden_down(s.session()), Some(2), "ClamShell's view over it");
     // Its tab shows it again.
@@ -138,7 +138,7 @@ fn the_windows_tab_shows_the_window_below_and_marks_one_hidden_by_another_tab() 
     assert_eq!(fx, vec![Effect::Watch(crate::Watch::Metrics, false)], "the tab left isn't watched");
     assert!(s.bottom().shows_windows(s.session()));
     // With another program in front, its window below isn't marked as hidden.
-    key(&mut s, DeviceKey::BottomView);
+    key(&mut s, HardwareKey::BottomView);
     s.observed(vec![win(1, GAME, "Top"), win(2, GAME, "Bottom"), win(3, "clamshell-run-x_1-1-0.scope", "x")]);
     s.applied(crate::WindowEvent::Activate(3).into());
     assert_eq!(s.bottom().hidden_down(s.session()), None);
@@ -236,7 +236,7 @@ fn home_start_wakes_a_screen_dark_for_a_game() {
     s.applied(Event::tick(1000));
     crate::testkit::start(&mut s, "zelda-lttp");
     assert!(s.bottom().off());
-    assert_eq!(power(&key(&mut s, DeviceKey::BottomPower)), Some(true));
+    assert_eq!(power(&key(&mut s, HardwareKey::BottomPower)), Some(true));
     assert!(!s.bottom_dark() && !s.bottom().off());
     assert_eq!(power(&s.applied(Event::tick(1001))), None, "it stays on");
     assert!(!s.bottom().off());
@@ -246,7 +246,7 @@ fn home_start_wakes_a_screen_dark_for_a_game() {
 fn windows_moved_down_keep_it_on() {
     let mut s = emulator();
     on_battery(&mut s, true);
-    key(&mut s, DeviceKey::WindowDown);
+    key(&mut s, HardwareKey::WindowDown);
     s.observed(vec![win(1, GAME, "Top"), win(2, GAME, "Bottom")]);
     s.applied(Event::tick(1000));
     assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), None, "a window shown there");
@@ -257,9 +257,9 @@ fn home_start_brings_back_a_screen_off_by_hand_and_by_itself_at_once() {
     let mut s = state();
     on_battery(&mut s, true);
     s.applied(Event::tick(1000));
-    key(&mut s, DeviceKey::BottomPower);
+    key(&mut s, HardwareKey::BottomPower);
     s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER));
-    assert_eq!(power(&key(&mut s, DeviceKey::BottomPower)), Some(true), "one press");
+    assert_eq!(power(&key(&mut s, HardwareKey::BottomPower)), Some(true), "one press");
     assert!(!s.bottom().off(), "on, and not off by itself either");
 }
 
@@ -269,7 +269,7 @@ fn home_start_brings_back_a_screen_off_by_itself() {
     on_battery(&mut s, true);
     s.applied(Event::tick(1000));
     s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER));
-    assert_eq!(power(&key(&mut s, DeviceKey::BottomPower)), Some(true), "on, as a touch would");
+    assert_eq!(power(&key(&mut s, HardwareKey::BottomPower)), Some(true), "on, as a touch would");
     assert!(!s.bottom().off());
 }
 
@@ -294,7 +294,7 @@ fn the_bottom_screen_dims_untouched_and_lights_when_used() {
     assert!(!s.bottom().dimmed());
     // Windows moved there are watched without touching, so they are never dimmed.
     let mut s = emulator();
-    key(&mut s, DeviceKey::WindowDown);
+    key(&mut s, HardwareKey::WindowDown);
     s.observed(vec![win(1, GAME, "Top"), win(2, GAME, "Bottom")]);
     s.applied(Event::tick(5000));
     s.applied(Event::tick(5000 + 2 * DIM_AFTER));
@@ -305,10 +305,10 @@ fn the_bottom_screen_dims_untouched_and_lights_when_used() {
 fn the_bottom_screen_turns_off_and_on() {
     let mut s = emulator();
     let off = vec![Effect::Compositor(Compositor::Outputs { top: true, bottom: false }), Effect::Watch(crate::Watch::Metrics, false)];
-    assert_eq!(key(&mut s, DeviceKey::BottomPower), off, "nothing seen: not watched");
+    assert_eq!(key(&mut s, HardwareKey::BottomPower), off, "nothing seen: not watched");
     assert!(s.bottom().off());
     // A window moved down turns it on again.
-    let fx = key(&mut s, DeviceKey::WindowDown);
+    let fx = key(&mut s, HardwareKey::WindowDown);
     assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: true })), "{fx:?}");
     assert!(!s.bottom().off());
 }
@@ -317,9 +317,9 @@ fn the_bottom_screen_turns_off_and_on() {
 #[test]
 fn window_down_with_no_window_in_front_does_nothing() {
     let mut s = state();
-    assert_eq!(key(&mut s, DeviceKey::WindowDown), vec![], "no windows");
+    assert_eq!(key(&mut s, HardwareKey::WindowDown), vec![], "no windows");
     s.observed(vec![crate::testkit::win_of(2, "foot", &crate::testkit::launch_of("foot_1"))]);
-    assert_eq!(key(&mut s, DeviceKey::WindowDown), vec![], "shelf in front");
+    assert_eq!(key(&mut s, HardwareKey::WindowDown), vec![], "shelf in front");
     assert!(s.session().window_rules().list().is_empty());
 }
 
@@ -327,10 +327,10 @@ fn window_down_with_no_window_in_front_does_nothing() {
 #[test]
 fn a_window_moved_up_says_its_rule_is_forgotten() {
     let mut s = emulator();
-    key(&mut s, DeviceKey::WindowDown);
+    key(&mut s, HardwareKey::WindowDown);
     s.observed(vec![win(1, GAME, "Top"), win(2, GAME, "Bottom")]);
     s.applied(Event::tick(100));
-    key(&mut s, DeviceKey::WindowUp);
+    key(&mut s, HardwareKey::WindowUp);
     assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::BottomRule(false)));
 }
 
@@ -376,21 +376,21 @@ fn a_game_starting_lets_a_woken_screen_go_dark_again() {
 fn moving_a_window_down_from_another_tab_opens_the_windows_tab_with_the_screen_on() {
     let mut s = emulator();
     tap(&mut s, crate::Id::Tab(Tab::Settings));
-    key(&mut s, DeviceKey::BottomPower);
+    key(&mut s, HardwareKey::BottomPower);
     assert!(s.bottom().off());
-    let fx = key(&mut s, DeviceKey::WindowDown);
+    let fx = key(&mut s, HardwareKey::WindowDown);
     assert_eq!(s.bottom().tab(), Tab::Windows, "{fx:?}");
     assert!(!s.bottom().off(), "not moved to a dark panel");
     assert!(s.bottom().shows_windows(s.session()));
     // Back to the settings, where it was moved from.
-    key(&mut s, DeviceKey::BottomView);
+    key(&mut s, HardwareKey::BottomView);
     assert_eq!(s.bottom().tab(), Tab::Settings);
 }
 
 #[test]
 fn the_keyboard_doesnt_come_up_over_a_window_shown_below() {
     let mut s = emulator();
-    key(&mut s, DeviceKey::WindowDown);
+    key(&mut s, HardwareKey::WindowDown);
     s.observed(vec![win(1, GAME, "Top"), win(2, GAME, "Bottom")]);
     assert!(s.bottom().shows_windows(s.session()));
     s.applied(Event::TextInput(true));
@@ -405,9 +405,9 @@ fn the_keyboard_doesnt_come_up_over_a_window_shown_below() {
 #[test]
 fn the_windows_tab_with_nothing_below_shows_no_window() {
     let mut s = emulator();
-    key(&mut s, DeviceKey::BottomView);
+    key(&mut s, HardwareKey::BottomView);
     assert_eq!(s.bottom().tab(), Tab::Windows, "opened even with nothing below: it says how to move one");
     assert!(!s.bottom().shows_windows(s.session()));
-    key(&mut s, DeviceKey::BottomView);
+    key(&mut s, HardwareKey::BottomView);
     assert_eq!(s.bottom().tab(), Tab::Sysinfo);
 }

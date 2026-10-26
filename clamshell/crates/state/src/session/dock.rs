@@ -486,8 +486,8 @@ mod tests {
         long(&mut s, dock(0));
         assert_eq!(tap(&mut s, Id::Dock(DockId::ForceKill)), vec![Effect::EndRun { key, force: true }, closed()]);
         // Home with B closes the window in front; held, it quits the window's entry.
-        assert_eq!(s.applied(Event::Device(crate::DeviceKey::CloseWindow)), vec![Effect::Compositor(Compositor::Close(vec![5]))]);
-        assert_eq!(s.applied(Event::Device(crate::DeviceKey::Quit)), vec![Effect::Compositor(Compositor::Close(vec![5]))]);
+        assert_eq!(s.applied(Event::HardwareKey(crate::HardwareKey::CloseWindow)), vec![Effect::Compositor(Compositor::Close(vec![5]))]);
+        assert_eq!(s.applied(Event::HardwareKey(crate::HardwareKey::Quit)), vec![Effect::Compositor(Compositor::Close(vec![5]))]);
     }
 
     /// Back at the top of an entry's tray menu goes back to its own menu. Leaving the tab closes both.
@@ -555,14 +555,14 @@ mod tests {
 
     #[test]
     fn home_b_closes_the_bottom_screens_window_with_none_in_front_above() {
-        use crate::DeviceKey;
+        use crate::HardwareKey;
         let mut s = state();
         s.observed(vec![foot()]);
-        s.applied(Event::Device(DeviceKey::WindowDown));
+        s.applied(Event::HardwareKey(HardwareKey::WindowDown));
         assert!(s.bottom().shows_windows(s.session()));
-        assert_eq!(s.applied(Event::Device(DeviceKey::CloseWindow)), vec![Effect::Compositor(Compositor::Close(vec![foot().id]))]);
+        assert_eq!(s.applied(Event::HardwareKey(HardwareKey::CloseWindow)), vec![Effect::Compositor(Compositor::Close(vec![foot().id]))]);
         // With ClamShell's view on the bottom screen instead, there is nothing to close.
-        s.applied(Event::Device(DeviceKey::BottomView));
-        assert_eq!(s.applied(Event::Device(DeviceKey::CloseWindow)), vec![]);
+        s.applied(Event::HardwareKey(HardwareKey::BottomView));
+        assert_eq!(s.applied(Event::HardwareKey(HardwareKey::CloseWindow)), vec![]);
     }
 }

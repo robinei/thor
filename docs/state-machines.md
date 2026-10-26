@@ -338,7 +338,7 @@ routing, tab switching and bottom-slot swaps.
 Home + right stick press switches to the windows' tab and back; Home + Start controls bottom power; Home + R1
 takes a screenshot; Home + B closes or quits. Select and the D-pad don't move windows or switch the bottom
 view. Tests: `home_chords_use_the_right_stick_and_not_select_or_the_dpad`, and the B and R1 chord tests. The UI's overlay over the top screen's window draws the window arrows while Home is held
-(`Id::WindowArrow`); a press on one sends the same `Device` event as the pad's window keys, as it comes down.
+(`Id::WindowArrow`); a press on one sends the same `HardwareKey` event as the pad's window keys, as it comes down.
 
 ## Keymaps (keymap/)
 

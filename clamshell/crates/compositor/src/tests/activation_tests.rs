@@ -278,7 +278,7 @@ fn activating_a_window_below_gives_it_the_keyboard_and_leaves_it_below() {
             // `target` goes down to the second screen, and `origin` has the keyboard again.
             Step::Shown => {
                 server.core.handle(clamshell_state::WindowEvent::Activate(target).into());
-                server.core.handle(Event::Device(DeviceKey::WindowDown));
+                server.core.handle(Event::HardwareKey(HardwareKey::WindowDown));
                 server.core.handle(clamshell_state::WindowEvent::Activate(origin).into());
             }
             Step::Activated => {

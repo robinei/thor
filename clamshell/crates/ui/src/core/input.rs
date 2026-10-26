@@ -1,7 +1,7 @@
 //! Routes input, by the screen it is on, to the pure machines: presses, the wheel, pointer motion and
 //! releases, the pad and keys.
 
-use clamshell_state::DeviceKey;
+use clamshell_state::HardwareKey;
 use clamshell_state::{Event, Id, ListEvent, NotificationEvent, PadInput, PointerEvent, ShelfEvent, State};
 use xkeysym::Keysym;
 
@@ -50,8 +50,8 @@ impl Core {
         let Some(id) = found else { return false };
         match id {
             Id::WindowArrow { next } => {
-                let key = if next { DeviceKey::WindowNext } else { DeviceKey::WindowPrevious };
-                self.handle(Event::Device(key));
+                let key = if next { HardwareKey::WindowNext } else { HardwareKey::WindowPrevious };
+                self.handle(Event::HardwareKey(key));
             }
             Id::Notification { id, close: false } => self.handle(NotificationEvent::Tapped(id).into()),
             Id::Notification { id, close: true } => self.handle(NotificationEvent::Dismissed(id).into()),

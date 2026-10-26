@@ -66,7 +66,7 @@ fn draw_one(f: &mut Frame, n: &Notification, row: Rect, pad: f32, title: f32, sm
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
-    use clamshell_state::DeviceKey;
+    use clamshell_state::HardwareKey;
     use clamshell_state::{Event, Id, Init, Notification, NotificationEvent, NotificationId, State, Urgency};
 
     use crate::gfx::DrawCache;
@@ -111,7 +111,7 @@ mod tests {
         assert!(close.x >= row.x + row.w - 1.0 && (close.y - row.y).abs() < 1.0, "the close mark at the row's end: {close:?}");
         assert!(shown.targets[2].rect.y >= row.y + row.h - 1.0, "one under the other");
         // The bottom screen off by hand: nothing drawn, nothing to tap.
-        s.apply(Event::Device(DeviceKey::BottomPower), &mut Vec::new());
+        s.apply(Event::HardwareKey(HardwareKey::BottomPower), &mut Vec::new());
         let off = overlay(&s);
         assert!(off.targets.is_empty() && off.next.ink().is_empty());
     }

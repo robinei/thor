@@ -18,8 +18,8 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use clamshell_state::DeviceKey;
 use clamshell_state::Event;
+use clamshell_state::HardwareKey;
 use clamshell_state::idle::IdleEvent;
 use evdev::raw_stream::RawDevice;
 use evdev::{AbsoluteAxisCode, EventType, KeyCode, PropType, SwitchCode, SynchronizationCode};
@@ -103,17 +103,17 @@ impl Watched {
 }
 
 /// A hardware key's meaning, if `raw` is one pressed or held. Holding it repeats.
-fn device_key(raw: Raw) -> Option<DeviceKey> {
+fn device_key(raw: Raw) -> Option<HardwareKey> {
     let (key, press) = raw.as_key()?;
     if !press.held() {
         return None;
     }
     Some(match key {
-        KeyCode::KEY_VOLUMEUP => DeviceKey::VolumeUp,
-        KeyCode::KEY_VOLUMEDOWN => DeviceKey::VolumeDown,
-        KeyCode::KEY_MUTE if press == Press::Down => DeviceKey::Mute,
-        KeyCode::KEY_BRIGHTNESSUP => DeviceKey::BrightnessUp,
-        KeyCode::KEY_BRIGHTNESSDOWN => DeviceKey::BrightnessDown,
+        KeyCode::KEY_VOLUMEUP => HardwareKey::VolumeUp,
+        KeyCode::KEY_VOLUMEDOWN => HardwareKey::VolumeDown,
+        KeyCode::KEY_MUTE if press == Press::Down => HardwareKey::Mute,
+        KeyCode::KEY_BRIGHTNESSUP => HardwareKey::BrightnessUp,
+        KeyCode::KEY_BRIGHTNESSDOWN => HardwareKey::BrightnessDown,
         _ => return None,
     })
 }
@@ -200,7 +200,7 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
             true
         });
         for key in keys {
-            sink.send(Event::Device(key))?;
+            sink.send(Event::HardwareKey(key))?;
         }
         if input && reported.is_none_or(|t| t.elapsed() >= ACTIVITY_EVERY) {
             reported = Some(Instant::now());
@@ -252,8 +252,8 @@ mod tests {
     #[test]
     fn hardware_keys_and_their_presses() {
         let key = |code: KeyCode, press: Press| Raw::key(code, press);
-        assert_eq!(device_key(key(KeyCode::KEY_VOLUMEUP, Press::Down)), Some(DeviceKey::VolumeUp));
-        assert_eq!(device_key(key(KeyCode::KEY_VOLUMEDOWN, Press::Repeat)), Some(DeviceKey::VolumeDown), "held: repeats");
+        assert_eq!(device_key(key(KeyCode::KEY_VOLUMEUP, Press::Down)), Some(HardwareKey::VolumeUp));
+        assert_eq!(device_key(key(KeyCode::KEY_VOLUMEDOWN, Press::Repeat)), Some(HardwareKey::VolumeDown), "held: repeats");
         assert_eq!(device_key(key(KeyCode::KEY_VOLUMEUP, Press::Up)), None);
         assert_eq!(device_key(key(KeyCode::KEY_MUTE, Press::Repeat)), None, "mute toggles once");
         assert_eq!(device_key(key(KeyCode::KEY_A, Press::Down)), None);

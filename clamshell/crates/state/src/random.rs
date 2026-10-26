@@ -18,7 +18,7 @@ use crate::Compositor;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::DeviceKey;
+use crate::HardwareKey;
 use crate::bottom::keyboard::{KeyPos, slot};
 use crate::idle::{IdleEvent, Stage};
 use crate::keymap::{Button, Input};
@@ -595,22 +595,22 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
         // The device's keys and buttons.
         83..=86 => {
             let keys = [
-                DeviceKey::VolumeUp,
-                DeviceKey::VolumeDown,
-                DeviceKey::BrightnessUp,
-                DeviceKey::BrightnessDown,
-                DeviceKey::Mute,
-                DeviceKey::Screenshot,
-                DeviceKey::BottomView,
-                DeviceKey::CloseWindow,
-                DeviceKey::Quit,
-                DeviceKey::BottomPower,
-                DeviceKey::WindowDown,
-                DeviceKey::WindowUp,
-                DeviceKey::WindowPrevious,
-                DeviceKey::WindowNext,
+                HardwareKey::VolumeUp,
+                HardwareKey::VolumeDown,
+                HardwareKey::BrightnessUp,
+                HardwareKey::BrightnessDown,
+                HardwareKey::Mute,
+                HardwareKey::Screenshot,
+                HardwareKey::BottomView,
+                HardwareKey::CloseWindow,
+                HardwareKey::Quit,
+                HardwareKey::BottomPower,
+                HardwareKey::WindowDown,
+                HardwareKey::WindowUp,
+                HardwareKey::WindowPrevious,
+                HardwareKey::WindowNext,
             ];
-            Event::Device(*rng.pick(&keys)?)
+            Event::HardwareKey(*rng.pick(&keys)?)
         }
         87..=89 => match rng.below(5) {
             0 => Event::Home,
@@ -1090,7 +1090,7 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
                     sent.ended.retain(|k| *k != r.key);
                 }
             }
-            Event::Device(DeviceKey::Quit)
+            Event::HardwareKey(HardwareKey::Quit)
             | Event::Pointer(PointerEvent::Activate(Id::Dock(DockId::Quit)) | PointerEvent::LongPress(Id::Dock(DockId::Quit))) => sent.ended.clear(),
             _ => {}
         }

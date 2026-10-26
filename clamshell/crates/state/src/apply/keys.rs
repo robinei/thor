@@ -7,7 +7,7 @@ use crate::{Compositor, Control, Effect, Level, State};
 
 /// A hardware key, or the same key requested through the control pipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum DeviceKey {
+pub enum HardwareKey {
     VolumeUp,
     VolumeDown,
     Mute,
@@ -36,33 +36,33 @@ pub enum DeviceKey {
 impl State {
     /// A hardware key. A level key steps the level and shows it. The others take a screenshot or run
     /// their Home combination.
-    pub(crate) fn on_device_key(&mut self, key: DeviceKey, out: &mut Out) {
+    pub(crate) fn on_hardware_key(&mut self, key: HardwareKey, out: &mut Out) {
         let (level, direction) = match key {
-            DeviceKey::VolumeUp => (Level::Volume, 1),
-            DeviceKey::VolumeDown => (Level::Volume, -1),
-            DeviceKey::BrightnessUp => (Level::Brightness, 1),
-            DeviceKey::BrightnessDown => (Level::Brightness, -1),
+            HardwareKey::VolumeUp => (Level::Volume, 1),
+            HardwareKey::VolumeDown => (Level::Volume, -1),
+            HardwareKey::BrightnessUp => (Level::Brightness, 1),
+            HardwareKey::BrightnessDown => (Level::Brightness, -1),
             // The level is shown only when the mute changed.
-            DeviceKey::Mute => {
+            HardwareKey::Mute => {
                 if self.levels.toggle_mute(out) {
                     self.bottom.notice_mut().show(NoticeKind::Level(Control::Volume), self.clock.mono());
                 }
                 return;
             }
-            DeviceKey::Screenshot => return out.effects.push(Effect::Compositor(Compositor::Screenshot)),
-            DeviceKey::BottomView => return self.choose_tab(self.bottom.view_toggled()),
-            DeviceKey::CloseWindow => return self.session.close_front_window(self.bottom.shows_windows(&self.session), out),
-            DeviceKey::Quit => return self.session.quit_front(self.bottom.shows_windows(&self.session), out),
-            DeviceKey::BottomPower => return self.bottom.toggle_power(self.power(), self.clock.mono()),
-            DeviceKey::WindowDown => {
+            HardwareKey::Screenshot => return out.effects.push(Effect::Compositor(Compositor::Screenshot)),
+            HardwareKey::BottomView => return self.choose_tab(self.bottom.view_toggled()),
+            HardwareKey::CloseWindow => return self.session.close_front_window(self.bottom.shows_windows(&self.session), out),
+            HardwareKey::Quit => return self.session.quit_front(self.bottom.shows_windows(&self.session), out),
+            HardwareKey::BottomPower => return self.bottom.toggle_power(self.power(), self.clock.mono()),
+            HardwareKey::WindowDown => {
                 if self.session.window_down(self.bottom.notice_mut(), self.clock.mono(), out) {
                     self.bottom.show_below();
                 }
                 return;
             }
-            DeviceKey::WindowUp => return self.session.window_up(self.bottom.notice_mut(), self.clock.mono(), out),
-            DeviceKey::WindowPrevious => return self.session.step_window(false),
-            DeviceKey::WindowNext => return self.session.step_window(true),
+            HardwareKey::WindowUp => return self.session.window_up(self.bottom.notice_mut(), self.clock.mono(), out),
+            HardwareKey::WindowPrevious => return self.session.step_window(false),
+            HardwareKey::WindowNext => return self.session.step_window(true),
         };
         let control = if level == Level::Volume { Control::Volume } else { Control::Brightness };
         self.bottom.notice_mut().show(NoticeKind::Level(control), self.clock.mono());
@@ -87,10 +87,10 @@ mod tests {
         let mut s = state();
         s.applied(Event::tick(100));
         s.applied(Reading::Status(Status { volume: Some(50), brightness: Some(40), ..Status::default() }).into());
-        assert_eq!(s.applied(Event::Device(DeviceKey::VolumeUp)), vec![Effect::Sound(Sound::Volume(55))]);
+        assert_eq!(s.applied(Event::HardwareKey(HardwareKey::VolumeUp)), vec![Effect::Sound(Sound::Volume(55))]);
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::Level(Control::Volume)));
-        assert!(matches!(s.applied(Event::Device(DeviceKey::BrightnessDown)).as_slice(), [Effect::Brightness { level: 35, .. }]));
-        assert_eq!(s.applied(Event::Device(DeviceKey::Mute)), vec![Effect::Sound(Sound::Mute(true))]);
+        assert!(matches!(s.applied(Event::HardwareKey(HardwareKey::BrightnessDown)).as_slice(), [Effect::Brightness { level: 35, .. }]));
+        assert_eq!(s.applied(Event::HardwareKey(HardwareKey::Mute)), vec![Effect::Sound(Sound::Mute(true))]);
         s.applied(Event::tick(101));
         assert!(s.bottom().notice().is_some());
         s.applied(Event::tick(102));
@@ -101,17 +101,17 @@ mod tests {
     fn the_mute_key_shows_the_level_only_when_it_changes_something() {
         let mut s = state();
         s.applied(Event::tick(100));
-        assert_eq!(s.applied(Event::Device(DeviceKey::Mute)), vec![], "the volume unknown");
+        assert_eq!(s.applied(Event::HardwareKey(HardwareKey::Mute)), vec![], "the volume unknown");
         assert!(s.bottom().notice().is_none());
         s.applied(Reading::Status(Status { volume: Some(50), ..Status::default() }).into());
-        assert_eq!(s.applied(Event::Device(DeviceKey::Mute)), vec![Effect::Sound(Sound::Mute(true))]);
+        assert_eq!(s.applied(Event::HardwareKey(HardwareKey::Mute)), vec![Effect::Sound(Sound::Mute(true))]);
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::Level(Control::Volume)));
     }
 
     #[test]
     fn a_screenshot_is_asked_for_and_its_result_shown() {
         let mut s = state();
-        assert_eq!(s.applied(Event::Device(DeviceKey::Screenshot)), vec![Effect::Compositor(Compositor::Screenshot)]);
+        assert_eq!(s.applied(Event::HardwareKey(HardwareKey::Screenshot)), vec![Effect::Compositor(Compositor::Screenshot)]);
         s.applied(Event::Screenshot(Ok("/home/thor/Pictures/Screenshots/a.png".into())));
         assert!(matches!(s.bottom().notice().map(|n| &n.what), Some(NoticeKind::Screenshot(Ok(_)))));
     }

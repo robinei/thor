@@ -1,5 +1,5 @@
 use super::*;
-use crate::DeviceKey;
+use crate::HardwareKey;
 use crate::testkit::*;
 use crate::{Effect, Event};
 
@@ -121,8 +121,8 @@ fn activation_selects_the_window_on_its_screen() {
     let mut s = state();
     s.observed(vec![win_of(7, "test", &launch_of("one")), win_of(8, "test", &launch_of("two"))]);
     s.applied(WindowEvent::Activate(8).into());
-    s.applied(Event::Device(DeviceKey::WindowDown));
-    s.applied(Event::Device(DeviceKey::BottomView));
+    s.applied(Event::HardwareKey(HardwareKey::WindowDown));
+    s.applied(Event::HardwareKey(HardwareKey::BottomView));
     assert_eq!(s.applied(WindowEvent::Activate(7).into()), vec![Effect::PadRoute(crate::PadRoute::Game)]);
     assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
     assert_eq!(s.applied(WindowEvent::Activate(8).into()), vec![Effect::Watch(crate::Watch::Metrics, false), Effect::PadActivity(true)]);
@@ -136,7 +136,7 @@ fn activation_selects_the_window_on_its_screen() {
 fn top_and_bottom(s: &mut crate::State) {
     s.observed(vec![win_of(7, "top", &launch_of("top")), win_of(8, "bottom", &launch_of("bottom"))]);
     s.applied(WindowEvent::Activate(8).into());
-    s.applied(Event::Device(DeviceKey::WindowDown));
+    s.applied(Event::HardwareKey(HardwareKey::WindowDown));
     s.applied(WindowEvent::Activate(7).into());
 }
 
@@ -255,7 +255,7 @@ fn stale_identity_facts_cannot_undo_a_placement() {
     let unit = launch(&mut s, "zelda-lttp");
     let before = win_of(7, "game", &unit);
     s.applied(WindowEvent::Opened(before.clone()).into());
-    s.applied(Event::Device(DeviceKey::WindowDown));
+    s.applied(Event::HardwareKey(HardwareKey::WindowDown));
     let identity = WindowFacts { pids: vec![100, 50], ..before.clone() };
     assert!(s.applied(WindowEvent::Changed(identity).into()).is_empty());
     let window = s.session().window(7);
@@ -301,7 +301,7 @@ fn a_dialog_of_a_window_below_shows_on_top_while_its_parent_stays_below() {
     let mut s = state();
     let unit = launch(&mut s, "zelda-lttp");
     s.applied(WindowEvent::Opened(win_of(7, "game", &unit)).into());
-    s.applied(Event::Device(DeviceKey::WindowDown));
+    s.applied(Event::HardwareKey(HardwareKey::WindowDown));
     let dialog = WindowFacts { parent: Some(7), ..win(8, "dialog") };
     s.applied(WindowEvent::Opened(dialog).into());
     assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
@@ -335,7 +335,7 @@ fn touching_a_home_arrow_consumes_the_release_but_direct_home_still_shows_shelf(
     s.observed(vec![win_of(7, "one", &one), win_of(8, "one", &one)]);
     s.applied(WindowEvent::Activate(7).into());
     s.applied(Event::HomeHeld(true));
-    assert!(s.applied(Event::Device(DeviceKey::WindowNext)).is_empty());
+    assert!(s.applied(Event::HardwareKey(HardwareKey::WindowNext)).is_empty());
     s.applied(Event::HomeHeld(false));
     assert!(s.applied(Event::HomeTap).is_empty());
     assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
@@ -384,7 +384,7 @@ fn remembering_a_bottom_rule_does_not_move_existing_siblings_of_other_launches()
     s.applied(Event::Units(vec![unit.clone(), another.clone()]));
     s.observed(vec![win_of(7, "foot", &unit), win_of(8, "foot", &another)]);
     s.applied(WindowEvent::Activate(7).into());
-    s.applied(Event::Device(DeviceKey::WindowDown));
+    s.applied(Event::HardwareKey(HardwareKey::WindowDown));
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
     assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
     // A later matching window does use that rule and displaces the bottom occupant.
@@ -400,9 +400,9 @@ fn displacing_another_programs_bottom_window_does_not_activate_it() {
     let (one, two) = (launch_of("one"), launch_of("two"));
     s.observed(vec![win_of(7, "one", &one), win_of(8, "two", &two), win_of(9, "one", &one)]);
     s.applied(WindowEvent::Activate(8).into());
-    s.applied(Event::Device(DeviceKey::WindowDown));
+    s.applied(Event::HardwareKey(HardwareKey::WindowDown));
     s.applied(WindowEvent::Activate(7).into());
-    s.applied(Event::Device(DeviceKey::WindowDown));
+    s.applied(Event::HardwareKey(HardwareKey::WindowDown));
     // The returned foreign program receives no focus.
     assert_eq!(s.session().place(8), Some(WindowPlace::Top(Some(&group_of(&two)))));
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
@@ -417,13 +417,13 @@ fn top_window_switching_wraps_within_the_program_and_skips_the_bottom_slot() {
     s.observed(vec![win_of(7, "one", &one), win_of(8, "one", &one), win_of(9, "other", &launch_of("other"))]);
     s.applied(WindowEvent::Activate(7).into());
     assert!(s.session().has_other_top_window());
-    for (action, id) in [(DeviceKey::WindowNext, 8), (DeviceKey::WindowNext, 7), (DeviceKey::WindowPrevious, 8)] {
-        assert!(s.applied(Event::Device(action)).is_empty());
+    for (action, id) in [(HardwareKey::WindowNext, 8), (HardwareKey::WindowNext, 7), (HardwareKey::WindowPrevious, 8)] {
+        assert!(s.applied(Event::HardwareKey(action)).is_empty());
         assert_eq!(s.session().top_window().map(|w| w.id), Some(id));
     }
-    s.applied(Event::Device(DeviceKey::WindowDown));
+    s.applied(Event::HardwareKey(HardwareKey::WindowDown));
     assert!(!s.session().has_other_top_window());
-    assert!(s.applied(Event::Device(DeviceKey::WindowNext)).is_empty());
+    assert!(s.applied(Event::HardwareKey(HardwareKey::WindowNext)).is_empty());
     assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(8));
 }
@@ -451,8 +451,8 @@ fn activating_a_program_reveals_its_bottom_window_without_moving_or_focusing_it(
     let unit = launch(&mut s, "zelda-lttp");
     s.observed(vec![win_of(7, "game", &unit), win_of(8, "second", &unit)]);
     s.applied(WindowEvent::Activate(8).into());
-    s.applied(Event::Device(DeviceKey::WindowDown));
-    s.applied(Event::Device(DeviceKey::BottomView));
+    s.applied(Event::HardwareKey(HardwareKey::WindowDown));
+    s.applied(Event::HardwareKey(HardwareKey::BottomView));
     assert!(!s.bottom().shows_windows(s.session()));
     // Only the tab its window covers stops being watched.
     assert_eq!(show(&mut s, "zelda-lttp"), vec![Effect::Watch(crate::Watch::Metrics, false)]);
@@ -472,7 +472,7 @@ fn moving_the_top_window_does_not_require_keyboard_focus_there() {
     top_and_bottom(&mut s);
     s.applied(WindowEvent::KeyboardFocus(Some(8)).into());
     assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
-    s.applied(Event::Device(DeviceKey::WindowDown));
+    s.applied(Event::HardwareKey(HardwareKey::WindowDown));
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
     assert_eq!(s.session().place(8), Some(WindowPlace::Top(Some(&group_of(&launch_of("bottom"))))));
     assert!(s.session().shelf_in_front());

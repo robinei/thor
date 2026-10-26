@@ -5,7 +5,7 @@
 use crate::bottom::touch::Pointing;
 use std::sync::Arc;
 
-use crate::DeviceKey;
+use crate::HardwareKey;
 use crate::id::Id;
 use crate::idle::IdleEvent;
 use crate::kit::list::ItemKey;
@@ -105,7 +105,7 @@ pub enum Event {
     Idle(IdleEvent),
     /// A hardware key, such as the device's buttons or the pad's Home with RB, or the same key sent by
     /// `clamshell ctl`.
-    Device(DeviceKey),
+    HardwareKey(HardwareKey),
     /// The requested screenshot was taken, with its file, or failed, with the reason.
     Screenshot(Result<String, String>),
     /// Dump recent in-process compositor window inputs for diagnosis and replay.

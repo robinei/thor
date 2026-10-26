@@ -5,7 +5,7 @@
 //! target there. Touch continues in `touch`, the pointer's capture in `pointer`.
 
 use crate::server::Server;
-use clamshell_state::{DeviceKey, Event as StateEvent, WindowEvent};
+use clamshell_state::{Event as StateEvent, HardwareKey, WindowEvent};
 use clamshell_ui::{End, Screen, Source};
 use smithay::{
     backend::input::{
@@ -97,8 +97,8 @@ impl Server {
                             return FilterResult::Intercept(());
                         }
                         let action = match sym {
-                            Keysym::F11 => Some(StateEvent::Device(DeviceKey::WindowDown)),
-                            Keysym::F10 => Some(StateEvent::Device(DeviceKey::WindowUp)),
+                            Keysym::F11 => Some(StateEvent::HardwareKey(HardwareKey::WindowDown)),
+                            Keysym::F10 => Some(StateEvent::HardwareKey(HardwareKey::WindowUp)),
                             _ => None,
                         };
                         if let Some(action) = action {

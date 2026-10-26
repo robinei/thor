@@ -5,7 +5,7 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
-use clamshell_state::{DeviceKey, Event, State, WindowEvent};
+use clamshell_state::{Event, HardwareKey, State, WindowEvent};
 use serde::{Deserialize, Serialize};
 
 const CAPACITY: usize = 256;
@@ -18,7 +18,7 @@ pub enum Input {
     HomeTap,
     HomeHeld(bool),
     PadActive,
-    Device(DeviceKey),
+    Device(HardwareKey),
 }
 impl Input {
     fn capture(event: &Event, state: &State) -> Option<Self> {
@@ -29,14 +29,14 @@ impl Input {
             Event::HomeTap => Self::HomeTap,
             Event::HomeHeld(held) => Self::HomeHeld(*held),
             Event::PadActive if state.session().top_window().is_some_and(|w| Some(w.id) != state.session().keyboard_focus()) => Self::PadActive,
-            Event::Device(
-                key @ (DeviceKey::WindowDown
-                | DeviceKey::WindowUp
-                | DeviceKey::WindowPrevious
-                | DeviceKey::WindowNext
-                | DeviceKey::CloseWindow
-                | DeviceKey::Quit
-                | DeviceKey::BottomView),
+            Event::HardwareKey(
+                key @ (HardwareKey::WindowDown
+                | HardwareKey::WindowUp
+                | HardwareKey::WindowPrevious
+                | HardwareKey::WindowNext
+                | HardwareKey::CloseWindow
+                | HardwareKey::Quit
+                | HardwareKey::BottomView),
             ) => Self::Device(*key),
             _ => return None,
         })
@@ -49,7 +49,7 @@ impl Input {
             Self::HomeTap => Event::HomeTap,
             Self::HomeHeld(held) => Event::HomeHeld(held),
             Self::PadActive => Event::PadActive,
-            Self::Device(key) => Event::Device(key),
+            Self::Device(key) => Event::HardwareKey(key),
         }
     }
 }
@@ -191,8 +191,8 @@ mod tests {
         core.handle(Event::Tick { unix_secs: 1000, mono_secs: 10 });
         let window = WindowFacts { id: 1, app_id: "trace-test".into(), ..WindowFacts::default() };
         core.handle(Event::WindowBatch(vec![WindowEvent::Opened(window), WindowEvent::Title { window: 1, title: "recorded".into() }]));
-        core.handle(Event::Device(DeviceKey::WindowDown));
-        core.handle(Event::Device(DeviceKey::WindowUp));
+        core.handle(Event::HardwareKey(HardwareKey::WindowDown));
+        core.handle(Event::HardwareKey(HardwareKey::WindowUp));
         core.handle(Event::Home);
         core.handle(WindowEvent::Activate(1).into());
         let recording = ring.borrow().snapshot(core.state());

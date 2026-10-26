@@ -150,7 +150,7 @@ fn home_chords_use_the_right_stick_and_not_select_or_the_dpad() {
         r.event(key(code, Press::Up), now, &mut out);
     }
     r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
-    assert_eq!(actions(&out), vec![Event::Device(DeviceKey::BottomView), Event::Device(DeviceKey::BottomPower)]);
+    assert_eq!(actions(&out), vec![Event::HardwareKey(HardwareKey::BottomView), Event::HardwareKey(HardwareKey::BottomPower)]);
     assert!(!out.pad.iter().any(|raw| {
         raw.as_key().is_some_and(|(key, _)| matches!(key, KeyCode::BTN_SELECT | KeyCode::BTN_THUMBR | KeyCode::BTN_DPAD_UP | KeyCode::BTN_DPAD_DOWN))
     }));
@@ -167,7 +167,7 @@ fn home_with_b_closes_the_window_held_quits_and_the_game_sees_no_b() {
     assert_eq!(r.tick(now, &mut out), Some(now + QUIT_HOLD), "ticked at the hold's end");
     r.event(key(KeyCode::BTN_EAST, Press::Up), now + QUIT_HOLD / 2, &mut out);
     r.event(key(KeyCode::BTN_MODE, Press::Up), now + QUIT_HOLD / 2, &mut out);
-    assert_eq!(actions(&out), vec![Event::Device(DeviceKey::CloseWindow)], "not Home as well");
+    assert_eq!(actions(&out), vec![Event::HardwareKey(HardwareKey::CloseWindow)], "not Home as well");
     // Holding quits once the hold is reached, and letting go after that does nothing more.
     out.events.clear();
     r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
@@ -175,7 +175,7 @@ fn home_with_b_closes_the_window_held_quits_and_the_game_sees_no_b() {
     r.tick(now + QUIT_HOLD, &mut out);
     r.event(key(KeyCode::BTN_EAST, Press::Up), now + QUIT_HOLD * 2, &mut out);
     r.event(key(KeyCode::BTN_MODE, Press::Up), now + QUIT_HOLD * 2, &mut out);
-    assert_eq!(actions(&out), vec![Event::Device(DeviceKey::Quit)]);
+    assert_eq!(actions(&out), vec![Event::HardwareKey(HardwareKey::Quit)]);
     assert!(!b(&out), "the game saw no B: {:?}", out.pad);
 }
 
@@ -187,7 +187,7 @@ fn home_with_rb_is_a_screenshot_and_the_game_sees_neither() {
     r.event(key(KeyCode::BTN_TR, Press::Down), now, &mut out);
     r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
     r.event(key(KeyCode::BTN_TR, Press::Up), now, &mut out);
-    assert_eq!(actions(&out), vec![Event::Device(DeviceKey::Screenshot)], "not Home as well");
+    assert_eq!(actions(&out), vec![Event::HardwareKey(HardwareKey::Screenshot)], "not Home as well");
     assert!(out.pad.is_empty(), "RB stays ClamShell's: {:?}", out.pad);
     // RB on its own is the game's again.
     r.event(key(KeyCode::BTN_TR, Press::Down), now, &mut out);
@@ -325,7 +325,7 @@ fn home_flicks_once_and_neutralises_the_games_stick_until_it_returns() {
     for value in [32000, 0, -30000, -32000, 10000, -30000, 0, 30000] {
         r.event(Raw::abs(AbsoluteAxisCode::ABS_RX, value), now, &mut out);
     }
-    assert_eq!(out.events, vec![Event::HomeHeld(true), Event::Device(DeviceKey::WindowPrevious), Event::Device(DeviceKey::WindowNext)]);
+    assert_eq!(out.events, vec![Event::HomeHeld(true), Event::HardwareKey(HardwareKey::WindowPrevious), Event::HardwareKey(HardwareKey::WindowNext)]);
     assert!(!out.pad.iter().any(|raw| raw.as_abs().is_some_and(|(axis, value)| axis == AbsoluteAxisCode::ABS_RX && value != 0)));
     r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
     r.event(Raw::abs(AbsoluteAxisCode::ABS_RX, 31000), now, &mut out);

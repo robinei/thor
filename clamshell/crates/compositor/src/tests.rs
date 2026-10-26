@@ -8,7 +8,7 @@ use std::os::unix::net::UnixStream;
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
-use clamshell_state::{DeviceKey, Event, Init, State, session::windows::WindowPlace};
+use clamshell_state::{Event, HardwareKey, Init, State, session::windows::WindowPlace};
 use clamshell_ui::Config;
 use smithay::reexports::{
     wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base},
@@ -352,7 +352,7 @@ fn a_window_moved_down_that_ignores_its_configure_is_scaled_at_once() {
     });
     let checked = client.serve(&mut display, &mut server, Server::frame, |display, server, configured| {
         let Some(size) = configured else {
-            server.core.handle(Event::Device(DeviceKey::WindowDown));
+            server.core.handle(Event::HardwareKey(HardwareKey::WindowDown));
             server.frame();
             display.flush_clients().unwrap();
             return;
@@ -390,7 +390,7 @@ fn a_burst_of_titles_reaches_the_state_once_per_frame() {
     });
     let checked = client.serve(&mut display, &mut server, Server::frame, |_, server, renamed| {
         if !renamed {
-            server.core.handle(Event::Device(DeviceKey::WindowDown));
+            server.core.handle(Event::HardwareKey(HardwareKey::WindowDown));
             server.frame();
             return;
         }
@@ -432,7 +432,7 @@ fn an_unmapped_window_leaves_the_state_and_comes_back_on_top() {
         match step {
             Mapping::Mapped => {
                 id = Some(windows[0].id);
-                server.core.handle(Event::Device(DeviceKey::WindowDown));
+                server.core.handle(Event::HardwareKey(HardwareKey::WindowDown));
                 server.frame();
             }
             Mapping::Unmapped => {
@@ -478,7 +478,7 @@ fn a_dialog_of_a_window_below_shows_on_the_top_screen_at_its_fixed_size() {
     });
     let checked = client.serve(&mut display, &mut server, Server::frame, |_, server, configured| {
         let Some(size) = configured else {
-            server.core.handle(Event::Device(DeviceKey::WindowDown));
+            server.core.handle(Event::HardwareKey(HardwareKey::WindowDown));
             server.frame();
             return;
         };
@@ -599,7 +599,7 @@ fn touch_contacts_keep_independent_surfaces_and_native_coordinates() {
     let checked = client.serve(&mut display, &mut server, Server::frame, |_, server, ()| {
         let first = server.windows[0].id;
         let second = server.windows[1].id;
-        server.core.handle(Event::Device(DeviceKey::WindowDown));
+        server.core.handle(Event::HardwareKey(HardwareKey::WindowDown));
         server.core.handle(clamshell_state::WindowEvent::Activate(first).into());
         server.frame();
         let top = server.geometry(first).unwrap();
@@ -818,13 +818,13 @@ fn screenshots_are_consumed_by_the_host_instead_of_the_parent_capture_tool() {
     let effects = forwarded.clone();
     let (_display, mut server) = ServerBuilder::new().on_effect(move |effect| effects.borrow_mut().push(effect.clone())).started();
     forwarded.borrow_mut().clear();
-    server.core.handle(Event::Device(DeviceKey::Screenshot));
-    server.core.handle(Event::Device(DeviceKey::Screenshot));
+    server.core.handle(Event::HardwareKey(HardwareKey::Screenshot));
+    server.core.handle(Event::HardwareKey(HardwareKey::Screenshot));
     server.frame();
     assert!(std::mem::take(&mut server.screenshot_requested));
     assert!(!std::mem::take(&mut server.screenshot_requested), "several requests before a frame need one capture");
     assert!(!forwarded.borrow().iter().any(|effect| matches!(effect, clamshell_state::Effect::Compositor(Compositor::Screenshot))));
-    server.core.handle(Event::Device(DeviceKey::Screenshot));
+    server.core.handle(Event::HardwareKey(HardwareKey::Screenshot));
     server.frame();
     assert!(server.screenshot_requested, "a later frame can capture again");
 }

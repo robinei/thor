@@ -98,7 +98,7 @@ use sync::{Sent, Wanted};
 
 // What other crates use to talk to the state: the events and effects and what they carry, the ids, and
 // the groups the getters return.
-pub use apply::keys::DeviceKey;
+pub use apply::keys::HardwareKey;
 pub use clock::Clock;
 pub use effect::{Compositor, Effect, Save, ScreenshotPixels, Watch};
 pub use event::{EntryAct, Event, KeymapEvent, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide, Thread};
@@ -419,7 +419,7 @@ impl State {
             Event::Pointing(pointing) => self.bottom.point(pointing, out),
             Event::Resumed => self.resumed(),
             Event::Idle(event) => self.idle.heard(event, now),
-            Event::Device(key) => self.on_device_key(key, out),
+            Event::HardwareKey(key) => self.on_hardware_key(key, out),
             Event::BottomTouched => self.bottom.used(&self.session, &self.clock),
             Event::Frozen(keys) => self.session.found_frozen(keys),
             Event::Paste => self.bottom.paste(),

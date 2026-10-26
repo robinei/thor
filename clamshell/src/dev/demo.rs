@@ -54,7 +54,7 @@ pub fn window_below() -> Vec<Event> {
     let below = WindowFacts { title: BELOW.into(), ..window_of(10, "foot", &t2) };
     vec![
         Event::WindowBatch(vec![WindowEvent::Closed(5), WindowEvent::Closed(7), WindowEvent::Closed(9), WindowEvent::Opened(below)]),
-        Event::Device(clamshell_state::DeviceKey::BottomView),
+        Event::HardwareKey(clamshell_state::HardwareKey::BottomView),
     ]
 }
 

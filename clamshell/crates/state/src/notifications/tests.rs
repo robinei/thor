@@ -1,5 +1,5 @@
 use super::*;
-use crate::DeviceKey;
+use crate::HardwareKey;
 use crate::idle::{IdleEvent, Stage};
 use crate::settings::{BottomWhenIdle, Choice, Setting};
 use crate::testkit::{Applied, state};
@@ -58,12 +58,12 @@ fn notifications_are_held_newest_first_and_one_sent_again_replaces_its_own() {
 #[test]
 fn a_notification_waits_for_the_bottom_screen_and_then_shows_its_time() {
     let mut s = ticking();
-    s.applied(Event::Device(DeviceKey::BottomPower));
+    s.applied(Event::HardwareKey(HardwareKey::BottomPower));
     assert!(s.bottom().off());
     notify(&mut s, note(1, Urgency::Normal, -1));
     assert_eq!(s.notifications().expires_at(bus(1)), None, "waiting");
     assert_eq!(s.applied(Event::tick(1100)), [], "kept while the screen is off");
-    s.applied(Event::Device(DeviceKey::BottomPower));
+    s.applied(Event::HardwareKey(HardwareKey::BottomPower));
     assert_eq!(s.notifications().expires_at(bus(1)), Some(1100 + DEFAULT_SECS), "seen from now");
     s.applied(Event::tick(1104));
     assert_eq!(held(&s), [bus(1)]);
@@ -77,9 +77,9 @@ fn its_time_starts_again_when_the_screen_is_lit_again() {
     notify(&mut s, note(1, Urgency::Normal, 4000));
     assert_eq!(s.notifications().expires_at(bus(1)), Some(1004));
     s.applied(Event::tick(1002));
-    s.applied(Event::Device(DeviceKey::BottomPower));
+    s.applied(Event::HardwareKey(HardwareKey::BottomPower));
     assert_eq!(s.applied(Event::tick(1010)), [], "not seen, so not expired");
-    s.applied(Event::Device(DeviceKey::BottomPower));
+    s.applied(Event::HardwareKey(HardwareKey::BottomPower));
     assert_eq!(s.notifications().expires_at(bus(1)), Some(1014));
 }
 
@@ -158,7 +158,7 @@ fn past_the_most_the_oldest_is_closed() {
 fn a_critical_notification_wakes_the_screens_and_turns_the_bottom_screen_on() {
     let mut s = ticking();
     s.applied(Event::Idle(IdleEvent::Watching(true)));
-    s.applied(Event::Device(DeviceKey::BottomPower));
+    s.applied(Event::HardwareKey(HardwareKey::BottomPower));
     s.applied(Event::tick(1300));
     assert_eq!(s.idle().stage(), Stage::Off);
     assert_eq!(notify(&mut s, note(1, Urgency::Normal, -1)), [], "an ordinary one waits");

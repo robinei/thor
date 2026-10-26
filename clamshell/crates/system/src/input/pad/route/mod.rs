@@ -4,7 +4,7 @@
 //! events go in, and events for the virtual devices and the state come out, so switching routes is
 //! tested here. Whatever a mapping holds down is let go when the pad leaves it.
 
-use clamshell_state::DeviceKey;
+use clamshell_state::HardwareKey;
 use std::time::Instant;
 
 use clamshell_state::{Event, PadInput, PadRoute};
@@ -156,8 +156,8 @@ fn away(route: PadRoute) -> bool {
 
 /// Home held with one of these buttons gives ClamShell's system shortcut, and the game never sees the
 /// button. Directional flicks are recognised separately from normalised stick axes.
-const SYSTEM: [(KeyCode, DeviceKey); 3] =
-    [(KeyCode::BTN_TR, DeviceKey::Screenshot), (KeyCode::BTN_THUMBR, DeviceKey::BottomView), (KeyCode::BTN_START, DeviceKey::BottomPower)];
+const SYSTEM: [(KeyCode, HardwareKey); 3] =
+    [(KeyCode::BTN_TR, HardwareKey::Screenshot), (KeyCode::BTN_THUMBR, HardwareKey::BottomView), (KeyCode::BTN_START, HardwareKey::BottomPower)];
 
 /// Home with B: if B is let go before this, the window in front closes. If held this long, its program
 /// quits.
@@ -395,7 +395,7 @@ impl PadRouter {
                 if press == Press::Up {
                     self.taken.retain(|&k| k != code);
                     if code == KeyCode::BTN_EAST && self.closing.take().is_some() {
-                        out.events.push(Event::Device(DeviceKey::CloseWindow));
+                        out.events.push(Event::HardwareKey(HardwareKey::CloseWindow));
                     }
                     if code == BACK_KEY && self.home == Home::Guide {
                         self.guide(false, out);
@@ -425,12 +425,12 @@ impl PadRouter {
                 if held && let Some(direction) = self.flick.update([x, y]) {
                     self.home = Home::Held { combined: true };
                     let action = match direction {
-                        Dir::Left => DeviceKey::WindowPrevious,
-                        Dir::Right => DeviceKey::WindowNext,
-                        Dir::Up => DeviceKey::WindowUp,
-                        Dir::Down => DeviceKey::WindowDown,
+                        Dir::Left => HardwareKey::WindowPrevious,
+                        Dir::Right => HardwareKey::WindowNext,
+                        Dir::Up => HardwareKey::WindowUp,
+                        Dir::Down => HardwareKey::WindowDown,
                     };
-                    out.events.push(Event::Device(action));
+                    out.events.push(Event::HardwareKey(action));
                 }
                 return;
             }
@@ -444,7 +444,7 @@ impl PadRouter {
             Some((code, Press::Down)) if held && let Some(&(_, shortcut)) = SYSTEM.iter().find(|(k, _)| *k == code) => {
                 self.home = Home::Held { combined: true };
                 self.taken.push(code);
-                out.events.push(Event::Device(shortcut));
+                out.events.push(Event::HardwareKey(shortcut));
                 return;
             }
             // Any other button with Home held is Home's too. The game sees neither it nor its release.
@@ -534,7 +534,7 @@ impl PadRouter {
     pub(crate) fn tick(&mut self, now: Instant, out: &mut Out) -> Option<Instant> {
         if self.closing.is_some_and(|at| now >= at) {
             self.closing = None;
-            out.events.push(Event::Device(DeviceKey::Quit));
+            out.events.push(Event::HardwareKey(HardwareKey::Quit));
         }
         let next = match self.mapping(self.route) {
             Some(m) => m.tick(now, out),

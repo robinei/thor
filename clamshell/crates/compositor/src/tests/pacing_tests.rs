@@ -209,7 +209,7 @@ fn a_commit_is_noted_by_its_windows_screen() {
         match step {
             0 => {
                 assert_eq!(committed, Committed { screens: [true, false], elsewhere: false }, "on the top screen");
-                server.core.handle(Event::Device(DeviceKey::WindowDown));
+                server.core.handle(Event::HardwareKey(HardwareKey::WindowDown));
                 server.frame();
             }
             1 => assert_eq!(committed, Committed { screens: [false, true], elsewhere: false }, "moved to the second"),

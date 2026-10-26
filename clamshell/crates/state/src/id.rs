@@ -67,7 +67,7 @@ pub enum Id {
     Battery(BatteryId),
     /// An arrow at an edge of the main screen while Home is held: the previous window of the program shown
     /// there, or with `next` its next. The UI acts on it as it is pressed, with the same event as the pad's
-    /// (`DeviceKey::WindowPrevious`, `DeviceKey::WindowNext`), so it is never tapped.
+    /// (`HardwareKey::WindowPrevious`, `HardwareKey::WindowNext`), so it is never tapped.
     WindowArrow {
         next: bool,
     },

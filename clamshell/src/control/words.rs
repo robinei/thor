@@ -2,7 +2,7 @@
 //! the names of the pad buttons, keys, and keymap inputs and outputs that the commands take.
 
 use clamshell_state::Control;
-use clamshell_state::DeviceKey;
+use clamshell_state::HardwareKey;
 use clamshell_state::bottom::keyboard::{self, Key, Modifier, Named};
 use clamshell_state::keymap::{Actuation, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
 use clamshell_state::levels::Level;
@@ -22,8 +22,8 @@ pub(super) const SLIDE_WIDTH: f32 = 620.0;
 /// The number of steps a slide moves in.
 pub(super) const SLIDE_STEPS: u16 = 10;
 
-pub(super) fn device(key: DeviceKey) -> Result<Vec<Event>, ParseError> {
-    Ok(vec![Event::Device(key)])
+pub(super) fn hardware_key(key: HardwareKey) -> Result<Vec<Event>, ParseError> {
+    Ok(vec![Event::HardwareKey(key)])
 }
 
 /// Sets the level row to a value and lifts the finger.
@@ -34,24 +34,28 @@ pub(super) fn level(level: Level, value: &str) -> Result<Vec<Event>, ParseError>
 /// The commands. The targets of a tap or a long press are in [`TARGETS`], and `type TEXT` types the rest
 /// of the line as it is.
 pub const COMMANDS: &[Form<Vec<Event>>] = &[
-    form("volume up", "the volume key", |_| device(DeviceKey::VolumeUp)),
-    form("volume down", "the volume key", |_| device(DeviceKey::VolumeDown)),
-    form("volume mute", "mute", |_| device(DeviceKey::Mute)),
-    form("brightness up", "the brightness key", |_| device(DeviceKey::BrightnessUp)),
-    form("brightness down", "the brightness key", |_| device(DeviceKey::BrightnessDown)),
-    form("screenshot", "the screenshot key", |_| device(DeviceKey::Screenshot)),
-    form("bottom view", "Home + right stick press: the bottom screen shows ClamShell's view or the windows moved there", |_| device(DeviceKey::BottomView)),
-    form("bottom power", "Home+Start: the bottom screen off, or on", |_| device(DeviceKey::BottomPower)),
+    form("volume up", "the volume key", |_| hardware_key(HardwareKey::VolumeUp)),
+    form("volume down", "the volume key", |_| hardware_key(HardwareKey::VolumeDown)),
+    form("volume mute", "mute", |_| hardware_key(HardwareKey::Mute)),
+    form("brightness up", "the brightness key", |_| hardware_key(HardwareKey::BrightnessUp)),
+    form("brightness down", "the brightness key", |_| hardware_key(HardwareKey::BrightnessDown)),
+    form("screenshot", "the screenshot key", |_| hardware_key(HardwareKey::Screenshot)),
+    form("bottom view", "Home + right stick press: the bottom screen shows ClamShell's view or the windows moved there", |_| {
+        hardware_key(HardwareKey::BottomView)
+    }),
+    form("bottom power", "Home+Start: the bottom screen off, or on", |_| hardware_key(HardwareKey::BottomPower)),
     form("window events FILE", "dump the last 256 window inputs and the windows", |a| Ok(vec![Event::DumpWindowEvents(arg(a, 0).into())])),
     form("calibration rate HZ", "the main screen at HZ while the refresh rate calibration runs (its tool asks)", |a| {
         Ok(vec![Event::CalibrationRate(number(arg(a, 0))?)])
     }),
-    form("window down", "Home + right stick down: the window in front to the bottom screen (remembered for its program)", |_| device(DeviceKey::WindowDown)),
-    form("window up", "Home + right stick up: the bottom screen's window back up (forgotten)", |_| device(DeviceKey::WindowUp)),
-    form("window previous", "the program's previous window on top", |_| device(DeviceKey::WindowPrevious)),
-    form("window next", "the program's next window on top", |_| device(DeviceKey::WindowNext)),
-    form("window close", "Home+B: the window in front closes", |_| device(DeviceKey::CloseWindow)),
-    form("window quit", "Home+B held: the program in front quits (as its dock menu's Quit)", |_| device(DeviceKey::Quit)),
+    form("window down", "Home + right stick down: the window in front to the bottom screen (remembered for its program)", |_| {
+        hardware_key(HardwareKey::WindowDown)
+    }),
+    form("window up", "Home + right stick up: the bottom screen's window back up (forgotten)", |_| hardware_key(HardwareKey::WindowUp)),
+    form("window previous", "the program's previous window on top", |_| hardware_key(HardwareKey::WindowPrevious)),
+    form("window next", "the program's next window on top", |_| hardware_key(HardwareKey::WindowNext)),
+    form("window close", "Home+B: the window in front closes", |_| hardware_key(HardwareKey::CloseWindow)),
+    form("window quit", "Home+B held: the program in front quits (as its dock menu's Quit)", |_| hardware_key(HardwareKey::Quit)),
     form("home", "the Home button", |_| Ok(vec![Event::Home])),
     form("list N", "shelf's selection moved by N", |a| Ok(vec![ShelfEvent::ListStep(number(arg(a, 0))?).into()])),
     form("pin", "shelf's selected entry pinned to the dock, or unpinned (the pad's X)", |_| Ok(vec![ShelfEvent::TogglePin.into()])),
