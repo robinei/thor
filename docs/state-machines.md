@@ -505,13 +505,17 @@ for 0 or a critical one.
 
 Interactions: a critical notification wakes the screens as input does (`idle.own_input`) and turns the
 bottom screen on (`Bottom::light`: off by hand or by itself, or dark for a game), routed through
-`State::notify`; an ordinary one waits (tests `a_critical_notification_wakes_the_screens_and_turns_the_bottom_screen_on`,
-`a_critical_notification_lights_a_screen_dark_for_a_game`). A tap on one is input and a use of the bottom
-screen. Taps reach the state from the bottom screen's overlay as the press comes down
+`State::notify`; an ordinary one waits (tests
+`a_critical_notification_wakes_the_screens_and_turns_the_bottom_screen_on`,
+`a_critical_notification_lights_a_screen_dark_for_a_game`). A tap on one is input and a use of the
+bottom screen. Taps reach the state from the bottom screen's overlay as the press comes down
 (`Core::press_overlay`), not through the pointer's presses; the overlay draws them, and so offers them to
-touch, only while the bottom screen is lit (ui `the_newest_three_show_below_the_bar_each_with_its_close_mark`). What the bus thread does (the name, `Notify` answered with the id,
-`replaces_id`, the signals) is checked by its parsing tests and by the nested compositor test, which sends
-one with `gdbus` and closes it.
+touch, only while the bottom screen is lit (ui
+`the_newest_three_show_below_the_bar_each_with_its_close_mark`).
+
+What the bus thread does (the name, `Notify` answered with the id, `replaces_id`, the signals) is checked
+by its parsing tests, a live test by hand (`a_notify_call_is_answered_and_sent_on`), and the nested
+compositor test, which sends them with `gdbus`, closes one and taps another.
 
 ## Sync's resends (sync.rs)
 
