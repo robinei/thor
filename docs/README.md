@@ -42,5 +42,7 @@ Finished plans and reviews, kept for the reasons they record:
 - `history/state-review.md`
 - `history/compositor-mvp.md`
 - `history/review-2026-10-26.md`
+- `history/state-machines-notes.md`: the suspects of 2026-10-23, the decisions on them, and the notes
+  kept while the compositor was built, moved out of `state-machines.md`
 
 Their file and line references are as they were then.

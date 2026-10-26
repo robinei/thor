@@ -4,9 +4,9 @@ What each feature's state is, how it moves, how features interact, and what pins
 `AGENTS.md` asks that a change to a feature updates its part here in the same change.
 
 Notation: `state --event / condition--> state [effects]`. **Test:** the test that asserts the outcome
-(file in `crates/state/src`), or **GAP** (nothing asserts it). Suspected problems are numbered (S1, ...)
-and collected at the end. First written 2026-10-23 from three read-only passes over the code; the shelf
-pass confirmed its suspicions with probe tests in a scratch copy.
+(file in `crates/state/src` unless the area names another), or **GAP** (nothing asserts it). The problems
+found when this was first written (S1 to S51, all fixed), the decisions taken on them, and the notes kept
+while the compositor was built are in `history/state-machines-notes.md`.
 
 ## Session: launches (session/)
 
@@ -120,6 +120,25 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Running | ForceKill | Quitting(ended), so that nothing quits it again while it still runs (Quits when closed) | thaw, EndRun{force} or EndProcesses{force} | same; background `a_force_killed_entry_isnt_quit_again_by_quits_closed`, `force_kill_thaws_a_paused_entry_then_ends_it` |
 | not running | Quit / ForceKill | unchanged | nothing | running `quit_and_force_kill_of_an_entry_not_running_do_nothing` |
 
+### Steam's interface (system/launch/steam.rs, packages/thor-session)
+
+Steam is started in its controller interface, `-gamepadui`, every way it starts: its packaged desktop
+entry and steam:// links run `steam -gamepadui %U`, and a Steam game from shelf runs `steam -gamepadui
+-silent -applaunch ID`, as a launch of Steam's desktop entry when the client isn't running (with only
+`WAYLAND_DISPLAY` and `DISPLAY` from the game's environment), or handed to the running client; `-silent`
+keeps a cold start from showing the client's window.
+
+    no client --Launch(Steam game)--> the client started as Steam's own launch [the argv above]; the game's unit runs `clamshell --follow-steam ID`
+    client running --Launch(Steam game)--> the request handed to the client; the follower started
+
+The state's side is pinned by `steams_windows_open_behind_a_steam_games_launch`,
+`a_game_steam_started_is_followed_as_a_launch_beside_the_others`,
+`a_steam_game_shelf_started_ends_by_the_launcher_not_its_windows`,
+`a_steam_games_window_is_the_games_though_it_runs_in_steams_scope`,
+`a_steam_game_found_by_its_window_is_launched_not_found_as_a_program`, and the system's
+`a_steam_game_is_known_by_its_app_id`. The `-gamepadui` argument and the interface it gives are checked on
+the device.
+
 ### Front and Home
 
 | Trigger | Result | Test |
@@ -130,7 +149,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Home, shelf not in front | ShowShelf; cancel foreground launch intent | front `home_always_shows_shelf_and_repeated_home_stays_there` |
 | Home, shelf in front | stays; close Device view first if open | same; device `home_closes_the_device_view_first` |
 | WindowPrevious / WindowNext | wrap within the selected top program, skipping the bottom slot; absent/single/shelf do nothing | windows `top_window_switching_wraps_within_the_program_and_skips_the_bottom_slot` |
-| HomeHeld(bool) | remember button state for the future compositor's arrows; repeated values do nothing | windows `pad_activity_returns_keyboard_focus_to_top_without_moving_windows` |
+| HomeHeld(bool) | the button's state, by which the overlay draws the window arrows (with another top window); a new hold starts unused, so the HomeTap after a Home-held arrow is taken by it; repeated values do nothing | windows `pad_activity_returns_keyboard_focus_to_top_without_moving_windows` |
 | PadActive | keyboard focus returns to selected top content; placement stays | same |
 | settle: program in force | the focused top window's owner, else the kept one if it runs, else the last running | running `the_settings_follow_the_front`, `the_program_in_force_falls_back_to_the_last_started` |
 
@@ -144,7 +163,7 @@ State: `Pauses{unused, paused: Hidden | Held}`.
 | Paused(Hidden) | shown, no windows, quitting, setting changed | Running | Freeze off | background tests, `a_paused_game_set_to_run_hidden_is_thawed_at_once`; shown again as the front window closes, in the same event: tests `a_paused_game_shown_when_the_front_closes_is_thawed_at_once` |
 | any | Suspend | Held | ShowShelf if visible; Freeze on | background `a_suspended_entry_stays_frozen_…`; dock `the_menus_autostart_and_suspend` |
 | Held | shown after its windows were seen hidden (one suspended in view stays frozen while its window is still shown), Show, Quit, ForceKill | Running | Freeze off | same |
-| — | `Frozen(keys)` at start | Held (kept while the scope is listed, until its entry runs) | — | same; found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
+| — | `Frozen(keys)` at start | Held (kept while its unit is listed, until its entry runs) | — | same; found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
 | Running | set to quit when closed, seen, no windows | Quitting | as Quit | background `quits_closed_ends_once_…` |
 | runner | none shown, launching or starting for 10 s | runner paused | RunnerCommand(pause) | background `a_runner_paused_together…`, `a_runner_isnt_paused_while_a_launch_waits_for_its_unit` |
 
@@ -243,7 +262,7 @@ bottom screen to open the windows' tab and turn on (`Bottom::show_below`).
 | Home+Start: wake if off by itself (dark for a game too, which sets `woken` as a tap does), else toggle off | `the_bottom_screen_turns_off_and_on`, `home_start_brings_back_…`, `…off_by_hand_and_by_itself_at_once`, `home_start_wakes_a_screen_dark_for_a_game` |
 | settle: off by itself when on battery, not refreshing, not set to stay on, no windows shown, no editor, and dark in a game or untouched 4 min | `on_battery_the_untouched_…` and siblings; `a_refresh_calibration_or_an_editor_keeps_it_on` |
 | settle: dimmed after 60 s untouched, unless windows are shown | `the_bottom_screen_dims_untouched_and_lights_when_used` |
-| Wake tap sets `woken`; a game starting resets it | `dark_for_a_game_…`, `a_game_can_start_the_pad_mouse_…`, `a_game_starting_lets_a_woken_screen_go_dark_again`; touch or pad focus don't wake a dark screen (S16) |
+| Wake tap sets `woken`; a game starting resets it | `dark_for_a_game_…`, `a_game_can_start_the_pad_mouse_…`, `a_game_starting_lets_a_woken_screen_go_dark_again`; touch or pad focus don't wake a dark screen (kept by decision, S16 in the history notes) |
 
 ## Idle and sleep (device/idle.rs)
 
@@ -316,10 +335,9 @@ press before the other buttons' and its release after theirs
 past 4096 (`game_activity_is_an_axis_past_a_threshold`). The VM `pad_windows` check exercises real evdev
 routing, tab switching and bottom-slot swaps.
 
-Home + right stick press switches to the windows' tab and back; Home + Start controls bottom power; Home + R1 is
-still Screenshot; Home + B closes or quits. Select and the D-pad no longer move windows or switch the
-bottom view. Tests: `home_chords_use_the_right_stick_and_not_select_or_the_dpad`, the existing B and R1
-chord tests. The UI's overlay over the top screen's window draws the window arrows while Home is held
+Home + right stick press switches to the windows' tab and back; Home + Start controls bottom power; Home + R1
+takes a screenshot; Home + B closes or quits. Select and the D-pad don't move windows or switch the bottom
+view. Tests: `home_chords_use_the_right_stick_and_not_select_or_the_dpad`, and the B and R1 chord tests. The UI's overlay over the top screen's window draws the window arrows while Home is held
 (`Id::WindowArrow`); a press on one sends the same `Device` event as the pad's window keys, as it comes down.
 
 ## Keymaps (keymap/)
@@ -580,6 +598,864 @@ then go nowhere, logged once (system crate, `a_thread_that_keeps_panicking_soon_
   launch, the refresh calibration, an account change) answer with a failure if they panic
   (`os::worker::or_on_panic`). The randomized test restarts random threads.
 
+## Windows in the compositor (compositor/)
+
+The compositor's side of the windows: `windows.rs` (facts, configure, the presentation cache, titles),
+`handlers.rs` (the xdg-shell and commit callbacks), `geometry.rs` (one transform for drawing and input),
+`input.rs` (`hit`, `ui_at`), `render.rs`, `server.rs` (its turn, `frame`, `reject_client`), `clients.rs`,
+`trace.rs`; in the state, `session/presentation.rs` (the presentation policy) and `Session::opening_focus`.
+They run the same way under the nested host (`nested.rs`) and the DRM host (`drm.rs`). The state's side of
+the same windows is under Session, "Window lifecycle and placement".
+
+### Lifecycle and facts (windows.rs, handlers.rs)
+
+A Wayland toplevel is a `ClientWindow`, opened and mapped or not. Its facts are its app id, title, parent,
+size limits, role (Normal, or Dialog through xdg-dialog), colour, unit and processes; `x11` is set only by
+the X11 adapter.
+
+    none --get_toplevel--> unopened [id given]
+    none --a second toplevel on the same wl_surface--> none [client ended, reason logged]
+    unopened --commit--> opened [Opened(facts); the first configure after the state has placed it]
+    opened --commit with a buffer--> mapped
+    opened --app id, parent or dialog hint changed--> opened [Changed(facts)]
+    opened --commit with changed limits or colour--> opened [Changed(facts)]
+    mapped --commit with a null buffer--> unopened [Closed(id); a pending title dropped]
+    unopened (after an unmap) --commit--> opened [Opened(facts), the same id]
+    any --toplevel destroyed--> none [Closed(id)]
+
+Changed keeps placement, selection, keyboard focus, title and `x11`.
+
+Tests: `xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu` (opened before the first
+buffer, configured at 960×540, its unit identified, unmapped and remapped under the same id, a fixed-size
+child with its parent, close); `a_toplevel_marked_a_dialog_has_the_dialog_role`; in the state
+`presentation_facts_and_colour_do_not_change_placement_or_selection`, `backend_changes_keep_the_placement`,
+`stale_identity_facts_cannot_undo_a_placement`, `changed_facts_keep_a_window_x11`,
+`lifecycle_messages_keep_one_window_and_ignore_late_messages`.
+
+### Opening focus (session/mod.rs)
+
+On Opened the state decides whether the window comes in front (`Session::opening_focus`).
+
+| Condition at Opened | Result | Test |
+|---|---|---|
+| a launch waits for its window | in front only if it is that launch's (in its unit, of its entry by app id or process, or a dialog of one); others open behind | `steams_windows_open_behind_a_steam_games_launch` |
+| it has a parent | in front if the parent's program is shown | `opening_focus_respects_launch_intent_and_shown_program` |
+| not in a unit of ours | in front | same; `a_window_opens_in_front_as_its_opening_focus_says` |
+| the first window of a unit of ours | behind (it waits for the launch's intent) | same |
+| a later window of a unit of ours whose program is shown | in front, with the keyboard | same |
+
+A dialog of a window on the bottom screen is placed on the top screen
+(`a_dialog_of_a_window_below_shows_on_top_while_its_parent_stays_below`; the compositor test above checks it
+with a real fixed-size child).
+
+### Presentation and geometry (session/presentation.rs, geometry.rs)
+
+The state gives each window a presentation: a layout (Fullscreen or Centred) and a scale (Fit, Integer,
+Stretch, Native). With the Size setting at Default, a main window (no parent, role Normal) fills the
+screen: a game's at Fit, any other at Native. Dialogs, utility and splash windows, and windows of a fixed
+size that is none of the screen's resolutions or Xwayland's modes are Centred at Native; a fixed size equal
+to one of those fills the screen. Size at Fit, Integer or Stretch applies to main windows only.
+
+The compositor configures a fixed-size window at its size, a Fullscreen one at the screen's area or at its
+game's resolution, and any other at its own size clipped to the area; Fullscreen sets the xdg fullscreen
+state, and keyboard focus sets Activated. Drawing and input use one `Geometry` (viewport, origin, scale)
+per window. A scaled Fullscreen window is fitted by its picture (the surface `picture_surface` picks, such
+as Wine's game subsurface), in the picture's own shape when that differs from its place by more than 2 %.
+Native never scales up. A press on the black around a top window reaches neither the window nor shelf
+behind it.
+
+    window --role or limits Changed--> the same place and selection, a new presentation [configure]
+    window --moved below or above--> a new area [configure to it; until the client answers, its old buffer is fitted]
+
+Tests: in the state `dialogs_and_fixed_windows_are_centred_and_games_fit_ignored_sizes`,
+`a_game_window_fixed_at_its_screens_mode_fills_the_screen`,
+`a_size_shows_main_windows_as_it_says_whatever_their_size_but_not_dialogs`; geometry
+`fitting_preserves_aspect_and_uses_the_same_inverse_for_input`,
+`native_size_is_sharp_and_oversized_fixed_windows_scale_down`,
+`a_fullscreen_game_at_a_lower_resolution_is_configured_to_it_and_scaled_up`,
+`a_mode_stretched_over_the_screen_keeps_its_shape`,
+`integer_scaling_shows_the_largest_whole_multiple_of_the_picture`,
+`a_picture_in_part_of_its_window_is_what_is_fitted`; the compositor's lifecycle test above (a client that
+stops acknowledging configure is fitted below at once). The fullscreen and activated states, and the black
+around a window, are checked by `tests/nested-compositor.py` (real pixels above, below, on return and at
+Home; X11 fixed-size and transient windows centred on black). `tests/picture-scaling.py` checks that test
+games (Wine's subsurface and viewport, SDL 3 on Wayland and on X11, at the desktop's size and at a lower
+mode) fill the top screen at each Resolution, Scaling, anti-aliasing and Sharpen setting.
+
+### The presentation cache (windows.rs)
+
+Each window keeps what the state says of it (`Shown`: presentation, clarity, curve, HDR peak, frame rate
+cap). `sync_windows` reads it again only when Core's state revision changed, which every applied event
+does, the UI's own included; frames, configures and hit tests read the cached values.
+
+    cached at revision r --an event applied--> stale --sync_windows--> cached at r+1
+
+Test: `xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu` (ten repeated syncs keep the
+revision; a role changed to Utility gives Centred, back to Normal Fullscreen).
+
+### Titles (windows.rs, server.rs)
+
+A title request of an opened Wayland toplevel marks it dirty. `Server::frame`, run once per composed frame
+by both hosts (and on each frame turn on DRM with both screens off), sends one Title per dirty window whose
+title differs from the state's. A title set before Opened comes with Opened's facts.
+
+    clean --set_title--> dirty
+    dirty --frame, the title differs--> clean [Title]
+    dirty --frame, the same title--> clean
+    dirty --unmap--> clean
+
+Test: `xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu` sends 101 titles in one
+dispatch and then 100 identical ones, and finds one Title record in the event ring and the last title in
+the state.
+
+### Viewports (protocols.rs, handlers.rs)
+
+Both hosts offer wp_viewporter. A source rectangle crops the buffer after its transform and scale; a
+destination sets the surface's logical size, which presentation and hit testing use. Destroying the
+viewport restores the buffer's size at the next commit. An invalid request is a protocol error that ends
+its client. Viewports add no facts to the state.
+
+    buffer size --a destination committed--> destination size
+    destination size --viewport destroyed, commit--> buffer size
+
+Test: `viewport_destination_drives_geometry_and_destroy_restores_buffer_size` (a 640×480 buffer at scale 2,
+a cropped source, a 600×400 destination, then 320×240 after destroy; the centre's hit coordinates; one
+state window throughout). A game's picture subsurface stretched by a viewport:
+`a_picture_in_part_of_its_window_is_what_is_fitted` and `tests/picture-scaling.py`.
+
+### Window colour facts (state/colour.rs, compositor/colour/)
+
+A window's colour is the parametric description committed through wp_color_management on the surface
+holding its picture, else on its toplevel: primaries (named or CIE xy), transfer function, luminances,
+and optionally the mastering primaries and luminance, MaxCLL and MaxFALL. The DRM host describes each
+screen by the device profile's panel colour, with unknown luminance left unset; the nested host by its
+host's preferred description, as PQ when the host takes HDR. The picture's pipeline is in `picture.md`.
+
+    window --a commit with a new description--> the same placement, selection and focus [Changed(facts)]
+    window --Changed with the same facts--> unchanged
+
+Tests: in the state `presentation_facts_and_colour_do_not_change_placement_or_selection` (repeated facts
+too), and the randomized test (window fact changes include colour); in the compositor
+`parametric_descriptions_are_double_buffered_and_preferred_information_is_available`,
+`an_invalid_colour_request_disconnects_its_client_without_ending_the_server`,
+`each_screen_is_described_as_its_panel_and_the_top_is_preferred`,
+`clients_are_told_the_hosts_headroom_not_the_contents_volume`, and the conversion tests in
+`colour/math.rs`. `tests/nested-compositor.py` checks that a surface's colour reaches the window's facts in
+the exported event ring, and PQ, linear and SDR pixels from an EGL client.
+
+### A client's failure (server.rs, render.rs, clients.rs)
+
+    client --a duplicate toplevel role, or a popup that can't be tracked or configured--> ended [protocol error, reason logged]
+    client --its buffer fails to import while drawing--> ended [reason logged; the frame goes on]
+    client --a dmabuf fails to import, or more than 64 imports pending--> buffer rejected [logged; invalid_format ends the client]
+    client --protocol error--> gone [warn]; --disconnects--> gone [debug]
+
+Other clients' windows and the event loop go on. Under the nested host a renderer or host window error
+ends the session (there is nothing left to show on); on DRM a failed compose is logged and the loop goes
+on.
+
+Tests: `a_protocol_error_disconnects_only_its_client` (a duplicate role on a second connection; the healthy
+client's title still changes afterwards), `a_rejected_dmabuf_disconnects_only_its_client`. A failed shm or
+EGL import while drawing has no unit test.
+
+### The window event ring and its replay (trace.rs)
+
+Core's observer records events before they are applied and can't change the state. The ring keeps the last
+256 window inputs: window events (a `WindowBatch` as one record), Home, HomeTap, HomeHeld, the window
+chords (down, up, previous, next, close, quit, bottom view), and PadActive when it gives the keyboard back
+to the top window. Each record has a sequence number, both clocks, and the selection before it (top,
+bottom, keyboard, the number of windows).
+
+    n < 256 records --a window input--> n+1
+    256 records --a window input--> 256 [the oldest dropped]
+    any --another event--> unchanged
+    any --`clamshell ctl window events FILE`--> unchanged [DumpWindowEvents: the ring, the final selection and the windows, written as JSON at mode 0600 by a worker; success or failure logged]
+
+`Recording::replay` applies the recorded clocks and inputs to a state fixture with the same library, rules
+and launch context, checks each selection before an input and the final one, and reports the first
+mismatch by its sequence number. A ring that wrapped needs a fixture as it was at its first record.
+
+Tests: `recorded_window_batches_and_chords_replay_through_state` (a batch as one record, the JSON's round
+trip, mode 0600, a write failure, a mismatch, replayed windows, title and focus),
+`the_ring_keeps_only_the_last_256_window_inputs`,
+`dumping_window_events_is_one_backend_effect_without_changing_windows`,
+`the_window_event_dump_command_keeps_the_requested_path`; the randomized test generates the event.
+`tests/nested-compositor.py` exports the live ring and checks it (at most 256 records, window inputs, an
+empty final selection, X11 title changes and colour facts in it); the VM suite reads the windows from the
+same export.
+
+## Input in the compositor (compositor/, system/input/pad/)
+
+Both hosts pass Smithay's input events to `Server::input` (`input.rs`): the nested host its winit window's
+(absolute pointer positions, each touch event ending a frame), the DRM host libinput's on the seat
+(relative mouse motion, libinput's own touch frames). An absolute device's position is placed in the scene
+by its host: the nested window covers the whole scene; on DRM a touchscreen or tablet goes on the screen the
+device profile names it on (an unnamed touchscreen on the profile's catch-all, anything else on the top
+screen), turned back from the panel's mounting. DRM turns on tapping for ClamShell's virtual touchpad.
+Every input event counts as the compositor's input for idle.
+
+Tests: `a_turned_panels_corners_reach_the_screens_corners`,
+`an_input_device_is_on_the_screen_the_profile_names_it_on`,
+`a_device_is_named_by_its_ids_and_its_name_with_underscores`. The VM suite (DRM host) drives a virtio
+multitouch screen and checks `touchpad` and `keyboard_points` (a tap clicks, a finger moves the pointer).
+
+### Touch contacts (touch.rs)
+
+Up to 32 contacts, each a slot with a target fixed at its down: a client surface (with the window's
+geometry and the surface's origin), a UI screen, or nothing. Each slot keeps its own surface, so both
+screens can be touched at once. Every down, motion and up hides the cursor; a down also dismisses menus
+outside the window touched (see Popup menus).
+
+| From | Event / condition | To | Effects | Test |
+|---|---|---|---|---|
+| none | down on a target of the screen's overlay as last drawn (`Core::press_overlay`) | ignored | the target acts once: a Home arrow switches the window, a notification is tapped, its close mark dismisses it | `touching_a_home_arrow_switches_once_and_consumes_home_release`, `touching_a_notification_taps_it_and_its_close_mark_dismisses_it` |
+| none | down on a mapped, visible window's surface (not the black around it) | client | `WindowEvent::Activate`; wl_touch down in surface coordinates | `touch_contacts_keep_independent_surfaces_and_native_coordinates` |
+| none | down on the bottom screen's UI, the bar over a window below included | UI (bottom) | Core press; keyboard focus kept | same; `the_bottom_keyboard_commits_text_and_sends_shortcuts_without_stealing_focus` |
+| none | down on the top screen's UI (no top window) | UI (top) | `KeyboardFocus(None)`; Core press | GAP |
+| none | down on black | ignored | — | `touch_contacts_…` |
+| any | down on a slot already active | every contact cancelled, then the down as above | as cancel | GAP |
+| any | down with 32 contacts active | unchanged | ignored (debug) | GAP |
+| client | motion | client | wl_touch motion through the transform of its down, across screens too | `touch_contacts_…` |
+| UI | motion | UI | Core move, in its first screen's coordinates | VM `two_fingers` |
+| client or UI | up | none | wl_touch up, or Core release | `touch_contacts_…` |
+| ignored, or an unknown slot | motion, up | unchanged | — | `touch_contacts_…`, `touching_a_home_arrow_…` |
+| any | the host's cancel; the nested window losing focus; a resize; a client contact's window hidden or unmapped or its surface gone (checked at each window sync) | none | Core cancels the UI's presses; each client contact's position is sent again, then wl_touch cancel, so a finger that hasn't moved is cancelled too | `touch_contacts_…` (cancel, Home hiding the client), `x11_popups_share_parent_scaling_keep_tooltips_passive_and_cancel_dismissed_contacts`; the nested focus loss and libinput's cancel: GAP |
+
+A wl_touch frame goes out only when something was sent since the last one (`touching_a_home_arrow_…`
+checks that none is left pending). Real touchscreens: the VM suite (`two_fingers`: a slide goes on while
+another finger taps a tab) and the device.
+
+### Keys and text input (input.rs, keyboard.rs)
+
+A key from a keyboard passes the compositor's filter before the focused client sees it, on both hosts:
+
+| Key | Effect | Test |
+|---|---|---|
+| F12 down, up | `HomeHeld(true)`, `HomeHeld(false)` and `HomeTap`; not passed on | GAP (by hand) |
+| Ctrl+Alt+F1 to F12 | DRM switches to that VT; nested ignores it; not passed on | on the device |
+| F11, F10 down | `Device(WindowDown)`, `Device(WindowUp)`; not passed on | GAP |
+| another key, with no keyboard focus in the state | to ClamShell's screens as the pad (`focus::desktop_key`: arrows, Enter, ...); not passed on | `desktop_keys_stand_for_the_pad` (the table) |
+| another key | to the focused surface | the nested X11 focus checks |
+
+Text input is Smithay's text-input-v3; the compositor is the seat's input method, so no input method
+process is needed.
+
+    inactive --the focused client enables and commits--> active [TextInput(true); the state raises the keyboard tab]
+    active --disabled, or the active text input destroyed--> inactive [TextInput(false); the state goes back from the tab]
+    any --the seat's keyboard focus changes--> [TextInput(false)]
+
+The state's side: `a_text_field_brings_up_the_keyboard_and_back`,
+`a_text_field_done_leaves_an_editor_on_the_keyboard_open`,
+`a_text_field_doesnt_take_the_screen_from_an_open_editor`,
+`a_keyboard_a_text_field_brought_up_isnt_saved_as_the_tab`.
+
+An on-screen key goes to an open editor, the keymap's capture or shelf's find; otherwise it becomes
+`Compositor::Key(stroke)`, which `Server::stroke` carries out:
+
+- no client has the seat's keyboard: nothing;
+- a printable character without Ctrl, Alt or Super, with a text input active: `commit_string` of the
+  (shifted) character, then `done`;
+- otherwise: the modifiers down (Ctrl, Alt, Super, Shift), the key down and up, the modifiers up in
+  reverse order, from a keyboard source of its own, so a key held on a real keyboard stays held; these keys
+  skip the filter above, so an on-screen F12 reaches the client;
+- a modifier alone, Caps, F13 and above, or a key with no keycode: nothing (debug).
+
+Touching the bottom screen's UI keeps the client's keyboard focus. Test:
+`the_bottom_keyboard_commits_text_and_sends_shortcuts_without_stealing_focus` (commit strings and serials,
+modifier order, keys before enable and after disable, a physical Shift kept, F12 delivered, the tab given
+back, silence after Home). `tests/nested-compositor.py`: an X11 client receives whole strokes, a no-input
+client none; the VM suite's `keyboard_points` types into foot.
+
+### Idle and inhibitors (idle.rs)
+
+The state: the last input's time, whether an inhibitor is in effect, and the last report. An
+idle-inhibit-v1 inhibitor is in effect while its surface has a buffer and its root (through subsurface and
+popup parents) is a mapped, visible window. Each inhibitor counts on its own; those of dead surfaces are
+dropped. It is checked each turn of the loop, and only changes go to the state's idle machine (Idle and
+sleep, above); the loop sets no wake of its own for the 10 s, so quiet is reported at the first turn after
+them.
+
+    input --10 s (NOTIFY_AFTER) without input, no inhibitor in effect--> quiet [Idle(CompositorQuiet)]
+    quiet --input from the host--> input [Idle(CompositorInput)]
+    quiet --an inhibitor comes into effect--> input [Idle(CompositorInput)]
+    inhibited --the last inhibitor in effect destroyed, hidden, unmapped or dead--> input, the 10 s counted from now
+
+Tests: `quiet_input_and_inhibition_report_only_transitions_and_restart_the_timeout`,
+`inhibitors_count_individually_and_only_mapped_visible_surfaces_keep_idle_off`, and the state's
+`the_compositor_holds_idle_off_while_it_sees_input_or_an_app_asks`. The screens' power follows the state's
+`Compositor::Outputs`: DRM turns them off and on
+(`a_screen_turned_on_is_drawn_whole_and_one_switched_has_no_frame_queued`); the nested host ignores it.
+
+### The pad's activity watch (state/lib.rs, sync.rs; system/input/pad/)
+
+The watch is armed while there is a top window without keyboard focus. Sync sends `PadActivity(watch)`
+when it changes; the pad's supervisor keeps the value while the controller is gone and gives it to a new
+router when one comes.
+
+    disarmed --keyboard focus leaves the top window--> armed [PadActivity(true)]
+    armed (router) --route Game; a button down or an axis past ±4096, outside Home's chords--> disarmed in the router [PadActive]
+    any --pad input on ClamShell's screens--> [PadActive]
+    state: PadActive with the top window unfocused --> the top window focused [PadActivity(false)]; otherwise nothing
+
+Tests: `game_activity_is_reported_once_per_keyboard_focus_loss`, `game_activity_is_an_axis_past_a_threshold`,
+`pad_activity_returns_keyboard_focus_to_top_without_moving_windows`,
+`keyboard_focus_is_independent_of_both_screens_selected_content`, and the randomized test (the watch is
+"the top window unfocused" after every event). Arming again after the controller comes back: GAP.
+
+### Popup menus (popup.rs)
+
+A menu belongs to its root toplevel and never becomes a window of the state. The state: at most one menu
+(its window and grab chain). X11's menus are under X11.
+
+| From | Event / condition | To | Effects |
+|---|---|---|---|
+| none | a grab on this seat, the root keyboard-focused and visible | menu | the pointer grab installed before the keyboard grab (replacing a parent's pointer grab releases its keyboard grab, so the other order would release the submenu's); keyboard focus to the popup |
+| none | a grab on another seat, or the root unfocused or hidden | none | `popup_done` |
+| none | the root missing or not a window of ours; a popup that can't be tracked or grabbed | none | client ended, logged |
+| none | the seat holds another grab | none | chain dismissed |
+| menu | a submenu's grab | menu | the same chain; focus to the submenu |
+| menu | a submenu destroyed | menu | focus back to its parent popup |
+| menu | the last popup destroyed | none | focus back to the toplevel |
+| menu | a press (touch, or a first pointer button) outside the root window | none | dismissed, grabs released, then the press routed |
+| menu | Home; keyboard focus to another window; the root hidden, unmapped or destroyed | none | dismissed, grabs released; Home still clears focus and shows shelf |
+
+Test: `menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy` (hit coordinates and
+focus, an outside touch, Home, a submenu keeping its live keyboard grab, which pins the order, and giving
+focus back to its parent, the parent unmapped and mapped again, one window in the state throughout and none
+while unmapped, a menu releasing a pointer lock). Another seat, a conflicting grab and focus moved to
+another window: GAP.
+
+### The cursor (cursor.rs)
+
+    hidden --pointer motion (absolute or relative)--> visible [the loop woken at the 3 s deadline]
+    visible --3 s without motion--> hidden
+    visible --touch down, motion or up; the nested window losing focus--> hidden
+
+It starts hidden. Its image (`effective_cursor`): none while the pointer is locked; the client's request
+(wl_pointer.set_cursor or cursor-shape-v1: Named, a theme image; Hidden, nothing; Surface, the client's
+cursor tree at its hotspot, with frame callbacks) while a client has pointer focus and the pointer is over a
+window (or a button grab holds a visible one); the theme's default otherwise (ClamShell's UI, a window
+Home hid), and for a dead cursor surface. A cursor surface whose import fails ends its client and the
+default is drawn. Smithay ignores a request with an older enter serial. Theme images come from
+`XCURSOR_THEME` at the size nearest `XCURSOR_SIZE` (24 by default), loaded once per icon; a missing icon
+tries "default", then a built-in arrow (logged). Animation follows the frames' delays and wraps, skipping
+zero-delay frames (all zero: the first frame). Both hosts draw it above everything with the same code; the
+nested host hides its window's own cursor.
+
+Tests: `motion_shows_the_cursor_and_touch_or_three_seconds_without_motion_hides_it`,
+`cursor_animation_wraps_and_zero_delay_images_do_not_stall_it`,
+`cursor_requests_keep_hotspots_ignore_old_serials_and_release_on_home` (named, hidden, a surface with its
+hotspot, an old serial ignored, touch hiding it, Home, the cursor surface destroyed).
+`tests/nested-compositor.py`, with a virtual pointer in its sway: the cursor drawn into the scene, the
+damage at its old and new places, the themed cursor after leaving a client, hidden after 3 s and shown
+again by motion.
+
+### Xdg activation (activation.rs)
+
+A token is tracked only if it carries a serial of this seat no older than the keyboard's last enter, the
+state's keyboard focus is a mapped window of the requesting client, which also has the seat's keyboard,
+and its source surface, if any, is that client's. Otherwise the client still gets a token, which grants
+nothing.
+
+    tracked --5 s old--> removed at the next turn of the loop
+    tracked --the seat's keyboard focus becomes none (Home, shelf)--> every token removed
+    tracked --an activation request--> removed; if it was under 5 s old, the state has a keyboard focus and the surface is a window of the state: WindowEvent::Activate and a window sync
+
+Activation follows the state's ordinary selection: it never moves a window between the screens, and Home
+settled in the same dispatch wins. The token's app id is not used. A refusal is not a protocol error.
+
+Test: `activation_tokens_require_focus_expire_are_single_use_and_cannot_undo_home` (missing and old serials,
+another connection borrowing the serial, Home before the seat's sync at creation and at redemption,
+success, reuse, expiry before pruning, an unknown surface, activating a window below without moving it, an
+unmapped target); the state's activation tests pin the effects.
+
+### Relative pointer and constraints (pointer.rs)
+
+The relative-pointer and pointer-constraints globals exist only when the host gives relative motion: DRM
+does (libinput's mice, the virtual touchpad); the nested host doesn't, since winit in the pinned Smithay
+gives absolute motion only.
+
+- Relative motion, while captured or on DRM: a relative event to the surface with pointer focus, both
+  deltas divided by the window's scale; the cursor moves by it unless locked, kept within a confinement.
+- Relative motion on an absolute host, not captured: to the client only.
+- Absolute motion: ignored while captured; otherwise it places the cursor.
+
+Motion never changes the state. Capture is settled each frame:
+
+    free --relative host, host focused, no menu (xdg or X11), the pointer over a live surface with pointer focus of the keyboard-focused window, a constraint whose region holds the pointer, the host takes the mode--> locked or confined [constraint activated]
+    free --the host refuses the mode--> free [a fatal protocol error to that client, flushed; the session goes on]
+    locked or confined --host focus lost, a menu opened, the surface dead, keyboard focus moved, the window hidden or unmapped, its geometry changed, the constraint destroyed or inactive, the region no longer holding the pointer--> free [constraint deactivated; a persistent one may activate again, a one-shot one not]
+    captured --the host can't release it--> session ends (logged)
+
+Locked, the cursor stays put and hidden; confined, a step outside keeps whichever axis stays inside.
+Cursor position hints are not applied. DRM captures by itself and never refuses.
+
+Tests: `relative_motion_and_constraints_follow_geometry_home_regions_and_host_focus` (a free cursor moved
+by relative motion, scaled deltas, 100 events without a state revision, a locked cursor fixed and hidden, a
+persistent lock again after remapping, confinement, Home, region commits, one-shot, host focus lost, a
+refused capture, the exact sequence of host modes), `a_host_that_cannot_release_capture_ends_the_unusable_session`,
+and the popup test (a menu releases a lock). `tests/nested-compositor.py` checks that the nested host offers
+no capture. A real mouse's relative motion: on the device.
+
+## Frames, buffers, screenshots and the clipboard (compositor/)
+
+Two hosts show the scene: the DRM host (`drm.rs`) on the device's screens, and the nested host
+(`nested.rs`), a winit window on a desktop that redraws at each of the desktop compositor's frames. The
+protocol tests (`tests.rs`, `tests/*.rs`) run real clients over a socket pair against a `Server`;
+`tests/nested-compositor.py` runs the nested host in a headless sway, with software rendering, or with
+`--gpu` on GLES and hardware EGL (vkcube needed too).
+
+### Frame pacing (pacing.rs, frames.rs, drm.rs)
+
+Each window has its `Frames`: `fresh` (a new buffer committed to its root surface and not yet shown), a
+ring of the times of its last 256 frames shown, and, under a frame rate cap, when its next frame callback
+is due. Each surface notes the commit drawn into the frame queued for its screen and the commit last
+shown; the nested host notes both right after a submission, the DRM host the first when it queues and the
+second at the flip.
+
+The cap is the `FpsCap` setting of the window's running entry, when not 0 (`State::window_fps_cap`). A
+capped launch gets `MESA_VK_WSI_PRESENT_MODE=fifo` and `vblank_mode=3`, so the game waits for the callbacks
+the compositor paces (`a_windows_fps_cap_is_the_one_set_for_its_program`,
+`a_capped_game_is_launched_presenting_in_fifo`).
+
+| From | Event / condition | To | Effects | Test |
+|---|---|---|---|---|
+| shown | a new buffer committed to the window's root surface | fresh | | `only_new_buffers_count_once_shown` |
+| fresh | a screen shows the window (DRM: its flip; nested: the submission) | shown | its time into the ring | same |
+| shown | shown again with nothing new | shown | no frame counted | same |
+| uncapped, mapped and visible | frame callbacks for its screen (DRM: after a flip, an idle answer, or held callbacks due; nested: each redraw) | | callbacks sent | the protocol tests; `tests/nested-compositor.py` |
+| capped, waiting for a callback or on a FIFO barrier | due within a quarter refresh | | sent; next due a cap's interval later, or from now if more than one behind | `a_cap_paces_frame_callbacks_on_the_screens_refreshes` (40 fps at 60 Hz: two refreshes, then one) |
+| capped, waiting | not due yet | held | the loop woken when due | same; `held_callbacks_go_once_due_and_wake_the_loop_until_then` |
+| FIFO barrier set | callbacks sent, the surface's commit queued but not shown | set | | `a_barrier_goes_once_its_frame_is_shown_and_a_timed_commit_at_its_time` |
+| FIFO barrier set | callbacks sent, its commit shown or never drawn | released | barrier signalled; the client's held commits apply; DRM composes again at once | same; `commits_let_through_after_composing_are_composed_at_once` |
+| timed commit (`wp_commit_timing`) | its time no later than when the frame being composed is shown | applied | | the barrier test |
+| timed commit | later | held | DRM wakes a refresh before it, or at the next frame if within a refresh | same; `a_timed_commit_wakes_the_loop_a_refresh_before_it_or_at_the_next_frame` |
+| timed commit of a capped window | any time | applied | the cap paces it instead | `a_capped_windows_timed_commit_goes_ahead_at_once` |
+
+A frame is shown, on DRM, at the next refresh after the top screen's last flip, a refresh later if a frame
+is already queued (`a_frame_is_shown_at_the_next_refresh_after_the_last_flip`); nested, a host refresh from
+now.
+
+Each DRM screen, each turn of the loop (`drm.rs`, `step`, `screen_turn`):
+
+    pending --any turn--> pending [no callbacks, frame or wake]                     a_queued_frame_waits_for_its_flip_without_turning_the_loop
+    pending --flip--> idle [frame shown, feedback, frame callbacks]                 on the device; the VM suite draws through it
+    pending --no flip for 1 s--> dirty [buffers reset, warn]                        a_frame_without_its_flip_for_a_second_is_lost
+    idle --its part of the scene changed, screen on--> pending [presented, commits answered]   a_changed_screen_shows_a_frame_if_on_and_an_idle_one_answers_at_most_once_a_refresh
+    idle --commits unanswered, a refresh since the last answer--> idle [frame callbacks]       same
+    on --the state turns it off--> off [nothing pending]                            a_screen_turned_on_is_drawn_whole_and_one_switched_has_no_frame_queued
+    off --the state turns it on--> dirty [buffers reset]                            same
+    both off --turn--> both off [no compose unless a screenshot waits; dmabuf imports still run]   no unit test
+    any --the seat resumed (back from another VT)--> dirty [pending cleared, buffers reset, the whole scene drawn]   on the device
+
+The frame rate: at each turn of the server, for the mapped window in front on the top screen, the frames
+shown in the last second and their mean spacing (with two or more) go to the state as `Reading::Frames`
+when they change, every 500 ms while frames come, and as none once none came for a second, so the FPS tile
+shows no game rather than 0 (`the_rate_is_the_last_seconds_frames_and_their_spacing`,
+`the_ring_keeps_the_newest_frames`, `the_top_windows_new_buffers_shown_are_its_frame_rate`,
+`the_frame_rate_is_kept_apart_from_the_metrics`). `tests/picture-scaling.py`, where Wine is installed,
+changes a Wine-on-Wayland Vulkan game's mode through the FIFO path and checks that its window survives.
+
+### Buffers and dmabuf imports (dmabuf.rs, handlers.rs)
+
+Both hosts offer dmabuf as their renderer allows:
+
+| Renderer | Offered |
+|---|---|
+| no dmabuf formats | no global |
+| a software EGL device | no global: its import formats don't promise that native allocations can be sampled, and a deferred import can fail inside Mesa after EGL accepted it |
+| a render device, feedback built | version 4 with default feedback: the main device and its format table, higher-precision formats kept, no scanout tranche |
+| no render device, or the feedback failed to build (logged) | version 3 with the format list |
+
+The DRM host also offers `linux-drm-syncobj-v1` when the GPU can wait on a timeline point through an
+eventfd, and logs that only implicit fences are used otherwise. A commit with a new dmabuf waits until the
+buffer is ready: its acquire point signalled, or without one its implicit fence readable; if the wait
+can't be set up, a warning is logged and the commit applies at once (nested `--gpu` exercises the implicit
+fences; explicit sync is checked on the device).
+
+    create --fewer than 64 imports pending for the client--> queued
+    create --64 pending--> rejected [warn; invalid_format ends the client]                     no unit test
+    queued --the next compose (nested redraw; DRM compose, or each turn with both screens off), import succeeds--> created [created sent once]
+    queued --import fails--> rejected [warn; invalid_format ends that client only]
+    queued --the server dropped--> failed                                                      no unit test
+
+Tests: `an_accepted_import_completes_once_and_an_empty_frame_has_no_import_work` (a renderer boundary that
+succeeds: one buffer created, version 3 without a device, no work on an empty queue);
+`a_rejected_dmabuf_disconnects_only_its_client` (version 3's modifier events and version 4's feedback with
+a 10-bit format, the main device and the format table; one call at a failing boundary; the requesting
+client ended; a healthy window's later title applies). `tests/nested-compositor.py` checks that the
+software host offers no `zwp_linux_dmabuf_v1`, and with `--gpu` that the EGL client and vkcube create
+dmabufs and vkcube gets its feedback; a real GPU import is checked only there.
+
+### Presentation feedback (pacing.rs)
+
+`wp_presentation` uses CLOCK_MONOTONIC. A feedback request belongs to the surface's next commit.
+
+    committed --the window's screen showed the surface (nested submission or DRM flip), window mapped and visible--> presented [its screen as the output; sent once]
+    committed --window hidden or covered, or the surface not in the frame's render states--> committed (kept)
+    committed --a newer commit with feedback--> discarded
+    committed --surface destroyed--> discarded
+
+Drawing alone completes nothing; a failed nested submission ends the host before any feedback is sent.
+
+| Host | Time | Refresh | Sequence | Flags |
+|---|---|---|---|---|
+| nested | the monotonic clock just after a successful swap (winit gives no display time) | unknown | 0 | none |
+| DRM | the flip event's time (the clock's if the event has none) | the screen's frame interval | the flip's | vsync, hw_clock, hw_completion |
+
+Test: `feedback_follows_submission_visibility_superseding_and_surface_destruction` (the nested form: clock
+id, exact times, the output for a toplevel and its synchronised subsurface, nothing with no render states,
+completion once, held at Home and completed on activation, superseded and destroyed feedback discarded).
+`tests/nested-compositor.py` runs `examples/feedback-client` on both hosts' modes: a frame with a new buffer
+and an unchanged one get ordered monotonic feedback with refresh 0, sequence 0 and no flags. The DRM flip's
+feedback is checked on the device.
+
+### Screenshots (server.rs, colour/render.rs; system/display/screenshot.rs)
+
+The screenshot key (Home+R1, or `clamshell ctl screenshot`) gives `Effect::Compositor(Screenshot)`, which
+the compositor keeps.
+
+    idle --Screenshot--> requested
+    requested --Screenshot--> requested (one capture)
+    requested --the next nested redraw, or the next DRM compose (with both screens off too)--> idle [capture to Handles::save_screenshot]
+
+The capture renders the composed scene of both screens through an sRGB output pass into an 8-bit RGBA
+texture and reads it back with the top row first; the nested host then begins an empty frame to restore
+its window's EGL target before the swap. A failed readback is passed on as the error (and logged by the
+nested host). The system worker writes `~/Pictures/Screenshots/clamshell-YYYYMMDD-HHMMSS.png` (UTC),
+making the folder if needed, and answers `Event::Screenshot(Ok(path))` or `Err(reason)`; the state shows
+"Screenshot saved" or "Screenshot failed".
+
+Tests: `a_screenshot_is_asked_for_and_its_result_shown`,
+`screenshots_are_consumed_by_the_host_instead_of_the_parent_capture_tool` (coalescing, and the effect kept
+by the host), `captured_pixels_are_saved_with_their_size_and_row_order`,
+`invalid_captures_and_unwritable_folders_return_errors`, `timestamps_are_utc_dates`.
+`tests/nested-compositor.py` saves one in an isolated home, checks it is a whole 1580×540 PNG, and that
+clients still draw afterwards (which catches a lost EGL window binding). The DRM capture is checked on the
+device.
+
+### The clipboard (handlers.rs, windows.rs; system/session/clipboard.rs)
+
+Smithay keeps the data-device, primary-selection and ext-data-control objects and the transfers between
+them. The client with keyboard focus gets the clipboard and primary offers; with no surface focused, both
+are cleared. The keeper is a system thread, an `ext_data_control` client connected to the compositor's
+socket by its path, which keeps the last text copied, offers it itself while the clipboard is its, and
+saves it in `$XDG_RUNTIME_DIR/clamshell/compositor/<socket>/clipboard` (mode 0600, gone at reboot); the
+process's environment is not changed. Who may read the clipboard is in `security.md`.
+
+    start --saved text up to 1 MiB--> kept [Reading::Clipboard; offered if the clipboard is empty]
+    any --a text offer (the best of five text types, no x-kde-passwordManagerHint), read up to 1 MiB, UTF-8, different--> kept [file written, Reading::Clipboard, the primary selection set to it]
+    any --a text offer over 1 MiB or not UTF-8--> unchanged
+    kept --a non-text or password manager's offer--> none [file removed, Reading::Clipboard(None)]
+    kept --clipboard emptied (its program quit)--> kept [its own offer becomes the clipboard]
+    own offer --cancelled (replaced)--> kept [own offer dropped]
+
+`clamshell --clipboard get|set` connects through `WAYLAND_DISPLAY`; `set` offers its text until it is
+taken, at most 5 s.
+
+Tests: `the_best_text_type_is_taken_and_a_password_managers_copy_is_none`,
+`a_copied_text_is_kept_up_to_its_limit_and_only_as_utf8`. `tests/nested-compositor.py` checks the command's
+set and get, the text kept after its source quits, the saved file under `compositor/<socket>/`, the desktop's
+clipboard unchanged, foot's OSC 52 copy through wl_data_device, the primary selection read back by foot,
+and the copy outliving foot; the offers following keyboard focus have no unit test, and foot's copy and
+paste there depend on them. The VM suite's `clipboard` check runs on the DRM host. The X11 side is under
+X11.
+
+### Real clients (tests/nested-compositor.py)
+
+`examples/egl-client`, a winit Wayland EGL client that clears to one colour, beside foot: on top, moved
+below and back, ended with exit 0 by `clamshell ctl window close` (Home+B), foot left on top. With `--gpu`,
+`vkcube --wsi wayland`: changing frames on top, still presenting with SMAA on (its edges blended), below
+after the resize, and back on top, and exit 0 on close. Home, the clipboard and the window event ring are
+checked after both. Screenshots and the clients' `WAYLAND_DEBUG` logs stay in the directory it prints.
+
+## X11 (compositor/x11/)
+
+Xwayland runs on demand behind one display socket, and ClamShell is its window manager over a private
+connection. Managed X11 windows reach the state as the same facts as Wayland ones; menus, tooltips and
+selections stay in the adapter. `tests/nested-compositor.py` drives real X11 clients (`examples/x11-client`,
+`x11-selection`, `x11-copy`) on the software and GPU hosts; its checks are named here by what they say. Test
+files: mod `x11/mod.rs`, transport `x11/transport.rs`, wm `x11/wm.rs`, properties `x11/properties.rs`,
+popup `tests/x11_popup_tests.rs`, send `x11/selection/send/tests.rs`, receive
+`x11/selection/receive/transfer/tests.rs`.
+
+### Xwayland (x11/mod.rs, x11/socket.rs)
+
+One reserved display socket (`/tmp/.X11-unix/X<n>` and its lock file, the first free n below 128; a lock
+whose owner is dead is taken over, any other taken slot skipped) and at most one Xwayland. The display is
+given to launches as DISPLAY, and on the device to the user manager and the bus too; the compositor's own
+environment is not changed. The compositor never accepts an X11 connection: Xwayland gets the listener
+(`-listenfd`) and accepts it. Its environment holds only PATH, XDG_RUNTIME_DIR and WAYLAND_SOCKET, and its
+four private descriptors (Wayland socket, WM socket, display number pipe, listener) are passed only in the
+child's exec setup (`private_descriptors_are_inherited_only_by_the_selected_child`).
+
+| From | Event / condition | To | Effects | Test |
+|---|---|---|---|---|
+| dormant | the listener readable | starting | spawn Xwayland; insert its Wayland client | mod `dormant_xwayland_has_no_child_or_deadline_and_a_connection_wakes_its_listener`; nested "Wayland-only use leaves Xwayland dormant", "X11 client rendered on top" |
+| starting | spawn fails | dormant | logged; again after 1 s while the connection waits | GAP |
+| starting | display number (5 s, at most 16 bytes), X11 setup, atoms, X-Resource 1.2, Composite | connected | the hidden owner window; SubstructureRedirect on the root; Composite redirect; WM_S0 and _NET_WM_CM_S0 claimed; the RandR mode sizes sent once (`Reading::XwaylandModes`; no RandR is logged) | every nested X11 check depends on it |
+| starting or connected | a transport error; a reply, focus time or selection time past its deadline; BadAccess (another WM); the WM_S0 anchor naming another owner; an extension missing | stopping | logged; its windows closed in the state; the selection bridge cleared; its Wayland client ended; SIGKILL | the transport tests below; wm `outstanding_deadlines_stale_replies_and_menu_ownership_follow_window_lifetimes` (a reply's deadline) |
+| any | pidfd readable, the child gone | dormant | reaped without waiting; its windows closed; its client ended; the listener armed again | nested "crashed Xwayland is reaped through pidfd readiness", "crash recovery waits for another X11 connection" |
+| dormant after an exit | the next X11 connection | starting | the replacement on the same display | nested "another client starts a replacement Xwayland", "Xwayland starts again on demand", "Wayland survives Xwayland restart" |
+| any | the compositor ends | — | the child killed and reaped on a thread of its own; only this instance's socket and lock removed | mod `dormant_…` |
+
+Dormant, or connected and idle, it has no deadline and no periodic wake (nested "Wayland still moves while
+idle Xwayland is stopped": an idle Xwayland under SIGSTOP is not restarted).
+
+### The X11 transport (x11/transport.rs)
+
+The WM's connection is a non-blocking socket; x11rb supplies the wire types and sequence tracking, never
+I/O. Readiness of the socket, the display pipe, the listener and the pidfd are event loop sources; write
+interest is there only while bytes wait. Each turn does at most 64 writes, 64 setup reads, 64 packet reads
+of up to 4096 bytes and 64 events. Packets and the outgoing queue are capped at 1 MiB, a packet's length
+checked before its payload is read. Partial setup, packets and writes keep their bytes. Deadlines: setup
+3 s; a queue that started waiting must empty within 3 s; each reply 3 s. At most 256 of the WM's replies
+are outstanding: property queries wait for room, any other request past that stops Xwayland.
+
+| From | Event / condition | To | Effects | Test |
+|---|---|---|---|---|
+| handshake | partial setup | handshake | bytes kept | every transport test's fixture |
+| handshake | 3 s without setup, or EOF | stopping | | transport `setup_timeout_eof_and_oversized_packets_end_only_the_connection` |
+| connected | a packet over 1 MiB | stopping | nothing allocated | same |
+| connected | a partial reply | connected | polled once whole | transport `partial_replies_are_polled_and_idle_connections_never_probe` |
+| connected, idle | turns | connected | no traffic, no deadline | same |
+| writing | the peer not reading | writing | WouldBlock keeps the bytes; past 1 MiB refused; 3 s: stopping | transport `full_write_buffers_keep_the_queue_bounded_and_still_return_to_the_loop` |
+| connected | 32,768 requests since the last reply | anchoring | GetSelectionOwner(WM_S0), so the 16-bit sequence can't wrap unanchored; the reply must name the WM | transport `sequence_anchors_follow_actual_traffic_across_wire_wrap`; the owner check: GAP |
+
+### X11 windows (x11/wm.rs, x11/properties.rs, x11/shell.rs)
+
+The WM follows the root's children it didn't create, at most 128; the client of one more is ended
+(KillClient). Each gets a model id never used again, so a late reply for a destroyed window can't change
+one that took its XID. Override-redirect windows are menus (below); input-only windows are mapped as asked
+and never reach the state. The facts of the others: app id, WM_CLASS's class; title, _NET_WM_NAME (UTF-8),
+else WM_NAME (Latin-1); parent, WM_TRANSIENT_FOR while that window is open; limits, WM_NORMAL_HINTS' sizes;
+role, dialog, splash or utility from _NET_WM_WINDOW_TYPE, and dialog for WM_TRANSIENT_FOR without a type;
+process, X-Resource's client PID, never _NET_WM_PID or Xwayland's own credentials (the unit and processes
+follow from it as for Wayland). Properties are read up to 4 KiB, their type and format checked; one absent
+or malformed clears its fact.
+
+| From | Event / condition | To | Effects | Test |
+|---|---|---|---|---|
+| — | CreateNotify on the root | known | PropertyChange selected; no queries | wm `outstanding_…` |
+| known | MapRequest | querying | attributes, nine properties, the PID (waiting for room under the 256) | same |
+| querying | every reply | placed | Opened; ConfigureWindow (the presentation's geometry; _NET_WM_STATE fullscreen or empty; WM_STATE Normal); MapWindow; then focus | wm `placement_is_committed_and_configured_before_mapping_and_focus` (the request order; nothing again when unchanged) |
+| querying or placed | an error reply to its query | removed | Closed if open | GAP |
+| placed | WL_SURFACE_SERIAL (two 32-bit halves) and the surface committed with that serial through `xwayland_shell_v1` | drawable | the surface bound once; drawn, hit and paced as a Wayland one. A serial is never reused, unlike a surface's id; serial 0 is a protocol error | wm `a_window_is_paired_with_the_surface_committed_with_its_serial`; `a_committed_serial_pairs_its_surface_once_and_only_xwayland_sees_the_shell` |
+| placed | PropertyNotify of a property it reads | placed | the property read again (once more if it changes meanwhile); changes held to the frame, then Changed and Title (one batch when both), the state's unit and processes kept | wm `placement_…`; nested "X11 property changes enter the ordinary window-event ring" |
+| placed | ConfigureRequest | placed | the size asked for kept and configured again; position and stacking ignored | GAP |
+| placed, fullscreen | _XWAYLAND_RANDR_EMU_MONITOR_RECTS gives a mode's size | placed | configured at that size; Xwayland scales it to the screen | GAP |
+| placed | the state closes it | placed | WM_DELETE_WINDOW if offered, else KillClient | nested "X11 client receives WM_DELETE_WINDOW"; KillClient: GAP |
+| placed or drawable | UnmapNotify | known | Closed; the surface detached; its menus dismissed | nested "unmapping X11 restores the Wayland client" |
+| known, was open | MapRequest | placed | Opened with the same id | nested "the same X11 window maps again" |
+| any | DestroyNotify | removed | Closed if open; menus dismissed | GAP |
+
+The facts: properties `property_fixtures_translate_to_the_same_protocol_neutral_facts`
+(`fixtures/x11-properties.json`) and `focus_protocols_and_input_hints_are_validated_and_removed`; nested
+"XRes reports the app, not Xwayland", "fixed-size X11 content is centred on black", "X11 transient maps
+before its parent", "a transient stays centred even before its parent maps".
+
+### X11 focus (x11/wm.rs)
+
+X11's focus follows the state's keyboard focus among open X11 windows, and is None when a Wayland window or
+nothing has it. The server ignores a focus request older than the last focus change, which an active client
+may have made itself, so each change takes a fresh server time
+([ICCCM](https://xorg.freedesktop.org/releases/current/doc/xorg-docs/icccm/icccm.html#input_focus), 2.1 for
+the append).
+
+| From | Event / condition | To | Effects | Test |
+|---|---|---|---|---|
+| settled | the keyboard focus changes | stamping | an empty append to _THOR_TIMESTAMP on the hidden window | wm `placement_…` |
+| stamping | its PropertyNotify (time t) | settled | SetInputFocus (the window if WM_HINTS' input is true or absent, else None) at t; WM_TAKE_FOCUS at t if offered; _NET_ACTIVE_WINDOW | same (passive, locally active, globally active and no-input; the same nonzero t in both; a new time per change) |
+| stamping | no PropertyNotify within 3 s | stopping | | GAP |
+| stamping | the focus back where X11 has it before t comes | settled | t dropped | GAP |
+| settled | the focused window's WM_HINTS or WM_PROTOCOLS read again | stamping | focus sent again | GAP |
+
+Nested: "active X11 client receives a timestamped focus offer" (the fixture fails on time 0), each focus
+model's policy and key strokes, "no-input clients receive no keys", "Home removes X11 keyboard focus",
+"remapping restores X11 keyboard focus", "touching the bottom parent restores its keyboard focus".
+
+### X11 menus and tooltips (x11/menus.rs, popup.rs, surface.rs)
+
+Override-redirect windows are drawn as popups of a managed parent and never reach the state; a tooltip
+(_NET_WM_WINDOW_TYPE_TOOLTIP) takes no input. The owner is found by following WM_TRANSIENT_FOR through
+mapped override-redirect ancestors to a managed window; without it, the focused managed window (for a
+tooltip, the one under the pointer, else the focused one) with the same X-Resource PID. A missing or
+unmapped ancestor, or a cycle (the walk is bounded by the number of windows), gives no owner. A shown
+popup's owner stays until it unmaps. Popups draw and hit-test with their parent's scale and screen clip.
+While a popup that takes input is shown, pointer capture is released and not granted (GAP). A touch on a
+popup that is detached cancels the touch sequence.
+
+| From | Event / condition | To | Effects | Test |
+|---|---|---|---|---|
+| known | MapNotify, its replies in, a buffer, its owner open and visible (and focused, for a menu) | shown | attached where it is relative to the parent | wm `outstanding_…` (the same PID, the owner under the pointer, a fixed owner, an ancestor unmapped, cycles); nested "X11 menu is drawn over its parent", "X11 menu receives local pointer coordinates", "X11 submenu is drawn above the parent menu", "a parentless menu belongs to the focused client with the same XRes PID", "a menu can extend to its screen edge", "menu pixels cannot cross into the other screen", "X11 menu stays local to a bottom-screen parent", "X11 tooltip is drawn" |
+| known | MapNotify without an owner | known | UnmapWindow | wm `outstanding_…` (no owner); the unmap: GAP |
+| shown menu | a press outside its window's popups | dismissed | detached; UnmapWindow | popup `x11_popups_share_parent_scaling_keep_tooltips_passive_and_cancel_dismissed_contacts`; nested "an outside press dismisses the X11 menu chain" |
+| shown menu | its parent loses the keyboard | dismissed | the same | nested "Home dismisses a menu even while its bottom parent remains visible" |
+| shown | the parent's geometry changes, or it is hidden | dismissed | the same | popup `x11_popups_…`; nested "moving a parent dismisses its old menu" |
+| shown | an ancestor menu or the parent unmapped or destroyed | dismissed | the same | nested "unmapping a menu dismisses its submenu" |
+| shown | its surface destroyed | dismissed | the same | nested "destroying X11 popups removes their pixels" |
+| shown tooltip | a press, a focus change | shown | input goes through to the parent | popup `x11_popups_…`; nested "X11 tooltip does not intercept pointer input" |
+
+### Wayland selections to X11 (x11/selection/mod.rs, send.rs)
+
+The seat's selection callbacks keep, for CLIPBOARD and PRIMARY each, a revision and up to 64 MIME types of
+at most 255 bytes (longer names dropped); nothing reaches the state. An offer imported from X11 is never
+exported back. UTF8_STRING, TEXT and STRING are offered when the source has text/plain;charset=utf-8 or
+text/plain. Replies and the timestamp have 3 s; a miss stops Xwayland.
+
+| From | Event / condition | To | Effects | Test |
+|---|---|---|---|---|
+| any | a new seat revision, not imported | preparing | the selection's transfers cancelled; an empty selection releases ownership at its acquisition time; InternAtom for each type | send `late_atom_replies_cannot_restore_an_old_generation_and_missing_replies_have_a_deadline`, `clearing_a_source_releases_ownership_at_its_acquisition_time_and_removes_read_watches` |
+| preparing | an atom reply of an older revision | preparing | ignored | send `late_atom_replies_…` |
+| preparing | every atom, at least one format | awaiting time | TIMESTAMP replaced on the hidden window | send `server_timestamp_precedes_ownership_and_stale_clears_cannot_cancel_a_new_offer` |
+| awaiting time | its PropertyNotify, the same revision | owned | SetSelectionOwner at that time | same |
+| awaiting time | a time asked for an older revision | preparing | asked again | same |
+| owned | SelectionClear at or after the acquisition time | lost | transfers cancelled; formats forgotten; an unchanged revision never claims it again | same; nested "a new X11 owner is never reclaimed without a new Wayland copy" |
+| owned | a TARGETS or TIMESTAMP request | owned | the property, then SelectionNotify | nested |
+| owned | a stale revision, an unknown target (MULTIPLE too), the source refusing, the requestor's property busy, 8 transfers running | owned | SelectionNotify None | send `unsupported_duplicate_excess_stale_and_missing_source_requests_are_refused`; nested "unsupported targets are refused" |
+| owned | a supported request (property None means the target) | reading | the source into a non-blocking pipe; the requestor watched; 5 s deadline | nested "None property falls back to the requested target" |
+| reading | EOF under 16 KiB | done | ChangeProperty, then SelectionNotify; pipe closed | send `small_and_empty_transfers_set_the_property_before_notifying_and_close_the_pipe` |
+| reading | 16 KiB buffered | incremental | INCR, SelectionNotify | send `incr_waits_for_each_delete_keeps_one_bounded_chunk_and_finishes_with_zero_length` |
+| incremental | PropertyNotify Delete | permitted | deadline renewed | same |
+| permitted | data buffered | incremental | one ChangeProperty of up to 16 KiB | same |
+| permitted | EOF, nothing buffered | done | a zero-length property | same |
+| reading or incremental | 5 s without progress, a read error, the revision replaced, SelectionClear, Xwayland stopped | cancelled | before INCR SelectionNotify None; after it nothing (never a false end) | send `timeout_and_replacement_cancel_only_their_transfers_without_a_fake_incr_eof`; nested "a reader that stops acknowledging times out", "a timed-out transfer does not stop the clipboard" |
+| any | the requestor destroyed | removed | | nested "a dead requestor does not disrupt another reader" |
+
+A transfer reads at most four times 4 KiB per turn, and has a read watch only while its buffer has room and
+the pipe hasn't ended. STRING is UTF-8 turned into Latin-1, with `?` for what can't be written; a scalar
+split between reads (up to 3 bytes) is kept and counts in the 16 KiB (send
+`latin1_translation_preserves_split_scalars_and_bounds_incomplete_input`,
+`split_invalid_utf8_at_a_chunk_boundary_cannot_exceed_the_payload_budget`). Nested: X11 reads the
+Wayland clipboard and primary selection, slow INCR reads of both, a UTF-8 scalar across an INCR chunk's
+edge, STRING in Latin-1, the desktop's clipboard untouched.
+
+### X11 selections to Wayland (x11/selection/receive.rs, receive/transfer.rs)
+
+Once connected, the adapter asks for XFixes 2 (without it, logged, nothing is imported), subscribes to
+CLIPBOARD's and PRIMARY's owner changes, and asks each's owner once; nothing polls. Each owner change starts
+a generation, which requests and replies carry, so an older one can't change a newer one. Each conversion
+has a fresh input-only requestor and `_THOR_SELECTION`. Replies have 3 s (a miss stops Xwayland), at most
+256 outstanding.
+
+| From | Event / condition | To | Effects | Test |
+|---|---|---|---|---|
+| any | the owner becomes an X11 client (notified, or the first reply for the current generation) | discovering | the selection's conversions cancelled; ConvertSelection(TARGETS) at the owner's time; the seat's offer kept meanwhile | receive `replacement_owner_cancels_old_requests_without_publishing_an_empty_selection_between_offers`, `conversion_and_mailbox_limits_close_only_new_readers_and_old_owner_snapshots_are_ignored` |
+| discovering | TARGETS read (up to 4 KiB, INCR allowed) | naming | UTF8_STRING, else STRING (Latin-1), as text/plain;charset=utf-8 and text/plain; GetAtomName for up to 62 others | receive `offers_wait_for_names_are_tagged_and_do_not_echo_or_clear_newer_wayland_selections` |
+| naming | every name | offered | names up to 255 bytes with a `/` (or x-kde-passwordManagerHint) kept; the seat's selection set, with its generation | same; nested "Wayland reads an X11-owned clipboard" |
+| discovering or naming | no usable format | none | this selection's imported offer cleared | GAP |
+| discovering, naming or offered | the Wayland selection changes | none | conversions cancelled; Wayland's selection kept | GAP |
+| offered | the owner none, or the WM itself | none | the seat's selection cleared only if still this offer | receive `replacement_owner_…` |
+| offered | the export's turn | offered | never exported back | receive `offers_wait_…`; nested "the imported offer is not echoed back as a new X11 owner" |
+| offered | Xwayland stops | none | only this offer cleared; waiting readers closed | receive `offers_wait_…`, `conversion_and_mailbox_…`; nested "keeper survives destruction of the imported X11 offer", "a replacement adapter imports a fresh X11 generation" |
+| offered | a reader for a live type and generation, fewer than 8 waiting and 8 running (both selections together) | converting | ConvertSelection; otherwise the reader's fd closed | receive `conversion_and_mailbox_…` |
+| converting | SelectionNotify for its selection, target and property | reading | GetProperty of a slice (16 KiB; Latin-1 8 KiB) | receive `incr_deletes_only_after_backpressure_and_all_property_slices_have_drained` |
+| converting | refused, or not what was asked | done | requestor destroyed, pipe closed | receive `refusal_timeout_dead_reader_and_late_reply_do_not_affect_a_replacement`; nested "a refused or malformed transfer closes only its reader" |
+| reading | INCR at offset 0 | chunk | DeleteProperty | receive `incr_deletes_…` |
+| reading | a wrong type or format, too large, a malformed INCR | done | | receive `normal_latin1_empty_and_invalid_properties_finish_only_their_own_conversion`; a malformed INCR: GAP |
+| reading | a valid value | draining | Latin-1 turned into UTF-8 | same |
+| draining | the pipe full | draining | a write watch; no reads, no DeleteProperty | receive `incr_deletes_…` |
+| draining | all written, more in the property | reading | GetProperty at the next offset | same; nested "large ordinary X11 properties are sliced without early deletion" |
+| draining | all of an INCR chunk written | chunk | DeleteProperty | same |
+| chunk | PropertyNotify NewValue | reading | | same |
+| draining | a whole property done, or a zero-length INCR chunk | done | DeleteProperty, the requestor destroyed, pipe closed | same |
+| any | 5 s without progress, the reader gone, the owner changed, a newer Wayland selection | done | | receive `refusal_timeout_…`; nested "a stalled Wayland reader is cancelled", "a failed reader does not disrupt another transfer" |
+
+Nested also: large CLIPBOARD and PRIMARY imports through INCR, arbitrary MIME bytes under the pipe's
+backpressure, a new owner replacing one whose TARGETS were pending, an old owner dying without clearing its
+replacement, Latin-1 STRING into UTF-8, the keeper keeping the text after the X11 owner quits, X11's copies
+kept from the desktop's clipboard.
+
+## Device facts (crates/device, system/profile.rs, compositor/drm.rs)
+
+What a profile holds and why is in `device-profiles.md`. This part is how the profile is chosen, which
+wins between what is detected and the profile's hints, and the machines that depend on them.
+
+### Identification (device/lib.rs `Profile::identify`, system/profile.rs, fan/main.rs)
+
+Every `clamshell` command and `clamshell-fan` identify the device once, at start, by the same pure
+function; `State` gets the profile in `Init` (`State::profile`).
+
+| Transition | Test |
+|---|---|
+| `start --CLAMSHELL_DEVICE thor, vm, vm-hdr or generic--> that profile` (detection skipped) | device `identity_uses_exact_compatible_entries_dmi_and_an_explicit_override` |
+| `start --the device tree's compatible has the whole entry "ayn,thor"--> thor` (a longer entry such as `ayn,thor-other` doesn't match) | same |
+| `start --DMI's sys_vendor "QEMU" or product_name "QEMU Virtual Machine"--> vm` | same |
+| `start --otherwise--> generic` | same; system `kernel_identity_is_read_from_the_supplied_root_and_unknown_overrides_fail` |
+| `start --an unknown CLAMSHELL_DEVICE--> exit [the error names it]` | both |
+| `start --an identity file missing--> read as empty`; unreadable otherwise: ClamShell logs it and reads it as empty, the fan daemon exits 1 | the system test (missing files); the fan daemon: GAP |
+| `generic --clamshell --drm--> exit [no connector for the top screen]`, as for a named connector absent or not connected (`drm.rs` `choose`) | GAP; the VM suite runs the DRM session with the vm profile |
+
+### What is detected, and the profile's hints
+
+What the hardware reports wins; the profile's value is used only when nothing is reported; with neither,
+the fact stays unknown and its UI is dimmed, not hidden.
+
+| Fact | Precedence | Test |
+|---|---|---|
+| the screens (`drm.rs` `choose`) | the connector the profile names; the mode the kernel set, else the preferred one, else the first; turned by the profile's rotation | the VM suite (Virtual-1 and -2); on the device (DSI-2, DSI-1) |
+| the second screen's density, for the virtual touchpad (`drm.rs` `bottom_density`, `system/input/touchpad`) | the connector's millimetres, turned, else the profile's hint (the Thor's only, 16.5 px/mm), else none and no virtual touchpad; nested, the hint only | compositor `the_second_screens_density_is_its_panels_or_else_the_profiles`, device `only_a_known_physical_panel_supplies_a_density_hint`, touchpad `both_reported_axes_are_kept_and_unknown_resolution_is_not_guessed`; VM `touchpad` |
+| a backlight's label (`levels` `backlight_label`) | the backlights found; one named as the profile's top or bottom hint reads "Top screen" or "Bottom screen", any other its kernel name | levels `the_thors_backlights_by_their_screens` |
+| an absolute input device's screen (`drm.rs` `screen_of`) | the profile's entry for it; else, for a touchscreen, the profile's catch-all; else the top screen | compositor `an_input_device_is_on_the_screen_the_profile_names_it_on` |
+| the auxiliary button (`system/input/pad/device.rs`) | an evdev device of the profile's name and key, looked for when a controller opens; its presses become the auxiliary role; without the hint, none | device `physical_back_codes_are_normalised_and_missing_auxiliary_controls_stay_absent`; VM `pad_guide` |
+| Back | the profile's physical code becomes the Back role, in events and on resynchronisation, and is kept off the virtual pad | system `control_normalisation_preserves_other_keys_and_axis_codes`, device `physical_back_codes_…` |
+| X and Y | the controller's driver read from its sysfs link; a driver in the profile's `letter_code_drivers` swaps them | device `button_conventions_are_facts_about_the_detected_driver`, system `x_and_y_swap_between_letters_and_places` |
+| motion (`pad/mod.rs` `find_motion`) | the controller's evdev motion sensor, else the profile's sensor hub (QRTR service, rate, clock, axes), else none; looked for again after waking | device `only_the_physical_profile_claims_a_sensor_hub`, sensor hub `the_thors_frame_is_turned_a_quarter`; VM `gyro_sleep` (evdev); the hub on the device |
+| the panels' colour (`drm.rs`, `nested.rs`) | DRM: the profile's description of each screen; nested: the host's, once its colour management answers, else sRGB | device `panel_facts_preserve_the_documented_headroom_without_claiming_a_ten_bit_link`, `tests/device_profiles.rs` `panel_queries_follow_the_selected_profile`; which one is used: GAP |
+| the canvas (`src/session.rs`, `server.rs` `resize`) | DRM: the screens' modes, turned; nested: the profile's preview size; a host resize keeps the screens' width ratio, at least 4×4 and 2 px a screen | compositor `requested_preview_geometry_sets_the_initial_canvas_and_resize_ratio` |
+
+### Refresh calibration without the profile's entry (system/display/refresh.rs)
+
+The Device view's Refresh row is under Device view. Without `refresh_calibration` in the profile:
+
+| Transition | Test |
+|---|---|
+| the row reads Unavailable, dimmed, still tappable | GAP (the snapshots use the Thor's profile) |
+| `Idle --tap--> Running [CalibrateRefresh, the bottom screen off]`; no program is started, and `RefreshCalibrated(Err)` answers it: `Done(Err)` | refresh `a_profile_without_calibration_reports_unavailable_without_running_a_tool`, device `the_refresh_calibration_runs_once_at_a_time_and_says_how_it_went` |
+| `thor-panel-calibration` takes its facts from `clamshell device panel` (rates, attributes, step, tolerances) and exits saying there is no panel to calibrate when they are null | `panel_queries_follow_the_selected_profile`; the frame length search on the device |
+
+### Charging (system/power/tuning.rs)
+
+The tuning thread chooses how to hold the limit once, at start, and finds each power supply's attributes
+and the OEM switches again at each settings application and every 30 s while the Charge limit is under
+100.
+
+| Transition | Test |
+|---|---|
+| `start --CLAMSHELL_CHARGE_LIMIT current, threshold or firmware--> that way` | `detected_controls_take_precedence_unless_the_profile_records_a_firmware_quirk` |
+| `start --the profile's prefer_current (the Thor: its firmware ignores the threshold)--> current`; otherwise `detected` | same |
+| `detected --the supply has charge_control_end_threshold--> threshold [the limit as end threshold, current at its most]`; `--the threshold gone--> current` | same |
+| `current`: threshold 100; current 0 at or over the limit, the most again 5 below | `a_charge_limit_holds_at_the_limit_and_charges_again_five_below` |
+| `firmware --both switches there (named by the profile), limit 80--> [the 80 % switch on, charging on, current not held]`; switches missing or another limit: held as current | `firmware_switches_require_both_detected_attributes_and_use_the_supplied_names` |
+| `any --Bypass (0)--> [current 0, threshold 100; with the firmware's switches, charging off]` | same |
+| `any --the session ends--> [limit 100: threshold 100, current at its most, switches reset]` | same |
+
+Whether the firmware honours a write is checked on the device.
+
+### Display modes and the Refresh tile (state/device/display.rs, state/settings_tab.rs, compositor/drm.rs)
+
+`DisplayModes` holds at most 32 sorted, unique rates (1 to 1000 Hz) and the rate at start; the profile gives
+none.
+
+| Transition | Test |
+|---|---|
+| `unknown --DisplayModes at the DRM host's start (the top connector's rates at its current size, the start rate)--> known`; nested sends none and stays unknown | `rates_are_bounded_sorted_deduplicated_and_never_invented`; the DRM report: the VM suite, the device |
+| `any --DisplayModes--> replaced`; the saved Refresh unchanged; effects only if the rate wanted changes | `refresh_taps_follow_announced_modes_and_reports_never_change_saved_choices`; the randomized test; `allocations_per_event` |
+| Refresh tap: 0 ("as is"), then each rate: `--tap--> the next`; `--a value not listed, or no rates--> 0` [Save(Settings); Apply and Compositor::Refresh when they change] | `refresh_taps_follow_…` |
+| the rate wanted: a running calibration's, else the last launch's settings until its window shows, else those in force; Refresh 0 under a frame cap the start rate isn't a multiple of: the highest rate the cap divides (the tile says "for the cap") | `a_cap_as_is_gets_a_rate_it_divides`, `what_the_outside_starts_without_goes_out_at_the_first_event`; the randomized test |
+| the compositor: `Refresh(0)`, the start mode; `Refresh(hz)`, the nearest mode of the top screen's size | compositor `the_mode_for_a_refresh_is_the_nearest_or_the_screens_own` |
+| no rates: the tile dimmed, still tappable | GAP |
+
+### The fan daemon without a policy (fan/main.rs, packages/clamshell/clamshell-fan.service)
+
+| Transition | Test |
+|---|---|
+| `start --the profile has no fan--> exit 0` (with `--safe` too); `Restart=on-failure` leaves it stopped | device `unsupported_profiles_do_not_invent_a_curve_and_known_curves_are_ordered`; the exit itself: GAP |
+| `start --identification fails--> exit 1`, restarted every 2 s | GAP |
+| `start --a policy--> running` on the profile's hwmon and curves | `waits_for_the_fan_then_takes_it_and_sets_it`, `a_different_board_policy_changes_interpolation_and_fallback_without_device_checks`, `stopping_leaves_it_at_the_safe_speed`; on the device |
+
+The Fan tile is dimmed when the profile has no fan (GAP).
+
 ## Interactions
 
 | From | Route | To | Test |
@@ -629,7 +1505,7 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
 3. **Pad route:** consistent with claimant, listening and dock move; reconciling again changes nothing;
    the focus ring shows only when the route is Ui, or after a hold on shelf's selected entry opened its
    actions with the pad elsewhere, until the next touch hides it (the ring is what shows the actions are
-   open, S24; the focus may move meanwhile, as when the Device view opens).
+   open, S24 in the history notes; the focus may move meanwhile, as when the Device view opens).
 4. **Session:** live window ids and running ids unique; at most one selected top window and one window placed
    below; remembered selections belong to their top groups; keyboard focus is absent or names
    a live window; at most one launch waiting per entry; no launching instance listed in
@@ -673,946 +1549,4 @@ It runs 8 fixed seeds × 4000 events with the other tests (about 1.5 s in the de
 `RANDOM_SEEDS=2000 cargo test -p clamshell-state --release random` runs seeds 1 to 2000,
 `RANDOM_SEED=x` one seed, and `RANDOM_EVENTS=n` sets the events per seed. A failure prints the seed, the
 event's number, its effects and the 20 events before it. 3000 seeds × 5000 events passed after the fixes
-of S50 and S51.
-
-## Suspected problems
-
-Session and dock:
-- S1. A tray-only program that exits by itself shows "didn't start" (`session/running.rs:261`): `seen` only
-  means it had a window. Fixed: state/session: a program with a tray icon has started.
-- S2. A scope of an entry not in the library (window-found, tray-found, browsed) is never re-adopted after
-  a restart (`running.rs:222`); its windows and tray are skipped as ours, so it runs with no dock tile and
-  can't be quit, and a Frozen hold for it is dropped so its slice stays frozen. Fixed: state/session: a found program's scope is found again after a restart.
-- S3. After a tray program's scope is adopted, its tray menu is missing until the tray thread re-reads the
-  icons (`tray.rs:122`). Fixed: state/session: a tray icon stays with its adopted program and gives no pid.
-- S5. Show when every window is moved down focuses an empty top group (`running.rs:488`). Fixed: state/session: Show of an entry whose windows are all below shows them there.
-- S6. A quit the program refuses (a "save changes?" cancelled) stays quitting indefinitely: never paused,
-  and ended when its windows later close (`running.rs:566-631`). Fixed: state/session: a quit whose windows stay 10 s is given up.
-- S7. A window-found entry without its own process gets a tray icon's pid; Quit then signals it (`tray.rs:111`).
-  Fixed: state/session: a tray icon stays with its adopted program and gives no pid.
-- S8. A runner paused again while a launch waits more than 10 s for its scope (`background.rs:447`). Fixed: state/session: a launch waiting for its scope keeps its runner resumed.
-- S9. A launch the launcher never answers stays launching, blocking a relaunch (`running.rs:542`). Fixed: state/session: a launch with no answer in 30 s is given up.
-- S20. Back at the top of the dock's tray menu closes the whole menu instead of going back to the entry menu.
-  Fixed: state/dock: Back goes up to the entry's menu; menu and move end with their entry.
-- S21. Dock leftovers: `close` keeps the tray path; the menu stays open after its entry left; a Library
-  read can drop the item being moved; a long press while moving opens the menu with the move on.
-  Fixed: state/dock: Back goes up to the entry's menu; menu and move end with their entry.
-
-Second screen, device, pad, keymaps:
-- S10. After the account password editor saves or cancels, the screen stays on Keyboard (`tabs.rs`, `editor_done`),
-  against `Event::EditOnKeyboard`'s doc. Fixed: state/bottom: one editor on the keyboard, which goes back when it closes.
-- S11. A text field losing focus goes back from Keyboard even while an editor is open there (`bottom/mod.rs:204`). Fixed: state/bottom: one editor on the keyboard, which goes back when it closes.
-- S12. Opening the password editor while naming a file drops the name typed (`bottom/editor.rs:117`). Fixed: state/bottom: one editor on the keyboard, which goes back when it closes.
-- S13. Modifiers armed on the capture screen survive leaving it by tab or Home (`keymap/screens/mod.rs:573`). Fixed: state/keymap: modifiers armed on the capture screen go with it.
-- S14. The gyro's "hold still" notice expires after 2 s whatever the calibration does. Fixed: state/bottom: the gyro's hold still shows until it answers.
-- S15. Showing the program's windows below (dock tap, BottomWindows) while the screen is off by hand shows
-  them on a dark panel (`bottom/screen.rs:310`). Fixed: state/bottom: showing the windows below turns the screen on.
-- S16. A screen dark for a game wakes only on the Wake tap, not a touch or pad focus, and not when the tap
-  is swallowed by idle (`screen.rs:154, 214`). Kept, by decision.
-- S17. Two taps on Sticks before the first progress start the calibration twice (`device/mod.rs:151`). Fixed: state/device: sticks and remote login wait for their answer.
-- S18. Two taps on Ssh send it twice (`device/mod.rs:149`). Fixed: state/device: sticks and remote login wait for their answer.
-- S19. The pad switched to the second screen goes back when the claimant changes (the keyboard coming
-  up): the documented exception never applies (`nav/pad.rs:150`). Fixed: state/pad: switched to the second screen, the pad stays until View or shelf.
-- S22. Forgetting a keymap that was set globally leaves games that chose it on their runner's keymap, not
-  Default (`settings/mod.rs:569`). Fixed: state/settings: forgetting a keymap sets who chose it to Default.
-
-Shelf, files, radios, levels, status:
-- S23. A tap on an entry not in the list leaves the focus on it. Fixed: state/shelf: a tap on an entry not in the list does nothing.
-- S24. A long press on the selected entry by touch plays it (`shelf/rules.rs:17`). Fixed: state/shelf: a long press on the selected entry opens its actions by touch too.
-- S25. A relayout (favourite, play) doesn't move the pointer's focus with the selection (`rules.rs:141`). Fixed: state/shelf: a relayout moves the focus with the selection.
-- S26. A Library read drops the typed filter. Fixed: state/shelf: a library read keeps what is typed.
-- S27. Copy/Cut with only stale selected entries makes an empty clip that Paste offers and ignores (`files.rs:316`). Fixed: state/files: a listing drops selected entries that are gone.
-- S28. A cut clip is cleared before the move finishes, so after a failed move it is gone. Fixed: state/files: count the operations running, and keep a cut entry until moved.
-- S29. `busy` clears at the first of several operations' Done (`files.rs:415`); without a Done it never clears. Fixed: state/files: count the operations running, and keep a cut entry until moved.
-- S30. A Wi-Fi or Bluetooth reading wipes the local error and busy mark, even one older than the command. Fixed: state/radios: a busy mark and a local error stay until a reading answers them.
-- S31. Setting a muted stream's volume shows it unmuted but leaves it muted (`levels/mod.rs:370`). Fixed: state/levels: setting a muted stream's level unmutes it.
-- S32. Dimming at brightness 0 raises it to 1 (`levels/mod.rs:264`). Fixed: state/levels: dimming never raises the brightness.
-- S33. The battery warning fires on the charger in bypass mode (`status/mod.rs:103`). Fixed: state/status: the battery warning keys on discharging.
-- S34. The battery tab's spender menu stays open across tabs and after its row is gone. Fixed: state/status: the battery menu closes when the tab is left or its row goes.
-- S35. A relayout doesn't close a group that left a derived collection (Recent, Favourites). Fixed: state/shelf: a relayout closes a group no longer in its collection.
-- S36. A folder listing that changes the entries but not shelf's view isn't asked for metadata first. Fixed: state/shelf: a listing that changes the entries shown asks for their metadata first.
-- S37. The Mute key shows its notice when the volume is unknown and nothing changes (`keys.rs`). Fixed: state/levels: the Mute key shows its notice only when the mute changed.
-- S38. The resume record can leave out a collection whose stored place is past its list after a relayout
-  (`shelf/mod.rs:552`). Fixed: state/shelf: the resume record keeps a place past its shrunk list.
-- S39. An entry known by its app id (a Steam game) whose launch's unit ends while its window is open
-  runs on by its windows, but its play is then recorded from when the unit ended, not from its launch
-  (`running.rs` `follow_ours`); found by the test filling the GAP. Fixed: state/session: a play that goes
-  on by its windows counts from its launch.
-- S40. Suspend of an entry in view (the usual case, from the dock below it) freezes it and thaws it in the
-  same event, since its window is still shown when the event's steps follow and a held entry counts as
-  in use when shown; the existing test handled the event without its steps. Fixed: state/session: a
-  suspended entry stays frozen until shown after it was hidden.
-
-Found by the randomized event-sequence test (`random.rs`):
-- S50. A launch given up that starts late isn't followed while another launch of the entry waits: its
-  scope is skipped (`running.rs`, `follow_units`), so its windows are taken for a program found by them,
-  with its scope listed. Fixed: state/session: a scope listed runs its entry while another launch waits.
-- S51. Suspend of a quitting entry freezes it, so it can't close its windows and end, and it stays quitting
-  and paused (`background.rs`, `suspendable`). Fixed: state/session: a quitting entry isn't suspended.
-
-## Decisions on the suspects (2026-10-23)
-
-Decided without a design discussion, to get them fixed. **Revisit** marks the ones that might need it,
-with what would make us change our minds.
-
-- S1. A program that had a tray icon counts as seen: ending without a window isn't "didn't start".
-- S2. A scope of an entry not in the library is adopted as an entry found by its scope (named from its
-  windows or tray icon as when it was found), so it is on the dock and can be quit and thawed.
-  **Revisit** if adopting what an earlier ClamShell found turns out to bring back programs the user
-  doesn't think of as theirs.
-- S3. Adoption keeps the tray key, so the menu stays.
-- S5. Show of an entry whose windows are all moved down shows them below, as the dock tap does.
-- S6. A quit whose windows are still there 10 s after the last close is abandoned: the entry runs on as
-  before, unpaused rules apply again. **Revisit** the 10 s, and whether a second Quit should then
-  force-kill.
-- S7. A tray icon gives its pid only to an entry found by that program's own process.
-- S8. A launch waiting for its unit counts as starting, so its runner isn't paused again.
-- S9. A launch with no answer from the launcher in 30 s is given up, with the "didn't start" notice.
-  **Revisit** the 30 s for slow starts (Proton games on first run). The launcher's failure arriving after
-  that is ignored, so the notice isn't shown twice.
-- S10, S11, S12. An editor opened on the keyboard goes back where it came from when it closes, whatever
-  its purpose; a text field losing focus doesn't switch away from an open editor; a second editor for
-  the keyboard while one is open there is refused with a notice, so nothing typed is lost. **Revisit**
-  if refusing turns out to block something the user expects to interrupt (the account password). S12
-  added a notice kind for it, KeyboardBusy.
-- S13. Leaving the capture screen any way drops the modifiers armed there.
-- S14. The gyro's notice stays until the calibration answers, at most 30 s.
-- S15. Showing the windows below turns the screen on if it was off by hand.
-- S16. Kept: a screen dark for a game wakes only on the Wake target, so a stray touch mid-game doesn't
-  light it. **Revisit** after using it on the device.
-- S17, S18. The sticks calibration and the remote-login toggle wait for their answer before taking
-  another tap, at most 30 s (for the sticks, 30 s since the last progress), as the gyro's notice does, so
-  a dead thread or helper can't block them for good.
-- S19. Implement the documented exception: the pad switched to the second screen stays there when the
-  claimant changes, until View is pressed or shelf comes to the front. **Revisit** if it feels sticky
-  on the device. Applied literally, this includes the pad mouse: the pad stays on the second screen when
-  the mouse turns on (by hand or by a game), so the mouse does nothing until View.
-- S20. Back at the top of the tray menu goes back to the entry's menu.
-- S21. The dock menu closes when its entry leaves the dock; a move ends when its item goes; `close`
-  clears the tray path; a long press while moving ends the move first.
-- S22. Forgetting a keymap sets those who chose it to Default, as the docs say.
-- S23. A tap on an entry not in the list does nothing.
-- S24. A long press on the selected entry opens its actions, by touch as with the pad.
-- S25. A relayout moves the focus with the selection.
-- S26. A library read keeps the typed filter.
-- S27. Copy or Cut with nothing valid selected does nothing; a listing drops selected ids that are gone.
-- S28. A cut clip is cleared when its paste succeeds.
-- S29. `busy` counts the operations running.
-- S30. A local error (needs a login) and the busy mark stay until the next attempt or a reading that
-  answers it (connected, or the system's own error). **Revisit** if a reading can't tell an old attempt
-  from a new one.
-- S31. Setting a muted stream's level unmutes it, as the output volume does.
-- S32. Dimming never raises the brightness.
-- S33. The battery warning keys on discharging.
-- S34. The battery menu closes when the tab is left or its row goes.
-- S35. A relayout closes a group no longer in its collection.
-- S36. A listing that changes the entries shown asks for their metadata first.
-- S37. The Mute key shows its notice only when something changed.
-- S38. The resume record keeps every collection's place, clamped to its list.
-- S39. A launch that goes on by its windows (app id or browsed file) keeps its launch's start as the
-  play's start.
-- S40. A suspended entry counts as shown again only once its windows have been seen hidden; one found
-  frozen at start counts as hidden already.
-- S50. A unit listed runs its entry whatever launch of it waits; the waiting launch joins it when its
-  own unit comes.
-- S51. A quitting entry can't be suspended; the dock menu's Suspend does nothing for it.
-
-### In-process window presentation (compositor/)
-
-Window limits, role and optional colour description are facts. Changing them preserves selection and
-placement. Normal game windows fill their viewport with aspect-preserving fitting; normal apps use
-native scale. Fixed-size windows, dialogs and utility/splash roles are centred at native scale and
-shrink only when necessary. Rendering and pointer input share the same viewport, origin and scale;
-black around the client does not activate the shelf behind it. Colour metadata is reserved for future
-colour management; the host does not advertise HDR.
-
-The state decides on `Opened` whether a window comes in front. While a launch waits for its window,
-only its own windows select themselves (in its unit, of its entry
-by app id or process, or a dialog of one); others open behind, as Steam's windows behind a Steam game's
-launch (`steams_windows_open_behind_a_steam_games_launch`). Otherwise an external client's first window
-selects itself, a first window of our own unit waits for foreground launch intent, and a later window
-may select itself only when that program is shown. A dialog selects itself when its parent's program is
-shown. Tests: `opening_focus_respects_launch_intent_and_shown_program`,
-`a_window_opens_in_front_as_its_opening_focus_says`, the presentation
-policy tests, metadata-change and Home-tap tests in session/windows, and the randomized state test.
-The headless compositor protocol test checks first configure, fixed-size child placement and close;
-geometry tests check native sizing, fitting and inverse coordinates. `tests/nested-compositor.py` checks
-real client pixels across top, bottom, return and Home. The remaining protocols are pending.
-
-### Compositor touch routing (compositor/touch)
-
-A contact starts on a client surface, a UI screen, an overlay's target, or black. Client contacts retain
-their surface and inverse geometry from down until up; each slot has its own target, so both screens can
-be touched simultaneously. Motion across screens keeps that target. UI contacts use the existing Core
-press/move/release path on their initial screen. An overlay's targets, those of the screen's overlay
-frame drawn last (`Core::press_overlay`), act once on down and consume the contact: a Home arrow
-switches windows, a notification is tapped, its close mark dismisses it (tests
-`touching_a_home_arrow_switches_once_and_consumes_home_release`,
-`touching_a_notification_taps_it_and_its_close_mark_dismisses_it`);
-black stays ignored even when the finger moves over a client. Unknown motion/up events do nothing.
-Tracking is bounded to 32 simultaneous contacts; additional downs are ignored. Reusing an active slot
-cancels the previous sequence before accepting the new down.
-
-Cancel, loss of host focus, resize, or a client being hidden/unmapped/removed cancels the active sequence
-and clears UI presses. Late up/motion after cancellation does nothing. The pinned Smithay cancellation
-path only visits slots pending since its last frame; the adapter repeats active client positions before
-cancel so stationary fingers also receive cancellation. Winit reports physical window coordinates and
-has no touch frames; the nested adapter finishes each down/motion/up as a frame. These host details stay
-outside the contact routing, which the DRM/libinput backend can call after output mapping.
-
-`touch_contacts_keep_independent_surfaces_and_native_coordinates` uses real wl_touch traffic over a
-socket pair. It pins independent surfaces, native and scaled coordinates, cross-screen dragging,
-black margins and bottom-bar exclusion, cancellation after a completed frame, new contacts after
-cancellation, hiding a touched client, and ignored late events.
-`touching_a_home_arrow_switches_once_and_consumes_home_release` checks that an arrow contact switches
-once and consumes Home release. Physical touchscreen input remains a nested-host/device check; no
-libinput backend is enabled yet.
-
-### Compositor text input and on-screen keys (compositor/keyboard)
-
-Text-input-v3 enable/commit from the focused client sends TextInput(true) through Core; disable,
-destruction of the active text input, or a keyboard focus change sends TextInput(false). State owns
-raising and restoring the keyboard tab, including its existing editor guards. The compositor acts as
-the seat's input method; no external input-method process is required.
-
-A printable OSK stroke without Ctrl/Alt/Super commits its shifted character to the active text input,
-followed by done with the client's commit serial. Without active text input it becomes a seat key
-press/release. Shortcuts and named keys always use seat events: modifiers down, key down/up, modifiers
-up in reverse order. A separate keyboard source preserves physically held keys when OSK modifiers are
-released. Injected keys bypass nested development shortcuts. Unsupported keys and strokes without
-keyboard focus do nothing. Bottom UI interactions retain the client's keyboard focus; the shelf can
-claim it. UI editors continue to consume their own strokes in state.
-
-`the_bottom_keyboard_commits_text_and_sends_shortcuts_without_stealing_focus` exchanges real
-wl_keyboard and text-input-v3 messages over a socket pair. It pins commit strings and serials,
-modifier order, native key fallback before enable and after disable, physical Shift retention, F12
-delivery, the state-to-effect route, tab restoration and silence after focus loss. The touch protocol
-test continues to pin the two-screen routing. Real toolkit activation is checked in nested mode.
-
-### Compositor idle inhibition (compositor/idle)
-
-Nested input restarts a ten-second quiet timer. Quiet and resumed transitions send CompositorQuiet /
-CompositorInput to the existing device idle machine through Core. A mapped surface belonging to a
-visible window, including a subsurface or popup, can inhibit that timer with idle-inhibit-v1. Hidden,
-unmapped and dead surfaces cannot. Each inhibitor is counted separately; destroying one removes only
-that inhibitor. Dead surfaces are discarded. Ending inhibition starts a fresh quiet interval.
-
-`quiet_input_and_inhibition_report_only_transitions_and_restart_the_timeout` pins timeout thresholds,
-repetition, resumption and inhibitor removal.
-`inhibitors_count_individually_and_only_mapped_visible_surfaces_keep_idle_off` uses real protocol
-objects to check mapping, hiding/showing, subsurface ownership, multiple inhibitors, unmapping and
-surface destruction. The existing state idle tests pin dim/off/sleep effects and the desktop sleep
-guard; no separate policy is introduced in the compositor. The nested host still leaves physical
-output power to its parent; actual output power belongs to the DRM backend.
-
-### Nested clipboard and selection focus (compositor, system/session/clipboard)
-
-Smithay owns data-device, primary-selection and ext-data-control protocol objects and offer transfer.
-Keyboard focus selects the client receiving clipboard and primary offers; losing focus clears both.
-The existing keeper remains a system thread and retains its text-only, primary-mirroring, password
-manager and size-limit rules. The nested host passes its socket path to that thread explicitly.
-The process environment is never changed.
-
-Nested saved text goes under `$XDG_RUNTIME_DIR/clamshell/compositor/<socket>/clipboard`, separately
-from the session's `$XDG_RUNTIME_DIR/clamshell/clipboard`. The nested compositor neither reads the
-parent's saved text nor replaces it. `tests/nested-compositor.py` checks CLI set/get, persistence after
-the source exits, native Foot OSC52 copy through wl_data_device, primary paste back into Foot, and
-an unchanged parent clipboard.
-
-### One-shot game-pad activity (state/sync, system/input/pad)
-
-Top content without keyboard focus arms PadActivity(true). A game-pad press or deflection sends one
-PadActive and disarms the router locally, before another input can be reported. State restores top
-keyboard focus and sync sends PadActivity(false). Further game input sends no activity events. Losing
-keyboard focus again rearms the watch; repeated focus observations do not. The pad supervisor retains
-the watch while the controller is absent and installs it on reconnection.
-
-`game_activity_is_reported_once_per_keyboard_focus_loss` exercises hundreds of presses and deflections
-with no watch, then one report per arming. The session keyboard-focus and pad-activity tests pin the
-effect sequence and unchanged placement. The randomized invariant checks the watch against top
-keyboard focus after every event. Snapshot pixels and focus are unchanged; the trace adds only watch
-arming/disarming in the three scenarios that move keyboard focus away and back.
-
-The nested host caches each client's window presentation at Core's state revision. Repeated frames
-and pointer hit tests read that cache. Any applied event, including UI-generated events, invalidates
-it; the next window sync derives it again. The protocol test changes a live window's role and checks
-its new configure policy, as well as unchanged revisions across repeated syncs.
-
-### Client failure containment (compositor/server, render)
-
-One wl_surface has at most one live toplevel. A duplicate is rejected before another window enters
-the model. A failed client buffer import or popup setup rejects that client, with a logged reason;
-other windows and the event loop continue. Wayland protocol disconnects are logged; normal disconnects
-are debug messages. Host renderer/display failures remain session failures, as there is no usable
-display to continue on. No X11-specific path has been introduced in state.
-
-`a_protocol_error_disconnects_only_its_client` constructs a duplicate role on a separate real Wayland
-connection and then changes a healthy mapped client's title, asserting its window and session remain
-alive. `xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu` now also stops
-acknowledging configure, retains an oversized buffer across a screen move, and checks the fitted
-transform. It unmaps and remaps the same surface, reapplying xdg properties and checking that the
-unowned window starts above again. Fixed-size child presentation remains in the same test. Renderer import paths are exercised by
-`tests/nested-compositor.py`; a failed client import never propagates as a host-loop error. Xwayland
-supervision and X11 toplevel fixtures are implemented; X11 menus and clipboard bridging remain phase 2 work.
-
-### Window-event diagnostics and replay (compositor/trace)
-
-Core's optional observer sees inputs before apply and cannot change state. The compositor retains the
-last 256 window inputs, preserving atomic batches, plus Home/window chords and pad focus restoration.
-Each record has a sequence, both clocks and the preceding top/bottom/keyboard selection and window
-count. Irrelevant inputs do not enter the ring. At capacity, a new record discards the oldest. No
-recording work occurs in an unchanged frame; strings are copied only for recorded window metadata.
-
-`window events FILE` becomes one DumpWindowEvents effect. The compositor snapshots the ring and final
-selection, then a worker writes JSON with mode 0600. Success or failure is logged; an export failure
-does not change the session.
-
-`trace::Recording::replay` applies the recorded clocks and inputs to a matching state fixture and
-checks each preceding selection and the final one. The fixture supplies the library, rules and launch
-context; a wrapped ring starts at its first retained event. A mismatch is reported with its sequence.
-`recorded_window_batches_and_chords_replay_through_state` checks round-trip serialization, batch
-preservation, replayed window facts and keyboard focus, fixture mismatch, file permissions and export
-failure. `the_ring_keeps_only_the_last_256_window_inputs` pins wrap order and capacity. State and control
-tests pin the diagnostic effect and path; its event is in the randomized generator. The nested smoke
-test exports the live ring through the control command and parses its final empty-window selection.
-
-Window facts carry no Wayland/X11 transport tag. Adapters translate client properties into parent, role,
-limits, identity and colour facts; state rules use those facts uniformly. Session tests check identity changes
-and parent inheritance without a transport-dependent branch. This removal preserves snapshot pixels, focus and
-trace.
-
-### Coalesced client titles (compositor/server)
-
-A title request for an open Wayland toplevel marks that client's title dirty. At the next rendered
-frame, the host reads its final title and emits one Title event if it differs from state. Repeating
-the same title emits nothing. Initial titles arrive with Opened; unmapping clears a pending title,
-and a removed window has nothing left to flush. The ordinary event-loop turn does not flush titles,
-so several protocol dispatches before a redraw still produce at most one update per rendered frame.
-
-The headless lifecycle client sends 101 different titles in one batch and then 100 identical ones.
-`xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu` asserts the final title and
-exactly one Title record in the event ring across both batches, alongside the unmap/remap checks.
-Headless tests step the same frame boundary as the nested host.
-
-### In-process screenshots (compositor/render, system/display/screenshot)
-
-Screenshot effects in the nested host request one capture of the next rendered scene. Requests before
-that frame coalesce. Readback copies the combined logical screens to top-first SDR RGBA8 pixels, then
-restores the window EGL target before presentation. Readback failure is logged and forwarded as a
-screenshot error; it does not escape into the host loop. The binary passes pixels or the error to
-Handles, whose system worker encodes/saves PNG and sends the existing Screenshot result event.
-The state owns the success/failure notice. The DRM host captures the same way.
-
-`screenshots_are_consumed_by_the_host_instead_of_the_parent_capture_tool` pins coalescing and that the
-effect stays with the host. System screenshot tests decode a saved PNG to check size and row
-order, and check invalid images, missing folders and write failure. The nested smoke test saves a
-complete PNG in an isolated home, checks its dimensions, and continues with client rendering,
-clipboard, screen moves and Home. This catches losing the EGL window binding during readback.
-Readback is an SDR file conversion after composition; it does not set client/target precision or
-advertise HDR. Future HDR screenshot tone mapping remains part of the colour-management work.
-
-### Client viewports (compositor)
-
-The nested host advertises viewporter. A committed source rectangle crops the buffer after its
-buffer transform and scale; the destination sets the logical surface size. Presentation fits that
-logical size to the selected screen, and hit testing uses the same inverse transform. Destroying a
-viewport clears source and destination on the next commit, restoring the buffer-derived logical size.
-Smithay validates viewport requests through the existing buffer commit handler; protocol errors end
-that client under the ordinary client-isolation rule. No viewport facts enter state, and no pixel
-format conversion is introduced.
-
-`viewport_destination_drives_geometry_and_destroy_restores_buffer_size` drives a real socket-pair
-client with a 640×480 buffer at scale 2, a cropped source and a 600×400 destination. It checks logical
-geometry and centre hit coordinates before and after destroying the viewport, with one state window
-throughout. Buffer cropping and sampling use the renderer's existing surface-tree path.
-
-### Real EGL client coverage (compositor)
-
-The nested smoke harness starts the standalone `egl-client` example alongside Foot. The example is a
-Wayland EGL client using the existing safe renderer API, with no session state or system workers.
-Its distinct solid colour lets the harness check top presentation, moving below and returning above
-while Foot remains visible on the other screen. A close chord above delivers xdg close, the client
-exits normally, and the previous window reappears; Home still returns to the shelf afterwards.
-
-`tests/nested-compositor.py` checks those pixels and process outcomes under headless sway with software
-EGL, alongside its shared-memory, clipboard and screenshot checks. The EGL fixture is built separately
-as stated in the script. This exercises EGL rendering over the available software transport; native
-dmabuf advertisement/import and hardware GPU-client coverage remain separate work.
-
-### Native dmabuf imports (compositor/dmabuf)
-
-A native EGL renderer advertises exactly its dmabuf formats and modifiers, retaining higher-precision
-formats. A software EGL device advertises no native dmabuf global: its import-format list does not
-guarantee that native Vulkan allocations can be sampled, and a deferred import can fail inside Mesa
-after EGL accepted it. The software smoke test asserts the absence of that global in a real EGL
-client's registry traffic, then checks rendering, moves and close. A renderer with no formats advertises no dmabuf global. When EGL identifies a render device,
-feedback describes that device and its sampling formats; otherwise the host advertises version 3.
-Feedback-file creation failure is logged and also uses version 3. No scanout preference is advertised
-by the nested backend.
-
-A create request queues an import for the next redraw. The renderer validates it before scene drawing:
-success completes the buffer notification once; failure logs the reason and posts a fatal client
-protocol error. Each client may have at most 64 pending imports in one dispatch; exceeding that limit
-ends that client. Queued notifications are failed on host shutdown. A frame with imports forces a full
-render, restoring the EGL window target even if scene damage would otherwise be empty. No window event
-or state apply is produced by buffer imports, and no intermediate 8-bit conversion is used.
-
-`a_rejected_dmabuf_disconnects_only_its_client` receives real version-3 format events and version-4
-feedback, including a 10-bit format and the native-byte format table/device. It submits a buffer to a
-mock renderer boundary, asserts that boundary was reached exactly once and rejected the requesting
-connection, then changes a healthy mapped window's title. The accepted-import protocol test uses a
-mock successful boundary to assert one created buffer and no work on an empty queue. This tests
-protocol completion, not a GPU importing an ordinary file. The nested software-EGL smoke test remains
-green. Its `--gpu` mode uses a headless GLES2 host and hardware EGL, checks rendered pixels across
-screen moves/close and requires native dmabuf create requests in the fixture's protocol log. It fails
-rather than accepting shared-memory transport in that mode. Both modes passed on the development
-desktop; the hardware run submitted AMD-modified 10-bit buffers and rendered the expected colours.
-
-### Popup menu grabs (compositor/popup)
-
-A menu belongs to its root toplevel and never creates a state window. A visible, keyboard-focused
-parent may grant a popup grab on the session seat; other parents or seats receive popup_done.
-Malformed roots and failed popup setup end that client with a logged reason. A conflicting seat grab
-dismisses the popup chain instead of replacing the other grab. Nested popups share the parent's grab
-chain. The pointer grab is installed before the keyboard grab: replacing a parent pointer grab releases
-its matching keyboard grab, so reversing this order would release the newly installed submenu grab.
-
-Normal window synchronisation keeps keyboard focus on the current popup while the root remains
-selected, visible and mapped. Destroying a submenu restores its parent popup; destroying the last menu
-restores the toplevel. Touch or pointer presses outside the parent window dismiss the chain before
-routing the new input. Home, root unmapping, root destruction, hiding the root or moving keyboard focus
-to another window dismisses the chain and releases its seat grabs. Home still clears keyboard focus
-and shows the shelf, even if the client leaves its dismissed popup resources alive.
-
-`menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy` uses a real socket-pair
-xdg client and seat input serials. It checks popup hit coordinates and focus, outside touch dismissal,
-Home while the menu still exists, nested menu focus and restoration, parent unmapping/remapping and
-client destruction. The exact pointer-before-keyboard order is pinned by the nested submenu's live
-keyboard grab. State's window count remains one throughout menus, and zero while the parent is unmapped.
-No new state events or protocol-specific state facts are introduced. The nested software and GPU smoke
-harnesses check that the ordinary client presentation/input paths still run with menu support enabled.
-
-### Compositor cursors (compositor/cursor)
-
-Pointer motion makes the compositor cursor visible and restarts a three-second timeout. Touch down,
-motion or up hides it immediately; nested host focus loss also hides it. Only pointer motion shows
-it again. The visibility deadline wakes the loop even without a further input event. The
-host window's own cursor is disabled. Client cursor requests are delivered by Smithay's seat handler:
-Named selects an xcursor theme image, Hidden draws nothing over that client, and Surface draws the
-client's committed cursor tree with its hotspot. Cursor-shape-v1 provides named requests. The protocol
-handler ignores stale enter serials. Cursor surfaces retain their buffer format; import failure rejects
-that client and restores the default cursor instead of ending the session. Dead cursor surfaces also
-fall back to the default. No cursor fact enters State.
-
-A cursor is composed above the UI and windows in output coordinates, independently of window fitting.
-When the pointer targets the shell, or Home hides the window, a client's custom or hidden cursor no
-longer applies. Theme images are chosen by nominal size, uploaded once per requested icon and retained.
-Animation follows frame delays, wraps and skips zero-delay frames; all-zero delays select the first
-frame. A missing or unreadable theme uses the built-in pointer with a logged reason. An unchanged
-cached theme frame does not reload or upload its pixels. Cursor surface frame callbacks allow client
-animations to continue.
-
-`cursor_requests_keep_hotspots_ignore_old_serials_and_release_on_home` drives real pointer and
-cursor-shape requests, asserting named, hidden and custom states, hotspot, stale serial handling,
-Home and cursor destruction. The visibility test pins the three-second boundary, repeated movement, immediate hiding and motion
-restoration; the real touch test checks down, motion and up hiding a visible cursor. The animation
-test pins frame boundaries and wrap. The nested smoke
-harness creates a virtual pointer only in its isolated parent sway, checks cursor pixels inside the
-presented scene (without the parent's cursor in grim's capture), moves it and checks both damage positions,
-then checks the shell's themed cursor, its idle disappearance and reappearance on motion. Both software and GPU modes exercise these steps alongside
-screenshots and client rendering.
-
-### Vulkan WSI client coverage (compositor)
-
-The GPU smoke harness runs `vkcube --wsi wayland` beside the EGL fixture. It checks that the cube
-presents changing frames above, remains animated after moving below and resizing, and keeps presenting
-when returned above. Closing delivers the normal close request and exits the client successfully;
-the previous terminal returns and the existing Home, clipboard and event-ring checks still pass.
-
-The Vulkan protocol log must contain Wayland buffer attachments, native dmabuf create requests,
-a feedback request, a format table and feedback completion. Animation is checked from successive
-scene captures, not inferred from process liveness or protocol requests alone. Vulkan runs in the
-explicit `tests/nested-compositor.py --gpu` mode, with a native EGL renderer, accessible render node,
-Vulkan driver and Wayland-capable vkcube. Software mode keeps the EGL/shared-memory tests and pins that
-software EGL advertises no native dmabuf transport. No software-WSI override or pixel-format downgrade
-is added to application launches. Both modes passed on the development desktop; their screenshots
-and full protocol logs are retained by the harness.
-
-### Xdg activation (compositor/activation)
-
-A client may mint a token only while its mapped window owns keyboard focus in State and on the seat,
-using this seat's serial no older than its latest keyboard enter. An optional source surface must
-belong to that client. Missing/old serials and background clients still receive an opaque token string,
-but it is untracked and grants no activation. Tokens expire after five seconds and unused expired
-tokens are pruned on event-loop turns.
-
-A known token is consumed on its first activation request, including a rejected request. A recent token
-for a mapped toplevel becomes the existing WindowEvent::Activate; ordinary state selection, keyboard
-focus and bottom presentation rules settle before synchronisation. Activation never moves a window
-between screens. Unknown surfaces, unmapped windows and expired or reused tokens do nothing. A token's
-app_id is advisory and does not override window identity or placement.
-
-Returning keyboard focus to the shelf clears outstanding tokens. Both creation and redemption read
-State's current focus, so Home also wins if it settles before the seat is synchronised in the same
-dispatch. A pending activation cannot undo Home. Policy denial is an ordinary protocol outcome; it
-does not disconnect the client or change the session.
-
-`activation_tokens_require_focus_expire_are_single_use_and_cannot_undo_home` drives real activation,
-keyboard and xdg-shell traffic. It pins missing/old serials, a background connection borrowing another
-client's serial, Home revocation, successful activation, reuse, expiry, unknown surfaces, activating
-below without changing placement, and a target unmapping. Direct callbacks with real token data also
-pin the pre-synchronisation Home race and an expired request before periodic pruning. Existing state
-activation tests pin resulting effects and their order; no new state event or randomized-generator
-branch is introduced. The nested software and GPU harnesses check coexistence with the EGL, Vulkan,
-clipboard, cursor and screen-move paths.
-
-### Steam's default interface (system/launch, thor-session)
-
-Steam's packaged desktop entry, including steam:// links, requests `-gamepadui`. Starting its client
-for a Steam game also requests `-gamepadui`, keeping `-silent -applaunch ID` so a cold game launch
-still suppresses the client window. An existing client receives the same game request. Scope ownership,
-following Steam's game launcher and the separation between the client's and game's environments stay
-as before. The state continues to emit the same Launch::Steam effect.
-
-The desktop entry is validated with desktop-file-validate when available; argument forwarding through
-the packaged Steam wrapper is checked using a temporary client that records argv, without starting
-Steam or changing its installation. The client UI itself is checked with Steam on the device; the
-workspace tests continue to pin launch effects and scope/follower behaviour.
-
-### Relative pointer and constraints (compositor/pointer)
-
-A backend declares whether it supplies relative motion when constructing the server. Relative-pointer
-and pointer-constraints globals are offered only with that capability. The headless harness enables it
-and injects relative motion, as the libinput backend will on the device. The current nested winit host
-is absolute-only and offers neither global; a separate upstream forwarding patch is not a build
-dependency. No local Cargo source override is needed by this checkout or CI.
-
-Relative-only input reports both accelerated and unaccelerated deltas to the focused client, using the
-window's inverse scale, and moves the free or confined compositor cursor. A locked cursor stays fixed
-and hidden while relative events continue. Winit's dual absolute/relative stream, if supplied by a
-future upstream update, positions a free cursor from the absolute event without moving it twice.
-Motion never becomes a state event or triggers a UI recording merely to deliver camera input.
-
-A pointer over the keyboard-focused, visible, mapped window may activate its surface's lock or
-confinement inside the requested region, after the backend accepts capture. Confinement rejects
-positions outside that surface/region and retains a permitted axis of motion. Changing a committed
-region to exclude the cursor ends capture. Destroying a constraint, unmapping/hiding the window,
-changing focus or geometry, opening a menu, Home and host focus loss release it. Persistent constraints
-may reactivate on return; one-shot constraints are removed on release. Cursor-position hints are
-advisory and are not applied. No constraint is represented in State.
-
-A failure to obtain host capture posts and flushes a fatal protocol error for the requesting client;
-the session continues. Merely marking a client dead after request dispatch can leave its socket
-waiting indefinitely, so the shared rejection helper now posts wl_display.implementation on the actual
-display object. A host that cannot release capture leaves no usable input path; the nested session
-ends rather than trapping the user's pointer. Ordinary releases reach the backend before a later
-capture activates.
-
-`relative_motion_and_constraints_follow_geometry_home_regions_and_host_focus` uses a real socket-pair
-client, an oversized buffer and injected relative input. It pins free-cursor movement, exact scaled
-relative channels, 100 camera events without a state revision, fixed/hidden locked cursors, persistent
-unmap/remap, confinement, Home, region commits, one-shot focus loss and rejection when capture fails.
-The exact host mode sequence is asserted. `a_host_that_cannot_release_capture_ends_the_unusable_session`
-pins the host failure policy. The real-client popup test also acquires a lock and checks that opening
-a menu releases it. The nested software/GPU smoke tests assert that an absolute-only host
-omits both globals and continue testing cursor, EGL, Vulkan and screen moves with upstream Smithay.
-
-### Presentation feedback (compositor/presentation)
-
-The server advertises wp_presentation with CLOCK_MONOTONIC. A feedback request belongs to the next
-surface commit. A successful nested host submission completes the committed callbacks only for mapped,
-visible windows and surfaces included in the renderer's presentation states; this includes their
-subsurfaces and popups. Rendering alone does not complete feedback, and failed submission ends the
-unusable nested host before any presentation is reported. The output comes from the window's current
-screen. Completed callbacks are drained once. Hidden or occluded content retains feedback until it is
-shown; a newer feedback-bearing commit supersedes it with discarded, and destruction discards pending
-callbacks through Smithay's cached surface state.
-
-Winit does not expose a display timestamp or refresh sequence. Its feedback uses the monotonic time
-immediately after a successful swap, unknown refresh, zero sequence and no flags: no vsync, hardware
-clock, hardware completion or zero-copy claim. This is an estimated software timestamp. The DRM backend
-must supply actual flip timing and its matching flags instead of reusing this submission estimate.
-
-`feedback_follows_submission_visibility_superseding_and_surface_destruction` uses a real socket-pair
-client to check the clock, exact timestamps, output notification, completion once, missing renderer
-states, synchronised subsurfaces, Home/activation, superseded commits and destruction. `tests/nested-compositor.py` also runs a
-real feedback client against the software and GPU hosts: both a newly attached buffer and a subsequent
-unchanged frame must receive ordered monotonic feedback with unknown refresh and no hardware flags.
-
-### Xwayland windows, transport and activation (compositor/x11)
-
-The adapter owns one reserved X11 display socket and at most one private Xwayland child. The socket
-is advertised to nested launches; the process environment and parent display are untouched. The
-first connection in its listen queue starts Xwayland with that socket, its private Wayland/WM sockets
-and display-number socket. The parent never accepts the pending X11 connection: Xwayland does.
-
-`dormant --X11 listener readable--> starting [spawn, pass listener, insert Wayland client]`.
-`starting --spawn failure--> retrying [log, retry after one second while demand exists]`.
-`starting --display number, X11 setup, atom and extension replies--> connected
-[claim WM/compositing selections, redirect subwindows]`.
-`starting/connected --EOF, malformed data, queue limit, request/write timeout or I/O failure-->
-stopping [kill only Xwayland, disconnect its Wayland client, close its model windows, log]`.
-`starting/connected/stopping --pidfd readable, child exited--> dormant
-[reap without waiting, close only its windows, rearm listener]`.
-The next X11 connection starts a replacement on the same display. Shutdown kills and reaps any child
-on a separate thread and removes only this instance's display socket and lock file.
-
-All socket I/O is non-blocking. x11rb supplies protocol types and sequence tracking, never blocking
-connections or Smithay XWM commit hooks. Read/write/displayfd/listener readiness and pidfd are calloop
-sources; write readiness is registered only with unsent bytes. Dormant and idle connected Xwayland
-have no adapter deadline, probe traffic or periodic wakeup. A selection-ownership reply is requested
-only after 32,768 unacknowledged requests to anchor X11's 16-bit sequence before it wraps.
-The display-number deadline is five
-seconds; setup, queued writes and outstanding replies have three seconds. Partial messages retain
-their bytes. Each turn permits at most 64 writes, 64 setup reads, 64 packet reads of at most 4096 bytes
-and 64 event deliveries. Packets and outgoing bytes are capped at 1 MiB; packet lengths are checked
-before allocating their payload. At most 256 queries are outstanding, deferring further property
-requests. At most 128 X11 windows are tracked; an excess ends the offending X11 client. command-fds
-passes the four private descriptors only in child-side exec setup, retaining the parent's CLOEXEC.
-
-`created --MapRequest--> querying [attributes, properties, XRes]`.
-`querying --initial replies--> placed [Opened → final configure → map → focus]`.
-The initial queries are issued after MapRequest, so properties set between creation and mapping
-are included in the first placement.
-Input-only and override-redirect surfaces are excluded from these toplevels. Class, UTF-8 title with
-Latin-1 fallback, transient parent, normal size hints and dialog/splash/utility role become the same
-Window facts as Wayland. PIDs come from XRes, never the forgeable _NET_WM_PID property or Xwayland's
-own socket credentials. WM_TRANSIENT_FOR also implies dialog presentation when the parent has not
-mapped or has gone away, even without an explicit window type. Properties have a 4 KiB query bound and validated types/formats; absent or
-malformed properties clear their facts. Title/property notifications coalesce while a query is in
-flight, retaining a refresh bit for changes that race its reply. Changed facts coalesce per window
-until the next recorded frame, so title traffic never drives repeated UI applies within that frame.
-Metadata and title changing together form one ordered batch, preserving a scope adoption that arrived
-while the properties waited.
-Initial facts and presentation policy
-are cached, so unchanged turns emit no state events or X11 requests. The adapter's turn runs named
-steps in order: begin setup, dispatch replies, finish setup, anchor the wire sequence, dispatch events,
-query window properties, synchronise selections, settle managed windows, settle menus and synchronise
-the shared windows. Managed-window settlement publishes each window's facts, binds its surface and
-configures/maps it, then settles focus and close requests. The refactor preserves that order and the
-existing request-order and state-trace tests.
-
-`placed --WL_SURFACE_SERIAL, the surface given that serial through xwayland_shell_v1 committed--> drawable`.
-Pairing by serial (never reused, unlike a surface's id) can't pair a window with a later surface.
-The serial is 64 bits, in two 32-bit halves on each side (tested by
-`a_window_is_paired_with_the_surface_committed_with_its_serial` and
-`a_committed_serial_pairs_its_surface_once_and_only_xwayland_sees_the_shell`).
-The shared surface wrapper uses the same rendering, geometry, input, frame and presentation-feedback
-paths. A window ignoring its configured size is treated by the existing geometry policy. X11 size
-requests cannot choose placement or stacking. WM_HINTS input and WM_TAKE_FOCUS are honoured when focus
-changes. Each focus change first gets a fresh server time: `focus changed --> stamping [empty append to
-_THOR_TIMESTAMP on our window]`, `stamping --its PropertyNotify--> [SetInputFocus and WM_TAKE_FOCUS with
-that time]`; the time is used once, and one arriving after the change was undone is dropped; no
-PropertyNotify within 3 s restarts Xwayland like a missed reply. The server ignores a focus request older
-than the last focus change, which an active client may have made itself, so an old observed time could be
-ignored silently ([ICCCM](https://xorg.freedesktop.org/releases/current/doc/xorg-docs/icccm/icccm.html#input_focus),
-2.1 for the append). Tested by `placement_is_committed_and_configured_before_mapping_and_focus`.
-WM_DELETE_WINDOW closes a supporting client, otherwise KillClient ends it.
-`mapped --unmap--> known [Closed, detach drawable]`; a later map reopens it with the same model id.
-`known/mapped --destroy/BadWindow--> removed [Closed if open]`.
-Late replies use unique model ids, so XID reuse cannot modify a replacement. Selection/focus/placement
-remain state rules. The clipboard bridge imports and exports both seat selections; there is no
-drag and drop. The clipboard bridge's INCR and asynchronous transfer plan is explicit in
-`docs/history/compositor-mvp.md`; the implemented export transitions and tests are described below.
-
-Property fixtures check ordinary and fixed transient windows, all supported roles, malformed types,
-negative sizes and property deletion, plus focus protocols/hints. Socket-pair tests check partial
-setup/replies, full buffers, EOF, oversize rejection, idle silence and outstanding-request deadlines.
-The dormant listener test asserts no child/deadline before a connection. The request-order test pins
-configure before map and focus, and no repeated commands for unchanged state. The real software/GPU
-harness starts a font-independent X11 fixture, checks pixels through top/bottom moves, configure sizes,
-unmap/remap, WM_DELETE_WINDOW and a transient preceding its parent, then stops/kills Xwayland while Wayland keeps moving. It checks
-reaping, no eager restart, and activation of a replacement by another X11 client.
-
-
-The focus request-order fixture covers all four ICCCM models: passive (input true, no take-focus),
-locally active (input true, take-focus), globally active (input false, take-focus) and no-input (input
-false, no take-focus). It asserts direct focus or None, the matching protocol message, the same
-nonzero timestamp in both requests, and no repeated commands without a change. The real X11 fixture
-changes between those models, rejects zero-time WM_TAKE_FOCUS, responds using the offered timestamp,
-and checks actual key press/release delivery. No-input receives no keys. The real harness also checks
-Home releasing focus while the bottom parent remains visible, and focus returning after unmap/remap.
-
-### X11 menus and tooltips
-
-Override-redirect windows remain adapter-owned surfaces, never State windows.
-`known --map, metadata and buffer ready, visible focused parent--> menu layer`.
-WM_TRANSIENT_FOR resolves through live menu ancestors; absent a hint, the focused managed window
-must have the same XRes PID. Ownership stays fixed while mapped. Tooltips may use the hovered
-same-process parent and do not take input or keyboard focus. Cycles and missing ancestors reject the
-menu. Rendering and hit testing share the parent's scale and screen clip, including submenus.
-`menu layer --outside press, focus loss, Home, parent geometry change/hide/unmap/destroy--> dismissed
-[detach, asynchronous UnmapWindow]`.
-`submenu --ancestor unmap/destroy--> dismissed [detach, asynchronous UnmapWindow]`.
-`tooltip --parent geometry change/hide/unmap/destroy--> dismissed`.
-`layer --surface destroyed--> detached`. Repeated dismissal is harmless. Detached touch targets are
-cancelled, and an interactive menu releases pointer capture until dismissed.
-
-The headless surface fixture asserts scaled menu/submenu touch coordinates, passive tooltips,
-stationary-touch cancellation and unchanged State window count. Adapter tests assert same-PID
-inference, tooltip hover ownership, fixed ownership, ancestor unmap and bounded transient cycles.
-The real-client software/GPU harness checks menu pixels and local pointer coordinates, submenu
-stacking and ancestor dismissal, parentless inference, clipping at the screen boundary, tooltip input pass-through, outside presses,
-parent screen moves and Home while the bottom parent remains visible.
-
-
-### Wayland selections exported to X11
-
-Seat selection callbacks cache a revision and at most 64 advertised types of at most 255 bytes for
-CLIPBOARD and PRIMARY separately. They do not enter State.
-`new Wayland revision --adapter turn--> preparing [cancel previous transfers, asynchronously intern
-MIME atoms]`. Late atom replies from a previous revision are drained and ignored.
-`preparing --atoms ready--> awaiting timestamp [change hidden owner's TIMESTAMP property]`.
-`awaiting timestamp --matching-generation PropertyNotify--> exported [SetSelectionOwner with that
-server timestamp]`. A timestamp requested for an older revision cannot acquire a replacement offer.
-TARGETS lists MIME atoms and supported text/metadata targets. TIMESTAMP returns the acquisition time.
-UTF8_STRING and TEXT request UTF-8 from the Wayland source; STRING translates it to Latin-1, replacing
-unrepresentable or invalid scalars with question marks and preserving split UTF-8 scalars.
-`exported --SelectionClear from a newer owner--> inactive [cancel transfers, forget formats]`.
-An unchanged Wayland revision never reclaims another X11 client's selection. Clearing a Wayland
-selection releases an owned X11 selection using its acquisition timestamp, so an older clear cannot
-replace ownership acquired at a later X11 time. Stale SelectionClear events are ignored.
-
-`exported --supported SelectionRequest--> reading [request Wayland source into pipe, watch read fd]`.
-None as the requested property uses the target atom. Unsupported targets, a stale seat revision,
-missing source, a reused requestor/property pair or more than eight simultaneous transfers receive
-SelectionNotify with None. MULTIPLE is not advertised.
-`reading --EOF before a full chunk--> complete [ChangeProperty, SelectionNotify, close pipe]`.
-`reading --16 KiB buffered--> incremental [INCR marker, SelectionNotify]`.
-`incremental --PropertyNotify/Delete--> permitted`.
-`permitted --buffered bytes--> incremental [one ChangeProperty chunk]`.
-`permitted --EOF with empty buffer--> complete [zero-length property, close pipe]`.
-Each transfer buffers at most 16 KiB, including at most three incomplete UTF-8 bytes
-between reads. A full buffer or EOF removes the read watch; the next deletion or pipe readiness drives
-progress. No timer runs when there are no pending requests or transfers.
-`reading/incremental --five seconds without progress, source revision replaced, SelectionClear,
-requestor destroyed or Xwayland stopped--> cancelled [close pipe, remove watch]`.
-Cancellation before INCR notifies refusal; cancellation after INCR never fakes a successful truncated
-EOF. Other selections and transfers continue. X server atom/timestamp requests have three-second
-response deadlines; lack of response restarts Xwayland through the existing supervisor.
-
-Socket-pair tests pin the property-before-notify order, every INCR acknowledgement, bounded chunk
-sizes and final zero length; they assert empty data, split-scalar encoding, timeout, selective
-cancellation, stale atom/timestamp replies, refusal limits, watch cleanup and no remaining idle deadline. The software/GPU real-client harness reads both seat
-selections through X11, including large slow INCR reads, None properties, metadata, refusal, dead and
-stalled readers, an external X11 owner taking over, a UTF-8 scalar at the chunk boundary, selection
-replacement and nested-host isolation.
-X11-owned selections follow the incoming transitions below.
-
-
-### X11 selections imported into Wayland
-
-The adapter negotiates XFixes once, subscribes to CLIPBOARD and PRIMARY ownership and queries their
-initial owners once. Setup replies and initial-owner queries share the bounded asynchronous transport;
-an initial-owner reply cannot overwrite a newer notification. There is no ownership poll or idle timer.
-`owner changed --external nonzero owner--> discovering [cancel old conversions, create fresh hidden
-requestor, ConvertSelection(TARGETS)]`.
-`discovering --valid TARGETS, atom-name replies--> offered [publish generation-tagged seat selection]`.
-UTF8_STRING takes precedence over STRING for text; STRING converts Latin-1 to UTF-8. Other advertised
-MIME atoms retain their names. Metadata is capped at 4 KiB, 64 MIME types and 255 bytes per name.
-Unknown non-MIME atoms are skipped. TARGETS itself may use INCR. A replacement keeps the previous
-seat offer until its metadata is ready, avoiding a temporary empty selection and a keeper restore.
-A Wayland selection changed during discovery wins over the pending X11 offer. Old metadata, stale
-read requests and late property replies cannot alter a replacement generation.
-`offered --Wayland reader requests live MIME/generation--> converting [fresh requestor,
-ConvertSelection, non-blocking reader fd]`.
-`converting --SelectionNotify with expected property--> reading [GetProperty slice]`.
-`reading --normal value--> draining [write to Wayland pipe]`.
-`reading --initial INCR marker--> awaiting chunk [DeleteProperty]`.
-`awaiting chunk --PropertyNotify/NewValue--> reading [GetProperty slice]`.
-`draining --pipe accepts slice, more property bytes--> reading [GetProperty at next offset]`.
-`draining --pipe accepts entire non-final INCR chunk--> awaiting chunk [DeleteProperty]`.
-`draining --normal property complete or final zero INCR chunk--> complete [DeleteProperty,
-destroy requestor, close pipe]`.
-The DeleteProperty acknowledgement follows every accepted byte, including multiple slices of one
-large property. A blocked reader holds one bounded slice and a writable-fd watch, with no further
-property reads or acknowledgements. UTF-8/raw slices are at most 16 KiB; Latin-1 slices are at most
-8 KiB before conversion, yielding at most 16 KiB. There are at most eight data conversions plus one
-metadata conversion per selection. A full queue refuses a new reader by closing its fd.
-`discovering/converting/reading/draining --owner replaced, owner disappears, newer Wayland copy,
-refusal, wrong property type/format, malformed INCR, dead reader or five seconds without progress-->
-cancelled [destroy requestor, close pipe, remove watch]`.
-Failures affect that conversion. A newer seat selection is never cleared by cancellation or Xwayland
-exit. An imported offer cannot acquire X11 ownership again. Owner disappearance or Xwayland death
-clears only its current imported offer, allowing the existing keeper to restore cached text. The
-keeper's restore and mirrors are ordinary subsequent Wayland selection changes. Outstanding X server
-reply deadlines remain three seconds; a stuck X server is handled by its supervisor.
-
-Socket-pair tests pin partial-property offsets, no INCR acknowledgement while a pipe is blocked,
-chunk deletion before requestor destruction, bounded Latin-1 expansion, malformed/refused replies,
-dead readers, timeouts and harmless late replies. Offer tests assert delayed MIME-name publication,
-generation tags, echo suppression, replacement without an empty offer and preserving newer Wayland
-selections on adapter shutdown. The real-client software/GPU harness covers both selections, normal
-properties larger than a slice, INCR metadata/data, arbitrary binary MIME data, slow/abandoned/stalled
-readers, refusal and bad formats, owner replacement during metadata, Latin-1, keeper persistence,
-parent-desktop isolation and fresh clipboard generations after Xwayland crashes and restarts.
-
-
-### Device profile at startup
-
-`startup --CLAMSHELL_DEVICE or kernel identity--> identified [construct typed profile]`.
-An explicit thor/vm/generic override wins over the device tree and DMI. Compatible entries match whole
-NUL-separated strings; QEMU's DMI selects the VM. Unknown hardware selects the generic profile; an
-unknown explicit override fails startup with a diagnostic. Identification performs no periodic work.
-`identified --build Init--> running [immutable profile available through State]`.
-The VM service now forces CLAMSHELL_DEVICE=vm, replacing its bottom-output environment override.
-Detected modes, inputs, backlights and readings remain runtime detection; each fixed fact is moved to
-the profile separately.
-Pure identity tests cover precedence, exact matching and unknown names. A filesystem fixture checks
-kernel identity reads without host-specific assumptions. State, allocation and snapshot checks cover
-passing the profile without changing per-event behaviour. VM service boot is checked by the VM suite
-once its output-generation script has been switched to the profile too.
-
-
-The compositor takes both connectors and their clockwise transforms from the profile; ClamShell's
-service identifies the same profile. (`thor-outputs` and `clamshell device outputs`, which wrote sway's
-output configuration from it, are gone.) `clamshell device panel` supplies connectors to the calibration
-tool, whose mode and vblank discovery stays runtime detection. An integration test forces each known
-profile and checks the calibration command's facts.
-
-
-Backlight discovery remains runtime enumeration. The brightness view resolves each detected kernel
-name through the profile's top/bottom role hints; an unrecognised name stays its kernel name. Missing
-hints do not invent backlights or hide the view. The role test checks both Thor screens, an unrelated
-backlight and a generic profile given the same kernel name. Snapshot and allocation references remain
-unchanged.
-
-
-The virtual touchpad prefers density measured from the second screen's DRM connector (its physical size
-against its logical size, turned as the screen is). Only the matched Thor panel, when its connector
-reports no physical size, uses its 16.5 px/mm hint;
-VM and generic profiles have no invented density. Both axes retain their reported resolution. With
-neither measurement nor hint, the touchpad stays unavailable rather than publishing made-up uinput
-resolution; after the initial layout arrives, it waits for input rather than polling for density.
-Unit tests pin measured-over-hint precedence and unknown/invalid dimensions. The VM suite checks the
-resulting uinput device and real finger forwarding; UI snapshot references remain unchanged. The
-compositor turns on tap and tap-and-drag for the virtual touchpad's libinput device (`drm.rs`).
-
-
-Refresh calibration's capability, helper program, frame-length attributes/ranges, step and tolerances
-now come from the profile. The package tool still detects the actual panel's sysfs files and available
-modes; it no longer embeds ICNA3520 ranges or chooses tolerances by rate. The Device row remains drawn
-and tappable without the capability, dimmed and labelled Unavailable. A tap follows the existing
-Running → Done(error) route without starting a helper when no capability exists. Package-query tests
-check Thor/VM capability facts and the worker test asserts the unavailable outcome. Snapshots now
-explicitly use the Thor profile and retain the same pixels, focus and trace. Actual frame-length
-calibration remains a device check.
-
-
-Panel colour is immutable profile data, exposed by `clamshell device panel` for inspection. The top
-panel preserves the gamescope starting profile's primaries, D65, gamma 2.2, 650-nit peak/frame-average
-and 0.002-nit black. Its HDR capability describes compositor tone mapping into available headroom,
-not a PQ link; both current Thor links are eight bits. VM/generic link depth stays unknown,
-so no compositor can mistake an invented eight-bit default for a hardware limit. Unprofiled panels use sRGB primaries at gamma 2.2,
-SDR-only, with luminance left unknown. No brightness-register calibration is invented. Unit tests pin
-these values and the package query checks their public representation. Phase 2h will consume these
-facts for physical outputs; nested outputs take their description from the host instead.
-
-
-Auxiliary GPIO-key identity/code and the controller's physical Back code now come from the profile.
-The GPIO device is still discovered by advertised name/capabilities. Physical presses are normalised
-into fixed logical auxiliary/Back roles before routing and keymaps; resynchronisation applies the same
-normalisation. The virtual gamepad excludes the physical Back key as well as the logical role. The VM
-profile models the Thor's auxiliary controls for its input fixtures; generic has no auxiliary GPIO key.
-Pure tests check alternate physical codes, unrelated keys/axes and virtual-pad filtering. Existing
-router, held-key, disconnect and randomized state tests retain the same canonical semantics. The VM
-suite checks actual GPIO-key discovery and uinput forwarding.
-
-
-The pad's actual driver is still detected through its sysfs device link. The profile supplies the
-list of drivers whose X/Y codes use letters rather than positions; input code no longer names those
-drivers in its decision. Thor/VM include rsinput and xpad, generic includes xpad. The existing swap,
-resynchronisation and routing paths are unchanged. Profile tests pin each convention and reject an
-unlisted driver; the existing event tests pin the resulting canonical button meanings.
-
-
-Motion discovery still tries a controller's advertised evdev sensor first. Only if absent does it use
-the profile's optional sensor hub. Its QMI service, sample rate, clock rate and mounting matrix are
-profile facts; the input thread no longer reads compatible or identifies a Thor. Reconnection after
-sleep takes the same facts. Thor retains 400/200 Hz/19.2 MHz and the quarter-turn axis transform;
-VM/generic claim no hub, while detected evdev sensors remain usable. Existing wire/sample tests pin
-protocol parsing and the profile-driven transform. Profile tests assert hub presence and timing;
-firmware service appearance/disappearance and physical mounting remain device checks.
-
-
-The fan daemon identifies the profile once, using the same pure identification as ClamShell. Its
-hwmon target, Auto/Quiet curves, minimum/safe/emergency duties and ramp policy come from the profile;
-actual hwmon files and thermal readings stay discovered. A profile without a userspace fan policy
-exits successfully and the service does not restart it. Fan controls remain visible and tappable,
-dimmed when no policy exists. Thor's curve and safe-stop behaviour are unchanged. Existing daemon
-filesystem tests now supply the Thor policy explicitly; interpolation, ramp, emergency and missing-
-sensor tests retain their exact outcomes. The service uses Restart=on-failure to preserve recovery
-without a retry loop on unsupported machines.
-
-### Charging control discovery
-
-The tuning worker receives immutable charging quirks and optional OEM attribute names from the device
-profile. State settings and their effects are unchanged. Without an override or firmware quirk, each
-application discovers the battery's end-threshold attribute; a missing threshold uses the charge
-current where its attributes exist. The Thor's known ignored threshold selects current instead.
-Explicit `CLAMSHELL_CHARGE_LIMIT` selects current, threshold or firmware for trials.
-
-- `detected --threshold appears--> threshold [hold requested limit in firmware]`;
-  `detected --threshold vanishes--> current [hold requested limit with current]`.
-- `current quirk --threshold present--> current`; an explicit threshold override takes precedence.
-- `firmware --both OEM switches present / limit 80--> firmware [enable 80-percent switch]`;
-  absent switches or limit 90 use current. Bypass uses zero current and, when selected and present,
-  disables charging through the switch. Disconnect releases the hold and resets the switches.
-
-System tuning tests assert discovery changes, quirk and override precedence, both-attribute detection,
-firmware fallback, Bypass and release targets. The existing hysteresis test pins charge-current holds.
-Actual battery firmware behaviour is checked on the device; attribute presence alone cannot establish
-that its firmware honours a write.
-
-### Control diagram facts
-
-The keymap screen reads immutable control-layout and printed-legend facts from the startup profile.
-The Thor and VM fixture retain their diagram and Nintendo-style face legends. Unknown hardware shows
-a virtual-pad reference diagram with canonical legends; this does not announce physical capabilities.
-Changing a binding, selecting an input or choosing an output uses the same legends throughout. The
-existing keymapping events, effects and transitions are unchanged. UI tests check input/output legends
-and swapped group placement; Thor snapshots pin the existing pixels, focus targets and effect trace.
-
-### Preview geometry
-
-Startup profile preview dimensions request the two desktop windows' initial size, the nested host's
-initial canvas and its split ratio. Live configure events still replace their dimensions. Offline
-Thor snapshots explicitly use its reference canvas. These values never supply physical millimetres
-or claim an output mode. Compositor resize tests exercise the split and clamped tiny hosts; snapshot
-pixel, focus and trace references stay unchanged.
-
-### Announced display modes
-
-`DisplayModes` arrives from the DRM host at start, containing only refresh rates at the top screen's
-current dimensions. State stores a bounded sorted unique list; zero always
-means restore the original mode. No modes are invented from the profile. The Refresh tile stays
-visible and tappable, dimmed when no controllable rates are known. Frame-cap choices are generic
-limiter policy. Resolution, Scaling, Anti-aliasing and Sharpen (`docs/picture.md`) are the compositor's
-alone; Resolution's tile shows its size on the
-top screen once the compositor has said it (`Reading::Screens`).
-
-- `unknown --mode report--> known [no effects]`; repeated reports replace the facts without effects.
-- `known --mode change/hotplug--> known or unknown [no effects]`; saved choices remain intact.
-- `known --Refresh tap--> next announced rate, then zero [save settings, apply, refresh]`.
-- `unknown or saved rate absent --Refresh tap--> zero [save settings, apply when changed]`.
-- `known --output manager finished--> unknown [no effects]`.
-
-State tests pin the saved values, save-before-apply ordering and refresh effects through reports,
-repeats, unplugging and replacement. Random sequences include reports and assert sorted unique valid
-rates after every event; the allocation test covers changing reports. The DRM host reports the top
-screen's modes at start. Offline snapshots explicitly announce their fixture modes.
-
-### Parametric window colour facts
-
-An immutable shared description holds named or explicit CIE xy primaries, the transfer function,
-primary luminance and reference white, and optional mastering/CLL/FALL metadata. The description is
-shared by reference so window events remain small and copying a description during apply allocates
-nothing. Physical panel descriptions come from the startup profile; nested output descriptions come
-from the host's preferred description. Unknown physical measurements stay unknown.
-
-`window --Changed(colour)--> same placement, selection and focus with new colour facts [no effects]`.
-Repeating the same facts has no effects. The existing presentation-facts test asserts the resulting
-colour, placement, policy and focus; random window-fact changes now include colour descriptions.
-Matching source/output primaries, transfer and primary luminance permit colour-preserving scanout;
-mastering metadata does not change the signal encoding. The compositor still checks buffer and plane
-constraints before scanout. Numeric conversion and protocol commit behaviour are compositor tests.
+of S50 and S51 (history notes).
