@@ -147,38 +147,6 @@ fn while_metadata_is_fetched_shelfs_view_goes_first() {
     assert!(!s.applied(ShelfEvent::ListStep(1).into()).iter().any(|e| matches!(e, Effect::FetchFirst(_))), "done");
 }
 
-/// The windows' effects come after those of the steps that follow them: here the quit entry is ended
-/// (its windows are gone), then the Steam game found by its window is launched, then a stray window on
-/// the landing workspace goes up.
-#[test]
-fn the_windows_effects_follow_the_later_steps() {
-    let mut library = clamshell_library::demo::library();
-    if let Some(g) = library.entries.iter_mut().find(|g| &*g.id == "ff6") {
-        g.launch = clamshell_library::Launch::Steam { appid: 620 };
-    }
-    let mut s = started(Init { library, ..init() });
-    s.applied(Event::tick(1000));
-    let zelda = launch(&mut s, "zelda-lttp").workspace();
-    s.observed(vec![shelf_window(false), win(3, "zelda3", &zelda, true)]);
-    s.applied(Event::Entry("zelda-lttp".into(), EntryAct::Quit));
-    let landing = String::new();
-    let fx = s.observed(vec![shelf_window(false), win(7, "steam_app_620", &landing, true), win(8, "foot", &landing, false)]);
-    let kinds: Vec<&str> = fx
-        .iter()
-        .map(|e| match e {
-            Effect::EndRun { .. } => "end zelda",
-            Effect::Save(Save::Resume(_)) => "save resume",
-            Effect::Launch { entry, .. } if &**entry == "ff6" => "launch ff6",
-            Effect::Window(WindowCommand::Move { windows, .. }) if windows == &[7] => "place ff6",
-            Effect::Window(WindowCommand::Move { windows, .. }) if windows == &[8] => "place foot",
-            Effect::Window(WindowCommand::FocusWindow(7)) => "focus ff6",
-            Effect::Window(WindowCommand::FocusWindow(8)) => "focus foot",
-            _ => "other",
-        })
-        .collect();
-    assert_eq!(kinds, ["end zelda", "save resume", "launch ff6", "place ff6", "focus ff6", "place foot", "focus foot"], "{fx:?}");
-}
-
 /// Sync sends the settings in force, then the keymap, then the pad's route. Nothing outside depends on
 /// the settings coming before the keymap; the keymap must come before the route (see
 /// [`crate::sync::Sent::sync`]).
@@ -232,12 +200,12 @@ fn a_launchs_first_window_is_shown_before_a_window_that_came_back() {
     let zelda_window = Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), true) };
     s.observed(vec![shelf_window(false), zelda_window.clone()]);
     // Its window closes with nothing else in front: shelf is shown, and the workspace remembered.
-    let fx = s.observed(vec![shelf_window(false)]);
-    assert_eq!(window_effects(fx), [Effect::Window(WindowCommand::ShowShelf)]);
+    s.observed(vec![shelf_window(false)]);
+    assert!(s.session().shelf_in_front());
     let ff6 = launch(&mut s, "ff6");
     let ff6_window = Window { unit: ff6.unit(), ..win(4, "ff6", &ff6.workspace(), false) };
-    let fx = s.observed(vec![shelf_window(false), Window { focused: false, ..zelda_window }, ff6_window]);
-    assert_eq!(window_effects(fx), [focus(4), focus(3)]);
+    s.observed(vec![shelf_window(false), Window { focused: false, ..zelda_window }, ff6_window]);
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(3));
 }
 
 /// The steps in the background run before the quitting entries are followed: here a paused game shown
@@ -266,13 +234,13 @@ fn the_background_is_followed_before_the_quitting() {
     assert_eq!(kinds, ["thaw zelda", "end ff6"], "{fx:?}");
 }
 
-/// The UI starting sends what was waiting for it, in this order: the brightness as it was left, the down
-/// rules for sway, then after the event the keymap in force and the pad's route (keymap before route, as
+/// The UI starting sends what was waiting for it, in this order: the brightness as it was left, then
+/// after the event the keymap in force and the pad's route (keymap before route, as
 /// [`crate::sync::Sent::sync`] says). The pad thread starts with neither, so both are sent though the
 /// state took them as sent when it was built.
 #[test]
-fn the_ui_starting_sends_the_brightness_the_down_rules_the_keymap_and_the_route() {
-    use crate::bottom::screen::{DownRule, WindowRule, WindowRules};
+fn the_ui_starting_sends_the_brightness_the_keymap_and_the_route() {
+    use crate::bottom::screen::{WindowRule, WindowRules};
     let rule = WindowRule { owner: "zelda-lttp".into(), app_id: "zelda3".into(), title: None };
     let brightness = Brightness { level: Some(40), shares: Vec::new() };
     let keymaps = crate::keymap::Keymaps::initial();
@@ -282,16 +250,7 @@ fn the_ui_starting_sends_the_brightness_the_down_rules_the_keymap_and_the_route(
     let keymap = s.keymapping().in_force(1);
     let fx = s.applied(Event::Start);
     let sent: Vec<&Effect> = fx.iter().filter(|e| !matches!(e, Effect::Watch(..))).collect();
-    assert_eq!(
-        sent,
-        [
-            &Effect::Brightness { level: 40, shares: Vec::new() },
-            &Effect::Window(WindowCommand::DownRules(vec![DownRule { app_id: "zelda3".into(), title: None }])),
-            &Effect::Keymap(keymap),
-            &Effect::PadRoute(PadRoute::Ui),
-        ],
-        "{fx:?}"
-    );
+    assert_eq!(sent, [&Effect::Brightness { level: 40, shares: Vec::new() }, &Effect::Keymap(keymap), &Effect::PadRoute(PadRoute::Ui),], "{fx:?}");
     let fx = s.applied(Event::Start);
     assert!(fx.contains(&Effect::PadRoute(PadRoute::Ui)), "sent again at another start: {fx:?}");
 }
@@ -378,10 +337,10 @@ fn a_library_read_while_fetching_asks_for_shelfs_view_first_again() {
     assert!(!fx.iter().any(|e| matches!(e, Effect::FetchFirst(_))), "not fetching: {fx:?}");
 }
 
-/// A library read again updates what depends on its entries: sway's landing rules for the entries known
-/// by app id, and the runners paused together, which a runner new in the library then is.
+/// A library read again updates what depends on its entries: the runners paused together, which a runner
+/// new in the library then is.
 #[test]
-fn a_library_read_updates_the_landing_rules_and_the_runners_paused_together() {
+fn a_library_read_updates_the_runners_paused_together() {
     let mut s = state();
     s.applied(Event::tick(100));
     let runner = clamshell_library::RunnerOf {
@@ -399,9 +358,7 @@ fn a_library_read_updates_the_landing_rules_and_the_runners_paused_together() {
             _ => {}
         }
     }
-    let fx = s.applied(Event::Library(Box::new(library)));
-    let land = Effect::Window(WindowCommand::KnownApps(vec!["steam_app_620".into(), "firefox".into()]));
-    assert!(fx.contains(&land), "{fx:?}");
+    s.applied(Event::Library(Box::new(library)));
     let pause = Effect::RunnerCommand(vec!["pause".into()]);
     assert!(!s.applied(Event::tick(100 + crate::session::background::GRACE - 1)).contains(&pause));
     assert!(s.applied(Event::tick(100 + crate::session::background::GRACE)).contains(&pause), "the new runner is paused together");

@@ -20,11 +20,12 @@ use std::sync::Arc;
 
 use clamshell_library::ids;
 
-use crate::effect::{Effect, WindowCommand};
+use crate::effect::Effect;
 use crate::out::Out;
 use crate::session::instance::Instance;
 use crate::session::running::{Origin, Running};
 use crate::session::windows::Window;
+use crate::session::windows::WindowCommand;
 use crate::{Clock, Entry, Library, Session};
 
 impl Session {
@@ -76,10 +77,10 @@ impl Session {
             let focused = mine.iter().any(|w| w.focused);
             let ids: Vec<i64> = mine.iter().map(|w| w.id).collect();
             if !ids.is_empty() {
-                self.command(WindowCommand::Move { windows: ids, to: r.workspace() }, out);
+                self.command(WindowCommand::Move { windows: ids, to: r.workspace() });
             }
             if focused {
-                self.focus(&r.workspace(), out);
+                self.focus(&r.workspace());
             }
             if r.id.starts_with(ids::WINDOW)
                 && let Some(app_id) = &r.app_id
@@ -146,8 +147,8 @@ mod tests {
         let r = s.session().running("window:org.x.Thing").unwrap();
         assert_eq!((r.found(), r.pid(), r.app_id.as_deref()), (true, Some(500), Some("org.x.Thing")));
         let ws = r.workspace();
-        assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![5, 6], to: ws.clone() })), "{fx:?}");
-        assert!(fx.contains(&Effect::Window(WindowCommand::FocusWindow(5))), "it was in front: {fx:?}");
+        assert!([5, 6].iter().all(|id| s.session().window(*id).is_some_and(|w| w.workspace == ws)));
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(5), "it was in front");
         assert!(fx.iter().any(|e| matches!(e, Effect::Adopt { pid: 500, .. })), "{fx:?}");
         assert!(s.dock().items().iter().any(|i| &*i.id == "window:org.x.Thing"), "on the dock");
         // Its picture is looked up by its app id, and once found it is the entry's.
@@ -186,9 +187,11 @@ mod tests {
     #[test]
     fn a_services_window_is_no_entry() {
         let mut s = device();
-        let fx = s.observed(vec![window(5, "xdg-desktop-portal-gtk", 300, "xdg-desktop-portal-gtk.service", true)]);
+        let portal = window(5, "xdg-desktop-portal-gtk", 300, "xdg-desktop-portal-gtk.service", true);
+        let fx = s.observed(vec![portal.clone()]);
         assert!(s.session().running_entries().is_empty(), "the program that asked for it is its");
-        assert!(!fx.iter().any(|e| matches!(e, Effect::Adopt { .. } | Effect::Window(WindowCommand::Move { .. }))), "{fx:?}");
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Adopt { .. })), "{fx:?}");
+        assert_eq!(s.session().window(5).map(|w| w.workspace.as_str()), Some(portal.workspace.as_str()), "not moved");
     }
 
     #[test]
@@ -210,7 +213,7 @@ mod tests {
         assert!(!fx.iter().any(|e| matches!(e, Effect::Adopt { .. })), "{fx:?}");
         // Quit closes its windows, and that is all.
         let id: Arc<str> = "window:org.other".into();
-        assert_eq!(quit(&mut s, &id), vec![Effect::Window(WindowCommand::Close(vec![6]))]);
+        assert_eq!(quit(&mut s, &id), vec![Effect::Close(vec![6])]);
         let fx = s.observed(vec![mine]);
         assert!(!fx.iter().any(|e| matches!(e, Effect::EndProcesses { .. } | Effect::EndRun { .. })), "{fx:?}");
         assert!(s.session().running("window:org.other").is_none());

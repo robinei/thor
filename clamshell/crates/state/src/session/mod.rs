@@ -16,8 +16,8 @@ pub mod windows;
 
 use std::sync::Arc;
 
-use crate::effect::{Effect, WindowCommand};
-use crate::out::Out;
+use crate::effect::Effect;
+use crate::session::windows::WindowCommand;
 use crate::{Entry, Library};
 use instance::Instance;
 use running::{Front, Launching, Running};
@@ -211,7 +211,7 @@ impl Session {
         self.front_launch_until = until;
     }
 
-    pub(crate) fn step_window(&mut self, next: bool, out: &mut Out) {
+    pub(crate) fn step_window(&mut self, next: bool) {
         let Some(front) = self.top_window().filter(|w| !w.is_shelf()) else { return };
         let mut group = self.windows.iter().filter(|w| !w.down && w.workspace == front.workspace).cycle();
         let count = self.windows.iter().filter(|w| !w.down && w.workspace == front.workspace).count();
@@ -223,13 +223,13 @@ impl Session {
         if let Some(id) = id.filter(|id| *id != front.id) {
             self.use_home();
             self.cancel_front_launch();
-            self.command(WindowCommand::FocusWindow(id), out);
+            self.command(WindowCommand::FocusWindow(id));
         }
     }
 
-    pub(crate) fn pad_active(&mut self, out: &mut Out) {
+    pub(crate) fn pad_active(&mut self) {
         if let Some(id) = self.top_window().map(|w| w.id).filter(|id| Some(*id) != self.keyboard_focus) {
-            self.command(WindowCommand::FocusWindow(id), out);
+            self.command(WindowCommand::FocusWindow(id));
         }
     }
 
@@ -404,7 +404,7 @@ impl Session {
     /// If a window appears within [`REOPEN_SECS`] on the workspace whose window in front closed, shows
     /// that workspace again. This is for a program that replaces its first window, such as a splash
     /// screen, or Waydroid on a cold start.
-    pub(crate) fn follow_replacement(&mut self, now: u64, out: &mut Out) {
+    pub(crate) fn follow_replacement(&mut self, now: u64) {
         let Some((ws, at)) = self.closed_front.take() else {
             return;
         };
@@ -412,7 +412,7 @@ impl Session {
             return;
         }
         if self.windows.iter().any(|w| w.workspace == ws && !w.down) {
-            self.focus(&ws, out);
+            self.focus(&ws);
             return;
         }
         self.closed_front = Some((ws, at));
@@ -421,7 +421,7 @@ impl Session {
     /// Shows the workspace of the launch just started, once its own first window is there. The entry's
     /// workspace may already have windows of its other launches. An entry known by its app id has no scope
     /// of ours, so any of its windows counts.
-    pub(crate) fn follow_front_launch(&mut self, now: u64, out: &mut Out) {
+    pub(crate) fn follow_front_launch(&mut self, now: u64) {
         if self.front_launch_until.is_some_and(|until| now > until) {
             self.cancel_front_launch();
         }
@@ -445,7 +445,7 @@ impl Session {
         if let Some((id, down)) = arrived {
             self.front_launch = None;
             if !down {
-                self.command(WindowCommand::FocusWindow(id), out);
+                self.command(WindowCommand::FocusWindow(id));
             }
         }
     }

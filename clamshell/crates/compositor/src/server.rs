@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use clamshell_state::{Effect, State, WindowCommand, WindowEvent, session::windows::Window};
+use clamshell_state::{Effect, State, WindowEvent, session::windows::Window};
 use clamshell_ui::{Config, Core, Error, Screen};
 use smithay::{
     desktop::{PopupManager, Window as SurfaceWindow},
@@ -553,7 +553,7 @@ impl Server {
                 Effect::DumpWindowEvents(ref path) => crate::trace::save(self.trace.borrow().snapshot(self.core.state()), path.clone()),
                 Effect::Screenshot => self.screenshot_requested = true,
                 Effect::Quit => self.exit = true,
-                Effect::Window(WindowCommand::Close(ref ids)) => {
+                Effect::Close(ref ids) => {
                     self.x11_close.extend(ids.iter().copied().filter(|id| {
                         self.core.state().session().window(*id).is_some()
                             && self.windows.iter().all(|window| window.id != *id || window.window.toplevel().is_none())
@@ -567,7 +567,6 @@ impl Server {
                 // The second screen is on only while the screens are.
                 Effect::Outputs { top, bottom } => self.screens_on = [top, top && bottom],
                 Effect::Refresh(hz) => self.refresh_wanted = hz,
-                Effect::Window(_) => {}
                 Effect::Key(ref stroke) => self.stroke(stroke),
                 Effect::Launch { ref env, .. } => {
                     let mut launch = effect.clone();

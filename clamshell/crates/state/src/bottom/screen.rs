@@ -10,19 +10,18 @@
 //! program has another window with that app id open, as a dual-screen emulator does, since titles change
 //! with what a window shows.
 //!
-//! The rules are saved and given to sway ([`WindowCommand::DownRules`]), which places a matching window
-//! on the bottom screen as it opens, before it is drawn. ClamShell then marks it as moved down. If sway's
-//! rule didn't move it, ClamShell moves it itself, since by app id and title alone sway can't tell which
-//! program a window belongs to.
+//! The rules are saved. A window that matches one is moved down once, after the event that opened it or
+//! gave it the title ([`Bottom::follow_window_rules`]).
 
 use std::sync::Arc;
 
 use crate::bottom::Bottom;
 use crate::bottom::notice::NoticeKind;
-use crate::effect::{Effect, Save, WindowCommand};
+use crate::effect::{Effect, Save};
 use crate::out::Out;
 use crate::session::instance::Instance;
 use crate::session::windows::Window;
+use crate::session::windows::WindowCommand;
 use crate::settings::BottomWhenIdle;
 use crate::{Clock, Session};
 
@@ -37,31 +36,8 @@ pub struct WindowRule {
 
 impl WindowRule {
     fn matches(&self, owner: &str, w: &Window) -> bool {
-        &*self.owner == owner && matches_window(&self.app_id, self.title.as_deref(), w)
+        &*self.owner == owner && self.app_id == w.app_id && self.title.as_ref().is_none_or(|t| *t == w.title)
     }
-
-    /// What sway can match a window by: its app id and title, but not which program it belongs to.
-    pub fn down_rule(&self) -> DownRule {
-        DownRule { app_id: self.app_id.clone(), title: self.title.clone() }
-    }
-}
-
-/// A window that goes to the bottom screen as it opens, as sway matches it: by app id, and by title if
-/// one is given.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct DownRule {
-    pub app_id: String,
-    pub title: Option<String>,
-}
-
-impl DownRule {
-    pub fn matches(&self, w: &Window) -> bool {
-        matches_window(&self.app_id, self.title.as_deref(), w)
-    }
-}
-
-fn matches_window(app_id: &str, title: Option<&str>, w: &Window) -> bool {
-    app_id == w.app_id && title.is_none_or(|t| t == w.title)
 }
 
 /// The rules for which programs' windows go to the bottom screen.
@@ -96,24 +72,8 @@ impl WindowRules {
         self.list.len() != before
     }
 
-    /// The rules in the form sway uses to place windows.
-    pub(crate) fn effect(&self) -> Effect {
-        let mut rules = Vec::new();
-        self.down_rules(&mut rules);
-        Effect::Window(WindowCommand::DownRules(rules))
-    }
-
     fn wants(&self, owner: &str, w: &Window) -> bool {
         self.list.iter().any(|r| r.matches(owner, w))
-    }
-
-    /// Appends what the rules match, for sway, without duplicates, to `out`.
-    pub fn down_rules(&self, out: &mut Vec<DownRule>) {
-        for rule in self.list.iter().map(WindowRule::down_rule) {
-            if !out.contains(&rule) {
-                out.push(rule);
-            }
-        }
     }
 }
 
@@ -237,7 +197,7 @@ impl Bottom {
         let Some(w) = session.top_window().filter(|w| !w.is_shelf()).cloned() else {
             return;
         };
-        self.show_down(w.id, session, out);
+        self.show_down(w.id, session);
         // Sent down already, so the rule added below doesn't send it again.
         if !self.sent_down.contains(&w.id) {
             self.sent_down.push(w.id);
@@ -262,9 +222,9 @@ impl Bottom {
 
     /// Moves a window down and shows it there, in the windows' tab, from whichever tab was open, turning
     /// the bottom screen on again if it was off.
-    pub(crate) fn show_down(&mut self, id: i64, session: &mut Session, out: &mut Out) {
+    pub(crate) fn show_down(&mut self, id: i64, session: &mut Session) {
         self.open_windows_tab();
-        session.command(WindowCommand::Down(id), out);
+        session.command(WindowCommand::Down(id));
         self.screen.off = false;
     }
 
@@ -274,7 +234,7 @@ impl Bottom {
         let Some(w) = session.windows_down().find(|w| w.visible).or_else(|| session.windows_down().next()).cloned() else {
             return;
         };
-        session.command(WindowCommand::Up { window: w.id, to: w.workspace.clone() }, out);
+        session.command(WindowCommand::Up { window: w.id, to: w.workspace.clone() });
         if let Some(owner) = session.owner_of(&w)
             && self.window_rules.forget(&owner, &w)
         {
@@ -282,12 +242,10 @@ impl Bottom {
         }
     }
 
-    /// A rule was added or forgotten. That is shown in a notice, and the rules are saved and given to
-    /// sway.
+    /// A rule was added or forgotten. That is shown in a notice, and the rules are saved.
     fn window_rules_changed(&mut self, added: bool, now: u64, out: &mut Out) {
         self.notice.show(NoticeKind::BottomRule(added), now);
         out.effects.push(Effect::Save(Save::WindowRules(self.window_rules.clone())));
-        out.effects.push(self.window_rules.effect());
     }
 
     /// Opens the windows' tab as a window moves there. The tab left is settled later (see
@@ -321,9 +279,9 @@ impl Bottom {
 
     /// A tap on a program whose windows are all on the bottom screen shows them there, with its first
     /// tab in view, turning the bottom screen on again if it was off by hand.
-    pub(crate) fn show_program_down(&mut self, window: i64, session: &mut Session, out: &mut Out) {
+    pub(crate) fn show_program_down(&mut self, window: i64, session: &mut Session) {
         self.open_windows_tab();
-        session.command(WindowCommand::ShowDown(window), out);
+        session.command(WindowCommand::ShowDown(window));
         self.screen.off = false;
     }
 
@@ -346,7 +304,7 @@ impl Bottom {
     }
 
     /// Runs after every event. A window whose program has a rule for it is sent down, once.
-    pub(crate) fn follow_window_rules(&mut self, session: &mut Session, library: &crate::Library, out: &mut Out) {
+    pub(crate) fn follow_window_rules(&mut self, session: &mut Session, library: &crate::Library) {
         let wanted: Vec<i64> = session
             .windows()
             .iter()
@@ -362,7 +320,7 @@ impl Bottom {
             .collect();
         for id in wanted {
             self.sent_down.push(id);
-            self.show_down(id, session, out);
+            self.show_down(id, session);
         }
         self.sent_down.retain(|id| session.windows().iter().any(|w| w.id == *id));
     }
@@ -378,7 +336,7 @@ mod tests {
     use crate::settings::{Choice, Setting};
     use crate::testkit::Applied;
     use crate::testkit::{state, tap};
-    use crate::{Event, State};
+    use crate::{Event, State, WindowPlace};
 
     fn win(id: i64, unit: &str, title: &str, focused: bool, down: bool) -> Window {
         Window {
@@ -425,7 +383,7 @@ mod tests {
         s.observed(vec![win(2, GAME, "Page one", true, false)]);
         let fx = key(&mut s, DeviceKey::WindowDown);
         let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: None };
-        assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(r)) if r.list() == [rule.clone()]), "{fx:?}");
+        assert!(matches!(&fx[0], Effect::Save(Save::WindowRules(r)) if r.list() == [rule.clone()]), "{fx:?}");
         // A different title next time, such as a page or a command, still matches.
         assert!(rule.matches("melonds", &win(3, GAME, "Page two", true, false)));
     }
@@ -437,25 +395,20 @@ mod tests {
         assert_eq!(key(&mut s, DeviceKey::BottomView), vec![Effect::Watch(crate::Watch::Metrics, false)]);
         assert!(!s.bottom().shows_windows(s.session()));
         let fx = key(&mut s, DeviceKey::WindowDown);
-        assert_eq!(fx[0], Effect::Window(WindowCommand::Down(2)));
+        assert_eq!(s.session().bottom_window().map(|w| w.id), Some(2));
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(1));
         // The title is included, since the emulator has another window with the same app id.
         let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: Some("Bottom".into()) };
-        assert_eq!(fx[1], Effect::Window(WindowCommand::FocusWindow(1)));
-        assert!(matches!(&fx[2], Effect::Save(Save::WindowRules(r)) if r.list() == [rule.clone()]), "{fx:?}");
-        assert_eq!(fx[3], Effect::Window(WindowCommand::DownRules(vec![rule.down_rule()])), "for sway");
-        assert_eq!(fx.iter().filter(|e| **e == Effect::Window(WindowCommand::Down(2))).count(), 1, "sent down once, not again by its rule: {fx:?}");
+        assert!(matches!(&fx[0], Effect::Save(Save::WindowRules(r)) if r.list() == [rule.clone()]), "{fx:?}");
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::BottomRule(true)));
-        // sway reports it down, so it is shown there.
-        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
         assert!(s.bottom().shows_windows(s.session()));
         // Moving up acts even when ClamShell's own view covers the bottom window.
         key(&mut s, DeviceKey::BottomView);
         assert!(!s.bottom().shows_windows(s.session()));
         // Up moves it back to its workspace, forgets the rule, and shows ClamShell's view below.
         let fx = key(&mut s, DeviceKey::WindowUp);
-        assert_eq!(fx[0], Effect::Window(WindowCommand::Up { window: 2, to: emu().workspace() }));
-        assert!(matches!(&fx[1], Effect::Save(Save::WindowRules(r)) if r.list().is_empty()), "{fx:?}");
-        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, false)]);
+        assert_eq!(s.session().window(2).map(Window::place), Some(WindowPlace::Top(&emu().workspace())));
+        assert!(matches!(&fx[0], Effect::Save(Save::WindowRules(r)) if r.list().is_empty()), "{fx:?}");
         assert!(!s.bottom().shows_windows(s.session()), "none down: ClamShell's view");
     }
 
@@ -468,24 +421,23 @@ mod tests {
         // down, once.
         let mut s = crate::testkit::started(crate::Init { window_rules: rules.clone(), ..crate::testkit::init() });
         s.add_run(running("melonds", "melonds_1"), emu());
-        let fx = s.observed(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)]);
-        assert!(fx.contains(&Effect::Window(WindowCommand::Down(6))), "{fx:?}");
-        assert!(!fx.contains(&Effect::Window(WindowCommand::Down(5))));
-        let fx = s.observed(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)]);
-        assert!(!fx.contains(&Effect::Window(WindowCommand::Down(6))), "asked once");
+        s.observed(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)]);
+        assert_eq!(s.session().bottom_window().map(|w| w.id), Some(6));
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(5));
+        assert_eq!(s.session().windows_down().count(), 1);
         // Its window appears before its scope is listed, and is sent down when the scope appears.
         let mut s = crate::testkit::started(crate::Init { window_rules: rules.clone(), ..crate::testkit::init() });
-        let fx = s.observed(vec![win(8, GAME, "Bottom", true, false)]);
-        assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Down(_)))), "no entry yet: {fx:?}");
+        s.observed(vec![win(8, GAME, "Bottom", true, false)]);
+        assert_eq!(s.session().bottom_window(), None, "no entry yet");
         s.add_run(running("melonds", "melonds_1"), emu());
-        let fx = s.applied(Event::Units(vec![emu()]));
-        assert!(fx.contains(&Effect::Window(WindowCommand::Down(8))), "{fx:?}");
+        s.applied(Event::Units(vec![emu()]));
+        assert_eq!(s.session().bottom_window().map(|w| w.id), Some(8));
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
         // Another game's window with that title doesn't match the rule.
         s.add_run(running("other", "other_2"), Instance::Run { key: "other_2".into(), secs: 5, n: 2 });
-        let fx = s.observed(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom", false, false)]);
-        assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::Down(_)))), "{fx:?}");
+        s.observed(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom", false, false)]);
+        assert!(s.session().window(7).is_some_and(|w| !w.down));
     }
 
     #[test]
@@ -493,16 +445,15 @@ mod tests {
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(2));
-        let fx = key(&mut s, DeviceKey::WindowDown);
-        // Return before Down: sway must not temporarily put two clients on the bottom workspace.
-        assert_eq!(&fx[..2], &[Effect::Window(WindowCommand::Return { window: 2, to: emu().workspace() }), Effect::Window(WindowCommand::Down(1)),]);
+        key(&mut s, DeviceKey::WindowDown);
+        assert_eq!(s.session().window(2).map(Window::place), Some(WindowPlace::Top(&emu().workspace())));
         assert_eq!(s.session().windows_down().count(), 1);
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(1));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(2));
         key(&mut s, DeviceKey::BottomView);
         assert!(!s.bottom().shows_windows(s.session()));
-        let fx = key(&mut s, DeviceKey::WindowUp);
-        assert!(fx.contains(&Effect::Window(WindowCommand::Up { window: 1, to: emu().workspace() })));
+        key(&mut s, DeviceKey::WindowUp);
+        assert_eq!(s.session().window(1).map(Window::place), Some(WindowPlace::Top(&emu().workspace())));
         assert_eq!(s.session().windows_down().count(), 0);
         assert!(!s.bottom().shows_windows(s.session()));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(1));
@@ -512,7 +463,6 @@ mod tests {
     fn the_windows_tab_shows_the_window_below_and_marks_one_hidden_by_another_tab() {
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
-        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
         assert_eq!(s.bottom().tab(), Tab::Windows);
         assert_eq!(s.bottom().hidden_down(s.session()), None, "shown");
         // Home + right stick press goes back to the tab it came from: the window is then hidden there.

@@ -107,16 +107,6 @@ pub fn notice(s: &State) -> Option<crate::bottom::notice::NoticeKind> {
     s.bottom().notice().map(|n| n.what.clone())
 }
 
-/// The window commands among `fx`.
-pub fn window_effects(fx: Vec<Effect>) -> Vec<Effect> {
-    fx.into_iter().filter(|e| matches!(e, Effect::Window(_))).collect()
-}
-
-/// The effect that selects a window in its group.
-pub fn focus(window: i64) -> Effect {
-    Effect::Window(WindowCommand::FocusWindow(window))
-}
-
 /// Launches `entry` from shelf and has it start. Returns its instance.
 pub fn launch(s: &mut State, id: &str) -> Instance {
     // Select it if it isn't selected, then play it. The launch is in the effects of one of the two taps.

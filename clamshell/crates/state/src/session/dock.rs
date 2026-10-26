@@ -17,7 +17,7 @@
 
 use std::sync::Arc;
 
-use crate::effect::{Effect, Save, WindowCommand};
+use crate::effect::{Effect, Save};
 use crate::id::DockId;
 use crate::keymap::Dir;
 use crate::out::Out;
@@ -207,7 +207,7 @@ impl Dock {
             DockId::OpenAnother => EntryAct::OpenAnother,
             DockId::CloseWindow => {
                 if let Some(w) = session.entry_window(&entry) {
-                    out.effects.push(Effect::Window(WindowCommand::Close(vec![w])));
+                    out.effects.push(Effect::Close(vec![w]));
                 }
                 return;
             }
@@ -340,7 +340,8 @@ mod tests {
         assert!(s.bottom().notice().is_some());
         // With a window, a tap shows it, and its menu pins it.
         s.observed(vec![win(3, "zelda3", &zelda.workspace(), false)]);
-        assert_eq!(tap(&mut s, dock(0)), vec![focus(3), Effect::PadRoute(crate::PadRoute::Game)]);
+        assert_eq!(tap(&mut s, dock(0)), vec![Effect::PadRoute(crate::PadRoute::Game)]);
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(3));
         long(&mut s, dock(0));
         assert_eq!(s.dock().menu().map(|m| &**m), Some("zelda-lttp"));
         let fx = tap(&mut s, Id::Dock(DockId::Pin));
@@ -367,7 +368,8 @@ mod tests {
         assert!(s.dock().is_pinned("tv:Cosmos"));
         // A tap on it opens it in shelf.
         tap(&mut s, Id::Shelf(ShelfId::Collection(0)));
-        assert_eq!(tap(&mut s, dock(0)), vec![Effect::Window(WindowCommand::ShowShelf)]);
+        assert!(tap(&mut s, dock(0)).is_empty());
+        assert!(s.session().shelf_in_front());
         assert_eq!(s.shelf().group().map(|g| &*g.id), Some("tv:Cosmos"));
         // Unpinned from shelf, it is removed, since it doesn't run.
         tap(&mut s, Id::Shelf(ShelfId::Up));
@@ -441,21 +443,14 @@ mod tests {
         long(&mut s, dock(0));
         let slice = Instance::slice_of(&clamshell_library::key_of("zelda-lttp"));
         let fx = tap(&mut s, Id::Dock(DockId::Suspend));
-        assert_eq!(
-            fx,
-            vec![
-                Effect::Window(WindowCommand::ShowShelf),
-                Effect::Freeze { slice: slice.clone(), frozen: true },
-                closed(),
-                Effect::PadRoute(crate::PadRoute::Ui)
-            ],
-            "shelf in front, then frozen"
-        );
+        assert_eq!(fx, vec![Effect::Freeze { slice: slice.clone(), frozen: true }, closed(), Effect::PadRoute(crate::PadRoute::Ui)]);
+        assert!(s.session().shelf_in_front());
         assert!(s.session().suspended("zelda-lttp"));
         s.observed(vec![shelf_window(true), Window { focused: false, visible: false, ..w }]);
         long(&mut s, dock(0));
         let fx = tap(&mut s, Id::Dock(DockId::Suspend));
-        assert!(fx.contains(&Effect::Freeze { slice, frozen: false }) && fx.contains(&focus(5)), "resumed and shown: {fx:?}");
+        assert!(fx.contains(&Effect::Freeze { slice, frozen: false }), "resumed: {fx:?}");
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(5), "and shown");
         assert!(!s.session().suspended("zelda-lttp"));
     }
 
@@ -470,14 +465,14 @@ mod tests {
         long(&mut s, dock(0));
         assert!(!s.opens_another("zelda-lttp") && tap(&mut s, Id::Dock(DockId::OpenAnother)) == vec![closed()], "a game: not another");
         long(&mut s, dock(0));
-        assert_eq!(tap(&mut s, Id::Dock(DockId::CloseWindow)), vec![Effect::Window(WindowCommand::Close(vec![5])), closed()]);
+        assert_eq!(tap(&mut s, Id::Dock(DockId::CloseWindow)), vec![Effect::Close(vec![5]), closed()]);
         long(&mut s, dock(0));
-        assert_eq!(tap(&mut s, Id::Dock(DockId::Quit)), vec![Effect::Window(WindowCommand::Close(vec![5])), closed()]);
+        assert_eq!(tap(&mut s, Id::Dock(DockId::Quit)), vec![Effect::Close(vec![5]), closed()]);
         long(&mut s, dock(0));
         assert_eq!(tap(&mut s, Id::Dock(DockId::ForceKill)), vec![Effect::EndRun { key, force: true }, closed()]);
         // Home with B closes the window in front; held, it quits the window's entry.
-        assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::CloseWindow)), vec![Effect::Window(WindowCommand::Close(vec![5]))]);
-        assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::Quit)), vec![Effect::Window(WindowCommand::Close(vec![5]))]);
+        assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::CloseWindow)), vec![Effect::Close(vec![5])]);
+        assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::Quit)), vec![Effect::Close(vec![5])]);
     }
 
     /// Back at the top of an entry's tray menu goes back to its own menu. Leaving the tab closes both.
@@ -551,7 +546,7 @@ mod tests {
         s.applied(Event::Device(DeviceKey::WindowDown));
         s.observed(vec![shelf_window(true), Window { down: true, visible: true, focused: false, ..foot() }]);
         assert!(s.bottom().shows_windows(s.session()));
-        assert_eq!(s.applied(Event::Device(DeviceKey::CloseWindow)), vec![Effect::Window(WindowCommand::Close(vec![foot().id]))]);
+        assert_eq!(s.applied(Event::Device(DeviceKey::CloseWindow)), vec![Effect::Close(vec![foot().id])]);
         // With ClamShell's view on the bottom screen instead, there is nothing to close.
         s.applied(Event::Device(DeviceKey::BottomView));
         assert_eq!(s.applied(Event::Device(DeviceKey::CloseWindow)), vec![]);

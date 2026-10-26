@@ -6,9 +6,8 @@
 
 use std::sync::Arc;
 
-use crate::out::Out;
+use crate::Session;
 use crate::session::instance::Instance;
-use crate::{Effect, Session, WindowCommand};
 
 /// Where the session has placed a window. A top group contains all launches of one entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,12 +16,35 @@ pub enum WindowPlace<'a> {
     Bottom,
 }
 
+/// A change to where windows are and which ones are shown, decided by the session. The compositor shows
+/// the result, read from the state after apply.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum WindowCommand {
+    /// Select this top window, including its tab within its group.
+    FocusWindow(i64),
+    /// Give a client keyboard focus without changing the selected content on either screen.
+    KeyboardFocus(i64),
+    /// Put these windows in this group. Used for an entry known by app id, to move its windows from where
+    /// they opened.
+    Move { windows: Vec<i64>, to: String },
+    /// Bring shelf to the front.
+    ShowShelf,
+    /// Move a window to the bottom screen and show it there. It is marked so it stays there. The top
+    /// screen keeps the keyboard.
+    Down(i64),
+    /// Move a window that was moved down back to the top screen, to its group or the one in front.
+    Up { window: i64, to: String },
+    /// Return the displaced bottom window to its home group without activating that program.
+    Return { window: i64, to: String },
+    /// Show on the bottom screen this window that was moved there. The top screen keeps the keyboard.
+    ShowDown(i64),
+}
+
 impl Session {
-    /// Commits a placement decision before returning its command to the backend. The compositor reads
-    /// this same placement after apply; it does not have to wait for a backend observation.
-    pub(crate) fn command(&mut self, command: WindowCommand, out: &mut Out) {
+    /// Carries out a placement decision on the session's windows.
+    pub(crate) fn command(&mut self, command: WindowCommand) {
         if let WindowCommand::Down(id) = &command {
-            self.return_bottom(*id, out);
+            self.return_bottom(*id);
         }
         match &command {
             WindowCommand::KeyboardFocus(id) => {
@@ -94,19 +116,17 @@ impl Session {
                     w.visible = w.id == *id;
                 }
             }
-            WindowCommand::Close(_) | WindowCommand::DownRules(_) | WindowCommand::KnownApps(_) => {}
         }
         self.remember_front();
         let refocus = matches!(command, WindowCommand::Down(_)).then(|| self.top_window().map(|w| w.id)).flatten();
-        out.effects.push(Effect::Window(command));
         if let Some(id) = refocus {
-            self.command(WindowCommand::FocusWindow(id), out);
+            self.command(WindowCommand::FocusWindow(id));
         }
     }
 
-    pub(crate) fn return_bottom(&mut self, except: i64, out: &mut Out) {
+    pub(crate) fn return_bottom(&mut self, except: i64) {
         while let Some(w) = self.windows.iter().find(|w| w.down && w.id != except) {
-            self.command(WindowCommand::Return { window: w.id, to: w.workspace.clone() }, out);
+            self.command(WindowCommand::Return { window: w.id, to: w.workspace.clone() });
         }
     }
 
@@ -127,9 +147,9 @@ impl Session {
         self.windows.iter().filter(|w| !w.down && w.workspace == group).max_by_key(|w| (Some(w.id) == selected, w.focused, w.visible, w.id))
     }
 
-    pub(crate) fn focus(&mut self, group: &str, out: &mut Out) {
+    pub(crate) fn focus(&mut self, group: &str) {
         if let Some(id) = self.group_window(group).map(|w| w.id) {
-            self.command(WindowCommand::FocusWindow(id), out);
+            self.command(WindowCommand::FocusWindow(id));
         }
     }
 
@@ -183,14 +203,14 @@ impl From<WindowEvent> for crate::Event {
 }
 
 impl crate::Session {
-    pub(crate) fn on_window(&mut self, event: WindowEvent, out: &mut crate::out::Out) {
+    pub(crate) fn on_window(&mut self, event: WindowEvent) {
         match event {
             WindowEvent::Opened(window) => {
                 if self.windows.iter().any(|w| w.id == window.id) {
                     return;
                 }
                 if window.down {
-                    self.return_bottom(window.id, out);
+                    self.return_bottom(window.id);
                 }
                 let focus = window.focused && !window.down;
                 if window.focused {
@@ -218,9 +238,9 @@ impl crate::Session {
                 self.windows.retain(|w| w.id != id);
                 if let Some(group) = group.filter(|g| self.windows.iter().any(|w| !w.down && w.workspace == *g)) {
                     if let Some(parent) = parent {
-                        self.command(WindowCommand::FocusWindow(parent), out);
+                        self.command(WindowCommand::FocusWindow(parent));
                     } else {
-                        self.focus(&group, out);
+                        self.focus(&group);
                     }
                 }
                 if bottom && let Some(w) = self.windows.iter_mut().rev().find(|w| w.down) {
@@ -279,13 +299,13 @@ impl crate::Session {
             WindowEvent::Activate(id) => {
                 if let Some(window) = self.windows.iter().find(|w| w.id == id) {
                     let command = if window.down {
-                        crate::WindowCommand::ShowDown(id)
+                        WindowCommand::ShowDown(id)
                     } else if window.is_shelf() {
-                        crate::WindowCommand::ShowShelf
+                        WindowCommand::ShowShelf
                     } else {
-                        crate::WindowCommand::FocusWindow(id)
+                        WindowCommand::FocusWindow(id)
                     };
-                    self.command(command, out);
+                    self.command(command);
                 }
             }
         }
@@ -402,7 +422,7 @@ impl Window {
 mod tests {
     use super::*;
     use crate::testkit::*;
-    use crate::{Effect, Event, WindowCommand};
+    use crate::{Effect, Event};
 
     #[test]
     fn compositor_opening_focus_respects_launch_intent_and_shown_program() {
@@ -456,7 +476,8 @@ mod tests {
         assert_eq!(s.applied(event), vec![Effect::PadRoute(crate::PadRoute::Ui)]);
         assert_eq!(s.session().windows(), windows);
         assert!(s.applied(Event::Home).is_empty());
-        assert_eq!(s.applied(WindowEvent::Activate(8).into()), vec![Effect::Window(WindowCommand::FocusWindow(8)), Effect::PadRoute(crate::PadRoute::Game)]);
+        assert_eq!(s.applied(WindowEvent::Activate(8).into()), vec![Effect::PadRoute(crate::PadRoute::Game)]);
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
     }
 
     #[test]
@@ -481,7 +502,7 @@ mod tests {
         let shelf = shelf_window(false);
         let front = win(7, "test", "1", true);
         s.observed(vec![shelf.clone(), front]);
-        assert_eq!(s.applied(WindowEvent::Closed(7).into()), vec![Effect::Window(WindowCommand::ShowShelf), Effect::PadRoute(crate::PadRoute::Ui)]);
+        assert_eq!(s.applied(WindowEvent::Closed(7).into()), vec![Effect::PadRoute(crate::PadRoute::Ui)]);
         let shelf = Window { focused: true, visible: true, ..shelf };
         assert_eq!(s.session().windows(), std::slice::from_ref(&shelf));
         assert!(s.applied(WindowEvent::Closed(7).into()).is_empty());
@@ -496,21 +517,15 @@ mod tests {
         let shelf = shelf_window(true);
         let shelf_id = shelf.id;
         s.observed(vec![shelf, top, down]);
-        assert_eq!(s.applied(WindowEvent::Activate(7).into()), vec![Effect::Window(WindowCommand::FocusWindow(7)), Effect::PadRoute(crate::PadRoute::Game)]);
-        assert_eq!(
-            s.applied(WindowEvent::Activate(8).into()),
-            vec![
-                Effect::Window(WindowCommand::ShowDown(8)),
-                Effect::Window(WindowCommand::KeyboardFocus(8)),
-                Effect::Watch(crate::Watch::Metrics, false),
-                Effect::PadActivity(true)
-            ]
-        );
+        assert_eq!(s.applied(WindowEvent::Activate(7).into()), vec![Effect::PadRoute(crate::PadRoute::Game)]);
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
+        assert_eq!(s.applied(WindowEvent::Activate(8).into()), vec![Effect::Watch(crate::Watch::Metrics, false), Effect::PadActivity(true)]);
+        assert_eq!(s.session().bottom_window().map(|w| w.id), Some(8));
+        assert_eq!(s.session().keyboard_focus(), Some(8));
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
         assert!(s.bottom().shows_windows(s.session()));
-        assert_eq!(
-            s.applied(WindowEvent::Activate(shelf_id).into()),
-            vec![Effect::Window(WindowCommand::ShowShelf), Effect::PadActivity(false), Effect::PadRoute(crate::PadRoute::Ui)]
-        );
+        assert_eq!(s.applied(WindowEvent::Activate(shelf_id).into()), vec![Effect::PadActivity(false), Effect::PadRoute(crate::PadRoute::Ui)]);
+        assert!(s.session().shelf_in_front());
     }
 
     #[test]
@@ -542,7 +557,7 @@ mod tests {
         s.applied(Event::Home);
         assert!(s.session().front_launch().is_none());
         let window = Window { unit: instance.unit(), ..win(7, "zelda3", &instance.workspace(), false) };
-        assert!(window_effects(s.applied(WindowEvent::Opened(window).into())).is_empty());
+        s.applied(WindowEvent::Opened(window).into());
         assert_eq!(s.session().front(), crate::session::running::Front::Shelf);
     }
 
@@ -552,15 +567,13 @@ mod tests {
         s.applied(Event::tick(100));
         let instance = launch(&mut s, "zelda-lttp");
         let window = Window { unit: instance.unit(), ..win(7, "zelda3", &instance.workspace(), false) };
-        assert_eq!(
-            s.applied(WindowEvent::Opened(window.clone()).into()),
-            vec![Effect::Window(WindowCommand::FocusWindow(7)), Effect::PadRoute(crate::PadRoute::Game)]
-        );
+        assert_eq!(s.applied(WindowEvent::Opened(window.clone()).into()), vec![Effect::PadRoute(crate::PadRoute::Game)]);
         let window = Window { focused: true, visible: true, ..window };
         assert_eq!(s.session().windows_of("zelda-lttp").collect::<Vec<_>>(), vec![&window]);
         assert!(s.session().front_launch().is_none());
-        assert_eq!(s.applied(WindowEvent::Closed(7).into()), vec![Effect::Window(WindowCommand::ShowShelf), Effect::PadRoute(crate::PadRoute::Ui)]);
+        assert_eq!(s.applied(WindowEvent::Closed(7).into()), vec![Effect::PadRoute(crate::PadRoute::Ui)]);
         assert!(s.session().windows_of("zelda-lttp").next().is_none());
+        assert!(s.session().shelf_in_front());
     }
 
     #[test]
@@ -569,10 +582,10 @@ mod tests {
         s.observed(vec![win(7, "other", "other", true)]);
         let instance = launch(&mut s, "zelda-lttp");
         assert!(s.session().front_launch().is_some());
-        assert_eq!(s.applied(WindowEvent::Activate(7).into()), vec![Effect::Window(WindowCommand::FocusWindow(7))]);
+        assert!(s.applied(WindowEvent::Activate(7).into()).is_empty());
         assert!(s.session().front_launch().is_none());
         let window = Window { unit: instance.unit(), ..win(8, "zelda3", &instance.workspace(), false) };
-        assert!(window_effects(s.applied(WindowEvent::Opened(window).into())).is_empty());
+        s.applied(WindowEvent::Opened(window).into());
         assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
     }
 
@@ -583,12 +596,11 @@ mod tests {
         s.observed(vec![shelf_window(false), Window { unit: instance.unit(), ..win(7, "zelda3", &instance.workspace(), true) }]);
         s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::Suspend));
         assert!(s.session().suspended("zelda-lttp"));
-        // The client must be able to draw before the backend gives it focus.
+        // The client must be able to draw when the compositor shows it.
         assert_eq!(
             s.applied(WindowEvent::Activate(7).into()),
             vec![
                 Effect::Freeze { slice: Instance::slice_of(&clamshell_library::key_of("zelda-lttp")), frozen: false },
-                Effect::Window(WindowCommand::FocusWindow(7)),
                 Effect::PadRoute(crate::PadRoute::Game),
             ]
         );
@@ -609,17 +621,11 @@ mod tests {
         s.applied(WindowEvent::Opened(window).into());
         let event = || WindowEvent::Title { window: 7, title: "second".into() }.into();
         let effects = s.applied(event());
-        assert_eq!(
-            effects,
-            vec![
-                Effect::Window(WindowCommand::Down(7)),
-                Effect::Window(WindowCommand::ShowShelf),
-                Effect::Watch(crate::Watch::Metrics, false),
-                Effect::PadRoute(crate::PadRoute::Ui)
-            ]
-        );
+        assert_eq!(effects, vec![Effect::Watch(crate::Watch::Metrics, false), Effect::PadRoute(crate::PadRoute::Ui)]);
+        assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
+        assert!(s.session().shelf_in_front());
         assert_eq!(s.session().windows().first().map(|w| w.title.as_str()), Some("second"));
-        assert!(s.bottom().shows_windows(s.session()), "placement is committed without a backend observation");
+        assert!(s.bottom().shows_windows(s.session()));
         assert!(s.applied(event()).is_empty());
     }
 
@@ -631,14 +637,7 @@ mod tests {
         let group = Instance::workspace_of(&clamshell_library::key_of("zelda-lttp"));
         let unit = Instance::Run { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 };
         let window = Window { id: 7, app_id: "game".into(), unit: unit.unit(), ..Window::default() };
-        assert_eq!(
-            s.applied(WindowEvent::Opened(window).into()),
-            vec![
-                Effect::Window(WindowCommand::Down(7)),
-                Effect::Window(WindowCommand::Move { windows: vec![7], to: group.clone() }),
-                Effect::Watch(crate::Watch::Metrics, false),
-            ]
-        );
+        assert_eq!(s.applied(WindowEvent::Opened(window).into()), vec![Effect::Watch(crate::Watch::Metrics, false)]);
         assert_eq!(s.session().window(7).map(Window::place), Some(WindowPlace::Bottom));
         assert_eq!(s.session().window(7).map(|w| w.workspace.as_str()), Some(group.as_str()));
         assert!(s.session().units().is_empty());
@@ -673,11 +672,11 @@ mod tests {
             Window { unit: two.unit(), ..win(9, "other", &two.workspace(), true) },
         ]);
         s.applied(WindowEvent::Activate(7).into());
-        assert_eq!(show(&mut s, "ff6"), vec![Effect::Window(WindowCommand::FocusWindow(9))]);
+        show(&mut s, "ff6");
         assert_eq!(s.session().top_window().map(|w| w.id), Some(9));
-        assert_eq!(show(&mut s, "zelda-lttp"), vec![Effect::Window(WindowCommand::FocusWindow(7))]);
+        show(&mut s, "zelda-lttp");
         assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
-        assert_eq!(s.applied(WindowEvent::Closed(7).into()), vec![Effect::Window(WindowCommand::FocusWindow(8))]);
+        s.applied(WindowEvent::Closed(7).into());
         assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
     }
 
@@ -687,11 +686,9 @@ mod tests {
         let instance = launch(&mut s, "zelda-lttp");
         s.applied(WindowEvent::Opened(Window { unit: instance.unit(), ..win(7, "game", &instance.workspace(), true) }).into());
         let dialog = Window { id: 8, app_id: "dialog".into(), parent: Some(7), unit: Some("portal.service".into()), focused: true, ..Window::default() };
-        assert_eq!(
-            s.applied(WindowEvent::Opened(dialog).into()),
-            vec![Effect::Window(WindowCommand::Move { windows: vec![8], to: instance.workspace() }), Effect::Window(WindowCommand::FocusWindow(8)),]
-        );
+        assert!(s.applied(WindowEvent::Opened(dialog).into()).is_empty());
         assert_eq!(s.session().window(8).map(Window::place), Some(WindowPlace::Top(&instance.workspace())));
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
         assert_eq!(s.session().window(8).and_then(|w| s.session().running_of(w)).map(|r| &*r.id), Some("zelda-lttp"));
         assert!(s.applied(WindowEvent::Closed(7).into()).is_empty());
         assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
@@ -704,15 +701,7 @@ mod tests {
         s.applied(WindowEvent::Opened(Window { unit: instance.unit(), ..win(7, "game", &instance.workspace(), true) }).into());
         s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
         let dialog = Window { id: 8, app_id: "dialog".into(), parent: Some(7), focused: true, ..Window::default() };
-        assert_eq!(
-            s.applied(WindowEvent::Opened(dialog).into()),
-            vec![
-                Effect::Window(WindowCommand::Return { window: 7, to: instance.workspace() }),
-                Effect::Window(WindowCommand::Down(8)),
-                Effect::Window(WindowCommand::FocusWindow(7)),
-                Effect::PadRoute(crate::PadRoute::Game)
-            ]
-        );
+        assert_eq!(s.applied(WindowEvent::Opened(dialog).into()), vec![Effect::PadRoute(crate::PadRoute::Game)]);
         assert_eq!(s.session().window(8).map(Window::place), Some(WindowPlace::Bottom));
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(8));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
@@ -742,15 +731,16 @@ mod tests {
         let mut s = state();
         s.observed(vec![shelf_window(false), win(7, "one", "one", true), win(8, "one", "one", false)]);
         s.applied(Event::HomeHeld(true));
-        assert_eq!(s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowNext)), vec![Effect::Window(WindowCommand::FocusWindow(8))]);
+        assert!(s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowNext)).is_empty());
         s.applied(Event::HomeHeld(false));
         assert!(s.applied(Event::HomeTap).is_empty());
         assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
-        assert_eq!(window_effects(s.applied(Event::Home)), vec![Effect::Window(WindowCommand::ShowShelf)]);
+        s.applied(Event::Home);
+        assert!(s.session().shelf_in_front());
         s.applied(WindowEvent::Activate(8).into());
         s.applied(Event::HomeHeld(true));
         s.applied(Event::HomeHeld(false));
-        assert_eq!(window_effects(s.applied(Event::HomeTap)), vec![Effect::Window(WindowCommand::ShowShelf)]);
+        s.applied(Event::HomeTap);
         assert!(s.session().top_window().is_some_and(Window::is_shelf));
     }
 
@@ -788,27 +778,14 @@ mod tests {
             Window { unit: instance.unit(), ..win(7, "foot", &instance.workspace(), true) },
             Window { unit: another.unit(), ..win(8, "foot", &another.workspace(), false) },
         ]);
-        assert_eq!(
-            window_effects(s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown))),
-            vec![
-                Effect::Window(WindowCommand::Down(7)),
-                Effect::Window(WindowCommand::FocusWindow(8)),
-                Effect::Window(WindowCommand::DownRules(vec![crate::bottom::screen::DownRule { app_id: "foot".into(), title: None }]))
-            ]
-        );
+        s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
         // A later matching window does use that rule and displaces the bottom occupant.
-        let fx = window_effects(s.applied(WindowEvent::Opened(Window { unit: another.unit(), ..win(9, "foot", &another.workspace(), false) }).into()));
-        assert_eq!(
-            fx,
-            vec![
-                Effect::Window(WindowCommand::Return { window: 7, to: instance.workspace() }),
-                Effect::Window(WindowCommand::Down(9)),
-                Effect::Window(WindowCommand::FocusWindow(8))
-            ]
-        );
+        s.applied(WindowEvent::Opened(Window { unit: another.unit(), ..win(9, "foot", &another.workspace(), false) }).into());
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(9));
+        assert_eq!(s.session().window(7).map(Window::place), Some(WindowPlace::Top(&instance.workspace())));
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
         assert_eq!(s.session().windows_down().count(), 1);
     }
 
@@ -819,16 +796,8 @@ mod tests {
         s.applied(WindowEvent::Activate(8).into());
         s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
         s.applied(WindowEvent::Activate(7).into());
-        let effects = window_effects(s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown)));
-        // Return must precede Down, and the returned foreign program must receive no focus.
-        assert_eq!(
-            effects,
-            vec![
-                Effect::Window(WindowCommand::Return { window: 8, to: "two".into() }),
-                Effect::Window(WindowCommand::Down(7)),
-                Effect::Window(WindowCommand::FocusWindow(9))
-            ]
-        );
+        s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
+        // The returned foreign program receives no focus.
         assert_eq!(s.session().window(8).map(Window::place), Some(WindowPlace::Top("two")));
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(9));
@@ -845,7 +814,7 @@ mod tests {
             (crate::device::buttons::DeviceKey::WindowNext, 7),
             (crate::device::buttons::DeviceKey::WindowPrevious, 8),
         ] {
-            assert_eq!(s.applied(Event::Device(action)), vec![Effect::Window(WindowCommand::FocusWindow(id))]);
+            assert!(s.applied(Event::Device(action)).is_empty());
             assert_eq!(s.session().top_window().map(|w| w.id), Some(id));
         }
         s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
@@ -860,8 +829,9 @@ mod tests {
         let mut s = state();
         s.observed(vec![win(7, "one", "one", true), Window { down: true, visible: true, ..win(8, "two", "two", false) }]);
         assert_eq!(s.applied(WindowEvent::KeyboardFocus(Some(8)).into()), vec![Effect::PadActivity(true)]);
-        // Focus is restored before the activity watch is disarmed; another focus loss can then arm it.
-        assert_eq!(s.applied(Event::PadActive), vec![Effect::Window(WindowCommand::FocusWindow(7)), Effect::PadActivity(false)]);
+        // Focus returns to the top window and the activity watch is disarmed; another focus loss can then
+        // arm it.
+        assert_eq!(s.applied(Event::PadActive), vec![Effect::PadActivity(false)]);
         assert_eq!(s.session().keyboard_focus(), Some(7));
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(8));
         assert!(s.applied(Event::PadActive).is_empty());
@@ -883,7 +853,7 @@ mod tests {
         s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
         s.applied(Event::Device(crate::device::buttons::DeviceKey::BottomView));
         assert!(!s.bottom().shows_windows(s.session()));
-        assert_eq!(show(&mut s, "zelda-lttp"), vec![Effect::Window(WindowCommand::FocusWindow(7)), Effect::Window(WindowCommand::ShowDown(8))]);
+        assert!(show(&mut s, "zelda-lttp").is_empty());
         assert_eq!(s.session().keyboard_focus(), Some(7));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(8));
@@ -901,16 +871,9 @@ mod tests {
         s.applied(WindowEvent::Presentation { window: 7, focused: Some(false), visible: None }.into());
         s.applied(WindowEvent::KeyboardFocus(Some(8)).into());
         assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
-        let effects = window_effects(s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown)));
-        assert_eq!(
-            effects,
-            vec![
-                Effect::Window(WindowCommand::Return { window: 8, to: "two".into() }),
-                Effect::Window(WindowCommand::Down(7)),
-                Effect::Window(WindowCommand::ShowShelf)
-            ]
-        );
+        s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
+        assert_eq!(s.session().window(8).map(Window::place), Some(WindowPlace::Top("two")));
         assert!(s.session().top_window().is_some_and(Window::is_shelf));
         assert_eq!(s.session().windows_down().count(), 1);
     }

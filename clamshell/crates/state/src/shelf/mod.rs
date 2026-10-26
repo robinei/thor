@@ -930,7 +930,8 @@ mod tests {
     fn a_group_started_from_elsewhere_opens_in_shelf() {
         let mut s = state();
         let fx = launch_now(&mut s, "tv:Cosmos/Season 1");
-        assert_eq!(fx, vec![Effect::Window(WindowCommand::ShowShelf)]);
+        assert!(fx.is_empty());
+        assert!(s.session().shelf_in_front());
         assert_eq!(s.shelf().collection().map(|c| c.name.as_str()), Some("TV"));
         assert_eq!(s.shelf().group().map(|g| &*g.id), Some("tv:Cosmos/Season 1"));
         assert_eq!(s.shelf().selected().map(|g| &**g), Some("tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv"));

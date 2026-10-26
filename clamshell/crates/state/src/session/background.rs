@@ -257,7 +257,7 @@ impl Session {
         }
         let shown = self.windows_of(id).any(|w| w.visible);
         if shown {
-            self.command(crate::effect::WindowCommand::ShowShelf, out);
+            self.command(crate::session::windows::WindowCommand::ShowShelf);
         }
         let Some(r) = self.running.iter().find(|r| &*r.id == id) else {
             return;
@@ -284,7 +284,6 @@ impl Session {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::effect::WindowCommand;
     use crate::session::windows::Window;
     use crate::settings::{Choice, Setting};
     use crate::testkit::*;
@@ -318,7 +317,8 @@ mod tests {
         let t = 101 + 2 * GRACE;
         s.applied(Event::tick(t));
         assert!(s.session().paused("zelda-lttp"));
-        assert_eq!(show(&mut s, "zelda-lttp"), vec![freeze(&key, false), Effect::Window(WindowCommand::FocusWindow(3))]);
+        assert_eq!(show(&mut s, "zelda-lttp"), vec![freeze(&key, false)]);
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(3));
         // It is paused again after being hidden for the grace period anew. Quitting thaws it, so that it
         // can answer its window's closing.
         s.applied(Event::tick(t + 1));
@@ -328,7 +328,7 @@ mod tests {
         s.applied(Event::tick(t + 1 + GRACE));
         assert!(s.session().paused("zelda-lttp"));
         let id: Arc<str> = "zelda-lttp".into();
-        assert_eq!(quit(&mut s, &id), vec![freeze(&key, false), Effect::Window(WindowCommand::Close(vec![3]))]);
+        assert_eq!(quit(&mut s, &id), vec![freeze(&key, false), Effect::Close(vec![3])]);
         // With its window gone it ends, and it isn't paused meanwhile even though it is hidden.
         s.observed(vec![]);
         s.applied(Event::tick(t + 3 * GRACE));
@@ -423,7 +423,7 @@ mod tests {
         assert!(s.session().suspendable("zelda-lttp"));
         // Applied whole: its window is still shown when the event's steps follow, which doesn't thaw it.
         let fx = s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::Suspend));
-        assert!(fx.contains(&freeze(&key, true)) && fx.contains(&Effect::Window(crate::effect::WindowCommand::ShowShelf)), "{fx:?}");
+        assert!(fx.contains(&freeze(&key, true)) && s.session().shelf_in_front(), "{fx:?}");
         assert!(!fx.contains(&freeze(&key, false)), "{fx:?}");
         assert!(s.session().suspended("zelda-lttp") && !s.session().suspendable("zelda-lttp"));
         // Hidden, it stays frozen and isn't frozen twice.

@@ -86,6 +86,7 @@ use crate::kit::debounce::Debounce;
 use crate::nav::lists::Scrolls;
 use crate::profiles::picker::{Kind as ProfileKind, PickerCx, ProfileEvent, ProfileId};
 use crate::session::running::{Instead, LaunchRequest, Start};
+use crate::session::windows::WindowCommand;
 use crate::settings::{BottomWhenIdle, MouseAtLaunch, Setting, Settings, Values};
 use out::Out;
 use resume::SAVE_AFTER;
@@ -94,7 +95,7 @@ use sync::{Resend, Sent, Wanted};
 // What other crates use to talk to the state: the events and effects and what they carry, the ids, and
 // the groups the getters return.
 pub use clock::Clock;
-pub use effect::{Effect, Save, Watch, WindowCommand};
+pub use effect::{Effect, Save, Watch};
 pub use event::{EntryAct, Event, KeymapEvent, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide};
 pub use id::{AudioId, BatteryId, BtId, DeviceId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, TimeId, WifiId};
 pub use resume::Resume;
@@ -207,11 +208,6 @@ pub struct State {
     /// The events the rules queue for State, lent to `apply`'s [`Out`] and returned empty, so that its
     /// room is kept.
     queue: Vec<Event>,
-    /// The windows' effects while the session's steps run, put after the later steps' (see
-    /// [`State::settle`]). Kept empty, so that its room is reused.
-    window_effects: Vec<Effect>,
-    /// Initial placements wait behind launches discovered by the same dispatch.
-    opening_effects: Vec<Effect>,
     /// The plays the session's steps ended, until they are recorded in shelf. Kept empty, so that its
     /// room is reused.
     plays: Vec<crate::session::running::Play>,
@@ -412,14 +408,14 @@ impl State {
             Event::Tray(items) => self.session.set_tray(items, &self.clock, self.shelf.library(), out),
             Event::Units(units) => self.session.set_units(units),
             Event::Start => self.ui_started(out),
-            Event::Home => self.home(out),
+            Event::Home => self.home(),
             Event::HomeHeld(held) => self.session.hold_home(held),
             Event::HomeTap => {
                 if self.session.home_tap() {
-                    self.home(out);
+                    self.home();
                 }
             }
-            Event::PadActive => self.session.pad_active(out),
+            Event::PadActive => self.session.pad_active(),
             Event::Listened(input) => self.keymapping.listened(input, self.pad.route() == PadRoute::Listen, out),
             Event::PadSwitch => self.pad.switch(),
             // Never applied here: the UI handles pad navigation itself.
@@ -477,20 +473,14 @@ impl State {
                             .or_else(|| self.session.running_of(&window).map(|r| r.workspace()))
                             .or_else(|| window.home().map(|i| i.workspace()))
                     });
-                    if let Some(group) = group.filter(|g| *g != window.workspace) {
-                        window.workspace.clone_from(&group);
-                        if !window.down {
-                            self.opening_effects.push(Effect::Window(WindowCommand::Move { windows: vec![window.id], to: group }));
-                            if window.focused {
-                                self.opening_effects.push(Effect::Window(WindowCommand::FocusWindow(window.id)));
-                            }
-                        }
+                    if let Some(group) = group {
+                        window.workspace = group;
                     }
                 }
                 let id = window.id;
-                self.session.on_window(WindowEvent::Opened(window), out);
+                self.session.on_window(WindowEvent::Opened(window));
                 if inherit_down {
-                    self.bottom.show_down(id, &mut self.session, out);
+                    self.bottom.show_down(id, &mut self.session);
                 }
             }
             WindowEvent::Activate(id) => {
@@ -502,13 +492,13 @@ impl State {
                     self.session.resume_runner_of(&owner, self.shelf.library(), out);
                 }
                 if self.session.window(id).is_some_and(|w| w.down) {
-                    self.bottom.show_program_down(id, &mut self.session, out);
-                    self.session.command(WindowCommand::KeyboardFocus(id), out);
+                    self.bottom.show_program_down(id, &mut self.session);
+                    self.session.command(WindowCommand::KeyboardFocus(id));
                 } else {
-                    self.session.on_window(WindowEvent::Activate(id), out);
+                    self.session.on_window(WindowEvent::Activate(id));
                 }
             }
-            event => self.session.on_window(event, out),
+            event => self.session.on_window(event),
         }
     }
 
@@ -532,9 +522,7 @@ impl State {
     /// 2. The windows: entries started by their app ids ([`crate::Session::start_by_app_id`]), with Steam's
     ///    games launched before the windows are followed, since a starting launch's window is left where
     ///    it is; then windows moved to their entries, programs found by them, and entries ended by them
-    ///    ([`crate::Session::follow_windows`], which compares with the windows the last pass saw). The
-    ///    effects of this step, the Steam games' launches among them, come after those of steps 3 to 7,
-    ///    so that a window just taken by a browsed file is shown over the one in front closing.
+    ///    ([`crate::Session::follow_windows`], which compares with the windows the last pass saw).
     /// 3. The rules that send windows down.
     /// 4. In the background: entries paused, thawed or ended by their setting. This reads 1 and 2.
     /// 5. What is shown: a launch's first window, and a workspace whose window came back.
@@ -564,34 +552,26 @@ impl State {
         for id in due {
             self.launch(id, None, Start::Background, out);
         }
-        // The windows' effects go after those of the steps that follow them, below.
-        let mut windows = Out { effects: std::mem::take(&mut self.window_effects), events: Vec::new() };
         let mut steam = Vec::new();
         if self.session.start_by_app_id(&self.clock, self.shelf.library(), &mut steam) {
             self.bottom.unwake();
         }
         // Before following the windows, which leaves a starting launch's windows where they are.
         for id in steam {
-            self.launch(id, None, Start::Front, &mut windows);
+            self.launch(id, None, Start::Front, out);
         }
-        windows.effects.append(&mut self.opening_effects);
-        self.session.follow_windows(&self.clock, self.shelf.library(), &mut self.plays, &mut windows);
-        self.record_plays(&mut windows);
-        self.bottom.follow_window_rules(&mut self.session, self.shelf.library(), out);
+        self.session.follow_windows(&self.clock, self.shelf.library(), &mut self.plays, out);
+        self.record_plays(out);
+        self.bottom.follow_window_rules(&mut self.session, self.shelf.library());
         // A window moved down opened the windows' tab; the tab it left settles as any tab left.
         if let Some(left) = self.bottom.take_left() {
             self.left_tab(left);
         }
         self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
-        self.session.follow_front_launch(self.clock.mono(), &mut windows);
-        self.session.follow_replacement(self.clock.mono(), &mut windows);
+        self.session.follow_front_launch(self.clock.mono());
+        self.session.follow_replacement(self.clock.mono());
         self.session.follow_quitting(self.clock.mono(), self.shelf.library(), out);
-        self.session.follow_front(self.clock.mono(), out);
-        // After handling the front one closing, so that a window just taken by a browsed file is shown
-        // over it.
-        out.effects.append(&mut windows.effects);
-        out.events.append(&mut windows.events);
-        self.window_effects = windows.effects;
+        self.session.follow_front(self.clock.mono());
         self.dock.follow(&self.session);
         self.session.followed();
         self.bottom.follow_dim(&self.session, &self.clock);
@@ -727,8 +707,8 @@ impl State {
     }
 
     /// The library was read again. New problems are reported once and shelf is reloaded. Then what
-    /// depends on its entries is updated: runners' pauses and keymaps, landing rules, and pins of entries
-    /// that are gone. Shelf's entries shown are asked for first again.
+    /// depends on its entries is updated: runners' pauses and keymaps, and pins of entries that are
+    /// gone. Shelf's entries shown are asked for first again.
     fn library_read(&mut self, library: Library, out: &mut Out) {
         let problems = &library.problems;
         if !problems.is_empty() && *problems != self.shelf.library().problems {
@@ -740,7 +720,6 @@ impl State {
         }
         self.session.set_pausable_runners(self.shelf.library());
         self.keymapping.adopt_runner_keymaps(self.shelf.library(), &mut self.prefs, out);
-        out.effects.push(crate::session::running::known_apps(self.shelf.library()));
         if self.dock.drop_gone(self.shelf.library(), &self.session) {
             out.effects.push(self.dock.save_effect());
         }
@@ -767,7 +746,7 @@ impl State {
     }
 
     /// The UI is up. Sends what was waiting for it: the dock if pins were dropped at start, the
-    /// brightness, the runners' keymaps and the down rules, and after the event the pad's route and
+    /// brightness and the runners' keymaps, and after the event the pad's route and
     /// keymap. The open tab's watch starts from now (see [`crate::sync::Sent::ui_started`]).
     fn ui_started(&mut self, out: &mut Out) {
         self.sent.ui_started();
@@ -777,7 +756,6 @@ impl State {
         }
         out.effects.extend(self.levels.brightness_effect());
         self.keymapping.adopt_runner_keymaps(self.shelf.library(), &mut self.prefs, out);
-        out.effects.push(self.bottom.window_rules().effect());
     }
 
     /// A level event. A level row set is the one the finger landed on, and nothing once it is gone.
@@ -795,13 +773,13 @@ impl State {
     /// Home. On a screen that listens for input, it leaves that screen; Home is never taken as an input.
     /// When the Device view is in shelf's place, it goes back to shelf. Otherwise the session handles it
     /// (see [`Session::home`]).
-    fn home(&mut self, out: &mut Out) {
+    fn home(&mut self) {
         if self.listening() {
             self.keymapping.back(&mut self.keyboard);
         } else if self.session.shelf_in_front() && self.device.is_open() {
             self.device.close(&mut self.pointer, self.shelf.selected());
         } else {
-            self.session.home(out);
+            self.session.home();
         }
     }
 
@@ -1279,8 +1257,8 @@ impl State {
             DeviceKey::BottomPower => return self.bottom.toggle_power(self.power(), self.clock.mono()),
             DeviceKey::WindowDown => return self.bottom.window_down(&mut self.session, self.clock.mono(), out),
             DeviceKey::WindowUp => return self.bottom.window_up(&mut self.session, self.clock.mono(), out),
-            DeviceKey::WindowPrevious => return self.session.step_window(false, out),
-            DeviceKey::WindowNext => return self.session.step_window(true, out),
+            DeviceKey::WindowPrevious => return self.session.step_window(false),
+            DeviceKey::WindowNext => return self.session.step_window(true),
         };
         let control = if level == Level::Volume { Control::Volume } else { Control::Brightness };
         self.bottom.notice_mut().show(NoticeKind::Level(control), self.clock.mono());
@@ -1352,9 +1330,9 @@ impl State {
     fn show(&mut self, id: &str, out: &mut Out) {
         let below = self.session.windows_of(id).find(|w| w.down).map(|w| w.id);
         if let Some(window) = self.session.show(id, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out) {
-            self.bottom.show_program_down(window, &mut self.session, out);
+            self.bottom.show_program_down(window, &mut self.session);
         } else if let Some(window) = below.filter(|_| !self.bottom.shows_windows(&self.session)) {
-            self.bottom.show_program_down(window, &mut self.session, out);
+            self.bottom.show_program_down(window, &mut self.session);
         }
     }
 
@@ -1373,12 +1351,12 @@ impl State {
         match self.session.launch(request, &self.shelf, tab, self.prefs.settings(), &self.clock, out) {
             Some(Instead::Device) => {
                 self.session.cancel_front_launch();
-                self.device.open(&mut self.pointer, &mut self.session, out);
+                self.device.open(&mut self.pointer, &mut self.session);
             }
             Some(Instead::Group) if self.shelf.reveal(&entry) => {
                 self.session.cancel_front_launch();
                 self.shelf.moved(&mut self.pointer);
-                self.session.command(WindowCommand::ShowShelf, out);
+                self.session.command(WindowCommand::ShowShelf);
             }
             Some(Instead::Show) => self.show(&entry, out),
             Some(Instead::Group) | None => {}

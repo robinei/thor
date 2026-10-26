@@ -2,7 +2,6 @@
 # had effects, then its effects. "-- name" is where a shot is taken.
 == group top.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -19,7 +18,6 @@ Units []
   RecordPlay zelda-lttp from 1759900000 for 15660s
   Apply settings of all
 close 900
-  Window ShowShelf
   PadActivity(false)
   PadRoute Ui
 Shelf(ToggleFavourite)
@@ -35,14 +33,12 @@ Pointer(Activate(Shelf(Entry("ff6"))))
 -- top-switch.png
 == group top-actions.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
 -- top-actions.png
 == group top-folder.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -59,21 +55,18 @@ Units []
   Browse in use 0 files
   Apply settings of all
 close 900
-  Window ShowShelf
   PadActivity(false)
   PadRoute Ui
 -- top-group.png
 -- top-recent.png
 == group bottom.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
 -- bottom.png
 == group windows-empty.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -82,7 +75,6 @@ Pointer(Activate(Tab(Windows)))
 -- windows-empty.png
 == group settings-running.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -131,7 +123,6 @@ Units []
   RecordPlay zelda-lttp from 1759999940 for 60s
   Apply settings of all
 close 900
-  Window ShowShelf
   PadActivity(false)
   PadRoute Ui
 Pointer(Activate(Settings(Tile(Scaling))))
@@ -156,7 +147,6 @@ Reading Status
 -- status-low.png
 == group keymap-name.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -174,7 +164,6 @@ Pointer(Activate(Editor(Save)))
 -- keymap-edit-new.png
 == group keymap-edit.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -241,7 +230,6 @@ Pointer(Activate(Keymap(Target(To(Mouse(Left))))))
 -- keymap-edit-slider.png
 == group keymap-edit-back.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -328,7 +316,6 @@ Pointer(Activate(Keymap(LayerPicker)))
 -- keymap-layer-list.png
 == group keymap-mouse.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -423,7 +410,6 @@ Pointer(Activate(Profile(Keymap, Back)))
 -- keymap-pick.png
 == group keymaps.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -490,7 +476,6 @@ Pointer(Activate(Row { list: Keymaps, i: 3, part: Main }))
 -- keymap-delete.png
 == group curves.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -519,7 +504,6 @@ Slide(To { x: 1116.0 })
 -- curve-edit-peak.png
 == group curve-edit-histogram.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -537,7 +521,6 @@ Windows [open game on clamshell-run-ff6_09d141, order [30]]
 -- curve-edit-histogram.png
 == group curve-edit-scrgb.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -555,7 +538,6 @@ Windows [open game on clamshell-run-ff6_09d141, order [30]]
 -- curve-edit-scrgb.png
 == group keymaps-chosen.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -639,7 +621,6 @@ Pointer(Activate(Profile(Keymap, Edit)))
 -- keymap-edit-own.png
 == group launcher.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -658,7 +639,6 @@ Pointer(LongPress(Dock(Entry(1))))
 -- dock-menu.png
 == group wifi.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -670,7 +650,6 @@ Pointer(Activate(Tab(Wifi)))
 -- wifi-scrolled.png
 == group battery.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -682,7 +661,6 @@ Pointer(Activate(Tab(Battery)))
 -- battery.png
 == group time.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -694,15 +672,11 @@ Pointer(Activate(Tab(Time)))
 -- time-europe.png
 == group device-unavailable.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
 Pointer(Activate(Shelf(Entry("tool:device"))))
-  Window ShowShelf
   Watch Account on
-Pointer(Activate(Shelf(Entry("tool:device"))))
-  Window ShowShelf
 -- device-unavailable.png
 -- device.png
 Pointer(Activate(Device(Sticks)))
@@ -713,7 +687,6 @@ Pointer(Activate(Device(Password)))
 -- device-password.png
 == group time-by-hand.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -725,7 +698,6 @@ Pointer(Activate(Time(TwelveHour)))
 -- time-by-hand.png
 == group bluetooth.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -735,7 +707,6 @@ Pointer(Activate(Tab(Bluetooth)))
 -- bluetooth.png
 == group volume.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -745,7 +716,6 @@ Pointer(Activate(Tab(Volume)))
 -- volume.png
 == group brightness.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui
@@ -757,7 +727,6 @@ Level(Set(Backlight(1), 65))
 -- brightness.png
 == group slider.png
 Start
-  Window DownRules 0 rules
   Watch Metrics on
   Keymap 0 "Default"
   PadRoute Ui

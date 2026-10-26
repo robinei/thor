@@ -22,8 +22,9 @@ use std::sync::Arc;
 
 use crate::bottom::Tab;
 use crate::bottom::editor::{Editor, Purpose};
-use crate::effect::{Effect, Save, WindowCommand};
+use crate::effect::{Effect, Save};
 use crate::out::Out;
+use crate::session::windows::WindowCommand;
 use crate::{Event, Id, Pointer};
 use account::{Account, AccountCommand, PasswordStep};
 use sticks::{Calibrations, Progress, Sticks};
@@ -142,10 +143,10 @@ impl Device {
 
     /// Opens the view on the main screen, bringing shelf's window to the front, with the pad's focus on
     /// its first row. The account is read while it is open ([`crate::sync::Sent::watches`]).
-    pub(crate) fn open(&mut self, pointer: &mut Pointer, session: &mut crate::Session, out: &mut Out) {
+    pub(crate) fn open(&mut self, pointer: &mut Pointer, session: &mut crate::Session) {
         self.open = true;
         pointer.focus_on(Id::Device(DeviceId::Wifi));
-        session.command(WindowCommand::ShowShelf, out);
+        session.command(WindowCommand::ShowShelf);
     }
 
     /// Goes back to shelf, with the focus on its `selected` entry.
@@ -272,7 +273,8 @@ mod tests {
         let mut s = State::new(init());
         let effects = launch_now(&mut s, "tool:device");
         assert_eq!(s.device().top_view(), TopView::Device);
-        assert_eq!(effects, vec![Effect::Window(WindowCommand::ShowShelf)], "shelf's window in front");
+        assert!(effects.is_empty());
+        assert!(s.session().shelf_in_front());
         assert_eq!(s.pointer().focus(), Some(&Id::Device(DeviceId::Wifi)));
         let effects = tap(&mut s, DeviceId::Close);
         assert_eq!(s.device().top_view(), TopView::Shelf);
@@ -317,11 +319,12 @@ mod tests {
         launch_now(&mut s, "tool:device");
         s.observed(vec![shelf_window(true), zelda_window(false)]);
         assert_eq!(s.device().top_view(), TopView::Device);
-        let fx = s.applied(Event::Home);
-        assert!(window_effects(fx).is_empty(), "nothing shown but shelf");
+        s.applied(Event::Home);
+        assert!(s.session().shelf_in_front(), "nothing shown but shelf");
         assert_eq!(s.device().top_view(), TopView::Shelf);
         assert_eq!(s.pointer().focus(), Some(&crate::testkit::entry("zelda-lttp")), "the focus on shelf's selection");
-        assert!(window_effects(s.applied(Event::Home)).is_empty());
+        s.applied(Event::Home);
+        assert!(s.session().shelf_in_front());
     }
 
     /// The account is read while the view is open, from when the UI is up: an open view at the first

@@ -72,7 +72,8 @@ mod tests {
         s.observed(windows(false));
         end(&mut s, "zelda-lttp");
         assert_eq!(s.dock().items().first().map(|i| &*i.id), Some("ff6"), "moved up");
-        assert_eq!(window_effects(tap(&mut s, tile.clone())), [focus(4)]);
+        tap(&mut s, tile.clone());
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(4));
         s.applied(PointerEvent::Up(tile.clone()).into());
         let first = Id::Dock(DockId::Entry(0));
         s.applied(PointerEvent::Down(first.clone(), None).into());

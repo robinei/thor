@@ -155,7 +155,7 @@ mod tests {
     use crate::id::{DockId, Id};
     use crate::session::windows::{self, Window};
     use crate::testkit::*;
-    use crate::{Event, State, WindowCommand};
+    use crate::{Event, State};
 
     fn entry(id: i32, label: &str, children: Vec<TrayEntry>) -> TrayEntry {
         TrayEntry { id, label: label.into(), enabled: true, checked: None, children }
@@ -200,14 +200,12 @@ mod tests {
         let at = s.dock().items().iter().position(|i| &*i.id == "desktop:firefox").unwrap() as u16;
         assert_eq!(tap_dock(&mut s, DockId::Entry(at)), vec![Effect::Tray(TrayCommand::Activate(":1.9/b".into()))]);
         let window = Window { pids: vec![900, 77], ..win(6, "firefox", &Instance::Shelf.name(), true) };
-        let fx = s.observed(vec![shelf.clone(), window.clone()]);
-        assert!(fx.contains(&Effect::Window(WindowCommand::Move { windows: vec![6], to: ws.clone() })), "{fx:?}");
-        assert!(fx.contains(&Effect::Window(WindowCommand::FocusWindow(6))), "shown without waiting for sway: {fx:?}");
-        let moved = Window { workspace: ws.clone(), ..window };
-        let fx = s.observed(vec![shelf.clone(), moved.clone()]);
-        assert!(!fx.iter().any(|e| matches!(e, Effect::Window(WindowCommand::FocusWindow(_)))), "already shown: {fx:?}");
+        s.observed(vec![shelf.clone(), window.clone()]);
+        assert_eq!(s.session().window(6).map(|w| w.workspace.as_str()), Some(ws.as_str()));
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(6));
         // With its window open, a tap shows it.
-        assert_eq!(tap_dock(&mut s, DockId::Entry(at)), vec![Effect::Window(WindowCommand::FocusWindow(6)), Effect::PadRoute(crate::PadRoute::Game)]);
+        tap_dock(&mut s, DockId::Entry(at));
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(6));
         // Its corner mark opens its menu. A submenu opens, Back goes up, and clicking an entry closes the
         // menu.
         tap_dock(&mut s, DockId::Tray(at));
@@ -221,7 +219,7 @@ mod tests {
         assert!(s.dock().menu().is_none());
         // Quit closes its windows, then asks its process to end. Force kill kills it.
         let id: Arc<str> = "desktop:firefox".into();
-        assert_eq!(quit(&mut s, &id), vec![Effect::Window(WindowCommand::Close(vec![6]))]);
+        assert_eq!(quit(&mut s, &id), vec![Effect::Close(vec![6])]);
         let fx = s.observed(vec![shelf.clone()]);
         assert!(fx.contains(&Effect::EndProcesses { pids: vec![77], force: false }), "{fx:?}");
         assert_eq!(force_kill(&mut s, "desktop:firefox"), vec![Effect::EndProcesses { pids: vec![77], force: true }]);
@@ -300,7 +298,7 @@ mod tests {
         let r = s.session().running("desktop:foot").unwrap();
         assert_eq!((r.tray().map(|k| &**k), r.pid()), (Some(":1.8/d"), None), "its icon, not the process");
         let id: Arc<str> = "desktop:foot".into();
-        assert_eq!(quit(&mut s, &id), vec![Effect::Window(WindowCommand::Close(vec![6]))]);
+        assert_eq!(quit(&mut s, &id), vec![Effect::Close(vec![6])]);
         let fx = s.observed(vec![in_waydroid(5, "firefox")]);
         assert!(!fx.iter().any(|e| matches!(e, Effect::EndProcesses { .. })), "{fx:?}");
     }

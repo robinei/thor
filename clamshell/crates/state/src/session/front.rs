@@ -2,7 +2,8 @@
 //! before it, until the program of the closed window shows another.
 
 use crate::out::Out;
-use crate::{EntryAct, Event, Instance, Session, WindowCommand};
+use crate::session::windows::WindowCommand;
+use crate::{Effect, EntryAct, Event, Instance, Session};
 
 /// How long a program whose window in front closed, still running, is waited for to show another (see
 /// [`Session::follow_front`]): Steam replacing its update dialog with its window takes a while.
@@ -14,7 +15,7 @@ impl Session {
     /// before it, with shelf as the last resort; otherwise sway would leave the empty workspace in front. The workspace is remembered in case a
     /// window appears on it soon after (see [`Session::follow_replacement`]). If its program still runs,
     /// its next window is shown as a launch's first is, for [`REWAIT_SECS`].
-    pub(crate) fn follow_front(&mut self, now: u64, out: &mut Out) {
+    pub(crate) fn follow_front(&mut self, now: u64) {
         let windows = &self.windows;
         let Some(was) = &self.followed_front else { return };
         if windows.iter().any(|w| !w.down && (w.focused || w.workspace == *was)) {
@@ -25,8 +26,8 @@ impl Session {
         let was = was.clone();
         let closed = !windows.iter().any(|w| w.workspace == was);
         match group {
-            Some(group) => self.focus(&group, out),
-            None => self.command(WindowCommand::ShowShelf, out),
+            Some(group) => self.focus(&group),
+            None => self.command(WindowCommand::ShowShelf),
         }
         if let Some(instance) = closed.then(|| self.still_running(&was)).flatten() {
             self.set_front_launch(instance, Some(now + REWAIT_SECS));
@@ -50,17 +51,17 @@ impl Session {
 
     /// The Home button always goes to shelf. (When the Device view is in shelf's place, Home closes it instead: see
     /// [`crate::device::Device::close`].)
-    pub(crate) fn home(&mut self, out: &mut Out) {
+    pub(crate) fn home(&mut self) {
         self.cancel_front_launch();
         if !self.shelf_in_front() {
-            self.command(WindowCommand::ShowShelf, out);
+            self.command(WindowCommand::ShowShelf);
         }
     }
 
     /// Home with B, released at once, asks that window (see [`Session::home_b_window`]) to close.
     pub(crate) fn close_front_window(&mut self, shows_windows: bool, out: &mut Out) {
         if let Some(w) = self.home_b_window(shows_windows) {
-            self.command(WindowCommand::Close(vec![w.id]), out);
+            out.effects.push(Effect::Close(vec![w.id]));
         }
     }
 
@@ -72,7 +73,7 @@ impl Session {
         };
         match self.running_of(w) {
             Some(r) => out.events.push(Event::Entry(r.id.clone(), EntryAct::Quit)),
-            None => self.command(WindowCommand::Close(vec![w.id]), out),
+            None => out.effects.push(Effect::Close(vec![w.id])),
         }
     }
 }
@@ -88,7 +89,7 @@ mod tests {
         let mut s = state();
         assert!(s.applied(Event::Home).is_empty());
         s.observed(vec![shelf_window(false), win(7, "app", "app", true)]);
-        assert_eq!(s.applied(Event::Home), vec![Effect::Window(WindowCommand::ShowShelf), Effect::PadRoute(crate::PadRoute::Ui)]);
+        assert_eq!(s.applied(Event::Home), vec![Effect::PadRoute(crate::PadRoute::Ui)]);
         assert!(s.session().top_window().is_some_and(Window::is_shelf));
         assert!(s.applied(Event::Home).is_empty());
     }
@@ -102,21 +103,20 @@ mod tests {
         s.observed(vec![shelf_window(false), win(2, "foot", &terminal, true)]);
         s.observed(vec![shelf_window(false), win(2, "foot", &terminal, false), win(3, "retroarch", &zelda, true)]);
         // When the game quits, the terminal, which was in front before it, comes back.
-        let fx = s.observed(vec![shelf_window(false), win(2, "foot", &terminal, false)]);
-        assert_eq!(window_effects(fx), vec![Effect::Window(WindowCommand::FocusWindow(2))]);
+        s.observed(vec![shelf_window(false), win(2, "foot", &terminal, false)]);
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(2));
         s.observed(vec![shelf_window(false), win(2, "foot", &terminal, true)]);
         // When the terminal quits, shelf comes back.
-        let fx = s.observed(vec![shelf_window(false)]);
-        assert_eq!(window_effects(fx), vec![Effect::Window(WindowCommand::ShowShelf)]);
+        s.observed(vec![shelf_window(false)]);
+        assert!(s.session().shelf_in_front());
         // Nothing happens when a program's own second window closes, or for a new workspace before its
         // window.
         s.observed(vec![shelf_window(false), win(3, "retroarch", &zelda, true), win(4, "retroarch", &zelda, false)]);
-        assert_eq!(
-            window_effects(s.observed(vec![shelf_window(false), win(4, "retroarch", &zelda, true)])),
-            vec![Effect::Window(WindowCommand::FocusWindow(4))]
-        );
+        s.observed(vec![shelf_window(false), win(4, "retroarch", &zelda, true)]);
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(4));
         s.observed(vec![shelf_window(true), win(4, "retroarch", &zelda, false)]);
-        assert_eq!(window_effects(s.observed(vec![shelf_window(false), win(4, "retroarch", &zelda, false)])), vec![], "shelf's window is still there");
+        s.observed(vec![shelf_window(false), win(4, "retroarch", &zelda, false)]);
+        assert!(s.session().shelf_in_front(), "shelf's window is still there");
     }
 
     #[test]
@@ -127,15 +127,16 @@ mod tests {
         s.observed(vec![shelf_window(false), win(2, "waydroid.org.fdroid.fdroid", &app, true)]);
         // Its window closes and shelf shows. Another window comes on its workspace, moved there and not in
         // front, and the workspace is shown again.
-        assert_eq!(window_effects(s.observed(vec![shelf_window(false)])), vec![Effect::Window(WindowCommand::ShowShelf)]);
-        let fx = s.observed(vec![shelf_window(true), win(3, "waydroid.org.fdroid.fdroid", &app, false)]);
-        assert_eq!(window_effects(fx), vec![Effect::Window(WindowCommand::FocusWindow(3))]);
+        s.observed(vec![shelf_window(false)]);
+        assert!(s.session().shelf_in_front());
+        s.observed(vec![shelf_window(true), win(3, "waydroid.org.fdroid.fdroid", &app, false)]);
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(3));
         // Later than that, it isn't.
         s.observed(vec![shelf_window(false), win(3, "waydroid.org.fdroid.fdroid", &app, true)]);
         s.observed(vec![shelf_window(false)]);
         s.applied(Event::tick(103));
-        let fx = s.observed(vec![shelf_window(true), win(4, "waydroid.org.fdroid.fdroid", &app, false)]);
-        assert_eq!(window_effects(fx), vec![], "too late: it stays behind");
+        s.observed(vec![shelf_window(true), win(4, "waydroid.org.fdroid.fdroid", &app, false)]);
+        assert!(s.session().shelf_in_front(), "too late: it stays behind");
     }
 
     /// A program still running whose window in front closed, as Steam's update dialog does before its
@@ -148,17 +149,18 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         let window = |id, focused| Window { unit: zelda.unit(), ..win(id, "zelda3", &zelda.workspace(), focused) };
         s.observed(vec![shelf_window(false), window(3, true)]);
-        assert_eq!(window_effects(s.observed(vec![shelf_window(false)])), [Effect::Window(WindowCommand::ShowShelf)]);
+        s.observed(vec![shelf_window(false)]);
+        assert!(s.session().shelf_in_front());
         s.applied(Event::tick(1010));
         assert!(!s.session().opening_focus(&foot()), "another program's window opens behind");
-        let fx = s.observed(vec![shelf_window(true), window(4, false)]);
-        assert_eq!(window_effects(fx), [focus(4)]);
+        s.observed(vec![shelf_window(true), window(4, false)]);
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(4));
         // Closed again, and its next window comes too late.
         s.observed(vec![shelf_window(false), window(4, true)]);
         s.observed(vec![shelf_window(false)]);
         s.applied(Event::tick(1011 + super::REWAIT_SECS));
-        let fx = s.observed(vec![shelf_window(true), window(5, false)]);
-        assert_eq!(window_effects(fx), [], "too late: it stays behind");
+        s.observed(vec![shelf_window(true), window(5, false)]);
+        assert!(s.session().shelf_in_front(), "too late: it stays behind");
     }
 
     #[test]

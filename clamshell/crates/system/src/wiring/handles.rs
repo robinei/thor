@@ -155,8 +155,8 @@ impl Handles {
             Effect::Notify { summary, body, urgent } => {
                 self.system.send(crate::device::Command::Notify { summary: summary.clone(), body: body.clone(), urgent: *urgent })
             }
-            // The compositor's own: the windows, the screens' power and refresh rate, screenshots, quitting.
-            Effect::Window(_) | Effect::Outputs { .. } | Effect::Refresh(_) | Effect::Screenshot | Effect::Quit => {}
+            // The compositor's own: closing windows, the screens' power and refresh rate, screenshots, quitting.
+            Effect::Close(_) | Effect::Outputs { .. } | Effect::Refresh(_) | Effect::Screenshot | Effect::Quit => {}
         }
     }
 

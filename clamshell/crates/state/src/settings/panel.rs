@@ -686,7 +686,7 @@ mod tests {
         assert!(fx.iter().any(|e| matches!(e, Effect::Apply { settings, .. } if settings.get(Setting::Power) == 2)));
         let mut fx = end(&mut s, "zelda-lttp");
         fx.extend(s.observed(vec![]));
-        let fx: Vec<Effect> = fx.into_iter().filter(|e| !matches!(e, Effect::RecordPlay { .. } | Effect::Window(_))).collect();
+        let fx: Vec<Effect> = fx.into_iter().filter(|e| !matches!(e, Effect::RecordPlay { .. })).collect();
         assert_eq!(fx, vec![Effect::Apply { entry: None, settings: s.prefs().settings().global }, Effect::PadRoute(PadRoute::Ui)], "and the pad back to shelf");
     }
 

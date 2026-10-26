@@ -3,7 +3,7 @@
 //! leaves out payloads such as settings, environments and readings, which other tests cover.
 
 use clamshell_state::shelf::files::BrowseCommand;
-use clamshell_state::{Effect, Event, Save, WindowCommand, WindowEvent};
+use clamshell_state::{Effect, Event, Save, WindowEvent};
 
 /// The longest Debug text kept whole. A longer one is cut to its kind.
 const SHORT: usize = 72;
@@ -57,7 +57,6 @@ pub fn effect(effect: &Effect) -> String {
         Effect::Brightness { level, shares } => format!("Brightness {level} over {} shares", shares.len()),
         Effect::Watch(watch, on) => format!("Watch {watch:?} {}", if *on { "on" } else { "off" }),
         Effect::PadRoute(route) => format!("PadRoute {route:?}"),
-        Effect::Window(command) => format!("Window {}", window(command)),
         Effect::FetchFirst(ids) => format!("FetchFirst {} entries, {} first", ids.len(), ids.first().map_or("none", |id| id)),
         Effect::ReadPosition { entry, .. } => format!("ReadPosition {entry}"),
         Effect::Browse(BrowseCommand::Open(Some(browse))) => format!("Browse open {}", browse.folder),
@@ -77,14 +76,6 @@ fn save(save: &Save) -> String {
         Save::Brightness(_) => "Brightness".into(),
         Save::WindowRules(_) => "WindowRules".into(),
         Save::Sticks(_) => "Sticks".into(),
-        other => short(other),
-    }
-}
-
-fn window(command: &WindowCommand) -> String {
-    match command {
-        WindowCommand::DownRules(rules) => format!("DownRules {} rules", rules.len()),
-        WindowCommand::KnownApps(ids) => format!("KnownApps {} app ids", ids.len()),
         other => short(other),
     }
 }

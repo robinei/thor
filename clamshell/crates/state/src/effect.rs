@@ -42,8 +42,8 @@ pub enum Effect {
     PadRoute(PadRoute),
     /// Report the first game-pad input while the top window lacks keyboard focus.
     PadActivity(bool),
-    /// Ask the compositor to show, close or move windows.
-    Window(WindowCommand),
+    /// Ask these windows to close, as their own close buttons would.
+    Close(Vec<i64>),
     /// End an entry's slice, which holds all its launches. Normally it is stopped: systemd asks its
     /// processes to end, then kills what is left after its timeout. With `force` it is killed at once.
     EndRun {
@@ -220,34 +220,4 @@ pub enum Save {
     FirstStartDone,
     /// The sticks' calibrations, by controller.
     Sticks(crate::device::sticks::Calibrations),
-}
-
-/// What the compositor is asked to do.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WindowCommand {
-    /// Select this top window, including its tab within its group.
-    FocusWindow(i64),
-    /// Give a client keyboard focus without changing the selected content on either screen.
-    KeyboardFocus(i64),
-    /// Ask these windows to close, as their own close buttons would.
-    Close(Vec<i64>),
-    /// Move these windows to this workspace. Used for an entry known by app id, to move its windows from
-    /// where they landed.
-    Move { windows: Vec<i64>, to: String },
-    /// Bring shelf's window to the front.
-    ShowShelf,
-    /// Move a window to the bottom screen and show it there. It is marked so it stays there. The top
-    /// screen keeps the keyboard.
-    Down(i64),
-    /// Move a window that was moved down back to the top screen, to its workspace or the one in front.
-    Up { window: i64, to: String },
-    /// Return the displaced bottom window to its home group without activating that program.
-    Return { window: i64, to: String },
-    /// Show on the bottom screen this window that was moved there. The top screen keeps the keyboard.
-    ShowDown(i64),
-    /// The windows that go to the bottom screen as they open. This is the full set of rules in force.
-    DownRules(Vec<crate::bottom::screen::DownRule>),
-    /// The full set of app ids whose windows open on the landing workspace, to be moved to their entry's
-    /// workspace from there (see [`crate::session::running::app_id_of`]).
-    KnownApps(Vec<std::sync::Arc<str>>),
 }

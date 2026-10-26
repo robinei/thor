@@ -146,32 +146,7 @@ impl World {
             match e {
                 Effect::Launch { entry, instance, .. } => self.launches.push((entry.clone(), instance.clone())),
                 Effect::EndRun { key, .. } => self.ending.push(key.clone()),
-                Effect::Window(WindowCommand::Close(ids)) => self.closing.extend(ids),
-                Effect::Window(WindowCommand::FocusWindow(id)) => self.focus(|w| w.id == *id),
-                Effect::Window(WindowCommand::ShowShelf) => self.focus(|w| w.app_id == SHELF_APP_ID),
-                Effect::Window(WindowCommand::Move { windows, to }) => {
-                    for w in self.windows.iter_mut().filter(|w| windows.contains(&w.id)) {
-                        w.workspace = to.clone();
-                    }
-                }
-                Effect::Window(WindowCommand::Down(id)) => {
-                    for w in self.windows.iter_mut().filter(|w| w.id == *id) {
-                        (w.down, w.focused) = (true, false);
-                    }
-                }
-                Effect::Window(WindowCommand::Up { window, .. }) => {
-                    for w in self.windows.iter_mut().filter(|w| w.id == *window) {
-                        w.down = false;
-                    }
-                }
-                Effect::Window(WindowCommand::Return { window, to }) => {
-                    for w in self.windows.iter_mut().filter(|w| w.id == *window) {
-                        w.down = false;
-                        w.visible = false;
-                        w.focused = false;
-                        w.workspace.clone_from(to);
-                    }
-                }
+                Effect::Close(ids) => self.closing.extend(ids),
                 Effect::CalibrateSticks => self.sticks = true,
                 Effect::CalibrateGyro => self.gyro = true,
                 Effect::CalibrateRefresh => self.refresh = true,
@@ -179,6 +154,16 @@ impl World {
                 Effect::Screenshot => self.screenshot = true,
                 Effect::Sleep => self.asleep = true,
                 _ => {}
+            }
+        }
+    }
+
+    /// The compositor shows what the state decided: each window's group, screen and selection.
+    fn place(&mut self, s: &State) {
+        for w in self.windows.iter_mut().chain(self.reported_windows.iter_mut()) {
+            if let Some(placed) = s.session().window(w.id) {
+                w.workspace.clone_from(&placed.workspace);
+                (w.down, w.focused, w.visible) = (placed.down, placed.focused, placed.visible);
             }
         }
     }
@@ -1035,6 +1020,7 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
         effects.clear();
         s.apply(event, &mut effects);
         world.follow(&effects);
+        world.place(&s);
         if let Err(e) = check(&mut s, &mut sent, &effects, &before, i >= 1) {
             return Err(format!("seed {seed}, event {i}: {e}\neffects: {effects:?}\nlast events:\n{}", history.join("\n")));
         }
