@@ -118,6 +118,8 @@ impl State {
 
     /// Quitting ClamShell: where shelf and the second screen are is saved first.
     pub(crate) fn quit(&mut self, out: &mut Out) {
+        // What waits a moment to be saved is saved now.
+        self.levels.save_due(u64::MAX, out);
         out.effects.push(Effect::Save(Save::Resume(self.resume())));
         out.effects.push(Effect::Compositor(Compositor::Quit));
     }

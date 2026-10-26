@@ -126,6 +126,7 @@ pub fn run(
     on_effect: impl FnMut(&Effect) + 'static,
     identify: impl Fn(u32) -> Process + 'static,
     on_capture: impl FnMut(Result<clamshell_state::ScreenshotPixels, String>) + 'static,
+    quit: crate::QuitSignals,
 ) -> Result<(), Error> {
     let profile = *state.profile();
     let (mut session, notifier) = LibSeatSession::new().map_err(|e| format!("drm: no seat: {e}"))?;
@@ -153,7 +154,7 @@ pub fn run(
     config.top_size = (top_size.w as u32, top_size.h as u32);
     config.bottom_size = (bottom_size.w as u32, bottom_size.h as u32);
 
-    let mut base = Base::new(state, config, true, identify, on_effect)?;
+    let mut base = Base::new(state, config, true, identify, on_effect, quit)?;
     let server = &mut base.server;
     let millimetres = bottom.millimetres.map(|(w, h)| {
         transform(profile.bottom.rotation).transform_size(Size::<i32, Physical>::from((i32::try_from(w).unwrap_or(0), i32::try_from(h).unwrap_or(0))))

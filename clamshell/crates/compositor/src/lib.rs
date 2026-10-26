@@ -40,6 +40,18 @@ pub use nested::run;
 #[cfg(test)]
 mod tests;
 
+/// SIGTERM and SIGINT, as systemd stops ClamShell at a poweroff or a restart: blocked for the thread
+/// that made this and every thread it starts afterwards, and read by the event loop, which quits as the
+/// state's Quit does (its last saves made, the store's writes finished).
+pub struct QuitSignals(calloop::signals::Signals);
+
+/// Makes [`QuitSignals`]. It is made first, before any thread starts, so that no thread (a driver's
+/// among them) takes the signal and ends ClamShell on the spot.
+pub fn quit_signals() -> std::io::Result<QuitSignals> {
+    use calloop::signals::{Signal, Signals};
+    Signals::new(&[Signal::SIGTERM, Signal::SIGINT]).map(QuitSignals).map_err(std::io::Error::other)
+}
+
 /// Sends events into the compositor's event loop from other threads.
 #[derive(Clone)]
 pub struct EventSender(channel::Sender<clamshell_state::Event>);

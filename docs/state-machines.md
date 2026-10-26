@@ -410,7 +410,9 @@ State: `clip`, `selected`, `armed`, `busy`, `hidden`, the listings.
   `a_library_read_while_fetching_asks_for_shelfs_view_first_again`.
 - A folder listing that changes the entries in the list counts as a change of the view. Test: files
   `a_listing_that_changes_the_entries_shown_asks_for_their_metadata_first`.
-- Shelf or tab changes touch the resume debounce; a tick 2 s later saves it; Quit saves at once. Tests:
+- Shelf or tab changes touch the resume debounce; a tick 2 s later saves it; Quit (SIGTERM or SIGINT
+  read by the event loop, or nested's window closed) saves it and a brightness change still waiting at
+  once, then ends ClamShell (`quit_saves_what_waits_then_ends`). Tests:
   resume `the_place_is_saved_after_a_pause_and_restored`, `open_groups_are_restored`.
 - The record keeps every collection's place, clamped to its list (one that shrank while another was
   shown). Test: shelf `the_resume_record_keeps_a_place_past_its_shrunk_list`.

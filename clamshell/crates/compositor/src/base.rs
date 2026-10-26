@@ -34,8 +34,16 @@ impl Base {
         relative_motion: bool,
         identify: impl Fn(u32) -> Process + 'static,
         on_effect: impl FnMut(&Effect) + 'static,
+        quit: crate::QuitSignals,
     ) -> Result<Base, Error> {
         let event_loop: EventLoop<Server> = EventLoop::try_new()?;
+        event_loop
+            .handle()
+            .insert_source(quit.0, |event, _, server| {
+                log::info!("compositor: {:?}: quitting", event.signal());
+                server.core.handle(Event::Quit);
+            })
+            .map_err(|e| e.error)?;
         let mut display = Display::<Server>::new()?;
         let (wake, woken) = ping::make_ping()?;
         event_loop.handle().insert_source(woken, |_, _, _| {}).map_err(|e| e.error)?;

@@ -30,8 +30,9 @@ pub fn run(
     on_effect: impl FnMut(&Effect) + 'static,
     identify: impl Fn(u32) -> Process + 'static,
     mut on_capture: impl FnMut(Result<clamshell_state::ScreenshotPixels, String>) + 'static,
+    quit: crate::QuitSignals,
 ) -> Result<(), Error> {
-    let mut base = Base::new(state, config, false, identify, on_effect)?;
+    let mut base = Base::new(state, config, false, identify, on_effect, quit)?;
     let server = &mut base.server;
     // The screens are the device's own pixels: its second screen's density, if the profile knows it.
     let density = server.core.state().profile().bottom_pixels_per_mm_hint();

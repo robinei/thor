@@ -536,3 +536,23 @@ fn immutable_device_profile_is_carried_from_init_through_state_events() {
         assert_eq!(*state.profile(), profile);
     }
 }
+
+/// Quit (SIGTERM at a poweroff or a restart, or nested's window closed) saves at once what waits a moment
+/// to be saved, and where shelf and the bottom screen are, then ends ClamShell.
+#[test]
+fn quit_saves_what_waits_then_ends() {
+    let mut s = state();
+    s.applied(Event::tick(100));
+    s.applied(LevelEvent::Set(crate::Level::Brightness, 70).into());
+    let fx = s.applied(Event::Quit);
+    let kinds: Vec<&str> = fx
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Save(Save::Brightness(_)) => Some("brightness"),
+            Effect::Save(Save::Resume(_)) => Some("resume"),
+            Effect::Compositor(Compositor::Quit) => Some("quit"),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(kinds, ["brightness", "resume", "quit"], "{fx:?}");
+}

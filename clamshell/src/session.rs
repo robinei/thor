@@ -70,6 +70,8 @@ pub(crate) enum Host {
 
 /// Runs the session: the state from what was saved, the compositor with the UI, and the system threads.
 pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Result<(), String> {
+    // First, before any thread starts (see `quit_signals`).
+    let quit = clamshell_compositor::quit_signals().map_err(|e| format!("quit signals: {e}"))?;
     let loaded = library::load(sources);
     // Metadata to fetch once the threads run, if there is somewhere to keep it.
     let fetch = paths.art.clone().map(|art| meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art });
@@ -130,8 +132,8 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
         *started.borrow_mut() = Some(start(&system_config, &paths, sources, layout, &global, fetch, sender));
     };
     let result = match host {
-        Host::Drm => clamshell_compositor::run_drm(state, config, start, on_effect, identify, on_capture),
-        Host::Nested => clamshell_compositor::run(state, config, start, on_effect, identify, on_capture),
+        Host::Drm => clamshell_compositor::run_drm(state, config, start, on_effect, identify, on_capture, quit),
+        Host::Nested => clamshell_compositor::run(state, config, start, on_effect, identify, on_capture, quit),
     };
     result.map_err(|e| e.to_string())
 }
