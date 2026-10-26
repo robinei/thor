@@ -40,7 +40,13 @@ restarts (systemd's after a failure, or by hand) until it has stopped with nothi
 has given the user manager and the bus `WAYLAND_DISPLAY` and `DISPLAY`, which brings up
 `graphical-session.target` (bound to the service) and udiskie with it. As the session ends, `thor-session`
 takes the displays out of the user manager's environment and stops `app-graphical.slice` (every launch) and
-`background-graphical.slice`; then the profile logs out and the autologin starts a new session. Unless it
+`background-graphical.slice`; then the profile logs out and the autologin starts a new session. The
+session is named `ClamShell` (`XDG_CURRENT_DESKTOP`; xdg-desktop-portal takes GTK's portals,
+`clamshell-portals.conf`). Under a game that takes every core the session keeps up: `session.slice` has four
+times `app.slice`'s CPU weight, and ClamShell asks rtkit for its compositor thread at nice -15 (not
+real-time: the kernel kills a real-time thread that runs past `RLIMIT_RTTIME`, and the compositor draws the
+screens on the CPU). `systemctl --user status clamshell` shows what runs (ClamShell's `STATUS=`: entries,
+windows, Xwayland), and its journal lines carry their priority (`journalctl --user -u clamshell -p err`). Unless it
 can't go on: ended 3 times within 2 minutes, the session isn't started again; ClamShell failing 4 times within
 a minute (watchdog restarts too), systemd gives up. Either way the console stays on tty1, saying why (the last
 lines of ClamShell's journal) and how to go on (the Thor has no keyboard: holding the power button turns it
