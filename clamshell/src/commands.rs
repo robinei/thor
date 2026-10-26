@@ -37,7 +37,7 @@ pub(crate) fn fetch_metadata(paths: &Paths, sources: &Sources) -> Result<(), Str
     let titles: std::collections::HashMap<_, _> = loaded.library.entries.iter().map(|g| (g.id.clone(), g.title.clone())).collect();
     println!("fetching for {} entries", loaded.wanted.len());
     let (tx, rx) = std::sync::mpsc::channel();
-    meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art }, &meta::Queue::default(), tx).map_err(|e| e.to_string())?;
+    meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art }, &meta::Queue::default(), tx);
     // The channel ends when the fetch threads are done and drop their senders.
     for event in rx {
         if let clamshell_state::Event::Meta { id, meta } = event {

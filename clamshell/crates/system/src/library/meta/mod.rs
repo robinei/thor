@@ -172,12 +172,12 @@ impl Queue {
 
 /// Adds what `fetch` wants to `queue` and fetches on [`THREADS`] more threads until the queue is empty or
 /// the UI is gone. Sends `Fetching(true)` as they start and `Fetching(false)` when the last thread is
-/// done.
-pub fn spawn(fetch: Fetch, queue: &Queue, sink: impl Sink + Clone) -> std::io::Result<()> {
+/// done. A thread that can't start is logged; the others fetch its share.
+pub fn spawn(fetch: Fetch, queue: &Queue, sink: impl Sink + Clone) {
     use std::sync::atomic::Ordering;
     let count = queue.add(fetch.wanted);
     if count == 0 {
-        return Ok(());
+        return;
     }
     log::info!("meta: fetching for {count} entries");
     let _ = sink.send(Event::Fetching(true));
@@ -185,10 +185,11 @@ pub fn spawn(fetch: Fetch, queue: &Queue, sink: impl Sink + Clone) -> std::io::R
     for _ in 0..THREADS {
         let (queue, shared, sink) = (queue.clone(), shared.clone(), sink.clone());
         queue.threads.fetch_add(1, Ordering::SeqCst);
-        worker::detached("meta", move || {
+        let (waiting, told) = (queue.clone(), sink.clone());
+        let started = worker::detached("meta", move || {
             let cache = Cache::open(&shared.art);
-            while let Some(w) = queue.next() {
-                let meta = shared.fetch(&w);
+            let fetch_one = |w: &Wanted| {
+                let meta = shared.fetch(w);
                 let saved = match &w.how {
                     How::Duration => cache.save_probe(&w.id, meta.duration, meta.details.shot.as_deref()),
                     _ => cache.save_meta(&w.id, &w.how.source(), crate::time::clock::unix_secs(), &meta),
@@ -196,17 +197,42 @@ pub fn spawn(fetch: Fetch, queue: &Queue, sink: impl Sink + Clone) -> std::io::R
                 if let Err(e) = saved {
                     log::warn!("meta: {}: {e}", w.id);
                 }
-                if meta != Meta::default() && sink.send(Event::Meta { id: w.id.clone(), meta }).is_err() {
-                    break;
-                }
-            }
-            if queue.threads.fetch_sub(1, Ordering::SeqCst) == 1 {
+                if meta == Meta::default() { Ok(()) } else { sink.send(Event::Meta { id: w.id.clone(), meta }) }
+            };
+            fetch_all(&queue, fetch_one, || {
                 log::info!("meta: done");
                 let _ = sink.send(Event::Fetching(false));
+            });
+        });
+        if let Err(e) = started {
+            log::warn!("meta: a fetching thread: {e}");
+            // Not counted. If no other runs, the fetch is over: what waits is fetched with the next.
+            if waiting.threads.fetch_sub(1, Ordering::SeqCst) == 1 {
+                let _ = told.send(Event::Fetching(false));
             }
-        })?;
+        }
     }
-    Ok(())
+}
+
+/// A fetching thread's work: fetches each entry taken from `queue` with `fetch_one`, until the queue is
+/// empty or the UI is gone (`Err`). A panic fetching one entry (the panic hook has logged it) costs that
+/// entry's metadata, not the rest. `done` is called by the last thread to finish.
+fn fetch_all(queue: &Queue, mut fetch_one: impl FnMut(&Wanted) -> Result<(), crate::Closed>, done: impl FnOnce()) {
+    while let Some(w) = queue.next() {
+        let fetched = worker::or_on_panic(
+            || fetch_one(&w),
+            || {
+                log::error!("meta: {}: fetching panicked; it has no metadata fetched", w.id);
+                Ok(())
+            },
+        );
+        if fetched.is_err() {
+            break;
+        }
+    }
+    if queue.threads.fetch_sub(1, std::sync::atomic::Ordering::SeqCst) == 1 {
+        done();
+    }
 }
 
 /// What the threads share: the keys, where images go, and libretro's file lists. Each list is fetched
@@ -273,6 +299,30 @@ mod tests {
         queue.first(&["c".into(), "x".into(), "b".into()]);
         let order: Vec<String> = std::iter::from_fn(|| queue.next()).map(|w| w.id.to_string()).collect();
         assert_eq!(order, ["c", "b", "a", "d"]);
+    }
+
+    /// A panic fetching one entry costs that entry: the rest are fetched, and the last thread still says
+    /// the fetch is done, once.
+    #[test]
+    fn a_panic_fetching_one_entry_costs_only_that_entry() {
+        let wanted = |id: &str| Wanted { id: id.into(), key: id.into(), title: id.into(), file: None, how: How::SteamGridDb, art: false };
+        let queue = Queue::default();
+        queue.add(["a", "b", "c"].map(wanted).to_vec());
+        queue.threads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let mut fetched = Vec::new();
+        let mut done = 0;
+        fetch_all(
+            &queue,
+            |w| {
+                assert_ne!(&*w.id, "b", "b panics");
+                fetched.push(w.id.to_string());
+                Ok(())
+            },
+            || done += 1,
+        );
+        assert_eq!(fetched, ["a", "c"]);
+        assert_eq!(done, 1);
+        assert_eq!(queue.threads.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
     #[test]
