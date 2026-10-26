@@ -236,4 +236,17 @@ mod tests {
         assert_eq!(exec_args(r#"/usr/bin/steam-runtime -silent %U"#), ["/usr/bin/steam-runtime", "-silent"]);
         assert_eq!(exec_args(r#""/opt/My App/run" --name "a \"b\"" 100%%"#), ["/opt/My App/run", "--name", r#"a "b""#, "100%"]);
     }
+
+    /// A damaged file reads as far as it makes sense: keys outside the entry's group and lines without
+    /// `=` are passed over, a quote left open takes the rest of the line, and a trailing `%` is dropped.
+    #[test]
+    fn a_malformed_file_reads_as_far_as_it_makes_sense() {
+        let entry = parse("Name=outside\n[Desktop Entry]\nno equals here\n=nothing\nName=Thing\nExec=\"run me --flag %\n[Desktop Action x]\nName=inner\n");
+        assert_eq!(entry.name, "Thing");
+        assert_eq!(exec_args(&entry.exec), ["run me --flag "]);
+        assert_eq!(parse("").name, "");
+        assert_eq!(parse("[Desktop Entry\nName=half a header").name, "", "not the entry's group");
+        assert!(exec_args("").is_empty());
+        assert!(exec_args("%").is_empty());
+    }
 }

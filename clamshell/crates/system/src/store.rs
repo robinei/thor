@@ -514,6 +514,25 @@ mod tests {
         assert!(store.twelve_hour());
     }
 
+    /// A damaged file reads as if it were never saved (and is logged): ClamShell starts with that part at
+    /// its default rather than not at all.
+    #[test]
+    fn damaged_files_read_as_never_saved() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        for name in ["window-rules.json", "dock.json", "autostart.json", "resume.json", "first-start.json", "sticks.json", "clock.json", "brightness.json"] {
+            std::fs::write(dir.join(name), b"{ not json \xff").unwrap();
+        }
+        let store = Store::open(dir);
+        assert!(store.window_rules().list().is_empty());
+        assert!(store.autostart().is_empty());
+        assert!(store.resume().is_none());
+        assert!(!store.first_start_done(), "the Device view opens again");
+        assert!(store.sticks().is_empty());
+        assert!(!store.twelve_hour());
+        assert_eq!(store.brightness(), Brightness::default());
+    }
+
     #[test]
     fn settings_are_a_file_per_screen_written_where_they_changed() {
         let tmp = tempfile::tempdir().unwrap();
