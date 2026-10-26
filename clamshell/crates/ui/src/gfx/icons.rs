@@ -27,6 +27,8 @@ pub enum Icon {
     Upscale,
     /// Scaling: a two-by-two grid of pixels.
     Scaling,
+    /// A window's size: a small picture between the screen's four corners.
+    Size,
     /// Anti-aliasing: a staircase with the smooth edge over it.
     AntiAlias,
     /// Sharpening: a triangle.
@@ -284,6 +286,17 @@ pub fn draw(c: &mut Painter, icon: Icon, r: Rect, color: Color) {
             for (x, y) in [(3.0, 3.0), (13.0, 3.0), (3.0, 13.0), (13.0, 13.0)] {
                 p.frame((x, y, 8.0, 8.0), 1.0, LINE);
             }
+        }
+        Icon::Size => {
+            for corner in [
+                [(3.0, 8.0), (3.0, 3.0), (8.0, 3.0)],
+                [(16.0, 3.0), (21.0, 3.0), (21.0, 8.0)],
+                [(21.0, 16.0), (21.0, 21.0), (16.0, 21.0)],
+                [(8.0, 21.0), (3.0, 21.0), (3.0, 16.0)],
+            ] {
+                p.line(&corner, LINE);
+            }
+            p.frame((8.0, 9.0, 8.0, 6.0), 1.0, LINE);
         }
         Icon::AntiAlias => {
             p.line(&[(3.0, 21.0), (3.0, 17.0), (7.0, 17.0), (7.0, 13.0), (11.0, 13.0), (11.0, 9.0), (15.0, 9.0), (15.0, 5.0), (19.0, 5.0)], 1.0);
@@ -611,6 +624,7 @@ mod tests {
             Icon::Hud,
             Icon::Upscale,
             Icon::Scaling,
+            Icon::Size,
             Icon::AntiAlias,
             Icon::Sharpen,
             Icon::ScreenOff,
@@ -669,7 +683,7 @@ mod tests {
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 58, "a variant is missing from the list");
+        assert_eq!(seen.len(), 59, "a variant is missing from the list");
         all
     }
 
@@ -732,6 +746,7 @@ mod tests {
             Icon::Archive => 60,
             Icon::Dot => 61,
             Icon::Scaling => 62,
+            Icon::Size => 65,
             Icon::AntiAlias => 63,
             Icon::Sharpen => 64,
         }

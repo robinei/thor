@@ -689,9 +689,8 @@ impl Server {
     pub fn geometry(&self, id: i64) -> Option<crate::geometry::Geometry> {
         let window = self.core.state().session().window(id)?;
         let client = self.windows.iter().find(|w| w.id == id && w.mapped)?;
-        let integer = self.core.state().window_clarity(id).scaling == clamshell_state::settings::Scaling::Nearest;
         let (size, place) = client.window.picture().unzip();
-        let picture = crate::geometry::Picture { size, place, integer };
+        let picture = crate::geometry::Picture { size, place };
         crate::geometry::Geometry::new(self.area(window.down), client.window.geometry(), client.presentation?, picture)
     }
 }

@@ -31,6 +31,8 @@ pub enum Setting {
     Resolution,
     /// How the game's picture is shown when it is smaller than its screen (see [`Scaling`]).
     Scaling,
+    /// The size a program's main windows are shown at (see [`Size`]). The compositor's alone.
+    Size,
     /// Anti-aliasing of the game's picture by the compositor (see [`AntiAliasing`]).
     AntiAliasing,
     /// Sharpening of the game's picture by the compositor, in percent: 0 off, 25 to 100 its strength. CAS,
@@ -226,13 +228,29 @@ impl Resolution {
 }
 
 choices!(
-    /// [`Setting::Scaling`]: how a picture smaller than its screen is brought to the screen's size.
-    /// Nearest+Integer shows it at the largest whole multiple that fits, nearest-neighbour, so every pixel
-    /// is a square of whole screen pixels; 1/2 and 1/3 of the Thor's screen fill it.
+    /// [`Setting::Scaling`]: how a picture smaller than its screen is brought to the screen's size. At
+    /// [`Size::Integer`] it is nearest-neighbour instead, whichever is chosen.
     Scaling for Scaling, default Bilinear {
         Bilinear = 0, "Bilinear", Stock;
-        Nearest = 1, "Nearest+Integer", Changes;
         Fsr = 2, "FSR", Changes;
+    }
+);
+
+choices!(
+    /// [`Setting::Size`]: the size a program's main windows (not its dialogs or popups) are shown at.
+    Size for Size, default Default {
+        /// A game's fitted to the screen in its picture's shape, any other program's at their own size
+        /// (fitted down if larger); a window of a fixed size other than one its screen told it, centred at
+        /// its own size.
+        Default = 0, "Default size", Stock;
+        /// Fitted to the screen in its picture's shape, whatever its size.
+        Fit = 1, "Fit", Changes;
+        /// The largest whole multiple of its picture that fits, nearest-neighbour, so every pixel is a
+        /// square of whole screen pixels (fitted if even once doesn't); 1/2 and 1/3 of the Thor's screen
+        /// fill it.
+        Integer = 2, "Integer", Changes;
+        /// Filling the screen, its picture's shape aside.
+        Stretch = 3, "Stretch", Changes;
     }
 );
 
@@ -300,7 +318,7 @@ choices!(
     }
 );
 
-pub const COUNT: usize = 22;
+pub const COUNT: usize = 23;
 
 /// What a value does, for the tile's colour. It is the stock value and does nothing, or it saves power
 /// or eases the load, costs power, or changes how the game looks or plays.
@@ -321,6 +339,7 @@ names!(Setting {
     Hud: "hud";
     Resolution: "resolution";
     Scaling: "scaling";
+    Size: "size";
     AntiAliasing: "aa";
     Sharpen: "sharpen";
     Curve: "curve";
@@ -358,6 +377,7 @@ impl Setting {
             Setting::Hud => Some(&Hud::TABLE),
             Setting::Resolution => Some(&Resolution::TABLE),
             Setting::Scaling => Some(&Scaling::TABLE),
+            Setting::Size => Some(&Size::TABLE),
             Setting::AntiAliasing => Some(&AntiAliasing::TABLE),
             Setting::BottomScreen => Some(&BottomWhenIdle::TABLE),
             Setting::BigCores => Some(&Cores::TABLE),
@@ -406,7 +426,7 @@ impl Setting {
 
     /// Whether only ClamShell's own compositor does it: under sway it does nothing.
     pub fn compositor_only(self) -> bool {
-        matches!(self, Setting::Curve | Setting::HdrPeak | Setting::Resolution | Setting::Scaling | Setting::AntiAliasing | Setting::Sharpen)
+        matches!(self, Setting::Curve | Setting::HdrPeak | Setting::Resolution | Setting::Scaling | Setting::Size | Setting::AntiAliasing | Setting::Sharpen)
     }
 
     /// Whether the setting works through the launch's own process, as MangoHud's cap and HUD do. An app
@@ -429,6 +449,7 @@ impl Setting {
             Setting::Hud => "HUD",
             Setting::Resolution => "Resolution",
             Setting::Scaling => "Scaling",
+            Setting::Size => "Size",
             Setting::AntiAliasing => "Anti-aliasing",
             Setting::Sharpen => "Sharpen",
             Setting::Curve => "Tone curve",

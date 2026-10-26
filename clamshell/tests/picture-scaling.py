@@ -42,10 +42,11 @@ PATTERN = CLAMSHELL / "target/debug/examples/pattern-game"
 
 RESOLUTIONS = ["native", "5/6", "2/3", "1/2", "1/3"]
 FRACTIONS = {"native": None, "5/6": (5, 6), "2/3": (2, 3), "1/2": (1, 2), "1/3": (1, 3)}
-SCALINGS = ["bilinear", "nearest", "fsr"]
+SCALINGS = ["bilinear", "fsr"]
+SIZES = ["default", "fit", "integer", "stretch"]
 AAS = ["off", "fxaa", "smaa"]
 SHARPENS = [0, 25, 50, 75, 100]
-CYCLES = {"resolution": RESOLUTIONS, "scaling": SCALINGS, "aa": AAS, "sharpen": SHARPENS}
+CYCLES = {"resolution": RESOLUTIONS, "scaling": SCALINGS, "size": SIZES, "aa": AAS, "sharpen": SHARPENS}
 
 
 def size_on(resolution, screen):
@@ -230,7 +231,7 @@ def main():
             program = windows_process(exe) if name in WINDOWS else "^" + next(a for a in kinds[name] if a.startswith("/")) + "( |$)"
             return subprocess.run(["pgrep", "-f", program], capture_output=True).returncode == 0
 
-        settings = {"resolution": "native", "scaling": "bilinear", "aa": "off", "sharpen": 0}
+        settings = {"resolution": "native", "scaling": "bilinear", "size": "default", "aa": "off", "sharpen": 0}
 
         def set_setting(key, value):
             """The game's own setting `key` tapped round to `value` (it must be in front, Settings open)."""
@@ -282,12 +283,13 @@ def main():
         # The top screen's size: the screen as a game at Native is told it.
         screen = None
 
-        def check(case, expected_mode=None, integer=False):
+        def check(case, expected_mode=None, size="default"):
             """The picture fills the top screen, of `screen`, or for a mode of another shape (more than 2 %
             off) is fitted in it and centred between black bars: each corner block touches the picture's
             corner, the border shows at Native, and the magenta cross is there once each way, near the
-            middle. With `integer` (Nearest+Integer) it is the largest whole multiple of the mode that fits,
-            centred."""
+            middle. At the Integer size it is the largest whole multiple of the mode that fits, centred; at
+            Stretch it fills the screen whatever its shape."""
+            integer = size == "integer"
             time.sleep(0.8)
             subprocess.run(["grim", "-o", "HEADLESS-1", str(directory / f"{case}.png")], env=host, check=True)
             width, height, pixels = image()
@@ -297,7 +299,7 @@ def main():
             if times >= 1:
                 w, h = expected_mode[0] * times, expected_mode[1] * times
                 x0, y0 = (sw - w) // 2, (sh - h) // 2
-            elif expected_mode and abs((expected_mode[0] / expected_mode[1]) / (sw / sh) - 1) > 0.02:
+            elif expected_mode and size != "stretch" and abs((expected_mode[0] / expected_mode[1]) / (sw / sh) - 1) > 0.02:
                 fit = min(sw / expected_mode[0], sh / expected_mode[1])
                 w, h = round(expected_mode[0] * fit), round(expected_mode[1] * fit)
                 x0, y0 = (sw - w) // 2, (sh - h) // 2
@@ -372,19 +374,23 @@ def main():
             print(line, flush=True)
 
         def combos(full):
+            """(scaling, size, anti-aliasing, sharpening) cases: Integer is nearest-neighbour whatever the
+            scaling, so it goes with bilinear."""
             if full:
-                return [(s, a, p) for s in SCALINGS for a in AAS for p in (0, 50)]
-            return [("bilinear", "off", 0), ("bilinear", "smaa", 0), ("nearest", "fxaa", 0), ("fsr", "off", 50),
-                    ("fsr", "smaa", 50)]
+                return [(s, "default", a, p) for s in SCALINGS for a in AAS for p in (0, 50)] + [
+                    ("bilinear", z, a, 0) for z in ("integer", "stretch") for a in AAS]
+            return [("bilinear", "default", "off", 0), ("bilinear", "default", "smaa", 0), ("bilinear", "integer", "fxaa", 0),
+                    ("fsr", "default", "off", 50), ("fsr", "default", "smaa", 50), ("bilinear", "stretch", "off", 0)]
 
         def go_through(name, prefix, full, mode):
             open_settings()
-            for scaling, aa, sharpen in combos(full):
+            for scaling, size, aa, sharpen in combos(full):
                 set_setting("scaling", scaling)
+                set_setting("size", size)
                 set_setting("aa", aa)
                 set_setting("sharpen", sharpen)
-                check(f"{prefix}-{scaling}-{aa}-sharpen{sharpen}", mode, integer=scaling == "nearest")
-            for key, value in [("scaling", "bilinear"), ("aa", "off"), ("sharpen", 0)]:
+                check(f"{prefix}-{scaling}-{size}-{aa}-sharpen{sharpen}", mode, size)
+            for key, value in [("scaling", "bilinear"), ("size", "default"), ("aa", "off"), ("sharpen", 0)]:
                 set_setting(key, value)
 
         def check_colour(name, expected):

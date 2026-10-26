@@ -25,9 +25,16 @@ pub enum WindowLayout {
     Fullscreen,
     Centred,
 }
+/// How a window's picture is brought to the screen (see [`crate::settings::Size`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum WindowScale {
+    /// Fitted, in the picture's shape.
     Fit,
+    /// The largest whole multiple of the picture that fits, nearest-neighbour.
+    Integer,
+    /// Filling the screen, its shape aside.
+    Stretch,
+    /// At its own size, fitted down if larger.
     Native,
 }
 
@@ -196,6 +203,9 @@ pub struct Histogram {
 pub struct Clarity {
     pub resolution: crate::settings::Resolution,
     pub scaling: crate::settings::Scaling,
+    /// Whether the picture is shown at a whole multiple, nearest-neighbour ([`WindowScale::Integer`]), so
+    /// that [`Clarity::scaling`] does nothing.
+    pub integer: bool,
     pub anti_aliasing: crate::settings::AntiAliasing,
     /// The sharpening's strength in percent, 0 for none.
     pub sharpen: u16,
@@ -219,16 +229,31 @@ pub struct HdrPlot {
 }
 
 impl super::windows::Window {
-    /// How the window is shown: dialogs, popups and windows of a fixed size centred at their own size, other
-    /// windows filling the screen, a game's scaled to it. `screen` is the sizes its screen may tell it it
-    /// has (what each resolution gives it): a window fixed at one of them fills the screen too, as a game
-    /// Wine shows as a window of the screen's mode.
-    pub fn presentation(&self, game: bool, screen: &[(u32, u32)]) -> WindowPresentation {
-        let fixed = self.limits.fixed_size().is_some_and(|size| !screen.contains(&size));
-        let centred = self.parent.is_some() || self.role != WindowRole::Normal || fixed;
-        WindowPresentation {
-            layout: if centred { WindowLayout::Centred } else { WindowLayout::Fullscreen },
-            scale: if game && !centred { WindowScale::Fit } else { WindowScale::Native },
+    /// How the window is shown at `size` (see [`crate::settings::Size`]): dialogs, popups and windows of a
+    /// fixed size centred at their own size, other windows filling the screen, a game's scaled to it.
+    /// `screen` is the sizes its screen may tell it it has (what each resolution gives it, and an X11
+    /// window Xwayland's modes): a window fixed at one of them fills the screen too, as a game Wine shows
+    /// as a window of the screen's mode. A size other than Default shows a main window (not a dialog or
+    /// popup) filling the screen as it says, whatever its own size.
+    pub fn presentation(&self, game: bool, screen: &[(u32, u32)], size: crate::settings::Size) -> WindowPresentation {
+        use crate::settings::Size;
+        let main = self.parent.is_none() && self.role == WindowRole::Normal;
+        let scale = match size {
+            Size::Fit => WindowScale::Fit,
+            Size::Integer => WindowScale::Integer,
+            Size::Stretch => WindowScale::Stretch,
+            Size::Default => {
+                let fixed = self.limits.fixed_size().is_some_and(|size| !screen.contains(&size));
+                let centred = !main || fixed;
+                return WindowPresentation {
+                    layout: if centred { WindowLayout::Centred } else { WindowLayout::Fullscreen },
+                    scale: if game && !centred { WindowScale::Fit } else { WindowScale::Native },
+                };
+            }
+        };
+        match main {
+            true => WindowPresentation { layout: WindowLayout::Fullscreen, scale },
+            false => WindowPresentation { layout: WindowLayout::Centred, scale: WindowScale::Native },
         }
     }
 }
@@ -251,7 +276,8 @@ impl crate::State {
         if window.x11 && !window.down {
             screen.extend(&self.xwayland_modes);
         }
-        Some(window.presentation(game, &screen))
+        let size = self.session().running_of(window).map_or_else(Default::default, |r| self.settings_of(&r.id).choice());
+        Some(window.presentation(game, &screen, size))
     }
 
     /// The tone curve for window `id`'s content: the curve chosen for the program running it, in its
@@ -341,7 +367,8 @@ impl crate::State {
             return Clarity::default();
         };
         let v = self.settings_of(&running.id);
-        Clarity { resolution: v.choice(), scaling: v.choice(), anti_aliasing: v.choice(), sharpen: v.get(Setting::Sharpen) }
+        let integer = self.window_presentation(id).is_some_and(|p| p.scale == WindowScale::Integer);
+        Clarity { resolution: v.choice(), scaling: v.choice(), integer, anti_aliasing: v.choice(), sharpen: v.get(Setting::Sharpen) }
     }
 
     /// The game a client's process is (see [`crate::session::Session::running_of_process`]): its resolution,
@@ -367,6 +394,19 @@ impl crate::State {
 mod tests {
     use super::*;
     use crate::session::windows::Window;
+    use crate::settings::Size;
+
+    #[test]
+    fn a_size_shows_main_windows_as_it_says_whatever_their_size_but_not_dialogs() {
+        let launcher = Window { limits: WindowLimits { min: (500, 300), max: (500, 300) }, ..Window::default() };
+        assert_eq!(launcher.presentation(true, &[], Size::Default).layout, WindowLayout::Centred, "by default, at its own size");
+        for (size, scale) in [(Size::Fit, WindowScale::Fit), (Size::Integer, WindowScale::Integer), (Size::Stretch, WindowScale::Stretch)] {
+            assert_eq!(launcher.presentation(true, &[], size), WindowPresentation { layout: WindowLayout::Fullscreen, scale });
+            assert_eq!(launcher.presentation(false, &[], size).scale, scale, "any program's");
+        }
+        let dialog = Window { parent: Some(1), ..Window::default() };
+        assert_eq!(dialog.presentation(true, &[], Size::Stretch), WindowPresentation { layout: WindowLayout::Centred, scale: WindowScale::Native });
+    }
 
     #[test]
     fn a_windows_fps_cap_is_the_one_set_for_its_program() {
@@ -403,20 +443,20 @@ mod tests {
     #[test]
     fn dialogs_and_fixed_windows_are_centred_and_games_fit_ignored_sizes() {
         let mut window = Window::default();
-        assert_eq!(window.presentation(false, &[]), WindowPresentation { layout: WindowLayout::Fullscreen, scale: WindowScale::Native });
-        assert_eq!(window.presentation(true, &[]), WindowPresentation { layout: WindowLayout::Fullscreen, scale: WindowScale::Fit });
+        assert_eq!(window.presentation(false, &[], Size::Default), WindowPresentation { layout: WindowLayout::Fullscreen, scale: WindowScale::Native });
+        assert_eq!(window.presentation(true, &[], Size::Default), WindowPresentation { layout: WindowLayout::Fullscreen, scale: WindowScale::Fit });
         window.parent = Some(7);
-        assert_eq!(window.presentation(true, &[]), WindowPresentation { layout: WindowLayout::Centred, scale: WindowScale::Native });
+        assert_eq!(window.presentation(true, &[], Size::Default), WindowPresentation { layout: WindowLayout::Centred, scale: WindowScale::Native });
         window.parent = None;
         window.limits = WindowLimits { min: (640, 480), max: (640, 480) };
         assert_eq!(window.limits.fixed_size(), Some((640, 480)));
-        assert_eq!(window.presentation(true, &[]).layout, WindowLayout::Centred);
+        assert_eq!(window.presentation(true, &[], Size::Default).layout, WindowLayout::Centred);
         window.limits.max = (0, 0);
         assert_eq!(window.limits.fixed_size(), None);
-        assert_eq!(window.presentation(true, &[]).layout, WindowLayout::Fullscreen);
+        assert_eq!(window.presentation(true, &[], Size::Default).layout, WindowLayout::Fullscreen);
         for role in [WindowRole::Dialog, WindowRole::Splash, WindowRole::Utility] {
             window.role = role;
-            assert_eq!(window.presentation(false, &[]).layout, WindowLayout::Centred);
+            assert_eq!(window.presentation(false, &[], Size::Default).layout, WindowLayout::Centred);
         }
     }
     #[test]
@@ -424,10 +464,10 @@ mod tests {
         // As Wine shows a game: a window fixed at the mode.
         let window = Window { limits: WindowLimits { min: (1200, 675), max: (1200, 675) }, ..Window::default() };
         let screen = [(1200, 675), (1000, 562)];
-        assert_eq!(window.presentation(true, &screen), WindowPresentation { layout: WindowLayout::Fullscreen, scale: WindowScale::Fit });
+        assert_eq!(window.presentation(true, &screen, Size::Default), WindowPresentation { layout: WindowLayout::Fullscreen, scale: WindowScale::Fit });
         let lower = Window { limits: WindowLimits { min: (1000, 562), max: (1000, 562) }, ..Window::default() };
-        assert_eq!(lower.presentation(true, &screen).scale, WindowScale::Fit, "at the game's resolution, scaled up");
+        assert_eq!(lower.presentation(true, &screen, Size::Default).scale, WindowScale::Fit, "at the game's resolution, scaled up");
         let small = Window { limits: WindowLimits { min: (800, 600), max: (800, 600) }, ..Window::default() };
-        assert_eq!(small.presentation(true, &screen).layout, WindowLayout::Centred, "another fixed size stays centred");
+        assert_eq!(small.presentation(true, &screen, Size::Default).layout, WindowLayout::Centred, "another fixed size stays centred");
     }
 }

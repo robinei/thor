@@ -236,7 +236,7 @@ impl Pipeline {
             }
             // Anti-aliasing at the texel's centre, as the window is shown one to one or nearest and nothing is
             // sharpened after it, is done in the final pass: FXAA all of it, SMAA its blending.
-            let at_centre = (one_to_one || clarity.scaling == clamshell_state::settings::Scaling::Nearest) && clarity.sharpen == 0;
+            let at_centre = (one_to_one || clarity.integer) && clarity.sharpen == 0;
             let fxaa_here = clarity.anti_aliasing == clamshell_state::settings::AntiAliasing::Fxaa && at_centre;
             let smaa_fused = clarity.anti_aliasing == clamshell_state::settings::AntiAliasing::Smaa && at_centre;
             client.window.with_surfaces(|surface, states| {
@@ -244,7 +244,8 @@ impl Pipeline {
                 let buffer = renderer_state.and_then(|state| state.lock().ok()?.buffer_size()).map_or((0, 0), |size| (size.w, size.h));
                 self.curves.push((Id::from_wayland_resource(surface), Look { curve, headroom, clarity, buffer, fxaa_here, hdr_peak }));
             });
-            let upscale = clarity.scaling == clamshell_state::settings::Scaling::Fsr && clarity.sharpen > 0;
+            // At Integer, nearest-neighbour: no FSR whatever Scaling says.
+            let upscale = clarity.scaling == clamshell_state::settings::Scaling::Fsr && clarity.sharpen > 0 && !clarity.integer;
             // FXAA done in the final pass takes no passes before it.
             let aa = if fxaa_here { clamshell_state::settings::AntiAliasing::Off } else { clarity.anti_aliasing };
             if let (true, Some((surface, ..))) = (upscale || aa != clamshell_state::settings::AntiAliasing::Off, picture) {
@@ -389,8 +390,8 @@ fn clarity_uniform(clarity: clamshell_state::session::presentation::Clarity, (w,
     }
     let sampling = match clarity.scaling {
         _ if fxaa_here => 4.0,
+        _ if clarity.integer => 1.0,
         Scaling::Bilinear => 0.0,
-        Scaling::Nearest => 1.0,
         Scaling::Fsr => 2.0,
     };
     [1.0 / w as f32, 1.0 / h as f32, f32::from(clarity.sharpen.min(100)) / 100.0, sampling]
@@ -956,8 +957,8 @@ mod tests {
     fn the_clarity_uniform_steps_by_a_texel_and_says_how_to_sample() {
         use clamshell_state::session::presentation::Clarity;
         use clamshell_state::settings::Scaling;
-        let nearest = Clarity { scaling: Scaling::Nearest, sharpen: 50, ..Clarity::default() };
-        assert_eq!(clarity_uniform(nearest, (960, 540), false), [1.0 / 960.0, 1.0 / 540.0, 0.5, 1.0]);
+        let nearest = Clarity { scaling: Scaling::Fsr, integer: true, sharpen: 50, ..Clarity::default() };
+        assert_eq!(clarity_uniform(nearest, (960, 540), false), [1.0 / 960.0, 1.0 / 540.0, 0.5, 1.0], "integer: nearest, whatever the scaling");
         assert_eq!(clarity_uniform(Clarity { scaling: Scaling::Fsr, ..Clarity::default() }, (960, 540), false)[3], 2.0);
         assert_eq!(clarity_uniform(Clarity::default(), (960, 540), false)[2..], [0.0, 0.0], "bilinear, unsharpened");
         assert_eq!(clarity_uniform(Clarity::default(), (960, 540), true)[3], 4.0, "FXAA one to one");

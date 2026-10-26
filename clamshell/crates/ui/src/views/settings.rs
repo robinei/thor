@@ -107,12 +107,17 @@ pub(super) fn draw(f: &mut Frame) {
         f.c.text_in(bar, size, Tone::Dim, note, Align::End);
     }
 
-    // The grid below.
+    // The grid below, in rows that scroll, as the dock's do.
     let grid = Rect::new(grid.x, grid.y + pad * 0.6, grid.w, grid.h - pad * 0.6);
-    let last = entry.is_some().then_some(Tile::Reset);
-    for (i, tile) in GRID.into_iter().chain(last).enumerate() {
-        draw_tile(f, grid.cell(COLUMNS, ROWS, f.body().h * style::TILE_GAP, i), tile);
+    let gap = f.body().h * style::TILE_GAP;
+    let list = Scrolled::begin(f, ListId::Settings, grid, grid.h / ROWS as f32, panel.grid().count().div_ceil(GRID_COLUMNS));
+    for row in list.shown() {
+        let r = list.row(row);
+        for (column, tile) in panel.grid().skip(row * GRID_COLUMNS).take(GRID_COLUMNS).filter_map(Tile::of).enumerate() {
+            draw_tile(f, Rect::new(r.x, r.y, r.w, r.h - gap).cell(GRID_COLUMNS, 1, gap, column), tile);
+        }
     }
+    list.end(f, grid.x + grid.w + pad * 0.3);
 }
 
 /// How a tile looks: its icon and value, and what the value does, shown by the icon's colour. It also
@@ -142,7 +147,7 @@ fn value_text(s: &State, setting: Setting, value: u16) -> Fmt<32> {
         Setting::Resolution if resolution != clamshell_state::settings::Resolution::Native && s.top_size().is_some() => {
             let screen = s.top_size().unwrap_or_default();
             let (w, h) = resolution.size_on(screen);
-            // A size the screen holds a whole number of times each way, which Nearest+Integer fills.
+            // A size the screen holds a whole number of times each way, which Integer fills.
             match (w > 0 && h > 0).then(|| (screen.0 / w, screen.1 / h)) {
                 Some((x, y)) if x == y && x * w == screen.0 && y * h == screen.1 => Fmt::of(format_args!("{w}×{h} ({x}×)")),
                 _ => Fmt::of(format_args!("{w}×{h}")),
@@ -198,6 +203,8 @@ fn face(s: &State, tile: Tile) -> Face {
         Tile::Setting(setting) => {
             let value = p.tile_value(setting);
             let text = value_text(s, setting, value);
+            // At Integer the picture is nearest-neighbour, whatever Scaling says.
+            let overruled = setting == Setting::Scaling && p.tile_value(Setting::Size) == clamshell_state::settings::Size::Integer as u16;
             Face {
                 id: Id::Settings(SettingsId::Tile(setting)),
                 icon: Icon::for_setting(setting),

@@ -41,6 +41,7 @@ impl Icon {
             Setting::Hud => Icon::Hud,
             Setting::Resolution => Icon::Upscale,
             Setting::Scaling => Icon::Scaling,
+            Setting::Size => Icon::Size,
             Setting::AntiAliasing => Icon::AntiAlias,
             Setting::Sharpen => Icon::Sharpen,
             Setting::Curve | Setting::HdrPeak => Icon::Brightness,
