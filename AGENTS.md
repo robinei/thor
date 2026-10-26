@@ -59,8 +59,9 @@ readings, ticks, windows, units ─▶ Event ───┤
 
 ## The state (crates/state)
 
-- `State` (lib.rs) holds the areas (shelf, session, bottom, radios, ...) and coordinates them, in one
-  `impl State`. An area owns its fields privately, with its rules and the getters the UI reads.
+- `State` (lib.rs) holds the areas (shelf, session, bottom, radios, ...) and coordinates them; its
+  `impl State` is split by subject into child files of the crate root (`incoming.rs`, `launching.rs`,
+  `restart.rs`, ...). An area owns its fields privately, with its rules and the getters the UI reads.
 - A rule that needs another area's data gets it as a parameter; a change another area alone owns is
   that area's `&mut self` method, passed as narrowly as practical. A request that needs several areas is
   queued as an `Event` (as the rule's last act) and handled by State after the rule returns.
