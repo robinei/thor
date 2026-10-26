@@ -31,18 +31,8 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Client {
 
 #[test]
 fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() {
-    let mut display = Display::<Server>::new().unwrap();
-    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), true, || {}, |_| Process::default(), |_| {}).unwrap();
-    server.core.handle(Event::Start);
-    server.frame();
-    let (server_socket, client_socket) = UnixStream::pair().unwrap();
-    display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
-    let (report, reports) = mpsc::channel();
-    let (next, steps) = mpsc::channel();
-    let thread = std::thread::spawn(move || {
-        let connection = Connection::from_socket(client_socket).unwrap();
-        let (globals, mut queue) = registry_queue_init::<Client>(&connection).unwrap();
+    let (mut display, mut server) = ServerBuilder::new().relative_motion().started();
+    let client = spawn_client(&mut display, ClientState::default(), move |globals, mut queue, steps| {
         let qh = queue.handle();
         let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
         let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
@@ -68,16 +58,14 @@ fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() 
         surface.commit();
         queue.roundtrip(&mut client).unwrap();
         for cycle in 0..4 {
-            report.send((cycle, 0)).unwrap();
-            steps.recv_timeout(Duration::from_secs(5)).unwrap();
+            steps.step((cycle, 0));
             queue.roundtrip(&mut client).unwrap();
             assert_ne!(client.pointer_serial, 0);
             if cycle == 0 {
                 lock = Some(constraints.lock_pointer(&surface, &pointer, None, zwp_pointer_constraints_v1::Lifetime::Persistent, &qh, ()));
                 queue.roundtrip(&mut client).unwrap();
                 queue.roundtrip(&mut client).unwrap();
-                report.send((cycle, 6)).unwrap();
-                steps.recv_timeout(Duration::from_secs(5)).unwrap();
+                steps.step((cycle, 6));
             }
             let menu_surface = compositor.create_surface(&qh, ());
             let menu_xdg = shell.get_xdg_surface(&menu_surface, &qh, ());
@@ -93,8 +81,7 @@ fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() 
             menu_surface.attach(Some(&menu_buffer), 0, 0);
             menu_surface.commit();
             queue.roundtrip(&mut client).unwrap();
-            report.send((cycle, 1)).unwrap();
-            steps.recv_timeout(Duration::from_secs(5)).unwrap();
+            steps.step((cycle, 1));
             queue.roundtrip(&mut client).unwrap();
             assert_eq!(client.popup_done, (cycle + 1).min(2));
             if let Some(lock) = lock.take() {
@@ -112,21 +99,18 @@ fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() 
                 child_surface.attach(Some(&menu_buffer), 0, 0);
                 child_surface.commit();
                 queue.roundtrip(&mut client).unwrap();
-                report.send((cycle, 3)).unwrap();
-                steps.recv_timeout(Duration::from_secs(5)).unwrap();
+                steps.step((cycle, 3));
                 child.destroy();
                 child_xdg.destroy();
                 child_surface.destroy();
                 queue.roundtrip(&mut client).unwrap();
-                report.send((cycle, 4)).unwrap();
-                steps.recv_timeout(Duration::from_secs(5)).unwrap();
+                steps.step((cycle, 4));
             }
             if cycle == 3 {
                 surface.attach(None, 0, 0);
                 surface.commit();
                 queue.roundtrip(&mut client).unwrap();
-                report.send((cycle, 5)).unwrap();
-                steps.recv_timeout(Duration::from_secs(5)).unwrap();
+                steps.step((cycle, 5));
                 queue.roundtrip(&mut client).unwrap();
                 assert_eq!(client.popup_done, 3);
             }
@@ -142,18 +126,17 @@ fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() 
                 surface.commit();
             }
             queue.roundtrip(&mut client).unwrap();
-            report.send((cycle, 2)).unwrap();
-            steps.recv_timeout(Duration::from_secs(5)).unwrap();
+            steps.step((cycle, 2));
         }
     });
-    let until = Instant::now() + Duration::from_secs(15);
-    let mut phases = 0;
-    while !thread.is_finished() && Instant::now() < until {
-        display.dispatch_clients(&mut server).unwrap();
-        server.frame();
-        server.sync_pointer_capture(|_| Ok::<_, &str>(()));
-        display.flush_clients().unwrap();
-        if let Ok((cycle, phase)) = reports.try_recv() {
+    let checked = client.serve(
+        &mut display,
+        &mut server,
+        |server| {
+            server.frame();
+            server.sync_pointer_capture(|_| Ok::<_, &str>(()));
+        },
+        |_, server, (cycle, phase)| {
             let id = server.windows[0].id;
             let root = server.windows[0].window.toplevel().unwrap().wl_surface().clone();
             let keyboard = server.seat.get_keyboard().unwrap();
@@ -165,15 +148,15 @@ fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() 
                     server.core.handle(clamshell_state::WindowEvent::Activate(id).into());
                     server.frame();
                     pointer.motion(
-                        &mut server,
+                        server,
                         Some((root, (0.0, 0.0).into())),
                         &MotionEvent { location: (100.0, 100.0).into(), serial: SERIAL_COUNTER.next_serial(), time: InputTime::now() },
                     );
                     pointer.button(
-                        &mut server,
+                        server,
                         &ButtonEvent { button: 0x110, state: ButtonState::Pressed, serial: SERIAL_COUNTER.next_serial(), time: InputTime::now() },
                     );
-                    pointer.frame(&mut server);
+                    pointer.frame(server);
                 }
                 1 => {
                     assert!(server.menu.is_some());
@@ -184,7 +167,7 @@ fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() 
                     assert_eq!(Some(hit.surface), keyboard.current_focus());
                     assert_eq!(hit.location - hit.origin, (10.0, 10.0).into());
                     pointer.button(
-                        &mut server,
+                        server,
                         &ButtonEvent { button: 0x110, state: ButtonState::Released, serial: SERIAL_COUNTER.next_serial(), time: InputTime::now() },
                     );
                     if cycle == 0 {
@@ -237,12 +220,7 @@ fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() 
                 _ => panic!("unexpected phase"),
             }
             server.sync_pointer_capture(|_| Ok::<_, &str>(()));
-            phases += 1;
-            next.send(()).unwrap();
-        }
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    assert!(thread.is_finished());
-    thread.join().unwrap();
-    assert_eq!(phases, 16);
+        },
+    );
+    assert_eq!(checked, 16);
 }

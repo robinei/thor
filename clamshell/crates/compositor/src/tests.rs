@@ -24,7 +24,7 @@ use crate::clients::{ClientState, Process};
 use crate::server::Server;
 
 #[derive(Default)]
-struct Client {
+pub(crate) struct Client {
     sizes: Vec<(i32, i32)>,
     presentation_clock: Option<u32>,
     presented: Vec<(u32, Duration)>,
@@ -80,6 +80,137 @@ delegate_noop!(Client: ignore wl_shm::WlShm);
 delegate_noop!(Client: ignore wl_shm_pool::WlShmPool);
 delegate_noop!(Client: ignore wl_buffer::WlBuffer);
 
+/// A test server, without a GPU or a host compositor: the preview's screens (960×540 and 620×540), a state
+/// from nothing, every process of no unit, and effects dropped, unless set otherwise.
+pub(crate) struct ServerBuilder {
+    state: State,
+    config: Config,
+    relative_motion: bool,
+    identify: Box<dyn Fn(u32) -> Process>,
+    on_effect: Box<dyn FnMut(&clamshell_state::Effect)>,
+}
+
+impl ServerBuilder {
+    pub(crate) fn new() -> ServerBuilder {
+        ServerBuilder {
+            state: State::new(Init::default()),
+            config: Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() },
+            relative_motion: false,
+            identify: Box::new(|_| Process::default()),
+            on_effect: Box::new(|_| {}),
+        }
+    }
+
+    pub(crate) fn sizes(self, top_size: (u32, u32), bottom_size: (u32, u32)) -> ServerBuilder {
+        ServerBuilder { config: Config { top_size, bottom_size, ..self.config }, ..self }
+    }
+
+    /// With relative pointer motion, as on a host that gives it.
+    pub(crate) fn relative_motion(self) -> ServerBuilder {
+        ServerBuilder { relative_motion: true, ..self }
+    }
+
+    /// With each client's process as `identify` says, by its pid.
+    pub(crate) fn identify(self, identify: impl Fn(u32) -> Process + 'static) -> ServerBuilder {
+        ServerBuilder { identify: Box::new(identify), ..self }
+    }
+
+    /// With the effects the compositor passes on given to `on_effect`.
+    pub(crate) fn on_effect(self, on_effect: impl FnMut(&clamshell_state::Effect) + 'static) -> ServerBuilder {
+        ServerBuilder { on_effect: Box::new(on_effect), ..self }
+    }
+
+    /// The server and its display, before the UI's Start.
+    pub(crate) fn build(self) -> (Display<Server>, Server) {
+        let display = Display::<Server>::new().unwrap();
+        let server = Server::new(self.state, self.config, display.handle(), self.relative_motion, || {}, self.identify, self.on_effect).unwrap();
+        (display, server)
+    }
+
+    /// The server after the UI's Start and a first frame, as most tests want it.
+    pub(crate) fn started(self) -> (Display<Server>, Server) {
+        let (display, mut server) = self.build();
+        server.core.handle(Event::Start);
+        server.frame();
+        (display, server)
+    }
+}
+
+/// A client's side of a test: it reports each step it has taken and waits until the server has checked it.
+pub(crate) struct Steps<R> {
+    report: mpsc::Sender<R>,
+    next: mpsc::Receiver<()>,
+}
+
+impl<R> Steps<R> {
+    /// Reports `step`, and waits until the server has checked it.
+    pub(crate) fn step(&self, step: R) {
+        self.report.send(step).map_err(|_| "the server is gone").unwrap();
+        self.next.recv_timeout(Duration::from_secs(5)).unwrap();
+    }
+}
+
+/// A test client on a thread of its own (see [`spawn_client`]).
+pub(crate) struct TestClient<R> {
+    /// The server's handle of the client, to look up its objects.
+    pub(crate) peer: smithay::reexports::wayland_server::Client,
+    thread: std::thread::JoinHandle<()>,
+    reports: mpsc::Receiver<R>,
+    next: mpsc::Sender<()>,
+}
+
+/// Connects a client to `display`, with `state` (Xwayland's or an ordinary client's), and runs `run` on a
+/// thread of its own with the globals, its event queue and its [`Steps`].
+pub(crate) fn spawn_client<R: Send + 'static>(
+    display: &mut Display<Server>,
+    state: ClientState,
+    run: impl FnOnce(wayland_client::globals::GlobalList, wayland_client::EventQueue<Client>, Steps<R>) + Send + 'static,
+) -> TestClient<R> {
+    let (server_socket, client_socket) = UnixStream::pair().unwrap();
+    let peer = display.handle().insert_client(server_socket, Arc::new(state)).unwrap();
+    let (report, reports) = mpsc::channel();
+    let (next, steps) = mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        let connection = Connection::from_socket(client_socket).unwrap();
+        let (globals, queue) = registry_queue_init::<Client>(&connection).unwrap();
+        run(globals, queue, Steps { report, next: steps });
+    });
+    TestClient { peer, thread, reports, next }
+}
+
+impl<R> TestClient<R> {
+    /// Serves the client until its thread ends, for at most 15 s. Each turn dispatches its requests, lets
+    /// `turn` do the server's work between (a frame, for most tests), flushes the replies, and hands a step
+    /// the client reported to `check`, after which the client goes on. Asserts that the client ended, and
+    /// returns the steps checked.
+    pub(crate) fn serve(
+        self,
+        display: &mut Display<Server>,
+        server: &mut Server,
+        mut turn: impl FnMut(&mut Server),
+        mut check: impl FnMut(&mut Display<Server>, &mut Server, R),
+    ) -> usize {
+        let until = Instant::now() + Duration::from_secs(15);
+        let mut checked = 0;
+        while !self.thread.is_finished() && Instant::now() < until {
+            display.dispatch_clients(server).unwrap();
+            turn(server);
+            display.flush_clients().unwrap();
+            if let Ok(step) = self.reports.try_recv() {
+                check(display, server, step);
+                display.flush_clients().unwrap();
+                checked += 1;
+                // (A client that ends without waiting for the last check has gone.)
+                let _ = self.next.send(());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(self.thread.is_finished(), "the client timed out after {checked} steps");
+        self.thread.join().unwrap();
+        checked
+    }
+}
+
 #[derive(Debug)]
 enum Report {
     Configured((i32, i32)),
@@ -94,27 +225,9 @@ enum Report {
 
 #[test]
 fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
-    let mut display = Display::<Server>::new().unwrap();
-    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
-    let mut server = Server::new(
-        State::new(Init::default()),
-        config,
-        display.handle(),
-        false,
-        || {},
-        |_| Process { unit: Some("test.service".into()), pids: vec![100], steam_app: None },
-        |_| {},
-    )
-    .unwrap();
-    server.core.handle(Event::Start);
-    server.frame();
-    let (server_socket, client_socket) = UnixStream::pair().unwrap();
-    display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
-    let (report, reports) = mpsc::channel();
-    let (next, steps) = mpsc::channel();
-    let thread = std::thread::spawn(move || {
-        let connection = Connection::from_socket(client_socket).unwrap();
-        let (globals, mut queue) = registry_queue_init::<Client>(&connection).unwrap();
+    let (mut display, mut server) =
+        ServerBuilder::new().identify(|_| Process { unit: Some("test.service".into()), pids: vec![100], steam_app: None }).started();
+    let client = spawn_client(&mut display, ClientState::default(), |globals, mut queue, steps| {
         let qh = queue.handle();
         let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
         let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
@@ -127,8 +240,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
         surface.commit();
         let mut client = Client::default();
         queue.roundtrip(&mut client).unwrap();
-        report.send(Report::Configured(*client.sizes.last().unwrap())).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(Report::Configured(*client.sizes.last().unwrap()));
 
         let (width, height) = *client.sizes.last().unwrap();
         let mut file = tempfile::tempfile().unwrap();
@@ -140,31 +252,26 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
         surface.commit();
         queue.roundtrip(&mut client).unwrap();
         client.ignore_configures = true;
-        report.send(Report::Mapped).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(Report::Mapped);
         queue.roundtrip(&mut client).unwrap();
-        report.send(Report::Below(*client.sizes.last().unwrap())).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(Report::Below(*client.sizes.last().unwrap()));
         for number in 0..100 {
             top.set_title(format!("intermediate title {number}"));
         }
         top.set_title("after configure".into());
         queue.roundtrip(&mut client).unwrap();
-        report.send(Report::Renamed).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(Report::Renamed);
         for _ in 0..100 {
             top.set_title("after configure".into());
         }
         queue.roundtrip(&mut client).unwrap();
-        report.send(Report::Renamed).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(Report::Renamed);
 
         client.ignore_configures = false;
         surface.attach(None, 0, 0);
         surface.commit();
         queue.roundtrip(&mut client).unwrap();
-        report.send(Report::Unmapped).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(Report::Unmapped);
         // Unmapping resets xdg properties; clients must set them again before remapping.
         top.set_app_id("test".into());
         top.set_title("after configure".into());
@@ -173,8 +280,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
         surface.attach(Some(&buffer), 0, 0);
         surface.commit();
         queue.roundtrip(&mut client).unwrap();
-        report.send(Report::Remapped).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(Report::Remapped);
 
         let child_surface = compositor.create_surface(&qh, ());
         let child_xdg = shell.get_xdg_surface(&child_surface, &qh, ());
@@ -185,8 +291,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
         child.set_max_size(320, 240);
         child_surface.commit();
         queue.roundtrip(&mut client).unwrap();
-        report.send(Report::Child(*client.sizes.last().unwrap())).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(Report::Child(*client.sizes.last().unwrap()));
         child.destroy();
         child_xdg.destroy();
         child_surface.destroy();
@@ -196,117 +301,93 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
         buffer.destroy();
         pool.destroy();
         queue.roundtrip(&mut client).unwrap();
-        report.send(Report::Closed).unwrap();
+        steps.step(Report::Closed);
     });
-    let until = Instant::now() + Duration::from_secs(15);
-    let mut phases = 0;
-    while !thread.is_finished() && Instant::now() < until {
-        display.dispatch_clients(&mut server).unwrap();
-        server.frame();
-        display.flush_clients().unwrap();
-        while let Ok(report) = reports.try_recv() {
-            let windows = server.core.state().session().windows();
-            match report {
-                Report::Configured(size) => {
-                    assert_eq!(size, (960, 540));
-                    assert_eq!(windows.len(), 1);
-                    assert_eq!(windows[0].title, "before configure");
-                    assert_eq!(windows[0].unit.as_deref(), Some("test.service"));
-                    assert!(matches!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Top(_)));
-                    assert!(!server.windows[0].mapped, "initial configure precedes the first buffer");
-                    assert_eq!(server.core.state().session().top_window().map(|w| w.id), Some(windows[0].id));
-                    next.send(()).unwrap();
-                }
-                Report::Mapped => {
-                    use clamshell_state::session::presentation::{WindowLayout, WindowRole};
-                    assert!(server.windows[0].mapped);
-                    server.sync_windows();
-                    let revision = server.presentation_revision;
-                    for _ in 0..10 {
-                        server.sync_windows();
-                    }
-                    assert_eq!(server.presentation_revision, revision);
-                    let mut facts = server.core.state().session().windows()[0].facts.clone();
-                    facts.role = WindowRole::Utility;
-                    server.core.handle(clamshell_state::WindowEvent::Changed(facts.clone()).into());
-                    server.sync_windows();
-                    assert_ne!(server.presentation_revision, revision);
-                    assert_eq!(server.windows[0].shown.presentation.unwrap().layout, WindowLayout::Centred);
-                    facts.role = WindowRole::Normal;
-                    server.core.handle(clamshell_state::WindowEvent::Changed(facts).into());
-                    server.sync_windows();
-                    assert_eq!(server.windows[0].shown.presentation.unwrap().layout, WindowLayout::Fullscreen);
-                    server.core.handle(Event::Device(DeviceKey::WindowDown));
-                    server.frame();
-                    display.flush_clients().unwrap();
-                    next.send(()).unwrap();
-                }
-                Report::Below(size) => {
-                    // The client keeps its original buffer and stops acknowledging configure. It
-                    // cannot hold up placement; rendering and input use a fitted transform at once.
-                    let geometry = server.geometry(windows[0].id).unwrap();
-                    assert!(geometry.scale.x < 1.0);
-                    assert_eq!(geometry.native.size, (960, 540).into());
-                    assert_eq!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Bottom);
-                    assert_eq!(size, (server.area(true).size.w, server.area(true).size.h));
-                    next.send(()).unwrap();
-                }
-                Report::Renamed => {
-                    let recording = server.trace.borrow().snapshot(server.core.state());
-                    let titles = recording
-                        .records
-                        .iter()
-                        .filter(|record| matches!(&record.input, crate::trace::Input::Window(clamshell_state::WindowEvent::Title { .. })))
-                        .count();
-                    assert_eq!(titles, 1, "a title burst enters state and diagnostics once per frame");
-                    assert_eq!(windows[0].title, "after configure");
-                    assert_eq!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Bottom);
-                    next.send(()).unwrap();
-                }
-                Report::Unmapped => {
-                    assert!(windows.is_empty());
-                    assert!(!server.windows[0].mapped);
-                    next.send(()).unwrap();
-                }
-                Report::Remapped => {
-                    assert_eq!(windows.len(), 1);
-                    assert_eq!(windows[0].id, server.windows[0].id);
-                    assert!(server.windows[0].mapped);
-                    assert_eq!(windows[0].title, "after configure");
-                    assert!(
-                        matches!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Top(_)),
-                        "this unowned client has no persistent bottom rule"
-                    );
-                    server.core.handle(Event::Device(DeviceKey::WindowDown));
-                    server.frame();
-                    next.send(()).unwrap();
-                }
-                Report::Child(size) => {
-                    assert_eq!(windows.len(), 2);
-                    assert_eq!(windows[1].parent, Some(windows[0].id));
-                    assert_eq!(server.core.state().session().place(windows[1].id).unwrap(), WindowPlace::Bottom);
-                    assert_eq!(size, (320, 240));
-                    assert_eq!(windows[1].limits.fixed_size(), Some((320, 240)));
-                    next.send(()).unwrap();
-                }
-                Report::Closed => {
-                    assert!(windows.is_empty());
-                    assert!(server.windows.is_empty());
-                }
+    let checked = client.serve(&mut display, &mut server, Server::frame, |display, server, report| {
+        let windows = server.core.state().session().windows();
+        match report {
+            Report::Configured(size) => {
+                assert_eq!(size, (960, 540));
+                assert_eq!(windows.len(), 1);
+                assert_eq!(windows[0].title, "before configure");
+                assert_eq!(windows[0].unit.as_deref(), Some("test.service"));
+                assert!(matches!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Top(_)));
+                assert!(!server.windows[0].mapped, "initial configure precedes the first buffer");
+                assert_eq!(server.core.state().session().top_window().map(|w| w.id), Some(windows[0].id));
             }
-            phases += 1;
+            Report::Mapped => {
+                use clamshell_state::session::presentation::{WindowLayout, WindowRole};
+                assert!(server.windows[0].mapped);
+                server.sync_windows();
+                let revision = server.presentation_revision;
+                for _ in 0..10 {
+                    server.sync_windows();
+                }
+                assert_eq!(server.presentation_revision, revision);
+                let mut facts = server.core.state().session().windows()[0].facts.clone();
+                facts.role = WindowRole::Utility;
+                server.core.handle(clamshell_state::WindowEvent::Changed(facts.clone()).into());
+                server.sync_windows();
+                assert_ne!(server.presentation_revision, revision);
+                assert_eq!(server.windows[0].shown.presentation.unwrap().layout, WindowLayout::Centred);
+                facts.role = WindowRole::Normal;
+                server.core.handle(clamshell_state::WindowEvent::Changed(facts).into());
+                server.sync_windows();
+                assert_eq!(server.windows[0].shown.presentation.unwrap().layout, WindowLayout::Fullscreen);
+                server.core.handle(Event::Device(DeviceKey::WindowDown));
+                server.frame();
+                display.flush_clients().unwrap();
+            }
+            Report::Below(size) => {
+                // The client keeps its original buffer and stops acknowledging configure. It
+                // cannot hold up placement; rendering and input use a fitted transform at once.
+                let geometry = server.geometry(windows[0].id).unwrap();
+                assert!(geometry.scale.x < 1.0);
+                assert_eq!(geometry.native.size, (960, 540).into());
+                assert_eq!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Bottom);
+                assert_eq!(size, (server.area(true).size.w, server.area(true).size.h));
+            }
+            Report::Renamed => {
+                let recording = server.trace.borrow().snapshot(server.core.state());
+                let titles = recording
+                    .records
+                    .iter()
+                    .filter(|record| matches!(&record.input, crate::trace::Input::Window(clamshell_state::WindowEvent::Title { .. })))
+                    .count();
+                assert_eq!(titles, 1, "a title burst enters state and diagnostics once per frame");
+                assert_eq!(windows[0].title, "after configure");
+                assert_eq!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Bottom);
+            }
+            Report::Unmapped => {
+                assert!(windows.is_empty());
+                assert!(!server.windows[0].mapped);
+            }
+            Report::Remapped => {
+                assert_eq!(windows.len(), 1);
+                assert_eq!(windows[0].id, server.windows[0].id);
+                assert!(server.windows[0].mapped);
+                assert_eq!(windows[0].title, "after configure");
+                assert!(
+                    matches!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Top(_)),
+                    "this unowned client has no persistent bottom rule"
+                );
+                server.core.handle(Event::Device(DeviceKey::WindowDown));
+                server.frame();
+            }
+            Report::Child(size) => {
+                assert_eq!(windows.len(), 2);
+                assert_eq!(windows[1].parent, Some(windows[0].id));
+                assert_eq!(server.core.state().session().place(windows[1].id).unwrap(), WindowPlace::Bottom);
+                assert_eq!(size, (320, 240));
+                assert_eq!(windows[1].limits.fixed_size(), Some((320, 240)));
+            }
+            Report::Closed => {
+                assert!(windows.is_empty());
+                assert!(server.windows.is_empty());
+            }
         }
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    assert!(thread.is_finished(), "client did not complete the protocol exchange");
-    thread.join().unwrap();
-    // The final report can arrive just as the client thread exits.
-    if let Ok(Report::Closed) = reports.try_recv() {
-        assert!(server.core.state().session().windows().is_empty());
-        assert!(server.windows.is_empty());
-        phases += 1;
-    }
-    assert_eq!(phases, 9);
+    });
+    assert_eq!(checked, 9);
 }
 
 #[derive(Debug, PartialEq)]
@@ -335,18 +416,8 @@ delegate_noop!(Client: ignore wl_seat::WlSeat);
 #[test]
 fn touch_contacts_keep_independent_surfaces_and_native_coordinates() {
     use smithay::backend::input::InputTime;
-    let mut display = Display::<Server>::new().unwrap();
-    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
-    server.core.handle(Event::Start);
-    server.frame();
-    let (server_socket, client_socket) = UnixStream::pair().unwrap();
-    display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
-    let (report, reports) = mpsc::channel();
-    let (next, steps) = mpsc::channel();
-    let thread = std::thread::spawn(move || {
-        let connection = Connection::from_socket(client_socket).unwrap();
-        let (globals, mut queue) = registry_queue_init::<Client>(&connection).unwrap();
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let client = spawn_client(&mut display, ClientState::default(), |globals, mut queue, steps| {
         let qh = queue.handle();
         let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
         let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
@@ -374,8 +445,7 @@ fn touch_contacts_keep_independent_surfaces_and_native_coordinates() {
             queue.roundtrip(&mut client).unwrap();
             windows.push((surface, xdg, top));
         }
-        report.send(()).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(());
         queue.roundtrip(&mut client).unwrap();
         let first = windows[0].0.id().protocol_id();
         let second = windows[1].0.id().protocol_id();
@@ -402,66 +472,51 @@ fn touch_contacts_keep_independent_surfaces_and_native_coordinates() {
             ]
         );
     });
-    let until = Instant::now() + Duration::from_secs(15);
-    let mut checked = false;
-    while !thread.is_finished() && Instant::now() < until {
-        display.dispatch_clients(&mut server).unwrap();
+    let checked = client.serve(&mut display, &mut server, Server::frame, |_, server, ()| {
+        let first = server.windows[0].id;
+        let second = server.windows[1].id;
+        server.core.handle(Event::Device(DeviceKey::WindowDown));
+        server.core.handle(clamshell_state::WindowEvent::Activate(first).into());
         server.frame();
-        display.flush_clients().unwrap();
-        if reports.try_recv().is_ok() {
-            let first = server.windows[0].id;
-            let second = server.windows[1].id;
-            server.core.handle(Event::Device(DeviceKey::WindowDown));
-            server.core.handle(clamshell_state::WindowEvent::Activate(first).into());
-            server.frame();
-            let top = server.geometry(first).unwrap();
-            let bottom = server.geometry(second).unwrap();
-            let time = InputTime::from_millis(10);
-            server.touch_down(Some(0).into(), top.origin + smithay::utils::Point::from((100.0, 80.0)), time);
-            server.touch_down(Some(1).into(), bottom.origin + smithay::utils::Point::from((120.0, 90.0)), time);
-            server.touch_frame();
-            server.touch_motion(Some(0).into(), top.origin + smithay::utils::Point::from((1000.0, 80.0)), time);
-            server.touch_up(Some(0).into(), time);
-            server.touch_frame();
-            // Black margins and the bottom bar must not leak touches into either client.
-            server.touch_down(Some(2).into(), (0.0, 0.0).into(), time);
-            server.touch_motion(Some(2).into(), top.origin + smithay::utils::Point::from((20.0, 20.0)), time);
-            server.touch_up(Some(2).into(), time);
-            server.touch_down(Some(3).into(), (server.top_width as f64 + 10.0, 10.0).into(), time);
-            server.touch_cancel();
-            server.touch_up(Some(1).into(), time);
-            server.touch_motion(Some(1).into(), bottom.origin, time);
-            assert!(server.touches.iter().all(Option::is_none));
-            server.resize((790, 135));
-            let scaled = server.geometry(first).unwrap();
-            assert!(scaled.scale.x < 1.0);
-            let point = scaled.origin + smithay::utils::Point::from((128.0 * scaled.scale.x, 64.0 * scaled.scale.y));
-            server.touch_down(Some(4).into(), point, time);
-            server.touch_up(Some(4).into(), time);
-            server.touch_frame();
-            server.touch_down(Some(5).into(), point, time);
-            server.touch_frame();
-            server.core.handle(Event::Home);
-            server.frame();
-            assert!(server.touches.iter().all(Option::is_none), "hiding a touched client cancels the gesture");
-            display.flush_clients().unwrap();
-            next.send(()).unwrap();
-            checked = true;
-        }
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    assert!(checked);
-    assert!(thread.is_finished());
-    thread.join().unwrap();
+        let top = server.geometry(first).unwrap();
+        let bottom = server.geometry(second).unwrap();
+        let time = InputTime::from_millis(10);
+        server.touch_down(Some(0).into(), top.origin + smithay::utils::Point::from((100.0, 80.0)), time);
+        server.touch_down(Some(1).into(), bottom.origin + smithay::utils::Point::from((120.0, 90.0)), time);
+        server.touch_frame();
+        server.touch_motion(Some(0).into(), top.origin + smithay::utils::Point::from((1000.0, 80.0)), time);
+        server.touch_up(Some(0).into(), time);
+        server.touch_frame();
+        // Black margins and the bottom bar must not leak touches into either client.
+        server.touch_down(Some(2).into(), (0.0, 0.0).into(), time);
+        server.touch_motion(Some(2).into(), top.origin + smithay::utils::Point::from((20.0, 20.0)), time);
+        server.touch_up(Some(2).into(), time);
+        server.touch_down(Some(3).into(), (server.top_width as f64 + 10.0, 10.0).into(), time);
+        server.touch_cancel();
+        server.touch_up(Some(1).into(), time);
+        server.touch_motion(Some(1).into(), bottom.origin, time);
+        assert!(server.touches.iter().all(Option::is_none));
+        server.resize((790, 135));
+        let scaled = server.geometry(first).unwrap();
+        assert!(scaled.scale.x < 1.0);
+        let point = scaled.origin + smithay::utils::Point::from((128.0 * scaled.scale.x, 64.0 * scaled.scale.y));
+        server.touch_down(Some(4).into(), point, time);
+        server.touch_up(Some(4).into(), time);
+        server.touch_frame();
+        server.touch_down(Some(5).into(), point, time);
+        server.touch_frame();
+        server.core.handle(Event::Home);
+        server.frame();
+        assert!(server.touches.iter().all(Option::is_none), "hiding a touched client cancels the gesture");
+    });
+    assert_eq!(checked, 1);
 }
 
 #[test]
 fn touching_a_home_arrow_switches_once_and_consumes_home_release() {
     use clamshell_state::{WindowEvent, session::windows::WindowFacts};
     use smithay::backend::input::InputTime;
-    let display = Display::<Server>::new().unwrap();
-    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
+    let (_display, mut server) = ServerBuilder::new().build();
     server.core.handle(Event::Start);
     // Two windows of one launch, the first in front.
     for id in [1, 2] {
@@ -542,9 +597,7 @@ fn a_rejected_dmabuf_disconnects_only_its_client() {
 }
 
 fn client_error_is_isolated(dmabuf_error: bool) {
-    let mut display = Display::<Server>::new().unwrap();
-    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
+    let (mut display, mut server) = ServerBuilder::new().build();
     use smithay::backend::allocator::{Format, Fourcc, Modifier};
     server.advertise_dmabuf_formats(
         [Format { code: Fourcc::Xrgb8888, modifier: Modifier::Linear }, Format { code: Fourcc::Abgr2101010, modifier: Modifier::Linear }],
@@ -552,16 +605,9 @@ fn client_error_is_isolated(dmabuf_error: bool) {
     );
     server.core.handle(Event::Start);
     server.frame();
-    let (good_server, good_client) = UnixStream::pair().unwrap();
     let (bad_server, bad_client) = UnixStream::pair().unwrap();
-    for stream in [good_server, bad_server] {
-        display.handle().insert_client(stream, Arc::new(ClientState::default())).unwrap();
-    }
-    let (report, reports) = mpsc::channel();
-    let (next, steps) = mpsc::channel();
-    let thread = std::thread::spawn(move || {
-        let connection = Connection::from_socket(good_client).unwrap();
-        let (globals, mut queue) = registry_queue_init::<Client>(&connection).unwrap();
+    display.handle().insert_client(bad_server, Arc::new(ClientState::default())).unwrap();
+    let client = spawn_client(&mut display, ClientState::default(), move |globals, mut queue, steps| {
         let qh = queue.handle();
         let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
         let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
@@ -580,8 +626,7 @@ fn client_error_is_isolated(dmabuf_error: bool) {
         surface.attach(Some(&buffer), 0, 0);
         surface.commit();
         queue.roundtrip(&mut client).unwrap();
-        report.send(0).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(0);
         let bad = Connection::from_socket(bad_client).unwrap();
         let (globals, mut bad_queue) = registry_queue_init::<Client>(&bad).unwrap();
         let qh = bad_queue.handle();
@@ -619,58 +664,35 @@ fn client_error_is_isolated(dmabuf_error: bool) {
         }
         top.set_title("still responsive".into());
         queue.roundtrip(&mut client).unwrap();
-        report.send(1).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(1);
     });
-    let until = Instant::now() + Duration::from_secs(15);
-    let mut phases = 0;
     let mut imports = 0;
-    while !thread.is_finished() && Instant::now() < until {
-        display.dispatch_clients(&mut server).unwrap();
+    let turn = |server: &mut Server| {
         server.complete_dmabuf_imports(|_| {
             imports += 1;
             Err("test renderer cannot import this fd")
         });
         server.frame();
-        display.flush_clients().unwrap();
-        if let Ok(phase) = reports.try_recv() {
-            assert_eq!(server.windows.len(), 1);
-            assert!(server.windows[0].mapped);
-            assert!(!server.exit);
-            assert_eq!(server.core.state().session().windows()[0].app_id, "healthy");
-            if phase == 1 {
-                assert_eq!(server.core.state().session().windows()[0].title, "still responsive");
-            }
-            phases += 1;
-            next.send(()).unwrap();
+    };
+    let checked = client.serve(&mut display, &mut server, turn, |_, server, phase| {
+        assert_eq!(server.windows.len(), 1);
+        assert!(server.windows[0].mapped);
+        assert!(!server.exit);
+        assert_eq!(server.core.state().session().windows()[0].app_id, "healthy");
+        if phase == 1 {
+            assert_eq!(server.core.state().session().windows()[0].title, "still responsive");
         }
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    });
     assert_eq!(imports, usize::from(dmabuf_error), "the failure must reach the renderer boundary");
-    assert_eq!(phases, 2);
-    assert!(thread.is_finished());
-    thread.join().unwrap();
+    assert_eq!(checked, 2);
 }
 
 #[test]
 fn screenshots_are_consumed_by_the_host_instead_of_the_parent_capture_tool() {
     use std::{cell::RefCell, rc::Rc};
-    let display = Display::<Server>::new().unwrap();
     let forwarded = Rc::new(RefCell::new(Vec::new()));
     let effects = forwarded.clone();
-    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
-    let mut server = Server::new(
-        State::new(Init::default()),
-        config,
-        display.handle(),
-        false,
-        || {},
-        |_| Process::default(),
-        move |effect| effects.borrow_mut().push(effect.clone()),
-    )
-    .unwrap();
-    server.core.handle(Event::Start);
-    server.frame();
+    let (_display, mut server) = ServerBuilder::new().on_effect(move |effect| effects.borrow_mut().push(effect.clone())).started();
     forwarded.borrow_mut().clear();
     server.core.handle(Event::Device(DeviceKey::Screenshot));
     server.core.handle(Event::Device(DeviceKey::Screenshot));
@@ -702,9 +724,7 @@ mod x11_popup_tests;
 
 #[test]
 fn requested_preview_geometry_sets_the_initial_canvas_and_resize_ratio() {
-    let display = Display::<Server>::new().unwrap();
-    let config = Config { top_size: (800, 600), bottom_size: (400, 600), touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
+    let (_display, mut server) = ServerBuilder::new().sizes((800, 600), (400, 600)).build();
     assert_eq!(server.size, (1200, 600));
     assert_eq!(server.top_width, 800);
     server.resize((900, 400));
@@ -743,9 +763,7 @@ mod xwayland_shell {
 
     #[test]
     fn a_committed_serial_pairs_its_surface_once_and_only_xwayland_sees_the_shell() {
-        let mut display = Display::<Server>::new().unwrap();
-        let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
-        let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
+        let (mut display, mut server) = ServerBuilder::new().build();
         // Another client doesn't see it.
         let (server_socket, client_socket) = UnixStream::pair().unwrap();
         display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
@@ -761,13 +779,7 @@ mod xwayland_shell {
         }
         assert!(!other.join().unwrap(), "only Xwayland sees xwayland_shell_v1");
 
-        let (server_socket, client_socket) = UnixStream::pair().unwrap();
-        display.handle().insert_client(server_socket, Arc::new(ClientState { xwayland: true, ..ClientState::default() })).unwrap();
-        let (report, reports) = mpsc::channel();
-        let (next, steps) = mpsc::channel::<()>();
-        let thread = std::thread::spawn(move || {
-            let connection = Connection::from_socket(client_socket).unwrap();
-            let (globals, mut queue) = registry_queue_init::<Client>(&connection).unwrap();
+        let client = spawn_client(&mut display, ClientState { xwayland: true, ..ClientState::default() }, |globals, mut queue, steps| {
             let qh = queue.handle();
             let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
             let shell: xwayland_shell_v1::XwaylandShellV1 = globals.bind(&qh, 1..=1, ()).unwrap();
@@ -776,12 +788,10 @@ mod xwayland_shell {
             xwayland.set_serial(7, 0);
             let mut client = Client::default();
             queue.roundtrip(&mut client).unwrap();
-            report.send(Step::SerialSet).unwrap();
-            steps.recv_timeout(Duration::from_secs(5)).unwrap();
+            steps.step(Step::SerialSet);
             surface.commit();
             queue.roundtrip(&mut client).unwrap();
-            report.send(Step::Committed).unwrap();
-            steps.recv_timeout(Duration::from_secs(5)).unwrap();
+            steps.step(Step::Committed);
             // Another surface given a serial, then destroyed before its window was paired.
             let gone = compositor.create_surface(&qh, ());
             let gone_xwayland = shell.get_xwayland_surface(&gone, &qh, ());
@@ -790,31 +800,23 @@ mod xwayland_shell {
             gone_xwayland.destroy();
             gone.destroy();
             queue.roundtrip(&mut client).unwrap();
-            report.send(Step::Destroyed).unwrap();
-            steps.recv_timeout(Duration::from_secs(5)).unwrap();
+            steps.step(Step::Destroyed);
         });
-        let until = Instant::now() + Duration::from_secs(15);
-        let mut steps_seen = 0;
-        while !thread.is_finished() && Instant::now() < until {
-            display.dispatch_clients(&mut server).unwrap();
-            display.flush_clients().unwrap();
-            if let Ok(step) = reports.try_recv() {
-                match step {
-                    Step::SerialSet => assert!(crate::x11::shell::take(&mut server, 7).is_none(), "not paired before its commit"),
-                    Step::Committed => {
-                        assert!(crate::x11::shell::take(&mut server, 7).is_some_and(|surface| surface.is_alive()), "paired once committed");
-                        assert!(crate::x11::shell::take(&mut server, 7).is_none(), "and only once");
-                    }
-                    Step::Destroyed => {
-                        assert!(crate::x11::shell::take(&mut server, 8).is_none_or(|surface| !surface.is_alive()), "a destroyed surface isn't paired alive");
-                    }
+        let checked = client.serve(
+            &mut display,
+            &mut server,
+            |_| {},
+            |_, server, step| match step {
+                Step::SerialSet => assert!(crate::x11::shell::take(server, 7).is_none(), "not paired before its commit"),
+                Step::Committed => {
+                    assert!(crate::x11::shell::take(server, 7).is_some_and(|surface| surface.is_alive()), "paired once committed");
+                    assert!(crate::x11::shell::take(server, 7).is_none(), "and only once");
                 }
-                steps_seen += 1;
-                next.send(()).unwrap();
-            }
-            std::thread::sleep(Duration::from_millis(1));
-        }
-        assert_eq!(steps_seen, 3);
-        thread.join().unwrap();
+                Step::Destroyed => {
+                    assert!(crate::x11::shell::take(server, 8).is_none_or(|surface| !surface.is_alive()), "a destroyed surface isn't paired alive");
+                }
+            },
+        );
+        assert_eq!(checked, 3);
     }
 }

@@ -236,17 +236,7 @@ fn refusal_timeout_dead_reader_and_late_reply_do_not_affect_a_replacement() {
 }
 
 fn server() -> (smithay::reexports::wayland_server::Display<Server>, Server) {
-    let display = smithay::reexports::wayland_server::Display::<Server>::new().unwrap();
-    let mut server = Server::new(
-        clamshell_state::State::new(clamshell_state::Init::default()),
-        clamshell_ui::Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: std::sync::Arc::default() },
-        display.handle(),
-        false,
-        || {},
-        |_| crate::Process::default(),
-        |_| {},
-    )
-    .unwrap();
+    let (display, mut server) = crate::tests::ServerBuilder::new().build();
     server.x11.selections.next_origin = 10;
     (display, server)
 }

@@ -41,18 +41,8 @@ delegate_noop!(Client: ignore wl_output::WlOutput);
 
 #[test]
 fn feedback_follows_submission_visibility_superseding_and_surface_destruction() {
-    let mut display = Display::<Server>::new().unwrap();
-    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
-    server.core.handle(Event::Start);
-    server.frame();
-    let (server_socket, client_socket) = UnixStream::pair().unwrap();
-    display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
-    let (report, reports) = mpsc::channel();
-    let (next, steps) = mpsc::channel();
-    let thread = std::thread::spawn(move || {
-        let connection = Connection::from_socket(client_socket).unwrap();
-        let (globals, mut queue) = registry_queue_init::<Client>(&connection).unwrap();
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let client = spawn_client(&mut display, ClientState::default(), move |globals, mut queue, steps| {
         let qh = queue.handle();
         let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
         let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
@@ -89,8 +79,7 @@ fn feedback_follows_submission_visibility_superseding_and_surface_destruction() 
         surface.commit();
         for phase in 0..5 {
             queue.roundtrip(&mut client).unwrap();
-            report.send(phase).unwrap();
-            steps.recv_timeout(Duration::from_secs(5)).unwrap();
+            steps.step(phase);
             queue.roundtrip(&mut client).unwrap();
             match phase {
                 0 => assert!(client.presented.is_empty(), "unsubmitted or occluded content has no feedback"),
@@ -123,74 +112,52 @@ fn feedback_follows_submission_visibility_superseding_and_surface_destruction() 
             }
         }
     });
-    let until = Instant::now() + Duration::from_secs(15);
-    let mut phases = 0;
-    while !thread.is_finished() && Instant::now() < until {
-        display.dispatch_clients(&mut server).unwrap();
-        server.frame();
-        if let Ok(phase) = reports.try_recv() {
-            let mut rendered = RenderElementStates::default();
-            if phase < 4 {
-                server.windows[0].window.with_surfaces(|surface, _| {
-                    rendered.states.insert(
-                        surface.into(),
-                        RenderElementState {
-                            visible_area: 1,
-                            presentation_state: RenderElementPresentationState::Rendering { reason: None },
-                            needs_capture: false,
-                        },
-                    );
-                });
-            }
-            match phase {
-                0 => {
-                    server.present_submission(&RenderElementStates::default(), Duration::from_secs(100).into());
-                }
-                1 => {
-                    server.present_submission(&rendered, Duration::from_secs(123).into());
-                    server.present_submission(&rendered, Duration::from_secs(124).into()); // A completed callback is sent once.
-                }
-                2 => {
-                    server.core.handle(Event::Home);
-                    server.frame();
-                    server.present_submission(&rendered, Duration::from_secs(200).into());
-                }
-                3 => {
-                    let id = server.windows[0].id;
-                    server.core.handle(clamshell_state::WindowEvent::Activate(id).into());
-                    server.frame();
-                    server.present_submission(&rendered, Duration::from_secs(456).into());
-                }
-                4 => assert!(server.windows.is_empty()),
-                _ => panic!(),
-            }
-            phases += 1;
-            next.send(()).unwrap();
+    let checked = client.serve(&mut display, &mut server, Server::frame, |_, server, phase| {
+        let mut rendered = RenderElementStates::default();
+        if phase < 4 {
+            server.windows[0].window.with_surfaces(|surface, _| {
+                rendered.states.insert(
+                    surface.into(),
+                    RenderElementState {
+                        visible_area: 1,
+                        presentation_state: RenderElementPresentationState::Rendering { reason: None },
+                        needs_capture: false,
+                    },
+                );
+            });
         }
-        display.flush_clients().unwrap();
-        std::thread::yield_now();
-    }
-    assert!(thread.is_finished(), "client did not finish");
-    thread.join().unwrap();
-    assert_eq!(phases, 5);
+        match phase {
+            0 => {
+                server.present_submission(&RenderElementStates::default(), Duration::from_secs(100).into());
+            }
+            1 => {
+                server.present_submission(&rendered, Duration::from_secs(123).into());
+                server.present_submission(&rendered, Duration::from_secs(124).into()); // A completed callback is sent once.
+            }
+            2 => {
+                server.core.handle(Event::Home);
+                server.frame();
+                server.present_submission(&rendered, Duration::from_secs(200).into());
+            }
+            3 => {
+                let id = server.windows[0].id;
+                server.core.handle(clamshell_state::WindowEvent::Activate(id).into());
+                server.frame();
+                server.present_submission(&rendered, Duration::from_secs(456).into());
+            }
+            4 => assert!(server.windows.is_empty()),
+            _ => panic!(),
+        }
+    });
+    assert_eq!(checked, 5);
 }
 
 #[test]
 fn the_top_windows_new_buffers_shown_are_its_frame_rate() {
-    let mut display = Display::<Server>::new().unwrap();
-    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
-    server.core.handle(Event::Start);
-    server.frame();
-    let (server_socket, client_socket) = UnixStream::pair().unwrap();
-    display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
-    let (report, reports) = mpsc::channel();
-    let (next, steps) = mpsc::channel();
+    let (mut display, mut server) = ServerBuilder::new().started();
     // Ten frames with a new buffer each, then a commit without one, which is no frame.
     const STEPS: u32 = 11;
-    let thread = std::thread::spawn(move || {
-        let connection = Connection::from_socket(client_socket).unwrap();
-        let (globals, mut queue) = registry_queue_init::<Client>(&connection).unwrap();
+    let client = spawn_client(&mut display, ClientState::default(), move |globals, mut queue, steps| {
         let qh = queue.handle();
         let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
         let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
@@ -212,38 +179,27 @@ fn the_top_windows_new_buffers_shown_are_its_frame_rate() {
             }
             surface.commit();
             queue.roundtrip(&mut client).unwrap();
-            report.send(step).unwrap();
-            steps.recv_timeout(Duration::from_secs(5)).unwrap();
+            steps.step(step);
         }
     });
-    let until = Instant::now() + Duration::from_secs(15);
     let start: Duration = server.clock.now().into();
     let mut measured = None;
-    while !thread.is_finished() && Instant::now() < until {
-        display.dispatch_clients(&mut server).unwrap();
-        server.frame();
-        if let Ok(step) = reports.try_recv() {
-            let mut rendered = RenderElementStates::default();
-            let root = server.windows[0].window.root().unwrap();
-            let state =
-                RenderElementState { visible_area: 1, presentation_state: RenderElementPresentationState::Rendering { reason: None }, needs_capture: false };
-            rendered.states.insert((&root).into(), state);
-            // 20 ms apart, as a 50 fps game's frames.
-            server.present_submission(&rendered, (start + Duration::from_millis(20) * step).into());
-            if step == STEPS - 1 {
-                // Reported now rather than half a second after the last report.
-                server.pacing.frames_due = None;
-                server.turn();
-                let metrics = server.core.state().sys().metrics();
-                measured = Some((metrics.fps, metrics.frame_ms));
-            }
-            next.send(()).unwrap();
+    client.serve(&mut display, &mut server, Server::frame, |_, server, step| {
+        let mut rendered = RenderElementStates::default();
+        let root = server.windows[0].window.root().unwrap();
+        let state =
+            RenderElementState { visible_area: 1, presentation_state: RenderElementPresentationState::Rendering { reason: None }, needs_capture: false };
+        rendered.states.insert((&root).into(), state);
+        // 20 ms apart, as a 50 fps game's frames.
+        server.present_submission(&rendered, (start + Duration::from_millis(20) * step).into());
+        if step == STEPS - 1 {
+            // Reported now rather than half a second after the last report.
+            server.pacing.frames_due = None;
+            server.turn();
+            let metrics = server.core.state().sys().metrics();
+            measured = Some((metrics.fps, metrics.frame_ms));
         }
-        display.flush_clients().unwrap();
-        std::thread::yield_now();
-    }
-    assert!(thread.is_finished(), "client did not finish");
-    thread.join().unwrap();
+    });
     let (fps, frame_ms) = measured.unwrap();
     assert_eq!(fps, Some(10.0), "ten frames in the last second");
     assert!(frame_ms.is_some_and(|ms| (ms - 20.0).abs() < 0.01), "{frame_ms:?}");

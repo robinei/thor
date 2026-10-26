@@ -15,18 +15,8 @@ delegate_noop!(Client: ignore wp_cursor_shape_device_v1::WpCursorShapeDeviceV1);
 
 #[test]
 fn cursor_requests_keep_hotspots_ignore_old_serials_and_release_on_home() {
-    let mut display = Display::<Server>::new().unwrap();
-    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
-    server.core.handle(Event::Start);
-    server.frame();
-    let (server_socket, client_socket) = UnixStream::pair().unwrap();
-    display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
-    let (report, reports) = mpsc::channel();
-    let (next, steps) = mpsc::channel();
-    let thread = std::thread::spawn(move || {
-        let connection = Connection::from_socket(client_socket).unwrap();
-        let (globals, mut queue) = registry_queue_init::<Client>(&connection).unwrap();
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let client = spawn_client(&mut display, ClientState::default(), move |globals, mut queue, steps| {
         let qh = queue.handle();
         let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
         let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
@@ -49,92 +39,72 @@ fn cursor_requests_keep_hotspots_ignore_old_serials_and_release_on_home() {
         surface.attach(Some(&buffer), 0, 0);
         surface.commit();
         queue.roundtrip(&mut client).unwrap();
-        report.send(0).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(0);
         queue.roundtrip(&mut client).unwrap();
         let serial = client.cursor_enter;
         assert_ne!(serial, 0);
         shape.set_shape(serial, wp_cursor_shape_device_v1::Shape::Text);
         queue.roundtrip(&mut client).unwrap();
-        report.send(1).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(1);
         pointer.set_cursor(serial, None, 0, 0);
         queue.roundtrip(&mut client).unwrap();
-        report.send(2).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(2);
         let cursor = compositor.create_surface(&qh, ());
         let image = pool.create_buffer(0, 16, 24, 64, wl_shm::Format::Abgr8888, &qh, ());
         pointer.set_cursor(serial, Some(&cursor), 3, 7);
         cursor.attach(Some(&image), 0, 0);
         cursor.commit();
         queue.roundtrip(&mut client).unwrap();
-        report.send(3).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(3);
         pointer.set_cursor(serial.wrapping_sub(1), None, 0, 0);
         queue.roundtrip(&mut client).unwrap();
-        report.send(4).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(4);
         cursor.destroy();
         queue.roundtrip(&mut client).unwrap();
-        report.send(5).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(5);
     });
-    let until = Instant::now() + Duration::from_secs(15);
-    let mut phases = 0;
-    while !thread.is_finished() && Instant::now() < until {
-        display.dispatch_clients(&mut server).unwrap();
-        server.frame();
-        display.flush_clients().unwrap();
-        if let Ok(phase) = reports.try_recv() {
-            match phase {
-                0 => {
-                    let root = server.windows[0].window.toplevel().unwrap().wl_surface().clone();
-                    server.pointer = (200.0, 200.0).into();
-                    let pointer = server.seat.get_pointer().unwrap();
-                    pointer.motion(
-                        &mut server,
-                        Some((root, (0.0, 0.0).into())),
-                        &MotionEvent { location: (200.0, 200.0).into(), serial: SERIAL_COUNTER.next_serial(), time: InputTime::now() },
-                    );
-                    pointer.frame(&mut server);
-                }
-                1 => assert_eq!(server.effective_cursor(), CursorImageStatus::Named(CursorIcon::Text)),
-                2 => assert_eq!(server.effective_cursor(), CursorImageStatus::Hidden),
-                3 | 4 => {
-                    let CursorImageStatus::Surface(surface) = server.effective_cursor() else {
-                        panic!("expected the client's cursor surface");
-                    };
-                    let hotspot = with_states(&surface, |states| states.data_map.get::<CursorImageSurfaceData>().unwrap().lock().unwrap().hotspot);
-                    assert_eq!(hotspot, (3, 7).into());
-                    if phase == 3 {
-                        let now = Instant::now();
-                        server.cursor_activity.motion(now);
-                        server.touch_down(TouchSlot::from(Some(0)), (200.0, 200.0).into(), InputTime::now());
-                        assert!(!server.cursor_activity.visible(now), "touch immediately hides a visible cursor");
-                        server.cursor_activity.motion(now);
-                        server.touch_motion(TouchSlot::from(Some(0)), (210.0, 200.0).into(), InputTime::now());
-                        assert!(!server.cursor_activity.visible(now));
-                        server.cursor_activity.motion(now);
-                        server.touch_up(TouchSlot::from(Some(0)), InputTime::now());
-                        server.touch_frame();
-                        assert!(!server.cursor_activity.visible(now));
-                    }
-                    if phase == 4 {
-                        server.core.handle(Event::Home);
-                        server.frame();
-                        assert_eq!(server.effective_cursor(), CursorImageStatus::default_named());
-                        assert!(server.core.state().session().top_window().is_none());
-                    }
-                }
-                5 => assert_eq!(server.effective_cursor(), CursorImageStatus::default_named()),
-                _ => panic!("unexpected phase"),
-            }
-            phases += 1;
-            next.send(()).unwrap();
+    let checked = client.serve(&mut display, &mut server, Server::frame, |_, server, phase| match phase {
+        0 => {
+            let root = server.windows[0].window.toplevel().unwrap().wl_surface().clone();
+            server.pointer = (200.0, 200.0).into();
+            let pointer = server.seat.get_pointer().unwrap();
+            pointer.motion(
+                server,
+                Some((root, (0.0, 0.0).into())),
+                &MotionEvent { location: (200.0, 200.0).into(), serial: SERIAL_COUNTER.next_serial(), time: InputTime::now() },
+            );
+            pointer.frame(server);
         }
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    assert!(thread.is_finished());
-    thread.join().unwrap();
-    assert_eq!(phases, 6);
+        1 => assert_eq!(server.effective_cursor(), CursorImageStatus::Named(CursorIcon::Text)),
+        2 => assert_eq!(server.effective_cursor(), CursorImageStatus::Hidden),
+        3 | 4 => {
+            let CursorImageStatus::Surface(surface) = server.effective_cursor() else {
+                panic!("expected the client's cursor surface");
+            };
+            let hotspot = with_states(&surface, |states| states.data_map.get::<CursorImageSurfaceData>().unwrap().lock().unwrap().hotspot);
+            assert_eq!(hotspot, (3, 7).into());
+            if phase == 3 {
+                let now = Instant::now();
+                server.cursor_activity.motion(now);
+                server.touch_down(TouchSlot::from(Some(0)), (200.0, 200.0).into(), InputTime::now());
+                assert!(!server.cursor_activity.visible(now), "touch immediately hides a visible cursor");
+                server.cursor_activity.motion(now);
+                server.touch_motion(TouchSlot::from(Some(0)), (210.0, 200.0).into(), InputTime::now());
+                assert!(!server.cursor_activity.visible(now));
+                server.cursor_activity.motion(now);
+                server.touch_up(TouchSlot::from(Some(0)), InputTime::now());
+                server.touch_frame();
+                assert!(!server.cursor_activity.visible(now));
+            }
+            if phase == 4 {
+                server.core.handle(Event::Home);
+                server.frame();
+                assert_eq!(server.effective_cursor(), CursorImageStatus::default_named());
+                assert!(server.core.state().session().top_window().is_none());
+            }
+        }
+        5 => assert_eq!(server.effective_cursor(), CursorImageStatus::default_named()),
+        _ => panic!("unexpected phase"),
+    });
+    assert_eq!(checked, 6);
 }

@@ -851,20 +851,10 @@ impl Window {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
     use super::*;
-    use std::{os::unix::net::UnixStream, sync::Arc};
+    use std::os::unix::net::UnixStream;
     #[test]
     fn outstanding_deadlines_stale_replies_and_menu_ownership_follow_window_lifetimes() {
-        let display = smithay::reexports::wayland_server::Display::<Server>::new().unwrap();
-        let mut server = Server::new(
-            clamshell_state::State::new(clamshell_state::Init::default()),
-            clamshell_ui::Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() },
-            display.handle(),
-            false,
-            || {},
-            |_| Process::default(),
-            |_| {},
-        )
-        .unwrap();
+        let (_display, mut server) = crate::tests::ServerBuilder::new().build();
         let (socket, _peer) = UnixStream::pair().unwrap();
         let now = Instant::now();
         let mut wire = Transport::new(socket, now).unwrap();
@@ -938,17 +928,7 @@ mod tests {
     #[test]
     fn placement_is_committed_and_configured_before_mapping_and_focus() {
         use std::io::Read;
-        let display = smithay::reexports::wayland_server::Display::<Server>::new().unwrap();
-        let mut server = Server::new(
-            clamshell_state::State::new(clamshell_state::Init::default()),
-            clamshell_ui::Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() },
-            display.handle(),
-            false,
-            || {},
-            |_| Process::default(),
-            |_| {},
-        )
-        .unwrap();
+        let (_display, mut server) = crate::tests::ServerBuilder::new().build();
         let (socket, mut peer) = UnixStream::pair().unwrap();
         let now = Instant::now();
         let mut wire = Transport::new(socket, now).unwrap();

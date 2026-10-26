@@ -51,19 +51,9 @@ fn stroke(key: Key) -> Stroke {
 
 #[test]
 fn the_bottom_keyboard_commits_text_and_sends_shortcuts_without_stealing_focus() {
-    let mut display = Display::<Server>::new().unwrap();
-    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
-    server.core.handle(Event::Start);
-    server.frame();
+    let (mut display, mut server) = ServerBuilder::new().started();
     let original_tab = server.core.state().bottom().tab();
-    let (server_socket, client_socket) = UnixStream::pair().unwrap();
-    display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
-    let (report, reports) = mpsc::channel();
-    let (next, steps) = mpsc::channel();
-    let thread = std::thread::spawn(move || {
-        let connection = Connection::from_socket(client_socket).unwrap();
-        let (globals, mut queue) = registry_queue_init::<Client>(&connection).unwrap();
+    let client = spawn_client(&mut display, ClientState::default(), move |globals, mut queue, steps| {
         let qh = queue.handle();
         let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
         let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
@@ -88,8 +78,7 @@ fn the_bottom_keyboard_commits_text_and_sends_shortcuts_without_stealing_focus()
         queue.roundtrip(&mut client).unwrap();
         assert_eq!(client.text, vec![TextRecord::Enter]);
         client.text.clear();
-        report.send(0).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(0);
         queue.roundtrip(&mut client).unwrap();
         // The modifier order makes the shortcut apply only to its key. F12 injection reaches the
         // app rather than triggering nested Home. A physical Shift survives an OSK Shift stroke.
@@ -116,8 +105,7 @@ fn the_bottom_keyboard_commits_text_and_sends_shortcuts_without_stealing_focus()
         text.enable();
         text.commit();
         queue.roundtrip(&mut client).unwrap();
-        report.send(1).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(1);
         queue.roundtrip(&mut client).unwrap();
         assert_eq!(client.text, vec![TextRecord::Commit("!".into()), TextRecord::Done(1), TextRecord::Commit("a".into()), TextRecord::Done(1)]);
         assert_eq!(client.keys, vec![(29, true), (46, true), (46, false), (29, false), (14, true), (14, false)]);
@@ -126,8 +114,7 @@ fn the_bottom_keyboard_commits_text_and_sends_shortcuts_without_stealing_focus()
         text.disable();
         text.commit();
         queue.roundtrip(&mut client).unwrap();
-        report.send(2).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(2);
         queue.roundtrip(&mut client).unwrap();
         assert_eq!(client.keys, vec![(48, true), (48, false)]);
         assert!(client.text.is_empty());
@@ -135,70 +122,52 @@ fn the_bottom_keyboard_commits_text_and_sends_shortcuts_without_stealing_focus()
         text.enable();
         text.commit();
         queue.roundtrip(&mut client).unwrap();
-        report.send(3).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(3);
         queue.roundtrip(&mut client).unwrap();
         assert_eq!(client.text, vec![TextRecord::Leave]);
         assert!(client.keys.is_empty(), "an unfocused client receives no on-screen strokes");
     });
-    let until = Instant::now() + Duration::from_secs(15);
-    let mut phases = 0;
-    while !thread.is_finished() && Instant::now() < until {
-        display.dispatch_clients(&mut server).unwrap();
-        server.frame();
-        display.flush_clients().unwrap();
-        if let Ok(phase) = reports.try_recv() {
-            match phase {
-                0 => {
-                    server.stroke(&stroke(Key::Char('a')));
-                    server.stroke(&Stroke { ctrl: true, shift: true, ..stroke(Key::Char('t')) });
-                    server.stroke(&stroke(Key::Named(Named::F(12))));
-                    let keyboard = server.seat.get_keyboard().unwrap();
-                    keyboard.input::<(), _>(&mut server, Keycode::new(50), KeyState::Pressed, SERIAL_COUNTER.next_serial(), InputTime::now(), |_, _, _| {
-                        FilterResult::Forward
-                    });
-                    server.stroke(&Stroke { shift: true, ..stroke(Key::Char('a')) });
-                    assert!(keyboard.modifier_state().shift, "OSK release must leave physical Shift held");
-                    keyboard.input::<(), _>(&mut server, Keycode::new(50), KeyState::Released, SERIAL_COUNTER.next_serial(), InputTime::now(), |_, _, _| {
-                        FilterResult::Forward
-                    });
-                    server.stroke(&stroke(Key::Named(Named::F(13))));
-                    assert!(!server.core.state().session().home_held());
-                }
-                1 => {
-                    assert_eq!(server.core.state().bottom().tab(), Tab::Keyboard);
-                    let focus = server.core.state().session().keyboard_focus();
-                    server.touch_down(Some(0).into(), (server.top_width as f64 + 10.0, 10.0).into(), InputTime::now());
-                    server.touch_cancel();
-                    assert_eq!(server.core.state().session().keyboard_focus(), focus);
-                    assert!(server.seat.get_keyboard().unwrap().is_focused());
-                    server.stroke(&Stroke { shift: true, ..stroke(Key::Char('1')) });
-                    let pos = keyboard::find(Key::Char('a')).unwrap();
-                    server.core.handle(PointerEvent::Activate(Id::Key(pos)).into());
-                    server.frame();
-                    server.stroke(&Stroke { ctrl: true, ..stroke(Key::Char('c')) });
-                    server.stroke(&stroke(Key::Named(Named::Backspace)));
-                }
-                2 => {
-                    assert_eq!(server.core.state().bottom().tab(), original_tab);
-                    server.stroke(&stroke(Key::Char('b')));
-                }
-                3 => {
-                    assert_eq!(server.core.state().bottom().tab(), Tab::Keyboard);
-                    server.core.handle(Event::Home);
-                    server.frame();
-                    assert_eq!(server.core.state().bottom().tab(), original_tab);
-                    server.stroke(&stroke(Key::Char('c')));
-                }
-                _ => panic!("unexpected phase"),
-            }
-            phases += 1;
-            display.flush_clients().unwrap();
-            next.send(()).unwrap();
+    let checked = client.serve(&mut display, &mut server, Server::frame, |_, server, phase| match phase {
+        0 => {
+            server.stroke(&stroke(Key::Char('a')));
+            server.stroke(&Stroke { ctrl: true, shift: true, ..stroke(Key::Char('t')) });
+            server.stroke(&stroke(Key::Named(Named::F(12))));
+            let keyboard = server.seat.get_keyboard().unwrap();
+            keyboard
+                .input::<(), _>(server, Keycode::new(50), KeyState::Pressed, SERIAL_COUNTER.next_serial(), InputTime::now(), |_, _, _| FilterResult::Forward);
+            server.stroke(&Stroke { shift: true, ..stroke(Key::Char('a')) });
+            assert!(keyboard.modifier_state().shift, "OSK release must leave physical Shift held");
+            keyboard
+                .input::<(), _>(server, Keycode::new(50), KeyState::Released, SERIAL_COUNTER.next_serial(), InputTime::now(), |_, _, _| FilterResult::Forward);
+            server.stroke(&stroke(Key::Named(Named::F(13))));
+            assert!(!server.core.state().session().home_held());
         }
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    assert_eq!(phases, 4);
-    assert!(thread.is_finished());
-    thread.join().unwrap();
+        1 => {
+            assert_eq!(server.core.state().bottom().tab(), Tab::Keyboard);
+            let focus = server.core.state().session().keyboard_focus();
+            server.touch_down(Some(0).into(), (server.top_width as f64 + 10.0, 10.0).into(), InputTime::now());
+            server.touch_cancel();
+            assert_eq!(server.core.state().session().keyboard_focus(), focus);
+            assert!(server.seat.get_keyboard().unwrap().is_focused());
+            server.stroke(&Stroke { shift: true, ..stroke(Key::Char('1')) });
+            let pos = keyboard::find(Key::Char('a')).unwrap();
+            server.core.handle(PointerEvent::Activate(Id::Key(pos)).into());
+            server.frame();
+            server.stroke(&Stroke { ctrl: true, ..stroke(Key::Char('c')) });
+            server.stroke(&stroke(Key::Named(Named::Backspace)));
+        }
+        2 => {
+            assert_eq!(server.core.state().bottom().tab(), original_tab);
+            server.stroke(&stroke(Key::Char('b')));
+        }
+        3 => {
+            assert_eq!(server.core.state().bottom().tab(), Tab::Keyboard);
+            server.core.handle(Event::Home);
+            server.frame();
+            assert_eq!(server.core.state().bottom().tab(), original_tab);
+            server.stroke(&stroke(Key::Char('c')));
+        }
+        _ => panic!("unexpected phase"),
+    });
+    assert_eq!(checked, 4);
 }

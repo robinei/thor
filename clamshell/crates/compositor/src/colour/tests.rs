@@ -1,11 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
-use crate::clients::{ClientState, Process};
+use crate::clients::ClientState;
 use crate::server::Server;
-use clamshell_state::{
-    Init, State,
-    colour::{ColourDescription, ColourLuminance, ColourPrimaries, TransferFunction},
-};
-use clamshell_ui::Config;
+use clamshell_state::colour::{ColourDescription, ColourLuminance, ColourPrimaries, TransferFunction};
 use smithay::reexports::{
     wayland_protocols::wp::color_management::v1::client::{
         wp_color_management_surface_feedback_v1::{self as feedback, WpColorManagementSurfaceFeedbackV1},
@@ -79,9 +75,7 @@ delegate_noop!(Client:ignore WpImageDescriptionCreatorParamsV1);
 delegate_noop!(Client:ignore wl_output::WlOutput);
 delegate_noop!(Client:ignore smithay::reexports::wayland_protocols::wp::color_management::v1::client::wp_color_management_output_v1::WpColorManagementOutputV1);
 fn server() -> (Display<Server>, Server) {
-    let display = Display::new().unwrap();
-    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
-    let server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
+    let (display, server) = crate::tests::ServerBuilder::new().build();
     super::protocol::install(&display.handle());
     (display, server)
 }

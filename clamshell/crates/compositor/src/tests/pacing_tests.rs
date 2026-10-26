@@ -50,18 +50,8 @@ fn barrier(server: &Server) -> bool {
 
 #[test]
 fn a_barrier_goes_once_its_frame_is_shown_and_a_timed_commit_at_its_time() {
-    let mut display = Display::<Server>::new().unwrap();
-    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
-    server.core.handle(Event::Start);
-    server.frame();
-    let (server_socket, client_socket) = UnixStream::pair().unwrap();
-    display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
-    let (report, reports) = mpsc::channel();
-    let (next, steps) = mpsc::channel::<()>();
-    let thread = std::thread::spawn(move || {
-        let connection = Connection::from_socket(client_socket).unwrap();
-        let (globals, mut queue) = registry_queue_init::<Client>(&connection).unwrap();
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let client = spawn_client(&mut display, ClientState::default(), move |globals, mut queue, steps| {
         let qh = queue.handle();
         let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
         let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
@@ -81,66 +71,50 @@ fn a_barrier_goes_once_its_frame_is_shown_and_a_timed_commit_at_its_time() {
         surface.attach(Some(&buffer), 0, 0);
         surface.commit();
         queue.roundtrip(&mut client).unwrap();
-        report.send(Step::Shown).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(Step::Shown);
         let fifo = fifos.get_fifo(&surface, &qh, ());
         fifo.set_barrier();
         surface.attach(Some(&buffer), 0, 0);
         surface.damage_buffer(0, 0, 64, 64);
         surface.commit();
         queue.roundtrip(&mut client).unwrap();
-        report.send(Step::Barrier).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(Step::Barrier);
         let timer = timing.get_timer(&surface, &qh, ());
         timer.set_timestamp(0, 1000, 0);
         surface.attach(Some(&buffer), 0, 0);
         surface.commit();
         queue.roundtrip(&mut client).unwrap();
-        report.send(Step::Timed).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(Step::Timed);
     });
-    let until = Instant::now() + Duration::from_secs(15);
-    let mut steps_seen = 0;
     let refresh = Duration::from_millis(16);
-    while !thread.is_finished() && Instant::now() < until {
-        display.dispatch_clients(&mut server).unwrap();
-        server.frame();
-        if let Ok(step) = reports.try_recv() {
-            match step {
-                Step::Shown => {
-                    let rendered = rendered(&server);
-                    server.frame_queued(&rendered, None);
-                    server.frame_shown(&rendered, None);
-                }
-                Step::Barrier => {
-                    assert!(barrier(&server), "set");
-                    server.frame_callbacks(None, refresh, Instant::now());
-                    assert!(barrier(&server), "kept: the frame with its content isn't shown");
-                    let rendered = rendered(&server);
-                    server.frame_queued(&rendered, None);
-                    server.frame_callbacks(None, refresh, Instant::now());
-                    assert!(barrier(&server), "kept while that frame is only queued");
-                    server.frame_shown(&rendered, None);
-                    server.frame_callbacks(None, refresh, Instant::now());
-                    assert!(!barrier(&server), "let go once it is shown");
-                }
-                Step::Timed => {
-                    let commits = server.pacing.commits;
-                    let held = server.release_timed_commits(Duration::from_secs(500).into());
-                    assert_eq!(held.map(Duration::from), Some(Duration::from_secs(1000)), "held until its time");
-                    display.dispatch_clients(&mut server).unwrap();
-                    assert_eq!(server.pacing.commits, commits, "not applied before");
-                    assert_eq!(server.release_timed_commits(Duration::from_secs(1000).into()), None, "let go at its time");
-                    display.dispatch_clients(&mut server).unwrap();
-                    assert!(server.pacing.commits > commits, "applied once let go");
-                }
-            }
-            steps_seen += 1;
-            next.send(()).unwrap();
+    let checked = client.serve(&mut display, &mut server, Server::frame, |display, server, step| match step {
+        Step::Shown => {
+            let rendered = rendered(server);
+            server.frame_queued(&rendered, None);
+            server.frame_shown(&rendered, None);
         }
-        display.flush_clients().unwrap();
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    assert_eq!(steps_seen, 3);
-    thread.join().unwrap();
+        Step::Barrier => {
+            assert!(barrier(server), "set");
+            server.frame_callbacks(None, refresh, Instant::now());
+            assert!(barrier(server), "kept: the frame with its content isn't shown");
+            let rendered = rendered(server);
+            server.frame_queued(&rendered, None);
+            server.frame_callbacks(None, refresh, Instant::now());
+            assert!(barrier(server), "kept while that frame is only queued");
+            server.frame_shown(&rendered, None);
+            server.frame_callbacks(None, refresh, Instant::now());
+            assert!(!barrier(server), "let go once it is shown");
+        }
+        Step::Timed => {
+            let commits = server.pacing.commits;
+            let held = server.release_timed_commits(Duration::from_secs(500).into());
+            assert_eq!(held.map(Duration::from), Some(Duration::from_secs(1000)), "held until its time");
+            display.dispatch_clients(server).unwrap();
+            assert_eq!(server.pacing.commits, commits, "not applied before");
+            assert_eq!(server.release_timed_commits(Duration::from_secs(1000).into()), None, "let go at its time");
+            display.dispatch_clients(server).unwrap();
+            assert!(server.pacing.commits > commits, "applied once let go");
+        }
+    });
+    assert_eq!(checked, 3);
 }

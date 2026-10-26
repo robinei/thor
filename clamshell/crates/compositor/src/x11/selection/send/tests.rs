@@ -154,18 +154,7 @@ fn latin1_translation_preserves_split_scalars_and_bounds_incomplete_input() {
 }
 
 fn server() -> (smithay::reexports::wayland_server::Display<Server>, Server) {
-    let display = smithay::reexports::wayland_server::Display::<Server>::new().unwrap();
-    let server = Server::new(
-        clamshell_state::State::new(clamshell_state::Init::default()),
-        clamshell_ui::Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: std::sync::Arc::default() },
-        display.handle(),
-        false,
-        || {},
-        |_| crate::Process::default(),
-        |_| {},
-    )
-    .unwrap();
-    (display, server)
+    crate::tests::ServerBuilder::new().build()
 }
 #[test]
 fn unsupported_duplicate_excess_stale_and_missing_source_requests_are_refused() {

@@ -61,29 +61,30 @@ impl Dispatch<zwp_confined_pointer_v1::ZwpConfinedPointerV1, ()> for Client {
     }
 }
 
-fn host(mode: CaptureMode, modes: &mut Vec<CaptureMode>, deny: bool, rejected: &mut bool) -> Result<(), &'static str> {
-    if deny && mode == CaptureMode::Locked {
-        *rejected = true;
-        return Err("host capture unavailable");
+/// The host's pointer capture: the modes it was asked for, and whether it refuses to lock (`deny`) and has
+/// refused (`rejected`).
+#[derive(Default)]
+struct Host {
+    modes: Vec<CaptureMode>,
+    deny: bool,
+    rejected: bool,
+}
+
+impl Host {
+    fn capture(&mut self, mode: CaptureMode) -> Result<(), &'static str> {
+        if self.deny && mode == CaptureMode::Locked {
+            self.rejected = true;
+            return Err("host capture unavailable");
+        }
+        self.modes.push(mode);
+        Ok(())
     }
-    modes.push(mode);
-    Ok(())
 }
 
 #[test]
 fn relative_motion_and_constraints_follow_geometry_home_regions_and_host_focus() {
-    let mut display = Display::<Server>::new().unwrap();
-    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), true, || {}, |_| Process::default(), |_| {}).unwrap();
-    server.core.handle(Event::Start);
-    server.frame();
-    let (server_socket, client_socket) = UnixStream::pair().unwrap();
-    display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
-    let (report, reports) = mpsc::channel();
-    let (next, steps) = mpsc::channel();
-    let thread = std::thread::spawn(move || {
-        let connection = Connection::from_socket(client_socket).unwrap();
-        let (globals, mut queue) = registry_queue_init::<Client>(&connection).unwrap();
+    let (mut display, mut server) = ServerBuilder::new().relative_motion().started();
+    let client = spawn_client(&mut display, ClientState::default(), move |globals, mut queue, steps| {
         let qh = queue.handle();
         let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
         let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
@@ -107,15 +108,13 @@ fn relative_motion_and_constraints_follow_geometry_home_regions_and_host_focus()
         surface.attach(Some(&buffer), 0, 0);
         surface.commit();
         queue.roundtrip(&mut client).unwrap();
-        report.send(0).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(0);
         let lock = constraints.lock_pointer(&surface, &pointer, None, zwp_pointer_constraints_v1::Lifetime::Persistent, &qh, ());
         queue.roundtrip(&mut client).unwrap();
         queue.roundtrip(&mut client).unwrap();
         assert_eq!(client.constraints, ["locked"]);
         client.relative.clear();
-        report.send(1).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(1);
         queue.roundtrip(&mut client).unwrap();
         assert_eq!(client.relative, vec![(12.0, -6.0, 6.0, -3.0); 100]);
         surface.attach(None, 0, 0);
@@ -123,35 +122,30 @@ fn relative_motion_and_constraints_follow_geometry_home_regions_and_host_focus()
         queue.roundtrip(&mut client).unwrap();
         queue.roundtrip(&mut client).unwrap();
         assert_eq!(client.constraints.last(), Some(&"unlocked"));
-        report.send(2).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(2);
         top.set_app_id("pointer-test".into());
         surface.commit();
         queue.roundtrip(&mut client).unwrap();
         surface.attach(Some(&buffer), 0, 0);
         surface.commit();
         queue.roundtrip(&mut client).unwrap();
-        report.send(3).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(3);
         queue.roundtrip(&mut client).unwrap();
         queue.roundtrip(&mut client).unwrap();
         assert_eq!(client.constraints.last(), Some(&"locked"), "persistent capture can resume after remapping");
         lock.destroy();
         queue.roundtrip(&mut client).unwrap();
-        report.send(4).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(4);
 
         let region = compositor.create_region(&qh, ());
         region.add(0, 0, 500, 400);
         let confine = constraints.confine_pointer(&surface, &pointer, Some(&region), zwp_pointer_constraints_v1::Lifetime::Persistent, &qh, ());
         queue.roundtrip(&mut client).unwrap();
         queue.roundtrip(&mut client).unwrap();
-        report.send(5).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(5);
         queue.roundtrip(&mut client).unwrap();
         assert_eq!(client.constraints, ["locked", "unlocked", "locked", "confined", "unconfined"]);
-        report.send(6).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(6);
         queue.roundtrip(&mut client).unwrap();
         queue.roundtrip(&mut client).unwrap();
         assert_eq!(client.constraints.last(), Some(&"confined"));
@@ -161,35 +155,30 @@ fn relative_motion_and_constraints_follow_geometry_home_regions_and_host_focus()
         queue.roundtrip(&mut client).unwrap();
         queue.roundtrip(&mut client).unwrap();
         assert_eq!(client.constraints.last(), Some(&"unconfined"));
-        report.send(7).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(7);
         confine.destroy();
         let once = constraints.lock_pointer(&surface, &pointer, None, zwp_pointer_constraints_v1::Lifetime::Oneshot, &qh, ());
         queue.roundtrip(&mut client).unwrap();
         queue.roundtrip(&mut client).unwrap();
-        report.send(8).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(8);
         queue.roundtrip(&mut client).unwrap();
         assert_eq!(client.constraints.last(), Some(&"unlocked"));
-        report.send(9).unwrap();
-        steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        steps.step(9);
         queue.roundtrip(&mut client).unwrap();
         assert_eq!(client.constraints.last(), Some(&"unlocked"), "oneshot does not reactivate");
         once.destroy();
         let _rejected = constraints.lock_pointer(&surface, &pointer, None, zwp_pointer_constraints_v1::Lifetime::Persistent, &qh, ());
         assert!(queue.roundtrip(&mut client).is_err(), "host capture failure disconnects its requesting client");
     });
-    let until = Instant::now() + Duration::from_secs(15);
-    let mut phases = 0;
-    let mut modes = Vec::new();
-    let mut deny = false;
-    let mut rejected = false;
-    while !thread.is_finished() && Instant::now() < until {
-        display.dispatch_clients(&mut server).unwrap();
-        server.frame();
-        server.sync_pointer_capture(|mode| host(mode, &mut modes, deny, &mut rejected));
-        display.flush_clients().unwrap();
-        if let Ok(phase) = reports.try_recv() {
+    let host = std::cell::RefCell::new(Host::default());
+    let checked = client.serve(
+        &mut display,
+        &mut server,
+        |server| {
+            server.frame();
+            server.sync_pointer_capture(|mode| host.borrow_mut().capture(mode));
+        },
+        |_, server, phase| {
             let id = server.windows[0].id;
             match phase {
                 0 => {
@@ -247,26 +236,15 @@ fn relative_motion_and_constraints_follow_geometry_home_regions_and_host_focus()
                 9 => {
                     assert_eq!(server.host_capture, CaptureMode::Free);
                     server.host_focused = true;
-                    deny = true;
+                    host.borrow_mut().deny = true;
                 }
                 _ => panic!("unexpected phase"),
             }
-            server.sync_pointer_capture(|mode| host(mode, &mut modes, deny, &mut rejected));
-            phases += 1;
-            next.send(()).unwrap();
-        }
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    assert!(
-        thread.is_finished(),
-        "pointer client timed out: phases={phases}, rejected={rejected}, mode={:?}, pointer={:?}, focus={:?}, model={:?}",
-        server.host_capture,
-        server.pointer,
-        server.seat.get_pointer().unwrap().current_focus(),
-        server.core.state().session().keyboard_focus()
+            server.sync_pointer_capture(|mode| host.borrow_mut().capture(mode));
+        },
     );
-    thread.join().unwrap();
-    assert_eq!(phases, 10);
+    let Host { modes, rejected, .. } = host.into_inner();
+    assert_eq!(checked, 10);
     assert!(rejected);
     assert!(!server.exit, "failure to capture a client does not end the session");
     assert_eq!(server.host_capture, CaptureMode::Free);
@@ -293,9 +271,7 @@ fn relative_motion_and_constraints_follow_geometry_home_regions_and_host_focus()
 
 #[test]
 fn a_host_that_cannot_release_capture_ends_the_unusable_session() {
-    let display = Display::<Server>::new().unwrap();
-    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), true, || {}, |_| Process::default(), |_| {}).unwrap();
+    let (_display, mut server) = ServerBuilder::new().relative_motion().build();
     // The client capture ended, but releasing the last applied host capture fails.
     server.host_capture = CaptureMode::Locked;
     let mut attempts = Vec::new();

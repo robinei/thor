@@ -381,17 +381,7 @@ mod tests {
     }
 
     fn server() -> Server {
-        let display = smithay::reexports::wayland_server::Display::<Server>::new().unwrap();
-        Server::new(
-            clamshell_state::State::new(clamshell_state::Init::default()),
-            clamshell_ui::Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() },
-            display.handle(),
-            false,
-            || {},
-            |_| crate::Process::default(),
-            |_| {},
-        )
-        .unwrap()
+        crate::tests::ServerBuilder::new().build().1
     }
 
     #[test]

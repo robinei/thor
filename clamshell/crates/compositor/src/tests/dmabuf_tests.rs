@@ -57,15 +57,9 @@ impl Dispatch<zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1, ()> for Cl
 #[test]
 fn an_accepted_import_completes_once_and_an_empty_frame_has_no_import_work() {
     use smithay::backend::allocator::{Format, Fourcc, Modifier};
-    let mut display = Display::<Server>::new().unwrap();
-    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
-    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
+    let (mut display, mut server) = ServerBuilder::new().build();
     server.advertise_dmabuf_formats([Format { code: Fourcc::Xrgb8888, modifier: Modifier::Linear }], None);
-    let (server_socket, client_socket) = UnixStream::pair().unwrap();
-    display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
-    let thread = std::thread::spawn(move || {
-        let connection = Connection::from_socket(client_socket).unwrap();
-        let (globals, mut queue) = registry_queue_init::<Client>(&connection).unwrap();
+    let client = spawn_client(&mut display, ClientState::default(), |globals, mut queue, _: Steps<()>| {
         let qh = queue.handle();
         let manager: zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1 = globals.bind(&qh, 3..=3, ()).unwrap();
         let params = manager.create_params(&qh, ());
@@ -78,10 +72,8 @@ fn an_accepted_import_completes_once_and_an_empty_frame_has_no_import_work() {
         queue.roundtrip(&mut client).unwrap();
         assert_eq!(client.imported_buffers, 1);
     });
-    let until = Instant::now() + Duration::from_secs(15);
     let mut imported = 0;
-    while !thread.is_finished() && Instant::now() < until {
-        display.dispatch_clients(&mut server).unwrap();
+    let turn = |server: &mut Server| {
         // The renderer boundary is mocked here; no ordinary file is treated as a GPU buffer.
         let changed = server.complete_dmabuf_imports(|_| {
             imported += 1;
@@ -90,11 +82,8 @@ fn an_accepted_import_completes_once_and_an_empty_frame_has_no_import_work() {
         if changed {
             assert_eq!(imported, 1);
         }
-        display.flush_clients().unwrap();
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    assert!(thread.is_finished());
-    thread.join().unwrap();
+    };
+    client.serve(&mut display, &mut server, turn, |_, _, ()| {});
     assert_eq!(imported, 1);
     assert!(!server.complete_dmabuf_imports(|_| -> Result<(), &str> { panic!("empty queue called importer") }));
 }
