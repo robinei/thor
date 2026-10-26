@@ -278,7 +278,7 @@ Known issues and risks, to check first:
 
 Thorch (github.com/thorch-os/thorch) is stale: kernel 7.1.2 and ROCKNIX `next` of July; its move to 7.2
 was closed unmerged. Armada (github.com/armada-os/armada) is active: its own Linux 7.2.6 with about 190
-patches, each with its source in `packages/kernel/PATCHES.md`; Thor sleep power 0.77 → 0.46 W at the USB
+patches, each with its source in their `packages/kernel/PATCHES.md`; Thor sleep power 0.77 → 0.46 W at the USB
 input (commit 431bf57). Both run both panels at the same rotation, which settles that question.
 
 For our image (small):
@@ -287,7 +287,7 @@ For our image (small):
       picks deep where firmware offers it.
 - [x] `fbcon=rotate:1` on the command line, as Thorch requires, with `CONFIG_FRAMEBUFFER_CONSOLE_ROTATION`
       in `config.thor` (Armada's config lacks it, and without it the option does nothing): the console
-      turned. `thor-outputs` turns both outputs 90° by itself. Keep `/KERNEL`'s command line under 512
+      turned. The compositor turns both screens 90° by itself, from the device profile. Keep `/KERNEL`'s command line under 512
       bytes (Armada: the ABL may not read past that).
 - [x] USB controller autosuspend (`power/control=auto` on the DWC3 device), so it doesn't hold a DDR vote
       while idle (Thorch `99-thorch-sm8550-usb-autosuspend.rules`, Armada `60-armada-usb-autosuspend.rules`).
