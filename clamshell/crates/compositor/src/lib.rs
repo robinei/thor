@@ -65,9 +65,3 @@ pub struct Displays {
     /// Xwayland's display (DISPLAY).
     pub x11: String,
 }
-
-/// An opaque SDR capture of the presented scene, with the top row first.
-pub struct Capture {
-    pub size: (u32, u32),
-    pub rgba: Vec<u8>,
-}

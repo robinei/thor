@@ -359,7 +359,7 @@ impl Pipeline {
     }
 
     /// The whole scene in sRGB, for a screenshot.
-    pub fn capture(&self, renderer: &mut GlesRenderer) -> Result<crate::Capture, String> {
+    pub fn capture(&self, renderer: &mut GlesRenderer) -> Result<clamshell_state::ScreenshotPixels, String> {
         let program = shader(renderer, ColourDescription::default(), false).map_err(|error| error.to_string())?;
         let mut texture: GlesTexture = renderer.create_buffer(Fourcc::Abgr8888, self.size.into()).map_err(|error| error.to_string())?;
         let mut target = renderer.bind(&mut texture).map_err(|error| error.to_string())?;
@@ -369,7 +369,11 @@ impl Pipeline {
 }
 
 /// Readback is an SDR file export; clients and the composition target retain their native precision.
-fn read_back(renderer: &mut GlesRenderer, target: &smithay::backend::renderer::gles::GlesTarget<'_>, size: (i32, i32)) -> Result<crate::Capture, String> {
+fn read_back(
+    renderer: &mut GlesRenderer,
+    target: &smithay::backend::renderer::gles::GlesTarget<'_>,
+    size: (i32, i32),
+) -> Result<clamshell_state::ScreenshotPixels, String> {
     use smithay::backend::renderer::{ExportMem, TextureMapping};
     let width = u32::try_from(size.0).map_err(|e| e.to_string())?;
     let height = u32::try_from(size.1).map_err(|e| e.to_string())?;
@@ -385,7 +389,7 @@ fn read_back(renderer: &mut GlesRenderer, target: &smithay::backend::renderer::g
     } else {
         rgba.extend_from_slice(bytes);
     }
-    Ok(crate::Capture { size: (width, height), rgba })
+    Ok(clamshell_state::ScreenshotPixels { size: (width, height), rgba })
 }
 
 /// Whether a surface of `description` is SDR: an sRGB or power-law signal, the curve applied to its signal

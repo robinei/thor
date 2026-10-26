@@ -104,9 +104,9 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
         pids: clamshell_system::os::lineage(pid),
         steam_app: clamshell_system::os::steam_app_of(pid),
     };
-    let on_capture = move |captured: Result<clamshell_compositor::Capture, String>| {
+    let on_capture = move |captured: Result<clamshell_state::ScreenshotPixels, String>| {
         if let Some(handles) = capture_handles.borrow().as_ref() {
-            handles.save_screenshot(captured.map(|capture| wiring::ScreenshotPixels { size: capture.size, rgba: capture.rgba }));
+            handles.save_screenshot(captured);
         }
     };
     let start = move |sender: EventSender, displays: clamshell_compositor::Displays| {

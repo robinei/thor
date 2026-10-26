@@ -49,7 +49,7 @@ pub struct Handles {
 
 impl Handles {
     /// Save an in-process compositor capture and report the result through the system sink.
-    pub fn save_screenshot(&self, pixels: Result<super::ScreenshotPixels, String>) {
+    pub fn save_screenshot(&self, pixels: Result<clamshell_state::ScreenshotPixels, String>) {
         self.system.send(crate::errands::Command::SaveScreenshot(pixels));
     }
 

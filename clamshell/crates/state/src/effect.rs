@@ -173,6 +173,14 @@ pub enum Compositor {
     Quit,
 }
 
+/// The pixels of a screenshot ([`Compositor::Screenshot`]), from the compositor to the file the system
+/// saves: opaque SDR RGBA8, the top row first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScreenshotPixels {
+    pub size: (u32, u32),
+    pub rgba: Vec<u8>,
+}
+
 /// What a tab watches while it is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Watch {

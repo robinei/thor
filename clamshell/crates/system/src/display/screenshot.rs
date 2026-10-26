@@ -2,15 +2,10 @@
 
 use std::path::PathBuf;
 
-/// An opaque SDR RGBA8 capture, with the top row first. Capture format does not select render format.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Pixels {
-    pub size: (u32, u32),
-    pub rgba: Vec<u8>,
-}
+use clamshell_state::ScreenshotPixels;
 
 /// Encode compositor pixels on the system worker, without changing either screen's render format.
-pub fn save(dir: Option<&PathBuf>, pixels: Pixels) -> Result<String, String> {
+pub fn save(dir: Option<&PathBuf>, pixels: ScreenshotPixels) -> Result<String, String> {
     let (width, height) = pixels.size;
     let length = usize::try_from(width).ok().and_then(|w| usize::try_from(height).ok().and_then(|h| w.checked_mul(h))).and_then(|n| n.checked_mul(4));
     if width == 0 || height == 0 || length != Some(pixels.rgba.len()) {
@@ -51,7 +46,7 @@ mod tests {
     #[test]
     fn captured_pixels_are_saved_with_their_size_and_row_order() {
         let directory = tempfile::tempdir().unwrap();
-        let pixels = Pixels { size: (2, 2), rgba: vec![255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255] };
+        let pixels = ScreenshotPixels { size: (2, 2), rgba: vec![255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255] };
         let expected = pixels.rgba.clone();
         let path = save(Some(&directory.path().to_path_buf()), pixels).unwrap();
         let decoder = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(path).unwrap()));
@@ -65,10 +60,10 @@ mod tests {
     fn invalid_captures_and_unwritable_folders_return_errors() {
         let directory = tempfile::tempdir().unwrap();
         let target = directory.path().to_path_buf();
-        for pixels in [Pixels { size: (0, 2), rgba: vec![] }, Pixels { size: (2, 2), rgba: vec![0; 3] }] {
+        for pixels in [ScreenshotPixels { size: (0, 2), rgba: vec![] }, ScreenshotPixels { size: (2, 2), rgba: vec![0; 3] }] {
             assert!(save(Some(&target), pixels).is_err());
         }
-        let valid = Pixels { size: (1, 1), rgba: vec![0, 0, 0, 255] };
+        let valid = ScreenshotPixels { size: (1, 1), rgba: vec![0, 0, 0, 255] };
         assert!(save(None, valid.clone()).is_err());
         let blocked = target.join("file");
         std::fs::write(&blocked, b"occupied").unwrap();

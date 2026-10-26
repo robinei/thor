@@ -20,7 +20,7 @@ use crate::{Closed, Sink};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Command {
-    SaveScreenshot(Result<screenshot::Pixels, String>),
+    SaveScreenshot(Result<clamshell_state::ScreenshotPixels, String>),
     Sleep,
     Notify {
         summary: String,

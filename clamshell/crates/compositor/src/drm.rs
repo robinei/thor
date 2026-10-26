@@ -125,7 +125,7 @@ pub fn run(
     start: impl FnOnce(EventSender, crate::Displays),
     on_effect: impl FnMut(&Effect) + 'static,
     identify: impl Fn(u32) -> Process + 'static,
-    on_capture: impl FnMut(Result<crate::Capture, String>) + 'static,
+    on_capture: impl FnMut(Result<clamshell_state::ScreenshotPixels, String>) + 'static,
 ) -> Result<(), Error> {
     let profile = *state.profile();
     let (mut session, notifier) = LibSeatSession::new().map_err(|e| format!("drm: no seat: {e}"))?;
@@ -439,7 +439,12 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
 /// flip pending; nothing changed means no frame. Clients that committed without a visible change get
 /// their frame callbacks, at most once a refresh, so that an idle screen never spins. Returns when those
 /// are next due.
-fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(Result<crate::Capture, String>), now: Instant) -> Option<Instant> {
+fn step(
+    drawing: &mut Drawing,
+    server: &mut Server,
+    on_capture: &mut impl FnMut(Result<clamshell_state::ScreenshotPixels, String>),
+    now: Instant,
+) -> Option<Instant> {
     outputs(drawing, server);
     // Commits timed for no later than the top screen's next frame go ahead before it is composed; the
     // loop wakes a refresh before the next one held is due, to compose it in time, or, within a refresh
@@ -621,7 +626,7 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
 }
 
 /// Draws what changed in the scene, marking the screens whose part it is in.
-fn compose(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(Result<crate::Capture, String>)) -> Result<(), Error> {
+fn compose(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(Result<clamshell_state::ScreenshotPixels, String>)) -> Result<(), Error> {
     server.frame();
     server.sync_pointer_capture(|_| Ok::<(), std::convert::Infallible>(()));
     server.import_dmabufs(&mut drawing.renderer);

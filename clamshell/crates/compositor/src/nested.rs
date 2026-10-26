@@ -29,7 +29,7 @@ pub fn run(
     start: impl FnOnce(EventSender, crate::Displays),
     on_effect: impl FnMut(&Effect) + 'static,
     identify: impl Fn(u32) -> Process + 'static,
-    mut on_capture: impl FnMut(Result<crate::Capture, String>) + 'static,
+    mut on_capture: impl FnMut(Result<clamshell_state::ScreenshotPixels, String>) + 'static,
 ) -> Result<(), Error> {
     let mut base = Base::new(state, config, false, identify, on_effect)?;
     let server = &mut base.server;
