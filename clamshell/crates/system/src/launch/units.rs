@@ -68,13 +68,18 @@ impl From<dbus::Error> for Error {
 
 lost_on!(Error: dbus::Error);
 
-/// The session bus connection shared by every one-off unit operation. Several threads use it, one at a
-/// time. It connects again after the bus fails.
+/// The session bus connection shared by the one-off unit operations of launches and the effects. Several
+/// threads use it, one at a time. It connects again after the bus fails. The freezer has a connection of
+/// its own, since a freeze can wait long on a process that doesn't stop (see [`super::freezer`]).
 static BUS: std::sync::Mutex<dbus::Kept> = std::sync::Mutex::new(dbus::Kept::session());
 
 /// Runs `call` on the user manager over the shared connection.
 pub(super) fn with_manager<T>(call: impl FnOnce(&mut Bus) -> Result<T, Error>) -> Result<T, Error> {
-    let mut kept = crate::os::lock(&BUS);
+    with_manager_on(&mut crate::os::lock(&BUS), call)
+}
+
+/// Runs `call` on the user manager over `kept`, which connects again after the bus fails.
+pub(super) fn with_manager_on<T>(kept: &mut dbus::Kept, call: impl FnOnce(&mut Bus) -> Result<T, Error>) -> Result<T, Error> {
     let result = call(kept.get()?);
     if let Err(Error::Bus(e)) = &result {
         kept.failed(e);

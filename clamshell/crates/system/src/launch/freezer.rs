@@ -3,9 +3,9 @@
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::units::{SYSTEMD, call, get_unit, with_manager};
+use super::units::{SYSTEMD, call, get_unit, with_manager_on};
 use crate::os::cgroup;
-use crate::os::dbus::Bus;
+use crate::os::dbus::{Bus, Kept};
 use crate::os::worker;
 
 /// Freezes or thaws a unit. For a slice that means every unit in it. The cgroup freezer stops the
@@ -33,33 +33,38 @@ trait Freezer {
     fn busy(&mut self, unit: &str) -> bool;
 }
 
-/// The user manager's units.
-struct Systemd;
+/// The user manager's units, over a connection of the freezer's own: FreezeUnit is answered once every
+/// process has stopped, which a process stuck in the kernel (in D state) holds up for the call's whole
+/// timeout, and over the shared connection that would hold up launches meanwhile.
+struct Systemd {
+    bus: Kept,
+}
 
 impl Freezer for Systemd {
     fn thaw(&mut self, unit: &str) {
-        match with_manager(|bus| Ok(call::<()>(bus, "ThawUnit", (unit,))?)) {
+        match with_manager_on(&mut self.bus, |bus| Ok(call::<()>(bus, "ThawUnit", (unit,))?)) {
             Ok(()) => log::info!("thawed {unit}"),
             Err(e) => log::warn!("thawing {unit}: {e}"),
         }
     }
 
     fn freeze(&mut self, unit: &str) {
-        match with_manager(|bus| Ok(call::<()>(bus, "FreezeUnit", (unit,))?)) {
+        match with_manager_on(&mut self.bus, |bus| Ok(call::<()>(bus, "FreezeUnit", (unit,))?)) {
             Ok(()) => log::info!("froze {unit}"),
             Err(e) => log::warn!("freezing {unit}: {e}"),
         }
     }
 
     fn busy(&mut self, unit: &str) -> bool {
-        let group = with_manager(|bus| Ok(control_group(bus, unit))).inspect_err(|e| log::debug!("freezer: {unit}'s cgroup: {e}")).ok().flatten();
+        let group =
+            with_manager_on(&mut self.bus, |bus| Ok(control_group(bus, unit))).inspect_err(|e| log::debug!("freezer: {unit}'s cgroup: {e}")).ok().flatten();
         working_without_drawing(group)
     }
 }
 
 /// The freezer thread, acting on systemd's units. See [`follow_requests`].
 fn freezer(requests: &std::sync::mpsc::Receiver<(String, bool)>) {
-    follow_requests(requests, &mut Systemd);
+    follow_requests(requests, &mut Systemd { bus: Kept::session() });
 }
 
 /// Carries out the waiting requests on `units`, each unit's latest, until none is left. Thaws happen at
