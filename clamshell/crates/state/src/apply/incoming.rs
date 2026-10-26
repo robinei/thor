@@ -42,6 +42,7 @@ impl State {
             Reading::Histogram(histogram) => self.presentation.read_histogram(*histogram),
             Reading::Told { unit, steam_app, resolution } => self.session.told(unit.as_deref(), steam_app, resolution),
             Reading::XwaylandModes(modes) => self.presentation.read_xwayland_modes(modes),
+            Reading::DisplayModes(modes) => self.presentation.read_display_modes(modes),
             Reading::Wifi(wifi) => self.radios.read_wifi(wifi),
             Reading::Bluetooth(bluetooth) => self.radios.read_bluetooth(bluetooth),
             Reading::Battery(battery) => self.sys.read_battery(battery),

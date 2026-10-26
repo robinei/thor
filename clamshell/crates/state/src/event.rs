@@ -24,8 +24,6 @@ use crate::status::metrics::Metrics;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
-    /// Controllable refresh modes at the main output's current dimensions, or empty when unavailable.
-    DisplayModes(crate::presentation::modes::DisplayModes),
     /// The clocks, sent once a second by a system thread. The wall clock, in epoch seconds, is for dating
     /// things. The monotonic clock (clamshell-system's `clock::mono_secs`) is for timing durations, so
     /// that a jump in the wall clock, by hand or by NTP, doesn't count as time passing.
@@ -212,6 +210,9 @@ pub enum Reading {
     /// The compositor told a game's process, known by its unit or Steam's app id, that its screen has this
     /// resolution, when it connected (see [`crate::State::process_game`]).
     Told { unit: Option<String>, steam_app: Option<u32>, resolution: crate::settings::Resolution },
+    /// The top screen's refresh rates at its current size, and its rate at start, from the DRM host at
+    /// its start; the nested host sends none.
+    DisplayModes(crate::presentation::modes::DisplayModes),
     /// The sizes of the modes Xwayland offers X11 clients, read when it starts: a game switching to one
     /// shows a window of that size (see [`crate::State::window_presentation`]).
     XwaylandModes(Vec<(u32, u32)>),

@@ -155,7 +155,7 @@ fn allocations_per_event() {
         run(&name("display modes"), s, &|i| {
             let mut modes = clamshell_state::presentation::modes::DisplayModes::default();
             modes.add(60000 + i as i32 * 1000);
-            Event::DisplayModes(modes)
+            Reading::DisplayModes(modes).into()
         });
         run(&name("tick, same minute"), s, &|i| Event::Tick { unix_secs: T0 + 1000 + i, mono_secs: 1000 + i });
         run(&name("tick, a new minute each"), s, &|i| Event::Tick { unix_secs: T0 + 2000 + 60 * i, mono_secs: 2000 + 60 * i });

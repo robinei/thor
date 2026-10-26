@@ -1439,7 +1439,7 @@ none.
 
 | Transition | Test |
 |---|---|
-| `unknown --DisplayModes at the DRM host's start (the top connector's rates at its current size, the start rate)--> known`; nested sends none and stays unknown | `rates_are_bounded_sorted_deduplicated_and_never_invented`; the DRM report: the VM suite, the device |
+| `unknown --Reading::DisplayModes at the DRM host's start (the top connector's rates at its current size, the start rate)--> known`; nested sends none and stays unknown | `rates_are_bounded_sorted_deduplicated_and_never_invented`; the DRM report: the VM suite, the device |
 | `any --DisplayModes--> replaced`; the saved Refresh unchanged; effects only if the rate wanted changes | `refresh_taps_follow_announced_modes_and_reports_never_change_saved_choices`; the randomized test; `allocations_per_event` |
 | Refresh tap: 0 ("as is"), then each rate: `--tap--> the next`; `--a value not listed, or no rates--> 0` [Save(Settings); Apply and Compositor::Refresh when they change] | `refresh_taps_follow_…` |
 | the rate wanted: a running calibration's, else the last launch's settings until its window shows, else those in force; Refresh 0 under a frame cap the start rate isn't a multiple of: the highest rate the cap divides (the tile says "for the cap") | `a_cap_as_is_gets_a_rate_it_divides`, `what_the_outside_starts_without_goes_out_at_the_first_event`; the randomized test |

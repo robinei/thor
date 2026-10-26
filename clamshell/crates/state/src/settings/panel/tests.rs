@@ -12,8 +12,8 @@ fn refresh_taps_follow_announced_modes_and_reports_never_change_saved_choices() 
     for hz in [75000, 59940, 60000] {
         modes.add(hz);
     }
-    assert!(s.applied(Event::DisplayModes(modes)).is_empty());
-    assert!(s.applied(Event::DisplayModes(modes)).is_empty(), "a repeated report has no effects");
+    assert!(s.applied(Event::Reading(Reading::DisplayModes(modes))).is_empty());
+    assert!(s.applied(Event::Reading(Reading::DisplayModes(modes))).is_empty(), "a repeated report has no effects");
     let effects = taps(&mut s, Setting::Refresh, 1);
     assert_eq!(s.prefs().settings().global.get(Setting::Refresh), 60);
     // Persist the requested choice before applying it; the output request follows hardware settings.
@@ -24,14 +24,14 @@ fn refresh_taps_follow_announced_modes_and_reports_never_change_saved_choices() 
     let effects = taps(&mut s, Setting::Refresh, 1);
     assert_eq!(s.prefs().settings().global.get(Setting::Refresh), 75);
     assert!(effects.iter().any(|effect| matches!(effect, Effect::Compositor(Compositor::Refresh(75)))));
-    assert!(s.applied(Event::DisplayModes(Default::default())).is_empty());
+    assert!(s.applied(Event::Reading(Reading::DisplayModes(Default::default()))).is_empty());
     assert_eq!(s.prefs().settings().global.get(Setting::Refresh), 75, "hotplug never overwrites a saved choice");
     let effects = taps(&mut s, Setting::Refresh, 1);
     assert_eq!(s.prefs().settings().global.get(Setting::Refresh), 0);
     assert!(effects.iter().any(|effect| matches!(effect, Effect::Compositor(Compositor::Refresh(0)))));
     let mut replacement = crate::presentation::modes::DisplayModes::default();
     replacement.add(144000);
-    assert!(s.applied(Event::DisplayModes(replacement)).is_empty());
+    assert!(s.applied(Event::Reading(Reading::DisplayModes(replacement))).is_empty());
     taps(&mut s, Setting::Refresh, 1);
     assert_eq!(s.prefs().settings().global.get(Setting::Refresh), 144);
 }

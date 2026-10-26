@@ -376,7 +376,6 @@ impl State {
         let mark = out.events.len();
         let now = self.clock.mono();
         match event {
-            Event::DisplayModes(modes) => self.presentation.read_display_modes(modes),
             Event::Tick { unix_secs, mono_secs } => self.tick(unix_secs, mono_secs, out),
             Event::Reading(reading) => self.on_reading(reading, out),
             Event::Notification(e) => self.on_notification(e, out),

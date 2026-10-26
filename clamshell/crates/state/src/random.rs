@@ -651,7 +651,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             if rng.one_in(2) {
                 modes.set_start(modes.rates().first().map_or(0, |hz| i32::from(*hz) * 1000));
             }
-            Event::DisplayModes(modes)
+            Reading::DisplayModes(modes).into()
         }
         // The pad's inputs while it listens on the keymap edit screen.
         95 if s.pad().route() == PadRoute::Listen => {

@@ -62,7 +62,7 @@ pub struct Screens {
 pub struct Presentation {
     /// The screens, as the compositor last said (see [`crate::Reading::Screens`]).
     screens: Screens,
-    /// The top screen's refresh rates (see [`crate::Event::DisplayModes`]).
+    /// The top screen's refresh rates (see [`crate::Reading::DisplayModes`]).
     display_modes: modes::DisplayModes,
     /// The last histogram the compositor measured (see [`crate::Reading::Histogram`]).
     histogram: Option<crate::colour::Histogram>,
