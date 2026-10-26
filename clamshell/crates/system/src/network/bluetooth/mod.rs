@@ -223,6 +223,12 @@ fn pair(bus: &mut Bus, device: &str) -> dbus::Result<()> {
     paired
 }
 
+/// Whether object `path` is under adapter `adapter`'s path (`/org/bluez/hci1/dev_…` under
+/// `/org/bluez/hci1`, but not under `/org/bluez/hci10`'s).
+fn of_adapter(path: &str, adapter: &str) -> bool {
+    path.strip_prefix(adapter).is_some_and(|rest| rest.starts_with('/'))
+}
+
 /// The first adapter and its devices; devices without a name are left out unless paired.
 fn read(objects: &ManagedObjects, state: &BtState) -> Bluetooth {
     let adapter = first_adapter(objects);
@@ -231,7 +237,7 @@ fn read(objects: &ManagedObjects, state: &BtState) -> Bluetooth {
     };
     let mut devices: Vec<Device> = objects
         .iter()
-        .filter(|(path, _)| path.starts_with(&**adapter_path))
+        .filter(|(path, _)| of_adapter(path, adapter_path))
         .filter_map(|(_, ifaces)| ifaces.get(DEVICE).map(Props))
         .filter_map(|props| {
             let name = props.str("Name");
@@ -355,6 +361,18 @@ impl<S: Sink> Service for BtThread<S> {
     /// Without BlueZ on the bus, because the machine has no Bluetooth, there is nothing to warn about.
     fn expected(e: &Error) -> bool {
         matches!(e, Error::Bus(e) if e.is_absent())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_device_is_its_adapters_alone() {
+        assert!(of_adapter("/org/bluez/hci1/dev_00_11", "/org/bluez/hci1"));
+        assert!(!of_adapter("/org/bluez/hci10/dev_00_11", "/org/bluez/hci1"), "another adapter's");
+        assert!(!of_adapter("/org/bluez/hci1", "/org/bluez/hci1"), "the adapter itself");
     }
 }
 
