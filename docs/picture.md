@@ -172,7 +172,16 @@ Where Smithay (rev 24647fc) is in the way, worth contributing upstream:
    in the chain at the game's resolution; in the VM it gives 81 % in-between tones across vkcube's
    edges, SMAA 49 %, none 24 %. Each tested headless against
    reference images computed on the CPU (the shaders' arithmetic mirrored, as the curve's is), and by
-   eye nested with a game.
+   eye nested with a game. Then, found with Big Walk under Proton's Wayland driver and since tested by
+   `tests/picture-scaling.py` (done): the passes run on the window's picture, the topmost surface covering at
+   least half as much as the largest (Wine draws a game in a subsurface, between its own bars at a mode of
+   another shape), whose colour is also the window's and whose place is what is fitted; a buffer a viewport
+   scales counts as scaled; a game is told its Resolution when its client connects and sees only the top
+   screen (a change applies at its next start, which the tile says); Nearest is Nearest+Integer; a mode
+   stretched over the screen keeps its shape. The harness launches test games as games in a nested
+   session and checks every picture: `pattern-game` as Wine shows a game, SDR, PQ and linear light;
+   `sdl-pattern` on Wayland and X11, switching modes; `wine-pattern` under Wine with DXVK, on Wayland and
+   X11, and HDR10 on Wayland. Scaling, anti-aliasing and sharpening compare PQ's signal for linear light. The tone curve's edit screen plots the picture's histogram.
 2. **On the device (phase 4 of the compositor plan):** each stage's GPU time on the Adreno at 1080p and
    at ⅔; which combinations are affordable. OptiScaler with a DX12 game through VKD3D on Turnip: does FSR
    3.1's upscaler run, at what cost, and frame generation, at what latency. The In game tiles follow only
