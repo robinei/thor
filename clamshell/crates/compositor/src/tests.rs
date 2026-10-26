@@ -15,8 +15,8 @@ use smithay::reexports::{
     wayland_server::Display,
 };
 use wayland_client::{
-    Connection, Dispatch, Proxy, QueueHandle, delegate_noop,
-    globals::{GlobalListContents, registry_queue_init},
+    Connection, Dispatch, EventQueue, Proxy, QueueHandle, delegate_noop,
+    globals::{GlobalList, GlobalListContents, registry_queue_init},
     protocol::{wl_buffer, wl_compositor, wl_registry, wl_seat, wl_shm, wl_shm_pool, wl_surface, wl_touch},
 };
 
@@ -215,27 +215,77 @@ impl<R> TestClient<R> {
     }
 }
 
-#[derive(Debug)]
-enum Report {
-    Configured((i32, i32)),
-    Mapped,
-    Below((i32, i32)),
-    Renamed,
-    Unmapped,
-    Remapped,
-    Child((i32, i32)),
-    Closed,
+/// A buffer of `size` in shared memory, all white.
+pub(crate) fn shm_buffer(globals: &GlobalList, qh: &QueueHandle<Client>, (width, height): (i32, i32)) -> wl_buffer::WlBuffer {
+    let shm: wl_shm::WlShm = globals.bind(qh, 1..=1, ()).unwrap();
+    let mut file = tempfile::tempfile().unwrap();
+    file.write_all(&vec![0xff; (width * height * 4) as usize]).unwrap();
+    let pool = shm.create_pool(file.as_fd(), width * height * 4, qh, ());
+    pool.create_buffer(0, width, height, width * 4, wl_shm::Format::Abgr8888, qh, ())
+}
+
+/// A test client's toplevel, shown (see [`open_toplevel`]).
+pub(crate) struct Toplevel {
+    pub(crate) surface: wl_surface::WlSurface,
+    pub(crate) xdg: xdg_surface::XdgSurface,
+    pub(crate) top: xdg_toplevel::XdgToplevel,
+    pub(crate) buffer: wl_buffer::WlBuffer,
+    app_id: String,
+}
+
+/// Opens a toplevel with `app_id` and, once it is configured, shows a buffer of `size`, or of the size it
+/// was configured to.
+pub(crate) fn open_toplevel(globals: &GlobalList, queue: &mut EventQueue<Client>, client: &mut Client, app_id: &str, size: Option<(i32, i32)>) -> Toplevel {
+    let qh = queue.handle();
+    let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
+    let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
+    let surface = compositor.create_surface(&qh, ());
+    let xdg = shell.get_xdg_surface(&surface, &qh, ());
+    let top = xdg.get_toplevel(&qh, ());
+    top.set_app_id(app_id.into());
+    surface.commit();
+    queue.roundtrip(client).unwrap();
+    let size = size.unwrap_or_else(|| *client.sizes.last().unwrap());
+    let buffer = shm_buffer(globals, &qh, size);
+    surface.attach(Some(&buffer), 0, 0);
+    surface.damage_buffer(0, 0, size.0, size.1);
+    surface.commit();
+    queue.roundtrip(client).unwrap();
+    Toplevel { surface, xdg, top, buffer, app_id: app_id.into() }
+}
+
+impl Toplevel {
+    /// Takes its buffer away, which unmaps it.
+    pub(crate) fn unmap(&self, queue: &mut EventQueue<Client>, client: &mut Client) {
+        self.surface.attach(None, 0, 0);
+        self.surface.commit();
+        queue.roundtrip(client).unwrap();
+    }
+
+    /// Shows it again. Unmapping reset its xdg state, so its app id is set again and it is configured
+    /// again before its buffer.
+    pub(crate) fn remap(&self, queue: &mut EventQueue<Client>, client: &mut Client) {
+        self.top.set_app_id(self.app_id.clone());
+        self.surface.commit();
+        queue.roundtrip(client).unwrap();
+        self.surface.attach(Some(&self.buffer), 0, 0);
+        self.surface.commit();
+        queue.roundtrip(client).unwrap();
+    }
+}
+
+/// A client of a launch's unit, `test.service`.
+fn launched() -> ClientState {
+    ClientState { process: Some(Process { unit: Some("test.service".into()), pids: vec![100], steam_app: None }), ..ClientState::default() }
 }
 
 #[test]
-fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
+fn an_xdg_window_is_placed_and_configured_before_its_first_buffer() {
     let (mut display, mut server) = ServerBuilder::new().started();
-    let process = Process { unit: Some("test.service".into()), pids: vec![100], steam_app: None };
-    let client = spawn_client(&mut display, ClientState { process: Some(process), ..ClientState::default() }, |globals, mut queue, steps| {
+    let client = spawn_client(&mut display, launched(), |globals, mut queue, steps| {
         let qh = queue.handle();
         let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
         let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
-        let shm: wl_shm::WlShm = globals.bind(&qh, 1..=1, ()).unwrap();
         let surface = compositor.create_surface(&qh, ());
         let xdg = shell.get_xdg_surface(&surface, &qh, ());
         let top = xdg.get_toplevel(&qh, ());
@@ -244,155 +294,224 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
         surface.commit();
         let mut client = Client::default();
         queue.roundtrip(&mut client).unwrap();
-        steps.step(Report::Configured(*client.sizes.last().unwrap()));
+        steps.step(*client.sizes.last().unwrap());
+    });
+    let checked = client.serve(&mut display, &mut server, Server::frame, |_, server, size| {
+        let windows = server.core.state().session().windows();
+        assert_eq!(size, (960, 540));
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0].title, "before configure");
+        assert_eq!(windows[0].unit.as_deref(), Some("test.service"));
+        assert!(matches!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Top(_)));
+        assert!(!server.windows[0].mapped, "initial configure precedes the first buffer");
+        assert_eq!(server.core.state().session().top_window().map(|w| w.id), Some(windows[0].id));
+    });
+    assert_eq!(checked, 1);
+}
 
-        let (width, height) = *client.sizes.last().unwrap();
-        let mut file = tempfile::tempfile().unwrap();
-        file.write_all(&vec![0xff; (width * height * 4) as usize]).unwrap();
-        let pool = shm.create_pool(file.as_fd(), width * height * 4, &qh, ());
-        let buffer = pool.create_buffer(0, width, height, width * 4, wl_shm::Format::Abgr8888, &qh, ());
-        surface.attach(Some(&buffer), 0, 0);
-        surface.damage_buffer(0, 0, width, height);
-        surface.commit();
-        queue.roundtrip(&mut client).unwrap();
+#[test]
+fn a_windows_presentation_is_worked_out_again_only_when_the_state_changes() {
+    use clamshell_state::session::presentation::{WindowLayout, WindowRole};
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let client = spawn_client(&mut display, launched(), |globals, mut queue, steps| {
+        let _window = open_toplevel(&globals, &mut queue, &mut Client::default(), "test", None);
+        steps.step(());
+    });
+    let checked = client.serve(&mut display, &mut server, Server::frame, |_, server, ()| {
+        assert!(server.windows[0].mapped);
+        server.sync_windows();
+        let revision = server.presentation_revision;
+        for _ in 0..10 {
+            server.sync_windows();
+        }
+        assert_eq!(server.presentation_revision, revision);
+        let mut facts = server.core.state().session().windows()[0].facts.clone();
+        facts.role = WindowRole::Utility;
+        server.core.handle(clamshell_state::WindowEvent::Changed(facts.clone()).into());
+        server.sync_windows();
+        assert_ne!(server.presentation_revision, revision);
+        assert_eq!(server.windows[0].shown.presentation.unwrap().layout, WindowLayout::Centred);
+        facts.role = WindowRole::Normal;
+        server.core.handle(clamshell_state::WindowEvent::Changed(facts).into());
+        server.sync_windows();
+        assert_eq!(server.windows[0].shown.presentation.unwrap().layout, WindowLayout::Fullscreen);
+    });
+    assert_eq!(checked, 1);
+}
+
+#[test]
+fn a_window_moved_down_that_ignores_its_configure_is_scaled_at_once() {
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let client = spawn_client(&mut display, launched(), |globals, mut queue, steps| {
+        let mut client = Client::default();
+        let _window = open_toplevel(&globals, &mut queue, &mut client, "test", None);
         client.ignore_configures = true;
-        steps.step(Report::Mapped);
+        steps.step(None);
         queue.roundtrip(&mut client).unwrap();
-        steps.step(Report::Below(*client.sizes.last().unwrap()));
+        steps.step(Some(*client.sizes.last().unwrap()));
+    });
+    let checked = client.serve(&mut display, &mut server, Server::frame, |display, server, configured| {
+        let Some(size) = configured else {
+            server.core.handle(Event::Device(DeviceKey::WindowDown));
+            server.frame();
+            display.flush_clients().unwrap();
+            return;
+        };
+        // The client keeps its original buffer and stops acknowledging configure. It
+        // cannot hold up placement; rendering and input use a fitted transform at once.
+        let id = server.core.state().session().windows()[0].id;
+        let geometry = server.geometry(id).unwrap();
+        assert!(geometry.scale.x < 1.0);
+        assert_eq!(geometry.native.size, (960, 540).into());
+        assert_eq!(server.core.state().session().place(id).unwrap(), WindowPlace::Bottom);
+        assert_eq!(size, (server.area(true).size.w, server.area(true).size.h));
+    });
+    assert_eq!(checked, 2);
+}
+
+#[test]
+fn a_burst_of_titles_reaches_the_state_once_per_frame() {
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let client = spawn_client(&mut display, launched(), |globals, mut queue, steps| {
+        let mut client = Client::default();
+        let window = open_toplevel(&globals, &mut queue, &mut client, "test", None);
+        steps.step(false);
         for number in 0..100 {
-            top.set_title(format!("intermediate title {number}"));
+            window.top.set_title(format!("intermediate title {number}"));
         }
-        top.set_title("after configure".into());
+        window.top.set_title("after configure".into());
         queue.roundtrip(&mut client).unwrap();
-        steps.step(Report::Renamed);
+        steps.step(true);
         for _ in 0..100 {
-            top.set_title("after configure".into());
+            window.top.set_title("after configure".into());
         }
         queue.roundtrip(&mut client).unwrap();
-        steps.step(Report::Renamed);
+        steps.step(true);
+    });
+    let checked = client.serve(&mut display, &mut server, Server::frame, |_, server, renamed| {
+        if !renamed {
+            server.core.handle(Event::Device(DeviceKey::WindowDown));
+            server.frame();
+            return;
+        }
+        let windows = server.core.state().session().windows();
+        let recording = server.trace.borrow().snapshot(server.core.state());
+        let titles =
+            recording.records.iter().filter(|record| matches!(&record.input, crate::trace::Input::Window(clamshell_state::WindowEvent::Title { .. }))).count();
+        assert_eq!(titles, 1, "a title burst enters state and diagnostics once per frame");
+        assert_eq!(windows[0].title, "after configure");
+        assert_eq!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Bottom, "a title doesn't move the window");
+    });
+    assert_eq!(checked, 3);
+}
 
-        client.ignore_configures = false;
-        surface.attach(None, 0, 0);
-        surface.commit();
-        queue.roundtrip(&mut client).unwrap();
-        steps.step(Report::Unmapped);
-        // Unmapping resets xdg properties; clients must set them again before remapping.
-        top.set_app_id("test".into());
-        top.set_title("after configure".into());
-        surface.commit();
-        queue.roundtrip(&mut client).unwrap();
-        surface.attach(Some(&buffer), 0, 0);
-        surface.commit();
-        queue.roundtrip(&mut client).unwrap();
-        steps.step(Report::Remapped);
+/// What the client of [`an_unmapped_window_leaves_the_state_and_comes_back_on_top`] did.
+#[derive(Debug)]
+enum Mapping {
+    Mapped,
+    Unmapped,
+    Remapped,
+}
 
+#[test]
+fn an_unmapped_window_leaves_the_state_and_comes_back_on_top() {
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let client = spawn_client(&mut display, launched(), |globals, mut queue, steps| {
+        let mut client = Client::default();
+        let window = open_toplevel(&globals, &mut queue, &mut client, "test", None);
+        steps.step(Mapping::Mapped);
+        window.unmap(&mut queue, &mut client);
+        steps.step(Mapping::Unmapped);
+        window.top.set_title("after remapping".into());
+        window.remap(&mut queue, &mut client);
+        steps.step(Mapping::Remapped);
+    });
+    let mut id = None;
+    let checked = client.serve(&mut display, &mut server, Server::frame, |_, server, step| {
+        let windows = server.core.state().session().windows();
+        match step {
+            Mapping::Mapped => {
+                id = Some(windows[0].id);
+                server.core.handle(Event::Device(DeviceKey::WindowDown));
+                server.frame();
+            }
+            Mapping::Unmapped => {
+                assert!(windows.is_empty());
+                assert!(!server.windows[0].mapped);
+            }
+            Mapping::Remapped => {
+                assert_eq!(windows.len(), 1);
+                assert_eq!(Some(windows[0].id), id);
+                assert_eq!(windows[0].id, server.windows[0].id);
+                assert!(server.windows[0].mapped);
+                assert_eq!(windows[0].title, "after remapping");
+                assert!(
+                    matches!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Top(_)),
+                    "this unowned client has no persistent bottom rule"
+                );
+            }
+        }
+    });
+    assert_eq!(checked, 3);
+}
+
+#[test]
+fn a_dialog_of_a_window_below_shows_on_the_top_screen_at_its_fixed_size() {
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let client = spawn_client(&mut display, launched(), |globals, mut queue, steps| {
+        let qh = queue.handle();
+        let mut client = Client::default();
+        let window = open_toplevel(&globals, &mut queue, &mut client, "test", None);
+        steps.step(None);
+        let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
+        let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
         let child_surface = compositor.create_surface(&qh, ());
         let child_xdg = shell.get_xdg_surface(&child_surface, &qh, ());
         let child = child_xdg.get_toplevel(&qh, ());
-        child.set_parent(Some(&top));
+        child.set_parent(Some(&window.top));
         child.set_app_id("dialog".into());
         child.set_min_size(320, 240);
         child.set_max_size(320, 240);
         child_surface.commit();
         queue.roundtrip(&mut client).unwrap();
-        steps.step(Report::Child(*client.sizes.last().unwrap()));
-        child.destroy();
-        child_xdg.destroy();
-        child_surface.destroy();
-        top.destroy();
-        xdg.destroy();
-        surface.destroy();
-        buffer.destroy();
-        pool.destroy();
-        queue.roundtrip(&mut client).unwrap();
-        steps.step(Report::Closed);
+        steps.step(Some(*client.sizes.last().unwrap()));
     });
-    let checked = client.serve(&mut display, &mut server, Server::frame, |display, server, report| {
+    let checked = client.serve(&mut display, &mut server, Server::frame, |_, server, configured| {
+        let Some(size) = configured else {
+            server.core.handle(Event::Device(DeviceKey::WindowDown));
+            server.frame();
+            return;
+        };
         let windows = server.core.state().session().windows();
-        match report {
-            Report::Configured(size) => {
-                assert_eq!(size, (960, 540));
-                assert_eq!(windows.len(), 1);
-                assert_eq!(windows[0].title, "before configure");
-                assert_eq!(windows[0].unit.as_deref(), Some("test.service"));
-                assert!(matches!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Top(_)));
-                assert!(!server.windows[0].mapped, "initial configure precedes the first buffer");
-                assert_eq!(server.core.state().session().top_window().map(|w| w.id), Some(windows[0].id));
-            }
-            Report::Mapped => {
-                use clamshell_state::session::presentation::{WindowLayout, WindowRole};
-                assert!(server.windows[0].mapped);
-                server.sync_windows();
-                let revision = server.presentation_revision;
-                for _ in 0..10 {
-                    server.sync_windows();
-                }
-                assert_eq!(server.presentation_revision, revision);
-                let mut facts = server.core.state().session().windows()[0].facts.clone();
-                facts.role = WindowRole::Utility;
-                server.core.handle(clamshell_state::WindowEvent::Changed(facts.clone()).into());
-                server.sync_windows();
-                assert_ne!(server.presentation_revision, revision);
-                assert_eq!(server.windows[0].shown.presentation.unwrap().layout, WindowLayout::Centred);
-                facts.role = WindowRole::Normal;
-                server.core.handle(clamshell_state::WindowEvent::Changed(facts).into());
-                server.sync_windows();
-                assert_eq!(server.windows[0].shown.presentation.unwrap().layout, WindowLayout::Fullscreen);
-                server.core.handle(Event::Device(DeviceKey::WindowDown));
-                server.frame();
-                display.flush_clients().unwrap();
-            }
-            Report::Below(size) => {
-                // The client keeps its original buffer and stops acknowledging configure. It
-                // cannot hold up placement; rendering and input use a fitted transform at once.
-                let geometry = server.geometry(windows[0].id).unwrap();
-                assert!(geometry.scale.x < 1.0);
-                assert_eq!(geometry.native.size, (960, 540).into());
-                assert_eq!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Bottom);
-                assert_eq!(size, (server.area(true).size.w, server.area(true).size.h));
-            }
-            Report::Renamed => {
-                let recording = server.trace.borrow().snapshot(server.core.state());
-                let titles = recording
-                    .records
-                    .iter()
-                    .filter(|record| matches!(&record.input, crate::trace::Input::Window(clamshell_state::WindowEvent::Title { .. })))
-                    .count();
-                assert_eq!(titles, 1, "a title burst enters state and diagnostics once per frame");
-                assert_eq!(windows[0].title, "after configure");
-                assert_eq!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Bottom);
-            }
-            Report::Unmapped => {
-                assert!(windows.is_empty());
-                assert!(!server.windows[0].mapped);
-            }
-            Report::Remapped => {
-                assert_eq!(windows.len(), 1);
-                assert_eq!(windows[0].id, server.windows[0].id);
-                assert!(server.windows[0].mapped);
-                assert_eq!(windows[0].title, "after configure");
-                assert!(
-                    matches!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Top(_)),
-                    "this unowned client has no persistent bottom rule"
-                );
-                server.core.handle(Event::Device(DeviceKey::WindowDown));
-                server.frame();
-            }
-            Report::Child(size) => {
-                assert_eq!(windows.len(), 2);
-                assert_eq!(windows[1].parent, Some(windows[0].id));
-                // A dialog of the window below shows on the top screen, where it can be answered.
-                assert!(matches!(server.core.state().session().place(windows[1].id).unwrap(), WindowPlace::Top(_)));
-                assert_eq!(size, (320, 240));
-                assert_eq!(windows[1].limits.fixed_size(), Some((320, 240)));
-            }
-            Report::Closed => {
-                assert!(windows.is_empty());
-                assert!(server.windows.is_empty());
-            }
-        }
+        assert_eq!(windows.len(), 2);
+        assert_eq!(windows[1].parent, Some(windows[0].id));
+        // A dialog of the window below shows on the top screen, where it can be answered.
+        assert!(matches!(server.core.state().session().place(windows[1].id).unwrap(), WindowPlace::Top(_)));
+        assert_eq!(size, (320, 240));
+        assert_eq!(windows[1].limits.fixed_size(), Some((320, 240)));
     });
-    assert_eq!(checked, 9);
+    assert_eq!(checked, 2);
+}
+
+#[test]
+fn a_destroyed_window_leaves_the_state_and_the_server() {
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let client = spawn_client(&mut display, launched(), |globals, mut queue, steps| {
+        let mut client = Client::default();
+        let window = open_toplevel(&globals, &mut queue, &mut client, "test", None);
+        steps.step(false);
+        window.top.destroy();
+        window.xdg.destroy();
+        window.surface.destroy();
+        window.buffer.destroy();
+        queue.roundtrip(&mut client).unwrap();
+        steps.step(true);
+    });
+    let checked = client.serve(&mut display, &mut server, Server::frame, |_, server, destroyed| {
+        assert_eq!(server.core.state().session().windows().is_empty(), destroyed);
+        assert_eq!(server.windows.is_empty(), destroyed);
+    });
+    assert_eq!(checked, 2);
 }
 
 #[derive(Debug, PartialEq)]
