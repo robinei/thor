@@ -68,7 +68,7 @@ impl State {
             self.shelf.moved(&mut self.pointer);
         }
         self.session.set_pausable_runners(self.shelf.library());
-        self.keymapping.adopt_runner_keymaps(self.shelf.library(), &mut self.prefs, out);
+        self.adopt_runner_keymaps(out);
         if self.dock.drop_gone(self.shelf.library(), &self.session) {
             out.effects.push(self.dock.save_effect());
         }
@@ -100,7 +100,7 @@ impl State {
         if self.dock.take_unsaved() {
             out.effects.push(self.dock.save_effect());
         }
-        self.keymapping.adopt_runner_keymaps(self.shelf.library(), &mut self.prefs, out);
+        self.adopt_runner_keymaps(out);
     }
 
     /// Home. On a screen that listens for input, it leaves that screen; Home is never taken as an input.
@@ -128,5 +128,24 @@ impl State {
     pub(crate) fn calibrate_gyro(&mut self, out: &mut Out) {
         self.bottom.notice_mut().show(NoticeKind::Gyro(None), self.clock.mono());
         out.effects.push(Effect::CalibrateGyro);
+    }
+
+    /// For runners that come with one of ClamShell's keymaps (see [`crate::Library::runner_keymaps`]) and
+    /// have no keymap chosen and none of their own: makes that keymap their own, chooses it, and saves.
+    fn adopt_runner_keymaps(&mut self, out: &mut Out) {
+        let mut adopted = false;
+        for (key, preset) in &self.shelf.library().runner_keymaps {
+            if self.prefs.settings().overrides_of(key).get(crate::settings::Setting::Keymap).is_some() {
+                continue;
+            }
+            if let Some(id) = self.keymapping.adopt_preset(key, preset) {
+                self.prefs.choose(Some(key), crate::settings::Setting::Keymap, id);
+                adopted = true;
+            }
+        }
+        if adopted {
+            out.effects.push(self.keymapping.save_effect());
+            out.effects.push(self.prefs.save_effect());
+        }
     }
 }

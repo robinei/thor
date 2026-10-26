@@ -246,26 +246,13 @@ impl Keymapping {
         }
     }
 
-    /// For runners that come with one of ClamShell's keymaps (see [`crate::Library::runner_keymaps`]) and
-    /// have no keymap chosen and none of their own: makes that keymap their own (see
-    /// [`Keymaps::make_own_from`]), chooses it, and saves.
-    pub(crate) fn adopt_runner_keymaps(&mut self, library: &crate::Library, prefs: &mut crate::Prefs, out: &mut Out) {
-        let wanting: Vec<(Arc<str>, Keymap)> = library
-            .runner_keymaps
-            .iter()
-            .filter(|(key, _)| prefs.settings().overrides_of(key).get(crate::settings::Setting::Keymap).is_none() && self.keymaps.own_of(key).is_none())
-            .filter_map(|(key, name)| Some((key.clone(), crate::keymap::preset(name)?)))
-            .collect();
-        if wanting.is_empty() {
-            return;
+    /// Makes ClamShell's keymap `preset` runner `key`'s own (see [`Keymaps::make_own_from`]), unless it
+    /// has one, and returns its id.
+    pub(crate) fn adopt_preset(&mut self, key: &Arc<str>, preset: &str) -> Option<u16> {
+        if self.keymaps.own_of(key).is_some() {
+            return None;
         }
-        for (key, preset) in &wanting {
-            if let Some(id) = self.keymaps.make_own_from(preset, key) {
-                prefs.choose(Some(key), crate::settings::Setting::Keymap, id);
-            }
-        }
-        out.effects.push(self.save_effect());
-        out.effects.push(prefs.save_effect());
+        self.keymaps.make_own_from(&crate::keymap::preset(preset)?, key)
     }
 
     /// The keymap tile opens the picker.
