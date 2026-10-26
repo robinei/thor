@@ -112,6 +112,8 @@ struct World {
     ending: Vec<String>,
     /// Windows asked to close.
     closing: Vec<i64>,
+    /// File operations sent and not yet done.
+    files: usize,
     sticks: bool,
     gyro: bool,
     refresh: bool,
@@ -140,6 +142,9 @@ impl World {
                 Effect::Account(_) => self.account = true,
                 Effect::Compositor(Compositor::Screenshot) => self.screenshot = true,
                 Effect::Sleep => self.asleep = true,
+                Effect::Files(_) => self.files += 1,
+                // A program adopted is moved into a scope of ours, which systemd lists.
+                Effect::Adopt { instance, .. } if !self.units.contains(instance) => self.units.push(instance.clone()),
                 _ => {}
             }
         }
@@ -443,7 +448,13 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 Some(id) if !rng.one_in(4) => id,
                 _ => rng.pick(&w.windows)?.id,
             };
+            let closed = w.windows.iter().find(|x| x.id == id).cloned();
             w.windows.retain(|x| x.id != id);
+            // Sometimes a program replaces its window with another at once.
+            if let Some(closed) = closed.filter(|_| rng.one_in(5)) {
+                let again = w.open(&closed.app_id, closed.unit, closed.parent);
+                w.next = Some(WindowEvent::Opened(again).into());
+            }
             WindowEvent::Closed(id).into()
         }
         // A window is tapped, or asks to be shown.
@@ -654,7 +665,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 id: "foot".into(),
                 title: "Foot".into(),
                 pid: if rng.one_in(3) { Some(4242) } else { pid },
-                unit: None,
+                unit: if rng.one_in(3) { rng.pick(&w.units).map(Instance::unit) } else { None },
                 icon: None,
                 menu: vec![entry(1), crate::session::tray::TrayEntry { children: vec![entry(3)], ..entry(2) }],
             };
@@ -664,8 +675,25 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
         97 if rng.one_in(4) => Event::Library(Box::new(library.clone())),
         97 => Event::DumpWindowEvents("window-events.json".into()),
         // A system thread started again after a panic.
-        98 if rng.one_in(2) => Event::Restarted(*rng.pick(&crate::Thread::ALL)?),
-        98 => Event::Enqueue,
+        98 => match rng.below(10) {
+            0..=3 => Event::Restarted(*rng.pick(&crate::Thread::ALL)?),
+            4 => Event::Enqueue,
+            // A game's process told its resolution as it connected.
+            5 => {
+                let unit = rng.pick(&w.units).map(Instance::unit);
+                Event::Reading(Reading::Told { unit, steam_app: None, resolution: crate::settings::Resolution::Half })
+            }
+            6 => Event::Reading(Reading::XwaylandModes(vec![(640, 480), (1280, 720)])),
+            // The files thread's progress and ends, for the operations sent.
+            7 if w.files > 0 => {
+                w.files -= 1;
+                Event::Files(crate::shelf::files::FilesEvent::Done(if rng.one_in(3) { Err("no room".into()) } else { Ok("done".into()) }))
+            }
+            7 => Event::Files(crate::shelf::files::FilesEvent::Busy { what: "Copying a".into(), fraction: 0.5 }),
+            // Quit (SIGTERM): the state saves; the run goes on, as if ClamShell were started again.
+            8 if rng.one_in(10) => Event::Quit,
+            _ => Event::Fetching(rng.one_in(2)),
+        },
         99 => {
             let window = rng.pick(&w.windows)?.clone();
             match rng.below(10) {
@@ -737,6 +765,11 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
         ensure!(!s.session().windows().iter().skip(i + 1).any(|other| other.id == window.id), "duplicate window id {}", window.id);
     }
     ensure!(s.session().selections_valid(), "a selected window is not in its top group, or a screen's window is not open or on both screens");
+    // Every window has a group once the event is settled, except one of a program still starting, whose
+    // window waits for its launch to say whose it is.
+    let unplaced =
+        s.session().windows().iter().find(|w| w.group.is_none() && !s.session().launching().iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str())));
+    ensure!(unplaced.is_none(), "window {:?} has no group after the settle", unplaced.map(|w| w.id));
     ensure!(s.session().keyboard_focus().is_none_or(|id| s.session().window(id).is_some()), "keyboard focus names a closed window");
     ensure!(s.device().display_modes().rates().iter().all(|hz| (1..=1000).contains(hz)), "invalid detected refresh rate");
     ensure!(s.device().display_modes().rates().windows(2).all(|pair| matches!(pair, [a,b] if a < b)), "refresh choices not sorted and unique");
@@ -998,6 +1031,11 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
     // A slice with no unit listed is gone; one started again starts thawed.
     let keys: Vec<String> = s.session().units().iter().map(Instance::slice).collect();
     sent.frozen.retain(|slice, _| keys.contains(slice));
+    // Each slice of ours is frozen, as last sent, exactly while its entry is paused.
+    for r in s.session().running_entries().iter().filter(|r| r.origin == crate::session::running::Origin::Ours) {
+        let frozen = sent.frozen.get(&Instance::slice_of(&r.key)).copied().unwrap_or(false);
+        ensure!(frozen == s.session().paused(&r.id), "11: {} frozen {frozen} as sent, paused {}", r.id, s.session().paused(&r.id));
+    }
     Ok(())
 }
 
@@ -1027,7 +1065,8 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
                     sent.ended.retain(|k| *k != r.key);
                 }
             }
-            Event::Device(DeviceKey::Quit) | Event::Pointer(PointerEvent::Activate(Id::Dock(DockId::Quit))) => sent.ended.clear(),
+            Event::Device(DeviceKey::Quit)
+            | Event::Pointer(PointerEvent::Activate(Id::Dock(DockId::Quit)) | PointerEvent::LongPress(Id::Dock(DockId::Quit))) => sent.ended.clear(),
             _ => {}
         }
         let before = (

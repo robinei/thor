@@ -629,7 +629,9 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    below; remembered selections belong to their top groups; keyboard focus is absent or names
    a live window; at most one launch waiting per entry; no launching instance listed in
    units; Ours ⇒ a unit of it is listed; Found ⇒ not; program in force is running and is the selected top
-   window's owner when it has one; quitting ⇒ running and not paused; paused ⇒ Ours; suspended ⇒ paused.
+   window's owner when it has one; quitting ⇒ running and not paused; paused ⇒ Ours; suspended ⇒ paused;
+   at most one selection per group; every window has a group once the event is settled, except one of
+   a program still starting (its app id launching).
 5. **Dock:** ids unique; every running entry is on it; every item is pinned, running or being moved.
 6. **Shelf:** the cursor within the list; `selected` is the entry at the cursor; the collection index in
    range; every entry listed matches the filter.
@@ -640,7 +642,8 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
 10. **Settings:** no empty override; no global-only setting in overrides.
 11. **Effect stream across events:** Freeze alternates per slice, starting frozen, while a unit of it is
     listed (a slice whose units are all gone is gone, and starts thawed again), except after the freezer
-    is started again (`Event::Restarted`), when every slice is sent as it should be; no second EndRun (not
+    is started again (`Event::Restarted`), when every slice is sent as it should be; each slice of ours is
+    frozen as last sent exactly while its entry is paused; no second EndRun (not
     forced) for a key until it is quit again or launched; at most one RecordPlay per entry per event, and
     only for an entry that ran before it; no Launch for an entry already launching (one given up in the
     same event may be launched again, as a Steam game whose window is there is).

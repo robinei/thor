@@ -289,6 +289,8 @@ impl Session {
     #[cfg(test)]
     pub(crate) fn selections_valid(&self) -> bool {
         let selected = self.selected.iter().all(|(group, id)| self.window(*id).is_some_and(|w| !self.below(w.id) && w.group.as_ref() == Some(group)));
+        // At most one selection per group.
+        let selected = selected && self.selected.iter().enumerate().all(|(i, (group, _))| !self.selected.iter().take(i).any(|(other, _)| other == group));
         let open = |slot: Option<i64>| slot.is_none_or(|id| self.window(id).is_some());
         selected && open(self.top) && open(self.bottom) && (self.top.is_none() || self.top != self.bottom)
     }
