@@ -40,6 +40,8 @@ pub struct Handles {
     /// The controller the pad thread grabbed. Launched SDL programs are told to ignore it.
     pub(crate) pad_taken: pad::Taken,
     pub(crate) launcher: Worker<launcher::Command>,
+    /// Freezes hidden games' slices and thaws them.
+    pub(crate) freezer: Worker<crate::launch::freezer::Request>,
     pub(crate) sound: Worker<clamshell_state::Sound>,
     pub(crate) brightness: Worker<brightness::Command>,
     pub(crate) tuning: Tuning,
@@ -130,7 +132,7 @@ impl Handles {
             Effect::Adopt { instance, pid } => launcher::adopt(instance.clone(), *pid),
             Effect::FindIcon { entry, app_id } => self.icons.send((entry.clone(), app_id.clone())),
             Effect::EndProcesses { pids, force } => launcher::end_processes(pids, *force),
-            Effect::Freeze { slice, frozen } => crate::launch::freezer::freeze(slice.clone(), *frozen),
+            Effect::Freeze { slice, frozen } => self.freezer.send((slice.clone(), *frozen)),
             Effect::Tray(command) => self.tray.send(command.clone()),
             Effect::AskAwake(argv) => self.system.send(crate::errands::Command::AskAwake(argv.clone())),
             Effect::Sleep => self.system.send(crate::errands::Command::Sleep),

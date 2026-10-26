@@ -18,7 +18,7 @@ use crate::Sink;
 use crate::audio::{mixer, sound};
 use crate::display::brightness::{self, Backlights};
 use crate::input::{pad, touchpad};
-use crate::launch::{launcher, units};
+use crate::launch::{freezer, launcher, units};
 use crate::library::meta::cache::Cache;
 use crate::library::{self, Sources, meta};
 use crate::network::{bluetooth, wifi};
@@ -182,6 +182,7 @@ pub fn start<S: Sink + Clone>(
         pad,
         pad_taken,
         launcher,
+        freezer: started("freezer", freezer::spawn()),
         sound: started("sound", sound::spawn()),
         system,
         brightness: started("brightness", brightness::spawn(backlights)),

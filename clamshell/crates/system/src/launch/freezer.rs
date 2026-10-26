@@ -6,23 +6,18 @@ use std::time::{Duration, Instant};
 use super::units::{SYSTEMD, call, get_unit, with_manager_on};
 use crate::os::cgroup;
 use crate::os::dbus::{Bus, Kept};
-use crate::os::worker;
+use crate::os::worker::Worker;
 
-/// Freezes or thaws a unit. For a slice that means every unit in it. The cgroup freezer stops the
-/// processes where they are, without their knowing. The freezer thread does this one unit after another,
-/// acting only on each unit's latest request, thaws first. A freeze waits while the slice works without
-/// drawing ([`working_without_drawing`]), for example while it loads or compiles shaders and the user has
-/// switched away to wait. A later request for the unit, such as a thaw when it is shown again, ends the
-/// wait.
-pub(crate) fn freeze(unit: String, frozen: bool) {
-    static FREEZER: std::sync::OnceLock<Option<std::sync::mpsc::Sender<(String, bool)>>> = std::sync::OnceLock::new();
-    let sender = FREEZER.get_or_init(|| {
-        let (send, receive) = std::sync::mpsc::channel();
-        worker::lasting(clamshell_state::Thread::Freezer.name(), move || freezer(&receive)).map_err(|e| log::warn!("freezer: {e}")).ok().map(|()| send)
-    });
-    if sender.as_ref().is_none_or(|s| s.send((unit, frozen)).is_err()) {
-        log::warn!("freezer: gone");
-    }
+/// A request to the freezer: freeze (true) or thaw a unit. For a slice that means every unit in it.
+pub(crate) type Request = (String, bool);
+
+/// Starts the freezer thread. The cgroup freezer stops the processes where they are, without their
+/// knowing. The thread does this one unit after another, acting only on each unit's latest request, thaws
+/// first. A freeze waits while the slice works without drawing ([`working_without_drawing`]), for example
+/// while it loads or compiles shaders and the user has switched away to wait. A later request for the
+/// unit, such as a thaw when it is shown again, ends the wait.
+pub(crate) fn spawn() -> std::io::Result<Worker<Request>> {
+    Worker::spawn(clamshell_state::Thread::Freezer.name(), |requests| follow_requests(requests, &mut Systemd { bus: Kept::session() }))
 }
 
 /// What the freezer does to units. It is implemented for systemd's units and for a test's.
@@ -60,11 +55,6 @@ impl Freezer for Systemd {
             with_manager_on(&mut self.bus, |bus| Ok(control_group(bus, unit))).inspect_err(|e| log::debug!("freezer: {unit}'s cgroup: {e}")).ok().flatten();
         working_without_drawing(group)
     }
-}
-
-/// The freezer thread, acting on systemd's units. See [`follow_requests`].
-fn freezer(requests: &std::sync::mpsc::Receiver<(String, bool)>) {
-    follow_requests(requests, &mut Systemd { bus: Kept::session() });
 }
 
 /// Carries out the waiting requests on `units`, each unit's latest, until none is left. Thaws happen at
@@ -255,7 +245,8 @@ mod live {
             .spawn()
             .unwrap();
         thread::sleep(Duration::from_secs(1));
-        freeze(slice.clone(), true);
+        let freezer = spawn().unwrap();
+        freezer.send((slice.clone(), true));
         thread::sleep(Duration::from_secs(6));
         assert_eq!(state(), "running", "busy without drawing: not yet");
         // Once idle, with the loop gone and a sleep left, it is frozen.
@@ -267,7 +258,7 @@ mod live {
             .unwrap();
         thread::sleep(Duration::from_secs(5));
         assert_eq!(state(), "frozen");
-        freeze(slice.clone(), false);
+        freezer.send((slice.clone(), false));
         thread::sleep(Duration::from_secs(1));
         assert_eq!(state(), "running");
         let _ = Command::new("systemctl").args(["--user", "stop", &slice]).status();
