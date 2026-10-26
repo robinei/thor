@@ -1039,10 +1039,22 @@ mod tests {
         assert_eq!(checked, 1);
     }
 
-    #[test]
-    fn placement_is_committed_and_configured_before_mapping_and_focus() {
+    /// A window manager with one X11 window (see [`placed`]): the window's id, Xwayland's end of the
+    /// connection, and the requests sent so far.
+    struct Placed {
+        _display: smithay::reexports::wayland_server::Display<Server>,
+        server: Server,
+        wm: Wm,
+        wire: Transport,
+        peer: UnixStream,
+        id: i64,
+        sent: Vec<u8>,
+    }
+
+    /// One X11 window (10, of the class `fixture`), discovered and settled: placed by the state and mapped.
+    fn placed() -> Placed {
         use std::io::Read;
-        let (_display, mut server) = crate::tests::ServerBuilder::new().build();
+        let (display, mut server) = crate::tests::ServerBuilder::new().build();
         let (socket, mut peer) = UnixStream::pair().unwrap();
         let now = Instant::now();
         let mut wire = Transport::new(socket, now).unwrap();
@@ -1055,12 +1067,31 @@ mod tests {
         wm.windows[0].properties.class = "fixture".into();
         let id = wm.windows[0].id;
         wm.settle(&mut wire, &mut server).unwrap();
-        assert!(server.core.state().session().window(id).is_some());
-        assert_eq!(server.core.state().session().top_window().map(|w| w.id), Some(id));
         wire.turn(now).unwrap();
         let mut bytes = [0; 4096];
         let length = peer.read(&mut bytes).unwrap();
-        let mut packets = &bytes[..length];
+        Placed { _display: display, server, wm, wire, peer, id, sent: bytes[..length].to_vec() }
+    }
+
+    /// The server's time, `time`, as the PropertyNotify of the window manager's own window brings it.
+    fn notify(wm: &mut Wm, server: &mut Server, wire: &mut Transport, time: u32) {
+        let event = PropertyNotifyEvent {
+            response_type: PROPERTY_NOTIFY_EVENT,
+            sequence: 0,
+            window: 2,
+            atom: wm.atoms.get("_THOR_TIMESTAMP"),
+            time,
+            state: Property::NEW_VALUE,
+        };
+        wm.event(&<[u8; 32]>::from(&event), wire, server).unwrap();
+    }
+
+    #[test]
+    fn placement_is_configured_before_mapping_and_focus_waits_for_the_servers_time() {
+        let Placed { server, id, sent, .. } = placed();
+        assert!(server.core.state().session().window(id).is_some());
+        assert_eq!(server.core.state().session().top_window().map(|w| w.id), Some(id));
+        let mut packets = sent.as_slice();
         let mut requests = Vec::new();
         while !packets.is_empty() {
             requests.push(packets[0]);
@@ -1080,21 +1111,18 @@ mod tests {
             ]
         );
         // Focus waits for the server's time: the last request is the empty append on our own window.
-        let stamp = &bytes[length - 24..length];
+        let stamp = &sent[sent.len() - 24..];
         assert_eq!((stamp[0], stamp[1]), (CHANGE_PROPERTY_REQUEST, u8::from(PropMode::APPEND)));
         assert_eq!(u32::from_ne_bytes(stamp[4..8].try_into().unwrap()), 2);
         assert_eq!(u32::from_ne_bytes(stamp[20..24].try_into().unwrap()), 0);
-        let notify = |wm: &mut Wm, server: &mut Server, wire: &mut Transport, time: u32| {
-            let event = PropertyNotifyEvent {
-                response_type: PROPERTY_NOTIFY_EVENT,
-                sequence: 0,
-                window: 2,
-                atom: wm.atoms.get("_THOR_TIMESTAMP"),
-                time,
-                state: Property::NEW_VALUE,
-            };
-            wm.event(&<[u8; 32]>::from(&event), wire, server).unwrap();
-        };
+    }
+
+    #[test]
+    fn focus_is_set_at_a_fresh_server_time_and_offered_as_the_window_asks() {
+        use std::io::Read;
+        let Placed { mut server, mut wm, mut wire, mut peer, .. } = placed();
+        let now = Instant::now();
+        let mut bytes = [0; 4096];
         for (n, (input, take)) in [(true, false), (true, true), (false, true), (false, false), (true, false)].into_iter().enumerate() {
             wm.focus = None;
             wm.windows[0].properties.input = Some(input);
@@ -1127,10 +1155,28 @@ mod tests {
                 assert_eq!(rest[0], CHANGE_PROPERTY_REQUEST);
             }
         }
+    }
+
+    #[test]
+    fn an_unchanged_window_sends_no_x11_requests() {
+        use std::io::Read;
+        let Placed { mut server, mut wm, mut wire, mut peer, .. } = placed();
+        // Focused at the server's time.
+        notify(&mut wm, &mut server, &mut wire, 1234);
+        wm.settle_focus(&mut wire, &server).unwrap();
+        wire.turn(Instant::now()).unwrap();
+        let mut bytes = [0; 4096];
+        assert!(peer.read(&mut bytes).unwrap() > 0);
+        assert_eq!(bytes[0], SET_INPUT_FOCUS_REQUEST);
         wm.settle(&mut wire, &mut server).unwrap();
-        wire.turn(now).unwrap();
+        wire.turn(Instant::now()).unwrap();
         peer.set_nonblocking(true).unwrap();
         assert_eq!(peer.read(&mut bytes).unwrap_err().kind(), io::ErrorKind::WouldBlock, "unchanged state sends no X11 commands");
+    }
+
+    #[test]
+    fn x11_title_changes_reach_the_state_once_per_frame() {
+        let Placed { mut server, mut wm, mut wire, id, .. } = placed();
         wm.windows[0].properties.name = "first title".into();
         wm.windows[0].dirty = true;
         wm.settle(&mut wire, &mut server).unwrap();
@@ -1142,6 +1188,11 @@ mod tests {
         server.frame();
         assert_eq!(server.core.state().session().window(id).unwrap().title, "last title");
         assert!(server.x11.changes.is_empty());
+    }
+
+    #[test]
+    fn x11_facts_deferred_to_the_frame_keep_an_adopted_unit_and_settle_with_their_title() {
+        let Placed { mut server, mut wm, mut wire, id, .. } = placed();
         wm.windows[0].properties.name = "dialog title".into();
         wm.windows[0].properties.role = clamshell_state::session::presentation::WindowRole::Dialog;
         wm.windows[0].dirty = true;
