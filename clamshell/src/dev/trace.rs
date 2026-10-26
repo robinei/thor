@@ -39,8 +39,6 @@ fn window_change(change: &WindowEvent) -> String {
         WindowEvent::Closed(id) => format!("close {id}"),
         WindowEvent::Title { window, .. } => format!("title {window}"),
         WindowEvent::Changed(w) => format!("changed {} on {}", w.app_id, w.workspace),
-        WindowEvent::Presentation { window, focused, visible } => format!("presentation {window} focus={focused:?} visible={visible:?}"),
-        WindowEvent::Order(ids) => format!("order {ids:?}"),
         WindowEvent::Activate(id) => format!("activate {id}"),
         WindowEvent::KeyboardFocus(id) => format!("keyboard focus {id:?}"),
     }

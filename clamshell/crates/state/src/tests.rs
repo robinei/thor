@@ -209,20 +209,20 @@ fn a_launchs_first_window_is_shown_before_a_window_that_came_back() {
 }
 
 /// The steps in the background run before the quitting entries are followed: here a paused game shown
-/// again is thawed, then a quitting one whose windows are gone is ended.
+/// again by a new window is thawed, then a quitting one whose windows are gone is ended.
 #[test]
 fn the_background_is_followed_before_the_quitting() {
     let mut s = state();
     s.applied(Event::tick(100));
     let zelda = launch(&mut s, "zelda-lttp");
     let ff6 = launch(&mut s, "ff6");
-    let zelda_window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), false) };
-    let ff6_window = Window { unit: ff6.unit(), visible: true, ..win(4, "ff6", &ff6.workspace(), true) };
-    s.observed(vec![zelda_window(false), ff6_window]);
+    let zelda_window = |id, focused| Window { unit: zelda.unit(), ..win(id, "zelda3", &zelda.workspace(), focused) };
+    let ff6_window = Window { unit: ff6.unit(), ..win(4, "ff6", &ff6.workspace(), true) };
+    s.observed(vec![zelda_window(3, false), ff6_window]);
     s.applied(Event::tick(100 + crate::session::background::GRACE));
     assert!(s.session().paused("zelda-lttp"));
     s.applied(Event::Entry("ff6".into(), EntryAct::Quit));
-    let fx = s.observed(vec![Window { focused: true, ..zelda_window(true) }]);
+    let fx = s.observed(vec![zelda_window(3, false), zelda_window(5, true)]);
     let kinds: Vec<&str> = fx
         .iter()
         .filter_map(|e| match e {

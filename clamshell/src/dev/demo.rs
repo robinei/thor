@@ -7,7 +7,7 @@ use clamshell_state::radios::wifi::{Network, Wifi};
 use clamshell_state::session::windows::Window;
 use clamshell_state::status::battery::{Battery, Charge, Group, Spender};
 use clamshell_state::status::metrics::Metrics;
-use clamshell_state::{Event, Id, Instance, PointerEvent, Reading, Status, Tab};
+use clamshell_state::{Event, Id, Instance, PointerEvent, Reading, Status, Tab, WindowEvent};
 
 /// A status that shows every bar icon.
 pub const STATUS: Status =
@@ -27,36 +27,35 @@ fn window_of(id: i64, app_id: &str, launch: &Instance, focused: bool, down: bool
     Window { id, app_id: app_id.into(), focused, unit: launch.unit(), workspace, down, ..Window::default() }
 }
 
+/// These windows opening, reported by the compositor in one batch.
+pub fn opened(windows: Vec<Window>) -> Event {
+    Event::WindowBatch(windows.into_iter().map(WindowEvent::Opened).collect())
+}
+
 /// A game, two terminals and a browser running, with their windows. The second terminal is in front.
 pub fn running() -> Vec<Event> {
     let (game, t1, t2, web) = (run("zelda-lttp", 0), run("desktop:foot", 1), run("desktop:foot", 2), run("desktop:firefox", 3));
     // Their scopes as systemd lists them, which marks them as running.
     vec![
         Event::Units(vec![game.clone(), t1.clone(), t2.clone(), web.clone()]),
-        clamshell_state::session::windows::changes(
-            &[],
-            &[
-                window_of(5, "retroarch", &game, false, false),
-                window_of(7, "foot", &t1, false, false),
-                window_of(8, "foot", &t2, true, false),
-                window_of(9, "firefox", &web, false, false),
-            ],
-        ),
+        opened(vec![
+            window_of(5, "retroarch", &game, false, false),
+            window_of(7, "foot", &t1, false, false),
+            window_of(8, "foot", &t2, true, false),
+            window_of(9, "firefox", &web, false, false),
+        ]),
     ]
 }
 
 /// The terminal in front from [`running`], with a second window of it moved to the bottom screen.
 pub fn window_below() -> Vec<Event> {
     let t2 = run("desktop:foot", 2);
-    vec![clamshell_state::session::windows::changes(
-        &[
-            window_of(5, "retroarch", &run("zelda-lttp", 0), false, false),
-            window_of(7, "foot", &run("desktop:foot", 1), false, false),
-            window_of(8, "foot", &t2, true, false),
-            window_of(9, "firefox", &run("desktop:firefox", 3), false, false),
-        ],
-        &[window_of(8, "foot", &t2, true, false), window_of(10, "foot", &t2, false, true)],
-    )]
+    vec![Event::WindowBatch(vec![
+        WindowEvent::Closed(5),
+        WindowEvent::Closed(7),
+        WindowEvent::Closed(9),
+        WindowEvent::Opened(window_of(10, "foot", &t2, false, true)),
+    ])]
 }
 
 /// The screens as the compositor describes them with the VM's HDR profile: the Thor's top panel with
@@ -84,11 +83,7 @@ pub fn sdr_game_measured(entry: &str) -> Vec<Event> {
         *last += 140;
     }
     let histogram = Histogram { window: 30, hdr: false, bins };
-    vec![
-        Event::Units(vec![launch]),
-        clamshell_state::session::windows::changes(&[], &[window]),
-        Event::Reading(clamshell_state::Reading::Histogram(Box::new(histogram))),
-    ]
+    vec![Event::Units(vec![launch]), opened(vec![window]), Event::Reading(clamshell_state::Reading::Histogram(Box::new(histogram)))]
 }
 
 pub fn hdr_game(entry: &str, declared: bool) -> Vec<Event> {
@@ -105,7 +100,7 @@ pub fn hdr_game(entry: &str, declared: bool) -> Vec<Event> {
         ColourDescription { primaries: ColourPrimaries::Srgb, transfer: TransferFunction::Linear, luminance: None, target: None }
     };
     let window = Window { colour: Some(std::sync::Arc::new(colour)), ..window_of(30, "game", &launch, true, false) };
-    vec![Event::Units(vec![launch]), clamshell_state::session::windows::changes(&[], &[window])]
+    vec![Event::Units(vec![launch]), opened(vec![window])]
 }
 
 /// Four networks in range, one connected.

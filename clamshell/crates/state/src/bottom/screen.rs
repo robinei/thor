@@ -698,7 +698,6 @@ mod tests {
         let fx = key(&mut s, DeviceKey::WindowDown);
         assert_eq!(s.bottom().tab(), Tab::Windows, "{fx:?}");
         assert!(!s.bottom().off(), "not moved to a dark panel");
-        s.observed(vec![win(1, GAME, "Top", false, false), win(2, GAME, "Bottom", true, true)]);
         assert!(s.bottom().shows_windows(s.session()));
         // Back to the settings, where it was moved from.
         key(&mut s, DeviceKey::BottomView);

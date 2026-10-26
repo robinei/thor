@@ -9,13 +9,30 @@ use crate::*;
 pub trait Applied {
     /// Applies `event`, and returns the effects.
     fn applied(&mut self, event: Event) -> Vec<Effect>;
-    /// Reports a backend observation through the same event diff as the sway adapter.
+    /// Reports the windows as the compositor does, in one batch: the known windows not in `windows`
+    /// close, the others open as given, and a known window's changed facts and title are reported. Where
+    /// a known window is placed and whether it is shown are the state's, so those are not reported.
     fn observed(&mut self, windows: Vec<Window>) -> Vec<Effect>;
 }
 
 impl Applied for State {
     fn observed(&mut self, windows: Vec<Window>) -> Vec<Effect> {
-        self.applied(crate::session::windows::changes(self.session().windows(), &windows))
+        let known = self.session().windows();
+        let mut events: Vec<WindowEvent> = known.iter().filter(|w| !windows.iter().any(|n| n.id == w.id)).map(|w| WindowEvent::Closed(w.id)).collect();
+        for window in windows {
+            let Some(old) = known.iter().find(|w| w.id == window.id) else {
+                events.push(WindowEvent::Opened(window));
+                continue;
+            };
+            let title = (old.title != window.title).then(|| WindowEvent::Title { window: window.id, title: window.title.clone() });
+            let facts =
+                Window { title: old.title.clone(), workspace: old.workspace.clone(), down: old.down, focused: old.focused, visible: old.visible, ..window };
+            if facts != *old {
+                events.push(WindowEvent::Changed(facts));
+            }
+            events.extend(title);
+        }
+        self.applied(Event::WindowBatch(events))
     }
     fn applied(&mut self, event: Event) -> Vec<Effect> {
         let mut effects = Vec::new();

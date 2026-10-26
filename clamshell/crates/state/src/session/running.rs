@@ -828,11 +828,10 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         let key = key("zelda-lttp");
         s.settings_mut().set(Some(&"zelda-lttp".into()), crate::settings::Setting::Background, Some(crate::settings::InBackground::Pauses.value()));
-        let window = |visible| Window { unit: zelda.unit(), visible, ..win(1, "zelda3", &zelda.workspace(), visible) };
         s.applied(Event::tick(100));
-        s.observed(vec![window(true)]);
+        s.observed(vec![Window { unit: zelda.unit(), ..win(1, "zelda3", &zelda.workspace(), true) }]);
         quit(&mut s, "zelda-lttp");
-        s.observed(vec![window(false)]);
+        s.applied(Event::Home);
         s.applied(Event::tick(100 + super::QUIT_WAIT - 1));
         assert!(s.session().is_quitting("zelda-lttp"), "still waiting");
         s.applied(Event::tick(100 + super::QUIT_WAIT));

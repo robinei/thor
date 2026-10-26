@@ -496,7 +496,7 @@ Slide(End)
   Save Curves(..)
 Units [ff6_09d141]
   Apply settings of ff6
-Windows [open game on clamshell-run-ff6_09d141, order [30]]
+Windows [open game on clamshell-run-ff6_09d141]
   PadRoute Game
 -- curve-edit-hdr.png
 Slide(To { x: 1116.0 })
@@ -516,7 +516,7 @@ Tick 1760000005
   Save Resume
 Units [ff6_09d141]
   Apply settings of ff6
-Windows [open game on clamshell-run-ff6_09d141, order [30]]
+Windows [open game on clamshell-run-ff6_09d141]
   PadRoute Game
 -- curve-edit-histogram.png
 == group curve-edit-scrgb.png
@@ -533,7 +533,7 @@ Tick 1760000005
   Save Resume
 Units [ff6_09d141]
   Apply settings of ff6
-Windows [open game on clamshell-run-ff6_09d141, order [30]]
+Windows [open game on clamshell-run-ff6_09d141]
   PadRoute Game
 -- curve-edit-scrgb.png
 == group keymaps-chosen.png
@@ -629,7 +629,7 @@ Pointer(Activate(Tab(Dock)))
 -- launcher.png
 Units [zelda_lttp_650a1e, foot_666b83, foot_666b83, firefox_16b084]
   Apply settings of desktop:firefox
-Windows [open retroarch on clamshell-run-zelda_lttp_650a1e, open foot on clamshell-run-foot_666b83, open foot on clamshell-run-foot_666b83, open firefox on clamshell-run-firefox_16b084, order [5, 7, 8, 9]]
+Windows [open retroarch on clamshell-run-zelda_lttp_650a1e, open foot on clamshell-run-foot_666b83, open foot on clamshell-run-foot_666b83, open firefox on clamshell-run-firefox_16b084]
   Apply settings of desktop:foot
   PadRoute Game
 -- launcher-running.png

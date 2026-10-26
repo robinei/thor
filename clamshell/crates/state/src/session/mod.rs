@@ -178,9 +178,9 @@ impl Session {
         self.top_window().is_some_and(|front| self.windows.iter().any(|w| !w.down && w.id != front.id && w.workspace == front.workspace))
     }
 
-    /// Initial selection for a compositor that has no external focus observation. While a launch waits for
-    /// its window, only its own windows come in front. A dialog comes in front if its parent's program is
-    /// in front. First windows of our scopes follow foreground launch intent; later windows of the shown
+    /// Whether a window opening comes in front, which the compositor asks as it opens. While a launch
+    /// waits for its window, only its own windows come in front. A dialog comes in front if its parent's
+    /// program is in front. First windows of our scopes follow foreground launch intent; later windows of the shown
     /// program may select themselves. An unowned program's window is shown at once.
     pub fn opening_focus(&self, window: &Window) -> bool {
         if let Some(instance) = &self.front_launch {

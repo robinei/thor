@@ -165,10 +165,10 @@ mod tests {
         let (album, single) = (key(&s, "album"), key(&s, "single"));
         let window = |id: i64, key: &str, focused: bool| crate::testkit::win(id, "mpv", &crate::Instance::workspace_of(key), focused);
         s.observed(vec![window(1, &album, true), window(2, &single, false)]);
-        s.observed(vec![window(1, &album, false), window(2, &single, true)]);
+        s.applied(crate::WindowEvent::Activate(2).into());
         let fx = tap(&mut s, Id::Shelf(ShelfId::Enqueue));
         assert!(matches!(fx.as_slice(), [Effect::Enqueue { key, .. }] if *key == single), "{fx:?}");
-        s.observed(vec![window(1, &album, true), window(2, &single, false)]);
+        s.applied(crate::WindowEvent::Activate(1).into());
         let fx = tap(&mut s, Id::Shelf(ShelfId::Enqueue));
         assert!(matches!(fx.as_slice(), [Effect::Enqueue { key, .. }] if *key == album), "{fx:?}");
     }

@@ -175,17 +175,6 @@ pub enum WindowEvent {
     },
     /// Backend facts which can change after opening, such as a process being adopted into a scope.
     Changed(Window),
-    /// Focus and visibility observed by the sway host. Missing fields are unchanged, so an identity
-    /// update cannot restore an observation made before a placement decision. Only for a backend that
-    /// decides presentation itself (sway); the built-in compositor shows what the state decided and never
-    /// sends this, so the state stays the one writer of what is in front.
-    Presentation {
-        window: i64,
-        focused: Option<bool>,
-        visible: Option<bool>,
-    },
-    /// The backend's traversal order, when moving a window changes the order of the tabs.
-    Order(Vec<i64>),
     /// A client's request to show its window, after the backend has checked its activation token.
     Activate(i64),
     /// Keyboard focus changed without changing which content either screen shows. Unknown ids are ignored.
@@ -259,34 +248,6 @@ impl crate::Session {
                     w.colour = window.colour;
                 }
             }
-            WindowEvent::Presentation { window, focused, visible } => {
-                if self.window(window).is_some() {
-                    if focused == Some(true) {
-                        self.keyboard_focus = Some(window);
-                    } else if focused == Some(false) && self.keyboard_focus == Some(window) {
-                        self.keyboard_focus = None;
-                    }
-                }
-                if focused == Some(true) {
-                    self.select_top(window);
-                }
-                if visible == Some(true) && self.window(window).is_some_and(|w| w.down) {
-                    for w in self.windows.iter_mut().filter(|w| w.down) {
-                        w.visible = w.id == window;
-                    }
-                }
-                if let Some(w) = self.windows.iter_mut().find(|w| w.id == window) {
-                    if let Some(focused) = focused {
-                        w.focused = focused && !w.down;
-                    }
-                    if let Some(visible) = visible {
-                        w.visible = visible;
-                    }
-                }
-            }
-            WindowEvent::Order(ids) => {
-                self.windows.sort_unstable_by_key(|w| ids.iter().position(|id| *id == w.id));
-            }
             WindowEvent::KeyboardFocus(id) => {
                 if id.is_none_or(|id| self.window(id).is_some()) {
                     self.keyboard_focus = id;
@@ -300,48 +261,6 @@ impl crate::Session {
             }
         }
     }
-}
-
-/// The window events between two snapshots of a backend's window list, as one batch. For a backend that
-/// only observes snapshots (sway) and for tests; the state's model takes events and never snapshots. The
-/// backend keeps the snapshots, and the batch is built outside `apply`.
-pub fn changes(previous: &[Window], windows: &[Window]) -> crate::Event {
-    let mut events = Vec::new();
-    for old in previous {
-        if !windows.iter().any(|w| w.id == old.id) {
-            events.push(WindowEvent::Closed(old.id));
-        }
-    }
-    for window in windows {
-        let Some(old) = previous.iter().find(|w| w.id == window.id) else {
-            events.push(WindowEvent::Opened(window.clone()));
-            continue;
-        };
-        if old == window {
-            continue;
-        }
-        let mut facts = window.clone();
-        facts.title.clone_from(&old.title);
-        facts.workspace.clone_from(&old.workspace);
-        facts.down = old.down;
-        facts.focused = old.focused;
-        facts.visible = old.visible;
-        if old != &facts {
-            events.push(WindowEvent::Changed(facts));
-        }
-        if old.title != window.title {
-            events.push(WindowEvent::Title { window: window.id, title: window.title.clone() });
-        }
-        let focused = (old.focused != window.focused).then_some(window.focused);
-        let visible = (old.visible != window.visible).then_some(window.visible);
-        if focused.is_some() || visible.is_some() {
-            events.push(WindowEvent::Presentation { window: window.id, focused, visible });
-        }
-    }
-    if !previous.iter().map(|w| w.id).eq(windows.iter().map(|w| w.id)) {
-        events.push(WindowEvent::Order(windows.iter().map(|w| w.id).collect()));
-    }
-    crate::Event::WindowBatch(events)
 }
 
 /// An open toplevel. The session owns its home group, screen and selection.
@@ -359,7 +278,8 @@ pub struct Window {
     pub x11: bool,
     pub colour: Option<Arc<super::presentation::ColourDescription>>,
     /// Whether this is the selected top content. Keyboard focus is independent: see
-    /// [`Session::keyboard_focus`]. On opening, the backend may supply an initial focus observation.
+    /// [`Session::keyboard_focus`]. On opening, the compositor says whether it comes in front
+    /// ([`Session::opening_focus`]).
     pub focused: bool,
     /// The systemd unit its process runs in.
     pub unit: Option<String>,
@@ -452,14 +372,14 @@ mod tests {
     }
 
     #[test]
-    fn backend_changes_preserve_titles_and_tab_order() {
+    fn backend_changes_keep_the_placement() {
         let mut s = state();
         let one = win(7, "one", "other", false);
-        let two = win(8, "two", "other", false);
+        let two = win(8, "two", "other", true);
         s.observed(vec![one.clone(), two.clone()]);
-        let changed = Window { title: "new title".into(), unit: Some("app-two.scope".into()), visible: true, ..two };
-        let windows = vec![changed, one];
-        assert_eq!(s.observed(windows.clone()), vec![Effect::PadActivity(true), Effect::PadRoute(crate::PadRoute::Game)]);
+        let changed = Window { title: "new title".into(), unit: Some("app-two.scope".into()), ..two };
+        let windows = vec![one, changed];
+        assert!(s.observed(windows.clone()).is_empty());
         assert_eq!(s.session().windows(), windows);
         assert!(s.observed(windows.clone()).is_empty());
         assert_eq!(s.session().windows(), windows);
@@ -617,8 +537,7 @@ mod tests {
         s.applied(WindowEvent::Opened(before.clone()).into());
         s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
         let identity = Window { pids: vec![100, 50], ..before.clone() };
-        let event = crate::session::windows::changes(&[before], &[identity]);
-        assert!(s.applied(event).is_empty());
+        assert!(s.applied(WindowEvent::Changed(identity).into()).is_empty());
         let window = s.session().window(7);
         assert_eq!(window.map(Window::place), Some(WindowPlace::Bottom));
         assert_eq!(window.map(|w| w.workspace.as_str()), Some(instance.workspace().as_str()));
@@ -830,7 +749,6 @@ mod tests {
     fn moving_the_top_window_does_not_require_keyboard_focus_there() {
         let mut s = state();
         s.observed(vec![win(7, "one", "one", true), Window { down: true, visible: true, ..win(8, "two", "two", false) }]);
-        s.applied(WindowEvent::Presentation { window: 7, focused: Some(false), visible: None }.into());
         s.applied(WindowEvent::KeyboardFocus(Some(8)).into());
         assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
         s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));

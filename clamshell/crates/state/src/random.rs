@@ -101,8 +101,8 @@ fn library() -> Library {
 /// would report, following the effects.
 #[derive(Default)]
 struct World {
+    /// The open windows, as the compositor knows them: what they are, not where they are placed.
     windows: Vec<Window>,
-    reported_windows: Vec<Window>,
     next_window: i64,
     units: Vec<Instance>,
     /// Launches asked for and not answered.
@@ -126,19 +126,6 @@ impl World {
         World { next_window: 1, ..World::default() }
     }
 
-    fn focus(&mut self, pick: impl Fn(&Window) -> bool) {
-        let Some(i) = self.windows.iter().position(|w| pick(w) && !w.down) else {
-            return;
-        };
-        let ws = self.windows.get(i).map(|w| w.workspace.clone()).unwrap_or_default();
-        for (j, w) in self.windows.iter_mut().enumerate() {
-            w.focused = i == j;
-            if !w.down {
-                w.visible = w.workspace == ws;
-            }
-        }
-    }
-
     /// What the effects ask of the outside.
     fn follow(&mut self, effects: &[Effect]) {
         for e in effects {
@@ -157,36 +144,19 @@ impl World {
         }
     }
 
-    /// The compositor shows what the state decided: each window's group, screen and selection.
-    fn place(&mut self, s: &State) {
-        for w in self.windows.iter_mut().chain(self.reported_windows.iter_mut()) {
-            if let Some(placed) = s.session().window(w.id) {
-                w.workspace.clone_from(&placed.workspace);
-                (w.down, w.focused, w.visible) = (placed.down, placed.focused, placed.visible);
-            }
-        }
-    }
-
-    fn report(&mut self) -> Event {
-        let event = crate::session::windows::changes(&self.reported_windows, &self.windows);
-        self.reported_windows.clone_from(&self.windows);
-        event
-    }
-
-    fn window(&mut self, app_id: &str, workspace: String, unit: Option<String>, focused: bool) -> Event {
-        self.open(app_id, workspace, unit, focused);
-        self.report()
-    }
-
-    fn open(&mut self, app_id: &str, workspace: String, unit: Option<String>, focused: bool) -> Window {
+    /// A window opens, as the compositor reports it: with no group, in front if the state would put it
+    /// there ([`crate::Session::opening_focus`]).
+    fn open(&mut self, s: &State, app_id: &str, unit: Option<String>, parent: Option<i64>) -> Window {
         let id = self.next_window;
         self.next_window += 1;
-        let window = Window { id, app_id: app_id.into(), workspace, unit, pids: vec![1000 + id as u32], ..Window::default() };
+        let mut window = Window { id, app_id: app_id.into(), unit, parent, pids: vec![1000 + id as u32], ..Window::default() };
+        window.focused = s.session().opening_focus(&window);
         self.windows.push(window.clone());
-        if focused {
-            self.focus(|w| w.id == id);
-        }
-        self.windows.iter().find(|w| w.id == id).cloned().unwrap_or(window)
+        window
+    }
+
+    fn window(&mut self, s: &State, app_id: &str, unit: Option<String>) -> Event {
+        WindowEvent::Opened(self.open(s, app_id, unit, None)).into()
     }
 }
 
@@ -443,22 +413,19 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 Event::Units(w.units.clone())
             }
         }
-        // A window opens: a launch's (a program may open several), a Steam game's or a handed-over app's
-        // on the landing workspace, or a stray one.
+        // A window opens: a launch's (a program may open several), a Steam game's, a handed-over app's,
+        // or a stray one.
         53..=60 if w.windows.len() > 8 => return None,
-        53..=60 => {
-            let focused = rng.one_in(2);
-            match rng.below(6) {
-                0 => w.window("steam_app_620", String::new(), Some("app-steam.scope".into()), focused),
-                1 => w.window("firefox", String::new(), None, focused),
-                2 => w.window("foot", "1".into(), None, focused),
-                _ => {
-                    let unit = rng.pick(&w.units)?.clone();
-                    let app = format!("app-{}", unit.key().unwrap_or("x"));
-                    w.window(&app, unit.workspace(), unit.unit(), focused)
-                }
+        53..=60 => match rng.below(6) {
+            0 => w.window(s, "steam_app_620", Some("app-steam.scope".into())),
+            1 => w.window(s, "firefox", None),
+            2 => w.window(s, "foot", None),
+            _ => {
+                let unit = rng.pick(&w.units)?.clone();
+                let app = format!("app-{}", unit.key().unwrap_or("x"));
+                w.window(s, &app, unit.unit())
             }
-        }
+        },
         // A window closes, by itself or as asked.
         61..=64 => {
             let id = match w.closing.pop() {
@@ -466,14 +433,10 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 _ => rng.pick(&w.windows)?.id,
             };
             w.windows.retain(|x| x.id != id);
-            w.report()
+            WindowEvent::Closed(id).into()
         }
-        // The focus moves to another window.
-        65..=66 => {
-            let id = rng.pick(&w.windows)?.id;
-            w.focus(|x| x.id == id);
-            w.report()
-        }
+        // A window is tapped, or asks to be shown.
+        65..=66 => WindowEvent::Activate(rng.pick(&w.windows)?.id).into(),
         // A scope ends, by itself or as asked; its windows go with it most times.
         67..=69 => {
             let key = match w.ending.pop() {
@@ -483,7 +446,9 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             w.units.retain(|u| u.key() != Some(key.as_str()));
             if !rng.one_in(4) {
                 let gone = |x: &Window| x.unit.as_deref().and_then(Instance::from_unit).is_some_and(|i| i.key() == Some(key.as_str()));
+                let closed = w.windows.iter().filter(|x| gone(x)).map(|x| WindowEvent::Closed(x.id)).collect();
                 w.windows.retain(|x| !gone(x));
+                w.next = Some(Event::WindowBatch(closed));
                 w.ending.retain(|k| *k != key);
             }
             Event::Units(w.units.clone())
@@ -666,14 +631,8 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             match rng.below(10) {
                 0 => {
                     let window = if rng.one_in(2) && w.windows.len() < 9 {
-                        let mut window = w.open("foot", "1".into(), None, false);
-                        if rng.one_in(3) {
-                            window.parent = rng.pick(&w.windows).filter(|p| p.id < window.id).map(|p| p.id);
-                        }
-                        if let Some(actual) = w.windows.iter_mut().find(|actual| actual.id == window.id) {
-                            actual.parent = window.parent;
-                        }
-                        window
+                        let parent = if rng.one_in(3) { rng.pick(&w.windows).map(|p| p.id) } else { None };
+                        w.open(s, "foot", None, parent)
                     } else {
                         window
                     };
@@ -988,7 +947,6 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
             0 => Event::Tick { unix_secs: 1_800_000_000 + clock, mono_secs: clock },
             1 => Event::Start,
             2 => Event::Units(Vec::new()),
-            3 => world.report(),
             _ => draw(&mut rng, &s, &mut world, &mut clock),
         };
         // A quit asked for may end its entry again.
@@ -1013,7 +971,6 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
         effects.clear();
         s.apply(event, &mut effects);
         world.follow(&effects);
-        world.place(&s);
         if let Err(e) = check(&mut s, &mut sent, &effects, &before, i >= 1) {
             return Err(format!("seed {seed}, event {i}: {e}\neffects: {effects:?}\nlast events:\n{}", history.join("\n")));
         }

@@ -287,7 +287,7 @@ mod tests {
     use crate::session::windows::Window;
     use crate::settings::{Choice, Setting};
     use crate::testkit::*;
-    use crate::{Event, State};
+    use crate::{Event, State, WindowEvent};
 
     fn freeze(key: &str, frozen: bool) -> Effect {
         Effect::Freeze { slice: Instance::slice_of(key), frozen }
@@ -299,21 +299,20 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         let key = zelda.key().unwrap().to_owned();
         s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Pauses.value()));
-        let window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), visible) };
         s.applied(Event::tick(100));
-        s.observed(vec![window(true)]);
+        s.observed(vec![Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), true) }]);
         // Once hidden for the grace period, it is paused.
-        let fx = s.observed(vec![window(false)]);
+        let fx = s.applied(Event::Home);
         assert!(!fx.contains(&freeze(&key, true)));
         assert!(!s.applied(Event::tick(100 + GRACE - 1)).contains(&freeze(&key, true)), "within the grace");
         assert!(s.applied(Event::tick(100 + GRACE)).contains(&freeze(&key, true)));
         assert!(s.session().paused("zelda-lttp"));
         assert!(!s.applied(Event::tick(101 + GRACE)).contains(&freeze(&key, true)), "once");
         // Shown again, it is thawed.
-        assert!(s.observed(vec![window(true)]).contains(&freeze(&key, false)));
+        assert!(s.applied(WindowEvent::Activate(3).into()).contains(&freeze(&key, false)));
         assert!(!s.session().paused("zelda-lttp"));
         // Paused and then shown from the dock, it is thawed before its workspace is shown.
-        s.observed(vec![window(false)]);
+        s.applied(Event::Home);
         let t = 101 + 2 * GRACE;
         s.applied(Event::tick(t));
         assert!(s.session().paused("zelda-lttp"));
@@ -322,7 +321,7 @@ mod tests {
         // It is paused again after being hidden for the grace period anew. Quitting thaws it, so that it
         // can answer its window's closing.
         s.applied(Event::tick(t + 1));
-        s.observed(vec![window(false)]);
+        s.applied(Event::Home);
         s.applied(Event::tick(t + GRACE));
         assert!(!s.session().paused("zelda-lttp"), "the grace counts again from the thaw");
         s.applied(Event::tick(t + 1 + GRACE));
@@ -364,13 +363,12 @@ mod tests {
         assert!(!s.applied(Event::tick(t + GRACE)).contains(&pause), "handed over, waiting for its window");
         // Shown, it isn't paused; hidden for the grace period, it is.
         let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
-        let window = |visible| Window { visible, ..win(6, "firefox", &ws, visible) };
-        assert!(!s.observed(vec![window(true)]).contains(&pause));
+        assert!(!s.observed(vec![win(6, "firefox", &ws, true)]).contains(&pause));
         assert!(!s.applied(Event::tick(t + GRACE + 1)).contains(&pause));
-        s.observed(vec![window(false)]);
+        s.applied(Event::Home);
         assert!(s.applied(Event::tick(t + 2 * GRACE + 1)).contains(&pause));
         // Shown again, it is resumed.
-        assert!(s.observed(vec![window(true)]).contains(&resume));
+        assert!(s.applied(WindowEvent::Activate(6).into()).contains(&resume));
     }
 
     /// A launch whose scope is slow to come counts as starting: its runner, resumed for it, isn't paused

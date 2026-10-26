@@ -96,10 +96,7 @@ fn warm() -> (State, Vec<Window>, Vec<Instance>) {
             .unwrap();
         units.push(instance.clone());
         s.apply(Event::Units(units.clone()), &mut effects);
-        for w in &mut windows {
-            w.focused = false;
-        }
-        windows.push(Window {
+        let window = Window {
             id: 10 + n as i64,
             app_id: id.trim_start_matches("desktop:").into(),
             unit: Some(format!("{}.scope", instance.name())),
@@ -107,8 +104,9 @@ fn warm() -> (State, Vec<Window>, Vec<Instance>) {
             focused: true,
             visible: true,
             ..Window::default()
-        });
-        s.apply(clamshell_state::session::windows::changes(s.session().windows(), &windows), &mut effects);
+        };
+        s.apply(WindowEvent::Opened(window.clone()).into(), &mut effects);
+        windows.push(window);
     }
     assert_eq!(s.session().running_entries().len(), 2, "both programs run");
     (s, windows, units)
@@ -153,18 +151,16 @@ fn allocations_per_event() {
         run(&name("metrics reading"), s, &|i| Event::Reading(Reading::Metrics(Metrics { cpu: Some(i as f32 / 10.0), ..Metrics::default() })));
         run(&name("frames reading"), s, &|i| Event::Reading(Reading::Frames { fps: Some(60.0 + i as f32), frame_ms: None }));
         run(&name("wifi reading, unchanged"), s, &|_| Event::Reading(Reading::Wifi(wifi.clone())));
-        run(&name("windows, unchanged"), s, &|_| clamshell_state::session::windows::changes(&windows, &windows));
         if let Some(window) = windows.first() {
             run(&name("window open, repeated"), s, &|_| WindowEvent::Opened(window.clone()).into());
             run(&name("window title"), s, &|i| WindowEvent::Title { window: window.id, title: format!("title {i}") }.into());
             run(&name("window facts"), s, &|_| WindowEvent::Changed(window.clone()).into());
+            run(&name("window facts and title"), s, &|i| {
+                Event::WindowBatch(vec![WindowEvent::Changed(window.clone()), WindowEvent::Title { window: window.id, title: format!("title {i}") }])
+            });
             run(&name("window activation, already shown"), s, &|_| WindowEvent::Activate(window.id).into());
             run(&name("keyboard focus, UI and client"), s, &|i| WindowEvent::KeyboardFocus((i % 2 == 0).then_some(window.id)).into());
         }
-        run(&name("window batch, reordered"), s, &|i| {
-            let ids = if i % 2 == 0 { windows.iter().rev().map(|w| w.id).collect() } else { windows.iter().map(|w| w.id).collect() };
-            Event::WindowBatch(vec![WindowEvent::Order(ids)])
-        });
         run(&name("window close, already gone"), s, &|_| WindowEvent::Closed(i64::MAX).into());
         run(&name("Home held and released"), s, &|i| Event::HomeHeld(i % 2 == 0));
         run(&name("controller keyboard focus"), s, &|_| Event::PadActive);
