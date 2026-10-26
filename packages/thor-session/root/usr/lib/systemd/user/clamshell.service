@@ -22,3 +22,6 @@ ExecStart=/usr/bin/clamshell --drm
 Restart=on-failure
 RestartSec=2
 Slice=session.slice
+# Every client's socket, buffers and sync files are fds of ClamShell's; the usual soft limit of 1024 runs
+# out with a few games and their windows. 524288 is systemd's default hard limit, here as both limits.
+LimitNOFILE=524288

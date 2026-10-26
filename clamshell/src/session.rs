@@ -72,6 +72,7 @@ pub(crate) enum Host {
 pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Result<(), String> {
     // First, before any thread starts (see `quit_signals`).
     let quit = clamshell_compositor::quit_signals().map_err(|e| format!("quit signals: {e}"))?;
+    raise_open_files();
     let loaded = library::load(sources);
     // Metadata to fetch once the threads run, if there is somewhere to keep it.
     let fetch = paths.art.clone().map(|art| meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art });
@@ -138,6 +139,24 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
     result.map_err(|e| e.to_string())
 }
 
+/// The soft limit of open files raised to the hard one. Every client's socket, buffer and sync file is an
+/// fd here, and 1024, the usual soft limit, runs out with a few games and their windows. The service sets
+/// both limits (clamshell.service); this covers a session started otherwise, as nested on a desktop. A
+/// failure is logged: the session runs on at the limit it had.
+fn raise_open_files() {
+    use rustix::process::{Resource, Rlimit, getrlimit, setrlimit};
+    let limit = getrlimit(Resource::Nofile);
+    // No hard limit can't be the soft one: the kernel takes at most fs.nr_open.
+    let (Some(soft), Some(hard)) = (limit.current, limit.maximum) else { return };
+    if soft >= hard {
+        return;
+    }
+    match setrlimit(Resource::Nofile, Rlimit { current: Some(hard), maximum: Some(hard) }) {
+        Ok(()) => log::info!("open files: at most {hard} (from {soft})"),
+        Err(e) => log::warn!("open files: raising the limit from {soft} to {hard}: {e}; it stays at {soft}"),
+    }
+}
+
 /// The system threads' sink: the UI's event loop.
 #[derive(Clone)]
 pub struct UiSink(pub EventSender);
@@ -160,4 +179,18 @@ pub fn start(
 ) -> Handles {
     let sink = UiSink(sender);
     wiring::start(config, paths, sources, layout, global, fetch, sink)
+}
+
+#[cfg(test)]
+mod tests {
+    /// The soft limit of open files is the hard one afterwards (where the hard one is finite).
+    #[test]
+    fn the_open_files_limit_is_raised_to_the_hard_one() {
+        use rustix::process::{Resource, getrlimit};
+        super::raise_open_files();
+        let limit = getrlimit(Resource::Nofile);
+        if limit.maximum.is_some() {
+            assert_eq!(limit.current, limit.maximum);
+        }
+    }
 }
