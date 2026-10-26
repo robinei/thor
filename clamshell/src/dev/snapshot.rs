@@ -92,7 +92,7 @@ fn open_device() -> Vec<Event> {
 /// sends the terminal's window titled [`demo::BELOW`] to the bottom screen, and nothing else remembered.
 pub fn state(library: Library) -> State {
     let dock = Dock::pinned(vec!["desktop:steam".into(), "desktop:foot".into(), "desktop:firefox".into()]);
-    let mut display_modes = clamshell_state::device::display::DisplayModes::default();
+    let mut display_modes = clamshell_state::presentation::modes::DisplayModes::default();
     for refresh in [60000, 120000] {
         display_modes.add(refresh);
     }

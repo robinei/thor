@@ -1,5 +1,7 @@
 //! Presentation policy is shared by client types. Geometry and buffer transforms belong to the host.
 
+pub mod modes;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct WindowLimits {
     pub min: (u32, u32),
@@ -54,12 +56,14 @@ pub struct Screens {
     pub top_size: (u32, u32),
 }
 
-/// What the compositor said that windows are presented on: the screens, Xwayland's modes, and the last
-/// histogram it measured.
+/// What the compositor said that windows are presented on: the screens, the top screen's refresh rates,
+/// Xwayland's modes, and the last histogram it measured.
 #[derive(Debug, Default)]
 pub struct Presentation {
     /// The screens, as the compositor last said (see [`crate::Reading::Screens`]).
     screens: Screens,
+    /// The top screen's refresh rates (see [`crate::Event::DisplayModes`]).
+    display_modes: modes::DisplayModes,
     /// The last histogram the compositor measured (see [`crate::Reading::Histogram`]).
     histogram: Option<crate::colour::Histogram>,
     /// The sizes of Xwayland's modes (see [`crate::Reading::XwaylandModes`]).
@@ -69,6 +73,10 @@ pub struct Presentation {
 impl Presentation {
     pub(crate) fn read_screens(&mut self, screens: Screens) {
         self.screens = screens;
+    }
+
+    pub(crate) fn read_display_modes(&mut self, modes: modes::DisplayModes) {
+        self.display_modes = modes;
     }
 
     pub(crate) fn read_histogram(&mut self, histogram: crate::colour::Histogram) {
@@ -88,6 +96,10 @@ impl Presentation {
     /// The top screen's size, once the compositor has said.
     pub fn top_size(&self) -> Option<(u32, u32)> {
         Some(self.screens.top_size).filter(|(w, h)| *w > 0 && *h > 0)
+    }
+
+    pub fn display_modes(&self) -> &modes::DisplayModes {
+        &self.display_modes
     }
 
     pub fn histogram(&self) -> Option<crate::colour::Histogram> {

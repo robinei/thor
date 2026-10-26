@@ -13,7 +13,6 @@
 
 pub mod account;
 pub mod buttons;
-pub mod display;
 pub mod sticks;
 
 use crate::DeviceId;
@@ -60,7 +59,6 @@ pub struct Device {
     /// The last stick calibration failed. Cleared when another starts.
     sticks_failed: bool,
     refresh: Refresh,
-    display_modes: display::DisplayModes,
     /// The stick calibrations by controller. They are saved, and the pad thread has them too.
     calibrations: Calibrations,
     /// ClamShell's first start (see [`crate::Init::first_start`]).
@@ -96,14 +94,6 @@ impl Device {
     /// The view as ClamShell starts. It is open at the first start.
     pub(crate) fn new(calibrations: Calibrations, first_start: bool) -> Device {
         Device { open: first_start, calibrations, first_start, ..Device::default() }
-    }
-
-    pub fn display_modes(&self) -> &display::DisplayModes {
-        &self.display_modes
-    }
-
-    pub(crate) fn set_display_modes(&mut self, modes: display::DisplayModes) {
-        self.display_modes = modes;
     }
 
     pub fn top_view(&self) -> TopView {

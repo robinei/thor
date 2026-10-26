@@ -1432,7 +1432,7 @@ and the OEM switches again at each settings application and every 30 s while the
 
 Whether the firmware honours a write is checked on the device.
 
-### Display modes and the Refresh tile (state/device/display.rs, state/apply/settings_tab.rs, compositor/drm.rs)
+### Display modes and the Refresh tile (state/presentation/modes.rs, state/apply/settings_tab.rs, compositor/drm.rs)
 
 `DisplayModes` holds at most 32 sorted, unique rates (1 to 1000 Hz) and the rate at start; the profile gives
 none.

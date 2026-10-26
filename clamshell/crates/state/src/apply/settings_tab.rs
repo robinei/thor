@@ -38,11 +38,11 @@ impl State {
     }
 
     /// The values a tile steps through and its menu lists, as their number and the one at `i`: the
-    /// screen's announced rates after "as is" for the refresh rate (see [`crate::device::display::DisplayModes`]), the setting's
+    /// screen's announced rates after "as is" for the refresh rate (see [`crate::presentation::modes::DisplayModes`]), the setting's
     /// choices for the others. Drawing reads them every frame, so nothing is allocated.
     fn menu_values_len(&self, setting: Setting) -> usize {
         match setting {
-            Setting::Refresh => 1 + self.device.display_modes().rates().len(),
+            Setting::Refresh => 1 + self.presentation.display_modes().rates().len(),
             _ => setting.choices().len(),
         }
     }
@@ -50,7 +50,7 @@ impl State {
     fn menu_value(&self, setting: Setting, i: usize) -> Option<u16> {
         match (setting, i) {
             (Setting::Refresh, 0) => Some(0),
-            (Setting::Refresh, i) => self.device.display_modes().rates().get(i - 1).copied(),
+            (Setting::Refresh, i) => self.presentation.display_modes().rates().get(i - 1).copied(),
             _ => setting.choices().get(i).copied(),
         }
     }

@@ -153,7 +153,7 @@ fn allocations_per_event() {
         let units = if state == "idle" { Vec::new() } else { units.clone() };
         let name = |what: &str| format!("{state}: {what}");
         run(&name("display modes"), s, &|i| {
-            let mut modes = clamshell_state::device::display::DisplayModes::default();
+            let mut modes = clamshell_state::presentation::modes::DisplayModes::default();
             modes.add(60000 + i as i32 * 1000);
             Event::DisplayModes(modes)
         });

@@ -201,13 +201,13 @@ fn face(s: &State, tile: Tile) -> Face {
                 value: text,
                 impact: setting.impact(value),
                 origin: p.tile_origin(setting),
-                active: (setting != Setting::Refresh || !s.device().display_modes().rates().is_empty())
+                active: (setting != Setting::Refresh || !s.presentation().display_modes().rates().is_empty())
                     && (setting != Setting::Fan || s.profile().fan.is_some())
                     && !(setting.through_launch() && p.handed_over())
                     && !overruled,
                 note: if setting == Setting::Resolution && s.resolution_waits() {
                     "next start"
-                } else if setting == Setting::Refresh && value == 0 && s.device().display_modes().refresh_for(0, p.tile_value(Setting::FpsCap)) != 0 {
+                } else if setting == Setting::Refresh && value == 0 && s.presentation().display_modes().refresh_for(0, p.tile_value(Setting::FpsCap)) != 0 {
                     // As is, but a rate the cap divides while it is set.
                     "for the cap"
                 } else {

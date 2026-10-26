@@ -8,7 +8,7 @@ use clamshell_library::runner_key;
 #[test]
 fn refresh_taps_follow_announced_modes_and_reports_never_change_saved_choices() {
     let mut s = started(Init::default());
-    let mut modes = crate::device::display::DisplayModes::default();
+    let mut modes = crate::presentation::modes::DisplayModes::default();
     for hz in [75000, 59940, 60000] {
         modes.add(hz);
     }
@@ -29,7 +29,7 @@ fn refresh_taps_follow_announced_modes_and_reports_never_change_saved_choices() 
     let effects = taps(&mut s, Setting::Refresh, 1);
     assert_eq!(s.prefs().settings().global.get(Setting::Refresh), 0);
     assert!(effects.iter().any(|effect| matches!(effect, Effect::Compositor(Compositor::Refresh(0)))));
-    let mut replacement = crate::device::display::DisplayModes::default();
+    let mut replacement = crate::presentation::modes::DisplayModes::default();
     replacement.add(144000);
     assert!(s.applied(Event::DisplayModes(replacement)).is_empty());
     taps(&mut s, Setting::Refresh, 1);

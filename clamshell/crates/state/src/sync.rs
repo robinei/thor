@@ -38,7 +38,7 @@ pub(crate) struct Wanted<'a> {
     /// The main screen's refresh rate in Hz: the running refresh rate calibration's, else the settings'
     /// of the entry launched last while its window is yet to show ([`crate::Session::refresh_launch`]),
     /// else the settings in force's: their Refresh, or under a frame rate cap one it divides (see
-    /// [`crate::device::display::DisplayModes::refresh_for`]).
+    /// [`crate::presentation::modes::DisplayModes::refresh_for`]).
     pub(crate) refresh: u16,
     /// The bottom screen is on (see [`crate::Bottom::off`]).
     pub(crate) bottom_on: bool,

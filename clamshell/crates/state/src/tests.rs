@@ -345,7 +345,7 @@ fn what_the_outside_starts_without_goes_out_at_the_first_event() {
     let rule = WindowRule { owner: "zelda-lttp".into(), app_id: "zelda3".into(), title: None };
     let brightness = Brightness { level: Some(40), shares: Vec::new() };
     let keymaps = crate::keymap::Keymaps::initial();
-    let mut modes = crate::device::display::DisplayModes::default();
+    let mut modes = crate::presentation::modes::DisplayModes::default();
     modes.add(60_000);
     modes.add(90_000);
     let mut s = State::new(Init { keymaps: keymaps.clone(), window_rules: WindowRules::from_list(vec![rule]), brightness, display_modes: modes, ..init() });

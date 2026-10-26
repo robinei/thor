@@ -644,7 +644,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             _ => Slide::End.into(),
         },
         94 => {
-            let mut modes = crate::device::display::DisplayModes::default();
+            let mut modes = crate::presentation::modes::DisplayModes::default();
             for _ in 0..rng.below(5) {
                 modes.add((rng.below(240) as i32 + 1) * 1000);
             }
@@ -778,8 +778,8 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
         s.session().windows().iter().find(|w| w.group.is_none() && !s.session().launching().iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str())));
     ensure!(unplaced.is_none(), "window {:?} has no group after the settle", unplaced.map(|w| w.id));
     ensure!(s.session().keyboard_focus().is_none_or(|id| s.session().window(id).is_some()), "keyboard focus names a closed window");
-    ensure!(s.device().display_modes().rates().iter().all(|hz| (1..=1000).contains(hz)), "invalid detected refresh rate");
-    ensure!(s.device().display_modes().rates().windows(2).all(|pair| matches!(pair, [a,b] if a < b)), "refresh choices not sorted and unique");
+    ensure!(s.presentation().display_modes().rates().iter().all(|hz| (1..=1000).contains(hz)), "invalid detected refresh rate");
+    ensure!(s.presentation().display_modes().rates().windows(2).all(|pair| matches!(pair, [a,b] if a < b)), "refresh choices not sorted and unique");
     // 1. Sync converges.
     let again = sync_again(s);
     ensure!(again.is_empty(), "1: sync again sends {again:?}");
@@ -830,7 +830,7 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
         ensure!(sent.brightness == Some(want), "2: brightness sent {:?}, level {level}, dimmed {dimmed}", sent.brightness);
     }
     let settings = s.session().refresh_launch().map_or_else(|| s.in_force(), |id| s.settings_of(id));
-    let rate = s.device().display_modes().refresh_for(settings.get(Setting::Refresh), settings.get(Setting::FpsCap));
+    let rate = s.presentation().display_modes().refresh_for(settings.get(Setting::Refresh), settings.get(Setting::FpsCap));
     let refresh = s.device().calibration_rate().unwrap_or(rate);
     ensure!(sent.refresh == refresh, "2: refresh sent {}, the calibration's, the last launch's or in force {refresh}", sent.refresh);
     let apply = (s.session().program().cloned(), s.in_force());

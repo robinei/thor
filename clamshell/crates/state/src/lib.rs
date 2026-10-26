@@ -132,7 +132,7 @@ pub use clamshell_library::{BrowseKind, Browsed, Collection, Entry, Launch, Libr
 #[derive(Debug, Default)]
 pub struct Init {
     pub profile: Profile,
-    pub display_modes: device::display::DisplayModes,
+    pub display_modes: presentation::modes::DisplayModes,
     /// The library, or `None` if it is read after the start and comes as [`Event::Library`]: until then
     /// shelf is empty, and what needs the library waits for it (shelf's place, the dock's pins, autostart).
     pub library: Option<Library>,
@@ -233,7 +233,7 @@ impl State {
                 resume.restore_shelf(&mut s.shelf);
             }
         }
-        s.device.set_display_modes(init.display_modes);
+        s.presentation.read_display_modes(init.display_modes);
         // Unread, the pins are checked as the library comes (`library_read`).
         if s.shelf.read() {
             s.dock.drop_gone_at_start(s.shelf.library(), &s.session);
@@ -376,7 +376,7 @@ impl State {
         let mark = out.events.len();
         let now = self.clock.mono();
         match event {
-            Event::DisplayModes(modes) => self.device.set_display_modes(modes),
+            Event::DisplayModes(modes) => self.presentation.read_display_modes(modes),
             Event::Tick { unix_secs, mono_secs } => self.tick(unix_secs, mono_secs, out),
             Event::Reading(reading) => self.on_reading(reading, out),
             Event::Notification(e) => self.on_notification(e, out),
@@ -626,7 +626,7 @@ impl State {
             return hz;
         }
         let settings = self.session.refresh_launch().map_or(*in_force, |id| self.settings_of(id));
-        self.device.display_modes().refresh_for(settings.get(Setting::Refresh), settings.get(Setting::FpsCap))
+        self.presentation.display_modes().refresh_for(settings.get(Setting::Refresh), settings.get(Setting::FpsCap))
     }
 
     /// Sends the outside what differs from what it was last sent.
