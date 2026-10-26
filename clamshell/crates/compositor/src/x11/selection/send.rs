@@ -60,10 +60,12 @@ impl Bridge {
         let property = if request.property == 0 { request.target } else { request.property };
         let selection = (0..2).find(|selection| selection_atom(atoms, *selection) == request.selection && self.exports.get(*selection).owned);
         let Some(selection) = selection else {
+            log::debug!("compositor: refused an X11 selection request: the selection isn't ours");
             return notify(wire, &request, 0);
         };
         let export = self.exports.get(selection);
         if export.revision != Some(server.x11.selections.entries.get(selection).revision) {
+            log::debug!("compositor: refused an X11 selection request: the selection changed and X11 isn't told yet");
             return notify(wire, &request, 0);
         }
         if request.target == atoms.get("TARGETS") {
@@ -80,11 +82,15 @@ impl Bridge {
         }
         let format = export.formats.iter().find(|format| format.atom == request.target).cloned();
         let Some(format) = format else {
+            log::debug!("compositor: refused an X11 selection request: target {} isn't offered", request.target);
             return notify(wire, &request, 0);
         };
-        if self.transfers.len() >= MAX_TRANSFERS
-            || self.transfers.iter().any(|transfer| transfer.request.requestor == request.requestor && transfer.property == property)
-        {
+        if self.transfers.len() >= MAX_TRANSFERS {
+            log::warn!("compositor: refused an X11 selection request: {MAX_TRANSFERS} transfers already under way");
+            return notify(wire, &request, 0);
+        }
+        if self.transfers.iter().any(|transfer| transfer.request.requestor == request.requestor && transfer.property == property) {
+            log::warn!("compositor: refused an X11 selection request: one into the same property is under way");
             return notify(wire, &request, 0);
         }
         let (read, write) = match rustix::pipe::pipe_with(rustix::pipe::PipeFlags::CLOEXEC) {
@@ -107,6 +113,7 @@ impl Bridge {
             }
         };
         if !accepted {
+            log::warn!("compositor: refused an X11 selection request: the Wayland selection can't be asked for its data");
             return notify(wire, &request, 0);
         }
         wire.request(
@@ -139,6 +146,7 @@ impl Bridge {
         while index < self.transfers.len() {
             if self.transfers.get(index).is_some_and(|transfer| transfer.selection == selection) {
                 let transfer = self.transfers.remove(index);
+                log::info!("compositor: X11 clipboard transfer {} ended: the selection changed during it", transfer.id);
                 if !transfer.incremental {
                     notify(wire, &transfer.request, 0)?;
                 }
@@ -156,12 +164,12 @@ impl Bridge {
                 || match transfer.read(now) {
                     Ok(()) => false,
                     Err(error) => {
-                        log::debug!("compositor: clipboard source: {error}");
+                        log::warn!("compositor: clipboard source: {error}");
                         true
                     }
                 };
             if failed {
-                log::debug!("compositor: cancelling X11 clipboard transfer {}", transfer.id);
+                log::warn!("compositor: X11 clipboard transfer {} failed or timed out: not pasted", transfer.id);
                 if !transfer.incremental {
                     notify(wire, &transfer.request, 0)?;
                 }
