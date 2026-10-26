@@ -1,4 +1,6 @@
-//! Bounded non-blocking X11 transport. x11rb supplies wire types and sequence tracking, never I/O.
+//! The window manager's connection to Xwayland: a non-blocking socket with bounded buffers and timeouts,
+//! read and written when the event loop says it is ready. x11rb supplies the wire types and tracks the
+//! sequence numbers; the I/O is ours, so nothing waits on Xwayland.
 
 use std::{
     collections::VecDeque,

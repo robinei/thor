@@ -1,4 +1,7 @@
-//! Renderer formats and imports stay at the native buffer precision.
+//! Linux dmabuf: clients' GPU buffers. All the renderer's formats are offered, the high-precision ones
+//! among them, with the render device as feedback where it is known, and none on software EGL, which
+//! accepts imports it can't sample. A client's dmabuf is imported with the renderer before the next
+//! drawing (at most 64 waiting per client) and the client told whether it worked.
 
 use std::os::unix::fs::MetadataExt;
 

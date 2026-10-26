@@ -1,4 +1,8 @@
-//! A recent token delegates focus through the ordinary window activation rule.
+//! xdg-activation: a client with the keyboard gets a token and hands it to another of its windows, or to a
+//! program it starts, which uses it to come in front. A token is granted only to the client with the
+//! keyboard, for an input serial of its own, and lasts five seconds; using it activates the window through
+//! the state's ordinary activation rule, once, and does nothing while ClamShell's own view has the keyboard
+//! (after Home), so a client can't undo Home.
 
 use std::time::{Duration, Instant};
 

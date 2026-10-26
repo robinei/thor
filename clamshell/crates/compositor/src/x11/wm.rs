@@ -1,4 +1,8 @@
-//! The private XWM pipelines requests and translates replies without waiting for an X11 peer.
+//! ClamShell's X11 window manager, inside the compositor: it finds Xwayland's windows, reads their
+//! properties, pairs each with its Wayland surface, configures each to the place the state gives it, sets
+//! the focus and closes them, and turns them into the state's window facts. It never waits on Xwayland:
+//! requests are pipelined and each reply handled when it comes, within a deadline.
+
 use super::{
     properties::{Atoms, NAMES, PROPERTIES, Properties},
     transport::Transport,

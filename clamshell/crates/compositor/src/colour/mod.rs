@@ -1,4 +1,9 @@
-//! Parametric colour conversion. Linear BT.2020 with one unit at reference white is the working space.
+//! Colour management. Clients describe their surfaces' colour (`protocol`); the pipeline decodes every
+//! surface into one scene in linear BT.2020 with one unit at reference white, and encodes it once for each
+//! screen (`render`, with its shaders in `shaders` and the passes a picture takes before it in `chain` and
+//! `smaa`); nested, the host is told what we draw (`host`). [`State`] is what the server keeps: each
+//! surface's description, each screen's, and the protocol objects told when they change.
+
 pub(crate) mod chain;
 pub(crate) mod histogram;
 pub(crate) mod math;

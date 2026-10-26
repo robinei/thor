@@ -1,4 +1,6 @@
-//! Clients as they connect: their protocol state, and who they are, which decides what a game's sees.
+//! Clients as they connect: who they are and their protocol state. A client is admitted once its
+//! process is identified, off the compositor's thread ([`Identities`]), because who it is decides what it
+//! sees from its first request: a game's client sees only the top screen, and is told its game's mode.
 
 use std::os::unix::net::UnixStream;
 use std::sync::{Arc, mpsc};

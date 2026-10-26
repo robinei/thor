@@ -1,4 +1,7 @@
-//! Override-redirect surfaces stay inside the managed parent's presentation and never enter State.
+//! X11 menus and tooltips: override-redirect windows shown as popups of the managed window they belong to
+//! (by `WM_TRANSIENT_FOR`, or the focused window of the same process), within its presentation, and
+//! dismissed with it. They never become windows of the state's.
+
 use super::*;
 use crate::surface::X11Popup;
 

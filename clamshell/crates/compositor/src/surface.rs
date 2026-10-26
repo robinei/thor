@@ -1,4 +1,7 @@
-//! Wayland surface operations shared by xdg-shell and X11, without an X11 connection in drawing.
+//! A window's surfaces, Wayland's (an xdg toplevel in Smithay's `Window`) or X11's (Xwayland's surface,
+//! with its override-redirect popups), behind one type, so drawing, hit testing and frame callbacks treat
+//! both alike and none of them needs the X11 connection.
+
 use smithay::{
     backend::renderer::{
         element::{

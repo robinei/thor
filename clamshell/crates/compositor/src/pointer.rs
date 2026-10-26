@@ -1,4 +1,7 @@
-//! Pointer capture belongs to a focused surface and ends when that window loses focus.
+//! The pointer ([`Pointer`]), and its capture: a window may lock the pointer in place or confine it to a
+//! region (pointer constraints), with relative motion for a game's camera. A capture is the focused
+//! window's, and ends when the window loses the keyboard, is hidden or moves, a menu opens, or the host
+//! loses focus; the host is asked to capture its own pointer to match.
 
 use smithay::{
     backend::input::InputTime,
@@ -66,8 +69,8 @@ pub(crate) enum CaptureMode {
     Confined,
 }
 
-/// A window's lock or confinement in force: its surface, and the window's geometry and the surface's
-/// origin when it began, which it ends on changing.
+/// A window's lock or confinement in force: its surface, where the surface is in the window, and the
+/// window's geometry when it began (the capture ends if it changes).
 #[derive(Clone)]
 pub(crate) struct Capture {
     window: i64,

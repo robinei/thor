@@ -1,4 +1,8 @@
-//! Parametric colour-management objects. Invalid requests disconnect only their client.
+//! The colour-management protocol (`wp_color_management_v1`) served to clients: a surface's colour as its
+//! client describes it (parametric descriptions only), each output's description, and the preferred one
+//! told to surfaces. A request that can't be honoured ends that client with the protocol's error, never the
+//! session.
+
 use crate::server::Server;
 use clamshell_state::colour::{ColourDescription, ColourLuminance, ColourPrimaries, ColourTarget, TransferFunction};
 use smithay::{

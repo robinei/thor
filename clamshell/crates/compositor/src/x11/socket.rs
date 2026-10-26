@@ -1,4 +1,6 @@
-//! Reserve a display socket while Xwayland is dormant. Its first connection starts the server.
+//! The X11 display's socket (`/tmp/.X11-unix/X<n>`, with its lock file), reserved at start while Xwayland
+//! isn't running, so clients have a DISPLAY to connect to; the first connection starts Xwayland on it.
+
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},

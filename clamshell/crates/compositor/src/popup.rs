@@ -1,4 +1,6 @@
-//! Menus borrow their parent's focus; they never become state windows.
+//! Menus: an xdg popup with a grab takes the keyboard and pointer while it is open, and is dismissed when
+//! its window loses focus or is hidden, or a press lands outside it; X11 menus likewise (see `x11::menus`).
+//! A menu is never a window of the state's: it belongs to its parent.
 
 use smithay::{
     backend::input::InputTime,

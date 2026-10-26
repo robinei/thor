@@ -1,4 +1,8 @@
-//! Surfaces decode into a retained half-float scene before the host encoding is applied once.
+//! The colour pipeline, through which both hosts draw: every surface is decoded from its own colour into
+//! one scene of half floats kept between frames, with its game's curve and clarity applied, and each
+//! screen's part of the scene is encoded once in that screen's colour. Only what changed is drawn into the
+//! scene.
+
 use crate::{render::Element, server::Server};
 use clamshell_state::colour::{ColourDescription, TransferFunction};
 use clamshell_state::curve::{Curve, REFERENCE_NITS};

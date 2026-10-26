@@ -1,4 +1,7 @@
-//! Contacts keep their initial target and inverse transform, independently on the two screens.
+//! Touch: each finger goes to what it came down on, a window's surface or ClamShell's view on that screen,
+//! until it lifts, with the window's geometry as it was then, so a finger on each screen acts on its own.
+//! Smithay's down grab would send every finger to the first finger's surface, so a grab of our own keeps
+//! them apart.
 
 use crate::{geometry::Geometry, server::Server};
 use clamshell_state::WindowEvent;

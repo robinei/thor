@@ -1,3 +1,8 @@
+//! Colour maths on the CPU: the matrix from one set of primaries to another (through CIE XYZ, for primaries
+//! of the same white point, as nothing adapts between whites), and each transfer function's decoding to
+//! linear light and encoding from it. The shaders are built with these, and a description they can't
+//! handle is refused before a shader is made for it.
+
 use clamshell_state::colour::{ColourDescription, ColourPrimaries, TransferFunction};
 
 type Matrix = [[f64; 3]; 3];

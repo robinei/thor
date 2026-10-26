@@ -1,4 +1,11 @@
-//! Xwayland starts on the first display connection. Socket readiness drives all adapter work.
+//! The X11 adapter: Xwayland as a supervised child, and the window manager that turns its windows into the
+//! same window facts the Wayland side produces. Xwayland starts when a client first connects to the display
+//! socket reserved for it, and if it dies, again at the next connection: its X11 clients go, the session
+//! stays. All of it is driven by its sockets' readiness and never blocks: the window manager (`wm`) over its
+//! own transport (`transport`), properties into facts (`properties`), menus (`menus`), the clipboard between
+//! X11 and Wayland (`selection`), and the pairing of windows with their surfaces (`shell`). [`Bridge`] is
+//! what the adapter and the Wayland side leave each other.
+
 mod properties;
 pub(crate) mod selection;
 pub(crate) mod shell;

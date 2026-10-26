@@ -1,4 +1,7 @@
-//! Wayland protocol callbacks. Placement is read only after the lifecycle event has settled.
+//! Smithay's handlers for the protocols without a module of their own: surfaces and their commits (a
+//! window's frames, its mapping and unmapping, its colour), shm and buffers, outputs bound, xdg-shell's
+//! toplevels and popups, the seat (focus, the cursor's image) and the selections. A window's lifecycle event
+//! is applied to the state first, and where the window goes is read from the state after.
 
 use std::sync::OnceLock;
 

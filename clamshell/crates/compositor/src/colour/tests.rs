@@ -1,3 +1,4 @@
+//! The colour-management protocol with real clients: descriptions, outputs and errors.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 use crate::clients::ClientState;
 use crate::server::Server;

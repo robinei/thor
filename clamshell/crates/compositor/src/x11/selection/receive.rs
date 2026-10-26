@@ -1,4 +1,7 @@
-//! XFixes ownership notifications publish generation-tagged seat offers, never an echoed X11 owner.
+//! From X11 to Wayland: XFixes tells when an X11 client takes a selection; its formats are read and offered
+//! to the seat, tagged with a generation so a stale offer is never published, and a selection we own for a
+//! Wayland client is not offered back. A Wayland client's paste reads the data from the owner (`transfer`).
+
 mod transfer;
 use super::*;
 use smithay::wayland::selection::{data_device, primary_selection};

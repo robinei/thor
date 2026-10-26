@@ -1,4 +1,8 @@
-//! A desktop window containing two logical outputs. It never takes control of the host session.
+//! ClamShell's compositor in a window on a desktop (winit), for development: the window is the whole scene,
+//! both screens side by side at the device's sizes, drawn through the same colour pipeline as on the
+//! device and paced by the host monitor's refresh. It is an ordinary client of the desktop and never takes
+//! over its session: the pointer is captured only through the window, and the host's colour management is
+//! told what the window shows.
 
 use std::time::Duration;
 
@@ -21,8 +25,9 @@ use crate::{
     server::Server,
 };
 
-/// Runs the experimental nested compositor. Launch environments are scoped to its socket; the
-/// process environment and the parent's compositor are left alone.
+/// Runs the compositor in a window on the desktop until ClamShell quits. The programs it launches are
+/// given its own socket and display ([`crate::Displays`]); ClamShell's environment and the desktop's
+/// compositor are left alone.
 pub fn run(
     state: State,
     config: Config,

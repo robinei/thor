@@ -1,4 +1,8 @@
-//! A separate queue on winit's connection; winit remains the sole reader of the host socket.
+//! The host's colour management when nested in a Wayland desktop (`wp_color_management_v1` as a client):
+//! the colour the host prefers for our window, and the description of what we draw into it. It has its
+//! own event queue on winit's connection and dispatches only what winit has already read, so winit stays
+//! the one reader of the host's socket and nothing here waits on it.
+
 use clamshell_state::colour::{ColourDescription, ColourLuminance, ColourPrimaries, ColourTarget, TransferFunction};
 use smithay::reexports::{
     wayland_protocols::wp::color_management::v1::client::{

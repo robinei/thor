@@ -1,4 +1,6 @@
-//! Bounded window diagnostics. Recordings replay against a matching state fixture.
+//! The last 256 window events and inputs, for finding out what happened when an app's windows misbehave on
+//! the device: `clamshell ctl window events FILE` writes them with the windows as JSON, and a
+//! [`Recording`] replays against a state built with the same library, rules and launch context.
 
 use std::collections::VecDeque;
 use std::path::PathBuf;

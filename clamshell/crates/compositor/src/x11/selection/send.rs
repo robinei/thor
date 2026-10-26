@@ -1,4 +1,7 @@
-//! Wayland pipes feed bounded X11 properties; an INCR deletion permits exactly one next chunk.
+//! From Wayland to X11: an X11 client's request for a selection a Wayland client offers is answered from
+//! that client's pipe into a property of the requestor's, in bounded chunks; with INCR, for large data, each
+//! next chunk is written only after the requestor deleted the last.
+
 use super::*;
 use std::{fs::File, io::Read};
 

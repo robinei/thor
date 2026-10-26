@@ -1,4 +1,7 @@
-//! UI pixmaps are retained; only the changed rectangle is uploaded into each texture.
+//! The scene's elements for a host to compose: the UI's screens and overlays as textures, and the windows
+//! shown, each scaled and cropped to its place by its geometry. The UI draws each screen into a pixmap kept
+//! between frames ([`UiFrame`]); only the rectangle that changed is uploaded into its texture, and is the
+//! texture's damage.
 
 use crate::server::Server;
 use clamshell_ui::{Core, Error, Layer, Screen};

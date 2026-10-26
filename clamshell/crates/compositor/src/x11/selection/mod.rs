@@ -1,4 +1,7 @@
-//! Seat selection changes are translated here; neither State nor drawing knows about X11 transfers.
+//! The clipboard and the primary selection between X11 and Wayland clients: a selection an X11 client owns
+//! is offered to the seat (`receive`), and one a Wayland client offers is served to the X11 clients that
+//! ask (`send`), both in bounded chunks with deadlines. Neither the state nor the drawing knows of it.
+
 mod receive;
 mod send;
 

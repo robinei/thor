@@ -1,4 +1,7 @@
-//! One transform for drawing and hit testing. Black outside a window is not an input target.
+//! Where a window is shown and how: its viewport on its screen, its origin and scale by its presentation
+//! (native, fitted, integer, stretched; for a game, its picture brought to the screen), and the size it is
+//! configured to. Drawing and input use the same [`Geometry`], so a touch lands where the picture is drawn,
+//! and the black around a window is no window's.
 
 use clamshell_state::session::{
     presentation::{WindowLayout, WindowPresentation, WindowScale},

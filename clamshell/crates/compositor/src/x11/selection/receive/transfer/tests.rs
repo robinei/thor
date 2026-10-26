@@ -1,3 +1,4 @@
+//! X11 selections read into Wayland pipes over a fake X11 peer.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::too_many_arguments)]
 use super::*;
 use std::{

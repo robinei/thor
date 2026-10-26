@@ -1,4 +1,7 @@
-//! The same cursor composition serves nested and later direct outputs.
+//! The cursor: the image the client under the pointer asked for (a surface of its own or a named cursor
+//! from the XCursor theme), or the default arrow over ClamShell's own view, drawn into the scene. It shows
+//! while the pointer moves and hides three seconds after, at a touch, and while a window holds the pointer
+//! locked, so a game played by touch or the pad shows none.
 
 use std::time::{Duration, Instant};
 

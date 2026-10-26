@@ -1,4 +1,8 @@
-//! Desktop input reaches either the existing UI targets or Smithay's seat.
+//! Input from a host (the desktop window's events, or libinput's on the device): keys, the pointer, touch.
+//! A key goes to ClamShell's view while no window has the keyboard, else to the window; the desktop keys
+//! (F12 the Home button, F11 and F10 a window down to the second screen and back, Ctrl+Alt+F1..F12 a VT)
+//! go to the state whatever has the keyboard. A click goes to the window shown under it, or to the view's
+//! target there. Touch continues in `touch`, the pointer's capture in `pointer`.
 
 use crate::server::Server;
 use clamshell_state::{Event as StateEvent, WindowEvent, device::buttons::DeviceKey};

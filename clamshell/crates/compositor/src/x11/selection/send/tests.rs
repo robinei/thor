@@ -1,3 +1,4 @@
+//! Wayland selections served to X11 requestors over a fake X11 peer.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 use super::*;
 use std::{

@@ -1,4 +1,7 @@
-//! X11 properties become ordinary window facts here. No X11 types reach State.
+//! The atoms the window manager uses, and an X11 window's properties (its title, class, transient-for, size
+//! hints, type, state, protocols) read into the window facts the state knows, the same as a Wayland window's.
+//! An app's X11 quirk is fixed here, in the translation, and tested with its properties as input.
+
 use clamshell_state::session::{
     presentation::{WindowLimits, WindowRole},
     windows::WindowFacts,

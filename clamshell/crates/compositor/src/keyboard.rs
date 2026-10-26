@@ -1,4 +1,7 @@
-//! The bottom keyboard types into the focused client without a host uinput device.
+//! The on-screen keyboard's keys, sent to the focused client: a character as text input when the client
+//! has a text field active, otherwise as a key through the seat's keymap, with its modifiers, from a
+//! source of its own, so no virtual input device (uinput) is needed. The state is told when a client's
+//! text field becomes active or stops being (`Event::TextInput`).
 
 use crate::server::Server;
 use clamshell_state::{

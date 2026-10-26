@@ -1,4 +1,7 @@
-//! Read a property in bounded slices and delete it only after the reader accepts the entire chunk.
+//! One paste from an X11 owner into a Wayland client's pipe: the property read in bounded slices, and
+//! deleted only once the pipe has taken all of it, so that with INCR the owner sends its next chunk only when
+//! there is room.
+
 use super::*;
 use std::io::Write;
 

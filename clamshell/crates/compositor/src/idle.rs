@@ -1,4 +1,8 @@
-//! Visible client inhibitors and nested input feed the existing idle state machine.
+//! The compositor's part of idling: when input last came, and whether a shown window inhibits idling
+//! (idle-inhibit, as a video player asks while it plays). The state is told when the compositor turns quiet
+//! (no input for `NOTIFY_AFTER` seconds and nothing inhibiting) and when input or an inhibitor wakes it;
+//! its idle stage decides the rest. An inhibitor counts only while its surface has a buffer and its window
+//! is shown.
 
 use crate::server::Server;
 use clamshell_state::{
