@@ -104,7 +104,7 @@ impl Measure {
         };
         let to_reference = 203.0 / colour.luminances().reference.max(1) as f32;
         if self.program.is_none() {
-            self.program = Some(super::chain::pass_program(renderer, "measure()", MEASURE_GLSL).map_err(|e| e.to_string()));
+            self.program = Some(super::chain::pass_program(renderer, "measure()", MEASURE_GLSL, false).map_err(|e| e.to_string()));
         }
         let program = match &self.program {
             Some(Ok(program)) => program.clone(),

@@ -63,8 +63,9 @@ enum Read {
 #[derive(Default)]
 pub(crate) struct Chains {
     chains: HashMap<Id, Chain>,
-    easu: Option<Result<GlesTexProgram, String>>,
-    fxaa: Option<Result<GlesTexProgram, String>>,
+    /// The passes' programs, for a signal and for linear light (see [`Want::linear`]).
+    easu: (Program, Program),
+    fxaa: (Program, Program),
     /// SMAA's programs once made, or why they couldn't be, which isn't tried again.
     smaa: Option<Result<super::smaa::Smaa, String>>,
     /// The windows whose passes failed, logged once.
@@ -79,6 +80,9 @@ pub(crate) struct Want<'a> {
     pub fxaa: bool,
     pub upscale: bool,
     pub hdr: bool,
+    /// Whether it is linear light (scRGB's), whose contrast the passes measure in PQ's signal (see
+    /// `render::PERCEIVE_GLSL`).
+    pub linear: bool,
     /// SMAA's blending done in the final pass, which reads the buffer itself (not for one copied out).
     pub fuse: bool,
 }
@@ -212,7 +216,7 @@ impl Chains {
         }
         if chain.commit != Some(commit) {
             chain.commit = None;
-            self.draw(renderer, chain, source, read, flipped)?;
+            self.draw(renderer, chain, source, read, flipped, want.linear)?;
             chain.commit = Some(commit);
         }
         Ok(())
@@ -220,7 +224,7 @@ impl Chains {
 
     /// Draws a window's passes from its buffer's texture `source`, read as `read` (and upside down if
     /// `flipped`): SMAA, then the upscale, each if wanted.
-    fn draw(&mut self, renderer: &mut GlesRenderer, chain: &mut Chain, source: &GlesTexture, read: Read, flipped: bool) -> Result<(), Error> {
+    fn draw(&mut self, renderer: &mut GlesRenderer, chain: &mut Chain, source: &GlesTexture, read: Read, flipped: bool, linear: bool) -> Result<(), Error> {
         let mut input = source.clone();
         let mut input_turn = Transform::Normal;
         if let Some(t) = &mut chain.smaa {
@@ -235,7 +239,7 @@ impl Chains {
                 None => source.clone(),
             };
             match &mut self.smaa {
-                Some(Ok(smaa)) => smaa.run(renderer, (&color, read == Read::External), [&t.edges, &t.blend], t.out.as_ref(), (t.size.w, t.size.h))?,
+                Some(Ok(smaa)) => smaa.run(renderer, (&color, read == Read::External, linear), [&t.edges, &t.blend], t.out.as_ref(), (t.size.w, t.size.h))?,
                 Some(Err(error)) => return Err(error.clone().into()),
                 None => {}
             }
@@ -247,10 +251,11 @@ impl Chains {
             }
         }
         if let Some(target) = &mut chain.fxaa {
-            if self.fxaa.is_none() {
-                self.fxaa = Some(pass_program(renderer, "fxaa(v_coords)", super::render::FXAA_GLSL).map_err(|e| e.to_string()));
+            let fxaa = side(&mut self.fxaa, linear);
+            if fxaa.is_none() {
+                *fxaa = Some(pass_program(renderer, "fxaa(v_coords)", super::render::FXAA_GLSL, linear).map_err(|e| e.to_string()));
             }
-            let program = match &self.fxaa {
+            let program = match fxaa {
                 Some(Ok(program)) => program.clone(),
                 Some(Err(error)) => return Err(error.clone().into()),
                 None => return Ok(()),
@@ -261,10 +266,11 @@ impl Chains {
             input = target.clone();
         }
         if let Some(target) = &mut chain.upscaled {
-            if self.easu.is_none() {
-                self.easu = Some(pass_program(renderer, "easu()", super::render::EASU_GLSL).map_err(|e| e.to_string()));
+            let easu = side(&mut self.easu, linear);
+            if easu.is_none() {
+                *easu = Some(pass_program(renderer, "easu()", super::render::EASU_GLSL, linear).map_err(|e| e.to_string()));
             }
-            let program = match &self.easu {
+            let program = match easu {
                 Some(Ok(program)) => program.clone(),
                 Some(Err(error)) => return Err(error.clone().into()),
                 None => return Ok(()),
@@ -338,7 +344,16 @@ pub(super) fn render(
 
 /// A pass's program: `glsl` defining the function `main` calls (`easu()` or `fxaa(v_coords)`), its signal
 /// as it is (decoding comes in the final pass).
-pub(super) fn pass_program(renderer: &mut GlesRenderer, call: &str, glsl: &str) -> Result<GlesTexProgram, Error> {
+/// A pass's program, made the first time it is needed, or why it couldn't be.
+type Program = Option<Result<GlesTexProgram, String>>;
+
+/// One of a pair: the first, or with `second` the second.
+pub(super) fn side<T>(pair: &mut (T, T), second: bool) -> &mut T {
+    if second { &mut pair.1 } else { &mut pair.0 }
+}
+
+pub(super) fn pass_program(renderer: &mut GlesRenderer, call: &str, glsl: &str, linear: bool) -> Result<GlesTexProgram, Error> {
+    let perceive = super::render::PERCEIVE_GLSL;
     let source = format!(
         r#"#version 100
 //_DEFINES_
@@ -357,6 +372,8 @@ varying vec2 v_coords;
 #if defined(DEBUG_FLAGS)
 uniform float tint;
 #endif
+const bool LINEAR = {linear};
+{perceive}
 {glsl}
 void main() {{
     gl_FragColor = {call} * alpha;

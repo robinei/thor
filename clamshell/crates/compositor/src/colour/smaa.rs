@@ -75,6 +75,16 @@ const SAMPLING_EXTERNAL: &str = "#define SAMPLER_colorTex samplerExternalOES
 #define SMAASampleOffset(tex, coord, offset) texture(tex, coord + vec2(offset) * SMAA_RT_METRICS.xy)
 ";
 
+/// Sampling the picture as PQ's signal of its linear light (scRGB's, 1.0 at 80 nits), as
+/// `render::PERCEIVE_GLSL` does, for the edges' pass on linear light.
+const PERCEIVE: &str = "vec4 perceive(vec4 c) {
+    vec3 p = pow(max(c.rgb, vec3(0.0)) * 0.008, vec3(0.1593017578125));
+    return vec4(pow((0.8359375 + 18.8515625 * p) / (1.0 + 18.6875 * p), vec3(78.84375)), c.a);
+}
+#undef SMAASamplePoint
+#define SMAASamplePoint(tex, coord) perceive(texture(tex, coord))
+";
+
 /// A full-screen triangle from the vertex's index alone, its texture coordinates 0 to 1 over the target.
 const TRIANGLE: &str = "vec2 corner() { return vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)); }
 ";
@@ -156,6 +166,9 @@ pub(crate) struct Smaa {
     blending: Pass,
     /// The passes that read the picture, for an external one: made the first time one comes.
     external: Option<(Pass, Pass)>,
+    /// The edges' pass for linear light (scRGB's), measuring contrast in PQ's signal, for an ordinary
+    /// picture and an external one: made the first time one comes.
+    linear_edges: (Option<Pass>, Option<Pass>),
     area: GlesTexture,
     search: GlesTexture,
     framebuffer: u32,
@@ -174,12 +187,13 @@ impl Smaa {
                 gl,
                 WEIGHTS,
                 false,
+                false,
                 &[("edges_tex", false, ffi::TEXTURE_2D), ("area_tex", false, ffi::TEXTURE_2D), ("search_tex", true, ffi::TEXTURE_2D)],
             )?;
             Ok((edges, weights, blending, framebuffer(gl)))
         })?;
         let (edges, weights, blending, framebuffer) = built.map_err(|e| format!("smaa: {e}"))?;
-        Ok(Smaa { edges, weights, blending, external: None, area, search, framebuffer })
+        Ok(Smaa { edges, weights, blending, external: None, linear_edges: (None, None), area, search, framebuffer })
     }
 
     /// Anti-aliases `color` (an external texture if `external`) through `edges` and `blend`, all of `size`,
@@ -188,7 +202,7 @@ impl Smaa {
     pub fn run(
         &mut self,
         renderer: &mut GlesRenderer,
-        (color, external): (&GlesTexture, bool),
+        (color, external, linear): (&GlesTexture, bool, bool),
         [edges, blend]: [&GlesTexture; 2],
         out: Option<&GlesTexture>,
         size: (i32, i32),
@@ -197,9 +211,19 @@ impl Smaa {
             let built = renderer.with_context(|gl| picture_passes(gl, true))?;
             self.external = Some(built.map_err(|e| format!("smaa: {e}"))?);
         }
+        let linear_edges = super::chain::side(&mut self.linear_edges, external);
+        if linear && linear_edges.is_none() {
+            let built = renderer.with_context(|gl| build(gl, EDGES, external, true, &[("color_tex", false, picture_target(external))]))?;
+            *linear_edges = Some(built.map_err(|e| format!("smaa: {e}"))?);
+        }
+        let linear_edges = if external { &self.linear_edges.1 } else { &self.linear_edges.0 };
         let (edges_pass, blending_pass) = match (&self.external, external) {
             (Some((edges, blending)), true) => (edges, blending),
             _ => (&self.edges, &self.blending),
+        };
+        let edges_pass = match linear_edges {
+            Some(pass) if linear => pass,
+            _ => edges_pass,
         };
         let fb = self.framebuffer;
         renderer.with_context(|gl| {
@@ -215,9 +239,9 @@ impl Smaa {
 
 /// The two passes that read the picture, edges and blending, for an ordinary texture or an external one.
 fn picture_passes(gl: &ffi::Gles2, external: bool) -> Result<(Pass, Pass), String> {
-    let color = if external { ffi::TEXTURE_EXTERNAL_OES } else { ffi::TEXTURE_2D };
-    let edges = build(gl, EDGES, external, &[("color_tex", false, color)])?;
-    let blending = build(gl, BLENDING, external, &[("color_tex", false, color), ("blend_tex", false, ffi::TEXTURE_2D)])?;
+    let color = picture_target(external);
+    let edges = build(gl, EDGES, external, false, &[("color_tex", false, color)])?;
+    let blending = build(gl, BLENDING, external, false, &[("color_tex", false, color), ("blend_tex", false, ffi::TEXTURE_2D)])?;
     Ok((edges, blending))
 }
 
@@ -267,15 +291,23 @@ fn framebuffer(gl: &ffi::Gles2) -> u32 {
     fb
 }
 
+/// The picture's texture target: external, or ordinary.
+fn picture_target(external: bool) -> u32 {
+    if external { ffi::TEXTURE_EXTERNAL_OES } else { ffi::TEXTURE_2D }
+}
+
 /// Compiles and links a pass from its vertex and fragment parts, for an external picture or not, finding
-/// its uniforms: its samplers by name, with their filtering and target.
+/// its uniforms: its samplers by name, with their filtering and target. With `linear` the picture's
+/// samples, linear light, are taken to PQ's signal (only the edges' pass reads them, through
+/// `SMAASamplePoint`).
 #[allow(unsafe_code)]
-fn build(gl: &ffi::Gles2, (vertex, fragment): (&str, &str), external: bool, samplers: &[(&str, bool, u32)]) -> Result<Pass, String> {
+fn build(gl: &ffi::Gles2, (vertex, fragment): (&str, &str), external: bool, linear: bool, samplers: &[(&str, bool, u32)]) -> Result<Pass, String> {
     let (version, sampling) = match external {
         true => ("#version 300 es\n#extension GL_OES_EGL_image_external_essl3 : require\n", SAMPLING_EXTERNAL),
         false => ("#version 300 es\n", SAMPLING),
     };
-    let start = format!("{version}{HEADER}{sampling}");
+    let perceive = if linear { PERCEIVE } else { "" };
+    let start = format!("{version}{HEADER}{sampling}{perceive}");
     // The picture's declarations with its own sampler type.
     let shader = SHADER.replace("SMAATexture2D(colorTex)", "SAMPLER_colorTex colorTex");
     let vs = compile(gl, ffi::VERTEX_SHADER, &format!("{start}#define SMAA_INCLUDE_PS 0\n{shader}\n{TRIANGLE}{vertex}"))?;

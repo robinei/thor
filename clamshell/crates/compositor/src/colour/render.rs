@@ -260,7 +260,8 @@ impl Pipeline {
             chained.iter().find(|(chained, ..)| chained == id).map(|(id, surface, aa, upscale, fused)| {
                 use clamshell_state::settings::AntiAliasing;
                 let hdr = server.colour.surfaces.get(id).is_some_and(|colour| colour.hdr());
-                super::chain::Want { surface, smaa: *aa == AntiAliasing::Smaa, fxaa: *aa == AntiAliasing::Fxaa, upscale: *upscale, hdr, fuse: *fused }
+                let linear = server.colour.surfaces.get(id).is_some_and(|colour| colour.transfer == TransferFunction::Linear);
+                super::chain::Want { surface, smaa: *aa == AntiAliasing::Smaa, fxaa: *aa == AntiAliasing::Fxaa, upscale: *upscale, hdr, linear, fuse: *fused }
             })
         })?;
         self.converted.clear();
@@ -418,7 +419,7 @@ fn curve_uniforms(curve: Option<&Curve>, headroom: f32, hdr_peak: Option<f32>) -
 /// luma shows and kept within the four nearest (as `easu` in the tests). It works on the signal, before
 /// decoding.
 pub(super) const EASU_GLSL: &str = "vec4 texel(vec2 at) { return texture2D(tex, (at + 0.5) * clarity.xy); }
-float luma(vec3 c) { return c.b * 0.5 + c.r * 0.5 + c.g; }
+float luma(vec3 c) { c = perceive(c); return c.b * 0.5 + c.r * 0.5 + c.g; }
 void easu_set(inout vec2 dir, inout float len, float w, float a, float b, float c, float d, float e) {
     float dc = d - c;
     float cb = c - b;
@@ -527,11 +528,11 @@ pub(super) const FXAA_GLSL: &str = "vec4 fxaa(vec2 uv) {
     vec3 sw = texture2D(tex, uv + vec2(-1.0, 1.0) * px).rgb;
     vec3 se = texture2D(tex, uv + vec2(1.0, 1.0) * px).rgb;
     vec3 weights = vec3(0.299, 0.587, 0.114);
-    float lnw = dot(nw, weights);
-    float lne = dot(ne, weights);
-    float lsw = dot(sw, weights);
-    float lse = dot(se, weights);
-    float lm = dot(m4.rgb, weights);
+    float lnw = dot(perceive(nw), weights);
+    float lne = dot(perceive(ne), weights);
+    float lsw = dot(perceive(sw), weights);
+    float lse = dot(perceive(se), weights);
+    float lm = dot(perceive(m4.rgb), weights);
     float lmin = min(lm, min(min(lnw, lne), min(lsw, lse)));
     float lmax = max(lm, max(max(lnw, lne), max(lsw, lse)));
     vec2 dir = vec2(-((lnw + lne) - (lsw + lse)), (lnw + lsw) - (lne + lse));
@@ -540,8 +541,23 @@ pub(super) const FXAA_GLSL: &str = "vec4 fxaa(vec2 uv) {
     dir = clamp(dir * rcp, vec2(-8.0), vec2(8.0)) * px;
     vec3 a = 0.5 * (texture2D(tex, uv + dir * (1.0 / 3.0 - 0.5)).rgb + texture2D(tex, uv + dir * (2.0 / 3.0 - 0.5)).rgb);
     vec3 b = a * 0.5 + 0.25 * (texture2D(tex, uv - dir * 0.5).rgb + texture2D(tex, uv + dir * 0.5).rgb);
-    float lb = dot(b, weights);
+    float lb = dot(perceive(b), weights);
     return vec4((lb < lmin || lb > lmax) ? a : b, m4.a);
+}
+";
+
+/// The signal the passes measure contrast in: for linear light (scRGB's, 1.0 at 80 nits, `LINEAR`), PQ's of
+/// it, as a PQ picture's own signal is; for the others their signal as it is. Edges and sharpening are
+/// judged on it; anti-aliasing still blends the light itself.
+pub(super) const PERCEIVE_GLSL: &str = "vec3 perceive(vec3 c) {
+    if (!LINEAR) { return c; }
+    vec3 p = pow(max(c, vec3(0.0)) * 0.008, vec3(0.1593017578125));
+    return pow((0.8359375 + 18.8515625 * p) / (1.0 + 18.6875 * p), vec3(78.84375));
+}
+vec3 unperceive(vec3 e) {
+    if (!LINEAR) { return e; }
+    vec3 p = pow(clamp(e, 0.0, 1.0), vec3(1.0 / 78.84375));
+    return pow(max(p - 0.8359375, vec3(0.0)) / (18.8515625 - 18.6875 * p), vec3(1.0 / 0.1593017578125)) * 125.0;
 }
 ";
 
@@ -550,18 +566,18 @@ pub(super) const FXAA_GLSL: &str = "vec4 fxaa(vec2 uv) {
 /// four texels around, limited so that it never rings beyond them (as `rcas` in the tests).
 const RCAS_GLSL: &str = "vec4 rcas() {
     vec4 e4 = texture2D(tex, v_coords);
-    vec3 e = e4.rgb;
-    vec3 b = texture2D(tex, v_coords - vec2(0.0, clarity.y)).rgb;
-    vec3 h = texture2D(tex, v_coords + vec2(0.0, clarity.y)).rgb;
-    vec3 d = texture2D(tex, v_coords - vec2(clarity.x, 0.0)).rgb;
-    vec3 f = texture2D(tex, v_coords + vec2(clarity.x, 0.0)).rgb;
+    vec3 e = perceive(e4.rgb);
+    vec3 b = perceive(texture2D(tex, v_coords - vec2(0.0, clarity.y)).rgb);
+    vec3 h = perceive(texture2D(tex, v_coords + vec2(0.0, clarity.y)).rgb);
+    vec3 d = perceive(texture2D(tex, v_coords - vec2(clarity.x, 0.0)).rgb);
+    vec3 f = perceive(texture2D(tex, v_coords + vec2(clarity.x, 0.0)).rgb);
     vec3 mn4 = min(min(b, d), min(f, h));
     vec3 mx4 = max(max(b, d), max(f, h));
     vec3 hit_min = min(mn4, e) / max(4.0 * mx4, vec3(0.000001));
     vec3 hit_max = (1.0 - max(mx4, e)) / min(4.0 * mn4 - 4.0, vec3(-0.000001));
     vec3 lobes = max(-hit_min, hit_max);
     float lobe = max(-0.1875, min(max(max(lobes.r, lobes.g), lobes.b), 0.0)) * exp2(-2.0 * (1.0 - clarity.z));
-    return vec4((lobe * (b + d + f + h) + e) / (4.0 * lobe + 1.0), e4.a);
+    return vec4(unperceive((lobe * (b + d + f + h) + e) / (4.0 * lobe + 1.0)), e4.a);
 }
 ";
 
@@ -580,15 +596,16 @@ const FETCH_GLSL: &str = "vec4 fetch() {
     if (clarity.w > 0.5) { uv = (floor(uv / clarity.xy) + 0.5) * clarity.xy; }
     vec4 e = texture2D(tex, uv);
     if (clarity.z > 0.0) {
-        vec3 b = texture2D(tex, uv - vec2(0.0, clarity.y)).rgb;
-        vec3 h = texture2D(tex, uv + vec2(0.0, clarity.y)).rgb;
-        vec3 d = texture2D(tex, uv - vec2(clarity.x, 0.0)).rgb;
-        vec3 f = texture2D(tex, uv + vec2(clarity.x, 0.0)).rgb;
-        vec3 mn = min(min(min(d, e.rgb), min(f, b)), h);
-        vec3 mx = max(max(max(d, e.rgb), max(f, b)), h);
+        vec3 c = perceive(e.rgb);
+        vec3 b = perceive(texture2D(tex, uv - vec2(0.0, clarity.y)).rgb);
+        vec3 h = perceive(texture2D(tex, uv + vec2(0.0, clarity.y)).rgb);
+        vec3 d = perceive(texture2D(tex, uv - vec2(clarity.x, 0.0)).rgb);
+        vec3 f = perceive(texture2D(tex, uv + vec2(clarity.x, 0.0)).rgb);
+        vec3 mn = min(min(min(d, c), min(f, b)), h);
+        vec3 mx = max(max(max(d, c), max(f, b)), h);
         vec3 amp = sqrt(clamp(min(mn, 2.0 - mx) / max(mx, vec3(0.00001)), 0.0, 1.0));
         vec3 w = amp * (-1.0 / mix(8.0, 5.0, clarity.z));
-        e.rgb = clamp(((b + d + f + h) * w + e.rgb) / (1.0 + 4.0 * w), vec3(0.0), max(mx, vec3(1.0)));
+        e.rgb = unperceive(clamp(((b + d + f + h) * w + c) / (1.0 + 4.0 * w), vec3(0.0), max(mx, vec3(1.0))));
     }
     return e;
 }";
@@ -672,7 +689,8 @@ fn shader(renderer: &mut GlesRenderer, description: ColourDescription, input: bo
     };
     let uniforms = if curved { "uniform vec4 curve_a;\nuniform vec4 curve_b;\nuniform vec4 clarity;\nuniform sampler2D smaa_blend_tex;" } else { "" };
     let fetch = if curved {
-        [EASU_GLSL, FXAA_GLSL, SMAA_BLEND_GLSL, RCAS_GLSL, FETCH_GLSL].concat()
+        let linear = format!("const bool LINEAR = {};\n", description.transfer == TransferFunction::Linear);
+        [linear.as_str(), PERCEIVE_GLSL, EASU_GLSL, FXAA_GLSL, SMAA_BLEND_GLSL, RCAS_GLSL, FETCH_GLSL].concat()
     } else {
         "vec4 fetch() { return texture2D(tex, v_coords); }".to_owned()
     };
