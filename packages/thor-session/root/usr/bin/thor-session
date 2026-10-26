@@ -38,11 +38,14 @@ export XDG_CONFIG_DIRS=/usr/share/thor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}
 # the shell's own variables).
 env -u PWD -u OLDPWD -u SHLVL -u _ dbus-update-activation-environment --systemd --all
 # Until ClamShell ends, or systemd stops restarting it (its failures counted from this session's start).
-# A start that fails, or a ClamShell that fails, returns while systemd restarts it: waited for again
-# until the unit has failed for good.
+# The wait returns too when ClamShell is to run again: restarted by systemd after a failure, or by hand.
 state() { systemctl --user show --property=ActiveState --value clamshell.service; }
+ended() { [ -z "$(systemctl --user show --property=Job --value clamshell.service)" ] && case $(state) in inactive | failed) true ;; *) false ;; esac; }
 systemctl --user reset-failed clamshell.service 2> /dev/null
-while ! systemctl --user start --wait clamshell.service 2> /dev/null && [ "$(state)" != failed ]; do :; done
+while :; do
+    systemctl --user start --wait clamshell.service 2> /dev/null
+    ended && break
+done
 # The session's displays out of the environment, and what it launched and mounted stopped.
 systemctl --user unset-environment WAYLAND_DISPLAY DISPLAY
 systemctl --user stop app-graphical.slice background-graphical.slice
