@@ -4,7 +4,7 @@
 Build first (in clamshell/): cargo build
     cargo build -p clamshell-compositor --examples
 Run with --gpu to require native dmabuf on a machine with an accessible render node.
-Needs sway, Xwayland, foot and grim; --gpu also needs vkcube with Wayland WSI support and a Vulkan driver. Leaves screenshots and logs in the printed temporary directory.
+Needs sway, Xwayland, foot, grim, dbus-daemon and gdbus; --gpu also needs vkcube with Wayland WSI support and a Vulkan driver. Runs on a session bus of its own, so that ClamShell serves the notifications there rather than meet the desktop's server. Leaves screenshots and logs in the printed temporary directory.
 """
 import os
 import argparse
@@ -46,7 +46,8 @@ def main():
            "WLR_LIBINPUT_NO_DEVICES": "1", "LIBGL_ALWAYS_SOFTWARE": "0" if args.gpu else "1", "CLAMSHELL_STEAM": "off",
            "CLAMSHELL_CONTROL": str(directory / "control"), "CLAMSHELL_BACKLIGHTS": str(directory / "backlights"),
            "CLAMSHELL_GAMEPAD": str(directory / "no-controller"), "RUST_LOG": "info,clamshell_compositor::x11=debug"}
-    env["DBUS_SESSION_BUS_ADDRESS"] = os.environ.get("DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{os.getuid()}/bus")
+    bus = directory / "bus"
+    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={bus}"
     for key in ["SWAYSOCK", "WAYLAND_DISPLAY", "DISPLAY", "WAYLAND_SOCKET", "CLAMSHELL_SESSION"]:
         env.pop(key, None)
     processes = []
@@ -74,6 +75,8 @@ def main():
         raise RuntimeError(f"timed out: {description}; logs in {directory}")
 
     try:
+        spawn(["dbus-daemon", "--session", "--nofork", "--nopidfile", f"--address=unix:path={bus}"], "dbus", env)
+        wait(lambda: bus.is_socket(), "the test's session bus")
         spawn(["sway", "-c", str(sway_config)], "sway", env)
         parent_socket = wait(lambda: next((p.name for p in runtime.glob("wayland-*") if p.is_socket()), None), "parent Wayland socket")
         host = {**env, "WAYLAND_DISPLAY": parent_socket}
@@ -455,6 +458,34 @@ time.sleep(300)
         move_pointer(501, 250)
         wait(lambda: patch(500) != before_second, "pointer motion shows the idle cursor again")
         move_pointer(1400, 450)
+        # Notifications: ClamShell is the bus's notification server and draws them over the bottom screen,
+        # just below the bar, on a fill barely above black.
+        wait(lambda: "notifications: org.freedesktop.Notifications is ours" in (directory / "compositor.log").read_text(), "ClamShell serves the notifications")
+        monitor = spawn(["gdbus", "monitor", "--session", "--dest", "org.freedesktop.Notifications"], "notifications", env)
+        def notifications(method, *args):
+            return subprocess.run(["gdbus", "call", "--session", "--dest", "org.freedesktop.Notifications", "--object-path", "/org/freedesktop/Notifications",
+                                   "--method", f"org.freedesktop.Notifications.{method}", *args], env=env, capture_output=True, text=True, check=True, timeout=10).stdout
+        def notify(summary, actions):
+            return int(re.search(r"uint32 (\d+)", notifications("Notify", "nested", "0", "", summary, "from the test", actions, "{}", "0")).group(1))
+        def signalled(text):
+            return text in (directory / "notifications.log").read_text()
+        panel = (960 + 400, 100)
+        surface = (0x13, 0x13, 0x16)
+        first = notify("Nested", "[]")
+        wait(lambda: colour_at(*panel, surface), "a notification is drawn over the bottom screen")
+        shot("notification")
+        notifications("CloseNotification", str(first))
+        wait(lambda: not colour_at(*panel, surface), "a notification its program closed is gone")
+        wait(lambda: signalled(f"NotificationClosed (uint32 {first}, uint32 3)"), "closed by the call, as the signal says")
+        second = notify("Tap me", "['default', 'Open']")
+        wait(lambda: colour_at(*panel, surface), "a second notification is drawn")
+        move_pointer(960 + 200, 80, True)
+        wait(lambda: signalled(f"ActionInvoked (uint32 {second}, 'default')") and signalled(f"NotificationClosed (uint32 {second}, uint32 2)"),
+             "a tap invokes the default action and dismisses the notification")
+        wait(lambda: not colour_at(*panel, surface), "a tapped notification is gone")
+        monitor.terminate()
+        monitor.wait(timeout=5)
+        processes.remove(monitor)
         control("screenshot")
         screenshots = private_home / "Pictures/Screenshots"
         captured = wait(lambda: next(screenshots.glob("clamshell-*.png"), None), "in-process screenshot saved")
@@ -599,7 +630,7 @@ time.sleep(300)
         assert not any(r["input"].get("Window", {}).get("Opened", {}).get("app_id") == "HiddenX11Helper" for r in recorded["records"] if isinstance(r["input"], dict)), "input-only X11 helpers never enter the window model"
         if args.gpu:
             print("ok: Vulkan WSI animation, resize, close, dmabuf feedback, native submission and SMAA blended in the final pass; EGL native submission", flush=True)
-        print("ok: PQ, linear and SDR EGL colour conversion; compositor cursor and damage, in-process screenshot, window-event export, clipboard isolation and persistence, presentation feedback, lazy Xwayland, X11 presentation and crash recovery, Wayland EGL and shm rendering, bottom-slot move, return and Home", flush=True)
+        print("ok: PQ, linear and SDR EGL colour conversion; compositor cursor and damage, in-process screenshot, window-event export, clipboard isolation and persistence, presentation feedback, lazy Xwayland, X11 presentation and crash recovery, Wayland EGL and shm rendering, bottom-slot move, return and Home, notifications shown, closed and tapped", flush=True)
     finally:
         # Kill the entire isolated group even when its leader already exited, so a stopped
         # Xwayland cannot survive a failing test's teardown.
