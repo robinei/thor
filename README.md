@@ -19,11 +19,8 @@ Not aims (decided, so they are not reopened by accident):
 - More than one on-screen keyboard layout. It is a PC-style US layout with an Fn layer, which covers
   what is typed on the device (searches, passwords, names); other languages are for a physical keyboard,
   which keeps its own layout.
-- Compositors other than sway. Placing windows, the second screen and following launches use sway's IPC,
-  and other compositors offer no common way.
-- A compositor of ClamShell's own, for now. sway does the work; window operations go through ClamShell's
-  own effects and events (`crates/system/src/sway/` speaks to sway), so one could replace it later
-  without touching the state or the UI.
+- Running under another compositor. ClamShell is the compositor (`crates/compositor`): `clamshell --drm`
+  on the device's screens, `clamshell --nested` in a window on a desktop for development.
 - More than one virtual controller for games. Games see one Xbox 360 pad; remapping and the gyro are
   ClamShell's keymaps.
 - Themes, for now. There is one look, made for the OLED screens: black, grey text, colour only where it
@@ -67,7 +64,7 @@ with events; the UI draws from the state.
 
 ```
 input, readings, windows ─▶ Event ─▶ State::apply ─┬─▶ the UI redraws only what changed
-                               ▲                    └─▶ Effects ─▶ system threads (sway, systemd, D-Bus, …)
+                               ▲                    └─▶ Effects ─▶ system threads (systemd, D-Bus, …)
                                └───────────────────────────────── results as events ◀┘
 ```
 
@@ -93,8 +90,8 @@ It is made to be dependable, light and quick, to start and while it runs. Measur
 (the Thor's numbers will come with the device):
 
 - **Starting:** both screens are drawn about 80 ms after it starts, when it tells systemd it is ready. A
-  restart loses nothing: what it launched runs on in its own systemd scopes and is found again, and a
-  watchdog restarts it if its main loop ever stops.
+  watchdog restarts it if its main loop ever stops. As it is the compositor, a restart of it closes the
+  session's apps.
 - **Running:** about 40 MB resident, most of it the two screens' buffers, and about 0.2 % of a CPU over
   hours of use. A frame takes 0.1-0.6 ms to draw; when an event changes nothing visible, checking costs
   about 0.02 ms and nothing is drawn or sent to the compositor. Handling an event or drawing a frame
@@ -107,9 +104,11 @@ Rust, a Cargo workspace:
 | Crate | What |
 |---|---|
 | `crates/state` | the state and its rules: events in, effects out; no I/O |
-| `crates/system` | threads that watch the system and send events, and carry out effects (sway, systemd, NetworkManager, BlueZ, evdev/uinput, sysfs); the game library from disk |
+| `crates/system` | threads that watch the system and send events, and carry out effects (systemd, NetworkManager, BlueZ, evdev/uinput, sysfs); the game library from disk |
 | `crates/library` | the library's model (entries, groups, tabs), sorting, name patterns, and the parts of Steam's formats that need no disk |
-| `crates/ui` | Wayland, CPU drawing (tiny-skia, fontdue), the views, pad navigation; the font built in (Noto Sans, SIL Open Font License 1.1: `crates/ui/fonts/OFL.txt`) |
+| `crates/ui` | ClamShell's own screens: CPU drawing (tiny-skia, fontdue), the views, pad navigation, drawn into pixmaps the compositor shows; the font built in (Noto Sans, SIL Open Font License 1.1: `crates/ui/fonts/OFL.txt`) |
+| `crates/compositor` | the Wayland compositor (Smithay): the screens through DRM and libinput (`--drm`) or a desktop window (`--nested`), windows, input, Xwayland, frame pacing, screenshots |
+| `crates/device` | facts the hardware can't announce: the screens' connectors and rotation, the panels' colour, charging, the fan, the gyro, the inputs |
 | `crates/fan` | the fan daemon `clamshell-fan`: a system service on the device, the fan's speed from the temperatures in the mode the Fan setting picks (its curves in `crates/fan/src/curve.rs`); and its library `clamshell_fan_mode`, the modes as ClamShell writes them, which clamshell-state uses |
 | `src/` | the program around them: the command line, the environment, the threads, the control pipe, the snapshots |
 
@@ -118,10 +117,10 @@ failure that is handled by falling back (a file that can't be read, a service's 
 lookup that can't fail (an index the code itself made) still needs a fallback the lints accept, which
 never runs; where a bug could make it run, a `debug_assert!` catches it in tests.
 
-Beside the workspace are the configuration files the packages install with it: `sway/` (ClamShell's part
-of sway's config), `foot/`, `mako/`, `mpv/` and `retroarch/` (those programs' settings for the device),
-and `android/` (the Waydroid session's script and its clipboard bridge). `tests/` holds the nested sway
-test and the snapshots' references.
+Beside the workspace are `android/` (the Waydroid session's script and its clipboard bridge, which the package
+installs) and `tests/` (the nested compositor and picture tests with their test programs, the device profiles'
+test, and the snapshots' references). The settings of the programs the session runs (foot, mpv, RetroArch) are
+in `packages/thor-session/root/`.
 
 ## The library
 
@@ -185,17 +184,21 @@ file holds what: `crates/system/src/store.rs`.
 ## Running
 
     cd clamshell
-    cargo run                                   # two windows at half the Thor's size: top and bottom
+    cargo run -- --nested                       # the session in a window of this desktop: both screens
     cargo run --features dev -- --snapshot DIR  # every screen as PNG files at the Thor's size, no Wayland
     cargo run -- ctl help                       # the control pipe's commands (a running ClamShell takes them)
-    tools/nested-session.sh                     # as on the device: a nested sway in two windows (the Thor's
-                                                # screens at their size), with this desktop's library
+    tools/nested-session.sh                     # as on the device: the nested session as a user unit
+                                                # (clamshell-nested.service), with this desktop's library
+
+On the device, `clamshell --drm` runs on the screens from the first console (`thor-session`); `clamshell`
+without arguments prints its usage.
 
 In shelf, Y makes the selected entry a favourite (the Favourites tab) or not, and X pins it to the dock
 or unpins it; a pinned folder (a series) opens in shelf from the dock.
 
 On a desktop, keys stand in for the pad: arrows move the focus, Enter is A, Backspace B, Tab View, Q and
-E the shoulders, F is Y, P is X.
+E the shoulders, F is Y, P is X, C Start, Home and End the triggers; a controller's Guide button is the
+Thor's Home button.
 
 ## Checking
 
@@ -215,11 +218,34 @@ E the shoulders, F is Y, P is X.
   say in the commit what changed and why. A change meant to keep behaviour (a refactor, a rename)
   leaves the trace untouched, so any trace difference there is a regression; an unexpected difference
   is a bug.
-- `clamshell/tests/nested-sway.sh` (after `cargo build --release`): a headless sway with ClamShell in it,
-  driven through the control pipe; about a minute.
+- `clamshell/tests/nested-compositor.py` (after `cargo build` and `cargo build -p clamshell-compositor
+  --examples`): ClamShell nested in a headless sway, which only hosts its window, with real clients: clipboard
+  isolation and persistence, the cursor, screenshots, Xwayland started on demand and after a crash, X11
+  windows, moves between the screens. `--gpu`, on a desktop with a render node and a Vulkan driver (and
+  Wayland-capable `vkcube`), requires native dmabuf submission. It prints the directory with its screenshots
+  and protocol logs.
+- `clamshell/tests/picture-scaling.py` (after `cargo build` and `cargo build -p clamshell-compositor
+  --example pattern-game`): test games launched from shelf, their pictures checked to fill the top screen
+  at each Resolution and Scaling. Both need sway (as the host), Xwayland and grim; the first also foot.
 - `tools/vm/vm-test.sh`: the VM suite end to end, about twenty minutes; before pushing. The virtual Thor is
   `tools/vm/vm.py` (QEMU/KVM, both screens, a fake controller with a gyro and rumble, simulated Wi-Fi and
-  Bluetooth; `tools/vm/vm.py --help`), and its checks `tools/vm/vm-checks.py` (`--list`).
+  Bluetooth; `tools/vm/vm.py --help`), and its checks `tools/vm/vm-checks.py` (`--list`). Its session is
+  the device's, `clamshell.service` (the VM's build, `CLAMSHELL_DEVICE=vm`) started by the repository's
+  thor-session: `vm.py restart` ends it for the autologin to start again, and as the device's session it
+  sleeps when idle (`vm.py wake`).
+
+Relative-pointer and pointer-lock behaviour is tested headless by injecting relative input, independent
+of the nested host. The pinned winit backend is absolute-only, so nested mode omits relative-pointer
+and pointer-constraints globals; the DRM backend has them, from libinput. A winit raw-motion forwarding
+patch is being prepared upstream separately. Builds and CI use the pinned dependency without a local
+Cargo source override.
+
+For window diagnostics, `clamshell ctl window events /tmp/window-events.json` exports the windows and the
+last 256 window inputs. `clamshell_compositor::trace::Recording::replay` checks the recording against a
+state fixture with the matching library, rules and launch context.
+
+The screenshot chord or `clamshell ctl screenshot` captures the compositor's scene and saves it through
+the system worker. The nested compositor test checks this export and continued rendering afterward.
 
 ## The device's system
 
@@ -267,31 +293,3 @@ Ours: MIT or Apache-2.0, at your choice (`LICENSE-MIT`, `LICENSE-APACHE`). Not o
 
 Configuration values and facts taken from ROCKNIX, Armada, Thorch and Kettle Linux (named where used) are
 written here in our own words and files.
-
-The experimental in-process compositor runs with `cargo run --features compositor -- --nested` from
-`clamshell/`. It opens one desktop window with the logical screens side by side. F12 is Home (hold
-for window arrows), F11 moves the selected window down, and F10 returns it. Sway remains the normal
-session backend. Touch is routed to UI or clients. The on-screen keyboard uses text-input-v3 or seat key events;
-its clipboard is separate from the parent's. Xwayland starts on the first X11 connection, with non-blocking requests and supervised shutdown.
-X11 toplevels share presentation and input geometry; menus and clipboard bridging remain pending. Build with
-`cargo build --features compositor` and `cargo build -p clamshell-compositor --examples`, then run
-`python3 tests/nested-compositor.py` to check clipboard isolation, persistence, cursor visibility,
-screenshots, lazy Xwayland startup/restart, X11 toplevels and client screen moves using headless sway, Xwayland, foot,
-grim and the EGL fixture. Add `--gpu`
-on a desktop with an accessible render node and Vulkan driver to require native dmabuf submission.
-That mode also needs Wayland-capable `vkcube`: it checks Vulkan WSI animation through screen moves,
-resizes and close, plus complete dmabuf feedback and native buffer submission. The harness prints the
-directory containing screenshots and protocol logs.
-
-Relative-pointer and pointer-lock behaviour is tested headless by injecting relative input, independent
-of the nested host. The pinned winit backend is absolute-only, so nested mode omits relative-pointer
-and pointer-constraints globals; the device backend will use libinput. A winit raw-motion forwarding
-patch is being prepared upstream separately. Builds and CI use the pinned dependency without a local
-Cargo source override.
-
-For nested compositor diagnostics, `clamshell ctl window events /tmp/window-events.json` exports the
-last 256 window inputs. `clamshell_compositor::trace::Recording::replay` checks the recording against a
-state fixture with the matching library, rules and launch context.
-
-The screenshot chord or `clamshell ctl screenshot` captures the nested scene directly and saves through
-the normal system worker. The nested smoke test checks this export and continued rendering afterward.

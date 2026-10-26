@@ -10,10 +10,10 @@ what to try first.
 - **It is feasible and well-trodden.** Smithay (Rust) runs daily-driver compositors (niri, COSMIC). An MVP
   for ClamShell is now estimated at **9,000-11,000 new production lines and 2,900 deleted**, roughly 3-5 months of focused work
   to daily use, then a tail of per-app quirks (Steam, Proton).
-- **The hardware favours it.** The Thor's kernel carries ROCKNIX's inline-rotation patch: a game's
-  compressed (UBWC) buffer can be scanned out **rotated** onto the portrait-native panels, with no GPU
-  composition. sway (wlroots) never does this, so today every game frame is composited. Smithay already
-  attempts rotated scanout and falls back to composition when the hardware refuses.
+- **The hardware favours it.** The Thor's kernel carries ROCKNIX's inline-rotation patch: a game's compressed
+  (UBWC) buffer can be scanned out **rotated** onto the portrait-native panels, with no GPU composition. sway
+  (wlroots) never does this, so under sway every game frame was composited. Smithay already attempts rotated
+  scanout and falls back to composition when the hardware refuses.
 - **It removes whole mechanisms, not just sway.** Synchronous placement deletes the landing workspace, the
   `for_window` rules with their switch variables, marks and backend placement acknowledgements;
   the on-screen keyboard stops going through uinput; grim, sway's config and the generated output setup
@@ -79,7 +79,8 @@ screen capture for other clients, layer-shell for third-party clients, multi-sea
   Screen power and refresh use the sync-driven output effects introduced in phase 0.
 - State assigns ownership, home groups, bottom rules and selection during apply. Foreground launch intent,
   replacement history, finding entries by app id and ending windowless entries remain domain rules.
-  Landing workspaces, marks and retrying asynchronous placement belong only to the sway adapter.
+  Landing workspaces, marks and retrying asynchronous placement belonged only to the sway adapter (removed
+  with sway, 2026-10-26).
 - `apply` runs inside Smithay's dispatch, so the compositor's own effects are queued and carried out after
   dispatch, as the UI already does for events.
 - Title changes allocate (strings); the compositor coalesces them to at most one per frame.
@@ -104,7 +105,7 @@ input through it. No window floats or is moved by hand.
   default follows the entry: fit for games, centred for apps.
 - A touch on black around a window does nothing.
 
-**Windows on the two screens** (the model, the same under sway and the compositor; no focus or mode):
+**Windows on the two screens** (the model; no focus or mode):
 
 1. **Every window lives on one screen** and stays there until moved, whichever program is active.
 2. **At most one window is below, across all programs.** The second screen shows it, or ClamShell's own view
@@ -128,12 +129,9 @@ becomes the front of its screen (it usually needs an answer); the arrows go back
 menu for an entry still lists its windows, to pick one by touch. Two windows below at once (a video and a
 chat) is given up, and can be relaxed later if a need appears.
 
-Under sway the model is the same (the state decides, the sway adapter carries it out with down, back up
-and focus a tab). Sway keeps its own tab bar, so it needs no arrow overlay. Two other presentation
-differences are accepted for a fallback:
-
-- dialogs and fixed-size windows float over their parent, as sway does, instead of alone on black;
-- a game that ignores its size is shown at that size, not scaled to fit.
+Under sway, while it was kept as the fallback (until 2026-10-26), the model was the same (the state
+decided, the sway adapter carried it out), with sway's own tab bar instead of the arrows, dialogs and
+fixed-size windows floating over their parent, and a game that ignores its size shown at that size.
 
 **The Home chords.** Home is on the left of the Thor, Select too; Start, Back and the right stick are on
 the right; the AYN button is in the middle. Every chord is Home under the left thumb with the right thumb or
@@ -152,8 +150,8 @@ an index finger, never two buttons under one thumb:
 A flick acts once: past about 70% in one direction (the axis further out), re-armed below about 30%; a
 stick already off-centre when Home goes down must come back first. While Home is held the right stick goes
 to ClamShell, and the game is sent a centred stick. The AYN button, reachable alone, is the candidate for
-opening a Home menu on the second screen later. These chords and the model above don't depend on the
-compositor: under sway, switching windows switches tabs.
+opening a Home menu on the second screen later. These chords and the model above are the state's, not
+the compositor's.
 
 **Later, considered:** dialogs whose parent should stay visible (find and replace, tool palettes, live
 previews) lose context in the MVP; switching between a dialog and its parent from the second screen covers
@@ -313,9 +311,9 @@ and fixed once. Seven rules, the first three binding on the code from the start:
 ### Frame statistics and limiting
 
 **Decided: under the compositor, frame statistics and the frame-rate cap come from the compositor, and
-MangoHud isn't used.** Today ClamShell launches games with MangoHud as a layer inside them: its CSV log
-feeds the FPS tile, its `fps_limit` is the per-game cap (`Setting::FpsCap`), its overlay is the HUD
-setting, and Waydroid's apps, which MangoHud can't reach, get the same log written from their commits.
+MangoHud isn't used.** Under sway ClamShell launched games with MangoHud as a layer inside them: its CSV
+log fed the FPS tile, its `fps_limit` was the per-game cap (`Setting::FpsCap`), its overlay was the HUD
+setting, and Waydroid's apps, which MangoHud can't reach, got the same log written from their commits.
 The compositor sees every frame of every client without injecting anything: native Wayland apps, X11
 games through Xwayland, and Android apps (Waydroid's windows are Wayland surfaces).
 
@@ -334,8 +332,8 @@ games through Xwayland, and Android apps (Waydroid's windows are Wayland surface
 - **The HUD:** the frame rate and frame time drawn by the compositor as an overlay element when the
   setting asks for it; the full MangoHud overlay goes, the details being on the second screen's system
   info, which can show them live beside the game.
-- **Under sway,** for as long as it is kept, MangoHud stays as it is: sway gives nothing comparable. It
-  goes with sway.
+- **Under sway,** for as long as it was kept, MangoHud stayed as it was: sway gives nothing comparable. It
+  went with sway (2026-10-26).
 
 ### HDR: later, kept possible
 
@@ -444,6 +442,11 @@ the compositor (placing synchronously) and sway (placing a moment later with its
 sway-specific mechanisms (the landing workspace, `for_window` rules and their switch variables, marks,
 stray-window matching) move out of the state into `crates/system/src/sway`, which approximates the model.
 Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, alongside them.
+
+2026-10-26: sway and uwsm were removed, ahead of step 5's period with sway as the fallback: the
+compositor is the only session (`clamshell --drm` as `clamshell.service`, started by thor-session; on a
+desktop `clamshell --nested`). With them went the sway adapter, the UI's Wayland client, MangoHud, grim,
+mako, `/etc/thor/session` and the nested-sway test. Below, what refers to sway records how it was done.
 
 0. **Prepare under sway, no Smithay.** Behaviour unchanged; worth doing whatever is decided about the rest.
    - [x] `ui::Core`: the state, the event queue, the input machines, timers as deadlines (not
@@ -616,14 +619,15 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
           the same clip in mpv directly on KWin (done 2026-10-25: they look the same) (a synthetic clip: a 0-1000 nit ramp, patches from 1 to
           1000 nits, a moving 1000-nit highlight); a Proton game with HDR through Wine's Wayland driver.
 3. **The generic DRM backend, on the VM:** udev, DRM, GBM, GLES, libseat, libinput, two outputs, power,
-   refresh. The VM image boots either compositor; the VM suite checks both. (dmabuf feedback with scanout
-   tranches moved to phase 4, with direct scanout.)
+   refresh. The VM image boots ClamShell's compositor (either compositor until 2026-10-26); the VM suite
+   checks it. (dmabuf feedback with scanout tranches moved to phase 4, with direct scanout.)
    - [x] `clamshell --drm`: libseat, DRM and GBM with GLES, libinput, both screens from the device profile
          (the kernel's mode kept, turned as mounted), each shown its part of the one composed scene and
          drawn only when that part changed; flips give presentation feedback and frame callbacks; VT
          switching. Tried in the bring-up image (llvmpipe): both screens right, about 1 % CPU idle, clicks,
          touch, keys, a Wayland client (foot) shown and moved to the second screen.
    - [x] The session switch: `/etc/thor/session` saying `clamshell` runs it on tty1 instead of sway.
+         (Moot since 2026-10-26: there is only the one session.)
    - [x] Output power and refresh as the state asks (`Effect::Outputs`, `Effect::Refresh`); touch on
          panels mounted turned (the Thor's), rotated with the output; ClamShell's package built with the
          compositor (its libraries in the aarch64 sysroot). The render device's dmabuf feedback is sent;
@@ -635,7 +639,10 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
          graphical-session.target, so udiskie starts; clamshell.service and thor-mako.service start only in
          sway's session (`ConditionEnvironment=XDG_SESSION_DESKTOP=sway`). No watchdog or systemd restart:
          a compositor restarting takes every window with it, so thor-session's count (3 ends within 2
-         minutes) stays the guard. Tried in the VM, both sessions.
+         minutes) stays the guard. Tried in the VM, both sessions. Since 2026-10-26, without uwsm:
+         thor-session starts clamshell.service (`Type=notify`, a 30 s watchdog, restarted on failure,
+         bound to graphical-session.target), and ClamShell gives the user manager and the bus
+         WAYLAND_DISPLAY and DISPLAY itself (`docs/process-control.md`).
    - [x] Frame statistics and the cap ("Frame statistics and limiting", section 3) on the DRM backend's
          page-flip timestamps: the per-window ring, the FPS tile and system info reading it, the cap
          pacing frame callbacks with FIFO forced at launch, the HUD as an overlay element; MangoHud not
@@ -645,8 +652,8 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
          top screen's window gives `Reading::Frames` every half second while it draws. vkcube in the VM
          reads 60 fps uncapped, 30 and 40 capped (40 on 60 Hz: two refreshes, then one), the cap
          following the tile live. "HUD FPS" shows the frame rate, "Full HUD" adds the frame time.
-         Not done: frames replaced before being shown and frames shown late (no view reads them yet);
-         Waydroid's Wayland filter still writes its frame log, which nothing reads under the compositor.
+         Not done: frames replaced before being shown and frames shown late (no view reads them yet).
+         (Waydroid's Wayland filter no longer writes a frame log, since 2026-10-26.)
    - [x] `tools/vm/vm.py --gl`: the x86_64 VM with `virtio-gpu-gl-pci` (`venus=on,blob=on,hostmem=...`)
          and `-display sdl,gl=on` (`egl-headless` when headless), so the guest has OpenGL through virgl
          and Vulkan through Venus (the guest's `vulkan-virtio`), both on the host's GPU. The compositor's
@@ -659,8 +666,9 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
          screenshot (`clamshell ctl screenshot`, both screens side by side).
 4. **On the device:** the checks of section 5 (niri as a stand-in, possible as soon as the Thor arrives),
    then the Snapdragon specifics: panel orientation, rotated plane scanout, command-mode pacing, the
-   refresh policy, the brightness and power guards; measurements (frame statistics against MangoHud's
-   under sway for the same game, a capped game's pacing and power); daily use with sway still the default.
+   refresh policy, the brightness and power guards; measurements (frame statistics against MangoHud's for
+   the same game under gamescope, or sway installed by hand for the comparison; a capped game's pacing and
+   power); daily use.
    - [ ] Direct scanout and the scanout tranche. The DRM backend now always composes (the colour
          pipeline: curves, the panel's colour), so no client buffer reaches a plane, and a scanout tranche
          would only steer allocations for nothing. Direct scanout needs the backend on Smithay's
@@ -721,10 +729,11 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
     works on Turnip. Its first phase is on the desktop, its measurements on the device.
 5. **The default switches** to ClamShell's compositor; sway stays installed and selectable as the fallback
    for as long as the owner wants it. Dropping it (the sway adapter, its tests, the sway packages) is a
-   later decision, taken once the built-in compositor has proven itself in daily use.
+   later decision, taken once the built-in compositor has proven itself in daily use. Done 2026-10-26
+   without the fallback period: sway was dropped with the switch.
 6. **Absorb, later:** the clipboard and the Waydroid proxy in-process, libinput replacing the evdev watch
-   thread, notifications, uwsm, refresh calibration from vblank timestamps, direct injection of the pad
-   mouse and keymap keys.
+   thread, notifications, uwsm (dropped instead, 2026-10-26), refresh calibration from vblank timestamps,
+   direct injection of the pad mouse and keymap keys.
 
 ## 7. Decisions still open
 

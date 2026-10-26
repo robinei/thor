@@ -18,7 +18,8 @@ repository):
   FAT partition, both ways the card boots: systemd-boot's files and `/KERNEL` for the ABL; a pacman hook
   runs it after updates of the kernel, systemd, mkinitcpio and the rest the initramfs is made of), the
   power group's access, zram, sleep, the checks at boot (`thor-selftest`), the account helper.
-- `thor-session`: the autologin into sway and ClamShell, their configs, Steam's starter, this playbook.
+- `thor-session`: the autologin into ClamShell (`clamshell.service`), the session's configs, Steam's
+  starter, this playbook.
 - `clamshell`: ClamShell and the fan daemon.
 - `thor-ucm`: the Thor's sound profiles.
 - `thor-sensors`: the motion sensors' services (hexagonrpcd), for ClamShell's gyro.
@@ -33,16 +34,17 @@ Your notes are `changelog.md` in this folder (the device's own).
    installed here (`pacman -Qq`), summarize what to do and do it (or ask) before upgrading.
 
 2. **Packages.** `checkupdates`: summarize, noting the Thor's own (above), systemd, mkinitcpio, mesa,
-   sway, pipewire, wireplumber, alsa-ucm-conf, bluez, networkmanager, upower. Ask before updating if a
-   game might be running (ClamShell shows it; `systemctl --user list-units 'clamshell-game-*'`). Then
+   pipewire, wireplumber, alsa-ucm-conf, bluez, networkmanager, upower. Ask before updating if a
+   game might be running (ClamShell shows it; `systemctl --user list-units 'clamshell-run-*'`). Then
    `sudo pacman -Syu --noconfirm`. Read the output for warnings, failed hooks and `.pacnew` notices. If
    thor-boot ran, it must end with "thor-boot: done": if it failed, the card still boots the previous
    kernel (thor-boot replaces the card's files only once all the new ones are written and checked, and
    the previous kernel's modules are kept: thor-modules), but fix it before the user reboots (its log:
    `/var/log/thor-mkinitcpio.log`). If the kernel, systemd, mesa or the boot changed,
    tell the user a reboot is due (don't reboot yourself). If `clamshell` or `thor-session` changed, say
-   that restarting ClamShell (`systemctl --user restart clamshell`) takes the new one: both screens
-   redraw, apps and games keep running (each in a scope of its own, this terminal too); ask first.
+   that restarting ClamShell (`systemctl --user restart clamshell`) takes the new one, and that it closes
+   every app and game with a window, this terminal too (ClamShell is their compositor): it is the user's
+   to do, when nothing is running.
    If `thor-sensors` changed: `sudo systemctl restart thor-sensors` (its hexagonrpcd runs on as it was).
    Steam, if set up (`~/.local/share/Steam/steamrtarm64/steam`) and not running (`pgrep -x steam`):
    `steam-setup --update` (it starts without updating itself).

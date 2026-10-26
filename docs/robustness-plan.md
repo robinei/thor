@@ -16,7 +16,7 @@ replies and real errors.
 - [x] `wpctl get-volume` → the default sink's volume and mute from `pw-dump`'s JSON, which the mixer reads
       already.
 
-Staying: `pw-dump` (JSON), `grim` (only its exit status), `fc-match` (a path, once), `bsdtar`, and the
+Staying: `pw-dump` (JSON), `fc-match` (a path, once), `bsdtar`, and the
 programs started rather than read (`systemd-run`, `nice`, `pkexec`, `fusermount3`, `foot`).
 
 ## 2. Crates for hand-written code

@@ -191,9 +191,8 @@ Two kinds of entry run in another program's processes on purpose, and are known 
 Steam's games (`steam_app_<id>`, in Steam's scope) and the entries of a runner with `handover` (their
 desktop file's name: Waydroid's apps, in the Waydroid session). Alike for both:
 
-- Their windows open on a landing workspace (a sway rule per app id, for the library's entries) and are
-  moved to their entry's; one opening while the entry doesn't run (a game started in Steam, an Android
-  app opened by another) starts it, shown.
+- Their windows are found by their app id and put on their entry's workspace as they open; one opening while
+  the entry doesn't run (a game started in Steam, an Android app opened by another) starts it, shown.
 - Such an entry runs once: launching it again shows it.
 - It runs on by its windows after its launch ends, until the last closes; its play counts until then.
 - Force kill ends Steam's launcher for a game and the processes under it, and runs a `handover` runner's

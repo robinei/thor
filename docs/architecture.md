@@ -32,14 +32,16 @@ readings, ticks, windows, units ─▶ Event ───┤
 | Crate | Role |
 |---|---|
 | `crates/state` | the state and its rules; events in, effects out; no I/O, no threads |
-| `crates/system` | a thread per outside concern (sway, systemd and launches, the controller, Wi-Fi, Bluetooth, sound, storage, files, ...), each turning effects into actions and what it sees into events |
-| `crates/ui` | the Wayland client: owns `State`, runs the event loop, draws the views, turns input into events |
+| `crates/system` | a thread per outside concern (systemd and launches, the controller, Wi-Fi, Bluetooth, sound, storage, files, ...), each turning effects into actions and what it sees into events |
+| `crates/ui` | the UI without a backend (`ui::Core`): owns `State`, draws the views into pixmaps, turns input into events |
+| `crates/compositor` | the Wayland compositor (Smithay): hosts the UI and runs the event loop; the screens through DRM and libinput (`--drm`) or a window on a desktop (`--nested`), the windows, Xwayland |
+| `crates/device` | facts the hardware can't announce: the screens' connectors and rotation, the panels, the fan, the gyro |
 | `crates/library` | the game library's model, sorting and parsing, without disk access |
 | `crates/fan` | the fan daemon, a separate system service, and the small library with its mode protocol |
 | `src/` | the program: starts the threads, connects effects to them, the command line and the control pipe |
 
-The UI and the system crate don't depend on each other: the binary hands the UI a closure that passes each
-effect to the system crate's dispatcher.
+The UI and the system crate don't depend on each other: the binary hands the compositor a closure that
+passes each effect to the system crate's dispatcher.
 
 ## The state
 
@@ -71,32 +73,32 @@ How areas cooperate:
 
 ## Windows
 
-The session owns each window's home group, top or bottom placement, and the selected content on both
-screens. Keyboard focus is separate and may name either screen's client or ClamShell's UI. Individual
-lifecycle events update window facts; batches settle one backend dispatch atomically. Placement is
-committed during `State::apply`, so the planned in-process compositor can read it before configuring
-a new window.
-
-The current sway executor converts tree snapshots into sparse lifecycle and presentation changes and
-translates placement effects into IPC commands. Landing workspaces, marks, rules and retrying failed
-placement belong to that adapter. A metadata change cannot restore an old placement. Foreground launch
-intent and recent-group history remain session rules shared by both backends. The detailed transitions
-and their tests are in `docs/state-machines.md`; the migration stages are in `docs/compositor-mvp.md`.
+The session owns each window's group (`Window.workspace` in the code), whether it is on the top screen
+or moved down, and which window each screen shows. Keyboard focus is separate and may name either
+screen's client or ClamShell's UI. The compositor reports each window's life as events (opened, closed,
+changed, its title, keyboard focus, a client's request to be shown). Placing windows (focusing one,
+moving it between groups, down to the second screen or back) is the state's own, done during
+`State::apply`; the compositor reads the result from the state after apply, so a new window is placed
+before it is first shown. The only window effect is closing one (`Effect::Close`). Shelf is not a
+window: it is in front when no top window is. A metadata change cannot restore an old placement.
+Foreground launch intent and recent-group history are session rules. The detailed transitions and their
+tests are in `docs/state-machines.md`.
 
 ## The UI
 
 - **Core and host.** `ui::Core` is the UI without a backend: the state and the event queue, input routed
   by screen, the timers as deadlines (the core says when it next needs to run), each screen recorded and
-  drawn into a pixmap the host hands it, and the effects in order. `ui::platform` hosts it as a Wayland
-  client: the surfaces and their shm buffers, the protocols, and the effects that are the UI's own (the
-  screens' power, the refresh rate, quitting).
+  drawn into a pixmap the host hands it, and the effects in order. The compositor hosts it: it gives it
+  input by screen and the screens' sizes, runs it at its deadlines, shows each screen's pixmap, and
+  carries out the effects that are its own (the screens' power, the refresh rate, closing windows,
+  screenshots, quitting).
 - **Drawing.** Views are functions of `&State` that draw on a canvas. The canvas records commands (fills,
-  text, icons, images, clips) into a flat, reused buffer; after every event each visible screen is
-  recorded and compared with its last recording. If nothing differs, nothing is drawn or committed. If
-  something does, only the rectangle around the differing commands is redrawn: every command meeting it is
-  played again, clipped to it, from the background up, so blending stays exact. Each shm buffer knows its
-  age, so a reused one also gets what changed since it last held a frame. An idle tick costs a recording
-  and a comparison, about 0.02 ms.
+  text, icons, images, clips) into a flat, reused buffer; after every event each visible screen is recorded
+  and compared with its last recording. If nothing differs, nothing is drawn or committed. If something does,
+  only the rectangle around the differing commands is redrawn: every command meeting it is played again,
+  clipped to it, from the background up, so blending stays exact. Each pixmap knows the frame it holds, so a
+  reused one also gets what changed since it last held a frame. An idle tick costs a recording and a
+  comparison, about 0.02 ms.
 - **Input.** A frame keeps its targets (a rectangle, an id, and the key of the list item it showed). A
   touch is matched against the frame the user saw and carries that item's key, so a list that re-sorted
   meanwhile doesn't redirect it. Pad navigation moves between the same targets by direction.
@@ -107,9 +109,10 @@ and their tests are in `docs/state-machines.md`; the migration stages are in `do
 
 Each thread takes its own commands on a channel (`os::worker`); a thread that waits on devices is also
 woken by an eventfd. Services are reached over D-Bus (systemd, logind, timedated, UDisks2, NetworkManager,
-BlueZ, UPower), sway over its IPC socket, PipeWire through `pw-dump` and `wpctl`, the controller through
-evdev and uinput. Launches run in systemd scopes, so what runs is systemd's to say: a launch is running
-while its scope is listed, and ClamShell can be restarted without losing track.
+BlueZ, UPower), PipeWire through `pw-dump` and `wpctl`, the controller through evdev and uinput. Launches
+are ClamShell's child processes, each in a systemd scope of its own (`systemd-run --user --scope`), so
+what runs is systemd's to say: a launch is running while its scope is listed, and ClamShell can be
+restarted without losing track.
 
 ## Rules that hold everywhere
 
@@ -131,7 +134,8 @@ while its scope is listed, and ClamShell can be restarted without losing track.
 | snapshot test: pixels, focus, trace | every screen's pixels; where the pad's focus goes on every screen, with reachability rules; the effects of scripted scenarios | every commit and CI |
 | damaged frames against whole frames | partial redraws identical to full ones, pixel for pixel, across every scenario | every commit and CI |
 | allocation tests | the event path and frame drawing allocate nothing | every commit and CI |
-| `clamshell/tests/nested-sway.sh` | ClamShell in a real (headless) sway: launches, windows, the dock, restart | by hand, for sway behaviour |
+| `clamshell/tests/nested-compositor.py` | ClamShell's compositor nested (in a headless sway as the host) with real clients: Wayland and X11 windows, Xwayland's restart, the clipboard, screenshots, moves between the screens | by hand, for compositor behaviour |
+| `clamshell/tests/picture-scaling.py` | test games launched from shelf, their pictures filling the top screen at each Resolution and Scaling | by hand, for the picture |
 | `tools/vm/vm-test.sh` (about 120 checks) | the whole device image in QEMU: a fake controller with gyro and rumble, simulated Wi-Fi and Bluetooth, sleep and wake, the session's files | by hand, for changes to devices, services and the session |
 
 Every commit passes `tools/check.sh` (the first six rows) through the pre-commit hook, and CI runs it again
@@ -139,10 +143,10 @@ on GitHub.
 
 ## The device's system
 
-ClamShell is one package of several (`packages/`): the kernel (`linux-thor`, built from a pinned commit
-of the Armada kernel), the system configuration, the session (sway, the session's programs and their
-settings), the audio profiles, the motion sensors' services, and a metapackage that is the whole system.
-They are built on a PC from a checkout (ClamShell cross-compiled for aarch64), published as a signed
-pacman repository on a GitHub release, and the device stays current with `pacman -Syu`. The SD card image
-is assembled from the same packages with pacstrap, and the same system builds for x86_64 to boot in the
-VM. Nothing personal goes into the image: no users, keys or time zones.
+ClamShell is one package of several (`packages/`): the kernel (`linux-thor`, built from a pinned commit of the
+Armada kernel), the system configuration, the session (the autologin into ClamShell as a user service, the
+session's programs and their settings), the audio profiles, the motion sensors' services, and a metapackage
+that is the whole system. They are built on a PC from a checkout (ClamShell cross-compiled for aarch64),
+published as a signed pacman repository on a GitHub release, and the device stays current with `pacman -Syu`.
+The SD card image is assembled from the same packages with pacstrap, and the same system builds for x86_64 to
+boot in the VM. Nothing personal goes into the image: no users, keys or time zones.

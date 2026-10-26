@@ -19,41 +19,46 @@ FreezeUnit and ThawUnit).
 
 ## Modes
 
-- Device session (`CLAMSHELL_SESSION=device`): ClamShell is the session and manages everything it can.
-- Guest (nested in a desktop's session, `tools/nested-session.sh`): as on the device, sway and ClamShell
-  are user units (`clamshell-nested-sway.service`, and `clamshell-nested.service` bound to it), and
-  stopping sway's unit stops what ClamShell launched (its slices, after sway). A window in ClamShell's
-  sway is that session's, so it is found and its program adopted as on the device. What stays the
-  device's own: the tray (on a desktop its icons are the desktop's programs': shown, never moved or
-  ended), sleep, and the hardware keys.
+- Device session (`clamshell --drm`, on the screens): ClamShell is the session and manages everything
+  it can.
+- Guest (nested in a desktop's session, `clamshell --nested`; `tools/nested-session.sh` runs it as the
+  user unit `clamshell-nested.service`): stopping the unit stops what ClamShell launched (its slices,
+  under `app-graphical-clamshell.slice`, by the unit's ExecStopPost). A window in ClamShell's compositor
+  is that session's, so it is found and its program adopted as on the device. What stays the device's
+  own: the tray (on a desktop its icons are the desktop's programs': shown, never moved or ended), sleep,
+  and the hardware keys.
 
 ClamShell needs a systemd user manager: every launch runs in a scope of its own.
 
-On the device the session is sway through uwsm (`uwsm start -- sway` from the console's login): sway
-runs as `wayland-wm@sway.service`; uwsm reaches `graphical-session.target` once sway has put its
-environment in the user manager's (`uwsm finalize` in sway's config); ClamShell, mako and udiskie are
-user services of that target, in uwsm's `session-graphical.slice`, started once it is reached and
-stopped with it. As the session ends (sway exits or crashes, `uwsm stop`), uwsm stops the app slices
-first, so every launch (in `app-graphical.slice`) ends before sway does; then the console's autologin
-starts a new session (`thor-session`, thor-session's package, from the login's profile). Unless it can't go on:
-ended 3 times within 2 minutes (sway or uwsm dying as they start), the session isn't started again;
-ClamShell failing 4 times within a minute (watchdog restarts too), systemd gives up and
-`clamshell-failed.service` stops the session. Either way the console stays on tty1, saying why (the last
-lines of sway's or ClamShell's journal) and how to go on (the Thor has no keyboard: holding the power
-button turns it off, and turned on it tries again; with a keyboard, `exit` does; ssh works). A deliberate
-restart of ClamShell (maintenance, the VM checks) clears its count first (`systemctl --user reset-failed`).
-Tried in the VM: ClamShell made to exit at once, and sway made to fail at start; each ended on the console
-saying why, and came back once put right.
+On the device the session is ClamShell's compositor as the user service `clamshell.service` (`clamshell
+--drm`, in `session.slice`). The first console logs in by itself (getty@tty1's autologin), and the login's
+profile runs `thor-session` on tty1 unless the service is already active. `thor-session` gives the user
+manager and the bus the login's environment (`dbus-update-activation-environment --systemd --all`; its
+`XDG_SESSION_ID` is how ClamShell's libseat takes the seat) and starts the service, waiting on it through its
+restarts (systemd's after a failure, or by hand) until it has stopped with nothing queued. The service is
+`Type=notify` with a 30 s watchdog and `Restart=on-failure`: ClamShell says it is ready once it listens and
+has given the user manager and the bus `WAYLAND_DISPLAY` and `DISPLAY`, which brings up
+`graphical-session.target` (bound to the service) and udiskie with it. As the session ends, `thor-session`
+takes the displays out of the user manager's environment and stops `app-graphical.slice` (every launch) and
+`background-graphical.slice`; then the profile logs out and the autologin starts a new session. Unless it
+can't go on: ended 3 times within 2 minutes, the session isn't started again; ClamShell failing 4 times within
+a minute (watchdog restarts too), systemd gives up. Either way the console stays on tty1, saying why (the last
+lines of ClamShell's journal) and how to go on (the Thor has no keyboard: holding the power button turns it
+off, and turned on it tries again; with a keyboard, `exit` does; ssh works). A deliberate restart of ClamShell
+(maintenance, the VM checks) clears its count first (`systemctl --user reset-failed`). ClamShell is the
+compositor, so a restart closes the session's apps. Tried in the VM when the session was sway under uwsm:
+ClamShell made to exit at once, and sway made to fail at start; each ended on the console saying why, and came
+back once put right.
 
 ## Who started what, and what ClamShell does with it
 
 | Started by | Examples | Where it runs | ClamShell |
 |---|---|---|---|
-| ClamShell | apps, games, emulators, files opened, Steam | a scope per launch, in the entry's slice (`app-graphical-clamshell-run-<key>.slice`, in uwsm's app slice) | its own |
+| ClamShell | apps, games, emulators, files opened, Steam | a scope per launch, in the entry's slice (`app-graphical-clamshell-run-<key>.slice`, in `app-graphical.slice`) | its own |
 | Steam | its games, whether ClamShell or Steam's window started them | moved from Steam's scope into the game's own | its own, once moved |
-| Anything else, a program with a window or a tray icon | a program from sway's config, another program's child, a desktop launcher's | moved from its scope or unit (an app scope, sway's own unit under uwsm, a login session's) into one of the entry's | its own, once moved (device session) |
+| Anything else, a program with a window or a tray icon | another program's child, a desktop launcher's, one started from a terminal | moved from its scope or unit (an app scope, a login session's) into one of the entry's | its own, once moved (device session) |
 | A systemd service | portals, the polkit agent, PipeWire, D-Bus activated services | its service | not touched: its windows are no entries |
-| The session | sway, ClamShell, mako, udiskie | under uwsm, units in `session.slice` (in a desktop's session, its login scope) | the session's own: shown in the battery tab, not endable |
+| The session | ClamShell, udiskie | units in `session.slice` (`clamshell.service`; nested, `clamshell-nested.service`) | the session's own: shown in the battery tab, not endable |
 | Android | Waydroid's apps | the container (`lxc.payload.waydroid`) | paused and stopped through the Android runner |
 | The system | NetworkManager, bluetoothd, sshd, the Waydroid container service | `system.slice` | not touched |
 
@@ -61,14 +66,14 @@ saying why, and came back once put right.
 
 What runs is shown and controlled as entries (the dock's): one per program, each with a workspace.
 
-- A launch of ClamShell's runs in a scope of its own (`systemd-run --user --scope`, through sway's exec
-  so its first window opens on the entry's workspace; restarting ClamShell doesn't end it), in its
-  entry's slice; an entry may run several (another tab each). An entry runs while systemd lists a scope
-  of it, from the user manager's signals: its launch's scope appearing starts it, the last one gone ends
-  it, its play recorded from its start to then (launches side by side are one play; a video's place read
-  then, as mpv left it). The launcher only starts launches, and says so of one whose scope never came. A
-  ClamShell started later finds the launches that run by their scopes, and records their play from the
-  start time in the scopes' names.
+- A launch of ClamShell's is its child process in a scope of its own (`systemd-run --user --scope`; restarting
+  ClamShell doesn't end the scope, though a program with a window ends with its compositor), in its entry's
+  slice; its windows, found by the scope, go to the entry's workspace; an entry may run several (another tab
+  each). An entry runs while systemd lists a scope of it, from the user manager's signals: its launch's scope
+  appearing starts it, the last one gone ends it, its play recorded from its start to then (launches side by
+  side are one play; a video's place read then, as mpv left it). The launcher only starts launches, and says
+  so of one whose scope never came. A ClamShell started later finds the launches that run by their scopes, and
+  records their play from the start time in the scopes' names.
 - A launch that hands its app over to a program already running (the Android runner's, to the Waydroid
   session) and ends: the entry runs on by its windows, found by their app id (`waydroid.<package>`),
   until the last one closes (or none came within 15 s).
@@ -131,10 +136,9 @@ its windows hidden; the tile says Suspended. It stays frozen until shown (Resume
 on its tile), quit or killed.
 
 A ClamShell started again (an update, a crash) leaves our slices as it finds them: one found frozen
-(suspended, or paused hidden by the one before) is held as suspended, so a suspended game stays so. A
-slice is thawed before a launch into it (systemd starts no scope in a frozen slice), and a scope whose
-sway is gone has its slice thawed before it is stopped. Tried in the nested session: Foot suspended,
-ClamShell restarted in the same sway, still frozen, resumed with its window.
+(suspended, or paused hidden by the one before) is held as suspended, so a suspended game stays so. A slice is
+thawed before a launch into it (systemd starts no scope in a frozen slice). Tried in the nested session: Foot
+suspended, ClamShell restarted in the same sway, still frozen, resumed with its window.
 
 Android's apps share one container, so the Android runner is paused as a whole (its `pause` and `resume`,
 Waydroid's container service freezing and thawing the container, no root): set to Pauses hidden, once
@@ -155,7 +159,7 @@ finds running isn't started twice.
 - The battery tab's list of what is using the machine: CPU, GPU and resident memory per group (an
   entry's launches; an Android app, by its package, from the container's processes; Android's own
   processes; another program by name; the system), idle groups holding 100 MB or more too. A row of a
-  program that isn't the session's own (ClamShell, sway and what its config starts, PipeWire, the bus)
+  program that isn't the session's own (ClamShell, udiskie, PipeWire, the bus: `session.slice`)
   has Quit and Force kill. The GPU time of another user's processes (Android's, the system's) can't be
   read: a dash.
 
@@ -171,7 +175,7 @@ watched through /proc/self/mounts (POLLPRI) and devices through inotify on /dev/
 |---|---|---|
 | pad (no controller) | 10/s (a rescan every second) | none; a controller plugged in is grabbed in about 0.1 s |
 | browse | 2.5/s, 0.5 ms CPU/s (mounts and the folder every 400 ms) | none |
-| frames (MangoHud's logs) | 2/s | none without a game |
+| frames (MangoHud's logs) | 2/s | none without a game; gone since (the compositor measures frames) |
 | input watch | 2/s (a rescan every 5 s) | none |
 | tray | 4/s | its signals only |
 
@@ -207,8 +211,8 @@ On the desktop (AMD GPU, PipeWire, Steam), in the nested session:
 
 In the VM, as the device's session (`tools/vm/vm-checks.py`, the process control checks): a game
 launched from shelf runs in a scope of its own and Quit ends it with one play recorded; a game behind
-shelf is frozen after the grace and thawed when shown; foot started from an app scope and from sway's
-exec (sway's unit under uwsm; the login session's scope before) is found and moved into a scope of ours; a tray program (a Python
+shelf is frozen after the grace and thawed when shown; foot started from an app scope and from a login
+session (as over ssh) is found and moved into a scope of ours; a tray program (a Python
 StatusNotifierItem) is moved too; the clipboard's text outlives the program that set it.
 
 ## Open

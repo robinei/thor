@@ -65,11 +65,11 @@ Inside an archive nothing can be changed: an entry has Copy and Select; Paste so
 out. (The same goes for any folder that isn't writable: Cut, Rename, Move to Trash, Paste and New folder
 are offered only where they can be done.)
 
-- Each mount is a service of its own (`clamshell-archive-<hash>.service`, ratarmount in the foreground,
-  in uwsm's `background-graphical.slice`), so a ClamShell restarted doesn't take it down and the session
-  ending stops it; its indexes are kept in `~/.cache/clamshell/archive-index`, not beside the archive.
-  Opening one takes about 0.35 s here (a zip, a 7z, a tar.gz of 3 MB); a big compressed tar is read
-  through once for its index.
+- Each mount is a service of its own (`clamshell-archive-<hash>.service`, ratarmount in the foreground, in the
+  session's `background-graphical.slice`), so a ClamShell restarted doesn't take it down and the session
+  ending stops it (thor-session stops the slice); its indexes are kept in `~/.cache/clamshell/archive-index`,
+  not beside the archive. Opening one takes about 0.35 s here (a zip, a 7z, a tar.gz of 3 MB); a big
+  compressed tar is read through once for its index.
 - It stays mounted while it is needed: the folder open is it or in it, an entry of it is copied (to be
   pasted), or a running launch opened a file in it. Then its service is stopped, and the mount detached
   after it (lazily, also if ratarmount crashed). Services left by a ClamShell before are stopped at start.

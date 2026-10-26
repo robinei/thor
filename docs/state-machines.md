@@ -15,15 +15,21 @@ pass confirmed its suspicions with probe tests in a scratch copy.
 `Event::Window` applies one change; `WindowBatch` applies one backend dispatch before settling once.
 State commits placement and selection during `apply`. A compositor reads `Window::place`,
 `Session::top_window`, `bottom_window` and `keyboard_focus` immediately after it returns. Home groups
-are strings shared with the sway executor, not physical output locations: a window below retains its
+(`Window.workspace` in the code) are strings, not physical output locations: a window below retains its
 home group. `Window.focused` records the selected top content; keyboard focus is independent and may
 belong to a bottom client or ClamShell's UI (`None`).
 
 `Opened` supplies identity and optional initial backend presentation. State resolves the home from a
 known parent, library app id, owner or launch scope before returning. A known parent's bottom placement
 is inherited. `Changed` updates only identity (app id, unit, process ancestry and parent);
-it cannot undo placement or change title. `Title` is independent. Sway translates stable tree snapshots
-into sparse changes; unchanged observations cannot overwrite a newer state decision.
+it cannot undo placement or change title. `Title` is independent. The compositor sends each change as it
+happens (Opened, Closed, Changed, Title, KeyboardFocus, and Activate once a token is checked); a later
+fact cannot overwrite a newer state decision.
+
+Placing is the session's own: the steps in the Effects columns here and below (Focus, ShowShelf, Move,
+Down, Up, Return, ShowDown) are its window commands (`WindowCommand`), applied to the state during
+`apply`, not effects sent out. The only window effect is closing (`Effect::Close`). Shelf is not a
+window: it is in front when no top window is shown, and ShowShelf deselects the top windows.
 
 | From | Event / condition | To | Effects | Test |
 |---|---|---|---|---|
@@ -32,13 +38,12 @@ into sparse changes; unchanged observations cannot overwrite a newer state decis
 | present | Title | updated title | matching bottom rule sends Down once | windows `lifecycle_title_applies_a_bottom_rule_once` |
 | present | Changed | updated identity, same place and selection | ownership rules may assign its home | windows `stale_identity_facts_cannot_undo_a_placement` |
 | present | Closed | absent; select remaining tab or recent top group, shelf last | exact Focus or ShowShelf when a group empties | windows `lifecycle_close_falls_back_once_and_retains_the_other_windows`; front tests |
-| absent | late Closed, Title, Changed, Activate or keyboard focus | unchanged | — | windows `lifecycle_messages_keep_one_window_and_ignore_late_messages`, `backend_changes_preserve_titles_and_tab_order`, `keyboard_focus_is_independent_of_both_screens_selected_content` |
+| absent | late Closed, Title, Changed, Activate or keyboard focus | unchanged | — | windows `lifecycle_messages_keep_one_window_and_ignore_late_messages`, `backend_changes_keep_the_placement`, `keyboard_focus_is_independent_of_both_screens_selected_content` |
 | present on top | validated Activate | selected now | thaw/resume owner before exact Focus or ShowShelf | windows `activation_selects_the_window_on_its_screen`, `activation_thaws_a_suspended_owner_before_selecting_its_window` |
 | present below | validated Activate | bottom shows this window now | thaw/resume owner, ShowDown | same |
 | either screen selected | KeyboardFocus(Some(live id)) or None | keyboard target changes, content stays | — | windows `keyboard_focus_is_independent_of_both_screens_selected_content` |
 | top, regardless of keyboard focus | Down, including a remembered rule | previous bottom returned to its home without activation; requested window below; same-program next top or recent group/shelf selected | Return before Down, then exact top Focus/fallback | bottom `moving_another_window_down_swaps_the_single_bottom_slot`; windows `displacing_another_programs_bottom_window_does_not_activate_it`, `moving_the_top_window_does_not_require_keyboard_focus_there` |
 | below, shown or covered | Up | top at retained home, selected now; bottom shows ClamShell | Up to explicit home | bottom `moving_another_window_down_swaps_the_single_bottom_slot` |
-| any | Presentation / Order from sway | supplied observations / traversal order applied | normal selection and ownership rules | windows `backend_changes_preserve_titles_and_tab_order` |
 | front launch waiting | Home or another explicit selection | foreground intent cancelled | navigation's own effects | windows `home_cancels_a_launchs_late_request_to_take_the_front`, `activating_another_window_cancels_a_launchs_late_request_to_take_the_front` |
 
 Remembering a new bottom rule leaves existing sibling placements alone, including other launches of
@@ -49,20 +54,19 @@ The foreground launch intent (`front_launch`) and two-second replacement history
 an explicitly requested launch may show its first window, and a splash may be replaced without losing
 its place. When the window in front closes and its program still runs, the intent is set again for that
 program for `REWAIT_SECS` (30), so its next window comes in front however late, as Steam's window after
-its update dialog (`a_running_programs_next_window_is_shown_after_its_window_in_front_closed`). They are not acknowledgements of sway commands. Placement and exact focus commands remain
-effects for the sway executor; the in-process compositor reads the committed state instead.
+its update dialog (`a_running_programs_next_window_is_shown_after_its_window_in_front_closed`). The
+compositor reads the placement they lead to from the state after `apply`.
 
 Live ids are unique, at most one top window is selected and one window placed below, remembered
 selections belong to their home groups, and keyboard focus names a live window or none. The randomized
 event-sequence test checks these after every event, including lifecycle, activation and keyboard focus.
 The allocation test includes repeated lifecycle events, Home-held changes, controller focus and activation with live bottom rules.
 
-Sway's requested-layout mirror retries failed placement/focus without becoming the source of policy.
-Acknowledged focus accepts later user tab selection; late group moves leave bottom windows below.
-Pure `sway::desired` tests cover failures, reconnects and idempotent acknowledgements. The nested-sway
-suite checks real IPC placement and focus; the VM suite checks session adoption, input routes and
-services. Parent inheritance is checked in state tests; sway does not report protocol parents, so the
-nested compositor must exercise that path with real clients in phase 2.
+The compositor's tests check placement before the first configure with real clients
+(`xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu`), and
+`tests/nested-compositor.py` moves between the screens with real programs; the VM suite checks session
+adoption, input routes and services. Parent inheritance is checked in state tests
+(`a_dialog_of_a_window_below_is_placed_below_before_it_is_shown`).
 
 ### Launches
 
@@ -125,7 +129,7 @@ State: `Pauses{unused, paused: Hidden | Held}`.
 | From | Condition / event | To | Effects | Test |
 |---|---|---|---|---|
 | Running | set to pause, windows, none visible, not quitting, 10 s | Paused(Hidden) | Freeze on | background `pauses_hidden_…` |
-| Paused(Hidden) | shown, no windows, quitting, setting changed | Running | Freeze off | background tests, `a_paused_game_set_to_run_hidden_is_thawed_at_once` |
+| Paused(Hidden) | shown, no windows, quitting, setting changed | Running | Freeze off | background tests, `a_paused_game_set_to_run_hidden_is_thawed_at_once`; shown again as the front window closes, in the same event: tests `a_paused_game_shown_when_the_front_closes_is_thawed_at_once` |
 | any | Suspend | Held | ShowShelf if visible; Freeze on | background `a_suspended_entry_stays_frozen_…`; dock `the_menus_autostart_and_suspend` |
 | Held | shown after its windows were seen hidden (one suspended in view stays frozen while its window is still shown), Show, Quit, ForceKill | Running | Freeze off | same |
 | — | `Frozen(keys)` at start | Held (kept while the scope is listed, until its entry runs) | — | same; found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
@@ -217,10 +221,10 @@ as any tab left (`left_tab`).
 | Home + right stick press: to the windows' tab, or from it back to the tab it was opened from; with nothing moved down the tab says how to move a window there | `a_window_moved_down_is_shown_there_and_remembered`, `the_windows_tab_with_nothing_below_shows_no_window` |
 | a window moved down (by hand or by its rule), from any tab: the windows' tab opens, the screen turns on | `moving_a_window_down_from_another_tab_opens_the_windows_tab_with_the_screen_on` |
 | the windows' tab button: lit while open, standing out while the front program's window is below another tab, dim with nothing below | `the_windows_tab_shows_the_window_below_and_marks_one_hidden_by_another_tab` |
-| WindowDown: the selected top window moves down without needing keyboard focus; the old bottom window returns to its group, the screen shows it, a rule is added (notice, `Save(WindowRules)`, `DownRules`) | same; `a_programs_only_window_is_remembered_by_its_app_id_alone`; `window_down_with_no_window_in_front_does_nothing` |
+| WindowDown: the selected top window moves down without needing keyboard focus; the old bottom window returns to its group, the screen shows it, a rule is added (notice, `Save(WindowRules)`) | same; `a_programs_only_window_is_remembered_by_its_app_id_alone`; `window_down_with_no_window_in_front_does_nothing` |
 | WindowUp: the visible down window goes back, its rule is forgotten | same; `moving_another_window_down_swaps_the_single_bottom_slot` |
 | settle: a window matching a rule moves down once | `a_rule_sends_the_window_down_when_its_program_opens_it_again` |
-| dock tap or BottomWindows → windows shown, `ShowDown`, the screen turned on if it was off by hand | `the_front_programs_windows_hidden_below_…`, `showing_the_windows_below_turns_the_screen_on_if_off_by_hand` |
+| dock tap or BottomWindows → windows shown, `ShowDown`, the screen turned on if it was off by hand | running `show_of_an_entry_whose_windows_are_all_below_shows_them_there` |
 | Home+Start: wake if off by itself, else toggle off | `the_bottom_screen_turns_off_and_on`, `home_start_brings_back_…`, `…off_by_hand_and_by_itself_at_once` |
 | settle: off by itself when on battery, not refreshing, not set to stay on, no windows shown, no editor, and dark in a game or untouched 4 min | `on_battery_the_untouched_…` and siblings; `a_refresh_calibration_or_an_editor_keeps_it_on` |
 | settle: dimmed after 60 s untouched, unless windows are shown | `the_bottom_screen_dims_untouched_and_lights_when_used` |
@@ -256,7 +260,7 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 | Ssh with a password → `Account(Ssh)`; further taps do nothing until AccountChanged, at most 30 s | `remote_login_needs_a_password`, `remote_login_waits_for_its_answer_before_another_tap`, `remote_login_is_asked_again_after_30_s_without_an_answer` |
 | Sticks → `CalibrateSticks`; progress; done saves or fails; further taps do nothing until done, or 30 s without progress | `a_sticks_calibration_shows_its_progress_…`, `the_sticks_calibration_waits_for_its_end_before_another_tap`, `the_sticks_calibration_is_asked_again_after_30_s_without_word` |
 | Gyro → notice + `CalibrateGyro`; result notice; without one the notice goes after 30 s | `the_gyros_hold_still_shows_until_it_answers_at_most_30_s` |
-| Refresh → `CalibrateRefresh` once at a time; result → `Outputs` resent | `the_refresh_calibration_runs_once_at_a_time_…`; tests `a_refresh_calibration_ending_sets_the_bottom_screens_power_again` |
+| Refresh → `CalibrateRefresh` once at a time, the bottom screen off (`Outputs`) while it runs; `CalibrationRate(hz)` from the tool (`clamshell ctl calibration rate HZ`) → `Refresh(hz)` while it runs, nothing otherwise; result → the bottom screen's power and the rate given back (`Outputs`, `Refresh(0)`), one turned off by hand meanwhile staying off | `the_refresh_calibration_runs_once_at_a_time_…`; tests `a_refresh_calibration_sets_the_screens_and_then_gives_them_back` |
 
 ## Pad route and pointer (nav/pad.rs, nav/pointer.rs)
 
@@ -288,14 +292,12 @@ Home-held arrow already switched a window; otherwise it shows shelf. Direct Home
 until it returns, including during remap ticks and gyro samples. Unplugging releases Home for state.
 Tests: `home_flicks_once_and_neutralises_the_games_stick_until_it_returns`,
 `losing_the_controller_releases_home_for_the_state`. The VM `pad_windows` check exercises real evdev
-routing, tab switching and bottom-slot swaps; nested sway checks the same placement through IPC.
+routing, tab switching and bottom-slot swaps.
 
 Home + right stick press switches to the windows' tab and back; Home + Start controls bottom power; Home + R1 is
 still Screenshot; Home + B closes or quits. Select and the D-pad no longer move windows or switch the
 bottom view. Tests: `home_chords_use_the_right_stick_and_not_select_or_the_dpad`, the existing B and R1
-chord tests. Sway keeps its tab bar, with no arrow overlay; the in-process compositor draws its arrows
-in its nested host. `Presentation` and the snapshot-diff helper `session::windows::changes` belong to sway and
-tests, never to the in-process compositor.
+chord tests. The compositor draws the window arrows while Home is held.
 
 ## Keymaps (keymap/)
 
@@ -317,8 +319,7 @@ LayerPicker, LayerMenu; Undo per keymap since the edit screen opened. One Back f
 
 Screens: the picker's (`profiles::picker`, as for keymaps; Default colours is the default, "Unchanged"; its hint says what a curve does: "Maps the game's SDR or HDR to the screen's"), then Edit
 (a slider per parameter). One Back for all of them (`Id::Profile(Curve, Back)`). The curve chosen is
-`Setting::Curve` (an id, 0 Off), per game or for all; it does something only under ClamShell's own
-compositor (`Init::compositor`), and its tile is drawn dimmed with "no effect" under sway.
+`Setting::Curve` (an id, 0 Off), per game or for all; the compositor applies it to the game's picture.
 
 | Transition | Test |
 |---|---|
@@ -444,7 +445,7 @@ the slider tests. Setting a muted stream's level unmutes it, as the output volum
 never more than it was: `dimming_never_raises_the_brightness`. The Mute key shows the volume's notice
 only when the mute changed (not while the volume is unknown):
 `the_mute_key_shows_the_level_only_when_it_changes_something`. Brightness sent at Start: tests
-`the_ui_starting_sends_the_brightness_the_down_rules_the_keymap_and_the_route`.
+`the_ui_starting_sends_the_brightness_the_keymap_and_the_route`.
 
 ## Status (status/)
 
@@ -461,9 +462,9 @@ only when the mute changed (not while the volume is unknown):
 
 | Resend | Raised by | Re-sends | Test |
 |---|---|---|---|
-| Start | `Event::Start` | keymap, pad route (and Start sends dock save, brightness, DownRules) | watches tested; tests `the_ui_starting_sends_the_brightness_the_down_rules_the_keymap_and_the_route` |
+| Start | `Event::Start` | keymap, pad route (and Start sends the dock's save if unsaved, the brightness) | watches tested; tests `the_ui_starting_sends_the_brightness_the_keymap_and_the_route` |
 | Resumed | `Event::Resumed` | Apply | tests `back_from_sleep_applies_the_settings_again_and_wakes_the_screens` |
-| RefreshCalibrated | `Event::RefreshCalibrated` | Outputs | tests `a_refresh_calibration_ending_sets_the_bottom_screens_power_again` |
+| RefreshCalibrated | `Event::RefreshCalibrated` | Apply | tests `a_refresh_calibration_sets_the_screens_and_then_gives_them_back` |
 | FetchFirst | Fetching, Library | FetchFirst | tests `while_metadata_is_fetched_shelfs_view_goes_first`, `a_library_read_while_fetching_asks_for_shelfs_view_first_again` |
 
 ## Interactions
@@ -476,8 +477,8 @@ only when the mute changed (not while the volume is unknown):
 | a game starting | settle returns it | bottom (`unwake`) | `dark_for_a_game_…` |
 | notices | `&mut NoticeSlot` | bottom | per area |
 | settings in force | parameters to launch and background; sync Apply | session, system | settings tests |
-| refresh rate | sync `Refresh(hz)`: a launch's rate from its launch, the settings in force's when applied, whichever came last; sent when it changes | UI | tests `the_refresh_rate_follows_a_launch_at_once_then_the_settings_in_force` |
-| screens' power | sync `Outputs{top, bottom}`: top is the screens on (idle), bottom the second screen as set; sent when either changes or on a resend. The UI turns the screens off and on over Wayland for idle and passes a change of the bottom one alone (or a resend) to sway; how it is carried out is checked on the device | UI, system | tests `the_screens_power_is_sent_when_it_changes`, idle and screen tests |
+| refresh rate | sync `Refresh(hz)`: a launch's rate from its launch, the settings in force's when applied, whichever came last (a refresh calibration's while it runs); sent when it changes | compositor | tests `the_refresh_rate_follows_a_launch_at_once_then_the_settings_in_force` |
+| screens' power | sync `Outputs{top, bottom}`: top is the screens on (idle), bottom the second screen as set (and off while a refresh calibration runs); sent when either changes. The compositor turns the screens off and on (DRM); how it is carried out is checked on the device | compositor | tests `the_screens_power_is_sent_when_it_changes`, idle and screen tests |
 | program in force | settle → pad mouse; sync Apply, Keymap, PadRoute (keymap before route: the pad thread takes the game's keymap before it has the pad) | pad, system | `a_game_coming_in_front_gets_its_settings_then_its_keymap_then_the_pad` |
 | front, tab, listening, dock move | `reconcile_pad` | pad | pad tests |
 | windows down, program, battery, refresh, editor | `power()` for the bottom screen | bottom | screen tests |
@@ -485,12 +486,12 @@ only when the mute changed (not while the volume is unknown):
 | tabs | sync watches; `left_tab` closes the dock menu, releases levels, resets the time page, closes the battery menu | dock, levels, status | per tab; `leaving_the_tab_resets_it_to_its_main_page` |
 | profile (keymap) chosen/deleted/made own | queued `Event::Profile(kind, ProfileEvent)` → prefs, the kind's setting | settings | keymap tests |
 | device view, files, keymaps naming | queued `EditOnKeyboard` / editors | bottom | per area |
-| Library read | problems notice, shelf reload, pausable runners, runner keymaps, land rules, dock pins, FetchFirst | bottom, session, keymap, settings, dock | tests `new_library_problems_are_said_once`, `a_library_read_updates_the_landing_rules_and_the_runners_paused_together`, `a_library_read_while_fetching_asks_for_shelfs_view_first_again`; shelf `listings_outlive_…`, `a_library_read_keeps_what_is_typed`; settings `a_runner_gets_its_keymap_once`; dock `pins_of_entries_gone_…` |
+| Library read | problems notice, shelf reload, pausable runners, runner keymaps, dock pins, FetchFirst | bottom, session, keymap, settings, dock | tests `new_library_problems_are_said_once`, `a_library_read_updates_the_runners_paused_together`, `a_library_read_while_fetching_asks_for_shelfs_view_first_again`; shelf `listings_outlive_…`, `a_library_read_keeps_what_is_typed`; settings `a_runner_gets_its_keymap_once`; dock `pins_of_entries_gone_…` |
 | battery tab quit | queued `Event::Entry` | session | `a_rows_menu_quits_…` |
 | any event | settle `follow_lists` | every scroll | `a_list_changed_by_any_event_…` |
 
 Effects answered by events: Launch → Units / LaunchFailed; Adopt → Units; EndRun / EndProcesses → Units,
-Windows, Tray; Window commands → Windows; Tray Activate → Windows; FindIcon → Icon; CalibrateSticks →
+Windows, Tray; Close → Windows; Tray Activate → Windows; FindIcon → Icon; CalibrateSticks →
 Sticks; CalibrateRefresh → RefreshCalibrated; CalibrateGyro → GyroCalibrated; Account → AccountChanged and
 Account; AskAwake → KeptAwake; Sleep → Busy or Resumed; Screenshot → Screenshot; PadRoute(Listen) →
 Listened; Watch → readings. Freeze, RunnerCommand, Enqueue and saves are not answered.
@@ -775,13 +776,13 @@ Smithay owns data-device, primary-selection and ext-data-control protocol object
 Keyboard focus selects the client receiving clipboard and primary offers; losing focus clears both.
 The existing keeper remains a system thread and retains its text-only, primary-mirroring, password
 manager and size-limit rules. The nested host passes its socket path to that thread explicitly.
-Sway uses the environment as before; the process environment is never changed.
+The process environment is never changed.
 
 Nested saved text goes under `$XDG_RUNTIME_DIR/clamshell/compositor/<socket>/clipboard`, separately
 from the session's `$XDG_RUNTIME_DIR/clamshell/clipboard`. The nested compositor neither reads the
 parent's saved text nor replaces it. `tests/nested-compositor.py` checks CLI set/get, persistence after
 the source exits, native Foot OSC52 copy through wl_data_device, primary paste back into Foot, and
-an unchanged parent clipboard. The nested-sway test checks the normal session startup path.
+an unchanged parent clipboard.
 
 ### One-shot game-pad activity (state/sync, system/input/pad)
 
@@ -829,7 +830,7 @@ recording work occurs in an unchanged frame; strings are copied only for recorde
 
 `window events FILE` becomes one DumpWindowEvents effect. The compositor snapshots the ring and final
 selection, then a worker writes JSON with mode 0600. Success or failure is logged; an export failure
-does not change the session. Sway logs that this diagnostic belongs to the in-process host.
+does not change the session.
 
 `trace::Recording::replay` applies the recorded clocks and inputs to a matching state fixture and
 checks each preceding selection and the final one. The fixture supplies the library, rules and launch
@@ -840,10 +841,9 @@ failure. `the_ring_keeps_only_the_last_256_window_inputs` pins wrap order and ca
 tests pin the diagnostic effect and path; its event is in the randomized generator. The nested smoke
 test exports the live ring through the control command and parses its final empty-window selection.
 
-Window facts carry no Wayland/X11 transport tag. Adapters translate client properties into parent,
-role, limits, identity and colour facts; state rules use those facts uniformly. The sway tree fixture
-checks Wayland app IDs and X11 class translation, and session tests check identity changes and parent
-inheritance without a transport-dependent branch. This removal preserves snapshot pixels, focus and
+Window facts carry no Wayland/X11 transport tag. Adapters translate client properties into parent, role,
+limits, identity and colour facts; state rules use those facts uniformly. Session tests check identity changes
+and parent inheritance without a transport-dependent branch. This removal preserves snapshot pixels, focus and
 trace.
 
 ### Coalesced client titles (compositor/server)
@@ -866,10 +866,10 @@ that frame coalesce. Readback copies the combined logical screens to top-first S
 restores the window EGL target before presentation. Readback failure is logged and forwarded as a
 screenshot error; it does not escape into the host loop. The binary passes pixels or the error to
 Handles, whose system worker encodes/saves PNG and sends the existing Screenshot result event.
-The state owns the success/failure notice. Sway continues to capture through grim.
+The state owns the success/failure notice. The DRM host captures the same way.
 
-`screenshots_are_consumed_by_the_host_instead_of_the_parent_capture_tool` pins coalescing and prevents
-the nested effect reaching grim. System screenshot tests decode a saved PNG to check size and row
+`screenshots_are_consumed_by_the_host_instead_of_the_parent_capture_tool` pins coalescing and that the
+effect stays with the host. System screenshot tests decode a saved PNG to check size and row
 order, and check invalid images, missing folders and write failure. The nested smoke test saves a
 complete PNG in an isolated home, checks its dimensions, and continues with client rendering,
 clipboard, screen moves and Home. This catches losing the EGL window binding during readback.
@@ -983,7 +983,7 @@ Home and cursor destruction. The visibility test pins the three-second boundary,
 restoration; the real touch test checks down, motion and up hiding a visible cursor. The animation
 test pins frame boundaries and wrap. The nested smoke
 harness creates a virtual pointer only in its isolated parent sway, checks cursor pixels inside the
-presented scene (without grim's parent-cursor capture), moves it and checks both damage positions,
+presented scene (without the parent's cursor in grim's capture), moves it and checks both damage positions,
 then checks the shell's themed cursor, its idle disappearance and reappearance on motion. Both software and GPU modes exercise these steps alongside
 screenshots and client rendering.
 
@@ -1037,8 +1037,7 @@ Steam's packaged desktop entry, including steam:// links, requests `-gamepadui`.
 for a Steam game also requests `-gamepadui`, keeping `-silent -applaunch ID` so a cold game launch
 still suppresses the client window. An existing client receives the same game request. Scope ownership,
 following Steam's game launcher and the separation between the client's and game's environments stay
-as before. This is the default interface choice in both sway and the in-process session; the state
-continues to emit the same Launch::Steam effect.
+as before. The state continues to emit the same Launch::Steam effect.
 
 The desktop entry is validated with desktop-file-validate when available; argument forwarding through
 the packaged Steam wrapper is checked using a temporary client that records argv, without starting
@@ -1158,7 +1157,8 @@ the shared windows. Managed-window settlement publishes each window's facts, bin
 configures/maps it, then settles focus and close requests. The refactor preserves that order and the
 existing request-order and state-trace tests.
 
-`placed --WL_SURFACE_ID, matching private Wayland object exists--> drawable`.
+`placed --WL_SURFACE_SERIAL, the surface given that serial through xwayland_shell_v1 committed--> drawable`.
+Pairing by serial (never reused, unlike a surface's id) can't pair a window with a later surface.
 The shared surface wrapper uses the same rendering, geometry, input, frame and presentation-feedback
 paths. A window ignoring its configured size is treated by the existing geometry policy. X11 size
 requests cannot choose placement or stacking. WM_HINTS input and WM_TAKE_FOCUS are honoured when focus
@@ -1319,20 +1319,18 @@ unknown explicit override fails startup with a diagnostic. Identification perfor
 `identified --build Init--> running [immutable profile available through State]`.
 The VM service now forces CLAMSHELL_DEVICE=vm, replacing its bottom-output environment override.
 Detected modes, inputs, backlights and readings remain runtime detection; each fixed fact is moved to
-the profile separately. Existing desktop output overrides remain available for nested-sway tests.
+the profile separately.
 Pure identity tests cover precedence, exact matching and unknown names. A filesystem fixture checks
 kernel identity reads without host-specific assumptions. State, allocation and snapshot checks cover
 passing the profile without changing per-event behaviour. VM service boot is checked by the VM suite
 once its output-generation script has been switched to the profile too.
 
 
-The startup package's `thor-outputs` now writes the output configuration returned by `clamshell device
-outputs`. Both connectors, clockwise transforms and touchscreen-to-screen mappings come from the
-profile. It has no device detection branch and writes no separate environment override; ClamShell's
-service identifies the same profile. `clamshell device panel` supplies connectors to the calibration
+The compositor takes both connectors and their clockwise transforms from the profile; ClamShell's
+service identifies the same profile. (`thor-outputs` and `clamshell device outputs`, which wrote sway's
+output configuration from it, are gone.) `clamshell device panel` supplies connectors to the calibration
 tool, whose mode and vblank discovery stays runtime detection. An integration test forces each known
-profile, compares the emitted sway configuration, runs the installed output script against the binary
-and checks the calibration command's facts. The full VM suite checks these files at session startup.
+profile and checks the calibration command's facts.
 
 
 Backlight discovery remains runtime enumeration. The brightness view resolves each detected kernel
@@ -1342,14 +1340,15 @@ backlight and a generic profile given the same kernel name. Snapshot and allocat
 unchanged.
 
 
-The virtual touchpad prefers density measured from the output's reported physical/logical dimensions,
-with output rotation and buffer scale accounted for. Surface enter/leave and output changes update
-the measurement. Only the matched Thor panel, when it reports no physical dimensions, uses its 16.5 px/mm hint;
+The virtual touchpad prefers density measured from the second screen's DRM connector (its physical size
+against its logical size, turned as the screen is). Only the matched Thor panel, when its connector
+reports no physical size, uses its 16.5 px/mm hint;
 VM and generic profiles have no invented density. Both axes retain their reported resolution. With
 neither measurement nor hint, the touchpad stays unavailable rather than publishing made-up uinput
 resolution; after the initial layout arrives, it waits for input rather than polling for density.
 Unit tests pin measured-over-hint precedence and unknown/invalid dimensions. The VM suite checks the
-resulting uinput device and real finger forwarding; UI snapshot references remain unchanged.
+resulting uinput device and real finger forwarding; UI snapshot references remain unchanged. The
+compositor turns on tap and tap-and-drag for the virtual touchpad's libinput device (`drm.rs`).
 
 
 Refresh calibration's capability, helper program, frame-length attributes/ranges, step and tolerances
@@ -1446,12 +1445,12 @@ pixel, focus and trace references stay unchanged.
 
 ### Announced display modes
 
-`DisplayModes` arrives from output management after a complete mode report, containing only refresh
-rates at the main output's current dimensions. State stores a bounded sorted unique list; zero always
+`DisplayModes` arrives from the DRM host at start, containing only refresh rates at the top screen's
+current dimensions. State stores a bounded sorted unique list; zero always
 means restore the original mode. No modes are invented from the profile. The Refresh tile stays
 visible and tappable, dimmed when no controllable rates are known. Frame-cap choices are generic
 limiter policy. Resolution, Scaling, Anti-aliasing and Sharpen (`docs/picture.md`) are the compositor's
-alone (`Setting::compositor_only`), dimmed with "no effect" under sway; Resolution's tile shows its size on the
+alone; Resolution's tile shows its size on the
 top screen once the compositor has said it (`Reading::Screens`).
 
 - `unknown --mode report--> known [no effects]`; repeated reports replace the facts without effects.
@@ -1462,8 +1461,8 @@ top screen once the compositor has said it (`Reading::Screens`).
 
 State tests pin the saved values, save-before-apply ordering and refresh effects through reports,
 repeats, unplugging and replacement. Random sequences include reports and assert sorted unique valid
-rates after every event; the allocation test covers changing reports. Nested sway checks the actual
-output-management route. Offline snapshots explicitly announce their fixture modes.
+rates after every event; the allocation test covers changing reports. The DRM host reports the top
+screen's modes at start. Offline snapshots explicitly announce their fixture modes.
 
 ### Parametric window colour facts
 

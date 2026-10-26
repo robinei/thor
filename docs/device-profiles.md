@@ -21,8 +21,8 @@ in small steps. ClamShell keeps assuming two screens, a top and a bottom one.
    gyro, the state its layout, choice lists and capabilities (through `Init`), the fan daemon its curves.
    Code asks "is there a fan curve?", never "is this a Thor?". A missing capability dims its UI, as
    elsewhere.
-5. **Package scripts ask the binary** (`clamshell device outputs`, `clamshell device panel`) instead of
-   repeating connector names. Later the compositor reads the profile directly.
+5. **Package scripts ask the binary** (`clamshell device panel`) instead of repeating connector names. The
+   compositor reads the profile directly.
 6. **No file format yet.** A profile becomes data in a file only if outside profiles are ever wanted; the
    same struct could then be deserialised, without changing its readers.
 7. **Two screens.** A profile always names a top and a bottom screen. A single-screen device would later
@@ -66,7 +66,8 @@ command line, the self-test.
 1. **Implemented.** `crates/device` with `Profile`, the Thor's and the VM's constructors and identification; `Init`
    carries the profile; `CLAMSHELL_DEVICE` replaces the VM's environment overrides.
 2. **Implemented.** `clamshell device outputs`, used by `thor-outputs` (then the VM branch there goes) and
-   `thor-panel-calibration`.
+   `thor-panel-calibration`. (2026-10-26: `clamshell device outputs` and `thor-outputs` went with sway;
+   the compositor takes the screens from the profile, and the calibration uses `clamshell device panel`.)
 3. **Implemented.** Each board fact moved, one commit each, its readers taking the fact. Detectable display modes were removed from the inventory of fixed facts.
    Moved: screen connectors, transforms, touchscreen mapping, backlight role hints, bottom-screen touchpad density, top-panel refresh calibration, panel colour descriptions, auxiliary/Back control mapping, driver button conventions, sensor-hub service/timing/axes, userspace fan policy, charging quirks/OEM switch names, and the keymap control diagram/printed legends, and requested preview/fixture sizes. Preview sizes are explicit drawing policy, never detected panel geometry. Refresh choices are announced at runtime through output management, with no nominal rates when unavailable. Frame-cap values remain generic UI convenience policy (they do not claim output modes); inactive upscale choices use relative sizes rather than assuming a 1080-line panel. Standard battery controls remain detected on every application; only the known broken threshold overrides their use.
 4. A rule in `AGENTS.md` (added with this plan): device facts live in the profile, code never checks the

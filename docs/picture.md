@@ -67,7 +67,7 @@ menu is its picker (with New, and each profile's Edit, Rename, Duplicate, Delete
 Reset for a whole level stays its own tile.
 
 Tiles that do nothing for this game are dimmed with why, never hidden (Scaling with the picture at the
-screen's size; everything in layer 2 under sway, where the compositor isn't ours); so are rows of the
+screen's size); so are rows of the
 curve's edit screen (the curve's peak for an HDR game). No combination is refused: SMAA before Integer
 blurs pixel edges, and the levels are where the sensible combinations are kept. One rule keeps the layers
 from fighting: **with an upscaler in the game (In game's Upscaler, or the game's own temporal one), the
@@ -134,8 +134,7 @@ by a viewport, and Scaling and the passes take it as they take any picture small
 X11 games through Xwayland, one client for all of them, see the screen's size.
 
 **Layer 1:** ClamShell writes the game's `OptiScaler.ini` from its settings and starts it with
-Proton-CachyOS's `PROTON_USE_OPTISCALER=1`, under the compositor and under sway alike. No files are put
-into the game's folder.
+Proton-CachyOS's `PROTON_USE_OPTISCALER=1`. No files are put into the game's folder.
 
 **What replaces what:** `Setting::Upscale` (gamescope's FSR and integer modes, never implemented) goes;
 Resolution and Scaling replace it. The curve profiles stay as they are, as the colour.

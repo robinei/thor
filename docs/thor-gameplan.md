@@ -1,7 +1,7 @@
 # Game plan: when the AYN Thor arrives
 
 The device: AYN Thor Max (16 GB / 1 TB, Snapdragon 8 Gen 2 / SM8550, 6" top + 3.92" bottom OLED).
-The goal: our own minimal Arch Linux ARM with sway and ClamShell, booted from SD card first,
+The goal: our own minimal Arch Linux ARM with ClamShell, booted from SD card first,
 Android kept. Written 2026-10-14, before having the device; everything here is unverified on it.
 
 ## How the boot works
@@ -56,7 +56,8 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
 ## The hardware, as Kettle Linux found it
 
 - Screens: top DSI-2, 1080x1920 at 120 Hz (ICNA3520); bottom DSI-1, 1080x1240 at 60 Hz only (CH13726A;
-  Armada's panel patch `0057`, our DTB). Both natively portrait: sway needs a transform on each.
+  Armada's panel patch `0057`, our DTB). Both natively portrait: the compositor turns each (the device
+  profile's transform).
 - Touch: ROCKNIX's and Kettle's device trees swap and invert the touchscreens' axes, and their
   `LIBINPUT_CALIBRATION_MATRIX` (`0 -1 1 1 0 0`, Kettle's `61-kettle-thor-touch.rules`) undoes it. Armada's
   device tree (ours) drops those properties, so the touchscreens report their panels' own portrait
@@ -115,7 +116,7 @@ with the others but kept out of the published repository. Nothing in either is a
 | `thor` | the metapackage that is the whole system: the packages below, Turnip, the day-one checks' tools, what maintenance needs; an image is `base` and this (and thor-firmware) |
 | `linux-thor` | Armada's kernel, built in its PKGBUILD as Arch Linux ARM's linux-aarch64 is (cross-compiled with LLVM on the PC): kernel.org's tarball (its signature checked against Linus Torvalds' and Greg Kroah-Hartman's keys, `keys/pgp`) and Armada's repository at a pinned commit (`_armada`; Linux 7.2.6 with their 223 patches at d2bcf6fd3343, 2026-10-21, which reports the charge threshold's failures (0904); binder in their config), their series applied as their build does, our patches and config lines after; a release of its own per package version (`7.2.6-thor-d2bcf6f-6`: Armada's commit and pkgrel); modules, `Image` and the SM8550 device trees in `/usr/lib/modules/<release>`. Following Armada: `tools/repo/follow-armada.sh`. Its source package is published beside it (GPL-2.0) |
 | `thor-system` | the boot: `thor-boot` puts the kernel (`/Image`, decompressed, an EFI program), the Thor's device tree, our initramfs (`/usr/lib/thor/mkinitcpio.conf`: base udev modconf block thor-root-wait resume filesystems fsck, no autodetect) and the loader entry's command line on the card's FAT partition for systemd-boot (`EFI/BOOT/BOOTAA64.EFI`), and the same into `/KERNEL` for the ABL (`bootimg.py repack`: the gzip'd Image with the 14 device trees, ROCKNIX's header); a pacman hook runs it after updates of the kernel, systemd, mkinitcpio, kmod, util-linux, zstd. The first boot (`thor-firstboot.service`, once): grows the root partition and its ext4 to the card; makes `/swapfile`, 16 GiB (only if 8 GiB stay free beside it), in fstab; puts `resume=LABEL=THOR_ROOT resume_offset=<first block>` on the command line. The power group's write access to what ClamShell's settings set (cpufreq caps, CPUs' online, the GPU's devfreq cap, the battery's charge limit and charge current, the power key's wakeup; `73-thor-power.rules`); the sticks' range (`/usr/lib/modprobe.d/thor-rsinput.conf`); zram (zstd, priority 100, before the swap file) and swapping tuned for it (Armada's values); the SD card's scheduler (BFQ, 4 MB readahead); PipeWire's buffers (Armada's, against crackling after sleep); sleep (logind: power button and lid do `sleep` = suspend-then-hibernate, else suspend; long press powers off; s2idle; `HibernateDelaySec=30min`); a log of each wake's cause (`/var/log/thor-wake.log`); the checks at each boot (`thor-selftest`: see "Day one"); the account helper `thor-account` (pkexec, polkit: the password and sshd, for ClamShell's Device view); the touchscreens' hwdb entry, uinput for the input group, USB controller autosuspend; the thermal sensors' wakeup off; the fan's, battery's and gamepad's drivers loaded at boot; Wi-Fi scanning with the device's own address (NetworkManager); the lid heeded 5 s after boot or waking; Bluetooth off while asleep (if it was on); the TEO idle governor; the backlights' uevents kept from systemd |
-| `thor-session` | tty1's autologin as `thor` into sway through uwsm (`thor-session`, from `/etc/profile.d/thor-session.sh`; `graphical-session.target` with ClamShell, mako and udiskie as its user services, enabled globally; see process-control.md); sway's config (`/usr/share/thor/sway`: DSI-2 top, DSI-1 bottom; both outputs turned 90° and the touchscreens' outputs written at each start into the runtime directory, `thor-outputs`; ClamShell's `clamshell.conf`; the user's additions in `~/.config/sway/config.d/`), foot's (through `XDG_CONFIG_DIRS`) and mako's configs (the user's own first); the home's starting files where missing, at each session start (`thor-home`: the starter `library.json` with its folders, the dock's first pins, mpv's and RetroArch's configs and RetroArch's menu theme); Steam's starter (`steam`, `steam-setup`, `steam.desktop`); the Maintenance app (`thor-maintain`: Claude Code with the `/maintain` playbook in `~/.local/share/thor/maintenance`) |
+| `thor-session` | tty1's autologin as `thor` into ClamShell's compositor (`thor-session`, from `/etc/profile.d/thor-session.sh`, starts the user service `clamshell.service`, `clamshell --drm`; its readiness brings up `graphical-session.target` with udiskie; see process-control.md); foot's config (through `XDG_CONFIG_DIRS`, the user's own first); the home's starting files where missing, at each session start (`thor-home`: the starter `library.json` with its folders, the dock's first pins, mpv's and RetroArch's configs and RetroArch's menu theme); Steam's starter (`steam`, `steam-setup`, `steam.desktop`); the Maintenance app (`thor-maintain`: Claude Code with the `/maintain` playbook in `~/.local/share/thor/maintenance`) |
 | `clamshell` | ClamShell and the fan daemon `clamshell-fan` (a system service from early in boot: the fan's speed every 3 s from the mean of the three hottest CPU and GPU sensors, smoothed, on Armada's moderate curve with its ramp, by the mode ClamShell's Fan setting writes to `/run/clamshell-fan`; stopped or failed, `--safe` leaves it at half speed); the power group (sysusers); `clamshell-android` |
 | `thor-ucm` | the Thor's ALSA UCM profiles, ROCKNIX's patch (`0005_Add-AYN-Thor`, pinned to their commit c445081a), new files beside `alsa-ucm-conf`'s; the same profile under the Odin 2's names the card gets under AYN's U-Boot |
 | `thor-keyring` | the repository's signing key (`pacman-key --populate thor`); its private half on the publishing PC only (`~/.config/thor-repo/gnupg`) |
@@ -137,7 +138,7 @@ What the image adds:
 |---|---|
 | Bootloader | not in the image: stock U-Boot (UEFI), else ROCKNIX's ABL or OpenABL flashed once (see below) |
 | FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB, 512 MiB; an EFI system partition) | the loader's config and entry with our command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters, `fbcon=rotate:1`, `psi=1 cgroup_disable=pressure`, `ufshcd_core.uic_cmd_timeout=3000`, `panic=30`), ROCKNIX's `/KERNEL` as the header thor-boot repacks; thor-boot then fills it |
-| Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned) and the local `[thor]`: base, sudo, NetworkManager, OpenSSH, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, vim, grim, gptfdisk; RetroArch with cores for NES, SNES, N64, Game Boy, GBA, DS, Mega Drive, PlayStation and Dreamcast and XMB's assets, mpv, ffmpeg; evtest, alsa-utils; for maintenance pacman-contrib, base-devel, squashfs-tools, git; the Thor's packages (their dependencies bring sway, uwsm, mako, foot, udiskie, zram-generator) |
+| Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned) and the local `[thor]`: base, sudo, NetworkManager, OpenSSH, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, vim, gptfdisk; RetroArch with cores for NES, SNES, N64, Game Boy, GBA, DS, Mega Drive, PlayStation and Dreamcast and XMB's assets, mpv, ffmpeg; evtest, alsa-utils; for maintenance pacman-contrib, base-devel, squashfs-tools, git; the Thor's packages (their dependencies bring foot, udiskie, zram-generator) |
 | System | hostname `thor`, time zone UTC (`THOR_TIMEZONE` for another), locale (`THOR_LOCALE`, default `en_US.UTF-8`), systemd-timesyncd, NetworkManager, Bluetooth; sshd installed but off; UPower: hibernate at 3 % (power off if it can't); `[thor]` in pacman.conf |
 | User | `thor` (groups wheel, video, input, audio, power), its account locked until a password is set in ClamShell's Device view; sudo for wheel with that password (one timestamp for all the user's processes only during a maintenance pass: thor-maintain); the session's packages name it |
 
@@ -153,12 +154,12 @@ What ROCKNIX's system showed (used by the build):
 
 - Modules and part of the firmware are in a kernel overlay (`usr/lib/kernel-overlays/base/lib/...`);
   `usr/lib/firmware` is a link to `/run/kernel-overlays/firmware`, set up at run time.
-- Its sway outputs are written at session start by `usr/lib/autostart/common/111-sway-init`: the
-  transform from `/sys/class/graphics/fbcon/rotate` (1/2/3: 90/180/270), and for the Thor the
-  touchscreens `0:0:top_touchscreen` on DSI-2 and `0:0:bottom_touchscreen` on DSI-1 (bottom one's events
-  off unless something shows there). Our session writes the same (`thor-outputs`), but turns both panels
-  90° without reading fbcon (Armada's kernel config had no fbcon rotation until ours added it, so the
-  file said 0; Kettle, Thorch and Armada all turn both panels by 90°).
+- Its sway outputs are written at session start by `usr/lib/autostart/common/111-sway-init`: the transform
+  from `/sys/class/graphics/fbcon/rotate` (1/2/3: 90/180/270), and for the Thor the touchscreens
+  `0:0:top_touchscreen` on DSI-2 and `0:0:bottom_touchscreen` on DSI-1 (bottom one's events off unless
+  something shows there). Our compositor takes the same from the device profile, but turns both panels 90°
+  without reading fbcon (Armada's kernel config had no fbcon rotation until ours added it, so the file said 0;
+  Kettle, Thorch and Armada all turn both panels by 90°).
 
 Known issues and risks, to check first:
 
@@ -173,7 +174,7 @@ Known issues and risks, to check first:
    the Thor's sound: the self-test lists the card, sound itself is a day-one check. Under UEFI the card is
    named `ayn-AYNOdin2`; thor-ucm gives that name the Thor's profile (ROCKNIX's is the Odin 2's: no
    internal mic, the speakers' volumes unset).
-4. Rotation: both panels turned 90° (sway's `transform 90`, the panels' "right side up" orientation in
+4. Rotation: both panels turned 90° (the profile's `Clockwise90`, the panels' "right side up" orientation in
    the device tree), as Kettle, Thorch and Armada. ROCKNIX fixed a sideways bottom screen after 20261001
    (PR #3507: "Sway doesn't apply a transform to an output that is powered off"): check that the bottom's
    transform holds when it is turned off and on. Touch: no calibration matrix (see "The hardware": our
@@ -451,7 +452,7 @@ first start of `steam` (thor-session too, in a terminal):
 
 Tried 2026-10-20 on the PC into a scratch home (the client's first run left out): the downloads, checksums,
 backslash names and links. On the device: whether the first run and the start work as written; whether
-`steam -silent` stays out of sight under sway; the beta's known issues (the quick access menu freezing
+`steam -silent` stays out of sight; the beta's known issues (the quick access menu freezing
 Big Picture on Adreno, Steam #13544; Remote Play's decoding on SM8550's video decoder, #13428).
 
 Then, either way, Steam made as light as it goes, measured before and after with `tools/inventory.sh`
@@ -473,17 +474,17 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       after the grace) or stops (low CPU and GPU); whether loading and shader compiling are told from
       drawing (half a core, the GPU under 5 % on Freedreno); a frozen game's memory going to zram.
 - [ ] An online game frozen behind shelf: whether it is dropped (then it is set to run).
-- [ ] Sleep while busy: an idle session (sway, PipeWire, ClamShell, Steam in its tray, Waydroid up)
+- [ ] Sleep while busy: an idle session (ClamShell, PipeWire, Steam in its tray, Waydroid up)
       stays under the busy thresholds (the user's processes 0.3 core, the network 100 kB/s), so it
       sleeps; a Steam download keeps it awake (`sleep: not now` in the journal).
 - [ ] A second controller paired over Bluetooth while the Thor's own pad is grabbed: what ClamShell
       does with it (`CLAMSHELL_GAMEPAD`), and whether games get it as a second player.
 
-- [ ] Screens: both on, right size, orientation and position; layer surface on DSI-1.
-- [ ] Touch: the bottom screen's touch on DSI-1 (sway's `map_to_output`); two fingers on the bar at
-      once (one sliding, one tapping); below the bar, a finger sliding over anything points (on a list
-      only sideways; it fades; taps click, two fingers scroll) and taps act again a second after (or
-      when a text field takes focus); the Touchpad tab points at once: how it feels, the threshold
+- [ ] Screens: both on, right size, orientation and position; ClamShell's view on DSI-1.
+- [ ] Touch: the bottom screen's touch on DSI-1 (the compositor maps each touchscreen to its screen); two
+      fingers on the bar at once (one sliding, one tapping); below the bar, a finger sliding over anything
+      points (on a list only sideways; it fades; taps click, two fingers scroll) and taps act again a second
+      after (or when a text field takes focus); the Touchpad tab points at once: how it feels, the threshold
       (`POINT_START`).
 - [ ] Gamepad: evdev events; our virtual pad and pad mouse; per-game keymaps (a key chord, the pointer
       from a stick) and deadzone; the back buttons' key codes (ClamShell takes BTN_TRIGGER_HAPPY1-4 and
@@ -537,29 +538,29 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       ClamShell treats as Home (Home is on the left, the AYN button in the middle), and what the AYN
       and Back buttons send. The Home chords (`docs/compositor-mvp.md`, "The Home chords") assume Home
       is the left one.
-- [ ] GPU: Freedreno (sway) and Turnip (`vkcube`, a game); MangoHud frame rate in sysinfo.
-- [ ] Direct scanout. The spec sheet gives the panels as 1080x1920 (main, 120 Hz) and 1080x1240 (second,
-      60 Hz): natively portrait, mounted sideways, as our configs' transforms assume. Confirm with the
-      connectors' native modes. Rotated, sway composites a fullscreen game every frame (wlroots rotates
-      itself; it doesn't use a plane's rotation): measure what that pass costs at 120 Hz (GPU time,
-      power), and see it in sway's debug log ("direct scan-out"). Whether the display engine's planes
-      rotate RGB buffers by 90° (`drm_info`: each plane's rotation property and values): if so, gamescope
-      (which uses it) could show games without a composition pass. From the kernel's source (2026-10-23,
-      `docs/compositor-mvp.md` section 4): Armada's patch 0066 (ROCKNIX) gives the VIG planes 90°/270°
-      rotation for UBWC buffers only, 8888 and 2101010 formats, height up to 1088; a rotated fullscreen
-      plane on the top panel takes two of the four VIG pipes. A compositor of ClamShell's own would use it
-      (Smithay tries it); sway doesn't. That is the preferred way, needing no app patches; the
-      pre-rotation patches below become the fallback for what it doesn't cover.
-      If the pass costs enough (a few hundred mW at 120 Hz, not tens), the way without plane rotation:
-      games render portrait themselves. wlroots' scene scans out a buffer whose buffer transform matches
-      the output's, and tells clients the transform it prefers (`wl_surface.preferred_buffer_transform`;
-      both to confirm in its source), so sway likely needs nothing. Mesa's Wayland WSI needs a patch:
-      report the preferred transform as `currentTransform`, and set `wl_surface.set_buffer_transform`
-      when an app presents with that pre-transform (as Android's WSI does). DXVK needs one too, a cheap
-      one: its present pass already copies the back buffer into the swapchain image, so that copy writes
-      it rotated into a 1080x1920 swapchain (VKD3D-Proton likewise, probably). Only through Wine's
-      Wayland driver (`PROTON_ENABLE_WAYLAND=1`): an X11 window under Xwayland can't set a buffer
-      transform. Native games gain nothing. Both patches are upstream candidates.
+- [ ] GPU: Freedreno (the compositor's GLES) and Turnip (`vkcube`, a game); the compositor's frame rate
+      in sysinfo.
+- [ ] Direct scanout. The spec sheet gives the panels as 1080x1920 (main, 120 Hz) and 1080x1240 (second, 60
+      Hz): natively portrait, mounted sideways, as our configs' transforms assume. Confirm with the
+      connectors' native modes. Rotated, ClamShell's compositor composites a fullscreen game every frame (it
+      always composes for now: `docs/compositor-mvp.md`, phase 4): measure what that pass costs at 120 Hz (GPU
+      time, power). Whether the display engine's planes rotate RGB buffers by 90° (`drm_info`: each plane's
+      rotation property and values): if so, gamescope (which uses it) could show games without a composition
+      pass. From the kernel's source (2026-10-23, `docs/compositor-mvp.md` section 4): Armada's patch 0066
+      (ROCKNIX) gives the VIG planes 90°/270° rotation for UBWC buffers only, 8888 and 2101010 formats, height
+      up to 1088; a rotated fullscreen plane on the top panel takes two of the four VIG pipes. ClamShell's
+      compositor would use it with direct scanout (Smithay tries it); sway doesn't. That is the preferred way,
+      needing no app patches; the pre-rotation patches below become the fallback for what it doesn't cover. If
+      the pass costs enough (a few hundred mW at 120 Hz, not tens), the way without plane rotation: games
+      render portrait themselves. A compositor can scan out a buffer whose buffer transform matches the
+      output's, telling clients the transform it prefers (`wl_surface.preferred_buffer_transform`), as
+      wlroots' scene does; ClamShell's would need the same for direct scanout. Mesa's Wayland WSI needs a
+      patch: report the preferred transform as `currentTransform`, and set `wl_surface.set_buffer_transform`
+      when an app presents with that pre-transform (as Android's WSI does). DXVK needs one too, a cheap one:
+      its present pass already copies the back buffer into the swapchain image, so that copy writes it rotated
+      into a 1080x1920 swapchain (VKD3D-Proton likewise, probably). Only through Wine's Wayland driver
+      (`PROTON_ENABLE_WAYLAND=1`): an X11 window under Xwayland can't set a buffer transform. Native games
+      gain nothing. Both patches are upstream candidates.
 - [ ] HDR, an experiment (the panels do no tone mapping of their own: no PQ signal or metadata as an HDR
       monitor takes, and an 8-bit link as the drivers set it; HDR as on phones: the panel driven brighter,
       ordinary content drawn dimmer within it, highlights above). Peaks from the spec sheets: top 650
@@ -569,17 +570,18 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       white points and gamuts matched to begin with (two OLED panels can differ). First the facts: the DSI link's bits per colour and
       whether the display processor dithers (banding); how far the kernel's brightness goes and whether
       its top is near 650 nits or the panel's high-brightness mode is out of reach; which colour
-      properties msm exposes on the connector and CRTC (CTM, GAMMA_LUT, DEGAMMA_LUT); Turnip under
-      wlroots' Vulkan renderer (Sway 1.12's HDR needs it). Then a game with HDR under gamescope on the
+      properties msm exposes on the connector and CRTC (CTM, GAMMA_LUT, DEGAMMA_LUT). Then a game with HDR
+      under gamescope on the
       top screen with HDR output forced (its debug options), the peak at about 650 nits and ordinary
       content at about 200 (about 1.7 stops of headroom), the panel at the top of its brightness: do the
       highlights look better, without banding, heat or burn-in worries (a cap or time limit on highlights
-      if needed). Only if it pays: a headroom output mode patched into wlroots and Sway for the desktop.
+      if needed). Only if it pays: a headroom output mode in ClamShell's compositor
+      (`docs/compositor-mvp.md`, 4h).
 - [ ] Wi-Fi from the Wi-Fi mode (NetworkManager): scan, join with a password, forget; polkit lets the
       session's user do it (tested in the VM as an autologin session user, not on the device).
 - [ ] Bluetooth: does the chip work with ROCKNIX's kernel and firmware? Then the Bluetooth mode: pair
       headphones (sound moves to them) and a controller (no code needed), forget one.
-- [ ] Text fields bring up the keyboard tab (input-method-v2 in the device's sway; Steam's own fields?).
+- [ ] Text fields bring up the keyboard tab (text-input-v3 in ClamShell's compositor; Steam's own fields?).
 - [ ] Sound through speakers and headphones; volume keys (ClamShell reads them from evdev: which
       device sends them?); the volume slider (`wpctl`); the volume tab:
       apps listed while playing (Steam, Proton games), their levels and mutes, switching outputs.
@@ -636,7 +638,7 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] First boot: the root fills the card (`df -h /`), `/swapfile` is on (`swapon`), both command lines
       have `resume=` and `resume_offset=` (`cat /proc/cmdline` on the second boot, under each boot path),
       `journalctl -u thor-firstboot`. Time (timesyncd, `timedatectl`) and locale (`locale`).
-- [ ] Screenshot: Print on a USB keyboard (`clamshell ctl screenshot`, grim).
+- [ ] Screenshot: Print on a USB keyboard (`clamshell ctl screenshot`, the compositor's capture).
 - [ ] Suspend and hibernate. Expect suspend to fail at first: ROCKNIX 20261001 turns SM8550's sleep off
       ("Sleep is currently broken": its `030-suspend_mode` quirk, power key ignored, a fake suspend
       instead), and its deep suspend is still an open PR (#3126, updated 2026-10-18: ~3 s resume, wake on
@@ -652,12 +654,12 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       sometimes resets at once, or QEMU's ACPI S4 wakes the hibernating kernel; one resume went through.
 - [ ] Time tab: the time zone set from the regions; "Set automatically" off and on (timesyncd); with it
       off, the date and time stepped (the bar's clock follows at once); 24-hour clock off and on.
-- [ ] ClamShell's compositor (`echo clamshell > /etc/thor/session`, then a new login on tty1): both
-      panels the right way up, and a touch on each screen landing under the finger (the touchscreens
-      report across their panels as mounted; `upright` in the compositor's input turns them back with the
-      output's transform: if a touch lands mirrored or turned, that transform is the wrong way round).
-- [ ] The session (only tried in the VM and nested on the desktop): autologin on tty1 starts sway through
-      uwsm, `graphical-session.target` is reached, and ClamShell, mako and udiskie are active
+- [ ] ClamShell's compositor: both panels the right way up, and a touch on each screen landing under the
+      finger (the touchscreens report across their panels as mounted; `upright` in the compositor's input
+      turns them back with the output's transform: if a touch lands mirrored or turned, that transform is the
+      wrong way round).
+- [ ] The session (only tried in the VM and nested on the desktop): autologin on tty1 starts
+      `clamshell.service`, `graphical-session.target` is reached, and ClamShell and udiskie are active
       (`systemctl --user status`); launches run under `app-graphical.slice`. The failure path on the real
       console: with ClamShell made to fail (as in the VM: `ExecStart=/bin/false` in a drop-in), the
       session stops and tty1 says why: readable on the top screen (the right way up: the panel is
@@ -704,7 +706,7 @@ From the review of 2026-10-21 (what Armada, ROCKNIX, Thorch and Kettle do, taken
 - [ ] Touch: all four corners of both screens land where tapped (known issue 4).
 - [ ] The bottom screen off by itself on battery (the setting's default, "Off when idle": dimmed after a
       minute untouched, off three minutes later; "Dark in game" off at once while dark): unplugged and
-      left alone, it goes off (`swaymsg -t get_outputs`: DSI-1's power off); a tap on it brings it back
+      left alone, it goes off (ClamShell's log; the panel dark); a tap on it brings it back
       (touch still delivered to a powered-off output: if not, the pad's focus or Home+Start do); the
       charger plugged in brings it back. And the power it saves: the battery's draw with it dimmed and
       with it off (the panel is driven in video mode: streamed every frame until off).
@@ -712,8 +714,6 @@ From the review of 2026-10-21 (what Armada, ROCKNIX, Thorch and Kettle do, taken
       Armada's and Kettle's NetworkManager config; the fan and battery drivers loaded at boot
       (thor-drivers.service: Kettle saw them late otherwise); the lid heeded 5 s after boot or waking
       (`HoldoffTimeoutSec`, Kettle's); `aplay` goes through PipeWire (pipewire-alsa).
-- [ ] Screens turned on the first session: `$XDG_RUNTIME_DIR/thor-outputs.conf` written (thor-session runs
-      thor-outputs by its path; it wasn't on the login shell's PATH before).
 - [ ] zram: `swapon --show` lists `/dev/zram0` (priority 100) and `/swapfile`; `sysctl vm.swappiness`
       is 180; a game frozen behind shelf goes to zram, and hibernate still writes to the swap file.
 - [ ] The command line's additions: `/proc/pressure/` exists (`psi=1`; Waydroid's memory killer), and
@@ -763,16 +763,16 @@ Boot
   `SleepOperation=suspend` in our logind drop-in until it is fixed.
 
 Screens and touch
-- Both screens upside down: `transform 270` instead of 90 in `thor-outputs` (KWin's Rotated270 is the
-  same turn named the other way).
+- Both screens upside down: a 270° turn instead of `Clockwise90` in the Thor's profile (`crates/device`;
+  `Rotation` has no 270 yet; KWin's Rotated270 is the same turn named the other way).
 - Touch turned or mirrored: a udev rule with `LIBINPUT_CALIBRATION_MATRIX` by `ID_PATH` (known issue 4
   has the matrices).
-- The bottom screen sideways after it was off: ROCKNIX PR #3507 (sway doesn't apply a transform to an
-  output that is off): apply it again when ClamShell turns the output on.
+- The bottom screen sideways after it was off: ROCKNIX PR #3507 (sway didn't apply a transform to an
+  output that was off): check that ClamShell's compositor applies it when it turns the output on.
 - Bottom touch stuck after sleep even with pbos-0630: `edt,retain-power-in-suspend` on its node
   (Thorch's dts-patches/0005, Kettle's device tree).
-- The session dies at start: `journalctl --user -u 'wayland-wm@*'`; `WLR_RENDERER=pixman` in
-  `~/.config/uwsm/env` to get a screen; the GPU's firmware errors in `journalctl -k`.
+- The session dies at start: `journalctl --user -u clamshell`; the GPU's firmware errors in
+  `journalctl -k`.
 - The bottom brightness slider: pbos-0620's range is ours, 0-4095; another range is one number in it.
 
 Controls
@@ -831,16 +831,13 @@ Sound and the rest
 
 Held back until real use shows whether they are worth what they cost.
 
-- The bar reserved on the bottom screen. The second screen is one layer surface, behind the windows moved
-  there while they show, in front otherwise. Split into two, the bar (anchored to the top, always above
-  windows) and the tab below it, the bar could claim its height as an exclusive zone, so windows moved
-  down tile below it and the bar stays usable: its moved-down-windows button then acts like a tab (shows
-  them; another tab brings ClamShell's view back), as Home+Select does. A toggle (Home+Y: still free),
-  since it takes some 80 of the 1080 lines from what is below (a dual-screen emulator's second screen
-  wants all of them). Costs: the slider that comes up over the tab while one slides on the bar would
-  belong to the tab's surface, which then has to be in front while sliding; pointing's positions on the
-  tab's surface offset by the bar's height. Worth it if, with windows below, reaching for the bar (or
-  Home+Select) turns out to happen often.
+- The bar reserved on the bottom screen. The second screen shows ClamShell's view, or the window moved
+  there in front of it. The compositor could keep the bar above a window moved down and place the window
+  below it, so the bar stays usable: its moved-down-windows button then acts like a tab (shows them;
+  another tab brings ClamShell's view back), as Home + right stick press does. A toggle (Home+Y: still
+  free), since it takes some 80 of the 1080 lines from what is below (a dual-screen emulator's second
+  screen wants all of them). Worth it if, with windows below, reaching for the bar (or Home + right stick
+  press) turns out to happen often.
 
 ## References
 
@@ -853,4 +850,4 @@ Held back until real use shows whether they are worth what they cost.
   <https://github.com/kettlelinux/kettlelinux/blob/main/docs/THOR.md>
 - Our tools: `tools/vm/vm.py` (virtual Thor, x86-64 and aarch64; `packages`, `thor-image`),
   `tools/repo/` (building, indexing and publishing the packages), `tools/image/thor-image.sh`,
-  `packages/` (the PKGBUILDs), `clamshell/tests/nested-sway.sh`
+  `packages/` (the PKGBUILDs), `tools/nested-session.sh`

@@ -23,7 +23,7 @@ The dock menu has no Open another for them (a launch shows the app that runs). I
 battery tab's row, are the app's own processes in Waydroid's container (Android names them after the
 package): their CPU and memory; their GPU time is another user's, unreadable, so a dash. The rest of
 the container's processes are one row, Android. In the settings, the Android runner's tab and its apps'
-dim the FPS cap, the HUD and the variables ("no effect"): they work through the launch's own process,
+dim the FPS cap and the variables ("no effect"): they work through the launch's own process,
 which hands the app over and ends.
 
 Quit closes the window, then runs the runner's `stop` once it is gone (the entry ends with its window);
@@ -65,9 +65,9 @@ open it from the bar.
 
 Waydroid answers every `xdg_toplevel.configure` with a display hotplug (`xdg_toplevel_handle_configure`
 calls `do_hotplug` whatever the size), which clears its windows; it draws a window again only with its
-app's next frame, and an app at rest draws none. Sway configures a window as it is hidden, shown,
-focused or unfocused, its size unchanged: an Android app's window was lost whenever it went out of
-sight or lost focus, and didn't come back (Android keeping the task).
+app's next frame, and an app at rest draws none. A compositor configures a window as it is hidden, shown,
+focused or unfocused (`suspended`, `activated`), its size unchanged: an Android app's window was lost
+whenever it went out of sight or lost focus, and didn't come back (Android keeping the task).
 
 So Waydroid connects through ClamShell's Wayland filter (`clamshell --wayland-filter`, its own unit
 `clamshell-wayland-filter-<display>`, started by the script before the session): a proxy on a socket
@@ -80,7 +80,7 @@ session with it (bound to the filter's unit): Waydroid can't go on without its d
 restarted under a running Android, Android's system crashed when it next drew (`system_server` restarted)
 and its network didn't come back.
 
-It does two more things for Android's windows:
+It does one more thing for Android's windows:
 
 - Android's caption (back, minimise, maximise, close, drawn into the window along its top) is out of
   sight: Android is told a window the caption's height taller, and the compositor a window that starts
@@ -88,9 +88,8 @@ It does two more things for Android's windows:
   out below the caption, so nothing of it is under it. Its height is in `android-caption` in ClamShell's
   runtime dir: the script writes it once Android has started, 57 pixels at a density of 213 (measured) in
   proportion. Back: the pad's B (Escape). A new geometry is the compositor's from the app's next frame.
-- The app's frame rate (its window's commits, the window in front) is written as MangoHud logs it
-  (`android-<app id>.csv` in ClamShell's MangoHud folder, a row every half second), which ClamShell
-  reads as it does a game's.
+
+The app's frame rate is measured by the compositor, as any window's.
 
 No frame rate cap: Waydroid paces Android by a vsync of its own, its period fixed when the session starts
 (from the outputs' refresh), not by the compositor's frame callbacks. A cap would be all of Android's, set

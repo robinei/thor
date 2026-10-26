@@ -37,17 +37,18 @@ readings, ticks, windows, units ─▶ Event ───┤
       keeps the frame's targets for input                                     with Events
 ```
 
-- **The UI** (crates/ui) owns `State` and runs the event loop: Wayland input becomes events through the
-  last frame's targets (each recording the item it showed), events from the system threads arrive on a
-  channel, and every event goes through `State::apply`. Views are functions of `&State`; the canvas
-  records commands, and a screen is drawn only where its recording changed.
-- **The system crate** has a thread per concern (sway, the launcher and systemd, the pad, Wi-Fi,
+- **The UI** (crates/ui) owns `State`; the compositor (crates/compositor) hosts it and runs the event loop:
+  input becomes events through the last frame's targets (each recording the item it showed), events from the
+  system threads arrive on a channel, and every event goes through `State::apply`. Views are functions of
+  `&State`; the canvas records commands, and a screen is drawn only where its recording changed.
+- **The system crate** has a thread per concern (the launcher and systemd, the pad, Wi-Fi,
   Bluetooth, sound, the store, files, ...). Each takes its own commands on a channel (`os::worker`; a
   thread that polls devices is also woken by an eventfd bell) and sends events back through a `Sink`. No
   thread touches `State`.
-- **The binary** (`clamshell/src`) starts the threads, builds `Handles`, and gives the UI the closure that
-  passes effects to it, so the UI and the system crate don't depend on each other. The UI carries out
-  only what is its own: the screens' power and refresh rate over Wayland, and quitting.
+- **The binary** (`clamshell/src`) starts the threads, builds `Handles`, and gives the compositor the
+  closure that passes effects to it, so the UI and the system crate don't depend on each other. The
+  compositor carries out only what is its own: the screens' power and refresh rate, closing windows, keys
+  sent to the window in front, screenshots, and quitting.
 - So the cycle is event → apply → effects → threads → events. A new feature adds events and effects to
   the state crate, a rule there, and the thread or view that carries them out.
 
@@ -77,8 +78,9 @@ updates that document in the same change, and:
 - an order that matters is pinned by a test of the exact sequence, with a comment saying why it matters;
 - invariants that must hold after every event go into the randomized event-sequence test, and the
   feature's events into its generator;
-- a transition the state crate can't test (it needs the device, sway or a service) says in the document
-  how it is checked instead: the nested-sway test, the VM suite, or on the device.
+- a transition the state crate can't test (it needs the device, the compositor or a service) says in the
+  document how it is checked instead: the compositor's tests, the nested compositor test, the VM suite,
+  or on the device.
 
 ## Code
 
@@ -118,8 +120,8 @@ commits of this repository still build after a rebase.
   if every difference follows from the intended change, and say what and why in the commit. A
   behaviour-preserving change (refactor, rename) leaves the trace untouched, so a trace diff there is a
   regression; an unexpected difference is a bug.
-- Sway behaviour: `clamshell/tests/nested-sway.sh`. `tools/nested-session.sh` runs ClamShell as on the
-  device, in a nested sway on the desktop.
+- Real clients in the compositor: `clamshell/tests/nested-compositor.py`. `tools/nested-session.sh` runs
+  ClamShell as on the device, nested in a window on the desktop.
 - The VM suite (`tools/vm/vm-test.sh`, about twenty minutes) is the exception, for what nothing else can
   check: the pad and real input devices, the session's files, D-Bus services. Say why when running it.
 - In shell wait loops, anchor `pgrep -f` patterns (`'^qemu-system'`): an unanchored one matches the loop
