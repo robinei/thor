@@ -358,14 +358,36 @@ impl Pipeline {
         Ok(frame.finish()?)
     }
 
+    /// The whole scene in sRGB, for a screenshot.
     pub fn capture(&self, renderer: &mut GlesRenderer) -> Result<crate::Capture, String> {
         let program = shader(renderer, ColourDescription::default(), false).map_err(|error| error.to_string())?;
         let mut texture: GlesTexture = renderer.create_buffer(Fourcc::Abgr8888, self.size.into()).map_err(|error| error.to_string())?;
         let mut target = renderer.bind(&mut texture).map_err(|error| error.to_string())?;
         self.present_with(renderer, &mut target, &program).map_err(|error| error.to_string())?;
-        crate::render::capture(renderer, &target, self.size)
+        read_back(renderer, &target, self.size)
     }
 }
+
+/// Readback is an SDR file export; clients and the composition target retain their native precision.
+fn read_back(renderer: &mut GlesRenderer, target: &smithay::backend::renderer::gles::GlesTarget<'_>, size: (i32, i32)) -> Result<crate::Capture, String> {
+    use smithay::backend::renderer::{ExportMem, TextureMapping};
+    let width = u32::try_from(size.0).map_err(|e| e.to_string())?;
+    let height = u32::try_from(size.1).map_err(|e| e.to_string())?;
+    let stride = usize::try_from(width).ok().and_then(|w| w.checked_mul(4)).filter(|n| *n != 0).ok_or("invalid capture width")?;
+    let mapping = renderer.copy_framebuffer(target, Rectangle::from_size(size.into()), Fourcc::Abgr8888).map_err(|e| e.to_string())?;
+    let flipped = mapping.flipped();
+    let bytes = renderer.map_texture(&mapping).map_err(|e| e.to_string())?;
+    let mut rgba = Vec::with_capacity(bytes.len());
+    if flipped {
+        for row in bytes.chunks_exact(stride).rev() {
+            rgba.extend_from_slice(row);
+        }
+    } else {
+        rgba.extend_from_slice(bytes);
+    }
+    Ok(crate::Capture { size: (width, height), rgba })
+}
+
 /// Whether a surface of `description` is SDR: an sRGB or power-law signal, the curve applied to its signal
 /// (`Curve::map_on`).
 fn sdr(description: ColourDescription) -> bool {

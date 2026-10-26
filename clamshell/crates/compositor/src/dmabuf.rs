@@ -48,7 +48,7 @@ impl Server {
         }
     }
 
-    /// Import before drawing. The caller must rebind its EGL target even if scene damage is empty.
+    /// Import before drawing. Returns whether any were waiting.
     pub fn import_dmabufs(&mut self, renderer: &mut GlesRenderer) -> bool {
         self.complete_dmabuf_imports(|buffer| renderer.import_dmabuf(buffer, None).map(|_| ()))
     }

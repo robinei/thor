@@ -204,27 +204,3 @@ pub(crate) fn elements(
     }
     Ok(())
 }
-
-/// Readback is an SDR file export; clients and the composition target retain their native precision.
-pub(crate) fn capture(
-    renderer: &mut GlesRenderer,
-    target: &smithay::backend::renderer::gles::GlesTarget<'_>,
-    size: (i32, i32),
-) -> Result<crate::Capture, String> {
-    use smithay::backend::renderer::{ExportMem, TextureMapping};
-    let width = u32::try_from(size.0).map_err(|e| e.to_string())?;
-    let height = u32::try_from(size.1).map_err(|e| e.to_string())?;
-    let stride = usize::try_from(width).ok().and_then(|w| w.checked_mul(4)).filter(|n| *n != 0).ok_or("invalid capture width")?;
-    let mapping = renderer.copy_framebuffer(target, Rectangle::from_size(size.into()), Fourcc::Abgr8888).map_err(|e| e.to_string())?;
-    let flipped = mapping.flipped();
-    let bytes = renderer.map_texture(&mapping).map_err(|e| e.to_string())?;
-    let mut rgba = Vec::with_capacity(bytes.len());
-    if flipped {
-        for row in bytes.chunks_exact(stride).rev() {
-            rgba.extend_from_slice(row);
-        }
-    } else {
-        rgba.extend_from_slice(bytes);
-    }
-    Ok(crate::Capture { size: (width, height), rgba })
-}

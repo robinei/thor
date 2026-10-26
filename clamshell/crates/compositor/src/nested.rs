@@ -7,7 +7,7 @@ use clamshell_state::{Effect, State};
 use clamshell_ui::{Config, Error};
 use smithay::{
     backend::{
-        renderer::{Frame, Renderer, damage::OutputDamageTracker, gles::GlesRenderer},
+        renderer::{Frame, Renderer, gles::GlesRenderer},
         winit::{self, WinitEvent},
     },
     reexports::winit::{dpi::PhysicalSize, window::WindowAttributes},
@@ -42,17 +42,14 @@ pub fn run(
         WindowAttributes::default().with_title("ClamShell nested").with_surface_size(PhysicalSize::new(server.size.0 as u32, server.size.1 as u32));
     let (mut backend, events) = winit::init_from_attributes::<GlesRenderer>(attributes)?;
     server.advertise_dmabuf(backend.renderer());
-    let mut colour_pipeline = match crate::colour::render::Pipeline::new(backend.renderer(), server.size) {
-        Ok(pipeline) => {
-            crate::colour::protocol::install(&server.dh);
-            Some(pipeline)
-        }
-        Err(error) => {
-            log::warn!("colour management unavailable: {error}");
-            None
-        }
-    };
-    let mut host_colour = colour_pipeline.as_ref().and_then(|_| crate::colour::host::Host::new(backend.window()));
+    // The device's drawing path, the only one: nested shows what the device would.
+    let mut pipeline = crate::colour::render::Pipeline::new(backend.renderer(), server.size)
+        .map_err(|error| format!("nested compositor: the colour pipeline can't start, and nested draws only through it: {error}"))?;
+    crate::colour::protocol::install(&server.dh);
+    let mut host_colour = crate::colour::host::Host::new(backend.window());
+    if host_colour.is_none() {
+        log::info!("nested compositor: the host's colour management can't be reached (not a Wayland window), so the window is sRGB");
+    }
     backend.window().set_cursor_visible(false);
     let mut cursor = crate::cursor::Cursor::new();
     log::info!("nested output format: {:?}", backend.renderer().egl_context().pixel_format());
@@ -61,9 +58,7 @@ pub fn run(
     let mut frames = [UiFrame::new(top_size)?, UiFrame::new(bottom_size)?];
     let mut overlays = Overlays::new(top_size)?;
     let mut elements = Vec::new();
-    let mut submitted = false;
     let mut refresh_known = false;
-    let mut damage = OutputDamageTracker::new(backend.window_size(), 1.0, Transform::Flipped180);
     base.event_loop
         .handle()
         .insert_source(events, move |event, _, server| {
@@ -72,7 +67,6 @@ pub fn run(
                     WinitEvent::Resized { size, .. } => {
                         refresh_known = false;
                         server.resize((size.w, size.h));
-                        damage = OutputDamageTracker::new(size, 1.0, Transform::Flipped180);
                     }
                     WinitEvent::Focus(focused) => {
                         server.host_focused = focused;
@@ -100,7 +94,7 @@ pub fn run(
                             }
                         }
                         server.frame();
-                        if let (Some(host), Some(pipeline)) = (&mut host_colour, &mut colour_pipeline) {
+                        if let Some(host) = &mut host_colour {
                             if let Some(preferred) = host.turn()? {
                                 log::info!("nested compositor: host preferred colour {preferred:?}");
                             }
@@ -116,43 +110,22 @@ pub fn run(
                             }
                         }
                         sync_capture(server, backend.window());
-                        let imported = server.import_dmabufs(backend.renderer());
+                        server.import_dmabufs(backend.renderer());
                         let capturing = std::mem::take(&mut server.screenshot_requested);
                         // Commits timed for no later than this frame, shown at the host's next, go ahead.
                         let interval = Duration::from_secs_f64(1000.0 / f64::from(server.refresh.max(1000)));
                         server.release_timed_commits((Duration::from(server.clock.now()) + interval).into());
                         render::elements(server, &mut frames, &mut overlays, backend.renderer(), &mut elements)?;
                         cursor.elements(server, backend.renderer(), &mut elements)?;
-                        let composed_states =
-                            if let Some(pipeline) = &mut colour_pipeline { Some(pipeline.compose(server, backend.renderer(), &mut elements)?.0) } else { None };
-                        if let Some(histogram) = colour_pipeline.as_mut().and_then(|pipeline| pipeline.take_histogram()) {
+                        let (states, _) = pipeline.compose(server, backend.renderer(), &mut elements)?;
+                        if let Some(histogram) = pipeline.take_histogram() {
                             server.report_histogram(histogram);
                         }
-                        // The window's buffer age, which only the colour pipeline's absence uses: asked once
-                        // the window is bound, since EGL answers it only for the current surface, and
-                        // what was rendered offscreen or imported left none current. After imports, a
-                        // whole frame restores the window target even when the scene has not changed.
-                        let age = if colour_pipeline.is_none() && submitted && !imported {
-                            drop(backend.bind()?);
-                            backend.buffer_age().unwrap_or(0)
-                        } else {
-                            0
-                        };
-                        let states;
                         {
                             let (renderer, mut framebuffer) = backend.bind()?;
-                            states = if let Some(pipeline) = &colour_pipeline {
-                                pipeline.present(renderer, &mut framebuffer)?;
-                                composed_states.ok_or("colour scene was not composed")?
-                            } else {
-                                damage.render_output(renderer, &mut framebuffer, age, &elements, [0.0, 0.0, 0.0, 1.0])?.states
-                            };
+                            pipeline.present(renderer, &mut framebuffer)?;
                             if capturing {
-                                let captured = if let Some(pipeline) = &colour_pipeline {
-                                    pipeline.capture(renderer)
-                                } else {
-                                    render::capture(renderer, &framebuffer, server.size)
-                                };
+                                let captured = pipeline.capture(renderer);
                                 if let Err(error) = &captured {
                                     log::warn!("compositor screenshot: {error}");
                                 }
@@ -164,7 +137,6 @@ pub fn run(
                             }
                         }
                         backend.submit(Some(&[Rectangle::from_size(backend.window_size())]))?;
-                        submitted = true;
                         server.frame_queued(&states, None);
                         server.frame_shown(&states, None);
                         server.present_submission(&states, server.clock.now());
