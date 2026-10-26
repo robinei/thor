@@ -114,9 +114,6 @@ pub fn run(
                         }
                         sync_capture(server, backend.window());
                         let imported = server.import_dmabufs(backend.renderer());
-                        // Imports may make EGL surfaceless. Force a rendered frame to restore the
-                        // window target even when the scene has not otherwise changed.
-                        let age = if submitted && !imported { backend.buffer_age().unwrap_or(0) } else { 0 };
                         let capturing = std::mem::take(&mut server.screenshot_requested);
                         // Commits timed for no later than this frame, shown at the host's next, go ahead.
                         let interval = Duration::from_secs_f64(1000.0 / f64::from(server.refresh.max(1000)));
@@ -128,6 +125,16 @@ pub fn run(
                         if let Some(histogram) = colour_pipeline.as_mut().and_then(|pipeline| pipeline.take_histogram()) {
                             server.report_histogram(histogram);
                         }
+                        // The window's buffer age, which only the colour pipeline's absence uses: asked once
+                        // the window is bound, since EGL answers it only for the current surface, and
+                        // what was rendered offscreen or imported left none current. After imports, a
+                        // whole frame restores the window target even when the scene has not changed.
+                        let age = if colour_pipeline.is_none() && submitted && !imported {
+                            drop(backend.bind()?);
+                            backend.buffer_age().unwrap_or(0)
+                        } else {
+                            0
+                        };
                         let states;
                         {
                             let (renderer, mut framebuffer) = backend.bind()?;
