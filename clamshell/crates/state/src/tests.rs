@@ -234,6 +234,25 @@ fn the_background_is_followed_before_the_quitting() {
     assert_eq!(kinds, ["thaw zelda", "end ff6"], "{fx:?}");
 }
 
+/// A paused game shown again because the window in front closed is thawed in the same event: the
+/// background is followed once the front is settled.
+#[test]
+fn a_paused_game_shown_when_the_front_closes_is_thawed_at_once() {
+    let mut s = state();
+    s.applied(Event::tick(100));
+    let zelda = launch(&mut s, "zelda-lttp");
+    let ff6 = launch(&mut s, "ff6");
+    let zelda_window = |focused| Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), focused) };
+    let ff6_window = Window { unit: ff6.unit(), ..win(4, "ff6", &ff6.workspace(), true) };
+    s.observed(vec![zelda_window(true)]);
+    s.observed(vec![zelda_window(false), ff6_window]);
+    s.applied(Event::tick(100 + crate::session::background::GRACE));
+    assert!(s.session().paused("zelda-lttp"));
+    let fx = s.observed(vec![zelda_window(false)]);
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(3));
+    assert!(fx.iter().any(|e| matches!(e, Effect::Freeze { frozen: false, .. })), "{fx:?}");
+}
+
 /// The UI starting sends what was waiting for it, in this order: the brightness as it was left, then
 /// after the event the keymap in force and the pad's route (keymap before route, as
 /// [`crate::sync::Sent::sync`] says). The pad thread starts with neither, so both are sent though the

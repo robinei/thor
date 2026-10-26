@@ -567,11 +567,13 @@ impl State {
         if let Some(left) = self.bottom.take_left() {
             self.left_tab(left);
         }
-        self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
         self.session.follow_front_launch(self.clock.mono());
         self.session.follow_replacement(self.clock.mono());
-        self.session.follow_quitting(self.clock.mono(), self.shelf.library(), out);
         self.session.follow_front(self.clock.mono());
+        // Once the front is settled, so a program shown again when the front window closed is thawed at
+        // once; before the quitting, which a quitting entry isn't paused for.
+        self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
+        self.session.follow_quitting(self.clock.mono(), self.shelf.library(), out);
         self.dock.follow(&self.session);
         self.session.followed();
         self.bottom.follow_dim(&self.session, &self.clock);
