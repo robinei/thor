@@ -500,7 +500,7 @@ fn touch_contacts_keep_independent_surfaces_and_native_coordinates() {
         server.touch_cancel();
         server.touch_up(Some(1).into(), time);
         server.touch_motion(Some(1).into(), bottom.origin, time);
-        assert!(server.touches.iter().all(Option::is_none));
+        assert!(server.touch.contacts.iter().all(Option::is_none));
         server.resize((790, 135));
         let scaled = server.geometry(first).unwrap();
         assert!(scaled.scale.x < 1.0);
@@ -512,7 +512,7 @@ fn touch_contacts_keep_independent_surfaces_and_native_coordinates() {
         server.touch_frame();
         server.core.handle(Event::Home);
         server.frame();
-        assert!(server.touches.iter().all(Option::is_none), "hiding a touched client cancels the gesture");
+        assert!(server.touch.contacts.iter().all(Option::is_none), "hiding a touched client cancels the gesture");
     });
     assert_eq!(checked, 1);
 }
@@ -541,8 +541,8 @@ fn touching_a_home_arrow_switches_once_and_consumes_home_release() {
     server.touch_up(Some(0).into(), time);
     server.touch_up(Some(0).into(), time);
     server.touch_frame();
-    assert!(!server.touch_pending);
-    assert!(server.touches.iter().all(Option::is_none));
+    assert!(!server.touch.pending);
+    assert!(server.touch.contacts.iter().all(Option::is_none));
     server.core.handle(Event::HomeHeld(false));
     server.core.handle(Event::HomeTap);
     assert_eq!(server.core.state().session().top_window().map(|w| w.id), Some(2));
@@ -583,7 +583,7 @@ fn touching_a_notification_taps_it_and_its_close_mark_dismisses_it() {
     server.touch_down(Some(0).into(), row, time);
     server.touch_up(Some(0).into(), time);
     assert!(held(&server).is_empty(), "a tap on the row dismissed 1");
-    assert!(server.touches.iter().all(Option::is_none));
+    assert!(server.touch.contacts.iter().all(Option::is_none));
 }
 
 mod keyboard_tests;

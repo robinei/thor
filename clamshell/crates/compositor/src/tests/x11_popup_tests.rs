@@ -103,7 +103,7 @@ fn x11_popups_share_parent_scaling_keep_tooltips_passive_and_cancel_dismissed_co
         server.touch_frame();
         server.dismiss_x11_menus_outside(Some(&root));
         server.sync_windows();
-        assert!(server.touches.iter().all(Option::is_none), "a detached popup cannot retain a touch contact");
+        assert!(server.touch.contacts.iter().all(Option::is_none), "a detached popup cannot retain a touch contact");
         assert!(!server.has_x11_menu(), "tooltips do not capture input");
         assert_eq!(server.hit(main_point).unwrap().surface, root, "a tooltip passes input to its parent");
         assert_eq!(server.x11.popup_dismiss.len(), 2);

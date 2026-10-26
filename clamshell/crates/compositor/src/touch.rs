@@ -16,6 +16,21 @@ pub(crate) enum Target {
     Ui(Screen),
     Ignored,
 }
+/// The touches in progress.
+pub(crate) struct Touches {
+    /// Each finger down, in a slot of its own.
+    pub contacts: [Option<Contact>; 32],
+    /// Whether clients were sent touch events since the last frame event.
+    pub pending: bool,
+}
+
+impl Touches {
+    pub fn new() -> Self {
+        Self { contacts: std::array::from_fn(|_| None), pending: false }
+    }
+}
+
+/// A finger down: its slot, what it came down on, and where it is in the scene.
 pub(crate) struct Contact {
     slot: TouchSlot,
     target: Target,
@@ -26,10 +41,10 @@ impl Server {
     pub(crate) fn touch_down(&mut self, slot: TouchSlot, position: Point<f64, Logical>, time: InputTime) {
         self.pointer.cursor_activity.hide();
         self.idle.input(std::time::Instant::now());
-        if self.touches.iter().flatten().any(|contact| contact.slot == slot) {
+        if self.touch.contacts.iter().flatten().any(|contact| contact.slot == slot) {
             self.touch_cancel();
         }
-        let Some(index) = self.touches.iter().position(Option::is_none) else {
+        let Some(index) = self.touch.contacts.iter().position(Option::is_none) else {
             log::debug!("compositor: too many simultaneous touches");
             return;
         };
@@ -44,7 +59,7 @@ impl Server {
                 self.core.handle(WindowEvent::Activate(hit.window).into());
                 let location = hit.location - hit.origin;
                 if let Some(touch) = self.seat.get_touch() {
-                    self.touch_pending = true;
+                    self.touch.pending = true;
                     touch.down(self, Some((hit.surface.clone(), (0.0, 0.0).into())), &DownEvent { slot, location, serial: SERIAL_COUNTER.next_serial(), time });
                 }
                 Target::Client { window: hit.window, surface: hit.surface, geometry, origin: hit.origin }
@@ -60,7 +75,7 @@ impl Server {
         } else {
             Target::Ignored
         };
-        if let Some(contact) = self.touches.get_mut(index) {
+        if let Some(contact) = self.touch.contacts.get_mut(index) {
             *contact = Some(Contact { slot, target, location: position });
         }
         self.sync_windows();
@@ -68,13 +83,13 @@ impl Server {
     pub(crate) fn touch_motion(&mut self, slot: TouchSlot, position: Point<f64, Logical>, time: InputTime) {
         self.pointer.cursor_activity.hide();
         self.idle.input(std::time::Instant::now());
-        let Some(contact) = self.touches.iter_mut().flatten().find(|contact| contact.slot == slot) else { return };
+        let Some(contact) = self.touch.contacts.iter_mut().flatten().find(|contact| contact.slot == slot) else { return };
         contact.location = position;
         let target = contact.target.clone();
         match target {
             Target::Client { surface, geometry, origin, .. } => {
                 if let Some(touch) = self.seat.get_touch() {
-                    self.touch_pending = true;
+                    self.touch.pending = true;
                     touch.motion(self, Some((surface, (0.0, 0.0).into())), &MotionEvent { slot, location: geometry.surface_coords(position) - origin, time });
                 }
             }
@@ -88,13 +103,14 @@ impl Server {
     pub(crate) fn touch_up(&mut self, slot: TouchSlot, time: InputTime) {
         self.pointer.cursor_activity.hide();
         self.idle.input(std::time::Instant::now());
-        let Some(contact) = self.touches.iter_mut().find(|contact| contact.as_ref().is_some_and(|contact| contact.slot == slot)).and_then(Option::take) else {
+        let Some(contact) = self.touch.contacts.iter_mut().find(|contact| contact.as_ref().is_some_and(|contact| contact.slot == slot)).and_then(Option::take)
+        else {
             return;
         };
         match contact.target {
             Target::Client { .. } => {
                 if let Some(touch) = self.seat.get_touch() {
-                    self.touch_pending = true;
+                    self.touch.pending = true;
                     touch.up(self, &UpEvent { slot, serial: SERIAL_COUNTER.next_serial(), time });
                 }
             }
@@ -106,14 +122,14 @@ impl Server {
         }
     }
     pub(crate) fn touch_frame(&mut self) {
-        if std::mem::take(&mut self.touch_pending)
+        if std::mem::take(&mut self.touch.pending)
             && let Some(touch) = self.seat.get_touch()
         {
             touch.frame(self);
         }
     }
     pub(crate) fn cancel_hidden_touches(&mut self) {
-        let hidden = self.touches.iter().flatten().any(|contact| match &contact.target {
+        let hidden = self.touch.contacts.iter().flatten().any(|contact| match &contact.target {
             Target::Client { window, surface, .. } => {
                 !self.visible(*window) || !self.windows.iter().any(|client| client.id == *window && client.mapped && client.window.contains_x11_target(surface))
             }
@@ -129,10 +145,10 @@ impl Server {
         if let Some(touch) = self.seat.get_touch() {
             // This Smithay revision cancels only slots pending since the last frame. Repeat each
             // active position before cancelling so stationary contacts are cancelled too.
-            for index in 0..self.touches.len() {
-                let contact = self.touches.get_mut(index).and_then(Option::take);
+            for index in 0..self.touch.contacts.len() {
+                let contact = self.touch.contacts.get_mut(index).and_then(Option::take);
                 if let Some(Contact { slot, target: Target::Client { surface, geometry, origin, .. }, location }) = contact {
-                    self.touch_pending = true;
+                    self.touch.pending = true;
                     touch.motion(
                         self,
                         Some((surface, (0.0, 0.0).into())),
@@ -142,8 +158,8 @@ impl Server {
             }
             touch.cancel(self);
         }
-        self.touches.fill_with(|| None);
-        self.touch_pending = false;
+        self.touch.contacts.fill_with(|| None);
+        self.touch.pending = false;
     }
 }
 
