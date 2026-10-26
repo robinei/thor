@@ -42,7 +42,7 @@ core/src/
 
 ```
 system/src/
-  lib.rs paths.rs store.rs device.rs
+  lib.rs paths.rs store.rs errands.rs
   os/        worker, command, dbus, sys, cgroup, drm, qrtr, evdev/, fs, text, http, xdg
   wiring/    mod.rs (start, from the binary's wiring.rs), handles, settings (the Tuning router)
   input/     watch, keyboard, pad/ (sensor_hub/{mod, wire}), touchpad/

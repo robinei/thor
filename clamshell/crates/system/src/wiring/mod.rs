@@ -145,7 +145,7 @@ pub fn start<S: Sink + Clone>(
     let icons = started("icons", crate::session::icons::spawn(sink.clone()));
     let system = started(
         "system",
-        crate::device::spawn(paths.screenshots.clone(), env.profile.refresh_calibration.map(|calibration| calibration.program), sink.clone()),
+        crate::errands::spawn(paths.screenshots.clone(), env.profile.refresh_calibration.map(|calibration| calibration.program), sink.clone()),
     );
     // The lengths and frames of browsed videos are read by the metadata threads, as for scanned ones.
     let probe: Box<dyn Fn(Vec<meta::Wanted>) + Send> = {

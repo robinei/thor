@@ -40,8 +40,8 @@ pub struct Handles {
     pub sound: Worker<clamshell_state::Sound>,
     pub brightness: Worker<brightness::Command>,
     pub tuning: Tuning,
-    /// Screenshots, sleep and the other device-wide commands (see [`crate::device`]).
-    pub system: Worker<crate::device::Command>,
+    /// Screenshots, sleep and the other one-off requests (see [`crate::errands`]).
+    pub system: Worker<crate::errands::Command>,
     /// Lists and watches the folder open in the browser.
     pub browse: Worker<clamshell_state::shelf::files::BrowseCommand>,
     pub files: Worker<clamshell_state::shelf::files::FileOp>,
@@ -50,7 +50,7 @@ pub struct Handles {
 impl Handles {
     /// Save an in-process compositor capture and report the result through the system sink.
     pub fn save_screenshot(&self, pixels: Result<super::ScreenshotPixels, String>) {
-        self.system.send(crate::device::Command::SaveScreenshot(pixels));
+        self.system.send(crate::errands::Command::SaveScreenshot(pixels));
     }
 
     pub fn dispatch(&mut self, effect: &Effect) {
@@ -129,16 +129,16 @@ impl Handles {
             Effect::EndProcesses { pids, force } => launcher::end_processes(pids, *force),
             Effect::Freeze { slice, frozen } => crate::launch::freezer::freeze(slice.clone(), *frozen),
             Effect::Tray(command) => self.tray.send(command.clone()),
-            Effect::AskAwake(argv) => self.system.send(crate::device::Command::AskAwake(argv.clone())),
-            Effect::Sleep => self.system.send(crate::device::Command::Sleep),
-            Effect::Account(command) => self.system.send(crate::device::Command::Account(command.clone())),
-            Effect::CalibrateRefresh => self.system.send(crate::device::Command::CalibrateRefresh),
+            Effect::AskAwake(argv) => self.system.send(crate::errands::Command::AskAwake(argv.clone())),
+            Effect::Sleep => self.system.send(crate::errands::Command::Sleep),
+            Effect::Account(command) => self.system.send(crate::errands::Command::Account(command.clone())),
+            Effect::CalibrateRefresh => self.system.send(crate::errands::Command::CalibrateRefresh),
             Effect::CalibrateSticks => self.tuning.pad.send(pad::Command::CalibrateSticks),
-            Effect::SetTimeZone(zone) => self.system.send(crate::device::Command::SetTimeZone(zone.clone())),
-            Effect::SetNtp(on) => self.system.send(crate::device::Command::SetNtp(*on)),
-            Effect::StepClock(field, by) => self.system.send(crate::device::Command::StepClock(*field, *by)),
+            Effect::SetTimeZone(zone) => self.system.send(crate::errands::Command::SetTimeZone(zone.clone())),
+            Effect::SetNtp(on) => self.system.send(crate::errands::Command::SetNtp(*on)),
+            Effect::StepClock(field, by) => self.system.send(crate::errands::Command::StepClock(*field, *by)),
             Effect::Notify { summary, body, urgent } => {
-                self.system.send(crate::device::Command::Notify { summary: summary.clone(), body: body.clone(), urgent: *urgent })
+                self.system.send(crate::errands::Command::Notify { summary: summary.clone(), body: body.clone(), urgent: *urgent })
             }
             // The compositor carries out its own.
             Effect::Compositor(_) => {}
@@ -160,12 +160,12 @@ impl Handles {
             Watch::Metrics => self.metrics.send(Shown(on)),
             Watch::Status => self.status.send(Shown(on)),
             // Read once as the tab opens, since it changes only through the tab.
-            Watch::Time if on => self.system.send(crate::device::Command::ReadTime),
+            Watch::Time if on => self.system.send(crate::errands::Command::ReadTime),
             Watch::Time => {}
             // The Device view shows the account and the time zone.
             Watch::Account if on => {
-                self.system.send(crate::device::Command::Account(clamshell_state::device::account::AccountCommand::Read));
-                self.system.send(crate::device::Command::ReadTime);
+                self.system.send(crate::errands::Command::Account(clamshell_state::device::account::AccountCommand::Read));
+                self.system.send(crate::errands::Command::ReadTime);
             }
             Watch::Account => {}
         }

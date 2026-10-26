@@ -18,10 +18,13 @@
 //! - [`store`] and [`paths`]: ClamShell's own files, and where they are;
 //! - [`os`]: operating system plumbing that knows nothing of the rest. [`os::worker`] is how a thread is
 //!   built.
+//!
+//! `errands` is the "system" thread, which carries out the state's one-off requests (a screenshot,
+//! sleep, the clock, the account, ...) through the modules above.
 
 pub(crate) mod audio;
-pub(crate) mod device;
 pub(crate) mod display;
+pub(crate) mod errands;
 pub(crate) mod files;
 pub(crate) mod input;
 pub mod launch;

@@ -1,6 +1,6 @@
-//! The "system" worker. It carries out, one at a time, what the state asks of the device as a whole: a
-//! screenshot, sleep, a notification, the time zone and clock, the account, the panel's calibration. Each
-//! is done by the module for its area. Anything that may take seconds runs on a thread of its own.
+//! Errands: the one-off requests of the state that belong to no area's own thread, carried out one at a
+//! time on the "system" thread: a screenshot, sleep, a notification, the time zone and clock, the account,
+//! the panel's calibration. Each is done by the module for its area. Anything that may take seconds runs on a thread of its own.
 
 use std::io;
 use std::path::PathBuf;
