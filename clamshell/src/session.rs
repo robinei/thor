@@ -125,7 +125,7 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
             backlights: env.backlights.clone(),
         };
         if let Some(path) = env.control.as_ref().or(paths.control.as_ref()) {
-            control::spawn(path.clone(), UiSink(sender.clone()));
+            control::spawn(path.clone(), LoopSink(sender.clone()));
         }
         *started.borrow_mut() = Some(start(&system_config, &paths, sources, layout, &global, sender));
     };
@@ -175,11 +175,11 @@ fn raise_open_files() {
     }
 }
 
-/// The system threads' sink: the UI's event loop.
+/// The system threads' sink: the compositor's event loop, which hands each event to the UI.
 #[derive(Clone)]
-pub struct UiSink(pub EventSender);
+pub struct LoopSink(pub EventSender);
 
-impl Sink for UiSink {
+impl Sink for LoopSink {
     fn send(&self, event: clamshell_state::Event) -> Result<(), Closed> {
         if self.0.send(event) { Ok(()) } else { Err(Closed) }
     }
@@ -187,7 +187,7 @@ impl Sink for UiSink {
 
 /// Starts every system thread, sending to `sender` (see `clamshell_system::wiring::start`).
 pub fn start(config: &wiring::Config, paths: &Paths, sources: &Sources, layout: Arc<Mutex<TouchLayout>>, global: &Values, sender: EventSender) -> Handles {
-    let sink = UiSink(sender);
+    let sink = LoopSink(sender);
     wiring::start(config, paths, sources, layout, global, sink)
 }
 

@@ -47,7 +47,7 @@ use clamshell_state::Event;
 
 pub use os::worker::Closed;
 
-/// Where system threads deliver events: the UI's event loop.
+/// Where system threads deliver events: the compositor's event loop.
 pub trait Sink: Send + 'static {
     fn send(&self, event: Event) -> Result<(), Closed>;
 }
