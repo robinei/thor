@@ -116,8 +116,7 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
         // On the screens, the session's services and what the bus starts are given the displays, and the
         // compositor's thread (this one) a higher priority than the apps'.
         if host == Host::Drm {
-            clamshell_system::session::environment::export(&displays.wayland, &displays.x11);
-            clamshell_system::session::priority::raise(u64::from(rustix::thread::gettid().as_raw_nonzero().get().unsigned_abs()));
+            set_up_session(&displays);
         }
         let system_config = wiring::Config {
             profile: env.profile,
@@ -137,6 +136,27 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
         Host::Nested => clamshell_compositor::run(state, config, start, on_effect, identify, on_capture, quit),
     };
     result.map_err(|e| e.to_string())
+}
+
+/// Gives the session's services and the bus the displays, and asks rtkit to raise the compositor's
+/// thread, the calling one. Each is a D-Bus call that can wait out its timeout (25 s), so each is on a
+/// thread of its own. systemd is told ClamShell is up only once the displays are given, since the
+/// services started after it (udiskie) take the user manager's environment as they start.
+fn set_up_session(displays: &clamshell_compositor::Displays) {
+    use clamshell_system::os::worker::detached;
+    use clamshell_system::session::{environment, priority};
+    let compositor = u64::from(rustix::thread::gettid().as_raw_nonzero().get().unsigned_abs());
+    if let Err(e) = detached("priority", move || priority::raise(compositor)) {
+        log::warn!("priority: {e}; the compositor's thread runs at the ordinary nice level");
+    }
+    let (wayland, x11, held) = (displays.wayland.clone(), displays.x11.clone(), displays.readiness.hold());
+    // If the thread can't start, the hold goes with it and ClamShell is up without the displays given.
+    if let Err(e) = detached("environment", move || {
+        environment::export(&wayland, &x11);
+        drop(held);
+    }) {
+        log::error!("session: {e}: WAYLAND_DISPLAY and DISPLAY not given to the user manager and the bus");
+    }
 }
 
 /// The soft limit of open files raised to the hard one. Every client's socket, buffer and sync file is an

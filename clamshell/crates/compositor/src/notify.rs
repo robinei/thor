@@ -1,5 +1,6 @@
 //! What ClamShell tells systemd when it runs as a service (`Type=notify`, `WatchdogSec=`): that it is up
-//! once its loop has turned once, with its socket listening and the system threads started; every few
+//! once its loop has turned once, with its socket listening and the system threads started, and the setup
+//! held for with [`Readiness::hold`] done; every few
 //! seconds that the loop is still turning; and a status line for `systemctl status`: what runs.
 //!
 //! If the loop stops, through a deadlock or a call that never returns, systemd restarts ClamShell after
@@ -8,7 +9,36 @@
 //! Outside systemd there is no socket and nothing is sent.
 
 use std::os::unix::net::UnixDatagram;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
+
+/// Setup that systemd's `READY=1` waits for, besides the loop's first turn: what the services started
+/// after ClamShell need, such as the displays given to the user manager, done on threads of its own.
+#[derive(Clone, Default)]
+pub struct Readiness(Arc<AtomicUsize>);
+
+impl Readiness {
+    /// Holds the readiness until the [`Held`] is dropped, as the setup ends, whether done, failed or
+    /// panicked. The loop sees it at its next turn, within a second (the clock's tick).
+    pub fn hold(&self) -> Held {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Held(self.0.clone())
+    }
+
+    fn ready(&self) -> bool {
+        self.0.load(Ordering::SeqCst) == 0
+    }
+}
+
+/// A hold on the [`Readiness`], let go when dropped.
+pub struct Held(Arc<AtomicUsize>);
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 
 /// How often the loop reports that it is turning. This is well within any watchdog time; the service
 /// gives 30 s.
@@ -16,6 +46,7 @@ const EVERY: Duration = Duration::from_secs(5);
 
 pub struct Notifier {
     socket: Option<(UnixDatagram, std::path::PathBuf)>,
+    readiness: Readiness,
     ready: bool,
     last: Option<Instant>,
     /// The status last sent: running entries, windows, whether Xwayland runs.
@@ -25,26 +56,27 @@ pub struct Notifier {
 impl Notifier {
     /// systemd's socket, if ClamShell runs as a notifying service. `NOTIFY_SOCKET` must be a path. An
     /// abstract socket (`@…`) isn't the user manager's and isn't used.
-    pub fn new() -> Notifier {
+    pub fn new(readiness: Readiness) -> Notifier {
         let path = std::env::var_os("NOTIFY_SOCKET").map(std::path::PathBuf::from).filter(|p| {
             if !p.is_absolute() {
                 log::warn!("notify: NOTIFY_SOCKET {} isn't a path: systemd isn't told this is up", p.display());
             }
             p.is_absolute()
         });
-        Notifier::to(path)
+        Notifier::to(path, readiness)
     }
 
     /// One that tells the socket at `path`, if any.
-    fn to(path: Option<std::path::PathBuf>) -> Notifier {
+    fn to(path: Option<std::path::PathBuf>, readiness: Readiness) -> Notifier {
         let socket = path.and_then(|p| UnixDatagram::unbound().inspect_err(|e| log::warn!("notify {}: {e}", p.display())).ok().map(|s| (s, p)));
-        Notifier { socket, ready: false, last: None, status: None }
+        Notifier { socket, readiness, ready: false, last: None, status: None }
     }
 
-    /// Called after each turn of the main loop. Reports that the program is up the first time, and that
-    /// it is alive at most every few seconds.
+    /// Called after each turn of the main loop. Reports that the program is up the first time the
+    /// readiness isn't held, and that it is alive at most every few seconds.
     pub fn turned(&mut self) {
-        if !std::mem::replace(&mut self.ready, true) {
+        if !self.ready && self.readiness.ready() {
+            self.ready = true;
             self.send("READY=1");
         }
         if self.last.is_none_or(|t| t.elapsed() >= EVERY) {
@@ -95,10 +127,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("notify");
         let systemd = UnixDatagram::bind(&path).unwrap();
-        let mut notifier = Notifier::to(Some(path));
+        let readiness = Readiness::default();
+        let held = readiness.hold();
+        let mut notifier = Notifier::to(Some(path), readiness);
+        notifier.turned();
+        assert_eq!(sent(&systemd), ["WATCHDOG=1"], "not up while the setup is held");
+        drop(held);
         notifier.turned();
         notifier.turned();
-        assert_eq!(sent(&systemd), ["READY=1", "WATCHDOG=1"], "the second turn too soon for another");
+        assert_eq!(sent(&systemd), ["READY=1"], "once, and too soon for another watchdog");
         notifier.last = Instant::now().checked_sub(EVERY);
         notifier.turned();
         assert_eq!(sent(&systemd), ["WATCHDOG=1"]);
@@ -107,6 +144,6 @@ mod tests {
         notifier.status(1, 3, true);
         assert_eq!(sent(&systemd), ["STATUS=1 running, 2 windows, Xwayland not started", "STATUS=1 running, 3 windows, Xwayland running"]);
         assert!(notifier.deadline().is_some());
-        assert!(Notifier::to(None).deadline().is_none(), "outside systemd, no wake for it");
+        assert!(Notifier::to(None, Readiness::default()).deadline().is_none(), "outside systemd, no wake for it");
     }
 }

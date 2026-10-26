@@ -36,6 +36,7 @@ use smithay::reexports::calloop::channel;
 pub use clients::Process;
 pub use drm::run as run_drm;
 pub use nested::run;
+pub use notify::{Held, Readiness};
 
 #[cfg(test)]
 mod tests;
@@ -76,4 +77,6 @@ pub struct Displays {
     pub wayland: String,
     /// Xwayland's display (DISPLAY).
     pub x11: String,
+    /// What systemd's `READY=1` waits for: setup that services started after ClamShell need can hold it.
+    pub readiness: Readiness,
 }

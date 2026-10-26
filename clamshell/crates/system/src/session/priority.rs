@@ -6,13 +6,17 @@
 //! A thread inherits its starter's nice level, so the system's threads go back to the ordinary level as
 //! they start ([`crate::os::worker::start`]). What the compositor's thread starts directly keeps it:
 //! Xwayland, which draws X11 games' frames, and short-lived commands.
+//!
+//! The binary asks from a thread of its own, naming the compositor's thread, so that the compositor
+//! doesn't wait on the bus. What the compositor's thread starts before the answer keeps the ordinary
+//! level; Xwayland starts once an X11 client connects, after the answer in practice.
 
 use crate::os::dbus::Bus;
 
 const RTKIT: &str = "org.freedesktop.RealtimeKit1";
 const PATH: &str = "/org/freedesktop/RealtimeKit1";
 
-/// Raises `thread` (a thread id of this process). A failure is logged: the thread runs on at its nice
+/// Raises `thread` (a thread id of this process), from any of its threads. A failure is logged: the thread runs on at its nice
 /// level as it was.
 pub fn raise(thread: u64) {
     let result = Bus::system().and_then(|mut bus| {

@@ -83,10 +83,11 @@ impl Base {
         let mut x11 = crate::x11::Supervisor::new(event_loop.handle())?;
         let runtime = std::env::var_os("XDG_RUNTIME_DIR").ok_or("compositor: XDG_RUNTIME_DIR is missing")?;
         let socket = std::path::PathBuf::from(runtime).join(&server.socket);
-        start(sender, crate::Displays { socket, wayland: server.socket.clone(), x11: x11.display() });
+        let readiness = crate::notify::Readiness::default();
+        start(sender, crate::Displays { socket, wayland: server.socket.clone(), x11: x11.display(), readiness: readiness.clone() });
         server.core.handle(Event::Start);
         let mut host_deadline = None;
-        let mut notifier = crate::notify::Notifier::new();
+        let mut notifier = crate::notify::Notifier::new(readiness);
         while !server.exit {
             let now = Instant::now();
             x11.turn(&mut server, now);
