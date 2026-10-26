@@ -185,6 +185,10 @@ rules and launch context.
   cursor, notifications, screenshots, moves between the screens. `--gpu`, on a desktop with a render
   node and a Vulkan driver (and Wayland-capable `vkcube`), requires native dmabuf submission. It prints
   the directory with its screenshots and protocol logs.
+- `clamshell/tests/real-apps.py` (after `cargo build`): the apps installed on this computer (RetroArch,
+  Firefox, Wine's Notepad, Lutris, Heroic; the missing skipped) started in nested ClamShell, each checked
+  to open in front, draw, cause no compositor error and end when ClamShell closes its window. `--gpu` as
+  above.
 - `clamshell/tests/picture-scaling.py` (after `cargo build` and `cargo build -p clamshell-compositor
   --example pattern-game`): test games launched from shelf, their pictures checked to fill the top screen
   at each Resolution and Scaling. Both need sway (as the host), Xwayland and grim; the first also foot,
