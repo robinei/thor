@@ -687,3 +687,36 @@ pub(crate) fn wait_closed(fd: &impl AsFd) {
     assert_eq!(rustix::event::poll(&mut fds, Some(&Timespec { tv_sec: 2, tv_nsec: 0 })).unwrap(), 1);
     assert!(fds[0].revents().intersects(PollFlags::HUP | PollFlags::ERR));
 }
+
+/// The clipboard's protocol (`ext_data_control`) is offered only to a client running ClamShell's own
+/// program, known as it connects; any other client couldn't read what is copied.
+#[test]
+fn only_clamshells_own_program_sees_the_clipboards_protocol() {
+    let display = Display::<Server>::new().unwrap();
+    let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
+    let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
+    let mut display = display;
+    let mut sees = |ours: bool| {
+        let (server_socket, client_socket) = UnixStream::pair().unwrap();
+        if ours {
+            // (This test's process at the other end: the same executable.)
+            crate::server::insert_client(&mut display.handle(), server_socket).unwrap();
+        } else {
+            display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
+        }
+        let thread = std::thread::spawn(move || {
+            let connection = Connection::from_socket(client_socket).unwrap();
+            let (globals, _queue) = registry_queue_init::<Client>(&connection).unwrap();
+            globals.contents().with_list(|list| list.iter().any(|global| global.interface == "ext_data_control_manager_v1"))
+        });
+        let until = Instant::now() + Duration::from_secs(5);
+        while !thread.is_finished() && Instant::now() < until {
+            display.dispatch_clients(&mut server).unwrap();
+            display.flush_clients().unwrap();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        thread.join().unwrap()
+    };
+    assert!(sees(true), "ClamShell's own clipboard thread");
+    assert!(!sees(false), "another program");
+}

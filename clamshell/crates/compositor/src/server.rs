@@ -148,7 +148,11 @@ impl Server {
         smithay::wayland::viewporter::ViewporterState::new::<Self>(&dh);
         smithay::wayland::idle_inhibit::IdleInhibitManagerState::new::<Self>(&dh);
         let primary_selection = smithay::wayland::selection::primary_selection::PrimarySelectionState::new::<Self>(&dh);
-        let data_control = smithay::wayland::selection::ext_data_control::DataControlState::new::<Self, _>(&dh, Some(&primary_selection), |_| true);
+        // The clipboard's contents only for ClamShell's own program: its clipboard thread, and
+        // `clamshell --clipboard` for Waydroid's sharing; any other client could read what is copied.
+        let data_control = smithay::wayland::selection::ext_data_control::DataControlState::new::<Self, _>(&dh, Some(&primary_selection), |client| {
+            client.get_data::<ClientState>().is_some_and(|state| state.ours)
+        });
         let outputs = ["ClamShell-Top", "ClamShell-Bottom"].map(|name| {
             Output::new(
                 name.into(),
@@ -795,6 +799,8 @@ pub(crate) struct ClientState {
     pub game: std::sync::OnceLock<Option<(clamshell_state::settings::Resolution, bool)>>,
     /// Xwayland, the only client that sees `xwayland_shell_v1`.
     pub xwayland: bool,
+    /// The client runs ClamShell's own program (see [`insert_client`]): only it sees `ext_data_control`.
+    pub ours: bool,
 }
 
 impl ClientState {
@@ -815,5 +821,19 @@ impl ClientData for ClientState {
 }
 
 pub(crate) fn insert_client(dh: &mut DisplayHandle, stream: std::os::unix::net::UnixStream) -> Option<smithay::reexports::wayland_server::Client> {
-    dh.insert_client(stream, Arc::new(ClientState::default())).inspect_err(|error| log::warn!("compositor: accept client: {error}")).ok()
+    let state = ClientState { ours: runs_clamshell(&stream), ..ClientState::default() };
+    dh.insert_client(stream, Arc::new(state)).inspect_err(|error| log::warn!("compositor: accept client: {error}")).ok()
+}
+
+/// Whether the process at the other end of `stream` runs the same executable as this one. Known as it
+/// connects: a protocol's filter, asked with the display locked, can't ask the client's credentials.
+fn runs_clamshell(stream: &std::os::unix::net::UnixStream) -> bool {
+    let exe = |pid: &str| std::fs::read_link(format!("/proc/{pid}/exe")).ok();
+    match rustix::net::sockopt::socket_peercred(stream) {
+        Ok(peer) => exe(&peer.pid.as_raw_nonzero().to_string()).is_some_and(|theirs| Some(theirs) == exe("self")),
+        Err(e) => {
+            log::warn!("compositor: a client's process unknown, so it isn't taken as ClamShell's: {e}");
+            false
+        }
+    }
 }
