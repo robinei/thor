@@ -166,6 +166,11 @@ impl Server {
         core.observe_events(move |event, state| observed.borrow_mut().record(event, state));
         let clock = smithay::utils::Clock::<smithay::utils::Monotonic>::new();
         smithay::wayland::presentation::PresentationState::new::<Self>(&dh, clock.id() as u32);
+        // FIFO, by which Mesa's Vulkan paces a game in FIFO mode instead of with a frame callback a
+        // swapchain's teardown can destroy a second time from another thread as it is answered (which
+        // under Wine takes a game's window when it switches mode). Its barriers are signalled with the
+        // frame callbacks (see `Server::frame_callbacks`).
+        smithay::wayland::fifo::FifoManagerState::new::<Self>(&dh);
         let mut server = Self {
             clock,
             core,
@@ -632,32 +637,53 @@ impl Server {
 
     /// Frame callbacks for the windows shown on the top screen or the second (`down`; None: both, as
     /// nested), a capped window's at its cap's pace (see [`crate::frames::Frames::pace`]) on a screen
-    /// showing a frame every `refresh`. Returns when a callback held back is due.
+    /// showing a frame every `refresh`, and with them their surfaces' FIFO barriers, whose held commits
+    /// then go ahead. Returns when a callback held back is due.
     pub fn frame_callbacks(&mut self, down: Option<bool>, refresh: std::time::Duration, now: Instant) -> Option<Instant> {
         let shown: Vec<_> = self.windows.iter().map(|client| client.mapped && self.visible(client.id)).collect();
         let state = self.core.state();
         let [top, bottom] = &self.outputs;
         let time = self.started.elapsed();
         let mut held: Option<Instant> = None;
+        let mut barriers: Vec<smithay::reexports::wayland_server::Client> = Vec::new();
         for (client, shown) in self.windows.iter_mut().zip(shown) {
             let on_down = state.session().window(client.id).is_some_and(|w| w.down);
             if !shown || down.is_some_and(|down| down != on_down) {
                 continue;
             }
-            // A capped window uses its turn only while it waits for a callback, so that one drawing
-            // slower than its cap isn't held back further.
+            // A capped window uses its turn only while it waits for a callback or on a FIFO barrier, so
+            // that one drawing slower than its cap isn't held back further.
             let cap = state.window_fps_cap(client.id);
             let waiting = client.window.root().is_some_and(|root| {
                 with_states(&root, |states| !states.cached_state.get::<smithay::wayland::compositor::SurfaceAttributes>().current().frame_callbacks.is_empty())
             });
+            let mut barrier = false;
+            client.window.with_surfaces(|_, states| {
+                barrier |= states.cached_state.get::<smithay::wayland::fifo::FifoBarrierCachedState>().current().barrier.is_some();
+            });
+            let waiting = waiting || barrier;
             let paced = if cap.is_some() && !waiting { Ok(()) } else { client.frames.pace(cap, refresh, now) };
             match paced {
                 Ok(()) => {
                     let output = if on_down { bottom } else { top };
                     client.window.send_frame(output, time, Some(std::time::Duration::ZERO), |_, _| Some(output.clone()));
+                    client.window.with_surfaces(|surface, states| {
+                        let barrier = states.cached_state.get::<smithay::wayland::fifo::FifoBarrierCachedState>().current().barrier.take();
+                        if let Some(barrier) = barrier {
+                            barrier.signal();
+                            if let Some(owner) = surface.client().filter(|owner| !barriers.iter().any(|c| c.id() == owner.id())) {
+                                barriers.push(owner);
+                            }
+                        }
+                    });
                 }
                 Err(due) => held = Some(held.map_or(due, |held| held.min(due))),
             }
+        }
+        let dh = self.dh.clone();
+        for owner in barriers {
+            use smithay::wayland::compositor::CompositorHandler;
+            self.client_compositor_state(&owner).blocker_cleared(self, &dh);
         }
         held
     }

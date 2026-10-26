@@ -118,10 +118,10 @@ def main():
              "pattern-linear": [str(PATTERN), "--colour", "linear"], "sdl-wayland": ["env", "SDL_VIDEO_DRIVER=wayland", "SDL_LOGGING=video=debug", str(sdl)],
              "sdl-x11": ["env", "SDL_VIDEO_DRIVER=x11", "SDL_LOGGING=video=debug", str(sdl)]}
     if windows:
-        # Wine's Wayland driver is used when there is no X display. With it, about one run in three, Wine 11.20's
-        # process breaks while its swapchain is made anew for a mode (libwayland's "Proxy requested for unref
-        # has no references", or malloc's heap corruption, in the game's .err): its window goes, or it
-        # crashes, and that mode's cases fail. The compositor sees no protocol error.
+        # Wine's Wayland driver is used when there is no X display. Without the compositor's FIFO, Mesa's
+        # Vulkan paces a FIFO swapchain with a frame callback that its teardown, when the swapchain is made
+        # anew for a mode, may destroy a second time from another thread: libwayland's "Proxy requested for
+        # unref has no references" in the game's .err, and its window goes, or it crashes.
         kinds.update({
             "wine-wayland": ["env", "-u", "DISPLAY", *wine_env[1:], "wine", str(exe)],
             "wine-x11": [*wine_env, "wine", str(exe)],
