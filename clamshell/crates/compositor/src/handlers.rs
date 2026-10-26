@@ -133,11 +133,12 @@ impl XdgShellHandler for Server {
         &mut self.shell
     }
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
+        log::debug!("compositor: a toplevel on {:?}", surface.wl_surface().id());
         self.add_toplevel(surface);
     }
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         if let Some(id) = self.surface_id(surface.wl_surface()) {
-            log::info!("compositor: window {id} closes");
+            log::info!("compositor: window {id} closes: its toplevel on {:?} is gone", surface.wl_surface().id());
             self.core.handle(WindowEvent::Closed(id).into());
             self.windows.retain(|w| w.id != id);
             self.sync_windows();
