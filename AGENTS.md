@@ -70,6 +70,10 @@ readings, ticks, windows, units ─▶ Event ───┤
   diffs what the outside should have (`Wanted`) against what it was last sent. What can be computed from
   state is computed, not stored and kept in step.
 - Outside code reads areas through `State`'s accessors and changes state only through events.
+- Naming: an event that reports what happened is named for it, a noun or the past tense (`Reading`,
+  `Resumed`, `LaunchFailed`); one that asks the state for something, and every effect, which asks the
+  outside, is imperative (`ChooseTab`, `Launch`, `Freeze`). An area's events are an enum named for it
+  (`LaunchEvent`, `FilesEvent`).
 - No allocation on the per-event path or in drawing a frame (`crates/state/tests/apply_alloc.rs` and the
   UI's no-alloc test hold this). No function in the state crate returns a `Vec`: append to one passed in.
 
