@@ -57,7 +57,7 @@ impl State {
     pub fn curve_plot(&self) -> CurvePlot {
         let window = self.plot_window();
         let colour = window.and_then(|w| w.colour.as_deref().copied()).filter(|colour| colour.hdr());
-        let screen = self.screen_colour(window.is_some_and(|w| self.session().below(w.id)));
+        let screen = self.presentation.screen_colour(window.is_some_and(|w| self.session().below(w.id)));
         let luminance = screen.luminances();
         let black = f64::from(luminance.min) / 10000.0 / f64::from(luminance.reference.max(1));
         // The content's peak: the one set for the program edited (at the level edited), else what it
@@ -75,7 +75,7 @@ impl State {
                 scrgb: colour.transfer == crate::colour::TransferFunction::Linear,
             }
         });
-        let histogram = self.histogram.filter(|h| window.is_some_and(|w| w.id == h.window));
+        let histogram = self.presentation.histogram().filter(|h| window.is_some_and(|w| w.id == h.window));
         CurvePlot { hdr, headroom: screen.headroom(), black, histogram }
     }
 }

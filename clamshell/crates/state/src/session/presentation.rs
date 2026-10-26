@@ -54,6 +54,51 @@ pub struct Screens {
     pub top_size: (u32, u32),
 }
 
+/// What the compositor said that windows are presented on: the screens, Xwayland's modes, and the last
+/// histogram it measured.
+#[derive(Debug, Default)]
+pub struct Presentation {
+    /// The screens, as the compositor last said (see [`crate::Reading::Screens`]).
+    screens: Screens,
+    /// The last histogram the compositor measured (see [`crate::Reading::Histogram`]).
+    histogram: Option<crate::colour::Histogram>,
+    /// The sizes of Xwayland's modes (see [`crate::Reading::XwaylandModes`]).
+    xwayland_modes: Vec<(u32, u32)>,
+}
+
+impl Presentation {
+    pub(crate) fn read_screens(&mut self, screens: Screens) {
+        self.screens = screens;
+    }
+
+    pub(crate) fn read_histogram(&mut self, histogram: crate::colour::Histogram) {
+        self.histogram = Some(histogram);
+    }
+
+    pub(crate) fn read_xwayland_modes(&mut self, modes: Vec<(u32, u32)>) {
+        self.xwayland_modes = modes;
+    }
+
+    /// Screen `down`'s colour (the second's, or the top's), as the compositor describes it.
+    pub fn screen_colour(&self, down: bool) -> crate::colour::ColourDescription {
+        let [top, bottom] = self.screens.colour;
+        if down { bottom } else { top }
+    }
+
+    /// The top screen's size, once the compositor has said.
+    pub fn top_size(&self) -> Option<(u32, u32)> {
+        Some(self.screens.top_size).filter(|(w, h)| *w > 0 && *h > 0)
+    }
+
+    pub fn histogram(&self) -> Option<crate::colour::Histogram> {
+        self.histogram
+    }
+
+    pub fn xwayland_modes(&self) -> &[(u32, u32)] {
+        &self.xwayland_modes
+    }
+}
+
 /// How a window's picture is shown: its clarity settings (see [`crate::State::window_clarity`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Clarity {
@@ -105,6 +150,7 @@ impl crate::State {
         // have changed since, and an X11 game the modes Xwayland offers, one of which it may switch to. The
         // second's size isn't known here, and games are shown on the top one.
         let mut screen: Vec<(u32, u32)> = self
+            .presentation()
             .top_size()
             .filter(|_| !self.session().below(id))
             .map(|top| {
@@ -113,7 +159,7 @@ impl crate::State {
             })
             .unwrap_or_default();
         if window.x11 && !self.session().below(id) {
-            screen.extend(&self.xwayland_modes);
+            screen.extend(self.presentation().xwayland_modes());
         }
         let size = self.session().running_of(window).map_or_else(Default::default, |r| self.settings_of(&r.id).choice());
         Some(window.presentation(game, &screen, size))

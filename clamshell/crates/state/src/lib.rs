@@ -193,12 +193,7 @@ pub struct State {
     curving: crate::curve::screens::Curving,
     /// A setting's slider held (see [`Control::Setting`]).
     setting_slider: Option<Slider>,
-    /// The screens, as the compositor last said (see [`Reading::Screens`]).
-    screens: crate::session::presentation::Screens,
-    /// The last histogram the compositor measured (see [`Reading::Histogram`]).
-    histogram: Option<crate::colour::Histogram>,
-    /// The sizes of Xwayland's modes (see [`Reading::XwaylandModes`]).
-    xwayland_modes: Vec<(u32, u32)>,
+    presentation: crate::session::presentation::Presentation,
     /// Where the lists but shelf are scrolled.
     scrolls: Scrolls,
     clock: Clock,
@@ -227,9 +222,6 @@ impl State {
             keymapping: Keymapping::new(init.keymaps),
             curving: crate::curve::screens::Curving::new(init.curves),
             setting_slider: None,
-            screens: Default::default(),
-            histogram: None,
-            xwayland_modes: Vec::new(),
             bottom: Bottom::default(),
             sys: Sys::new(init.twelve_hour),
             levels: Levels::new(init.brightness),
@@ -316,15 +308,8 @@ impl State {
         &self.keymapping
     }
 
-    /// Screen `down`'s colour (the second's, or the top's), as the compositor describes it.
-    pub fn screen_colour(&self, down: bool) -> crate::colour::ColourDescription {
-        let [top, bottom] = self.screens.colour;
-        if down { bottom } else { top }
-    }
-
-    /// The top screen's size, once the compositor has said.
-    pub fn top_size(&self) -> Option<(u32, u32)> {
-        Some(self.screens.top_size).filter(|(w, h)| *w > 0 && *h > 0)
+    pub fn presentation(&self) -> &crate::session::presentation::Presentation {
+        &self.presentation
     }
 
     pub fn curving(&self) -> &crate::curve::screens::Curving {

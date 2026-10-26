@@ -134,8 +134,8 @@ fn note(no_effect: bool) -> &'static str {
 fn value_text(s: &State, setting: Setting, value: u16) -> Fmt<32> {
     let resolution: clamshell_state::settings::Resolution = clamshell_state::settings::Choice::of(value);
     match setting {
-        Setting::Resolution if resolution != clamshell_state::settings::Resolution::Native && s.top_size().is_some() => {
-            let screen = s.top_size().unwrap_or_default();
+        Setting::Resolution if resolution != clamshell_state::settings::Resolution::Native && s.presentation().top_size().is_some() => {
+            let screen = s.presentation().top_size().unwrap_or_default();
             let (w, h) = resolution.size_on(screen);
             // A size the screen holds a whole number of times each way, which Integer fills.
             match (w > 0 && h > 0).then(|| (screen.0 / w, screen.1 / h)) {
