@@ -280,9 +280,9 @@ pub enum ShelfEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LaunchEvent {
-    /// The entry couldn't be started because its unit never appeared. Whether a launch is running, and
-    /// when it ends, comes from systemd's list of our units ([`crate::Event::Units`]).
-    LaunchFailed(Arc<str>),
+    /// The entry's launch `instance` couldn't be started: its unit never appeared. Whether a launch is
+    /// running, and when it ends, comes from systemd's list of our units ([`crate::Event::Units`]).
+    LaunchFailed { entry: Arc<str>, instance: crate::Instance },
     /// A video played by mpv ended, with where mpv left it. None means it played to the end (see
     /// [`crate::Effect::ReadPosition`]).
     Position { entry: Arc<str>, position: Option<u32> },

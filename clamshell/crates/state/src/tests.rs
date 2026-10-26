@@ -116,7 +116,7 @@ fn a_launch_that_didnt_start_says_so() {
     let mut s = state();
     tap(&mut s, entry("zelda-lttp"));
     tap(&mut s, entry("zelda-lttp"));
-    s.applied(Event::Launch(LaunchEvent::LaunchFailed("zelda-lttp".into())));
+    crate::testkit::launch_failed(&mut s, "zelda-lttp");
     let notice = s.bottom().notice().map(|n| n.what.clone());
     assert!(matches!(&notice, Some(crate::bottom::notice::NoticeKind::NotStarted(t)) if t == "A Link to the Past"), "{notice:?}");
     assert!(s.session().running("zelda-lttp").is_none());
@@ -431,7 +431,7 @@ fn the_refresh_rate_goes_back_when_a_launch_fails() {
     let mut fx = tap(&mut s, entry("zelda-lttp"));
     fx.extend(tap(&mut s, entry("zelda-lttp")));
     assert_eq!(refresh(&fx), [60], "at the launch: {fx:?}");
-    let fx = s.applied(Event::Launch(crate::LaunchEvent::LaunchFailed("zelda-lttp".into())));
+    let fx = crate::testkit::launch_failed(&mut s, "zelda-lttp");
     assert_eq!(refresh(&fx), [0], "{fx:?}");
 }
 

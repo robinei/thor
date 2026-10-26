@@ -27,7 +27,9 @@ impl State {
         match event {
             LaunchEvent::Position { entry, position } => self.shelf.set_position(&entry, position, self.clock.unix()),
             // A launch that never started doesn't change what runs, but it is no longer starting.
-            LaunchEvent::LaunchFailed(entry) => self.session.launch_failed(entry, self.shelf.library(), &self.clock, self.bottom.notice_mut()),
+            LaunchEvent::LaunchFailed { entry, instance } => {
+                self.session.launch_failed(entry, &instance, self.shelf.library(), &self.clock, self.bottom.notice_mut())
+            }
         }
     }
 

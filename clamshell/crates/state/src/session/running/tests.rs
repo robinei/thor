@@ -188,14 +188,14 @@ fn a_launch_failure_after_it_was_given_up_says_nothing() {
     assert!(matches!(notice(&s), Some(crate::bottom::notice::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
     s.applied(Event::tick(200));
     assert_eq!(notice(&s), None);
-    s.applied(LaunchEvent::LaunchFailed("zelda-lttp".into()).into());
+    crate::testkit::launch_failed(&mut s, "zelda-lttp");
     assert_eq!(notice(&s), None, "said once");
     assert!(s.session().running("zelda-lttp").is_none());
     let mut s = files();
     s.applied(Event::tick(100));
     tap(&mut s, Id::Shelf(ShelfId::Launch));
     s.applied(Event::tick(100 + super::LAUNCH_WAIT));
-    s.applied(LaunchEvent::LaunchFailed("browse:Home/notes.md".into()).into());
+    crate::testkit::launch_failed(&mut s, "browse:Home/notes.md");
     assert!(s.session().running("browse:Home/notes.md").is_none(), "no wait for a window");
 }
 
@@ -302,7 +302,7 @@ fn a_failed_launch_known_by_app_id_waits_for_its_window() {
     s.applied(Event::tick(1000));
     tap(&mut s, entry("ff6"));
     tap(&mut s, entry("ff6"));
-    s.applied(LaunchEvent::LaunchFailed("ff6".into()).into());
+    crate::testkit::launch_failed(&mut s, "ff6");
     let ff6 = s.session().running("ff6").unwrap();
     assert_eq!(ff6.origin, Origin::Windows { since: 1000, until: 1000 + HANDOFF });
     assert_eq!(notice(&s).map(|n| matches!(n, crate::bottom::notice::NoticeKind::NotStarted(_))), Some(false), "not said to have failed");
@@ -317,7 +317,7 @@ fn a_failed_launch_known_by_app_id_waits_for_its_window() {
     assert!(fx.contains(&Effect::RecordPlay { entry: "ff6".into(), start: 1000, duration: 100 + REOPEN_SECS + 1 }), "{fx:?}");
     // Without a window it is gone once the wait is over, with no play.
     tap(&mut s, entry("ff6"));
-    s.applied(LaunchEvent::LaunchFailed("ff6".into()).into());
+    crate::testkit::launch_failed(&mut s, "ff6");
     s.applied(Event::tick(1103 + HANDOFF));
     assert!(s.session().running("ff6").is_some());
     let fx = s.applied(Event::tick(1104 + HANDOFF));
@@ -421,7 +421,7 @@ fn a_file_handed_to_another_program_runs_by_its_window() {
     });
     let ws = ws.unwrap();
     // xdg-open ended before its unit was seen; the app's window comes up with no group.
-    s.applied(LaunchEvent::LaunchFailed("browse:Home/notes.md".into()).into());
+    crate::testkit::launch_failed(&mut s, "browse:Home/notes.md");
     assert!(s.session().running("browse:Home/notes.md").is_some(), "waits for its window");
     // The demo's Terminal has foot's desktop file.
     let app = win(6, "foot");
@@ -447,7 +447,7 @@ fn a_file_handed_to_another_program_runs_by_its_window() {
         s.applied(ShelfEvent::CollectionStep(1).into());
     }
     assert!(launches(&tap(&mut s, Id::Shelf(ShelfId::Launch)), "browse:Home/notes.md"));
-    s.applied(LaunchEvent::LaunchFailed("browse:Home/notes.md".into()).into());
+    crate::testkit::launch_failed(&mut s, "browse:Home/notes.md");
     s.applied(Event::tick(203 + HANDOFF));
     assert!(s.session().running("browse:Home/notes.md").is_some());
     s.applied(Event::tick(204 + HANDOFF));
@@ -624,4 +624,22 @@ fn a_program_replacing_its_only_window_runs_on() {
     assert!(!fx.iter().any(|e| matches!(e, Effect::RecordPlay { .. } | Effect::Apply { .. })), "the same run: {fx:?}");
     let ff6 = s.session().running("ff6").unwrap();
     assert!(matches!(ff6.origin, Origin::Windows { since: 1000, .. }), "{ff6:?}");
+}
+
+/// The launcher's late failure of a launch already given up leaves a newer launch of the same entry
+/// waiting: the failure names its launch.
+#[test]
+fn a_late_failure_leaves_a_newer_launch_of_the_entry_waiting() {
+    let mut s = state();
+    s.applied(Event::tick(1000));
+    let launched = |fx: &[Effect]| fx.iter().find_map(|e| if let Effect::Launch { instance, .. } = e { Some(instance.clone()) } else { None });
+    let mut fx = tap(&mut s, entry("zelda-lttp"));
+    fx.extend(tap(&mut s, entry("zelda-lttp")));
+    let first = launched(&fx).unwrap();
+    s.applied(Event::tick(1000 + super::LAUNCH_WAIT));
+    assert!(s.session().launching().is_empty(), "given up");
+    let second = launched(&launch_now(&mut s, "zelda-lttp")).unwrap();
+    assert_ne!(first, second);
+    s.applied(Event::Launch(crate::LaunchEvent::LaunchFailed { entry: "zelda-lttp".into(), instance: first }));
+    assert_eq!(s.session().launching().iter().map(|l| &l.instance).collect::<Vec<_>>(), [&second], "the newer one waits on");
 }

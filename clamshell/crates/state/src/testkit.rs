@@ -50,6 +50,13 @@ pub fn start(s: &mut State, id: &str) -> Vec<Effect> {
     s.applied(Event::Units(units))
 }
 
+/// Entry `id`'s waiting launch, its oldest, fails, as the launcher reports it.
+pub fn launch_failed(s: &mut State, id: &str) -> Vec<Effect> {
+    let instance = s.session().launching().iter().find(|l| &*l.entry == id).map(|l| l.instance.clone());
+    let instance = instance.unwrap_or_else(|| Instance { key: clamshell_library::key_of(id), secs: 0, n: 0 });
+    s.applied(Event::Launch(crate::LaunchEvent::LaunchFailed { entry: id.into(), instance }))
+}
+
 /// Entry `id`'s launches end, as systemd reports it: its units are no longer listed.
 pub fn end(s: &mut State, id: &str) -> Vec<Effect> {
     let key = s.entry(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());

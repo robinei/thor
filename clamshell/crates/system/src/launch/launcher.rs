@@ -104,7 +104,8 @@ pub(crate) fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worke
                     request.env.extend(config.displays.iter().cloned());
                     if let Err(e) = worker::or_on_panic(|| start(&config, &request), || Err(Error::Panicked)) {
                         log::warn!("launcher: {}: {e}", request.entry);
-                        let _ = sink.send(Event::Launch(LaunchEvent::LaunchFailed(request.entry.clone())));
+                        let failed = LaunchEvent::LaunchFailed { entry: request.entry.clone(), instance: request.instance.clone() };
+                        let _ = sink.send(Event::Launch(failed));
                     }
                 }
                 Command::ReadPosition { entry, file } => {
@@ -294,9 +295,9 @@ mod tests {
         let (tx, events) = mpsc::channel();
         let launcher = spawn(config(), tx).unwrap();
         let instance = Instance { key: "test_1".into(), secs: u64::from(std::process::id()), n: 1 };
-        launcher.send(Command::Launch(Request { entry: "x".into(), instance, launch: Launch::program(vec![]), env: vec![] }));
+        launcher.send(Command::Launch(Request { entry: "x".into(), instance: instance.clone(), launch: Launch::program(vec![]), env: vec![] }));
         drop(launcher);
-        assert_eq!(events.iter().collect::<Vec<_>>(), vec![Event::Launch(LaunchEvent::LaunchFailed("x".into()))]);
+        assert_eq!(events.iter().collect::<Vec<_>>(), vec![Event::Launch(LaunchEvent::LaunchFailed { entry: "x".into(), instance })]);
     }
 }
 

@@ -319,9 +319,10 @@ impl Session {
 
     /// A launch that never started, its unit gone before it was seen. A browsed file's launch, or one
     /// known by its app id, waits for its window (see [`Origin::Windows`]). A failure of no launch waiting
-    /// is a late answer to one already given up ([`LAUNCH_WAIT`]), which said so then, and is ignored.
-    pub(crate) fn launch_failed(&mut self, entry: Arc<str>, library: &Library, clock: &Clock, notice: &mut NoticeSlot) {
-        let Some(i) = self.launching.iter().position(|l| l.entry == entry) else {
+    /// is a late answer to one already given up ([`LAUNCH_WAIT`]), which said so then, and is ignored: a
+    /// newer launch of the same entry waits on.
+    pub(crate) fn launch_failed(&mut self, entry: Arc<str>, instance: &Instance, library: &Library, clock: &Clock, notice: &mut NoticeSlot) {
+        let Some(i) = self.launching.iter().position(|l| l.entry == entry && l.instance == *instance) else {
             return;
         };
         let app_id = self.launching.remove(i).app_id;

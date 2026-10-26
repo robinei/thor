@@ -96,7 +96,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Launching | LaunchFailed, browsed file or app-id launch | Running(Windows, unseen, until now+15 s) | — | running `a_file_handed_to_another_program_…` (browsed); `a_failed_launch_known_by_app_id_waits_for_its_window` |
 | Launching | LaunchFailed otherwise | Idle | NotStarted notice | tests `a_launch_that_didnt_start_says_so` |
 | Launching | no answer from the launcher in 30 s | Idle | NotStarted notice; `front_launch` cleared | running `a_launch_never_answered_is_given_up` |
-| Idle | LaunchFailed of no launch waiting (a late answer to one given up) | Idle | nothing | running `a_launch_failure_after_it_was_given_up_says_nothing` |
+| Idle | LaunchFailed of no launch waiting (a late answer to one given up; the failure names its launch, so a newer launch of the entry waits on) | Idle | nothing | running `a_launch_failure_after_it_was_given_up_says_nothing`, `a_late_failure_leaves_a_newer_launch_of_the_entry_waiting` |
 | Idle | `Units` lists a unit of a library entry (an earlier ClamShell) | Running(Ours) | — | running `entries_started_before_clamshell_…` |
 | Idle | `Units` lists a scope of a key not in the library, a window or tray icon in it | Running(Ours), as found, named by the name whose key is the scope's (until a window or icon comes, nothing) | — | found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
 | Idle | a window with a library app id (not Steam) | Running(Windows, seen) | Focus once in its group | running `an_app_handed_over_…` |

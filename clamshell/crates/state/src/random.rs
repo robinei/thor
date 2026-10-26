@@ -406,7 +406,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             }
             let (entry, instance) = w.launches.remove(i);
             if rng.one_in(5) {
-                Event::Launch(LaunchEvent::LaunchFailed(entry))
+                Event::Launch(LaunchEvent::LaunchFailed { entry, instance })
             } else {
                 w.units.push(instance);
                 Event::Units(w.units.clone())

@@ -355,7 +355,7 @@ mod tests {
         assert_eq!(entry(&s, 0), Some("zelda-lttp"));
         assert!(tap(&mut s, dock(0)).iter().any(|e| matches!(e, Effect::Launch { .. })));
         // Unpinned while stopped, it is removed.
-        s.applied(LaunchEvent::LaunchFailed("zelda-lttp".into()).into());
+        crate::testkit::launch_failed(&mut s, "zelda-lttp");
         long(&mut s, dock(0));
         tap(&mut s, Id::Dock(DockId::Pin));
         assert_eq!(entry(&s, 0), None);
