@@ -5,7 +5,7 @@ manager. These are the places where something is kept, accepted or run that a re
 
 ## The clipboard
 
-ClamShell keeps the clipboard's text (see `crates/system/src/clipboard.rs`): it offers it again when the
+ClamShell keeps the clipboard's text (see `crates/system/src/session/clipboard.rs`): it offers it again when the
 program that copied it quits, and writes it to `$XDG_RUNTIME_DIR/clamshell/clipboard` (mode 0600, on a
 tmpfs only the user can read, gone at a reboot) so that a ClamShell started again offers it too. Text
 copied anywhere stays there until something else is copied or the device reboots: a password copied from
@@ -15,6 +15,14 @@ A password manager's copy is marked `x-kde-passwordManagerHint` (KeePassXC and o
 copy is not kept, not written, not mirrored to the primary selection and not pasted into ClamShell's
 fields, and what was kept is forgotten. The manager clears the clipboard itself after a while; keeping
 the copy would undo that.
+
+Any Wayland client can read and replace the clipboard: `ext_data_control` is offered to every client
+(`crates/compositor/src/protocols.rs`), as wl-clipboard and clipboard managers need, and X11 clients
+read the bridged clipboard as X11 always lets them. So a game, a Wine program or an app can see what
+was copied, including a password typed into a terminal; a password manager's marked copy is still
+dropped by ClamShell's keeper, but the program that copied it holds it until it clears it. Restricting
+the protocol to ClamShell's own thread was tried and reverted: it broke wl-clipboard and the tests'
+clipboard tool.
 
 ## The control pipe
 
@@ -70,3 +78,25 @@ Claude's commands, which have no terminal, use it, keeps it fresh, and removes t
 timestamp when it ends; so while a pass runs, every process of `thor` has sudo without a prompt. A pass
 killed outright (SIGKILL) leaves the file until the next boot, which removes it
 (`tmpfiles.d/thor-maintenance.conf`), and a timestamp for up to 15 minutes.
+
+## The account and the first password
+
+The image starts with the session's user in `wheel` and no password: no sudo and no ssh until one is
+set in the Device view. `thor-account` (run as root through pkexec, which polkit allows the active
+session without asking) sets it. Any process of the user could run it, so a first password is set only
+once Volume Up is pressed on a physical input device within 20 s (`clamshell device confirm`): a
+virtual device, which any member of the `input` group can make through uinput, doesn't count. Changing
+a password asks for the current one.
+
+## Input devices
+
+The session's user is in the `input` group, for ClamShell's virtual pad and keyboard (uinput) and for
+reading the hardware keys. So any program of the user can read the raw input devices (keys typed on an
+attached keyboard too) and make virtual ones. That is accepted on a single-user device; the first
+password's confirmation is the one place that needs a press only a person can make.
+
+## Tray icons
+
+A tray item names its icon and a folder for it over the bus. The name must be a name (no `/`, no `..`),
+and an SVG icon's `<image>` is drawn only from data inside the file, never from a file it names, so a
+program can't make ClamShell show other files of the user's.
