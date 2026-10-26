@@ -60,14 +60,14 @@ pub struct Bounds {
 }
 
 impl Bounds {
-    pub const EMPTY: Bounds = Bounds { x0: 0, y0: 0, x1: 0, y1: 0 };
+    pub(crate) const EMPTY: Bounds = Bounds { x0: 0, y0: 0, x1: 0, y1: 0 };
 
     pub fn new(x0: i32, y0: i32, x1: i32, y1: i32) -> Bounds {
         Bounds { x0, y0, x1, y1 }
     }
 
     /// The whole of a `w` x `h` buffer.
-    pub fn of_size((w, h): (u32, u32)) -> Bounds {
+    pub(crate) fn of_size((w, h): (u32, u32)) -> Bounds {
         Bounds::new(0, 0, i32::try_from(w).unwrap_or(i32::MAX), i32::try_from(h).unwrap_or(i32::MAX))
     }
 
@@ -85,7 +85,7 @@ impl Bounds {
     }
 
     /// The smallest rectangle holding both.
-    pub fn union(&self, o: Bounds) -> Bounds {
+    pub(crate) fn union(&self, o: Bounds) -> Bounds {
         match (self.is_empty(), o.is_empty()) {
             (true, _) => o,
             (_, true) => *self,
@@ -215,7 +215,7 @@ impl Recording {
     }
 
     /// The buffer pixels drawn over the background: around every command but the clears.
-    pub fn ink(&self) -> Bounds {
+    pub(crate) fn ink(&self) -> Bounds {
         self.cmds.iter().filter(|c| !matches!(c.op, Op::Clear(_))).fold(Bounds::EMPTY, |d, c| d.union(c.bounds))
     }
 

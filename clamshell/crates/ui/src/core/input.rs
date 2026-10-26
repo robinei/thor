@@ -98,7 +98,7 @@ impl Core {
     /// - View moves focus to the other screen while the shelf is in front. Otherwise it moves the pad
     ///   between the second screen and whatever else wants it, such as the pad mouse or typing. The pad
     ///   thread sends View from there too.
-    pub fn pad(&mut self, input: PadInput) {
+    pub(crate) fn pad(&mut self, input: PadInput) {
         self.handle(Event::PadActive);
         // While a dock entry is being moved, the D-pad moves it and A or B ends the move.
         if self.state.dock().moving().is_some() && self.state.bottom().tab() == clamshell_state::Tab::Dock {

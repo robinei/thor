@@ -13,7 +13,7 @@ pub enum Screen {
 impl Screen {
     pub const BOTH: [Screen; 2] = [Screen::Top, Screen::Bottom];
 
-    pub fn other(self) -> Screen {
+    pub(crate) fn other(self) -> Screen {
         match self {
             Screen::Top => Screen::Bottom,
             Screen::Bottom => Screen::Top,

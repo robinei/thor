@@ -251,7 +251,7 @@ impl Core {
 
     /// What the screens show may have changed, so each is recorded again before its next frame and drawn
     /// if it changed.
-    pub fn changed(&mut self) {
+    pub(crate) fn changed(&mut self) {
         for (_, screen) in self.screens.iter_mut() {
             screen.stale = true;
         }
@@ -273,13 +273,6 @@ impl Core {
         match layer {
             Layer::Screen(screen) => &self.screens[screen],
             Layer::Overlay => &self.overlay,
-        }
-    }
-
-    fn layer_mut(&mut self, layer: Layer) -> &mut ScreenCore {
-        match layer {
-            Layer::Screen(screen) => &mut self.screens[screen],
-            Layer::Overlay => &mut self.overlay,
         }
     }
 
@@ -306,11 +299,6 @@ impl Core {
     /// Whether `layer` may have changed since it was last recorded.
     pub fn stale(&self, layer: impl Into<Layer>) -> bool {
         self.layer(layer.into()).stale
-    }
-
-    /// `layer` couldn't be drawn: it isn't tried again until something changes.
-    pub fn skip(&mut self, layer: impl Into<Layer>) {
-        self.layer_mut(layer.into()).stale = false;
     }
 
     /// Records `layer`'s next frame and compares it with the last one drawn. Returns what changed in

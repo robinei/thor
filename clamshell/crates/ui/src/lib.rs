@@ -19,7 +19,7 @@ mod toolkit;
 mod views;
 
 pub use crate::core::Core;
-pub use gfx::canvas::DrawCache;
+use gfx::canvas::DrawCache;
 pub use gfx::record::Bounds;
 pub use input::{End, Source};
 pub use screens::{Layer, Screen};
