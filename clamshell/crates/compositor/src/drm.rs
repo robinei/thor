@@ -266,6 +266,9 @@ pub fn run(
         .insert_source(LibinputInputBackend::new(libinput.clone()), move |event, _, server| {
             if let InputEvent::DeviceAdded { device } = &event {
                 log::info!("drm: input {} ({}) on the {:?} screen", device.name(), identifier(device), areas.role(device));
+                if identifier(device) == TOUCHPAD {
+                    tap(&mut device.clone());
+                }
             }
             server.input(event, crate::input::Host { absolute_cursor: false, touch_frames: true }, |device| areas.of(device));
             if let Some(n) = server.vt_switch.take()
@@ -371,6 +374,19 @@ fn choose(drm: &DrmDevice, profile: &Profile, role: ScreenRole, taken: Option<cr
         return Ok(Chosen { connector: handle, mode, modes: same_size(mode), crtc, millimetres });
     }
     Err(format!("drm: no connector {name} for the {role:?} screen").into())
+}
+
+/// ClamShell's virtual touchpad (the touchpad tab, the keyboard while it points), as libinput names it.
+const TOUCHPAD: &str = "4660:22136:clamshell_touchpad";
+
+/// On ClamShell's touchpad a tap clicks, two fingers tapped right-click, and a tap then a held finger
+/// drags: libinput leaves tapping off by default.
+fn tap(device: &mut smithay::reexports::input::Device) {
+    for (what, set) in [("tap", device.config_tap_set_enabled(true)), ("tap and drag", device.config_tap_set_drag_enabled(true))] {
+        if let Err(error) = set {
+            log::warn!("drm: ClamShell's touchpad: {what}: {error:?}");
+        }
+    }
 }
 
 /// The second screen's pixels per millimetre, which the virtual touchpad's acceleration needs: from its
