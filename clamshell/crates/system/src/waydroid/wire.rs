@@ -43,22 +43,53 @@ pub(super) fn messages(buf: &[u8]) -> (Vec<(u32, u16, std::ops::Range<usize>)>, 
     (out, at)
 }
 
+/// How a relay ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum End {
+    /// The end it reads from closed.
+    From,
+    /// Sending to the other end failed.
+    To,
+    /// It panicked (the panic hook has logged it).
+    Panicked,
+}
+
 /// Passes messages from `from` to `to` as `pass` says, with the file descriptors that come with them,
-/// until either end closes. Then both ends are shut. `closed` is called before both ends are shut, with true if `from` closed.
-pub(super) fn relay(from: &UnixStream, to: &UnixStream, mut pass: impl FnMut(u32, u16, &[u8], Instant) -> Pass, closed: impl FnOnce(bool)) {
+/// until either end closes or the relay panics. Then both ends are shut, so the relay the other way ends
+/// too. `closed` is told how it ended before the ends are shut.
+pub(super) fn relay(from: &UnixStream, to: &UnixStream, pass: impl FnMut(u32, u16, &[u8], Instant) -> Pass, closed: impl FnOnce(End)) {
+    let end = crate::os::worker::or_on_panic(
+        || pass_on(from, to, pass),
+        || {
+            log::error!("wayland filter: a relay panicked: its connection ends");
+            End::Panicked
+        },
+    );
+    closed(end);
+    for end in [from, to] {
+        if let Err(e) = end.shutdown(std::net::Shutdown::Both)
+            && e.kind() != io::ErrorKind::NotConnected
+        {
+            log::debug!("wayland filter: closing: {e}");
+        }
+    }
+}
+
+/// The relay's work, until an end closes.
+fn pass_on(from: &UnixStream, to: &UnixStream, mut pass: impl FnMut(u32, u16, &[u8], Instant) -> Pass) -> End {
     let mut buf: Vec<u8> = Vec::new();
     let mut chunk = vec![0u8; 16384];
     let mut out = Vec::new();
-    let from_closed = loop {
+    loop {
         let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(MAX_FDS))];
         let mut ancillary = RecvAncillaryBuffer::new(&mut space);
         let n = match rustix::net::recvmsg(from, &mut [IoSliceMut::new(&mut chunk)], &mut ancillary, RecvFlags::CMSG_CLOEXEC) {
             Ok(r) if r.bytes > 0 => r.bytes,
             Err(rustix::io::Errno::INTR) => continue,
-            Ok(_) => break true,
+            Ok(_) => return End::From,
             Err(e) => {
                 log::debug!("wayland filter: receiving: {e}");
-                break true;
+                return End::From;
             }
         };
         let mut received: Vec<OwnedFd> = Vec::new();
@@ -86,15 +117,7 @@ pub(super) fn relay(from: &UnixStream, to: &UnixStream, mut pass: impl FnMut(u32
             && let Err(e) = send(to, &out, &received)
         {
             log::debug!("wayland filter: sending: {e}");
-            break false;
-        }
-    };
-    closed(from_closed);
-    for end in [from, to] {
-        if let Err(e) = end.shutdown(std::net::Shutdown::Both)
-            && e.kind() != io::ErrorKind::NotConnected
-        {
-            log::debug!("wayland filter: closing: {e}");
+            return End::To;
         }
     }
 }

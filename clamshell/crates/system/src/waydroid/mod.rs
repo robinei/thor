@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 
 use objects::Objects;
-use wire::relay;
+use wire::{End, relay};
 
 use crate::os::worker;
 
@@ -67,8 +67,9 @@ pub fn run(settings: PathBuf) -> io::Result<()> {
 }
 
 /// Handles a client that connected by opening its connection to the compositor and starting a thread
-/// each way. If the compositor ends the connection, because it is gone or it dropped the client, the
-/// filter ends and `ended` is told. Waydroid can't go on without its display, since Android's system
+/// each way. When either relay ends, both ends are shut, so the other ends too. If the compositor ends
+/// the connection, because it is gone or it dropped the client, or a relay panics, the filter ends and
+/// `ended` is told. Waydroid can't go on without its display, since Android's system
 /// crashes when it next draws, and its session is bound to the filter's (see the Android script).
 fn connect(client: UnixStream, upstream: &Path, settings: &Path, ended: &mpsc::Sender<()>) {
     let server = match UnixStream::connect(upstream) {
@@ -94,20 +95,17 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, ended: &mpsc::S
             log::debug!("wayland filter: already ending");
         }
     };
+    // A relay that panics ends the connection, as the compositor's end does: Waydroid can't go on without
+    // it either.
     let requests_relay = worker::detached("wayland filter", move || {
-        relay(&client, &server, |o, op, args, now| crate::os::lock(&requests).request(o, op, args, now), |client_closed| end(&first, !client_closed, &ended));
+        relay(&client, &server, |o, op, args, now| crate::os::lock(&requests).request(o, op, args, now), |how| end(&first, how != End::From, &ended));
     });
     // If the first relay didn't start, every handle is dropped on return, which closes the connection.
     if let Err(e) = requests_relay {
         return log::warn!("wayland filter: {e}");
     }
     let events_relay = worker::detached("wayland filter", move || {
-        relay(
-            &server2,
-            &client2,
-            |o, op, args, now| crate::os::lock(&objects).event(o, op, args, now),
-            |compositor_closed| end(&first2, compositor_closed, &ended2),
-        );
+        relay(&server2, &client2, |o, op, args, now| crate::os::lock(&objects).event(o, op, args, now), |how| end(&first2, how != End::To, &ended2));
     });
     if let Err(e) = events_relay {
         log::warn!("wayland filter: {e}");
@@ -118,7 +116,7 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, ended: &mpsc::S
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 mod tests {
     use super::objects::*;
     use super::wire::*;
@@ -206,6 +204,25 @@ mod tests {
         let (found, used) = messages(&buf);
         assert_eq!(used, whole, "the cut-off one left");
         assert_eq!(found.iter().map(|(o, op, r)| (*o, *op, r.len())).collect::<Vec<_>>(), [(11, 0, 12), (10, 0, 4)]);
+    }
+
+    /// A relay that panics shuts both ends, so the client sees its connection end and the relay the other
+    /// way ends too, and says it panicked.
+    #[test]
+    fn a_relay_that_panics_ends_both_sides() {
+        use std::io::{Read, Write};
+        let (client_near, client_far) = UnixStream::pair().unwrap();
+        let (server_near, server_far) = UnixStream::pair().unwrap();
+        let (told, how) = mpsc::channel();
+        let (cf, sn) = (client_far.try_clone().unwrap(), server_near.try_clone().unwrap());
+        let other = std::thread::spawn(move || relay(&server_near, &client_far, |_, _, _, _| Pass::Keep, |_| {}));
+        std::thread::spawn(move || relay(&cf, &sn, |_, _, _, _| panic!("a bad message"), move |end| told.send(end).unwrap()));
+        (&client_near).write_all(&message(DISPLAY, GET_REGISTRY, &words(&[2]))).unwrap();
+        assert_eq!(how.recv_timeout(std::time::Duration::from_secs(5)), Ok(End::Panicked));
+        let mut rest = Vec::new();
+        assert_eq!((&client_near).read_to_end(&mut rest).unwrap(), 0, "the client's connection ended");
+        assert_eq!((&server_far).read_to_end(&mut rest).unwrap(), 0, "the compositor's too");
+        other.join().unwrap();
     }
 
     #[test]
