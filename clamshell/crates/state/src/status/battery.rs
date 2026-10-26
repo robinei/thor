@@ -38,8 +38,8 @@ pub struct Spender {
     pub memory: u64,
     /// Its processes. For another program, these are what Quit and Force kill end.
     pub pids: Vec<u32>,
-    /// Whether it may be ended from the list. The session's own processes can't be, meaning ClamShell,
-    /// sway and what its config starts, PipeWire and the bus, and neither can the system.
+    /// Whether it may be ended from the list. The session's own processes can't be, meaning ClamShell and
+    /// what it starts, PipeWire and the bus, and neither can the system.
     pub endable: bool,
 }
 
@@ -203,8 +203,8 @@ mod tests {
         // The system's row, or the session's own, has no menu.
         tap(&mut s, Id::Battery(BatteryId::Spender(2)));
         assert_eq!(s.sys().spender_menu(), None);
-        let sway = Spender { endable: false, ..spender(Group::Process("sway".into())) };
-        s.applied(Event::Reading(Reading::Battery(Battery { spenders: vec![sway], ..Battery::default() })));
+        let own = Spender { endable: false, ..spender(Group::Process("pipewire".into())) };
+        s.applied(Event::Reading(Reading::Battery(Battery { spenders: vec![own], ..Battery::default() })));
         tap(&mut s, Id::Battery(BatteryId::Spender(0)));
         assert_eq!(s.sys().spender_menu(), None);
     }

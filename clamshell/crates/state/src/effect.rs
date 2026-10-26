@@ -124,9 +124,8 @@ pub enum Effect {
     Watch(Watch, bool),
     /// The screens' power, sent when it changes and when it is to be set again (the same value twice
     /// means set it again). `top` is whether the screens are on, which idle turns off together; `bottom`
-    /// is whether the second screen is on while they are (see [`crate::Bottom::off`]). The UI carries it
-    /// out: under sway it turns the screens off and on for idle over Wayland, and passes on a change of
-    /// the second screen's alone, which the system crate asks sway for.
+    /// is whether the second screen is on while they are (see [`crate::Bottom::off`]). The compositor
+    /// carries it out.
     Outputs {
         top: bool,
         bottom: bool,

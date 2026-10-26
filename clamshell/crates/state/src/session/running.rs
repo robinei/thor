@@ -917,8 +917,8 @@ mod tests {
         let mut s = steam_ff6();
         s.applied(Event::tick(1000));
         let zelda = launch(&mut s, "zelda-lttp").workspace();
-        let landing = String::new();
-        let windows = vec![win(1, "zelda3", &zelda, false), win(7, "steam_app_620", &landing, true)];
+        let no_group = String::new();
+        let windows = vec![win(1, "zelda3", &zelda, false), win(7, "steam_app_620", &no_group, true)];
         let fx = s.observed(windows.clone());
         // Found by its window, it is launched; the launcher finds it running and moves it into the
         // launch's scope. Its window is placed synchronously before the scope is listed.
@@ -928,7 +928,7 @@ mod tests {
         assert!(!launches(&s.observed(windows), "ff6"), "once");
         crate::testkit::start(&mut s, "ff6");
         assert_eq!(s.session().running_entries().len(), 2, "the other keeps running");
-        let fx = s.observed(vec![win(1, "zelda3", &zelda, false), win(7, "steam_app_620", &landing, true)]);
+        let fx = s.observed(vec![win(1, "zelda3", &zelda, false), win(7, "steam_app_620", &no_group, true)]);
         assert!(fx.is_empty(), "already placed: {fx:?}");
         // It is ended like any launch, through its slice.
         assert_eq!(force_kill(&mut s, "ff6"), vec![Effect::EndRun { key: key("ff6"), force: true }]);
@@ -938,7 +938,7 @@ mod tests {
         assert!(fx.contains(&Effect::RecordPlay { entry: "ff6".into(), start: 1000, duration: 600 }), "{fx:?}");
         assert!(s.session().running("ff6").is_none());
         // A Steam game the library doesn't have isn't one.
-        let fx = s.observed(vec![win(1, "zelda3", &zelda, false), win(9, "steam_app_1", &landing, true)]);
+        let fx = s.observed(vec![win(1, "zelda3", &zelda, false), win(9, "steam_app_1", &no_group, true)]);
         assert!(!fx.iter().any(|e| matches!(e, Effect::Launch { .. })), "{fx:?}");
         assert_eq!(s.session().running_entries().len(), 1, "zelda only");
         // A game started by a Steam of ours is in Steam's scope, but the app id says whose it is.
@@ -954,8 +954,8 @@ mod tests {
         launch(&mut s, "ff6");
         let ff6 = s.session().running("ff6").unwrap();
         assert_eq!((ff6.origin.clone(), ff6.app_id.as_deref()), (Origin::Ours, Some("steam_app_620")));
-        let landing = String::new();
-        s.observed(vec![win(7, "steam_app_620", &landing, true)]);
+        let no_group = String::new();
+        s.observed(vec![win(7, "steam_app_620", &no_group, true)]);
         let ff6 = Instance::workspace_of(&key("ff6"));
         assert_eq!(s.session().window(7).map(|w| w.workspace.as_str()), Some(ff6.as_str()), "its windows go to its workspace");
         let fx = s.observed(vec![]);
@@ -969,8 +969,8 @@ mod tests {
         let steam = Instance::Run { key: key("desktop:steam"), secs: 1, n: 0 };
         s.applied(Event::Units(vec![steam.clone()]));
         launch(&mut s, "ff6");
-        let landing = String::new();
-        let window = Window { unit: steam.unit(), ..win(7, "steam_app_620", &landing, true) };
+        let no_group = String::new();
+        let window = Window { unit: steam.unit(), ..win(7, "steam_app_620", &no_group, true) };
         s.observed(vec![window.clone()]);
         let ff6 = Instance::workspace_of(&key("ff6"));
         assert_eq!(s.session().window(7).map(|w| w.workspace.as_str()), Some(ff6.as_str()), "the game's, not Steam's");
@@ -1021,9 +1021,9 @@ mod tests {
         let ff6 = s.session().running("ff6").unwrap();
         assert_eq!(ff6.origin, Origin::Windows { since: 1000, until: 1000 + HANDOFF });
         assert_eq!(notice(&s).map(|n| matches!(n, crate::bottom::notice::NoticeKind::NotStarted(_))), Some(false), "not said to have failed");
-        let landing = String::new();
+        let no_group = String::new();
         s.applied(Event::tick(1010));
-        s.observed(vec![win(7, "steam_app_620", &landing, true)]);
+        s.observed(vec![win(7, "steam_app_620", &no_group, true)]);
         assert_eq!(s.session().window(7).map(|w| w.workspace.as_str()), Some(Instance::workspace_of(&key("ff6")).as_str()));
         s.applied(Event::tick(1100));
         assert!(s.session().running("ff6").is_some(), "runs by its window");
@@ -1177,7 +1177,7 @@ mod tests {
         firefox.runner = Some(clamshell_library::RunnerOf { handover: true, stop, ..clamshell_library::RunnerOf::new("android", "Android", true) });
         let mut s = State::new(Init { library, ..init() });
         s.applied(Event::tick(100));
-        let landing = String::new();
+        let no_group = String::new();
         s.observed(vec![]);
         let ws = Instance::workspace_of(&key("desktop:firefox"));
         assert!(launches(&launch_now(&mut s, "desktop:firefox"), "desktop:firefox"));
@@ -1185,7 +1185,7 @@ mod tests {
         // Its launch handed the app over to the Waydroid session and ended.
         crate::testkit::end(&mut s, "desktop:firefox");
         assert!(s.session().running("desktop:firefox").is_some(), "waits for its window");
-        let app = win(6, "firefox", &landing, false);
+        let app = win(6, "firefox", &no_group, false);
         s.observed(vec![app.clone()]);
         assert_eq!(s.session().window(6).map(|w| w.workspace.as_str()), Some(ws.as_str()));
         let moved = Window { workspace: ws.clone(), ..app.clone() };
@@ -1211,8 +1211,8 @@ mod tests {
         assert!(fx.contains(&stop), "{fx:?}");
         assert!(!s.observed(vec![]).contains(&stop), "once");
         s.observed(vec![moved]);
-        // A landed window that belongs to no entry, because its rule outlived it, goes to the main screen.
-        s.observed(vec![win(9, "gone", &landing, false)]);
+        // A window of no entry and no launch of ours gets a group of its own on the main screen.
+        s.observed(vec![win(9, "gone", &no_group, false)]);
         assert_eq!(s.session().windows().iter().find(|w| w.id == 9).map(|w| w.workspace.as_str()), Some("clamshell-window-9"));
         // An entry of another runner ends with its launch.
         let mut s = state();

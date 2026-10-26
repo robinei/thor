@@ -286,7 +286,7 @@ pub struct Window {
     /// Its process, then that process's parent, and so on, leaving out pid 1. A program found by its tray
     /// icon's process has the windows of that process and of the processes it started.
     pub pids: Vec<u32>,
-    /// Its home group, retained when it is moved below. Sway translates this into a workspace name.
+    /// Its home group, retained when it is moved below.
     pub workspace: String,
     /// Whether the session placed it on the bottom screen.
     pub down: bool,

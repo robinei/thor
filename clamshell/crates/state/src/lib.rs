@@ -319,7 +319,7 @@ impl State {
         if down { bottom } else { top }
     }
 
-    /// The top screen's size, once the compositor has said; under sway, none.
+    /// The top screen's size, once the compositor has said.
     pub fn top_size(&self) -> Option<(u32, u32)> {
         Some(self.screens.top_size).filter(|(w, h)| *w > 0 && *h > 0)
     }

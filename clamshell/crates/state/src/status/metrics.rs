@@ -33,8 +33,7 @@ pub struct Metrics {
     pub power_w: Option<f32>,
     /// Minutes left at the current draw, only while discharging.
     pub minutes_left: Option<u32>,
-    /// The frame rate of the window in front on the top screen, while it draws: from the compositor, or
-    /// under sway from the game through MangoHud.
+    /// The frame rate of the window in front on the top screen, while it draws, from the compositor.
     pub fps: Option<f32>,
     pub frame_ms: Option<f32>,
 }

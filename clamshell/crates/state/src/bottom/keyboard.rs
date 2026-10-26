@@ -147,8 +147,7 @@ pub const LAYOUT: &[&[Slot]] = &[
     &[
         modifier(Modifier::Fn, 1.0),
         modifier(Modifier::Ctrl, 1.0),
-        // Super is Fn+Alt, to leave room for a wider space bar. It is for sway's shortcuts and rarely
-        // needed here.
+        // Super is Fn+Alt, to leave room for a wider space bar. It is rarely needed here.
         Slot { base: Key::Mod(Modifier::Alt), fn_key: Some(Key::Mod(Modifier::Super)), width: 1.0 },
         Slot { base: Key::Char(' '), fn_key: None, width: 3.0 },
         c(';'),

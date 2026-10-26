@@ -9,8 +9,7 @@
 //! started.
 //!
 //! An entry that runs in another program's processes, such as a game in Steam's or an Android app in
-//! Waydroid's, isn't in a scope of ours, but its windows belong to its entry's home group too. The sway
-//! adapter translates groups into workspaces; landing and bottom workspace names belong to it.
+//! Waydroid's, isn't in a scope of ours, but its windows belong to its entry's home group too.
 
 use std::fmt::{self, Write};
 use std::str::FromStr;
@@ -92,11 +91,10 @@ impl Instance {
 
     /// Whether `unit` is a systemd service that a program runs in as part of the service, such as a portal
     /// or the polkit agent. Such a program's windows and processes belong to the service and aren't moved.
-    /// Sway's own unit doesn't count, because what sway's config starts runs there until it is moved out.
-    /// That unit is `wayland-wm@sway.service` on the device under uwsm, and
-    /// `clamshell-nested-sway.service` for the desktop's nested sway.
+    /// ClamShell's own unit doesn't count, because what ClamShell starts runs there until it is moved out.
+    /// That unit is `clamshell.service` on the device and `clamshell-nested.service` on the desktop.
     pub fn is_service(unit: &str) -> bool {
-        unit.ends_with(".service") && !unit.starts_with("wayland-wm@") && unit != "clamshell-nested-sway.service"
+        unit.ends_with(".service") && unit != "clamshell.service" && unit != "clamshell-nested.service"
     }
 
     /// Whether `name` is one of ours: a workspace or scope that ClamShell names, of a known kind or not.

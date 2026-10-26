@@ -6,7 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 publish.workspace = true
-description = "ClamShell's system threads: D-Bus, sway, the controller, sensors, files and launches"
+description = "ClamShell's system threads: D-Bus, the controller, sensors, files and launches"
 
 [dependencies]
 clamshell-device.workspace = true

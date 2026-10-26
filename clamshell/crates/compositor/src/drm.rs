@@ -215,7 +215,7 @@ pub fn run(
         });
     }
 
-    // The top screen's rates, for the refresh setting (sway's output management tells them otherwise).
+    // The top screen's rates, for the refresh setting.
     let mut rates = clamshell_state::device::display::DisplayModes::default();
     for mode in &top.modes {
         rates.add(i32::try_from(mode.vrefresh()).unwrap_or(0).saturating_mul(1000));
@@ -588,7 +588,7 @@ impl Areas {
     }
 }
 
-/// A device's identifier as sway writes it and the profile names it: vendor, product and name.
+/// A device's identifier as the profile names it: vendor, product and name, with spaces as underscores.
 fn identifier(device: &InputDevice) -> String {
     format!("{}:{}:{}", device.id_vendor(), device.id_product(), device.name().replace(' ', "_"))
 }

@@ -10,8 +10,8 @@
 //! ([`Session::adopt`]). From then on it is paused, quit and killed through its slice. A process that also
 //! has another entry's windows, such as a browser showing a file opened from the Files tab, is not moved:
 //! Quit closes its windows, and that is all. Nested in a desktop session this works the same, since a
-//! window in ClamShell's sway belongs to that session; the desktop's own programs show their windows on the
-//! desktop, not there.
+//! window in ClamShell's compositor belongs to that session; the desktop's own programs show their windows
+//! on the desktop, not there.
 //!
 //! A window that a systemd service opened, such as a portal's file chooser or the password prompt, is not
 //! found as a program. It belongs to the program that asked for it, and is gone in seconds.
@@ -132,10 +132,10 @@ mod tests {
     }
 
     #[test]
-    fn what_sways_config_starts_under_uwsm_is_no_service() {
+    fn clamshells_own_unit_is_no_service() {
         assert!(Instance::is_service("xdg-desktop-portal-gtk.service"));
-        assert!(!Instance::is_service("wayland-wm@sway.service"), "the compositor's unit: moved out of");
-        assert!(!Instance::is_service("clamshell-nested-sway.service"), "the desktop's nested sway's too");
+        assert!(!Instance::is_service("clamshell.service"), "ClamShell's unit on the device: moved out of");
+        assert!(!Instance::is_service("clamshell-nested.service"), "and on the desktop");
         assert!(!Instance::is_service("session-2.scope"));
     }
 
@@ -256,7 +256,7 @@ mod tests {
 
     #[test]
     fn nested_in_a_desktop_a_window_found_is_adopted_too() {
-        // As a guest in a desktop, a window in ClamShell's own sway belongs to that session, as on the
+        // As a guest in a desktop, a window in ClamShell's compositor belongs to that session, as on the
         // device.
         let mut s = state();
         let fx = s.observed(vec![window(5, "org.x.Thing", 500, "app-thing.scope", true)]);

@@ -12,9 +12,9 @@ pub(crate) const REWAIT_SECS: u64 = 30;
 impl Session {
     /// Runs after every event. If the window in front when the last pass ran (see
     /// [`Session::followed`]) closed and nothing of its workspace is left, goes back to what was in front
-    /// before it, with shelf as the last resort; otherwise sway would leave the empty workspace in front. The workspace is remembered in case a
-    /// window appears on it soon after (see [`Session::follow_replacement`]). If its program still runs,
-    /// its next window is shown as a launch's first is, for [`REWAIT_SECS`].
+    /// before it, with shelf as the last resort. The workspace is remembered in case a window appears on
+    /// it soon after (see [`Session::follow_replacement`]). If its program still runs, its next window is
+    /// shown as a launch's first is, for [`REWAIT_SECS`].
     pub(crate) fn follow_front(&mut self, now: u64) {
         let windows = &self.windows;
         let Some(was) = &self.followed_front else { return };

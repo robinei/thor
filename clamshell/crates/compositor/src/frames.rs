@@ -1,8 +1,7 @@
 //! Each window's frames as the compositor sees them: a frame is a new buffer committed to the window's
 //! surface, counted when a screen first shows it (the page flip's time on the device, the submission's
 //! nested). Kept in a fixed ring per window, with no allocation per frame. The window in front on the
-//! top screen gives the frame rate the FPS tile and the system info show (`Reading::Frames`), as
-//! MangoHud's log does under sway.
+//! top screen gives the frame rate the FPS tile and the system info show (`Reading::Frames`).
 //!
 //! A window with a frame rate cap gets its frame callbacks at the cap's pace ([`Frames::pace`]), which
 //! clients presenting in FIFO follow: Mesa's Vulkan WSI, EGL with a swap interval, Xwayland's Present.
