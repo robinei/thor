@@ -674,6 +674,11 @@ impl Server {
                     let output = if on_down { bottom } else { top };
                     client.window.send_frame(output, time, Some(std::time::Duration::ZERO), |_, _| Some(output.clone()));
                     client.window.with_surfaces(|surface, states| {
+                        // Only once the content that set it has been shown: let go earlier, the next
+                        // would replace it unseen.
+                        if !crate::presentation::content_shown(states) {
+                            return;
+                        }
                         let barrier = states.cached_state.get::<smithay::wayland::fifo::FifoBarrierCachedState>().current().barrier.take();
                         if let Some(barrier) = barrier {
                             barrier.signal();

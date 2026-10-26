@@ -358,6 +358,9 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
         _ => server.clock.now(),
     };
     let down = screen.role == ScreenRole::Bottom;
+    if let Some(states) = &states {
+        server.frame_shown(states, Some(down));
+    }
     if let Some(states) = states {
         server.present_flip(&states, time, down, screen.interval, metadata.map_or(0, |m| u64::from(m.sequence)));
     }
@@ -373,13 +376,16 @@ fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(
     if let Err(error) = compose(drawing, server, on_capture) {
         log::warn!("drm: drawing: {error}");
     }
+    let composed = server.commits;
     let mut due: Option<Instant> = None;
     for index in 0..drawing.screens.len() {
         let Some(screen) = drawing.screens.get_mut(index) else {
             continue;
         };
         let down = screen.role == ScreenRole::Bottom;
-        if screen.held.is_some_and(|at| at <= now) {
+        // Not while a frame is queued: it may hold the window's last picture, which its next (a FIFO
+        // barrier let go) would replace before it is shown. Its flip sends them.
+        if screen.held.is_some_and(|at| at <= now) && !screen.pending {
             screen.held = server.frame_callbacks(Some(down), screen.interval, now);
         }
         if let Some(held) = screen.held {
@@ -401,9 +407,18 @@ fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(
                     screen.answered = server.commits;
                     screen.next_callbacks = Some(now + screen.interval);
                     screen.held = server.frame_callbacks(Some(down), screen.interval, now);
+                    // A callback held back here is due later too (a FIFO client's empty commit, under a cap).
+                    if let Some(held) = screen.held {
+                        due = Some(due.map_or(held, |due| due.min(held)));
+                    }
                 }
             }
         }
+    }
+    // Commits let through after composing (a FIFO barrier the cap let go) are composed at once, not at
+    // the next wake-up for something else.
+    if server.commits != composed {
+        due = Some(now);
     }
     due
 }
@@ -483,6 +498,7 @@ fn present(drawing: &mut Drawing, server: &Server, index: usize) -> Result<(), E
         pipeline.present_part(renderer, &mut target, screen.role == ScreenRole::Bottom, screen.part, screen.size, screen.transform)?
     };
     screen.surface.queue_buffer(Some(sync), None, states.clone()).map_err(|e| format!("{:?} screen: {e}", screen.role))?;
+    server.frame_queued(states, Some(screen.role == ScreenRole::Bottom));
     screen.pending = true;
     screen.dirty = false;
     screen.answered = server.commits;

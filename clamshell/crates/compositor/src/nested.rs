@@ -149,6 +149,8 @@ pub fn run(
                         }
                         backend.submit(Some(&[Rectangle::from_size(backend.window_size())]))?;
                         submitted = true;
+                        server.frame_queued(&states, None);
+                        server.frame_shown(&states, None);
                         server.present_submission(&states, server.clock.now());
                         // The window redraws at each of the host's frames, so a held callback goes at a later one.
                         let refresh = Duration::from_secs_f64(1000.0 / f64::from(server.refresh.max(1000)));
