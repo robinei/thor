@@ -181,6 +181,9 @@ impl Server {
         // composed (see `Server::release_timed_commits`). Mesa's Vulkan times FIFO frames by it.
         smithay::wayland::commit_timing::CommitTimingManagerState::new::<Self>(&dh);
         crate::x11::shell::install(&dh);
+        // The screens' scale, 1, said as the fraction clients may size their buffers by (mpv's software
+        // output sets a zero viewport size, a protocol error, when not told it).
+        smithay::wayland::fractional_scale::FractionalScaleManagerState::new::<Self>(&dh);
         // Dialogs marked as such (GTK 4, Qt 6, SDL 3), whatever their parent: their role (see `Server::facts`).
         smithay::wayland::shell::xdg::dialog::XdgDialogState::new::<Self>(&dh);
         let mut server = Self {

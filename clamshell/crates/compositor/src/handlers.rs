@@ -173,6 +173,13 @@ impl OutputHandler for Server {
     }
 }
 impl PointerConstraintsHandler for Server {}
+impl smithay::wayland::fractional_scale::FractionalScaleHandler for Server {
+    fn new_fractional_scale(&mut self, surface: WlSurface) {
+        smithay::wayland::compositor::with_states(&surface, |states| {
+            smithay::wayland::fractional_scale::with_fractional_scale(states, |scale| scale.set_preferred_scale(1.0));
+        });
+    }
+}
 
 impl XdgShellHandler for Server {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
