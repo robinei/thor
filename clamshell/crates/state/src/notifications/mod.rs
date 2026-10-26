@@ -6,7 +6,7 @@
 //! shows for the time its program asked for ([`Notification::lasts`]); while the screen is off its time
 //! starts again, so it is never missed. A tap on it invokes its default action, if it has one, and
 //! dismisses it; its close mark only dismisses it. A program may close one it sent, and one it sends
-//! again with the same id replaces it. A critical one wakes the screens (see `crate::notifying`).
+//! again with the same id replaces it. A critical one wakes the screens (see `crate::apply::notifying`).
 //!
 //! Each one closed is reported to the bus with the reason the specification gives
 //! ([`Effect::NotificationClosed`]); ClamShell's own are not, since no program waits on them.

@@ -24,14 +24,9 @@
 //!
 //! [`State`] holds the areas and coordinates them. It is defined in `lib.rs`, after [`Init`], with what
 //! builds the areas, gives each to outside code to read, and runs [`State::apply`]'s phases. What needs
-//! more than one area is carried out in an `impl State` of its own file, by subject: what comes in from
-//! the system threads ([`incoming`]), presses ([`press`]), the hardware keys ([`keys`]), the lists'
-//! scrolling ([`scrolls`]), the second screen's tabs and the editor ([`tabs`]), the sliders
-//! ([`sliders`]), launches ([`launching`]), the settings tab ([`settings_tab`]), the notifications and the
-//! screens ([`notifying`]), the queries across areas ([`queries`]), and a system thread restarted
-//! ([`restart`]). What only State uses is in modules beside
-//! the areas: the record of what the outside was last sent ([`sync`]), the output of one event ([`out`]),
-//! and the resume record ([`resume`]). Outside code reads
+//! more than one area is carried out in an `impl State` of its own file, by subject, under [`apply`].
+//! What only State uses is in modules beside the areas: the record of what the outside was last sent
+//! ([`sync`]), the output of one event ([`out`]), and the resume record ([`resume`]). Outside code reads
 //! an area through State's accessor for it (`s.radios().wifi()`), and changes state only by sending an
 //! event to [`State::apply`], which runs in three phases:
 //!
@@ -50,6 +45,7 @@
 //! library's own tree, falls back quietly. Where a bug could reach a fallback, a `debug_assert!` catches
 //! it in tests.
 
+mod apply;
 pub mod bottom;
 mod clock;
 pub mod colour;
@@ -58,34 +54,23 @@ pub mod device;
 mod effect;
 mod event;
 mod id;
-mod incoming;
 pub mod keymap;
-mod keys;
 pub mod kit;
-mod launching;
 pub mod levels;
 pub mod nav;
 pub mod notifications;
-mod notifying;
 pub(crate) mod out;
-mod press;
 pub mod profiles;
-mod queries;
 pub mod radios;
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod random;
-mod restart;
 pub(crate) mod resume;
-mod scrolls;
 pub mod session;
 pub mod settings;
-mod settings_tab;
 pub mod shelf;
-mod sliders;
 pub mod status;
 pub(crate) mod sync;
-mod tabs;
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 pub(crate) mod testkit;

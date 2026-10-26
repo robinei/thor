@@ -57,7 +57,7 @@ rules and the getters the UI reads: `Shelf` (the game list), `Session` (launches
 `Bottom` (the second screen, its tabs, editor and notices), `Radios`, `Levels`, `Sys` (status, battery,
 time), `Device` (the device view, calibrations, account), `Idle`, `Prefs` (settings), `Keymapping`,
 `Presentation` (what the compositor said of the screens), the pad route, the pointer and the lists'
-scrolls. `State`'s impl holds what spans areas, in files by subject beside `lib.rs` (launching, presses,
+scrolls. `State`'s impl holds what spans areas, in files by subject under `apply/` (launching, presses,
 tabs, sliders, the settings tab, ...); nothing outside an area touches its fields.
 
 How areas cooperate:
@@ -171,7 +171,7 @@ listed, and ClamShell can be restarted without losing track.
 - **No panics by construction:** `unwrap`, `expect`, `panic!`, `unreachable!`, `todo!`,
   `unimplemented!`, indexing and unchecked time subtraction are denied outside tests. A panic that happens
   anyway is logged at `error`; a system thread is started again and sent again what it lost
-  (`state/src/restart.rs`), unless it keeps panicking soon after starting, when it is given up; a panic on the compositor's thread ends ClamShell, which systemd starts again.
+  (`state/src/apply/restart.rs`), unless it keeps panicking soon after starting, when it is given up; a panic on the compositor's thread ends ClamShell, which systemd starts again.
 - **`unsafe` denied:** allowed only for a block at an FFI boundary, with a `SAFETY:` comment.
 - **The compositor's thread doesn't block:** files, process walks, D-Bus calls and waiting on the GPU
   belong to a thread; drawing is bounded by what changed.

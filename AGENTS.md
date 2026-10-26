@@ -45,7 +45,7 @@ readings, ticks, windows, units ─▶ Event ───┤
   Bluetooth, sound, the store, files, ...). Each takes its own commands on a channel (`os::worker`; a
   thread that polls devices is also woken by an eventfd bell) and sends events back through a `Sink`. No
   thread touches `State`. A thread that panics is started again, at once and then after growing waits,
-  and the state sends it again what it had been sent (`crates/state/src/restart.rs`); one that panics
+  and the state sends it again what it had been sent (`crates/state/src/apply/restart.rs`); one that panics
   five times, each soon after its start, is given up, logged.
 - **The compositor's thread** runs the event loop, the state and the drawing. It does no blocking work:
   files, process walks, D-Bus calls and waiting on the GPU belong to a thread. It draws only what
@@ -61,7 +61,7 @@ readings, ticks, windows, units ─▶ Event ───┤
 ## The state (crates/state)
 
 - `State` (lib.rs) holds the areas (shelf, session, bottom, radios, ...) and coordinates them; its
-  `impl State` is split by subject into child files of the crate root (`incoming.rs`, `launching.rs`,
+  `impl State` is split by subject into the files of `apply/` (`incoming.rs`, `launching.rs`,
   `restart.rs`, ...). An area owns its fields privately, with its rules and the getters the UI reads.
 - A rule that needs another area's data gets it as a parameter; a change another area alone owns is
   that area's `&mut self` method, passed as narrowly as practical. A request that needs several areas is

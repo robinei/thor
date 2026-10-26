@@ -124,7 +124,7 @@ pub enum Event {
     /// calibration rate HZ`).
     CalibrationRate(u16),
     /// A system thread was started again after a panic, having lost what it held (see
-    /// [`crate::restart`]).
+    /// [`crate::apply::restart`]).
     Restarted(Thread),
     /// A change requested of the account helper is done, with what it did, or failed, with the reason. A
     /// new account reading follows (see [`crate::device::account`]).

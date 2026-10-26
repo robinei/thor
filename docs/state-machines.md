@@ -507,7 +507,7 @@ level nor touched the backlights. A level set while dimmed is sent dimmed. Tests
 - Time pages: regions, a region's zones, set, back; reset on leaving the tab (`leaving_the_tab_resets_it_to_its_main_page`); NTP and stepping the
   clock by hand. Tests: `regions_then_their_zones_…`, `the_clock_set_by_the_network_or_by_hand…`.
 
-## Notifications (notifications/, notifying.rs)
+## Notifications (notifications/, apply/notifying.rs)
 
 ClamShell is the session's notification server. A program's notification comes from the bus thread
 (`system/session/notifications.rs`) as `Notification(Notified)`, with the id the thread gave it; the
@@ -550,7 +550,7 @@ compositor test, which sends them with `gdbus`, closes one and taps another.
 |---|---|---|---|
 | Resumed | `Event::Resumed` | Apply | tests `back_from_sleep_applies_the_settings_again_and_wakes_the_screens` |
 | FetchFirst | Fetching, Library | FetchFirst | tests `while_metadata_is_fetched_shelfs_view_goes_first`, `a_library_read_while_fetching_asks_for_shelfs_view_first_again` |
-| Restarted(thread) | `Event::Restarted` | what that thread was sent (below) | tests in `restart.rs` |
+| Restarted(thread) | `Event::Restarted` | what that thread was sent (below) | tests in `apply/restart.rs` |
 
 At start only what the outside starts with counts as sent (`Sent::new`): the settings in force
 applied, the screens on at their own rate, the bar's status watched. So the brightness, the keymap,
@@ -564,7 +564,7 @@ else the settings'. Tests `the_refresh_rate_follows_a_launch_at_once_then_the_se
 `the_refresh_rate_goes_back_when_a_launch_fails`, `the_refresh_rate_goes_back_when_a_launch_shows_no_window`,
 `a_refresh_calibration_sets_the_screens_and_then_gives_them_back`).
 
-### A system thread started again (restart.rs)
+### A system thread started again (apply/restart.rs)
 
 A system thread that panics is started again by `os::worker::restarted` and the wiring sends
 `Event::Restarted(thread)` (tested end to end in the system crate's wiring,
@@ -594,7 +594,7 @@ then go nowhere, logged once (system crate, `a_thread_that_keeps_panicking_soon_
   `a_restarted_freezer_is_sent_each_slice_as_it_is`)
 - `--Restarted(Notifications)--> nothing`: the notifications are the state's, and the thread's ids come
   from a counter that outlives it (tested `a_restarted_notifications_thread_is_sent_nothing_and_they_stay`)
-- Other threads: nothing; `restart.rs` says why for each. Short-lived threads the state waits on (a
+- Other threads: nothing; `apply/restart.rs` says why for each. Short-lived threads the state waits on (a
   launch, the refresh calibration, an account change) answer with a failure if they panic
   (`os::worker::or_on_panic`). The randomized test restarts random threads.
 
@@ -1432,7 +1432,7 @@ and the OEM switches again at each settings application and every 30 s while the
 
 Whether the firmware honours a write is checked on the device.
 
-### Display modes and the Refresh tile (state/device/display.rs, state/settings_tab.rs, compositor/drm.rs)
+### Display modes and the Refresh tile (state/device/display.rs, state/apply/settings_tab.rs, compositor/drm.rs)
 
 `DisplayModes` holds at most 32 sorted, unique rates (1 to 1000 Hz) and the rate at start; the profile gives
 none.
