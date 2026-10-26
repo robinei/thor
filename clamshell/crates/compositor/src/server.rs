@@ -597,18 +597,6 @@ impl Server {
                 Effect::Outputs { top, bottom } => self.screens_on = [top, top && bottom],
                 Effect::Refresh(hz) => self.refresh_wanted = hz,
                 Effect::Key(ref stroke) => self.stroke(stroke),
-                Effect::Launch { ref env, .. } => {
-                    let mut launch = effect.clone();
-                    if let Effect::Launch { env: target, .. } = &mut launch {
-                        *target =
-                            env.iter().filter(|(k, _)| k != "WAYLAND_DISPLAY").cloned().chain([("WAYLAND_DISPLAY".into(), self.socket.clone())]).collect();
-                    }
-                    if let (Some(display), Effect::Launch { env, .. }) = (&self.x11_display, &mut launch) {
-                        env.retain(|(name, _)| name != "DISPLAY");
-                        env.push(("DISPLAY".into(), display.clone()));
-                    }
-                    (self.on_effect)(&launch);
-                }
                 _ => (self.on_effect)(&effect),
             }
         }

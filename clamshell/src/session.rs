@@ -120,6 +120,7 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
             gamepad: env.gamepad.clone(),
             device_session,
             clipboard_display: displays.socket,
+            displays: vec![("WAYLAND_DISPLAY".into(), displays.wayland.clone()), ("DISPLAY".into(), displays.x11.clone())],
             backlights: env.backlights.clone(),
         };
         if let Some(path) = env.control.as_ref().or(paths.control.as_ref()) {

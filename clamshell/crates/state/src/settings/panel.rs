@@ -495,7 +495,8 @@ mod tests {
             Effect::Launch { settings, env, .. } => Some((settings.get(Setting::FpsCap), settings.get(Setting::Power), env.clone())),
             _ => None,
         });
-        assert_eq!(launch, Some((30, 1, vec![("MPV".to_owned(), "1".to_owned())])), "the runner's, not the series folder's");
+        let env = [("MESA_VK_WSI_PRESENT_MODE", "fifo"), ("vblank_mode", "3"), ("MPV", "1")].map(|(k, v)| (k.to_owned(), v.to_owned())).to_vec();
+        assert_eq!(launch, Some((30, 1, env)), "the runner's, not the series folder's, after the cap's");
     }
 
     #[test]
@@ -667,7 +668,8 @@ mod tests {
         let Some(Effect::Launch { settings, env, .. }) = fx.iter().find(|e| matches!(e, Effect::Launch { .. })) else { panic!("{fx:?}") };
         assert_eq!(settings.get(Setting::FpsCap), 40);
         let pairs: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-        assert_eq!(pairs, [("A", "1"), ("B", "2"), ("B", "3"), ("C", "x y")], "the game's last, so they win");
+        let cap = [("MESA_VK_WSI_PRESENT_MODE", "fifo"), ("vblank_mode", "3")];
+        assert_eq!(pairs, [cap[0], cap[1], ("A", "1"), ("B", "2"), ("B", "3"), ("C", "x y")], "the cap's first, the game's last, so they win");
     }
 
     #[test]

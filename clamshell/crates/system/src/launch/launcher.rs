@@ -40,7 +40,7 @@ pub struct Request {
     /// The launch's scope, from the state.
     pub instance: Instance,
     pub launch: Launch,
-    /// The game's environment: the cap's and its own variables.
+    /// The game's environment: the controller's, the cap's and its own variables. The displays follow.
     pub env: Vec<(String, String)>,
 }
 
@@ -50,6 +50,9 @@ pub struct Config {
     pub watch_later: Vec<PathBuf>,
     /// Where the launches' control sockets go, which a command gets as `{socket}`.
     pub sockets: PathBuf,
+    /// The compositor's displays (`WAYLAND_DISPLAY`, `DISPLAY`), given to every launch after its own
+    /// variables.
+    pub displays: Vec<(String, String)>,
 }
 
 #[derive(Debug)]
@@ -98,7 +101,8 @@ pub fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worker<Comma
         for command in commands {
             let (config, sink) = (config.clone(), sink.clone());
             let started = worker::detached("launch", move || match command {
-                Command::Launch(request) => {
+                Command::Launch(mut request) => {
+                    request.env.extend(config.displays.iter().cloned());
                     if let Err(e) = worker::or_on_panic(|| start(&config, &request), || Err(Error::Panicked)) {
                         log::warn!("launcher: {}: {e}", request.entry);
                         let _ = sink.send(Event::Launch(LaunchEvent::LaunchFailed(request.entry.clone())));
@@ -254,7 +258,7 @@ mod tests {
     use std::time::Duration;
 
     fn config() -> Config {
-        Config { watch_later: Vec::new(), sockets: std::env::temp_dir() }
+        Config { watch_later: Vec::new(), sockets: std::env::temp_dir(), displays: Vec::new() }
     }
 
     /// Starts a service on this machine's user manager. Run it by hand with `--ignored`.

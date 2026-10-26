@@ -40,6 +40,8 @@ pub struct Config {
     pub device_session: bool,
     /// The compositor's socket, for the clipboard.
     pub clipboard_display: PathBuf,
+    /// The compositor's displays (`WAYLAND_DISPLAY`, `DISPLAY`), for launches.
+    pub displays: Vec<(String, String)>,
     /// The backlights' folder: /sys/class/backlight, or a stand-in.
     pub backlights: PathBuf,
 }
@@ -119,8 +121,13 @@ pub fn start<S: Sink + Clone>(
     detached("units", scopes::spawn(sink.clone()));
     // Games start from the launcher, each on a thread of its own, so several start side by side. Plays
     // go to the database.
-    let launcher =
-        started("launcher", launcher::spawn(launcher::Config { watch_later: paths.watch_later.clone(), sockets: paths.sockets.clone() }, sink.clone()));
+    let launcher = started(
+        "launcher",
+        launcher::spawn(
+            launcher::Config { watch_later: paths.watch_later.clone(), sockets: paths.sockets.clone(), displays: env.displays.clone() },
+            sink.clone(),
+        ),
+    );
     // The controller is grabbed for good, with a virtual Xbox pad for games.
     let pad_taken = pad::Taken::default();
     let pad = started("pad", pad::spawn(env.gamepad.clone(), env.profile.controls, env.profile.sensor_hub, pad_taken.clone(), sink.clone()));

@@ -67,12 +67,9 @@ impl Handles {
             Effect::Touchpad(contacts) => self.touchpad.send(touchpad::Command::Contacts(contacts.clone())),
             Effect::Launch { entry, instance, launch, settings, env } => {
                 log::info!("launching {entry}");
-                // The cap's first, so a game's own variables can still override them.
                 self.tuning.apply(settings);
-                let mut game_env = Tuning::fifo_env(settings);
-                game_env.extend(env.iter().cloned());
                 // The variables for the grabbed controller go first, so a game's own may override them.
-                game_env.splice(0..0, self.pad_taken.env());
+                let game_env = self.pad_taken.env().into_iter().chain(env.iter().cloned()).collect();
                 self.launcher.send(launcher::Command::Launch(launcher::Request {
                     entry: entry.clone(),
                     instance: instance.clone(),

@@ -625,7 +625,8 @@ impl Session {
         let (launch, key) = (command.unwrap_or_else(|| g.launch.clone()), g.key.clone());
         let runner = g.runner.as_ref().map(|r| &*r.key);
         let values = settings.of_in(&entry, runner.as_slice());
-        let mut env = Vec::new();
+        // The cap's variables first, so the entry's own may override them.
+        let mut env = cap_env(&values);
         settings.env_in(&entry, runner.as_slice(), &mut env);
         // If its runner, and so its container, is paused, it is resumed first.
         self.resume_runner_of(&entry, library, out);
@@ -706,6 +707,17 @@ impl Session {
         quitting.retain(|q| q.ended || now < q.asked + QUIT_WAIT);
         self.quitting = quitting;
     }
+}
+
+/// A capped game presents in FIFO, so that it waits for the frame callbacks the compositor paces to the
+/// cap: in mailbox or immediate it wouldn't. Mesa's Vulkan WSI, and GL's swap interval kept at 1 or more
+/// (`vblank_mode` 3). Set at launch, so a cap set while the game runs reaches only games presenting in
+/// FIFO already.
+fn cap_env(values: &crate::settings::Values) -> Vec<(String, String)> {
+    if values.get(crate::settings::Setting::FpsCap) == 0 {
+        return Vec::new();
+    }
+    vec![("MESA_VK_WSI_PRESENT_MODE".into(), "fifo".into()), ("vblank_mode".into(), "3".into())]
 }
 
 #[cfg(test)]
@@ -1301,5 +1313,16 @@ mod tests {
         assert_eq!(id(&s).as_deref(), Some("ff6"), "shelf in front: its selection");
         in_front(&mut s, win(3, "foot"));
         assert_eq!(s.panel().context(), None, "a window of none of ours: the defaults");
+    }
+
+    #[test]
+    fn a_capped_game_is_launched_presenting_in_fifo() {
+        let env_of = |fx: &[Effect]| fx.iter().find_map(|e| if let Effect::Launch { env, .. } = e { Some(env.clone()) } else { None });
+        let mut s = state();
+        assert_eq!(env_of(&launch_now(&mut s, "zelda-lttp")), Some(Vec::new()), "no cap");
+        let mut s = state();
+        s.settings_mut().set(Some(&"zelda-lttp".into()), crate::settings::Setting::FpsCap, Some(40));
+        let env = env_of(&launch_now(&mut s, "zelda-lttp")).unwrap();
+        assert!(env.contains(&("MESA_VK_WSI_PRESENT_MODE".into(), "fifo".into())), "{env:?}");
     }
 }
