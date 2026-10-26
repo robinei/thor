@@ -213,12 +213,12 @@ impl Pipeline {
             Vec::new();
         let state = server.core.state();
         for client in server.windows.iter().filter(|client| client.mapped && server.visible(client.id)) {
-            let curve = state.window_curve(client.id);
+            let curve = client.shown.curve;
             // What the screen shows, as clients are told: nested, the host's real peak rather than the
             // PQ signal we send it.
             let headroom = server.colour.screen(state.session().window(client.id).is_some_and(|w| w.down)).headroom() as f32;
-            let mut clarity = state.window_clarity(client.id);
-            let hdr_peak = state.window_hdr_peak(client.id);
+            let mut clarity = client.shown.clarity;
+            let hdr_peak = client.shown.hdr_peak;
             // The game's picture: the window's surface with the largest buffer (Wine draws it in a subsurface
             // over the toplevel's), and whether that buffer is its surface's size (Xwayland and Wine show a
             // mode a game picked as a smaller buffer scaled by a viewport).

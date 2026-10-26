@@ -89,7 +89,7 @@ fn x11_popups_share_parent_scaling_keep_tooltips_passive_and_cancel_dismissed_co
                 mapped: true,
                 opened: true,
                 title_dirty: false,
-                presentation: server.core.state().window_presentation(1),
+                shown: crate::server::Shown::of(server.core.state(), 1),
                 frames: Default::default(),
             });
             let geometry = server.geometry(1).unwrap();

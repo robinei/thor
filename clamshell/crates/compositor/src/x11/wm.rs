@@ -790,7 +790,7 @@ impl Window {
                 opened: true,
                 mapped,
                 title_dirty: false,
-                presentation: server.core.state().window_presentation(self.id),
+                shown: crate::server::Shown::of(server.core.state(), self.id),
                 frames: Default::default(),
             });
         }
@@ -803,7 +803,9 @@ impl Window {
         }
         let Some(policy) = self.policy else { return Ok(()) };
         let area = server.area(model.down);
-        let fill = server.fill_size(self.id, area.size);
+        // (Its clarity as read for its window this revision, else from the state while it has none yet.)
+        let clarity = server.windows.iter().find(|w| w.id == self.id).map_or_else(|| server.core.state().window_clarity(self.id), |w| w.shown.clarity);
+        let fill = crate::server::fill_size(clarity, area.size);
         let size = crate::geometry::configure_size(model, policy, area.size, fill, (i32::from(self.size.0), i32::from(self.size.1)).into())
             .unwrap_or((i32::from(self.size.0), i32::from(self.size.1)).into());
         // A fullscreen game that switched mode is configured to it, so that Xwayland emulates it: the window

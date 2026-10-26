@@ -229,11 +229,11 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
                     server.core.handle(clamshell_state::WindowEvent::Changed(facts.clone()).into());
                     server.sync_windows();
                     assert_ne!(server.presentation_revision, revision);
-                    assert_eq!(server.windows[0].presentation.unwrap().layout, WindowLayout::Centred);
+                    assert_eq!(server.windows[0].shown.presentation.unwrap().layout, WindowLayout::Centred);
                     facts.role = WindowRole::Normal;
                     server.core.handle(clamshell_state::WindowEvent::Changed(facts).into());
                     server.sync_windows();
-                    assert_eq!(server.windows[0].presentation.unwrap().layout, WindowLayout::Fullscreen);
+                    assert_eq!(server.windows[0].shown.presentation.unwrap().layout, WindowLayout::Fullscreen);
                     server.core.handle(Event::Device(DeviceKey::WindowDown));
                     server.frame();
                     display.flush_clients().unwrap();

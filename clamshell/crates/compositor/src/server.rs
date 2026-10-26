@@ -41,8 +41,33 @@ pub(crate) struct ClientWindow {
     pub opened: bool,
     pub mapped: bool,
     pub title_dirty: bool,
-    pub presentation: Option<clamshell_state::session::presentation::WindowPresentation>,
+    /// What the state says of how it is shown, read once per state revision (see [`Shown`]).
+    pub shown: Shown,
     pub frames: crate::frames::Frames,
+}
+
+/// How the state says a window is shown: its presentation and its entry's settings for the picture.
+/// Each is a search of the library for the window's entry, so they are read once per state revision
+/// ([`Server::sync_windows`]), not on every frame and commit.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct Shown {
+    pub presentation: Option<clamshell_state::session::presentation::WindowPresentation>,
+    pub clarity: clamshell_state::session::presentation::Clarity,
+    pub curve: Option<clamshell_state::curve::Curve>,
+    pub hdr_peak: u16,
+    pub fps_cap: Option<u16>,
+}
+
+impl Shown {
+    pub fn of(state: &State, id: i64) -> Shown {
+        Shown {
+            presentation: state.window_presentation(id),
+            clarity: state.window_clarity(id),
+            curve: state.window_curve(id),
+            hdr_peak: state.window_hdr_peak(id),
+            fps_cap: state.window_fps_cap(id),
+        }
+    }
 }
 
 pub(crate) struct Server {
@@ -319,7 +344,7 @@ impl Server {
             opened: false,
             mapped: false,
             title_dirty: false,
-            presentation: None,
+            shown: Shown::of(self.core.state(), self.next_id),
             frames: Default::default(),
         });
         self.next_id = next;
@@ -449,7 +474,7 @@ impl Server {
         let revision = self.core.state_revision();
         if self.presentation_revision != Some(revision) {
             for client in &mut self.windows {
-                client.presentation = self.core.state().window_presentation(client.id);
+                client.shown = Shown::of(self.core.state(), client.id);
             }
             self.presentation_revision = Some(revision);
         }
@@ -458,8 +483,8 @@ impl Server {
             let Some(window) = self.core.state().session().window(client.id) else { continue };
             if let Some(surface) = client.window.toplevel() {
                 let area = self.area(window.down);
-                let Some(policy) = client.presentation else { continue };
-                let fill = self.fill_size(client.id, area.size);
+                let Some(policy) = client.shown.presentation else { continue };
+                let fill = fill_size(client.shown.clarity, area.size);
                 let size = crate::geometry::configure_size(window, policy, area.size, fill, client.window.geometry().size);
                 surface.with_pending_state(|pending| {
                     pending.size = size;
@@ -594,14 +619,6 @@ impl Server {
         self.popups.cleanup();
     }
 
-    /// What a fullscreen window `id` fills in an area of `area`: the area, or the resolution its game is set
-    /// to (a fraction of it, `docs/picture.md`), which the window is then scaled up from.
-    pub fn fill_size(&self, id: i64, area: Size<i32, Logical>) -> Size<i32, Logical> {
-        let resolution = self.core.state().window_clarity(id).resolution;
-        let (w, h) = resolution.size_on((area.w.max(0) as u32, area.h.max(0) as u32));
-        (w as i32, h as i32).into()
-    }
-
     /// Takes in a client that connected, knowing it by its process (see `running_of_process`): a game's is
     /// shown only the top screen, at its resolution as it is now, so a change applies the next time the
     /// game starts.
@@ -683,7 +700,7 @@ impl Server {
             }
             // A capped window uses its turn only while it waits for a callback or on a FIFO barrier, so
             // that one drawing slower than its cap isn't held back further.
-            let cap = state.window_fps_cap(client.id);
+            let cap = client.shown.fps_cap;
             let waiting = client.window.root().is_some_and(|root| {
                 with_states(&root, |states| !states.cached_state.get::<smithay::wayland::compositor::SurfaceAttributes>().current().frame_callbacks.is_empty())
             });
@@ -731,9 +748,8 @@ impl Server {
         use smithay::wayland::commit_timing::{CommitTimerBarrierStateUserData, Timestamp};
         let mut released: Vec<smithay::reexports::wayland_server::Client> = Vec::new();
         let mut held: Option<Timestamp> = None;
-        let state = self.core.state();
         for client in &self.windows {
-            let until = if state.window_fps_cap(client.id).is_some() {
+            let until = if client.shown.fps_cap.is_some() {
                 Timestamp::from(smithay::utils::Time::<smithay::utils::Monotonic>::from(std::time::Duration::from_secs(1 << 40)))
             } else {
                 shown.into()
@@ -787,8 +803,15 @@ impl Server {
         let client = self.windows.iter().find(|w| w.id == id && w.mapped)?;
         let (size, place) = client.window.picture().unzip();
         let picture = crate::geometry::Picture { size, place };
-        crate::geometry::Geometry::new(self.area(window.down), client.window.geometry(), client.presentation?, picture)
+        crate::geometry::Geometry::new(self.area(window.down), client.window.geometry(), client.shown.presentation?, picture)
     }
+}
+
+/// What a fullscreen window fills in an area of `area`: the area, or the resolution its game is set to (a
+/// fraction of it, `docs/picture.md`), which the window is then scaled up from.
+pub(crate) fn fill_size(clarity: clamshell_state::session::presentation::Clarity, area: Size<i32, Logical>) -> Size<i32, Logical> {
+    let (w, h) = clarity.resolution.size_on((area.w.max(0) as u32, area.h.max(0) as u32));
+    (w as i32, h as i32).into()
 }
 
 #[derive(Default)]
