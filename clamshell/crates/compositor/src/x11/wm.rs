@@ -11,7 +11,7 @@ use crate::{
 use clamshell_state::{WindowEvent, session::presentation::WindowLayout};
 use smithay::{
     backend::renderer::utils::with_renderer_surface_state,
-    reexports::wayland_server::{Client, protocol::wl_surface::WlSurface},
+    reexports::wayland_server::protocol::wl_surface::WlSurface,
     utils::{Logical, Point, Rectangle},
 };
 use std::{
@@ -68,7 +68,9 @@ struct Window {
     input_only: bool,
     layout: Option<WindowLayout>,
     opened: bool,
-    surface: Option<u32>,
+    /// The serial Xwayland gave its surface (see `super::shell`), and the surface once it is committed.
+    serial: Option<u64>,
+    surface: Option<WlSurface>,
     size: (u16, u16),
     configured: Option<Rectangle<i32, smithay::utils::Logical>>,
     sent: Option<clamshell_state::session::windows::Window>,
@@ -112,7 +114,7 @@ impl Wm {
         self.pending.push(Pending { sequence, kind, deadline: now + Duration::from_secs(3) });
         Ok(())
     }
-    pub fn turn(&mut self, wire: &mut Transport, client: &Client, server: &mut Server, now: Instant) -> io::Result<()> {
+    pub fn turn(&mut self, wire: &mut Transport, server: &mut Server, now: Instant) -> io::Result<()> {
         self.start_setup(wire, now)?;
         self.dispatch_replies(wire, server, now)?;
         self.finish_setup(wire)?;
@@ -120,8 +122,8 @@ impl Wm {
         self.dispatch_events(wire, server)?;
         self.query_window_properties(wire, now)?;
         self.sync_selection(wire, server, now)?;
-        self.settle(wire, client, server)?;
-        self.settle_menus(wire, client, server)?;
+        self.settle(wire, server)?;
+        self.settle_menus(wire, server)?;
         server.sync_windows();
         Ok(())
     }
@@ -466,6 +468,7 @@ impl Wm {
             input_only: false,
             layout: None,
             opened: false,
+            serial: None,
             surface: None,
             size: (u16::try_from(geometry.size.w).unwrap_or(1), u16::try_from(geometry.size.h).unwrap_or(1)),
             configured: None,
@@ -535,6 +538,7 @@ impl Wm {
                         w.wants_map = false;
                         w.opened = false;
                         w.sent = None;
+                        w.serial = None;
                         w.surface = None;
                         w.configured = None;
                         for client in &mut server.windows {
@@ -564,11 +568,12 @@ impl Wm {
                 let event = ClientMessageEvent::try_parse(bytes).map_err(io::Error::other)?.0;
                 log::debug!("X11 client message window={} type={} data={:?}", event.window, event.type_, event.data.as_data32());
                 if event.format == 32
-                    && event.type_ == self.atoms.get("WL_SURFACE_ID")
+                    && event.type_ == self.atoms.get("WL_SURFACE_SERIAL")
                     && let Some(window) = self.windows.iter_mut().find(|w| w.xid == event.window)
+                    && let [low, high, ..] = event.data.as_data32()
                 {
-                    window.surface = event.data.as_data32().first().copied();
-                    log::debug!("X11 association id={} map={} pending={}", window.id, window.wants_map, window.outstanding);
+                    window.serial = Some(u64::from(low) | (u64::from(high) << 32));
+                    log::debug!("X11 surface serial id={}", window.id);
                 }
             }
             Some(CONFIGURE_REQUEST_EVENT) => {
@@ -617,13 +622,26 @@ impl Wm {
             self.forget(id, server);
         }
     }
-    fn settle(&mut self, wire: &mut Transport, client: &Client, server: &mut Server) -> io::Result<()> {
-        self.settle_windows(wire, client, server)?;
+    fn settle(&mut self, wire: &mut Transport, server: &mut Server) -> io::Result<()> {
+        self.pair_surfaces(server);
+        self.settle_windows(wire, server)?;
         self.settle_focus(wire, server)?;
         self.settle_close(wire, server)?;
         Ok(())
     }
-    fn settle_windows(&mut self, wire: &mut Transport, client: &Client, server: &mut Server) -> io::Result<()> {
+    /// Each window given a serial, paired with the surface Xwayland committed with it.
+    fn pair_surfaces(&mut self, server: &mut Server) {
+        for window in &mut self.windows {
+            if window.surface.is_none()
+                && let Some(serial) = window.serial
+                && let Some(surface) = super::shell::take(server, serial)
+            {
+                log::debug!("X11 association id={} map={} pending={}", window.id, window.wants_map, window.outstanding);
+                window.surface = Some(surface);
+            }
+        }
+    }
+    fn settle_windows(&mut self, wire: &mut Transport, server: &mut Server) -> io::Result<()> {
         for i in 0..self.windows.len() {
             let Some(w) = self.windows.get(i) else { continue };
             if w.override_redirect || !w.wants_map || w.outstanding != 0 {
@@ -641,7 +659,7 @@ impl Wm {
             let parent = w.properties.transient.and_then(|xid| self.windows.iter().find(|p| p.xid == xid && p.opened).map(|p| p.id));
             let Some(w) = self.windows.get_mut(i) else { continue };
             w.sync_facts(parent, server);
-            w.bind_surface(client, server);
+            w.bind_surface(server);
             w.configure(&self.atoms, wire, server)?;
         }
         Ok(())
@@ -760,10 +778,9 @@ impl Window {
             self.dirty = false;
         }
     }
-    fn bind_surface(&self, client: &Client, server: &mut Server) {
-        if let Some(object) = self.surface
+    fn bind_surface(&self, server: &mut Server) {
+        if let Some(surface) = self.surface.clone()
             && server.windows.iter().all(|v| v.id != self.id)
-            && let Ok(surface) = client.object_from_protocol_id::<WlSurface>(&server.dh, object)
         {
             let mapped = with_renderer_surface_state(&surface, |s| s.buffer().is_some()).unwrap_or(false);
             log::debug!("X11 surface bound {} mapped={mapped}", self.id);
@@ -864,15 +881,13 @@ mod tests {
         )
         .unwrap();
         let (socket, _peer) = UnixStream::pair().unwrap();
-        let client = display.handle().insert_client(socket, Arc::new(crate::server::ClientState::default())).unwrap();
-        let (socket, _peer) = UnixStream::pair().unwrap();
         let now = Instant::now();
         let mut wire = Transport::new(socket, now).unwrap();
         let mut wm = Wm::default();
         assert_eq!(wm.deadline(), None);
         wm.query(&mut wire, GetWindowAttributesRequest { window: 10 }, 0, Query::Attributes(7), now).unwrap();
         assert_eq!(wm.deadline(), Some(now + Duration::from_secs(3)));
-        assert_eq!(wm.turn(&mut wire, &client, &mut server, now + Duration::from_secs(3)).unwrap_err().kind(), io::ErrorKind::TimedOut);
+        assert_eq!(wm.turn(&mut wire, &mut server, now + Duration::from_secs(3)).unwrap_err().kind(), io::ErrorKind::TimedOut);
         wm.pending.clear();
         assert_eq!(wm.deadline(), None);
         wm.discover(10, Rectangle::from_size((640, 360).into()), false, &mut wire, &mut server).unwrap();
@@ -881,13 +896,13 @@ mod tests {
         wm.discover(10, Rectangle::from_size((640, 360).into()), false, &mut wire, &mut server).unwrap();
         assert_ne!(wm.windows[0].id, old_id);
         wm.res = Some(140);
-        wm.turn(&mut wire, &client, &mut server, now).unwrap();
+        wm.turn(&mut wire, &mut server, now).unwrap();
         assert!(wm.pending.is_empty(), "creation alone does not snapshot properties before the app sets them");
         let event = MapRequestEvent { response_type: MAP_REQUEST_EVENT, parent: 1, window: 10, ..MapRequestEvent::default() };
         let mut event = Serialize::serialize(&event).to_vec();
         event.resize(32, 0);
         wm.event(&event, &mut wire, &mut server).unwrap();
-        wm.turn(&mut wire, &client, &mut server, now).unwrap();
+        wm.turn(&mut wire, &mut server, now).unwrap();
         assert_eq!(wm.pending.len(), PROPERTIES.len() + 2, "MapRequest starts the attributes, properties and PID snapshot");
         assert!(server.core.state().session().windows().is_empty(), "the initial facts precede placement");
 
@@ -955,8 +970,6 @@ mod tests {
             |_| {},
         )
         .unwrap();
-        let (socket, _peer) = UnixStream::pair().unwrap();
-        let client = display.handle().insert_client(socket, Arc::new(crate::server::ClientState::default())).unwrap();
         let (socket, mut peer) = UnixStream::pair().unwrap();
         let now = Instant::now();
         let mut wire = Transport::new(socket, now).unwrap();
@@ -968,7 +981,7 @@ mod tests {
         wm.windows[0].wants_map = true;
         wm.windows[0].properties.class = "fixture".into();
         let id = wm.windows[0].id;
-        wm.settle(&mut wire, &client, &mut server).unwrap();
+        wm.settle(&mut wire, &mut server).unwrap();
         assert!(server.core.state().session().window(id).is_some());
         assert_eq!(server.core.state().session().top_window().map(|w| w.id), Some(id));
         wire.turn(now).unwrap();
@@ -1041,16 +1054,16 @@ mod tests {
                 assert_eq!(rest[0], CHANGE_PROPERTY_REQUEST);
             }
         }
-        wm.settle(&mut wire, &client, &mut server).unwrap();
+        wm.settle(&mut wire, &mut server).unwrap();
         wire.turn(now).unwrap();
         peer.set_nonblocking(true).unwrap();
         assert_eq!(peer.read(&mut bytes).unwrap_err().kind(), io::ErrorKind::WouldBlock, "unchanged state sends no X11 commands");
         wm.windows[0].properties.name = "first title".into();
         wm.windows[0].dirty = true;
-        wm.settle(&mut wire, &client, &mut server).unwrap();
+        wm.settle(&mut wire, &mut server).unwrap();
         wm.windows[0].properties.name = "last title".into();
         wm.windows[0].dirty = true;
-        wm.settle(&mut wire, &client, &mut server).unwrap();
+        wm.settle(&mut wire, &mut server).unwrap();
         assert_eq!(server.x11_changes.len(), 1, "X11 title changes coalesce before recording a frame");
         assert_eq!(server.core.state().session().window(id).unwrap().title, "");
         server.frame();
@@ -1059,7 +1072,7 @@ mod tests {
         wm.windows[0].properties.name = "dialog title".into();
         wm.windows[0].properties.role = clamshell_state::session::presentation::WindowRole::Dialog;
         wm.windows[0].dirty = true;
-        wm.settle(&mut wire, &client, &mut server).unwrap();
+        wm.settle(&mut wire, &mut server).unwrap();
         let mut adopted = server.core.state().session().window(id).unwrap().clone();
         adopted.unit = Some("adopted.scope".into());
         adopted.pids = vec![456];

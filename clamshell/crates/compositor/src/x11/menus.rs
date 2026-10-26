@@ -25,7 +25,7 @@ impl Wm {
         let target = if menu.properties.tooltip { hovered.or(focused) } else { focused }?;
         self.windows.iter().find(|w| w.id == target && !w.override_redirect && w.pid.is_some() && w.pid == menu.pid).map(|w| w.id)
     }
-    pub(super) fn settle_menus(&mut self, wire: &mut Transport, client: &Client, server: &mut Server) -> io::Result<()> {
+    pub(super) fn settle_menus(&mut self, wire: &mut Transport, server: &mut Server) -> io::Result<()> {
         server.sync_x11_popups();
         for id in server.x11_popup_dismiss.drain(..) {
             if let Some(menu) = self.windows.iter_mut().find(|w| w.id == id && w.override_redirect && w.wants_map) {
@@ -58,7 +58,7 @@ impl Wm {
             let Some(geometry) = server.geometry(parent.id) else { continue };
             let Some(configured) = parent.configured else { continue };
             let (id, location) = (menu.id, menu.position - configured.loc);
-            let Some(surface) = menu.surface.and_then(|object| client.object_from_protocol_id::<WlSurface>(&server.dh, object).ok()) else { continue };
+            let Some(surface) = menu.surface.clone() else { continue };
             if !with_renderer_surface_state(&surface, |state| state.buffer().is_some()).unwrap_or(false) {
                 continue;
             }

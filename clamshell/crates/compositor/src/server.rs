@@ -120,6 +120,8 @@ pub(crate) struct Server {
     pub x11_popup_dismiss: Vec<i64>,
     pub x11_changes: Vec<Window>,
     pub x11_display: Option<String>,
+    /// Xwayland's surfaces by the serial it gave them, until their window is paired (see `x11::shell`).
+    pub xwayland_serials: Vec<(u64, WlSurface)>,
 }
 
 impl Server {
@@ -178,6 +180,7 @@ impl Server {
         // Commit timing: a commit to be shown no sooner than a time, held until the frame shown then is
         // composed (see `Server::release_timed_commits`). Mesa's Vulkan times FIFO frames by it.
         smithay::wayland::commit_timing::CommitTimingManagerState::new::<Self>(&dh);
+        crate::x11::shell::install(&dh);
         let mut server = Self {
             clock,
             core,
@@ -241,6 +244,7 @@ impl Server {
             x11_popup_dismiss: Vec::new(),
             x11_changes: Vec::new(),
             x11_display: None,
+            xwayland_serials: Vec::new(),
         };
         if relative_motion {
             server.enable_relative_pointer();
@@ -776,6 +780,8 @@ pub(crate) struct ClientState {
     /// For a game's process, its resolution when it connected and whether it shows a window on the second
     /// screen (see [`Server::admit`]).
     pub game: std::sync::OnceLock<Option<(clamshell_state::settings::Resolution, bool)>>,
+    /// Xwayland, the only client that sees `xwayland_shell_v1`.
+    pub xwayland: bool,
 }
 
 impl ClientState {

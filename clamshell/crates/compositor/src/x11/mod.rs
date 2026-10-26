@@ -1,6 +1,7 @@
 //! Xwayland starts on the first display connection. Socket readiness drives all adapter work.
 mod properties;
 pub(crate) mod selection;
+pub(crate) mod shell;
 mod socket;
 mod transport;
 mod wm;
@@ -181,7 +182,7 @@ impl Running {
         ]);
         command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::inherit());
         let transport = Transport::new(wm, now)?;
-        let client = dh.insert_client(wayland, Arc::new(ClientState::default()))?;
+        let client = dh.insert_client(wayland, Arc::new(ClientState { xwayland: true, ..ClientState::default() }))?;
         let descriptors: Vec<OwnedFd> = vec![wayland_child.into(), wm_child.into(), ready_child.into(), listener];
         let child = match command.preserved_fds(descriptors).spawn() {
             Ok(child) => child,
@@ -257,7 +258,7 @@ impl Running {
             }
         }
         self.transport.turn(now)?;
-        self.wm.turn(&mut self.transport, &self.client, server, now)?;
+        self.wm.turn(&mut self.transport, server, now)?;
         self.wm.sync_selection_sources(handle, &mut self.selection_sources)?;
         self.update_writing(handle)?;
         if self.wm.ready && self.display.is_some() && !self.ready_logged {
