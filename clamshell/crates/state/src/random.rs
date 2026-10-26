@@ -120,6 +120,10 @@ struct World {
     account: bool,
     screenshot: bool,
     asleep: bool,
+    /// The main screen's rates in Hz as last told (DisplayModes), and the one it had at start (0 if not
+    /// told), for invariant 2's refresh, worked out apart from `DisplayModes`.
+    rates: Vec<u16>,
+    start_rate: u16,
     /// An event drawn to follow the one drawn now, such as a touch's press after HideFocus.
     next: Option<Event>,
 }
@@ -658,12 +662,14 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
         }
         94 => {
             let mut modes = crate::presentation::modes::DisplayModes::default();
+            w.rates.clear();
             for _ in 0..rng.below(5) {
-                modes.add((rng.below(240) as i32 + 1) * 1000);
+                let hz = rng.below(240) as u16 + 1;
+                modes.add(i32::from(hz) * 1000);
+                w.rates.push(hz);
             }
-            if rng.one_in(2) {
-                modes.set_start(modes.rates().first().map_or(0, |hz| i32::from(*hz) * 1000));
-            }
+            w.start_rate = if rng.one_in(2) { w.rates.iter().copied().min().unwrap_or(0) } else { 0 };
+            modes.set_start(i32::from(w.start_rate) * 1000);
             Reading::DisplayModes(modes).into()
         }
         // The pad's inputs while it listens on the keymap edit screen.
@@ -772,7 +778,7 @@ type Before = (Vec<Arc<str>>, Vec<(Arc<str>, u64)>, Vec<(NotificationId, bool)>)
 
 /// Checks the invariants after `event` gave `effects`. `before` is the state's running and launching
 /// entries before the event.
-fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, started: bool) -> Result<(), String> {
+fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: &Before, started: bool) -> Result<(), String> {
     macro_rules! ensure {
         ($cond:expr, $($arg:tt)*) => {
             if !$cond {
@@ -843,10 +849,28 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
         let want = if dimmed { (level / 3).max(1).min(level) } else { level };
         ensure!(sent.brightness == Some(want), "2: brightness sent {:?}, level {level}, dimmed {dimmed}", sent.brightness);
     }
+    // The refresh, from the rates the model told: the calibration's while it runs; else the settings' (the
+    // entry launched last while its window is yet to show, else in force) Refresh if set; else, under a
+    // frame rate cap the start rate isn't a multiple of, a rate the screen has that the cap divides with
+    // none higher (0 if there is none), so every capped frame is shown for as many refreshes; else 0, the
+    // screen as it is.
     let settings = s.session().refresh_launch().map_or_else(|| s.in_force(), |id| s.settings_of(id));
-    let rate = s.presentation().display_modes().refresh_for(settings.get(Setting::Refresh), settings.get(Setting::FpsCap));
-    let refresh = s.setup().calibration_rate().unwrap_or(rate);
-    ensure!(sent.refresh == refresh, "2: refresh sent {}, the calibration's, the last launch's or in force {refresh}", sent.refresh);
+    let (wanted, cap) = (settings.get(Setting::Refresh), settings.get(Setting::FpsCap));
+    if let Some(hz) = s.setup().calibration_rate() {
+        ensure!(sent.refresh == hz, "2: refresh sent {}, the calibration's {hz}", sent.refresh);
+    } else if wanted != 0 || cap == 0 || w.start_rate == 0 || w.start_rate.is_multiple_of(cap) {
+        ensure!(sent.refresh == wanted, "2: refresh sent {}, set {wanted} (cap {cap}, start {})", sent.refresh, w.start_rate);
+    } else {
+        let divided = |hz: &u16| hz.is_multiple_of(cap);
+        let best = w.rates.iter().copied().filter(divided).max().unwrap_or(0);
+        ensure!(
+            sent.refresh == best,
+            "2: refresh sent {} under cap {cap} from start {}, rates {:?}: the highest the cap divides is {best}",
+            sent.refresh,
+            w.start_rate,
+            w.rates
+        );
+    }
     let apply = (s.session().program().cloned(), s.in_force());
     ensure!(sent.apply.as_ref() == Some(&apply), "2: applied {:?}, in force {:?}", sent.apply, apply);
     let touchpad = s.presentation().touchpad();
@@ -1126,7 +1150,7 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
         sent.freezer_restarted = matches!(event, Event::Restarted(crate::Thread::Freezer));
         s.apply(event, &mut effects);
         world.follow(&effects);
-        if let Err(e) = check(&mut s, &mut sent, &effects, &before, i >= 1) {
+        if let Err(e) = check(&mut s, &mut sent, &world, &effects, &before, i >= 1) {
             return Err(format!("seed {seed}, event {i}: {e}\neffects: {effects:?}\nlast events:\n{}", history.join("\n")));
         }
     }
