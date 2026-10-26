@@ -54,7 +54,7 @@ fn started<C>(name: &'static str, result: io::Result<Worker<C>>) -> Worker<C> {
 }
 
 /// A thread without commands. Only its failure to start is worth logging.
-fn detached(name: &str, result: io::Result<()>) {
+fn log_failed_start(name: &str, result: io::Result<()>) {
     if let Err(e) = result {
         log::error!("{name} thread: {e}");
     }
@@ -66,7 +66,7 @@ fn detached(name: &str, result: io::Result<()>) {
 fn rescanner<S: Sink + Clone>(sources: Sources, paths: Paths, queue: meta::Queue, sink: S) -> Box<dyn Fn(bool)> {
     Box::new(move |refetch| {
         let (sources, paths, queue, sink) = (sources.clone(), paths.clone(), queue.clone(), sink.clone());
-        detached(
+        log_failed_start(
             "rescan",
             crate::os::worker::detached("rescan", move || {
                 if refetch && let Some(art) = paths.art.as_deref() {
@@ -94,7 +94,7 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, la
         log::error!("no systemd user manager: ClamShell needs one to run apps and games (as services of their own)");
     }
     crate::os::worker::on_restart(restarts_told(sink.clone()));
-    detached("clock", clock::spawn(sink.clone()));
+    log_failed_start("clock", clock::spawn(sink.clone()));
     let status = started("status", status::spawn(backlights.clone(), sink.clone()));
     let metrics = started("metrics", metrics::spawn(sink.clone()));
     let fetching = meta::Queue::default();
@@ -102,8 +102,8 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, la
     rescan(false);
     let touchpad = started("touchpad", touchpad::spawn(layout));
     // Watch input on every device for idle, and the hardware keys in the device's own session.
-    detached("input watch", crate::input::watch::spawn(env.device_session, sink.clone()));
-    detached("units", units::spawn(sink.clone()));
+    log_failed_start("input watch", crate::input::watch::spawn(env.device_session, sink.clone()));
+    log_failed_start("units", units::spawn(sink.clone()));
     // Games start from the launcher, each on a thread of its own, so several start side by side. Plays
     // go to the database.
     let launcher = started(
@@ -121,13 +121,13 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, la
         pad.send(pad::Command::Sticks(Store::open(dir).sticks()));
     }
     // Sleep waits for the pad to close the gyro's stream.
-    detached("sleep", crate::power::sleep::spawn_hold(pad.clone()));
+    log_failed_start("sleep", crate::power::sleep::spawn_hold(pad.clone()));
     let battery = started("battery", battery::spawn(sink.clone()));
     let mixer = started("mixer", mixer::spawn(backlights.clone(), sink.clone()));
     let bluetooth = started("bluetooth", bluetooth::spawn(sink.clone()));
     let tray = started("tray", crate::session::tray::spawn(sink.clone()));
     let notifications = started("notifications", crate::session::notifications::spawn(sink.clone()));
-    detached("clipboard", crate::session::clipboard::spawn(Some(env.clipboard_display.clone()), sink.clone()));
+    log_failed_start("clipboard", crate::session::clipboard::spawn(Some(env.clipboard_display.clone()), sink.clone()));
     let icons = started("icons", crate::session::icons::spawn(sink.clone()));
     let system = started(
         "system",
