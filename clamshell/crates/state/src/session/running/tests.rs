@@ -66,7 +66,7 @@ fn an_entry_runs_its_plays_count_and_it_may_run_twice() {
     assert!(launches(&launch_now(&mut s, &first), &first));
     crate::testkit::start(&mut s, &first);
     // The first launch's unit is gone and the second's is listed.
-    let second: Vec<Instance> = s.session().units().iter().skip(1).cloned().collect();
+    let second: Vec<LaunchUnit> = s.session().units().iter().skip(1).cloned().collect();
     s.applied(Event::Units(second));
     assert!(s.session().running(&first).is_some(), "the other still runs");
     s.applied(Event::tick(1660));
@@ -83,7 +83,7 @@ fn entries_run_side_by_side() {
     let mut s = state();
     s.applied(Event::tick(100));
     let zelda = launch(&mut s, "zelda-lttp");
-    assert_eq!(zelda, Instance { key: key("zelda-lttp"), secs: 100, n: 0 });
+    assert_eq!(zelda, LaunchUnit { key: key("zelda-lttp"), secs: 100, n: 0 });
     tap(&mut s, entry("ff6"));
     assert!(launches(&tap(&mut s, Id::Shelf(ShelfId::Launch)), "ff6"), "no choice: it starts");
     crate::testkit::start(&mut s, "ff6");
@@ -116,9 +116,9 @@ fn a_quit_that_ends_an_entry_runs_its_runners_stop_once() {
     let mut s = State::new(Init { library: Some(library), ..init() });
     s.applied(Event::tick(100));
     let firefox = launch_now(&mut s, "desktop:firefox");
-    let instance = firefox.iter().find_map(|e| if let Effect::Launch { instance, .. } = e { Some(instance.clone()) } else { None }).unwrap();
+    let unit = firefox.iter().find_map(|e| if let Effect::Launch { unit, .. } = e { Some(unit.clone()) } else { None }).unwrap();
     crate::testkit::start(&mut s, "desktop:firefox");
-    s.observed(vec![win_of(6, "firefox", &instance)]);
+    s.observed(vec![win_of(6, "firefox", &unit)]);
     let stop = Effect::RunnerCommand(vec!["stop".into(), "firefox".into()]);
     quit(&mut s, "desktop:firefox");
     let fx = s.observed(vec![]);
@@ -149,7 +149,7 @@ fn a_quit_refused_is_given_up() {
     assert!(!s.session().is_quitting("zelda-lttp"), "given up");
     s.applied(Event::tick(101 + super::QUIT_WAIT));
     let fx = s.applied(Event::tick(101 + super::QUIT_WAIT + crate::session::background::GRACE));
-    assert!(fx.contains(&Effect::Freeze { slice: Instance::slice_of(&key), frozen: true }), "paused hidden again: {fx:?}");
+    assert!(fx.contains(&Effect::Freeze { slice: LaunchUnit::slice_of(&key), frozen: true }), "paused hidden again: {fx:?}");
     let fx = s.observed(vec![]);
     assert!(!fx.iter().any(|e| matches!(e, Effect::EndRun { .. })), "{fx:?}");
     assert!(s.session().running("zelda-lttp").is_some());
@@ -179,16 +179,16 @@ fn a_launch_never_answered_is_given_up() {
 fn a_launch_given_up_that_starts_late_runs_beside_the_one_waiting() {
     let mut s = state();
     s.applied(Event::tick(100));
-    let instance = |fx: &[Effect]| {
+    let unit = |fx: &[Effect]| {
         fx.iter().find_map(|e| match e {
-            Effect::Launch { instance, .. } => Some(instance.clone()),
+            Effect::Launch { unit, .. } => Some(unit.clone()),
             _ => None,
         })
     };
-    let first = instance(&launch_now(&mut s, "desktop:foot")).unwrap();
+    let first = unit(&launch_now(&mut s, "desktop:foot")).unwrap();
     s.applied(Event::tick(100 + super::LAUNCH_WAIT));
     assert!(!s.session().is_launching("desktop:foot"), "given up");
-    let second = instance(&launch_now(&mut s, "desktop:foot")).unwrap();
+    let second = unit(&launch_now(&mut s, "desktop:foot")).unwrap();
     s.applied(Event::Units(vec![first.clone()]));
     let running = s.session().running("desktop:foot").map(|r| r.origin.clone());
     assert_eq!(running, Some(Origin::Ours), "runs by the unit that started late");
@@ -252,7 +252,7 @@ fn a_game_steam_started_is_followed_as_a_launch_beside_the_others() {
     assert!(!fx.iter().any(|e| matches!(e, Effect::Launch { .. })), "{fx:?}");
     assert_eq!(s.session().running_entries().len(), 1, "zelda only");
     // A game started by a Steam of ours is in Steam's scope, but the app id says whose it is.
-    let steam = Instance { key: key("desktop:steam"), secs: 1, n: 0 };
+    let steam = LaunchUnit { key: key("desktop:steam"), secs: 1, n: 0 };
     let in_steam = win_of(8, "steam_app_620", &steam);
     let fx = s.observed(vec![win_of(1, "zelda3", &zelda), in_steam]);
     assert!(launches(&fx, "ff6"), "{fx:?}");
@@ -275,7 +275,7 @@ fn a_steam_game_shelf_started_ends_by_the_launcher_not_its_windows() {
 #[test]
 fn a_steam_games_window_is_the_games_though_it_runs_in_steams_scope() {
     let mut s = steam_ff6();
-    let steam = Instance { key: key("desktop:steam"), secs: 1, n: 0 };
+    let steam = LaunchUnit { key: key("desktop:steam"), secs: 1, n: 0 };
     s.applied(Event::Units(vec![steam.clone()]));
     launch(&mut s, "ff6");
     let window = win_of(7, "steam_app_620", &steam);
@@ -290,7 +290,7 @@ fn a_steam_games_window_is_the_games_though_it_runs_in_steams_scope() {
 #[test]
 fn steams_windows_open_behind_a_steam_games_launch() {
     let mut s = steam_ff6();
-    let steam = Instance { key: key("desktop:steam"), secs: 1, n: 0 };
+    let steam = LaunchUnit { key: key("desktop:steam"), secs: 1, n: 0 };
     s.applied(Event::Units(vec![steam.clone()]));
     let client = win_of(5, "steam", &steam);
     s.observed(vec![client.clone()]);
@@ -440,7 +440,7 @@ fn a_file_handed_to_another_program_runs_by_its_window() {
     s.observed(vec![other.clone()]);
     let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
     let ws = fx.iter().find_map(|e| match e {
-        Effect::Launch { instance, .. } => Some(group_of(instance)),
+        Effect::Launch { unit, .. } => Some(group_of(unit)),
         _ => None,
     });
     let ws = ws.unwrap();
@@ -535,7 +535,7 @@ fn an_app_handed_over_runs_by_its_window_found_by_its_app_id() {
 fn entries_started_before_clamshell_are_found_by_their_units() {
     let mut s = state();
     s.applied(Event::tick(1000));
-    let foot = Instance { key: key("desktop:foot"), secs: 400, n: 0 };
+    let foot = LaunchUnit { key: key("desktop:foot"), secs: 400, n: 0 };
     s.applied(Event::Units(vec![foot.clone()]));
     assert!(s.session().running("desktop:foot").is_some(), "adopted");
     s.observed(vec![win_of(4, "foot", &foot)]);
@@ -554,7 +554,7 @@ fn a_launch_runs_while_a_unit_of_it_is_listed() {
     let fx = tap(&mut s, entry("zelda-lttp"));
     let fx: Vec<Effect> = fx.into_iter().chain(tap(&mut s, entry("zelda-lttp"))).collect();
     let zelda = fx.iter().find_map(|e| match e {
-        Effect::Launch { instance, .. } => Some(instance.clone()),
+        Effect::Launch { unit, .. } => Some(unit.clone()),
         _ => None,
     });
     let zelda = zelda.unwrap();
@@ -656,7 +656,7 @@ fn a_program_replacing_its_only_window_runs_on() {
 fn a_late_failure_leaves_a_newer_launch_of_the_entry_waiting() {
     let mut s = state();
     s.applied(Event::tick(1000));
-    let launched = |fx: &[Effect]| fx.iter().find_map(|e| if let Effect::Launch { instance, .. } = e { Some(instance.clone()) } else { None });
+    let launched = |fx: &[Effect]| fx.iter().find_map(|e| if let Effect::Launch { unit, .. } = e { Some(unit.clone()) } else { None });
     let mut fx = tap(&mut s, entry("zelda-lttp"));
     fx.extend(tap(&mut s, entry("zelda-lttp")));
     let first = launched(&fx).unwrap();
@@ -664,6 +664,6 @@ fn a_late_failure_leaves_a_newer_launch_of_the_entry_waiting() {
     assert!(s.session().launching().is_empty(), "given up");
     let second = launched(&launch_now(&mut s, "zelda-lttp")).unwrap();
     assert_ne!(first, second);
-    s.applied(Event::Launch(crate::LaunchEvent::LaunchFailed { entry: "zelda-lttp".into(), instance: first }));
-    assert_eq!(s.session().launching().iter().map(|l| &l.instance).collect::<Vec<_>>(), [&second], "the newer one waits on");
+    s.applied(Event::Launch(crate::LaunchEvent::LaunchFailed { entry: "zelda-lttp".into(), unit: first }));
+    assert_eq!(s.session().launching().iter().map(|l| &l.unit).collect::<Vec<_>>(), [&second], "the newer one waits on");
 }

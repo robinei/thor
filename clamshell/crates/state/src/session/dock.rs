@@ -457,7 +457,7 @@ mod tests {
         long(&mut s, dock(0));
         assert_eq!(tap(&mut s, Id::Dock(DockId::Autostart)), vec![Effect::Save(Save::Autostart(vec![])), closed()]);
         long(&mut s, dock(0));
-        let slice = Instance::slice_of(&clamshell_library::key_of("zelda-lttp"));
+        let slice = LaunchUnit::slice_of(&clamshell_library::key_of("zelda-lttp"));
         let fx = tap(&mut s, Id::Dock(DockId::Suspend));
         assert_eq!(fx, vec![Effect::Freeze { slice: slice.clone(), frozen: true }, closed(), Effect::PadRoute(crate::PadRoute::Ui)]);
         assert!(s.session().shelf_in_front());
@@ -502,7 +502,7 @@ mod tests {
             id: "zelda3".into(),
             title: "Zelda".into(),
             pid: Some(77),
-            unit: Some(zelda.unit()),
+            unit: Some(zelda.service()),
             icon: None,
             menu,
         };

@@ -4,16 +4,16 @@
 //! ranked by their share of the work instead.
 
 use crate::out::Out;
-use crate::session::instance::Instance;
+use crate::session::launch_unit::LaunchUnit;
 use crate::status::Sys;
 use crate::{BatteryId, Effect, EntryAct, Event, Library, Running, Session};
 
-/// Who a spender is. It is one of our instances or a game started by shelf, known by its unit. Or an
+/// Who a spender is. It is a launch of ours, an app or a game, known by its unit. Or an
 /// app run in another program's processes, known by its app id, such as an Android app in Waydroid's
 /// container. Or another of the user's programs, known by process name. Or everything the system runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Group {
-    Instance(Instance),
+    Launch(LaunchUnit),
     App(String),
     Process(String),
     System,
@@ -24,7 +24,7 @@ impl Group {
     /// another program's processes, such as Android's, and the system's processes belong to another
     /// user.
     pub fn gpu_known(&self) -> bool {
-        matches!(self, Group::Instance(_) | Group::Process(_))
+        matches!(self, Group::Launch(_) | Group::Process(_))
     }
 }
 
@@ -82,9 +82,9 @@ impl Spender {
     /// Its name: the entry its unit is a launch of, the program's name, or "System".
     pub fn name<'a>(&'a self, library: &'a Library) -> &'a str {
         match &self.group {
-            Group::Instance(instance) => {
-                let entry = library.entries.iter().find(|g| g.key == instance.key);
-                entry.map_or(instance.key.as_str(), |g| g.title.as_str())
+            Group::Launch(unit) => {
+                let entry = library.entries.iter().find(|g| g.key == unit.key);
+                entry.map_or(unit.key.as_str(), |g| g.title.as_str())
             }
             Group::App(app) => {
                 let entry = library.entries.iter().find(|g| clamshell_library::ids::desktop_file(&g.id) == Some(app.as_str()));
@@ -119,7 +119,7 @@ impl Sys {
                     return;
                 };
                 let entry = match &group {
-                    Group::Instance(instance) => session.running_entries().iter().find(|r| r.key == instance.key).map(|r| r.id.clone()),
+                    Group::Launch(unit) => session.running_entries().iter().find(|r| r.key == unit.key).map(|r| r.id.clone()),
                     Group::App(app) => session.running_app(app),
                     Group::Process(_) => {
                         let pids = self.battery.spenders.iter().find(|s| s.group == group).map(|s| s.pids.clone()).unwrap_or_default();
@@ -140,7 +140,7 @@ impl Sys {
     /// while the battery tab or the entry's dock menu is open.
     pub fn cost_of(&self, r: &Running) -> Option<Cost> {
         let mine = self.battery.spenders.iter().filter(|s| match &s.group {
-            Group::Instance(i) => i.key == r.key.as_str(),
+            Group::Launch(i) => i.key == r.key.as_str(),
             Group::App(app) => r.app_id.as_deref() == Some(app.as_str()),
             _ => false,
         });
@@ -176,11 +176,11 @@ mod tests {
         // Each unit keeps its own entry's name.
         let ff6 = launch(&mut s, "ff6");
         crate::testkit::start(&mut s, "ff6");
-        let terminal = Instance { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 9 };
-        assert_eq!(spender(Group::Instance(terminal)).name(s.shelf().library()), "Terminal");
+        let terminal = LaunchUnit { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 9 };
+        assert_eq!(spender(Group::Launch(terminal)).name(s.shelf().library()), "Terminal");
         let title = |id: &str| s.entry(id).map(|g| g.title.clone()).unwrap_or_default();
-        assert_eq!(spender(Group::Instance(zelda)).name(s.shelf().library()), title(&first));
-        assert_eq!(spender(Group::Instance(ff6)).name(s.shelf().library()), title("ff6"));
+        assert_eq!(spender(Group::Launch(zelda)).name(s.shelf().library()), title(&first));
+        assert_eq!(spender(Group::Launch(ff6)).name(s.shelf().library()), title("ff6"));
         assert_eq!(spender(Group::Process("firefox".into())).name(s.shelf().library()), "firefox");
         assert_eq!(spender(Group::System).name(s.shelf().library()), "System");
     }
@@ -190,7 +190,7 @@ mod tests {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
         let firefox = Spender { pids: vec![40, 41], ..spender(Group::Process("firefox".into())) };
-        let spenders = vec![spender(Group::Instance(zelda.clone())), firefox, spender(Group::System)];
+        let spenders = vec![spender(Group::Launch(zelda.clone())), firefox, spender(Group::System)];
         s.applied(Event::Reading(Reading::Battery(Battery { spenders, ..Battery::default() })));
         assert_eq!(s.session().running("zelda-lttp").and_then(|r| s.sys().cost_of(r)), Some(Cost { cpu: 0.1, gpu: Some(0.0), memory: 0 }));
         // Another program ends its processes.

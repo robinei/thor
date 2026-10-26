@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use crate::Session;
-use crate::session::instance::Instance;
+use crate::session::launch_unit::LaunchUnit;
 
 /// A home group on the top screen, whose windows are shown as tabs, one at a time.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -223,7 +223,7 @@ impl crate::Session {
                 .find(|g| super::running::has_app_id(g, &facts.app_id))
                 .map(|g| Group::entry(&g.key))
                 .or_else(|| self.running_of(&facts).map(super::running::Running::group))
-                .or_else(|| facts.instance().map(|i| Group::entry(&i.key))),
+                .or_else(|| facts.launch_unit().map(|i| Group::entry(&i.key))),
         };
         let focus = parent_below || self.opening_focus(&facts);
         let id = facts.id;
@@ -323,13 +323,13 @@ pub struct WindowFacts {
 
 impl WindowFacts {
     /// The launch it belongs to: its unit's, if we started it.
-    pub fn instance(&self) -> Option<Instance> {
-        self.unit.as_deref().and_then(Instance::from_unit)
+    pub fn launch_unit(&self) -> Option<LaunchUnit> {
+        self.unit.as_deref().and_then(LaunchUnit::from_unit)
     }
 
-    /// Whether it is in a unit we started ([`WindowFacts::instance`]), found without allocating.
+    /// Whether it is in a unit we started ([`WindowFacts::launch_unit`]), found without allocating.
     pub(crate) fn launched(&self) -> bool {
-        self.unit.as_deref().is_some_and(Instance::is_launch_unit)
+        self.unit.as_deref().is_some_and(LaunchUnit::is_launch_unit)
     }
 }
 

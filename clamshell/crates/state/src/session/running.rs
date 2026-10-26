@@ -1,5 +1,5 @@
 //! Running entries: what was launched from shelf or the dock, games and apps alike. Each launch is a unit
-//! of its own in the entry's slice, with its windows in the entry's group (see [`Instance`]). An entry
+//! of its own in the entry's slice, with its windows in the entry's group (see [`LaunchUnit`]). An entry
 //! may run more than once; another launch is another unit and another tab.
 //!
 //! Some entries run in another program's processes, not in a unit of ours, and are known by their
@@ -30,7 +30,7 @@ use crate::bottom::notice::{NoticeKind, NoticeSlot};
 use crate::effect::Effect;
 use crate::out::Out;
 use crate::session::found::window_entry;
-use crate::session::instance::{Instance, STEAM_APP_PREFIX};
+use crate::session::launch_unit::{LaunchUnit, STEAM_APP_PREFIX};
 use crate::session::tray::{TrayItem, tray_entry};
 use crate::session::windows::WindowCommand;
 use crate::session::windows::{Group, Window, WindowFacts};
@@ -153,7 +153,7 @@ impl Running {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Launching {
     pub entry: Arc<str>,
-    pub instance: Instance,
+    pub unit: LaunchUnit,
     /// The app id its windows have, if it runs in another program's processes.
     pub app_id: Option<Arc<str>>,
     /// When it was asked for, in monotonic seconds.
@@ -210,7 +210,7 @@ impl Session {
         // handed over to its windows and launched again. (Taken one at a time, so that nothing is
         // allocated while launches wait.)
         let mut any_started = false;
-        while let Some(i) = self.launching.iter().position(|l| self.units.contains(&l.instance)) {
+        while let Some(i) = self.launching.iter().position(|l| self.units.contains(&l.unit)) {
             let l = self.launching.remove(i);
             any_started = true;
             match self.running.iter_mut().find(|r| r.id == l.entry) {
@@ -227,7 +227,7 @@ impl Session {
         // A launch the launcher never answered is given up, so that it can be launched again.
         while let Some(i) = self.launching.iter().position(|l| now >= l.at + LAUNCH_WAIT) {
             let l = self.launching.remove(i);
-            if self.front_launch.as_ref().is_some_and(|f| f.instance == l.instance) {
+            if self.front_launch.as_ref().is_some_and(|f| f.unit == l.unit) {
                 self.front_launch = None;
             }
             let title = library.entry(&l.entry).map_or_else(|| l.entry.to_string(), |g| g.title.clone());
@@ -250,7 +250,7 @@ impl Session {
                 continue;
             }
             let first = units.iter().filter_map(|u| match u {
-                Instance { key: k, secs, .. } if k == key => Some(*secs),
+                LaunchUnit { key: k, secs, .. } if k == key => Some(*secs),
                 _ => None,
             });
             // Its units are named by the wall clock.
@@ -317,8 +317,8 @@ impl Session {
     /// known by its app id, waits for its window (see [`Origin::Windows`]). A failure of no launch waiting
     /// is a late answer to one already given up ([`LAUNCH_WAIT`]), which said so then, and is ignored: a
     /// newer launch of the same entry waits on.
-    pub(crate) fn launch_failed(&mut self, entry: Arc<str>, instance: &Instance, library: &Library, clock: &Clock, notice: &mut NoticeSlot) {
-        let Some(i) = self.launching.iter().position(|l| l.entry == entry && l.instance == *instance) else {
+    pub(crate) fn launch_failed(&mut self, entry: Arc<str>, unit: &LaunchUnit, library: &Library, clock: &Clock, notice: &mut NoticeSlot) {
+        let Some(i) = self.launching.iter().position(|l| l.entry == entry && l.unit == *unit) else {
             return;
         };
         let app_id = self.launching.remove(i).app_id;
@@ -360,7 +360,7 @@ impl Session {
         let Some(r) = new.last() else {
             return false;
         };
-        self.set_front_launch(Instance { key: r.key.clone(), secs: clock.unix(), n: 0 }, None);
+        self.set_front_launch(LaunchUnit { key: r.key.clone(), secs: clock.unix(), n: 0 }, None);
         self.running.extend(new);
         true
     }
@@ -513,7 +513,7 @@ impl Session {
 /// names, the one whose key is the scope's is the one it was found by. Without a window or icon there is
 /// none.
 fn found_in_scope(key: &str, windows: &[Window], tray: &[TrayItem], library: &Library) -> Option<Entry> {
-    let in_scope = |unit: Option<&str>| unit.and_then(Instance::key_of) == Some(key);
+    let in_scope = |unit: Option<&str>| unit.and_then(LaunchUnit::key_of) == Some(key);
     let by_window = windows.iter().filter(|w| in_scope(w.unit.as_deref())).find_map(|w| {
         let pid = w.pids.first().copied();
         (!w.app_id.is_empty() || pid.is_some()).then(|| window_entry(library, w, pid.unwrap_or_default()))
@@ -599,15 +599,15 @@ impl Session {
         self.launching.iter().any(|l| &*l.entry == id)
     }
 
-    /// Records a launch of `entry`, whose key is `key`, asked for now, and returns its instance. Started in
+    /// Records a launch of `entry`, whose key is `key`, asked for now, and returns its unit. Started in
     /// front, its group is shown once its first window appears.
-    fn begin_launch(&mut self, entry: Arc<str>, key: String, app_id: Option<Arc<str>>, clock: &Clock, start: Start) -> Instance {
-        let instance = Instance { key, secs: clock.unix(), n: self.next_instance() };
-        self.launching.push(Launching { entry, instance: instance.clone(), app_id, at: clock.mono(), told: None });
+    fn begin_launch(&mut self, entry: Arc<str>, key: String, app_id: Option<Arc<str>>, clock: &Clock, start: Start) -> LaunchUnit {
+        let unit = LaunchUnit { key, secs: clock.unix(), n: self.next_unit() };
+        self.launching.push(Launching { entry, unit: unit.clone(), app_id, at: clock.mono(), told: None });
         if start == Start::Front {
-            self.set_front_launch(instance.clone(), None);
+            self.set_front_launch(unit.clone(), None);
         }
-        instance
+        unit
     }
 
     /// Launches the entry `request` names, again in another tab if it runs, unless a launch of it is
@@ -649,9 +649,9 @@ impl Session {
         settings.env_in(&entry, runner.as_slice(), &mut env);
         // If its runner, and so its container, is paused, it is resumed first.
         self.resume_runner_of(&entry, library, out);
-        let instance = self.begin_launch(entry.clone(), key, app_id, clock, start);
+        let unit = self.begin_launch(entry.clone(), key, app_id, clock, start);
         self.refresh_launch = Some((entry.clone(), clock.mono()));
-        out.effects.push(Effect::Launch { entry, instance, settings: values, env, launch });
+        out.effects.push(Effect::Launch { entry, unit, settings: values, env, launch });
         Launched::Yes
     }
 

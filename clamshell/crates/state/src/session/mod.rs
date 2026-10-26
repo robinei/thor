@@ -8,7 +8,7 @@ pub mod dock;
 pub mod enqueue;
 pub(crate) mod found;
 mod front;
-pub mod instance;
+pub mod launch_unit;
 pub mod program;
 pub(crate) mod running;
 pub mod tray;
@@ -19,7 +19,7 @@ use std::sync::Arc;
 use crate::effect::Effect;
 use crate::session::windows::WindowCommand;
 use crate::{Entry, Library};
-use instance::Instance;
+use launch_unit::LaunchUnit;
 use running::{Front, Launching, Running};
 use windows::{Group, Window, WindowFacts, WindowPlace};
 
@@ -27,7 +27,7 @@ use windows::{Group, Window, WindowFacts, WindowPlace};
 /// still running whose window in front closed (see [`Session::follow_front`]); none for a launch.
 #[derive(Debug, Clone)]
 pub(crate) struct FrontLaunch {
-    instance: Instance,
+    unit: LaunchUnit,
     until: Option<u64>,
 }
 
@@ -61,7 +61,7 @@ pub struct Session {
     home_held: bool,
     home_used: bool,
     /// Our running units, as systemd lists them.
-    units: Vec<Instance>,
+    units: Vec<LaunchUnit>,
     /// Groups by when they were last in front, most recent first.
     recent: Vec<Group>,
     /// The selected window of each top group, retained while the group is hidden.
@@ -76,7 +76,7 @@ pub struct Session {
     quitting: Vec<Quitting>,
     /// The counter that numbers new instances' names. Together with the time, it makes them unique across
     /// restarts.
-    next_instance: u64,
+    next_unit: u64,
     /// Whether systemd has listed our units at least once, so that what runs is known.
     units_known: bool,
     /// What the last [`crate::State::settle`] saw: the windows' ids and the group in front on the main
@@ -208,31 +208,31 @@ impl Session {
     /// units follow foreground launch intent; later windows of the shown program may select themselves.
     /// An unowned program's window is shown at once.
     pub(crate) fn opening_focus(&self, window: &WindowFacts) -> bool {
-        if let Some(FrontLaunch { instance, .. }) = &self.front_launch {
-            return self.of_launch(instance, window);
+        if let Some(FrontLaunch { unit, .. }) = &self.front_launch {
+            return self.of_launch(unit, window);
         }
         if let Some(parent) = window.parent.and_then(|id| self.window(id)) {
             return self.top_window().is_some_and(|top| top.group == parent.group);
         }
-        if window.parent.is_some() || !window.unit.as_deref().is_some_and(Instance::is_launch_unit) {
+        if window.parent.is_some() || !window.unit.as_deref().is_some_and(LaunchUnit::is_launch_unit) {
             return true;
         }
-        let key = window.unit.as_deref().and_then(Instance::key_of);
+        let key = window.unit.as_deref().and_then(LaunchUnit::key_of);
         self.top_window().is_some_and(|top| top.group.as_ref().and_then(Group::key) == key) && self.windows.iter().any(|old| old.unit == window.unit)
     }
 
-    /// Whether `window` is one of launch `instance`'s: in its unit, of its entry by app id or process, or
+    /// Whether `window` is one of launch `unit`'s: in its unit, of its entry by app id or process, or
     /// a dialog of one in its group.
-    fn of_launch(&self, instance: &Instance, window: &WindowFacts) -> bool {
-        let running = self.running.iter().find(|r| r.key == instance.key);
-        let in_unit = window.unit.as_deref().and_then(Instance::unit_name).is_some_and(|unit| instance.is(unit));
-        let parent = window.parent.and_then(|id| self.window(id)).is_some_and(|parent| parent.group.as_ref().and_then(Group::key) == Some(&instance.key));
+    fn of_launch(&self, unit: &LaunchUnit, window: &WindowFacts) -> bool {
+        let running = self.running.iter().find(|r| r.key == unit.key);
+        let in_unit = window.unit.as_deref().and_then(LaunchUnit::unit_name).is_some_and(|name| unit.is(name));
+        let parent = window.parent.and_then(|id| self.window(id)).is_some_and(|parent| parent.group.as_ref().and_then(Group::key) == Some(&unit.key));
         in_unit || parent || running.is_some_and(|r| r.owns(window) || r.fathered(window))
     }
 
-    /// Makes `instance` the launch to show when its window appears, waiting until `until` if given.
-    pub(crate) fn set_front_launch(&mut self, instance: Instance, until: Option<u64>) {
-        self.front_launch = Some(FrontLaunch { instance, until });
+    /// Makes `unit` the launch to show when its window appears, waiting until `until` if given.
+    pub(crate) fn set_front_launch(&mut self, unit: LaunchUnit, until: Option<u64>) {
+        self.front_launch = Some(FrontLaunch { unit, until });
     }
 
     pub(crate) fn step_window(&mut self, next: bool) {
@@ -294,7 +294,7 @@ impl Session {
         selected && open(self.top) && open(self.bottom) && (self.top.is_none() || self.top != self.bottom)
     }
 
-    pub fn units(&self) -> &[Instance] {
+    pub fn units(&self) -> &[LaunchUnit] {
         &self.units
     }
 
@@ -310,9 +310,9 @@ impl Session {
     /// The running entry a client's process belongs to, before it has a window: by its unit, else the
     /// Steam game it is (Steam's game launcher starts it in Steam's scope, which ClamShell then follows).
     pub fn running_of_process(&self, unit: Option<&str>, steam_app: Option<u32>) -> Option<&Running> {
-        let by_key = unit.and_then(Instance::key_of).and_then(|key| self.running.iter().find(|r| r.key == key));
+        let by_key = unit.and_then(LaunchUnit::key_of).and_then(|key| self.running.iter().find(|r| r.key == key));
         by_key.or_else(|| {
-            let app_id = format!("{}{}", crate::session::instance::STEAM_APP_PREFIX, steam_app?);
+            let app_id = format!("{}{}", crate::session::launch_unit::STEAM_APP_PREFIX, steam_app?);
             self.running.iter().find(|r| r.app_id.as_deref() == Some(app_id.as_str()))
         })
     }
@@ -323,8 +323,8 @@ impl Session {
         let id = self.running_of_process(unit, steam_app).map(|r| r.id.clone());
         if let Some(running) = id.and_then(|id| self.running.iter_mut().find(|r| r.id == id)) {
             running.told = Some(resolution);
-        } else if let Some(key) = unit.and_then(Instance::key_of)
-            && let Some(launching) = self.launching.iter_mut().find(|l| l.instance.key == key)
+        } else if let Some(key) = unit.and_then(LaunchUnit::key_of)
+            && let Some(launching) = self.launching.iter_mut().find(|l| l.unit.key == key)
         {
             // Still starting: its program can connect before systemd lists its unit.
             launching.told = Some(resolution);
@@ -335,8 +335,8 @@ impl Session {
     /// still starting, whose program can connect before systemd lists its unit.
     pub(crate) fn entry_of_process(&self, unit: Option<&str>, steam_app: Option<u32>) -> Option<Arc<str>> {
         self.running_of_process(unit, steam_app).map(|r| r.id.clone()).or_else(|| {
-            let key = unit.and_then(Instance::key_of)?;
-            self.launching.iter().find(|l| l.instance.key == key).map(|l| l.entry.clone())
+            let key = unit.and_then(LaunchUnit::key_of)?;
+            self.launching.iter().find(|l| l.unit.key == key).map(|l| l.entry.clone())
         })
     }
 
@@ -361,7 +361,7 @@ impl Session {
         self.running
             .iter()
             .find(|r| r.owns(w))
-            .or_else(|| by_key(w.unit.as_deref().and_then(Instance::key_of)))
+            .or_else(|| by_key(w.unit.as_deref().and_then(LaunchUnit::key_of)))
             .or_else(|| self.running.iter().find(|r| r.fathered(w)))
             .or_else(|| by_key(self.window(w.id).and_then(|w| w.group.as_ref()).and_then(Group::key)))
     }
@@ -399,7 +399,7 @@ impl Session {
 
     /// Has `running` run in unit `unit`, as if it had started and systemd listed the unit.
     #[cfg(test)]
-    pub(crate) fn add_run(&mut self, running: Running, unit: Instance) {
+    pub(crate) fn add_run(&mut self, running: Running, unit: LaunchUnit) {
         self.running.push(running);
         self.units.push(unit);
     }
@@ -418,14 +418,14 @@ impl Session {
 
     /// The launch to show when its first window appears.
     #[cfg(test)]
-    pub(crate) fn front_launch(&self) -> Option<&Instance> {
-        self.front_launch.as_ref().map(|f| &f.instance)
+    pub(crate) fn front_launch(&self) -> Option<&LaunchUnit> {
+        self.front_launch.as_ref().map(|f| &f.unit)
     }
 
-    /// The counter for a new instance's name (see [`crate::session::instance::Instance`]).
-    pub(crate) fn next_instance(&mut self) -> u64 {
-        let n = self.next_instance;
-        self.next_instance += 1;
+    /// The counter for a new unit's name (see [`crate::session::launch_unit::LaunchUnit`]).
+    pub(crate) fn next_unit(&mut self) -> u64 {
+        let n = self.next_unit;
+        self.next_unit += 1;
         n
     }
 
@@ -451,7 +451,7 @@ impl Session {
         }
     }
 
-    pub(crate) fn set_units(&mut self, units: Vec<Instance>) {
+    pub(crate) fn set_units(&mut self, units: Vec<LaunchUnit>) {
         self.units = units;
         self.units_known = true;
     }
@@ -480,9 +480,9 @@ impl Session {
         if self.front_launch.as_ref().is_some_and(|f| f.until.is_some_and(|until| now > until)) {
             self.cancel_front_launch();
         }
-        let Some(FrontLaunch { instance, .. }) = &self.front_launch else { return };
-        let outside = self.running.iter().find(|r| r.key == instance.key).is_some_and(|r| r.outside() || matches!(r.origin, running::Origin::Windows { .. }));
-        if !outside && !self.units.contains(instance) && !self.launching.iter().any(|l| l.instance == *instance) {
+        let Some(FrontLaunch { unit, .. }) = &self.front_launch else { return };
+        let outside = self.running.iter().find(|r| r.key == unit.key).is_some_and(|r| r.outside() || matches!(r.origin, running::Origin::Windows { .. }));
+        if !outside && !self.units.contains(unit) && !self.launching.iter().any(|l| l.unit == *unit) {
             self.front_launch = None;
             return;
         }
@@ -490,8 +490,8 @@ impl Session {
             .windows
             .iter()
             .find(|w| {
-                w.group.as_ref().and_then(Group::key) == Some(&instance.key)
-                    && (outside || w.unit.as_deref().and_then(Instance::unit_name).is_some_and(|unit| instance.is(unit)))
+                w.group.as_ref().and_then(Group::key) == Some(&unit.key)
+                    && (outside || w.unit.as_deref().and_then(LaunchUnit::unit_name).is_some_and(|name| unit.is(name)))
             })
             .map(|w| (w.id, self.below(w.id)));
         if let Some((id, down)) = arrived {

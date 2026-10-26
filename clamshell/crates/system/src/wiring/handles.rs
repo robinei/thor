@@ -70,14 +70,14 @@ impl Handles {
             }
             Effect::PadActivity(watch) => self.pad.send(pad::Command::WatchActivity(*watch)),
             Effect::Touchpad(contacts) => self.touchpad.send(touchpad::Command::Contacts(contacts.clone())),
-            Effect::Launch { entry, instance, launch, settings, env } => {
+            Effect::Launch { entry, unit, launch, settings, env } => {
                 log::info!("launching {entry}");
                 self.tuning.apply(settings);
                 // The variables for the grabbed controller go first, so a game's own may override them.
                 let game_env = self.pad_taken.env().into_iter().chain(env.iter().cloned()).collect();
                 self.launcher.send(launcher::Command::Launch(launcher::Request {
                     entry: entry.clone(),
-                    instance: instance.clone(),
+                    unit: unit.clone(),
                     launch: launch.clone(),
                     env: game_env,
                 }));
@@ -129,7 +129,7 @@ impl Handles {
             }
             Effect::EndRun { key, force } => launcher::end_run(key, *force),
             Effect::RunnerCommand(argv) => launcher::runner_command(argv),
-            Effect::Adopt { instance, pid } => launcher::adopt(instance.clone(), *pid),
+            Effect::Adopt { unit, pid } => launcher::adopt(unit.clone(), *pid),
             Effect::FindIcon { entry, app_id } => self.icons.send((entry.clone(), app_id.clone())),
             Effect::EndProcesses { pids, force } => launcher::end_processes(pids, *force),
             Effect::Freeze { slice, frozen } => self.freezer.send((slice.clone(), *frozen)),

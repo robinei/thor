@@ -318,7 +318,7 @@ mod tests {
         s.observed(vec![foot()]);
         tap(&mut s, Id::Tab(Tab::Dock));
         assert_eq!(s.pad().route(), PadRoute::Game);
-        let foot_entry = Instance { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 0 };
+        let foot_entry = LaunchUnit { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 0 };
         s.applied(Event::Units(vec![foot_entry]));
         long(&mut s, Id::Dock(crate::DockId::Entry(0)));
         let fx = s.applied(PointerEvent::Activate(Id::Dock(crate::DockId::Move)).into());

@@ -13,7 +13,7 @@ use std::io;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-use clamshell_state::{Event, Instance};
+use clamshell_state::{Event, LaunchUnit};
 
 use crate::os::dbus::{self, Bus, Message, Path, value};
 use crate::os::worker::{self, Changed, Ended, Service, lost_on};
@@ -88,11 +88,11 @@ pub(super) fn with_manager_on<T>(kept: &mut dbus::Kept, call: impl FnOnce(&mut B
 }
 
 /// Our running units, which are dock app instances and games, sorted by name.
-fn list(bus: &mut Bus) -> dbus::Result<Vec<Instance>> {
+fn list(bus: &mut Bus) -> dbus::Result<Vec<LaunchUnit>> {
     let rows = units(bus, &PATTERNS)?;
     let mut names: Vec<String> = rows.into_iter().filter(|row| !matches!(row.3.as_str(), "inactive" | "failed")).map(|row| row.0).collect();
     names.sort();
-    Ok(names.iter().filter_map(|n| Instance::from_unit(n)).collect())
+    Ok(names.iter().filter_map(|n| LaunchUnit::from_unit(n)).collect())
 }
 
 /// Sends [`Event::Units`] at start and after every change of our units, and connects again if the bus
@@ -123,14 +123,16 @@ impl<S: Sink> Service for Units<S> {
         bus.add_match(&format!("type='signal',sender='{SYSTEMD}',path='{MANAGER_PATH}',interface='{MANAGER}'"))?;
         call::<()>(&mut bus, "Subscribe", ())?;
         if !std::mem::replace(&mut self.looked, true) {
-            let slices = units(&mut bus, &[&format!("{}*.slice", clamshell_state::session::instance::SLICE_PREFIX)])?;
+            let slices = units(&mut bus, &[&format!("{}*.slice", clamshell_state::session::launch_unit::SLICE_PREFIX)])?;
             let frozen = slices.into_iter().filter(|row| {
                 bus.get::<String>(SYSTEMD, &row.6, "org.freedesktop.systemd1.Unit", "FreezerState")
                     .inspect_err(|e| log::warn!("units: {}'s freezer state: {e}", row.0))
                     .is_ok_and(|s| s == "frozen")
             });
             self.frozen = Some(
-                frozen.filter_map(|row| Some(row.0.strip_prefix(clamshell_state::session::instance::SLICE_PREFIX)?.strip_suffix(".slice")?.into())).collect(),
+                frozen
+                    .filter_map(|row| Some(row.0.strip_prefix(clamshell_state::session::launch_unit::SLICE_PREFIX)?.strip_suffix(".slice")?.into()))
+                    .collect(),
             );
         }
         Ok(bus)
@@ -149,7 +151,7 @@ impl<S: Sink> Service for Units<S> {
         loop {
             bus.wait(None).map_err(|_| Error::SignalsEnded)?;
             let signals = bus.signals().map_err(|_| Error::SignalsEnded)?;
-            if signals.iter().filter_map(unit_of_signal).any(|name| Instance::is_ours(&name))
+            if signals.iter().filter_map(unit_of_signal).any(|name| LaunchUnit::is_ours(&name))
                 && let Some(units) = last.offer(list(&mut bus)?)
             {
                 self.sink.send(Event::Units(units))?;
@@ -283,18 +285,18 @@ mod live {
     #[allow(clippy::unwrap_used)]
     fn a_launch_comes_and_goes() {
         let mut bus = Bus::session().unwrap();
-        let instance = Instance { key: "unittest".into(), secs: u64::from(std::process::id()), n: 0 };
-        let name = instance.name();
+        let unit = LaunchUnit { key: "unittest".into(), secs: u64::from(std::process::id()), n: 0 };
+        let name = unit.name();
         let mut child = Command::new("systemd-run").args(["--user", "--quiet", "--collect", &format!("--unit={name}"), "--", "sleep", "1"]).spawn().unwrap();
         let start = Instant::now();
-        while !list(&mut bus).unwrap().contains(&instance) {
+        while !list(&mut bus).unwrap().contains(&unit) {
             assert!(start.elapsed() < Duration::from_secs(5), "listed");
             thread::sleep(Duration::from_millis(50));
         }
         child.wait().unwrap();
         // It is gone from the list once its process has ended.
         let start = Instant::now();
-        while list(&mut bus).unwrap().contains(&instance) {
+        while list(&mut bus).unwrap().contains(&unit) {
             assert!(start.elapsed() < Duration::from_secs(5), "gone");
             thread::sleep(Duration::from_millis(50));
         }

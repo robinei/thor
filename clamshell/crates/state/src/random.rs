@@ -105,9 +105,9 @@ struct World {
     /// The open windows, as the compositor knows them: what they are, not where they are placed.
     windows: Vec<WindowFacts>,
     next_window: i64,
-    units: Vec<Instance>,
+    units: Vec<LaunchUnit>,
     /// Launches asked for and not answered.
-    launches: Vec<(Arc<str>, Instance)>,
+    launches: Vec<(Arc<str>, LaunchUnit)>,
     /// Keys asked to end.
     ending: Vec<String>,
     /// Windows asked to close.
@@ -133,7 +133,7 @@ impl World {
     fn follow(&mut self, effects: &[Effect]) {
         for e in effects {
             match e {
-                Effect::Launch { entry, instance, .. } => self.launches.push((entry.clone(), instance.clone())),
+                Effect::Launch { entry, unit, .. } => self.launches.push((entry.clone(), unit.clone())),
                 Effect::EndRun { key, .. } => self.ending.push(key.clone()),
                 Effect::Compositor(Compositor::Close(ids)) => self.closing.extend(ids),
                 Effect::CalibrateSticks => self.sticks = true,
@@ -144,7 +144,7 @@ impl World {
                 Effect::Sleep => self.asleep = true,
                 Effect::Files(_) => self.files += 1,
                 // A program adopted is moved into a scope of ours, which systemd lists.
-                Effect::Adopt { instance, .. } if !self.units.contains(instance) => self.units.push(instance.clone()),
+                Effect::Adopt { unit, .. } if !self.units.contains(unit) => self.units.push(unit.clone()),
                 _ => {}
             }
         }
@@ -411,11 +411,11 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             if w.launches.is_empty() {
                 return None;
             }
-            let (entry, instance) = w.launches.remove(i);
+            let (entry, unit) = w.launches.remove(i);
             if rng.one_in(5) {
-                Event::Launch(LaunchEvent::LaunchFailed { entry, instance })
+                Event::Launch(LaunchEvent::LaunchFailed { entry, unit })
             } else {
-                w.units.push(instance);
+                w.units.push(unit);
                 Event::Units(w.units.clone())
             }
         }
@@ -430,7 +430,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 _ => {
                     let unit = rng.pick(&w.units)?.clone();
                     let app = format!("app-{}", unit.key);
-                    w.open(&app, Some(unit.unit()), None)
+                    w.open(&app, Some(unit.service()), None)
                 }
             };
             // Some through Xwayland, some of those a dialog, a splash or a utility, as their properties say.
@@ -469,7 +469,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             };
             w.units.retain(|u| u.key != key.as_str());
             if !rng.one_in(4) {
-                let gone = |x: &WindowFacts| x.unit.as_deref().and_then(Instance::from_unit).is_some_and(|i| i.key == key.as_str());
+                let gone = |x: &WindowFacts| x.unit.as_deref().and_then(LaunchUnit::from_unit).is_some_and(|i| i.key == key.as_str());
                 let closed = w.windows.iter().filter(|x| gone(x)).map(|x| WindowEvent::Closed(x.id)).collect();
                 w.windows.retain(|x| !gone(x));
                 w.next = Some(Event::WindowBatch(closed));
@@ -667,7 +667,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 id: "foot".into(),
                 title: "Foot".into(),
                 pid: if rng.one_in(3) { Some(4242) } else { pid },
-                unit: if rng.one_in(3) { rng.pick(&w.units).map(Instance::unit) } else { None },
+                unit: if rng.one_in(3) { rng.pick(&w.units).map(LaunchUnit::service) } else { None },
                 icon: None,
                 menu: vec![entry(1), crate::session::tray::TrayEntry { children: vec![entry(3)], ..entry(2) }],
             };
@@ -682,7 +682,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             4 => Event::Enqueue,
             // A game's process told its resolution as it connected.
             5 => {
-                let unit = rng.pick(&w.units).map(Instance::unit);
+                let unit = rng.pick(&w.units).map(LaunchUnit::service);
                 Event::Reading(Reading::Told { unit, steam_app: None, resolution: crate::settings::Resolution::Half })
             }
             6 => Event::Reading(Reading::XwaylandModes(vec![(640, 480), (1280, 720)])),
@@ -899,7 +899,7 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
     let launching = session.launching();
     for (i, l) in launching.iter().enumerate() {
         ensure!(!launching.iter().skip(i + 1).any(|o| o.entry == l.entry), "4: {} launching twice", l.entry);
-        ensure!(!session.units().contains(&l.instance), "4: {} launching with its unit listed", l.entry);
+        ensure!(!session.units().contains(&l.unit), "4: {} launching with its unit listed", l.entry);
     }
     if let Some(p) = session.program() {
         ensure!(session.running(p).is_some(), "4: program {p} doesn't run");
@@ -1037,23 +1037,23 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
                 ensure!(was_running.contains(entry), "11: a play of {entry}, which didn't run");
                 recorded.push(entry.clone());
             }
-            Effect::Launch { entry, instance, .. } => {
+            Effect::Launch { entry, unit, .. } => {
                 // One given up in this event (see LAUNCH_WAIT) may be launched again in it.
                 let now = s.clock().mono();
                 let waiting = was_launching.iter().any(|(e, at)| e == entry && now < at + crate::session::running::LAUNCH_WAIT);
                 ensure!(!waiting && !launched.contains(entry), "11: {entry} launched while launching");
                 launched.push(entry.clone());
-                sent.ended.retain(|k| *k != instance.key);
+                sent.ended.retain(|k| *k != unit.key);
             }
             _ => {}
         }
     }
     // A slice with no unit listed is gone; one started again starts thawed.
-    let keys: Vec<String> = s.session().units().iter().map(Instance::slice).collect();
+    let keys: Vec<String> = s.session().units().iter().map(LaunchUnit::slice).collect();
     sent.frozen.retain(|slice, _| keys.contains(slice));
     // Each slice of ours is frozen, as last sent, exactly while its entry is paused.
     for r in s.session().running_entries().iter().filter(|r| r.origin == crate::session::running::Origin::Ours) {
-        let frozen = sent.frozen.get(&Instance::slice_of(&r.key)).copied().unwrap_or(false);
+        let frozen = sent.frozen.get(&LaunchUnit::slice_of(&r.key)).copied().unwrap_or(false);
         ensure!(frozen == s.session().paused(&r.id), "11: {} frozen {frozen} as sent, paused {}", r.id, s.session().paused(&r.id));
     }
     Ok(())

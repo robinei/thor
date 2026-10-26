@@ -93,7 +93,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Idle | Play of an id not in the library | Idle | nothing | same |
 | Idle | Play, OpenAnother, autostart, a Steam game found by app id | Launching | runner resumed if paused; `Save(Resume)`; `Launch`; `front_launch` if in front; Starting notice (from Play) | tests `a_launch_says_it_is_starting`; background `a_runner_paused_together…` |
 | Launching | the same launched again | Launching | nothing | running `an_entry_runs_its_plays_count_…` |
-| Launching | `Units` lists its instance | Running(Ours) | second screen may go dark again | running `a_launch_runs_while_a_unit_…`; tests `…start_and_end_come_to_the_same_in_any_order` |
+| Launching | `Units` lists its unit | Running(Ours) | second screen may go dark again | running `a_launch_runs_while_a_unit_…`; tests `…start_and_end_come_to_the_same_in_any_order` |
 | Launching | LaunchFailed, browsed file or app-id launch | Running(Windows, unseen, until now+15 s) | — | running `a_file_handed_to_another_program_…` (browsed); `a_failed_launch_known_by_app_id_waits_for_its_window` |
 | Launching | LaunchFailed otherwise | Idle | NotStarted notice | tests `a_launch_that_didnt_start_says_so` |
 | Launching | no answer from the launcher in 30 s | Idle | NotStarted notice; `front_launch` cleared | running `a_launch_never_answered_is_given_up` |
@@ -1508,7 +1508,7 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    open, S24 in the history notes; the focus may move meanwhile, as when the Device view opens).
 4. **Session:** live window ids and running ids unique; at most one selected top window and one window placed
    below; remembered selections belong to their top groups; keyboard focus is absent or names
-   a live window; at most one launch waiting per entry; no launching instance listed in
+   a live window; at most one launch waiting per entry; no launch waiting with its unit listed in
    units; Ours ⇒ a unit of it is listed; Found ⇒ not; program in force is running and is the selected top
    window's owner when it has one; quitting ⇒ running and not paused; paused ⇒ Ours; suspended ⇒ paused;
    at most one selection per group; every window has a group once the event is settled, except one of

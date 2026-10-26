@@ -78,7 +78,7 @@ impl Paths {
 
     /// The control socket for launches of entry `key`. See [`clamshell_state::session::enqueue`].
     pub(crate) fn socket(&self, key: &str) -> PathBuf {
-        self.sockets.join(clamshell_state::session::instance::Instance::socket_of(key))
+        self.sockets.join(clamshell_state::session::launch_unit::LaunchUnit::socket_of(key))
     }
 
     /// Whether there is a systemd user session to run apps and games as units of.

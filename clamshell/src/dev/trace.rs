@@ -47,7 +47,7 @@ fn window_change(change: &WindowEvent) -> String {
 /// What `effect` asks for, in one line.
 pub fn effect(effect: &Effect) -> String {
     match effect {
-        Effect::Launch { entry, instance, .. } => format!("Launch {entry} as {}", instance.key),
+        Effect::Launch { entry, unit, .. } => format!("Launch {entry} as {}", unit.key),
         Effect::Apply { entry, .. } => format!("Apply settings of {}", entry.as_deref().unwrap_or("all")),
         Effect::Keymap(k) => format!("Keymap {} {:?}", k.id, k.name),
         Effect::Save(save) => format!("Save {}", self::save(save)),

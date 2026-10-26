@@ -44,17 +44,17 @@ impl Applied for State {
 /// the one the launch asked for, or else one of the entry's, as if an earlier ClamShell had started it.
 pub fn start(s: &mut State, id: &str) -> Vec<Effect> {
     let key = s.entry(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());
-    let launch = s.session().launching().iter().find(|l| &*l.entry == id).map(|l| l.instance.clone());
+    let launch = s.session().launching().iter().find(|l| &*l.entry == id).map(|l| l.unit.clone());
     let mut units = s.session().units().to_vec();
-    units.push(launch.unwrap_or(Instance { key, secs: s.clock().unix(), n: 99 }));
+    units.push(launch.unwrap_or(LaunchUnit { key, secs: s.clock().unix(), n: 99 }));
     s.applied(Event::Units(units))
 }
 
 /// Entry `id`'s waiting launch, its oldest, fails, as the launcher reports it.
 pub fn launch_failed(s: &mut State, id: &str) -> Vec<Effect> {
-    let instance = s.session().launching().iter().find(|l| &*l.entry == id).map(|l| l.instance.clone());
-    let instance = instance.unwrap_or_else(|| Instance { key: clamshell_library::key_of(id), secs: 0, n: 0 });
-    s.applied(Event::Launch(crate::LaunchEvent::LaunchFailed { entry: id.into(), instance }))
+    let unit = s.session().launching().iter().find(|l| &*l.entry == id).map(|l| l.unit.clone());
+    let unit = unit.unwrap_or_else(|| LaunchUnit { key: clamshell_library::key_of(id), secs: 0, n: 0 });
+    s.applied(Event::Launch(crate::LaunchEvent::LaunchFailed { entry: id.into(), unit }))
 }
 
 /// Entry `id`'s launches end, as systemd reports it: its units are no longer listed.
@@ -91,26 +91,26 @@ pub fn win(id: i64, app_id: &str) -> WindowFacts {
     WindowFacts { id, app_id: app_id.into(), ..WindowFacts::default() }
 }
 
-/// A window of launch `instance`: in its unit, and so in its entry's group.
-pub fn win_of(id: i64, app_id: &str, instance: &Instance) -> WindowFacts {
-    WindowFacts { unit: Some(instance.unit()), ..win(id, app_id) }
+/// A window of launch `unit`: in its unit, and so in its entry's group.
+pub fn win_of(id: i64, app_id: &str, unit: &LaunchUnit) -> WindowFacts {
+    WindowFacts { unit: Some(unit.service()), ..win(id, app_id) }
 }
 
 /// A launch of the entry with key `key`, which need not be in the library: its windows ([`win_of`]) are
 /// in a group of that key.
-pub fn launch_of(key: &str) -> Instance {
-    Instance { key: key.into(), secs: 1, n: 0 }
+pub fn launch_of(key: &str) -> LaunchUnit {
+    LaunchUnit { key: key.into(), secs: 1, n: 0 }
 }
 
-/// The group of `instance`'s entry, which holds its windows.
-pub fn group_of(instance: &Instance) -> Group {
-    Group::entry(&instance.key)
+/// The group of `unit`'s entry, which holds its windows.
+pub fn group_of(unit: &LaunchUnit) -> Group {
+    Group::entry(&unit.key)
 }
 
 /// A running entry's first window opens and its client asks to show it.
 pub fn show_window(s: &mut State, entry: &str, id: i64) -> Vec<Effect> {
     let key = clamshell_library::key_of(entry);
-    let unit = s.session().units().iter().find(|u| u.key == key).map(Instance::unit);
+    let unit = s.session().units().iter().find(|u| u.key == key).map(LaunchUnit::service);
     let mut fx = s.observed(vec![WindowFacts { unit, ..win(id, entry) }]);
     fx.extend(s.applied(WindowEvent::Activate(id).into()));
     fx
@@ -144,17 +144,17 @@ pub fn notice(s: &State) -> Option<crate::bottom::notice::NoticeKind> {
     s.bottom().notice().map(|n| n.what.clone())
 }
 
-/// Launches `entry` from shelf and has it start. Returns its instance.
-pub fn launch(s: &mut State, id: &str) -> Instance {
+/// Launches `entry` from shelf and has it start. Returns its unit.
+pub fn launch(s: &mut State, id: &str) -> LaunchUnit {
     // Select it if it isn't selected, then play it. The launch is in the effects of one of the two taps.
     let mut fx = tap(s, entry(id));
     fx.extend(tap(s, entry(id)));
-    let instance = fx.iter().find_map(|e| match e {
-        Effect::Launch { instance, .. } => Some(instance.clone()),
+    let unit = fx.iter().find_map(|e| match e {
+        Effect::Launch { unit, .. } => Some(unit.clone()),
         _ => None,
     });
     crate::testkit::start(s, id);
-    instance.unwrap()
+    unit.unwrap()
 }
 
 /// Quit on entry `id`, as from its dock menu, with what it does.
@@ -213,7 +213,7 @@ impl State {
     }
 
     /// Has `running` run in unit `unit` (see [`Session::add_run`]).
-    pub(crate) fn add_run(&mut self, running: crate::Running, unit: crate::Instance) {
+    pub(crate) fn add_run(&mut self, running: crate::Running, unit: crate::LaunchUnit) {
         self.session.add_run(running, unit);
     }
 

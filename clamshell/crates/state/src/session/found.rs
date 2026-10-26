@@ -22,7 +22,7 @@ use clamshell_library::ids;
 
 use crate::effect::Effect;
 use crate::out::Out;
-use crate::session::instance::Instance;
+use crate::session::launch_unit::LaunchUnit;
 use crate::session::running::{Origin, Running};
 use crate::session::windows::WindowCommand;
 use crate::session::windows::{Window, WindowFacts};
@@ -32,8 +32,8 @@ impl Session {
     /// Moves a found program's process, and those it started, into a scope of ours as a launch of entry
     /// `key`. Once systemd lists the scope, it runs as a launch (see [`Session::follow_units`]).
     fn adopt(&mut self, key: &str, pid: u32, clock: &Clock) -> Effect {
-        let (secs, n) = (clock.unix(), self.next_instance());
-        Effect::Adopt { instance: Instance { key: key.to_owned(), secs, n }, pid }
+        let (secs, n) = (clock.unix(), self.next_unit());
+        Effect::Adopt { unit: LaunchUnit { key: key.to_owned(), secs, n }, pid }
     }
 
     /// Makes the programs of windows that still belong to no entry run as entries found by them. `taken`
@@ -43,7 +43,7 @@ impl Session {
         // A starting launch's window is left out, such as a Steam game found running whose launch is
         // still to come.
         let starting = |w: &Window| self.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
-        let service = |w: &Window| w.unit.as_deref().is_some_and(Instance::is_service);
+        let service = |w: &Window| w.unit.as_deref().is_some_and(LaunchUnit::is_service);
         let mut new: Vec<Running> = Vec::new();
         for w in self.windows.iter().filter(|w| !taken.contains(&w.id) && !w.launched() && self.running_of(w).is_none()) {
             let Some(&pid) = w.pids.first().filter(|_| !starting(w) && !service(w)) else {
@@ -144,10 +144,10 @@ mod tests {
 
     #[test]
     fn clamshells_own_unit_is_no_service() {
-        assert!(Instance::is_service("xdg-desktop-portal-gtk.service"));
-        assert!(!Instance::is_service("clamshell.service"), "ClamShell's unit on the device: moved out of");
-        assert!(!Instance::is_service("clamshell-nested.service"), "and on the desktop");
-        assert!(!Instance::is_service("session-2.scope"));
+        assert!(LaunchUnit::is_service("xdg-desktop-portal-gtk.service"));
+        assert!(!LaunchUnit::is_service("clamshell.service"), "ClamShell's unit on the device: moved out of");
+        assert!(!LaunchUnit::is_service("clamshell-nested.service"), "and on the desktop");
+        assert!(!LaunchUnit::is_service("session-2.scope"));
     }
 
     #[test]
@@ -179,12 +179,12 @@ mod tests {
     #[test]
     fn a_window_of_another_process_after_its_entry_closed_is_found_anew() {
         let mut s = device();
-        let adopted = |fx: &[Effect]| fx.iter().find_map(|e| if let Effect::Adopt { instance, pid } = e { Some((instance.clone(), *pid)) } else { None });
+        let adopted = |fx: &[Effect]| fx.iter().find_map(|e| if let Effect::Adopt { unit, pid } = e { Some((unit.clone(), *pid)) } else { None });
         let fx = s.observed(vec![window(5, "foot", 500, "app-foot.scope")]);
-        let (instance, _) = adopted(&fx).unwrap();
-        s.applied(Event::Units(vec![instance.clone()]));
+        let (unit, _) = adopted(&fx).unwrap();
+        s.applied(Event::Units(vec![unit.clone()]));
         // Once moved, its window's unit is ours. Once closed, its scope is still listed for a moment.
-        s.observed(vec![WindowFacts { unit: Some(instance.unit()), ..window(5, "foot", 500, "app-foot.scope") }]);
+        s.observed(vec![WindowFacts { unit: Some(unit.service()), ..window(5, "foot", 500, "app-foot.scope") }]);
         s.observed(vec![]);
         // Another foot, in another process, appears before systemd's list says the scope is gone.
         let other = window(6, "foot", 600, "session-3.scope");
@@ -238,18 +238,18 @@ mod tests {
         let mut s = device();
         s.applied(Event::tick(1000));
         let key = |id: &str| clamshell_library::key_of(id);
-        let (thing, tray) = (Instance { key: key("window:org.x.Thing"), secs: 1, n: 0 }, Instance { key: key("tray:thing"), secs: 1, n: 1 });
+        let (thing, tray) = (LaunchUnit { key: key("window:org.x.Thing"), secs: 1, n: 0 }, LaunchUnit { key: key("tray:thing"), secs: 1, n: 1 });
         s.applied(Event::Units(vec![thing.clone(), tray.clone()]));
         assert!(s.session().running_entries().is_empty(), "not known yet");
         s.applied(Event::Frozen(vec![thing.key.as_str().into()]));
-        let in_scope = WindowFacts { unit: Some(thing.unit()), ..window(5, "org.x.Thing", 500, "") };
+        let in_scope = WindowFacts { unit: Some(thing.service()), ..window(5, "org.x.Thing", 500, "") };
         s.observed(vec![in_scope]);
         let r = s.session().running("window:org.x.Thing").unwrap();
         assert_eq!((r.origin.clone(), r.key.as_str()), (Origin::Ours, thing.key.as_str()));
         assert!(s.dock().items().iter().any(|i| &*i.id == "window:org.x.Thing"), "on the dock");
         assert!(s.session().suspended("window:org.x.Thing"), "held frozen");
         let fx = show(&mut s, "window:org.x.Thing");
-        assert_eq!(fx.first(), Some(&Effect::Freeze { slice: Instance::slice_of(&thing.key), frozen: false }), "{fx:?}");
+        assert_eq!(fx.first(), Some(&Effect::Freeze { slice: LaunchUnit::slice_of(&thing.key), frozen: false }), "{fx:?}");
         assert_eq!(force_kill(&mut s, "window:org.x.Thing"), vec![Effect::EndRun { key: thing.key.clone(), force: true }]);
         // A program found by its tray icon is named by it.
         let icon = crate::session::tray::TrayItem {
@@ -257,7 +257,7 @@ mod tests {
             id: "thing".into(),
             title: "Thing".into(),
             pid: Some(77),
-            unit: Some(tray.unit()),
+            unit: Some(tray.service()),
             icon: None,
             menu: vec![],
         };

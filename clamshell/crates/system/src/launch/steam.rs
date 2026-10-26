@@ -20,7 +20,7 @@ use std::process::{Command as Process, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use clamshell_state::Instance;
+use clamshell_state::LaunchUnit;
 
 use super::job::{self, Job};
 use super::launcher::{Error, Request, parents, with_descendants};
@@ -47,7 +47,7 @@ pub(super) fn start(request: &Request, appid: u32) -> Result<(), Error> {
     }
     let follower = std::env::current_exe()?.to_string_lossy().into_owned();
     let argv = vec![follower, "--follow-steam".to_owned(), appid.to_string()];
-    let job = Job { unit: request.instance.name(), slice: Some(request.instance.slice()), argv, env: vec![], workdir: None };
+    let job = Job { unit: request.unit.name(), slice: Some(request.unit.slice()), argv, env: vec![], workdir: None };
     Ok(job::start(&job)?)
 }
 
@@ -56,7 +56,7 @@ pub(super) fn start(request: &Request, appid: u32) -> Result<(), Error> {
 /// The first launcher must appear within [`STEAM_START`]. Then it ends. See the module docs.
 pub fn follow(appid: u32) {
     let marker = format!("AppId={appid}");
-    let Some(unit) = cgroup::unit_of(std::process::id()).filter(|u| Instance::is_launch_unit(u)) else {
+    let Some(unit) = cgroup::unit_of(std::process::id()).filter(|u| LaunchUnit::is_launch_unit(u)) else {
         log::warn!("follow-steam: not in a launch's unit");
         return;
     };
@@ -81,9 +81,9 @@ pub(super) fn ask_steam(request: &Request, appid: u32) -> Result<(), Error> {
     // With `-silent`, a Steam that isn't running starts without its window, so only the game shows.
     let argv: Vec<String> = ["steam", "-gamepadui", "-silent", "-applaunch", &appid.to_string()].map(String::from).to_vec();
     if !steam_client_running() {
-        let instance = Instance { key: clamshell_library::key_of(STEAM_ENTRY), secs: crate::time::clock::unix_secs(), n: 0 };
+        let unit = LaunchUnit { key: clamshell_library::key_of(STEAM_ENTRY), secs: crate::time::clock::unix_secs(), n: 0 };
         let displays = env.iter().filter(|(k, _)| k == "WAYLAND_DISPLAY" || k == "DISPLAY").cloned().collect();
-        let job = Job { unit: instance.name(), slice: Some(instance.slice()), argv, env: displays, workdir: None };
+        let job = Job { unit: unit.name(), slice: Some(unit.slice()), argv, env: displays, workdir: None };
         log::info!("launcher: Steam isn't running: starting it in {}", job.unit);
         job::start(&job)?;
     } else {

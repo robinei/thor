@@ -4,7 +4,7 @@
 use crate::Compositor;
 use crate::out::Out;
 use crate::session::windows::{Group, WindowCommand};
-use crate::{Effect, EntryAct, Event, Instance, Session};
+use crate::{Effect, EntryAct, Event, LaunchUnit, Session};
 
 /// How long a program whose window in front closed, still running, is waited for to show another (see
 /// [`Session::follow_front`]): Steam replacing its update dialog with its window takes a while.
@@ -30,19 +30,19 @@ impl Session {
             Some(group) => self.focus(&group),
             None => self.command(WindowCommand::ShowShelf),
         }
-        if let Some(instance) = closed.then(|| self.still_running(&was)).flatten() {
-            self.set_front_launch(instance, Some(now + REWAIT_SECS));
+        if let Some(unit) = closed.then(|| self.still_running(&was)).flatten() {
+            self.set_front_launch(unit, Some(now + REWAIT_SECS));
         }
         self.closed_front = closed.then_some((was, now));
     }
 
     /// The launch to wait for again in `group`, if its entry still runs: its unit, or for an entry known
     /// by app id or process (none of whose windows need be in its unit), the entry.
-    fn still_running(&self, group: &Group) -> Option<Instance> {
+    fn still_running(&self, group: &Group) -> Option<LaunchUnit> {
         let key = group.key()?;
         let running = self.running.iter().find(|r| r.key == key)?;
         let unit = self.units.iter().find(|unit| unit.key == key).cloned();
-        unit.or_else(|| running.outside().then(|| Instance { key: key.to_owned(), secs: running.start, n: 0 }))
+        unit.or_else(|| running.outside().then(|| LaunchUnit { key: key.to_owned(), secs: running.start, n: 0 }))
     }
 
     /// Whether shelf is in front on the main screen, as it is before the compositor reports a window.

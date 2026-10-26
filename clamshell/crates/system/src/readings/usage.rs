@@ -1,7 +1,7 @@
 //! What is using the machine now: CPU time per process (`/proc/<pid>/stat`), GPU time per DRM client
 //! (see [`crate::os::drm`]; only our user's processes are readable), and each process's resident memory.
 //!
-//! Processes are grouped by our units (an app instance, the game), or else by Android app for
+//! Processes are grouped by our units (an app's launch, the game), or else by Android app for
 //! Waydroid's container, or else by program name for our user's processes. Everything else is grouped
 //! as the system. Groups doing work come first, busiest first, followed by idle groups that hold a lot
 //! of memory.
@@ -11,7 +11,7 @@ use std::os::unix::fs::MetadataExt;
 use std::thread;
 use std::time::Instant;
 
-use clamshell_state::Instance;
+use clamshell_state::LaunchUnit;
 use clamshell_state::status::battery::{Group, Spender};
 
 use crate::os::{cgroup, drm, sys};
@@ -95,9 +95,9 @@ fn read_processes() -> HashMap<u32, Counters> {
             continue;
         };
         let mine = std::fs::metadata(&dir).is_ok_and(|m| m.uid() == me);
-        let instance = cgroup::unit_of(pid).and_then(|unit| Instance::from_unit(&unit));
-        let group = match (instance, android(&dir), mine) {
-            (Some(instance), ..) => Group::Instance(instance),
+        let unit = cgroup::unit_of(pid).and_then(|unit| LaunchUnit::from_unit(&unit));
+        let group = match (unit, android(&dir), mine) {
+            (Some(unit), ..) => Group::Launch(unit),
             (None, Some(group), _) => group,
             (None, None, true) => Group::Process(comm),
             (None, None, false) => Group::System,

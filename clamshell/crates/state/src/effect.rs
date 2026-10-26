@@ -9,7 +9,7 @@ use crate::levels::{Share, Sound};
 use crate::nav::pad::PadRoute;
 use crate::radios::bluetooth;
 use crate::radios::wifi;
-use crate::session::instance::Instance;
+use crate::session::launch_unit::LaunchUnit;
 use crate::settings::Values;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,7 +18,7 @@ pub enum Effect {
     /// environment. It runs in its own unit and in its own group.
     Launch {
         entry: Arc<str>,
-        instance: Instance,
+        unit: LaunchUnit,
         settings: Values,
         env: Vec<(String, String)>,
         launch: Launch,
@@ -65,10 +65,10 @@ pub enum Effect {
         app_id: String,
     },
     /// Adopt a program not started by ClamShell, found by its tray icon. Its process and the ones it
-    /// started are moved into `instance`'s scope, in the entry's slice, as a launch of that entry. Not
+    /// started are moved into `unit`'s scope, in the entry's slice, as a launch of that entry. Not
     /// used for a program run by a systemd service, which belongs to the service.
     Adopt {
-        instance: Instance,
+        unit: LaunchUnit,
         pid: u32,
     },
     /// Ask processes to end (SIGTERM), or kill them with `force`. This is for a program not started by

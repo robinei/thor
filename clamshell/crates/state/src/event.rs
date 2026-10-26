@@ -16,7 +16,7 @@ use crate::nav::pad::PadInput;
 use crate::notifications::NotificationEvent;
 use crate::radios::bluetooth::Bluetooth;
 use crate::radios::wifi::Wifi;
-use crate::session::instance::Instance;
+use crate::session::launch_unit::LaunchUnit;
 use crate::session::windows::WindowEvent;
 use crate::status::Status;
 use crate::status::battery::Battery;
@@ -57,7 +57,7 @@ pub enum Event {
     /// applied as one event.
     WindowBatch(Vec<WindowEvent>),
     /// Our running units, after any change. These are dock app instances and games started by shelf.
-    Units(Vec<Instance>),
+    Units(Vec<LaunchUnit>),
     /// The keys of our slices found frozen at start, sent after the first [`Event::Units`]. They are
     /// treated as suspended (see [`crate::session::background`]).
     Frozen(Vec<std::sync::Arc<str>>),
@@ -284,9 +284,9 @@ pub enum ShelfEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LaunchEvent {
-    /// The entry's launch `instance` couldn't be started: its unit never appeared. Whether a launch is
+    /// The entry's launch `unit` couldn't be started: its unit never appeared. Whether a launch is
     /// running, and when it ends, comes from systemd's list of our units ([`crate::Event::Units`]).
-    LaunchFailed { entry: Arc<str>, instance: crate::Instance },
+    LaunchFailed { entry: Arc<str>, unit: crate::LaunchUnit },
     /// A video played by mpv ended, with where mpv left it. None means it played to the end (see
     /// [`crate::Effect::ReadPosition`]).
     Position { entry: Arc<str>, position: Option<u32> },

@@ -118,7 +118,7 @@ pub use notifications::{CloseReason, Notification, NotificationEvent, Notificati
 pub use radios::{RadioStatus, Radios};
 pub use session::Session;
 pub use session::dock::{Dock, DockItem};
-pub use session::instance::Instance;
+pub use session::launch_unit::LaunchUnit;
 pub use session::running::{Front, Launching, Origin, Running};
 pub use settings::panel::{GRID_COLUMNS, Panel, Prefs, Program, Scope, Source, TileOrigin};
 pub use shelf::{Cursor, Shelf};

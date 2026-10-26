@@ -31,7 +31,7 @@ use clamshell_library::{Entry, Library, RunnerOf};
 use crate::Session;
 use crate::effect::Effect;
 use crate::out::Out;
-use crate::session::instance::Instance;
+use crate::session::launch_unit::LaunchUnit;
 use crate::session::running::{Origin, Running};
 use crate::settings::{InBackground, Settings};
 
@@ -177,7 +177,7 @@ impl Session {
             // A suspended entry stays frozen until shown, after its windows were hidden.
             let in_use = if self.background.entries.is_held(&r.key) { self.background.entries.held_in_use(&r.key, shown) } else { !hidden };
             if let Some(frozen) = self.background.entries.follow(&r.key, in_use, now) {
-                out.effects.push(Effect::Freeze { slice: Instance::slice_of(&r.key), frozen });
+                out.effects.push(Effect::Freeze { slice: LaunchUnit::slice_of(&r.key), frozen });
             }
             // Quits closed ends it once it has had a window and has none left.
             if setting == InBackground::Quits && r.seen && !has && !quitting {
@@ -236,7 +236,7 @@ impl Session {
             return;
         };
         if self.background.entries.resume(&r.key) {
-            out.effects.push(Effect::Freeze { slice: Instance::slice_of(&r.key), frozen: false });
+            out.effects.push(Effect::Freeze { slice: LaunchUnit::slice_of(&r.key), frozen: false });
         }
     }
 
@@ -244,7 +244,7 @@ impl Session {
     /// of our entries' slices is frozen or thawed again as it is paused or not.
     pub(crate) fn freeze_again(&self, out: &mut Out) {
         for r in self.running.iter().filter(|r| r.origin == Origin::Ours) {
-            out.effects.push(Effect::Freeze { slice: Instance::slice_of(&r.key), frozen: self.background.entries.is_paused(&r.key) });
+            out.effects.push(Effect::Freeze { slice: LaunchUnit::slice_of(&r.key), frozen: self.background.entries.is_paused(&r.key) });
         }
     }
 
@@ -271,7 +271,7 @@ impl Session {
             return;
         };
         if self.background.entries.hold(&r.key, !shown) {
-            out.effects.push(Effect::Freeze { slice: Instance::slice_of(&r.key), frozen: true });
+            out.effects.push(Effect::Freeze { slice: LaunchUnit::slice_of(&r.key), frozen: true });
         }
     }
 
@@ -298,7 +298,7 @@ mod tests {
     use crate::{Event, State, WindowEvent};
 
     fn freeze(key: &str, frozen: bool) -> Effect {
-        Effect::Freeze { slice: Instance::slice_of(key), frozen }
+        Effect::Freeze { slice: LaunchUnit::slice_of(key), frozen }
     }
 
     #[test]
@@ -497,7 +497,7 @@ mod tests {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
         let fx = launch_now(&mut s, "desktop:foot");
-        let foot = fx.iter().find_map(|e| if let Effect::Launch { instance, .. } = e { Some(instance.clone()) } else { None }).unwrap();
+        let foot = fx.iter().find_map(|e| if let Effect::Launch { unit, .. } = e { Some(unit.clone()) } else { None }).unwrap();
         crate::testkit::start(&mut s, "desktop:foot");
         let key = zelda.key.clone();
         let windows = vec![win_of(3, "zelda3", &zelda), win_of(4, "foot", &foot)];

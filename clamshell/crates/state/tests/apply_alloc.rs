@@ -11,7 +11,7 @@ use clamshell_state::radios::wifi::{Network, Wifi};
 use clamshell_state::session::windows::WindowFacts;
 use clamshell_state::status::metrics::Metrics;
 use clamshell_state::{
-    Control, Effect, EntryAct, Event, Id, Init, Instance, ListEvent, ListId, Notification, NotificationEvent, NotificationId, PointerEvent, Reading, Slide,
+    Control, Effect, EntryAct, Event, Id, Init, LaunchUnit, ListEvent, ListId, Notification, NotificationEvent, NotificationId, PointerEvent, Reading, Slide,
     State, Status, Tab, Urgency, WindowEvent,
 };
 
@@ -75,7 +75,7 @@ fn count(s: &mut State, event: Event, effects: &mut Vec<Effect>) -> usize {
 
 /// A warm state: up, with two programs of ours running, each with a window, one of them in front, and a
 /// terminal of the user's in another group.
-fn warm() -> (State, Vec<WindowFacts>, Vec<Instance>) {
+fn warm() -> (State, Vec<WindowFacts>, Vec<LaunchUnit>) {
     let window_rules = clamshell_state::session::below::WindowRules::from_list(vec![clamshell_state::session::below::WindowRule {
         owner: "desktop:foot".into(),
         app_id: "foot".into(),
@@ -90,19 +90,19 @@ fn warm() -> (State, Vec<WindowFacts>, Vec<Instance>) {
     for (n, id) in ["desktop:firefox", "desktop:foot"].into_iter().enumerate() {
         effects.clear();
         s.apply(Event::Entry(id.into(), EntryAct::Play), &mut effects);
-        let instance = effects
+        let unit = effects
             .iter()
             .find_map(|e| match e {
-                Effect::Launch { instance, .. } => Some(instance.clone()),
+                Effect::Launch { unit, .. } => Some(unit.clone()),
                 _ => None,
             })
             .unwrap();
-        units.push(instance.clone());
+        units.push(unit.clone());
         s.apply(Event::Units(units.clone()), &mut effects);
         let window = WindowFacts {
             id: 10 + n as i64,
             app_id: id.trim_start_matches("desktop:").into(),
-            unit: Some(format!("{}.scope", instance.name())),
+            unit: Some(format!("{}.scope", unit.name())),
             ..WindowFacts::default()
         };
         s.apply(WindowEvent::Opened(window.clone()).into(), &mut effects);

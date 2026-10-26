@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::process::{Command as Process, Stdio};
 use std::sync::Arc;
 
-use clamshell_state::{Event, Instance, Launch, LaunchEvent};
+use clamshell_state::{Event, Launch, LaunchEvent, LaunchUnit};
 use rustix::process::{Pid, Signal};
 
 use crate::Sink;
@@ -37,7 +37,7 @@ pub(crate) enum Command {
 pub(crate) struct Request {
     pub(crate) entry: Arc<str>,
     /// The launch's unit, from the state.
-    pub(crate) instance: Instance,
+    pub(crate) unit: LaunchUnit,
     pub(crate) launch: Launch,
     /// The game's environment: the controller's, the cap's and its own variables. The displays follow.
     pub(crate) env: Vec<(String, String)>,
@@ -104,7 +104,7 @@ pub(crate) fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worke
                     request.env.extend(config.displays.iter().cloned());
                     if let Err(e) = worker::or_on_panic(|| start(&config, &request), || Err(Error::Panicked)) {
                         log::warn!("launcher: {}: {e}", request.entry);
-                        let failed = LaunchEvent::LaunchFailed { entry: request.entry.clone(), instance: request.instance.clone() };
+                        let failed = LaunchEvent::LaunchFailed { entry: request.entry.clone(), unit: request.unit.clone() };
                         let _ = sink.send(Event::Launch(failed));
                     }
                 }
@@ -122,7 +122,7 @@ pub(crate) fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worke
 
 /// Starts the game a request is for. It is done once systemd has started the game's service.
 fn start(config: &Config, request: &Request) -> Result<(), Error> {
-    units::thaw_slice(&request.instance.slice());
+    units::thaw_slice(&request.unit.slice());
     match &request.launch {
         Launch::Program { argv, .. } if argv.is_empty() => Err(Error::EmptyCommand),
         Launch::Program { argv, workdir } => start_program(config, request, argv.clone(), workdir.clone()),
@@ -131,12 +131,12 @@ fn start(config: &Config, request: &Request) -> Result<(), Error> {
     }
 }
 
-/// Starts `argv` as the request's instance, in `workdir` or else the home dir.
+/// Starts `argv` as the request's unit, in `workdir` or else the home dir.
 fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir: Option<PathBuf>) -> Result<(), Error> {
     // `{socket}` is the entry's control socket. See clamshell_state::session::enqueue.
     let argv = if argv.iter().any(|a| a.contains("{socket}")) {
         std::fs::create_dir_all(&config.sockets)?;
-        let socket = config.sockets.join(Instance::socket_of(&request.instance.key));
+        let socket = config.sockets.join(LaunchUnit::socket_of(&request.unit.key));
         argv.iter().map(|a| a.replace("{socket}", &socket.to_string_lossy())).collect()
     } else {
         argv
@@ -148,7 +148,7 @@ fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir:
         Ok(exe) => env.push(("CLAMSHELL".to_owned(), exe.to_string_lossy().into_owned())),
         Err(e) => log::warn!("launcher: finding this program's path: {e}"),
     }
-    let job = Job { unit: request.instance.name(), slice: Some(request.instance.slice()), argv, env, workdir };
+    let job = Job { unit: request.unit.name(), slice: Some(request.unit.slice()), argv, env, workdir };
     Ok(job::start(&job)?)
 }
 
@@ -156,7 +156,7 @@ fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir:
 /// to end and kills what is left after its timeout. With `force` they are killed at once. This runs on a
 /// thread of its own, because stopping waits for the processes.
 pub(crate) fn end_run(key: &str, force: bool) {
-    let slice = Instance::slice_of(key);
+    let slice = LaunchUnit::slice_of(key);
     let ended = worker::detached("end", move || {
         log::info!("{slice}: {}", if force { "force kill" } else { "stop" });
         if let Err(e) = units::end(&slice, force) {
@@ -169,24 +169,24 @@ pub(crate) fn end_run(key: &str, force: bool) {
 }
 
 /// Adopts a program not started by ClamShell, found by its tray icon. Its process and the processes it
-/// started are moved into `instance`'s scope, in its entry's slice, on a thread of its own. A program run
+/// started are moved into `unit`'s scope, in its entry's slice, on a thread of its own. A program run
 /// by a systemd service is left alone, because the service would lose it, and so is one already in a
 /// scope of ours.
-pub(crate) fn adopt(instance: Instance, pid: u32) {
+pub(crate) fn adopt(unit: LaunchUnit, pid: u32) {
     let done = worker::detached("adopt", move || {
-        let unit = instance.scope();
+        let scope = unit.scope();
         if !sys::same_process(pid) {
             log::info!("adopt: process {pid} is gone (another has its id)");
             return;
         }
         let group = cgroup::unit_of(pid).unwrap_or_default();
-        if Instance::is_service(&group) || Instance::from_unit(&group).is_some() {
+        if LaunchUnit::is_service(&group) || LaunchUnit::from_unit(&group).is_some() {
             log::info!("adopt: process {pid} stays in {group}");
             return;
         }
         let pids = with_descendants(&[pid], &parents());
-        match units::adopt(&unit, Some(instance.slice().as_str()), &pids) {
-            Ok(()) => log::info!("adopt: process {pid} from {group} in {unit} ({} processes)", pids.len()),
+        match units::adopt(&scope, Some(unit.slice().as_str()), &pids) {
+            Ok(()) => log::info!("adopt: process {pid} from {group} in {scope} ({} processes)", pids.len()),
             Err(e) => log::warn!("adopt: process {pid}: {e}"),
         }
     });
@@ -275,8 +275,8 @@ mod tests {
         let launcher = spawn(config(), tx).unwrap();
         let id: Arc<str> = script.to_string_lossy().into();
         let launch = Launch::Program { argv: vec![script.to_string_lossy().into()], workdir: Some(dir.to_path_buf()) };
-        let instance = Instance { key: "test_1".into(), secs: u64::from(std::process::id()), n: 0 };
-        launcher.send(Command::Launch(Request { entry: id, instance, launch, env: vec![] }));
+        let unit = LaunchUnit { key: "test_1".into(), secs: u64::from(std::process::id()), n: 0 };
+        launcher.send(Command::Launch(Request { entry: id, unit, launch, env: vec![] }));
         drop(launcher);
 
         // systemd started it, so nothing is sent. Whether it runs and ends is for systemd's list to say.
@@ -294,10 +294,10 @@ mod tests {
     fn no_command_fails_cleanly() {
         let (tx, events) = mpsc::channel();
         let launcher = spawn(config(), tx).unwrap();
-        let instance = Instance { key: "test_1".into(), secs: u64::from(std::process::id()), n: 1 };
-        launcher.send(Command::Launch(Request { entry: "x".into(), instance: instance.clone(), launch: Launch::program(vec![]), env: vec![] }));
+        let unit = LaunchUnit { key: "test_1".into(), secs: u64::from(std::process::id()), n: 1 };
+        launcher.send(Command::Launch(Request { entry: "x".into(), unit: unit.clone(), launch: Launch::program(vec![]), env: vec![] }));
         drop(launcher);
-        assert_eq!(events.iter().collect::<Vec<_>>(), vec![Event::Launch(LaunchEvent::LaunchFailed { entry: "x".into(), instance })]);
+        assert_eq!(events.iter().collect::<Vec<_>>(), vec![Event::Launch(LaunchEvent::LaunchFailed { entry: "x".into(), unit })]);
     }
 }
 
@@ -338,11 +338,11 @@ mod live {
         // This is the scope's process, since systemd-run runs the shell as itself.
         assert!(wait_for(|| group_of(pid).starts_with("app-adopttest")), "{}", group_of(pid));
         assert!(wait_for(|| with_descendants(&[pid], &parents()).len() == 2), "its sleep");
-        let instance = Instance { key: format!("adopttest_{id}"), secs: u64::from(id), n: 0 };
-        adopt(instance.clone(), pid);
-        let unit = instance.scope();
-        assert!(wait_for(|| with_descendants(&[pid], &parents()).iter().all(|p| group_of(*p) == unit)), "moved, the sleep too");
-        let _ = Process::new("systemctl").args(["--user", "stop", &instance.slice()]).status();
+        let unit = LaunchUnit { key: format!("adopttest_{id}"), secs: u64::from(id), n: 0 };
+        adopt(unit.clone(), pid);
+        let scope = unit.scope();
+        assert!(wait_for(|| with_descendants(&[pid], &parents()).iter().all(|p| group_of(*p) == scope)), "moved, the sleep too");
+        let _ = Process::new("systemctl").args(["--user", "stop", &unit.slice()]).status();
         let _ = child.wait();
         // A service's process stays.
         let service = format!("adopttest-{id}");
@@ -352,7 +352,7 @@ mod live {
             .trim()
             .parse()
             .unwrap();
-        adopt(Instance { key: format!("adopttest_{id}"), secs: u64::from(id), n: 1 }, pid);
+        adopt(LaunchUnit { key: format!("adopttest_{id}"), secs: u64::from(id), n: 1 }, pid);
         thread::sleep(Duration::from_secs(1));
         assert_eq!(group_of(pid), format!("{service}.service"));
         let _ = Process::new("systemctl").args(["--user", "stop", &service]).status();

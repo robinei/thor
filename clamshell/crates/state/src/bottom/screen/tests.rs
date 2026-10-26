@@ -5,7 +5,7 @@ use crate::Tab;
 use crate::bottom::notice::NoticeKind;
 use crate::effect::{Effect, Save};
 use crate::session::below::WindowRule;
-use crate::session::instance::Instance;
+use crate::session::launch_unit::LaunchUnit;
 use crate::session::running::{Origin, Running};
 use crate::session::windows::WindowFacts;
 use crate::settings::{Choice, Setting};
@@ -20,8 +20,8 @@ fn win(id: i64, unit: &str, title: &str) -> WindowFacts {
 const GAME: &str = "clamshell-run-melonds_1-99-1.scope";
 
 /// The emulator's launch.
-fn emu() -> Instance {
-    Instance { key: "melonds_1".into(), secs: 99, n: 1 }
+fn emu() -> LaunchUnit {
+    LaunchUnit { key: "melonds_1".into(), secs: 99, n: 1 }
 }
 
 fn running(id: &str, key: &str) -> Running {
@@ -100,7 +100,7 @@ fn a_rule_sends_the_window_down_when_its_program_opens_it_again() {
     let mut s = emulator();
     key(&mut s, DeviceKey::WindowDown);
     // Another game's window with that title doesn't match the rule.
-    s.add_run(running("other", "other_2"), Instance { key: "other_2".into(), secs: 5, n: 2 });
+    s.add_run(running("other", "other_2"), LaunchUnit { key: "other_2".into(), secs: 5, n: 2 });
     s.observed(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom")]);
     assert!(s.session().window(7).is_some() && !s.session().below(7));
 }

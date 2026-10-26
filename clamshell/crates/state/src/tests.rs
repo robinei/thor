@@ -41,12 +41,12 @@ fn a_launchs_start_and_end_come_to_the_same_in_any_order() {
         let fx = tap(s, entry("zelda-lttp"));
         let fx: Vec<Effect> = fx.into_iter().chain(tap(s, entry("zelda-lttp"))).collect();
         fx.iter().find_map(|e| match e {
-            Effect::Launch { instance, .. } => Some(instance.clone()),
+            Effect::Launch { unit, .. } => Some(unit.clone()),
             _ => None,
         })
     };
     // If there is no launch, the shapes below show it.
-    let probe = start_end(&mut state()).unwrap_or(Instance { key: String::new(), secs: 0, n: 0 });
+    let probe = start_end(&mut state()).unwrap_or(LaunchUnit { key: String::new(), secs: 0, n: 0 });
     let window = win_of(5, "zelda3", &probe);
     let starts = [Event::Units(vec![probe.clone()]), WindowEvent::Opened(window).into()];
     let ends = [Event::Units(vec![]), WindowEvent::Closed(5).into()];

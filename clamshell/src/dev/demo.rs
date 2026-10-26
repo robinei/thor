@@ -7,7 +7,7 @@ use clamshell_state::radios::wifi::{Network, Wifi};
 use clamshell_state::session::windows::WindowFacts;
 use clamshell_state::status::battery::{Battery, Charge, Group, Spender};
 use clamshell_state::status::metrics::Metrics;
-use clamshell_state::{Event, Id, Instance, PointerEvent, Reading, Status, Tab, WindowEvent};
+use clamshell_state::{Event, Id, LaunchUnit, PointerEvent, Reading, Status, Tab, WindowEvent};
 
 /// A status that shows every bar icon.
 pub const STATUS: Status =
@@ -17,13 +17,13 @@ pub const STATUS: Status =
 pub const STATUS_LOW: Status = Status { battery: Some(9), charging: false, discharging: true, wifi: None, volume: Some(40), muted: true, brightness: None };
 
 /// A launch of entry `id`, the `n`th thing started.
-pub fn run(id: &str, n: u64) -> Instance {
-    Instance { key: clamshell_library::key_of(id), secs: 1, n }
+pub fn run(id: &str, n: u64) -> LaunchUnit {
+    LaunchUnit { key: clamshell_library::key_of(id), secs: 1, n }
 }
 
 /// A window of a launch.
-fn window_of(id: i64, app_id: &str, launch: &Instance) -> WindowFacts {
-    WindowFacts { id, app_id: app_id.into(), unit: Some(launch.unit()), ..WindowFacts::default() }
+fn window_of(id: i64, app_id: &str, launch: &LaunchUnit) -> WindowFacts {
+    WindowFacts { id, app_id: app_id.into(), unit: Some(launch.service()), ..WindowFacts::default() }
 }
 
 /// These windows opening, reported by the compositor in one batch.
@@ -199,9 +199,9 @@ pub fn battery(now: u64) -> Vec<Event> {
         .collect();
     let spender = |group: Group, cpu: f32, gpu: f32, mb: u64| Spender { endable: group != Group::System, group, cpu, gpu, memory: mb << 20, pids: vec![] };
     let spenders = vec![
-        spender(Group::Instance(run("zelda-lttp", 0)), 0.31, 0.62, 480),
+        spender(Group::Launch(run("zelda-lttp", 0)), 0.31, 0.62, 480),
         spender(Group::Process("firefox".into()), 0.08, 0.03, 1350),
-        spender(Group::Instance(run("desktop:foot", 1)), 0.02, 0.0, 42),
+        spender(Group::Launch(run("desktop:foot", 1)), 0.02, 0.0, 42),
         spender(Group::System, 0.03, 0.0, 610),
         spender(Group::Process("clamshell".into()), 0.01, 0.0, 85),
         spender(Group::Process("steam".into()), 0.0, 0.0, 720),

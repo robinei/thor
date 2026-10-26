@@ -18,7 +18,7 @@ use clamshell_state::setup::account::Account;
 use clamshell_state::setup::sticks::{Phase, Progress, StickAxis};
 use clamshell_state::status::battery;
 use clamshell_state::{
-    DockId, EditorId, Event, Id, Init, Instance, KeymapId, ListEvent, ListId, PointerEvent, Reading, RowPart, Scope, SettingsId, ShelfEvent, ShelfId, Slide,
+    DockId, EditorId, Event, Id, Init, KeymapId, LaunchUnit, ListEvent, ListId, PointerEvent, Reading, RowPart, Scope, SettingsId, ShelfEvent, ShelfId, Slide,
     State, Status, Tab, Target, TimeZones, levels,
 };
 
@@ -173,8 +173,8 @@ fn warm_frames_do_not_allocate() {
             "dock, a game and windows",
             vec![
                 tap(Id::Tab(Tab::Dock)),
-                Event::Units(vec![Instance { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 }]),
-                Event::Units(["clamshell-run-zelda_1-1-0", "clamshell-run-foot_1-1-0"].into_iter().filter_map(Instance::parse).collect()),
+                Event::Units(vec![LaunchUnit { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 }]),
+                Event::Units(["clamshell-run-zelda_1-1-0", "clamshell-run-foot_1-1-0"].into_iter().filter_map(LaunchUnit::parse).collect()),
                 Event::WindowBatch(
                     [
                         window(5, "retroarch", Some("clamshell-run-zelda_1-1-0.scope")),
@@ -353,7 +353,7 @@ fn warm_frames_do_not_allocate() {
         (
             "dark while a game runs",
             vec![
-                Event::Units(vec![Instance { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 }]),
+                Event::Units(vec![LaunchUnit { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 }]),
                 tap(Id::Settings(SettingsId::Tile(Setting::BottomScreen))),
             ],
         ),
@@ -404,7 +404,7 @@ fn warm_frames_do_not_allocate() {
             "dock, an entry's menu",
             vec![
                 tap(Id::Tab(Tab::Dock)),
-                Event::Units(vec![Instance { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 0 }]),
+                Event::Units(vec![LaunchUnit { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 0 }]),
                 Event::Pointer(PointerEvent::LongPress(Id::Dock(DockId::Entry(0)))),
             ],
         ),

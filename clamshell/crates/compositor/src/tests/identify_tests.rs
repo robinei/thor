@@ -26,10 +26,10 @@ fn running(identify: impl Fn(u32) -> Process + Send + Sync + 'static) -> (Displa
     let mut settings = clamshell_state::settings::Settings::default();
     settings.set(None, Setting::Resolution, Some(3));
     let state = State::new(Init { library: Some(clamshell_library::demo::library()), settings, ..Init::default() });
-    let instance = clamshell_state::Instance { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 1 };
-    let unit = instance.unit();
-    let (display, mut server) = ServerBuilder::new().state(state).identify(move |pid| Process { unit: Some(unit.clone()), ..identify(pid) }).started();
-    server.core.handle(Event::Units(vec![instance]));
+    let unit = clamshell_state::LaunchUnit { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 1 };
+    let service = unit.service();
+    let (display, mut server) = ServerBuilder::new().state(state).identify(move |pid| Process { unit: Some(service.clone()), ..identify(pid) }).started();
+    server.core.handle(Event::Units(vec![unit]));
     (display, server)
 }
 

@@ -163,11 +163,11 @@ fn keyboard_focus_is_independent_of_both_screens_selected_content() {
 #[test]
 fn home_cancels_a_launchs_late_request_to_take_the_front() {
     let mut s = state();
-    let instance = launch(&mut s, "zelda-lttp");
+    let unit = launch(&mut s, "zelda-lttp");
     assert!(s.session().front_launch().is_some());
     s.applied(Event::Home);
     assert!(s.session().front_launch().is_none());
-    s.applied(WindowEvent::Opened(win_of(7, "zelda3", &instance)).into());
+    s.applied(WindowEvent::Opened(win_of(7, "zelda3", &unit)).into());
     assert_eq!(s.session().front(), crate::session::running::Front::Shelf);
 }
 
@@ -175,8 +175,8 @@ fn home_cancels_a_launchs_late_request_to_take_the_front() {
 fn lifecycle_open_and_close_follow_launch_ownership() {
     let mut s = state();
     s.applied(Event::tick(100));
-    let instance = launch(&mut s, "zelda-lttp");
-    let window = win_of(7, "zelda3", &instance);
+    let unit = launch(&mut s, "zelda-lttp");
+    let window = win_of(7, "zelda3", &unit);
     assert_eq!(s.applied(WindowEvent::Opened(window.clone()).into()), vec![Effect::PadRoute(crate::PadRoute::Game)]);
     assert_eq!(s.session().windows_of("zelda-lttp").map(|w| &w.facts).collect::<Vec<_>>(), vec![&window]);
     assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
@@ -191,25 +191,25 @@ fn activating_another_window_cancels_a_launchs_late_request_to_take_the_front() 
     let mut s = state();
     s.observed(vec![win_of(7, "other", &launch_of("other"))]);
     s.applied(WindowEvent::Activate(7).into());
-    let instance = launch(&mut s, "zelda-lttp");
+    let unit = launch(&mut s, "zelda-lttp");
     assert!(s.session().front_launch().is_some());
     assert!(s.applied(WindowEvent::Activate(7).into()).is_empty());
     assert!(s.session().front_launch().is_none());
-    s.applied(WindowEvent::Opened(win_of(8, "zelda3", &instance)).into());
+    s.applied(WindowEvent::Opened(win_of(8, "zelda3", &unit)).into());
     assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
 }
 
 #[test]
 fn activation_thaws_a_suspended_owner_before_selecting_its_window() {
     let mut s = state();
-    let instance = launch(&mut s, "zelda-lttp");
-    s.observed(vec![win_of(7, "zelda3", &instance)]);
+    let unit = launch(&mut s, "zelda-lttp");
+    s.observed(vec![win_of(7, "zelda3", &unit)]);
     s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::Suspend));
     assert!(s.session().suspended("zelda-lttp"));
     // The client must be able to draw when the compositor shows it.
     assert_eq!(
         s.applied(WindowEvent::Activate(7).into()),
-        vec![Effect::Freeze { slice: Instance::slice_of(&clamshell_library::key_of("zelda-lttp")), frozen: false }, Effect::PadRoute(crate::PadRoute::Game),]
+        vec![Effect::Freeze { slice: LaunchUnit::slice_of(&clamshell_library::key_of("zelda-lttp")), frozen: false }, Effect::PadRoute(crate::PadRoute::Game),]
     );
     assert!(!s.session().suspended("zelda-lttp"));
     assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
@@ -223,8 +223,8 @@ fn lifecycle_title_applies_a_bottom_rule_once() {
     let rules = WindowRules::from_list(vec![WindowRule { owner: "zelda-lttp".into(), app_id: "zelda3".into(), title: Some("second".into()) }]);
     let mut s = started(crate::Init { window_rules: rules, ..init() });
     s.applied(Event::tick(100));
-    let instance = launch(&mut s, "zelda-lttp");
-    s.applied(WindowEvent::Opened(win_of(7, "zelda3", &instance)).into());
+    let unit = launch(&mut s, "zelda-lttp");
+    s.applied(WindowEvent::Opened(win_of(7, "zelda3", &unit)).into());
     let event = || WindowEvent::Title { window: 7, title: "second".into() }.into();
     let effects = s.applied(event());
     assert_eq!(effects, vec![Effect::Watch(crate::Watch::Metrics, false), Effect::PadRoute(crate::PadRoute::Ui)]);
@@ -241,7 +241,7 @@ fn a_launchs_window_and_its_rule_are_placed_before_its_unit_is_listed() {
     let rules = WindowRules::from_list(vec![WindowRule { owner: "zelda-lttp".into(), app_id: "game".into(), title: None }]);
     let mut s = started(crate::Init { window_rules: rules, ..init() });
     let group = Group::entry(&clamshell_library::key_of("zelda-lttp"));
-    let unit = Instance { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 };
+    let unit = LaunchUnit { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 };
     assert_eq!(s.applied(WindowEvent::Opened(win_of(7, "game", &unit)).into()), vec![Effect::Watch(crate::Watch::Metrics, false)]);
     assert_eq!(s.session().place(7), Some(WindowPlace::Bottom));
     assert_eq!(s.session().window(7).and_then(|w| w.group.clone()), Some(group.clone()));
@@ -252,15 +252,15 @@ fn a_launchs_window_and_its_rule_are_placed_before_its_unit_is_listed() {
 #[test]
 fn stale_identity_facts_cannot_undo_a_placement() {
     let mut s = state();
-    let instance = launch(&mut s, "zelda-lttp");
-    let before = win_of(7, "game", &instance);
+    let unit = launch(&mut s, "zelda-lttp");
+    let before = win_of(7, "game", &unit);
     s.applied(WindowEvent::Opened(before.clone()).into());
     s.applied(Event::Device(DeviceKey::WindowDown));
     let identity = WindowFacts { pids: vec![100, 50], ..before.clone() };
     assert!(s.applied(WindowEvent::Changed(identity).into()).is_empty());
     let window = s.session().window(7);
     assert_eq!(s.session().place(7), Some(WindowPlace::Bottom));
-    assert_eq!(window.and_then(|w| w.group.clone()), Some(group_of(&instance)));
+    assert_eq!(window.and_then(|w| w.group.clone()), Some(group_of(&unit)));
     assert_eq!(window.map(|w| w.pids.as_slice()), Some(&[100, 50][..]));
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
 }
@@ -283,11 +283,11 @@ fn a_hidden_group_keeps_its_selection_and_closing_it_selects_the_next_window() {
 #[test]
 fn a_dialog_inherits_its_parent_and_survives_the_parent_closing() {
     let mut s = state();
-    let instance = launch(&mut s, "zelda-lttp");
-    s.applied(WindowEvent::Opened(win_of(7, "game", &instance)).into());
+    let unit = launch(&mut s, "zelda-lttp");
+    s.applied(WindowEvent::Opened(win_of(7, "game", &unit)).into());
     let dialog = WindowFacts { parent: Some(7), unit: Some("portal.service".into()), ..win(8, "dialog") };
     assert!(s.applied(WindowEvent::Opened(dialog).into()).is_empty());
-    assert_eq!(s.session().place(8), Some(WindowPlace::Top(Some(&group_of(&instance)))));
+    assert_eq!(s.session().place(8), Some(WindowPlace::Top(Some(&group_of(&unit)))));
     assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
     assert_eq!(s.session().window(8).and_then(|w| s.session().running_of(w)).map(|r| &*r.id), Some("zelda-lttp"));
     assert!(s.applied(WindowEvent::Closed(7).into()).is_empty());
@@ -299,8 +299,8 @@ fn a_dialog_inherits_its_parent_and_survives_the_parent_closing() {
 /// screen, where it can be answered, while its parent stays below; closed, the parent is still below.
 fn a_dialog_of_a_window_below_shows_on_top_while_its_parent_stays_below() {
     let mut s = state();
-    let instance = launch(&mut s, "zelda-lttp");
-    s.applied(WindowEvent::Opened(win_of(7, "game", &instance)).into());
+    let unit = launch(&mut s, "zelda-lttp");
+    s.applied(WindowEvent::Opened(win_of(7, "game", &unit)).into());
     s.applied(Event::Device(DeviceKey::WindowDown));
     let dialog = WindowFacts { parent: Some(7), ..win(8, "dialog") };
     s.applied(WindowEvent::Opened(dialog).into());
@@ -313,18 +313,18 @@ fn a_dialog_of_a_window_below_shows_on_top_while_its_parent_stays_below() {
 }
 
 #[test]
-fn windows_know_their_instance() {
+fn windows_know_their_launch_unit() {
     let w = |unit: Option<&str>, app_id: &str| WindowFacts { unit: unit.map(Into::into), app_id: app_id.into(), ..WindowFacts::default() };
-    let terminal = Instance { key: "foot_1".into(), secs: 1234, n: 7 };
+    let terminal = LaunchUnit { key: "foot_1".into(), secs: 1234, n: 7 };
     let foot = w(Some("clamshell-run-foot_1-1234-7.scope"), "foot");
-    assert_eq!(foot.instance(), Some(terminal.clone()));
+    assert_eq!(foot.launch_unit(), Some(terminal.clone()));
     // Firefox started from that terminal belongs to the terminal.
-    assert_eq!(w(Some("clamshell-run-foot_1-1234-7.scope"), "firefox").instance(), Some(terminal));
-    assert_eq!(w(Some("app-steam.scope"), "steam_app_620").instance(), None, "Steam's: placed by the program");
-    assert_eq!(w(Some("app-steam.scope"), "steam").instance(), None, "not ours: left alone");
+    assert_eq!(w(Some("clamshell-run-foot_1-1234-7.scope"), "firefox").launch_unit(), Some(terminal));
+    assert_eq!(w(Some("app-steam.scope"), "steam_app_620").launch_unit(), None, "Steam's: placed by the program");
+    assert_eq!(w(Some("app-steam.scope"), "steam").launch_unit(), None, "not ours: left alone");
     // The same without allocating.
     for w in [foot, w(Some("app-steam.scope"), "steam"), w(None, "foot")] {
-        assert_eq!(w.launched(), w.instance().is_some(), "{w:?}");
+        assert_eq!(w.launched(), w.launch_unit().is_some(), "{w:?}");
     }
 }
 
@@ -379,10 +379,10 @@ fn presentation_facts_and_colour_do_not_change_placement_or_selection() {
 #[test]
 fn remembering_a_bottom_rule_does_not_move_existing_siblings_of_other_launches() {
     let mut s = state();
-    let instance = crate::Instance { key: clamshell_library::key_of("desktop:foot"), secs: 100, n: 0 };
-    let another = crate::Instance { key: clamshell_library::key_of("desktop:foot"), secs: 200, n: 1 };
-    s.applied(Event::Units(vec![instance.clone(), another.clone()]));
-    s.observed(vec![win_of(7, "foot", &instance), win_of(8, "foot", &another)]);
+    let unit = crate::LaunchUnit { key: clamshell_library::key_of("desktop:foot"), secs: 100, n: 0 };
+    let another = crate::LaunchUnit { key: clamshell_library::key_of("desktop:foot"), secs: 200, n: 1 };
+    s.applied(Event::Units(vec![unit.clone(), another.clone()]));
+    s.observed(vec![win_of(7, "foot", &unit), win_of(8, "foot", &another)]);
     s.applied(WindowEvent::Activate(7).into());
     s.applied(Event::Device(DeviceKey::WindowDown));
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
@@ -390,7 +390,7 @@ fn remembering_a_bottom_rule_does_not_move_existing_siblings_of_other_launches()
     // A later matching window does use that rule and displaces the bottom occupant.
     s.applied(WindowEvent::Opened(win_of(9, "foot", &another)).into());
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(9));
-    assert_eq!(s.session().place(7), Some(WindowPlace::Top(Some(&group_of(&instance)))));
+    assert_eq!(s.session().place(7), Some(WindowPlace::Top(Some(&group_of(&unit)))));
     assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
 }
 
@@ -448,8 +448,8 @@ fn pad_activity_returns_keyboard_focus_to_top_without_moving_windows() {
 #[test]
 fn activating_a_program_reveals_its_bottom_window_without_moving_or_focusing_it() {
     let mut s = state();
-    let instance = launch(&mut s, "zelda-lttp");
-    s.observed(vec![win_of(7, "game", &instance), win_of(8, "second", &instance)]);
+    let unit = launch(&mut s, "zelda-lttp");
+    s.observed(vec![win_of(7, "game", &unit), win_of(8, "second", &unit)]);
     s.applied(WindowEvent::Activate(8).into());
     s.applied(Event::Device(DeviceKey::WindowDown));
     s.applied(Event::Device(DeviceKey::BottomView));
@@ -503,7 +503,7 @@ fn a_window_sent_down_gives_the_keyboard_to_the_top_window() {
     let mut s = started(crate::Init { window_rules: rules, ..init() });
     s.applied(WindowEvent::Opened(foot()).into());
     assert_eq!(s.session().top_window().map(|w| w.id), Some(1001));
-    let zelda = Instance { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 };
+    let zelda = LaunchUnit { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 };
     s.applied(Event::WindowBatch(vec![WindowEvent::Opened(win_of(9, "zelda3", &zelda)), WindowEvent::KeyboardFocus(Some(9))]));
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(9));
     assert_eq!(s.session().top_window().map(|w| w.id), Some(1001));

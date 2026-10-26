@@ -1,4 +1,4 @@
-//! Starting a program as an instance of ours, an app or a game, as a transient systemd service of the
+//! Starting a program as a launch of ours, an app or a game, as a transient systemd service of the
 //! user manager: its output in the journal as the unit's, its processes in its cgroup, and systemd
 //! starting and stopping it. ClamShell needs a systemd user manager for this.
 
