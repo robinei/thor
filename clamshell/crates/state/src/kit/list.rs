@@ -89,7 +89,7 @@ impl Scroll {
     }
 
     /// The furthest the list scrolls with `len` rows, which puts its last row at the bottom.
-    pub fn max_offset(&self, len: usize) -> f32 {
+    pub(crate) fn max_offset(&self, len: usize) -> f32 {
         self.visible.map_or(0.0, |v| (len as f32 - v).max(0.0))
     }
 
@@ -102,7 +102,7 @@ impl Scroll {
     }
 
     /// Scrolls by `rows` within the list's ends; positive is further down. Returns whether it moved.
-    pub fn scroll_by(&mut self, rows: f32, len: usize) -> bool {
+    pub(crate) fn scroll_by(&mut self, rows: f32, len: usize) -> bool {
         let before = self.offset;
         self.offset += rows;
         self.clamp(len);
@@ -126,7 +126,7 @@ impl Scroll {
     }
 
     /// Sets how many rows the UI shows. Returns whether that changed.
-    pub fn set_visible(&mut self, rows: f32, len: usize) -> bool {
+    pub(crate) fn set_visible(&mut self, rows: f32, len: usize) -> bool {
         if self.visible == Some(rows) {
             return false;
         }

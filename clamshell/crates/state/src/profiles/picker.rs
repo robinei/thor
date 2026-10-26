@@ -250,7 +250,7 @@ impl<B: Clone + Default + PartialEq> Profiles<B> {
 
     /// A profile's name as shown: `kind`'s own name for a game's own, and its default name for none or
     /// for one that is gone.
-    pub fn shown_name(&self, id: u16, kind: Kind) -> &str {
+    pub(crate) fn shown_name(&self, id: u16, kind: Kind) -> &str {
         match self.get(id) {
             Some(p) if p.owner.is_some() => kind.own_name(),
             Some(p) => p.name.as_str(),

@@ -21,7 +21,7 @@ pub const SLICE_PREFIX: &str = "app-graphical-clamshell-run-";
 const SERVICE: &str = ".service";
 const SCOPE: &str = ".scope";
 /// Steam's app id for a game's windows: `steam_app_<id>`.
-pub const STEAM_APP_PREFIX: &str = "steam_app_";
+pub(crate) const STEAM_APP_PREFIX: &str = "steam_app_";
 
 /// A launch of an entry, which names its unit: the entry's key, the start time and a counter.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -48,7 +48,7 @@ impl Instance {
     }
 
     /// A unit's name without `.service` or `.scope`.
-    pub fn unit_name(unit: &str) -> Option<&str> {
+    pub(crate) fn unit_name(unit: &str) -> Option<&str> {
         unit.strip_suffix(SERVICE).or_else(|| unit.strip_suffix(SCOPE))
     }
 

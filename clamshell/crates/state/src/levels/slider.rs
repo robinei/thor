@@ -75,7 +75,7 @@ impl Slider {
     }
 
     /// A slider over `lo..=hi`, at `start`.
-    pub fn ranged(control: Control, start: u8, lo: u8, hi: u8, x: f32, width: f32) -> Slider {
+    pub(crate) fn ranged(control: Control, start: u8, lo: u8, hi: u8, x: f32, width: f32) -> Slider {
         let start = start.clamp(lo, hi.max(lo));
         let mut s = Slider { control, start, value: start, lo, hi: hi.max(lo), x, length: 0.0, moved: false };
         s.length = Slider::length_at(x, s.fraction(start), width);
@@ -95,7 +95,7 @@ impl Slider {
 
     /// The longest track, up to half the screen, that stays on a screen `width` wide when the fraction
     /// `below` (0 to 1) of it is left of `x` and the rest is right of it.
-    pub fn length_at(x: f32, below: f32, width: f32) -> f32 {
+    pub(crate) fn length_at(x: f32, below: f32, width: f32) -> f32 {
         let below = below.clamp(0.0, 1.0);
         let (left, right) = (x - width * EDGE, width * (1.0 - EDGE) - x);
         // A part of zero fits any length.

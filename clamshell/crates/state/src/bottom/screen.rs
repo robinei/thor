@@ -19,15 +19,15 @@ pub struct BottomScreen {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Power {
     /// Windows are moved to the bottom screen.
-    pub any_down: bool,
+    pub(crate) any_down: bool,
     /// A program is in force.
     pub in_game: bool,
     /// The setting in force for the second screen.
-    pub when_idle: BottomWhenIdle,
+    pub(crate) when_idle: BottomWhenIdle,
     /// Running on battery.
     pub discharging: bool,
     /// A refresh calibration is running.
-    pub refreshing: bool,
+    pub(crate) refreshing: bool,
 }
 
 /// How long, in seconds, the second screen goes untouched and without the pad's focus before it dims,

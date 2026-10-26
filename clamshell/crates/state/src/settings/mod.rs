@@ -431,7 +431,7 @@ impl Setting {
     }
 
     /// Whether the setting applies only to all games, not per game.
-    pub fn global_only(self) -> bool {
+    pub(crate) fn global_only(self) -> bool {
         matches!(self, Setting::ChargeLimit | Setting::ScreenOff | Setting::Sleep)
     }
 
@@ -614,7 +614,7 @@ impl Settings {
         self.overrides_of(entry).over(&inherited)
     }
 
-    pub fn overrides_of(&self, entry: &str) -> Overrides {
+    pub(crate) fn overrides_of(&self, entry: &str) -> Overrides {
         self.overrides.get(entry).copied().unwrap_or_default()
     }
 
@@ -659,7 +659,7 @@ impl Settings {
 
     /// Appends the environment a game below `levels` gets to `vars`: the global variables, then each
     /// level's, then its own. Later ones win.
-    pub fn env_in(&self, entry: &str, levels: &[&str], vars: &mut Vec<(String, String)>) {
+    pub(crate) fn env_in(&self, entry: &str, levels: &[&str], vars: &mut Vec<(String, String)>) {
         parse_env(&self.global_env, vars);
         for f in levels {
             parse_env(self.env_text(Some(f)), vars);

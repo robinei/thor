@@ -215,7 +215,7 @@ pub enum FileName {
 
 /// An archive's name without its extensions, such as `Game` for `Game.tar.gz`. It names the folder the
 /// archive is extracted into.
-pub fn extracted_name(name: &str) -> &str {
+pub(crate) fn extracted_name(name: &str) -> &str {
     let lower = name.to_lowercase();
     let two = [".tar.gz", ".tar.xz", ".tar.zst", ".tar.bz2", ".tar.lz4"];
     match two.iter().find(|e| lower.ends_with(*e)) {
@@ -280,7 +280,7 @@ impl Shelf {
     /// The file actions of what the details show (see [`Shelf::file_target`]), given by its place. They
     /// are its own actions if it is the selected entry, then the open folder's: Paste when something is
     /// copied, New folder, and Hidden files.
-    pub fn file_actions(&self) -> Actions {
+    pub(crate) fn file_actions(&self) -> Actions {
         use FileAction::*;
         let mut actions = Actions::default();
         let Some((entry, selected)) = self.file_target() else {

@@ -327,7 +327,7 @@ impl Session {
 
     /// The entry a client's process (by its unit, or Steam's app id) belongs to: one running, or a launch
     /// still starting, whose program can connect before systemd lists its unit.
-    pub fn entry_of_process(&self, unit: Option<&str>, steam_app: Option<u32>) -> Option<Arc<str>> {
+    pub(crate) fn entry_of_process(&self, unit: Option<&str>, steam_app: Option<u32>) -> Option<Arc<str>> {
         self.running_of_process(unit, steam_app).map(|r| r.id.clone()).or_else(|| {
             let key = unit.and_then(Instance::key_of)?;
             self.launching.iter().find(|l| l.instance.key == key).map(|l| l.entry.clone())
@@ -343,7 +343,7 @@ impl Session {
     /// - its group.
     ///
     /// A dialog's is its parent's.
-    pub fn running_of(&self, w: &WindowFacts) -> Option<&Running> {
+    pub(crate) fn running_of(&self, w: &WindowFacts) -> Option<&Running> {
         let mut w = w;
         for _ in 0..self.windows.len() {
             match w.parent.and_then(|id| self.window(id)) {
@@ -366,7 +366,7 @@ impl Session {
     }
 
     /// The windows of running entry `id`, including those moved to the bottom screen.
-    pub fn windows_of<'a>(&'a self, id: &'a str) -> impl Iterator<Item = &'a Window> + 'a {
+    pub(crate) fn windows_of<'a>(&'a self, id: &'a str) -> impl Iterator<Item = &'a Window> + 'a {
         self.windows.iter().filter(move |w| self.running_of(w).is_some_and(|r| &*r.id == id))
     }
 

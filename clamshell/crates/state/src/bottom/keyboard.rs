@@ -294,7 +294,7 @@ impl Keyboard {
 
     /// Returns the modifiers armed or held as a chord of their own, and releases them, since a chord of
     /// modifiers alone is complete.
-    pub fn take_modifiers(&mut self) -> crate::keymap::Chord {
+    pub(crate) fn take_modifiers(&mut self) -> crate::keymap::Chord {
         let chord = crate::keymap::Chord { key: None, shift: self.shift.on(), ctrl: self.ctrl.on(), alt: self.alt.on(), logo: self.logo.on() };
         for m in Modifier::ALL {
             let latch = self.latch_mut(m);

@@ -34,7 +34,7 @@ use crate::profiles::{Profile, Profiles};
 pub const REFERENCE_NITS: f64 = 203.0;
 
 /// The screen [`Curve::map`] shows a curve on: a 1000-nit one.
-pub const REFERENCE_SCREEN_NITS: f64 = 1000.0;
+pub(crate) const REFERENCE_SCREEN_NITS: f64 = 1000.0;
 
 /// What a curve holds: its parameters, in the units described on each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -210,7 +210,7 @@ pub fn map_hdr(curve: Option<&Curve>, light: [f64; 3], content_peak: f64, headro
 /// `k + x / (1 + x (1/T - 1/X))`, with `x`, `X` and `T` how far `y`, the content's peak and the target are
 /// above the knee. Its slope is 1 at the knee, it rises all the way, and the content's peak lands on the
 /// target. The knee is at most three quarters of the target, so that something is left to compress into.
-pub fn compress(y: f64, knee: f64, peak: f64, target: f64) -> f64 {
+pub(crate) fn compress(y: f64, knee: f64, peak: f64, target: f64) -> f64 {
     let knee = knee.min(0.75 * target);
     if peak <= target || y <= knee {
         return y;

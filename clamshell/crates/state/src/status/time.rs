@@ -34,7 +34,7 @@ pub struct TimeZones {
 
 /// The regions the zones are chosen by. These are tzdata's first name parts, without the old and
 /// administrative ones such as Etc, US and Canada. UTC is a row of its own after them.
-pub const REGIONS: [&str; 10] = ["Africa", "America", "Antarctica", "Arctic", "Asia", "Atlantic", "Australia", "Europe", "Indian", "Pacific"];
+pub(crate) const REGIONS: [&str; 10] = ["Africa", "America", "Antarctica", "Arctic", "Asia", "Atlantic", "Australia", "Europe", "Indian", "Pacific"];
 
 /// What the time tab shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -79,7 +79,7 @@ impl TimeZones {
 }
 
 /// Whether `zone` ("Europe/Oslo", "America/Argentina/Salta") is in `region`.
-pub fn in_region(zone: &str, region: &str) -> bool {
+pub(crate) fn in_region(zone: &str, region: &str) -> bool {
     zone.strip_prefix(region).is_some_and(|rest| rest.starts_with('/'))
 }
 
@@ -106,7 +106,7 @@ impl Sys {
         }
     }
 
-    pub fn time_rows(&self) -> usize {
+    pub(crate) fn time_rows(&self) -> usize {
         match self.time_page {
             TimePage::Main => 0,
             TimePage::Regions => REGIONS.len() + 1,

@@ -63,7 +63,7 @@ impl ColourDescription {
 
     /// The brightest it declares itself, over its reference white: its MaxCLL, else its mastering
     /// display's peak; none if it gives neither.
-    pub fn declared_peak(self) -> Option<f64> {
+    pub(crate) fn declared_peak(self) -> Option<f64> {
         let target = self.target.unwrap_or_default();
         let peak = target.max_cll.or(target.luminance.map(|(_, maximum)| maximum))?;
         Some(f64::from(peak) / f64::from(self.luminances().reference.max(1)))

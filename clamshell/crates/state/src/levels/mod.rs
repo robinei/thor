@@ -255,18 +255,18 @@ impl Levels {
     }
 
     /// The screens' brightness as it should be, once the level is known. Also applied at start.
-    pub fn brightness_effect(&self) -> Option<Effect> {
+    pub(crate) fn brightness_effect(&self) -> Option<Effect> {
         self.brightness.level.map(|level| self.brightness_at(level))
     }
 
     /// The screens dimmed for idle, to a third of their brightness but not dark, and never brighter than
     /// they are. Not saved.
-    pub fn dimmed_effect(&self) -> Option<Effect> {
+    pub(crate) fn dimmed_effect(&self) -> Option<Effect> {
         self.known_brightness().map(|level| self.brightness_at((level / 3).max(1).min(level)))
     }
 
     /// The screens back from dimmed, at their brightness as ClamShell set it or as it was read.
-    pub fn undimmed_effect(&self) -> Option<Effect> {
+    pub(crate) fn undimmed_effect(&self) -> Option<Effect> {
         self.known_brightness().map(|level| self.brightness_at(level))
     }
 

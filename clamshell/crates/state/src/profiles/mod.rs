@@ -142,7 +142,7 @@ impl<B: Clone + Default + PartialEq> Profiles<B> {
     }
 
     /// Makes `owner`'s own profile with `preset`'s body and returns its id.
-    pub fn make_own_from(&mut self, preset: &Profile<B>, owner: &Arc<str>) -> Option<u16> {
+    pub(crate) fn make_own_from(&mut self, preset: &Profile<B>, owner: &Arc<str>) -> Option<u16> {
         let id = self.make_own(0, owner)?;
         self.edit(id, |own| {
             own.body = preset.body.clone();
@@ -153,7 +153,7 @@ impl<B: Clone + Default + PartialEq> Profiles<B> {
 
     /// Replaces profile `to`'s body with a copy of profile `from`'s. If `from` is 0 or no longer exists,
     /// `to` gets the empty body. Returns whether `to` is there.
-    pub fn copy_into(&mut self, to: u16, from: u16) -> bool {
+    pub(crate) fn copy_into(&mut self, to: u16, from: u16) -> bool {
         let body = self.get(from).map_or_else(B::default, |p| p.body.clone());
         if self.get(to).is_none() {
             return false;

@@ -80,7 +80,7 @@ impl Presentation {
     }
 
     /// Screen `down`'s colour (the second's, or the top's), as the compositor describes it.
-    pub fn screen_colour(&self, down: bool) -> crate::colour::ColourDescription {
+    pub(crate) fn screen_colour(&self, down: bool) -> crate::colour::ColourDescription {
         let [top, bottom] = self.screens.colour;
         if down { bottom } else { top }
     }
@@ -94,7 +94,7 @@ impl Presentation {
         self.histogram
     }
 
-    pub fn xwayland_modes(&self) -> &[(u32, u32)] {
+    pub(crate) fn xwayland_modes(&self) -> &[(u32, u32)] {
         &self.xwayland_modes
     }
 }

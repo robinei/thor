@@ -95,7 +95,7 @@ impl Editor {
 /// The texts being edited, such as a game's environment or a Wi-Fi password. Each is in its own tab, at
 /// most one per tab, and is kept while another tab is shown.
 #[derive(Debug, Clone, Default)]
-pub struct Editors {
+pub(crate) struct Editors {
     list: Vec<Editor>,
 }
 

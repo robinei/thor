@@ -79,14 +79,14 @@ impl State {
     }
 
     /// How many stops `setting`'s slider has at the level edited (see [`State::setting_stop`]).
-    pub fn setting_stops(&self, setting: Setting) -> usize {
+    pub(crate) fn setting_stops(&self, setting: Setting) -> usize {
         let at_all = self.panel().editing().is_none();
         1 + setting.choices().iter().filter(|v| !(at_all && **v == setting.default_value())).count()
     }
 
     /// Stop `i` of `setting`'s slider at the level edited: first Default (None), which writes nothing
     /// there, then its values. At All, Default is the stock value, so that value isn't a stop of its own.
-    pub fn setting_stop(&self, setting: Setting, i: usize) -> Option<Option<u16>> {
+    pub(crate) fn setting_stop(&self, setting: Setting, i: usize) -> Option<Option<u16>> {
         if i == 0 {
             return Some(None);
         }

@@ -1,7 +1,7 @@
 //! Environment variables as the editor's text holds them, as `KEY=value` words.
 
 /// Parses `KEY=value` words (see [`Words`]) into variables, appended to `out`.
-pub fn parse_env(text: &str, out: &mut Vec<(String, String)>) {
+pub(crate) fn parse_env(text: &str, out: &mut Vec<(String, String)>) {
     out.extend(vars(text).map(|(k, v)| (k.to_owned(), v.to_owned())));
 }
 

@@ -345,7 +345,7 @@ impl<'a> Panel<'a> {
 
     /// Whether Reset has something to do for `setting`: the level edited chooses it itself, or All differs
     /// from the stock value.
-    pub fn resettable(&self, setting: Setting) -> bool {
+    pub(crate) fn resettable(&self, setting: Setting) -> bool {
         match self.tile_origin(setting) {
             TileOrigin::Own => true,
             TileOrigin::Global => self.tile_value(setting) != setting.default_value(),
@@ -353,17 +353,12 @@ impl<'a> Panel<'a> {
         }
     }
 
-    /// The keymap chosen for the scope edited; 0 is Default.
-    pub fn keymap_chosen(&self) -> u16 {
-        self.tile_value(Setting::Keymap)
-    }
-
     fn entry(&self) -> Option<&str> {
         self.editing.as_ref().map(|g| &*g.id)
     }
 
     /// Row `i` of the keymaps' picker, for what the panel edits.
-    pub fn keymap_row(&self, i: usize) -> Option<PickerRow<'a>> {
+    pub(crate) fn keymap_row(&self, i: usize) -> Option<PickerRow<'a>> {
         self.keymapping.row(i, self.entry())
     }
 

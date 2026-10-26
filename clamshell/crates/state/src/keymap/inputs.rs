@@ -56,7 +56,7 @@ impl Button {
 
     /// Whether the Xbox pad that games see has it, so that a pad output can be it. The paddles and Back
     /// are not on it.
-    pub fn on_pad(self) -> bool {
+    pub(crate) fn on_pad(self) -> bool {
         !self.is_back() && self != Button::Back
     }
 }

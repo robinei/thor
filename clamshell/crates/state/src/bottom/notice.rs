@@ -50,7 +50,7 @@ pub enum NoticeKind {
 
 /// The notice showing, if any. A rule shows one with [`NoticeSlot::show`], the one way to show one.
 #[derive(Debug, Clone, Default)]
-pub struct NoticeSlot(Option<Notice>);
+pub(crate) struct NoticeSlot(Option<Notice>);
 
 impl NoticeSlot {
     /// Shows `what` from `now`, in place of any notice showing.

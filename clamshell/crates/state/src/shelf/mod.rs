@@ -239,11 +239,11 @@ impl Shelf {
     }
 
     /// The selected entry's index in the library.
-    pub fn selected_index(&self) -> Option<usize> {
+    pub(crate) fn selected_index(&self) -> Option<usize> {
         self.list().get(self.cursor().index).copied()
     }
 
-    pub fn selected_entry(&self) -> Option<&Entry> {
+    pub(crate) fn selected_entry(&self) -> Option<&Entry> {
         self.entry_at(self.cursor().index)
     }
 

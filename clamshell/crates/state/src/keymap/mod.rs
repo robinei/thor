@@ -43,22 +43,22 @@ pub use param::*;
 /// The speed of motion mapped to a stick or the pointer, 0 to 100. 50 is the stock speed.
 pub const DEFAULT_SPEED: u8 = 50;
 /// A trigger mapped to a button acts past this, in percent of its travel (1 to 100).
-pub const DEFAULT_THRESHOLD: u8 = 50;
+pub(crate) const DEFAULT_THRESHOLD: u8 = 50;
 /// A trigger's full pull acts past this, in percent of its travel, unless set otherwise.
-pub const FULL_PULL: u8 = 95;
+pub(crate) const FULL_PULL: u8 = 95;
 /// A press held this long is a hold, in hundredths of a second (20 to 100).
-pub const DEFAULT_HOLD_TIME: u8 = 40;
+pub(crate) const DEFAULT_HOLD_TIME: u8 = 40;
 /// The gyro turning speed, in degrees per second, above which a turn gets all of the acceleration.
-pub const DEFAULT_ACCEL_AT: u8 = 60;
+pub(crate) const DEFAULT_ACCEL_AT: u8 = 60;
 /// The gyro turning speed, in tenths of a degree per second, below which motion is scaled down toward
 /// nothing. This tightening counters a hand's tremor.
-pub const DEFAULT_TIGHTEN: u8 = 10;
+pub(crate) const DEFAULT_TIGHTEN: u8 = 10;
 
 /// The default deadzone and curve for a stick mapped to the pointer. They match how the pointer moved
 /// before these parameters existed: nothing within 15 % of the middle, then the distance from there
 /// squared.
-pub const POINTER_DEADZONE: u8 = 15;
-pub const POINTER_CURVE: u8 = 50;
+pub(crate) const POINTER_DEADZONE: u8 = 15;
+pub(crate) const POINTER_CURVE: u8 = 50;
 
 /// An input's binding: what it maps to, and how. A stick's or trigger's tuning (deadzone, full point,
 /// curve, inversion) applies to its values before they are mapped, whatever they map to. A binding of an
@@ -154,7 +154,7 @@ impl Binding {
 
     /// The same binding to another output. Each parameter at its default for the old output gets its
     /// default for the new one; parameters that were set keep their values.
-    pub fn retarget(&self, input: Input, output: Output) -> Binding {
+    pub(crate) fn retarget(&self, input: Input, output: Output) -> Binding {
         let mut b = Binding { output, ..*self };
         for p in Param::ALL {
             if p.get(self) == p.default_for(input, self.output) {
@@ -233,7 +233,7 @@ pub fn change(input: Input, binding: Option<&Binding>) -> Change {
 }
 
 /// What may hold the gyro on: the buttons and the triggers.
-pub fn gyro_holds() -> impl Iterator<Item = Input> {
+pub(crate) fn gyro_holds() -> impl Iterator<Item = Input> {
     Button::ALL.into_iter().map(Input::Button).chain(Side::ALL.into_iter().map(Input::Trigger))
 }
 
@@ -355,7 +355,7 @@ impl Keymap {
     }
 
     /// Renames a layer; Base keeps its name. Returns whether the layer is there.
-    pub fn rename_layer(&mut self, layer: Layer, name: &str) -> bool {
+    pub(crate) fn rename_layer(&mut self, layer: Layer, name: &str) -> bool {
         match self.body.layers.iter_mut().find(|l| l.id == layer && l.id != Layer::BASE) {
             Some(l) => {
                 l.name = name.trim().to_owned();
@@ -366,7 +366,7 @@ impl Keymap {
     }
 
     /// Removes a layer other than Base, and the bindings to it. Returns whether it was there.
-    pub fn remove_layer(&mut self, layer: Layer) -> bool {
+    pub(crate) fn remove_layer(&mut self, layer: Layer) -> bool {
         let before = self.body.layers.len();
         self.body.layers.retain(|l| l.id != layer || l.id == Layer::BASE);
         if self.body.layers.len() == before {

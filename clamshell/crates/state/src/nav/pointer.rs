@@ -73,7 +73,7 @@ impl Pointer {
         self.focus.as_ref()
     }
 
-    pub fn show_focus(&self) -> bool {
+    pub(crate) fn show_focus(&self) -> bool {
         self.show_focus
     }
 

@@ -146,7 +146,7 @@ impl Bottom {
 
     /// The tab to come back to after a restart. This is the tab that was chosen, not the keyboard a text
     /// field brought up.
-    pub fn chosen_tab(&self) -> Tab {
+    pub(crate) fn chosen_tab(&self) -> Tab {
         self.raised_from.unwrap_or(self.tab)
     }
 }

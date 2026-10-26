@@ -75,7 +75,7 @@ pub struct Device {
 
 /// How long a request of the Device view waits for its answer, in seconds, before another tap may ask
 /// again: the sticks' calibration, remote login, and the gyro's notice to hold still.
-pub const ANSWER_WAIT: u64 = 30;
+pub(crate) const ANSWER_WAIT: u64 = 30;
 
 /// Whether a request made at `asked` still waits for its answer at `now`.
 fn waits(asked: Option<u64>, now: u64) -> bool {
@@ -108,7 +108,7 @@ impl Device {
         if self.open { TopView::Device } else { TopView::Shelf }
     }
 
-    pub fn is_open(&self) -> bool {
+    pub(crate) fn is_open(&self) -> bool {
         self.open
     }
 

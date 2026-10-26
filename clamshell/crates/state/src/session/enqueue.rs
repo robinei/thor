@@ -21,7 +21,7 @@ use crate::{Effect, Session, Shelf};
 impl Session {
     /// The running entry of runner `key` that was most recently in front. Only entries in a scope of ours
     /// count, not those known by app id.
-    pub fn enqueue_target(&self, key: &str) -> Option<&Running> {
+    pub(crate) fn enqueue_target(&self, key: &str) -> Option<&Running> {
         let runner_of = |r: &Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| &*o.key == key);
         let candidates = self.running.iter().filter(|r| r.app_id.is_none() && runner_of(r));
         // Entries never in front come after those that were, the last started first.

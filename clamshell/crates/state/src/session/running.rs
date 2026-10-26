@@ -70,10 +70,10 @@ pub enum Origin {
 }
 
 /// How long a quit waits for the windows to close, in seconds, before it is given up.
-pub const QUIT_WAIT: u64 = 10;
+pub(crate) const QUIT_WAIT: u64 = 10;
 
 /// How long a launch that handed over waits for its window, in seconds.
-pub const HANDOFF: u64 = 15;
+pub(crate) const HANDOFF: u64 = 15;
 
 /// An entry that runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,7 +131,7 @@ impl Running {
     }
 
     /// Whether `w` is one of its windows by its process: its own process, or one that process started.
-    pub fn fathered(&self, w: &WindowFacts) -> bool {
+    pub(crate) fn fathered(&self, w: &WindowFacts) -> bool {
         self.pid().is_some_and(|pid| w.pids.contains(&pid))
     }
 
@@ -164,13 +164,13 @@ pub struct Launching {
 
 /// How long a launch waits for an answer from the launcher, its scope or its failure, in seconds, before
 /// it is given up as not started.
-pub const LAUNCH_WAIT: u64 = 30;
+pub(crate) const LAUNCH_WAIT: u64 = 30;
 
 /// The app id an entry's windows have when it runs in another program's processes, which makes them its
 /// windows wherever they open. For Steam's games it is `steam_app_<id>`. For an entry whose runner hands
 /// its apps over, such as Waydroid's, it is the desktop file's name. It is none for the rest, which run in
 /// scopes of ours.
-pub fn app_id_of(g: &Entry) -> Option<Arc<str>> {
+pub(crate) fn app_id_of(g: &Entry) -> Option<Arc<str>> {
     match &g.launch {
         Launch::Steam { appid } => Some(format!("{STEAM_APP_PREFIX}{appid}").into()),
         _ => handed_over_app(g).map(Into::into),
@@ -179,7 +179,7 @@ pub fn app_id_of(g: &Entry) -> Option<Arc<str>> {
 
 /// Whether `app_id` is [`app_id_of`] `g`, without building it, since this is asked for every window and
 /// entry.
-pub fn has_app_id(g: &Entry, app_id: &str) -> bool {
+pub(crate) fn has_app_id(g: &Entry, app_id: &str) -> bool {
     match &g.launch {
         Launch::Steam { appid } => app_id.strip_prefix(STEAM_APP_PREFIX).and_then(|n| n.parse::<u32>().ok()) == Some(*appid),
         _ => handed_over_app(g) == Some(app_id),

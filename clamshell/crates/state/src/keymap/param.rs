@@ -94,7 +94,7 @@ impl Param {
     }
 
     /// [`Param::applies`] for `input`'s binding of `act`. A hold's binding also has its time.
-    pub fn applies_to(self, input: Input, output: Output, act: Actuation) -> bool {
+    pub(crate) fn applies_to(self, input: Input, output: Output, act: Actuation) -> bool {
         match (self, act) {
             (Param::HoldTime, _) => act == Actuation::Hold,
             // A full pull has its own threshold. The trigger's deadzone and full point belong to the

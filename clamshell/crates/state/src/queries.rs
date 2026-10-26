@@ -34,7 +34,7 @@ impl State {
     }
 
     /// The settings entry or level `id` runs with: the global ones, then its runner's, then its own.
-    pub fn settings_of(&self, id: &str) -> Values {
+    pub(crate) fn settings_of(&self, id: &str) -> Values {
         self.prefs.settings().of_in(id, self.runner_of(id).as_slice())
     }
 

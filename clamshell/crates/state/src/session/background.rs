@@ -37,7 +37,7 @@ use crate::settings::{InBackground, Settings};
 
 /// How long, in seconds, a program's windows are all hidden before it is paused, so that switching away
 /// and back quickly doesn't pause it.
-pub const GRACE: u64 = 10;
+pub(crate) const GRACE: u64 = 10;
 
 /// What the session keeps for pausing: entries' slices and runners, both by key. Each is paused once it
 /// has been out of use for the grace period.
@@ -137,7 +137,7 @@ impl Session {
     /// to Pauses games, the default, it is paused if it is a game (see [`Entry::is_game`]), or for a
     /// runner's level if all of the runner's entries are games, and runs otherwise. A game that minds,
     /// such as one played online, can be set to run.
-    pub fn background_of(&self, id: &str, library: &Library, settings: &Settings) -> InBackground {
+    pub(crate) fn background_of(&self, id: &str, library: &Library, settings: &Settings) -> InBackground {
         let entry = self.entry(library, id);
         let runner = entry.and_then(|g| g.runner.as_ref()).map(|r| &*r.key);
         let is_game = || match entry {

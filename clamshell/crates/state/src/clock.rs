@@ -28,7 +28,7 @@ impl Clock {
 
     /// Epoch seconds at monotonic time `mono`, going by the wall clock now. If the wall clock has jumped
     /// since, the result moves with it.
-    pub fn unix_at(&self, mono: u64) -> u64 {
+    pub(crate) fn unix_at(&self, mono: u64) -> u64 {
         self.unix.saturating_sub(self.mono.saturating_sub(mono))
     }
 
