@@ -256,8 +256,14 @@ fn virtual_mouse() -> io::Result<VirtualDevice> {
     VirtualDevice::builder()?.name(VIRTUAL_MOUSE).with_keys(&keyset(&mouse_device_keys()))?.with_relative_axes(&rel)?.build()
 }
 
+pub(crate) fn normalise_controls(controls: Controls, raws: &mut [Raw]) {
+    for raw in raws.iter_mut().filter(|raw| raw.kind == evdev::EventType::KEY) {
+        raw.code = controls.normalise_button(raw.code);
+    }
+}
+
 #[cfg(test)]
-mod letter_tests {
+mod tests {
     use super::*;
     use crate::os::evdev::Press;
 
@@ -279,16 +285,7 @@ mod letter_tests {
             [Raw::key(KeyCode::BTN_WEST, Press::Down), Raw::key(KeyCode::BTN_NORTH, Press::Up), Raw::key(KeyCode::BTN_SOUTH, Press::Down), Raw::REPORT]
         );
     }
-}
 
-pub(crate) fn normalise_controls(controls: Controls, raws: &mut [Raw]) {
-    for raw in raws.iter_mut().filter(|raw| raw.kind == evdev::EventType::KEY) {
-        raw.code = controls.normalise_button(raw.code);
-    }
-}
-#[cfg(test)]
-mod profile_tests {
-    use super::*;
     #[test]
     fn control_normalisation_preserves_other_keys_and_axis_codes() {
         let controls = Controls { back_key: Some(123), auxiliary: None, letter_code_drivers: &[] };

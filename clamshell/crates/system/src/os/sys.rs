@@ -150,9 +150,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn escaped_names() {}
-
-    #[test]
     fn stat_fields_count_after_the_name() {
         // A name with spaces and parentheses, as a process may give itself.
         let stat = "4242 (a (b) c) S 17 4242 4242 0 -1 4194560 120 0 0 0 1 0 0 0 20 0 1 0 98765 0 0";
@@ -181,11 +178,6 @@ mod tests {
     fn this_process_is_listed() {
         assert!(processes().any(|(pid, _)| pid == std::process::id()));
     }
-}
-
-#[cfg(test)]
-mod process_tests {
-    use super::*;
 
     #[test]
     fn a_steam_game_is_known_by_its_app_id() {

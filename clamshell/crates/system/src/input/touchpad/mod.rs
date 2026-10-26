@@ -99,9 +99,11 @@ impl Touchpad {
 fn resolution(measured: Option<(f32, f32)>) -> Option<(i32, i32)> {
     measured.filter(|(x, y)| x.is_finite() && y.is_finite() && *x > 0.0 && *y > 0.0).map(|(x, y)| (x.round().max(1.0) as i32, y.round().max(1.0) as i32))
 }
+
 #[cfg(test)]
-mod resolution_tests {
+mod tests {
     use super::*;
+
     #[test]
     fn both_reported_axes_are_kept_and_unknown_resolution_is_not_guessed() {
         assert_eq!(resolution(Some((4.0, 5.0))), Some((4, 5)));
