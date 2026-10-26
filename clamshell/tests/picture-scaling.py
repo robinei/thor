@@ -338,8 +338,12 @@ def main():
                 problems.append("the bars beside the picture aren't black")
             if x0 or y0:
                 measured.append(f"fitted {w}x{h} at {x0},{y0}")
-            # The cross: magenta runs across a row a quarter down and a column a quarter across.
-            magenta = lambda r, g, b: r - g > 60 and b - g > 60
+            # The cross: magenta runs across rows around a quarter down and columns around a quarter across,
+            # where most of five of them see it. Anti-aliasing may blend the 1-pixel line where it crosses an
+            # edge of the pattern, which at a small mode comes close.
+            # Strongly: anti-aliasing tints a dark edge next to the line a little.
+            magenta = lambda r, g, b: r > 150 and b > 150 and g < 100
+            near = lambda quarter: [quarter * k // 4 for k in (2, 3, 4, 5, 6)]
 
             def runs(values):
                 found, inside = [], False
@@ -349,8 +353,8 @@ def main():
                     inside = hit
                 return found
 
-            columns = runs([magenta(*at(x, h // 4)) for x in range(w)])
-            rows = runs([magenta(*at(w // 4, y)) for y in range(h)])
+            columns = runs([sum(magenta(*at(x, y)) for y in near(h // 4)) >= 3 for x in range(w)])
+            rows = runs([sum(magenta(*at(x, y)) for x in near(w // 4)) >= 3 for y in range(h)])
             measured.append(f"cross x{columns} y{rows}")
             if len(columns) != 1 or abs(columns[0] - w // 2) > w // 20:
                 problems.append(f"vertical line of the cross at {columns}, expected one near {w // 2}")
