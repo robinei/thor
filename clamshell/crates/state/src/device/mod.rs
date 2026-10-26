@@ -24,7 +24,6 @@ use crate::bottom::Tab;
 use crate::bottom::editor::{Editor, Purpose};
 use crate::effect::{Effect, Save};
 use crate::out::Out;
-use crate::session::windows::WindowCommand;
 use crate::{Event, Id, Pointer};
 use account::{Account, AccountCommand, PasswordStep};
 use sticks::{Calibrations, Progress, Sticks};
@@ -143,12 +142,12 @@ impl Device {
         self.account
     }
 
-    /// Opens the view on the main screen, bringing shelf to the front, with the pad's focus on
-    /// its first row. The account is read while it is open ([`crate::sync::Sent::watches`]).
-    pub(crate) fn open(&mut self, pointer: &mut Pointer, session: &mut crate::Session) {
+    /// Opens the view on the main screen, in shelf's place (State brings shelf to the front), with the
+    /// pad's focus on its first row. The account is read while it is open
+    /// ([`crate::sync::Sent::watches`]).
+    pub(crate) fn open(&mut self, pointer: &mut Pointer) {
         self.open = true;
         pointer.focus_on(Id::Device(DeviceId::Wifi));
-        session.command(WindowCommand::ShowShelf);
     }
 
     /// Goes back to shelf, with the focus on its `selected` entry.

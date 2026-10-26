@@ -260,7 +260,7 @@ fn a_paused_game_shown_when_the_front_closes_is_thawed_at_once() {
 /// state took them as sent when it was built.
 #[test]
 fn the_ui_starting_sends_the_brightness_the_keymap_and_the_route() {
-    use crate::bottom::screen::{WindowRule, WindowRules};
+    use crate::session::below::{WindowRule, WindowRules};
     let rule = WindowRule { owner: "zelda-lttp".into(), app_id: "zelda3".into(), title: None };
     let brightness = Brightness { level: Some(40), shares: Vec::new() };
     let keymaps = crate::keymap::Keymaps::initial();

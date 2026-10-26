@@ -94,10 +94,6 @@ pub struct Bottom {
     woken: bool,
     /// What the bottom screen shows, ClamShell's view or a window moved down, and whether it is off.
     screen: screen::BottomScreen,
-    /// Which programs' windows go to the bottom screen.
-    window_rules: screen::WindowRules,
-    /// Windows a rule sent to the bottom screen. Each is sent once and dropped from here when it closes.
-    sent_down: Vec<i64>,
     /// What a key just did, such as change a level or take a screenshot, shown under the bar for a
     /// moment.
     notice: NoticeSlot,
@@ -115,11 +111,6 @@ pub struct Bottom {
 }
 
 impl Bottom {
-    /// The second screen at start, with the saved window rules.
-    pub(crate) fn new(window_rules: screen::WindowRules) -> Bottom {
-        Bottom { window_rules, ..Bottom::default() }
-    }
-
     pub fn tab(&self) -> Tab {
         self.tab
     }
@@ -151,10 +142,6 @@ impl Bottom {
 
     pub fn notice(&self) -> Option<&Notice> {
         self.notice.get()
-    }
-
-    pub fn window_rules(&self) -> &screen::WindowRules {
-        &self.window_rules
     }
 
     /// The tab to come back to after a restart. This is the tab that was chosen, not the keyboard a text

@@ -73,19 +73,20 @@ How areas cooperate:
 
 ## Windows
 
-The session owns each window's group (`Window.group`: an entry's, by its key, or the window's own for a
-window of no entry), whether it is on the top screen
-or moved down, and which window each screen shows. Keyboard focus is separate and may name either
-screen's client or ClamShell's UI. The compositor reports each window's life as events (opened, closed,
-changed, its title, keyboard focus, a client's request to be shown); opened and changed carry only what
-the compositor knows of the window (`WindowFacts`), and whether a new window comes in front is the
-state's to decide. Placing windows (focusing one,
-moving it between groups, down to the second screen or back) is the state's own, done during
-`State::apply`; the compositor reads the result from the state after apply, so a new window is placed
-before it is first shown. The only window effect is closing one (`Effect::Close`). Shelf is not a
-window: it is in front when no top window is. A metadata change cannot restore an old placement.
-Foreground launch intent and recent-group history are session rules. The detailed transitions and their
-tests are in `docs/state-machines.md`.
+The session holds the windows and their placement: each window's group (`Window.group`: an entry's, by
+its key, or the window's own for a window of no entry), the one window the top screen shows and the one
+placed on the bottom screen (each held once), each group's selected window, and the rules that send a
+program's windows below (`session/windows.rs`, `session/below.rs`). The bottom screen's area (`Bottom`)
+keeps its tabs and power and reads the window below; a window moved there opens its windows' tab.
+Keyboard focus is separate and may name either screen's client or ClamShell's UI. The compositor reports
+each window's life as events (opened, closed, changed, its title, keyboard focus, a client's request to
+be shown); opened and changed carry only what the compositor knows of the window (`WindowFacts`), and
+whether a new window comes in front is the state's to decide. Placing windows (focusing one, moving it
+between groups, down to the second screen or back) is done during `State::apply`; the compositor reads
+the result from the state after apply, so a new window is placed before it is first shown. The only
+window effect is closing one (`Effect::Close`). Shelf is not a window: it is in front when no top window
+is. A metadata change cannot restore an old placement. Foreground launch intent and recent-group history
+are session rules. The detailed transitions and their tests are in `docs/state-machines.md`.
 
 ## The UI
 

@@ -207,7 +207,7 @@ pub enum Save {
     /// The screens' brightness, to apply at the next start.
     Brightness(crate::levels::Brightness),
     /// Which programs' windows go to the bottom screen.
-    WindowRules(crate::bottom::screen::WindowRules),
+    WindowRules(crate::session::below::WindowRules),
     /// The dock's pinned entries' ids, in order.
     Dock(Vec<std::sync::Arc<str>>),
     /// The entries started with ClamShell (see [`crate::session::autostart`]).

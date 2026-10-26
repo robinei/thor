@@ -33,11 +33,11 @@ use std::sync::mpsc::{self, Sender};
 use std::thread::JoinHandle;
 
 use clamshell_library::{Plays, key_of};
-use clamshell_state::bottom::screen::{WindowRule, WindowRules};
 use clamshell_state::curve::{Curve, Curves};
 use clamshell_state::keymap::{Keymap, Keymaps};
 use clamshell_state::levels::Brightness;
 use clamshell_state::profiles::{Profile, Profiles};
+use clamshell_state::session::below::{WindowRule, WindowRules};
 use clamshell_state::settings::{Setting, Settings};
 use clamshell_state::{Dock, Resume, Save};
 use serde::de::DeserializeOwned;

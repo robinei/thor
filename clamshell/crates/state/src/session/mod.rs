@@ -3,6 +3,7 @@
 
 pub mod autostart;
 pub mod background;
+pub mod below;
 pub mod dock;
 pub mod enqueue;
 pub(crate) mod found;
@@ -41,6 +42,10 @@ pub struct Session {
     /// The window placed on the bottom screen, if any. It is shown there while the windows' tab is open
     /// (see [`crate::Bottom::shows_windows`]).
     bottom: Option<i64>,
+    /// Which programs' windows go to the bottom screen (see [`crate::session::below`]).
+    window_rules: below::WindowRules,
+    /// Windows a rule sent to the bottom screen. Each is sent once and dropped from here when it closes.
+    sent_down: Vec<i64>,
     /// The client with keyboard focus; none while ClamShell's own UI receives keys.
     keyboard_focus: Option<i64>,
     home_held: bool,
@@ -103,8 +108,8 @@ pub(crate) struct Quitting {
 }
 
 impl Session {
-    pub(crate) fn new(autostart: Vec<Arc<str>>, device_session: bool) -> Session {
-        Session { autostart, device_session, ..Session::default() }
+    pub(crate) fn new(autostart: Vec<Arc<str>>, device_session: bool, window_rules: below::WindowRules) -> Session {
+        Session { autostart, device_session, window_rules, ..Session::default() }
     }
 
     /// Whether ClamShell is the device's own session (see [`crate::Init::device_session`]).

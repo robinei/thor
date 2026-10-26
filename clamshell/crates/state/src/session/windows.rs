@@ -189,19 +189,76 @@ impl From<WindowEvent> for crate::Event {
 }
 
 impl crate::Session {
-    /// A window opened, in `group` if it is known yet, and selected on the top screen if `focus`.
-    pub(crate) fn open(&mut self, facts: WindowFacts, group: Option<Group>, focus: bool) {
+    /// Applies a change to a window. Returns whether the bottom screen is to show its window: one opened
+    /// below, or one a client asked to show that is there.
+    pub(crate) fn on_window(&mut self, event: WindowEvent, library: &crate::Library, out: &mut crate::out::Out) -> bool {
+        match event {
+            WindowEvent::Opened(facts) => return self.open(facts, library),
+            WindowEvent::Closed(id) => self.close(id),
+            WindowEvent::Title { window, title } => self.retitle(window, title),
+            WindowEvent::Changed(facts) => self.change(facts),
+            WindowEvent::KeyboardFocus(id) => self.focus_keyboard(id),
+            WindowEvent::Activate(id) => return self.activate(id, library, out),
+        }
+        false
+    }
+
+    /// A window opened. Its group is known at once if it is a dialog, whose is its parent's, or a window
+    /// of an entry, by its app id, its owner or its launch's unit; another gets one as the windows are
+    /// followed ([`Session::follow_windows`]). It comes in front as [`Session::opening_focus`] says. A
+    /// dialog of the window below goes below in its place; then this returns true.
+    fn open(&mut self, facts: WindowFacts, library: &crate::Library) -> bool {
+        if self.window(facts.id).is_some() {
+            return false;
+        }
+        let parent = facts.parent.and_then(|id| self.window(id)).map(|w| (w.group.clone(), self.below(w.id)));
+        let down = parent.as_ref().is_some_and(|(_, down)| *down);
+        let group = match parent {
+            Some((group, _)) => group,
+            None => library
+                .entries
+                .iter()
+                .find(|g| super::running::has_app_id(g, &facts.app_id))
+                .map(|g| Group::entry(&g.key))
+                .or_else(|| self.running_of(&facts).map(super::running::Running::group))
+                .or_else(|| facts.instance().map(|i| Group::entry(&i.key))),
+        };
+        let focus = !down && self.opening_focus(&facts);
         let id = facts.id;
         self.opened.push(id);
         self.windows.push(Window { facts, group });
         if focus {
             self.select_top(id);
         }
+        if down {
+            self.command(WindowCommand::Down(id));
+        }
+        down
+    }
+
+    /// A client asks to show its window, after the compositor checked its token. Its program is thawed
+    /// first, so that it draws as it is shown; a window below keeps its screen and gets the keyboard.
+    /// Returns whether it is below, for the bottom screen to show it.
+    fn activate(&mut self, id: i64, library: &crate::Library, out: &mut crate::out::Out) -> bool {
+        if self.window(id).is_none() {
+            return false;
+        }
+        self.cancel_front_launch();
+        if let Some(owner) = self.window(id).and_then(|w| self.owner_of(w)) {
+            self.thaw(&owner, out);
+            self.resume_runner_of(&owner, library, out);
+        }
+        if self.below(id) {
+            self.command(WindowCommand::KeyboardFocus(id));
+            return true;
+        }
+        self.command(WindowCommand::FocusWindow(id));
+        false
     }
 
     /// A window closed. If it was the one in front, its parent or another window of its group comes in
     /// front.
-    pub(crate) fn close(&mut self, id: i64) {
+    fn close(&mut self, id: i64) {
         let parent = self.window(id).and_then(|w| w.parent).filter(|parent| self.window(*parent).is_some() && !self.below(*parent));
         if self.keyboard_focus == Some(id) {
             self.keyboard_focus = None;
@@ -223,21 +280,21 @@ impl crate::Session {
         }
     }
 
-    pub(crate) fn retitle(&mut self, id: i64, title: String) {
+    fn retitle(&mut self, id: i64, title: String) {
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
             w.facts.title = title;
         }
     }
 
     /// A window's facts changed. Its title has an event of its own.
-    pub(crate) fn change(&mut self, facts: WindowFacts) {
+    fn change(&mut self, facts: WindowFacts) {
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == facts.id) {
             w.facts = WindowFacts { title: std::mem::take(&mut w.facts.title), x11: w.facts.x11, ..facts };
         }
     }
 
     /// Keyboard focus moved to `id`, or to ClamShell's UI; a window that isn't open is ignored.
-    pub(crate) fn focus_keyboard(&mut self, id: Option<i64>) {
+    fn focus_keyboard(&mut self, id: Option<i64>) {
         if id.is_none_or(|id| self.window(id).is_some()) {
             self.keyboard_focus = id;
         }
@@ -523,7 +580,7 @@ mod tests {
 
     #[test]
     fn lifecycle_title_applies_a_bottom_rule_once() {
-        use crate::bottom::screen::{WindowRule, WindowRules};
+        use crate::session::below::{WindowRule, WindowRules};
         let rules = WindowRules::from_list(vec![WindowRule { owner: "zelda-lttp".into(), app_id: "zelda3".into(), title: Some("second".into()) }]);
         let mut s = started(crate::Init { window_rules: rules, ..init() });
         s.applied(Event::tick(100));
@@ -541,7 +598,7 @@ mod tests {
 
     #[test]
     fn a_scope_window_and_its_rule_are_placed_before_the_scope_is_listed() {
-        use crate::bottom::screen::{WindowRule, WindowRules};
+        use crate::session::below::{WindowRule, WindowRules};
         let rules = WindowRules::from_list(vec![WindowRule { owner: "zelda-lttp".into(), app_id: "game".into(), title: None }]);
         let mut s = started(crate::Init { window_rules: rules, ..init() });
         let group = Group::entry(&clamshell_library::key_of("zelda-lttp"));

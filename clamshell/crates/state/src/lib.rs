@@ -150,7 +150,7 @@ pub struct Init {
     /// ClamShell is the device's own session, so it may put the device to sleep when idle.
     pub device_session: bool,
     /// Which programs' windows go to the bottom screen.
-    pub window_rules: crate::bottom::screen::WindowRules,
+    pub window_rules: crate::session::below::WindowRules,
     /// Show clocks in 12-hour format rather than 24-hour.
     pub twelve_hour: bool,
     /// This is ClamShell's first start, meaning the Device view hasn't been closed with Done yet. The
@@ -227,10 +227,10 @@ impl State {
             screens: Default::default(),
             histogram: None,
             xwayland_modes: Vec::new(),
-            bottom: Bottom::new(init.window_rules),
+            bottom: Bottom::default(),
             sys: Sys::new(init.twelve_hour),
             levels: Levels::new(init.brightness),
-            session: Session::new(init.autostart, init.device_session),
+            session: Session::new(init.autostart, init.device_session, init.window_rules),
             dock: init.dock,
             device: device::Device::new(init.sticks, init.first_start),
             ..State::default()
@@ -452,53 +452,8 @@ impl State {
     }
 
     fn window_event(&mut self, event: WindowEvent, out: &mut Out) {
-        match event {
-            WindowEvent::Opened(facts) => {
-                if self.session.window(facts.id).is_some() {
-                    return;
-                }
-                // A dialog goes with its parent, below if the parent is.
-                let parent = facts.parent.and_then(|id| self.session.window(id)).map(|w| (w.group.clone(), self.session.below(w.id)));
-                let down = parent.as_ref().is_some_and(|(_, down)| *down);
-                let group = match parent {
-                    Some((group, _)) => group,
-                    None => self
-                        .shelf
-                        .library()
-                        .entries
-                        .iter()
-                        .find(|g| crate::session::running::has_app_id(g, &facts.app_id))
-                        .map(|g| crate::session::windows::Group::entry(&g.key))
-                        .or_else(|| self.session.running_of(&facts).map(Running::group))
-                        .or_else(|| facts.instance().map(|i| crate::session::windows::Group::entry(&i.key))),
-                };
-                let focus = !down && self.session.opening_focus(&facts);
-                let id = facts.id;
-                self.session.open(facts, group, focus);
-                if down {
-                    self.bottom.show_down(id, &mut self.session);
-                }
-            }
-            WindowEvent::Closed(id) => self.session.close(id),
-            WindowEvent::Title { window, title } => self.session.retitle(window, title),
-            WindowEvent::Changed(facts) => self.session.change(facts),
-            WindowEvent::KeyboardFocus(id) => self.session.focus_keyboard(id),
-            WindowEvent::Activate(id) => {
-                if self.session.window(id).is_none() {
-                    return;
-                }
-                self.session.cancel_front_launch();
-                if let Some(owner) = self.session.window(id).and_then(|w| self.session.owner_of(w)) {
-                    self.session.thaw(&owner, out);
-                    self.session.resume_runner_of(&owner, self.shelf.library(), out);
-                }
-                if self.session.below(id) {
-                    self.bottom.show_below();
-                    self.session.command(WindowCommand::KeyboardFocus(id));
-                } else {
-                    self.session.command(WindowCommand::FocusWindow(id));
-                }
-            }
+        if self.session.on_window(event, self.shelf.library(), out) {
+            self.bottom.show_below();
         }
     }
 
@@ -562,7 +517,9 @@ impl State {
         }
         self.session.follow_windows(&self.clock, self.shelf.library(), &mut self.plays, out);
         self.record_plays(out);
-        self.bottom.follow_window_rules(&mut self.session, self.shelf.library());
+        if self.session.follow_window_rules(self.shelf.library()) {
+            self.bottom.show_below();
+        }
         // A window moved down opened the windows' tab; the tab it left settles as any tab left.
         if let Some(left) = self.bottom.take_left() {
             self.left_tab(left);
@@ -1259,8 +1216,13 @@ impl State {
             DeviceKey::CloseWindow => return self.session.close_front_window(self.bottom.shows_windows(&self.session), out),
             DeviceKey::Quit => return self.session.quit_front(self.bottom.shows_windows(&self.session), out),
             DeviceKey::BottomPower => return self.bottom.toggle_power(self.power(), self.clock.mono()),
-            DeviceKey::WindowDown => return self.bottom.window_down(&mut self.session, self.clock.mono(), out),
-            DeviceKey::WindowUp => return self.bottom.window_up(&mut self.session, self.clock.mono(), out),
+            DeviceKey::WindowDown => {
+                if self.session.window_down(self.bottom.notice_mut(), self.clock.mono(), out) {
+                    self.bottom.show_below();
+                }
+                return;
+            }
+            DeviceKey::WindowUp => return self.session.window_up(self.bottom.notice_mut(), self.clock.mono(), out),
             DeviceKey::WindowPrevious => return self.session.step_window(false),
             DeviceKey::WindowNext => return self.session.step_window(true),
         };
@@ -1353,7 +1315,8 @@ impl State {
         match self.session.launch(request, &self.shelf, tab, self.prefs.settings(), &self.clock, out) {
             Some(Instead::Device) => {
                 self.session.cancel_front_launch();
-                self.device.open(&mut self.pointer, &mut self.session);
+                self.device.open(&mut self.pointer);
+                self.session.command(WindowCommand::ShowShelf);
             }
             Some(Instead::Group) if self.shelf.reveal(&entry) => {
                 self.session.cancel_front_launch();

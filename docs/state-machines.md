@@ -215,12 +215,14 @@ them_for_a_moment`, `a_screenshot_is_asked_for_…`, `a_window_moved_down_…`; 
 `a_window_moved_up_says_its_rule_is_forgotten`; Account: device `an_account_change_says_how_it_went`. The gyro's "hold still" notice stays until the calibration answers, at most 30 s:
 `the_gyros_hold_still_shows_until_it_answers_at_most_30_s`.
 
-### View, power and dim (bottom/screen.rs)
+### View, power and dim (bottom/screen.rs, session/below.rs)
 
-State: `screen{off, idle_off}`, `used_at`, `dimmed`, `woken`, `sent_down`, `window_rules`; the windows
-moved down are shown in their own tab, `Tab::Windows` (the bar's rightmost button), with `before_windows`
-the tab it was opened from and `left` a tab left as a window moved down, settled after the window rules
-as any tab left (`left_tab`).
+State: `screen{off, idle_off}`, `used_at`, `dimmed`, `woken`; the window moved down is shown in its own
+tab, `Tab::Windows` (the bar's rightmost button), with `before_windows` the tab it was opened from and
+`left` a tab left as a window moved down, settled after the window rules as any tab left (`left_tab`).
+Which window is below, the rules that send windows there (`window_rules`) and the windows they sent
+(`sent_down`) are the session's (session/below.rs): a move down, by hand, by a rule or by a dialog
+opening, tells the bottom screen to open the windows' tab and turn on (`Bottom::show_below`).
 
 | Transition | Test |
 |---|---|

@@ -1,80 +1,10 @@
-//! The bottom screen shared with programs' windows, such as a dual-screen emulator's second screen.
-//!
-//! Home + right stick down puts the selected top window below, returning the previous occupant to its
-//! home group. Up brings the bottom window back, even while ClamShell's view covers it. Right stick
-//! press switches between that one window and ClamShell's view; Home+Start controls bottom power.
-//!
-//! Moving a game's or a dock app's window down is remembered as a rule ([`WindowRule`]), so the next
-//! time the program opens a window like it, the window goes down by itself. Moving it up forgets the
-//! rule. A rule holds the program and the window's app id. It holds the title too, but only when the
-//! program has another window with that app id open, as a dual-screen emulator does, since titles change
-//! with what a window shows.
-//!
-//! The rules are saved. A window that matches one is moved down once, after the event that opened it or
-//! gave it the title ([`Bottom::follow_window_rules`]).
-
-use std::sync::Arc;
+//! The bottom screen shared with programs' windows, such as a dual-screen emulator's second screen: the
+//! windows' tab shows the window placed there (see [`crate::session::below`]), right stick press switches
+//! between it and ClamShell's view, and the screen's power, by hand (Home+Start) or by itself.
 
 use crate::bottom::Bottom;
-use crate::bottom::notice::NoticeKind;
-use crate::effect::{Effect, Save};
-use crate::out::Out;
-use crate::session::windows::WindowCommand;
-use crate::session::windows::WindowFacts;
 use crate::settings::BottomWhenIdle;
 use crate::{Clock, Session};
-
-/// A window that goes to the bottom screen when its entry opens it. The rule names the entry by its id,
-/// the app id, and optionally the title.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WindowRule {
-    pub owner: Arc<str>,
-    pub app_id: String,
-    pub title: Option<String>,
-}
-
-impl WindowRule {
-    fn matches(&self, owner: &str, w: &WindowFacts) -> bool {
-        &*self.owner == owner && self.app_id == w.app_id && self.title.as_ref().is_none_or(|t| *t == w.title)
-    }
-}
-
-/// The rules for which programs' windows go to the bottom screen.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct WindowRules {
-    list: Vec<WindowRule>,
-}
-
-impl WindowRules {
-    /// The rules from their saved list.
-    pub fn from_list(list: Vec<WindowRule>) -> WindowRules {
-        WindowRules { list }
-    }
-
-    pub fn list(&self) -> &[WindowRule] {
-        &self.list
-    }
-
-    /// Adds a rule unless there is one like it. Returns whether it did.
-    fn add(&mut self, rule: WindowRule) -> bool {
-        if self.list.contains(&rule) {
-            return false;
-        }
-        self.list.push(rule);
-        true
-    }
-
-    /// Forgets the rules that match a window of `owner`. Returns whether there were any.
-    fn forget(&mut self, owner: &str, w: &WindowFacts) -> bool {
-        let before = self.list.len();
-        self.list.retain(|r| !r.matches(owner, w));
-        self.list.len() != before
-    }
-
-    fn wants(&self, owner: &str, w: &WindowFacts) -> bool {
-        self.list.iter().any(|r| r.matches(owner, w))
-    }
-}
 
 /// What the bottom screen shows, besides being on or off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -190,63 +120,6 @@ impl Bottom {
         self.woken = false;
     }
 
-    /// Home + right stick down moves the window in front on the top screen to the bottom screen, shows it there, and
-    /// remembers it for its program.
-    pub(crate) fn window_down(&mut self, session: &mut Session, now: u64, out: &mut Out) {
-        let Some(w) = session.top_window().cloned() else {
-            return;
-        };
-        self.show_down(w.id, session);
-        // Sent down already, so the rule added below doesn't send it again.
-        if !self.sent_down.contains(&w.id) {
-            self.sent_down.push(w.id);
-        }
-        // The title is only used to tell it apart from another window of its program with the same
-        // app id.
-        let others = session.windows().iter().any(|o| o.id != w.id && o.app_id == w.app_id && o.unit == w.unit);
-        let title = others.then(|| w.title.clone());
-        if let Some(owner) = session.owner_of(&w)
-            && self.window_rules.add(WindowRule { owner: owner.clone(), app_id: w.app_id.clone(), title })
-        {
-            // A remembered rule applies to subsequent windows. Creating it must not move an already
-            // placed sibling with the same app id, including another launch of this program.
-            for existing in session.windows_of(&owner).filter(|other| other.app_id == w.app_id) {
-                if !self.sent_down.contains(&existing.id) {
-                    self.sent_down.push(existing.id);
-                }
-            }
-            self.window_rules_changed(true, now, out);
-        }
-    }
-
-    /// Moves a window down and shows it there, in the windows' tab, from whichever tab was open, turning
-    /// the bottom screen on again if it was off.
-    pub(crate) fn show_down(&mut self, id: i64, session: &mut Session) {
-        self.open_windows_tab();
-        session.command(WindowCommand::Down(id));
-        self.screen.off = false;
-    }
-
-    /// Home + right stick up moves the window the bottom screen shows (the tab in view) back to its place on the top
-    /// screen, and forgets its rule. The bottom screen then shows ClamShell's view.
-    pub(crate) fn window_up(&mut self, session: &mut Session, now: u64, out: &mut Out) {
-        let Some(w) = session.bottom_window().cloned() else {
-            return;
-        };
-        session.command(WindowCommand::Up(w.id));
-        if let Some(owner) = session.owner_of(&w)
-            && self.window_rules.forget(&owner, &w)
-        {
-            self.window_rules_changed(false, now, out);
-        }
-    }
-
-    /// A rule was added or forgotten. That is shown in a notice, and the rules are saved.
-    fn window_rules_changed(&mut self, added: bool, now: u64, out: &mut Out) {
-        self.notice.show(NoticeKind::BottomRule(added), now);
-        out.effects.push(Effect::Save(Save::WindowRules(self.window_rules.clone())));
-    }
-
     /// Opens the windows' tab as a window moves there. The tab left is settled later (see
     /// [`Bottom::take_left`]), since this can happen while windows are followed.
     fn open_windows_tab(&mut self) {
@@ -300,28 +173,6 @@ impl Bottom {
             self.screen.idle_off = false;
         }
     }
-
-    /// Runs after every event. A window whose program has a rule for it is sent down, once.
-    pub(crate) fn follow_window_rules(&mut self, session: &mut Session, library: &crate::Library) {
-        let wanted: Vec<i64> = session
-            .windows()
-            .iter()
-            .filter(|w| !session.below(w.id) && !self.sent_down.contains(&w.id))
-            .filter(|w| {
-                let owner = session.owner_of(w).or_else(|| {
-                    let key = w.group.as_ref()?.key()?;
-                    library.entries.iter().find(|g| g.key == key).map(|g| g.id.clone())
-                });
-                owner.is_some_and(|o| self.window_rules.wants(&o, w))
-            })
-            .map(|w| w.id)
-            .collect();
-        for id in wanted {
-            self.sent_down.push(id);
-            self.show_down(id, session);
-        }
-        self.sent_down.retain(|id| session.windows().iter().any(|w| w.id == *id));
-    }
 }
 
 #[cfg(test)]
@@ -329,9 +180,13 @@ impl Bottom {
 mod tests {
     use super::*;
     use crate::Tab;
+    use crate::bottom::notice::NoticeKind;
     use crate::device::buttons::DeviceKey;
+    use crate::effect::{Effect, Save};
+    use crate::session::below::WindowRule;
     use crate::session::instance::Instance;
     use crate::session::running::{Origin, Running};
+    use crate::session::windows::WindowFacts;
     use crate::settings::{Choice, Setting};
     use crate::testkit::Applied;
     use crate::testkit::{group_of, state, tap};
@@ -406,7 +261,7 @@ mod tests {
     fn a_rule_sends_the_window_down_when_its_program_opens_it_again() {
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
-        let rules = s.bottom().window_rules().clone();
+        let rules = s.session().window_rules().clone();
         // A fresh start with the rules. The game's windows open on top, and the one the rule names goes
         // down, once.
         let mut s = crate::testkit::started(crate::Init { window_rules: rules.clone(), ..crate::testkit::init() });
@@ -628,7 +483,7 @@ mod tests {
         assert_eq!(key(&mut s, DeviceKey::WindowDown), vec![], "no windows");
         s.observed(vec![crate::testkit::win_of(2, "foot", &crate::testkit::launch_of("foot_1"))]);
         assert_eq!(key(&mut s, DeviceKey::WindowDown), vec![], "shelf in front");
-        assert!(s.bottom().window_rules().list().is_empty());
+        assert!(s.session().window_rules().list().is_empty());
     }
 
     /// Home + right stick up says the window's rule is forgotten.

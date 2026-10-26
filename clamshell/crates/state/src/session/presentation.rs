@@ -377,7 +377,7 @@ impl crate::State {
     pub fn process_game(&self, unit: Option<&str>, steam_app: Option<u32>) -> Option<(crate::settings::Resolution, bool)> {
         let id = self.session().entry_of_process(unit, steam_app)?;
         let game = self.session().entry(self.shelf().library(), &id).is_some_and(crate::Entry::is_game);
-        let dual = self.bottom().window_rules().list().iter().any(|rule| *rule.owner == *id);
+        let dual = self.session().window_rules().list().iter().any(|rule| *rule.owner == *id);
         game.then(|| (self.settings_of(&id).choice(), dual))
     }
 

@@ -103,7 +103,7 @@ pub fn state(library: Library) -> State {
         dock,
         keymaps: clamshell_state::keymap::Keymaps::initial(),
         curves: clamshell_state::curve::Curves::initial(),
-        window_rules: clamshell_state::bottom::screen::WindowRules::from_list(vec![clamshell_state::bottom::screen::WindowRule {
+        window_rules: clamshell_state::session::below::WindowRules::from_list(vec![clamshell_state::session::below::WindowRule {
             owner: "desktop:foot".into(),
             app_id: "foot".into(),
             title: Some(demo::BELOW.into()),
