@@ -1,17 +1,8 @@
-//! The on-screen keyboard's output: a virtual keyboard through uinput, like the touchpad and the
-//! controller. Each key press from the keyboard mode becomes its modifiers pressed, the key pressed and
-//! released, and the modifiers released. Key positions are US, as is the compositor's layout, so the
-//! characters drawn on the keys are what is typed.
-
-use std::io;
+//! The keys a keymap's chords press, through the pad's virtual device (see [`crate::input::pad`]): US
+//! key positions, as is the compositor's layout, so a chord's character is what is typed.
 
 use clamshell_state::bottom::keyboard::{Key, Named, Stroke};
-use evdev::uinput::VirtualDevice;
-use evdev::{InputEvent, KeyCode};
-
-use crate::os::evdev::{Press, Raw, keyset};
-
-pub const NAME: &str = "clamshell keyboard";
+use evdev::KeyCode;
 
 /// The US key for an unshifted printable character.
 fn char_key(c: char) -> Option<KeyCode> {
@@ -109,27 +100,6 @@ fn key_of(stroke: &Stroke) -> Option<KeyCode> {
     }
 }
 
-/// The keys of one stroke in order: modifiers down, the key down, the key up, modifiers up.
-pub fn events(stroke: &Stroke) -> Vec<(KeyCode, Press)> {
-    let Some(key) = key_of(stroke) else {
-        return Vec::new();
-    };
-    let mods: Vec<KeyCode> = [
-        (stroke.ctrl, KeyCode::KEY_LEFTCTRL),
-        (stroke.alt, KeyCode::KEY_LEFTALT),
-        (stroke.logo, KeyCode::KEY_LEFTMETA),
-        (stroke.shift, KeyCode::KEY_LEFTSHIFT),
-    ]
-    .into_iter()
-    .filter_map(|(on, code)| on.then_some(code))
-    .collect();
-    let mut out: Vec<(KeyCode, Press)> = mods.iter().map(|&m| (m, Press::Down)).collect();
-    out.push((key, Press::Down));
-    out.push((key, Press::Up));
-    out.extend(mods.iter().rev().map(|&m| (m, Press::Up)));
-    out
-}
-
 /// The modifier keys, in the order they go down. They come up in reverse order.
 pub const MODIFIERS: [KeyCode; 4] = [KeyCode::KEY_LEFTCTRL, KeyCode::KEY_LEFTALT, KeyCode::KEY_LEFTMETA, KeyCode::KEY_LEFTSHIFT];
 
@@ -140,7 +110,7 @@ pub fn chord_keys(chord: &clamshell_state::keymap::Chord) -> (Vec<KeyCode>, Opti
     (mods, key)
 }
 
-/// Every key the on-screen keyboard, or a keymap's chord, can press.
+/// Every key a keymap's chord can press.
 pub fn all_keys() -> Vec<KeyCode> {
     let mut keys = MODIFIERS.to_vec();
     keys.extend((' '..='~').filter_map(char_key));
@@ -164,33 +134,6 @@ pub fn all_keys() -> Vec<KeyCode> {
     keys.sort_by_key(|k| k.0);
     keys.dedup();
     keys
-}
-
-pub struct VirtualKeyboard {
-    device: VirtualDevice,
-}
-
-impl VirtualKeyboard {
-    /// Creates the device with every key the on-screen keyboard can press.
-    pub fn new() -> io::Result<Self> {
-        let keys = keyset(&all_keys());
-        let device = VirtualDevice::builder()?.name(NAME).with_keys(&keys)?.build()?;
-        Ok(VirtualKeyboard { device })
-    }
-
-    /// Types one stroke. The key goes down and up in separate reports, as from a real keyboard.
-    pub fn stroke(&mut self, stroke: &Stroke) -> io::Result<()> {
-        let events = events(stroke);
-        let Some(release) = events.iter().position(|&(_, press)| press == Press::Up) else {
-            return Ok(());
-        };
-        let report = |keys: &[(KeyCode, Press)]| -> Vec<InputEvent> {
-            keys.iter().map(|&(code, press)| Raw::key(code, press).into()).chain([Raw::REPORT.into()]).collect()
-        };
-        let (down, up) = events.split_at(release);
-        self.device.emit(&report(down))?;
-        self.device.emit(&report(up))
-    }
 }
 
 #[cfg(test)]
@@ -235,46 +178,9 @@ mod tests {
     }
 
     #[test]
-    fn a_shifted_ctrl_stroke_wraps_the_key_in_its_modifiers() {
-        let s = Stroke { key: Key::Char('t'), shift: true, ctrl: true, alt: false, logo: false };
-        assert_eq!(
-            events(&s),
-            vec![
-                (KeyCode::KEY_LEFTCTRL, Press::Down),
-                (KeyCode::KEY_LEFTSHIFT, Press::Down),
-                (KeyCode::KEY_T, Press::Down),
-                (KeyCode::KEY_T, Press::Up),
-                (KeyCode::KEY_LEFTSHIFT, Press::Up),
-                (KeyCode::KEY_LEFTCTRL, Press::Up),
-            ]
-        );
-    }
-
-    #[test]
     fn named_keys_and_f_keys() {
-        assert_eq!(events(&stroke(Key::Named(Named::F(12))))[0], (KeyCode::KEY_F12, Press::Down));
-        assert_eq!(events(&stroke(Key::Named(Named::Delete)))[0], (KeyCode::KEY_DELETE, Press::Down));
-        assert!(events(&stroke(Key::Named(Named::F(13)))).is_empty());
-    }
-
-    /// Creates the real device and reads it back. Needs /dev/uinput. The reader grabs the device first,
-    /// so the compositor never sees these keys. `cargo test -p clamshell-system -- --ignored`
-    #[test]
-    #[ignore = "needs /dev/uinput"]
-    fn the_virtual_keyboard_sends_its_keys() {
-        let mut kb = VirtualKeyboard::new().expect("uinput");
-        std::thread::sleep(std::time::Duration::from_millis(300));
-        let mut reader = evdev::raw_stream::enumerate().map(|(_, d)| d).find(|d| d.name() == Some(NAME)).expect("device node");
-        reader.grab().expect("grab");
-        kb.stroke(&Stroke { key: Key::Char('a'), shift: true, ctrl: false, alt: false, logo: false }).expect("stroke");
-        let mut keys = Vec::new();
-        while keys.len() < 4 {
-            for e in reader.fetch_events().expect("read") {
-                if e.event_type() == evdev::EventType::KEY {
-                    keys.push((e.code(), e.value()));
-                }
-            }
-        }
-        assert_eq!(keys, vec![(KeyCode::KEY_LEFTSHIFT.0, 1), (KeyCode::KEY_A.0, 1), (KeyCode::KEY_A.0, 0), (KeyCode::KEY_LEFTSHIFT.0, 0)]);
+        assert_eq!(key_of(&stroke(Key::Named(Named::F(12)))), Some(KeyCode::KEY_F12));
+        assert_eq!(key_of(&stroke(Key::Named(Named::Delete))), Some(KeyCode::KEY_DELETE));
+        assert_eq!(key_of(&stroke(Key::Named(Named::F(13)))), None);
     }
 }

@@ -5,7 +5,6 @@ use clamshell_state::{Effect, Watch};
 use super::Tuning;
 use crate::audio::mixer;
 use crate::display::brightness;
-use crate::input::keyboard::VirtualKeyboard;
 use crate::input::{pad, touchpad};
 use crate::launch::launcher;
 use crate::network::{bluetooth, wifi};
@@ -46,8 +45,6 @@ pub struct Handles {
     /// Lists and watches the folder open in the browser.
     pub browse: Worker<clamshell_state::shelf::files::BrowseCommand>,
     pub files: Worker<clamshell_state::shelf::files::FileOp>,
-    /// The on-screen keyboard types through it. `None` if it couldn't be made.
-    pub keyboard: Option<VirtualKeyboard>,
 }
 
 impl Handles {
@@ -68,14 +65,6 @@ impl Handles {
             }
             Effect::PadActivity(watch) => self.pad.send(pad::Command::WatchActivity(*watch)),
             Effect::Touchpad(contacts) => self.touchpad.send(touchpad::Command::Contacts(contacts.clone())),
-            Effect::Key(stroke) => match self.keyboard.as_mut() {
-                Some(kb) => {
-                    if let Err(e) = kb.stroke(stroke) {
-                        log::warn!("virtual keyboard: {e}");
-                    }
-                }
-                None => log::info!("effect: {effect:?} (no virtual keyboard)"),
-            },
             Effect::Launch { entry, instance, launch, settings, env } => {
                 log::info!("launching {entry}");
                 // The cap's first, so a game's own variables can still override them.
@@ -155,8 +144,9 @@ impl Handles {
             Effect::Notify { summary, body, urgent } => {
                 self.system.send(crate::device::Command::Notify { summary: summary.clone(), body: body.clone(), urgent: *urgent })
             }
-            // The compositor's own: closing windows, the screens' power and refresh rate, screenshots, quitting.
-            Effect::Close(_) | Effect::Outputs { .. } | Effect::Refresh(_) | Effect::Screenshot | Effect::Quit => {}
+            // The compositor's own: closing windows, the on-screen keyboard's keys, the screens' power and
+            // refresh rate, screenshots, quitting.
+            Effect::Close(_) | Effect::Key(_) | Effect::Outputs { .. } | Effect::Refresh(_) | Effect::Screenshot | Effect::Quit => {}
         }
     }
 

@@ -18,7 +18,6 @@ pub use settings::Tuning;
 use crate::Sink;
 use crate::audio::{mixer, sound};
 use crate::display::brightness::{self, Backlights};
-use crate::input::keyboard::VirtualKeyboard;
 use crate::input::{pad, touchpad};
 use crate::launch::{launcher, scopes};
 use crate::library::meta::cache::Cache;
@@ -180,7 +179,5 @@ pub fn start<S: Sink + Clone>(
         tuning,
         browse,
         files,
-        // The on-screen keyboard types through a virtual keyboard with US key positions.
-        keyboard: VirtualKeyboard::new().map_err(|e| log::error!("virtual keyboard: {e}")).ok(),
     }
 }
