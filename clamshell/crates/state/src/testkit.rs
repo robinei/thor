@@ -97,11 +97,6 @@ pub fn read(s: &mut State, reading: Reading) {
     s.applied(reading.into());
 }
 
-/// Shelf's window, in front or not.
-pub fn shelf_window(focused: bool) -> Window {
-    win(1, crate::session::windows::SHELF_APP_ID, &Instance::Shelf.name(), focused)
-}
-
 /// The notice shown, if one is.
 pub fn notice(s: &State) -> Option<crate::bottom::notice::NoticeKind> {
     s.bottom().notice().map(|n| n.what.clone())

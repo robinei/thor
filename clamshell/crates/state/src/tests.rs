@@ -198,13 +198,13 @@ fn a_launchs_first_window_is_shown_before_a_window_that_came_back() {
     s.applied(Event::tick(1000));
     let zelda = launch(&mut s, "zelda-lttp");
     let zelda_window = Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), true) };
-    s.observed(vec![shelf_window(false), zelda_window.clone()]);
+    s.observed(vec![zelda_window.clone()]);
     // Its window closes with nothing else in front: shelf is shown, and the workspace remembered.
-    s.observed(vec![shelf_window(false)]);
+    s.observed(vec![]);
     assert!(s.session().shelf_in_front());
     let ff6 = launch(&mut s, "ff6");
     let ff6_window = Window { unit: ff6.unit(), ..win(4, "ff6", &ff6.workspace(), false) };
-    s.observed(vec![shelf_window(false), Window { focused: false, ..zelda_window }, ff6_window]);
+    s.observed(vec![Window { focused: false, ..zelda_window }, ff6_window]);
     assert_eq!(s.session().top_window().map(|w| w.id), Some(3));
 }
 

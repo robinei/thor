@@ -21,7 +21,7 @@ use crate::session::windows::WindowCommand;
 use crate::{Entry, Library};
 use instance::Instance;
 use running::{Front, Launching, Running};
-use windows::{SHELF_APP_ID, Window};
+use windows::Window;
 
 /// How soon after the window in front closed a new window on its workspace is shown again, in seconds.
 const REOPEN_SECS: u64 = 2;
@@ -175,7 +175,7 @@ impl Session {
     }
 
     pub fn has_other_top_window(&self) -> bool {
-        self.top_window().is_some_and(|front| !front.is_shelf() && self.windows.iter().any(|w| !w.down && w.id != front.id && w.workspace == front.workspace))
+        self.top_window().is_some_and(|front| self.windows.iter().any(|w| !w.down && w.id != front.id && w.workspace == front.workspace))
     }
 
     /// Initial selection for a compositor that has no external focus observation. While a launch waits for
@@ -212,7 +212,7 @@ impl Session {
     }
 
     pub(crate) fn step_window(&mut self, next: bool) {
-        let Some(front) = self.top_window().filter(|w| !w.is_shelf()) else { return };
+        let Some(front) = self.top_window() else { return };
         let mut group = self.windows.iter().filter(|w| !w.down && w.workspace == front.workspace).cycle();
         let count = self.windows.iter().filter(|w| !w.down && w.workspace == front.workspace).count();
         let id = if next {
@@ -257,7 +257,6 @@ impl Session {
     /// What is in front on the main screen: shelf, a running entry's window, or another.
     pub fn front(&self) -> Front {
         match self.top_window() {
-            Some(w) if w.app_id == SHELF_APP_ID => Front::Shelf,
             Some(w) if self.running_of(w).is_some() => Front::Program,
             Some(_) => Front::Other,
             None => Front::Shelf,
@@ -330,12 +329,11 @@ impl Session {
         })
     }
 
-    /// The window Home with B acts on. It is the one in front on the top screen, other than shelf's. If
-    /// there is none, it is the one in view on the bottom screen while it shows the windows moved there
+    /// The window Home with B acts on. It is the one in front on the top screen. If there is none, it is the one in view on the bottom screen while it shows the windows moved there
     /// (`shows_windows`).
     pub(crate) fn home_b_window(&self, shows_windows: bool) -> Option<&Window> {
         let windows = &self.windows;
-        self.top_window().filter(|w| !w.is_shelf()).or_else(|| shows_windows.then(|| windows.iter().filter(|w| w.down).max_by_key(|w| w.visible)).flatten())
+        self.top_window().or_else(|| shows_windows.then(|| windows.iter().filter(|w| w.down).max_by_key(|w| w.visible)).flatten())
     }
 
     /// Sets the icon of found entry `entry`, once it was found (see [`Effect::FindIcon`]).

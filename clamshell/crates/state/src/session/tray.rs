@@ -153,7 +153,7 @@ pub(crate) fn tray_entry(library: &Library, t: &TrayItem) -> Entry {
 mod tests {
     use super::*;
     use crate::id::{DockId, Id};
-    use crate::session::windows::{self, Window};
+    use crate::session::windows::Window;
     use crate::testkit::*;
     use crate::{Event, State};
 
@@ -174,8 +174,6 @@ mod tests {
     fn a_program_with_a_tray_icon_runs_with_its_windows_on_its_workspace() {
         let mut s = started(crate::Init { device_session: true, ..init() });
         tap(&mut s, Id::Tab(crate::Tab::Dock));
-        let shelf = win(1, windows::SHELF_APP_ID, &Instance::Shelf.name(), true);
-        s.observed(vec![shelf.clone()]);
         // The icon of a running entry, whose process is in the entry's scope, gives that entry its menu.
         let zelda = launch(&mut s, "zelda-lttp");
         let zelda_icon = item(":1.5/a", "zelda3", zelda.unit().as_deref());
@@ -200,7 +198,7 @@ mod tests {
         let at = s.dock().items().iter().position(|i| &*i.id == "desktop:firefox").unwrap() as u16;
         assert_eq!(tap_dock(&mut s, DockId::Entry(at)), vec![Effect::Tray(TrayCommand::Activate(":1.9/b".into()))]);
         let window = Window { pids: vec![900, 77], ..win(6, "firefox", &Instance::Shelf.name(), true) };
-        s.observed(vec![shelf.clone(), window.clone()]);
+        s.observed(vec![window.clone()]);
         assert_eq!(s.session().window(6).map(|w| w.workspace.as_str()), Some(ws.as_str()));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(6));
         // With its window open, a tap shows it.
@@ -220,7 +218,7 @@ mod tests {
         // Quit closes its windows, then asks its process to end. Force kill kills it.
         let id: Arc<str> = "desktop:firefox".into();
         assert_eq!(quit(&mut s, &id), vec![Effect::Close(vec![6])]);
-        let fx = s.observed(vec![shelf.clone()]);
+        let fx = s.observed(vec![]);
         assert!(fx.contains(&Effect::EndProcesses { pids: vec![77], force: false }), "{fx:?}");
         assert_eq!(force_kill(&mut s, "desktop:firefox"), vec![Effect::EndProcesses { pids: vec![77], force: true }]);
         // With its icon gone and no window, it has ended.

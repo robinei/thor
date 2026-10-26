@@ -45,7 +45,7 @@ impl Session {
         let starting = |w: &Window| self.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
         let service = |w: &Window| w.unit.as_deref().is_some_and(Instance::is_service);
         let mut new: Vec<Running> = Vec::new();
-        for w in self.windows.iter().filter(|w| !taken.contains(&w.id) && !w.has_home() && self.running_of(w).is_none()) {
+        for w in self.windows.iter().filter(|w| !taken.contains(&w.id) && !w.launched() && self.running_of(w).is_none()) {
             let Some(&pid) = w.pids.first().filter(|_| !starting(w) && !service(w)) else {
                 continue;
             };

@@ -471,7 +471,7 @@ impl State {
                             .find(|g| crate::session::running::has_app_id(g, &window.app_id))
                             .map(|g| Instance::workspace_of(&g.key))
                             .or_else(|| self.session.running_of(&window).map(|r| r.workspace()))
-                            .or_else(|| window.home().map(|i| i.workspace()))
+                            .or_else(|| window.instance().map(|i| i.workspace()))
                     });
                     if let Some(group) = group {
                         window.workspace = group;

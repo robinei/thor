@@ -141,7 +141,7 @@ impl Device {
         self.account
     }
 
-    /// Opens the view on the main screen, bringing shelf's window to the front, with the pad's focus on
+    /// Opens the view on the main screen, bringing shelf to the front, with the pad's focus on
     /// its first row. The account is read while it is open ([`crate::sync::Sent::watches`]).
     pub(crate) fn open(&mut self, pointer: &mut Pointer, session: &mut crate::Session) {
         self.open = true;
@@ -315,9 +315,8 @@ mod tests {
         s.applied(Event::tick(1000));
         let zelda = launch(&mut s, "zelda-lttp");
         let zelda_window = |focused| crate::testkit::win(3, "zelda3", &zelda.workspace(), focused);
-        s.observed(vec![shelf_window(false), zelda_window(true)]);
+        s.observed(vec![zelda_window(true)]);
         launch_now(&mut s, "tool:device");
-        s.observed(vec![shelf_window(true), zelda_window(false)]);
         assert_eq!(s.device().top_view(), TopView::Device);
         s.applied(Event::Home);
         assert!(s.session().shelf_in_front(), "nothing shown but shelf");
@@ -336,7 +335,6 @@ mod tests {
         assert!(s.applied(Event::Start).contains(&Effect::Watch(crate::Watch::Account, true)));
         assert!(tap(&mut s, DeviceId::Done).contains(&Effect::Watch(crate::Watch::Account, false)));
         // Opened again from shelf, and closed by Home.
-        s.observed(vec![shelf_window(true)]);
         let fx = s.applied(Event::Entry("tool:device".into(), crate::EntryAct::Play));
         assert!(fx.contains(&Effect::Watch(crate::Watch::Account, true)), "{fx:?}");
         assert!(s.applied(Event::Home).contains(&Effect::Watch(crate::Watch::Account, false)));

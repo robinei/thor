@@ -28,7 +28,7 @@ pub const STEAM_APP_PREFIX: &str = "steam_app_";
 /// A workspace of ours, or, for a launch, a scope and the workspace its windows are on.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Instance {
-    /// Shelf's window.
+    /// Shelf, which has no scope.
     Shelf,
     /// A launch of an entry: its key, the start time, a counter.
     Run { key: String, secs: u64, n: u64 },

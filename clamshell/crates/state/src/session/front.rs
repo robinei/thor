@@ -22,7 +22,7 @@ impl Session {
             return;
         }
         let shown = |ws: &String| windows.iter().any(|w| w.workspace == *ws && !w.down);
-        let group = self.recent.iter().find(|ws| shown(ws)).filter(|ws| !Instance::Shelf.is(ws)).cloned();
+        let group = self.recent.iter().find(|ws| shown(ws)).cloned();
         let was = was.clone();
         let closed = !windows.iter().any(|w| w.workspace == was);
         match group {
@@ -46,7 +46,7 @@ impl Session {
 
     /// Whether shelf is in front on the main screen, as it is before the compositor reports a window.
     pub(crate) fn shelf_in_front(&self) -> bool {
-        self.top_window().is_none_or(|w| w.is_shelf())
+        self.top_window().is_none()
     }
 
     /// The Home button always goes to shelf. (When the Device view is in shelf's place, Home closes it instead: see
@@ -88,9 +88,9 @@ mod tests {
     fn home_always_shows_shelf_and_repeated_home_stays_there() {
         let mut s = state();
         assert!(s.applied(Event::Home).is_empty());
-        s.observed(vec![shelf_window(false), win(7, "app", "app", true)]);
+        s.observed(vec![win(7, "app", "app", true)]);
         assert_eq!(s.applied(Event::Home), vec![Effect::PadRoute(crate::PadRoute::Ui)]);
-        assert!(s.session().top_window().is_some_and(Window::is_shelf));
+        assert!(s.session().shelf_in_front());
         assert!(s.applied(Event::Home).is_empty());
     }
 
@@ -99,24 +99,18 @@ mod tests {
         let mut s = state();
         let (zelda, terminal) = ("clamshell-run-zelda-1".to_owned(), "clamshell-run-foot-2".to_owned());
         // Shelf, then the terminal, then the game in front.
-        s.observed(vec![shelf_window(true)]);
-        s.observed(vec![shelf_window(false), win(2, "foot", &terminal, true)]);
-        s.observed(vec![shelf_window(false), win(2, "foot", &terminal, false), win(3, "retroarch", &zelda, true)]);
+        s.observed(vec![win(2, "foot", &terminal, true)]);
+        s.observed(vec![win(2, "foot", &terminal, false), win(3, "retroarch", &zelda, true)]);
         // When the game quits, the terminal, which was in front before it, comes back.
-        s.observed(vec![shelf_window(false), win(2, "foot", &terminal, false)]);
+        s.observed(vec![win(2, "foot", &terminal, false)]);
         assert_eq!(s.session().top_window().map(|w| w.id), Some(2));
-        s.observed(vec![shelf_window(false), win(2, "foot", &terminal, true)]);
         // When the terminal quits, shelf comes back.
-        s.observed(vec![shelf_window(false)]);
+        s.observed(vec![]);
         assert!(s.session().shelf_in_front());
-        // Nothing happens when a program's own second window closes, or for a new workspace before its
-        // window.
-        s.observed(vec![shelf_window(false), win(3, "retroarch", &zelda, true), win(4, "retroarch", &zelda, false)]);
-        s.observed(vec![shelf_window(false), win(4, "retroarch", &zelda, true)]);
+        // When a program's window closes, its other window comes in front.
+        s.observed(vec![win(3, "retroarch", &zelda, true), win(4, "retroarch", &zelda, false)]);
+        s.observed(vec![win(4, "retroarch", &zelda, false)]);
         assert_eq!(s.session().top_window().map(|w| w.id), Some(4));
-        s.observed(vec![shelf_window(true), win(4, "retroarch", &zelda, false)]);
-        s.observed(vec![shelf_window(false), win(4, "retroarch", &zelda, false)]);
-        assert!(s.session().shelf_in_front(), "shelf's window is still there");
     }
 
     #[test]
@@ -124,18 +118,17 @@ mod tests {
         let mut s = state();
         let app = "clamshell-run-fdroid-1".to_owned();
         s.applied(Event::tick(100));
-        s.observed(vec![shelf_window(false), win(2, "waydroid.org.fdroid.fdroid", &app, true)]);
-        // Its window closes and shelf shows. Another window comes on its workspace, moved there and not in
-        // front, and the workspace is shown again.
-        s.observed(vec![shelf_window(false)]);
+        s.observed(vec![win(2, "waydroid.org.fdroid.fdroid", &app, true)]);
+        // Its window closes and shelf shows. Another window comes on its workspace, not in front, and the
+        // workspace is shown again.
+        s.observed(vec![]);
         assert!(s.session().shelf_in_front());
-        s.observed(vec![shelf_window(true), win(3, "waydroid.org.fdroid.fdroid", &app, false)]);
+        s.observed(vec![win(3, "waydroid.org.fdroid.fdroid", &app, false)]);
         assert_eq!(s.session().top_window().map(|w| w.id), Some(3));
         // Later than that, it isn't.
-        s.observed(vec![shelf_window(false), win(3, "waydroid.org.fdroid.fdroid", &app, true)]);
-        s.observed(vec![shelf_window(false)]);
+        s.observed(vec![]);
         s.applied(Event::tick(103));
-        s.observed(vec![shelf_window(true), win(4, "waydroid.org.fdroid.fdroid", &app, false)]);
+        s.observed(vec![win(4, "waydroid.org.fdroid.fdroid", &app, false)]);
         assert!(s.session().shelf_in_front(), "too late: it stays behind");
     }
 
@@ -148,18 +141,17 @@ mod tests {
         s.applied(Event::tick(1000));
         let zelda = launch(&mut s, "zelda-lttp");
         let window = |id, focused| Window { unit: zelda.unit(), ..win(id, "zelda3", &zelda.workspace(), focused) };
-        s.observed(vec![shelf_window(false), window(3, true)]);
-        s.observed(vec![shelf_window(false)]);
+        s.observed(vec![window(3, true)]);
+        s.observed(vec![]);
         assert!(s.session().shelf_in_front());
         s.applied(Event::tick(1010));
         assert!(!s.session().opening_focus(&foot()), "another program's window opens behind");
-        s.observed(vec![shelf_window(true), window(4, false)]);
+        s.observed(vec![window(4, false)]);
         assert_eq!(s.session().top_window().map(|w| w.id), Some(4));
         // Closed again, and its next window comes too late.
-        s.observed(vec![shelf_window(false), window(4, true)]);
-        s.observed(vec![shelf_window(false)]);
+        s.observed(vec![]);
         s.applied(Event::tick(1011 + super::REWAIT_SECS));
-        s.observed(vec![shelf_window(true), window(5, false)]);
+        s.observed(vec![window(5, false)]);
         assert!(s.session().shelf_in_front(), "too late: it stays behind");
     }
 
@@ -167,19 +159,20 @@ mod tests {
     fn home_doesnt_go_back_to_a_workspace_whose_window_moved_down() {
         let mut s = state();
         let terminal = "clamshell-run-foot_1";
-        s.observed(vec![shelf_window(false), win(2, "foot", terminal, true)]);
-        s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
+        s.observed(vec![win(2, "foot", terminal, true)]);
         // With its window moved to the bottom screen and shelf in front, there is nothing to go back to on
         // the main screen.
-        s.observed(vec![shelf_window(true), Window { down: true, ..win(2, "foot", terminal, false) }]);
+        s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
+        assert!(s.session().shelf_in_front());
         assert_eq!(s.applied(Event::Home), vec![]);
     }
 
     #[test]
     fn home_stays_on_shelf_with_an_unowned_program_behind_it() {
         let mut s = state();
-        s.observed(vec![shelf_window(false), foot()]);
-        s.observed(vec![shelf_window(true), Window { focused: false, ..foot() }]);
+        s.observed(vec![foot()]);
+        s.applied(Event::Home);
         assert!(s.applied(Event::Home).is_empty());
+        assert!(s.session().shelf_in_front());
     }
 }

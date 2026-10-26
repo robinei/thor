@@ -54,14 +54,10 @@ impl Session {
             }
             WindowCommand::FocusWindow(id) => self.select_top(*id),
             WindowCommand::ShowShelf => {
-                if let Some(id) = self.windows.iter().find(|w| w.is_shelf() && !w.down).map(|w| w.id) {
-                    self.select_top(id);
-                } else {
-                    self.keyboard_focus = None;
-                    for w in self.windows.iter_mut().filter(|w| !w.down) {
-                        w.focused = false;
-                        w.visible = false;
-                    }
+                self.keyboard_focus = None;
+                for w in self.windows.iter_mut().filter(|w| !w.down) {
+                    w.focused = false;
+                    w.visible = false;
                 }
             }
             WindowCommand::Move { windows, to } => {
@@ -298,13 +294,7 @@ impl crate::Session {
             }
             WindowEvent::Activate(id) => {
                 if let Some(window) = self.windows.iter().find(|w| w.id == id) {
-                    let command = if window.down {
-                        WindowCommand::ShowDown(id)
-                    } else if window.is_shelf() {
-                        WindowCommand::ShowShelf
-                    } else {
-                        WindowCommand::FocusWindow(id)
-                    };
+                    let command = if window.down { WindowCommand::ShowDown(id) } else { WindowCommand::FocusWindow(id) };
                     self.command(command);
                 }
             }
@@ -354,9 +344,6 @@ pub fn changes(previous: &[Window], windows: &[Window]) -> crate::Event {
     crate::Event::WindowBatch(events)
 }
 
-/// The app id of shelf's window, its own Wayland surface on the main screen.
-pub const SHELF_APP_ID: &str = "clamshell.top";
-
 /// An open toplevel. The session owns its home group, screen and selection.
 #[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct Window {
@@ -396,24 +383,8 @@ impl Window {
         self.unit.as_deref().and_then(Instance::from_unit)
     }
 
-    /// Whose workspace it belongs on: its launch's, if we started it, or shelf's. Otherwise none, and it is
-    /// left where it is; Steam's games and the like are placed by the state, which knows their entries.
-    pub fn home(&self) -> Option<Instance> {
-        self.instance().or_else(|| (self.app_id == SHELF_APP_ID).then_some(Instance::Shelf))
-    }
-
-    /// Whether it has a home ([`Window::home`]), found without allocating.
-    pub fn has_home(&self) -> bool {
-        self.launched() || self.app_id == SHELF_APP_ID
-    }
-
-    /// Whether its home is shelf's workspace ([`Window::home`]), found without allocating.
-    pub fn is_shelf(&self) -> bool {
-        !self.launched() && self.app_id == SHELF_APP_ID
-    }
-
-    /// Whether it is in a scope we started.
-    fn launched(&self) -> bool {
+    /// Whether it is in a scope we started ([`Window::instance`]), found without allocating.
+    pub(crate) fn launched(&self) -> bool {
         self.unit.as_deref().is_some_and(Instance::is_launch_unit)
     }
 }
@@ -468,13 +439,13 @@ mod tests {
     #[test]
     fn a_backend_batch_keeps_replacement_history_until_all_changes_are_applied() {
         let mut s = state();
-        s.observed(vec![shelf_window(false), win(7, "test", "other", true)]);
-        let windows = vec![shelf_window(true), win(8, "test", "other", false)];
-        let event = crate::session::windows::changes(s.session().windows(), &windows);
-        // Closing first and settling would prune this workspace from history and briefly show shelf.
-        // One backend dispatch keeps the replacement present throughout settling.
+        s.observed(vec![win(7, "test", "other", true)]);
+        let replacement = win(8, "test", "other", false);
+        let event = Event::WindowBatch(vec![WindowEvent::Closed(7), WindowEvent::Opened(replacement.clone())]);
+        // Closing first and settling would prune this workspace from history. One dispatch keeps the
+        // replacement present throughout settling.
         assert_eq!(s.applied(event), vec![Effect::PadRoute(crate::PadRoute::Ui)]);
-        assert_eq!(s.session().windows(), windows);
+        assert_eq!(s.session().windows(), &[replacement]);
         assert!(s.applied(Event::Home).is_empty());
         assert_eq!(s.applied(WindowEvent::Activate(8).into()), vec![Effect::PadRoute(crate::PadRoute::Game)]);
         assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
@@ -499,14 +470,13 @@ mod tests {
     #[test]
     fn lifecycle_close_falls_back_once_and_retains_the_other_windows() {
         let mut s = state();
-        let shelf = shelf_window(false);
-        let front = win(7, "test", "1", true);
-        s.observed(vec![shelf.clone(), front]);
+        let other = win(6, "other", "2", false);
+        s.observed(vec![other.clone(), win(7, "test", "1", true)]);
         assert_eq!(s.applied(WindowEvent::Closed(7).into()), vec![Effect::PadRoute(crate::PadRoute::Ui)]);
-        let shelf = Window { focused: true, visible: true, ..shelf };
-        assert_eq!(s.session().windows(), std::slice::from_ref(&shelf));
+        assert_eq!(s.session().windows(), std::slice::from_ref(&other));
+        assert!(s.session().shelf_in_front());
         assert!(s.applied(WindowEvent::Closed(7).into()).is_empty());
-        assert_eq!(s.session().windows(), &[shelf]);
+        assert_eq!(s.session().windows(), &[other]);
     }
 
     #[test]
@@ -514,9 +484,7 @@ mod tests {
         let mut s = state();
         let top = win(7, "test", "1", false);
         let down = Window { down: true, ..win(8, "test", "clamshell-bottom", false) };
-        let shelf = shelf_window(true);
-        let shelf_id = shelf.id;
-        s.observed(vec![shelf, top, down]);
+        s.observed(vec![top, down]);
         assert_eq!(s.applied(WindowEvent::Activate(7).into()), vec![Effect::PadRoute(crate::PadRoute::Game)]);
         assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
         assert_eq!(s.applied(WindowEvent::Activate(8).into()), vec![Effect::Watch(crate::Watch::Metrics, false), Effect::PadActivity(true)]);
@@ -524,8 +492,6 @@ mod tests {
         assert_eq!(s.session().keyboard_focus(), Some(8));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
         assert!(s.bottom().shows_windows(s.session()));
-        assert_eq!(s.applied(WindowEvent::Activate(shelf_id).into()), vec![Effect::PadActivity(false), Effect::PadRoute(crate::PadRoute::Ui)]);
-        assert!(s.session().shelf_in_front());
     }
 
     #[test]
@@ -551,7 +517,6 @@ mod tests {
     #[test]
     fn home_cancels_a_launchs_late_request_to_take_the_front() {
         let mut s = state();
-        s.observed(vec![shelf_window(true)]);
         let instance = launch(&mut s, "zelda-lttp");
         assert!(s.session().front_launch().is_some());
         s.applied(Event::Home);
@@ -593,7 +558,7 @@ mod tests {
     fn activation_thaws_a_suspended_owner_before_selecting_its_window() {
         let mut s = state();
         let instance = launch(&mut s, "zelda-lttp");
-        s.observed(vec![shelf_window(false), Window { unit: instance.unit(), ..win(7, "zelda3", &instance.workspace(), true) }]);
+        s.observed(vec![Window { unit: instance.unit(), ..win(7, "zelda3", &instance.workspace(), true) }]);
         s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::Suspend));
         assert!(s.session().suspended("zelda-lttp"));
         // The client must be able to draw when the compositor shows it.
@@ -708,28 +673,25 @@ mod tests {
     }
 
     #[test]
-    fn windows_know_their_instance_and_home() {
+    fn windows_know_their_instance() {
         let w = |unit: Option<&str>, app_id: &str| Window { unit: unit.map(Into::into), app_id: app_id.into(), ..Window::default() };
         let terminal = Instance::Run { key: "foot_1".into(), secs: 1234, n: 7 };
         let foot = w(Some("clamshell-run-foot_1-1234-7.scope"), "foot");
         assert_eq!(foot.instance(), Some(terminal.clone()));
-        assert_eq!(foot.home(), Some(terminal.clone()));
         // Firefox started from that terminal belongs to the terminal.
-        assert_eq!(w(Some("clamshell-run-foot_1-1234-7.scope"), "firefox").home(), Some(terminal));
-        assert_eq!(w(Some("app-steam.scope"), "steam_app_620").home(), None, "Steam's: placed by the program");
-        assert_eq!(w(Some("app-steam.scope"), "steam").home(), None, "not ours: left alone");
-        assert_eq!(w(Some("clamshell.service"), SHELF_APP_ID).home(), Some(Instance::Shelf));
+        assert_eq!(w(Some("clamshell-run-foot_1-1234-7.scope"), "firefox").instance(), Some(terminal));
+        assert_eq!(w(Some("app-steam.scope"), "steam_app_620").instance(), None, "Steam's: placed by the program");
+        assert_eq!(w(Some("app-steam.scope"), "steam").instance(), None, "not ours: left alone");
         // The same without allocating.
-        let windows = [foot, w(Some("app-steam.scope"), "steam"), w(Some("clamshell.service"), SHELF_APP_ID), w(None, SHELF_APP_ID)];
-        for w in &windows {
-            assert_eq!((w.has_home(), w.is_shelf()), (w.home().is_some(), w.home() == Some(Instance::Shelf)), "{w:?}");
+        for w in [foot, w(Some("app-steam.scope"), "steam"), w(None, "foot")] {
+            assert_eq!(w.launched(), w.instance().is_some(), "{w:?}");
         }
     }
 
     #[test]
     fn touching_a_home_arrow_consumes_the_release_but_direct_home_still_shows_shelf() {
         let mut s = state();
-        s.observed(vec![shelf_window(false), win(7, "one", "one", true), win(8, "one", "one", false)]);
+        s.observed(vec![win(7, "one", "one", true), win(8, "one", "one", false)]);
         s.applied(Event::HomeHeld(true));
         assert!(s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowNext)).is_empty());
         s.applied(Event::HomeHeld(false));
@@ -741,7 +703,7 @@ mod tests {
         s.applied(Event::HomeHeld(true));
         s.applied(Event::HomeHeld(false));
         s.applied(Event::HomeTap);
-        assert!(s.session().top_window().is_some_and(Window::is_shelf));
+        assert!(s.session().shelf_in_front());
     }
 
     #[test]
@@ -792,7 +754,7 @@ mod tests {
     #[test]
     fn displacing_another_programs_bottom_window_does_not_activate_it() {
         let mut s = state();
-        s.observed(vec![shelf_window(false), win(7, "one", "one", true), win(8, "two", "two", false), win(9, "one", "one", false)]);
+        s.observed(vec![win(7, "one", "one", true), win(8, "two", "two", false), win(9, "one", "one", false)]);
         s.applied(WindowEvent::Activate(8).into());
         s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
         s.applied(WindowEvent::Activate(7).into());
@@ -867,14 +829,14 @@ mod tests {
     #[test]
     fn moving_the_top_window_does_not_require_keyboard_focus_there() {
         let mut s = state();
-        s.observed(vec![shelf_window(false), win(7, "one", "one", true), Window { down: true, visible: true, ..win(8, "two", "two", false) }]);
+        s.observed(vec![win(7, "one", "one", true), Window { down: true, visible: true, ..win(8, "two", "two", false) }]);
         s.applied(WindowEvent::Presentation { window: 7, focused: Some(false), visible: None }.into());
         s.applied(WindowEvent::KeyboardFocus(Some(8)).into());
         assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
         s.applied(Event::Device(crate::device::buttons::DeviceKey::WindowDown));
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
         assert_eq!(s.session().window(8).map(Window::place), Some(WindowPlace::Top("two")));
-        assert!(s.session().top_window().is_some_and(Window::is_shelf));
+        assert!(s.session().shelf_in_front());
         assert_eq!(s.session().windows_down().count(), 1);
     }
 }

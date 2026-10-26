@@ -446,7 +446,6 @@ mod tests {
         assert_eq!(fx, vec![Effect::Freeze { slice: slice.clone(), frozen: true }, closed(), Effect::PadRoute(crate::PadRoute::Ui)]);
         assert!(s.session().shelf_in_front());
         assert!(s.session().suspended("zelda-lttp"));
-        s.observed(vec![shelf_window(true), Window { focused: false, visible: false, ..w }]);
         long(&mut s, dock(0));
         let fx = tap(&mut s, Id::Dock(DockId::Suspend));
         assert!(fx.contains(&Effect::Freeze { slice, frozen: false }), "resumed: {fx:?}");
@@ -542,9 +541,8 @@ mod tests {
     fn home_b_closes_the_bottom_screens_window_with_none_in_front_above() {
         use crate::device::buttons::DeviceKey;
         let mut s = state();
-        s.observed(vec![shelf_window(false), foot()]);
+        s.observed(vec![foot()]);
         s.applied(Event::Device(DeviceKey::WindowDown));
-        s.observed(vec![shelf_window(true), Window { down: true, visible: true, focused: false, ..foot() }]);
         assert!(s.bottom().shows_windows(s.session()));
         assert_eq!(s.applied(Event::Device(DeviceKey::CloseWindow)), vec![Effect::Close(vec![foot().id])]);
         // With ClamShell's view on the bottom screen instead, there is nothing to close.

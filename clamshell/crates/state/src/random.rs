@@ -27,7 +27,7 @@ use crate::out::Out;
 use crate::profiles::picker::ProfileId;
 use crate::radios::bluetooth::{Bluetooth, Device as BtDevice, Kind};
 use crate::radios::wifi::{Network, Wifi};
-use crate::session::windows::{SHELF_APP_ID, Window};
+use crate::session::windows::Window;
 use crate::settings::Setting;
 use crate::settings::panel::Scope;
 use crate::*;
@@ -123,8 +123,7 @@ struct World {
 
 impl World {
     fn new() -> World {
-        let shelf = Window { id: 1, app_id: SHELF_APP_ID.into(), focused: true, visible: true, workspace: Instance::Shelf.name(), ..Window::default() };
-        World { windows: vec![shelf], next_window: 2, ..World::default() }
+        World { next_window: 1, ..World::default() }
     }
 
     fn focus(&mut self, pick: impl Fn(&Window) -> bool) {
@@ -464,12 +463,9 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
         61..=64 => {
             let id = match w.closing.pop() {
                 Some(id) if !rng.one_in(4) => id,
-                _ => rng.pick(&w.windows).filter(|x| x.app_id != SHELF_APP_ID)?.id,
+                _ => rng.pick(&w.windows)?.id,
             };
             w.windows.retain(|x| x.id != id);
-            if !w.windows.iter().any(|x| x.focused) {
-                w.focus(|x| x.app_id == SHELF_APP_ID);
-            }
             w.report()
         }
         // The focus moves to another window.
@@ -488,9 +484,6 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             if !rng.one_in(4) {
                 let gone = |x: &Window| x.unit.as_deref().and_then(Instance::from_unit).is_some_and(|i| i.key() == Some(key.as_str()));
                 w.windows.retain(|x| !gone(x));
-                if !w.windows.iter().any(|x| x.focused) {
-                    w.focus(|x| x.app_id == SHELF_APP_ID);
-                }
                 w.ending.retain(|k| *k != key);
             }
             Event::Units(w.units.clone())
@@ -686,7 +679,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                     };
                     WindowEvent::Opened(window).into()
                 }
-                1 if window.app_id != SHELF_APP_ID => {
+                1 => {
                     w.windows.retain(|w| w.id != window.id);
                     WindowEvent::Closed(window.id).into()
                 }

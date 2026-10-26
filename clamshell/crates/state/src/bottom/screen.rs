@@ -194,7 +194,7 @@ impl Bottom {
     /// Home + right stick down moves the window in front on the top screen to the bottom screen, shows it there, and
     /// remembers it for its program.
     pub(crate) fn window_down(&mut self, session: &mut Session, now: u64, out: &mut Out) {
-        let Some(w) = session.top_window().filter(|w| !w.is_shelf()).cloned() else {
+        let Some(w) = session.top_window().cloned() else {
             return;
         };
         self.show_down(w.id, session);
@@ -637,7 +637,7 @@ mod tests {
     fn window_down_with_no_window_in_front_does_nothing() {
         let mut s = state();
         assert_eq!(key(&mut s, DeviceKey::WindowDown), vec![], "no windows");
-        s.observed(vec![crate::testkit::shelf_window(true), crate::testkit::win(2, "foot", "1", false)]);
+        s.observed(vec![crate::testkit::win(2, "foot", "1", false)]);
         assert_eq!(key(&mut s, DeviceKey::WindowDown), vec![], "shelf in front");
         assert!(s.bottom().window_rules().list().is_empty());
     }
