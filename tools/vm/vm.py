@@ -75,6 +75,8 @@ PACKAGES = [
     # Archives browsed (FUSE) and removable storage ejected, as on the device (a missing one is a
     # library problem).
     "ratarmount", "udisks2",
+    # The compositor's priority, as on the device.
+    "rtkit",
 ]
 # The simulated radios: wlan0 the device's, wlan1 and wlan2 access points (see TEST_AP).
 TEST_NETWORKS = "ThorTest (WPA2, password thortest123) and ThorOpen (open)"

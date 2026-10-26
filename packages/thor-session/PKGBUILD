@@ -15,7 +15,7 @@ license=('MIT OR Apache-2.0')
 # (PipeWire, ALSA's default device through it too), X programs (Xwayland), removable storage (udisks2, udiskie; exFAT's tools), archives browsed
 # (ratarmount), opening files (xdg-utils, imv, zathura); the starter library's players
 # (RetroArch with its cores and XMB's assets, mpv; ffmpeg's ffprobe for videos' lengths).
-depends=(clamshell thor-system dbus xdg-desktop-portal-gtk foot udiskie xorg-xwayland mesa noto-fonts python python-pillow curl unzip
+depends=(clamshell thor-system dbus rtkit xdg-desktop-portal-gtk foot udiskie xorg-xwayland mesa noto-fonts python python-pillow curl unzip
          networkmanager bluez upower pipewire pipewire-alsa pipewire-pulse wireplumber udisks2 exfatprogs ratarmount xdg-utils
          imv zathura zathura-pdf-mupdf mpv ffmpeg
          retroarch retroarch-assets-xmb retroarch-assets-glui retroarch-assets-ozone libretro-core-info

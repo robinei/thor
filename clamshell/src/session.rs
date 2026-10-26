@@ -109,9 +109,11 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
         }
     };
     let start = move |sender: EventSender, displays: clamshell_compositor::Displays| {
-        // On the screens, the session's services and what the bus starts are given the displays.
+        // On the screens, the session's services and what the bus starts are given the displays, and the
+        // compositor's thread (this one) a higher priority than the apps'.
         if host == Host::Drm {
             clamshell_system::session::environment::export(&displays.wayland, &displays.x11);
+            clamshell_system::session::priority::raise(u64::from(rustix::thread::gettid().as_raw_nonzero().get().unsigned_abs()));
         }
         let system_config = wiring::Config {
             profile: env.profile,
