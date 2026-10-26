@@ -1,10 +1,11 @@
 # The effects of the snapshot scenario's events (src/dev/trace.rs), group by group: each event that
 # had effects, then its effects. "-- name" is where a shot is taken.
 == group top.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 -- top.png
 -- top-tab2.png
 -- top-tab2-down.png
@@ -30,16 +31,18 @@ Pointer(Activate(Shelf(Entry("ff6"))))
   Launch ff6 as ff6_09d141
 -- top-switch.png
 == group top-actions.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 -- top-actions.png
 == group top-folder.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 -- top-folder.png
 Units [1__the_shores_of_030fb1]
   Browse in use 1 files
@@ -56,24 +59,27 @@ close 900
 -- top-group.png
 -- top-recent.png
 == group bottom.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 -- bottom.png
 == group windows-empty.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Tab(Windows)))
   Watch Metrics off
 -- windows-empty.png
 == group settings-running.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Shelf(Entry("ff6"))))
   Save Resume
   Launch ff6 as ff6_09d141
@@ -140,10 +146,11 @@ Reading Status
   Notify "Battery at 9 %"
 -- status-low.png
 == group keymap-name.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Shelf(Entry("ff6"))))
   Save Resume
   Launch ff6 as ff6_09d141
@@ -157,10 +164,11 @@ Pointer(Activate(Editor(Save)))
   PadRoute Listen
 -- keymap-edit-new.png
 == group keymap-edit.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Pointer(Activate(Editor(Save)))
@@ -223,10 +231,11 @@ Pointer(Activate(Keymap(Target(To(Mouse(Left))))))
 -- keymap-edit-stick.png
 -- keymap-edit-slider.png
 == group keymap-edit-back.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Pointer(Activate(Editor(Save)))
@@ -309,10 +318,11 @@ Pointer(Activate(Keymap(LayerPicker)))
   PadRoute Ui
 -- keymap-layer-list.png
 == group keymap-mouse.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Pointer(Activate(Editor(Save)))
@@ -403,10 +413,11 @@ Pointer(Activate(Profile(Keymap, Back)))
   PadRoute Listen
 -- keymap-pick.png
 == group keymaps.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Shelf(Entry("ff6"))))
   Save Resume
   Launch ff6 as ff6_09d141
@@ -469,10 +480,11 @@ Pointer(Activate(Row { list: Keymaps, i: 3, part: Main }))
   Save Settings
 -- keymap-delete.png
 == group curves.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Shelf(Entry("ff6"))))
   Save Resume
   Launch ff6 as ff6_09d141
@@ -497,10 +509,11 @@ Slide(To { x: 1116.0 })
   Apply settings of ff6
 -- curve-edit-peak.png
 == group curve-edit-histogram.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Shelf(Entry("ff6"))))
   Save Resume
   Launch ff6 as ff6_09d141
@@ -514,10 +527,11 @@ activate 30
   PadRoute Game
 -- curve-edit-histogram.png
 == group curve-edit-scrgb.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Shelf(Entry("ff6"))))
   Save Resume
   Launch ff6 as ff6_09d141
@@ -531,10 +545,11 @@ activate 30
   PadRoute Game
 -- curve-edit-scrgb.png
 == group keymaps-chosen.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Shelf(Entry("ff6"))))
   Save Resume
   Launch ff6 as ff6_09d141
@@ -614,10 +629,11 @@ Pointer(Activate(Profile(Keymap, Edit)))
   PadRoute Listen
 -- keymap-edit-own.png
 == group launcher.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Tab(Dock)))
   Watch Metrics off
 -- launcher.png
@@ -632,10 +648,11 @@ Pointer(LongPress(Dock(Entry(1))))
   Watch Battery on
 -- dock-menu.png
 == group wifi.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Tab(Wifi)))
   Watch Metrics off
   Watch Wifi on
@@ -643,10 +660,11 @@ Pointer(Activate(Tab(Wifi)))
 -- wifi-crowded.png
 -- wifi-scrolled.png
 == group battery.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Units [zelda_lttp_650a1e]
   Apply settings of zelda-lttp
 Pointer(Activate(Tab(Battery)))
@@ -654,10 +672,11 @@ Pointer(Activate(Tab(Battery)))
   Watch Battery on
 -- battery.png
 == group time.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Tab(Time)))
   Watch Metrics off
   Watch Time on
@@ -665,10 +684,11 @@ Pointer(Activate(Tab(Time)))
 -- time-zones.png
 -- time-europe.png
 == group device-unavailable.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Shelf(Entry("tool:device"))))
   Watch Account on
 -- device-unavailable.png
@@ -680,10 +700,11 @@ Pointer(Activate(Device(Password)))
   Watch Metrics off
 -- device-password.png
 == group time-by-hand.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Tab(Time)))
   Watch Metrics off
   Watch Time on
@@ -691,28 +712,31 @@ Pointer(Activate(Time(TwelveHour)))
   Save TwelveHour(true)
 -- time-by-hand.png
 == group bluetooth.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Tab(Bluetooth)))
   Watch Metrics off
   Watch Bluetooth on
 -- bluetooth.png
 == group volume.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Tab(Volume)))
   Watch Metrics off
   Watch Audio on
 -- volume.png
 == group brightness.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Tab(Brightness)))
   Watch Metrics off
   Watch Backlights on
@@ -720,10 +744,11 @@ Level(Set(Backlight(1), 65))
   Brightness 70 over 1 shares
 -- brightness.png
 == group slider.png
-Start
-  Watch Metrics on
+Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
+Start
+  Watch Metrics on
 Pointer(Activate(Tab(Dock)))
   Watch Metrics off
 Slide(To { x: 700.0 })

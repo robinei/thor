@@ -201,6 +201,8 @@ pub struct State {
     /// moment. Shelf and the bottom screen say when they changed; `apply` touches this at its end.
     resume: Debounce,
     idle: Idle,
+    /// The UI is up (Start came). Before that, no tab or account is watched.
+    ui_up: bool,
     /// What the outside was last sent (see [`crate::sync`]).
     sent: Sent,
     /// The events the rules queue for State, lent to `apply`'s [`Out`] and returned empty, so that its
@@ -595,6 +597,7 @@ impl State {
             bottom_seen: !self.bottom.shows_windows(&self.session) && !self.bottom.off(),
             tab,
             device_open: self.device.is_open(),
+            ui_up: self.ui_up,
             keymap: self.keymapping.version_of(settings.get(Setting::Keymap)),
             keymapping: &self.keymapping,
             route: self.pad.route(),

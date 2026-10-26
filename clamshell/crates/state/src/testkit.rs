@@ -176,7 +176,13 @@ pub fn show(s: &mut State, id: &str) -> Vec<Effect> {
 impl State {
     /// Marks the UI up, as Start does, with what the outside would be sent for it dropped.
     pub(crate) fn ui_up(&mut self) {
-        self.sent.ui_started();
+        self.ui_up = true;
+        self.sync(&mut Out::default());
+    }
+
+    /// Takes what a fresh state sends at its first event (the pad's keymap and route) as sent, for tests
+    /// that count a fresh state's effects.
+    pub(crate) fn sent_at_start(&mut self) {
         self.sync(&mut Out::default());
     }
 

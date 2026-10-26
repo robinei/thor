@@ -462,7 +462,7 @@ only when the mute changed (not while the volume is unknown):
 (`Levels::wanted_brightness`): ClamShell's level; dimmed, a third of the known level; back from dimmed,
 the level read before (a reading taken while dimmed is ignored); nothing while ClamShell neither set a
 level nor touched the backlights. A level set while dimmed is sent dimmed. Tests:
-`the_brightness_goes_out_at_once_and_the_ui_starting_sends_the_keymap_and_the_route`,
+`what_the_outside_starts_without_goes_out_at_the_first_event`,
 `the_screens_come_back_from_dimming_at_the_brightness_they_had`, `a_level_set_while_dimmed_is_sent_dimmed`.
 
 ## Status (status/)
@@ -480,10 +480,14 @@ level nor touched the backlights. A level set while dimmed is sent dimmed. Tests
 
 | Resend | Raised by | Re-sends | Test |
 |---|---|---|---|
-| Start | `Event::Start` | keymap, pad route (and Start sends the dock's save if unsaved) | watches tested; tests `the_brightness_goes_out_at_once_and_the_ui_starting_sends_the_keymap_and_the_route` |
 | Resumed | `Event::Resumed` | Apply | tests `back_from_sleep_applies_the_settings_again_and_wakes_the_screens` |
 | FetchFirst | Fetching, Library | FetchFirst | tests `while_metadata_is_fetched_shelfs_view_goes_first`, `a_library_read_while_fetching_asks_for_shelfs_view_first_again` |
 | Restarted(thread) | `Event::Restarted` | what that thread was sent (below) | tests in `restart.rs` |
+
+At start only what the outside starts with counts as sent (`Sent::new`): the settings in force
+applied, the screens on at their own rate, the bar's status watched. So the brightness, the keymap,
+the pad's route and a refresh rate the settings want go out at the first event (tests
+`what_the_outside_starts_without_goes_out_at_the_first_event`); Start sends none of them again.
 
 The main screen's refresh rate needs no resend: sync sends `Wanted::refresh` whenever it differs from
 what was sent (the calibration's rate, else the rate of the entry launched last until the program in

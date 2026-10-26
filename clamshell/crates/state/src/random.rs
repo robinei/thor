@@ -945,8 +945,9 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
     let mut rng = Rng(seed);
     let init = Init { library: library(), keymaps: crate::keymap::Keymaps::initial(), device_session: true, first_start: rng.one_in(3), ..Init::default() };
     let mut s = State::new(init);
-    let refresh = s.in_force().get(Setting::Refresh);
-    let mut sent = Sent { apply: Some((s.session().program().cloned(), s.in_force())), status: true, outputs: (true, true), refresh, ..Sent::default() };
+    // As the outside starts: the settings in force applied, the screens on at their own rate (0), the
+    // status watched, and the pad with no keymap or route.
+    let mut sent = Sent { apply: Some((s.session().program().cloned(), s.in_force())), status: true, outputs: (true, true), refresh: 0, ..Sent::default() };
     let mut world = World::new();
     let mut clock = 1000;
     let mut history: Vec<String> = Vec::new();

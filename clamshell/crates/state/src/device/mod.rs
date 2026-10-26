@@ -380,6 +380,7 @@ mod tests {
     #[test]
     fn the_password_is_typed_below_the_current_one_first() {
         let mut s = State::new(init());
+        s.sent_at_start();
         launch_now(&mut s, "tool:device");
         assert!(tap(&mut s, DeviceId::Password).is_empty(), "unavailable off the device");
         available(&mut s, true);
@@ -467,6 +468,7 @@ mod tests {
     #[test]
     fn the_sticks_calibration_waits_for_its_end_before_another_tap() {
         let mut s = State::new(init());
+        s.sent_at_start();
         assert_eq!(tap(&mut s, DeviceId::Sticks), vec![Effect::CalibrateSticks]);
         assert!(tap(&mut s, DeviceId::Sticks).is_empty(), "before the first progress too");
         s.applied(Event::Sticks(SticksEvent::Done("pad".into(), None)));
@@ -510,6 +512,7 @@ mod tests {
     #[test]
     fn a_sticks_calibration_shows_its_progress_and_keeps_its_result() {
         let mut s = State::new(init());
+        s.sent_at_start();
         assert_eq!(tap(&mut s, DeviceId::Sticks), vec![Effect::CalibrateSticks]);
         let rest = crate::device::sticks::StickAxis { low: 0, centre: 0, high: 0 };
         let p = Progress { phase: crate::device::sticks::Phase::LetGo, now: [0; 4], seen: [rest; 4], min: -1024, max: 1024 };
@@ -527,6 +530,7 @@ mod tests {
     #[test]
     fn the_refresh_calibration_runs_once_at_a_time_and_says_how_it_went() {
         let mut s = State::new(init());
+        s.sent_at_start();
         assert_eq!(tap(&mut s, DeviceId::Refresh), vec![Effect::CalibrateRefresh, Effect::Compositor(Compositor::Outputs { top: true, bottom: false })]);
         assert!(tap(&mut s, DeviceId::Refresh).is_empty());
         s.applied(Event::RefreshCalibrated(Ok("120 Hz: 118.630 -> 120.089 Hz".into())));

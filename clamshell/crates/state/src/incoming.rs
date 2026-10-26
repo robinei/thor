@@ -94,10 +94,9 @@ impl State {
     }
 
     /// The UI is up. Sends what was waiting for it: the dock if pins were dropped at start and the
-    /// runners' keymaps, and after the event the pad's route and keymap. The open tab's watch starts from now (see [`crate::sync::Sent::ui_started`]).
+    /// runners' keymaps. The open tab's and the account's watches start from now.
     pub(crate) fn ui_started(&mut self, out: &mut Out) {
-        self.sent.ui_started();
-        self.sent.resend(Resend::Start);
+        self.ui_up = true;
         if self.dock.take_unsaved() {
             out.effects.push(self.dock.save_effect());
         }

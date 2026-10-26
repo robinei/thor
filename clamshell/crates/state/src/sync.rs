@@ -46,6 +46,8 @@ pub(crate) struct Wanted<'a> {
     pub(crate) bottom_seen: bool,
     /// What the open tab watches.
     pub(crate) tab: Option<Watch>,
+    /// The UI is up (see [`crate::Event::Start`]).
+    pub(crate) ui_up: bool,
     /// The Device view is open.
     pub(crate) device_open: bool,
     /// The keymap in force (see [`Keymapping::version_of`]), and the keymaps it is taken from.
@@ -77,8 +79,6 @@ pub(crate) struct Sent {
     outputs: Option<(bool, bool)>,
     /// The main screen's refresh rate.
     refresh: u16,
-    /// The UI is up (it has sent Start). Before that, no tab or account is watched.
-    ui_up: bool,
     /// The bar's status isn't watched, since the screens are off (see [`Watch::Status`]), or None to
     /// send it again.
     status_off: Option<bool>,
@@ -110,7 +110,6 @@ impl Default for Sent {
             applied: None,
             outputs: Some((true, true)),
             refresh: 0,
-            ui_up: false,
             status_off: Some(false),
             account: Some(false),
             tab: None,
@@ -129,8 +128,6 @@ pub(crate) enum Resend {
     /// The library was read again or fetching started or stopped: shelf's entries shown are asked for
     /// first again.
     FetchFirst,
-    /// The UI started: the pad is sent its route and keymap.
-    Start,
     /// Back from sleep, which may have reset what the settings set, such as frequency caps and cores: they
     /// are applied again.
     Resumed,
@@ -143,7 +140,6 @@ impl Sent {
     /// Forgets what was sent for `why`, so that it is sent again.
     pub(crate) fn resend(&mut self, why: Resend) {
         match why {
-            Resend::Start => (self.keymap, self.route) = (None, None),
             Resend::FetchFirst => self.fetch_view = None,
             Resend::Resumed => self.applied = None,
             Resend::Restarted(thread) => match thread {
@@ -166,22 +162,11 @@ impl Sent {
         }
     }
 
-    /// As at start, where the pad is taken to have what `w` says.
+    /// As at start: only what the outside starts with counts as sent. The settings in force were applied
+    /// as the system started (its wiring applies the global ones); the pad has no keymap or route, and
+    /// the compositor runs at the screen's own rate (0).
     pub(crate) fn new(w: &Wanted) -> Sent {
-        Sent {
-            applied: Some((w.program.cloned(), w.settings)),
-            refresh: w.refresh,
-            keymap: Some(w.keymap),
-            route: Some(w.route),
-            #[cfg(debug_assertions)]
-            keymap_sent: Some(w.keymapping.in_force(w.settings.get(Setting::Keymap))),
-            ..Sent::default()
-        }
-    }
-
-    /// The UI is up. The open tab's and the account's watches start from now.
-    pub(crate) fn ui_started(&mut self) {
-        self.ui_up = true;
+        Sent { applied: Some((w.program.cloned(), w.settings)), ..Sent::default() }
     }
 
     /// Sends what differs from `w`, in this order. The screens go off before the device sleeps. Nothing
@@ -297,11 +282,11 @@ impl Sent {
         if self.status_off.replace(screens_off) != Some(screens_off) {
             out.effects.push(Effect::Watch(Watch::Status, !screens_off));
         }
-        let account = self.ui_up && w.device_open;
+        let account = w.ui_up && w.device_open;
         if self.account.replace(account) != Some(account) {
             out.effects.push(Effect::Watch(Watch::Account, account));
         }
-        let seen = self.ui_up && w.bottom_seen && !screens_off;
+        let seen = w.ui_up && w.bottom_seen && !screens_off;
         let tab = w.tab.filter(|_| seen);
         if tab == self.tab {
             return;
