@@ -195,7 +195,7 @@ pub struct Recording {
     pub(super) cmds: Vec<Cmd>,
     pub(super) text: Vec<u8>,
     /// Where the clip changed: from command `i` on, drawing is within the bounds. Before the first, it
-    /// is the whole buffer. Only a reference frame reads it (see [`super::paint::play_unbounded`]).
+    /// is the whole buffer. Only a reference frame reads it (see `paint::play_unbounded`, built for the dev tools and tests).
     pub(super) clips: Vec<(usize, Bounds)>,
 }
 

@@ -30,6 +30,7 @@ pub fn play(pixmap: PixmapMut, rec: &Recording, damage: Bounds, cache: &mut Draw
 /// Draws all of `rec` into `pixmap`, each command within the clip in force when it was recorded but not
 /// within its bounds. It is what the commands draw, to check against: it equals what [`play`] draws only
 /// if every command's bounds hold all of its pixels.
+#[cfg(any(test, feature = "dev"))]
 pub fn play_unbounded(pixmap: PixmapMut, rec: &Recording, cache: &mut DrawCache, images: &Images) {
     let mut p = Painter::new(pixmap, rec.scale.get(), rec.offset, cache);
     let all = Bounds::of_size(rec.size);

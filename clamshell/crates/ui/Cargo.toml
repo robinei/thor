@@ -23,5 +23,9 @@ rustix.workspace = true
 tempfile.workspace = true
 clamshell-library = { workspace = true, features = ["demo"] }
 
+[features]
+# The snapshot and the pad's view drawn without a compositor, for the binary's dev tools and tests.
+dev = []
+
 [lints]
 workspace = true

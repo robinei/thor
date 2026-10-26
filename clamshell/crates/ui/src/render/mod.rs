@@ -17,16 +17,20 @@
 #[allow(unsafe_code, clippy::unwrap_used, clippy::expect_used)]
 mod no_alloc;
 
-use clamshell_state::{Event, ListEvent, ListId, ShelfEvent, State};
+#[cfg(any(test, feature = "dev"))]
+use clamshell_state::ShelfEvent;
+use clamshell_state::{Event, ListEvent, ListId, State};
 use tiny_skia::PixmapMut;
 
+#[cfg(any(test, feature = "dev"))]
+use crate::Error;
 use crate::gfx::images::Images;
 use crate::gfx::paint::play;
 use crate::gfx::record::{Bounds, Recording};
 use crate::gfx::{Canvas, DrawCache, Rect};
 use crate::toolkit::{Frame, FrameOut, Scratch, Target};
 use crate::views;
-use crate::{Error, Layer, Screen};
+use crate::{Layer, Screen};
 
 /// OLED burn-in protection. Every screen is laid out inside a black margin of MARGIN buffer pixels on
 /// each side, and drawn moved within it by an offset that drifts slowly, about a pixel a minute along an
@@ -120,6 +124,7 @@ pub(crate) fn record(retained: &mut Retained, at: Placement, layer: Layer, state
 
 /// Draws `layer` for `state` into `pixmap`, which must be `at`'s size, as [`record`] and then the
 /// whole recording played.
+#[cfg(any(test, feature = "dev"))]
 pub(crate) fn render(
     pixmap: PixmapMut,
     retained: &mut Retained,
@@ -229,6 +234,7 @@ pub(crate) fn list_changes(state: &State, out: &FrameOut) -> impl Iterator<Item 
 
 /// What a frame drawn without Wayland reports back to the state, as a live frame would: shelf's rows and
 /// the lists' visible rows.
+#[cfg(any(test, feature = "dev"))]
 pub(crate) fn frame_events(state: &State, out: &FrameOut) -> Vec<Event> {
     let mut events: Vec<Event> = out.list_rows.filter(|&r| r != state.shelf().rows()).map(|r| ShelfEvent::Rows(r).into()).into_iter().collect();
     events.extend(list_changes(state, out));

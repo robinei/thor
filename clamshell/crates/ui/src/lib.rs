@@ -20,6 +20,7 @@ mod toolkit;
 mod views;
 
 pub use crate::core::Core;
+#[cfg(any(test, feature = "dev"))]
 use gfx::canvas::DrawCache;
 pub use gfx::record::Bounds;
 pub use input::{End, Source};
@@ -28,9 +29,12 @@ pub use screens::{Layer, Screen};
 use std::sync::{Arc, Mutex};
 
 use clamshell_state::bottom::touch::TouchLayout;
+#[cfg(any(test, feature = "dev"))]
 use clamshell_state::{Event, State};
 
+#[cfg(any(test, feature = "dev"))]
 use gfx::images::Images;
+#[cfg(any(test, feature = "dev"))]
 use render::{Placement, Retained};
 
 pub type Error = Box<dyn std::error::Error>;
@@ -47,6 +51,7 @@ pub struct Config {
 /// Renders one screen without Wayland, at `size` logical pixels and integer `scale`, to a PNG file, with
 /// its overlay over it as the compositor shows it. For checking layouts and for automated tests. Returns
 /// the events a live frame would send the state, such as the shelf's rows and the lists' rows.
+#[cfg(any(test, feature = "dev"))]
 pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, path: &std::path::Path) -> Result<Vec<Event>, Error> {
     let at = Placement { size_px: (size.0 * scale, size.1 * scale), scale, drift: (0, 0) };
     let (mut fonts, mut images) = (DrawCache::load(), Images::synchronous());
@@ -63,6 +68,7 @@ pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, pat
 /// compared with the last, and only what changed is played, into two buffers used in turn. Each buffer
 /// is brought up to date with what changed since it was last drawn into. Tests use it to check that
 /// this gives the pixels a whole frame does.
+#[cfg(any(test, feature = "dev"))]
 pub struct Frames {
     screen: Screen,
     at: Placement,
@@ -75,6 +81,7 @@ pub struct Frames {
     images: Images,
 }
 
+#[cfg(any(test, feature = "dev"))]
 impl Frames {
     /// For `screen` at `size` pixels.
     pub fn new(screen: Screen, size: (u32, u32)) -> Result<Frames, Error> {
@@ -118,6 +125,7 @@ impl Frames {
 
 /// Records both screens without Wayland and answers what the pad does on them, by the same functions a
 /// live view uses (`input::focus`). The snapshot test maps the pad's moves with it.
+#[cfg(any(test, feature = "dev"))]
 pub struct PadFrames {
     at: screens::Screens<Placement>,
     retained: screens::Screens<Retained>,
@@ -126,15 +134,18 @@ pub struct PadFrames {
 }
 
 /// Both screens' targets as one frame of each placed them.
+#[cfg(any(test, feature = "dev"))]
 pub struct PadView {
     targets: screens::Screens<Vec<toolkit::Target>>,
     sizes: screens::Screens<(f32, f32)>,
 }
 
 /// A direction the pad moves the focus in.
+#[cfg(any(test, feature = "dev"))]
 pub use input::nav::Dir;
 
 /// A target drawn on a screen: its id and its rect (x, y, width, height) in the screen's pixels.
+#[cfg(any(test, feature = "dev"))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct PadTarget {
     pub screen: Screen,
@@ -142,12 +153,14 @@ pub struct PadTarget {
     pub rect: [f32; 4],
 }
 
+#[cfg(any(test, feature = "dev"))]
 impl PadTarget {
     fn of(screen: Screen, t: &toolkit::Target) -> PadTarget {
         PadTarget { screen, id: t.id.clone(), rect: [t.rect.x, t.rect.y, t.rect.w, t.rect.h] }
     }
 }
 
+#[cfg(any(test, feature = "dev"))]
 impl PadFrames {
     /// For screens of `top` and `bottom` pixels.
     pub fn new(top: (u32, u32), bottom: (u32, u32)) -> PadFrames {
@@ -173,6 +186,7 @@ impl PadFrames {
     }
 }
 
+#[cfg(any(test, feature = "dev"))]
 impl input::focus::Drawn for PadView {
     fn targets(&self, screen: Screen) -> &[toolkit::Target] {
         &self.targets[screen]
@@ -183,6 +197,7 @@ impl input::focus::Drawn for PadView {
     }
 }
 
+#[cfg(any(test, feature = "dev"))]
 impl PadView {
     /// Every target drawn on `screen`, in the order drawn.
     pub fn drawn(&self, screen: Screen) -> Vec<PadTarget> {
