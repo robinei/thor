@@ -65,7 +65,9 @@ lost_on!(Error: dbus::Error);
 
 /// Sends [`Event::Tray`] at start and after every change; carries out [`TrayCommand`]s.
 pub fn spawn(sink: impl Sink) -> io::Result<Worker<TrayCommand>> {
-    Worker::spawn_belled("tray", move |commands, bell| worker::supervise(&mut Tray { sink, bell }, &commands, RETRY))
+    let bell = worker::Bell::new()?;
+    let mut tray = Tray { sink, bell: bell.clone() };
+    Worker::spawn_belled(clamshell_state::Thread::Tray.name(), bell, move |commands| worker::supervise(&mut tray, commands, RETRY))
 }
 
 struct Tray<S> {

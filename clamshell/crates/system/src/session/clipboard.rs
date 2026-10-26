@@ -65,7 +65,7 @@ fn saved(display: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
 /// `display` selects the nested server explicitly; None uses the session's environment.
 pub fn spawn(display: Option<std::path::PathBuf>, sink: impl Sink + Clone + 'static) -> io::Result<()> {
     let saved = saved(display.as_deref());
-    worker::detached("clipboard", move || {
+    worker::lasting(clamshell_state::Thread::Clipboard.name(), move || {
         let before = saved
             .as_ref()
             .and_then(|path| {
@@ -84,7 +84,7 @@ pub fn spawn(display: Option<std::path::PathBuf>, sink: impl Sink + Clone + 'sta
             let _ = sink.send(Event::Reading(Reading::Clipboard(before.as_deref().map(Arc::from))));
         }
         // The reading threads send through this.
-        let sink = Mutex::new(sink);
+        let (sink, saved) = (Mutex::new(sink.clone()), saved.clone());
         let on_read = move |text: Option<String>| {
             if let Some(path) = saved.as_ref() {
                 let written = match &text {

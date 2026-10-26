@@ -29,13 +29,13 @@ pub enum Command {
 /// Forwards the fingers pointing to the virtual touchpad. `layout` holds the second screen's size, kept
 /// up to date by the UI.
 pub fn spawn(layout: Arc<Mutex<TouchLayout>>) -> io::Result<Worker<Command>> {
-    Worker::spawn("touchpad", move |commands| {
-        let mut touchpad = Touchpad { layout, pad: None, fingers: pointing::Fingers::default() };
+    Worker::spawn(clamshell_state::Thread::Touchpad.name(), move |commands| {
+        let mut touchpad = Touchpad { layout: layout.clone(), pad: None, fingers: pointing::Fingers::default() };
         touchpad.make();
         loop {
             // Wait for the first layout. Unknown physical density creates no continuing poll.
             let wait = (touchpad.pad.is_none() && crate::os::lock(&touchpad.layout).screen == (0.0, 0.0)).then_some(LAYOUT_EVERY);
-            let next = worker::next(&commands, wait);
+            let next = worker::next(commands, wait);
             touchpad.make();
             match next {
                 Next::Command(Command::Contacts(contacts)) => touchpad.contacts(&contacts),

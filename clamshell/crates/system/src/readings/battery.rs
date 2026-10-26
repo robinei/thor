@@ -56,8 +56,8 @@ impl From<dbus::Error> for Error {
 
 /// Starts the battery thread, which samples what uses the battery while the battery tab is shown.
 pub fn spawn(sink: impl Sink) -> io::Result<Worker<Shown>> {
-    Worker::spawn("battery", move |commands| {
-        let _ = sample(&commands, &sink);
+    Worker::spawn(clamshell_state::Thread::Battery.name(), move |commands| {
+        let _ = sample(commands, &sink);
     })
 }
 

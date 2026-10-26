@@ -99,6 +99,12 @@ pub fn start<S: Sink + Clone>(
     if !paths.has_user_systemd() {
         log::error!("no systemd user manager: ClamShell needs one to run apps and games (in scopes of their own)");
     }
+    // A thread started again after a panic is sent again what it lost.
+    let told = sink.clone();
+    crate::os::worker::on_restart(move |name| match clamshell_state::Thread::named(name) {
+        Some(thread) => drop(told.send(clamshell_state::Event::Restarted(thread))),
+        None => log::warn!("{name}: started again, unknown to the state"),
+    });
     detached("clock", clock::spawn(sink.clone()));
     let status = started("status", status::spawn(backlights.clone(), sink.clone()));
     let metrics = started("metrics", metrics::spawn(sink.clone()));

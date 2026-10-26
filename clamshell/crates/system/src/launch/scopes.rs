@@ -94,7 +94,8 @@ fn list(bus: &mut Bus) -> dbus::Result<Vec<Instance>> {
 /// frozen. An earlier ClamShell froze them, when suspending or pausing a hidden game, and they are held
 /// as suspended.
 pub fn spawn(sink: impl Sink) -> io::Result<()> {
-    worker::detached("units", move || worker::supervise_alone(&mut Units { sink, frozen: None, looked: false }, RETRY))
+    let mut units = Units { sink, frozen: None, looked: false };
+    worker::lasting(clamshell_state::Thread::Units.name(), move || worker::supervise_alone(&mut units, RETRY))
 }
 
 struct Units<S> {

@@ -1,6 +1,7 @@
 //! What every system thread is made of:
 //!
-//! - A thread is spawned with its command channel ([`Worker::spawn`]).
+//! - A thread is spawned with its command channel ([`Worker::spawn`]). A panic in it is logged and the
+//!   thread is started again, on the same channel, with what the body makes afresh ([`restarted`]).
 //! - It waits for its next command or for its period to pass ([`next`]). A thread that waits on files,
 //!   such as a device or inotify, waits on those and its [`Bell`] together, and its commands ring the
 //!   bell.
@@ -25,7 +26,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// The UI is gone. A thread whose events can't be delivered ends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,20 +93,19 @@ pub struct Gone;
 
 impl<C: Send + 'static> Worker<C> {
     /// Starts a thread named `name` running `body` with the receiving end of its command channel. The
-    /// thread ends when `body` returns, usually when every sender is dropped.
-    pub fn spawn(name: &'static str, body: impl FnOnce(Receiver<C>) + Send + 'static) -> io::Result<Worker<C>> {
+    /// thread ends when `body` returns, usually when every sender is dropped. After a panic `body` runs
+    /// again ([`restarted`]), so what it makes at its start is made afresh, and what it captured is kept.
+    pub fn spawn(name: &'static str, mut body: impl FnMut(&Receiver<C>) + Send + 'static) -> io::Result<Worker<C>> {
         let (tx, rx) = mpsc::channel();
-        start(name, move || body(rx))?;
+        start(name, move || restarted(name, || body(&rx)))?;
         Ok(Worker { name, tx: Some(tx), gone: Arc::default(), bell: None })
     }
 
-    /// Like [`Worker::spawn`], for a thread that waits on files. `body` also gets the [`Bell`] that its
-    /// commands ring.
-    pub fn spawn_belled(name: &'static str, body: impl FnOnce(Receiver<C>, Bell) + Send + 'static) -> io::Result<Worker<C>> {
-        let bell = Bell::new()?;
+    /// Like [`Worker::spawn`], for a thread that waits on files: its commands ring `bell`, which `body`
+    /// holds a clone of to wait on.
+    pub fn spawn_belled(name: &'static str, bell: Bell, mut body: impl FnMut(&Receiver<C>) + Send + 'static) -> io::Result<Worker<C>> {
         let (tx, rx) = mpsc::channel();
-        let theirs = bell.clone();
-        start(name, move || body(rx, theirs))?;
+        start(name, move || restarted(name, || body(&rx)))?;
         Ok(Worker { name, tx: Some(tx), gone: Arc::default(), bell: Some(bell) })
     }
 }
@@ -137,9 +137,58 @@ impl<C> Worker<C> {
     }
 }
 
-/// Starts a thread that takes no commands. It ends when the UI is gone.
+/// Starts a thread that takes no commands, for one piece of work: it isn't started again after a panic.
+/// A long-lived one is [`lasting`].
 pub fn detached(name: &str, body: impl FnOnce() + Send + 'static) -> io::Result<()> {
     start(name, body).map(drop)
+}
+
+/// Starts a long-lived thread that takes no commands, started again after a panic ([`restarted`]). It
+/// ends when `body` returns, usually when the UI is gone.
+pub fn lasting(name: &'static str, mut body: impl FnMut() + Send + 'static) -> io::Result<()> {
+    start(name, move || restarted(name, &mut body)).map(drop)
+}
+
+/// What `work` gives, or what `fallback` gives if it panics (the panic hook has logged it): for a
+/// short-lived thread whose answer the UI waits for, which then gets one.
+pub fn or_on_panic<T>(work: impl FnOnce() -> T, fallback: impl FnOnce() -> T) -> T {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)).unwrap_or_else(|_| fallback())
+}
+
+/// After a run of panics, the waits before starting again grow from none to this, doubling.
+const RESTART_FIRST: Duration = Duration::from_millis(250);
+const RESTART_MOST: Duration = Duration::from_secs(5);
+/// A thread that ran this long before panicking is started again at once.
+const RESTART_CALM: Duration = Duration::from_secs(30);
+
+/// Told the name of each thread started again after a panic (see [`on_restart`]).
+type Restarts = Box<dyn Fn(&'static str) + Send>;
+static RESTARTS: std::sync::Mutex<Option<Restarts>> = std::sync::Mutex::new(None);
+
+/// Sets what is told when a thread is started again after a panic, so that the UI sends it again what
+/// it had been sent and lost.
+pub fn on_restart(told: impl Fn(&'static str) + Send + 'static) {
+    *crate::os::lock(&RESTARTS) = Some(Box::new(told));
+}
+
+/// Runs `body` until it returns. A panic in it (the panic hook has logged it) is logged and `body` runs
+/// again: at once, then after waits that double to [`RESTART_MOST`] while it keeps panicking soon after
+/// starting. Before it runs again, [`on_restart`]'s function is told.
+pub fn restarted(name: &'static str, mut body: impl FnMut()) {
+    let mut delay = Duration::ZERO;
+    loop {
+        let started = Instant::now();
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(&mut body)).is_ok() {
+            return;
+        }
+        let wait = if started.elapsed() >= RESTART_CALM { Duration::ZERO } else { delay };
+        delay = (wait * 2).clamp(RESTART_FIRST, RESTART_MOST);
+        log::error!("{name}: panicked; starting it again in {} ms", wait.as_millis());
+        thread::sleep(wait);
+        if let Some(told) = crate::os::lock(&RESTARTS).as_ref() {
+            told(name);
+        }
+    }
 }
 
 /// Starts a thread named `name` running `body`, at the ordinary priority whichever thread started it:
@@ -406,7 +455,7 @@ pub fn spawn_coalescing<C: Send + 'static, K: PartialEq + 'static>(
 ) -> io::Result<Worker<C>> {
     Worker::spawn(name, move |commands| {
         while let Ok(first) = commands.recv() {
-            for command in coalesce(first, &commands, kind) {
+            for command in coalesce(first, commands, kind) {
                 carry_out(command);
             }
         }
@@ -487,7 +536,7 @@ mod tests {
     fn a_gone_worker_takes_no_commands() {
         let w: Worker<u8> = Worker::gone("test");
         assert_eq!(w.try_send(1), Err(Gone));
-        let w = Worker::spawn("test", |rx: Receiver<u8>| {
+        let w = Worker::spawn("test", |rx: &Receiver<u8>| {
             let _ = rx.recv();
         })
         .unwrap();
@@ -544,5 +593,37 @@ mod tests {
         // The command sent while the service is down is taken and the service is tried again at once.
         // After the second failure the retry interval passes, and then the service is up.
         assert_eq!(worker.join().unwrap(), vec!["down 1", "down: watch", "down 2", "up: join"]);
+    }
+
+    #[test]
+    fn a_panicking_thread_runs_again_at_once_then_after_growing_waits() {
+        let started = std::time::Instant::now();
+        let mut runs = Vec::new();
+        restarted("test", || {
+            runs.push(started.elapsed());
+            if runs.len() < 3 {
+                panic!("run {}", runs.len());
+            }
+        });
+        let [_, second, third] = runs[..] else { panic!("{runs:?}") };
+        assert!(second < RESTART_FIRST, "at once: {runs:?}");
+        assert!(third - second >= RESTART_FIRST, "then after a wait: {runs:?}");
+    }
+
+    #[test]
+    fn a_worker_keeps_its_commands_through_a_panic() {
+        let (seen, saw) = mpsc::channel();
+        let w = Worker::spawn("test", move |commands: &Receiver<u8>| {
+            for command in commands {
+                assert_ne!(command, 1, "the first panics");
+                seen.send(command).unwrap();
+            }
+        })
+        .unwrap();
+        for command in [1, 2, 3] {
+            w.send(command);
+        }
+        assert_eq!(saw.recv_timeout(Duration::from_secs(5)), Ok(2));
+        assert_eq!(saw.recv_timeout(Duration::from_secs(5)), Ok(3));
     }
 }

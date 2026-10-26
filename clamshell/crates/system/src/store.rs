@@ -400,15 +400,17 @@ impl Writer {
     pub fn spawn(mut store: Store) -> io::Result<Writer> {
         let (tx, rx) = mpsc::channel::<Write>();
         let thread = crate::os::worker::start("store", move || {
-            for write in rx {
-                let written = match &write {
-                    Write::Save(save) => store.save(save),
-                    Write::Play { id, start, duration } => store.add_play(id, *start, *duration),
-                };
-                if let Err(e) = written {
-                    log::warn!("store: {e}");
+            crate::os::worker::restarted(clamshell_state::Thread::Store.name(), || {
+                for write in &rx {
+                    let written = match &write {
+                        Write::Save(save) => store.save(save),
+                        Write::Play { id, start, duration } => store.add_play(id, *start, *duration),
+                    };
+                    if let Err(e) = written {
+                        log::warn!("store: {e}");
+                    }
                 }
-            }
+            });
         })?;
         Ok(Writer { tx: Some(tx), thread: Some(thread) })
     }

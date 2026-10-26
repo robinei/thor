@@ -66,7 +66,8 @@ impl From<dbus::Error> for Error {
 lost_on!(Error: dbus::Error);
 
 pub fn spawn(sink: impl Sink) -> io::Result<Worker<Request>> {
-    Worker::spawn("wifi", move |commands| worker::supervise(&mut WifiThread { sink, state: WifiState::default() }, &commands, RETRY))
+    let mut thread = WifiThread { sink, state: WifiState::default() };
+    Worker::spawn(clamshell_state::Thread::Wifi.name(), move |commands| worker::supervise(&mut thread, commands, RETRY))
 }
 
 /// A connection being made.

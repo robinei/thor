@@ -24,8 +24,8 @@ pub enum Command {
 const READ_EVERY: Duration = Duration::from_secs(1);
 
 pub fn spawn(backlights: Backlights, sink: impl Sink) -> io::Result<Worker<Command>> {
-    Worker::spawn("mixer", move |commands| {
-        let _ = follow(&backlights, &commands, &sink);
+    Worker::spawn(clamshell_state::Thread::Mixer.name(), move |commands| {
+        let _ = follow(&backlights, commands, &sink);
     })
 }
 

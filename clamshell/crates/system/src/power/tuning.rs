@@ -157,7 +157,7 @@ fn big_cpus(clusters: &[(u64, Vec<u32>)]) -> Vec<u32> {
 /// Starts the hardware thread. It applies the settings it is sent, only the latest when several wait.
 /// With a charge limit or Bypass on, it sees to the battery again every [`CHARGE_AGAIN`].
 pub fn spawn(policy: ChargePolicy) -> io::Result<Worker<Values>> {
-    Worker::spawn("tuning", move |commands| {
+    Worker::spawn(clamshell_state::Thread::Tuning.name(), move |commands| {
         let (mut quiet, mut known, mut last) = (Quiet::default(), Vec::new(), None::<Values>);
         let mut charge = Charge { hold: Hold::from_env(policy), switches: policy.switches, held: false };
         log::info!(
@@ -172,9 +172,9 @@ pub fn spawn(policy: ChargePolicy) -> io::Result<Worker<Values>> {
         loop {
             let limit = last.map(|v| v.get(Setting::ChargeLimit));
             let every = limit.is_some_and(|l| l != 100).then_some(CHARGE_AGAIN);
-            match worker::next(&commands, every) {
+            match worker::next(commands, every) {
                 Next::Command(first) => {
-                    let Some(values) = worker::coalesce(first, &commands, |_| ()).pop() else { continue };
+                    let Some(values) = worker::coalesce(first, commands, |_| ()).pop() else { continue };
                     apply_hardware(&values, &mut known, &mut charge, &mut quiet);
                     last = Some(values);
                 }

@@ -59,7 +59,7 @@ fn awake(argv: &[String]) -> bool {
 /// (the account's helper, a runner's awake check, the panel's calibration) runs on a thread of its own,
 /// so a screenshot or sleep asked for meanwhile doesn't wait for it.
 pub fn spawn(screenshots: Option<PathBuf>, calibration: Option<&'static str>, sink: impl Sink + Clone) -> io::Result<Worker<Command>> {
-    Worker::spawn("system", move |commands| {
+    Worker::spawn(clamshell_state::Thread::System.name(), move |commands| {
         // Our last notification, which the next one replaces. For example, a lower battery warning
         // replaces the earlier one.
         let mut shown = 0;
@@ -93,7 +93,7 @@ fn carry_out(
             }
         },
         Command::AskAwake(argv) => {
-            in_background("awake", sink, move || if awake(&argv) { vec![Event::Idle(IdleEvent::KeptAwake)] } else { vec![] });
+            in_background("awake", sink, move || if awake(&argv) { vec![Event::Idle(IdleEvent::KeptAwake)] } else { vec![] }, Vec::new);
             Ok(())
         }
         Command::ReadTime => sink.send(Event::Reading(Reading::Time(timedated::read_time(None)))),
@@ -113,26 +113,38 @@ fn carry_out(
             sink.send(Event::Reading(Reading::Time(timedated::read_time(error))))
         }
         Command::CalibrateRefresh => {
-            in_background("refresh", sink, move || {
-                let result = refresh::calibrate_refresh(calibration);
-                log::info!("refresh calibration: {result:?}");
-                vec![Event::RefreshCalibrated(result)]
-            });
+            in_background(
+                "refresh",
+                sink,
+                move || {
+                    let result = refresh::calibrate_refresh(calibration);
+                    log::info!("refresh calibration: {result:?}");
+                    vec![Event::RefreshCalibrated(result)]
+                },
+                || vec![Event::RefreshCalibrated(Err("it panicked".into()))],
+            );
             Ok(())
         }
         Command::Account(command) => {
-            in_background("account", sink, move || {
-                let mut events = Vec::new();
-                if command != AccountCommand::Read {
-                    let result = crate::session::account::change(&command);
-                    if let Err(e) = &result {
-                        log::warn!("account: {e}");
+            let changing = command != AccountCommand::Read;
+            let fallback = move || if changing { vec![Event::AccountChanged(Err("it panicked".into()))] } else { Vec::new() };
+            in_background(
+                "account",
+                sink,
+                move || {
+                    let mut events = Vec::new();
+                    if command != AccountCommand::Read {
+                        let result = crate::session::account::change(&command);
+                        if let Err(e) = &result {
+                            log::warn!("account: {e}");
+                        }
+                        events.push(Event::AccountChanged(result));
                     }
-                    events.push(Event::AccountChanged(result));
-                }
-                events.push(Event::Reading(Reading::Account(crate::session::account::read())));
-                events
-            });
+                    events.push(Event::Reading(Reading::Account(crate::session::account::read())));
+                    events
+                },
+                fallback,
+            );
             Ok(())
         }
         Command::Notify { summary, body, urgent } => {
@@ -145,12 +157,17 @@ fn carry_out(
     }
 }
 
-/// Runs `work` on a thread of its own and sends its events when it is done. If the thread can't start,
-/// that is logged.
-fn in_background(name: &str, sink: &(impl Sink + Clone), work: impl FnOnce() -> Vec<Event> + Send + 'static) {
+/// Runs `work` on a thread of its own and sends its events when it is done, or `fallback`'s if it
+/// panicked. If the thread can't start, that is logged.
+fn in_background(
+    name: &str,
+    sink: &(impl Sink + Clone),
+    work: impl FnOnce() -> Vec<Event> + Send + 'static,
+    fallback: impl FnOnce() -> Vec<Event> + Send + 'static,
+) {
     let sink = sink.clone();
     let started = crate::os::worker::detached(name, move || {
-        for event in work() {
+        for event in crate::os::worker::or_on_panic(work, fallback) {
             if sink.send(event).is_err() {
                 return;
             }

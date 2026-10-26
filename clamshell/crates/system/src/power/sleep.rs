@@ -32,7 +32,7 @@ const RETRY: Duration = Duration::from_secs(30);
 
 /// The thread holding sleep for the pad (see the module doc).
 pub fn spawn_hold(pad: Worker<pad::Command>) -> std::io::Result<()> {
-    worker::detached("sleep", move || {
+    worker::lasting(clamshell_state::Thread::Sleep.name(), move || {
         loop {
             if let Err(e) = hold(&pad) {
                 log::warn!("sleep: {e} (again in {}s)", RETRY.as_secs());

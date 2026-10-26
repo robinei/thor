@@ -129,28 +129,29 @@ pub fn spawn(
 ) -> io::Result<Worker<Command>> {
     let watched = crate::input::watch::devices_watch();
     let retry = if watched.is_some() { RETRY } else { RETRY_UNWATCHED };
-    let worker = Worker::spawn_belled("pad", move |commands, bell| {
-        let mut pad = PadThread {
-            bell,
-            spec,
-            controls,
-            sensor_hub,
-            taken,
-            sink,
-            route: PadRoute::default(),
-            watch_activity: false,
-            keymap: Keymap::default(),
-            devices: None,
-            effects: Effects::default(),
-            rumble_setting: RumbleStrength::default(),
-            buzz: None,
-            sticks: Default::default(),
-        };
-        worker::supervise(&mut pad, &commands, retry);
-    })?;
+    // Kept through a restart after a panic, as through a reconnection: a game keeps its virtual
+    // controller, and the keymap, route and calibrations stay.
+    let bell = worker::Bell::new()?;
+    let mut pad = PadThread {
+        bell: bell.clone(),
+        spec,
+        controls,
+        sensor_hub,
+        taken,
+        sink,
+        route: PadRoute::default(),
+        watch_activity: false,
+        keymap: Keymap::default(),
+        devices: None,
+        effects: Effects::default(),
+        rumble_setting: RumbleStrength::default(),
+        buzz: None,
+        sticks: Default::default(),
+    };
+    let worker = Worker::spawn_belled(clamshell_state::Thread::Pad.name(), bell, move |commands| worker::supervise(&mut pad, commands, retry))?;
     if let Some(notify) = watched {
         let pad = worker.clone();
-        worker::detached("pad devices", move || {
+        worker::lasting(clamshell_state::Thread::PadDevices.name(), move || {
             let mut fds = [PollFd::new(&notify, PollFlags::IN)];
             loop {
                 match rustix::event::poll(&mut fds, None) {

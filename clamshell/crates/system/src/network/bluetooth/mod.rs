@@ -109,7 +109,8 @@ impl Shared {
 }
 
 pub fn spawn(sink: impl Sink) -> io::Result<Worker<Request>> {
-    Worker::spawn("bluetooth", move |commands| worker::supervise(&mut BtThread { sink, shared: Shared::default() }, &commands, RETRY))
+    let mut thread = BtThread { sink, shared: Shared::default() };
+    Worker::spawn(clamshell_state::Thread::Bluetooth.name(), move |commands| worker::supervise(&mut thread, commands, RETRY))
 }
 
 struct BtThread<S> {
@@ -169,8 +170,10 @@ fn first_adapter(objects: &ManagedObjects) -> Option<(&Path<'static>, Props<'_>)
 /// shows which device in `busy`, and what went wrong in `error`. It has a connection of its own, which
 /// serves the pairing agent.
 fn connecting_worker(shared: Shared) -> io::Result<Worker<String>> {
-    Worker::spawn("bluetooth-connect", move |addresses: Receiver<String>| {
+    Worker::spawn(clamshell_state::Thread::BluetoothConnect.name(), move |addresses: &Receiver<String>| {
         let mut bus: Option<Bus> = None;
+        // Started again after a panic, the connection that was under way has ended.
+        shared.lock().busy = None;
         for address in addresses {
             shared.lock().busy = Some(address.clone());
             let connected = match bus.take().map_or_else(system, Ok) {

@@ -33,8 +33,11 @@ pub struct Browsing {
 /// Starts the browse thread, which lists and watches the folder each command names (see [`Browsing`]).
 pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<BrowseCommand>> {
     let Browsing { config, home, art, probe, cache } = browsing;
-    Worker::spawn_belled("browse", move |commands, bell| {
-        let mut archives = crate::files::archives::Mounts::new(cache);
+    let bell = Bell::new()?;
+    let theirs = bell.clone();
+    Worker::spawn_belled(clamshell_state::Thread::Browse.name(), bell, move |commands| {
+        let bell = &theirs;
+        let mut archives = crate::files::archives::Mounts::new(cache.clone());
         // The videos' lengths and frames are read from this at each listing that has videos.
         let store = art.as_deref().map(crate::library::meta::cache::Cache::open);
         let mut in_use: Vec<PathBuf> = Vec::new();
@@ -65,7 +68,7 @@ pub fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Worker<Br
         };
         loop {
             // Sleep until a command comes, or the folder or the mounts change.
-            let (folder_changed, mounts_changed) = wait(&bell, notify.as_ref(), mount_table.as_ref());
+            let (folder_changed, mounts_changed) = wait(bell, notify.as_ref(), mount_table.as_ref());
             // A command and a change may come together, so the change is looked at too.
             match commands.try_recv() {
                 Ok(BrowseCommand::InUse(files)) => {

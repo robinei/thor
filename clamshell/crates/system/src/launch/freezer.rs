@@ -18,7 +18,7 @@ pub fn freeze(unit: String, frozen: bool) {
     static FREEZER: std::sync::OnceLock<Option<std::sync::mpsc::Sender<(String, bool)>>> = std::sync::OnceLock::new();
     let sender = FREEZER.get_or_init(|| {
         let (send, receive) = std::sync::mpsc::channel();
-        worker::detached("freezer", move || freezer(&receive)).map_err(|e| log::warn!("freezer: {e}")).ok().map(|()| send)
+        worker::lasting(clamshell_state::Thread::Freezer.name(), move || freezer(&receive)).map_err(|e| log::warn!("freezer: {e}")).ok().map(|()| send)
     });
     if sender.as_ref().is_none_or(|s| s.send((unit, frozen)).is_err()) {
         log::warn!("freezer: gone");

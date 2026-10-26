@@ -61,7 +61,7 @@ fn raw(level: u8, share: u8, max: u32) -> u32 {
 pub fn spawn(backlights: Backlights) -> io::Result<Worker<Command>> {
     let mut setter = Setter::default();
     worker::spawn_coalescing(
-        "brightness",
+        clamshell_state::Thread::Brightness.name(),
         |_| (),
         move |Command { level, shares }| {
             for dir in backlights.devices() {

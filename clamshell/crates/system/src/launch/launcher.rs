@@ -59,6 +59,7 @@ pub enum Error {
     Units(scopes::Error),
     NoCommand,
     EmptyCommand,
+    Panicked,
 }
 
 impl fmt::Display for Error {
@@ -69,6 +70,7 @@ impl fmt::Display for Error {
             Error::Units(e) => write!(f, "{e}"),
             Error::NoCommand => write!(f, "no launch command"),
             Error::EmptyCommand => write!(f, "empty launch command"),
+            Error::Panicked => write!(f, "starting it panicked"),
         }
     }
 }
@@ -92,12 +94,12 @@ impl From<scopes::Error> for Error {
 }
 
 pub fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worker<Command>> {
-    Worker::spawn("launcher", move |commands| {
+    Worker::spawn(clamshell_state::Thread::Launcher.name(), move |commands| {
         for command in commands {
             let (config, sink) = (config.clone(), sink.clone());
             let started = worker::detached("launch", move || match command {
                 Command::Launch(request) => {
-                    if let Err(e) = start(&config, &request) {
+                    if let Err(e) = worker::or_on_panic(|| start(&config, &request), || Err(Error::Panicked)) {
                         log::warn!("launcher: {}: {e}", request.entry);
                         let _ = sink.send(Event::Launch(LaunchEvent::LaunchFailed(request.entry.clone())));
                     }

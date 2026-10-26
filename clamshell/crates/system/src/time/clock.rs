@@ -29,7 +29,7 @@ pub fn mono_secs() -> u64 {
 }
 
 pub fn spawn(sink: impl Sink) -> io::Result<()> {
-    worker::detached("clock", move || {
+    worker::lasting(clamshell_state::Thread::Clock.name(), move || {
         let _ = tick(&sink);
     })
 }

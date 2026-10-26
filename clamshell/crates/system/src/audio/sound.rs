@@ -45,7 +45,7 @@ fn wpctl_args(sound: &Sound) -> Vec<String> {
 
 /// Starts the thread that sets the sound. Failures are logged by [`command`].
 pub fn spawn() -> io::Result<Worker<Sound>> {
-    worker::spawn_coalescing("sound", kind, |sound| {
+    worker::spawn_coalescing(clamshell_state::Thread::Sound.name(), kind, |sound| {
         let args = wpctl_args(&sound);
         command::output("wpctl", &args.iter().map(String::as_str).collect::<Vec<_>>());
     })

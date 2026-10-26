@@ -51,7 +51,7 @@ pub fn run(settings: PathBuf) -> io::Result<()> {
     let listener = UnixListener::bind(&path)?;
     log::info!("wayland filter: {} for {}", path.display(), upstream.display());
     let (ended, end) = mpsc::channel();
-    worker::detached("wayland filter", move || {
+    worker::lasting(clamshell_state::Thread::WaylandFilter.name(), move || {
         for client in listener.incoming() {
             match client {
                 Ok(client) => connect(client, &upstream, &settings, &ended),

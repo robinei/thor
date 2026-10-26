@@ -131,7 +131,7 @@ pub fn devices_watch() -> Option<rustix::fd::OwnedFd> {
 /// Starts watching. With `hardware_keys` it takes the device's hardware keys, which is for the device's
 /// own session only.
 pub fn spawn(hardware_keys: bool, sink: impl Sink) -> io::Result<()> {
-    worker::detached("input watch", move || {
+    worker::lasting(clamshell_state::Thread::InputWatch.name(), move || {
         if let Err(Closed) = watch(hardware_keys, &sink) {
             log::debug!("input watch: the UI is gone");
         }

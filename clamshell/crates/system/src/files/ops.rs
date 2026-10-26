@@ -21,7 +21,7 @@ const PROGRESS: Duration = Duration::from_millis(250);
 
 /// Starts the files thread. It runs each operation, then sends what was done or what went wrong.
 pub fn spawn_ops(home: Option<PathBuf>, sink: impl Sink) -> io::Result<Worker<FileOp>> {
-    Worker::spawn("files", move |ops| {
+    Worker::spawn(clamshell_state::Thread::Files.name(), move |ops| {
         for op in ops {
             log::info!("files: {op:?}");
             let result = run(&op, home.as_deref(), &sink);
