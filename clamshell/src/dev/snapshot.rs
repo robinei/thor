@@ -11,10 +11,10 @@ use std::path::Path;
 use clamshell_state::Control;
 use clamshell_state::DeviceId;
 use clamshell_state::bottom::keyboard::{Key, Modifier, Named};
-use clamshell_state::device::SticksEvent;
 use clamshell_state::keymap::{Actuation, Button, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
 use clamshell_state::levels::Level;
 use clamshell_state::settings::Setting;
+use clamshell_state::setup::SticksEvent;
 use clamshell_state::{
     Dock, EditorId, Event, Id, Init, KeymapId, LevelEvent, Library, ListEvent, ListId, PointerEvent, Reading, Scope, SettingsId, ShelfEvent, ShelfId, Slide,
     State, Status, Tab, Target, TimeId,
@@ -605,7 +605,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot(
                     "device.png",
                     Top,
-                    vec![Reading::Account(clamshell_state::device::account::Account { available: true, password: false, ssh: false }).into()],
+                    vec![Reading::Account(clamshell_state::setup::account::Account { available: true, password: false, ssh: false }).into()],
                 ),
                 shot("device-sticks.png", Top, vec![tap(Id::Device(DeviceId::Sticks)), Event::Sticks(SticksEvent::Progress(demo::sticks_progress()))]),
                 shot("device-password.png", Bottom, [tap(Id::Device(DeviceId::Password))].into_iter().chain(control::type_text("secret")?).collect()),

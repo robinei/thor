@@ -1,5 +1,5 @@
 //! The device's account. The session's user starts without a password, which means it is locked, with
-//! no sudo and no ssh. A password is set in the Device view ([`crate::device`]), and once there is one,
+//! no sudo and no ssh. A password is set in the Device view ([`crate::setup`]), and once there is one,
 //! remote login (ssh) can be turned on.
 //!
 //! The system side is the image's root helper, `thor-account`, which polkit lets the session's user run.

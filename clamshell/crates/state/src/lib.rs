@@ -15,7 +15,7 @@
 //! - [`levels`]: volume and brightness, and the slider that sets them;
 //! - [`radios`]: Wi-Fi and Bluetooth;
 //! - [`settings`]: the settings table and panel, the environment variables, and the fan mode;
-//! - [`device`]: the Device view, the account, and stick calibration;
+//! - [`setup`]: the Device view, the account, and stick calibration;
 //! - [`idle`]: the screens dimmed and off, and sleep, with no input ([`Idle`]);
 //! - [`status`]: the system readings ([`Sys`]), covering status, metrics, the battery and the time;
 //! - [`notifications`]: the desktop notifications shown over the bottom screen ([`Notifications`]);
@@ -53,7 +53,6 @@ pub mod bottom;
 mod clock;
 pub mod colour;
 pub mod curve;
-pub mod device;
 mod effect;
 mod event;
 mod id;
@@ -73,6 +72,7 @@ mod random;
 pub(crate) mod resume;
 pub mod session;
 pub mod settings;
+pub mod setup;
 pub mod shelf;
 pub mod status;
 pub(crate) mod sync;
@@ -162,10 +162,10 @@ pub struct Init {
     /// Show clocks in 12-hour format rather than 24-hour.
     pub twelve_hour: bool,
     /// This is ClamShell's first start, meaning the Device view hasn't been closed with Done yet. The
-    /// Device view opens (see [`device`]).
+    /// Device view opens (see [`setup`]).
     pub first_start: bool,
-    /// The sticks' calibrations, by controller (see [`crate::device::sticks`]).
-    pub sticks: crate::device::sticks::Calibrations,
+    /// The sticks' calibrations, by controller (see [`crate::setup::sticks`]).
+    pub sticks: crate::setup::sticks::Calibrations,
 }
 
 /// Everything ClamShell knows, as its areas (see the [crate docs](crate)).
@@ -176,8 +176,8 @@ pub struct State {
     bottom: Bottom,
     session: Session,
     dock: Dock,
-    /// The Device view on the main screen (see [`crate::device`]).
-    device: device::Device,
+    /// The Device view on the main screen (see [`crate::setup`]).
+    setup: setup::Setup,
     levels: Levels,
     radios: Radios,
     pad: Pad,
@@ -225,7 +225,7 @@ impl State {
             levels: Levels::new(init.brightness),
             session: Session::new(init.autostart, init.device_session, init.window_rules),
             dock: init.dock,
-            device: device::Device::new(init.sticks, init.first_start),
+            setup: setup::Setup::new(init.sticks, init.first_start),
             ..State::default()
         };
         if let Some(resume) = &init.resume {
@@ -276,8 +276,8 @@ impl State {
         &self.dock
     }
 
-    pub fn device(&self) -> &device::Device {
-        &self.device
+    pub fn setup(&self) -> &setup::Setup {
+        &self.setup
     }
 
     pub fn levels(&self) -> &Levels {
@@ -425,15 +425,15 @@ impl State {
             Event::Paste => self.bottom.paste(),
             Event::DumpWindowEvents(path) => out.effects.push(Effect::Compositor(Compositor::DumpWindowEvents(path))),
             Event::Screenshot(result) => self.bottom.notice_mut().show(NoticeKind::Screenshot(result), now),
-            Event::Sticks(event) => self.device.sticks_event(event, now, out),
+            Event::Sticks(event) => self.setup.sticks_event(event, now, out),
             Event::RefreshCalibrated(result) => self.refresh_calibrated(result),
             Event::Restarted(thread) => self.restarted(thread, now, out),
-            Event::CalibrationRate(hz) => self.device.calibration_asks(hz),
+            Event::CalibrationRate(hz) => self.setup.calibration_asks(hz),
             Event::CalibrateGyro => self.calibrate_gyro(out),
             Event::GyroCalibrated(ok) => self.bottom.notice_mut().show(NoticeKind::Gyro(Some(ok)), now),
             // What the helper did, or why it failed, shown for a moment.
             Event::AccountChanged(result) => {
-                self.device.account_changed();
+                self.setup.account_changed();
                 self.bottom.notice_mut().show(NoticeKind::Account(result), now);
             }
             Event::ChooseTab(tab) => self.choose_tab(tab),
@@ -550,7 +550,7 @@ impl State {
         // Sleep only in the device's own session. A program in front doesn't hold it off; one playing a
         // video asks the compositor to keep the screen on.
         let policy = crate::idle::Policy::of(&self.prefs.settings().global, self.session.device_session());
-        let refreshing = self.device.calibrating();
+        let refreshing = self.setup.calibrating();
         self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), out);
         let changed = self.session.follow_program(self.clock.mono());
         self.bottom.follow_power(self.power(), self.clock.mono());
@@ -607,10 +607,10 @@ impl State {
             settings,
             refresh: self.refresh_wanted(&settings),
             // Off while the refresh rate calibration runs, so only the main screen's vblanks come.
-            bottom_on: !self.bottom.off() && !self.device.calibrating(),
+            bottom_on: !self.bottom.off() && !self.setup.calibrating(),
             bottom_seen: !self.bottom.shows_windows(&self.session) && !self.bottom.off(),
             tab,
-            device_open: self.device.is_open(),
+            setup_open: self.setup.is_open(),
             ui_up: self.ui_up,
             keymap: self.keymapping.version_of(settings.get(Setting::Keymap)),
             keymapping: &self.keymapping,
@@ -622,7 +622,7 @@ impl State {
     /// The main screen's refresh rate (see [`crate::sync::Wanted::refresh`]), with `in_force` the
     /// settings in force.
     fn refresh_wanted(&self, in_force: &Values) -> u16 {
-        if let Some(hz) = self.device.calibration_rate() {
+        if let Some(hz) = self.setup.calibration_rate() {
             return hz;
         }
         let settings = self.session.refresh_launch().map_or(*in_force, |id| self.settings_of(id));

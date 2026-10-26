@@ -51,7 +51,7 @@ impl Session {
     }
 
     /// The Home button always goes to shelf. (When the Device view is in shelf's place, Home closes it instead: see
-    /// [`crate::device::Device::close`].)
+    /// [`crate::setup::Setup::close`].)
     pub(crate) fn home(&mut self) {
         self.cancel_front_launch();
         if !self.shelf_in_front() {

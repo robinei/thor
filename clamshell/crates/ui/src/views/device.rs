@@ -1,4 +1,4 @@
-//! The Device view, shown on the main screen in place of the shelf (see `clamshell_state::device`). It
+//! The Device view, shown on the main screen in place of the shelf (see `clamshell_state::setup`). It
 //! has one row per setting, styled like the time tab's rows: Wi-Fi (opens its tab), the time zone (opens
 //! the time tab), the password (typed in the second screen's editor and shown as dots there), remote
 //! login, calibrating the sticks and the gyro, and calibrating the top screen's refresh rate. The last
@@ -13,9 +13,9 @@ use std::fmt::{self, Display, Formatter, Write};
 use clamshell_state::DeviceId;
 use clamshell_state::Id;
 use clamshell_state::bottom::editor::{Editor, Purpose};
-use clamshell_state::device::Refresh;
-use clamshell_state::device::account::PasswordStep;
-use clamshell_state::device::sticks::{Phase, Progress, StickAxis};
+use clamshell_state::setup::Refresh;
+use clamshell_state::setup::account::PasswordStep;
+use clamshell_state::setup::sticks::{Phase, Progress, StickAxis};
 
 use super::time::Name;
 use crate::gfx::{Align, Column, Keep, Rect};
@@ -36,14 +36,14 @@ const DOT: f32 = 0.07;
 /// The view, over all of `screen`.
 pub(super) fn draw(f: &mut Frame, screen: Rect) {
     let s = f.s;
-    let device = s.device();
+    let device = s.setup();
     let (pad, size) = (f.pad(), f.text(Text::Body));
     let area = style::content(screen).inset(pad);
     let small = f.text(Text::Small);
     let heading = f.text(Text::Heading);
     f.c.text_fit(area.top_line(heading), heading, Tone::Normal, "Device", Keep::Start);
     // At the first start, a line saying what the view is for.
-    if s.device().first_start() {
+    if s.setup().first_start() {
         let intro = "First start: set these up now, or later from Tools, Device";
         f.c.text_fit(area.top_line(small).shifted(0.0, heading * 1.5), small, Tone::Dim, intro, Keep::Start);
     }
@@ -71,11 +71,11 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     };
     f.button(Id::Device(DeviceId::Zone), zone, Look::ROW, |f| widgets::value_row(f, zone, size, "Time zone", &name, true));
 
-    let account = s.device().account();
+    let account = s.setup().account();
     let password = col.take(row_h);
     if account.available {
         // The helper sets a first password once Volume Up is pressed on the device itself.
-        let value = match (s.device().confirming(), account.password) {
+        let value = match (s.setup().confirming(), account.password) {
             (true, _) => "Press Volume Up to confirm",
             (false, true) => "Set",
             (false, false) => "Not set",
@@ -116,7 +116,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     col.skip(row_h * 0.3);
     let end = col.take(row_h);
     let inner = Rect::new(end.x + size * 0.4, end.y, end.w - size * 0.8, end.h);
-    if s.device().first_start() {
+    if s.setup().first_start() {
         f.text_button(Id::Device(DeviceId::Done), inner, size, Tone::Fn, "Done", Align::Start);
     } else {
         f.text_button(Id::Device(DeviceId::Close), inner, size, Tone::Fn, "Close", Align::Start);

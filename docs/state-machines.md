@@ -281,7 +281,7 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 | first tick, wall-clock jumps | `what_is_heard_before_the_clock_is_known_…`, `a_step_of_the_wall_clock_…` |
 | a suspend that fails without Busy leaves the stage Asleep with screens off until input | `a_suspend_that_failed_waits_for_input` |
 
-## Device view (device/)
+## Device view (setup/)
 
 | Transition | Test |
 |---|---|

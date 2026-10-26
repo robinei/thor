@@ -49,7 +49,7 @@ pub(crate) struct Wanted<'a> {
     /// The UI is up (see [`crate::Event::Start`]).
     pub(crate) ui_up: bool,
     /// The Device view is open.
-    pub(crate) device_open: bool,
+    pub(crate) setup_open: bool,
     /// The keymap in force (see [`Keymapping::version_of`]), and the keymaps it is taken from.
     pub(crate) keymap: (u16, u64),
     pub(crate) keymapping: &'a Keymapping,
@@ -278,7 +278,7 @@ impl Sent {
         if self.status_off.replace(screens_off) != Some(screens_off) {
             out.effects.push(Effect::Watch(Watch::Status, !screens_off));
         }
-        let account = w.ui_up && w.device_open;
+        let account = w.ui_up && w.setup_open;
         if self.account.replace(account) != Some(account) {
             out.effects.push(Effect::Watch(Watch::Account, account));
         }

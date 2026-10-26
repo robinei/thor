@@ -8,7 +8,7 @@ use crate::levels::slider::Control;
 const NOTICE_FOR: u64 = 2;
 
 /// How long the gyro's "hold still" shows at most, in seconds. Its answer replaces it before then.
-const GYRO_FOR: u64 = crate::device::ANSWER_WAIT;
+const GYRO_FOR: u64 = crate::setup::ANSWER_WAIT;
 
 /// A notice under the bar, until it times out.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,7 +39,7 @@ pub enum NoticeKind {
     /// A requested launch is starting. Holds the entry's title.
     Starting(String),
     /// An account change is done, with what was done, or failed, with the reason (see
-    /// [`crate::device::account`]).
+    /// [`crate::setup::account`]).
     Account(Result<String, String>),
     /// An editor for the keyboard tab was refused, since another is open there.
     KeyboardBusy,

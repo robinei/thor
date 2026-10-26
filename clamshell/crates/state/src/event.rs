@@ -114,8 +114,8 @@ pub enum Event {
     CalibrateGyro,
     /// A requested gyro calibration ended. True if it worked, meaning the device was held still enough.
     GyroCalibrated(bool),
-    /// Progress or the end of a stick calibration (see [`crate::device`]).
-    Sticks(crate::device::SticksEvent),
+    /// Progress or the end of a stick calibration (see [`crate::setup`]).
+    Sticks(crate::setup::SticksEvent),
     /// The top screen's refresh rate calibration ended, with its output or the reason it failed.
     RefreshCalibrated(Result<String, String>),
     /// The running refresh rate calibration asks for the main screen at this rate, in Hz (`clamshell ctl
@@ -125,7 +125,7 @@ pub enum Event {
     /// [`crate::apply::restart`]).
     Restarted(Thread),
     /// A change requested of the account helper is done, with what it did, or failed, with the reason. A
-    /// new account reading follows (see [`crate::device::account`]).
+    /// new account reading follows (see [`crate::setup::account`]).
     AccountChanged(Result<String, String>),
     /// Opens a tab on the second screen, as tapping its icon does.
     ChooseTab(crate::Tab),
@@ -201,8 +201,8 @@ pub enum Reading {
     Backlights(Vec<String>),
     /// The time zone and the ones to choose from. Sent while the time tab is open and after setting one.
     Time(crate::status::time::TimeZones),
-    /// The account, while the Device view is open and after a change (see [`crate::device::account`]).
-    Account(crate::device::account::Account),
+    /// The account, while the Device view is open and after a change (see [`crate::setup::account`]).
+    Account(crate::setup::account::Account),
     /// The screens as the compositor has them, at the start and when they change.
     Screens(Box<crate::presentation::Screens>),
     /// Where the pixels of the plotted window's picture are (see [`crate::State::histogram_window`]).

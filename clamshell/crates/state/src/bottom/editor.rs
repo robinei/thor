@@ -48,8 +48,8 @@ pub enum Purpose {
     ProfileName(crate::profiles::picker::Kind, crate::profiles::picker::ProfileName),
     /// A browsed file's or folder's name (see [`crate::shelf::files`]).
     FileName(crate::shelf::files::FileName),
-    /// The account's password, current or new (see [`crate::device::account`]).
-    AccountPassword(crate::device::account::PasswordStep),
+    /// The account's password, current or new (see [`crate::setup::account`]).
+    AccountPassword(crate::setup::account::PasswordStep),
 }
 
 /// What a keymap layer's name is for.

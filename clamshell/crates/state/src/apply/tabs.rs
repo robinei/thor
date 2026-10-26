@@ -77,10 +77,10 @@ impl State {
                 }
             }
             (Done::Save, Purpose::AccountPassword(step)) => {
-                if step == (crate::device::account::PasswordStep::New { current: None }) {
-                    self.device.first_password_sent();
+                if step == (crate::setup::account::PasswordStep::New { current: None }) {
+                    self.setup.first_password_sent();
                 }
-                crate::device::account::password_typed(step, editor.text, self.bottom.editors_mut(), out);
+                crate::setup::account::password_typed(step, editor.text, self.bottom.editors_mut(), out);
             }
         }
         if on_keyboard && self.bottom.editor().is_none() {

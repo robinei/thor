@@ -1,13 +1,13 @@
-//! The Device view. It shows on the main screen in shelf's place ([`TopView`]). It is opened by the
-//! Device entry in Tools, from shelf or pinned to the dock, and opens by itself at ClamShell's first
-//! start. B, Home or Close go back to shelf.
+//! The Device view, where the device is set up. It shows on the main screen in shelf's place
+//! ([`TopView`]). It is opened by the Device entry in Tools, from shelf or pinned to the dock, and opens
+//! by itself at ClamShell's first start. B, Home or Close go back to shelf.
 //!
 //! It has a row for each thing a device needs set up once, or now and then:
 //!
 //! - Wi-Fi, which opens its tab;
 //! - the time zone, which opens the time tab;
-//! - the password and remote login (see [`crate::device::account`]);
-//! - calibrating the controller's sticks ([`crate::device::sticks`]) and gyro;
+//! - the password and remote login (see [`crate::setup::account`]);
+//! - calibrating the controller's sticks ([`crate::setup::sticks`]) and gyro;
 //! - calibrating the top screen's refresh rate (thor-panel-calibration);
 //! - Done, at the first start.
 
@@ -47,7 +47,7 @@ pub enum Refresh {
 
 /// The Device view's own state.
 #[derive(Debug, Clone, Default)]
-pub struct Device {
+pub struct Setup {
     open: bool,
     /// When a stick calibration was asked for or last reported progress (monotonic seconds), until it
     /// ends. Another isn't asked for until it has, or until [`ANSWER_WAIT`] has passed with no word from
@@ -89,10 +89,10 @@ pub enum SticksEvent {
     Done(String, Option<Sticks>),
 }
 
-impl Device {
+impl Setup {
     /// The view as ClamShell starts. It is open at the first start.
-    pub(crate) fn new(calibrations: Calibrations, first_start: bool) -> Device {
-        Device { open: first_start, calibrations, first_start, ..Device::default() }
+    pub(crate) fn new(calibrations: Calibrations, first_start: bool) -> Setup {
+        Setup { open: first_start, calibrations, first_start, ..Setup::default() }
     }
 
     pub fn top_view(&self) -> TopView {
@@ -281,29 +281,29 @@ mod tests {
     }
 
     fn available(s: &mut State, password: bool) {
-        s.applied(Event::Reading(Reading::Account(crate::device::account::Account { available: true, password, ssh: false })));
+        s.applied(Event::Reading(Reading::Account(crate::setup::account::Account { available: true, password, ssh: false })));
     }
 
     #[test]
     fn the_first_start_opens_the_device_view_and_done_ends_it_for_good() {
         let mut s = State::new(Init { first_start: true, ..init() });
-        assert_eq!(s.device().top_view(), TopView::Device, "the first start opens it");
+        assert_eq!(s.setup().top_view(), TopView::Device, "the first start opens it");
         let effects = tap(&mut s, DeviceId::Done);
         assert!(effects.contains(&Effect::Save(Save::FirstStartDone)));
-        assert_eq!(s.device().top_view(), TopView::Shelf);
-        assert!(!s.device().first_start());
+        assert_eq!(s.setup().top_view(), TopView::Shelf);
+        assert!(!s.setup().first_start());
     }
 
     #[test]
     fn the_device_entry_opens_it_and_close_goes_back_to_shelf() {
         let mut s = State::new(init());
         let effects = launch_now(&mut s, "tool:device");
-        assert_eq!(s.device().top_view(), TopView::Device);
+        assert_eq!(s.setup().top_view(), TopView::Device);
         assert!(effects.is_empty());
         assert!(s.session().shelf_in_front());
         assert_eq!(s.pointer().focus(), Some(&Id::Device(DeviceId::Wifi)));
         let effects = tap(&mut s, DeviceId::Close);
-        assert_eq!(s.device().top_view(), TopView::Shelf);
+        assert_eq!(s.setup().top_view(), TopView::Shelf);
         assert!(!effects.contains(&Effect::Save(Save::FirstStartDone)), "not the first start: nothing saved");
     }
 
@@ -331,7 +331,7 @@ mod tests {
         let fx = tap(&mut s, DeviceId::Zone);
         assert_eq!(s.bottom().tab(), Tab::Time);
         assert!(fx.contains(&Effect::Watch(crate::Watch::Wifi, false)) && fx.contains(&Effect::Watch(crate::Watch::Time, true)), "{fx:?}");
-        assert_eq!(s.device().top_view(), TopView::Device, "the view stays open");
+        assert_eq!(s.setup().top_view(), TopView::Device, "the view stays open");
     }
 
     /// Home closes the Device view back to shelf. Repeated Home stays on shelf.
@@ -342,10 +342,10 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         s.observed(vec![crate::testkit::win_of(3, "zelda3", &zelda)]);
         launch_now(&mut s, "tool:device");
-        assert_eq!(s.device().top_view(), TopView::Device);
+        assert_eq!(s.setup().top_view(), TopView::Device);
         s.applied(Event::Home);
         assert!(s.session().shelf_in_front(), "nothing shown but shelf");
-        assert_eq!(s.device().top_view(), TopView::Shelf);
+        assert_eq!(s.setup().top_view(), TopView::Shelf);
         assert_eq!(s.pointer().focus(), Some(&crate::testkit::entry("zelda-lttp")), "the focus on shelf's selection");
         s.applied(Event::Home);
         assert!(s.session().shelf_in_front());
@@ -433,7 +433,7 @@ mod tests {
         assert_eq!(tap(&mut s, DeviceId::Ssh), vec![Effect::Account(AccountCommand::Ssh(true))]);
         assert!(tap(&mut s, DeviceId::Ssh).is_empty(), "not sent twice");
         s.applied(Event::AccountChanged(Ok("Remote login on".into())));
-        s.applied(Event::Reading(Reading::Account(crate::device::account::Account { available: true, password: true, ssh: true })));
+        s.applied(Event::Reading(Reading::Account(crate::setup::account::Account { available: true, password: true, ssh: true })));
         assert_eq!(tap(&mut s, DeviceId::Ssh), vec![Effect::Account(AccountCommand::Ssh(false))], "answered: off again");
         s.applied(Event::AccountChanged(Err("failed".into())));
         assert_eq!(tap(&mut s, DeviceId::Ssh), vec![Effect::Account(AccountCommand::Ssh(false))], "a failure answers too");
@@ -471,14 +471,14 @@ mod tests {
         s.applied(Event::tick(1000));
         assert_eq!(tap(&mut s, DeviceId::Sticks), vec![Effect::CalibrateSticks]);
         s.applied(Event::tick(1020));
-        let rest = crate::device::sticks::StickAxis { low: 0, centre: 0, high: 0 };
-        let p = Progress { phase: crate::device::sticks::Phase::Turn, now: [0; 4], seen: [rest; 4], min: -1024, max: 1024 };
+        let rest = crate::setup::sticks::StickAxis { low: 0, centre: 0, high: 0 };
+        let p = Progress { phase: crate::setup::sticks::Phase::Turn, now: [0; 4], seen: [rest; 4], min: -1024, max: 1024 };
         s.applied(Event::Sticks(SticksEvent::Progress(p)));
         s.applied(Event::tick(1049));
         assert!(tap(&mut s, DeviceId::Sticks).is_empty(), "29 s since its progress: still waiting");
         s.applied(Event::tick(1050));
         assert_eq!(tap(&mut s, DeviceId::Sticks), vec![Effect::CalibrateSticks], "30 s without word: asked again");
-        assert!(s.device().sticks().is_none(), "the old progress is dropped");
+        assert!(s.setup().sticks().is_none(), "the old progress is dropped");
         assert!(tap(&mut s, DeviceId::Sticks).is_empty(), "and that one waits in turn");
     }
 
@@ -502,17 +502,17 @@ mod tests {
         let mut s = State::new(init());
         s.sent_at_start();
         assert_eq!(tap(&mut s, DeviceId::Sticks), vec![Effect::CalibrateSticks]);
-        let rest = crate::device::sticks::StickAxis { low: 0, centre: 0, high: 0 };
-        let p = Progress { phase: crate::device::sticks::Phase::LetGo, now: [0; 4], seen: [rest; 4], min: -1024, max: 1024 };
+        let rest = crate::setup::sticks::StickAxis { low: 0, centre: 0, high: 0 };
+        let p = Progress { phase: crate::setup::sticks::Phase::LetGo, now: [0; 4], seen: [rest; 4], min: -1024, max: 1024 };
         s.applied(Event::Sticks(SticksEvent::Progress(p)));
-        assert!(s.device().sticks().is_some());
+        assert!(s.setup().sticks().is_some());
         assert!(tap(&mut s, DeviceId::Sticks).is_empty(), "one at a time");
-        let sticks = Sticks { axes: [crate::device::sticks::StickAxis { low: -900, centre: 0, high: 900 }; crate::device::sticks::AXES] };
+        let sticks = Sticks { axes: [crate::setup::sticks::StickAxis { low: -900, centre: 0, high: 900 }; crate::setup::sticks::AXES] };
         let effects = s.applied(Event::Sticks(SticksEvent::Done("pad".into(), Some(sticks))));
-        assert!(s.device().calibrated("pad"));
+        assert!(s.setup().calibrated("pad"));
         assert!(effects.iter().any(|e| matches!(e, Effect::Save(Save::Sticks(c)) if c.contains_key("pad"))), "{effects:?}");
         s.applied(Event::Sticks(SticksEvent::Done("pad".into(), None)));
-        assert!(s.device().sticks_failed());
+        assert!(s.setup().sticks_failed());
     }
 
     #[test]
@@ -522,20 +522,20 @@ mod tests {
         assert_eq!(tap(&mut s, DeviceId::Refresh), vec![Effect::CalibrateRefresh, Effect::Compositor(Compositor::Outputs { top: true, bottom: false })]);
         assert!(tap(&mut s, DeviceId::Refresh).is_empty());
         s.applied(Event::RefreshCalibrated(Ok("120 Hz: 118.630 -> 120.089 Hz".into())));
-        assert!(matches!(s.device().refresh(), Refresh::Done(Ok(_))));
+        assert!(matches!(s.setup().refresh(), Refresh::Done(Ok(_))));
     }
 
     /// A first password waits for Volume Up to be pressed until the helper answers, whatever it says.
     #[test]
     fn a_first_password_waits_for_volume_up_until_the_helper_answers() {
         let mut s = state();
-        s.applied(Event::Reading(Reading::Account(crate::device::account::Account { available: true, password: false, ssh: false })));
+        s.applied(Event::Reading(Reading::Account(crate::setup::account::Account { available: true, password: false, ssh: false })));
         let fx = s.applied(Event::EditOnKeyboard(Editor { purpose: Purpose::AccountPassword(PasswordStep::New { current: None }), text: "secret12".into() }));
-        assert!(!s.device().confirming(), "not before it is set: {fx:?}");
+        assert!(!s.setup().confirming(), "not before it is set: {fx:?}");
         let fx = crate::testkit::tap(&mut s, crate::Id::Editor(crate::EditorId::Save));
         assert!(fx.iter().any(|e| matches!(e, Effect::Account(AccountCommand::Password { current: None, .. }))), "{fx:?}");
-        assert!(s.device().confirming());
+        assert!(s.setup().confirming());
         s.applied(Event::AccountChanged(Err("Volume Up not pressed".into())));
-        assert!(!s.device().confirming());
+        assert!(!s.setup().confirming());
     }
 }

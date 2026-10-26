@@ -77,7 +77,7 @@ impl State {
             Launched::Yes => out.effects.push(Effect::Save(Save::Resume(self.resume()))),
             Launched::Instead(Instead::Device) => {
                 self.session.cancel_front_launch();
-                self.device.open(&mut self.pointer);
+                self.setup.open(&mut self.pointer);
                 self.session.command(WindowCommand::ShowShelf);
             }
             Launched::Instead(Instead::Group) if self.shelf.reveal(&entry) => {

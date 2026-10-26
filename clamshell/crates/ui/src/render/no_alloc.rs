@@ -8,14 +8,14 @@ use std::cell::Cell;
 use clamshell_state::Control;
 use clamshell_state::DeviceId;
 use clamshell_state::bottom::keyboard::{self, Key, Modifier};
-use clamshell_state::device::SticksEvent;
-use clamshell_state::device::account::Account;
-use clamshell_state::device::sticks::{Phase, Progress, StickAxis};
 use clamshell_state::keymap::{Button, Input, Keymaps, Layer, Param, Side};
 use clamshell_state::radios::{bluetooth, wifi};
 use clamshell_state::session::tray;
 use clamshell_state::session::windows::WindowFacts;
 use clamshell_state::settings::Setting;
+use clamshell_state::setup::SticksEvent;
+use clamshell_state::setup::account::Account;
+use clamshell_state::setup::sticks::{Phase, Progress, StickAxis};
 use clamshell_state::status::battery;
 use clamshell_state::{
     DockId, EditorId, Event, Id, Init, Instance, KeymapId, ListEvent, ListId, PointerEvent, Reading, RowPart, Scope, SettingsId, ShelfEvent, ShelfId, Slide,

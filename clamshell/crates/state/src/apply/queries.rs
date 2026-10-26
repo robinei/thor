@@ -55,7 +55,7 @@ impl State {
             in_game: self.session.program().is_some(),
             when_idle: self.in_force().choice::<BottomWhenIdle>(),
             discharging: self.sys.status().discharging,
-            refreshing: self.device.calibrating(),
+            refreshing: self.setup.calibrating(),
         }
     }
 

@@ -6,8 +6,8 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use clamshell_state::device::account::AccountCommand;
 use clamshell_state::idle::IdleEvent;
+use clamshell_state::setup::account::AccountCommand;
 use clamshell_state::{Event, Reading};
 
 use crate::display::{refresh, screenshot};
@@ -32,7 +32,7 @@ pub(crate) enum Command {
     AskAwake(Vec<String>),
     /// Reads or changes the account. After a change, the result is sent and then the account is read
     /// again.
-    Account(clamshell_state::device::account::AccountCommand),
+    Account(clamshell_state::setup::account::AccountCommand),
     /// Calibrates the top screen's refresh rate with thor-panel-calibration and sends back the result. It
     /// runs on a thread of its own because it takes a couple of minutes.
     CalibrateRefresh,

@@ -242,7 +242,7 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
 
 /// Whether the pad is on shelf, rather than on a view shown in its place.
 fn on_shelf(s: &State, d: &impl Drawn) -> bool {
-    s.pad().on_top() && focus_screen(s, d) == Screen::Top && s.device().top_view() == clamshell_state::device::TopView::Shelf
+    s.pad().on_top() && focus_screen(s, d) == Screen::Top && s.setup().top_view() == clamshell_state::setup::TopView::Shelf
 }
 
 /// L2 and R2 go to shelf's first or last entry.
@@ -295,7 +295,7 @@ pub(crate) fn back(s: &State) -> Option<Event> {
         return Some(PointerEvent::Activate(Id::Profile(Kind::Keymap, ProfileId::Back)).into());
     }
     // The Device view in shelf's place goes back to shelf.
-    if s.device().top_view() == clamshell_state::device::TopView::Device {
+    if s.setup().top_view() == clamshell_state::setup::TopView::Device {
         return Some(PointerEvent::Activate(Id::Device(clamshell_state::DeviceId::Close)).into());
     }
     // On shelf's actions, which holding A led to, go back to the entry in the list.

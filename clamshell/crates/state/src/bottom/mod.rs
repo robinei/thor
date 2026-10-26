@@ -298,7 +298,7 @@ mod tests {
     }
 
     fn password() -> Editor {
-        let step = crate::device::account::PasswordStep::New { current: None };
+        let step = crate::setup::account::PasswordStep::New { current: None };
         Editor { purpose: crate::bottom::editor::Purpose::AccountPassword(step), text: String::new() }
     }
 

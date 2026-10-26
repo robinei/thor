@@ -46,9 +46,9 @@ use std::time::{Duration, Instant};
 
 use clamshell_state::Event;
 use clamshell_state::PadRoute;
-use clamshell_state::device::SticksEvent;
 use clamshell_state::keymap::Keymap;
 use clamshell_state::settings::RumbleStrength;
+use clamshell_state::setup::SticksEvent;
 use rustix::event::{PollFd, PollFlags};
 
 use crate::os::evdev::Raw;
@@ -89,7 +89,7 @@ pub(crate) enum Command {
     CalibrateSticks,
     /// The sticks' calibrations, by controller. They are sent at start, and a calibration made here is
     /// kept here too.
-    Sticks(clamshell_state::device::sticks::Calibrations),
+    Sticks(clamshell_state::setup::sticks::Calibrations),
 }
 
 /// A command's acknowledgement, sent once the command is carried out.
@@ -190,7 +190,7 @@ struct PadThread<S> {
     /// The keymap's buzz that is playing, and when it ends.
     buzz: Option<(Buzz, Instant)>,
     /// The sticks' calibrations, by controller.
-    sticks: clamshell_state::device::sticks::Calibrations,
+    sticks: clamshell_state::setup::sticks::Calibrations,
 }
 
 /// A controller taken over, with its gyro if one is found.

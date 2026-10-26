@@ -49,7 +49,7 @@ impl State {
             Reading::Audio(audio) => self.levels.read_audio(audio),
             Reading::Backlights(backlights) => self.levels.read_backlights(backlights),
             Reading::Time(time) => self.sys.read_time(time),
-            Reading::Account(account) => self.device.read_account(account),
+            Reading::Account(account) => self.setup.read_account(account),
         }
         if status && let Some(warning) = self.sys.battery_warning() {
             self.notify(warning, out);
@@ -95,7 +95,7 @@ impl State {
     /// The refresh rate calibration ended: the bottom screen comes on again and the main screen's rate
     /// is the settings' again, as sync finds.
     pub(crate) fn refresh_calibrated(&mut self, result: Result<String, String>) {
-        self.device.refresh_done(result);
+        self.setup.refresh_done(result);
     }
 
     /// The UI is up. Sends what was waiting for it: the dock if pins were dropped at start and the
@@ -114,8 +114,8 @@ impl State {
     pub(crate) fn home(&mut self) {
         if self.listening() {
             self.keymapping.back(&mut self.keyboard);
-        } else if self.session.shelf_in_front() && self.device.is_open() {
-            self.device.close(&mut self.pointer, self.shelf.selected());
+        } else if self.session.shelf_in_front() && self.setup.is_open() {
+            self.setup.close(&mut self.pointer, self.shelf.selected());
         } else {
             self.session.home();
         }

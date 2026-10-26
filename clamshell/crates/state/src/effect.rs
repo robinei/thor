@@ -120,9 +120,9 @@ pub enum Effect {
     Watch(Watch, bool),
     /// Sleep, for idle in the device's session. Suspends, then hibernates where the system can.
     Sleep,
-    /// Ask the account helper to do something (see [`crate::device::account`]). A change is reported and
+    /// Ask the account helper to do something (see [`crate::setup::account`]). A change is reported and
     /// the account is then read again.
-    Account(crate::device::account::AccountCommand),
+    Account(crate::setup::account::AccountCommand),
     /// Set the system's time zone by its tzdata name. The time zones are read again afterwards.
     SetTimeZone(String),
     /// Turn network time (NTP) on or off. The time is read again afterwards.
@@ -200,7 +200,7 @@ pub enum Watch {
     Battery,
     /// The time zone and the ones to choose from.
     Time,
-    /// The account (see [`crate::device::account`]) and the time zone, which the Device view both shows.
+    /// The account (see [`crate::setup::account`]) and the time zone, which the Device view both shows.
     Account,
     /// The system's metrics, read more often while shown.
     Metrics,
@@ -234,5 +234,5 @@ pub enum Save {
     /// again.
     FirstStartDone,
     /// The sticks' calibrations, by controller.
-    Sticks(crate::device::sticks::Calibrations),
+    Sticks(crate::setup::sticks::Calibrations),
 }

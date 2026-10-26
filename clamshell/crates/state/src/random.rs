@@ -20,7 +20,6 @@ use std::sync::Arc;
 
 use crate::DeviceKey;
 use crate::bottom::keyboard::{KeyPos, slot};
-use crate::device::{SticksEvent, TopView};
 use crate::idle::{IdleEvent, Stage};
 use crate::keymap::{Button, Input};
 use crate::levels::{Audio, AudioOutput, Stream};
@@ -31,6 +30,7 @@ use crate::radios::wifi::{Network, Wifi};
 use crate::session::windows::WindowFacts;
 use crate::settings::Setting;
 use crate::settings::panel::Scope;
+use crate::setup::{SticksEvent, TopView};
 use crate::*;
 
 /// The seeds that run with the other tests, and the events in each.
@@ -216,7 +216,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
     if s.bottom_dark() {
         ids.push(Id::Wake);
     }
-    match s.device().top_view() {
+    match s.setup().top_view() {
         TopView::Device => ids.extend(
             [
                 DeviceId::Wifi,
@@ -504,8 +504,8 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                     w.sticks = false;
                     Event::Sticks(SticksEvent::Done("pad".into(), None))
                 } else {
-                    let rest = crate::device::sticks::StickAxis { low: 0, centre: 0, high: 0 };
-                    let p = crate::device::sticks::Progress { phase: crate::device::sticks::Phase::Turn, now: [0; 4], seen: [rest; 4], min: -1024, max: 1024 };
+                    let rest = crate::setup::sticks::StickAxis { low: 0, centre: 0, high: 0 };
+                    let p = crate::setup::sticks::Progress { phase: crate::setup::sticks::Phase::Turn, now: [0; 4], seen: [rest; 4], min: -1024, max: 1024 };
                     Event::Sticks(SticksEvent::Progress(p))
                 }
             }
@@ -589,7 +589,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 streams.truncate(rng.below(3));
                 Reading::Audio(Audio { outputs, streams })
             }
-            4 => Reading::Account(crate::device::account::Account { available: true, password: !rng.one_in(3), ssh: rng.one_in(2) }),
+            4 => Reading::Account(crate::setup::account::Account { available: true, password: !rng.one_in(3), ssh: rng.one_in(2) }),
             _ => Reading::Clipboard(rng.one_in(2).then(|| "pasted".into())),
         }),
         // The device's keys and buttons.
@@ -809,7 +809,7 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
         ensure!(sent.route == Some(s.pad().route()), "2: route sent {:?}, state {:?}", sent.route, s.pad().route());
         let in_force = s.keymapping().in_force(s.in_force().get(Setting::Keymap));
         ensure!(sent.keymap.as_ref() == Some(&in_force), "2: keymap sent {:?}, in force {}", sent.keymap.as_ref().map(|k| k.id), in_force.id);
-        ensure!(sent.account == s.device().is_open(), "2: account watched {}, view open {}", sent.account, s.device().is_open());
+        ensure!(sent.account == s.setup().is_open(), "2: account watched {}, view open {}", sent.account, s.setup().is_open());
     }
     let screens_on = s.idle().stage() < Stage::Off;
     ensure!(sent.status == screens_on, "2: status watched {}, screens on {screens_on}", sent.status);
@@ -821,7 +821,7 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
         sent.watched
     );
     // (The refresh rate calibration keeps the bottom screen off while it runs.)
-    let outputs = (screens_on, !s.bottom().off() && !s.device().calibrating());
+    let outputs = (screens_on, !s.bottom().off() && !s.setup().calibrating());
     ensure!(sent.outputs == outputs, "2: outputs sent {:?}, state {outputs:?}", sent.outputs);
     // Once ClamShell set a level, the screens have it, or a third of it (at least 1) while dimmed.
     if let Some(level) = s.levels().brightness().level {
@@ -831,7 +831,7 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
     }
     let settings = s.session().refresh_launch().map_or_else(|| s.in_force(), |id| s.settings_of(id));
     let rate = s.presentation().display_modes().refresh_for(settings.get(Setting::Refresh), settings.get(Setting::FpsCap));
-    let refresh = s.device().calibration_rate().unwrap_or(rate);
+    let refresh = s.setup().calibration_rate().unwrap_or(rate);
     ensure!(sent.refresh == refresh, "2: refresh sent {}, the calibration's, the last launch's or in force {refresh}", sent.refresh);
     let apply = (s.session().program().cloned(), s.in_force());
     ensure!(sent.apply.as_ref() == Some(&apply), "2: applied {:?}, in force {:?}", sent.apply, apply);

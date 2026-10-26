@@ -142,7 +142,7 @@ impl State {
             }
             Id::Time(id) => self.sys.on_time(id, self.scrolls.get_mut(ListId::Time), out),
             Id::Device(id) => {
-                self.device.tap(id, self.clock.mono(), &mut self.pointer, self.shelf.selected(), out);
+                self.setup.tap(id, self.clock.mono(), &mut self.pointer, self.shelf.selected(), out);
             }
             Id::Battery(id) => {
                 self.sys.on_battery(id, &self.session, out);

@@ -350,7 +350,7 @@ fn a_refresh_calibration_or_an_editor_keeps_it_on() {
     let mut s = state();
     on_battery(&mut s, true);
     s.applied(Event::tick(1000));
-    let step = crate::device::account::PasswordStep::Current;
+    let step = crate::setup::account::PasswordStep::Current;
     let editor = crate::Editor { purpose: crate::bottom::editor::Purpose::AccountPassword(step), text: String::new() };
     s.applied(Event::EditOnKeyboard(editor));
     assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), None, "typing");
