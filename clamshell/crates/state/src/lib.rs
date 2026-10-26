@@ -458,21 +458,23 @@ impl State {
                     return;
                 }
                 // A dialog goes with its parent, below if the parent is.
-                let parent = facts.parent.and_then(|id| self.session.window(id)).map(|w| (w.workspace.clone(), w.down));
+                let parent = facts.parent.and_then(|id| self.session.window(id)).map(|w| (w.group.clone(), w.down));
                 let down = parent.as_ref().is_some_and(|(_, down)| *down);
-                let group = parent.map(|(group, _)| group).or_else(|| {
-                    self.shelf
+                let group = match parent {
+                    Some((group, _)) => group,
+                    None => self
+                        .shelf
                         .library()
                         .entries
                         .iter()
                         .find(|g| crate::session::running::has_app_id(g, &facts.app_id))
-                        .map(|g| Instance::workspace_of(&g.key))
-                        .or_else(|| self.session.running_of(&facts).map(|r| r.workspace()))
-                        .or_else(|| facts.instance().map(|i| i.workspace()))
-                });
+                        .map(|g| crate::session::windows::Group::entry(&g.key))
+                        .or_else(|| self.session.running_of(&facts).map(Running::group))
+                        .or_else(|| facts.instance().and_then(|i| i.key().map(crate::session::windows::Group::entry))),
+                };
                 let focus = !down && self.session.opening_focus(&facts);
                 let id = facts.id;
-                self.session.open(facts, group.unwrap_or_default(), focus);
+                self.session.open(facts, group, focus);
                 if down {
                     self.bottom.show_down(id, &mut self.session);
                 }
@@ -523,7 +525,7 @@ impl State {
     ///    ([`crate::Session::follow_windows`], which compares with the windows the last pass saw).
     /// 3. The rules that send windows down.
     /// 4. In the background: entries paused, thawed or ended by their setting. This reads 1 and 2.
-    /// 5. What is shown: a launch's first window, and a workspace whose window came back.
+    /// 5. What is shown: a launch's first window, and a group whose window came back.
     /// 6. Quitting entries are ended once their windows are gone. This reads 1 to 4.
     /// 7. Going back to what was before when the one in front closed.
     /// 8. The dock: running entries are added to it and ended ones removed.

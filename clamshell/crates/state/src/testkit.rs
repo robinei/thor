@@ -1,6 +1,6 @@
 //! Shorthands for the tests.
 
-pub use crate::session::windows::WindowFacts;
+pub use crate::session::windows::{Group, WindowFacts};
 pub use crate::settings::Values;
 
 use crate::*;
@@ -92,6 +92,11 @@ pub fn win_of(id: i64, app_id: &str, instance: &Instance) -> WindowFacts {
 /// in a group of that key.
 pub fn launch_of(key: &str) -> Instance {
     Instance::Run { key: key.into(), secs: 1, n: 0 }
+}
+
+/// The group of `instance`'s entry, which holds its windows.
+pub fn group_of(instance: &Instance) -> Group {
+    Group::entry(instance.key().unwrap_or_default())
 }
 
 /// A running entry's first window opens and its client asks to show it.

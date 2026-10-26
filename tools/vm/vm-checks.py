@@ -184,7 +184,8 @@ def chord(char, ctrl=False):
 
 def windows():
     """ClamShell's windows as its state has them (`window events`): each with its id, app id, group
-    (`workspace`), whether it is below (`down`), shown and focused."""
+    (`group`: `{"Entry": key}`, `{"Window": id}` or none), whether it is below (`down`), shown and
+    focused."""
     path = f"{CHECKS_DIR}/windows.json"
     sh(f"rm -f {path}")
     control(f"window events {path}")
@@ -198,10 +199,13 @@ def windows():
 
 def front():
     """The group in front on the main screen, as the compositor shows it: the focused top window's, else
-    the last shown top window's, else shelf's."""
+    the last shown top window's, else "shelf". An entry's group is its key, a window's own "window <id>"."""
     top = [w for w in windows() if not w["down"]]
     shown = next((w for w in top if w["focused"]), None) or max((w for w in top if w["visible"]), key=lambda w: w["id"], default=None)
-    return shown["workspace"] if shown else "clamshell-shelf"
+    if not shown:
+        return "shelf"
+    group = shown.get("group") or {}
+    return group.get("Entry") or f"window {group.get('Window')}"
 
 
 def typed():
@@ -373,7 +377,7 @@ systemctl --user reset-failed clamshell; systemctl --user restart clamshell
         result = subprocess.run([sys.executable, str(Path(vm.__file__)), "bluetooth"], capture_output=True, text=True)
         if result.returncode != 0:
             print(f"  (Bluetooth not set up: {result.stderr.strip() or result.stdout.strip()})")
-    if not until(lambda: sh("systemctl --user is-active clamshell").strip() == "active" and front() == "clamshell-shelf", 15):
+    if not until(lambda: sh("systemctl --user is-active clamshell").strip() == "active" and front() == "shelf", 15):
         sys.exit("ClamShell didn't start")
     time.sleep(1)
     return since
@@ -427,7 +431,7 @@ class Checks:
         off."""
         self.i.lift_all()
         sh("systemctl --user stop 'clamshell-run-*' 'app-graphical-clamshell-run-*' 2>/dev/null || true")
-        until(lambda: front() == "clamshell-shelf", 5)
+        until(lambda: front() == "shelf", 5)
         if self.route() == "Mouse":
             self.icon("pad-mouse")
         self.icon("dock")
@@ -629,7 +633,7 @@ class Checks:
         """More games than fit in shelf's list: a drag with the pointer scrolls it, settling on a whole row,
         and a click then selects the game under it."""
         control("home")
-        until(lambda: front() == "clamshell-shelf", 5)
+        until(lambda: front() == "shelf", 5)
         if collection() not in (None, "Test"):
             return self.check("shelf: the Test collection in front", False, f"collection {collection()!r}")
         # Down by three rows and a bit, slowly; it settles on three.
@@ -790,15 +794,15 @@ class Checks:
         dpad("up")
         until(lambda: selection() == before, 3)
         press("a")
-        launched = until(lambda: bool(units("run-")) and front() not in ("", "clamshell-shelf"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("shelf", "window None"), 10)
         game = front()
         self.check("  A launches the selected game, in front", launched, f"units {units('game')}, front {game!r}")
         if not launched:
             return
         press("home")
-        self.check("  Home goes to shelf", until(lambda: front() == "clamshell-shelf"), f"front {front()!r}")
+        self.check("  Home goes to shelf", until(lambda: front() == "shelf"), f"front {front()!r}")
         press("home")
-        self.check("  Home again stays on shelf", until(lambda: front() == "clamshell-shelf"), f"front {front()!r}")
+        self.check("  Home again stays on shelf", until(lambda: front() == "shelf"), f"front {front()!r}")
         press("a")
         self.check("  activating the program shows its top window", until(lambda: front() == game), f"front {front()!r}")
 
@@ -836,7 +840,7 @@ class Checks:
         sh("pkill -x foot || true")
         until(lambda: not sh("pgrep -x foot || true").strip(), 5)
         sh(f"rm -f {TYPED}; setsid -f foot sh -c 'stty -icanon -echo; exec cat > {TYPED}' >/dev/null 2>&1")
-        if not until(lambda: front().startswith("clamshell-run-foot_"), 8):
+        if not until(lambda: front().startswith("foot_"), 8):
             return self.check("an app in front (Terminal)", False, f"front {front()!r}")
         self.icon("keyboard")
         return self.check("pad with an app in front and the keyboard tab: typing",
@@ -883,7 +887,7 @@ class Checks:
             return self.check("pad: the fake pad grabbed", False)
         since = now()
         control("tap launch")
-        launched = until(lambda: bool(units("run-")) and front() not in ("", "clamshell-shelf"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("shelf", "window None"), 10)
         game_route = logged(since, "PadRoute(Game)")
         if not self.check("pad: a game in front, the pad goes to it", launched and game_route, f"front {front()!r}"):
             return
@@ -897,7 +901,7 @@ class Checks:
         if not plug_pad():
             return self.check("pad: the fake pad grabbed", False)
         control("tap launch")
-        launched = until(lambda: bool(units("run-")) and front() not in ("", "clamshell-shelf"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("shelf", "window None"), 10)
         if not self.check("pad: a game in front", launched, f"front {front()!r}"):
             return
         game = front()
@@ -915,12 +919,12 @@ class Checks:
                    and "value 0" in mode[1] and front() == game, f"{mode}, front {front()!r}")
         out = capture(f"evtest {virtual}", 3, lambda: pad("tap home 900"))
         self.check("  Home held long alone: not Guide (Home on release: shelf in front)",
-                   "BTN_MODE" not in out.split("Testing ...")[-1] and until(lambda: front() == "clamshell-shelf", 3),
+                   "BTN_MODE" not in out.split("Testing ...")[-1] and until(lambda: front() == "shelf", 3),
                    f"front {front()!r}")
         press("home")
         out = capture(f"evtest {virtual}", 2, lambda: press("home"))
         self.check("  Home pressed: ClamShell's (shelf in front), the game sees nothing",
-                   until(lambda: front() == "clamshell-shelf", 3) and "BTN_MODE" not in out.split("Testing ...")[-1],
+                   until(lambda: front() == "shelf", 3) and "BTN_MODE" not in out.split("Testing ...")[-1],
                    f"front {front()!r}")
 
     # keymaps
@@ -964,7 +968,7 @@ class Checks:
         applied_since = since
         since = now()
         control("tap launch")
-        launched = until(lambda: bool(units("run-")) and front() not in ("", "clamshell-shelf"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("shelf", "window None"), 10)
         if not self.check("  the game runs with it", launched and logged(applied_since, f"pad: keymap {ident} (Check)", 5),
                           f"front {front()!r}; {journal(since)[-300:]!r}"):
             return
@@ -1030,7 +1034,7 @@ class Checks:
         since = now()
         control(f"tap keymap {rows}")
         control("tap launch")
-        launched = until(lambda: bool(units("run-")) and front() not in ("", "clamshell-shelf"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("shelf", "window None"), 10)
         if not self.check("  the game runs with it", launched and logged(since, "(Layers)", 5), f"front {front()!r}"):
             return
         game = front()
@@ -1071,7 +1075,7 @@ class Checks:
         self.check("  a buzz as it is armed, another as it goes off", "rumble 0 40000" in said and "rumble 30000 0" in said, said)
         self.check("  the game stays in front", front() == game, f"front {front()!r}")
         press("home")
-        self.check("  a Home tap: shelf", until(lambda: front() == "clamshell-shelf", 3), f"front {front()!r}")
+        self.check("  a Home tap: shelf", until(lambda: front() == "shelf", 3), f"front {front()!r}")
 
     def keymap_actuations(self):
         """A keymap with A to X pressed and to E held, B to Z pressed twice, Y to T with turbo and toggled,
@@ -1093,7 +1097,7 @@ class Checks:
         since = now()
         control(f"tap keymap {rows}")
         control("tap launch")
-        launched = until(lambda: bool(units("run-")) and front() not in ("", "clamshell-shelf"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("shelf", "window None"), 10)
         if not self.check("  the game runs with it", launched and logged(since, "(Acts)", 5), f"front {front()!r}"):
             return
         mouse = device("clamshell pad mouse")
@@ -1124,7 +1128,7 @@ class Checks:
         if not self.check("rumble: the fake pad grabbed", plug_pad()):
             return
         control("tap launch")
-        if not self.check("  a game in front", until(lambda: bool(units("run-")) and front() not in ("", "clamshell-shelf"), 10)):
+        if not self.check("  a game in front", until(lambda: bool(units("run-")) and front() not in ("shelf", "window None"), 10)):
             return
         virtual = device("clamshell pad (Xbox 360)")
         # struct ff_effect: type, id, direction, trigger, replay (length 500 ms), then the rumble's
@@ -1159,7 +1163,7 @@ class Checks:
             if until(lambda: (selection() or "").endswith("test.game"), 2):
                 break
         control("tap launch")
-        if not until(lambda: front().startswith("clamshell-run-"), 10):
+        if not until(lambda: not front().startswith(("shelf", "window ")), 10):
             self.check("process control: the test game launched, in front", False, f"front {front()!r}, units {units('run-')}")
             return None
         return front()
@@ -1197,9 +1201,9 @@ class Checks:
         sh("pkill -x foot || true")
         # (Gone, its entry ended, shelf in front: a window opening on an entry's workspace is that entry's.)
         until(lambda: not sh("pgrep -x foot || true").strip() and not [u for u in units("run-foot") if u.endswith((".service", ".scope"))]
-              and front() == "clamshell-shelf", 10)
+              and front() == "shelf", 10)
         sh(how)
-        on = until(lambda: front().startswith("clamshell-run-foot_"), 10)
+        on = until(lambda: front().startswith("foot_"), 10)
         pid = sh("pgrep -n -x foot || true").strip()
         return on, lambda: sh(f"cat /proc/{pid}/cgroup 2>/dev/null").strip() if pid else ""
 

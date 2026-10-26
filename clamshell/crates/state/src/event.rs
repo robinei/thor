@@ -145,7 +145,7 @@ pub enum Event {
 pub enum EntryAct {
     /// Starts it, or shows it if it runs (see [`crate::State::play`]).
     Play,
-    /// Shows it, as a tap on its dock tile does: its workspace, thawed if it was paused or suspended.
+    /// Shows it, as a tap on its dock tile does: its group, thawed if it was paused or suspended.
     Show,
     /// Launches it again, in another tab, if it runs and another launch of it makes sense (see
     /// [`crate::State::opens_another`]).

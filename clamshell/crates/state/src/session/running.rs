@@ -1,11 +1,11 @@
 //! Running entries: what was launched from shelf or the dock, games and apps alike. Each launch is a scope
-//! of its own in the entry's slice, with its windows on the entry's workspace (see [`Instance`]). An entry
+//! of its own in the entry's slice, with its windows in the entry's group (see [`Instance`]). An entry
 //! may run more than once; another launch is another scope and another tab.
 //!
 //! Some entries run in another program's processes, not in a scope of ours, and are known by their
 //! windows' app id ([`app_id_of`]). These are Steam's games (`steam_app_<id>`, in Steam's scope) and the
 //! entries of a runner that hands its apps over, such as Waydroid's, whose app id is their desktop file's
-//! name and which run in the Waydroid session. Their windows are put on their entry's workspace as they
+//! name and which run in the Waydroid session. Their windows are put in their entry's group as they
 //! open. A window that opens while the entry doesn't run, such as a game started in Steam or an app opened by another app, starts the entry.
 //! Such an entry runs once, so another launch shows it instead. It runs on by its windows after its launch
 //! ends, until the last one closes.
@@ -13,7 +13,7 @@
 //! A file opened from the Files tab, a browsed entry, may have a launch that hands it to a program not
 //! ours and ends, as with `xdg-open` to an app's own instance or with D-Bus activation. It runs on by its
 //! windows too: a new window of no launch of ours that appears within [`HANDOFF`] is moved to its
-//! workspace, and the file has ended when that window has closed, or when none came.
+//! group, and the file has ended when that window has closed, or when none came.
 //!
 //! In shelf, activating a running entry shows it, and activating a stopped one starts it. Quit asks an
 //! entry's windows to close and, once none is left and it still runs, ends it. That stops its slice, or for
@@ -33,7 +33,7 @@ use crate::session::found::window_entry;
 use crate::session::instance::{Instance, STEAM_APP_PREFIX};
 use crate::session::tray::{TrayItem, tray_entry};
 use crate::session::windows::WindowCommand;
-use crate::session::windows::{Window, WindowFacts};
+use crate::session::windows::{Group, Window, WindowFacts};
 use crate::settings::Settings;
 use crate::{Clock, Entry, Library, Resume, Session, Shelf};
 
@@ -78,7 +78,7 @@ pub const HANDOFF: u64 = 15;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Running {
     pub id: Arc<str>,
-    /// Its key, which names its workspace and its launches' scopes and slice.
+    /// Its key, which names its group and its launches' scopes and slice.
     pub key: String,
     pub origin: Origin,
     /// The app id its windows have, if it runs in another program's processes (see [`app_id_of`]).
@@ -135,14 +135,14 @@ impl Running {
     }
 
     /// Whether its windows are found other than by its scope, by app id or by process, and so are moved
-    /// to its workspace wherever they open.
+    /// to its group wherever they open.
     pub fn outside(&self) -> bool {
         self.app_id.is_some() || self.pid().is_some()
     }
 
-    /// Its workspace's name.
-    pub fn workspace(&self) -> String {
-        Instance::workspace_of(&self.key)
+    /// Its group, which holds its windows.
+    pub fn group(&self) -> Group {
+        Group::entry(&self.key)
     }
 }
 
@@ -370,7 +370,7 @@ impl Session {
     /// Runs after every event, after the entries started by their windows' app ids
     /// ([`Session::start_by_app_id`]).
     ///
-    /// - A running entry's windows found by app id go to its workspace.
+    /// - A running entry's windows found by app id go to its group.
     /// - A new window of no launch of ours goes to the latest browsed file waiting for one, shown.
     /// - A window that still belongs to no entry makes its program an entry found by it (see
     ///   [`crate::session::found`]).
@@ -388,13 +388,13 @@ impl Session {
         self.end_windowless(taken.as_ref(), clock.mono(), plays);
     }
 
-    /// Moves windows found by app id or by process to their entry's workspace.
+    /// Moves windows found by app id or by process to their entry's group.
     fn place_owned_windows(&mut self) {
         let mut commands = Vec::new();
         for r in &self.running {
-            let away: Vec<i64> = self.windows_of(&r.id).filter(|w| Instance::key_of(&w.workspace) != Some(&r.key)).map(|w| w.id).collect();
+            let away: Vec<i64> = self.windows_of(&r.id).filter(|w| w.group.as_ref().and_then(Group::key) != Some(&r.key)).map(|w| w.id).collect();
             if !away.is_empty() {
-                commands.push(WindowCommand::Move { windows: away, to: r.workspace() });
+                commands.push(WindowCommand::Move { windows: away, to: r.group() });
             }
         }
         for command in commands {
@@ -416,9 +416,9 @@ impl Session {
             .max_by_key(|r| r.start);
         let r = waiting.filter(|_| !stray.is_empty())?;
         let id = r.id.clone();
-        let group = r.workspace();
+        let group = r.group();
         taken.extend(&stray);
-        self.command(WindowCommand::Move { windows: stray, to: group.clone() });
+        self.command(WindowCommand::Move { windows: stray, to: group });
         Some(id)
     }
 
@@ -427,16 +427,11 @@ impl Session {
     /// program's group; without one it gets a group of its own so Home can still return to shelf.
     fn place_unowned(&mut self) {
         let starting = |w: &crate::session::windows::Window| self.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
-        let ids: Vec<i64> = self.windows.iter().filter(|w| w.workspace.is_empty() && self.running_of(w).is_none() && !starting(w)).map(|w| w.id).collect();
+        let ids: Vec<i64> = self.windows.iter().filter(|w| w.group.is_none() && self.running_of(w).is_none() && !starting(w)).map(|w| w.id).collect();
         for id in ids {
             let down = self.window(id).is_some_and(|w| w.down);
-            let group = self
-                .windows
-                .iter()
-                .find(|w| !down && w.focused && !w.down && !w.workspace.is_empty())
-                .map(|w| w.workspace.clone())
-                .unwrap_or_else(|| format!("clamshell-window-{id}"));
-            self.command(WindowCommand::Move { windows: vec![id], to: group.clone() });
+            let group = self.windows.iter().find(|w| !down && w.focused && !w.down).and_then(|w| w.group.clone()).unwrap_or(Group::Window(id));
+            self.command(WindowCommand::Move { windows: vec![id], to: group });
             if !down {
                 self.command(WindowCommand::FocusWindow(id));
             }
@@ -493,13 +488,13 @@ impl Session {
         entries.iter().find(named).or_else(|| entries.iter().filter(|g| ids::desktop_file(&g.id).is_some()).find(program))
     }
 
-    /// Remembers the windows this pass saw and the workspace in front, for the next pass (see
+    /// Remembers the windows this pass saw and the group in front, for the next pass (see
     /// [`Session::claim_opened_windows`] and [`Session::follow_front`]).
     pub(crate) fn followed(&mut self) {
         self.opened.clear();
-        let front = self.top_window().map(|w| w.workspace.as_str());
-        if self.followed_front.as_deref() != front {
-            self.followed_front = front.map(str::to_owned);
+        let front = self.top_window().and_then(|w| w.group.as_ref());
+        if self.followed_front.as_ref() != front {
+            self.followed_front = front.cloned();
         }
     }
 }
@@ -536,7 +531,7 @@ pub(crate) struct LaunchRequest {
 /// How a launch starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Start {
-    /// Its workspace is shown once its first window appears.
+    /// Its group is shown once its first window appears.
     Front,
     /// In the background, so that what was going to be shown still is.
     Background,
@@ -552,7 +547,7 @@ pub(crate) enum Instead {
 }
 
 impl Session {
-    /// Shows running entry `id`: its workspace, if a window of it is there to see. If all its windows are
+    /// Shows running entry `id`: its group, if a window of it is there to see. If all its windows are
     /// on the bottom screen, the first of them is returned, for the bottom screen to show. Otherwise what
     /// is in front stays, and a notice says it has no window. It may run without one, not have shown one
     /// yet, or have lost its display, in which case its dock menu's Quit ends it. It never shows an empty
@@ -561,7 +556,7 @@ impl Session {
         let r = self.running(id)?;
         if self.windows_of(&r.id).next().is_some() {
             let down = self.windows_of(&r.id).all(|w| w.down).then(|| self.windows_of(&r.id).next().map(|w| w.id)).flatten();
-            let group = r.workspace();
+            let group = r.group();
             self.cancel_front_launch();
             // If it or its runner is paused, it is thawed first, so that it draws as it is shown.
             self.thaw(id, out);
@@ -586,7 +581,7 @@ impl Session {
     }
 
     /// Records a launch of `entry`, whose key is `key`, asked for now, and returns its instance. Started in
-    /// front, its workspace is shown once its first window appears.
+    /// front, its group is shown once its first window appears.
     fn begin_launch(&mut self, entry: Arc<str>, key: String, app_id: Option<Arc<str>>, clock: &Clock, start: Start) -> Instance {
         let instance = Instance::Run { key, secs: clock.unix(), n: self.next_instance() };
         self.launching.push(Launching { entry, instance: instance.clone(), app_id, at: clock.mono(), told: None });
@@ -924,8 +919,8 @@ mod tests {
         // Found by its window, it is launched; the launcher finds it running and moves it into the
         // launch's scope. Its window is placed synchronously before the scope is listed.
         assert!(launches(&fx, "ff6"), "{fx:?}");
-        let ff6 = Instance::workspace_of(&key("ff6"));
-        assert_eq!(s.session().windows().iter().find(|w| w.id == 7).map(|w| w.workspace.as_str()), Some(ff6.as_str()));
+        let ff6 = Group::entry(&key("ff6"));
+        assert_eq!(s.session().windows().iter().find(|w| w.id == 7).and_then(|w| w.group.clone()), Some(ff6.clone()));
         assert!(!launches(&s.observed(windows), "ff6"), "once");
         crate::testkit::start(&mut s, "ff6");
         assert_eq!(s.session().running_entries().len(), 2, "the other keeps running");
@@ -956,8 +951,8 @@ mod tests {
         let ff6 = s.session().running("ff6").unwrap();
         assert_eq!((ff6.origin.clone(), ff6.app_id.as_deref()), (Origin::Ours, Some("steam_app_620")));
         s.observed(vec![win(7, "steam_app_620")]);
-        let ff6 = Instance::workspace_of(&key("ff6"));
-        assert_eq!(s.session().window(7).map(|w| w.workspace.as_str()), Some(ff6.as_str()), "its windows go to its workspace");
+        let ff6 = Group::entry(&key("ff6"));
+        assert_eq!(s.session().window(7).and_then(|w| w.group.clone()), Some(ff6.clone()), "its windows go to its group");
         let fx = s.observed(vec![]);
         assert!(!fx.iter().any(|e| matches!(e, Effect::RecordPlay { .. })), "{fx:?}");
         assert!(s.session().running("ff6").is_some());
@@ -971,8 +966,8 @@ mod tests {
         launch(&mut s, "ff6");
         let window = win_of(7, "steam_app_620", &steam);
         s.observed(vec![window.clone()]);
-        let ff6 = Instance::workspace_of(&key("ff6"));
-        assert_eq!(s.session().window(7).map(|w| w.workspace.as_str()), Some(ff6.as_str()), "the game's, not Steam's");
+        let ff6 = Group::entry(&key("ff6"));
+        assert_eq!(s.session().window(7).and_then(|w| w.group.clone()), Some(ff6.clone()), "the game's, not Steam's");
         assert_eq!(s.session().running_of(&window).map(|r| &*r.id), Some("ff6"));
     }
 
@@ -1023,7 +1018,7 @@ mod tests {
         assert_eq!(notice(&s).map(|n| matches!(n, crate::bottom::notice::NoticeKind::NotStarted(_))), Some(false), "not said to have failed");
         s.applied(Event::tick(1010));
         s.observed(vec![win(7, "steam_app_620")]);
-        assert_eq!(s.session().window(7).map(|w| w.workspace.as_str()), Some(Instance::workspace_of(&key("ff6")).as_str()));
+        assert_eq!(s.session().window(7).and_then(|w| w.group.clone()), Some(Group::entry(&key("ff6"))));
         s.applied(Event::tick(1100));
         assert!(s.session().running("ff6").is_some(), "runs by its window");
         let fx = s.observed(vec![]);
@@ -1128,19 +1123,18 @@ mod tests {
         s.observed(vec![other.clone()]);
         let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
         let ws = fx.iter().find_map(|e| match e {
-            Effect::Launch { instance, .. } => Some(instance.workspace()),
+            Effect::Launch { instance, .. } => Some(group_of(instance)),
             _ => None,
         });
-        let ws = ws.unwrap_or_default();
-        assert!(!ws.is_empty(), "{fx:?}");
+        let ws = ws.unwrap();
         // xdg-open ended before its scope was seen; the app's window comes up with no group.
         s.applied(LaunchEvent::LaunchFailed("browse:Home/notes.md".into()).into());
         assert!(s.session().running("browse:Home/notes.md").is_some(), "waits for its window");
         // The demo's Terminal has foot's desktop file.
         let app = win(6, "foot");
         s.observed(vec![other.clone(), app.clone()]);
-        assert_eq!(s.session().window(6).map(|w| w.workspace.as_str()), Some(ws.as_str()));
-        assert_eq!(s.session().window(other.id).map(|w| w.workspace.as_str()), Some(launch_of("steam").workspace().as_str()), "only the new one");
+        assert_eq!(s.session().window(6).and_then(|w| w.group.clone()), Some(ws.clone()));
+        assert_eq!(s.session().window(other.id).and_then(|w| w.group.clone()), Some(group_of(&launch_of("steam"))), "only the new one");
         assert_eq!(s.session().top_window().map(|w| w.id), Some(6));
         s.observed(vec![other.clone(), app]);
         s.applied(Event::tick(200));
@@ -1176,7 +1170,7 @@ mod tests {
         let mut s = State::new(Init { library, ..init() });
         s.applied(Event::tick(100));
         s.observed(vec![]);
-        let ws = Instance::workspace_of(&key("desktop:firefox"));
+        let ws = Group::entry(&key("desktop:firefox"));
         assert!(launches(&launch_now(&mut s, "desktop:firefox"), "desktop:firefox"));
         crate::testkit::start(&mut s, "desktop:firefox");
         // Its launch handed the app over to the Waydroid session and ended.
@@ -1184,7 +1178,7 @@ mod tests {
         assert!(s.session().running("desktop:firefox").is_some(), "waits for its window");
         let app = win(6, "firefox");
         s.observed(vec![app.clone()]);
-        assert_eq!(s.session().window(6).map(|w| w.workspace.as_str()), Some(ws.as_str()));
+        assert_eq!(s.session().window(6).and_then(|w| w.group.clone()), Some(ws.clone()));
         s.observed(vec![app.clone()]);
         assert!(!launches(&launch_now(&mut s, "desktop:firefox"), "desktop:firefox"), "it runs once: shown");
         s.applied(Event::tick(400));
@@ -1194,10 +1188,10 @@ mod tests {
         let fx = s.observed(vec![]);
         assert!(s.session().running("desktop:firefox").is_none(), "its window closed: ended");
         assert!(fx.contains(&Effect::RecordPlay { entry: "desktop:firefox".into(), start: 100, duration: 300 }), "played until then: {fx:?}");
-        // Opened by another app, it runs, and its window goes to its workspace and is shown.
+        // Opened by another app, it runs, and its window goes to its group and is shown.
         s.observed(vec![app.clone()]);
         assert!(s.session().running("desktop:firefox").is_some());
-        assert_eq!(s.session().window(6).map(|w| w.workspace.as_str()), Some(ws.as_str()));
+        assert_eq!(s.session().window(6).and_then(|w| w.group.clone()), Some(ws.clone()));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(6), "shown in the same event");
         // Quit closes its window. It ends with the window, and its runner's stop runs then, once.
         let stop = Effect::RunnerCommand(vec!["stop".into(), "firefox".into()]);
@@ -1209,7 +1203,7 @@ mod tests {
         s.observed(vec![app]);
         // A window of no entry and no launch of ours gets a group of its own on the main screen.
         s.observed(vec![win(9, "gone")]);
-        assert_eq!(s.session().windows().iter().find(|w| w.id == 9).map(|w| w.workspace.as_str()), Some("clamshell-window-9"));
+        assert_eq!(s.session().windows().iter().find(|w| w.id == 9).and_then(|w| w.group.clone()), Some(Group::Window(9)));
         // An entry of another runner ends with its launch.
         let mut s = state();
         launch_now(&mut s, "desktop:firefox");
@@ -1258,7 +1252,7 @@ mod tests {
     }
 
     /// Show, as from shelf, of an entry whose windows are all on the bottom screen shows them there, as a
-    /// tap on its dock tile does, and doesn't focus its empty workspace on the main screen.
+    /// tap on its dock tile does, and doesn't focus its empty group on the main screen.
     #[test]
     fn show_of_an_entry_whose_windows_are_all_below_shows_them_there() {
         let mut s = state();

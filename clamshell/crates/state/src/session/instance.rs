@@ -1,17 +1,13 @@
-//! The names ClamShell gives home groups, systemd units and slices.
+//! The names ClamShell gives its systemd units and slices.
 //!
 //! A launch of a library entry, whether a game or an app, is a service we started
 //! (`clamshell-run-<key>-<secs>-<n>.service`), its output in the journal as the unit's. A program found
 //! running that we take as an entry's is a scope of the same kind of name (`….scope`), since a service
 //! can't take in processes that already run. Either is in the entry's slice
 //! (`app-graphical-clamshell-run-<key>.slice`), which is in the session's app slice; Quit and Force kill
-//! end the slice. All the entry's windows are on its workspace (`clamshell-run-<key>`), as tabs. `<key>` is
-//! the entry's key ([`clamshell_library::key_of`]), made of letters, digits and `_`. `<secs>-<n>` is the
-//! start time and a counter, so names are unique across restarts and sort in the order things were
-//! started.
-//!
-//! An entry that runs in another program's processes, such as a game in Steam's or an Android app in
-//! Waydroid's, isn't in a scope of ours, but its windows belong to its entry's home group too.
+//! end the slice. `<key>` is the entry's key ([`clamshell_library::key_of`]), made of letters, digits and
+//! `_`. `<secs>-<n>` is the start time and a counter, so names are unique across restarts and sort in the
+//! order things were started.
 
 use std::fmt::{self, Write};
 use std::str::FromStr;
@@ -27,18 +23,17 @@ const SCOPE: &str = ".scope";
 /// Steam's app id for a game's windows: `steam_app_<id>`.
 pub const STEAM_APP_PREFIX: &str = "steam_app_";
 
-/// A workspace of ours, or, for a launch, a scope and the workspace its windows are on.
+/// A launch of an entry, which names its unit, or shelf.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Instance {
-    /// Shelf, which has no scope.
+    /// Shelf, which has no unit.
     Shelf,
     /// A launch of an entry: its key, the start time, a counter.
     Run { key: String, secs: u64, n: u64 },
 }
 
 impl Instance {
-    /// The instance that `name`, a workspace's or a scope's without `.scope`, stands for, if it is ours. An
-    /// entry's workspace gives none, since its launches share it.
+    /// The instance whose name (a unit's without its suffix) is `name`, if it is ours.
     pub fn parse(name: &str) -> Option<Instance> {
         if name.strip_prefix(PREFIX)? == "shelf" {
             return Some(Instance::Shelf);
@@ -77,18 +72,12 @@ impl Instance {
         format!("{RUN}{key}.sock")
     }
 
-    /// The entry key in `name`, which is a launch's unit, with or without its suffix, or an entry's
-    /// workspace. It doesn't allocate.
+    /// The entry key in `name`, a launch's unit with or without its suffix. It doesn't allocate.
     pub fn key_of(name: &str) -> Option<&str> {
         let rest = name.strip_prefix(RUN)?;
         let rest = Instance::unit_name(rest).unwrap_or(rest);
         let key = rest.split('-').next()?;
         (!key.is_empty()).then_some(key)
-    }
-
-    /// The workspace of the entry with `key`, which holds its launches' windows as tabs.
-    pub fn workspace_of(key: &str) -> String {
-        format!("{RUN}{key}")
     }
 
     /// The slice of the entry with `key`, which holds its launches' units and so all its processes.
@@ -105,30 +94,14 @@ impl Instance {
         unit.ends_with(SERVICE) && unit != "clamshell.service" && unit != "clamshell-nested.service" && !Instance::is_launch_unit(unit)
     }
 
-    /// Whether `name` is one of ours: a workspace or scope that ClamShell names, of a known kind or not.
+    /// Whether `name` is one of ours: a unit or slice that ClamShell names, of a known kind or not.
     pub fn is_ours(name: &str) -> bool {
         name.starts_with(PREFIX)
     }
 
-    /// Its name: for a launch, its unit's without the suffix, or else its workspace's.
+    /// Its name: for a launch, its unit's without the suffix.
     pub fn name(&self) -> String {
         self.to_string()
-    }
-
-    /// The workspace its windows are on: its entry's for a launch, or else the one with its own name.
-    pub fn workspace(&self) -> String {
-        match self {
-            Instance::Run { key, .. } => Instance::workspace_of(key),
-            _ => self.name(),
-        }
-    }
-
-    /// Whether workspace `name` is the one its windows are on, compared without allocating.
-    pub fn on(&self, name: &str) -> bool {
-        match self {
-            Instance::Run { key, .. } => name.strip_prefix(RUN) == Some(key.as_str()),
-            _ => self.is(name),
-        }
     }
 
     /// The service a launch runs in.
@@ -217,10 +190,8 @@ mod tests {
         assert_eq!(run.unit().as_deref(), Some("clamshell-run-zelda_3fa2b1-1234-7.service"));
         assert_eq!(run.scope().as_deref(), Some("clamshell-run-zelda_3fa2b1-1234-7.scope"));
         assert_eq!(run.slice().as_deref(), Some("app-graphical-clamshell-run-zelda_3fa2b1.slice"));
-        assert_eq!(run.workspace(), "clamshell-run-zelda_3fa2b1");
-        assert!(run.on("clamshell-run-zelda_3fa2b1") && !run.on(&run.name()) && !run.on("clamshell-run-zelda_3fa2b12"));
-        assert_eq!(Instance::parse("clamshell-run-zelda_3fa2b1"), None, "an entry's workspace is no instance");
-        assert_eq!(Instance::key_of("clamshell-run-zelda_3fa2b1"), Some("zelda_3fa2b1"));
+        assert_eq!(Instance::parse("clamshell-run-zelda_3fa2b1"), None, "a key alone is no instance");
+        assert_eq!(Instance::key_of("clamshell-run-zelda_3fa2b1-1234-7"), Some("zelda_3fa2b1"));
         assert_eq!(Instance::key_of("clamshell-run-zelda_3fa2b1-1234-7.scope"), Some("zelda_3fa2b1"));
         assert_eq!(Instance::key_of("clamshell-shelf"), None);
         assert_eq!(Instance::Shelf.unit(), None, "only a launch has a unit");

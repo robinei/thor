@@ -1,7 +1,7 @@
 //! Entries started with ClamShell, chosen in an entry's dock menu (Start with ClamShell) and saved. Once
 //! ClamShell knows what runs, from systemd's first list of its scopes, each of these entries that the
 //! library has and that doesn't run is launched. Waiting for that list keeps a restarted ClamShell from
-//! starting again what is still running. They are launched in the background, on their own workspaces and
+//! starting again what is still running. They are launched in the background, in their own groups and
 //! not shown, so that a window Steam opens doesn't cover shelf.
 
 use std::sync::Arc;

@@ -1,6 +1,6 @@
 //! The dock: the entries pinned there, in the user's saved order, and the running entries, added at the end
 //! as they start and removed when they stop unless pinned. A pinned entry that isn't running shows dimmed,
-//! and a tap starts it. A tap on a running entry shows its workspace, or, if all its windows are on the
+//! and a tap starts it. A tap on a running entry shows its group, or, if all its windows are on the
 //! bottom screen, shows them there.
 //!
 //! A long press opens the entry's menu:

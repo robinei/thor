@@ -11,7 +11,7 @@
 //! ended through its slice. A process that a systemd service runs is not moved; it stays the service's
 //! and is signalled directly.
 //!
-//! Like any running entry it is on the dock with a workspace of its own, and its windows (those of the
+//! Like any running entry it is on the dock with a group of its own, and its windows (those of the
 //! icon's process and the processes it started) go there wherever they open. A tap shows them, or, with
 //! none open, asks the program to show itself. The tile's corner mark opens the program's menu, as does
 //! Menu in its long-press menu. Quit closes its windows and then asks the icon's process to end; Force
@@ -121,7 +121,7 @@ impl Session {
     }
 
     /// Shows a running entry that has a tray icon but no open window. The program is asked to show itself,
-    /// and its window is shown when it comes, on the entry's workspace; it is moved there if it opens
+    /// and its window is shown when it comes, in the entry's group; it is moved there if it opens
     /// elsewhere. Returns whether the entry has a tray icon to ask.
     pub(crate) fn activate_tray(&mut self, entry: &str, clock: &Clock, out: &mut Out) -> bool {
         let Some(key) = self.tray_of(entry).map(|t| t.key.clone()) else {
@@ -170,7 +170,7 @@ mod tests {
     }
 
     #[test]
-    fn a_program_with_a_tray_icon_runs_with_its_windows_on_its_workspace() {
+    fn a_program_with_a_tray_icon_runs_with_its_windows_in_its_group() {
         let mut s = started(crate::Init { device_session: true, ..init() });
         tap(&mut s, Id::Tab(crate::Tab::Dock));
         // The icon of a running entry, whose process is in the entry's scope, gives that entry its menu.
@@ -190,15 +190,15 @@ mod tests {
         );
         let r = s.session().running("desktop:firefox").unwrap();
         assert_eq!((r.found(), r.pid()), (true, Some(77)));
-        let ws = r.workspace();
+        let ws = r.group();
         assert!(s.dock().items().iter().any(|i| &*i.id == "desktop:firefox"), "on the dock");
-        // With no window, a tap asks it to show itself. Its window opens on shelf's workspace, from a child
-        // of the icon's process, and is moved to its own workspace and shown there.
+        // With no window, a tap asks it to show itself. Its window opens with no group, from a child
+        // of the icon's process, and is moved to its own group and shown there.
         let at = s.dock().items().iter().position(|i| &*i.id == "desktop:firefox").unwrap() as u16;
         assert_eq!(tap_dock(&mut s, DockId::Entry(at)), vec![Effect::Tray(TrayCommand::Activate(":1.9/b".into()))]);
         let window = WindowFacts { pids: vec![900, 77], ..win(6, "firefox") };
         s.observed(vec![window.clone()]);
-        assert_eq!(s.session().window(6).map(|w| w.workspace.as_str()), Some(ws.as_str()));
+        assert_eq!(s.session().window(6).and_then(|w| w.group.clone()), Some(ws.clone()));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(6));
         // With its window open, a tap shows it.
         tap_dock(&mut s, DockId::Entry(at));

@@ -4,7 +4,7 @@
 //! Each such program runs as an entry ([`Origin::Found`]). That is the library's desktop entry named like
 //! the window's app id, or else an entry of its own (`window:<app id>`). An entry of its own gets a picture
 //! looked up by the app id in the icon themes, or else the UI's app glyph. The program's windows, those
-//! with its app id or of its process, go to its workspace, which is shown if one of them was in front.
+//! with its app id or of its process, go to its group, which is shown if one of them was in front.
 //!
 //! Its process, and those it started, are moved into a scope of ours as a launch of the entry
 //! ([`Session::adopt`]). From then on it is paused, quit and killed through its slice. A process that also
@@ -69,7 +69,7 @@ impl Session {
     }
 
     /// Runs entries just found by windows or tray icons. Their windows, except `taken`, go to their
-    /// workspaces, which are shown if one of the windows was in front. An entry of its own gets its
+    /// groups, which are shown if one of the windows was in front. An entry of its own gets its
     /// picture looked up by its app id, and each is moved into a scope of ours.
     pub(crate) fn start_found(&mut self, new: Vec<Running>, taken: &[i64], clock: &Clock, out: &mut Out) {
         for r in &new {
@@ -77,10 +77,10 @@ impl Session {
             let focused = mine.iter().any(|w| w.focused);
             let ids: Vec<i64> = mine.iter().map(|w| w.id).collect();
             if !ids.is_empty() {
-                self.command(WindowCommand::Move { windows: ids, to: r.workspace() });
+                self.command(WindowCommand::Move { windows: ids, to: r.group() });
             }
             if focused {
-                self.focus(&r.workspace());
+                self.focus(&r.group());
             }
             if r.id.starts_with(ids::WINDOW)
                 && let Some(app_id) = &r.app_id
@@ -146,8 +146,8 @@ mod tests {
         let fx = s.observed(vec![thing.clone(), window(6, "org.x.Thing", 500, "app-thing.scope")]);
         let r = s.session().running("window:org.x.Thing").unwrap();
         assert_eq!((r.found(), r.pid(), r.app_id.as_deref()), (true, Some(500), Some("org.x.Thing")));
-        let ws = r.workspace();
-        assert!([5, 6].iter().all(|id| s.session().window(*id).is_some_and(|w| w.workspace == ws)));
+        let ws = r.group();
+        assert!([5, 6].iter().all(|id| s.session().window(*id).is_some_and(|w| w.group.as_ref() == Some(&ws))));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(6), "the one in front, opened last");
         assert!(fx.iter().any(|e| matches!(e, Effect::Adopt { pid: 500, .. })), "{fx:?}");
         assert!(s.dock().items().iter().any(|i| &*i.id == "window:org.x.Thing"), "on the dock");
@@ -191,7 +191,7 @@ mod tests {
         let fx = s.observed(vec![portal.clone()]);
         assert!(s.session().running_entries().is_empty(), "the program that asked for it is its");
         assert!(!fx.iter().any(|e| matches!(e, Effect::Adopt { .. })), "{fx:?}");
-        assert_eq!(s.session().window(5).map(|w| w.workspace.as_str()), Some("clamshell-window-5"), "a group of its own");
+        assert_eq!(s.session().window(5).and_then(|w| w.group.clone()), Some(Group::Window(5)), "a group of its own");
     }
 
     #[test]

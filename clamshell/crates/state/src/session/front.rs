@@ -2,7 +2,7 @@
 //! before it, until the program of the closed window shows another.
 
 use crate::out::Out;
-use crate::session::windows::WindowCommand;
+use crate::session::windows::{Group, WindowCommand};
 use crate::{Effect, EntryAct, Event, Instance, Session};
 
 /// How long a program whose window in front closed, still running, is waited for to show another (see
@@ -11,20 +11,20 @@ pub(crate) const REWAIT_SECS: u64 = 30;
 
 impl Session {
     /// Runs after every event. If the window in front when the last pass ran (see
-    /// [`Session::followed`]) closed and nothing of its workspace is left, goes back to what was in front
-    /// before it, with shelf as the last resort. The workspace is remembered in case a window appears on
-    /// it soon after (see [`Session::follow_replacement`]). If its program still runs, its next window is
+    /// [`Session::followed`]) closed and nothing of its group is left, goes back to what was in front
+    /// before it, with shelf as the last resort. The group is remembered in case a window appears in it
+    /// soon after (see [`Session::follow_replacement`]). If its program still runs, its next window is
     /// shown as a launch's first is, for [`REWAIT_SECS`].
     pub(crate) fn follow_front(&mut self, now: u64) {
         let windows = &self.windows;
         let Some(was) = &self.followed_front else { return };
-        if windows.iter().any(|w| !w.down && (w.focused || w.workspace == *was)) {
+        if windows.iter().any(|w| !w.down && (w.focused || w.group.as_ref() == Some(was))) {
             return;
         }
-        let shown = |ws: &String| windows.iter().any(|w| w.workspace == *ws && !w.down);
-        let group = self.recent.iter().find(|ws| shown(ws)).cloned();
+        let shown = |group: &Group| windows.iter().any(|w| w.group.as_ref() == Some(group) && !w.down);
+        let group = self.recent.iter().find(|group| shown(group)).cloned();
         let was = was.clone();
-        let closed = !windows.iter().any(|w| w.workspace == was);
+        let closed = !windows.iter().any(|w| w.group.as_ref() == Some(&was));
         match group {
             Some(group) => self.focus(&group),
             None => self.command(WindowCommand::ShowShelf),
@@ -35,10 +35,10 @@ impl Session {
         self.closed_front = closed.then_some((was, now));
     }
 
-    /// The launch to wait for again on workspace `ws`, if its entry still runs: its scope, or for an entry
-    /// known by app id or process (none of whose windows need be in its scope), the entry.
-    fn still_running(&self, ws: &str) -> Option<Instance> {
-        let key = Instance::key_of(ws)?;
+    /// The launch to wait for again in `group`, if its entry still runs: its unit, or for an entry known
+    /// by app id or process (none of whose windows need be in its unit), the entry.
+    fn still_running(&self, group: &Group) -> Option<Instance> {
+        let key = group.key()?;
         let running = self.running.iter().find(|r| r.key == key)?;
         let scope = self.units.iter().find(|unit| unit.key() == Some(key)).cloned();
         scope.or_else(|| running.outside().then(|| Instance::Run { key: key.to_owned(), secs: running.start, n: 0 }))
@@ -123,8 +123,8 @@ mod tests {
         s.applied(Event::tick(100));
         s.observed(vec![win_of(2, "waydroid.org.fdroid.fdroid", &app)]);
         s.applied(WindowEvent::Activate(2).into());
-        // Its window closes and shelf shows. Another window comes on its workspace, not in front, and the
-        // workspace is shown again.
+        // Its window closes and shelf shows. Another window comes in its group, not in front, and the
+        // group is shown again.
         s.observed(vec![]);
         assert!(s.session().shelf_in_front());
         s.observed(vec![win_of(3, "waydroid.org.fdroid.fdroid", &app)]);
@@ -160,7 +160,7 @@ mod tests {
     }
 
     #[test]
-    fn home_doesnt_go_back_to_a_workspace_whose_window_moved_down() {
+    fn home_doesnt_go_back_to_a_group_whose_window_moved_down() {
         let mut s = state();
         s.observed(vec![win_of(2, "foot", &launch_of("foot_1"))]);
         s.applied(WindowEvent::Activate(2).into());

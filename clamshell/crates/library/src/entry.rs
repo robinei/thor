@@ -49,7 +49,7 @@ pub struct Entry {
     /// Focus, settings and play time are keyed by it. It is shared so the UI can put it in a frame's
     /// targets without allocating.
     pub id: Arc<str>,
-    /// The id made fit for unit and workspace names (see [`key_of`]). Its launches are named by it.
+    /// The id made fit for unit and slice names (see [`key_of`]). Its launches are named by it.
     pub key: String,
     pub title: String,
     /// What it sorts by (see [`sort`]).
@@ -248,7 +248,7 @@ impl Entry {
 /// How far into a video counts as watched, leaving room for the credits.
 pub const DONE: f64 = 0.9;
 
-/// An entry's key, made from its id. Its launches' units and its workspace are named by it.
+/// An entry's key, made from its id. Its launches' units and slice are named by it.
 ///
 /// It has only letters, digits and `_`, because `-` separates the parts of those names. It is the id's
 /// last part (the file name without its extension, or what follows `:`), lowercased and cut to 16

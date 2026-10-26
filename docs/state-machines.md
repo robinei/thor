@@ -15,8 +15,9 @@ pass confirmed its suspicions with probe tests in a scratch copy.
 `Event::Window` applies one change; `WindowBatch` applies one backend dispatch before settling once.
 State commits placement and selection during `apply`. A compositor reads `Window::place`,
 `Session::top_window`, `bottom_window` and `keyboard_focus` immediately after it returns. Home groups
-(`Window.workspace` in the code) are strings, not physical output locations: a window below retains its
-home group. `Window.focused` records the selected top content; keyboard focus is independent and may
+(`Window.group`, a `Group`: an entry's by its key, holding all its launches' windows, or a window's own
+for a window of no entry) are not physical output locations: a window below retains its home group. A
+window of no entry has none until the settle after the event that opened it gives it one. `Window.focused` records the selected top content; keyboard focus is independent and may
 belong to a bottom client or ClamShell's UI (`None`).
 
 `Opened` and `Changed` carry the window's facts (`WindowFacts`: id, app id, title, parent, limits,
@@ -90,7 +91,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Idle | LaunchFailed of no launch waiting (a late answer to one given up) | Idle | nothing | running `a_launch_failure_after_it_was_given_up_says_nothing` |
 | Idle | `Units` lists a scope of a library entry (an earlier ClamShell) | Running(Ours) | — | running `entries_started_before_clamshell_…` |
 | Idle | `Units` lists a scope of a key not in the library, a window or tray icon in it | Running(Ours), as found, named by the name whose key is the scope's (until a window or icon comes, nothing) | — | found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
-| Idle | a window with a library app id (not Steam) | Running(Windows, seen) | Focus once on its workspace | running `an_app_handed_over_…` |
+| Idle | a window with a library app id (not Steam) | Running(Windows, seen) | Focus once in its group | running `an_app_handed_over_…` |
 | Idle | a Steam game's window by app id | Launching | as a launch | running `a_game_steam_started_is_followed…` |
 | Idle | a stray window of no entry | Running(Found) | Move, Focus if focused, FindIcon, Adopt (own pid) | found `a_window_of_no_entry_…` and its siblings |
 | Idle | a tray icon not in our scope (device session) | Running(Found{tray}) | Move/Focus, Adopt | tray `a_program_with_a_tray_icon_runs…` |
@@ -114,7 +115,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 
 | Trigger | Result | Test |
 |---|---|---|
-| settle: the front workspace has no window left | Focus the most recent top workspace, else ShowShelf; remember it 2 s | front `a_closed_window_goes_back_…` |
+| settle: the front group has no window left | Focus the most recent top group, else ShowShelf; remember it 2 s | front `a_closed_window_goes_back_…` |
 | settle: within 2 s a window reappears there | Focus it | front `a_window_in_front_replaced_at_once_…` |
 | settle: `front_launch` and its window arrived | Focus, cleared | tests `a_launchs_first_window_is_shown_before_…` |
 | Home, shelf not in front | ShowShelf; cancel foreground launch intent | front `home_always_shows_shelf_and_repeated_home_stays_there` |
@@ -149,7 +150,7 @@ Freeze and RunnerCommand have no acknowledgement; the state assumes they worked.
   `a_tray_icon_gives_no_process_to_an_entry_found_in_another_programs`.
 - Autostart: once, at the first settle after units are known, launching unshown what isn't running.
   Test: autostart `chosen_entries_start_once_…`.
-- Enqueue: to the runner's running instance whose workspace was in front most recently; without one, a
+- Enqueue: to the runner's running instance whose group was in front most recently; without one, a
   single file plays and several launch together; the file selection is cleared. Test: enqueue
   `enqueue_plays_with_nothing_playing_then_adds_…`, `enqueue_goes_to_the_launch_most_recently_in_front`,
   `a_file_alone_with_nothing_playing_plays_as_itself`.
@@ -558,7 +559,7 @@ Session and dock:
   can't be quit, and a Frozen hold for it is dropped so its slice stays frozen. Fixed: state/session: a found program's scope is found again after a restart.
 - S3. After a tray program's scope is adopted, its tray menu is missing until the tray thread re-reads the
   icons (`tray.rs:122`). Fixed: state/session: a tray icon stays with its adopted program and gives no pid.
-- S5. Show when every window is moved down focuses an empty top workspace (`running.rs:488`). Fixed: state/session: Show of an entry whose windows are all below shows them there.
+- S5. Show when every window is moved down focuses an empty top group (`running.rs:488`). Fixed: state/session: Show of an entry whose windows are all below shows them there.
 - S6. A quit the program refuses (a "save changes?" cancelled) stays quitting indefinitely: never paused,
   and ended when its windows later close (`running.rs:566-631`). Fixed: state/session: a quit whose windows stay 10 s is given up.
 - S7. A window-found entry without its own process gets a tray icon's pid; Quit then signals it (`tray.rs:111`).

@@ -21,9 +21,9 @@ use crate::session::windows::WindowCommand;
 use crate::{Entry, Library};
 use instance::Instance;
 use running::{Front, Launching, Running};
-use windows::{Window, WindowFacts};
+use windows::{Group, Window, WindowFacts};
 
-/// How soon after the window in front closed a new window on its workspace is shown again, in seconds.
+/// How soon after the window in front closed a new window in its group is shown again, in seconds.
 const REOPEN_SECS: u64 = 2;
 
 #[derive(Debug, Default)]
@@ -42,19 +42,19 @@ pub struct Session {
     home_used: bool,
     /// Our running scopes, as systemd lists them.
     units: Vec<Instance>,
-    /// Workspaces by when they were last in front, most recent first.
-    recent: Vec<String>,
+    /// Groups by when they were last in front, most recent first.
+    recent: Vec<Group>,
     /// The selected window of each top group, retained while the group is hidden.
-    selected: Vec<(String, i64)>,
+    selected: Vec<(Group, i64)>,
     /// The launch to show when its first window appears. Until then, other programs' new windows open
     /// behind (see [`Session::opening_focus`]).
     front_launch: Option<Instance>,
     /// When a front launch waiting again gives up: one set for a program still running whose window in
     /// front closed (see [`Session::follow_front`]).
     front_launch_until: Option<u64>,
-    /// The workspace whose window in front closed, leaving it empty, and when (see
+    /// The group whose window in front closed, leaving it empty, and when (see
     /// [`Session::follow_replacement`]).
-    closed_front: Option<(String, u64)>,
+    closed_front: Option<(Group, u64)>,
     /// Entries quitting (see [`Quitting`]).
     quitting: Vec<Quitting>,
     /// The counter that numbers new instances' names. Together with the time, it makes them unique across
@@ -62,10 +62,10 @@ pub struct Session {
     next_instance: u64,
     /// Whether systemd has listed our scopes at least once, so that what runs is known.
     units_known: bool,
-    /// What the last [`crate::State::settle`] saw: the windows' ids and the workspace in front on the
-    /// main screen. They tell which windows are new and when the one in front closes.
+    /// What the last [`crate::State::settle`] saw: the windows' ids and the group in front on the main
+    /// screen. They tell which windows are new and when the one in front closes.
     opened: Vec<i64>,
-    followed_front: Option<String>,
+    followed_front: Option<Group>,
     /// Which running entries have windows and which have a tray icon, in their order, kept so that each
     /// pass reuses it (see [`Session::end_windowless`]).
     with_windows: Vec<(bool, bool)>,
@@ -175,7 +175,7 @@ impl Session {
     }
 
     pub fn has_other_top_window(&self) -> bool {
-        self.top_window().is_some_and(|front| self.windows.iter().any(|w| !w.down && w.id != front.id && w.workspace == front.workspace))
+        self.top_window().is_some_and(|front| self.windows.iter().any(|w| !w.down && w.id != front.id && w.group == front.group))
     }
 
     /// Whether a window opening comes in front. While a launch waits for its window, only its own windows
@@ -187,21 +187,21 @@ impl Session {
             return self.of_launch(instance, window);
         }
         if let Some(parent) = window.parent.and_then(|id| self.window(id)) {
-            return self.top_window().is_some_and(|top| top.workspace == parent.workspace);
+            return self.top_window().is_some_and(|top| top.group == parent.group);
         }
         if window.parent.is_some() || !window.unit.as_deref().is_some_and(Instance::is_launch_unit) {
             return true;
         }
         let key = window.unit.as_deref().and_then(Instance::key_of);
-        self.top_window().is_some_and(|top| Instance::key_of(&top.workspace) == key) && self.windows.iter().any(|old| old.unit == window.unit)
+        self.top_window().is_some_and(|top| top.group.as_ref().and_then(Group::key) == key) && self.windows.iter().any(|old| old.unit == window.unit)
     }
 
     /// Whether `window` is one of launch `instance`'s: in its unit, of its entry by app id or process, or
-    /// a dialog of one on its workspace.
+    /// a dialog of one in its group.
     fn of_launch(&self, instance: &Instance, window: &WindowFacts) -> bool {
         let running = self.running.iter().find(|r| Some(r.key.as_str()) == instance.key());
         let in_scope = window.unit.as_deref().and_then(Instance::unit_name).is_some_and(|unit| instance.is(unit));
-        let parent = window.parent.and_then(|id| self.window(id)).is_some_and(|parent| instance.on(&parent.workspace));
+        let parent = window.parent.and_then(|id| self.window(id)).is_some_and(|parent| parent.group.as_ref().and_then(Group::key) == instance.key());
         in_scope || parent || running.is_some_and(|r| r.owns(window) || r.fathered(window))
     }
 
@@ -213,8 +213,8 @@ impl Session {
 
     pub(crate) fn step_window(&mut self, next: bool) {
         let Some(front) = self.top_window() else { return };
-        let mut group = self.windows.iter().filter(|w| !w.down && w.workspace == front.workspace).cycle();
-        let count = self.windows.iter().filter(|w| !w.down && w.workspace == front.workspace).count();
+        let mut group = self.windows.iter().filter(|w| !w.down && w.group == front.group).cycle();
+        let count = self.windows.iter().filter(|w| !w.down && w.group == front.group).count();
         let id = if next {
             group.find(|w| w.id == front.id).and_then(|_| group.next()).map(|w| w.id)
         } else {
@@ -247,7 +247,7 @@ impl Session {
 
     #[cfg(test)]
     pub(crate) fn selections_valid(&self) -> bool {
-        self.selected.iter().all(|(group, id)| self.window(*id).is_some_and(|w| !w.down && w.workspace == *group))
+        self.selected.iter().all(|(group, id)| self.window(*id).is_some_and(|w| !w.down && w.group.as_ref() == Some(group)))
     }
 
     pub fn units(&self) -> &[Instance] {
@@ -302,7 +302,7 @@ impl Session {
     ///   scope;
     /// - its scope, which also covers windows moved down;
     /// - its process, for a program found by its tray icon;
-    /// - its workspace.
+    /// - its group.
     ///
     /// A dialog's is its parent's.
     pub fn running_of(&self, w: &WindowFacts) -> Option<&Running> {
@@ -319,7 +319,7 @@ impl Session {
             .find(|r| r.owns(w))
             .or_else(|| by_key(w.unit.as_deref().and_then(Instance::key_of)))
             .or_else(|| self.running.iter().find(|r| r.fathered(w)))
-            .or_else(|| by_key(self.window(w.id).and_then(|w| Instance::key_of(&w.workspace))))
+            .or_else(|| by_key(self.window(w.id).and_then(|w| w.group.as_ref()).and_then(Group::key)))
     }
 
     /// The id of the running entry a window belongs to (see [`Session::running_of`]).
@@ -393,17 +393,18 @@ impl Session {
 
     /// Keeps the front's history after the window set changes, whichever backend reported it.
     pub(crate) fn remember_front(&mut self) {
-        self.selected.retain(|(group, id)| self.windows.iter().any(|w| w.id == *id && !w.down && w.workspace == *group));
+        self.selected.retain(|(group, id)| self.windows.iter().any(|w| w.id == *id && !w.down && w.group.as_ref() == Some(group)));
         for w in self.windows.iter().filter(|w| !w.down && (w.visible || w.focused)) {
-            match self.selected.iter_mut().find(|(g, _)| *g == w.workspace) {
+            let Some(group) = &w.group else { continue };
+            match self.selected.iter_mut().find(|(g, _)| g == group) {
                 Some((_, id)) => *id = w.id,
-                None => self.selected.push((w.workspace.clone(), w.id)),
+                None => self.selected.push((group.clone(), w.id)),
             }
         }
-        let present = |name: &String| self.windows.iter().any(|w| w.workspace == *name);
+        let present = |group: &Group| self.windows.iter().any(|w| w.group.as_ref() == Some(group));
         self.recent.retain(present);
         // Already first, it stays.
-        if let Some(front) = self.top_window().map(|w| &w.workspace).filter(|f| self.recent.first() != Some(*f)) {
+        if let Some(front) = self.top_window().and_then(|w| w.group.as_ref()).filter(|f| self.recent.first() != Some(*f)) {
             let front = front.clone();
             self.recent.retain(|n| *n != front);
             self.recent.insert(0, front);
@@ -415,25 +416,25 @@ impl Session {
         self.units_known = true;
     }
 
-    /// If a window appears within [`REOPEN_SECS`] on the workspace whose window in front closed, shows
-    /// that workspace again. This is for a program that replaces its first window, such as a splash
+    /// If a window appears within [`REOPEN_SECS`] in the group whose window in front closed, shows that
+    /// group again. This is for a program that replaces its first window, such as a splash
     /// screen, or Waydroid on a cold start.
     pub(crate) fn follow_replacement(&mut self, now: u64) {
-        let Some((ws, at)) = self.closed_front.take() else {
+        let Some((group, at)) = self.closed_front.take() else {
             return;
         };
         if now > at + REOPEN_SECS {
             return;
         }
-        if self.windows.iter().any(|w| w.workspace == ws && !w.down) {
-            self.focus(&ws);
+        if self.windows.iter().any(|w| w.group.as_ref() == Some(&group) && !w.down) {
+            self.focus(&group);
             return;
         }
-        self.closed_front = Some((ws, at));
+        self.closed_front = Some((group, at));
     }
 
-    /// Shows the workspace of the launch just started, once its own first window is there. The entry's
-    /// workspace may already have windows of its other launches. An entry known by its app id has no scope
+    /// Shows the group of the launch just started, once its own first window is there. The entry's group
+    /// may already have windows of its other launches. An entry known by its app id has no scope
     /// of ours, so any of its windows counts.
     pub(crate) fn follow_front_launch(&mut self, now: u64) {
         if self.front_launch_until.is_some_and(|until| now > until) {
@@ -452,7 +453,10 @@ impl Session {
         let arrived = self
             .windows
             .iter()
-            .find(|w| instance.on(&w.workspace) && (outside || w.unit.as_deref().and_then(Instance::unit_name).is_some_and(|unit| instance.is(unit))))
+            .find(|w| {
+                w.group.as_ref().and_then(Group::key) == instance.key()
+                    && (outside || w.unit.as_deref().and_then(Instance::unit_name).is_some_and(|unit| instance.is(unit)))
+            })
             .map(|w| (w.id, w.down));
         if let Some((id, down)) = arrived {
             self.front_launch = None;

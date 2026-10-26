@@ -73,7 +73,8 @@ How areas cooperate:
 
 ## Windows
 
-The session owns each window's group (`Window.workspace` in the code), whether it is on the top screen
+The session owns each window's group (`Window.group`: an entry's, by its key, or the window's own for a
+window of no entry), whether it is on the top screen
 or moved down, and which window each screen shows. Keyboard focus is separate and may name either
 screen's client or ClamShell's UI. The compositor reports each window's life as events (opened, closed,
 changed, its title, keyboard focus, a client's request to be shown); opened and changed carry only what

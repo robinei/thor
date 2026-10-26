@@ -156,6 +156,7 @@ impl Sys {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use super::Group;
     use super::*;
     use crate::id::BatteryId;
     use crate::testkit::*;

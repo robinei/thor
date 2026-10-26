@@ -19,7 +19,6 @@ use crate::bottom::Bottom;
 use crate::bottom::notice::NoticeKind;
 use crate::effect::{Effect, Save};
 use crate::out::Out;
-use crate::session::instance::Instance;
 use crate::session::windows::WindowCommand;
 use crate::session::windows::WindowFacts;
 use crate::settings::BottomWhenIdle;
@@ -234,7 +233,7 @@ impl Bottom {
         let Some(w) = session.windows_down().find(|w| w.visible).or_else(|| session.windows_down().next()).cloned() else {
             return;
         };
-        session.command(WindowCommand::Up { window: w.id, to: w.workspace.clone() });
+        session.command(WindowCommand::Up(w.id));
         if let Some(owner) = session.owner_of(&w)
             && self.window_rules.forget(&owner, &w)
         {
@@ -273,8 +272,8 @@ impl Bottom {
         if self.shows_windows(session) {
             return None;
         }
-        let front = &session.top_window()?.workspace;
-        session.windows_down().find(|w| w.workspace == *front).map(|w| w.id)
+        let front = &session.top_window()?.group;
+        session.windows_down().find(|w| w.group == *front).map(|w| w.id)
     }
 
     /// A tap on a program whose windows are all on the bottom screen shows them there, with its first
@@ -311,7 +310,7 @@ impl Bottom {
             .filter(|w| !w.down && !self.sent_down.contains(&w.id))
             .filter(|w| {
                 let owner = session.owner_of(w).or_else(|| {
-                    let key = Instance::key_of(&w.workspace)?;
+                    let key = w.group.as_ref()?.key()?;
                     library.entries.iter().find(|g| g.key == key).map(|g| g.id.clone())
                 });
                 owner.is_some_and(|o| self.window_rules.wants(&o, w))
@@ -332,11 +331,12 @@ mod tests {
     use super::*;
     use crate::Tab;
     use crate::device::buttons::DeviceKey;
+    use crate::session::instance::Instance;
     use crate::session::running::{Origin, Running};
     use crate::session::windows::Window;
     use crate::settings::{Choice, Setting};
     use crate::testkit::Applied;
-    use crate::testkit::{state, tap};
+    use crate::testkit::{group_of, state, tap};
     use crate::{Event, State, WindowPlace};
 
     fn win(id: i64, unit: &str, title: &str) -> WindowFacts {
@@ -397,9 +397,9 @@ mod tests {
         // Moving up acts even when ClamShell's own view covers the bottom window.
         key(&mut s, DeviceKey::BottomView);
         assert!(!s.bottom().shows_windows(s.session()));
-        // Up moves it back to its workspace, forgets the rule, and shows ClamShell's view below.
+        // Up moves it back to its group, forgets the rule, and shows ClamShell's view below.
         let fx = key(&mut s, DeviceKey::WindowUp);
-        assert_eq!(s.session().window(2).map(Window::place), Some(WindowPlace::Top(&emu().workspace())));
+        assert_eq!(s.session().window(2).map(Window::place), Some(WindowPlace::Top(Some(&group_of(&emu())))));
         assert!(matches!(&fx[0], Effect::Save(Save::WindowRules(r)) if r.list().is_empty()), "{fx:?}");
         assert!(!s.bottom().shows_windows(s.session()), "none down: ClamShell's view");
     }
@@ -438,14 +438,14 @@ mod tests {
         key(&mut s, DeviceKey::WindowDown);
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(2));
         key(&mut s, DeviceKey::WindowDown);
-        assert_eq!(s.session().window(2).map(Window::place), Some(WindowPlace::Top(&emu().workspace())));
+        assert_eq!(s.session().window(2).map(Window::place), Some(WindowPlace::Top(Some(&group_of(&emu())))));
         assert_eq!(s.session().windows_down().count(), 1);
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(1));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(2));
         key(&mut s, DeviceKey::BottomView);
         assert!(!s.bottom().shows_windows(s.session()));
         key(&mut s, DeviceKey::WindowUp);
-        assert_eq!(s.session().window(1).map(Window::place), Some(WindowPlace::Top(&emu().workspace())));
+        assert_eq!(s.session().window(1).map(Window::place), Some(WindowPlace::Top(Some(&group_of(&emu())))));
         assert_eq!(s.session().windows_down().count(), 0);
         assert!(!s.bottom().shows_windows(s.session()));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(1));

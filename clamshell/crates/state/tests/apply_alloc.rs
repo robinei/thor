@@ -71,7 +71,7 @@ fn count(s: &mut State, event: Event, effects: &mut Vec<Effect>) -> usize {
 }
 
 /// A warm state: up, with two programs of ours running, each with a window, one of them in front, and a
-/// terminal of the user's on another workspace.
+/// terminal of the user's in another group.
 fn warm() -> (State, Vec<WindowFacts>, Vec<Instance>) {
     let window_rules = clamshell_state::bottom::screen::WindowRules::from_list(vec![clamshell_state::bottom::screen::WindowRule {
         owner: "desktop:foot".into(),

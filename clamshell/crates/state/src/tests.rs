@@ -199,7 +199,7 @@ fn a_launchs_first_window_is_shown_before_a_window_that_came_back() {
     let zelda = launch(&mut s, "zelda-lttp");
     let zelda_window = win_of(3, "zelda3", &zelda);
     s.observed(vec![zelda_window.clone()]);
-    // Its window closes with nothing else in front: shelf is shown, and the workspace remembered.
+    // Its window closes with nothing else in front: shelf is shown, and the group remembered.
     s.observed(vec![]);
     assert!(s.session().shelf_in_front());
     let ff6 = launch(&mut s, "ff6");

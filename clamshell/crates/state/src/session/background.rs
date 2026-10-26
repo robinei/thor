@@ -310,7 +310,7 @@ mod tests {
         // Shown again, it is thawed.
         assert!(s.applied(WindowEvent::Activate(3).into()).contains(&freeze(&key, false)));
         assert!(!s.session().paused("zelda-lttp"));
-        // Paused and then shown from the dock, it is thawed before its workspace is shown.
+        // Paused and then shown from the dock, it is thawed before its group is shown.
         s.applied(Event::Home);
         let t = 101 + 2 * GRACE;
         s.applied(Event::tick(t));
