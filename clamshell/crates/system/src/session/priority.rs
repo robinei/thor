@@ -2,6 +2,10 @@
 //! asked of it over the system bus, so that the screens keep up under a game that takes every core. Not
 //! real-time scheduling: the kernel kills a real-time thread that runs on past RLIMIT_RTTIME, which rtkit
 //! requires, and the compositor draws ClamShell's screens on the CPU.
+//!
+//! A thread inherits its starter's nice level, so the system's threads go back to the ordinary level as
+//! they start ([`crate::os::worker::start`]). What the compositor's thread starts directly keeps it:
+//! Xwayland, which draws X11 games' frames, and short-lived commands.
 
 use crate::os::dbus::Bus;
 

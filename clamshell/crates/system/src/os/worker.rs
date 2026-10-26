@@ -95,7 +95,7 @@ impl<C: Send + 'static> Worker<C> {
     /// thread ends when `body` returns, usually when every sender is dropped.
     pub fn spawn(name: &'static str, body: impl FnOnce(Receiver<C>) + Send + 'static) -> io::Result<Worker<C>> {
         let (tx, rx) = mpsc::channel();
-        thread::Builder::new().name(name.into()).spawn(move || body(rx))?;
+        start(name, move || body(rx))?;
         Ok(Worker { name, tx: Some(tx), gone: Arc::default(), bell: None })
     }
 
@@ -105,7 +105,7 @@ impl<C: Send + 'static> Worker<C> {
         let bell = Bell::new()?;
         let (tx, rx) = mpsc::channel();
         let theirs = bell.clone();
-        thread::Builder::new().name(name.into()).spawn(move || body(rx, theirs))?;
+        start(name, move || body(rx, theirs))?;
         Ok(Worker { name, tx: Some(tx), gone: Arc::default(), bell: Some(bell) })
     }
 }
@@ -139,7 +139,31 @@ impl<C> Worker<C> {
 
 /// Starts a thread that takes no commands. It ends when the UI is gone.
 pub fn detached(name: &str, body: impl FnOnce() + Send + 'static) -> io::Result<()> {
-    thread::Builder::new().name(name.into()).spawn(body).map(drop)
+    start(name, body).map(drop)
+}
+
+/// Starts a thread named `name` running `body`, at the ordinary priority whichever thread started it:
+/// the compositor's thread runs raised (see [`crate::session::priority`]), and a new thread would
+/// inherit that, ahead of the game.
+pub fn start<T: Send + 'static>(name: &str, body: impl FnOnce() -> T + Send + 'static) -> io::Result<thread::JoinHandle<T>> {
+    thread::Builder::new().name(name.into()).spawn(move || {
+        ordinary_priority();
+        body()
+    })
+}
+
+/// The calling thread back at nice level 0 if it is below (raising the level needs no privilege).
+fn ordinary_priority() {
+    let thread = rustix::thread::gettid();
+    match rustix::process::getpriority_process(Some(thread)) {
+        Ok(level) if level < 0 => {
+            if let Err(e) = rustix::process::setpriority_process(Some(thread), 0) {
+                log::warn!("{}: nice level {level} kept: {e}", thread::current().name().unwrap_or("a thread"));
+            }
+        }
+        Ok(_) => {}
+        Err(e) => log::warn!("{}: nice level unknown: {e}", thread::current().name().unwrap_or("a thread")),
+    }
 }
 
 /// What woke a thread waiting for its next command.

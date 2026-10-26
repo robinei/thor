@@ -399,7 +399,7 @@ pub struct Writer {
 impl Writer {
     pub fn spawn(mut store: Store) -> io::Result<Writer> {
         let (tx, rx) = mpsc::channel::<Write>();
-        let thread = std::thread::Builder::new().name("store".into()).spawn(move || {
+        let thread = crate::os::worker::start("store", move || {
             for write in rx {
                 let written = match &write {
                     Write::Save(save) => store.save(save),
