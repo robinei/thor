@@ -51,8 +51,10 @@ impl Freezer for Systemd {
     }
 
     fn busy(&mut self, unit: &str) -> bool {
-        let group =
-            with_manager_on(&mut self.bus, |bus| Ok(control_group(bus, unit))).inspect_err(|e| log::debug!("freezer: {unit}'s cgroup: {e}")).ok().flatten();
+        let group = with_manager_on(&mut self.bus, |bus| control_group(bus, unit))
+            .inspect_err(|e| log::warn!("freezer: {unit}'s cgroup: {e}: it is frozen without looking whether it works without drawing"))
+            .ok()
+            .flatten();
         working_without_drawing(group)
     }
 }
@@ -117,13 +119,11 @@ const DRAWING_GPU: f64 = 0.05;
 /// How long a slice is watched to decide that.
 const WATCH: Duration = Duration::from_secs(2);
 
-/// A slice's cgroup, under /sys/fs/cgroup.
-fn control_group(bus: &mut Bus, unit: &str) -> Option<String> {
-    let path = get_unit(bus, unit).inspect_err(|e| log::debug!("freezer: {unit}: {e}")).ok()?;
-    bus.get::<String>(SYSTEMD, &path, "org.freedesktop.systemd1.Slice", "ControlGroup")
-        .inspect_err(|e| log::debug!("freezer: {unit}'s cgroup: {e}"))
-        .ok()
-        .filter(|g| !g.is_empty())
+/// A slice's cgroup, under /sys/fs/cgroup. `None` if it has none, as a slice that isn't running.
+fn control_group(bus: &mut Bus, unit: &str) -> Result<Option<String>, super::units::Error> {
+    let path = get_unit(bus, unit)?;
+    let group = bus.get::<String>(SYSTEMD, &path, "org.freedesktop.systemd1.Slice", "ControlGroup")?;
+    Ok(Some(group).filter(|g| !g.is_empty()))
 }
 
 /// Whether the slice with cgroup `group` works without drawing over [`WATCH`]. That means much CPU while
@@ -140,6 +140,7 @@ fn working_without_drawing(group: Option<String>) -> bool {
     thread::sleep(WATCH);
     let (cpu1, gpu1, t1) = sample();
     let (Some(cpu0), Some(cpu1)) = (cpu0, cpu1) else {
+        log::warn!("freezer: {}'s cpu.stat unread: it is frozen without looking whether it works without drawing", dir.display());
         return false;
     };
     let wall = t1.duration_since(t0).as_secs_f64();

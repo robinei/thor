@@ -299,7 +299,7 @@ fn read(bus: &mut Bus, keys: &[String]) -> (Vec<TrayItem>, HashMap<String, Strin
                 Some(item)
             }
             Err(e) => {
-                log::debug!("tray: {key}: {e}");
+                log::warn!("tray: {key}: {e}: its icon isn't shown");
                 None
             }
         })

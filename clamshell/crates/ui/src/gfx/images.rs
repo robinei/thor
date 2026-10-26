@@ -86,6 +86,9 @@ pub struct Images {
     pending: HashSet<Key>,
     /// Where requests go. `None` decodes at once, which snapshots use.
     worker: Option<Sender<Request>>,
+    /// The worker is gone, so nothing more is asked of it, and images not loaded stay placeholders. That
+    /// was said once.
+    gone: bool,
     /// The frame being recorded, counting the frames of both screens.
     frame: u64,
     generation: u32,
@@ -98,7 +101,7 @@ impl Images {
 
     /// Decodes on request, in the calling thread.
     pub fn synchronous() -> Self {
-        Images { index: HashMap::new(), entries: Vec::new(), pending: HashSet::new(), worker: None, frame: 0, generation: 0 }
+        Images { index: HashMap::new(), entries: Vec::new(), pending: HashSet::new(), worker: None, gone: false, frame: 0, generation: 0 }
     }
 
     /// The image of `id` in `slot` fitted into `w`x`h` pixels, if it is loaded. If not, it is asked for.
@@ -107,12 +110,15 @@ impl Images {
         if !self.index.contains_key(&key) {
             match &self.worker {
                 Some(worker) => {
-                    if !self.pending.contains(&key) {
+                    if !self.gone && !self.pending.contains(&key) {
                         match worker.send(Request { key: key.clone(), path: path.to_path_buf() }) {
                             Ok(()) => {
                                 self.pending.insert(key);
                             }
-                            Err(e) => log::trace!("image {}: {e}", path.display()),
+                            Err(_) => {
+                                log::warn!("images: the decoding thread is gone: images not loaded yet are left out");
+                                self.gone = true;
+                            }
                         }
                     }
                     return None;
@@ -272,6 +278,19 @@ mod tests {
         let p = load(&svg, 64, 64, false).expect("rendered");
         assert_eq!((p.width(), p.height()), (64, 32));
         assert_eq!(p.pixel(10, 10).map(|px| (px.blue(), px.alpha())), Some((255, 255)));
+    }
+
+    /// With the decoding thread gone, a miss isn't asked for again, every frame, and none waits.
+    #[test]
+    fn with_the_thread_gone_nothing_more_is_asked() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        drop(rx);
+        let mut images = Images::new(tx);
+        let id: Arc<str> = "game".into();
+        assert!(images.get(&id, Slot::Art, Path::new("/x.png"), 10, 10).is_none());
+        assert!(images.gone && images.pending.is_empty());
+        assert!(images.get(&id, Slot::Icon, Path::new("/y.png"), 10, 10).is_none());
+        assert!(images.pending.is_empty());
     }
 
     #[test]

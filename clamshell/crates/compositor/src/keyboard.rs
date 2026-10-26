@@ -51,7 +51,7 @@ impl Server {
         }
         let Some(sym) = keysym(stroke.key) else { return };
         let Some(code) = keyboard.keycode_for_keysym(sym) else {
-            log::debug!("compositor: no key for on-screen stroke {:?}", stroke.key);
+            log::warn!("compositor: no key in the keymap for on-screen stroke {:?}: not typed", stroke.key);
             return;
         };
         let modifiers = [

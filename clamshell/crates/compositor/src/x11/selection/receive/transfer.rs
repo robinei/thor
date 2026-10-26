@@ -120,7 +120,7 @@ impl Imports {
                         || event.property != atoms.get("_THOR_SELECTION")
                     {
                         let id = transfer.id;
-                        log::debug!("compositor: X11 selection refused or mismatched");
+                        log::warn!("compositor: an X11 client refused or mismatched a selection transfer: not pasted");
                         self.finish(id, wire)?;
                     } else {
                         transfer.phase = Phase::Read;
@@ -195,7 +195,7 @@ impl Imports {
         Ok(())
     }
     fn invalid(&mut self, id: u64, wire: &mut Transport) -> io::Result<()> {
-        log::debug!("compositor: invalid X11 selection property");
+        log::warn!("compositor: an X11 selection transfer's property is invalid: not pasted");
         self.finish(id, wire)
     }
     pub(super) fn pump(&mut self, wire: &mut Transport, atoms: &Atoms, now: Instant) -> io::Result<()> {
@@ -204,7 +204,7 @@ impl Imports {
             let Some(transfer) = self.transfers.get_mut(index) else { break };
             let id = transfer.id;
             if now >= transfer.deadline {
-                log::debug!("compositor: X11 selection transfer timed out");
+                log::warn!("compositor: an X11 selection transfer timed out: not pasted");
                 self.finish(id, wire)?;
                 continue;
             }
