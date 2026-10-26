@@ -2,14 +2,14 @@
 """Checks of ClamShell in the virtual Thor through its real inputs: touches on the bottom screen's
 touchscreen (QEMU's virtio-multitouch, driven over QMP), a fake controller (the fake_pad example), and
 two virtual Bluetooth controllers (btvirt) with a test device. Each check acts as a user would and looks
-at what came of it: ClamShell's journal, its saved files, sway's workspaces, the devices it makes, the
-system (NetworkManager, BlueZ, PipeWire, a fake backlight), screenshots.
+at what came of it: ClamShell's journal, its saved files, its windows (`window events`), the devices it
+makes, the system (NetworkManager, BlueZ, PipeWire, a fake backlight), the screens (QEMU's).
 
     tools/vm/vm.py run --headless &          (the machine running; ClamShell built on the host)
     tools/vm/vm-checks.py [CHECK ...]        (all of them by default; --list names them)
 
-For the checks ClamShell runs as the device's session (CLAMSHELL_SESSION=device: it adopts programs
-it didn't start), with a test library (a game that opens an empty mpv window), a fake backlight and its own
+For the checks ClamShell runs, as the device's session (it adopts programs it didn't start), with a test
+library (a game that opens an empty mpv window), a fake backlight and its own
 state directory (a runtime drop-in for its service, removed at the end), PipeWire gets a null sink (the
 machine has no audio device), and Bluetooth is set up (tools/vm/vm.py bluetooth). The exit status is the
 number of failed checks. Standard library only.
@@ -20,6 +20,7 @@ import json
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -30,6 +31,8 @@ vm = importlib.import_module("vm")
 
 HOME = f"/home/{vm.USER}"
 CHECKS_DIR = f"{HOME}/.cache/thor-checks"
+# What the checks' terminal was given to type (see Checks._terminal_with_keyboard).
+TYPED = f"{CHECKS_DIR}/typed"
 # ClamShell's library config, and what it keeps (play time, favourites, settings, keymaps, the dock, where
 # shelf was, brightness: JSON files, see clamshell-system's store).
 CONFIG = f"{CHECKS_DIR}/config/clamshell"
@@ -53,7 +56,7 @@ TIME_BACK = (83, 135)
 # Below the bar: where a finger points (the touchpad tab: at once).
 PAD_Y = 600
 
-PRELUDE = ("export SWAYSOCK=$(ls /run/user/$(id -u)/sway-ipc.*.sock 2>/dev/null | head -1) WAYLAND_DISPLAY=wayland-1; "
+PRELUDE = ("export WAYLAND_DISPLAY=wayland-1; "
            "dev() { for d in /sys/class/input/event*; do [ \"$(cat $d/device/name)\" = \"$1\" ] && echo /dev/input/${d##*/}; done; }; ")
 
 
@@ -179,22 +182,36 @@ def chord(char, ctrl=False):
     return {"Key": {"key": {"Char": char}, "shift": False, "ctrl": ctrl, "alt": False, "logo": False}}
 
 
+def windows():
+    """ClamShell's windows as its state has them (`window events`): each with its id, app id, group
+    (`workspace`), whether it is below (`down`), shown and focused."""
+    path = f"{CHECKS_DIR}/windows.json"
+    sh(f"rm -f {path}")
+    control(f"window events {path}")
+    for _ in range(25):
+        try:
+            return json.loads(sh(f"cat {path} 2>/dev/null"))["windows"]
+        except (ValueError, KeyError):
+            time.sleep(0.1)
+    return []
+
+
 def front():
-    return sh("swaymsg -t get_workspaces | python3 -c "
-              "'import json,sys; print(next((w[\"name\"] for w in json.load(sys.stdin) if w[\"focused\"]), \"\"))'").strip()
+    """The group in front on the main screen, as the compositor shows it: the focused top window's, else
+    the last shown top window's, else shelf's."""
+    top = [w for w in windows() if not w["down"]]
+    shown = next((w for w in top if w["focused"]), None) or max((w for w in top if w["visible"]), key=lambda w: w["id"], default=None)
+    return shown["workspace"] if shown else "clamshell-shelf"
+
+
+def typed():
+    """How many characters the checks' terminal has been given."""
+    out = sh(f"stat -c %s {TYPED} 2>/dev/null").strip()
+    return int(out) if out.isdigit() else 0
 
 
 def units(prefix):
     return sh(f"systemctl --user list-units 'clamshell-{prefix}*' --plain --no-legend | awk '{{print $1}}'").split()
-
-
-def screenshot(output="Virtual-2"):
-    """A screen as (width, height, RGB bytes)."""
-    data = sh(f"grim -t ppm -o {output} -", binary=True)
-    parts = data.split(maxsplit=4)
-    if len(parts) < 5 or parts[0] != b"P6":
-        raise RuntimeError("grim: no picture")
-    return int(parts[1]), int(parts[2]), parts[4]
 
 
 def light_pixels(shot, y, x0, x1, level=150):
@@ -242,6 +259,17 @@ class Inputs:
         if button:
             events.append({"type": "btn", "data": {"button": "left", "down": button == "down"}})
         self.qmp.command("input-send-event", device="video0", head=head, events=events)
+
+    def screenshot(self, head=1):
+        """A screen as (width, height, RGB bytes), as QEMU shows it: the main screen head 0, the second
+        1 (through this connection: QMP takes one at a time)."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "screen.ppm"
+            self.qmp.command("screendump", filename=str(path), device="video0", head=head)
+            parts = path.read_bytes().split(maxsplit=4)
+        if len(parts) < 5 or parts[0] != b"P6":
+            raise RuntimeError("screendump: no picture")
+        return int(parts[1]), int(parts[2]), parts[4]
 
     def tap(self, x, y, slot=0):
         self.touch.down(slot, x, y)
@@ -330,7 +358,7 @@ touch {CHECKS_DIR}/games/test.game {CHECKS_DIR}/games/zeta.game {" ".join(f"{CHE
 echo 100 > {BACKLIGHT}/max_brightness; echo 50 > {BACKLIGHT}/brightness
 mkdir -p $(dirname {DROP_IN})
 printf '%s\\n' '[Service]' 'Environment=XDG_CONFIG_HOME={CHECKS_DIR}/config' 'Environment=XDG_DATA_HOME={CHECKS_DIR}/data' \\
-    'Environment=CLAMSHELL_BACKLIGHTS={CHECKS_DIR}/backlight' 'Environment=CLAMSHELL_SESSION=device' > {DROP_IN}
+    'Environment=CLAMSHELL_BACKLIGHTS={CHECKS_DIR}/backlight' > {DROP_IN}
 wpctl status | grep -q thor-checks-sink || wpctl status | grep -q 'Test sink' || pw-cli create-node adapter \\
     '{{ factory.name=support.null-audio-sink node.name=thor-checks-sink node.description="Test sink" media.class=Audio/Sink object.linger=true audio.position=[FL FR] }}' > /dev/null 2>&1
 sleep 0.5
@@ -464,11 +492,11 @@ class Checks:
         self.icon("dock")
 
     def volume_hold(self):
-        before = light_pixels(screenshot(), BAR_Y, 20, 600)
+        before = light_pixels(self.i.screenshot(), BAR_Y, 20, 600)
         since = now()
         self.i.touch.down(0, ICONS["volume"], BAR_Y)
         time.sleep(0.5)
-        during = light_pixels(screenshot(), BAR_Y, 20, 600)
+        during = light_pixels(self.i.screenshot(), BAR_Y, 20, 600)
         self.i.touch.up(0)
         time.sleep(3)
         self.check("bar: a hold on volume shows the slider", during > before + 150, f"light pixels on the bar {before} -> {during}")
@@ -599,7 +627,8 @@ class Checks:
     def shelf_scroll(self):
         """More games than fit in shelf's list: a drag with the pointer scrolls it, settling on a whole row,
         and a click then selects the game under it."""
-        sh("swaymsg workspace clamshell-shelf > /dev/null")
+        control("home")
+        until(lambda: front() == "clamshell-shelf", 5)
         if collection() not in (None, "Test"):
             return self.check("shelf: the Test collection in front", False, f"collection {collection()!r}")
         # Down by three rows and a bit, slowly; it settles on three.
@@ -657,21 +686,11 @@ class Checks:
 
     def window_rules(self):
         def where():
-            """foot's windows: their workspace and whether they're marked down."""
-            tree = json.loads(sh("swaymsg -t get_tree") or "{}")
-            out = []
-
-            def walk(n, ws=""):
-                ws = n.get("name", ws) if n.get("type") == "workspace" else ws
-                if n.get("app_id") == "foot":
-                    out.append((ws, any(m.startswith("clamshell-down") for m in n.get("marks", []))))
-                for c in n.get("nodes", []) + n.get("floating_nodes", []):
-                    walk(c, ws)
-            walk(tree)
-            return out
+            """foot's windows: whether each is below."""
+            return [w["down"] for w in windows() if w["app_id"] == "foot"]
 
         def reopen():
-            sh("swaymsg '[app_id=foot] kill' >/dev/null 2>&1 || true")
+            sh("pkill -x foot || true")
             # (Its launch ended too: a tap on a running entry shows it rather than starting it.)
             until(lambda: not where() and not units("run-"), 8)
             control("tap dock 0")  # foot, pinned by the setup
@@ -683,57 +702,48 @@ class Checks:
         if not self.check("bottom screen: foot open", until(lambda: bool(where()), 8), where()):
             return
         control("window down")
-        self.check("  moved down, marked", until(lambda: where() == [("clamshell-bottom", True)], 5), where())
+        self.check("  moved below", until(lambda: where() == [True], 5), where())
         down = reopen()
-        self.check("  remembered: opened again, straight on the bottom screen (sway's rule), and kept there",
-                   down == [("clamshell-bottom", True)], down)
+        self.check("  remembered: opened again, straight below, and kept there", down == [True], down)
         control("window up")
-        until(lambda: where() and where()[0][0] != "clamshell-bottom", 5)
+        until(lambda: where() == [False], 5)
         up = reopen()
-        self.check("  moved up, forgotten: opened again on top", bool(up) and up[0][0] != "clamshell-bottom", up)
-        sh("swaymsg '[app_id=foot] kill' >/dev/null 2>&1 || true")
+        self.check("  moved up, forgotten: opened again on top", up == [False], up)
+        sh("pkill -x foot || true")
 
     def pad_windows(self):
         if not plug_pad():
             return self.check("window flicks: the fake pad grabbed", False)
 
-        def windows():
-            tree = json.loads(sh("swaymsg -t get_tree") or "{}")
-            found = []
-            def walk(node):
-                if node.get("app_id") == "foot":
-                    found.append((node["id"], any(m.startswith("clamshell-down") for m in node.get("marks", [])), node.get("focused", False)))
-                for child in node.get("nodes", []) + node.get("floating_nodes", []):
-                    walk(child)
-            walk(tree)
-            return found
+        def foot():
+            return [(w["id"], w["down"], w["focused"]) for w in windows() if w["app_id"] == "foot"]
 
         def focused():
-            return next((id for id, down, focus in windows() if focus and not down), None)
+            return next((id for id, down, focus in foot() if focus and not down), None)
 
         def below():
-            return [id for id, down, _ in windows() if down]
+            return [id for id, down, _ in foot() if down]
 
         def flick(x, y):
             pad("press home", f"stick right {x} {y}", "sleep 120", "stick right 0 0", "release home")
             time.sleep(0.5)
 
         control("tap dock 0")
-        until(lambda: len(windows()) == 1, 8)
+        until(lambda: len(foot()) == 1, 8)
         control("long dock 0")
         control("tap dock-menu open-another")
-        if not self.check("window flicks: two top windows of one program", until(lambda: len(windows()) == 2, 8), windows()):
+        if not self.check("window flicks: two top windows of one program", until(lambda: len(foot()) == 2, 8), foot()):
             return
         first = focused()
         flick(-1, 0)
-        self.check("  Home + right stick left selects the other top tab", focused() not in (None, first), windows())
+        self.check("  Home + right stick left selects the other top tab", focused() not in (None, first), foot())
         flick(0, 1)
         down = below()
-        self.check("  a downward flick moves exactly one window below", len(down) == 1 and focused() is not None, windows())
+        self.check("  a downward flick moves exactly one window below", len(down) == 1 and focused() is not None, foot())
         flick(0, 1)
-        self.check("  the next downward flick swaps that bottom slot", len(below()) == 1 and below() != down and focused() in down, windows())
+        self.check("  the next downward flick swaps that bottom slot", len(below()) == 1 and below() != down and focused() in down, foot())
         flick(0, -1)
-        self.check("  an upward flick empties the slot and shows its window on top", not below() and len(windows()) == 2, windows())
+        self.check("  an upward flick empties the slot and shows its window on top", not below() and len(foot()) == 2, foot())
 
     # the keyboard's pointing
 
@@ -743,24 +753,22 @@ class Checks:
             return
         if not self.check("  its touchpad ready", until(lambda: bool(device("clamshell touchpad")), 3)):
             return
-        virtual, keyboard = device("clamshell touchpad"), device("clamshell keyboard")
+        virtual = device("clamshell touchpad")
 
         def slide_then_tap():
             self.i.touch.slide(0, 300, PAD_Y, 900, PAD_Y, 20, 1.0)
             self.i.touch.up(0)
             time.sleep(0.3)
             self.i.tap(600, PAD_Y)
-        # (libinput's own context taps as sway's does when told to.)
+        # (libinput's own context taps, as the compositor's does on ClamShell's touchpad.)
         out = capture(f"sudo libinput debug-events --enable-tap --device {virtual}", 4, slide_then_tap)
         motion = out.count("POINTER_MOTION")
         self.check("  a finger sliding over the keys moves the pointer", motion > 3, f"{motion} motion events; {out.strip()[-300:]!r}")
         self.check("  a tap while it points clicks", "POINTER_BUTTON" in out, out.strip()[-300:])
-        inputs = json.loads(sh("swaymsg -t get_inputs") or "[]")
-        tap = [d.get("libinput", {}).get("tap") for d in inputs if d.get("name") == "clamshell touchpad"]
-        self.check("  sway taps on it", tap == ["enabled"], f"tap {tap}")
         time.sleep(1.5)
-        typed = capture(f"evtest {keyboard}", 2, lambda: self.i.tap(600, PAD_Y))
-        self.check("  a moment later a tap types again", "(EV_KEY)" in typed and "value 1" in typed, typed.strip()[-300:])
+        before = typed()
+        self.i.tap(600, PAD_Y)
+        self.check("  a moment later a tap types again", until(lambda: typed() > before, 2), f"{before} -> {typed()} characters")
 
     # the pad
 
@@ -821,8 +829,12 @@ class Checks:
         self.check("  off again", until(lambda: self.route() not in ("Mouse", None)), f"route {self.route()}")
 
     def _terminal_with_keyboard(self):
+        """A terminal in front that writes what is typed into it to TYPED (foot, started outside ClamShell
+        and found as the Terminal entry), and the keyboard tab open."""
         since = now()
-        control("tap dock 0")  # foot, pinned by the setup
+        sh("pkill -x foot || true")
+        until(lambda: not sh("pgrep -x foot || true").strip(), 5)
+        sh(f"rm -f {TYPED}; setsid -f foot sh -c 'stty -icanon -echo; exec cat > {TYPED}' >/dev/null 2>&1")
         if not until(lambda: front().startswith("clamshell-run-foot_"), 8):
             return self.check("an app in front (Terminal)", False, f"front {front()!r}")
         self.icon("keyboard")
@@ -850,22 +862,19 @@ class Checks:
             return
         for _ in range(3):  # from the tab's icon (where the tap left the focus) down to a letter
             dpad("down")
-        keyboard = device("clamshell keyboard")
-
-        def held_then_view():
-            pad("press a")
-            time.sleep(1.2)
-            pad("tap view")
-        out = capture(f"evtest {keyboard}", 4, held_then_view)
+        before = typed()
+        pad("press a")
+        time.sleep(1.2)
+        pad("tap view")
+        # (What was typed until View moved the pad away, with a moment for it to arrive.)
+        time.sleep(0.4)
+        at_view = typed()
+        time.sleep(1.5)
         pad("release a")
-        events = [line for line in out.splitlines() if "type 1 (EV_KEY)" in line and "value 1" in line]
-        times = [float(line.split()[2].rstrip(",")) for line in events]
-        repeats = len(times)
-        # After View (1.2 s after A went down, give or take): no more presses.
-        late = [t for t in times if times and t > times[0] + 1.6]
-        self.check("  A held on a key repeats it", repeats > 5, f"{repeats} presses")
-        self.check("  and View, moving the pad away, stops the repeat", repeats > 0 and not late,
-                   f"{len(late)} presses after View")
+        repeats = at_view - before
+        self.check("  A held on a key repeats it", repeats > 5, f"{repeats} characters")
+        self.check("  and View, moving the pad away, stops the repeat", repeats > 0 and typed() == at_view,
+                   f"{typed() - at_view} characters after View")
         press("view")
 
     def pad_unplug(self):
@@ -1184,7 +1193,7 @@ class Checks:
     def _foot_outside(self, how):
         """foot started outside ClamShell (`how`: a command starting it): whether it came in front on its
         entry's workspace, and a reader of its process's cgroup."""
-        sh("swaymsg '[app_id=foot] kill' >/dev/null 2>&1 || true")
+        sh("pkill -x foot || true")
         # (Gone, its entry ended, shelf in front: a window opening on an entry's workspace is that entry's.)
         until(lambda: not sh("pgrep -x foot || true").strip() and not [u for u in units("run-foot") if u.endswith(".scope")]
               and front() == "clamshell-shelf", 10)
@@ -1196,17 +1205,17 @@ class Checks:
     def found_window(self):
         """A window started outside ClamShell: its entry's (foot's desktop file), on its workspace, in
         front, its process moved into a scope of ours: from a desktop's app scope (as a launcher starts
-        one), and from the login session's (sway's exec)."""
+        one), and from a login session's (as from a terminal over ssh)."""
         adopt = lambda since: [line for line in journal(since).splitlines() if "adopt" in line][-3:]
         since = now()
         on, cgroup = self._foot_outside("setsid -f systemd-run --user --scope --quiet --collect --unit=app-thor-checks-foot.scope foot >/dev/null 2>&1")
         self.check("found: a window started outside ClamShell (an app scope) is its entry's, on its workspace, in front", on, f"front {front()!r}")
         self.check("  its process moved into a scope of ours", until(lambda: "clamshell-run-foot_" in cgroup(), 5), f"{cgroup()!r}; {adopt(since)}")
         since = now()
-        on, cgroup = self._foot_outside("swaymsg 'exec foot' >/dev/null")
-        self.check("  one started by sway's exec (sway's own unit under uwsm) too, on its workspace, in front", on, f"front {front()!r}")
+        on, cgroup = self._foot_outside("setsid -f foot >/dev/null 2>&1")
+        self.check("  one started in a login session too, on its workspace, in front", on, f"front {front()!r}")
         self.check("  its process moved into a scope of ours", until(lambda: "clamshell-run-foot_" in cgroup(), 5), f"{cgroup()!r}; {adopt(since)}")
-        sh("swaymsg '[app_id=foot] kill' >/dev/null 2>&1 || true")
+        sh("pkill -x foot || true")
 
     def tray_program(self):
         """A program with a tray icon, started outside ClamShell (an app scope): an entry found by it, its
