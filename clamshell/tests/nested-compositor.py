@@ -165,9 +165,19 @@ time.sleep(300)
         large_clipboard = ("café clipboard transfer\n" * 4096).encode()
         subprocess.run([str(BIN), "--clipboard", "set"], input=large_clipboard, env=nested, check=True, timeout=10)
         wait(lambda: saved.read_bytes() == large_clipboard, "large Wayland selection reaches the keeper")
+        def read_settled(expected, before, description, *args):
+            # Just after saving a text the keeper replaces both selections: it copies the text to the
+            # primary selection, and offers the clipboard itself once `--clipboard set` has quit. A read
+            # during either is refused, or gets nothing or the text before, and is made again.
+            def attempt():
+                result = read_x11_selection(*args)
+                if b"selection refused" in result.stderr or result.stdout in (b"", before):
+                    return None
+                assert result.returncode == 0 and result.stdout == expected, (result.returncode, len(result.stdout), result.stdout[:40], result.stderr)
+                return result
+            return wait(attempt, description)
         for selection in ("CLIPBOARD", "PRIMARY"):
-            result = read_x11_selection(selection, "UTF8_STRING", "--slow")
-            assert result.returncode == 0 and result.stdout == large_clipboard, result.stderr
+            result = read_settled(large_clipboard, b"nested clipboard", f"the large text read from {selection}", selection, "UTF8_STRING", "--slow")
             assert b"INCR" in result.stderr, "large transfers use incremental X11 properties"
         abandoned = read_x11_selection("CLIPBOARD", "UTF8_STRING", "--abandon")
         assert abandoned.returncode == 0 and b"INCR" in abandoned.stderr
@@ -178,8 +188,7 @@ time.sleep(300)
         edge_clipboard = "a" * (16 * 1024 - 1) + "€"
         subprocess.run([str(BIN), "--clipboard", "set"], input=edge_clipboard, text=True, env=nested, check=True, timeout=10)
         wait(lambda: saved.read_text() == edge_clipboard, "a UTF-8 scalar straddles the INCR chunk boundary")
-        edge = read_x11_selection("CLIPBOARD", "STRING")
-        assert edge.returncode == 0 and edge.stdout == b"a" * (16 * 1024 - 1) + b"?", edge.stderr
+        edge = read_settled(b"a" * (16 * 1024 - 1) + b"?", large_clipboard.decode().encode("latin-1"), "the straddling text read as STRING", "CLIPBOARD", "STRING")
         assert b"INCR" in edge.stderr
         assert read_x11_selection("CLIPBOARD", "UTF8_STRING", "--take").stdout == b"owned\n", "a new X11 owner is never reclaimed without a new Wayland copy"
         subprocess.run([str(BIN), "--clipboard", "set"], input="café €", text=True, env=nested, check=True, timeout=10)
@@ -469,20 +478,28 @@ time.sleep(300)
             return int(re.search(r"uint32 (\d+)", notifications("Notify", "nested", "0", "", summary, "from the test", actions, "{}", "0")).group(1))
         def signalled(text):
             return text in (directory / "notifications.log").read_text()
-        panel = (960 + 400, 100)
+        # A strip across the card, clear of its text and its close button. One pixel isn't enough: the
+        # anti-aliased edge of a glyph below can be as dark as the card's fill.
         surface = (0x13, 0x13, 0x16)
+        strip = range(960 + 140, 960 + 540, 4)
+        def on_card():
+            return sum(colour_at(x, 100, surface) for x in strip)
+        def card_shown():
+            return on_card() >= len(strip) * 0.95
+        def card_gone():
+            return on_card() < len(strip) / 2
         first = notify("Nested", "[]")
-        wait(lambda: colour_at(*panel, surface), "a notification is drawn over the bottom screen")
+        wait(card_shown, "a notification is drawn over the bottom screen")
         shot("notification")
         notifications("CloseNotification", str(first))
-        wait(lambda: not colour_at(*panel, surface), "a notification its program closed is gone")
+        wait(card_gone, "a notification its program closed is gone")
         wait(lambda: signalled(f"NotificationClosed (uint32 {first}, uint32 3)"), "closed by the call, as the signal says")
         second = notify("Tap me", "['default', 'Open']")
-        wait(lambda: colour_at(*panel, surface), "a second notification is drawn")
+        wait(card_shown, "a second notification is drawn")
         move_pointer(960 + 200, 80, True)
         wait(lambda: signalled(f"ActionInvoked (uint32 {second}, 'default')") and signalled(f"NotificationClosed (uint32 {second}, uint32 2)"),
              "a tap invokes the default action and dismisses the notification")
-        wait(lambda: not colour_at(*panel, surface), "a tapped notification is gone")
+        wait(card_gone, "a tapped notification is gone")
         monitor.terminate()
         monitor.wait(timeout=5)
         processes.remove(monitor)
