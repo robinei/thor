@@ -81,7 +81,7 @@ pub(crate) struct Want<'a> {
     pub upscale: bool,
     pub hdr: bool,
     /// Whether it is linear light (scRGB's), whose contrast the passes measure in PQ's signal (see
-    /// `render::PERCEIVE_GLSL`).
+    /// `shaders::PERCEIVE`).
     pub linear: bool,
     /// SMAA's blending done in the final pass, which reads the buffer itself (not for one copied out).
     pub fuse: bool,
@@ -257,7 +257,7 @@ impl Chains {
         if let Some(target) = &mut chain.fxaa {
             let fxaa = side(&mut self.fxaa, linear);
             if fxaa.is_none() {
-                *fxaa = Some(pass_program(renderer, "fxaa(v_coords)", super::render::FXAA_GLSL, linear).map_err(|e| e.to_string()));
+                *fxaa = Some(pass_program(renderer, "fxaa(v_coords)", super::shaders::FXAA, linear).map_err(|e| e.to_string()));
             }
             let program = match fxaa {
                 Some(Ok(program)) => program.clone(),
@@ -272,7 +272,7 @@ impl Chains {
         if let Some(target) = &mut chain.upscaled {
             let easu = side(&mut self.easu, linear);
             if easu.is_none() {
-                *easu = Some(pass_program(renderer, "easu()", super::render::EASU_GLSL, linear).map_err(|e| e.to_string()));
+                *easu = Some(pass_program(renderer, "easu()", super::shaders::EASU, linear).map_err(|e| e.to_string()));
             }
             let program = match easu {
                 Some(Ok(program)) => program.clone(),
@@ -357,31 +357,6 @@ pub(super) fn side<T>(pair: &mut (T, T), second: bool) -> &mut T {
 }
 
 pub(super) fn pass_program(renderer: &mut GlesRenderer, call: &str, glsl: &str, linear: bool) -> Result<GlesTexProgram, Error> {
-    let perceive = super::render::PERCEIVE_GLSL;
-    let source = format!(
-        r#"#version 100
-//_DEFINES_
-#if defined(EXTERNAL)
-#extension GL_OES_EGL_image_external : require
-#endif
-precision highp float;
-#if defined(EXTERNAL)
-uniform samplerExternalOES tex;
-#else
-uniform sampler2D tex;
-#endif
-uniform float alpha;
-uniform vec4 clarity;
-varying vec2 v_coords;
-#if defined(DEBUG_FLAGS)
-uniform float tint;
-#endif
-const bool LINEAR = {linear};
-{perceive}
-{glsl}
-void main() {{
-    gl_FragColor = {call} * alpha;
-}}"#
-    );
+    let source = super::shaders::pass(call, glsl, linear);
     Ok(renderer.compile_custom_texture_shader(source, &[UniformName::new("clarity", UniformType::_4f)])?)
 }

@@ -26,36 +26,6 @@ const SIZE: (i32, i32) = (96, 54);
 /// How often it is measured.
 const EVERY: Duration = Duration::from_millis(250);
 
-/// Each pixel's luminance as a level, in the red channel, by the kind in `clarity.x`: SDR's signal
-/// (sRGB's encoding, BT.709's luminance); PQ's, of its light (BT.2020's luminance) scaled by `clarity.y`
-/// so that its white is at the reference; or for linear light (scRGB's, BT.709's), PQ's of it with 1.0
-/// at the reference.
-const MEASURE_GLSL: &str = "float srgb_decode(float e) { return e <= 0.04045 ? e / 12.92 : pow((e + 0.055) / 1.055, 2.4); }
-float srgb_encode(float l) { return l <= 0.0031308 ? l * 12.92 : 1.055 * pow(l, 1.0 / 2.4) - 0.055; }
-float pq_light(float e) {
-    float p = pow(clamp(e, 0.0, 1.0), 32.0 / 2523.0);
-    return pow(max(p - 0.8359375, 0.0) / (18.8515625 - 18.6875 * p), 16384.0 / 2610.0) * 10000.0;
-}
-float pq(float nits) {
-    float p = pow(max(nits, 0.0) / 10000.0, 2610.0 / 16384.0);
-    return pow((0.8359375 + 18.8515625 * p) / (1.0 + 18.6875 * p), 2523.0 / 32.0);
-}
-vec4 measure() {
-    vec3 c = texture2D(tex, v_coords).rgb;
-    float level;
-    if (clarity.x < 0.5) {
-        float y = dot(vec3(srgb_decode(c.r), srgb_decode(c.g), srgb_decode(c.b)), vec3(0.2126, 0.7152, 0.0722));
-        level = srgb_encode(clamp(y, 0.0, 1.0));
-    } else if (clarity.x < 1.5) {
-        float y = dot(vec3(pq_light(c.r), pq_light(c.g), pq_light(c.b)), vec3(0.2627, 0.6780, 0.0593));
-        level = pq(y * clarity.y);
-    } else {
-        level = pq(dot(max(c, vec3(0.0)), vec3(0.2126, 0.7152, 0.0722)) * 203.0);
-    }
-    return vec4(level, 0.0, 0.0, 1.0);
-}
-";
-
 #[derive(Default)]
 pub(crate) struct Measure {
     program: Option<Result<GlesTexProgram, String>>,
@@ -114,7 +84,7 @@ impl Measure {
         };
         let to_reference = 203.0 / colour.luminances().reference.max(1) as f32;
         if self.program.is_none() {
-            self.program = Some(super::chain::pass_program(renderer, "measure()", MEASURE_GLSL, false).map_err(|e| e.to_string()));
+            self.program = Some(super::chain::pass_program(renderer, "measure()", super::shaders::MEASURE, false).map_err(|e| e.to_string()));
         }
         let program = match &self.program {
             Some(Ok(program)) => program.clone(),

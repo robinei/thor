@@ -6,7 +6,7 @@
 //! run in Smithay's context between its frames; they put back the bindings they change.
 //!
 //! The passes read the game's buffer as it is, so nothing is copied: SMAA's language is given by our own
-//! macros (its `SMAA_CUSTOM_SL`), and the picture (`colorTex`) is declared with the external sampler of a
+//! macros (its `SMAA_CUSTOM_SL`, in `shaders`), and the picture (`colorTex`) is declared with the external sampler of a
 //! dmabuf the GPU can't render to, in a second variant of the passes that read it (by its declarations in
 //! SMAA's text: GLSL ES has no token pasting to do it by name).
 
@@ -19,138 +19,10 @@ use smithay::backend::{
     },
 };
 
-/// SMAA's shader, with its own GLSL macros (`SMAA_GLSL_3`).
-const SHADER: &str = include_str!("smaa/SMAA.hlsl");
 /// The area table: 160 by 560, two bytes a texel (red, green).
 const AREA: &[u8] = include_bytes!("smaa/area.bin");
 /// The search table: 64 by 16, a byte a texel.
 const SEARCH: &[u8] = include_bytes!("smaa/search.bin");
-
-/// What every pass's source starts with after its version (and for an external picture, the extension
-/// for it): SMAA's high preset, the render target's metrics as a uniform, and SMAA's language as GLSL ES 3
-/// by our macros. Its textures are `sampler2D`s, but the picture's, `SAMPLER_colorTex`.
-const HEADER: &str = "precision highp float;
-precision highp int;
-#define SMAA_PRESET_HIGH
-#define SMAA_RT_METRICS rt_metrics
-uniform vec4 rt_metrics;
-#define SMAA_CUSTOM_SL
-#define SMAATexture2D(tex) sampler2D tex
-#define SMAATexturePass2D(tex) tex
-#define SMAA_FLATTEN
-#define SMAA_BRANCH
-#define lerp(a, b, t) mix(a, b, t)
-#define saturate(a) clamp(a, 0.0, 1.0)
-#define mad(a, b, c) (a * b + c)
-#define float2 vec2
-#define float3 vec3
-#define float4 vec4
-#define int2 ivec2
-#define int3 ivec3
-#define int4 ivec4
-#define bool2 bvec2
-#define bool3 bvec3
-#define bool4 bvec4
-";
-
-/// SMAA's sampling as SMAA_GLSL_3 does it, for passes whose textures are all ordinary.
-const SAMPLING: &str = "#define SAMPLER_colorTex sampler2D
-#define SMAASampleLevelZero(tex, coord) textureLod(tex, coord, 0.0)
-#define SMAASampleLevelZeroPoint(tex, coord) textureLod(tex, coord, 0.0)
-#define SMAASampleLevelZeroOffset(tex, coord, offset) textureLodOffset(tex, coord, 0.0, offset)
-#define SMAASample(tex, coord) texture(tex, coord)
-#define SMAASamplePoint(tex, coord) texture(tex, coord)
-#define SMAASampleOffset(tex, coord, offset) texture(tex, coord, offset)
-";
-
-/// SMAA's sampling with the picture an external texture, which takes only `texture`: offsets in texels as
-/// coordinates, and a level of detail that changes nothing (the textures have one level, sampled the same
-/// way minified or magnified).
-const SAMPLING_EXTERNAL: &str = "#define SAMPLER_colorTex samplerExternalOES
-#define SMAASampleLevelZero(tex, coord) texture(tex, coord)
-#define SMAASampleLevelZeroPoint(tex, coord) texture(tex, coord)
-#define SMAASampleLevelZeroOffset(tex, coord, offset) texture(tex, coord + vec2(offset) * SMAA_RT_METRICS.xy)
-#define SMAASample(tex, coord) texture(tex, coord)
-#define SMAASamplePoint(tex, coord) texture(tex, coord)
-#define SMAASampleOffset(tex, coord, offset) texture(tex, coord + vec2(offset) * SMAA_RT_METRICS.xy)
-";
-
-/// Sampling the picture as PQ's signal of its linear light (scRGB's, 1.0 at 80 nits), as
-/// `render::PERCEIVE_GLSL` does, for the edges' pass on linear light.
-const PERCEIVE: &str = "vec4 perceive(vec4 c) {
-    vec3 p = pow(max(c.rgb, vec3(0.0)) * 0.008, vec3(0.1593017578125));
-    return vec4(pow((0.8359375 + 18.8515625 * p) / (1.0 + 18.6875 * p), vec3(78.84375)), c.a);
-}
-#undef SMAASamplePoint
-#define SMAASamplePoint(tex, coord) perceive(texture(tex, coord))
-";
-
-/// A full-screen triangle from the vertex's index alone, its texture coordinates 0 to 1 over the target.
-const TRIANGLE: &str = "vec2 corner() { return vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)); }
-";
-
-/// The three passes' vertex and fragment shaders' own parts, after the header and SMAA's shader.
-const EDGES: (&str, &str) = (
-    "out vec2 v_texcoord;
-out vec4 v_offset[3];
-void main() {
-    v_texcoord = corner();
-    vec4 offset[3];
-    SMAAEdgeDetectionVS(v_texcoord, offset);
-    v_offset = offset;
-    gl_Position = vec4(v_texcoord * 2.0 - 1.0, 0.0, 1.0);
-}",
-    "uniform SAMPLER_colorTex color_tex;
-in vec2 v_texcoord;
-in vec4 v_offset[3];
-out vec4 frag;
-void main() {
-    frag = vec4(SMAALumaEdgeDetectionPS(v_texcoord, v_offset, color_tex), 0.0, 0.0);
-}",
-);
-const WEIGHTS: (&str, &str) = (
-    "out vec2 v_texcoord;
-out vec2 v_pixcoord;
-out vec4 v_offset[3];
-void main() {
-    v_texcoord = corner();
-    vec2 pixcoord;
-    vec4 offset[3];
-    SMAABlendingWeightCalculationVS(v_texcoord, pixcoord, offset);
-    v_pixcoord = pixcoord;
-    v_offset = offset;
-    gl_Position = vec4(v_texcoord * 2.0 - 1.0, 0.0, 1.0);
-}",
-    "uniform sampler2D edges_tex;
-uniform sampler2D area_tex;
-uniform sampler2D search_tex;
-in vec2 v_texcoord;
-in vec2 v_pixcoord;
-in vec4 v_offset[3];
-out vec4 frag;
-void main() {
-    frag = SMAABlendingWeightCalculationPS(v_texcoord, v_pixcoord, v_offset, edges_tex, area_tex, search_tex, vec4(0.0));
-}",
-);
-const BLENDING: (&str, &str) = (
-    "out vec2 v_texcoord;
-out vec4 v_offset;
-void main() {
-    v_texcoord = corner();
-    vec4 offset;
-    SMAANeighborhoodBlendingVS(v_texcoord, offset);
-    v_offset = offset;
-    gl_Position = vec4(v_texcoord * 2.0 - 1.0, 0.0, 1.0);
-}",
-    "uniform SAMPLER_colorTex color_tex;
-uniform sampler2D blend_tex;
-in vec2 v_texcoord;
-in vec4 v_offset;
-out vec4 frag;
-void main() {
-    frag = SMAANeighborhoodBlendingPS(v_texcoord, v_offset, color_tex, blend_tex);
-}",
-);
 
 /// A pass's program, its metrics uniform, and its samplers with their filtering (nearest or not) and
 /// their texture's target.
@@ -185,7 +57,7 @@ impl Smaa {
             let (edges, blending) = picture_passes(gl, false)?;
             let weights = build(
                 gl,
-                WEIGHTS,
+                super::shaders::SMAA_WEIGHTS,
                 false,
                 false,
                 &[("edges_tex", false, ffi::TEXTURE_2D), ("area_tex", false, ffi::TEXTURE_2D), ("search_tex", true, ffi::TEXTURE_2D)],
@@ -213,7 +85,7 @@ impl Smaa {
         }
         let linear_edges = super::chain::side(&mut self.linear_edges, external);
         if linear && linear_edges.is_none() {
-            let built = renderer.with_context(|gl| build(gl, EDGES, external, true, &[("color_tex", false, picture_target(external))]))?;
+            let built = renderer.with_context(|gl| build(gl, super::shaders::SMAA_EDGES, external, true, &[("color_tex", false, picture_target(external))]))?;
             *linear_edges = Some(built.map_err(|e| format!("smaa: {e}"))?);
         }
         let linear_edges = if external { &self.linear_edges.1 } else { &self.linear_edges.0 };
@@ -240,8 +112,8 @@ impl Smaa {
 /// The two passes that read the picture, edges and blending, for an ordinary texture or an external one.
 fn picture_passes(gl: &ffi::Gles2, external: bool) -> Result<(Pass, Pass), String> {
     let color = picture_target(external);
-    let edges = build(gl, EDGES, external, false, &[("color_tex", false, color)])?;
-    let blending = build(gl, BLENDING, external, false, &[("color_tex", false, color), ("blend_tex", false, ffi::TEXTURE_2D)])?;
+    let edges = build(gl, super::shaders::SMAA_EDGES, external, false, &[("color_tex", false, color)])?;
+    let blending = build(gl, super::shaders::SMAA_BLENDING, external, false, &[("color_tex", false, color), ("blend_tex", false, ffi::TEXTURE_2D)])?;
     Ok((edges, blending))
 }
 
@@ -301,17 +173,10 @@ fn picture_target(external: bool) -> u32 {
 /// samples, linear light, are taken to PQ's signal (only the edges' pass reads them, through
 /// `SMAASamplePoint`).
 #[allow(unsafe_code)]
-fn build(gl: &ffi::Gles2, (vertex, fragment): (&str, &str), external: bool, linear: bool, samplers: &[(&str, bool, u32)]) -> Result<Pass, String> {
-    let (version, sampling) = match external {
-        true => ("#version 300 es\n#extension GL_OES_EGL_image_external_essl3 : require\n", SAMPLING_EXTERNAL),
-        false => ("#version 300 es\n", SAMPLING),
-    };
-    let perceive = if linear { PERCEIVE } else { "" };
-    let start = format!("{version}{HEADER}{sampling}{perceive}");
-    // The picture's declarations with its own sampler type.
-    let shader = SHADER.replace("SMAATexture2D(colorTex)", "SAMPLER_colorTex colorTex");
-    let vs = compile(gl, ffi::VERTEX_SHADER, &format!("{start}#define SMAA_INCLUDE_PS 0\n{shader}\n{TRIANGLE}{vertex}"))?;
-    let fs = compile(gl, ffi::FRAGMENT_SHADER, &format!("{start}#define SMAA_INCLUDE_VS 0\n{shader}\n{fragment}"))?;
+fn build(gl: &ffi::Gles2, pass: (&str, &str), external: bool, linear: bool, samplers: &[(&str, bool, u32)]) -> Result<Pass, String> {
+    let (vertex, fragment) = super::shaders::smaa(pass, external, linear);
+    let vs = compile(gl, ffi::VERTEX_SHADER, &vertex)?;
+    let fs = compile(gl, ffi::FRAGMENT_SHADER, &fragment)?;
     // SAFETY: GL on Smithay's current context, with the shaders compiled above.
     unsafe {
         let program = gl.CreateProgram();

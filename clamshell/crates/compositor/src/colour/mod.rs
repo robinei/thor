@@ -6,6 +6,7 @@ pub(crate) mod math;
 pub(crate) mod host;
 pub(crate) mod protocol;
 pub(crate) mod render;
+mod shaders;
 pub(crate) mod smaa;
 use clamshell_state::colour::ColourDescription;
 use smithay::reexports::wayland_protocols::wp::color_management::v1::server::{
