@@ -220,6 +220,11 @@ impl XdgShellHandler for Server {
         surface.send_repositioned(token);
     }
 }
+impl smithay::wayland::shell::xdg::dialog::XdgDialogHandler for Server {
+    fn dialog_hint_changed(&mut self, toplevel: ToplevelSurface, _: smithay::wayland::shell::xdg::dialog::ToplevelDialogHint) {
+        self.identity_changed(toplevel);
+    }
+}
 
 impl Server {
     fn identity_changed(&mut self, surface: ToplevelSurface) {

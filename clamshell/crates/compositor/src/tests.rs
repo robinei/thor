@@ -486,6 +486,8 @@ fn touching_a_home_arrow_switches_once_and_consumes_home_release() {
 #[path = "keyboard_tests.rs"]
 mod keyboard_tests;
 
+#[path = "dialog_tests.rs"]
+mod dialog_tests;
 #[path = "idle_tests.rs"]
 mod idle_tests;
 

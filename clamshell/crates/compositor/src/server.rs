@@ -181,6 +181,8 @@ impl Server {
         // composed (see `Server::release_timed_commits`). Mesa's Vulkan times FIFO frames by it.
         smithay::wayland::commit_timing::CommitTimingManagerState::new::<Self>(&dh);
         crate::x11::shell::install(&dh);
+        // Dialogs marked as such (GTK 4, Qt 6, SDL 3), whatever their parent: their role (see `Server::facts`).
+        smithay::wayland::shell::xdg::dialog::XdgDialogState::new::<Self>(&dh);
         let mut server = Self {
             clock,
             core,
@@ -338,12 +340,15 @@ impl Server {
     }
 
     pub fn facts(&self, surface: &ToplevelSurface, id: i64) -> Window {
-        let (app_id, title, parent) = with_states(surface.wl_surface(), |states| {
+        let (app_id, title, parent, dialog) = with_states(surface.wl_surface(), |states| {
             states
                 .data_map
                 .get::<XdgToplevelSurfaceData>()
                 .and_then(|data| data.lock().ok())
-                .map(|data| (data.app_id.clone().unwrap_or_default(), data.title.clone().unwrap_or_default(), data.parent.clone()))
+                .map(|data| {
+                    let dialog = data.dialog_hint != smithay::wayland::shell::xdg::dialog::ToplevelDialogHint::Unknown;
+                    (data.app_id.clone().unwrap_or_default(), data.title.clone().unwrap_or_default(), data.parent.clone(), dialog)
+                })
                 .unwrap_or_default()
         });
         let process = self
@@ -371,6 +376,7 @@ impl Server {
             unit: process.unit,
             pids: process.pids,
             limits,
+            role: if dialog { clamshell_state::session::presentation::WindowRole::Dialog } else { clamshell_state::session::presentation::WindowRole::Normal },
             ..Window::default()
         }
     }

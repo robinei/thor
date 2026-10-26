@@ -94,9 +94,9 @@ centred at its own size on black. The compositor reports a window's parent, size
 input through it. No window floats or is moved by hand.
 
 - **Most windows** accept any size and are fullscreen.
-- **A dialog** (a parent, or X11 `WM_TRANSIENT_FOR`) becomes the front of its parent's group, centred at its
-  own size on black, its parent not shown; closing it returns to the parent. One larger than the screen is
-  told the screen's size. Modal or not makes no difference: nothing beneath can be touched.
+- **A dialog** (a parent, `xdg_dialog_v1`, or X11 `WM_TRANSIENT_FOR` or a dialog window type) becomes the
+  front of its parent's group, centred at its own size on black, its parent not shown; closing it returns
+  to the parent. One larger than the screen is told the screen's size. Modal or not makes no difference: nothing beneath can be touched.
 - **Windows that can't change size** (minimum and maximum equal, or an X11 splash or utility window) are
   centred at their own size, sharp at 1:1; one too big for the screen is scaled down to fit.
 - **Windows that ignore their size** (mostly games rendering a fixed windowed resolution) are scaled to fit,
