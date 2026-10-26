@@ -100,12 +100,7 @@ pub fn start<S: Sink + Clone>(
     if !paths.has_user_systemd() {
         log::error!("no systemd user manager: ClamShell needs one to run apps and games (as services of their own)");
     }
-    // A thread started again after a panic is sent again what it lost.
-    let told = sink.clone();
-    crate::os::worker::on_restart(move |name| match clamshell_state::Thread::named(name) {
-        Some(thread) => drop(told.send(clamshell_state::Event::Restarted(thread))),
-        None => log::warn!("{name}: started again, unknown to the state"),
-    });
+    crate::os::worker::on_restart(restarts_told(sink.clone()));
     detached("clock", clock::spawn(sink.clone()));
     let status = started("status", status::spawn(backlights.clone(), sink.clone()));
     let metrics = started("metrics", metrics::spawn(sink.clone()));
@@ -193,5 +188,46 @@ pub fn start<S: Sink + Clone>(
         tuning,
         browse,
         files,
+    }
+}
+
+/// What is told of a thread started again after a panic: the state, as [`clamshell_state::Event::Restarted`],
+/// so that it sends the thread again what it lost.
+fn restarts_told<S: Sink>(sink: S) -> impl Fn(&'static str) + Send + 'static {
+    move |name| match clamshell_state::Thread::named(name) {
+        Some(thread) => drop(sink.send(clamshell_state::Event::Restarted(thread))),
+        None => log::warn!("{name}: started again, unknown to the state"),
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use clamshell_state::{Event, Thread};
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    /// A thread that panics is started again and the state is told, by the thread's name. The hook is
+    /// global and only this test sets it; other tests' threads that panic are named so that the state
+    /// doesn't know them, and are only logged.
+    #[test]
+    fn a_thread_started_again_after_a_panic_tells_the_state() {
+        let (tx, rx) = mpsc::channel();
+        crate::os::worker::on_restart(super::restarts_told(tx));
+        let (ran, runs) = mpsc::channel();
+        let worker = crate::os::worker::Worker::spawn("wifi", move |commands: &mpsc::Receiver<u8>| {
+            ran.send(()).unwrap();
+            if commands.recv() == Ok(1) {
+                panic!("the first command panics");
+            }
+        })
+        .unwrap();
+        runs.recv_timeout(Duration::from_secs(5)).unwrap();
+        worker.send(1);
+        assert_eq!(runs.recv_timeout(Duration::from_secs(5)), Ok(()), "started again");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let told = std::iter::from_fn(|| rx.recv_timeout(deadline.saturating_duration_since(Instant::now())).ok())
+            .find(|e| matches!(e, Event::Restarted(Thread::Wifi)));
+        assert!(told.is_some(), "the state is told");
     }
 }

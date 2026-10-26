@@ -540,7 +540,8 @@ else the settings'. Tests `the_refresh_rate_follows_a_launch_at_once_then_the_se
 ### A system thread started again (restart.rs)
 
 A system thread that panics is started again by `os::worker::restarted` and the wiring sends
-`Event::Restarted(thread)`. What the thread was carrying out is lost; what it was sent and still stands is
+`Event::Restarted(thread)` (tested end to end in the system crate's wiring,
+`a_thread_started_again_after_a_panic_tells_the_state`). What the thread was carrying out is lost; what it was sent and still stands is
 sent again, or what waits on it ends:
 
 - `idle --Restarted(Pad)--> [Keymap, PadRoute, PadActivity, Apply]` (the pad keeps its virtual devices
