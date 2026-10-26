@@ -28,7 +28,7 @@ FreezeUnit and ThawUnit).
   own: the tray (on a desktop its icons are the desktop's programs': shown, never moved or ended), sleep,
   and the hardware keys.
 
-ClamShell needs a systemd user manager: every launch runs in a scope of its own.
+ClamShell needs a systemd user manager: every launch is a service of its own.
 
 On the device the session is ClamShell's compositor as the user service `clamshell.service` (`clamshell
 --drm`, in `session.slice`). The first console logs in by itself (getty@tty1's autologin), and the login's
@@ -54,7 +54,7 @@ back once put right.
 
 | Started by | Examples | Where it runs | ClamShell |
 |---|---|---|---|
-| ClamShell | apps, games, emulators, files opened, Steam | a scope per launch, in the entry's slice (`app-graphical-clamshell-run-<key>.slice`, in `app-graphical.slice`) | its own |
+| ClamShell | apps, games, emulators, files opened, Steam | a service per launch, in the entry's slice (`app-graphical-clamshell-run-<key>.slice`, in `app-graphical.slice`) | its own |
 | Steam | its games, whether ClamShell or Steam's window started them | moved from Steam's scope into the game's own | its own, once moved |
 | Anything else, a program with a window or a tray icon | another program's child, a desktop launcher's, one started from a terminal | moved from its scope or unit (an app scope, a login session's) into one of the entry's | its own, once moved (device session) |
 | A systemd service | portals, the polkit agent, PipeWire, D-Bus activated services | its service | not touched: its windows are no entries |
@@ -66,33 +66,37 @@ back once put right.
 
 What runs is shown and controlled as entries (the dock's): one per program, each with a workspace.
 
-- A launch of ClamShell's is its child process in a scope of its own (`systemd-run --user --scope`; restarting
-  ClamShell doesn't end the scope, though a program with a window ends with its compositor), in its entry's
-  slice; its windows, found by the scope, go to the entry's workspace; an entry may run several (another tab
-  each). An entry runs while systemd lists a scope of it, from the user manager's signals: its launch's scope
-  appearing starts it, the last one gone ends it, its play recorded from its start to then (launches side by
-  side are one play; a video's place read then, as mpv left it). The launcher only starts launches, and says
-  so of one whose scope never came. A ClamShell started later finds the launches that run by their scopes, and
-  records their play from the start time in the scopes' names.
+- A launch of ClamShell's is a transient service of the user manager (`systemd-run --user`,
+  `clamshell-run-<key>-<secs>-<n>.service`): started once its program runs (`Type=exec`), running as long
+  as any of its processes does (`ExitType=cgroup`, as a launcher script's game outlives it), its output in
+  the journal as the unit's (`journalctl --user -u <unit>`), in its entry's slice. Restarting ClamShell
+  doesn't end it, though a program with a window ends with its compositor. Its windows, found by the unit,
+  go to the entry's workspace; an entry may run several (another tab each). An entry runs while systemd
+  lists a unit of it, from the user manager's signals: its launch's unit appearing starts it, the last one
+  gone ends it, its play recorded from its start to then (launches side by side are one play; a video's
+  place read then, as mpv left it). The launcher only starts launches, and says so of one systemd didn't
+  start (its program couldn't run). A ClamShell started later finds the launches that run by their units,
+  and records their play from the start time in the units' names.
 - A launch that hands its app over to a program already running (the Android runner's, to the Waydroid
   session) and ends: the entry runs on by its windows, found by their app id (`waydroid.<package>`),
   until the last one closes (or none came within 15 s).
 - A Steam game: Steam starts it under its launcher process (`reaper SteamLaunch AppId=<id>`, in Steam's
-  scope). The launch's own scope holds a follower (`clamshell --follow-steam <id>`): it moves that
-  launcher and what it started into the scope, and any later one for the game (a fresh Steam runs
+  unit). The launch's own service holds a follower (`clamshell --follow-steam <id>`): it moves that
+  launcher and what it started into the service, and any later one for the game (a fresh Steam runs
   Proton's install scripts first under one launcher, then the game under another), as long as one runs
   or did within 10 s (the first within 2 minutes: Steam may start or update first); then it ends, and
-  the scope with the game's last process. So the scope, and the entry, last as long as the game, also
+  the service with the game's last process. So the service, and the entry, last as long as the game, also
   across a ClamShell restarted. A game started from Steam's own window is found by its window
-  (`steam_app_<id>`; the app id says whose it is, though the process is in Steam's scope), which makes it
+  (`steam_app_<id>`; the app id says whose it is, though the process is in Steam's unit), which makes it
   a launch: its follower finds it running and moves it in the same way. Steam's Running state and its Stop are unaffected: Steam goes
   by its launcher process, not its cgroup.
 - A program ClamShell didn't start is found by its tray icon, or by a window no entry has; anything with
   a window is on the dock. Its entry: the library's desktop entry named as the icon's id or the window's
   app id, else one of its own (`tray:…`, `window:<app id>`). Its windows go to its workspace (shown if
   one was in front). In the device session its process and those it started are moved into a scope of
-  the entry's (systemd's StartTransientUnit with their PIDs, or AttachProcessesToUnit into one there
-  already: the scopes are delegated, which a user manager requires for that); once systemd lists it, the
+  the entry's, named as a launch's service is but `.scope`, since a service can't take in processes that
+  already run (systemd's StartTransientUnit with their PIDs, or AttachProcessesToUnit into one there
+  already: the units are delegated, which a user manager requires for that); once systemd lists it, the
   entry is a launch like any other, its windows found by the scope. Not moved: a process a systemd
   service runs (the service would lose it), or one that also has another entry's windows (a browser
   showing a file opened from the Files tab: moving it would take the other's windows too); such an entry
@@ -104,7 +108,7 @@ What runs is shown and controlled as entries (the dock's): one per program, each
 
 | Entry | Quit | Force kill |
 |---|---|---|
-| A launch (and anything moved into a scope of ours) | its windows asked to close (a "save changes?" window keeps it until answered); then, if it still runs, its slice stopped (SIGTERM, SIGKILL after systemd's timeout) | its slice killed |
+| A launch (and anything moved into a unit of ours) | its windows asked to close (a "save changes?" window keeps it until answered); then, if it still runs, its slice stopped (SIGTERM, SIGKILL after systemd's timeout) | its slice killed |
 | Handed over (Android) | its windows closed; the runner's `stop` once they are gone (`am force-stop`, its tasks removed) | the runner's `stop` at once |
 | Found, not moved | its windows closed; then its process asked to end (SIGTERM), in the device session | its process killed (device session) |
 | Found, sharing a process | its windows closed | nothing |
@@ -210,7 +214,7 @@ On the desktop (AMD GPU, PipeWire, Steam), in the nested session:
 - A program started through sway, not ClamShell (foot): on the dock, on its workspace, in front.
 
 In the VM, as the device's session (`tools/vm/vm-checks.py`, the process control checks): a game
-launched from shelf runs in a scope of its own and Quit ends it with one play recorded; a game behind
+launched from shelf runs as a service of its own and Quit ends it with one play recorded; a game behind
 shelf is frozen after the grace and thawed when shown; foot started from an app scope and from a login
 session (as over ssh) is found and moved into a scope of ours; a tray program (a Python
 StatusNotifierItem) is moved too; the clipboard's text outlives the program that set it.

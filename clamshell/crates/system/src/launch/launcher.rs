@@ -15,7 +15,6 @@ use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command as Process, Stdio};
 use std::sync::Arc;
-use std::time::Duration;
 
 use clamshell_state::{Event, Instance, Launch, LaunchEvent};
 use rustix::process::{Pid, Signal};
@@ -25,9 +24,6 @@ use crate::launch::job::{self, Job};
 use crate::launch::{scopes, steam};
 use crate::os::worker::{self, Worker};
 use crate::os::{cgroup, sys};
-
-/// How long a game's scope may take to appear.
-const GAME_START: Duration = Duration::from_secs(30);
 
 /// What the launcher is asked.
 pub enum Command {
@@ -62,8 +58,6 @@ pub enum Error {
     Job(job::Error),
     Units(scopes::Error),
     NoCommand,
-    /// The instance has no scope to follow the game by. Only apps' and games' instances have one.
-    NoScope,
     EmptyCommand,
 }
 
@@ -74,7 +68,6 @@ impl fmt::Display for Error {
             Error::Job(e) => write!(f, "{e}"),
             Error::Units(e) => write!(f, "{e}"),
             Error::NoCommand => write!(f, "no launch command"),
-            Error::NoScope => write!(f, "the instance has no scope"),
             Error::EmptyCommand => write!(f, "empty launch command"),
         }
     }
@@ -153,15 +146,7 @@ fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir:
         Err(e) => log::warn!("launcher: finding this program's path: {e}"),
     }
     let job = Job { unit: request.instance.name(), slice: request.instance.slice(), argv, env, workdir };
-    started(job::start(&job)?, request)
-}
-
-/// Waits for a job started for `request` until its scope is there: until then it may yet fail to start.
-pub(super) fn started(child: std::process::Child, request: &Request) -> Result<(), Error> {
-    job::reap(child);
-    let unit = request.instance.unit().ok_or(Error::NoScope)?;
-    scopes::appear(&unit, GAME_START)?;
-    Ok(())
+    Ok(job::start(&job)?)
 }
 
 /// Ends an entry's slice with all its launches. Normally the slice is stopped: systemd asks its processes
@@ -186,7 +171,7 @@ pub fn end_run(key: &str, force: bool) {
 /// scope of ours.
 pub fn adopt(instance: Instance, pid: u32) {
     let done = worker::detached("adopt", move || {
-        let Some(unit) = instance.unit() else {
+        let Some(unit) = instance.scope() else {
             return;
         };
         if !sys::same_process(pid) {
@@ -269,6 +254,7 @@ mod tests {
 
     use super::*;
     use std::sync::mpsc;
+    use std::time::Duration;
 
     fn config() -> Config {
         Config { watch_later: Vec::new(), sockets: std::env::temp_dir() }
@@ -316,6 +302,7 @@ mod tests {
 mod live {
     use super::*;
     use std::thread;
+    use std::time::Duration;
     use std::time::Instant;
 
     fn group_of(pid: u32) -> String {

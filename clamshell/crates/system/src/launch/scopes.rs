@@ -10,8 +10,7 @@ use std::convert::Infallible;
 use std::fmt;
 use std::io;
 use std::sync::mpsc::Receiver;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use clamshell_state::{Event, Instance};
 
@@ -19,7 +18,7 @@ use crate::os::dbus::{self, Bus, Message, Path, value};
 use crate::os::worker::{self, Changed, Ended, Service, lost_on};
 use crate::{Closed, Sink};
 
-const PATTERNS: [&str; 1] = ["clamshell-run-*.scope"];
+const PATTERNS: [&str; 2] = ["clamshell-run-*.service", "clamshell-run-*.scope"];
 
 /// How long to wait before trying the user manager again.
 const RETRY: Duration = Duration::from_secs(5);
@@ -49,8 +48,6 @@ pub enum Error {
     Bus(dbus::Error),
     /// The manager's signals ended because the bus connection closed.
     SignalsEnded,
-    /// A scope we waited for didn't appear in time.
-    DidNotStart(String),
 }
 
 impl fmt::Display for Error {
@@ -58,7 +55,6 @@ impl fmt::Display for Error {
         match self {
             Error::Bus(e) => write!(f, "{e}"),
             Error::SignalsEnded => write!(f, "the bus closed"),
-            Error::DidNotStart(unit) => write!(f, "{unit} didn't start"),
         }
     }
 }
@@ -255,22 +251,12 @@ fn thaw_now(bus: &mut Bus, unit: &str) {
     }
 }
 
-/// Waits for a scope to appear, within `appear`.
-pub fn appear(unit: &str, appear: Duration) -> Result<(), Error> {
-    let asked = Instant::now();
-    while !with_manager(|bus| Ok(loaded(bus, unit)))? {
-        if asked.elapsed() > appear {
-            return Err(Error::DidNotStart(unit.to_owned()));
-        }
-        thread::sleep(Duration::from_millis(200));
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod live {
     use super::*;
     use std::process::Command;
+    use std::thread;
+    use std::time::Instant;
 
     /// Needs a user session, so a desktop. Lists our scopes without changing anything. Run it by hand
     /// with `--ignored --nocapture`.
@@ -282,24 +268,21 @@ mod live {
         println!("{:?}", list(&mut bus).unwrap());
     }
 
-    /// Needs a user session, so a desktop. A scope we start shows in the list and is gone once it ends.
-    /// Starts a one-second `sleep` in a scope of its own. Run it by hand with `--ignored`.
+    /// Needs a user session, so a desktop. A launch's unit we start shows in the list and is gone once it
+    /// ends. Starts a one-second `sleep` as a service of its own. Run it by hand with `--ignored`.
     #[test]
-    #[ignore = "needs a user session; starts a scope"]
+    #[ignore = "needs a user session; starts a service"]
     #[allow(clippy::unwrap_used)]
-    fn a_scope_comes_and_goes() {
+    fn a_launch_comes_and_goes() {
         let mut bus = Bus::session().unwrap();
         let instance = Instance::Run { key: "unittest".into(), secs: u64::from(std::process::id()), n: 0 };
         let name = instance.name();
-        let mut child =
-            Command::new("systemd-run").args(["--user", "--scope", "--quiet", "--collect", &format!("--unit={name}"), "--", "sleep", "1"]).spawn().unwrap();
+        let mut child = Command::new("systemd-run").args(["--user", "--quiet", "--collect", &format!("--unit={name}"), "--", "sleep", "1"]).spawn().unwrap();
         let start = Instant::now();
         while !list(&mut bus).unwrap().contains(&instance) {
             assert!(start.elapsed() < Duration::from_secs(5), "listed");
             thread::sleep(Duration::from_millis(50));
         }
-        let unit = instance.unit().unwrap();
-        appear(&unit, Duration::from_secs(1)).unwrap();
         child.wait().unwrap();
         // It is gone from the list once its process has ended.
         let start = Instant::now();
@@ -307,6 +290,5 @@ mod live {
             assert!(start.elapsed() < Duration::from_secs(5), "gone");
             thread::sleep(Duration::from_millis(50));
         }
-        assert!(appear("clamshell-run-never-0-0.scope", Duration::from_millis(300)).is_err());
     }
 }

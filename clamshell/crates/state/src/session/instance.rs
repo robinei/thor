@@ -1,7 +1,9 @@
-//! The names ClamShell gives home groups, systemd scopes and slices.
+//! The names ClamShell gives home groups, systemd units and slices.
 //!
-//! A launch of a library entry, whether a game or an app, is a scope we started
-//! (`clamshell-run-<key>-<secs>-<n>.scope`). It is in the entry's slice
+//! A launch of a library entry, whether a game or an app, is a service we started
+//! (`clamshell-run-<key>-<secs>-<n>.service`), its output in the journal as the unit's. A program found
+//! running that we take as an entry's is a scope of the same kind of name (`….scope`), since a service
+//! can't take in processes that already run. Either is in the entry's slice
 //! (`app-graphical-clamshell-run-<key>.slice`), which is in the session's app slice; Quit and Force kill
 //! end the slice. All the entry's windows are on its workspace (`clamshell-run-<key>`), as tabs. `<key>` is
 //! the entry's key ([`clamshell_library::key_of`]), made of letters, digits and `_`. `<secs>-<n>` is the
@@ -18,8 +20,9 @@ use std::str::FromStr;
 const PREFIX: &str = "clamshell-";
 const RUN: &str = "clamshell-run-";
 /// The prefix of an entry's slice, which is named by the entry's key. The slice is in the session's slice
-/// for apps, uwsm's `app-graphical.slice`, which is stopped before the compositor as the session ends.
+/// for apps, `app-graphical.slice`, which thor-session stops as the session ends.
 pub const SLICE_PREFIX: &str = "app-graphical-clamshell-run-";
+const SERVICE: &str = ".service";
 const SCOPE: &str = ".scope";
 /// Steam's app id for a game's windows: `steam_app_<id>`.
 pub const STEAM_APP_PREFIX: &str = "steam_app_";
@@ -53,15 +56,19 @@ impl Instance {
         Some((key, secs, n))
     }
 
-    /// The launch whose scope `unit` (`<name>.scope`) is, if we started it.
-    pub fn from_unit(unit: &str) -> Option<Instance> {
-        Instance::parse(unit.strip_suffix(SCOPE)?).filter(|i| matches!(i, Instance::Run { .. }))
+    /// A unit's name without `.service` or `.scope`.
+    pub fn unit_name(unit: &str) -> Option<&str> {
+        unit.strip_suffix(SERVICE).or_else(|| unit.strip_suffix(SCOPE))
     }
 
-    /// Whether `unit` is the scope of a launch we started ([`Instance::from_unit`]), found without
-    /// allocating.
+    /// The launch whose unit `unit` (its service, or the scope of a program taken in) is, if it is ours.
+    pub fn from_unit(unit: &str) -> Option<Instance> {
+        Instance::parse(Instance::unit_name(unit)?).filter(|i| matches!(i, Instance::Run { .. }))
+    }
+
+    /// Whether `unit` is a launch's ([`Instance::from_unit`]), found without allocating.
     pub fn is_launch_unit(unit: &str) -> bool {
-        unit.strip_suffix(SCOPE).and_then(Instance::parse_run).is_some()
+        Instance::unit_name(unit).and_then(Instance::parse_run).is_some()
     }
 
     /// The file name, in the runtime dir, of the control socket of entry `key`'s launches. It is a
@@ -70,11 +77,11 @@ impl Instance {
         format!("{RUN}{key}.sock")
     }
 
-    /// The entry key in `name`, which is a launch's scope, with or without `.scope`, or an entry's
+    /// The entry key in `name`, which is a launch's unit, with or without its suffix, or an entry's
     /// workspace. It doesn't allocate.
     pub fn key_of(name: &str) -> Option<&str> {
         let rest = name.strip_prefix(RUN)?;
-        let rest = rest.strip_suffix(SCOPE).unwrap_or(rest);
+        let rest = Instance::unit_name(rest).unwrap_or(rest);
         let key = rest.split('-').next()?;
         (!key.is_empty()).then_some(key)
     }
@@ -84,17 +91,18 @@ impl Instance {
         format!("{RUN}{key}")
     }
 
-    /// The slice of the entry with `key`, which holds its launches' scopes and so all its processes.
+    /// The slice of the entry with `key`, which holds its launches' units and so all its processes.
     pub fn slice_of(key: &str) -> String {
         format!("{SLICE_PREFIX}{key}.slice")
     }
 
     /// Whether `unit` is a systemd service that a program runs in as part of the service, such as a portal
     /// or the polkit agent. Such a program's windows and processes belong to the service and aren't moved.
-    /// ClamShell's own unit doesn't count, because what ClamShell starts runs there until it is moved out.
-    /// That unit is `clamshell.service` on the device and `clamshell-nested.service` on the desktop.
+    /// ClamShell's own unit doesn't count, because what ClamShell starts runs there until it is moved out,
+    /// nor do our launches'. ClamShell's unit is `clamshell.service` on the device and
+    /// `clamshell-nested.service` on the desktop.
     pub fn is_service(unit: &str) -> bool {
-        unit.ends_with(".service") && unit != "clamshell.service" && unit != "clamshell-nested.service"
+        unit.ends_with(SERVICE) && unit != "clamshell.service" && unit != "clamshell-nested.service" && !Instance::is_launch_unit(unit)
     }
 
     /// Whether `name` is one of ours: a workspace or scope that ClamShell names, of a known kind or not.
@@ -102,7 +110,7 @@ impl Instance {
         name.starts_with(PREFIX)
     }
 
-    /// Its name: for a launch, its scope's without `.scope`, or else its workspace's.
+    /// Its name: for a launch, its unit's without the suffix, or else its workspace's.
     pub fn name(&self) -> String {
         self.to_string()
     }
@@ -123,8 +131,13 @@ impl Instance {
         }
     }
 
-    /// Its scope's unit name, for a launch.
+    /// The service a launch runs in.
     pub fn unit(&self) -> Option<String> {
+        matches!(self, Instance::Run { .. }).then(|| format!("{self}{SERVICE}"))
+    }
+
+    /// The scope a program found running is taken into, for a launch.
+    pub fn scope(&self) -> Option<String> {
         matches!(self, Instance::Run { .. }).then(|| format!("{self}{SCOPE}"))
     }
 
@@ -201,7 +214,8 @@ mod tests {
             assert!(i.is(&i.name()) && !i.is("clamshell-") && !i.is(&format!("{i}-1")), "{i}");
         }
         assert_eq!(run.name(), "clamshell-run-zelda_3fa2b1-1234-7");
-        assert_eq!(run.unit().as_deref(), Some("clamshell-run-zelda_3fa2b1-1234-7.scope"));
+        assert_eq!(run.unit().as_deref(), Some("clamshell-run-zelda_3fa2b1-1234-7.service"));
+        assert_eq!(run.scope().as_deref(), Some("clamshell-run-zelda_3fa2b1-1234-7.scope"));
         assert_eq!(run.slice().as_deref(), Some("app-graphical-clamshell-run-zelda_3fa2b1.slice"));
         assert_eq!(run.workspace(), "clamshell-run-zelda_3fa2b1");
         assert!(run.on("clamshell-run-zelda_3fa2b1") && !run.on(&run.name()) && !run.on("clamshell-run-zelda_3fa2b12"));
@@ -209,8 +223,10 @@ mod tests {
         assert_eq!(Instance::key_of("clamshell-run-zelda_3fa2b1"), Some("zelda_3fa2b1"));
         assert_eq!(Instance::key_of("clamshell-run-zelda_3fa2b1-1234-7.scope"), Some("zelda_3fa2b1"));
         assert_eq!(Instance::key_of("clamshell-shelf"), None);
-        assert_eq!(Instance::Shelf.unit(), None, "only a launch has a scope");
-        assert_eq!(Instance::from_unit("clamshell-run-x_1-5-0.scope").and_then(|i| i.key().map(str::to_owned)).as_deref(), Some("x_1"));
+        assert_eq!(Instance::Shelf.unit(), None, "only a launch has a unit");
+        assert_eq!(Instance::from_unit("clamshell-run-x_1-5-0.service").and_then(|i| i.key().map(str::to_owned)).as_deref(), Some("x_1"));
+        assert_eq!(Instance::from_unit("clamshell-run-x_1-5-0.scope").and_then(|i| i.key().map(str::to_owned)).as_deref(), Some("x_1"), "taken in");
+        assert!(!Instance::is_service("clamshell-run-x_1-5-0.service"), "a launch is no system service");
         assert_eq!(Instance::from_unit("clamshell-shelf.scope"), None);
         assert_eq!(Instance::parse("1"), None);
         assert!(Instance::Run { key: "x".into(), secs: 5, n: 10 }.order() > Instance::Run { key: "x".into(), secs: 5, n: 9 }.order());

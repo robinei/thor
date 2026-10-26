@@ -196,11 +196,11 @@ impl Session {
         self.top_window().is_some_and(|top| Instance::key_of(&top.workspace) == key) && self.windows.iter().any(|old| old.unit == window.unit)
     }
 
-    /// Whether `window` is one of launch `instance`'s: in its scope, of its entry by app id or process, or
+    /// Whether `window` is one of launch `instance`'s: in its unit, of its entry by app id or process, or
     /// a dialog of one on its workspace.
     fn of_launch(&self, instance: &Instance, window: &Window) -> bool {
         let running = self.running.iter().find(|r| Some(r.key.as_str()) == instance.key());
-        let in_scope = window.unit.as_deref().and_then(|unit| unit.strip_suffix(".scope")).is_some_and(|unit| instance.is(unit));
+        let in_scope = window.unit.as_deref().and_then(Instance::unit_name).is_some_and(|unit| instance.is(unit));
         let parent = window.parent.and_then(|id| self.window(id)).is_some_and(|parent| instance.on(&parent.workspace));
         in_scope || parent || running.is_some_and(|r| r.owns(window) || r.fathered(window))
     }
@@ -436,9 +436,7 @@ impl Session {
         let arrived = self
             .windows
             .iter()
-            .find(|w| {
-                instance.on(&w.workspace) && (outside || w.unit.as_deref().and_then(|unit| unit.strip_suffix(".scope")).is_some_and(|unit| instance.is(unit)))
-            })
+            .find(|w| instance.on(&w.workspace) && (outside || w.unit.as_deref().and_then(Instance::unit_name).is_some_and(|unit| instance.is(unit))))
             .map(|w| (w.id, w.down));
         if let Some((id, down)) = arrived {
             self.front_launch = None;

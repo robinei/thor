@@ -110,9 +110,9 @@ tests are in `docs/state-machines.md`.
 Each thread takes its own commands on a channel (`os::worker`); a thread that waits on devices is also
 woken by an eventfd. Services are reached over D-Bus (systemd, logind, timedated, UDisks2, NetworkManager,
 BlueZ, UPower), PipeWire through `pw-dump` and `wpctl`, the controller through evdev and uinput. Launches
-are ClamShell's child processes, each in a systemd scope of its own (`systemd-run --user --scope`), so
-what runs is systemd's to say: a launch is running while its scope is listed, and ClamShell can be
-restarted without losing track.
+are transient services of the user manager (`systemd-run --user`), each its own unit with its output in
+the journal as the unit's, so what runs is systemd's to say: a launch is running while its unit is
+listed, and ClamShell can be restarted without losing track.
 
 ## Rules that hold everywhere
 

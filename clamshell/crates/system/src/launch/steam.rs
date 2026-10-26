@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 use clamshell_state::Instance;
 
 use super::job::{self, Job};
-use super::launcher::{Error, Request, parents, started, with_descendants};
+use super::launcher::{Error, Request, parents, with_descendants};
 use super::scopes;
 use crate::os::{cgroup, sys};
 
@@ -48,7 +48,7 @@ pub(super) fn start(request: &Request, appid: u32) -> Result<(), Error> {
     let follower = std::env::current_exe()?.to_string_lossy().into_owned();
     let argv = vec![follower, "--follow-steam".to_owned(), appid.to_string()];
     let job = Job { unit: request.instance.name(), slice: request.instance.slice(), argv, env: vec![], workdir: None };
-    started(job::start(&job)?, request)
+    Ok(job::start(&job)?)
 }
 
 /// `clamshell --follow-steam <id>`, run in a Steam game's launch scope. It moves Steam's launcher for the
@@ -56,8 +56,8 @@ pub(super) fn start(request: &Request, appid: u32) -> Result<(), Error> {
 /// The first launcher must appear within [`STEAM_START`]. Then it ends. See the module docs.
 pub fn follow(appid: u32) {
     let marker = format!("AppId={appid}");
-    let Some(unit) = cgroup::unit_of(std::process::id()).filter(|u| u.ends_with(".scope")) else {
-        log::warn!("follow-steam: not in a scope of its own");
+    let Some(unit) = cgroup::unit_of(std::process::id()).filter(|u| Instance::is_launch_unit(u)) else {
+        log::warn!("follow-steam: not in a launch's unit");
         return;
     };
     let mut seen = Instant::now();
@@ -85,7 +85,7 @@ pub(super) fn ask_steam(request: &Request, appid: u32) -> Result<(), Error> {
         let displays = env.iter().filter(|(k, _)| k == "WAYLAND_DISPLAY" || k == "DISPLAY").cloned().collect();
         let job = Job { unit: instance.name(), slice: instance.slice(), argv, env: displays, workdir: None };
         log::info!("launcher: Steam isn't running: starting it in {}", job.unit);
-        job::reap(job::start(&job)?);
+        job::start(&job)?;
     } else {
         let mut steam = Process::new("steam");
         steam.args(argv.iter().skip(1)).envs(env.iter().map(|(k, v)| (k, v))).stdin(Stdio::null()).process_group(0);

@@ -1164,14 +1164,14 @@ class Checks:
         return front()
 
     def launch_and_quit(self):
-        scopes = lambda: [u for u in units("run-") if u.endswith(".scope")]
+        launches = lambda: [u for u in units("run-") if u.endswith(".service")]
         before = plays()
         if not self._launch_test_game():
             return
-        self.check("process control: a game launched from shelf runs in a scope of its own, in front", bool(scopes()), f"units {units('run-')}")
+        self.check("process control: a game launched from shelf runs as a service of its own, in front", bool(launches()), f"units {units('run-')}")
         time.sleep(2)
         control("window quit")
-        self.check("  Quit ends it (its scope gone)", until(lambda: not scopes(), 10), f"units {units('run-')}")
+        self.check("  Quit ends it (its service gone)", until(lambda: not launches(), 10), f"units {units('run-')}")
         self.check("  one play recorded", until(lambda: plays() == before + 1, 5), f"plays {before} -> {plays()}")
 
     def pause_hidden(self):
@@ -1188,14 +1188,14 @@ class Checks:
         control("tap launch")
         self.check("  thawed when shown again", until(lambda: state() == "running" and front() == game, 5), f"{state()!r}, front {front()!r}")
         control("window quit")
-        until(lambda: not [u for u in units("run-") if u.endswith(".scope")], 10)
+        until(lambda: not [u for u in units("run-") if u.endswith((".service", ".scope"))], 10)
 
     def _foot_outside(self, how):
         """foot started outside ClamShell (`how`: a command starting it): whether it came in front on its
         entry's workspace, and a reader of its process's cgroup."""
         sh("pkill -x foot || true")
         # (Gone, its entry ended, shelf in front: a window opening on an entry's workspace is that entry's.)
-        until(lambda: not sh("pgrep -x foot || true").strip() and not [u for u in units("run-foot") if u.endswith(".scope")]
+        until(lambda: not sh("pgrep -x foot || true").strip() and not [u for u in units("run-foot") if u.endswith((".service", ".scope"))]
               and front() == "clamshell-shelf", 10)
         sh(how)
         on = until(lambda: front().startswith("clamshell-run-foot_"), 10)
