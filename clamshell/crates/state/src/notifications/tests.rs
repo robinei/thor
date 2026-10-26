@@ -1,6 +1,6 @@
 use super::*;
 use crate::device::buttons::DeviceKey;
-use crate::device::idle::{IdleEvent, Stage};
+use crate::idle::{IdleEvent, Stage};
 use crate::settings::{BottomWhenIdle, Choice, Setting};
 use crate::testkit::{Applied, state};
 use crate::{Compositor, Event, State, Status};

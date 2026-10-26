@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use clamshell_state::device::account::AccountCommand;
-use clamshell_state::device::idle::IdleEvent;
+use clamshell_state::idle::IdleEvent;
 use clamshell_state::{Event, Reading};
 
 use crate::display::{refresh, screenshot};

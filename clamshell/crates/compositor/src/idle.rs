@@ -7,7 +7,7 @@
 use crate::server::Server;
 use clamshell_state::{
     Event,
-    device::idle::{IdleEvent, NOTIFY_AFTER},
+    idle::{IdleEvent, NOTIFY_AFTER},
 };
 use smithay::{
     backend::renderer::utils::with_renderer_surface_state,

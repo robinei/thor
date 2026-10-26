@@ -612,7 +612,7 @@ mod tests {
     /// for the screens' brightness, so they come back as they were, cycle after cycle.
     #[test]
     fn the_screens_come_back_from_dimming_at_the_brightness_they_had() {
-        use crate::device::idle::IdleEvent;
+        use crate::idle::IdleEvent;
         let mut s = State::new(crate::Init { device_session: true, ..crate::testkit::init() });
         s.applied(Event::tick(1000));
         s.applied(Event::Idle(IdleEvent::Watching(true)));
@@ -633,7 +633,7 @@ mod tests {
     /// A level set while the screens are dimmed is sent dimmed: the screens don't light up at full.
     #[test]
     fn a_level_set_while_dimmed_is_sent_dimmed() {
-        use crate::device::idle::IdleEvent;
+        use crate::idle::IdleEvent;
         let mut s = State::new(crate::Init { device_session: true, ..crate::testkit::init() });
         s.applied(Event::tick(1000));
         s.applied(Event::Idle(IdleEvent::Watching(true)));

@@ -31,7 +31,7 @@ impl State {
             // The volume, mute and brightness go to the levels, where a finger on a slider wins over the
             // reading.
             Reading::Status(status) => {
-                self.levels.read(status.volume, status.muted, status.brightness, self.idle.stage() >= crate::device::idle::Stage::Dimmed);
+                self.levels.read(status.volume, status.muted, status.brightness, self.idle.stage() >= crate::idle::Stage::Dimmed);
                 self.sys.read_status(status);
             }
             Reading::Clipboard(text) => self.bottom.read_clipboard(text),

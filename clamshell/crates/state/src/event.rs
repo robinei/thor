@@ -6,8 +6,8 @@ use crate::bottom::touch::Pointing;
 use std::sync::Arc;
 
 use crate::device::buttons::DeviceKey;
-use crate::device::idle::IdleEvent;
 use crate::id::Id;
+use crate::idle::IdleEvent;
 use crate::kit::list::ItemKey;
 use crate::levels::slider::Control;
 use crate::levels::{Audio, Level};

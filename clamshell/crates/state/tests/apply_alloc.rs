@@ -187,13 +187,9 @@ fn allocations_per_event() {
         });
         run(&name("focus moved by the pad"), s, &|i| Event::Pointer(PointerEvent::Focus(Id::Tab(if i % 2 == 0 { Tab::Volume } else { Tab::Wifi }))));
         run(&name("focus moved by the pad down a list"), s, &|i| Event::Pointer(PointerEvent::Focus(ListId::Wifi.row(if i % 2 == 0 { 0 } else { 7 }))));
-        run(&name("input on a device"), s, &|_| Event::Idle(clamshell_state::device::idle::IdleEvent::DeviceInput));
+        run(&name("input on a device"), s, &|_| Event::Idle(clamshell_state::idle::IdleEvent::DeviceInput));
         run(&name("the compositor quiet and busy"), s, &|i| {
-            Event::Idle(if i % 2 == 0 {
-                clamshell_state::device::idle::IdleEvent::CompositorQuiet
-            } else {
-                clamshell_state::device::idle::IdleEvent::CompositorInput
-            })
+            Event::Idle(if i % 2 == 0 { clamshell_state::idle::IdleEvent::CompositorQuiet } else { clamshell_state::idle::IdleEvent::CompositorInput })
         });
         let item = clamshell_state::session::tray::TrayItem {
             key: ":1.9/StatusNotifierItem".into(),

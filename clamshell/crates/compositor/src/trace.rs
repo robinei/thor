@@ -230,7 +230,7 @@ mod tests {
         assert_eq!(ring.records.front().map(|r| r.sequence), Some(44));
         assert_eq!(ring.records.back().map(|r| r.sequence), Some(299));
         for _ in 0..1000 {
-            ring.record(&Event::Idle(clamshell_state::device::idle::IdleEvent::DeviceInput), &state);
+            ring.record(&Event::Idle(clamshell_state::idle::IdleEvent::DeviceInput), &state);
         }
         assert_eq!(ring.records.len(), CAPACITY);
         assert_eq!(ring.records.capacity(), capacity);

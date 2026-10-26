@@ -202,7 +202,7 @@ fn the_screens_go_off_before_the_device_sleeps() {
     let mut s = State::new(Init { device_session: true, ..init() });
     s.ui_up();
     s.applied(Event::tick(1000));
-    s.applied(Event::Idle(crate::device::idle::IdleEvent::Watching(true)));
+    s.applied(Event::Idle(crate::idle::IdleEvent::Watching(true)));
     let fx = s.applied(Event::tick(1900));
     let off = fx.iter().position(|e| matches!(e, Effect::Compositor(Compositor::Outputs { top: false, .. })));
     let sleep = fx.iter().position(|e| *e == Effect::Sleep);
@@ -376,11 +376,11 @@ fn back_from_sleep_applies_the_settings_again_and_wakes_the_screens() {
     s.ui_up();
     s.applied(Reading::Status(Status { brightness: Some(60), ..Status::default() }).into());
     s.applied(Event::tick(1000));
-    s.applied(Event::Idle(crate::device::idle::IdleEvent::Watching(true)));
+    s.applied(Event::Idle(crate::idle::IdleEvent::Watching(true)));
     assert!(s.applied(Event::tick(1900)).contains(&Effect::Sleep));
     let fx = s.applied(Event::Resumed);
     let global = s.prefs().settings().global;
-    assert_eq!(s.idle().stage(), crate::device::idle::Stage::Awake);
+    assert_eq!(s.idle().stage(), crate::idle::Stage::Awake);
     assert!(fx.contains(&Effect::Apply { entry: None, settings: global }), "{fx:?}");
     assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: true })), "{fx:?}");
     assert!(fx.iter().any(|e| matches!(e, Effect::Brightness { level: 60, .. })), "undimmed: {fx:?}");
@@ -475,7 +475,7 @@ fn the_refresh_rate_goes_back_when_a_launch_fails() {
 /// with the bottom one as it is set.
 #[test]
 fn the_screens_power_is_sent_when_it_changes() {
-    use crate::device::idle::IdleEvent;
+    use crate::idle::IdleEvent;
     let mut s = state();
     s.applied(Event::tick(1000));
     s.applied(Event::Idle(IdleEvent::Watching(true)));

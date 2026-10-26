@@ -491,10 +491,10 @@ mod tests {
     fn a_late_kept_awake_leaves_the_screens_dimmed() {
         let mut s = crate::State::new(crate::Init { device_session: true, ..crate::testkit::init() });
         s.applied(crate::Event::tick(1000));
-        s.applied(crate::Event::Idle(crate::device::idle::IdleEvent::Watching(true)));
+        s.applied(crate::Event::Idle(crate::idle::IdleEvent::Watching(true)));
         s.applied(crate::Event::tick(1400));
-        assert!(s.idle().stage() >= crate::device::idle::Stage::Dimmed);
-        s.applied(crate::Event::Idle(crate::device::idle::IdleEvent::KeptAwake));
-        assert!(s.idle().stage() >= crate::device::idle::Stage::Dimmed, "{:?}", s.idle().stage());
+        assert!(s.idle().stage() >= crate::idle::Stage::Dimmed);
+        s.applied(crate::Event::Idle(crate::idle::IdleEvent::KeptAwake));
+        assert!(s.idle().stage() >= crate::idle::Stage::Dimmed, "{:?}", s.idle().stage());
     }
 }

@@ -264,7 +264,7 @@ bottom screen to open the windows' tab and turn on (`Bottom::show_below`).
 | settle: dimmed after 60 s untouched, unless windows are shown | `the_bottom_screen_dims_untouched_and_lights_when_used` |
 | Wake tap sets `woken`; a game starting resets it | `dark_for_a_game_…`, `a_game_can_start_the_pad_mouse_…`, `a_game_starting_lets_a_woken_screen_go_dark_again`; touch or pad focus don't wake a dark screen (kept by decision, S16 in the history notes) |
 
-## Idle and sleep (device/idle.rs)
+## Idle and sleep (idle.rs)
 
 State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`, `woke_at`,
 `sleep_not_before`. The stage is recomputed every settle from the time idle and the policy.

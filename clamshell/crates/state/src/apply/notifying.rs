@@ -2,7 +2,7 @@
 //! bottom screen is lit, and a tap on one is a use of that screen (see [`crate::notifications`]).
 
 use crate::State;
-use crate::device::idle::Stage;
+use crate::idle::Stage;
 use crate::notifications::{CloseReason, Notification, NotificationEvent, NotificationId, Urgency};
 use crate::out::Out;
 

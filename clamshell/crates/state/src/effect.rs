@@ -50,7 +50,7 @@ pub enum Effect {
     /// `pause` or `resume` (see [`crate::session::background`]).
     RunnerCommand(Vec<String>),
     /// Run a runner's `awake` command, which says whether its app on screen keeps the screen on. The
-    /// answer comes back as [`crate::device::idle::IdleEvent::KeptAwake`].
+    /// answer comes back as [`crate::idle::IdleEvent::KeptAwake`].
     AskAwake(Vec<String>),
     /// Freeze or thaw an entry's slice, which holds all its launches' processes (see
     /// [`crate::session::background`]).

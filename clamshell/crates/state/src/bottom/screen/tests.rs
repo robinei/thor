@@ -171,7 +171,7 @@ fn on_battery_the_untouched_bottom_screen_goes_off_and_a_touch_brings_it_back() 
 
 #[test]
 fn off_by_itself_as_the_screens_go_off_it_goes_off_with_them_and_stays_off() {
-    use crate::device::idle::IdleEvent;
+    use crate::idle::IdleEvent;
     let mut s = state();
     on_battery(&mut s, true);
     s.applied(Event::tick(1000));

@@ -14,7 +14,6 @@
 pub mod account;
 pub mod buttons;
 pub mod display;
-pub mod idle;
 pub mod sticks;
 
 use crate::DeviceId;

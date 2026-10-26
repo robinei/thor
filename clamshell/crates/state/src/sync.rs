@@ -8,8 +8,8 @@ use crate::Compositor;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::device::idle::Stage;
 use crate::effect::{Effect, Watch};
+use crate::idle::Stage;
 use crate::keymap::screens::Keymapping;
 use crate::out::Out;
 use crate::settings::{Setting, Values};

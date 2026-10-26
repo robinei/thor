@@ -15,7 +15,8 @@
 //! - [`levels`]: volume and brightness, and the slider that sets them;
 //! - [`radios`]: Wi-Fi and Bluetooth;
 //! - [`settings`]: the settings table and panel, the environment variables, and the fan mode;
-//! - [`device`]: the Device view, the account, stick calibration, the device buttons, and idle;
+//! - [`device`]: the Device view, the account, stick calibration, and the device buttons;
+//! - [`idle`]: the screens dimmed and off, and sleep, with no input ([`Idle`]);
 //! - [`status`]: the system readings ([`Sys`]), covering status, metrics, the battery and the time;
 //! - [`notifications`]: the desktop notifications shown over the bottom screen ([`Notifications`]);
 //! - [`keymap`]: keymaps and their screens;
@@ -54,6 +55,7 @@ pub mod device;
 mod effect;
 mod event;
 mod id;
+pub mod idle;
 pub mod keymap;
 pub mod kit;
 pub mod levels;
@@ -82,7 +84,7 @@ use std::sync::Arc;
 
 use crate::bottom::keyboard::Keyboard;
 use crate::bottom::notice::NoticeKind;
-use crate::device::idle::Idle;
+use crate::idle::Idle;
 use crate::keymap::screens::Keymapping;
 use crate::kit::debounce::Debounce;
 use crate::nav::lists::Scrolls;
@@ -336,7 +338,7 @@ impl State {
         }
     }
 
-    pub fn idle(&self) -> &crate::device::idle::Idle {
+    pub fn idle(&self) -> &crate::idle::Idle {
         &self.idle
     }
 
@@ -544,7 +546,7 @@ impl State {
         self.radios.follow(self.clock.mono());
         // Sleep only in the device's own session. A program in front doesn't hold it off; one playing a
         // video asks the compositor to keep the screen on.
-        let policy = crate::device::idle::Policy::of(&self.prefs.settings().global, self.session.device_session());
+        let policy = crate::idle::Policy::of(&self.prefs.settings().global, self.session.device_session());
         let refreshing = self.device.calibrating();
         self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), out);
         let changed = self.session.follow_program(self.clock.mono());
