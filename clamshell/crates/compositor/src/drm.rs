@@ -55,6 +55,8 @@ struct Screen {
     interval: Duration,
     /// A frame is queued and its flip not yet seen.
     pending: bool,
+    /// When the frame pending was queued (see [`flip_lost`]).
+    queued_at: Option<Instant>,
     /// The scene changed in the screen's part since its last frame.
     dirty: bool,
     /// The commits its last frame callbacks answered, and when an idle screen may send the next ones.
@@ -206,6 +208,7 @@ pub fn run(
             transform: transform(profile.screen(role).rotation),
             interval,
             pending: false,
+            queued_at: None,
             dirty: true,
             answered: 0,
             next_callbacks: None,
@@ -304,6 +307,7 @@ pub fn run(
                 for screen in &mut drawing.screens {
                     screen.surface.reset_buffers();
                     screen.pending = false;
+                    screen.queued_at = None;
                 }
                 drawing.pipeline.redraw_all();
                 step(drawing, server, &mut *capture.borrow_mut(), Instant::now());
@@ -413,6 +417,7 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
         return;
     };
     screen.pending = false;
+    screen.queued_at = None;
     let states = match screen.surface.frame_submitted() {
         Ok(states) => states,
         Err(error) => {
@@ -463,9 +468,19 @@ fn step(
         }
     } else {
         server.frame();
+        // Buffers wait for their import until a compose; with the screens off a client would wait too.
+        server.import_dmabufs(&mut drawing.renderer);
     }
     let composed = server.pacing.commits;
     let mut due: Option<Instant> = timed.flatten();
+    for screen in &mut drawing.screens {
+        if flip_lost(screen.pending, screen.queued_at, now) {
+            log::warn!("drm: {:?} screen: no flip {} ms after its frame: drawn again", screen.role, FLIP_LOST.as_millis());
+            screen.surface.reset_buffers();
+            (screen.pending, screen.queued_at, screen.dirty) = (false, None, true);
+        }
+        due = earlier(due, screen.queued_at.filter(|_| screen.pending).map(|at| at + FLIP_LOST));
+    }
     for index in 0..drawing.screens.len() {
         let Some(screen) = drawing.screens.get_mut(index) else {
             continue;
@@ -490,6 +505,15 @@ fn step(
         }
     }
     after_compose(due, composed, server.pacing.commits, now)
+}
+
+/// How long a queued frame waits for its flip before it is taken as lost (the driver never answered):
+/// the screen would otherwise never present again, with the loop still turning for the watchdog.
+const FLIP_LOST: Duration = Duration::from_secs(1);
+
+/// Whether the frame `pending` since `queued` lost its flip by `now`.
+fn flip_lost(pending: bool, queued: Option<Instant>, now: Instant) -> bool {
+    pending && queued.is_some_and(|at| now >= at + FLIP_LOST)
 }
 
 /// When the loop wakes next, `due` as the screens' turns say, with `composed` the commit count composed
@@ -685,6 +709,7 @@ fn present(drawing: &mut Drawing, server: &Server, index: usize) -> Result<(), E
     screen.surface.queue_buffer(Some(sync), None, states.clone()).map_err(|e| format!("{:?} screen: {e}", screen.role))?;
     server.frame_queued(states, Some(screen.role == ScreenRole::Bottom));
     screen.pending = true;
+    screen.queued_at = Some(Instant::now());
     screen.dirty = false;
     screen.answered = server.pacing.commits;
     Ok(())
@@ -760,6 +785,15 @@ mod tests {
         assert_eq!(super::nearest(&rates, |r| *r, 100), Some(&90), "the nearer");
         assert_eq!(super::nearest(&rates, |r| *r, 75), Some(&60), "as near as 90: the first");
         assert_eq!(super::nearest(&[] as &[u32], |r| *r, 60), None);
+    }
+
+    #[test]
+    fn a_frame_without_its_flip_for_a_second_is_lost() {
+        let now = Instant::now();
+        assert!(!flip_lost(true, Some(now), now + FLIP_LOST.saturating_sub(Duration::from_millis(1))));
+        assert!(flip_lost(true, Some(now), now + FLIP_LOST));
+        assert!(!flip_lost(false, Some(now), now + FLIP_LOST), "flipped");
+        assert!(!flip_lost(true, None, now + FLIP_LOST));
     }
 
     const IDLE: Timing = Timing { pending: false, dirty: false, on: true, held: None, answered: true, next_callbacks: None };
