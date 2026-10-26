@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
-use crate::server::{ClientState, Process, Server};
+use crate::clients::{ClientState, Process};
+use crate::server::Server;
 use clamshell_state::{
     Init, State,
     colour::{ColourDescription, ColourLuminance, ColourPrimaries, TransferFunction},

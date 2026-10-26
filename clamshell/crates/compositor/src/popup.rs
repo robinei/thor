@@ -108,7 +108,7 @@ impl Server {
         for index in 0..self.windows.len() {
             let current = self.windows.get(index).and_then(|window| self.visible(window.id).then(|| self.geometry(window.id)).flatten());
             if let Some(window) = self.windows.get_mut(index) {
-                window.window.dismiss_x11_popups(&mut self.x11_popup_dismiss, |popup| {
+                window.window.dismiss_x11_popups(&mut self.x11.popup_dismiss, |popup| {
                     !smithay::reexports::wayland_server::Resource::is_alive(&popup.surface)
                         || current != Some(popup.geometry)
                         || (popup.input && focus != Some(window.id))
@@ -119,7 +119,7 @@ impl Server {
     pub(crate) fn dismiss_x11_menus_outside(&mut self, surface: Option<&WlSurface>) {
         for window in &mut self.windows {
             if !surface.is_some_and(|surface| window.window.popup_surface(surface)) {
-                window.window.dismiss_x11_popups(&mut self.x11_popup_dismiss, |popup| popup.input);
+                window.window.dismiss_x11_popups(&mut self.x11.popup_dismiss, |popup| popup.input);
             }
         }
     }

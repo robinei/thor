@@ -16,8 +16,9 @@ use smithay::{
 
 use crate::{
     base::Base,
+    clients::Process,
     render::{self, Overlays, UiFrame},
-    server::{Process, Server},
+    server::Server,
 };
 
 /// Runs the experimental nested compositor. Launch environments are scoped to its socket; the

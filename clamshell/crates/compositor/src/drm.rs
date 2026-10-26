@@ -36,9 +36,10 @@ use smithay::{
 
 use crate::{
     base::Base,
+    clients::Process,
     colour::render::Pipeline,
     render::{self, Overlays, UiFrame},
-    server::{Process, Server},
+    server::Server,
 };
 
 /// One of the two screens: its connector's CRTC, its swapchain, and where it is in the scene.
@@ -168,7 +169,7 @@ pub fn run(
     // Explicit sync, where the GPU can wait on a timeline point by an eventfd; without it, clients' buffers
     // are waited on by their implicit fences (see `CompositorHandler::new_surface`).
     if smithay::wayland::drm_syncobj::supports_syncobj_eventfd(&sync_fd) {
-        server.syncobj = Some(smithay::wayland::drm_syncobj::DrmSyncobjState::new::<Server>(&server.dh, sync_fd));
+        server.protocols.syncobj = Some(smithay::wayland::drm_syncobj::DrmSyncobjState::new::<Server>(&server.dh, sync_fd));
         log::info!("drm: explicit sync offered");
     } else {
         log::info!("drm: no syncobj eventfd on {}: no explicit sync, buffers' implicit fences only", gpu.display());
@@ -458,14 +459,14 @@ fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(
     } else {
         server.frame();
     }
-    let composed = server.commits;
+    let composed = server.pacing.commits;
     let mut due: Option<Instant> = timed.flatten();
     for index in 0..drawing.screens.len() {
         let Some(screen) = drawing.screens.get_mut(index) else {
             continue;
         };
         let down = screen.role == ScreenRole::Bottom;
-        let turn = screen_turn(Timing::of(screen, server.commits), now);
+        let turn = screen_turn(Timing::of(screen, server.pacing.commits), now);
         if turn.send_held {
             screen.held = server.frame_callbacks(Some(down), screen.interval, now);
             due = earlier(due, screen.held);
@@ -476,7 +477,7 @@ fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(
                 log::warn!("drm: drawing: {error}");
             }
         } else if turn.answer {
-            screen.answered = server.commits;
+            screen.answered = server.pacing.commits;
             screen.next_callbacks = Some(now + screen.interval);
             screen.held = server.frame_callbacks(Some(down), screen.interval, now);
             // A callback held back here is due later too (a FIFO client's empty commit, under a cap).
@@ -485,7 +486,7 @@ fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(
     }
     // Commits let through after composing (a FIFO barrier the cap let go) are composed at once, not at
     // the next wake-up for something else.
-    if server.commits != composed {
+    if server.pacing.commits != composed {
         due = Some(now);
     }
     due
@@ -659,7 +660,7 @@ fn present(drawing: &mut Drawing, server: &Server, index: usize) -> Result<(), E
     server.frame_queued(states, Some(screen.role == ScreenRole::Bottom));
     screen.pending = true;
     screen.dirty = false;
-    screen.answered = server.commits;
+    screen.answered = server.pacing.commits;
     Ok(())
 }
 

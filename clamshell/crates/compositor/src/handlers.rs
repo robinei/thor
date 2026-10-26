@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use clamshell_state::WindowEvent;
 use smithay::{
     backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state},
-    desktop::{PopupKind, WindowSurfaceType},
+    desktop::PopupKind,
     input::{Seat, SeatHandler, SeatState},
     reexports::wayland_server::{
         Client, Resource,
@@ -26,11 +26,12 @@ use smithay::{
     },
 };
 
-use crate::server::{ClientState, Server};
+use crate::clients::ClientState;
+use crate::server::Server;
 
 impl CompositorHandler for Server {
     fn compositor_state(&mut self) -> &mut CompositorState {
-        &mut self.compositor
+        &mut self.protocols.compositor
     }
     /// A commit with a new dmabuf waits until the buffer is ready: its explicit sync acquire point is
     /// signalled, or its implicit fence when it has none. Composed earlier, the GPU would wait for the
@@ -102,7 +103,7 @@ impl CompositorHandler for Server {
         let covered = covers();
         on_commit_buffer_handler::<Self>(surface);
         let picture_may_move = covers() != covered;
-        self.commits = self.commits.wrapping_add(1);
+        self.pacing.commits = self.pacing.commits.wrapping_add(1);
         let id = smithay::backend::renderer::element::Id::from_wayland_resource(surface);
         let current = crate::colour::protocol::current(surface);
         let previous = match current.clone() {
@@ -161,7 +162,7 @@ impl BufferHandler for Server {
 }
 impl ShmHandler for Server {
     fn shm_state(&self) -> &ShmState {
-        &self.shm
+        &self.protocols.shm
     }
 }
 impl OutputHandler for Server {
@@ -183,7 +184,7 @@ impl smithay::wayland::fractional_scale::FractionalScaleHandler for Server {
 
 impl XdgShellHandler for Server {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
-        &mut self.shell
+        &mut self.protocols.shell
     }
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         log::debug!("compositor: a toplevel on {:?}", surface.wl_surface().id());
@@ -241,21 +242,6 @@ impl Server {
             self.core.handle(WindowEvent::Changed(self.facts(&surface, id)).into());
         }
     }
-
-    pub fn hit(&self, pos: smithay::utils::Point<f64, smithay::utils::Logical>) -> Option<crate::input::Hit> {
-        self.windows.iter().rev().filter(|w| w.mapped && self.visible(w.id)).find_map(|client| {
-            let geometry = self.geometry(client.id)?;
-            if !geometry.viewport.to_f64().contains(pos) {
-                return None;
-            }
-            let location = geometry.surface_coords(pos);
-            let (surface, origin) = client.window.surface_under(location, WindowSurfaceType::ALL)?;
-            if client.window.root().as_ref() == Some(&surface) && !geometry.native.to_f64().contains(location) {
-                return None;
-            }
-            Some(crate::input::Hit { window: client.id, surface, location, origin: origin.to_f64() })
-        })
-    }
 }
 
 impl SeatHandler for Server {
@@ -263,7 +249,7 @@ impl SeatHandler for Server {
     type PointerFocus = WlSurface;
     type TouchFocus = WlSurface;
     fn seat_state(&mut self) -> &mut SeatState<Self> {
-        &mut self.seats
+        &mut self.protocols.seats
     }
     fn touch_down_grab(&mut self, start: smithay::input::touch::GrabStartData<Self>) -> impl smithay::input::touch::TouchGrab<Self> {
         crate::touch::ContactGrab::new(start)
@@ -285,7 +271,7 @@ impl SelectionHandler for Server {
         source: Option<smithay::wayland::selection::SelectionSource>,
         _seat: Seat<Self>,
     ) {
-        self.x11_selections.changed(target, source);
+        self.x11.selections.changed(target, source);
     }
     fn send_selection(
         &mut self,
@@ -295,19 +281,19 @@ impl SelectionHandler for Server {
         _seat: Seat<Self>,
         origin: &u64,
     ) {
-        self.x11_selections.read(target, mime, fd, *origin);
+        self.x11.selections.read(target, mime, fd, *origin);
     }
 }
 impl DataDeviceHandler for Server {
     fn data_device_state(&mut self) -> &mut DataDeviceState {
-        &mut self.data_device
+        &mut self.protocols.data_device
     }
 }
 impl WaylandDndGrabHandler for Server {}
 
 impl smithay::wayland::drm_syncobj::DrmSyncobjHandler for Server {
     fn drm_syncobj_state(&mut self) -> Option<&mut smithay::wayland::drm_syncobj::DrmSyncobjState> {
-        self.syncobj.as_mut()
+        self.protocols.syncobj.as_mut()
     }
 }
 
@@ -315,12 +301,12 @@ smithay::delegate_dispatch2!(Server);
 
 impl smithay::wayland::selection::primary_selection::PrimarySelectionHandler for Server {
     fn primary_selection_state(&mut self) -> &mut smithay::wayland::selection::primary_selection::PrimarySelectionState {
-        &mut self.primary_selection
+        &mut self.protocols.primary_selection
     }
 }
 impl smithay::wayland::selection::ext_data_control::DataControlHandler for Server {
     fn data_control_state(&mut self) -> &mut smithay::wayland::selection::ext_data_control::DataControlState {
-        &mut self.data_control
+        &mut self.protocols.data_control
     }
 }
 

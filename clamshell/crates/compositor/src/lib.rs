@@ -6,6 +6,7 @@
 
 mod activation;
 mod base;
+mod clients;
 mod colour;
 mod cursor;
 mod dmabuf;
@@ -18,21 +19,23 @@ mod input;
 mod keyboard;
 mod nested;
 mod notify;
+mod pacing;
 mod pointer;
 mod popup;
-mod presentation;
+mod protocols;
 mod render;
 mod server;
 mod surface;
 mod touch;
 pub mod trace;
+mod windows;
 mod x11;
 
 use smithay::reexports::calloop::channel;
 
+pub use clients::Process;
 pub use drm::run as run_drm;
 pub use nested::run;
-pub use server::Process;
 
 #[cfg(test)]
 mod tests;

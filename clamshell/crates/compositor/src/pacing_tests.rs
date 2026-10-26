@@ -125,14 +125,14 @@ fn a_barrier_goes_once_its_frame_is_shown_and_a_timed_commit_at_its_time() {
                     assert!(!barrier(&server), "let go once it is shown");
                 }
                 Step::Timed => {
-                    let commits = server.commits;
+                    let commits = server.pacing.commits;
                     let held = server.release_timed_commits(Duration::from_secs(500).into());
                     assert_eq!(held.map(Duration::from), Some(Duration::from_secs(1000)), "held until its time");
                     display.dispatch_clients(&mut server).unwrap();
-                    assert_eq!(server.commits, commits, "not applied before");
+                    assert_eq!(server.pacing.commits, commits, "not applied before");
                     assert_eq!(server.release_timed_commits(Duration::from_secs(1000).into()), None, "let go at its time");
                     display.dispatch_clients(&mut server).unwrap();
-                    assert!(server.commits > commits, "applied once let go");
+                    assert!(server.pacing.commits > commits, "applied once let go");
                 }
             }
             steps_seen += 1;

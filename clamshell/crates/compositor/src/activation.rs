@@ -15,13 +15,13 @@ const TOKEN_LIFETIME: Duration = Duration::from_secs(5);
 
 impl Server {
     pub(crate) fn expire_activation_tokens(&mut self, now: Instant) {
-        self.activation.retain_tokens(|_, data| now.saturating_duration_since(data.timestamp) < TOKEN_LIFETIME);
+        self.protocols.activation.retain_tokens(|_, data| now.saturating_duration_since(data.timestamp) < TOKEN_LIFETIME);
     }
 }
 
 impl XdgActivationHandler for Server {
     fn activation_state(&mut self) -> &mut XdgActivationState {
-        &mut self.activation
+        &mut self.protocols.activation
     }
 
     fn token_created(&mut self, _: XdgActivationToken, data: XdgActivationTokenData) -> bool {
@@ -47,7 +47,7 @@ impl XdgActivationHandler for Server {
 
     fn request_activation(&mut self, token: XdgActivationToken, data: XdgActivationTokenData, surface: WlSurface) {
         // Consume even a rejected request, so a token never grants repeated focus changes.
-        if !self.activation.remove_token(&token) {
+        if !self.protocols.activation.remove_token(&token) {
             return;
         }
         if data.timestamp.elapsed() >= TOKEN_LIFETIME || self.core.state().session().keyboard_focus().is_none() {

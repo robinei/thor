@@ -16,7 +16,8 @@ use smithay::{
     wayland::socket::ListeningSocketSource,
 };
 
-use crate::server::{Process, Server};
+use crate::clients::Process;
+use crate::server::Server;
 
 pub(crate) struct Base {
     pub event_loop: EventLoop<'static, Server>,
@@ -72,7 +73,6 @@ impl Base {
     pub fn run(self, start: impl FnOnce(EventSender, crate::Displays), mut host: impl FnMut(&mut Server, Instant) -> Option<Instant>) -> Result<(), Error> {
         let Base { mut event_loop, mut server, sender } = self;
         let mut x11 = crate::x11::Supervisor::new(event_loop.handle())?;
-        server.x11_display = Some(x11.display());
         let runtime = std::env::var_os("XDG_RUNTIME_DIR").ok_or("compositor: XDG_RUNTIME_DIR is missing")?;
         let socket = std::path::PathBuf::from(runtime).join(&server.socket);
         start(sender, crate::Displays { socket, wayland: server.socket.clone(), x11: x11.display() });
@@ -87,7 +87,7 @@ impl Base {
                 .deadline()
                 .into_iter()
                 .chain(server.cursor_activity.deadline(now))
-                .chain(server.frames_due)
+                .chain(server.pacing.frames_due)
                 .chain(x11.deadline())
                 .chain(host_deadline)
                 .chain(notifier.deadline())

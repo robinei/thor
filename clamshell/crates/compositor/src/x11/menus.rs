@@ -27,7 +27,7 @@ impl Wm {
     }
     pub(super) fn settle_menus(&mut self, wire: &mut Transport, server: &mut Server) -> io::Result<()> {
         server.sync_x11_popups();
-        for id in server.x11_popup_dismiss.drain(..) {
+        for id in server.x11.popup_dismiss.drain(..) {
             if let Some(menu) = self.windows.iter_mut().find(|w| w.id == id && w.override_redirect && w.wants_map) {
                 wire.request(UnmapWindowRequest { window: menu.xid }, 0, false)?;
                 menu.wants_map = false;
@@ -47,7 +47,7 @@ impl Wm {
                 let id = menu.id;
                 wire.request(UnmapWindowRequest { window: menu.xid }, 0, false)?;
                 for window in &mut server.windows {
-                    window.window.dismiss_x11_popups(&mut server.x11_popup_dismiss, |popup| popup.id == id);
+                    window.window.dismiss_x11_popups(&mut server.x11.popup_dismiss, |popup| popup.id == id);
                 }
                 if let Some(menu) = self.windows.get_mut(index) {
                     menu.wants_map = false;

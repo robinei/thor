@@ -3,11 +3,7 @@ use super::{
     properties::{Atoms, NAMES, PROPERTIES, Properties},
     transport::Transport,
 };
-use crate::{
-    Process,
-    server::{ClientWindow, Server},
-    surface::Surface,
-};
+use crate::{Process, server::Server, surface::Surface, windows::ClientWindow};
 use clamshell_state::{WindowEvent, session::presentation::WindowLayout};
 use smithay::{
     backend::renderer::utils::with_renderer_surface_state,
@@ -543,10 +539,10 @@ impl Wm {
                         w.configured = None;
                         for client in &mut server.windows {
                             let parent = client.id == id;
-                            client.window.dismiss_x11_popups(&mut server.x11_popup_dismiss, |popup| parent || popup.id == id);
+                            client.window.dismiss_x11_popups(&mut server.x11.popup_dismiss, |popup| parent || popup.id == id);
                         }
                         server.windows.retain(|v| v.id != id);
-                        server.x11_changes.retain(|v| v.id != id);
+                        server.x11.changes.retain(|v| v.id != id);
                         if opened {
                             server.core.handle(WindowEvent::Closed(id).into());
                         }
@@ -600,9 +596,9 @@ impl Wm {
         self.windows.retain(|w| w.id != id);
         for client in &mut server.windows {
             let parent = client.id == id;
-            client.window.dismiss_x11_popups(&mut server.x11_popup_dismiss, |popup| parent || popup.id == id);
+            client.window.dismiss_x11_popups(&mut server.x11.popup_dismiss, |popup| parent || popup.id == id);
         }
-        server.x11_changes.retain(|facts| facts.id != id);
+        server.x11.changes.retain(|facts| facts.id != id);
         server.windows.retain(|w| w.id != id);
         if server.core.state().session().window(id).is_some() {
             server.core.handle(WindowEvent::Closed(id).into());
@@ -718,7 +714,7 @@ impl Wm {
         Ok(())
     }
     fn settle_close(&mut self, wire: &mut Transport, server: &mut Server) -> io::Result<()> {
-        for id in server.x11_close.drain(..) {
+        for id in server.x11.close.drain(..) {
             if let Some(w) = self.windows.iter().find(|w| w.id == id) {
                 if w.properties.delete {
                     let event = ClientMessageEvent::new(32, w.xid, self.atoms.get("WM_PROTOCOLS"), [self.atoms.get("WM_DELETE_WINDOW"), 0, 0, 0, 0]);
@@ -761,10 +757,10 @@ impl Window {
             } else if self.sent.as_ref().is_none_or(|old| {
                 old.app_id != facts.app_id || old.title != facts.title || old.parent != facts.parent || old.limits != facts.limits || old.role != facts.role
             }) {
-                if let Some(pending) = server.x11_changes.iter_mut().find(|old| old.id == facts.id) {
+                if let Some(pending) = server.x11.changes.iter_mut().find(|old| old.id == facts.id) {
                     *pending = facts.clone();
                 } else {
-                    server.x11_changes.push(facts.clone());
+                    server.x11.changes.push(facts.clone());
                 }
                 self.sent = Some(facts);
             }
@@ -783,7 +779,7 @@ impl Window {
                 opened: true,
                 mapped,
                 title_dirty: false,
-                shown: crate::server::Shown::of(server.core.state(), self.id),
+                shown: crate::windows::Shown::of(server.core.state(), self.id),
                 frames: Default::default(),
             });
         }
@@ -798,7 +794,7 @@ impl Window {
         let area = server.area(server.core.state().session().below(self.id));
         // (Its clarity as read for its window this revision, else from the state while it has none yet.)
         let clarity = server.windows.iter().find(|w| w.id == self.id).map_or_else(|| server.core.state().window_clarity(self.id), |w| w.shown.clarity);
-        let fill = crate::server::fill_size(clarity, area.size);
+        let fill = crate::windows::fill_size(clarity, area.size);
         let size = crate::geometry::configure_size(model, policy, area.size, fill, (i32::from(self.size.0), i32::from(self.size.1)).into())
             .unwrap_or((i32::from(self.size.0), i32::from(self.size.1)).into());
         // A fullscreen game that switched mode is configured to it, so that Xwayland emulates it: the window
@@ -1047,11 +1043,11 @@ mod tests {
         wm.windows[0].properties.name = "last title".into();
         wm.windows[0].dirty = true;
         wm.settle(&mut wire, &mut server).unwrap();
-        assert_eq!(server.x11_changes.len(), 1, "X11 title changes coalesce before recording a frame");
+        assert_eq!(server.x11.changes.len(), 1, "X11 title changes coalesce before recording a frame");
         assert_eq!(server.core.state().session().window(id).unwrap().title, "");
         server.frame();
         assert_eq!(server.core.state().session().window(id).unwrap().title, "last title");
-        assert!(server.x11_changes.is_empty());
+        assert!(server.x11.changes.is_empty());
         wm.windows[0].properties.name = "dialog title".into();
         wm.windows[0].properties.role = clamshell_state::session::presentation::WindowRole::Dialog;
         wm.windows[0].dirty = true;

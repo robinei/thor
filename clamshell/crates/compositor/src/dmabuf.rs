@@ -41,10 +41,10 @@ impl Server {
             }
         });
         if let Some(feedback) = feedback {
-            self.dmabuf.create_global_with_default_feedback::<Self>(&self.dh, &feedback);
+            self.protocols.dmabuf.create_global_with_default_feedback::<Self>(&self.dh, &feedback);
         } else {
             log::debug!("compositor: no render-device feedback, advertising dmabuf v3");
-            self.dmabuf.create_global::<Self>(&self.dh, formats);
+            self.protocols.dmabuf.create_global::<Self>(&self.dh, formats);
         }
     }
 
@@ -74,7 +74,7 @@ impl Server {
 
 impl DmabufHandler for Server {
     fn dmabuf_state(&mut self) -> &mut DmabufState {
-        &mut self.dmabuf
+        &mut self.protocols.dmabuf
     }
 
     fn dmabuf_imported(&mut self, _: &DmabufGlobal, buffer: Dmabuf, notifier: ImportNotifier) {

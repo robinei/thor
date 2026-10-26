@@ -1,7 +1,8 @@
 //! `xwayland_shell_v1`, seen only by Xwayland: it gives a window's surface a serial, sent the window too
 //! as `WL_SURFACE_SERIAL`, and the window manager pairs them by it. Unlike a surface's id, a serial is
 //! never reused, so a window can't be paired with a later surface that took a destroyed one's id.
-use crate::server::{ClientState, Server};
+use crate::clients::ClientState;
+use crate::server::Server;
 use smithay::{
     reexports::{
         wayland_protocols::xwayland::shell::v1::server::{
@@ -38,8 +39,8 @@ pub(crate) fn install(dh: &DisplayHandle) {
 
 /// The surface Xwayland committed with this serial, taken.
 pub(crate) fn take(server: &mut Server, serial: u64) -> Option<WlSurface> {
-    let index = server.xwayland_serials.iter().position(|(s, _)| *s == serial)?;
-    Some(server.xwayland_serials.swap_remove(index).1)
+    let index = server.x11.serials.iter().position(|(s, _)| *s == serial)?;
+    Some(server.x11.serials.swap_remove(index).1)
 }
 
 impl GlobalDispatch2<XwaylandShellV1, Server> for Shell {
@@ -71,8 +72,8 @@ impl Dispatch2<XwaylandShellV1, Server> for Shell {
                         return;
                     };
                     // Surfaces destroyed before their window was paired go now.
-                    server.xwayland_serials.retain(|(_, surface)| surface.is_alive());
-                    server.xwayland_serials.push((serial, surface.clone()));
+                    server.x11.serials.retain(|(_, surface)| surface.is_alive());
+                    server.x11.serials.push((serial, surface.clone()));
                 });
                 init.init(id, XwaylandSurface(surface));
             }

@@ -172,13 +172,13 @@ impl Bridge {
         self.imports.turn(wire, atoms, server, now)?;
         for selection in 0..2 {
             if let Some(revision) = self.imports.take_change(selection) {
-                let entry = server.x11_selections.entries.get(selection);
+                let entry = server.x11.selections.entries.get(selection);
                 if entry.revision == revision || entry.origin.is_some() {
                     self.cancel(selection, wire, now)?;
                     *self.exports.get_mut(selection) = Export { revision: Some(entry.revision), ..Default::default() };
                 }
             }
-            let seat = server.x11_selections.entries.get(selection);
+            let seat = server.x11.selections.entries.get(selection);
             if self.exports.get(selection).revision != Some(seat.revision) && self.pending.len() + seat.mime_types.len() <= 128 {
                 self.cancel(selection, wire, now)?;
                 if seat.origin.is_some() {

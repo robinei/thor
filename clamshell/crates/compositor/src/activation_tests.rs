@@ -174,13 +174,13 @@ fn activation_tokens_require_focus_expire_are_single_use_and_cannot_undo_home() 
                 1..=3 | 7 | 9 | 10 => {
                     assert_eq!(server.core.state().session().top_window().map(|window| window.id), Some(origin));
                     assert_eq!(server.core.state().session().keyboard_focus(), Some(origin));
-                    assert_eq!(server.activation.tokens().count(), 0);
+                    assert_eq!(server.protocols.activation.tokens().count(), 0);
                 }
                 4 => {
                     use smithay::wayland::xdg_activation::XdgActivationHandler;
-                    assert_eq!(server.activation.tokens().count(), 1);
-                    let (pending, data) = server.activation.tokens().next().map(|(token, data)| (token.clone(), data.clone())).unwrap();
-                    let late = server.activation.create_external_token(Some(data.clone())).0.clone();
+                    assert_eq!(server.protocols.activation.tokens().count(), 1);
+                    let (pending, data) = server.protocols.activation.tokens().next().map(|(token, data)| (token.clone(), data.clone())).unwrap();
+                    let late = server.protocols.activation.create_external_token(Some(data.clone())).0.clone();
                     let surface = server.windows[1].window.toplevel().unwrap().wl_surface().clone();
                     server.core.handle(Event::Home);
                     // Home can settle before the seat is synchronised in this dispatch.
@@ -190,9 +190,9 @@ fn activation_tokens_require_focus_expire_are_single_use_and_cannot_undo_home() 
                     server.request_activation(late, data, surface);
                     assert!(server.core.state().session().top_window().is_none());
                     assert_eq!(server.core.state().session().keyboard_focus(), None);
-                    assert_eq!(server.activation.tokens().count(), 1);
+                    assert_eq!(server.protocols.activation.tokens().count(), 1);
                     server.frame();
-                    assert_eq!(server.activation.tokens().count(), 0);
+                    assert_eq!(server.protocols.activation.tokens().count(), 0);
                 }
                 5 => {
                     assert!(server.core.state().session().top_window().is_none());
@@ -202,35 +202,35 @@ fn activation_tokens_require_focus_expire_are_single_use_and_cannot_undo_home() 
                 6 => {
                     assert_eq!(server.core.state().session().top_window().map(|window| window.id), Some(target));
                     assert_eq!(server.core.state().session().keyboard_focus(), Some(target));
-                    assert_eq!(server.activation.tokens().count(), 0);
+                    assert_eq!(server.protocols.activation.tokens().count(), 0);
                     server.core.handle(Event::Device(DeviceKey::WindowDown));
                     server.core.handle(clamshell_state::WindowEvent::Activate(origin).into());
                 }
                 8 => {
-                    assert_eq!(server.activation.tokens().count(), 1);
+                    assert_eq!(server.protocols.activation.tokens().count(), 1);
                     use smithay::wayland::xdg_activation::XdgActivationHandler;
-                    let mut data = server.activation.tokens().next().unwrap().1.clone();
+                    let mut data = server.protocols.activation.tokens().next().unwrap().1.clone();
                     data.timestamp = Instant::now().checked_sub(Duration::from_secs(5)).unwrap();
-                    let expired = server.activation.create_external_token(Some(data.clone())).0.clone();
+                    let expired = server.protocols.activation.create_external_token(Some(data.clone())).0.clone();
                     let surface = server.windows[1].window.toplevel().unwrap().wl_surface().clone();
                     server.request_activation(expired, data, surface);
                     assert_eq!(server.core.state().session().keyboard_focus(), Some(origin));
-                    assert_eq!(server.activation.tokens().count(), 1);
+                    assert_eq!(server.protocols.activation.tokens().count(), 1);
                     server.expire_activation_tokens(Instant::now() + Duration::from_secs(5));
-                    assert_eq!(server.activation.tokens().count(), 0);
+                    assert_eq!(server.protocols.activation.tokens().count(), 0);
                 }
                 11 => {
                     assert_eq!(server.core.state().session().top_window().map(|window| window.id), Some(origin));
                     assert_eq!(server.core.state().session().bottom_window().map(|window| window.id), Some(target));
                     assert_eq!(server.core.state().session().keyboard_focus(), Some(target));
                     assert!(server.core.state().session().below(target), "activation does not move a window between screens");
-                    assert_eq!(server.activation.tokens().count(), 0);
+                    assert_eq!(server.protocols.activation.tokens().count(), 0);
                     server.core.handle(clamshell_state::WindowEvent::Activate(origin).into());
                 }
                 12 => {
                     assert_eq!(server.core.state().session().keyboard_focus(), Some(origin));
                     assert!(server.core.state().session().window(target).is_none());
-                    assert_eq!(server.activation.tokens().count(), 0);
+                    assert_eq!(server.protocols.activation.tokens().count(), 0);
                 }
                 _ => panic!("unexpected phase"),
             }

@@ -51,11 +51,11 @@ impl Imports {
         for selection in 0..2 {
             self.clear_seat(selection, server);
         }
-        server.x11_selections.requests.clear();
+        server.x11.selections.requests.clear();
         *self = Self::default();
     }
     fn clear_seat(&self, selection: usize, server: &mut Server) {
-        let entry = server.x11_selections.entries.get_mut(selection);
+        let entry = server.x11.selections.entries.get_mut(selection);
         if entry.origin == Some(self.offers.get(selection).origin)
             || (entry.origin.is_some() && entry.origin == self.offers.get(selection).previous_origin && entry.revision == self.offers.get(selection).revision)
         {
@@ -105,7 +105,7 @@ impl Imports {
         }
         for selection in 0..2 {
             let offer = self.offers.get(selection);
-            let entry = server.x11_selections.entries.get(selection);
+            let entry = server.x11.selections.entries.get(selection);
             if offer.owner != 0 && (if offer.published { entry.origin != Some(offer.origin) } else { entry.revision != offer.revision }) {
                 log::debug!("compositor: X11 selection generation {} superseded by a Wayland selection", offer.origin);
                 self.cancel(selection, wire)?;
@@ -118,7 +118,7 @@ impl Imports {
                 self.offers.get_mut(selection).owner = 0;
             }
         }
-        for request in server.x11_selections.requests.drain(..) {
+        for request in server.x11.selections.requests.drain(..) {
             let offer = self.offers.get(request.selection);
             if !offer.published || offer.owner == 0 || offer.origin != request.origin {
                 continue;
@@ -215,16 +215,16 @@ impl Imports {
             self.clear_seat(selection, server);
         }
         if xid != 0 && xid != owner {
-            *self.changes.get_mut(selection) = Some(server.x11_selections.entries.get(selection).revision);
+            *self.changes.get_mut(selection) = Some(server.x11.selections.entries.get(selection).revision);
         }
         let serial = self.offers.get(selection).serial.wrapping_add(1);
-        let origin = server.x11_selections.origin();
+        let origin = server.x11.selections.origin();
         *self.offers.get_mut(selection) = Offer {
             serial,
             owner: if xid == owner { 0 } else { xid },
             origin,
-            revision: server.x11_selections.entries.get(selection).revision,
-            previous_origin: server.x11_selections.entries.get(selection).origin,
+            revision: server.x11.selections.entries.get(selection).revision,
+            previous_origin: server.x11.selections.entries.get(selection).origin,
             timestamp,
             ..Default::default()
         };
@@ -241,7 +241,7 @@ impl Imports {
         if offer.owner == 0 || offer.published || !offer.targets_done || offer.pending_names != 0 || offer.formats.is_empty() {
             return;
         }
-        let entry = server.x11_selections.entries.get_mut(selection);
+        let entry = server.x11.selections.entries.get_mut(selection);
         if entry.revision != offer.revision {
             return;
         }

@@ -20,7 +20,8 @@ use wayland_client::{
     protocol::{wl_buffer, wl_compositor, wl_registry, wl_seat, wl_shm, wl_shm_pool, wl_surface, wl_touch},
 };
 
-use crate::server::{ClientState, Process, Server};
+use crate::clients::{ClientState, Process};
+use crate::server::Server;
 
 #[derive(Default)]
 struct Client {

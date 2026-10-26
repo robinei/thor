@@ -60,7 +60,7 @@ impl Bridge {
             return notify(wire, &request, 0);
         };
         let export = self.exports.get(selection);
-        if export.revision != Some(server.x11_selections.entries.get(selection).revision) {
+        if export.revision != Some(server.x11.selections.entries.get(selection).revision) {
             return notify(wire, &request, 0);
         }
         if request.target == atoms.get("TARGETS") {

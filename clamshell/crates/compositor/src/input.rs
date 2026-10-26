@@ -47,6 +47,22 @@ fn upright(on_panel: Point<f64, Logical>, area: Rectangle<f64, Logical>, turn: T
 }
 
 impl Server {
+    /// The surface of the frontmost window shown at `pos` in the scene, and where `pos` is on it.
+    pub fn hit(&self, pos: Point<f64, Logical>) -> Option<Hit> {
+        self.windows.iter().rev().filter(|w| w.mapped && self.visible(w.id)).find_map(|client| {
+            let geometry = self.geometry(client.id)?;
+            if !geometry.viewport.to_f64().contains(pos) {
+                return None;
+            }
+            let location = geometry.surface_coords(pos);
+            let (surface, origin) = client.window.surface_under(location, smithay::desktop::WindowSurfaceType::ALL)?;
+            if client.window.root().as_ref() == Some(&surface) && !geometry.native.to_f64().contains(location) {
+                return None;
+            }
+            Some(Hit { window: client.id, surface, location, origin: origin.to_f64() })
+        })
+    }
+
     /// An input event from a host. `area` is where an absolute device (a touchscreen, a tablet, the
     /// nested window) lies in the scene, and the turn of the panel it reports in (see [`placed`]).
     pub(crate) fn input<B: InputBackend>(&mut self, event: InputEvent<B>, host: Host, area: impl Fn(&B::Device) -> (Rectangle<f64, Logical>, Transform)) {

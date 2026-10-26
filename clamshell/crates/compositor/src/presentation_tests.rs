@@ -232,7 +232,7 @@ fn the_top_windows_new_buffers_shown_are_its_frame_rate() {
             server.present_submission(&rendered, (start + Duration::from_millis(20) * step).into());
             if step == STEPS - 1 {
                 // Reported now rather than half a second after the last report.
-                server.frames_due = None;
+                server.pacing.frames_due = None;
                 server.turn();
                 let metrics = server.core.state().sys().metrics();
                 measured = Some((metrics.fps, metrics.frame_ms));

@@ -195,7 +195,7 @@ fn unsupported_duplicate_excess_stale_and_missing_source_requests_are_refused() 
     excess.requestor = 1000;
     bridge.request(excess, &mut wire, &atoms, &mut server, now).unwrap();
     bridge.transfers.clear();
-    server.x11_selections.entries.clipboard.revision = 1;
+    server.x11.selections.entries.clipboard.revision = 1;
     bridge.request(request, &mut wire, &atoms, &mut server, now).unwrap();
     bridge.exports.clipboard.revision = Some(1);
     bridge.request(request, &mut wire, &atoms, &mut server, now).unwrap();
@@ -228,7 +228,7 @@ fn server_timestamp_precedes_ownership_and_stale_clears_cannot_cancel_a_new_offe
     assert_eq!(bridge.deadline(), Some(now + Duration::from_secs(3)));
     // A timestamp requested for an earlier generation must not acquire a replacement offer.
     bridge.exports.clipboard.revision = Some(1);
-    server.x11_selections.entries.clipboard.revision = 1;
+    server.x11.selections.entries.clipboard.revision = 1;
     let old_clock =
         PropertyNotifyEvent { response_type: PROPERTY_NOTIFY_EVENT, window: 5, atom: 202, time: 150, state: Property::NEW_VALUE, ..Default::default() };
     bridge.event(&event_bytes(old_clock.serialize()), &mut wire, &atoms, 5, &mut server, now).unwrap();
@@ -272,7 +272,7 @@ fn event_bytes(bytes: impl AsRef<[u8]>) -> Vec<u8> {
 fn late_atom_replies_cannot_restore_an_old_generation_and_missing_replies_have_a_deadline() {
     let now = Instant::now();
     let (_display, mut server) = server();
-    server.x11_selections.entries.clipboard.mime_types.push("application/x-thor-old".into());
+    server.x11.selections.entries.clipboard.mime_types.push("application/x-thor-old".into());
     let mut atoms = atoms();
     atoms.0.extend([("CLIPBOARD", 100), ("TIMESTAMP", 202)]);
     let (mut wire, mut peer) = wire(now);
@@ -280,8 +280,8 @@ fn late_atom_replies_cannot_restore_an_old_generation_and_missing_replies_have_a
     bridge.turn(&mut wire, &atoms, 5, &mut server, now).unwrap();
     let old = bridge.pending[0].sequence;
     assert_eq!(packets(&mut wire, &mut peer, now)[0][0], INTERN_ATOM_REQUEST);
-    server.x11_selections.entries.clipboard.revision = 1;
-    server.x11_selections.entries.clipboard.mime_types[0] = "application/x-thor-new".into();
+    server.x11.selections.entries.clipboard.revision = 1;
+    server.x11.selections.entries.clipboard.mime_types[0] = "application/x-thor-new".into();
     bridge.turn(&mut wire, &atoms, 5, &mut server, now).unwrap();
     let new = bridge.pending[1].sequence;
     assert_eq!(packets(&mut wire, &mut peer, now)[0][0], INTERN_ATOM_REQUEST);
@@ -321,7 +321,7 @@ fn clearing_a_source_releases_ownership_at_its_acquisition_time_and_removes_read
     let mut sources = Vec::new();
     bridge.sync_sources(&handle, &mut sources).unwrap();
     assert_eq!(sources.len(), 1);
-    server.x11_selections.changed(SelectionTarget::Clipboard, None);
+    server.x11.selections.changed(SelectionTarget::Clipboard, None);
     bridge.turn(&mut wire, &atoms, 5, &mut server, now).unwrap();
     bridge.sync_sources(&handle, &mut sources).unwrap();
     assert!(sources.is_empty());

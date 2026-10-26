@@ -1,8 +1,8 @@
 //! Bare Xwayland-style surfaces exercise the shared popup transform and touch path without a GPU.
 use super::*;
 use crate::{
-    server::ClientWindow,
     surface::{Surface, X11Popup},
+    windows::ClientWindow,
 };
 use clamshell_state::{
     WindowEvent,
@@ -88,7 +88,7 @@ fn x11_popups_share_parent_scaling_keep_tooltips_passive_and_cancel_dismissed_co
                 mapped: true,
                 opened: true,
                 title_dirty: false,
-                shown: crate::server::Shown::of(server.core.state(), 1),
+                shown: crate::windows::Shown::of(server.core.state(), 1),
                 frames: Default::default(),
             });
             let geometry = server.geometry(1).unwrap();
@@ -121,12 +121,12 @@ fn x11_popups_share_parent_scaling_keep_tooltips_passive_and_cancel_dismissed_co
             assert!(server.touches.iter().all(Option::is_none), "a detached popup cannot retain a touch contact");
             assert!(!server.has_x11_menu(), "tooltips do not capture input");
             assert_eq!(server.hit(main_point).unwrap().surface, root, "a tooltip passes input to its parent");
-            assert_eq!(server.x11_popup_dismiss.len(), 2);
-            assert!(server.x11_popup_dismiss.contains(&101) && server.x11_popup_dismiss.contains(&102));
+            assert_eq!(server.x11.popup_dismiss.len(), 2);
+            assert!(server.x11.popup_dismiss.contains(&101) && server.x11.popup_dismiss.contains(&102));
             server.core.handle(Event::Home);
             server.frame();
             assert!(server.windows[0].window.x11_popups().is_empty());
-            assert!(server.x11_popup_dismiss.contains(&103), "hiding a parent dismisses its tooltip too");
+            assert!(server.x11.popup_dismiss.contains(&103), "hiding a parent dismisses its tooltip too");
             assert_eq!(server.core.state().session().windows().len(), 1, "only the parent ever enters State");
             checked = true;
             display.flush_clients().unwrap();

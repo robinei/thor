@@ -6,7 +6,9 @@ mod socket;
 mod transport;
 mod wm;
 
-use crate::server::{ClientState, Server};
+use crate::clients::ClientState;
+use crate::server::Server;
+use clamshell_state::{WindowEvent, session::windows::WindowFacts};
 use command_fds::CommandFdExt;
 use smithay::reexports::{
     calloop::{Interest, LoopHandle, Mode, PostAction, RegistrationToken, generic::Generic},
@@ -25,6 +27,44 @@ use std::{
     time::{Duration, Instant},
 };
 use transport::Transport;
+
+/// What the X11 adapter and the Wayland side leave each other on the server.
+#[derive(Default)]
+pub(crate) struct Bridge {
+    pub selections: selection::SeatSelections,
+    /// Windows the state closed that are X11's, for the adapter to close.
+    pub close: Vec<i64>,
+    /// X11 popups to dismiss, for the adapter to unmap.
+    pub popup_dismiss: Vec<i64>,
+    /// X11 windows' changed facts, coalesced until the frame (see [`Server::flush_x11_changes`]).
+    pub changes: Vec<WindowFacts>,
+    /// Xwayland's surfaces by the serial it gave them, until their window is paired (see `x11::shell`).
+    pub serials: Vec<(u64, smithay::reexports::wayland_server::protocol::wl_surface::WlSurface)>,
+}
+
+impl Server {
+    /// Tells the state the X11 windows' changes since the last frame.
+    pub(crate) fn flush_x11_changes(&mut self) {
+        for mut facts in self.x11.changes.drain(..) {
+            let Some(old) = self.core.state().session().window(facts.id) else { continue };
+            let title_changed = old.title != facts.title;
+            let changed =
+                old.app_id != facts.app_id || old.parent != facts.parent || old.limits != facts.limits || old.role != facts.role || old.colour != facts.colour;
+            if changed {
+                // Scope adoption can arrive while the properties wait for this frame.
+                facts.unit.clone_from(&old.unit);
+                facts.pids.clone_from(&old.pids);
+            }
+            let title = title_changed.then(|| WindowEvent::Title { window: facts.id, title: std::mem::take(&mut facts.title) });
+            match (changed, title) {
+                (true, Some(title)) => self.core.handle(clamshell_state::Event::WindowBatch(vec![WindowEvent::Changed(facts), title])),
+                (true, None) => self.core.handle(WindowEvent::Changed(facts).into()),
+                (false, Some(title)) => self.core.handle(title.into()),
+                (false, None) => {}
+            }
+        }
+    }
+}
 
 pub(crate) struct Supervisor {
     handle: LoopHandle<'static, Server>,
@@ -128,8 +168,8 @@ impl Supervisor {
             }
             return;
         }
-        server.x11_close.clear();
-        server.x11_popup_dismiss.clear();
+        server.x11.close.clear();
+        server.x11.popup_dismiss.clear();
         if !self.demand.get() || self.retry.is_some_and(|deadline| now < deadline) {
             return;
         }

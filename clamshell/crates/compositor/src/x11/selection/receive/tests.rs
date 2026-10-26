@@ -247,7 +247,7 @@ fn server() -> (smithay::reexports::wayland_server::Display<Server>, Server) {
         |_| {},
     )
     .unwrap();
-    server.x11_selections.next_origin = 10;
+    server.x11.selections.next_origin = 10;
     (display, server)
 }
 #[test]
@@ -264,7 +264,7 @@ fn offers_wait_for_names_are_tagged_and_do_not_echo_or_clear_newer_wayland_selec
     imports.finish(id, &mut wire).unwrap();
     imports.publish(0, &mut server);
     assert!(!imports.offers.clipboard.published);
-    assert_eq!(server.x11_selections.entries.clipboard.origin, None);
+    assert_eq!(server.x11.selections.entries.clipboard.origin, None);
     let name = b"application/x-thor-bytes".to_vec();
     let reply = GetAtomNameReply { length: (name.len() as u32).div_ceil(4), name, ..Default::default() };
     let mut bytes = Vec::new();
@@ -272,8 +272,8 @@ fn offers_wait_for_names_are_tagged_and_do_not_echo_or_clear_newer_wayland_selec
     imports.reply(Query::Name(0, origin, 300), &bytes, &mut wire, &atoms(), &mut server, now).unwrap();
     imports.publish(0, &mut server);
     assert!(imports.offers.clipboard.published);
-    assert_eq!(server.x11_selections.entries.clipboard.origin, Some(origin));
-    assert_eq!(server.x11_selections.entries.clipboard.mime_types, ["text/plain;charset=utf-8", "text/plain", "application/x-thor-bytes"]);
+    assert_eq!(server.x11.selections.entries.clipboard.origin, Some(origin));
+    assert_eq!(server.x11.selections.entries.clipboard.mime_types, ["text/plain;charset=utf-8", "text/plain", "application/x-thor-bytes"]);
     assert_eq!(*data_device::current_data_device_selection_userdata::<Server>(&server.seat).unwrap(), origin);
     imports.pending.clear();
     packets(&mut wire, &mut peer, now);
@@ -282,12 +282,12 @@ fn offers_wait_for_names_are_tagged_and_do_not_echo_or_clear_newer_wayland_selec
     assert!(!bridge.exports.clipboard.claim);
     assert!(!bridge.exports.clipboard.owned);
     assert!(packets(&mut wire, &mut peer, now).is_empty(), "an X11-derived offer cannot acquire X11 ownership again");
-    server.x11_selections.changed(SelectionTarget::Clipboard, None);
-    server.x11_selections.entries.clipboard.mime_types = vec!["application/x-newer-wayland".into()];
-    let revision = server.x11_selections.entries.clipboard.revision;
+    server.x11.selections.changed(SelectionTarget::Clipboard, None);
+    server.x11.selections.entries.clipboard.mime_types = vec!["application/x-newer-wayland".into()];
+    let revision = server.x11.selections.entries.clipboard.revision;
     bridge.clear(&mut server);
-    assert_eq!(server.x11_selections.entries.clipboard.revision, revision);
-    assert_eq!(server.x11_selections.entries.clipboard.mime_types, ["application/x-newer-wayland"]);
+    assert_eq!(server.x11.selections.entries.clipboard.revision, revision);
+    assert_eq!(server.x11.selections.entries.clipboard.mime_types, ["application/x-newer-wayland"]);
     assert_eq!(bridge.deadline(), None);
 }
 #[test]
@@ -300,7 +300,7 @@ fn replacement_owner_cancels_old_requests_without_publishing_an_empty_selection_
     imports.offers.clipboard.formats.push(Format { atom: 101, mime: "text/plain".into(), latin1: false });
     imports.publish(0, &mut server);
     let old_origin = imports.offers.clipboard.origin;
-    let old_revision = server.x11_selections.entries.clipboard.revision;
+    let old_revision = server.x11.selections.entries.clipboard.revision;
     let (mut reader, writer) = pipe();
     let old_id = begin(&mut imports, writer, false, &mut wire, now);
     imports.owner(0, (42, 2000), &mut wire, &atoms(), &mut server, now).unwrap();
@@ -308,15 +308,15 @@ fn replacement_owner_cancels_old_requests_without_publishing_an_empty_selection_
     assert_eq!(imports.transfers.len(), 1);
     assert_ne!(imports.transfers[0].id, old_id);
     assert_ne!(imports.offers.clipboard.origin, old_origin);
-    assert_eq!(server.x11_selections.entries.clipboard.origin, Some(old_origin));
-    assert_eq!(server.x11_selections.entries.clipboard.revision, old_revision, "replacement metadata must not cause an empty offer and keeper restore");
+    assert_eq!(server.x11.selections.entries.clipboard.origin, Some(old_origin));
+    assert_eq!(server.x11.selections.entries.clipboard.revision, old_revision, "replacement metadata must not cause an empty offer and keeper restore");
     let new_origin = imports.offers.clipboard.origin;
     imports.offers.clipboard.formats.push(Format { atom: 101, mime: "text/plain".into(), latin1: false });
     imports.offers.clipboard.targets_done = true;
     imports.publish(0, &mut server);
-    assert_eq!(server.x11_selections.entries.clipboard.origin, Some(new_origin));
+    assert_eq!(server.x11.selections.entries.clipboard.origin, Some(new_origin));
     imports.owner(0, (0, 2001), &mut wire, &atoms(), &mut server, now).unwrap();
-    assert_eq!(server.x11_selections.entries.clipboard.origin, None);
+    assert_eq!(server.x11.selections.entries.clipboard.origin, None);
     assert!(data_device::current_data_device_selection_userdata::<Server>(&server.seat).is_none());
 }
 
@@ -344,24 +344,24 @@ fn conversion_and_mailbox_limits_close_only_new_readers_and_old_owner_snapshots_
     assert_eq!(excess.read(&mut [0]).unwrap(), 0);
     let windows: std::collections::BTreeSet<u32> = imports.transfers.iter().map(|transfer| transfer.window).collect();
     assert_eq!(windows.len(), MAX_TRANSFERS, "each conversion has a unique requestor");
-    server.x11_selections.entries.clipboard.origin = Some(77);
+    server.x11.selections.entries.clipboard.origin = Some(77);
     let (mut stale, writer) = pipe();
-    server.x11_selections.read(SelectionTarget::Clipboard, "text/plain".into(), writer.into(), 76);
-    assert!(server.x11_selections.requests.is_empty());
+    server.x11.selections.read(SelectionTarget::Clipboard, "text/plain".into(), writer.into(), 76);
+    assert!(server.x11.selections.requests.is_empty());
     crate::tests::wait_closed(&stale);
     assert_eq!(stale.read(&mut [0]).unwrap(), 0);
     for _ in 0..MAX_TRANSFERS {
         let (reader, writer) = pipe();
-        server.x11_selections.read(SelectionTarget::Clipboard, "text/plain".into(), writer.into(), 77);
+        server.x11.selections.read(SelectionTarget::Clipboard, "text/plain".into(), writer.into(), 77);
         readers.push(reader);
     }
     let (mut excess, writer) = pipe();
-    server.x11_selections.read(SelectionTarget::Clipboard, "text/plain".into(), writer.into(), 77);
-    assert_eq!(server.x11_selections.requests.len(), MAX_TRANSFERS);
+    server.x11.selections.read(SelectionTarget::Clipboard, "text/plain".into(), writer.into(), 77);
+    assert_eq!(server.x11.selections.requests.len(), MAX_TRANSFERS);
     crate::tests::wait_closed(&excess);
     assert_eq!(excess.read(&mut [0]).unwrap(), 0);
     imports.clear(&mut server);
-    assert!(server.x11_selections.requests.is_empty());
+    assert!(server.x11.selections.requests.is_empty());
     assert_eq!(imports.deadline(), None);
     assert!(readers.iter_mut().all(|reader| {
         crate::tests::wait_closed(reader);
