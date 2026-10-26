@@ -129,18 +129,19 @@ mod tests {
         assert!(args.contains(&"--slice=app-graphical-clamshell-run-jobtest.slice"), "in its slice: {args:?}");
         assert!(args.contains(&"--setenv=K=v w") && args.contains(&"--working-directory=/tmp"), "{args:?}");
         assert!(args.contains(&"--property=ExitType=cgroup"), "running while any of its processes does: {args:?}");
+        assert!(args.contains(&"--service-type=exec"), "started once its program runs: {args:?}");
+        assert!(args.contains(&"--property=Delegate=yes"), "delegated, for the Steam follower: {args:?}");
     }
 
+    /// Starts services on this machine's user manager. Run it by hand with `--ignored`.
     #[test]
+    #[ignore = "needs a user manager; starts services"]
     fn a_job_starts_as_a_service_and_one_that_cant_run_fails() {
         let job = Job { unit: format!("clamshell-run-jobtest-{}-1", std::process::id()), slice: None, argv: vec!["true".into()], env: vec![], workdir: None };
         let empty = Job { argv: vec![], ..job.clone() };
         assert!(matches!(start(&empty), Err(Error::EmptyCommand)));
-        // Only where there is a user manager to start the service.
-        if std::env::var_os("XDG_RUNTIME_DIR").is_some_and(|d| std::path::Path::new(&d).join("systemd/private").exists()) {
-            start(&job).unwrap();
-            let missing = Job { unit: format!("clamshell-run-jobtest-{}-2", std::process::id()), argv: vec!["/nonexistent/program".into()], ..job };
-            assert!(matches!(start(&missing), Err(Error::NotStarted(_))));
-        }
+        start(&job).unwrap();
+        let missing = Job { unit: format!("clamshell-run-jobtest-{}-2", std::process::id()), argv: vec!["/nonexistent/program".into()], ..job };
+        assert!(matches!(start(&missing), Err(Error::NotStarted(_))));
     }
 }

@@ -260,12 +260,10 @@ mod tests {
         Config { watch_later: Vec::new(), sockets: std::env::temp_dir() }
     }
 
-    /// Runs only where there is a user manager to start the scope.
+    /// Starts a service on this machine's user manager. Run it by hand with `--ignored`.
     #[test]
-    fn runs_a_game_in_its_scope_and_reports_nothing_more() {
-        if !std::env::var_os("XDG_RUNTIME_DIR").is_some_and(|d| std::path::Path::new(&d).join("systemd/private").exists()) {
-            return;
-        }
+    #[ignore = "needs a user manager; starts a service"]
+    fn runs_a_game_as_its_service_and_reports_nothing_more() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();
         let script = dir.join("game.sh");
@@ -280,11 +278,15 @@ mod tests {
         launcher.send(Command::Launch(Request { entry: id, instance, launch, env: vec![] }));
         drop(launcher);
 
-        // Its scope appeared, so nothing is sent. Whether it runs and ends is for systemd's list to say.
+        // systemd started it, so nothing is sent. Whether it runs and ends is for systemd's list to say.
         let events: Vec<Event> = events.iter().collect();
         assert_eq!(events, vec![]);
-        std::thread::sleep(Duration::from_secs(2));
-        assert_eq!(std::fs::read_to_string(dir.join("ran-in")).unwrap().trim(), dir.to_string_lossy(), "in its own dir");
+        let ran = dir.join("ran-in");
+        let started = std::time::Instant::now();
+        while !ran.exists() && started.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert_eq!(std::fs::read_to_string(ran).unwrap().trim(), dir.to_string_lossy(), "in its own dir");
     }
 
     #[test]
@@ -337,7 +339,7 @@ mod live {
         assert!(wait_for(|| with_descendants(&[pid], &parents()).len() == 2), "its sleep");
         let instance = Instance::Run { key: format!("adopttest_{id}"), secs: u64::from(id), n: 0 };
         adopt(instance.clone(), pid);
-        let unit = instance.unit().unwrap();
+        let unit = instance.scope().unwrap();
         assert!(wait_for(|| with_descendants(&[pid], &parents()).iter().all(|p| group_of(*p) == unit)), "moved, the sleep too");
         let _ = Process::new("systemctl").args(["--user", "stop", &instance.slice().unwrap()]).status();
         let _ = child.wait();
