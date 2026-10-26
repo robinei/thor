@@ -57,7 +57,7 @@ pub enum IdleEvent {
 }
 
 /// How long sleep waits after the machine was found busy.
-const SLEEP_RETRY: u64 = 300;
+pub(crate) const SLEEP_RETRY: u64 = 300;
 
 /// What the compositor reports, where it reports anything.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -113,7 +113,10 @@ impl Idle {
                 self.watching = on;
                 self.last_input = now;
             }
-            IdleEvent::DeviceInput | IdleEvent::KeptAwake => self.last_input = now,
+            IdleEvent::DeviceInput => self.last_input = now,
+            // Asked before the screens dim; an answer after they did doesn't bring them back.
+            IdleEvent::KeptAwake if self.stage == Stage::Awake => self.last_input = now,
+            IdleEvent::KeptAwake => {}
             IdleEvent::CompositorQuiet => self.compositor = Reported::QuietSince(now.saturating_sub(NOTIFY_AFTER)),
             IdleEvent::CompositorInput => self.compositor = Reported::Busy,
             IdleEvent::Busy => self.sleep_not_before = now + SLEEP_RETRY,
@@ -480,5 +483,18 @@ mod tests {
         idle.resumed(5000);
         assert_eq!(idle.wanted(5010, p), Stage::Awake);
         assert_eq!(idle.wanted(5300, p), Stage::Off);
+    }
+
+    /// The runner's answer that it keeps the screen on counts only while the screens are awake: one that
+    /// comes after they dimmed doesn't bring them back.
+    #[test]
+    fn a_late_kept_awake_leaves_the_screens_dimmed() {
+        let mut s = crate::State::new(crate::Init { device_session: true, ..crate::testkit::init() });
+        s.applied(crate::Event::tick(1000));
+        s.applied(crate::Event::Idle(crate::device::idle::IdleEvent::Watching(true)));
+        s.applied(crate::Event::tick(1400));
+        assert!(s.idle().stage() >= crate::device::idle::Stage::Dimmed);
+        s.applied(crate::Event::Idle(crate::device::idle::IdleEvent::KeptAwake));
+        assert!(s.idle().stage() >= crate::device::idle::Stage::Dimmed, "{:?}", s.idle().stage());
     }
 }

@@ -149,10 +149,6 @@ impl Sent {
                 // The system thread reads the time and the account as their views open.
                 Thread::Mixer | Thread::Battery | Thread::Metrics | Thread::Status | Thread::Wifi | Thread::Bluetooth | Thread::System => {
                     (self.tab, self.status_off, self.account) = (None, None, None);
-                    // Sleep asked again, if it was asked last: the device may not have slept.
-                    if thread == Thread::System && self.stage == Stage::Asleep {
-                        self.stage = Stage::Off;
-                    }
                 }
                 Thread::Browse => (self.browsing, self.in_use) = (None, None),
                 // The thread holds nothing; the backlights keep their level. Sent again if ClamShell set one.

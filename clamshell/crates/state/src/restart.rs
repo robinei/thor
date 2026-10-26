@@ -13,6 +13,11 @@ impl State {
         match thread {
             Thread::Wifi => self.radios.restarted(true, now),
             Thread::Bluetooth | Thread::BluetoothConnect => self.radios.restarted(false, now),
+            // A sleep it was asked for may not have happened. It is taken as refused for now (Busy), and
+            // asked again after the retry, by when a wake would have come had the device slept.
+            Thread::System if self.idle.stage() == crate::device::idle::Stage::Asleep => {
+                self.idle.heard(crate::device::idle::IdleEvent::Busy, now);
+            }
             _ => {}
         }
         match thread {
@@ -158,15 +163,16 @@ mod tests {
     }
 
     #[test]
-    fn a_restarted_system_thread_is_asked_to_sleep_again() {
+    fn a_restarted_system_thread_is_asked_to_sleep_again_after_the_retry() {
         let mut s = started(crate::Init { device_session: true, ..init() });
         s.applied(Event::tick(1000));
         s.applied(Event::Idle(crate::device::idle::IdleEvent::Watching(true)));
         assert!(s.applied(Event::tick(1900)).contains(&Effect::Sleep));
         assert_eq!(s.idle().stage(), Stage::Asleep);
-        let fx = s.applied(Event::Restarted(Thread::System));
-        assert!(fx.contains(&Effect::Sleep), "{fx:?}");
+        // Not at once: had the device slept, its wake would come first. After the retry, if still asleep.
+        assert!(!s.applied(Event::Restarted(Thread::System)).contains(&Effect::Sleep));
         assert!(!s.applied(Event::Restarted(Thread::Mixer)).contains(&Effect::Sleep), "only the system thread sleeps");
+        assert!(s.applied(Event::tick(1900 + crate::device::idle::SLEEP_RETRY)).contains(&Effect::Sleep));
     }
 
     #[test]
