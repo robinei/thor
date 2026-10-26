@@ -38,6 +38,14 @@ fn main() -> ExitCode {
         });
     }
     logger.init();
+    // A panic is logged at error (the journal's priority), with its thread and place: a system thread's
+    // panic doesn't end the program, so it would go unseen at stderr's info.
+    std::panic::set_hook(Box::new(|info| {
+        let thread = std::thread::current();
+        let backtrace = std::backtrace::Backtrace::capture();
+        let backtrace = if backtrace.status() == std::backtrace::BacktraceStatus::Captured { format!("\n{backtrace}") } else { String::new() };
+        log::error!("panic in {}: {info}{backtrace}", thread.name().unwrap_or("a thread"));
+    }));
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(command) = cli::parse(&args) else {
         eprintln!("{}", cli::USAGE);

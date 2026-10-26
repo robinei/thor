@@ -300,28 +300,19 @@ pub trait Service {
 }
 
 /// Runs `service` until the UI or every command sender is gone. It connects and runs while the service
-/// is up. While the service is down, it waits `retry` or for a command before trying again.
+/// is up. While the service is down, it waits `retry` or for a command before trying again. A panic while
+/// connecting or running (the panic hook has logged it) is taken as the service lost: it is connected
+/// again, so a thread doesn't end for good on one bad reply.
 pub fn supervise<S: Service>(service: &mut S, commands: &Receiver<S::Command>, retry: Duration) {
     let mut quiet = Quiet::default();
     loop {
-        let told = match service.connect() {
-            Ok(session) => {
-                quiet.ok();
-                match service.run_while_up(session, commands) {
-                    Ok(()) | Err(Ended::Closed) => return,
-                    Err(Ended::Lost(e)) => {
-                        quiet.failed(S::NAME, &e);
-                        service.lost(&e)
-                    }
-                }
-            }
-            Err(e) => {
-                if S::expected(&e) {
-                    log::debug!("{}: {e}", S::NAME);
-                } else {
-                    quiet.failed(S::NAME, &e);
-                }
-                service.unavailable(&e)
+        let turn = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_once(service, commands, &mut quiet)));
+        let told = match turn {
+            Ok(Some(told)) => told,
+            Ok(None) => return,
+            Err(_) => {
+                log::error!("{}: panicked; connecting again", S::NAME);
+                Ok(())
             }
         };
         if told.is_err() {
@@ -337,6 +328,31 @@ pub fn supervise<S: Service>(service: &mut S, commands: &Receiver<S::Command>, r
             Next::Disconnected => return,
         }
     }
+}
+
+/// Connects `service` and runs it while it is up. `None` when the thread is to end; else what telling the
+/// UI the service is down gave.
+fn run_once<S: Service>(service: &mut S, commands: &Receiver<S::Command>, quiet: &mut Quiet) -> Option<Result<(), Closed>> {
+    Some(match service.connect() {
+        Ok(session) => {
+            quiet.ok();
+            match service.run_while_up(session, commands) {
+                Ok(()) | Err(Ended::Closed) => return None,
+                Err(Ended::Lost(e)) => {
+                    quiet.failed(S::NAME, &e);
+                    service.lost(&e)
+                }
+            }
+        }
+        Err(e) => {
+            if S::expected(&e) {
+                log::debug!("{}: {e}", S::NAME);
+            } else {
+                quiet.failed(S::NAME, &e);
+            }
+            service.unavailable(&e)
+        }
+    })
 }
 
 /// Supervises a service that takes no commands and follows only the service's own signals or events.
@@ -398,9 +414,45 @@ pub fn spawn_coalescing<C: Send + 'static, K: PartialEq + 'static>(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    /// A service whose first connection panics, then connects and ends.
+    struct Panicky {
+        connects: u32,
+    }
+
+    impl Service for Panicky {
+        type Command = ();
+        type Session = ();
+        type Error = String;
+        const NAME: &'static str = "panicky";
+
+        fn connect(&mut self) -> Result<(), String> {
+            self.connects += 1;
+            if self.connects == 1 {
+                panic!("a bad reply");
+            }
+            Ok(())
+        }
+
+        fn run_while_up(&mut self, _: (), _: &Receiver<()>) -> Result<(), Ended<String>> {
+            Ok(())
+        }
+
+        fn command_while_down(&mut self, _: ()) -> Result<(), Closed> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_service_that_panics_is_connected_again() {
+        let (_keep, commands) = mpsc::channel();
+        let mut panicky = Panicky { connects: 0 };
+        supervise(&mut panicky, &commands, Duration::from_millis(10));
+        assert_eq!(panicky.connects, 2, "connected again after the panic, then ended as it was told");
+    }
 
     #[test]
     fn a_reading_goes_out_when_it_changes() {
