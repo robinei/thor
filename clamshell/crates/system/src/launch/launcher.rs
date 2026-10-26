@@ -4,8 +4,7 @@
 //! never appeared. Each start runs on a thread of its own, so launches start side by side.
 //!
 //! - A program, with its arguments filled in by the library, runs in its own systemd scope (`systemd-run
-//!   --user --scope`), so restarting ClamShell doesn't end it. It goes through sway's exec so its first
-//!   window opens on its workspace.
+//!   --user --scope`), so restarting ClamShell doesn't end it.
 //! - A Steam game is handed to Steam and followed in its launch's scope. See [`crate::launch::steam`].
 //!
 //! Where mpv left a video is also read here when its play ends, at the state's request (`ReadPosition`).
@@ -22,12 +21,12 @@ use clamshell_state::{Event, Instance, Launch, LaunchEvent};
 use rustix::process::{Pid, Signal};
 
 use crate::Sink;
-use crate::launch::job::{self, Job, Runner, Started};
+use crate::launch::job::{self, Job};
 use crate::launch::{scopes, steam};
 use crate::os::worker::{self, Worker};
 use crate::os::{cgroup, sys};
 
-/// How long sway may take to start a game, until its scope appears.
+/// How long a game's scope may take to appear.
 const GAME_START: Duration = Duration::from_secs(30);
 
 /// What the launcher is asked.
@@ -42,10 +41,10 @@ pub enum Command {
 
 pub struct Request {
     pub entry: Arc<str>,
-    /// The launch's scope and workspace, from the state.
+    /// The launch's scope, from the state.
     pub instance: Instance,
     pub launch: Launch,
-    /// The game's environment: its MangoHud config and its own variables.
+    /// The game's environment: the cap's and its own variables.
     pub env: Vec<(String, String)>,
 }
 
@@ -53,9 +52,6 @@ pub struct Request {
 pub struct Config {
     /// Where mpv keeps the positions of videos.
     pub watch_later: Vec<PathBuf>,
-    /// How jobs start. Under sway they start through it (see [`crate::sway`]), so the game's window opens
-    /// on the game's workspace.
-    pub jobs: Runner,
     /// Where the launches' control sockets go, which a command gets as `{socket}`.
     pub sockets: PathBuf,
 }
@@ -133,7 +129,7 @@ fn start(config: &Config, request: &Request) -> Result<(), Error> {
     match &request.launch {
         Launch::Program { argv, .. } if argv.is_empty() => Err(Error::EmptyCommand),
         Launch::Program { argv, workdir } => start_program(config, request, argv.clone(), workdir.clone()),
-        Launch::Steam { appid } => steam::start(config, request, *appid),
+        Launch::Steam { appid } => steam::start(request, *appid),
         Launch::None | Launch::Tool(_) => Err(Error::NoCommand),
     }
 }
@@ -156,15 +152,13 @@ fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir:
         Ok(exe) => env.push(("CLAMSHELL".to_owned(), exe.to_string_lossy().into_owned())),
         Err(e) => log::warn!("launcher: finding this program's path: {e}"),
     }
-    let job = Job { unit: request.instance.name(), workspace: request.instance.workspace(), slice: request.instance.slice(), argv, env, workdir };
-    started(config.jobs.start(&job)?, request)
+    let job = Job { unit: request.instance.name(), slice: request.instance.slice(), argv, env, workdir };
+    started(job::start(&job)?, request)
 }
 
-/// Waits for a job started for `request` until its scope is there, since sway may not start it.
-pub(super) fn started(started: Started, request: &Request) -> Result<(), Error> {
-    if let Started::Child(child) = started {
-        job::reap(child);
-    }
+/// Waits for a job started for `request` until its scope is there: until then it may yet fail to start.
+pub(super) fn started(child: std::process::Child, request: &Request) -> Result<(), Error> {
+    job::reap(child);
     let unit = request.instance.unit().ok_or(Error::NoScope)?;
     scopes::appear(&unit, GAME_START)?;
     Ok(())
@@ -277,7 +271,7 @@ mod tests {
     use std::sync::mpsc;
 
     fn config() -> Config {
-        Config { watch_later: Vec::new(), jobs: Runner { jobs: std::env::temp_dir(), sway: None }, sockets: std::env::temp_dir() }
+        Config { watch_later: Vec::new(), sockets: std::env::temp_dir() }
     }
 
     /// Runs only where there is a user manager to start the scope.

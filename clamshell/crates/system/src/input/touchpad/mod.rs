@@ -1,8 +1,7 @@
 //! The second screen as a touchpad (see clamshell-state's `touch`). The fingers the UI says are pointing,
-//! on any tab, or any finger in the touchpad tab, go to a virtual touchpad. sway's libinput then does
-//! what it does for a laptop touchpad: pointer motion with acceleration, tap to click, two-finger scroll,
-//! tap and drag, and palm detection, all configurable with `input` lines. Our part is only the
-//! forwarding.
+//! on any tab, or any finger in the touchpad tab, go to a virtual touchpad. The compositor's libinput then
+//! does what it does for a laptop touchpad: pointer motion with acceleration, tap to click, two-finger
+//! scroll, tap and drag, and palm detection. Our part is only the forwarding.
 //!
 //! The touchpad is the size of the second screen, in its pixels. It is made once the UI has drawn that
 //! screen, and kept: libinput takes a moment to see a new device, so it is ready before any finger.

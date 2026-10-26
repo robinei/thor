@@ -1,6 +1,6 @@
 //! Applying settings to the hardware: the power profile and the CPU and GPU frequency caps, the big
-//! cores, and the charge limit. The frame rate cap and HUD go to a game's MangoHud config instead (see
-//! [`crate::readings::mangohud`]), and [`crate::wiring::Tuning`] sends each setting where it goes.
+//! cores, and the charge limit. The frame rate cap and HUD are the compositor's, and
+//! [`crate::wiring::Tuning`] sends each setting where it goes.
 //!
 //! This writes each cpufreq policy's `scaling_max_freq`, the GPU devfreq device's `max_freq`, the CPUs'
 //! `online`, the battery's `charge_control_end_threshold` and `constant_charge_current` (see [`Hold`]),

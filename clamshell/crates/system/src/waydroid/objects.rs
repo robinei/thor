@@ -1,6 +1,6 @@
 //! What the proxy reads of the protocol and what it changes. It reads the registry, `xdg_wm_base`, its
 //! surfaces and their toplevels (app id, size, activated). It drops toplevel configures of an unchanged
-//! size, puts Android's caption out of sight, and counts the active window's commits as its frame rate.
+//! size and puts Android's caption out of sight.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -34,11 +34,7 @@ pub(super) const CONFIGURE: u16 = 0;
 
 pub(super) const ACTIVATED: u32 = 4;
 
-/// wl_surface: `commit`.
-pub(super) const COMMIT: u16 = 6;
-
-/// How often a frame rate row is written, and how often the settings' files are read again.
-pub(super) const ROW_EVERY: Duration = Duration::from_millis(500);
+/// How often the settings' files are read again.
 pub(super) const SETTINGS_EVERY: Duration = Duration::from_secs(1);
 
 /// What to do with a message.
@@ -87,15 +83,11 @@ impl Settings {
 #[derive(Debug)]
 pub(super) struct Toplevel {
     xdg_surface: u32,
-    surface: u32,
     app_id: String,
     /// The size of the last configure passed on, as the compositor gave it. With none yet, the first
     /// configure goes through.
     size: Option<(i32, i32)>,
     active: bool,
-    /// Commits since `since`.
-    commits: u32,
-    since: Option<Instant>,
 }
 
 /// What the proxy knows of a connection's objects.
@@ -103,8 +95,7 @@ pub(super) struct Toplevel {
 pub(super) struct Objects {
     registries: HashSet<u32>,
     wm_bases: HashSet<u32>,
-    /// Each xdg_surface's wl_surface.
-    xdg_surfaces: HashMap<u32, u32>,
+    xdg_surfaces: HashSet<u32>,
     pub(super) toplevels: HashMap<u32, Toplevel>,
     pub(super) settings: Settings,
 }
@@ -116,10 +107,6 @@ impl Objects {
 
     pub(super) fn toplevel_of_xdg_surface(&self, xdg_surface: u32) -> Option<u32> {
         self.toplevels.iter().find(|(_, t)| t.xdg_surface == xdg_surface).map(|(id, _)| *id)
-    }
-
-    pub(super) fn toplevel_of_surface(&self, surface: u32) -> Option<u32> {
-        self.toplevels.iter().find(|(_, t)| t.surface == surface).map(|(id, _)| *id)
     }
 
     /// Handles a request from the client. It notes the objects the client makes that the proxy follows,
@@ -140,18 +127,15 @@ impl Objects {
         match opcode {
             GET_REGISTRY if object == DISPLAY => self.registries.extend(word(0)),
             GET_XDG_SURFACE if self.wm_bases.contains(&object) => {
-                if let (Some(id), Some(surface)) = (word(0), word(1)) {
-                    self.xdg_surfaces.insert(id, surface);
-                }
+                self.xdg_surfaces.extend(word(0));
             }
-            GET_TOPLEVEL if self.xdg_surfaces.contains_key(&object) => {
-                let surface = self.xdg_surfaces.get(&object).copied().unwrap_or(0);
+            GET_TOPLEVEL if self.xdg_surfaces.contains(&object) => {
                 if let Some(id) = word(0) {
-                    let t = Toplevel { xdg_surface: object, surface, app_id: String::new(), size: None, active: false, commits: 0, since: None };
+                    let t = Toplevel { xdg_surface: object, app_id: String::new(), size: None, active: false };
                     self.toplevels.insert(id, t);
                 }
             }
-            SET_WINDOW_GEOMETRY if self.xdg_surfaces.contains_key(&object) && self.toplevel_of_xdg_surface(object).is_some() => {
+            SET_WINDOW_GEOMETRY if self.xdg_surfaces.contains(&object) && self.toplevel_of_xdg_surface(object).is_some() => {
                 self.settings.refresh(now);
                 let caption = self.settings.caption;
                 let int = |i: usize| word(i).map(|w| w as i32);
@@ -167,12 +151,6 @@ impl Objects {
                 let app_id = args.get(4..4 + len.saturating_sub(1)).map(|b| String::from_utf8_lossy(b).into_owned()).unwrap_or_default();
                 if let Some(t) = self.toplevels.get_mut(&object) {
                     t.app_id = app_id;
-                }
-            }
-            COMMIT => {
-                if let Some(t) = self.toplevel_of_surface(object).and_then(|id| self.toplevels.get_mut(&id)) {
-                    t.commits += 1;
-                    t.since.get_or_insert(now);
                 }
             }
             _ => {}
@@ -219,20 +197,5 @@ impl Objects {
             return Pass::Replace(message(object, opcode, &changed));
         }
         Pass::Keep
-    }
-
-    /// The active toplevel's app id and frame rate in commits per second. It is given once half a second
-    /// has passed since it was last given.
-    pub(super) fn frame_rate(&mut self, now: Instant) -> Option<(String, f32)> {
-        let t = self.toplevels.values_mut().find(|t| t.active && !t.app_id.is_empty())?;
-        let since = t.since?;
-        let elapsed = now.duration_since(since);
-        if elapsed < ROW_EVERY {
-            return None;
-        }
-        let fps = t.commits as f32 / elapsed.as_secs_f32();
-        t.commits = 0;
-        t.since = Some(now);
-        Some((t.app_id.clone(), fps))
     }
 }

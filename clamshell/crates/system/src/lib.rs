@@ -13,8 +13,7 @@
 //! - [`time`]: the clock and timedated;
 //! - `network`: NetworkManager and BlueZ;
 //! - [`session`]: the tray, clipboard, account and notifications;
-//! - [`readings`]: what the bar and tabs show (status, metrics, the battery, frame rates, MangoHud's files);
-//! - `sway`: the compositor;
+//! - [`readings`]: what the bar and tabs show (status, metrics, the battery);
 //! - [`waydroid`]: the Wayland proxy for Android's windows;
 //! - [`store`] and [`paths`]: ClamShell's own files, and where they are;
 //! - [`os`]: operating system plumbing that knows nothing of the rest. [`os::worker`] is how a thread is
@@ -35,7 +34,6 @@ pub mod profile;
 pub mod readings;
 pub mod session;
 pub mod store;
-pub(crate) mod sway;
 pub mod time;
 pub mod waydroid;
 pub mod wiring;

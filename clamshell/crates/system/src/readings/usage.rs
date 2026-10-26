@@ -111,8 +111,8 @@ fn read_processes() -> HashMap<u32, Counters> {
 
 /// Whether a process may be ended from the battery tab. ClamShell itself and the session's own processes
 /// may not. The session's own are those in:
-/// - `session.slice`, which under uwsm holds sway, ClamShell, mako, udiskie, PipeWire and the bus;
-/// - a login session's scope, where sway runs without uwsm in a desktop's session;
+/// - `session.slice`, which under uwsm holds ClamShell, udiskie, PipeWire and the bus;
+/// - a login session's scope;
 /// - the user manager's own scope;
 /// - ClamShell's service.
 fn endable(pid: u32, dir: &std::path::Path) -> bool {

@@ -22,8 +22,8 @@ use std::time::{Duration, Instant};
 
 use clamshell_state::Instance;
 
-use super::job::{self, Job, Started};
-use super::launcher::{Config, Error, Request, parents, started, with_descendants};
+use super::job::{self, Job};
+use super::launcher::{Error, Request, parents, started, with_descendants};
 use super::scopes;
 use crate::os::{cgroup, sys};
 
@@ -39,16 +39,16 @@ const STEAM_GAP: Duration = Duration::from_secs(10);
 /// Starts a Steam game. Steam is asked to start it, unless its launcher already runs because it was
 /// started in Steam itself. Then the launch's scope is started with the follower in it. See the module
 /// docs.
-pub(super) fn start(config: &Config, request: &Request, appid: u32) -> Result<(), Error> {
+pub(super) fn start(request: &Request, appid: u32) -> Result<(), Error> {
     if steam_running(&format!("AppId={appid}")) {
         log::info!("launcher: Steam's AppId={appid} runs: following it");
     } else {
-        ask_steam(config, request, appid)?;
+        ask_steam(request, appid)?;
     }
     let follower = std::env::current_exe()?.to_string_lossy().into_owned();
     let argv = vec![follower, "--follow-steam".to_owned(), appid.to_string()];
-    let job = Job { unit: request.instance.name(), workspace: request.instance.workspace(), slice: request.instance.slice(), argv, env: vec![], workdir: None };
-    started(config.jobs.without_sway().start(&job)?, request)
+    let job = Job { unit: request.instance.name(), slice: request.instance.slice(), argv, env: vec![], workdir: None };
+    started(job::start(&job)?, request)
 }
 
 /// `clamshell --follow-steam <id>`, run in a Steam game's launch scope. It moves Steam's launcher for the
@@ -76,18 +76,16 @@ pub fn follow(appid: u32) {
 }
 
 /// Asks Steam to start a game, starting Steam for it if it isn't running.
-pub(super) fn ask_steam(config: &Config, request: &Request, appid: u32) -> Result<(), Error> {
+pub(super) fn ask_steam(request: &Request, appid: u32) -> Result<(), Error> {
     let env = &request.env;
     // With `-silent`, a Steam that isn't running starts without its window, so only the game shows.
     let argv: Vec<String> = ["steam", "-gamepadui", "-silent", "-applaunch", &appid.to_string()].map(String::from).to_vec();
     if !steam_client_running() {
         let instance = Instance::Run { key: clamshell_library::key_of(STEAM_ENTRY), secs: crate::time::clock::unix_secs(), n: 0 };
         let displays = env.iter().filter(|(k, _)| k == "WAYLAND_DISPLAY" || k == "DISPLAY").cloned().collect();
-        let job = Job { unit: instance.name(), workspace: instance.workspace(), slice: instance.slice(), argv, env: displays, workdir: None };
+        let job = Job { unit: instance.name(), slice: instance.slice(), argv, env: displays, workdir: None };
         log::info!("launcher: Steam isn't running: starting it in {}", job.unit);
-        if let Started::Child(child) = config.jobs.without_sway().start(&job)? {
-            job::reap(child);
-        }
+        job::reap(job::start(&job)?);
     } else {
         let mut steam = Process::new("steam");
         steam.args(argv.iter().skip(1)).envs(env.iter().map(|(k, v)| (k, v))).stdin(Stdio::null()).process_group(0);

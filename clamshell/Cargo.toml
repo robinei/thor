@@ -77,7 +77,7 @@ serde_json.workspace = true
 clamshell-system.workspace = true
 clamshell-library.workspace = true
 clamshell-ui.workspace = true
-clamshell-compositor = { workspace = true, optional = true }
+clamshell-compositor.workspace = true
 log.workspace = true
 env_logger.workspace = true
 rustix.workspace = true
@@ -91,7 +91,6 @@ image.workspace = true
 [features]
 # `--snapshot` and the demo library it draws: for development, not the device's build.
 dev = ["clamshell-library/demo"]
-compositor = ["dep:clamshell-compositor"]
 
 [lints]
 workspace = true

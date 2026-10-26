@@ -1,21 +1,6 @@
-//! Screenshots of both screens: grim under sway, or pixels from the in-process compositor.
+//! Screenshots of both screens: the compositor's pixels, saved as PNG.
 
 use std::path::PathBuf;
-
-use crate::os::command;
-
-/// Saves both screens, as the compositor lays them out, into one PNG named by the time. Returns its path,
-/// or why it failed.
-pub fn screenshot(dir: Option<&PathBuf>) -> Result<String, String> {
-    let file = filename(dir)?;
-    let path = file.to_string_lossy().into_owned();
-    if command::output("grim", &[&path]).is_some() {
-        log::info!("screenshot: {path}");
-        Ok(path)
-    } else {
-        Err("grim failed (is it installed, and does the compositor allow screen capture?)".into())
-    }
-}
 
 /// An opaque SDR RGBA8 capture, with the top row first. Capture format does not select render format.
 #[derive(Debug, Clone, PartialEq, Eq)]

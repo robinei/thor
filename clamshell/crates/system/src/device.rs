@@ -20,7 +20,6 @@ use crate::{Closed, Sink};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    Screenshot,
     SaveScreenshot(Result<screenshot::Pixels, String>),
     Sleep,
     Notify {
@@ -81,7 +80,6 @@ fn carry_out(
     sink: &(impl Sink + Clone),
 ) -> Result<(), Closed> {
     match command {
-        Command::Screenshot => sink.send(Event::Screenshot(screenshot::screenshot(screenshots))),
         Command::SaveScreenshot(pixels) => sink.send(Event::Screenshot(pixels.and_then(|pixels| screenshot::save(screenshots, pixels)))),
         // Busy means something is working that the user left running, such as a download or a build.
         Command::Sleep => match sleep::busy() {

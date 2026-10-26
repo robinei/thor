@@ -14,10 +14,6 @@ pub struct Paths {
     pub art: Option<PathBuf>,
     /// Where mpv keeps the position of videos quit before the end. See [`crate::launch::mpv`].
     pub watch_later: Vec<PathBuf>,
-    /// Launches handed to sway's exec, in $XDG_RUNTIME_DIR/clamshell/jobs. See [`crate::launch::job`].
-    pub jobs: PathBuf,
-    /// MangoHud's config files and frame logs, in RAM ($XDG_RUNTIME_DIR/clamshell/mangohud).
-    pub mangohud: PathBuf,
     /// The launches' control sockets, which a command gets as `{socket}`. They are in
     /// $XDG_RUNTIME_DIR/clamshell/sockets.
     pub sockets: PathBuf,
@@ -69,8 +65,6 @@ impl Paths {
         let art = base.xdg(base.cache_home.as_ref(), ".cache").map(|c| c.join("clamshell/art"));
         let watch_later = crate::launch::mpv::watch_later_dirs(config.as_deref(), base.xdg(base.state_home.as_ref(), ".local/state").as_deref());
         Paths {
-            jobs: base.runtime.clone().unwrap_or_else(std::env::temp_dir).join("clamshell/jobs"),
-            mangohud: base.runtime.clone().unwrap_or_else(|| PathBuf::from("/tmp")).join("clamshell/mangohud"),
             sockets: base.runtime.clone().unwrap_or_else(std::env::temp_dir).join("clamshell/sockets"),
             runtime: base.runtime.clone(),
             control: base.runtime.as_ref().map(|r| r.join("clamshell-control")),
@@ -104,7 +98,6 @@ mod tests {
         let paths = Paths::new(&base);
         assert_eq!(paths.library.as_deref(), Some(Path::new("/h/.config/clamshell/library.json")));
         assert_eq!(paths.state_dir.as_deref(), Some(Path::new("/h/.local/share/clamshell")));
-        assert_eq!((paths.jobs.as_path(), paths.mangohud.as_path()), (Path::new("/run/u/clamshell/jobs"), Path::new("/run/u/clamshell/mangohud")));
         assert_eq!(paths.art.as_deref(), Some(Path::new("/h/.cache/clamshell/art")));
         assert_eq!(Paths::new(&Base::default()).state_dir, None, "no HOME, no XDG dirs");
     }

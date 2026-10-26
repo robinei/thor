@@ -32,7 +32,7 @@ _target() { echo "$CARCH-unknown-linux-gnu"; }
 build() {
     cd "$(_repo)/clamshell"
     # (CARGO_TARGET_DIR: a target dir kept between builds.)
-    CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$srcdir/target} cargo build --release --locked --target "$(_target)" --features compositor
+    CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$srcdir/target} cargo build --release --locked --target "$(_target)"
     # The licenses of what is built into the programs: the crates they link, the font.
     python3 "$(_repo)/tools/repo/third-party-licenses.py" . "$(_target)" > "$srcdir/THIRD-PARTY"
 }

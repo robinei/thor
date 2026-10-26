@@ -1,5 +1,5 @@
-//! The session: it builds the state from what was saved, runs the UI, and starts the system threads once
-//! the UI is up.
+//! The session: it builds the state from what was saved, runs the compositor with the UI, and starts the
+//! system threads once it is up.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -57,119 +57,79 @@ pub(crate) fn saved(paths: &Paths) -> Init {
     }
 }
 
-/// What shows the windows.
+/// Where the compositor shows the screens.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Host {
-    /// sway, with ClamShell a client of it.
-    Sway,
-    /// ClamShell's compositor in a window on a desktop.
-    #[cfg(feature = "compositor")]
+pub(crate) enum Host {
+    /// In a window on a desktop.
     Nested,
-    /// ClamShell's compositor on the machine's screens.
-    #[cfg(feature = "compositor")]
+    /// On the machine's screens, as the device's own session: it takes the hardware keys (volume,
+    /// brightness) and may put the device to sleep when idle.
     Drm,
 }
 
-/// Runs the session: the state from what was saved, the UI, and the system threads.
-pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources) -> Result<(), String> {
-    run_host(env, paths, sources, Host::Sway)
-}
-
-#[cfg(feature = "compositor")]
-pub(crate) fn run_nested(env: &Env, paths: Paths, sources: &Sources) -> Result<(), String> {
-    run_host(env, paths, sources, Host::Nested)
-}
-
-#[cfg(feature = "compositor")]
-pub(crate) fn run_drm(env: &Env, paths: Paths, sources: &Sources) -> Result<(), String> {
-    run_host(env, paths, sources, Host::Drm)
-}
-
-fn run_host(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Result<(), String> {
+/// Runs the session: the state from what was saved, the compositor with the UI, and the system threads.
+pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Result<(), String> {
     let loaded = library::load(sources);
     // Metadata to fetch once the threads run, if there is somewhere to keep it.
     let fetch = paths.art.clone().map(|art| meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art });
+    let device_session = host == Host::Drm;
     let state = State::new(Init {
         profile: env.profile,
         library: loaded.library,
         start_tab: env.start_tab,
         pad_mouse: env.pad_mouse,
-        device_session: env.device_session,
-        compositor: host != Host::Sway,
+        device_session,
+        compositor: true,
         // Settings, keymaps, curves, window rules, brightness, the dock, where shelf was.
         ..saved(&paths)
     });
-    // Nested, the screens are the device's own sizes, as pixels of the host's window; the other hosts take
-    // theirs from the outputs.
-    #[cfg(feature = "compositor")]
-    let nested = host == Host::Nested;
-    #[cfg(not(feature = "compositor"))]
-    let nested = false;
-    let preview = if nested { env.profile.preview } else { env.profile.preview.half() };
-    let config = Config {
-        bottom_output: env.bottom_output.clone(),
-        top_size: preview.top,
-        bottom_size: preview.bottom,
-        bottom_panel: env.bottom_panel,
-        touch_layout: Arc::default(),
-    };
+    // Nested, the screens are the device's own sizes, as pixels of the host's window; on the screens,
+    // they are taken from the outputs.
+    let preview = if host == Host::Nested { env.profile.preview } else { env.profile.preview.half() };
+    let config = Config { bottom_output: String::new(), top_size: preview.top, bottom_size: preview.bottom, bottom_panel: false, touch_layout: Arc::default() };
     let layout = config.touch_layout.clone();
     let global = state.prefs().settings().global;
-    // The threads send to the UI's event loop, so they start once it exists. Effects are dispatched only
-    // after that.
+    // The threads send to the compositor's event loop, so they start once it exists. Effects are
+    // dispatched only after that.
     let handles: Rc<RefCell<Option<Handles>>> = Rc::default();
     let started = handles.clone();
-    let mut system_config = wiring::Config {
-        profile: env.profile,
-        gamepad: env.gamepad.clone(),
-        device_session: env.device_session,
-        sway: env.sway.clone(),
-        clipboard_display: None,
-        bottom_output: env.bottom_output.clone(),
-        backlights: env.backlights.clone(),
-        compositor: host != Host::Sway,
-    };
-    let start = move |sender: EventSender, display| {
-        system_config.clipboard_display = display;
-        if let Some(path) = env.control.as_ref().or(paths.control.as_ref()) {
-            control::spawn(path.clone(), UiSink(sender.clone()));
-        }
-        *started.borrow_mut() = Some(start(&system_config, &paths, sources, layout, &global, fetch, sender));
-    };
-    #[cfg(feature = "compositor")]
     let capture_handles = handles.clone();
     let on_effect = move |effect: &clamshell_state::Effect| {
         if let Some(handles) = handles.borrow_mut().as_mut() {
             handles.dispatch(effect);
         }
     };
-    #[cfg(feature = "compositor")]
-    if host != Host::Sway {
-        let identify = |pid| clamshell_compositor::Process {
-            unit: clamshell_system::os::unit_of(pid),
-            pids: clamshell_system::os::lineage(pid),
-            steam_app: clamshell_system::os::steam_app_of(pid),
+    let identify = |pid| clamshell_compositor::Process {
+        unit: clamshell_system::os::unit_of(pid),
+        pids: clamshell_system::os::lineage(pid),
+        steam_app: clamshell_system::os::steam_app_of(pid),
+    };
+    let on_capture = move |captured: Result<clamshell_compositor::Capture, String>| {
+        if let Some(handles) = capture_handles.borrow().as_ref() {
+            handles.save_screenshot(captured.map(|capture| wiring::ScreenshotPixels { size: capture.size, rgba: capture.rgba }));
+        }
+    };
+    let start = move |sender: EventSender, displays: clamshell_compositor::Displays| {
+        // On the screens, ClamShell is uwsm's compositor unit.
+        if host == Host::Drm {
+            clamshell_system::session::uwsm::finalize(&displays.wayland, &displays.x11);
+        }
+        let system_config = wiring::Config {
+            profile: env.profile,
+            gamepad: env.gamepad.clone(),
+            device_session,
+            clipboard_display: displays.socket,
+            backlights: env.backlights.clone(),
         };
-        let on_capture = move |captured: Result<clamshell_compositor::Capture, String>| {
-            if let Some(handles) = capture_handles.borrow().as_ref() {
-                handles.save_screenshot(captured.map(|capture| wiring::ScreenshotPixels { size: capture.size, rgba: capture.rgba }));
-            }
-        };
-        let start = |sender, displays: clamshell_compositor::Displays| {
-            // On the screens, ClamShell is uwsm's compositor unit, as sway is.
-            if host == Host::Drm {
-                clamshell_system::session::uwsm::finalize(&displays.wayland, &displays.x11);
-            }
-            start(sender, Some(displays.socket));
-        };
-        let result = if host == Host::Drm {
-            clamshell_compositor::run_drm(state, config, start, on_effect, identify, on_capture)
-        } else {
-            clamshell_compositor::run(state, config, start, on_effect, identify, on_capture)
-        };
-        return result.map_err(|e| e.to_string());
-    }
-    let result = clamshell_ui::run(state, config, |sender| start(sender, None), on_effect);
+        if let Some(path) = env.control.as_ref().or(paths.control.as_ref()) {
+            control::spawn(path.clone(), UiSink(sender.clone()));
+        }
+        *started.borrow_mut() = Some(start(&system_config, &paths, sources, layout, &global, fetch, sender));
+    };
+    let result = match host {
+        Host::Drm => clamshell_compositor::run_drm(state, config, start, on_effect, identify, on_capture),
+        Host::Nested => clamshell_compositor::run(state, config, start, on_effect, identify, on_capture),
+    };
     result.map_err(|e| e.to_string())
 }
 

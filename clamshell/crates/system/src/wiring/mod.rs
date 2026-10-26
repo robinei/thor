@@ -15,11 +15,11 @@ pub use crate::display::screenshot::Pixels as ScreenshotPixels;
 pub use handles::Handles;
 pub use settings::Tuning;
 
+use crate::Sink;
 use crate::audio::{mixer, sound};
 use crate::display::brightness::{self, Backlights};
 use crate::input::keyboard::VirtualKeyboard;
 use crate::input::{pad, touchpad};
-use crate::launch::job::Runner;
 use crate::launch::{launcher, scopes};
 use crate::library::meta::cache::Cache;
 use crate::library::{self, Sources, meta};
@@ -28,10 +28,9 @@ use crate::os::evdev::device::DeviceSpec;
 use crate::os::worker::Worker;
 use crate::paths::Paths;
 use crate::power::tuning;
-use crate::readings::{battery, frames, metrics, status};
+use crate::readings::{battery, metrics, status};
 use crate::store::{Store, Writer};
 use crate::time::clock;
-use crate::{Sink, sway};
 
 /// What the threads are told about the environment, from the binary's `Env`.
 pub struct Config {
@@ -40,17 +39,10 @@ pub struct Config {
     pub gamepad: DeviceSpec,
     /// Whether ClamShell is the device's own session, in which case it takes the hardware keys.
     pub device_session: bool,
-    /// sway's socket, under sway.
-    pub sway: Option<PathBuf>,
-    /// An explicit compositor socket for the clipboard, or the environment under sway.
-    pub clipboard_display: Option<PathBuf>,
-    /// The second screen's output.
-    pub bottom_output: String,
+    /// The compositor's socket, for the clipboard.
+    pub clipboard_display: PathBuf,
     /// The backlights' folder: /sys/class/backlight, or a stand-in.
     pub backlights: PathBuf,
-    /// Whether ClamShell is the compositor, which measures and caps frames itself: games aren't started
-    /// with MangoHud then.
-    pub compositor: bool,
 }
 
 /// A thread with commands, or a stand-in that takes none if it couldn't be started.
@@ -116,24 +108,14 @@ pub fn start<S: Sink + Clone>(
         detached("meta", meta::spawn(fetch, &fetching, sink.clone()));
     }
     let rescan = rescanner(sources.clone(), paths.clone(), fetching.clone(), sink.clone());
-    if !env.compositor {
-        detached("frames", frames::spawn(paths.mangohud.clone(), sink.clone()));
-    }
     let touchpad = started("touchpad", touchpad::spawn(layout));
     // Watch input on every device for idle, and the hardware keys in the device's own session.
     detached("input watch", crate::input::watch::spawn(env.device_session, sink.clone()));
-    let sway = sway::spawn(env.sway.clone(), env.bottom_output.clone(), sink.clone()).unwrap_or_else(|e| {
-        log::error!("sway thread: {e}");
-        env.sway.as_ref().map(|_| Worker::gone("sway commands"))
-    });
     detached("units", scopes::spawn(sink.clone()));
     // Games start from the launcher, each on a thread of its own, so several start side by side. Plays
     // go to the database.
-    let jobs = Runner { jobs: paths.jobs.clone(), sway: sway.clone() };
-    let launcher = started(
-        "launcher",
-        launcher::spawn(launcher::Config { watch_later: paths.watch_later.clone(), jobs: jobs.clone(), sockets: paths.sockets.clone() }, sink.clone()),
-    );
+    let launcher =
+        started("launcher", launcher::spawn(launcher::Config { watch_later: paths.watch_later.clone(), sockets: paths.sockets.clone() }, sink.clone()));
     // The controller is grabbed for good, with a virtual Xbox pad for games.
     let pad_taken = pad::Taken::default();
     let pad = started("pad", pad::spawn(env.gamepad.clone(), env.profile.controls, env.profile.sensor_hub, pad_taken.clone(), sink.clone()));
@@ -147,7 +129,7 @@ pub fn start<S: Sink + Clone>(
     let mixer = started("mixer", mixer::spawn(backlights.clone(), sink.clone()));
     let bluetooth = started("bluetooth", bluetooth::spawn(sink.clone()));
     let tray = started("tray", crate::session::tray::spawn(sink.clone()));
-    detached("clipboard", crate::session::clipboard::spawn(env.clipboard_display.clone(), sink.clone()));
+    detached("clipboard", crate::session::clipboard::spawn(Some(env.clipboard_display.clone()), sink.clone()));
     let icons = started("icons", crate::session::icons::spawn(sink.clone()));
     let system = started(
         "system",
@@ -172,12 +154,8 @@ pub fn start<S: Sink + Clone>(
     let browse = started("browse", crate::files::browse::spawn_browse(browsing, sink.clone()));
     let files = started("files", crate::files::ops::spawn_ops(sources.home.clone(), sink.clone()));
     let wifi = started("wifi", wifi::spawn(sink));
-    let tuning = Tuning {
-        hardware: started("tuning", tuning::spawn(env.profile.charge)),
-        pad: pad.clone(),
-        mangohud: (!env.compositor).then(|| paths.mangohud.clone()),
-    };
-    tuning.apply(global, None);
+    let tuning = Tuning { hardware: started("tuning", tuning::spawn(env.profile.charge)), pad: pad.clone() };
+    tuning.apply(global);
     let store = paths.state_dir.as_deref().and_then(|dir| Writer::spawn(Store::open(dir)).map_err(|e| log::error!("store thread: {e}")).ok());
     Handles {
         paths: paths.clone(),
@@ -196,8 +174,6 @@ pub fn start<S: Sink + Clone>(
         pad,
         pad_taken,
         launcher,
-        sway,
-        jobs,
         sound: started("sound", sound::spawn()),
         system,
         brightness: started("brightness", brightness::spawn(backlights)),

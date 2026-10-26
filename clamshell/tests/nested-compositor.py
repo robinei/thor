@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run the in-process compositor in headless sway and check a real client's pixels on both screens.
 
-Build first (in clamshell/): cargo build --features compositor
+Build first (in clamshell/): cargo build
     cargo build -p clamshell-compositor --examples
 Run with --gpu to require native dmabuf on a machine with an accessible render node.
 Needs sway, Xwayland, foot and grim; --gpu also needs vkcube with Wayland WSI support and a Vulkan driver. Leaves screenshots and logs in the printed temporary directory.

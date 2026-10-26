@@ -4,7 +4,7 @@
 //!
 //! - A toplevel configure with the size the window already has is dropped. Waydroid answers every
 //!   configure with a display hotplug, which clears its windows. A window is drawn again only with its
-//!   app's next frame, and an app at rest draws none. Sway configures a window, with its size unchanged,
+//!   app's next frame, and an app at rest draws none. A compositor configures a window, with its size unchanged,
 //!   whenever it is hidden, shown, focused or unfocused (`suspended`, `activated`). So an Android app's
 //!   window was lost whenever it went out of sight or lost focus. A resize still reaches Waydroid.
 //! - Android's caption, with its back, minimise, maximise and close buttons drawn into the top of the
@@ -13,9 +13,6 @@
 //!   fills the window, unscaled. The caption's height, in pixels at Android's density, is in
 //!   `android-caption` in ClamShell's runtime dir. The Android script writes it. Without the file the
 //!   caption is shown.
-//! - The app's frame rate is measured from its window's commits and written the way MangoHud logs its
-//!   own: a CSV row every half second with fps and frame time, in ClamShell's MangoHud folder, as
-//!   `android-<app>.csv`. ClamShell reads it as it reads a game's.
 //!
 //! There is no frame rate cap. Waydroid paces Android by a vsync of its own, whose period is fixed from
 //! the outputs' refresh when its session starts, and not by the compositor's frame callbacks.
@@ -36,13 +33,12 @@ use objects::Objects;
 use wire::relay;
 
 use crate::os::worker;
-use crate::readings::mangohud;
 
 /// Listens on `<display>-android` beside the compositor's socket (`$XDG_RUNTIME_DIR`, `$WAYLAND_DISPLAY`)
-/// and passes each connection through. `settings` is ClamShell's runtime dir with its `android-*` files,
-/// and `frames` is its MangoHud folder. Returns once the compositor closes a connection (see
+/// and passes each connection through. `settings` is ClamShell's runtime dir with its `android-*` files.
+/// Returns once the compositor closes a connection (see
 /// [`connect`]), or if it can't listen.
-pub fn run(settings: PathBuf, frames: PathBuf) -> io::Result<()> {
+pub fn run(settings: PathBuf) -> io::Result<()> {
     let runtime = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).ok_or_else(|| io::Error::other("no XDG_RUNTIME_DIR"))?;
     let display = std::env::var("WAYLAND_DISPLAY").map_err(|_| io::Error::other("no WAYLAND_DISPLAY"))?;
     let upstream = runtime.join(&display);
@@ -58,7 +54,7 @@ pub fn run(settings: PathBuf, frames: PathBuf) -> io::Result<()> {
     worker::detached("wayland filter", move || {
         for client in listener.incoming() {
             match client {
-                Ok(client) => connect(client, &upstream, &settings, &frames, &ended),
+                Ok(client) => connect(client, &upstream, &settings, &ended),
                 Err(e) => log::warn!("wayland filter: {e}"),
             }
         }
@@ -74,7 +70,7 @@ pub fn run(settings: PathBuf, frames: PathBuf) -> io::Result<()> {
 /// each way. If the compositor ends the connection, because it is gone or it dropped the client, the
 /// filter ends and `ended` is told. Waydroid can't go on without its display, since Android's system
 /// crashes when it next draws, and its session is bound to the filter's (see the Android script).
-fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path, ended: &mpsc::Sender<()>) {
+fn connect(client: UnixStream, upstream: &Path, settings: &Path, ended: &mpsc::Sender<()>) {
     let server = match UnixStream::connect(upstream) {
         Ok(s) => s,
         Err(e) => {
@@ -88,8 +84,7 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path, 
         (Ok(c), Ok(s), Ok(k)) => (c, s, k),
         (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => return log::warn!("wayland filter: {e}"),
     };
-    let (requests, rates) = (objects.clone(), objects.clone());
-    let mut log = mangohud::FrameLog::new(frames);
+    let requests = objects.clone();
     // Which end closed first. True means the compositor's.
     let first: Arc<OnceLock<bool>> = Arc::default();
     let first2 = first.clone();
@@ -100,17 +95,7 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path, 
         }
     };
     let requests_relay = worker::detached("wayland filter", move || {
-        relay(
-            &client,
-            &server,
-            |o, op, args, now| crate::os::lock(&requests).request(o, op, args, now),
-            |now| {
-                if let Some((app, fps)) = crate::os::lock(&rates).frame_rate(now) {
-                    log.row(&app, fps);
-                }
-            },
-            |client_closed| end(&first, !client_closed, &ended),
-        );
+        relay(&client, &server, |o, op, args, now| crate::os::lock(&requests).request(o, op, args, now), |client_closed| end(&first, !client_closed, &ended));
     });
     // If the first relay didn't start, every handle is dropped on return, which closes the connection.
     if let Err(e) = requests_relay {
@@ -121,7 +106,6 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, frames: &Path, 
             &server2,
             &client2,
             |o, op, args, now| crate::os::lock(&objects).event(o, op, args, now),
-            |_| {},
             |compositor_closed| end(&first2, compositor_closed, &ended2),
         );
     });
@@ -142,7 +126,7 @@ mod tests {
     use std::io::IoSliceMut;
     use std::mem::MaybeUninit;
     use std::os::fd::OwnedFd;
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags};
 
@@ -214,24 +198,6 @@ mod tests {
     }
 
     #[test]
-    fn the_active_windows_commits_are_its_frame_rate() {
-        let mut o = objects(0);
-        let t0 = Instant::now();
-        o.event(11, CONFIGURE, &configure(1920, 1080, &[ACTIVATED]), t0);
-        for i in 0..30 {
-            o.request(9, COMMIT, &[], t0 + Duration::from_millis(i * 20));
-        }
-        assert_eq!(o.frame_rate(t0 + Duration::from_millis(100)), None, "not half a second yet");
-        let (app, fps) = o.frame_rate(t0 + Duration::from_millis(600)).unwrap();
-        assert_eq!(app, "org.x");
-        assert!((fps - 50.0).abs() < 1.0, "{fps}");
-        // A window that isn't active has no frame rate.
-        o.event(11, CONFIGURE, &configure(1920, 1080, &[]), t0);
-        o.request(9, COMMIT, &[], t0 + Duration::from_millis(700));
-        assert_eq!(o.frame_rate(t0 + Duration::from_millis(1300)), None);
-    }
-
-    #[test]
     fn messages_are_taken_whole() {
         let mut buf = message(11, 0, &words(&[1, 2, 0]));
         buf.extend(message(10, 0, &words(&[5])));
@@ -250,8 +216,8 @@ mod tests {
         let objects = Arc::new(Mutex::new(Objects::default()));
         let (o1, o2) = (objects.clone(), objects.clone());
         let (cf, sn) = (client_far.try_clone().unwrap(), server_near.try_clone().unwrap());
-        std::thread::spawn(move || relay(&cf, &sn, |o, op, a, t| o1.lock().unwrap().request(o, op, a, t), |_| {}, |_| {}));
-        std::thread::spawn(move || relay(&server_near, &client_far, |o, op, a, t| o2.lock().unwrap().event(o, op, a, t), |_| {}, |_| {}));
+        std::thread::spawn(move || relay(&cf, &sn, |o, op, a, t| o1.lock().unwrap().request(o, op, a, t), |_| {}));
+        std::thread::spawn(move || relay(&server_near, &client_far, |o, op, a, t| o2.lock().unwrap().event(o, op, a, t), |_| {}));
         // The client makes a toplevel, sending an fd along.
         let mut requests = message(DISPLAY, GET_REGISTRY, &words(&[2]));
         requests.extend(message(2, BIND, &bind("xdg_wm_base", 4)));

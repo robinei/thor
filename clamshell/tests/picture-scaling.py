@@ -13,7 +13,7 @@ are checked. They are:
 Each is a library entry that is a game, launched from shelf, with Resolution, Scaling, AA and Sharpen set
 through the settings tiles. A screenshot per case is kept in the printed directory.
 
-Build first (in clamshell/): cargo build --features compositor
+Build first (in clamshell/): cargo build
     cargo build -p clamshell-compositor --example pattern-game
 Needs sway, Xwayland, grim, a C compiler and SDL 3. --gpu runs the host on GLES (as the device does);
 --keep leaves the session running at the end.

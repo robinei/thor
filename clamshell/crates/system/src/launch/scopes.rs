@@ -3,8 +3,8 @@
 //! unit of ours is coming, starting or going.
 //!
 //! This is the truth for what runs. A scope lives as long as any of its processes, whatever its windows
-//! do, and it survives a restart of ClamShell. When a session's sway ends, they all stop, because their
-//! slices are stopped after it: by uwsm on the device, and by the nested sway's unit on the desktop.
+//! do, and it survives a restart of ClamShell. When the session ends, they all stop, because their slices are
+//! stopped after it: by uwsm on the device, and by the nested session's unit on the desktop.
 
 use std::convert::Infallible;
 use std::fmt;

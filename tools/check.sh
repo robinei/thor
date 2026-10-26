@@ -9,8 +9,6 @@ cargo fmt --check
 cargo clippy --workspace --all-targets --quiet -- -D warnings
 # (The development build too: --snapshot and the demo library.)
 cargo clippy --package clamshell --features dev --quiet -- -D warnings
-# The experimental compositor's binary wiring, as well as its workspace crate.
-cargo clippy --package clamshell --features compositor --all-targets --quiet -- -D warnings
 # (And the release build, where code under cfg(debug_assertions) is gone.)
 cargo clippy --workspace --release --quiet -- -D warnings
 cargo test --workspace --quiet

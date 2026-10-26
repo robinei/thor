@@ -44,15 +44,8 @@ pub(super) fn messages(buf: &[u8]) -> (Vec<(u32, u16, std::ops::Range<usize>)>, 
 }
 
 /// Passes messages from `from` to `to` as `pass` says, with the file descriptors that come with them,
-/// until either end closes. Then both ends are shut. `after` is called after each read. `closed` is
-/// called before both ends are shut, with true if `from` closed.
-pub(super) fn relay(
-    from: &UnixStream,
-    to: &UnixStream,
-    mut pass: impl FnMut(u32, u16, &[u8], Instant) -> Pass,
-    mut after: impl FnMut(Instant),
-    closed: impl FnOnce(bool),
-) {
+/// until either end closes. Then both ends are shut. `closed` is called before both ends are shut, with true if `from` closed.
+pub(super) fn relay(from: &UnixStream, to: &UnixStream, mut pass: impl FnMut(u32, u16, &[u8], Instant) -> Pass, closed: impl FnOnce(bool)) {
     let mut buf: Vec<u8> = Vec::new();
     let mut chunk = vec![0u8; 16384];
     let mut out = Vec::new();
@@ -87,7 +80,6 @@ pub(super) fn relay(
             }
         }
         buf.drain(..used);
-        after(now);
         // The descriptors go with the bytes they came with, since the receiver takes them in order, by
         // message.
         if (!out.is_empty() || !received.is_empty())

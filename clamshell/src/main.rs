@@ -14,12 +14,9 @@ mod session;
 
 use std::process::ExitCode;
 
-use clamshell_state::settings::Hud;
 use clamshell_state::{Init, State};
-use clamshell_system::launch::job;
 use clamshell_system::library::{self, Sources};
 use clamshell_system::paths::Paths;
-use clamshell_system::readings::mangohud;
 
 use cli::Command;
 use config::Env;
@@ -46,40 +43,12 @@ fn carry_out(command: Command) -> Result<(), String> {
     let paths = Paths::new(&env.base);
     let sources = Sources::new(&paths, env.base.home.as_deref(), env.steam);
     match command {
-        Command::DeviceOutputs => {
-            print!("{}", profile::outputs(&env.profile));
-            Ok(())
-        }
         Command::DevicePanel => {
             println!("{}", profile::panel(&env.profile));
             Ok(())
         }
-        Command::Run => session::run(&env, paths, &sources),
-        Command::Nested => {
-            #[cfg(feature = "compositor")]
-            {
-                let mut env = env;
-                env.sway = None;
-                env.device_session = false;
-                session::run_nested(&env, paths, &sources)
-            }
-            #[cfg(not(feature = "compositor"))]
-            Err("--nested requires a build with --features compositor".into())
-        }
-        Command::Drm => {
-            #[cfg(feature = "compositor")]
-            {
-                // ClamShell is the device's session here, as under sway, but sway isn't there.
-                let mut env = env;
-                env.sway = None;
-                env.device_session = true;
-                session::run_drm(&env, paths, &sources)
-            }
-            #[cfg(not(feature = "compositor"))]
-            Err("--drm requires a build with --features compositor".into())
-        }
-        // `job::run` returns only if the job's program couldn't take over.
-        Command::RunJob(file) => Err(format!("{}: {}", file.display(), job::run(&file))),
+        Command::Nested => session::run(&env, paths, &sources, session::Host::Nested),
+        Command::Drm => session::run(&env, paths, &sources, session::Host::Drm),
         Command::Ctl(words) if words == ["help"] => {
             print!("{}", control::help());
             Ok(())
@@ -89,20 +58,14 @@ fn carry_out(command: Command) -> Result<(), String> {
             clamshell_system::launch::steam::follow(appid);
             Ok(())
         }
-        Command::MangohudEnv => {
-            let config = mangohud::config(&paths.mangohud, "default", 0, Hud::Off).map_err(|e| format!("MangoHud config: {e}"))?;
-            for (k, v) in mangohud::env(&config) {
-                println!("{k}={v}");
-            }
-            Ok(())
-        }
         Command::Library => {
             commands::print_library(State::new(Init { library: library::load(&sources).library, ..Init::default() }).shelf().library());
             Ok(())
         }
         Command::WaylandFilter => {
-            let runtime = paths.mangohud.parent().map_or_else(|| paths.mangohud.clone(), std::path::Path::to_path_buf);
-            clamshell_system::waydroid::run(runtime, paths.mangohud.clone()).map_err(|e| format!("wayland filter: {e}"))
+            // ClamShell's files in RAM, where the Android script writes the filter's settings.
+            let settings = paths.runtime.clone().unwrap_or_else(std::env::temp_dir).join("clamshell");
+            clamshell_system::waydroid::run(settings).map_err(|e| format!("wayland filter: {e}"))
         }
         Command::ClipboardGet => {
             let text = clamshell_system::session::clipboard::get().map_err(|e| format!("clipboard: {e}"))?;

@@ -1,19 +1,17 @@
 //! Carrying out the state's effects. Each effect goes to the thread or the device it is for.
 
-use clamshell_state::{Effect, Instance, Watch, WindowCommand};
+use clamshell_state::{Effect, Watch};
 
 use super::Tuning;
 use crate::audio::mixer;
 use crate::display::brightness;
 use crate::input::keyboard::VirtualKeyboard;
 use crate::input::{pad, touchpad};
-use crate::launch::job::Runner;
 use crate::launch::launcher;
 use crate::network::{bluetooth, wifi};
 use crate::os::worker::{self, Shown, Worker};
 use crate::paths::Paths;
 use crate::store::{Write, Writer};
-use crate::sway;
 
 /// The threads, and the one device, that effects go to.
 pub struct Handles {
@@ -40,9 +38,6 @@ pub struct Handles {
     /// The controller the pad thread grabbed. Launched SDL programs are told to ignore it.
     pub pad_taken: pad::Taken,
     pub launcher: Worker<launcher::Command>,
-    /// Windows and launches, under sway.
-    pub sway: Option<Worker<sway::Command>>,
-    pub jobs: Runner,
     pub sound: Worker<clamshell_state::Sound>,
     pub brightness: Worker<brightness::Command>,
     pub tuning: Tuning,
@@ -83,17 +78,12 @@ impl Handles {
             },
             Effect::Launch { entry, instance, launch, settings, env } => {
                 log::info!("launching {entry}");
-                // MangoHud's (under sway) or FIFO's (a cap under the compositor) first, so a game's own
-                // variables can still override them.
-                let mut game_env = match self.tuning.apply(settings, Some(entry)) {
-                    Some(config) => crate::readings::mangohud::env(&config),
-                    None => self.tuning.fifo_env(settings),
-                };
+                // The cap's first, so a game's own variables can still override them.
+                self.tuning.apply(settings);
+                let mut game_env = Tuning::fifo_env(settings);
                 game_env.extend(env.iter().cloned());
                 // The variables for the grabbed controller go first, so a game's own may override them.
                 game_env.splice(0..0, self.pad_taken.env());
-                // The game gets its own workspace, which is shown when its first window appears. The state
-                // asks for that.
                 self.launcher.send(launcher::Command::Launch(launcher::Request {
                     entry: entry.clone(),
                     instance: instance.clone(),
@@ -101,9 +91,7 @@ impl Handles {
                     env: game_env,
                 }));
             }
-            Effect::Apply { entry, settings } => {
-                self.tuning.apply(settings, entry.as_deref());
-            }
+            Effect::Apply { settings, .. } => self.tuning.apply(settings),
             Effect::Keymap(keymap) => self.tuning.keymap(keymap),
             Effect::CalibrateGyro => self.tuning.calibrate_gyro(),
             Effect::Save(save) => {
@@ -119,7 +107,6 @@ impl Handles {
                     store.send(Write::Play { id: entry.clone(), start: *start, duration: *duration });
                 }
             }
-            Effect::Window(command) => self.window(command),
             Effect::Enqueue { key, lines } => {
                 log::info!("effect: {effect:?}");
                 let socket = self.paths.socket(key);
@@ -157,7 +144,6 @@ impl Handles {
             Effect::Freeze { slice, frozen } => crate::launch::freezer::freeze(slice.clone(), *frozen),
             Effect::Tray(command) => self.tray.send(command.clone()),
             Effect::DumpWindowEvents(_) => log::debug!("window events: available in the in-process compositor"),
-            Effect::Screenshot => self.system.send(crate::device::Command::Screenshot),
             Effect::AskAwake(argv) => self.system.send(crate::device::Command::AskAwake(argv.clone())),
             Effect::Sleep => self.system.send(crate::device::Command::Sleep),
             Effect::Account(command) => self.system.send(crate::device::Command::Account(command.clone())),
@@ -169,16 +155,8 @@ impl Handles {
             Effect::Notify { summary, body, urgent } => {
                 self.system.send(crate::device::Command::Notify { summary: summary.clone(), body: body.clone(), urgent: *urgent })
             }
-            // The UI passes on only a change of the bottom screen's power alone, or one to set again, which
-            // goes through sway (see the effect).
-            Effect::Outputs { bottom, .. } => {
-                if let Some(sway) = &self.sway {
-                    sway.send(sway::Command::Power(*bottom));
-                }
-            }
-            // The UI handles quitting and the rest of the screens' power and refresh rate, since they are
-            // its Wayland business.
-            Effect::Quit | Effect::Refresh(_) => {}
+            // The compositor's own: the windows, the screens' power and refresh rate, screenshots, quitting.
+            Effect::Window(_) | Effect::Outputs { .. } | Effect::Refresh(_) | Effect::Screenshot | Effect::Quit => {}
         }
     }
 
@@ -205,25 +183,6 @@ impl Handles {
                 self.system.send(crate::device::Command::ReadTime);
             }
             Watch::Account => {}
-        }
-    }
-
-    fn window(&self, command: &WindowCommand) {
-        let Some(sway) = &self.sway else {
-            return;
-        };
-        match command {
-            WindowCommand::FocusWindow(id) => sway.send(sway::Command::Focus(*id)),
-            WindowCommand::KeyboardFocus(id) => sway.send(sway::Command::KeyboardFocus(*id)),
-            WindowCommand::ShowShelf => sway.send(sway::Command::Workspace(Instance::Shelf.name())),
-            WindowCommand::Move { windows, to } => sway.send(sway::Command::Move { windows: windows.clone(), workspace: to.clone() }),
-            WindowCommand::Close(ids) => ids.iter().for_each(|id| sway.send(sway::Command::Close(*id))),
-            WindowCommand::Down(id) => sway.send(sway::Command::Down(*id)),
-            WindowCommand::Up { window, to } => sway.send(sway::Command::Up { window: *window, workspace: to.clone() }),
-            WindowCommand::Return { window, to } => sway.send(sway::Command::Return { window: *window, workspace: to.clone() }),
-            WindowCommand::ShowDown(id) => sway.send(sway::Command::ShowDown(*id)),
-            WindowCommand::DownRules(rules) => sway.send(sway::Command::DownRules(rules.clone())),
-            WindowCommand::KnownApps(ids) => sway.send(sway::Command::LandRules(ids.clone())),
         }
     }
 }

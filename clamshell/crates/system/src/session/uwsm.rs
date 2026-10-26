@@ -1,5 +1,5 @@
 //! uwsm, which runs ClamShell's compositor as the session's main unit (`uwsm start -- clamshell --drm`,
-//! from thor-session), as it runs sway. Once ClamShell listens, `uwsm finalize` gives the user manager
+//! from thor-session). Once ClamShell listens, `uwsm finalize` gives the user manager
 //! WAYLAND_DISPLAY and DISPLAY, so that the session's services (udiskie) reach the compositor, and tells
 //! systemd that the unit has started, which brings up graphical-session.target.
 

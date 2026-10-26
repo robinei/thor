@@ -1,8 +1,7 @@
 //! The on-screen keyboard's output: a virtual keyboard through uinput, like the touchpad and the
 //! controller. Each key press from the keyboard mode becomes its modifiers pressed, the key pressed and
-//! released, and the modifiers released. Key positions are US, so the compositor must use the US layout
-//! for this device, or the characters drawn on the keys won't match what is typed. In sway that is
-//! `input "<vendor>:<product>:clamshell_keyboard" xkb_layout us`.
+//! released, and the modifiers released. Key positions are US, as is the compositor's layout, so the
+//! characters drawn on the keys are what is typed.
 
 use std::io;
 
