@@ -295,5 +295,4 @@ impl Latin1 {
 }
 
 #[cfg(test)]
-#[path = "send_tests.rs"]
 mod tests;

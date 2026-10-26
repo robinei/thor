@@ -488,12 +488,9 @@ fn touching_a_home_arrow_switches_once_and_consumes_home_release() {
     assert_eq!(server.core.state().session().top_window().map(|w| w.id), Some(2));
 }
 
-#[path = "keyboard_tests.rs"]
 mod keyboard_tests;
 
-#[path = "dialog_tests.rs"]
 mod dialog_tests;
-#[path = "idle_tests.rs"]
 mod idle_tests;
 
 #[test]
@@ -648,30 +645,21 @@ fn screenshots_are_consumed_by_the_host_instead_of_the_parent_capture_tool() {
     assert!(server.screenshot_requested, "a later frame can capture again");
 }
 
-#[path = "viewport_tests.rs"]
 mod viewport_tests;
 
-#[path = "dmabuf_tests.rs"]
 mod dmabuf_tests;
 
-#[path = "popup_tests.rs"]
 mod popup_tests;
 
-#[path = "cursor_tests.rs"]
 mod cursor_tests;
 
-#[path = "activation_tests.rs"]
 mod activation_tests;
 
-#[path = "pointer_tests.rs"]
 mod pointer_tests;
 
-#[path = "pacing_tests.rs"]
 mod pacing_tests;
-#[path = "presentation_tests.rs"]
 mod presentation_tests;
 
-#[path = "x11_popup_tests.rs"]
 mod x11_popup_tests;
 
 #[test]
