@@ -555,6 +555,8 @@ sent again, or what waits on it ends:
   `a_restarted_icons_thread_is_asked_again`)
 - `--Restarted(Freezer)--> [Freeze(slice, paused) for each slice of ours]` (tested
   `a_restarted_freezer_is_sent_each_slice_as_it_is`)
+- `--Restarted(Notifications)--> nothing`: the notifications are the state's, and the thread's ids come
+  from a counter that outlives it (tested `a_restarted_notifications_thread_is_sent_nothing_and_they_stay`)
 - Other threads: nothing; `restart.rs` says why for each. Short-lived threads the state waits on (a
   launch, the refresh calibration, an account change) answer with a failure if they panic
   (`os::worker::or_on_panic`). The randomized test restarts random threads.

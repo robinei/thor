@@ -55,6 +55,10 @@ impl State {
             | Thread::Clipboard
             | Thread::Sleep
             | Thread::WaylandFilter => {}
+            // Nothing: the notifications are the state's, and the thread holds only its bus name, which it
+            // asks for again. Its ids come from a counter that outlives it, so it doesn't give out an id
+            // the state still holds. A signal it was emitting is lost.
+            Thread::Notifications => {}
         }
     }
 
@@ -139,6 +143,24 @@ mod tests {
         s.applied(crate::LevelEvent::Set(crate::Level::Brightness, 70).into());
         let fx = s.applied(Event::Restarted(Thread::Brightness));
         assert!(fx.iter().any(|e| matches!(e, Effect::Brightness { level: 70, .. })), "{fx:?}");
+    }
+
+    #[test]
+    fn a_restarted_notifications_thread_is_sent_nothing_and_they_stay() {
+        use crate::notifications::{Notification, NotificationEvent, NotificationId, Urgency};
+        let mut s = started(init());
+        let n = Notification {
+            id: NotificationId::Bus(3),
+            app: "mail".into(),
+            summary: "new".into(),
+            body: String::new(),
+            urgency: Urgency::Normal,
+            action: None,
+            timeout_ms: 0,
+        };
+        s.applied(NotificationEvent::Notified(Box::new(n)).into());
+        assert_eq!(s.applied(Event::Restarted(Thread::Notifications)), []);
+        assert!(s.notifications().get(NotificationId::Bus(3)).is_some());
     }
 
     #[test]

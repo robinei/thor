@@ -140,6 +140,7 @@ pub fn start<S: Sink + Clone>(
     let mixer = started("mixer", mixer::spawn(backlights.clone(), sink.clone()));
     let bluetooth = started("bluetooth", bluetooth::spawn(sink.clone()));
     let tray = started("tray", crate::session::tray::spawn(sink.clone()));
+    let notifications = started("notifications", crate::session::notifications::spawn(sink.clone()));
     detached("clipboard", crate::session::clipboard::spawn(Some(env.clipboard_display.clone()), sink.clone()));
     let icons = started("icons", crate::session::icons::spawn(sink.clone()));
     let system = started(
@@ -178,6 +179,7 @@ pub fn start<S: Sink + Clone>(
         wifi,
         bluetooth,
         tray,
+        notifications,
         metrics,
         status,
         icons,

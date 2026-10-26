@@ -95,6 +95,12 @@ reading the hardware keys. So any program of the user can read the raw input dev
 attached keyboard too) and make virtual ones. That is accepted on a single-user device; the first
 password's confirmation is the one place that needs a press only a person can make.
 
+## Notifications
+
+ClamShell serves `org.freedesktop.Notifications`, so any program on the session bus can show a
+notification over the bottom screen, and a critical one wakes the screens. What it shows is plain text:
+markup is taken out, icons and images are never read, and at most 32 are held, the oldest closed first.
+
 ## Tray icons
 
 A tray item names its icon and a folder for it over the bus. The name must be a name (no `/`, no `..`),

@@ -10,6 +10,7 @@ use crate::launch::launcher;
 use crate::network::{bluetooth, wifi};
 use crate::os::worker::{self, Shown, Worker};
 use crate::paths::Paths;
+use crate::session::notifications::Command as Notifications;
 use crate::store::{Write, Writer};
 
 /// The threads, and the one device, that effects go to.
@@ -28,6 +29,8 @@ pub struct Handles {
     pub(crate) wifi: Worker<wifi::Request>,
     pub(crate) bluetooth: Worker<bluetooth::Request>,
     pub(crate) tray: Worker<clamshell_state::session::tray::TrayCommand>,
+    /// The notification server, which emits the signals for programs' notifications closed or tapped.
+    pub(crate) notifications: Worker<Notifications>,
     pub(crate) metrics: Worker<Shown>,
     /// The bar's status, read often while the screens are on.
     pub(crate) status: Worker<Shown>,
@@ -137,8 +140,8 @@ impl Handles {
             Effect::SetTimeZone(zone) => self.system.send(crate::errands::Command::SetTimeZone(zone.clone())),
             Effect::SetNtp(on) => self.system.send(crate::errands::Command::SetNtp(*on)),
             Effect::StepClock(field, by) => self.system.send(crate::errands::Command::StepClock(*field, *by)),
-            // The notifications thread, which emits them, comes in the next change.
-            Effect::NotificationClosed { .. } | Effect::ActionInvoked { .. } => {}
+            Effect::NotificationClosed { id, reason } => self.notifications.send(Notifications::Closed { id: *id, reason: reason.code() }),
+            Effect::ActionInvoked { id, key } => self.notifications.send(Notifications::Invoked { id: *id, key: key.clone() }),
             // The compositor carries out its own.
             Effect::Compositor(_) => {}
         }

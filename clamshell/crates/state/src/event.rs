@@ -341,10 +341,11 @@ pub enum Thread {
     Clipboard,
     Sleep,
     WaylandFilter,
+    Notifications,
 }
 
 impl Thread {
-    pub const ALL: [Thread; 27] = [
+    pub const ALL: [Thread; 28] = [
         Thread::Pad,
         Thread::PadDevices,
         Thread::Tuning,
@@ -372,6 +373,7 @@ impl Thread {
         Thread::Clipboard,
         Thread::Sleep,
         Thread::WaylandFilter,
+        Thread::Notifications,
     ];
 
     /// The name the thread runs under.
@@ -404,6 +406,7 @@ impl Thread {
             Thread::Clipboard => "clipboard",
             Thread::Sleep => "sleep",
             Thread::WaylandFilter => "wayland filter",
+            Thread::Notifications => "notifications",
         }
     }
 
