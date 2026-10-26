@@ -31,8 +31,8 @@ in small steps. ClamShell keeps assuming two screens, a top and a bottom one.
 
 ## Where it lives
 
-`crates/device`, a leaf crate with no dependencies and no I/O beyond what identification needs (reading
-`compatible` stays in the callers: the system crate and the fan daemon). The state crate depends on it,
+`crates/device`, a leaf crate with no dependencies and no I/O: identification takes the `compatible`
+string the callers read (the system crate and the fan daemon). The state crate depends on it,
 and through it the UI; the system crate, the compositor and the fan daemon depend on it directly. It is
 its own crate because the fan daemon, a separate service, needs its curves from it, and the state crate
 already depends on the fan crate (its mode protocol).
@@ -48,7 +48,7 @@ From the inventory of 2026-10-24 (paths under `clamshell/` unless noted), with w
 | Backlight per screen (`ae96000.dsi.0` top, `ae94000.dsi.0` bottom) | `crates/state/src/levels/mod.rs:91-97` |
 | The bottom screen's density hint (16.5 px/mm), used only without reported physical geometry | `crates/system/src/wiring/mod.rs:52` |
 | Top panel refresh calibration (ICNA3520 frame lengths) and its Device view row | `crates/system/src/display/refresh.rs`, `thor-panel-calibration` |
-| Each panel's colour: primaries and white point, transfer function (gamma 2.2), peak, frame-average and black luminance, the link's bit depth (8 today: dither when compositing in 10), HDR capable or not; for 4h the brightness register's range and the level that gives the peak. The top panel's from gamescope's profile (R 0.680/0.320, G 0.265/0.690, B 0.150/0.060, D65; 650/650/0.002 nits); a panel without one is sRGB at gamma 2.2, SDR. Nested on a desktop the host's description is used instead | `docs/history/compositor-mvp.md`, phases 2h and 4h |
+| Each panel's colour: primaries and white point, transfer function (gamma 2.2), peak, frame-average and black luminance, the link's bit depth (8 today: dither when compositing in 10), HDR capable or not, and where SDR white is shown (`sdr_white`: none, at the peak, until the panel is driven brighter for HDR, phase 4h of `docs/history/compositor-mvp.md`). The top panel's from gamescope's profile (R 0.680/0.320, G 0.265/0.690, B 0.150/0.060, D65; 650/650/0.002 nits); a panel without one is sRGB at gamma 2.2, SDR. Nested on a desktop the host's description is used instead | `docs/history/compositor-mvp.md`, phases 2h and 4h |
 | The AYN key (`gpio-keys-ayn`, `KEY_F24`), Back (`BTN_BACK`) | `crates/system/src/input/pad/device.rs:36`, `remap/mod.rs:203-209` |
 | The X/Y swap by driver (`rsinput`, `xpad`) | `crates/system/src/input/pad/device.rs:145-166` |
 | The gyro: Qualcomm sensor hub, QMI service 400, 200 Hz, axis matrix | `crates/system/src/input/pad/sensor_hub/mod.rs` |
@@ -62,14 +62,4 @@ What stays in per-device packages, as now: the kernel and its patches, the devic
 sound profiles (UCM), the motion sensors' services, udev rules, sleep settings, the boot layout and
 command line, the self-test.
 
-## Steps
-
-1. **Implemented.** `crates/device` with `Profile`, the Thor's and the VM's constructors and identification; `Init`
-   carries the profile; `CLAMSHELL_DEVICE` replaces the VM's environment overrides.
-2. **Implemented.** `clamshell device outputs`, used by `thor-outputs` (then the VM branch there goes) and
-   `thor-panel-calibration`. (2026-10-26: `clamshell device outputs` and `thor-outputs` went with sway;
-   the compositor takes the screens from the profile, and the calibration uses `clamshell device panel`.)
-3. **Implemented.** Each board fact moved, one commit each, its readers taking the fact. Detectable display modes were removed from the inventory of fixed facts.
-   Moved: screen connectors, transforms, touchscreen mapping, backlight role hints, bottom-screen touchpad density, top-panel refresh calibration, panel colour descriptions, auxiliary/Back control mapping, driver button conventions, sensor-hub service/timing/axes, userspace fan policy, charging quirks/OEM switch names, and the keymap control diagram/printed legends, and requested preview/fixture sizes. Preview sizes are explicit drawing policy, never detected panel geometry. Refresh choices are the rates the DRM compositor reports at start, with no nominal rates when none are reported. Frame-cap values remain generic UI convenience policy (they do not claim output modes); inactive upscale choices use relative sizes rather than assuming a 1080-line panel. Standard battery controls remain detected on every application; only the known broken threshold overrides their use.
-4. A rule in `AGENTS.md` (added with this plan): device facts live in the profile, code never checks the
-   device.
+The steps that moved these facts into the profile are in `docs/history/device-profiles-steps.md`.
