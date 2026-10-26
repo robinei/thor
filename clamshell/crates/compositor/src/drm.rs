@@ -382,10 +382,15 @@ const TOUCHPAD: &str = "4660:22136:clamshell_touchpad";
 /// On ClamShell's touchpad a tap clicks, two fingers tapped right-click, and a tap then a held finger
 /// drags: libinput leaves tapping off by default.
 fn tap(device: &mut smithay::reexports::input::Device) {
-    for (what, set) in [("tap", device.config_tap_set_enabled(true)), ("tap and drag", device.config_tap_set_drag_enabled(true))] {
-        if let Err(error) = set {
+    let mut set = true;
+    for (what, done) in [("tap", device.config_tap_set_enabled(true)), ("tap and drag", device.config_tap_set_drag_enabled(true))] {
+        if let Err(error) = done {
             log::warn!("drm: ClamShell's touchpad: {what}: {error:?}");
+            set = false;
         }
+    }
+    if set {
+        log::info!("drm: ClamShell's touchpad taps and drags");
     }
 }
 
