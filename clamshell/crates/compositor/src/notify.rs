@@ -32,6 +32,11 @@ impl Notifier {
             }
             p.is_absolute()
         });
+        Notifier::to(path)
+    }
+
+    /// One that tells the socket at `path`, if any.
+    fn to(path: Option<std::path::PathBuf>) -> Notifier {
         let socket = path.and_then(|p| UnixDatagram::unbound().inspect_err(|e| log::warn!("notify {}: {e}", p.display())).ok().map(|s| (s, p)));
         Notifier { socket, ready: false, last: None, status: None }
     }
@@ -70,5 +75,38 @@ impl Notifier {
         {
             log::warn!("notify {state}: {e}");
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    /// What the notifier sent, as systemd would read it.
+    fn sent(socket: &UnixDatagram) -> Vec<String> {
+        socket.set_nonblocking(true).unwrap();
+        let mut buffer = [0; 256];
+        std::iter::from_fn(|| socket.recv(&mut buffer).ok().map(|n| String::from_utf8_lossy(buffer.get(..n).unwrap_or_default()).into_owned())).collect()
+    }
+
+    #[test]
+    fn ready_once_the_watchdog_every_few_seconds_and_the_status_when_it_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("notify");
+        let systemd = UnixDatagram::bind(&path).unwrap();
+        let mut notifier = Notifier::to(Some(path));
+        notifier.turned();
+        notifier.turned();
+        assert_eq!(sent(&systemd), ["READY=1", "WATCHDOG=1"], "the second turn too soon for another");
+        notifier.last = Some(Instant::now() - EVERY);
+        notifier.turned();
+        assert_eq!(sent(&systemd), ["WATCHDOG=1"]);
+        notifier.status(1, 2, false);
+        notifier.status(1, 2, false);
+        notifier.status(1, 3, true);
+        assert_eq!(sent(&systemd), ["STATUS=1 running, 2 windows, Xwayland not started", "STATUS=1 running, 3 windows, Xwayland running"]);
+        assert!(notifier.deadline().is_some());
+        assert!(Notifier::to(None).deadline().is_none(), "outside systemd, no wake for it");
     }
 }
