@@ -118,7 +118,17 @@ impl CompositorHandler for Server {
             while let Some(parent) = get_parent(&root) {
                 root = parent;
             }
-            if let Some(client) = self.windows.iter_mut().find(|w| w.window.root().as_ref() == Some(&root)) {
+            let client = self.windows.iter_mut().find(|w| w.window.root().as_ref() == Some(&root));
+            match &client {
+                Some(client) => {
+                    let below = self.core.state().session().below(client.id);
+                    if let Some(screen) = self.pacing.committed.screens.get_mut(usize::from(below)) {
+                        *screen = true;
+                    }
+                }
+                None => self.pacing.committed.elsewhere = true,
+            }
+            if let Some(client) = client {
                 if new_buffer && root == *surface {
                     client.frames.committed();
                 }

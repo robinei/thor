@@ -1,8 +1,8 @@
 //! ClamShell's compositor on the machine's own screens: a seat from libseat, the GPU through DRM and GBM,
 //! input from libinput. The device profile names the connector of each screen and how its panel is
 //! mounted. The scene is composed once (the colour pipeline), and each screen is shown its part of it,
-//! turned as its panel is; each screen's page flips pace its frames, and their times are the presentation
-//! feedback clients get.
+//! turned as its panel is; each screen's page flips pace its frames and the composing of commits to it,
+//! and their times are the presentation feedback clients get.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -440,8 +440,8 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
     screen.held = server.frame_callbacks(Some(down), screen.interval, Instant::now());
 }
 
-/// Composes what changed in the scene and shows it on each screen whose part changed and that has no
-/// flip pending; nothing changed means no frame. Clients that committed without a visible change get
+/// Composes what changed in the scene when a screen can show it (see [`compose_now`]), and shows it on
+/// each screen whose part changed and that has no flip pending; nothing changed means no frame. Clients that committed without a visible change get
 /// their frame callbacks, at most once a refresh, so that an idle screen never spins. Returns when those
 /// are next due.
 fn step(
@@ -460,15 +460,16 @@ fn step(
         let held = server.release_timed_commits(next);
         held.map(|at| timed_wake(now, Duration::from(clock), Duration::from(next), Duration::from(at), top.interval))
     });
-    // Nothing to compose with both screens off, unless for a screenshot; the frame's own work (the X11
-    // windows' changes to the state) goes on.
-    if drawing.screens.iter().any(|screen| screen.on) || server.screenshot_requested {
+    // The scene is composed when a screen can show it (see `compose_now`). Otherwise the frame's own work
+    // (the X11 windows' changes to the state) goes on, and so do the buffers' imports, which their clients
+    // wait for.
+    let power = |role| drawing.screens.iter().find(|s| s.role == role).map_or(Power::default(), |s| Power { on: s.on, dirty: s.dirty, pending: s.pending });
+    if compose_now([power(ScreenRole::Top), power(ScreenRole::Bottom)], server.pacing.committed, server.screenshot_requested) {
         if let Err(error) = compose(drawing, server, on_capture) {
             log::warn!("drm: drawing: {error}");
         }
     } else {
         server.frame();
-        // Buffers wait for their import until a compose; with the screens off a client would wait too.
         server.import_dmabufs(&mut drawing.renderer);
     }
     let composed = server.pacing.commits;
@@ -611,8 +612,27 @@ fn screen_turn(timing: Timing, now: Instant) -> Turn {
     turn
 }
 
+/// Whether the scene is composed this turn, the screens being `screens` (the top's, the second's) and
+/// `committed` what committed since it was last composed: always for a screenshot, never with both
+/// screens off, and otherwise unless every commit is a window's on a screen with a frame queued. Such a
+/// screen shows nothing new before its flip, and an uncapped game commits faster than the screen
+/// refreshes: its commits until the flip are composed once, at the flip, rather than each in turn. A
+/// commit on a screen that is off holds nothing back, since no flip comes there. A turn without commits
+/// composes whatever else changed, and the rest of the scene waits at most a refresh for a flip.
+fn compose_now(screens: [Power; 2], committed: crate::pacing::Committed, screenshot: bool) -> bool {
+    if screenshot {
+        return true;
+    }
+    if !screens.iter().any(|screen| screen.on) {
+        return false;
+    }
+    let mut on_screens = screens.iter().zip(committed.screens).filter(|(screen, committed)| *committed && screen.on).map(|(screen, _)| screen);
+    let held = !committed.elsewhere && on_screens.clone().next().is_some() && on_screens.all(|screen| screen.pending);
+    !held
+}
+
 /// What of a screen's state its power changes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct Power {
     on: bool,
     dirty: bool,
@@ -672,6 +692,7 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
 
 /// Draws what changed in the scene, marking the screens whose part it is in.
 fn compose(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(Result<clamshell_state::ScreenshotPixels, String>)) -> Result<(), Error> {
+    server.pacing.committed = Default::default();
     server.frame();
     server.sync_pointer_capture(|_| Ok::<(), std::convert::Infallible>(()));
     server.import_dmabufs(&mut drawing.renderer);
@@ -863,6 +884,25 @@ mod tests {
         assert_eq!(after_compose(None, 5, 5, now), None);
         assert_eq!(after_compose(later, 5, 6, now), Some(now), "one let through: now");
         assert_eq!(after_compose(None, 5, 6, now), Some(now));
+    }
+
+    #[test]
+    fn commits_on_a_screen_with_a_frame_queued_wait_for_its_flip() {
+        use crate::pacing::Committed;
+        let free = Power { on: true, dirty: false, pending: false };
+        let queued = Power { pending: true, ..free };
+        let off = Power::default();
+        let top = Committed { screens: [true, false], elsewhere: false };
+        assert!(!compose_now([queued, free], top, false), "the top screen's flip shows it no sooner");
+        assert!(compose_now([free, queued], top, false), "the top screen shows it at its next refresh");
+        assert!(compose_now([queued, free], Committed { elsewhere: true, ..top }, false), "a popup or a cursor: at once");
+        assert!(!compose_now([queued, queued], Committed { screens: [true, true], elsewhere: false }, false));
+        assert!(compose_now([queued, free], Committed { screens: [true, true], elsewhere: false }, false), "the second screen shows its part");
+        assert!(compose_now([queued, free], Committed::default(), false), "no commits: whatever else changed, as before");
+        assert!(compose_now([queued, off], Committed { screens: [false, true], elsewhere: false }, false), "no flip comes on a screen off");
+        assert!(!compose_now([off, off], top, false), "both off: nothing shows it");
+        assert!(compose_now([off, off], top, true), "a screenshot");
+        assert!(compose_now([queued, queued], top, true));
     }
 
     #[test]
