@@ -299,23 +299,24 @@ fn a_paused_game_shown_when_the_front_closes_is_thawed_at_once() {
     assert!(fx.iter().any(|e| matches!(e, Effect::Freeze { frozen: false, .. })), "{fx:?}");
 }
 
-/// The UI starting sends what was waiting for it, in this order: the brightness as it was left, then
-/// after the event the keymap in force and the pad's route (keymap before route, as
+/// The brightness as it was left goes out at the first event. The UI starting sends what was waiting for
+/// it, in this order: the keymap in force and the pad's route (keymap before route, as
 /// [`crate::sync::Sent::sync`] says). The pad thread starts with neither, so both are sent though the
 /// state took them as sent when it was built.
 #[test]
-fn the_ui_starting_sends_the_brightness_the_keymap_and_the_route() {
+fn the_brightness_goes_out_at_once_and_the_ui_starting_sends_the_keymap_and_the_route() {
     use crate::session::below::{WindowRule, WindowRules};
     let rule = WindowRule { owner: "zelda-lttp".into(), app_id: "zelda3".into(), title: None };
     let brightness = Brightness { level: Some(40), shares: Vec::new() };
     let keymaps = crate::keymap::Keymaps::initial();
     let mut s = State::new(Init { keymaps: keymaps.clone(), window_rules: WindowRules::from_list(vec![rule]), brightness, ..init() });
     s.settings_mut().global.set(Setting::Keymap, 1);
-    s.applied(Event::tick(1000));
+    let fx = s.applied(Event::tick(1000));
+    assert!(fx.contains(&Effect::Brightness { level: 40, shares: Vec::new() }), "{fx:?}");
     let keymap = s.keymapping().in_force(1);
     let fx = s.applied(Event::Start);
     let sent: Vec<&Effect> = fx.iter().filter(|e| !matches!(e, Effect::Watch(..))).collect();
-    assert_eq!(sent, [&Effect::Brightness { level: 40, shares: Vec::new() }, &Effect::Keymap(keymap), &Effect::PadRoute(PadRoute::Ui),], "{fx:?}");
+    assert_eq!(sent, [&Effect::Keymap(keymap), &Effect::PadRoute(PadRoute::Ui),], "{fx:?}");
     let fx = s.applied(Event::Start);
     assert!(fx.contains(&Effect::PadRoute(PadRoute::Ui)), "sent again at another start: {fx:?}");
 }

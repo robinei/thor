@@ -31,7 +31,7 @@ impl State {
             // The volume, mute and brightness go to the levels, where a finger on a slider wins over the
             // reading.
             Reading::Status(status) => {
-                self.levels.read(status.volume, status.muted, status.brightness);
+                self.levels.read(status.volume, status.muted, status.brightness, self.idle.stage() >= crate::device::idle::Stage::Dimmed);
                 self.sys.read_status(status);
             }
             Reading::Clipboard(text) => self.bottom.read_clipboard(text),
@@ -93,16 +93,14 @@ impl State {
         self.device.refresh_done(result);
     }
 
-    /// The UI is up. Sends what was waiting for it: the dock if pins were dropped at start, the
-    /// brightness and the runners' keymaps, and after the event the pad's route and
-    /// keymap. The open tab's watch starts from now (see [`crate::sync::Sent::ui_started`]).
+    /// The UI is up. Sends what was waiting for it: the dock if pins were dropped at start and the
+    /// runners' keymaps, and after the event the pad's route and keymap. The open tab's watch starts from now (see [`crate::sync::Sent::ui_started`]).
     pub(crate) fn ui_started(&mut self, out: &mut Out) {
         self.sent.ui_started();
         self.sent.resend(Resend::Start);
         if self.dock.take_unsaved() {
             out.effects.push(self.dock.save_effect());
         }
-        out.effects.extend(self.levels.brightness_effect());
         self.keymapping.adopt_runner_keymaps(self.shelf.library(), &mut self.prefs, out);
     }
 

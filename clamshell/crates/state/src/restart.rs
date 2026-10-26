@@ -24,11 +24,8 @@ impl State {
             | Thread::Wifi
             | Thread::Bluetooth
             | Thread::System
-            | Thread::Browse => self.sent.resend(Resend::Restarted(thread)),
-            Thread::Brightness => {
-                let dimmed = self.idle.stage() >= crate::device::idle::Stage::Dimmed;
-                out.effects.extend(if dimmed { self.levels.dimmed_effect() } else { self.levels.undimmed_effect() });
-            }
+            | Thread::Browse
+            | Thread::Brightness => self.sent.resend(Resend::Restarted(thread)),
             // Everything saved, written again. A play being recorded is lost.
             Thread::Store => out.effects.extend(self.save_effects()),
             Thread::Icons => self.session.find_icons_again(out),
@@ -129,11 +126,13 @@ mod tests {
     }
 
     #[test]
-    fn a_restarted_brightness_thread_is_sent_the_level() {
+    fn a_restarted_brightness_thread_is_sent_the_level_clamshell_set() {
         let mut s = started(init());
         s.applied(Event::Reading(crate::Reading::Status(crate::status::Status { brightness: Some(40), ..Default::default() })));
+        assert!(s.applied(Event::Restarted(Thread::Brightness)).is_empty(), "a level only read isn't set");
+        s.applied(crate::LevelEvent::Set(crate::Level::Brightness, 70).into());
         let fx = s.applied(Event::Restarted(Thread::Brightness));
-        assert!(fx.iter().any(|e| matches!(e, Effect::Brightness { level: 40, .. })), "{fx:?}");
+        assert!(fx.iter().any(|e| matches!(e, Effect::Brightness { level: 70, .. })), "{fx:?}");
     }
 
     #[test]

@@ -458,8 +458,12 @@ the slider tests. Setting a muted stream's level unmutes it, as the output volum
 `setting_a_muted_streams_level_unmutes_it`. Dimming takes a third of the brightness, at least 1 but
 never more than it was: `dimming_never_raises_the_brightness`. The Mute key shows the volume's notice
 only when the mute changed (not while the volume is unknown):
-`the_mute_key_shows_the_level_only_when_it_changes_something`. Brightness sent at Start: tests
-`the_ui_starting_sends_the_brightness_the_keymap_and_the_route`.
+`the_mute_key_shows_the_level_only_when_it_changes_something`. The brightness is sync's
+(`Levels::wanted_brightness`): ClamShell's level; dimmed, a third of the known level; back from dimmed,
+the level read before (a reading taken while dimmed is ignored); nothing while ClamShell neither set a
+level nor touched the backlights. A level set while dimmed is sent dimmed. Tests:
+`the_brightness_goes_out_at_once_and_the_ui_starting_sends_the_keymap_and_the_route`,
+`the_screens_come_back_from_dimming_at_the_brightness_they_had`, `a_level_set_while_dimmed_is_sent_dimmed`.
 
 ## Status (status/)
 
@@ -476,7 +480,7 @@ only when the mute changed (not while the volume is unknown):
 
 | Resend | Raised by | Re-sends | Test |
 |---|---|---|---|
-| Start | `Event::Start` | keymap, pad route (and Start sends the dock's save if unsaved, the brightness) | watches tested; tests `the_ui_starting_sends_the_brightness_the_keymap_and_the_route` |
+| Start | `Event::Start` | keymap, pad route (and Start sends the dock's save if unsaved) | watches tested; tests `the_brightness_goes_out_at_once_and_the_ui_starting_sends_the_keymap_and_the_route` |
 | Resumed | `Event::Resumed` | Apply | tests `back_from_sleep_applies_the_settings_again_and_wakes_the_screens` |
 | FetchFirst | Fetching, Library | FetchFirst | tests `while_metadata_is_fetched_shelfs_view_goes_first`, `a_library_read_while_fetching_asks_for_shelfs_view_first_again` |
 | Restarted(thread) | `Event::Restarted` | what that thread was sent (below) | tests in `restart.rs` |
@@ -499,8 +503,8 @@ sent again, or what waits on it ends:
   (tested `a_restarted_reader_is_sent_the_watches`)
 - `Asleep --Restarted(System)--> [watches, Sleep]`; awake, only the watches (tested
   `a_restarted_system_thread_is_asked_to_sleep_again`)
-- `--Restarted(Brightness)--> [Brightness]`, dimmed if idle dimmed it (tested
-  `a_restarted_brightness_thread_is_sent_the_level`)
+- `--Restarted(Brightness)--> [Brightness]` if ClamShell set a level, dimmed if idle dimmed it (tested
+  `a_restarted_brightness_thread_is_sent_the_level_clamshell_set`)
 - `--Restarted(Store)--> [Save of everything saved]` (tested `a_restarted_store_is_sent_everything_saved`)
 - `files running --Restarted(Files)--> the oldest operation done, failed [notice]`; the rest run (tested
   `a_restarted_files_thread_fails_the_operation_it_had_and_browse_lists_again`)
@@ -552,6 +556,8 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    view is open; the last Apply is `(program, in_force)`; the last Outputs is (screens on, bottom on);
    the last Refresh is the calibration's rate while it runs, else the rate of the entry launched last
    until the program in force changes, else the rate of the settings in force, at the modes known.
+   Once ClamShell set a brightness level, the last Brightness is that level, or a third of it (at
+   least 1) while dimmed.
 3. **Pad route:** consistent with claimant, listening and dock move; reconciling again changes nothing;
    the focus ring shows only when the route is Ui, or after a hold on shelf's selected entry opened its
    actions with the pad elsewhere, until the next touch hides it (the ring is what shows the actions are

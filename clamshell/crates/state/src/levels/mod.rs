@@ -254,37 +254,33 @@ impl Levels {
         }
     }
 
-    /// The screens' brightness as it should be, once the level is known. Also applied at start.
-    pub(crate) fn brightness_effect(&self) -> Option<Effect> {
-        self.brightness.level.map(|level| self.brightness_at(level))
-    }
-
-    /// The screens dimmed for idle, to a third of their brightness but not dark, and never brighter than
-    /// they are. Not saved.
-    pub(crate) fn dimmed_effect(&self) -> Option<Effect> {
-        self.known_brightness().map(|level| self.brightness_at((level / 3).max(1).min(level)))
-    }
-
-    /// The screens back from dimmed, at their brightness as ClamShell set it or as it was read.
-    pub(crate) fn undimmed_effect(&self) -> Option<Effect> {
-        self.known_brightness().map(|level| self.brightness_at(level))
-    }
-
-    /// The brightness ClamShell set, or else the one that was read.
-    fn known_brightness(&self) -> Option<u8> {
-        self.brightness.level.or(self.read_brightness)
+    /// The screens' brightness as it should be at idle stage `dimmed` or not, given whether ClamShell has
+    /// set the backlights before (`touched`): ClamShell's level; dimmed, a third of the known level but
+    /// not dark; back from dimmed, the level known before. None when there is nothing to set: no level is
+    /// known, or ClamShell never set one and hasn't touched the backlights.
+    pub(crate) fn wanted_brightness(&self, dimmed: bool, touched: bool) -> Option<u8> {
+        let known = self.brightness.level.or(self.read_brightness);
+        match (dimmed, self.brightness.level) {
+            (true, _) => known.map(|level| (level / 3).max(1).min(level)),
+            (false, Some(level)) => Some(level),
+            (false, None) => known.filter(|_| touched),
+        }
     }
 
     /// The screens at brightness `level`, each scaled by its share.
-    fn brightness_at(&self, level: u8) -> Effect {
+    pub(crate) fn brightness_at(&self, level: u8) -> Effect {
         Effect::Brightness { level, shares: self.brightness.shares.clone() }
     }
 
     /// A status reading of the volume, mute and brightness. A finger on the level keeps what it shows.
-    pub(crate) fn read(&mut self, volume: Option<u8>, muted: bool, brightness: Option<u8>) {
+    /// While the screens are dimmed (`dimmed`), the backlight shows the dimmed level, not the screens'
+    /// brightness, so its reading is ignored.
+    pub(crate) fn read(&mut self, volume: Option<u8>, muted: bool, brightness: Option<u8>, dimmed: bool) {
         self.volume.reading(volume);
         self.muted.reading(muted);
-        self.read_brightness = brightness;
+        if !dimmed {
+            self.read_brightness = brightness;
+        }
     }
 
     /// Changes the levels with `change` at `now`. A changed brightness is saved a moment later.
@@ -386,10 +382,8 @@ impl Levels {
                     out.effects.push(Effect::Sound(Sound::StreamVolume(s.id, value)));
                 }
             }
-            Level::Brightness => {
-                self.brightness.level = Some(value);
-                out.effects.extend(self.brightness_effect());
-            }
+            // Sent by sync, dimmed while idle has dimmed the screens.
+            Level::Brightness => self.brightness.level = Some(value),
             Level::Backlight(i) => {
                 if let Some(name) = self.backlights.0.get(usize::from(i)).cloned() {
                     self.brightness.set_share(&name, value);
@@ -397,7 +391,6 @@ impl Levels {
                     if self.brightness.level.is_none() {
                         self.brightness.level = self.read_brightness;
                     }
-                    out.effects.extend(self.brightness_effect());
                 }
             }
         }
@@ -489,7 +482,7 @@ impl Rows for Backlights {
 }
 
 #[cfg(test)]
-#[allow(clippy::panic)]
+#[allow(clippy::panic, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::testkit::*;
@@ -561,7 +554,7 @@ mod tests {
         // The level is read from the first panel until ClamShell sets one, and shares are 100 until set.
         read(&mut s, Reading::Status(Status { brightness: Some(60), ..Status::default() }));
         assert_eq!(s.levels().level(Level::Brightness), Some(60));
-        assert_eq!(s.levels().brightness_effect(), None, "nothing to apply before a level is set");
+        assert_eq!(s.levels().wanted_brightness(false, false), None, "nothing to apply before a level is set");
         read(&mut s, Reading::Backlights(vec!["top".into(), "bottom".into()]));
         assert_eq!(s.levels().level(Level::Backlight(1)), Some(100));
         let share = |backlight: &str, share| Share { backlight: backlight.into(), share };
@@ -586,10 +579,7 @@ mod tests {
         let mut s = state();
         let dimmed = |s: &mut State, brightness| {
             read(s, Reading::Status(Status { brightness: Some(brightness), ..Status::default() }));
-            match s.levels().dimmed_effect() {
-                Some(Effect::Brightness { level, .. }) => level,
-                other => panic!("{other:?}"),
-            }
+            s.levels().wanted_brightness(true, false).unwrap()
         };
         assert_eq!(dimmed(&mut s, 60), 20, "a third");
         assert_eq!(dimmed(&mut s, 2), 1, "not dark");
@@ -610,5 +600,40 @@ mod tests {
         assert_eq!(backlight_label(&crate::Profile::thor(), "ae94000.dsi.0"), "Bottom screen");
         assert_eq!(backlight_label(&crate::Profile::thor(), "intel_backlight"), "intel_backlight");
         assert_eq!(backlight_label(&crate::Profile::generic(), "ae96000.dsi.0"), "ae96000.dsi.0");
+    }
+
+    /// The backlight reads the dimmed level while idle has dimmed the screens: that reading isn't taken
+    /// for the screens' brightness, so they come back as they were, cycle after cycle.
+    #[test]
+    fn the_screens_come_back_from_dimming_at_the_brightness_they_had() {
+        use crate::device::idle::IdleEvent;
+        let mut s = State::new(crate::Init { device_session: true, ..crate::testkit::init() });
+        s.applied(Event::tick(1000));
+        s.applied(Event::Idle(IdleEvent::Watching(true)));
+        let level = |fx: &[Effect]| fx.iter().find_map(|e| if let Effect::Brightness { level, .. } = e { Some(*level) } else { None });
+        for cycle in 0..3u64 {
+            let at = 1000 + cycle * 1000;
+            read(&mut s, Reading::Status(Status { brightness: Some(60), ..Status::default() }));
+            let fx = s.applied(Event::tick(at + 400));
+            assert_eq!(level(&fx), Some(20), "dimmed, cycle {cycle}: {fx:?}");
+            // The status thread reads the backlight at its dimmed level.
+            read(&mut s, Reading::Status(Status { brightness: Some(20), ..Status::default() }));
+            let fx = s.applied(Event::Idle(IdleEvent::DeviceInput));
+            assert_eq!(level(&fx), Some(60), "back, cycle {cycle}: {fx:?}");
+            s.applied(Event::tick(at + 401));
+        }
+    }
+
+    /// A level set while the screens are dimmed is sent dimmed: the screens don't light up at full.
+    #[test]
+    fn a_level_set_while_dimmed_is_sent_dimmed() {
+        use crate::device::idle::IdleEvent;
+        let mut s = State::new(crate::Init { device_session: true, ..crate::testkit::init() });
+        s.applied(Event::tick(1000));
+        s.applied(Event::Idle(IdleEvent::Watching(true)));
+        read(&mut s, Reading::Status(Status { brightness: Some(60), ..Status::default() }));
+        s.applied(Event::tick(1400));
+        let fx = s.applied(LevelEvent::Set(Level::Brightness, 90).into());
+        assert!(fx.contains(&Effect::Brightness { level: 30, shares: vec![] }), "{fx:?}");
     }
 }

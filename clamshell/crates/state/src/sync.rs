@@ -67,6 +67,9 @@ pub(crate) struct Sent {
     in_use: Option<u64>,
     /// The idle stage the screens were last set for.
     stage: Stage,
+    /// The brightness last sent, its level and the shares, or None if none was (see
+    /// [`Levels::wanted_brightness`]).
+    brightness: Option<(u8, Vec<crate::levels::Share>)>,
     /// The program in force and its settings as they were applied last, or None to apply them again.
     applied: Option<(Option<Arc<str>>, Values)>,
     /// The screens' power as `Compositor::Outputs` has it (whether they are on, and the bottom one while
@@ -103,6 +106,7 @@ impl Default for Sent {
             browsing: Some(None),
             in_use: Some(0),
             stage: Stage::Awake,
+            brightness: None,
             applied: None,
             outputs: Some((true, true)),
             refresh: 0,
@@ -155,6 +159,8 @@ impl Sent {
                     }
                 }
                 Thread::Browse => (self.browsing, self.in_use) = (None, None),
+                // The thread holds nothing; the backlights keep their level. Sent again if ClamShell set one.
+                Thread::Brightness => self.brightness = None,
                 _ => {}
             },
         }
@@ -232,17 +238,28 @@ impl Sent {
         }
     }
 
-    /// The screens for the idle stage: brightness goes down while dimmed or darker and comes back when
-    /// awake, the screens' power follows (see [`Sent::outputs`]), and the device sleeps.
+    /// The screens for the idle stage: the brightness (dimmed while dimmed or darker), the screens' power
+    /// (see [`Sent::outputs`]), and the device sleeps.
     fn idle(&mut self, w: &Wanted, out: &mut Out) {
         let was = std::mem::replace(&mut self.stage, w.stage);
-        if was != w.stage && (was >= Stage::Dimmed) != (w.stage >= Stage::Dimmed) {
-            out.effects.extend(if w.stage >= Stage::Dimmed { w.levels.dimmed_effect() } else { w.levels.undimmed_effect() });
-        }
+        self.brightness(w, out);
         self.outputs(w, out);
         if was != w.stage && w.stage == Stage::Asleep {
             out.effects.push(Effect::Sleep);
         }
+    }
+
+    /// The screens' brightness when it differs from what was sent: the level, or the shares.
+    fn brightness(&mut self, w: &Wanted, out: &mut Out) {
+        let Some(level) = w.levels.wanted_brightness(w.stage >= Stage::Dimmed, self.brightness.is_some()) else {
+            return;
+        };
+        let shares = &w.levels.brightness().shares;
+        if self.brightness.as_ref().is_some_and(|(sent, sent_shares)| *sent == level && sent_shares == shares) {
+            return;
+        }
+        self.brightness = Some((level, shares.clone()));
+        out.effects.push(w.levels.brightness_at(level));
     }
 
     /// The screens are on while idle hasn't turned them off, and the bottom one as it is set (see

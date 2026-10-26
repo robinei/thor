@@ -168,6 +168,8 @@ struct Sent {
     outputs: (bool, bool),
     /// The last Refresh.
     refresh: u16,
+    /// The last Brightness's level.
+    brightness: Option<u8>,
     /// Each slice's last Freeze.
     frozen: HashMap<String, bool>,
     /// The freezer was started again in this event: every slice is sent as it should be, whatever it was
@@ -726,6 +728,7 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
             Effect::Watch(Watch::Account, on) => sent.account = *on,
             Effect::Compositor(Compositor::Outputs { top, bottom }) => sent.outputs = (*top, *bottom),
             Effect::Compositor(Compositor::Refresh(hz)) => sent.refresh = *hz,
+            Effect::Brightness { level, .. } => sent.brightness = Some(*level),
             _ => {}
         }
     }
@@ -740,6 +743,12 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
     // (The refresh rate calibration keeps the bottom screen off while it runs.)
     let outputs = (screens_on, !s.bottom().off() && !s.device().calibrating());
     ensure!(sent.outputs == outputs, "2: outputs sent {:?}, state {outputs:?}", sent.outputs);
+    // Once ClamShell set a level, the screens have it, or a third of it (at least 1) while dimmed.
+    if let Some(level) = s.levels().brightness().level {
+        let dimmed = s.idle().stage() >= Stage::Dimmed;
+        let want = if dimmed { (level / 3).max(1).min(level) } else { level };
+        ensure!(sent.brightness == Some(want), "2: brightness sent {:?}, level {level}, dimmed {dimmed}", sent.brightness);
+    }
     let settings = s.session().refresh_launch().map_or_else(|| s.in_force(), |id| s.settings_of(id));
     let rate = s.device().display_modes().refresh_for(settings.get(Setting::Refresh), settings.get(Setting::FpsCap));
     let refresh = s.device().calibration_rate().unwrap_or(rate);
