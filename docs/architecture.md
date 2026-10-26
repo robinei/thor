@@ -49,8 +49,9 @@ passes each effect to the system crate's dispatcher.
 rules and the getters the UI reads: `Shelf` (the game list), `Session` (launches, windows, background),
 `Bottom` (the second screen, its tabs, editor and notices), `Radios`, `Levels`, `Sys` (status, battery,
 time), `Device` (the device view, calibrations, account), `Idle`, `Prefs` (settings), `Keymapping`, the pad
-route, the pointer and the lists' scrolls. One `impl State` holds what spans areas; nothing outside an
-area touches its fields.
+route, the pointer and the lists' scrolls. `State`'s impl holds what spans areas, in files by subject
+beside `lib.rs` (launching, presses, tabs, sliders, the settings tab, ...); nothing outside an area
+touches its fields.
 
 How areas cooperate:
 

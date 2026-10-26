@@ -616,7 +616,7 @@ Session and dock:
   Fixed: state/dock: Back goes up to the entry's menu; menu and move end with their entry.
 
 Second screen, device, pad, keymaps:
-- S10. After the account password editor saves or cancels, the screen stays on Keyboard (`lib.rs:1025`),
+- S10. After the account password editor saves or cancels, the screen stays on Keyboard (`tabs.rs`, `editor_done`),
   against `Event::EditOnKeyboard`'s doc. Fixed: state/bottom: one editor on the keyboard, which goes back when it closes.
 - S11. A text field losing focus goes back from Keyboard even while an editor is open there (`bottom/mod.rs:204`). Fixed: state/bottom: one editor on the keyboard, which goes back when it closes.
 - S12. Opening the password editor while naming a file drops the name typed (`bottom/editor.rs:117`). Fixed: state/bottom: one editor on the keyboard, which goes back when it closes.
@@ -648,7 +648,7 @@ Shelf, files, radios, levels, status:
 - S34. The battery tab's spender menu stays open across tabs and after its row is gone. Fixed: state/status: the battery menu closes when the tab is left or its row goes.
 - S35. A relayout doesn't close a group that left a derived collection (Recent, Favourites). Fixed: state/shelf: a relayout closes a group no longer in its collection.
 - S36. A folder listing that changes the entries but not shelf's view isn't asked for metadata first. Fixed: state/shelf: a listing that changes the entries shown asks for their metadata first.
-- S37. The Mute key shows its notice when the volume is unknown and nothing changes (`lib.rs:1058`). Fixed: state/levels: the Mute key shows its notice only when the mute changed.
+- S37. The Mute key shows its notice when the volume is unknown and nothing changes (`keys.rs`). Fixed: state/levels: the Mute key shows its notice only when the mute changed.
 - S38. The resume record can leave out a collection whose stored place is past its list after a relayout
   (`shelf/mod.rs:552`). Fixed: state/shelf: the resume record keeps a place past its shrunk list.
 - S39. An entry known by its app id (a Steam game) whose launch's scope ends while its window is open

@@ -3,6 +3,7 @@
 pub use crate::session::windows::{Group, WindowFacts};
 pub use crate::settings::Values;
 
+use crate::out::Out;
 use crate::*;
 
 /// [`State::apply`] with a vector of its own for the effects, for tests.
@@ -169,4 +170,41 @@ pub fn launch_now(s: &mut State, id: &str) -> Vec<Effect> {
 /// Shows running entry `id`, as a tap on its dock tile does, with what that does at once.
 pub fn show(s: &mut State, id: &str) -> Vec<Effect> {
     s.handle(Event::Entry(id.into(), EntryAct::Show))
+}
+
+/// Setting up tests: what the tests reach in State past its events.
+impl State {
+    /// Marks the UI up, as Start does, with what the outside would be sent for it dropped.
+    pub(crate) fn ui_up(&mut self) {
+        self.sent.ui_started();
+        self.sync(&mut Out::default());
+    }
+
+    /// Handles `event` without the steps that follow it, and returns the effects it pushed.
+    pub(crate) fn handle(&mut self, event: Event) -> Vec<Effect> {
+        let mut out = Out::default();
+        self.apply_event(event, &mut out);
+        out.effects
+    }
+
+    /// Handles `events` as if a rule had queued them, without the steps that follow, and returns the
+    /// effects.
+    pub(crate) fn handle_as_queued(&mut self, events: Vec<Event>) -> Vec<Effect> {
+        let mut out = Out { effects: Vec::new(), events };
+        self.handle_queued(0, &mut out);
+        out.effects
+    }
+
+    pub(crate) fn settings_mut(&mut self) -> &mut crate::settings::Settings {
+        self.prefs.settings_mut()
+    }
+
+    /// Has `running` run in scope `unit` (see [`Session::add_run`]).
+    pub(crate) fn add_run(&mut self, running: crate::Running, unit: crate::Instance) {
+        self.session.add_run(running, unit);
+    }
+
+    pub(crate) fn editor_mut(&mut self) -> Option<&mut crate::Editor> {
+        self.bottom.editor_mut()
+    }
 }

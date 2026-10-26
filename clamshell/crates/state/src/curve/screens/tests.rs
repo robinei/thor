@@ -1,4 +1,5 @@
 use super::*;
+use crate::bottom::editor::Purpose;
 use crate::profiles::picker::{Kind as ProfileKind, ProfileId};
 use crate::testkit::*;
 use crate::*;
