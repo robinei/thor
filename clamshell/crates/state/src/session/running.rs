@@ -207,24 +207,12 @@ impl Session {
     pub(crate) fn follow_units(&mut self, clock: &Clock, library: &Library, notice: &mut NoticeSlot, plays: &mut Vec<Play>) -> bool {
         let (now, unix) = (clock.mono(), clock.unix());
         // The entries of launches whose unit is there run as launches of ours, including one that was
-        // handed over to its windows and launched again.
-        let started: Vec<Launching> = {
-            let units = &self.units;
-            let (started, waiting) = std::mem::take(&mut self.launching).into_iter().partition(|l| units.contains(&l.instance));
-            self.launching = waiting;
-            started
-        };
-        // A launch the launcher never answered is given up, so that it can be launched again.
-        while let Some(i) = self.launching.iter().position(|l| now >= l.at + LAUNCH_WAIT) {
+        // handed over to its windows and launched again. (Taken one at a time, so that nothing is
+        // allocated while launches wait.)
+        let mut any_started = false;
+        while let Some(i) = self.launching.iter().position(|l| self.units.contains(&l.instance)) {
             let l = self.launching.remove(i);
-            if self.front_launch.as_ref().is_some_and(|f| f.instance == l.instance) {
-                self.front_launch = None;
-            }
-            let title = library.entry(&l.entry).map_or_else(|| l.entry.to_string(), |g| g.title.clone());
-            notice.show(NoticeKind::NotStarted(title), now);
-        }
-        let any_started = !started.is_empty();
-        for l in started {
+            any_started = true;
             match self.running.iter_mut().find(|r| r.id == l.entry) {
                 Some(r) => r.origin = Origin::Ours,
                 None => {
@@ -235,6 +223,15 @@ impl Session {
                     self.running.push(Running { entry: r.entry.filter(|_| known.is_some()), ..r });
                 }
             }
+        }
+        // A launch the launcher never answered is given up, so that it can be launched again.
+        while let Some(i) = self.launching.iter().position(|l| now >= l.at + LAUNCH_WAIT) {
+            let l = self.launching.remove(i);
+            if self.front_launch.as_ref().is_some_and(|f| f.instance == l.instance) {
+                self.front_launch = None;
+            }
+            let title = library.entry(&l.entry).map_or_else(|| l.entry.to_string(), |g| g.title.clone());
+            notice.show(NoticeKind::NotStarted(title), now);
         }
         let units = &self.units;
         for r in self.running.iter_mut().filter(|r| r.found()) {

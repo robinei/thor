@@ -199,6 +199,8 @@ pub struct Levels {
     holding: Option<Level>,
     /// A change of the brightness, saved a moment later.
     unsaved: Debounce,
+    /// The brightness changed during [`Levels::change`].
+    brightness_changed: bool,
 }
 
 impl Levels {
@@ -285,9 +287,8 @@ impl Levels {
 
     /// Changes the levels with `change` at `now`. A changed brightness is saved a moment later.
     pub(crate) fn change(&mut self, now: u64, change: impl FnOnce(&mut Levels)) {
-        let before = self.brightness.clone();
         change(self);
-        if self.brightness != before {
+        if std::mem::take(&mut self.brightness_changed) {
             self.unsaved.touch(now);
         }
     }
@@ -383,12 +384,17 @@ impl Levels {
                 }
             }
             // Sent by sync, dimmed while idle has dimmed the screens.
-            Level::Brightness => self.brightness.level = Some(value),
+            Level::Brightness => {
+                self.brightness_changed |= self.brightness.level != Some(value);
+                self.brightness.level = Some(value);
+            }
             Level::Backlight(i) => {
                 if let Some(name) = self.backlights.0.get(usize::from(i)).cloned() {
+                    self.brightness_changed |= self.brightness.share(&name) != value;
                     self.brightness.set_share(&name, value);
                     // The level as read, until ClamShell sets one. All shares were 100 until then.
                     if self.brightness.level.is_none() {
+                        self.brightness_changed = true;
                         self.brightness.level = self.read_brightness;
                     }
                 }

@@ -11,8 +11,8 @@ use clamshell_state::radios::wifi::{Network, Wifi};
 use clamshell_state::session::windows::WindowFacts;
 use clamshell_state::status::metrics::Metrics;
 use clamshell_state::{
-    Effect, EntryAct, Event, Id, Init, Instance, ListEvent, ListId, Notification, NotificationEvent, NotificationId, PointerEvent, Reading, State, Status, Tab,
-    Urgency, WindowEvent,
+    Control, Effect, EntryAct, Event, Id, Init, Instance, ListEvent, ListId, Notification, NotificationEvent, NotificationId, PointerEvent, Reading, Slide,
+    State, Status, Tab, Urgency, WindowEvent,
 };
 
 thread_local! {
@@ -187,6 +187,39 @@ fn allocations_per_event() {
         });
         run(&name("focus moved by the pad"), s, &|i| Event::Pointer(PointerEvent::Focus(Id::Tab(if i % 2 == 0 { Tab::Volume } else { Tab::Wifi }))));
         run(&name("focus moved by the pad down a list"), s, &|i| Event::Pointer(PointerEvent::Focus(ListId::Wifi.row(if i % 2 == 0 { 0 } else { 7 }))));
+        run(&name("input on a device"), s, &|_| Event::Idle(clamshell_state::device::idle::IdleEvent::DeviceInput));
+        run(&name("the compositor quiet and busy"), s, &|i| {
+            Event::Idle(if i % 2 == 0 {
+                clamshell_state::device::idle::IdleEvent::CompositorQuiet
+            } else {
+                clamshell_state::device::idle::IdleEvent::CompositorInput
+            })
+        });
+        let item = clamshell_state::session::tray::TrayItem {
+            key: ":1.9/StatusNotifierItem".into(),
+            id: "thing".into(),
+            title: "Thing".into(),
+            pid: None,
+            unit: None,
+            icon: None,
+            menu: Vec::new(),
+        };
+        run(&name("tray, unchanged"), s, &|_| Event::Tray(vec![item.clone()]));
+        // The brightness slid in the bar, at a new level each step.
+        s.apply(Event::Reading(Reading::Status(Status { brightness: Some(50), ..Status::default() })), &mut Vec::new());
+        s.apply(Slide::Start { control: Control::Brightness, x: 300.0, width: 620.0 }.into(), &mut Vec::new());
+        run(&name("brightness slid"), s, &|i| Slide::To { x: 300.0 + 10.0 * i as f32 }.into());
+        s.apply(Slide::End.into(), &mut Vec::new());
+        if state == "running" {
+            // A window the rule puts on the bottom screen, retitled.
+            let lower = WindowFacts { id: 50, app_id: "foot".into(), title: "lower".into(), ..WindowFacts::default() };
+            s.apply(WindowEvent::Opened(lower).into(), &mut Vec::new());
+            run(&name("a window below, retitled"), s, &|i| WindowEvent::Title { window: 50, title: format!("lower {i}") }.into());
+            // A launch waiting for its unit, for the launch's wait.
+            s.apply(Event::Tick { unix_secs: T0 + 5000, mono_secs: 5000 }, &mut Vec::new());
+            s.apply(Event::Entry("zelda-lttp".into(), EntryAct::Play), &mut Vec::new());
+            run(&name("tick while a launch waits"), s, &|i| Event::Tick { unix_secs: T0 + 5000 + i, mono_secs: 5000 + i });
+        }
     }
     for (name, n) in &rows {
         println!("{n:4}  {name}");
