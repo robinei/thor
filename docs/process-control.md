@@ -147,8 +147,9 @@ on its tile), quit or killed.
 
 A ClamShell started again (an update, a crash) leaves our slices as it finds them: one found frozen
 (suspended, or paused hidden by the one before) is held as suspended, so a suspended game stays so. A slice is
-thawed before a launch into it (systemd starts no unit in a frozen slice). Tried in the nested session: Foot
-suspended, ClamShell restarted in the same sway, still frozen, resumed with its window.
+thawed before a launch into it (systemd starts no unit in a frozen slice). Tried in the nested session when it ran
+under sway (before 2026-10-26): Foot suspended, ClamShell restarted in the same sway, still frozen, resumed
+with its window.
 
 Android's apps share one container, so the Android runner is paused as a whole (its `pause` and `resume`,
 Waydroid's container service freezing and thawing the container, no root): set to Pauses hidden, once
@@ -201,14 +202,14 @@ woke about 8 times a second between them).
 
 `tools/inventory.sh [SECONDS]` (read-only, on the device or in the VM): the running units, and per
 cgroup its memory now and its CPU time over the window (30 s). In the VM (4 GiB, no GPU), idle, shelf
-in front, the machine used 653 MiB of 3.9 GiB: ClamShell 89 MiB and 134 ms of CPU in 30 s, journald 33
-MiB, the Waydroid container service 30 MiB, the login session (sway, mako) 19 MiB, PipeWire's three 16
+in front, the machine used 653 MiB (measured when the session was sway under uwsm, before 2026-10-26) of 3.9 GiB: ClamShell 89 MiB and 134 ms of CPU in 30 s, journald 33
+MiB, the Waydroid container service 30 MiB, the login session (sway and the mako notification daemon, both gone since) 19 MiB, PipeWire's three 16
 MiB, the rest under 10 MiB each. With the Waydroid session up and Calculator open: 1855 MiB used, the
 container 2.6 GiB (counting the page cache charged to it) in 89 processes. That inventory also found an
 adb server started by hand, in sway's login session, listed nowhere, which ClamShell's Android runner
 quietly depended on: since then the runner's adb server is its own, on a port of its own (5039).
 
-On the desktop (AMD GPU, PipeWire, Steam), in the nested session:
+On the desktop (AMD GPU, PipeWire, Steam), in the nested session as it was under sway (before 2026-10-26):
 
 - Frozen with systemctl for 10 s, a native Steam game (Super Meat Boy) froze in 37 ms and thawed in
   5 ms; its sound stream stayed open; it went on drawing. RetroArch (snes9x) the same.
@@ -217,7 +218,7 @@ On the desktop (AMD GPU, PipeWire, Steam), in the nested session:
   drawing on once shown; with no setting (Pauses games) frozen 12 s after Home; stopped from Steam's own
   Stop while frozen behind Steam's window (Steam closed its window, ClamShell thawed it, it ended within
   2 s, Steam showed it stopped); started from Steam's window, moved into its own scope and ended by Quit.
-- A program started through sway, not ClamShell (foot): on the dock, on its workspace, in front.
+- A program started through sway, not ClamShell (foot): on the dock, in its own group, in front.
 
 In the VM, as the device's session (`tools/vm/vm-checks.py`, the process control checks): a game
 launched from shelf runs as a service of its own and Quit ends it with one play recorded; a game behind
