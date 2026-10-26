@@ -17,6 +17,7 @@ mod idle;
 mod input;
 mod keyboard;
 mod nested;
+mod notify;
 mod pointer;
 mod popup;
 mod presentation;

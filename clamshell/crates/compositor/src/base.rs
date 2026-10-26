@@ -77,6 +77,7 @@ impl Base {
         start(sender, crate::Displays { socket, wayland: server.socket.clone(), x11: x11.display() });
         server.core.handle(Event::Start);
         let mut host_deadline = None;
+        let mut notifier = crate::notify::Notifier::new();
         while !server.exit {
             let now = Instant::now();
             x11.turn(&mut server, now);
@@ -88,12 +89,14 @@ impl Base {
                 .chain(server.frames_due)
                 .chain(x11.deadline())
                 .chain(host_deadline)
+                .chain(notifier.deadline())
                 .min()
                 .map(|at| at.saturating_duration_since(now));
             event_loop.dispatch(wait, &mut server)?;
             server.turn();
             host_deadline = host(&mut server, Instant::now());
             server.dh.flush_clients()?;
+            notifier.turned();
         }
         Ok(())
     }
