@@ -353,8 +353,8 @@ the MVP, but three choices keep it possible without rebuilding:
    Wayland driver). Whether Smithay implements it is checked when its revision is pinned; if not, it is
    ours to add later.
 3. **Plane assignment leaves room for a colour transform:** scanning out an HDR game means the display
-   hardware's colour pipeline (Armada's colour-pipeline patches) does the brightness and tone mapping, not
-   our shader.
+   hardware's colour pipeline (Armada's colour-pipeline patches, phase 4's "Direct scanout") does the
+   brightness and tone mapping, not our shader.
 
 The pinned Smithay revision (24647fc) has no colour-management protocol implementation. Window facts
 now reserve a colour description; the nested host does not advertise HDR. Client textures retain their
@@ -665,12 +665,24 @@ Steps 0-3 need no Thor; step 4's first checks can run whenever it arrives, along
          pipeline: curves, the panel's colour), so no client buffer reaches a plane, and a scanout tranche
          would only steer allocations for nothing. Direct scanout needs the backend on Smithay's
          `DrmCompositor` (it picks planes, test-commits, gives per-surface scanout feedback), and is
-         allowed only when composition would change nothing: the window fullscreen on its screen, no
-         overlay over it, its curve Off, its colours matching the panel's (or the plane's KMS colour
-         pipeline doing the conversion). First read on the device: the top panel's gamut against sRGB, the
-         planes' colour properties and formats, and the power composition costs against scanout; then
-         decide. With it, the per-surface feedback's scanout tranche (UBWC for Turnip and freedreno,
-         section 4).
+         allowed only when composition would change nothing the display engine can't do itself: the
+         window fullscreen on its screen, no overlay over it, no FSR, SMAA or Integer pass.
+         - The colour work can move to the display engine. Linux-thor carries Armada's patches for it
+           (series at d2bcf6f; the SM8550 device tree included): 0068 loads the DSPP's inverse gamma
+           (`DEGAMMA_LUT`) and 17^3 gamut LUT (CRTC property `DPU_3D_LUT`), after blending, through the
+           LUTDMA engine; 0077 gives each VIG pipe a DRM plane colour pipeline, a 1D LUT then a 3D LUT,
+           before blending. The panel's correction and gamut mapping become the 3D LUT, the curve the 1D
+           LUT (or baked into the 3D one), HDR tone mapping a PQ 1D LUT then the 3D LUT, as gamescope
+           does (Armada saw gamescope's shaper and 3D LUT scan out on the Odin 2 Portal, the same SoC).
+         - Limits: a plane with a colour pipeline needs a VIG pipe and no multirect (the second rect has
+           no LUT blocks); a rotated top-screen plane already takes two of the four VIG pipes. Smithay
+           doesn't know the plane colour pipeline API: its properties set by us and included in the
+           test commits (in our fork, or around `DrmCompositor`).
+         - First read on the device: `drm_info` (the planes' colour pipelines and formats, the CRTC's
+           `DPU_3D_LUT`), whether a rotated VIG plane with a colour pipeline at 120 Hz passes a test
+           commit, the top panel's gamut against sRGB, and the power composition costs against scanout;
+           then decide. With it, the per-surface feedback's scanout tranche (UBWC for Turnip and
+           freedreno, section 4).
 4h. **HDR, the device half** (after phase 4's measurements, as the gameplan's HDR experiment describes;
     the panels do no tone mapping of their own, so ours does it all):
     - [ ] Bit depth. The display controller takes 10-bit buffers (2101010), but the link to both panels is
