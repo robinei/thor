@@ -621,6 +621,7 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    while its window is yet to show, else the rate of the settings in force, at the modes known.
    Once ClamShell set a brightness level, the last Brightness is that level, or a third of it (at
    least 1) while dimmed.
+   At most one tab's watch is on, and it is the open tab's (or the battery's, for the dock's menu).
 3. **Pad route:** consistent with claimant, listening and dock move; reconciling again changes nothing;
    the focus ring shows only when the route is Ui, or after a hold on shelf's selected entry opened its
    actions with the pad elsewhere, until the next touch hides it (the ring is what shows the actions are

@@ -173,6 +173,8 @@ struct Sent {
     outputs: (bool, bool),
     /// The last Refresh.
     refresh: u16,
+    /// The tabs' watches on, as sent (all but Status and Account).
+    watched: Vec<Watch>,
     /// The last Brightness's level.
     brightness: Option<u8>,
     /// Each slice's last Freeze.
@@ -692,6 +694,11 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             7 => Event::Files(crate::shelf::files::FilesEvent::Busy { what: "Copying a".into(), fraction: 0.5 }),
             // Quit (SIGTERM): the state saves; the run goes on, as if ClamShell were started again.
             8 if rng.one_in(10) => Event::Quit,
+            // What the metadata thread found for an entry.
+            9 => {
+                let id = rng.pick(&library.entries)?.id.clone();
+                Event::Meta { id, meta: crate::Meta { cover: Some("/tmp/cover.png".into()), duration: Some(60), ..crate::Meta::default() } }
+            }
             _ => Event::Fetching(rng.one_in(2)),
         },
         99 => {
@@ -785,6 +792,12 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
             Effect::Keymap(k) => sent.keymap = Some(k.clone()),
             Effect::Apply { entry, settings } => sent.apply = Some((entry.clone(), *settings)),
             Effect::Watch(Watch::Status, on) => sent.status = *on,
+            Effect::Watch(w, on) if !matches!(w, Watch::Status | Watch::Account) => {
+                sent.watched.retain(|x| x != w);
+                if *on {
+                    sent.watched.push(*w);
+                }
+            }
             Effect::Watch(Watch::Account, on) => sent.account = *on,
             Effect::Compositor(Compositor::Outputs { top, bottom }) => sent.outputs = (*top, *bottom),
             Effect::Compositor(Compositor::Refresh(hz)) => sent.refresh = *hz,
@@ -800,6 +813,13 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
     }
     let screens_on = s.idle().stage() < Stage::Off;
     ensure!(sent.status == screens_on, "2: status watched {}, screens on {screens_on}", sent.status);
+    // At most one tab's watch is on, and it is the open tab's (the dock's menu shows the battery's).
+    let tab = s.bottom().tab().watch();
+    ensure!(
+        sent.watched.len() <= 1 && sent.watched.iter().all(|w| Some(*w) == tab || *w == Watch::Battery || *w == Watch::Time),
+        "2: watches on {:?}, the tab's {tab:?}",
+        sent.watched
+    );
     // (The refresh rate calibration keeps the bottom screen off while it runs.)
     let outputs = (screens_on, !s.bottom().off() && !s.device().calibrating());
     ensure!(sent.outputs == outputs, "2: outputs sent {:?}, state {outputs:?}", sent.outputs);
