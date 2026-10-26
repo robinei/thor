@@ -14,81 +14,19 @@ import re
 import signal
 import sys
 import subprocess
-import tempfile
 import time
 
-ROOT = Path(__file__).resolve().parents[2]
-BIN = ROOT / "clamshell/target/debug/clamshell"
+from nested_env import BIN, ROOT, Nested
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gpu", action="store_true", help="require hardware EGL and native dmabuf traffic")
     args = parser.parse_args()
-    directory = Path(tempfile.mkdtemp(prefix="clamshell-compositor-"))
-    print(f"nested compositor artifacts: {directory}", flush=True)
-    runtime = directory / "runtime"
-    runtime.mkdir(mode=0o700)
-    data = directory / "data/clamshell"
-    data.mkdir(parents=True)
-    (data / "first-start.json").write_text('{"done":true}\n')
-    config = directory / "config/clamshell"
-    config.mkdir(parents=True)
-    (config / "library.json").write_text('{"places":[{"id":"apps","path":"Apps"}]}\n')
-    sway_config = directory / "sway.conf"
-    sway_config.write_text('output HEADLESS-1 resolution 1580x540\ndefault_border none\n'
-                           'for_window [title="ClamShell nested"] fullscreen enable\n')
-    private_home = directory / "home"
-    private_home.mkdir()
-    env = {**os.environ, "HOME": str(private_home), "XDG_RUNTIME_DIR": str(runtime), "XDG_CONFIG_HOME": str(directory / "config"),
-           "XDG_DATA_HOME": str(directory / "data"), "XDG_CACHE_HOME": str(directory / "cache"),
-           "WLR_BACKENDS": "headless", "WLR_HEADLESS_OUTPUTS": "1", "WLR_RENDERER": "gles2" if args.gpu else "pixman",
-           "WLR_LIBINPUT_NO_DEVICES": "1", "LIBGL_ALWAYS_SOFTWARE": "0" if args.gpu else "1", "CLAMSHELL_STEAM": "off",
-           "CLAMSHELL_CONTROL": str(directory / "control"), "CLAMSHELL_BACKLIGHTS": str(directory / "backlights"),
-           "CLAMSHELL_GAMEPAD": str(directory / "no-controller"), "RUST_LOG": "info,clamshell_compositor::x11=debug"}
-    bus = directory / "bus"
-    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={bus}"
-    for key in ["SWAYSOCK", "WAYLAND_DISPLAY", "DISPLAY", "WAYLAND_SOCKET", "CLAMSHELL_SESSION"]:
-        env.pop(key, None)
-    processes = []
-    expected_exits = set()
-
-    def spawn(argv, name, environment, stdin=None):
-        log = (directory / f"{name}.log").open("w")
-        try:
-            process = subprocess.Popen(argv, env=environment, stdin=stdin, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-        finally:
-            log.close()
-        processes.append(process)
-        return process
-
-    def wait(predicate, description):
-        until = time.monotonic() + 10
-        while time.monotonic() < until:
-            failed = [process.returncode for process in processes if process.poll() is not None and process not in expected_exits]
-            if failed:
-                raise RuntimeError(f"{description}: a process exited: {failed}; logs in {directory}")
-            value = predicate()
-            if value:
-                return value
-            time.sleep(0.1)
-        raise RuntimeError(f"timed out: {description}; logs in {directory}")
-
-    try:
-        spawn(["dbus-daemon", "--session", "--nofork", "--nopidfile", f"--address=unix:path={bus}"], "dbus", env)
-        wait(lambda: bus.is_socket(), "the test's session bus")
-        spawn(["sway", "-c", str(sway_config)], "sway", env)
-        parent_socket = wait(lambda: next((p.name for p in runtime.glob("wayland-*") if p.is_socket()), None), "parent Wayland socket")
-        host = {**env, "WAYLAND_DISPLAY": parent_socket}
-        spawn([str(BIN), "--nested"], "compositor", host)
-
-        def socket_name():
-            match = re.search(r"compositor: WAYLAND_DISPLAY=(\S+)", (directory / "compositor.log").read_text())
-            return match.group(1) if match else None
-
-        nested_socket = wait(socket_name, "nested Wayland socket")
-        wait(lambda: (directory / "control").exists(), "control pipe")
-        nested = {**host, "WAYLAND_DISPLAY": nested_socket}
+    with Nested(gpu=args.gpu) as n:
+        directory, runtime, private_home, env, host, nested = n.directory, n.runtime, n.home, n.env, n.host, n.nested
+        nested_socket, processes, expected_exits = n.nested_socket, n.processes, n.expected_exits
+        spawn, wait, image, shot, control = n.spawn, n.wait, n.image, n.shot, n.control
         subprocess.run([str(BIN), "--clipboard", "set"], input="nested clipboard", text=True,
                        env=nested, check=True, timeout=10)
         def clipboard(environment):
@@ -119,26 +57,12 @@ time.sleep(300)
         client = spawn(["foot", "-o", "colors-dark.background=204080", "--app-id=nested-test",
                         "python3", str(client_program), str(directory)], "client", nested)
 
-        def image():
-            result = subprocess.run(["grim", "-o", "HEADLESS-1", "-t", "ppm", "-"], env=host, capture_output=True, check=True)
-            magic, dimensions, maximum, image = result.stdout.split(b"\n", 3)
-            assert magic == b"P6" and maximum == b"255"
-            width, height = map(int, dimensions.split())
-            assert len(image) == width * height * 3
-            return width, height, image
-
         def pixels(colour=(32, 64, 128)):
             width, height, data = image()
             def blue(x, y):
                 offset = (y * width + x) * 3
                 return all(abs(a - b) < 3 for a, b in zip(data[offset:offset + 3], colour))
             return blue(300, height // 2), blue(width - 300, height // 2)
-
-        def shot(name):
-            subprocess.run(["grim", "-o", "HEADLESS-1", str(directory / f"{name}.png")], env=host, check=True)
-
-        def control(*words):
-            subprocess.run([str(BIN), "ctl", *words], env=host, check=True)
 
         wait(lambda: pixels() == (True, False), "client rendered on top")
         shot("top")
@@ -648,22 +572,6 @@ time.sleep(300)
         if args.gpu:
             print("ok: Vulkan WSI animation, resize, close, dmabuf feedback, native submission and SMAA blended in the final pass; EGL native submission", flush=True)
         print("ok: PQ, linear and SDR EGL colour conversion; compositor cursor and damage, in-process screenshot, window-event export, clipboard isolation and persistence, presentation feedback, lazy Xwayland, X11 presentation and crash recovery, Wayland EGL and shm rendering, bottom-slot move, return and Home, notifications shown, closed and tapped", flush=True)
-    finally:
-        # Kill the entire isolated group even when its leader already exited, so a stopped
-        # Xwayland cannot survive a failing test's teardown.
-        for process in reversed(processes):
-            if process.poll() is None:
-                os.killpg(process.pid, signal.SIGTERM)
-        for process in processes:
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
 
 
 if __name__ == "__main__":
