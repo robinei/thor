@@ -74,7 +74,7 @@ const THOR_REFRESH: RefreshCalibration = RefreshCalibration {
 };
 /// The two-screen machine's fixed facts, identified once and passed to their readers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Profile {
+pub struct DeviceProfile {
     pub name: &'static str,
     pub top: Screen,
     pub bottom: Screen,
@@ -89,12 +89,12 @@ pub struct Profile {
     pub control_layout: layout::ControlLayout,
     pub preview: preview::Preview,
 }
-impl Default for Profile {
+impl Default for DeviceProfile {
     fn default() -> Self {
         Self::generic()
     }
 }
-impl Profile {
+impl DeviceProfile {
     pub const fn thor() -> Self {
         Self {
             name: "thor",
@@ -194,28 +194,28 @@ mod tests {
     use super::*;
     #[test]
     fn identity_uses_exact_compatible_entries_dmi_and_an_explicit_override() {
-        assert_eq!(Profile::identify(None, b"ayn,thor\0qcom,sm8550\0", "", ""), Ok(Profile::thor()));
-        assert_eq!(Profile::identify(None, b"other,board\0ayn,thor\0", "", ""), Ok(Profile::thor()));
-        assert_eq!(Profile::identify(None, b"ayn,thor-other\0", "", ""), Ok(Profile::generic()));
-        assert_eq!(Profile::identify(None, b"", "QEMU\n", "Standard PC (Q35 + ICH9, 2009)"), Ok(Profile::vm()));
-        assert_eq!(Profile::identify(None, b"", "Microsoft Corporation", "Virtual Machine"), Ok(Profile::generic()));
-        assert_eq!(Profile::identify(Some("vm"), b"ayn,thor\0", "", ""), Ok(Profile::vm()));
-        assert_eq!(Profile::identify(Some("generic"), b"ayn,thor\0", "", ""), Ok(Profile::generic()));
-        assert_eq!(Profile::identify(Some("vm-hdr"), b"", "QEMU", ""), Ok(Profile::vm_hdr()));
-        let hdr = Profile::vm_hdr();
+        assert_eq!(DeviceProfile::identify(None, b"ayn,thor\0qcom,sm8550\0", "", ""), Ok(DeviceProfile::thor()));
+        assert_eq!(DeviceProfile::identify(None, b"other,board\0ayn,thor\0", "", ""), Ok(DeviceProfile::thor()));
+        assert_eq!(DeviceProfile::identify(None, b"ayn,thor-other\0", "", ""), Ok(DeviceProfile::generic()));
+        assert_eq!(DeviceProfile::identify(None, b"", "QEMU\n", "Standard PC (Q35 + ICH9, 2009)"), Ok(DeviceProfile::vm()));
+        assert_eq!(DeviceProfile::identify(None, b"", "Microsoft Corporation", "Virtual Machine"), Ok(DeviceProfile::generic()));
+        assert_eq!(DeviceProfile::identify(Some("vm"), b"ayn,thor\0", "", ""), Ok(DeviceProfile::vm()));
+        assert_eq!(DeviceProfile::identify(Some("generic"), b"ayn,thor\0", "", ""), Ok(DeviceProfile::generic()));
+        assert_eq!(DeviceProfile::identify(Some("vm-hdr"), b"", "QEMU", ""), Ok(DeviceProfile::vm_hdr()));
+        let hdr = DeviceProfile::vm_hdr();
         assert_eq!((hdr.top.connector, hdr.top.colour.sdr_white), ("Virtual-1", Some(203_000)));
-        assert_eq!(hdr.bottom.colour, Profile::thor().bottom.colour);
-        assert_eq!(Profile::identify(Some("unknown"), b"ayn,thor\0", "", ""), Err("unknown"));
+        assert_eq!(hdr.bottom.colour, DeviceProfile::thor().bottom.colour);
+        assert_eq!(DeviceProfile::identify(Some("unknown"), b"ayn,thor\0", "", ""), Err("unknown"));
     }
     #[test]
     fn only_a_known_physical_panel_supplies_a_density_hint() {
-        assert_eq!(Profile::thor().bottom_pixels_per_mm_hint(), Some(16.5));
-        assert_eq!(Profile::vm().bottom_pixels_per_mm_hint(), None);
-        assert_eq!(Profile::generic().bottom_pixels_per_mm_hint(), None);
+        assert_eq!(DeviceProfile::thor().bottom_pixels_per_mm_hint(), Some(16.5));
+        assert_eq!(DeviceProfile::vm().bottom_pixels_per_mm_hint(), None);
+        assert_eq!(DeviceProfile::generic().bottom_pixels_per_mm_hint(), None);
     }
     #[test]
     fn profiles_always_name_distinct_top_and_bottom_screens() {
-        for profile in [Profile::thor(), Profile::vm(), Profile::generic()] {
+        for profile in [DeviceProfile::thor(), DeviceProfile::vm(), DeviceProfile::generic()] {
             assert_ne!(profile.top.connector, profile.bottom.connector);
             assert!(!profile.top.connector.is_empty());
             assert!(!profile.bottom.connector.is_empty());

@@ -305,7 +305,7 @@ mod tests {
     use super::*;
     #[test]
     fn the_profile_places_groups_and_their_input_targets() {
-        let layout = clamshell_state::Profile::thor().control_layout;
+        let layout = clamshell_state::DeviceProfile::thor().control_layout;
         let area = Rect::new(0.0, 0.0, 1000.0, 500.0);
         let thor = Pad::new(area, 200.0, layout);
         let swapped = Pad::new(area, 200.0, ControlLayout { left: layout.right, right: layout.left, ..layout });

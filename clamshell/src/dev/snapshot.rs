@@ -46,7 +46,7 @@ pub struct Shot {
 
 /// The fixed Thor reference canvas; live outputs are configured independently.
 fn size(screen: Screen) -> (u32, u32) {
-    let preview = clamshell_state::Profile::thor().preview;
+    let preview = clamshell_state::DeviceProfile::thor().preview;
     match screen {
         Screen::Top => preview.top,
         Screen::Bottom => preview.bottom,
@@ -98,7 +98,7 @@ pub fn state(library: Library) -> State {
     }
     State::new(Init {
         display_modes,
-        profile: clamshell_state::Profile::thor(),
+        profile: clamshell_state::DeviceProfile::thor(),
         library: Some(library),
         dock,
         keymaps: clamshell_state::keymap::Keymaps::initial(),

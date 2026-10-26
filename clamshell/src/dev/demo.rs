@@ -64,7 +64,7 @@ pub const BELOW: &str = "below";
 /// The screens as the compositor describes them with the VM's HDR profile: the Thor's top panel with
 /// SDR white at the reference, 650 nits at its peak; its second panel, SDR.
 pub fn screens() -> clamshell_state::presentation::Screens {
-    let profile = clamshell_state::Profile::vm_hdr();
+    let profile = clamshell_state::DeviceProfile::vm_hdr();
     clamshell_state::presentation::Screens { colour: [profile.top.colour.into(), profile.bottom.colour.into()], top_size: (1920, 1080) }
 }
 

@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use crate::EventSender;
-use clamshell_device::{Profile, Rotation, ScreenRole, TouchSelector, Touchscreen};
+use clamshell_device::{DeviceProfile, Rotation, ScreenRole, TouchSelector, Touchscreen};
 use clamshell_state::colour::ColourDescription;
 use clamshell_state::{Effect, State};
 use clamshell_ui::{Config, Error};
@@ -339,7 +339,7 @@ fn transform(rotation: Rotation) -> Transform {
 }
 
 /// The connector the profile names for `role`, its mode, and a CRTC it can use other than `taken`.
-fn choose(drm: &DrmDevice, profile: &Profile, role: ScreenRole, taken: Option<crtc::Handle>) -> Result<Chosen, Error> {
+fn choose(drm: &DrmDevice, profile: &DeviceProfile, role: ScreenRole, taken: Option<crtc::Handle>) -> Result<Chosen, Error> {
     let name = profile.screen(role).connector;
     let resources = drm.resource_handles().map_err(|e| format!("drm: {e}"))?;
     for &handle in resources.connectors() {
@@ -740,7 +740,7 @@ fn present(drawing: &mut Drawing, server: &Server, index: usize) -> Result<(), E
 /// touchscreen, the profile's catch-all; anything else (a tablet nobody named) covers the top screen.
 #[derive(Clone, Copy)]
 struct Areas {
-    profile: Profile,
+    profile: DeviceProfile,
     top: Size<i32, Logical>,
     bottom: Size<i32, Logical>,
 }
@@ -927,7 +927,7 @@ mod tests {
 
     #[test]
     fn an_input_device_is_on_the_screen_the_profile_names_it_on() {
-        let thor = Profile::thor().touchscreens;
+        let thor = DeviceProfile::thor().touchscreens;
         let named = |identifier: &'static str| move |n: &str| n == identifier;
         assert_eq!(screen_of(thor, true, named("0:0:top_touchscreen")), ScreenRole::Top);
         assert_eq!(screen_of(thor, true, named("0:0:bottom_touchscreen")), ScreenRole::Bottom);

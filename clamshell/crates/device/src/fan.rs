@@ -32,8 +32,8 @@ mod tests {
     use super::*;
     #[test]
     fn unsupported_profiles_do_not_invent_a_curve_and_known_curves_are_ordered() {
-        assert_eq!(crate::Profile::generic().fan, None);
-        assert_eq!(crate::Profile::vm().fan, None);
+        assert_eq!(crate::DeviceProfile::generic().fan, None);
+        assert_eq!(crate::DeviceProfile::vm().fan, None);
         for points in [Fan::thor().auto, Fan::thor().quiet] {
             assert!(points.windows(2).all(|points| matches!(points, [(left,_),(right,_)] if left < right)));
             assert!(points.first().is_some_and(|(_, duty)| *duty >= Fan::thor().min_running));

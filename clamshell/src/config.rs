@@ -2,13 +2,13 @@
 
 use std::path::PathBuf;
 
-use clamshell_state::{Profile, Tab};
+use clamshell_state::{DeviceProfile, Tab};
 use clamshell_system::os::evdev::device::DeviceSpec;
 use clamshell_system::paths::Base;
 
 pub struct Env {
     /// Fixed hardware facts, selected once from the kernel identity or CLAMSHELL_DEVICE.
-    pub profile: Profile,
+    pub profile: DeviceProfile,
     /// CLAMSHELL_GAMEPAD: the controller, as its /dev/input path or part of its name. The default is the
     /// first gamepad.
     pub gamepad: DeviceSpec,

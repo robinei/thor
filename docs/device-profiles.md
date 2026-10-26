@@ -11,10 +11,11 @@ in small steps. ClamShell keeps assuming two screens, a top and a bottom one.
    cpufreq clusters, the GPU's devfreq, thermal zones, hwmon, the power key and lid. A profile holds only
    what can't be detected. Reported or measured facts take precedence over profile hints; unknown
    values stay unknown rather than receiving nominal desktop or VM defaults.
-2. **One place maps the device to its facts, in code.** A `Profile` is a struct of typed facts, built by
-   one constructor per device (`Profile::thor()`, `Profile::vm()`, `Profile::generic()`, and
-   `Profile::vm_hdr()`, the VM with the Thor's panels' colour, only when forced). Facts can point
-   at tables in code: the keymap screen's control layout, the fan curves, the sensor hub's axis matrix.
+2. **One place maps the device to its facts, in code.** A `DeviceProfile` is a struct of typed facts,
+   built by one constructor per device (`DeviceProfile::thor()`, `DeviceProfile::vm()`,
+   `DeviceProfile::generic()`, and `DeviceProfile::vm_hdr()`, the VM with the Thor's panels' colour, only
+   when forced). Facts can point at tables in code: the keymap screen's control layout, the fan curves,
+   the sensor hub's axis matrix.
 3. **The device is identified once.** At start, from the device tree's `compatible` (DMI on x86, or
    `CLAMSHELL_DEVICE` to force one), mapped to a constructor by one match. That is the only place in the
    codebase that checks which device it runs on.

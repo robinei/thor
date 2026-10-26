@@ -1371,7 +1371,7 @@ kept from the desktop's clipboard.
 What a profile holds and why is in `device-profiles.md`. This part is how the profile is chosen, which
 wins between what is detected and the profile's hints, and the machines that depend on them.
 
-### Identification (device/lib.rs `Profile::identify`, system/profile.rs, fan/main.rs)
+### Identification (device/lib.rs `DeviceProfile::identify`, system/profile.rs, fan/main.rs)
 
 Every `clamshell` command and `clamshell-fan` identify the device once, at start, by the same pure
 function; `State` gets the profile in `Init` (`State::profile`).

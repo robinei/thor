@@ -89,7 +89,7 @@ pub struct Audio {
 }
 
 /// A detected backlight's screen role, or its kernel name when the profile has no role hint.
-pub fn backlight_label<'a>(profile: &crate::Profile, name: &'a str) -> &'a str {
+pub fn backlight_label<'a>(profile: &crate::DeviceProfile, name: &'a str) -> &'a str {
     if profile.top.backlight == Some(name) {
         "Top screen"
     } else if profile.bottom.backlight == Some(name) {
@@ -602,10 +602,10 @@ mod tests {
 
     #[test]
     fn the_thors_backlights_by_their_screens() {
-        assert_eq!(backlight_label(&crate::Profile::thor(), "ae96000.dsi.0"), "Top screen");
-        assert_eq!(backlight_label(&crate::Profile::thor(), "ae94000.dsi.0"), "Bottom screen");
-        assert_eq!(backlight_label(&crate::Profile::thor(), "intel_backlight"), "intel_backlight");
-        assert_eq!(backlight_label(&crate::Profile::generic(), "ae96000.dsi.0"), "ae96000.dsi.0");
+        assert_eq!(backlight_label(&crate::DeviceProfile::thor(), "ae96000.dsi.0"), "Top screen");
+        assert_eq!(backlight_label(&crate::DeviceProfile::thor(), "ae94000.dsi.0"), "Bottom screen");
+        assert_eq!(backlight_label(&crate::DeviceProfile::thor(), "intel_backlight"), "intel_backlight");
+        assert_eq!(backlight_label(&crate::DeviceProfile::generic(), "ae96000.dsi.0"), "ae96000.dsi.0");
     }
 
     /// The backlight reads the dimmed level while idle has dimmed the screens: that reading isn't taken

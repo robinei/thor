@@ -197,7 +197,7 @@ fn an_invalid_colour_request_disconnects_its_client_without_ending_the_server() 
 #[test]
 fn each_screen_is_described_as_its_panel_and_the_top_is_preferred() {
     let (mut display, mut server) = server();
-    let profile = clamshell_device::Profile::vm_hdr();
+    let profile = clamshell_device::DeviceProfile::vm_hdr();
     let panels = [ColourDescription::from(profile.top.colour), ColourDescription::from(profile.bottom.colour)];
     server.colour.set_outputs(panels);
     assert_ne!(server.colour.identities[0], server.colour.identities[1], "different descriptions, different identities");

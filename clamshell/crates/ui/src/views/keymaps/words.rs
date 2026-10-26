@@ -158,8 +158,8 @@ mod tests {
     use super::*;
     #[test]
     fn input_output_and_binding_words_share_the_profiles_printed_legends() {
-        let thor = clamshell_state::Profile::thor().control_layout.labels;
-        let standard = clamshell_state::Profile::generic().control_layout.labels;
+        let thor = clamshell_state::DeviceProfile::thor().control_layout.labels;
+        let standard = clamshell_state::DeviceProfile::generic().control_layout.labels;
         for (labels, south, trigger, auxiliary) in [(&thor, "B", "L2", "AYN"), (&standard, "A", "LT", "Guide")] {
             assert_eq!(Label(Input::Button(Button::A), labels).to_string(), south);
             assert_eq!(OutputLabel(Output::Pad(PadOut::Button(Button::A)), labels).to_string(), south);

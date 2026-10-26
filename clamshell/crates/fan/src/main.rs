@@ -16,7 +16,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use clamshell_device::{Profile, fan::Fan};
+use clamshell_device::{DeviceProfile, fan::Fan};
 use clamshell_fan_mode::{MODE_FILE, Mode};
 
 mod curve;
@@ -154,7 +154,7 @@ fn main() {
     }
 }
 
-fn identify(root: &Path) -> Result<Profile, String> {
+fn identify(root: &Path) -> Result<DeviceProfile, String> {
     let forced = std::env::var("CLAMSHELL_DEVICE").ok();
     let read = |relative: &str| -> Result<Vec<u8>, String> {
         let path = root.join(relative);
@@ -167,7 +167,7 @@ fn identify(root: &Path) -> Result<Profile, String> {
     let compatible = read("sys/firmware/devicetree/base/compatible")?;
     let vendor = read("sys/class/dmi/id/sys_vendor")?;
     let product = read("sys/class/dmi/id/product_name")?;
-    Profile::identify(forced.as_deref(), &compatible, &String::from_utf8_lossy(&vendor), &String::from_utf8_lossy(&product))
+    DeviceProfile::identify(forced.as_deref(), &compatible, &String::from_utf8_lossy(&vendor), &String::from_utf8_lossy(&product))
         .map_err(|name| format!("unknown CLAMSHELL_DEVICE {name:?}"))
 }
 

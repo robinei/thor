@@ -1,7 +1,7 @@
 //! Package scripts consume the same facts as the session, without repeating device identification.
-use clamshell_device::Profile;
+use clamshell_device::DeviceProfile;
 
-pub fn panel(profile: &Profile) -> serde_json::Value {
+pub fn panel(profile: &DeviceProfile) -> serde_json::Value {
     let calibration = profile.refresh_calibration.map(|calibration| {
         serde_json::json!({
             "program": calibration.program, "step": calibration.step,

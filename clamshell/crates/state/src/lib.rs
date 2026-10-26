@@ -125,14 +125,14 @@ pub use shelf::{Cursor, Shelf};
 pub use status::time::{ClockField, TimePage, TimeRow, TimeZones};
 pub use status::{Status, Sys};
 
-pub use clamshell_device::Profile;
+pub use clamshell_device::DeviceProfile;
 pub use clamshell_device::layout::{ControlLayout, Group as ControlGroup, Labels as ControlLabels};
 pub use clamshell_library::{BrowseKind, Browsed, Collection, Entry, Launch, Library, Meta, RunnerOf, runner_key};
 
 /// What the state starts from, as read from disk and the environment.
 #[derive(Debug, Default)]
 pub struct Init {
-    pub profile: Profile,
+    pub profile: DeviceProfile,
     pub display_modes: presentation::modes::DisplayModes,
     /// The library, or `None` if it is read after the start and comes as [`Event::Library`]: until then
     /// shelf is empty, and what needs the library waits for it (shelf's place, the dock's pins, autostart).
@@ -171,7 +171,7 @@ pub struct Init {
 /// Everything ClamShell knows, as its areas (see the [crate docs](crate)).
 #[derive(Debug, Default)]
 pub struct State {
-    profile: Profile,
+    profile: DeviceProfile,
     shelf: Shelf,
     bottom: Bottom,
     session: Session,
@@ -256,7 +256,7 @@ impl State {
         s
     }
 
-    pub fn profile(&self) -> &Profile {
+    pub fn profile(&self) -> &DeviceProfile {
         &self.profile
     }
 

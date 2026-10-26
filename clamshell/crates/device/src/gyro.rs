@@ -16,9 +16,9 @@ mod tests {
     use super::*;
     #[test]
     fn only_the_physical_profile_claims_a_sensor_hub() {
-        assert_eq!(crate::Profile::thor().sensor_hub, Some(SensorHub::thor()));
-        assert_eq!(crate::Profile::vm().sensor_hub, None);
-        assert_eq!(crate::Profile::generic().sensor_hub, None);
+        assert_eq!(crate::DeviceProfile::thor().sensor_hub, Some(SensorHub::thor()));
+        assert_eq!(crate::DeviceProfile::vm().sensor_hub, None);
+        assert_eq!(crate::DeviceProfile::generic().sensor_hub, None);
         let hub = SensorHub::thor();
         assert_eq!((hub.service, hub.rate_hz, hub.ticks_per_second), (400, 200, 19_200_000));
     }

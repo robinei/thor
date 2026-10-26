@@ -32,7 +32,7 @@ use crate::time::clock;
 
 /// What the threads are told about the environment, from the binary's `Env`.
 pub struct Config {
-    pub profile: clamshell_device::Profile,
+    pub profile: clamshell_device::DeviceProfile,
     /// The controller.
     pub gamepad: DeviceSpec,
     /// Whether ClamShell is the device's own session, in which case it takes the hardware keys.

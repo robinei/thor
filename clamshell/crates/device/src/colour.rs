@@ -67,7 +67,7 @@ mod tests {
     use super::*;
     #[test]
     fn panel_facts_preserve_the_documented_headroom_without_claiming_a_ten_bit_link() {
-        let top = crate::Profile::thor().top.colour;
+        let top = crate::DeviceProfile::thor().top.colour;
         assert_eq!(top, PanelColour::icna3520());
         assert_eq!(top.primaries.red, Xy { x: 680000, y: 320000 });
         assert_eq!(top.primaries.green, Xy { x: 265000, y: 690000 });
@@ -76,11 +76,11 @@ mod tests {
         assert_eq!(top.luminance, Some(Luminance { peak: 650000, frame_average: 650000, black: 2 }));
         assert_eq!(top.link_bits_per_channel, Some(8));
         assert!(top.hdr_capable);
-        let bottom = crate::Profile::thor().bottom.colour;
+        let bottom = crate::DeviceProfile::thor().bottom.colour;
         assert_eq!(bottom.link_bits_per_channel, Some(8));
         assert!(!bottom.hdr_capable);
         assert_eq!(bottom.primaries, PanelColour::srgb().primaries);
-        for panel in [crate::Profile::vm().top, crate::Profile::generic().bottom] {
+        for panel in [crate::DeviceProfile::vm().top, crate::DeviceProfile::generic().bottom] {
             assert_eq!(panel.colour, PanelColour::srgb());
             assert!(!panel.colour.hdr_capable);
             assert_eq!(panel.colour.luminance, None);
