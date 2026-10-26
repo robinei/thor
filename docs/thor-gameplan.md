@@ -392,10 +392,12 @@ To know:
    an entry fails. A kernel panic reboots after 30 s (`panic=30`).
    Serial console: none known; a USB keyboard and the screen, or ssh over USB Ethernet (after setting
    a password and turning Remote login on in ClamShell's Device view). Each boot runs
-   `thor-selftest` (from early on, not waited for): a pass at once (the kernel, its command line), and
-   one 90 s later (firmware and remote processors, both screens and backlights, the input devices by
-   name, the fan, the battery and the power group's access, zram and the swap file, the SD card's mode
-   and scheduler, sound, Wi-Fi, Bluetooth, the session), each line `ok`, `FAIL` or `info`, into the
+   `thor-selftest` (from early on, not waited for): a pass at once (the kernel, its command line, our
+   packages' versions), and one 90 s later (firmware and remote processors, both screens and
+   backlights, the input devices by name, the fan, the battery and the power group's access, zram and
+   the swap file, the SD card's mode and scheduler, sound, Wi-Fi, Bluetooth, the session, and from
+   ClamShell's log the panels' millimetres as their connectors give them, its panics, threads given up,
+   errors, warnings and restarts), each line `ok`, `FAIL` or `info`, into the
    journal (persistent, on the card) and `/var/log/thor-selftest.log` (the last 20 boots). If the boot
    gets that far but nothing shows, read them on the PC from the card's root:
    `journalctl --directory=MNT/var/log/journal -t thor-selftest` (and `-b -1` etc. for earlier boots;

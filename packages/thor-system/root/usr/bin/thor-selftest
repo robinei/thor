@@ -44,6 +44,14 @@ flush() {
 early() {
     out "== pass 1, $(date --iso-8601=seconds), boot $(cat /proc/sys/kernel/random/boot_id)"
     info "kernel $(uname -r)"
+    local ours
+    ours=$(pacman -Slq thor 2> /dev/null)
+    if [ -n "$ours" ]; then
+        # (pacman -Q with no names would list every package.)
+        info "packages: $(pacman -Q $ours 2> /dev/null | tr '\n' ' ')"
+    else
+        fail "the [thor] repository isn't in pacman.conf"
+    fi
     info "command line: $(cat /proc/cmdline)"
     # (Which device tree the bootloader chose, and which way it booted: UEFI or /KERNEL.)
     check "device tree: AYN Thor" grep -qx 'AYN Thor' <(tr -d '\0' < /proc/device-tree/model)
@@ -190,6 +198,24 @@ settled() {
         for unit in $units; do
             check "$unit active" runuser -u "$USER_NAME" -- env XDG_RUNTIME_DIR="/run/user/$uid" systemctl --user is-active -q "$unit"
         done
+    fi
+
+    # ClamShell, from its log this boot: what the panels' connectors said of their size (DSI panels have
+    # no EDID, and sysfs doesn't say), its panics, its threads given up, its restarts by systemd.
+    local log panics
+    log=$(journalctl -b _SYSTEMD_USER_UNIT=clamshell.service --no-pager -o cat 2> /dev/null)
+    if [ -n "$log" ]; then
+        info "$(grep -m1 "drm: the screens' millimetres" <<< "$log" || echo "ClamShell didn't log the screens' millimetres")"
+        panics=$(grep -E '\] panic in |given up' <<< "$log" | head -5)
+        if [ -z "$panics" ]; then ok "ClamShell: no panics"; else fail "ClamShell panicked:"; out "$panics"; fi
+        info "ClamShell: $(grep -c '^\[ERROR' <<< "$log") errors, $(grep -c '^\[WARN' <<< "$log") warnings (journalctl -b --user-unit clamshell -p warning)"
+        if [ -n "$uid" ] && [ -d "/run/user/$uid" ]; then
+            local restarts
+            restarts=$(runuser -u "$USER_NAME" -- env XDG_RUNTIME_DIR="/run/user/$uid" systemctl --user show -P NRestarts clamshell 2> /dev/null)
+            if [ "${restarts:-0}" = 0 ]; then ok "ClamShell not restarted"; else fail "ClamShell restarted $restarts times"; fi
+        fi
+    else
+        fail "no log from ClamShell this boot"
     fi
 
     # Sleep so far.
