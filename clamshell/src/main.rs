@@ -12,6 +12,7 @@ mod dev;
 mod profile;
 mod session;
 
+use std::io::Write;
 use std::process::ExitCode;
 
 use clamshell_state::{Init, State};
@@ -22,7 +23,21 @@ use cli::Command;
 use config::Env;
 
 fn main() -> ExitCode {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,tracing=warn")).init();
+    let mut logger = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,tracing=warn"));
+    // To the journal (as a service), each line starts with its syslog priority, which journald takes as
+    // the entry's: `journalctl -p err` finds the errors.
+    if to_journal() {
+        logger.format(|out, record| {
+            let priority = match record.level() {
+                log::Level::Error => 3,
+                log::Level::Warn => 4,
+                log::Level::Info => 6,
+                log::Level::Debug | log::Level::Trace => 7,
+            };
+            writeln!(out, "<{priority}>[{:<5} {}] {}", record.level(), record.target(), record.args())
+        });
+    }
+    logger.init();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(command) = cli::parse(&args) else {
         eprintln!("{}", cli::USAGE);
@@ -35,6 +50,13 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Whether stderr is the journal stream systemd connected (`JOURNAL_STREAM`, its device and inode), not
+/// just inherited from a service, as by a terminal's shell.
+fn to_journal() -> bool {
+    let Some(stream) = std::env::var("JOURNAL_STREAM").ok() else { return false };
+    rustix::fs::fstat(std::io::stderr()).is_ok_and(|stat| stream == format!("{}:{}", stat.st_dev, stat.st_ino))
 }
 
 /// Carries out what the command line asked for. The error is a message saying what went wrong.
