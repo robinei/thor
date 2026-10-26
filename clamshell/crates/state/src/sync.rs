@@ -36,6 +36,8 @@ pub(crate) struct Wanted<'a> {
     pub(crate) settings: Values,
     /// The refresh rate of the last entry launched by the event being handled, if one was.
     pub(crate) launched: Option<u16>,
+    /// The screen's refresh rates (see [`crate::device::display::DisplayModes::refresh_for`]).
+    pub(crate) modes: crate::device::display::DisplayModes,
     /// The bottom screen is on (see [`crate::Bottom::off`]).
     pub(crate) bottom_on: bool,
     /// ClamShell's view is on the bottom screen, and that screen is on.
@@ -144,7 +146,7 @@ impl Sent {
     pub(crate) fn new(w: &Wanted) -> Sent {
         Sent {
             applied: Some((w.program.cloned(), w.settings)),
-            refresh: w.settings.get(Setting::Refresh),
+            refresh: w.modes.refresh_for(w.settings.get(Setting::Refresh), w.settings.get(Setting::FpsCap)),
             keymap: Some(w.keymap),
             route: Some(w.route),
             #[cfg(debug_assertions)]
@@ -247,9 +249,10 @@ impl Sent {
     }
 
     /// The main screen's refresh rate follows the settings of the last entry launched, from its launch,
-    /// and the settings in force when they are applied, whichever came last.
+    /// and the settings in force when they are applied, whichever came last: their Refresh, or under a
+    /// frame rate cap one it divides (see [`crate::device::display::DisplayModes::refresh_for`]).
     fn refresh(&mut self, w: &Wanted, applied: bool, out: &mut Out) {
-        let hz = if applied { Some(w.settings.get(Setting::Refresh)) } else { w.launched };
+        let hz = if applied { Some(w.modes.refresh_for(w.settings.get(Setting::Refresh), w.settings.get(Setting::FpsCap))) } else { w.launched };
         if let Some(hz) = hz.filter(|&hz| hz != self.refresh) {
             self.refresh = hz;
             out.effects.push(Effect::Refresh(hz));

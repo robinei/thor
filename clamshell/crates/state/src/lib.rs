@@ -653,6 +653,7 @@ impl State {
         };
         let settings = self.in_force();
         Wanted {
+            modes: *self.device.display_modes(),
             shelf: &self.shelf,
             fetch_view: self.shelf.fetch_first(),
             browsed: self.shelf.browsed(),
@@ -677,8 +678,9 @@ impl State {
     /// Sends the outside what differs from what it was last sent. The event's effects start at `mark`.
     fn sync(&mut self, out: &mut Out, mark: usize) {
         let mut sent = std::mem::take(&mut self.sent);
+        let modes = *self.device.display_modes();
         let launched = out.effects.get(mark..).unwrap_or_default().iter().rev().find_map(|e| match e {
-            Effect::Launch { settings, .. } => Some(settings.get(Setting::Refresh)),
+            Effect::Launch { settings, .. } => Some(modes.refresh_for(settings.get(Setting::Refresh), settings.get(Setting::FpsCap))),
             _ => None,
         });
         sent.sync(&Wanted { launched, ..self.wanted() }, out);

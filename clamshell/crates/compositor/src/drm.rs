@@ -178,6 +178,7 @@ pub fn run(
     for mode in &top.modes {
         rates.add(i32::try_from(mode.vrefresh()).unwrap_or(0).saturating_mul(1000));
     }
+    rates.set_start(i32::try_from(top.mode.vrefresh()).unwrap_or(0).saturating_mul(1000));
     server.core.handle(clamshell_state::Event::DisplayModes(rates));
 
     let top_ui = server.core.size(clamshell_ui::Screen::Top).0;

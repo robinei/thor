@@ -654,6 +654,9 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             for _ in 0..rng.below(5) {
                 modes.add((rng.below(240) as i32 + 1) * 1000);
             }
+            if rng.one_in(2) {
+                modes.set_start(modes.rates().first().map_or(0, |hz| i32::from(*hz) * 1000));
+            }
             Event::DisplayModes(modes)
         }
         // The pad's inputs while it listens on the keymap edit screen.
@@ -783,7 +786,7 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
             _ => {}
         }
         if let Effect::Launch { settings, .. } | Effect::Apply { settings, .. } = e {
-            sent.refresh_wanted = settings.get(Setting::Refresh);
+            sent.refresh_wanted = s.device().display_modes().refresh_for(settings.get(Setting::Refresh), settings.get(Setting::FpsCap));
         }
     }
     if started {
