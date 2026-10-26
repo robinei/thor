@@ -476,8 +476,40 @@ only when the mute changed (not while the volume is unknown):
 |---|---|---|---|
 | Start | `Event::Start` | keymap, pad route (and Start sends the dock's save if unsaved, the brightness) | watches tested; tests `the_ui_starting_sends_the_brightness_the_keymap_and_the_route` |
 | Resumed | `Event::Resumed` | Apply | tests `back_from_sleep_applies_the_settings_again_and_wakes_the_screens` |
-| RefreshCalibrated | `Event::RefreshCalibrated` | Apply | tests `a_refresh_calibration_sets_the_screens_and_then_gives_them_back` |
 | FetchFirst | Fetching, Library | FetchFirst | tests `while_metadata_is_fetched_shelfs_view_goes_first`, `a_library_read_while_fetching_asks_for_shelfs_view_first_again` |
+| Restarted(thread) | `Event::Restarted` | what that thread was sent (below) | tests in `restart.rs` |
+
+The main screen's refresh rate needs no resend: sync sends `Wanted::refresh` whenever it differs from
+what was sent (the calibration's rate, else the rate of the entry launched last until the program in
+force changes, else the settings'; tests `the_refresh_rate_follows_a_launch_at_once_then_the_settings_in_force`,
+`the_refresh_rate_goes_back_when_a_launch_fails`, `a_refresh_calibration_sets_the_screens_and_then_gives_them_back`).
+
+### A system thread started again (restart.rs)
+
+A system thread that panics is started again by `os::worker::restarted` and the wiring sends
+`Event::Restarted(thread)`. What the thread was carrying out is lost; what it was sent and still stands is
+sent again, or what waits on it ends:
+
+- `idle --Restarted(Pad)--> [Keymap, PadRoute, PadActivity, Apply]` (the pad keeps its virtual devices
+  through the restart; tested `a_restarted_pad_is_sent_its_keymap_route_and_settings`)
+- `--Restarted(Tuning)--> [Apply]`
+- `--Restarted(Mixer | Battery | Metrics | Status | Wifi | Bluetooth)--> [Watch(tab, true), Watch(Status, ..), Watch(Account, ..)]`
+  (tested `a_restarted_reader_is_sent_the_watches`)
+- `Asleep --Restarted(System)--> [watches, Sleep]`; awake, only the watches (tested
+  `a_restarted_system_thread_is_asked_to_sleep_again`)
+- `--Restarted(Brightness)--> [Brightness]`, dimmed if idle dimmed it (tested
+  `a_restarted_brightness_thread_is_sent_the_level`)
+- `--Restarted(Store)--> [Save of everything saved]` (tested `a_restarted_store_is_sent_everything_saved`)
+- `files running --Restarted(Files)--> the oldest operation done, failed [notice]`; the rest run (tested
+  `a_restarted_files_thread_fails_the_operation_it_had_and_browse_lists_again`)
+- `--Restarted(Browse)--> [Browse(Open), Browse(InUse)]` (same test)
+- `--Restarted(Icons)--> [FindIcon for each entry found by its window]` (tested
+  `a_restarted_icons_thread_is_asked_again`)
+- `--Restarted(Freezer)--> [Freeze(slice, paused) for each slice of ours]` (tested
+  `a_restarted_freezer_is_sent_each_slice_as_it_is`)
+- Other threads: nothing; `restart.rs` says why for each. Short-lived threads the state waits on (a
+  launch, the refresh calibration, an account change) answer with a failure if they panic
+  (`os::worker::or_on_panic`). The randomized test restarts random threads.
 
 ## Interactions
 
