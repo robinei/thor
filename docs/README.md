@@ -28,6 +28,7 @@ Read `architecture.md` first, then `../AGENTS.md` for how work is done here.
 
 - `review-2026-10-26b.md`: the second review after the compositor became the only session, and its
   plan.
+- `window-management-ideas.md`: candidate improvements to window management, not yet decided.
 
 ## History
 
