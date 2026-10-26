@@ -115,6 +115,9 @@ pub fn run(
                         // window target even when the scene has not otherwise changed.
                         let age = if submitted && !imported { backend.buffer_age().unwrap_or(0) } else { 0 };
                         let capturing = std::mem::take(&mut server.screenshot_requested);
+                        // Commits timed for no later than this frame, shown at the host's next, go ahead.
+                        let interval = Duration::from_secs_f64(1000.0 / f64::from(server.refresh.max(1000)));
+                        server.release_timed_commits((Duration::from(server.clock.now()) + interval).into());
                         render::elements(server, &mut frames, &mut overlays, backend.renderer(), &mut elements)?;
                         cursor.elements(server, backend.renderer(), &mut elements)?;
                         let composed_states =

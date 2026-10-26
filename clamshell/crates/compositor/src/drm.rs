@@ -67,6 +67,30 @@ struct Screen {
     modes: Vec<smithay::reexports::drm::control::Mode>,
     start_mode: smithay::reexports::drm::control::Mode,
     refresh: u16,
+    /// When its last frame was shown, by the flip's time.
+    flipped: Option<Time<Monotonic>>,
+}
+
+impl Screen {
+    /// When a frame composed at `now` would be shown (see [`next_shown`]).
+    fn next_shown(&self, now: Time<Monotonic>) -> Time<Monotonic> {
+        Time::from(next_shown(self.flipped.map(Duration::from), self.interval, self.pending, Duration::from(now)))
+    }
+}
+
+/// When a frame composed at `now` is shown on a screen showing one every `interval`, last at `flipped`:
+/// the next refresh after `now`, whole refreshes on from the last flip, and a refresh later if a frame is
+/// `pending` already.
+fn next_shown(flipped: Option<Duration>, interval: Duration, pending: bool, now: Duration) -> Duration {
+    let interval = interval.max(Duration::from_micros(1));
+    let next = match flipped {
+        Some(flipped) if flipped <= now => {
+            let whole = u32::try_from((now - flipped).as_nanos() / interval.as_nanos()).unwrap_or(u32::MAX);
+            flipped + interval.saturating_mul(whole.saturating_add(1))
+        }
+        _ => now + interval,
+    };
+    if pending { next + interval } else { next }
 }
 
 /// What drawing needs, shared by the loop's sources.
@@ -179,6 +203,7 @@ pub fn run(
             modes: chosen.modes.clone(),
             start_mode: chosen.mode,
             refresh: 0,
+            flipped: None,
         });
     }
 
@@ -358,6 +383,7 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
         _ => server.clock.now(),
     };
     let down = screen.role == ScreenRole::Bottom;
+    screen.flipped = Some(time);
     if let Some(states) = &states {
         server.frame_shown(states, Some(down));
     }
@@ -373,11 +399,19 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
 /// are next due.
 fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(Result<crate::Capture, String>), now: Instant) -> Option<Instant> {
     outputs(drawing, server);
+    // Commits timed for no later than the top screen's next frame go ahead before it is composed; the
+    // loop wakes a refresh before the next one held is due, to compose it in time.
+    let timed = drawing.screens.iter().find(|s| s.role == ScreenRole::Top).map(|top| {
+        let clock = server.clock.now();
+        let held = server.release_timed_commits(top.next_shown(clock));
+        let wait = held.map(|at| Duration::from(at).saturating_sub(Duration::from(clock)).saturating_sub(top.interval));
+        wait.map(|wait| now + wait)
+    });
     if let Err(error) = compose(drawing, server, on_capture) {
         log::warn!("drm: drawing: {error}");
     }
     let composed = server.commits;
-    let mut due: Option<Instant> = None;
+    let mut due: Option<Instant> = timed.flatten();
     for index in 0..drawing.screens.len() {
         let Some(screen) = drawing.screens.get_mut(index) else {
             continue;
@@ -540,3 +574,16 @@ fn identifier(device: &InputDevice) -> String {
     format!("{}:{}:{}", device.id_vendor(), device.id_product(), device.name().replace(' ', "_"))
 }
 
+#[cfg(test)]
+mod next_shown_tests {
+    use super::*;
+
+    #[test]
+    fn a_frame_is_shown_at_the_next_refresh_after_the_last_flip() {
+        let ms = Duration::from_millis;
+        assert_eq!(next_shown(Some(ms(100)), ms(10), false, ms(123)), ms(130));
+        assert_eq!(next_shown(Some(ms(100)), ms(10), false, ms(130)), ms(140), "at a refresh: the one after");
+        assert_eq!(next_shown(Some(ms(100)), ms(10), true, ms(123)), ms(140), "a frame queued: a refresh later");
+        assert_eq!(next_shown(None, ms(10), false, ms(123)), ms(133), "no flip yet: a refresh on");
+    }
+}

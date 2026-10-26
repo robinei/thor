@@ -175,6 +175,9 @@ impl Server {
         // under Wine takes a game's window when it switches mode). Its barriers are signalled with the
         // frame callbacks (see `Server::frame_callbacks`).
         smithay::wayland::fifo::FifoManagerState::new::<Self>(&dh);
+        // Commit timing: a commit to be shown no sooner than a time, held until the frame shown then is
+        // composed (see `Server::release_timed_commits`). Mesa's Vulkan times FIFO frames by it.
+        smithay::wayland::commit_timing::CommitTimingManagerState::new::<Self>(&dh);
         let mut server = Self {
             clock,
             core,
@@ -697,6 +700,41 @@ impl Server {
             self.client_compositor_state(&owner).blocker_cleared(self, &dh);
         }
         held
+    }
+
+    /// Lets the windows' commits timed (`wp_commit_timing`) for no later than `shown`, when the frame about
+    /// to be composed is shown, go ahead, and a capped window's whatever their time: its cap paces it, and
+    /// Mesa's timing, which takes a frame shown later than it asked as one missed, would move its times on
+    /// further each frame the cap holds back. Returns the earliest time a commit is still held for.
+    pub fn release_timed_commits(&mut self, shown: smithay::utils::Time<smithay::utils::Monotonic>) -> Option<smithay::utils::Time<smithay::utils::Monotonic>> {
+        use smithay::wayland::commit_timing::{CommitTimerBarrierStateUserData, Timestamp};
+        let mut released: Vec<smithay::reexports::wayland_server::Client> = Vec::new();
+        let mut held: Option<Timestamp> = None;
+        let state = self.core.state();
+        for client in &self.windows {
+            let until = if state.window_fps_cap(client.id).is_some() {
+                Timestamp::from(smithay::utils::Time::<smithay::utils::Monotonic>::from(std::time::Duration::from_secs(1 << 40)))
+            } else {
+                shown.into()
+            };
+            client.window.with_surfaces(|surface, states| {
+                let Some(mut timers) = states.data_map.get::<CommitTimerBarrierStateUserData>().and_then(|timers| timers.lock().ok()) else { return };
+                if timers.signal_until(until)
+                    && let Some(owner) = surface.client().filter(|owner| !released.iter().any(|c| c.id() == owner.id()))
+                {
+                    released.push(owner);
+                }
+                if let Some(next) = timers.next_deadline() {
+                    held = Some(held.map_or(next, |held| held.min(next)));
+                }
+            });
+        }
+        let dh = self.dh.clone();
+        for owner in released {
+            use smithay::wayland::compositor::CompositorHandler;
+            self.client_compositor_state(&owner).blocker_cleared(self, &dh);
+        }
+        held.map(Into::into)
     }
 
     /// Sends the frame rate of the window on the top screen every [`crate::frames::REPORT`], while it
