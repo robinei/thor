@@ -219,6 +219,12 @@ impl Recording {
         self.cmds.iter().filter(|c| !matches!(c.op, Op::Clear(_))).fold(Bounds::EMPTY, |d, c| d.union(c.bounds))
     }
 
+    /// The bytes of every text drawn, run together, for tests of what a view says.
+    #[cfg(test)]
+    pub(crate) fn all_text(&self) -> &[u8] {
+        &self.text
+    }
+
     /// The bytes of a text command's text; none for any other command.
     pub(super) fn text_of(&self, op: &Op) -> &[u8] {
         match *op {

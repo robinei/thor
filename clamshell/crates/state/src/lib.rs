@@ -143,7 +143,9 @@ pub use clamshell_library::{BrowseKind, Browsed, Collection, Entry, Launch, Libr
 pub struct Init {
     pub profile: Profile,
     pub display_modes: device::display::DisplayModes,
-    pub library: Library,
+    /// The library, or `None` if it is read after the start and comes as [`Event::Library`]: until then
+    /// shelf is empty, and what needs the library waits for it (shelf's place, the dock's pins, autostart).
+    pub library: Option<Library>,
     /// Every game's settings and environment.
     pub settings: Settings,
     /// The keymaps.
@@ -223,7 +225,7 @@ impl State {
     pub fn new(init: Init) -> State {
         let mut s = State {
             profile: init.profile,
-            shelf: Shelf::new(init.library),
+            shelf: init.library.map_or_else(|| Shelf::unread(init.resume.clone()), Shelf::new),
             prefs: Prefs::new(init.settings),
             keymapping: Keymapping::new(init.keymaps),
             curving: crate::curve::screens::Curving::new(init.curves),
@@ -236,10 +238,16 @@ impl State {
             ..State::default()
         };
         if let Some(resume) = &init.resume {
-            resume.restore(&mut s.shelf, &mut s.bottom);
+            resume.restore_tab(&mut s.bottom);
+            if s.shelf.read() {
+                resume.restore_shelf(&mut s.shelf);
+            }
         }
         s.device.set_display_modes(init.display_modes);
-        s.dock.drop_gone_at_start(s.shelf.library(), &s.session);
+        // Unread, the pins are checked as the library comes (`library_read`).
+        if s.shelf.read() {
+            s.dock.drop_gone_at_start(s.shelf.library(), &s.session);
+        }
         s.session.set_pausable_runners(s.shelf.library());
         s.pointer.focus_shelf(s.shelf.selected());
         if init.first_start {
@@ -512,7 +520,10 @@ impl State {
         }
         self.record_plays(out);
         let mut due = Vec::new();
-        self.session.autostart_due(self.shelf.library(), &mut due);
+        // The entries to start are looked for in the library, so not before it is read.
+        if self.shelf.read() {
+            self.session.autostart_due(self.shelf.library(), &mut due);
+        }
         for id in due {
             self.launch(id, None, Start::Background, out);
         }

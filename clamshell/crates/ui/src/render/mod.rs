@@ -283,7 +283,7 @@ mod frame_times {
     use std::time::{Duration, Instant};
 
     fn state(events: Vec<Event>) -> State {
-        let mut s = State::new(Init { library: clamshell_library::demo::library(), ..Init::default() });
+        let mut s = State::new(Init { library: Some(clamshell_library::demo::library()), ..Init::default() });
         s.apply(Event::tick(1_700_000_000), &mut Vec::new());
         for e in events {
             s.apply(e, &mut Vec::new());

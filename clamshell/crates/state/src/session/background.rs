@@ -353,7 +353,7 @@ mod tests {
         };
         let mut library = clamshell_library::demo::library();
         library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap().runner = Some(runner.clone());
-        let mut s = State::new(crate::Init { library, ..init() });
+        let mut s = State::new(crate::Init { library: Some(library), ..init() });
         s.settings_mut().set(Some(&runner.key), Setting::Background, Some(InBackground::Pauses.value()));
         let (pause, resume) = (Effect::RunnerCommand(vec!["pause".into()]), Effect::RunnerCommand(vec!["resume".into()]));
         // With nothing of it running, it is paused after the grace period.
@@ -390,7 +390,7 @@ mod tests {
         };
         let mut library = clamshell_library::demo::library();
         library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap().runner = Some(runner.clone());
-        let mut s = State::new(crate::Init { library, ..init() });
+        let mut s = State::new(crate::Init { library: Some(library), ..init() });
         s.settings_mut().set(Some(&runner.key), Setting::Background, Some(InBackground::Pauses.value()));
         let pause = Effect::RunnerCommand(vec!["pause".into()]);
         s.applied(Event::tick(100));

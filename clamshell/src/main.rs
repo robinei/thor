@@ -94,7 +94,7 @@ fn carry_out(command: Command) -> Result<(), String> {
             Ok(())
         }
         Command::Library => {
-            commands::print_library(State::new(Init { library: library::load(&sources).library, ..Init::default() }).shelf().library());
+            commands::print_library(State::new(Init { library: Some(library::load(&sources).library), ..Init::default() }).shelf().library());
             Ok(())
         }
         Command::WaylandFilter => {

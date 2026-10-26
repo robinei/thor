@@ -210,7 +210,7 @@ mod tests {
         let mut library = clamshell_library::demo::library();
         let firefox = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
         firefox.runner = Some(clamshell_library::RunnerOf { handover: true, ..clamshell_library::RunnerOf::new("android", "Android", true) });
-        let mut s = State::new(Init { library, device_session: true, ..init() });
+        let mut s = State::new(Init { library: Some(library), device_session: true, ..init() });
         launch_now(&mut s, "desktop:firefox");
         crate::testkit::start(&mut s, "desktop:firefox");
         crate::testkit::end(&mut s, "desktop:firefox");

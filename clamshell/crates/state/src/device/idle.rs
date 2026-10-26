@@ -349,7 +349,7 @@ mod tests {
         if let Some(g) = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox") {
             g.runner = Some(runner);
         }
-        let mut s = State::new(crate::Init { library, ..crate::testkit::init() });
+        let mut s = State::new(crate::Init { library: Some(library), ..crate::testkit::init() });
         s.applied(Event::tick(1000));
         s.applied(Event::Idle(IdleEvent::Watching(true)));
         crate::testkit::launch_now(&mut s, "desktop:firefox");

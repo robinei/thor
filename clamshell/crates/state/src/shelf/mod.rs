@@ -52,6 +52,11 @@ impl Default for Nav {
 #[derive(Debug, Default)]
 pub struct Shelf {
     library: Library,
+    /// Whether the library has been read. ClamShell starts before it is, with none, and it comes as
+    /// [`crate::Event::Library`].
+    read: bool,
+    /// Where shelf was at the last start, to go back to once the library is read.
+    waiting: Option<crate::Resume>,
     /// The current collection, and each collection's place.
     current: usize,
     navs: Vec<Nav>,
@@ -93,13 +98,31 @@ pub(crate) struct ShelfView {
 impl Shelf {
     pub(crate) fn new(library: Library) -> Shelf {
         let navs = vec![Nav::default(); library.collections.len()];
-        let mut shelf = Shelf { library, navs, rows: 1, ..Shelf::default() };
+        let mut shelf = Shelf { library, read: true, navs, rows: 1, ..Shelf::default() };
+        shelf.sync();
+        shelf
+    }
+
+    /// Shelf before the library is read, empty. `resume` is where it was, restored once the library comes
+    /// ([`Shelf::reload`]).
+    pub(crate) fn unread(resume: Option<crate::Resume>) -> Shelf {
+        let mut shelf = Shelf { waiting: resume, rows: 1, ..Shelf::default() };
         shelf.sync();
         shelf
     }
 
     pub fn library(&self) -> &Library {
         &self.library
+    }
+
+    /// Whether the library has been read (see [`Shelf::unread`]).
+    pub fn read(&self) -> bool {
+        self.read
+    }
+
+    /// Where shelf was at the last start, while the library isn't read yet.
+    pub(crate) fn waiting(&self) -> Option<&crate::Resume> {
+        self.waiting.as_ref()
     }
 
     /// The current collection's position.
@@ -451,6 +474,7 @@ impl Shelf {
         let (rows, unsaved, fetching) = (self.rows, self.unsaved, self.fetching);
         let listings = std::mem::take(&mut self.listings);
         let files = std::mem::take(&mut self.files);
+        let waiting = self.waiting.take();
         // What shows is asked for first again, from the new library.
         *self = Shelf { files, fetching, ..Shelf::new(library) };
         (self.rows, self.unsaved) = (rows, unsaved);
@@ -464,6 +488,10 @@ impl Shelf {
             self.restore_place(name, levels);
         }
         self.restore_current(current.as_deref().unwrap_or(""));
+        // The first library read: shelf goes back to where it was at the last start.
+        if let Some(resume) = waiting {
+            resume.restore_shelf(self);
+        }
         self.selected != before
     }
 

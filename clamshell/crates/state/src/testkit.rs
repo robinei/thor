@@ -66,17 +66,17 @@ pub fn end(s: &mut State, id: &str) -> Vec<Effect> {
 
 /// What a test state starts from: the demo library and nothing else.
 pub fn init() -> Init {
-    Init { library: clamshell_library::demo::library(), ..Init::default() }
+    Init { library: Some(clamshell_library::demo::library()), ..Init::default() }
 }
 
 /// A test state that is up, as after the UI's Start, with its watches in force.
 pub fn state() -> State {
-    state_with(init().library)
+    started(init())
 }
 
 /// A test state with this library.
 pub fn state_with(library: Library) -> State {
-    started(Init { library, ..Init::default() })
+    started(Init { library: Some(library), ..Init::default() })
 }
 
 /// A test state from `init` that is up, as after the UI's Start, with its watches in force.

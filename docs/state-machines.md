@@ -157,8 +157,9 @@ Freeze and RunnerCommand have no acknowledgement; the state assumes they worked.
   its tray key, not its pid. Test: tray `a_program_with_a_tray_icon_runs…`,
   `a_guest_in_a_desktops_session_adopts_none…`, `an_adopted_tray_program_keeps_its_menu`,
   `a_tray_icon_gives_no_process_to_an_entry_found_in_another_programs`.
-- Autostart: once, at the first settle after units are known, launching unshown what isn't running.
-  Test: autostart `chosen_entries_start_once_…`.
+- Autostart: once, at the first settle after units are known and the library is read, launching
+  unshown what isn't running. Tests: autostart `chosen_entries_start_once_…`,
+  `chosen_entries_wait_for_the_library`.
 - Enqueue: to the runner's running instance whose group was in front most recently; without one, a
   single file plays and several launch together; the file selection is cleared. Test: enqueue
   `enqueue_plays_with_nothing_playing_then_adds_…`, `enqueue_goes_to_the_launch_most_recently_in_front`,
@@ -182,7 +183,7 @@ State: `items{id, pinned}`, `menu`, `tray` (submenu path), `moving`, `unsaved`.
 | moving | Done | closed | — | same |
 | moving | long press | move ended, menu open | Battery watched (sync) | dock `a_long_press_while_moving_ends_the_move` |
 | any | tab left | menu, tray path and move closed | — | dock `back_at_the_top_of_the_tray_menu_goes_to_the_entrys_menu` |
-| — | Library read or start | entries gone from the library and not running dropped; the menu or move of one ends | `Save(Dock)` | dock `pins_of_entries_gone_…`, `the_menu_and_the_move_end_with_their_entry` |
+| — | Library read or start (with the library read) | entries gone from the library and not running dropped; the menu or move of one ends | `Save(Dock)` | dock `pins_of_entries_gone_…`, `the_menu_and_the_move_end_with_their_entry`, `pins_wait_for_the_library_before_any_is_dropped` |
 
 ## Second screen (bottom/)
 
@@ -389,6 +390,7 @@ curve screens and slides their parameters.
 | a play recorded: relayout (a focus in the list follows the selection), `RecordPlay`, `ReadPosition` for videos | tests `a_launchs_start_and_end…`, `a_video_ended_asks_where_it_was_left`; shelf `a_play_recorded_keeps_shelfs_place_and_focus` |
 | a relayout closes a group no longer in its collection (Recent, Favourites) | `a_group_that_leaves_its_collection_is_closed_there` |
 | a group launched from elsewhere: its collection's places reset, the path opened, `ShowShelf` | `a_group_started_from_elsewhere_opens_in_shelf` |
+| Unread at start (`Init::library` is `None`; the binary reads it on a thread): shelf empty, no "nothing found" said; the tab restored at once; the place, and the focus left nowhere, as the library comes; a resume saved meanwhile is the place it goes back to | resume `before_the_library_is_read_the_place_waits_for_it`; views `an_unread_library_isnt_said_to_be_empty` |
 | Library read: places restored by name and id, with what is typed in each list | `listings_outlive_the_library_read_again`, `a_library_read_keeps_what_is_typed`; the selection gone: the list's first, `a_library_read_without_the_selected_entry_selects_the_first` |
 | Continue, Meta, Position | `continue_plays_on_where_the_series_was_left`, `fetched_metadata_goes_to_its_entry`, tests `a_video_ended_asks_where_it_was_left` |
 | actions and button shortcuts (Y, X, Start) | `an_entrys_actions_come_from_…`, `copy_then_paste_…`, `selected_entries_are_what_the_actions_act_on`, `the_shortcuts_are_off_on_the_actions` |

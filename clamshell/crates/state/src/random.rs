@@ -1062,7 +1062,11 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
 /// Runs `events` events from `seed`. Returns a description of the first invariant broken.
 fn run(seed: u64, events: usize) -> Result<(), String> {
     let mut rng = Rng(seed);
-    let init = Init { library: library(), keymaps: crate::keymap::Keymaps::initial(), device_session: true, first_start: rng.one_in(3), ..Init::default() };
+    // As on the device, the library comes after the start, now and then; otherwise it is there from the
+    // start, so that the runs aren't spent on an empty shelf.
+    let unread = rng.one_in(4);
+    let first_start = rng.one_in(3);
+    let init = Init { library: (!unread).then(library), keymaps: crate::keymap::Keymaps::initial(), device_session: true, first_start, ..Init::default() };
     let mut s = State::new(init);
     // As the outside starts: the settings in force applied, the screens on at their own rate (0), the
     // status watched, and the pad with no keymap or route.
@@ -1076,6 +1080,7 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
             0 => Event::Tick { unix_secs: 1_800_000_000 + clock, mono_secs: clock },
             1 => Event::Start,
             2 => Event::Units(Vec::new()),
+            3 if unread => Event::Library(Box::new(library())),
             _ => draw(&mut rng, &s, &mut world, &mut clock),
         };
         // A quit asked for may end its entry again.

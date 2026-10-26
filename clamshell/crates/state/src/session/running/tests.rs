@@ -12,7 +12,7 @@ fn steam_ff6() -> State {
     if let Some(g) = library.entries.iter_mut().find(|g| &*g.id == "ff6") {
         g.launch = Launch::Steam { appid: 620 };
     }
-    State::new(Init { library, ..init() })
+    State::new(Init { library: Some(library), ..init() })
 }
 
 fn key(id: &str) -> String {
@@ -113,7 +113,7 @@ fn a_quit_that_ends_an_entry_runs_its_runners_stop_once() {
     let firefox = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
     let stop = vec!["stop".to_owned(), "{id}".to_owned()].into();
     firefox.runner = Some(clamshell_library::RunnerOf { handover: true, stop, ..clamshell_library::RunnerOf::new("android", "Android", true) });
-    let mut s = State::new(Init { library, ..init() });
+    let mut s = State::new(Init { library: Some(library), ..init() });
     s.applied(Event::tick(100));
     let firefox = launch_now(&mut s, "desktop:firefox");
     let instance = firefox.iter().find_map(|e| if let Effect::Launch { instance, .. } = e { Some(instance.clone()) } else { None }).unwrap();
@@ -485,7 +485,7 @@ fn an_app_handed_over_runs_by_its_window_found_by_its_app_id() {
     let firefox = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
     let stop = vec!["stop".to_owned(), "{id}".to_owned()].into();
     firefox.runner = Some(clamshell_library::RunnerOf { handover: true, stop, ..clamshell_library::RunnerOf::new("android", "Android", true) });
-    let mut s = State::new(Init { library, ..init() });
+    let mut s = State::new(Init { library: Some(library), ..init() });
     s.applied(Event::tick(100));
     s.observed(vec![]);
     let ws = Group::entry(&key("desktop:firefox"));

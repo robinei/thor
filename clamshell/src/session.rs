@@ -11,7 +11,7 @@ use clamshell_state::curve::Curves;
 use clamshell_state::keymap::Keymaps;
 use clamshell_state::settings::Values;
 use clamshell_state::{Init, State};
-use clamshell_system::library::{self, Sources, meta};
+use clamshell_system::library::Sources;
 use clamshell_system::paths::Paths;
 use clamshell_system::store::Store;
 use clamshell_system::wiring::{self, Handles};
@@ -73,13 +73,11 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
     // First, before any thread starts (see `quit_signals`).
     let quit = clamshell_compositor::quit_signals().map_err(|e| format!("quit signals: {e}"))?;
     raise_open_files();
-    let loaded = library::load(sources);
-    // Metadata to fetch once the threads run, if there is somewhere to keep it.
-    let fetch = paths.art.clone().map(|art| meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art });
     let device_session = host == Host::Drm;
+    // The library is read on a thread as the system threads start, and comes as `Event::Library`.
     let state = State::new(Init {
         profile: env.profile,
-        library: loaded.library,
+        library: None,
         start_tab: env.start_tab,
         pad_mouse: env.pad_mouse,
         device_session,
@@ -129,7 +127,7 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
         if let Some(path) = env.control.as_ref().or(paths.control.as_ref()) {
             control::spawn(path.clone(), UiSink(sender.clone()));
         }
-        *started.borrow_mut() = Some(start(&system_config, &paths, sources, layout, &global, fetch, sender));
+        *started.borrow_mut() = Some(start(&system_config, &paths, sources, layout, &global, sender));
     };
     let result = match host {
         Host::Drm => clamshell_compositor::run_drm(state, config, start, on_effect, identify, on_capture, quit),
@@ -188,17 +186,9 @@ impl Sink for UiSink {
 }
 
 /// Starts every system thread, sending to `sender` (see `clamshell_system::wiring::start`).
-pub fn start(
-    config: &wiring::Config,
-    paths: &Paths,
-    sources: &Sources,
-    layout: Arc<Mutex<TouchLayout>>,
-    global: &Values,
-    fetch: Option<meta::Fetch>,
-    sender: EventSender,
-) -> Handles {
+pub fn start(config: &wiring::Config, paths: &Paths, sources: &Sources, layout: Arc<Mutex<TouchLayout>>, global: &Values, sender: EventSender) -> Handles {
     let sink = UiSink(sender);
-    wiring::start(config, paths, sources, layout, global, fetch, sink)
+    wiring::start(config, paths, sources, layout, global, sink)
 }
 
 #[cfg(test)]

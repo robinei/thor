@@ -63,7 +63,7 @@ fn an_entry_takes_its_runners_settings_not_its_folders() {
     settings.set(Some(&runner_key("video")), Setting::FpsCap, Some(30));
     settings.set(Some(&"tv:Cosmos".into()), Setting::Power, Some(PowerProfile::Battery.value()));
     settings.set_env(Some(runner_key("video")), "MPV=1");
-    let mut s = State::new(Init { library, settings, ..init() });
+    let mut s = State::new(Init { library: Some(library), settings, ..init() });
     let episode: std::sync::Arc<str> = "tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv".into();
     let fx = launch_now(&mut s, &episode);
     let launch = fx.iter().find_map(|e| match e {
@@ -80,7 +80,7 @@ fn the_panel_offers_the_items_levels() {
     for g in library.entries.iter_mut().filter(|g| g.id.starts_with("tv:")) {
         g.runner = Some(clamshell_library::RunnerOf::new("video", "Video", true));
     }
-    let mut s = State::new(Init { library, ..init() });
+    let mut s = State::new(Init { library: Some(library), ..init() });
     let levels = |s: &State| s.panel().levels().iter().flatten().map(|(scope, l)| (*scope, l.title.to_owned())).collect::<Vec<_>>();
     assert_eq!(levels(&s), [(Scope::Runner, "A Link to the Past".to_owned())], "a game with no runner: its own, as its runner");
     tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
@@ -103,7 +103,7 @@ fn a_runner_can_leave_its_items_without_settings_of_their_own() {
     for g in library.entries.iter_mut() {
         g.runner = Some(clamshell_library::RunnerOf::new("snes", "SNES", false));
     }
-    let s = State::new(Init { library, ..init() });
+    let s = State::new(Init { library: Some(library), ..init() });
     let levels = s.panel().levels().iter().flatten().map(|(scope, l)| (*scope, l.title)).collect::<Vec<_>>();
     assert_eq!(levels, [(Scope::Runner, "SNES")]);
     assert_eq!(s.panel().editing().map(|p| p.id.clone()), Some(runner_key("snes")), "the item's tab: its runner's");
@@ -113,7 +113,7 @@ fn a_runner_can_leave_its_items_without_settings_of_their_own() {
 fn a_runner_gets_its_keymap_once() {
     let mut library = clamshell_library::demo::library();
     library.runner_keymaps = vec![(runner_key("text"), "viewer".into())];
-    let mut s = State::new(Init { library, ..init() });
+    let mut s = State::new(Init { library: Some(library), ..init() });
     let fx = s.applied(Event::Start);
     assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))), "{fx:?}");
     let own = s.keymapping().keymaps().own_of("runner:text").map(|k| k.id);
@@ -132,7 +132,7 @@ fn a_runners_keymap_given_while_its_item_runs_is_applied() {
     for g in library.entries.iter_mut() {
         g.runner = Some(clamshell_library::RunnerOf::new("text", "Text", false));
     }
-    let mut s = started(Init { library, ..init() });
+    let mut s = started(Init { library: Some(library), ..init() });
     let zelda = launch(&mut s, "zelda-lttp");
     s.observed(vec![win_of(3, "zelda3", &zelda)]);
     assert_eq!(s.session().program().map(|p| &**p), Some("zelda-lttp"));
@@ -284,7 +284,7 @@ fn a_game_can_start_the_pad_mouse_and_darken_the_second_screen() {
 
 #[test]
 fn without_a_game_the_panel_edits_the_global_settings() {
-    let mut empty = State::new(Init { library: Library::default(), ..init() });
+    let mut empty = State::new(Init { library: Some(Library::default()), ..init() });
     tap(&mut empty, Id::Tab(Tab::Settings));
     assert_eq!(empty.bottom().tab(), Tab::Settings, "always available");
     taps(&mut empty, Setting::FpsCap, 2);

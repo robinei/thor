@@ -476,7 +476,7 @@ fn warm_frames_do_not_allocate() {
         let mut keymaps = Keymaps::initial();
         keymaps.get_mut(1).and_then(|k| k.add_layer("aim"));
         // Run as the device's own session, because tray icons are followed only there.
-        let mut state = State::new(Init { library: clamshell_library::demo::library(), keymaps, device_session: true, ..Init::default() });
+        let mut state = State::new(Init { library: Some(clamshell_library::demo::library()), keymaps, device_session: true, ..Init::default() });
         state.apply(Event::tick(1_700_000_000), &mut Vec::new());
         // The time tab's zone in every case, since a change of zone from one case to the next is read
         // anew.

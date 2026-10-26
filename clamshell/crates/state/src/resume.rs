@@ -26,21 +26,28 @@ impl Resume {
         Resume::at(shelf, bottom.chosen_tab())
     }
 
-    /// Where `shelf` is, with the second screen's chosen tab `tab`.
+    /// Where `shelf` is, with the second screen's chosen tab `tab`. Before the library is read, where it
+    /// was at the last start, which it goes back to then.
     pub(crate) fn at(shelf: &Shelf, tab: Tab) -> Resume {
+        if let Some(waiting) = shelf.waiting() {
+            return Resume { tab: tab.name().to_owned(), ..waiting.clone() };
+        }
         let mut places = Vec::new();
         shelf.places(&mut places);
         Resume { collection: shelf.collection().map(|c| c.name.clone()).unwrap_or_default(), tab: tab.name().to_owned(), places }
     }
 
-    /// Takes `shelf` and the second screen (`bottom`) back to this place. Collections and entries that are
-    /// gone are skipped.
-    pub(crate) fn restore(&self, shelf: &mut Shelf, bottom: &mut Bottom) {
+    /// Takes the second screen back to its tab.
+    pub(crate) fn restore_tab(&self, bottom: &mut Bottom) {
         // Any tab but the touchpad. There every touch moves the pointer, so it opens only on request.
         // What a tab watches starts with Event::Start.
         if let Some(tab) = Tab::from_name(&self.tab).filter(|t| *t != Tab::Touchpad) {
             bottom.restore_tab(tab);
         }
+    }
+
+    /// Takes `shelf` back to its collection and places. Collections and entries that are gone are skipped.
+    pub(crate) fn restore_shelf(&self, shelf: &mut Shelf) {
         for (name, ids) in &self.places {
             let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
             shelf.restore_selection(name, &ids);
@@ -76,6 +83,30 @@ mod tests {
         assert_eq!(fresh.shelf().collection().map(|c| c.name.as_str()), Some("More"));
         fresh.applied(ShelfEvent::CollectionStep(-1).into());
         assert_eq!(fresh.shelf().selected().map(|g| &**g), Some("ff6"));
+    }
+
+    /// ClamShell starts before the library is read. Its tab comes back at once; shelf goes back to its
+    /// place as the library comes, and a save meanwhile keeps that place rather than the empty shelf's.
+    #[test]
+    fn before_the_library_is_read_the_place_waits_for_it() {
+        let mut s = state();
+        s.applied(ShelfEvent::CollectionStep(1).into());
+        s.applied(ShelfEvent::ListStep(2).into());
+        tap(&mut s, Id::Tab(Tab::Wifi));
+        let resume = s.resume();
+        let selected = s.shelf().selected().cloned();
+        let mut fresh = started(Init { resume: Some(resume.clone()), library: None, ..init() });
+        assert!(!fresh.shelf().read() && fresh.shelf().library().entries.is_empty());
+        assert_eq!(fresh.bottom().tab(), Tab::Wifi, "the tab at once");
+        assert_eq!(fresh.resume(), resume, "saved meanwhile: the place it goes back to");
+        let mut tapped = started(Init { resume: Some(resume.clone()), library: None, ..init() });
+        tap(&mut tapped, Id::Tab(Tab::Sysinfo));
+        assert_eq!(tapped.resume(), Resume { tab: "sysinfo".into(), ..resume.clone() }, "with the tab chosen since");
+        fresh.applied(Event::Library(Box::new(clamshell_library::demo::library())));
+        assert!(fresh.shelf().read());
+        assert_eq!(fresh.shelf().collection().map(|c| c.name.as_str()), Some("More"));
+        assert_eq!(fresh.shelf().selected(), selected.as_ref());
+        assert_eq!(fresh.pointer().focus(), selected.map(|id| Id::Shelf(ShelfId::Entry(id))).as_ref(), "the pad's focus on it");
     }
 
     #[test]

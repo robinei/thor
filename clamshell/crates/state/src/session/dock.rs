@@ -385,7 +385,7 @@ mod tests {
         let mut library = clamshell_library::demo::library();
         library.away = vec!["sd:".into()];
         let dock = crate::session::dock::Dock::pinned(vec!["ff6".into(), "gone:x".into(), "sd:Zelda.sfc".into()]);
-        let mut s = State::new(Init { library, dock, ..init() });
+        let mut s = State::new(Init { library: Some(library), dock, ..init() });
         assert!(s.dock().pinned_ids().map(|i| &**i).eq(["ff6", "sd:Zelda.sfc"]), "the gone one dropped; the away one kept");
         let fx = s.applied(Event::Start);
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.len() == 2)), "saved: {fx:?}");
@@ -395,6 +395,19 @@ mod tests {
         library.collections.iter_mut().for_each(|c| c.entries.clear());
         let fx = s.applied(Event::Library(Box::new(library)));
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.is_empty())), "{fx:?}");
+    }
+
+    /// Before the library is read, every pin stays: the entries aren't known yet, not gone. They are
+    /// checked as the library comes.
+    #[test]
+    fn pins_wait_for_the_library_before_any_is_dropped() {
+        let dock = crate::session::dock::Dock::pinned(vec!["ff6".into(), "gone:x".into()]);
+        let mut s = State::new(Init { library: None, dock, ..init() });
+        assert!(s.dock().pinned_ids().map(|i| &**i).eq(["ff6", "gone:x"]));
+        assert!(!s.applied(Event::Start).iter().any(|e| matches!(e, Effect::Save(Save::Dock(_)))));
+        let fx = s.applied(Event::Library(Box::new(clamshell_library::demo::library())));
+        assert!(s.dock().pinned_ids().map(|i| &**i).eq(["ff6"]));
+        assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.len() == 1)), "{fx:?}");
     }
 
     #[test]

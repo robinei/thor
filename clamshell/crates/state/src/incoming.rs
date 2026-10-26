@@ -64,8 +64,12 @@ impl State {
             let first = problems.first().cloned().unwrap_or_default();
             self.bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Problems(first, problems.len()), self.clock.mono());
         }
+        let first = !self.shelf.read();
         if self.shelf.reload(library) {
             self.shelf.moved(&mut self.pointer);
+        }
+        if first {
+            self.pointer.shelf_read(self.shelf.selected());
         }
         self.session.set_pausable_runners(self.shelf.library());
         self.adopt_runner_keymaps(out);

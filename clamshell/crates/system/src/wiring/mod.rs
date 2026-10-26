@@ -60,8 +60,9 @@ fn detached(name: &str, result: io::Result<()>) {
     }
 }
 
-/// The Tools tab's rescan. On a thread of its own, it forgets the metadata misses if `refetch` is set,
-/// reads the library again and sends it, and fetches what the library wants.
+/// The Tools tab's rescan, and the library's first read at start. On a thread of its own, it forgets the
+/// metadata misses if `refetch` is set, reads the library and sends it, and fetches what the library
+/// wants.
 fn rescanner<S: Sink + Clone>(sources: Sources, paths: Paths, queue: meta::Queue, sink: S) -> Box<dyn Fn(bool)> {
     Box::new(move |refetch| {
         let (sources, paths, queue, sink) = (sources.clone(), paths.clone(), queue.clone(), sink.clone());
@@ -85,17 +86,9 @@ fn rescanner<S: Sink + Clone>(sources: Sources, paths: Paths, queue: meta::Queue
 }
 
 /// Starts every system thread, sending to `sink`, and applies the global settings, which are in force
-/// until a game brings its own. `layout` is the touch layout the UI keeps up to date, and `fetch` is the
-/// library's metadata to fetch.
-pub fn start<S: Sink + Clone>(
-    env: &Config,
-    paths: &Paths,
-    sources: &Sources,
-    layout: Arc<Mutex<TouchLayout>>,
-    global: &Values,
-    fetch: Option<meta::Fetch>,
-    sink: S,
-) -> Handles {
+/// until a game brings its own. `layout` is the touch layout the UI keeps up to date. The library is read
+/// on a thread, as the Tools tab's rescan reads it, and sent with what its metadata fetch finds.
+pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, layout: Arc<Mutex<TouchLayout>>, global: &Values, sink: S) -> Handles {
     let backlights = Backlights::new(env.backlights.clone());
     if !paths.has_user_systemd() {
         log::error!("no systemd user manager: ClamShell needs one to run apps and games (as services of their own)");
@@ -105,10 +98,8 @@ pub fn start<S: Sink + Clone>(
     let status = started("status", status::spawn(backlights.clone(), sink.clone()));
     let metrics = started("metrics", metrics::spawn(sink.clone()));
     let fetching = meta::Queue::default();
-    if let Some(fetch) = fetch {
-        detached("meta", meta::spawn(fetch, &fetching, sink.clone()));
-    }
     let rescan = rescanner(sources.clone(), paths.clone(), fetching.clone(), sink.clone());
+    rescan(false);
     let touchpad = started("touchpad", touchpad::spawn(layout));
     // Watch input on every device for idle, and the hardware keys in the device's own session.
     detached("input watch", crate::input::watch::spawn(env.device_session, sink.clone()));

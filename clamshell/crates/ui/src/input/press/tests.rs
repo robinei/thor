@@ -146,7 +146,7 @@ fn a_fling_slows_down_and_stops_at_the_end() {
 
 #[test]
 fn shelf_settles_on_a_whole_row() {
-    let mut state = State::new(Init { library: clamshell_library::demo::library(), ..Init::default() });
+    let mut state = State::new(Init { library: Some(clamshell_library::demo::library()), ..Init::default() });
     state.apply(clamshell_state::ShelfEvent::Rows(3).into(), &mut Vec::new());
     let mut input = Input::default();
     let t = t0();

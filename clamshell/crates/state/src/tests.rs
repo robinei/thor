@@ -253,7 +253,7 @@ fn a_steam_game_found_by_its_window_is_launched_not_found_as_a_program() {
     if let Some(g) = library.entries.iter_mut().find(|g| &*g.id == "ff6") {
         g.launch = Launch::Steam { appid: 620 };
     }
-    let mut s = started(Init { library, ..init() });
+    let mut s = started(Init { library: Some(library), ..init() });
     let fx = s.observed(vec![WindowFacts { pids: vec![500], ..win(7, "steam_app_620") }]);
     assert!(fx.iter().any(|e| matches!(e, Effect::Launch { entry, .. } if &**entry == "ff6")), "{fx:?}");
     assert!(!fx.iter().any(|e| matches!(e, Effect::Adopt { .. })), "{fx:?}");

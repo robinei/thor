@@ -36,6 +36,13 @@ impl Pointer {
         self.focus = selected.cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
     }
 
+    /// The library came, after the start: a focus left nowhere by the empty shelf goes to its selection.
+    pub(crate) fn shelf_read(&mut self, selected: Option<&Arc<str>>) {
+        if self.focus.is_none() {
+            self.focus_shelf(selected);
+        }
+    }
+
     /// Shelf's selection moved. A focus in shelf's list follows it.
     pub(crate) fn shelf_moved(&mut self, selected: Option<&Arc<str>>) {
         if matches!(self.focus, Some(Id::Shelf(ShelfId::Entry(_) | ShelfId::Collection(_)))) {

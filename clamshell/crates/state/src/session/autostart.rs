@@ -64,4 +64,15 @@ mod tests {
         assert_eq!(fx, vec![Effect::Save(Save::Autostart(vec!["desktop:firefox".into(), "gone".into()]))]);
         assert!(!s.session().autostarts("zelda-lttp"));
     }
+
+    /// The entries to start are looked for in the library, so with what runs known first, they start
+    /// once the library is read.
+    #[test]
+    fn chosen_entries_wait_for_the_library() {
+        let launches = |fx: &[Effect]| fx.iter().filter(|e| matches!(e, Effect::Launch { .. })).count();
+        let mut s = State::new(Init { autostart: vec!["zelda-lttp".into()], library: None, ..init() });
+        assert_eq!(launches(&s.applied(Event::Units(vec![]))), 0, "not in the empty shelf, and not given up");
+        assert_eq!(launches(&s.applied(Event::Library(Box::new(clamshell_library::demo::library())))), 1);
+        assert_eq!(launches(&s.applied(Event::Units(vec![]))), 0, "once");
+    }
 }

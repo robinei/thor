@@ -363,7 +363,7 @@ mod tests {
     }
 
     fn state() -> State {
-        State::new(Init { library: clamshell_library::demo::library(), ..Init::default() })
+        State::new(Init { library: Some(clamshell_library::demo::library()), ..Init::default() })
     }
 
     fn entry(s: &State, i: usize) -> Id {

@@ -19,8 +19,31 @@ fn draw_bottom(state: &State, (w, h): (u32, u32), cache: &mut DrawCache) -> (Vec
     (targets, out)
 }
 
+/// The text drawn on the main screen for `state`, at the device's size.
+fn top_text(state: &State) -> String {
+    let mut cache = DrawCache::load();
+    let mut rec = Recording::default();
+    let mut targets = Vec::new();
+    let mut canvas = Canvas::new(&mut rec, (1920, 1080), 1.0, &mut cache);
+    let (mut images, mut scratch) = (Images::synchronous(), Scratch::default());
+    let mut f = Frame::new(&mut canvas, state, &mut images, &mut scratch, &mut targets);
+    top(&mut f, Rect::new(0.0, 0.0, 1920.0, 1080.0));
+    f.finish();
+    String::from_utf8_lossy(rec.all_text()).into_owned()
+}
+
+/// Shelf is empty for a moment at start, while the library is read: it doesn't say that nothing was
+/// found until the library has been read.
+#[test]
+fn an_unread_library_isnt_said_to_be_empty() {
+    let unread = State::new(Init { library: None, ..Init::default() });
+    assert!(!top_text(&unread).contains("No games"), "{}", top_text(&unread));
+    let empty = State::new(Init { library: Some(clamshell_library::Library::default()), ..Init::default() });
+    assert!(top_text(&empty).contains("No games or apps found"), "{}", top_text(&empty));
+}
+
 fn demo() -> State {
-    let mut state = State::new(Init { library: clamshell_library::demo::library(), ..Init::default() });
+    let mut state = State::new(Init { library: Some(clamshell_library::demo::library()), ..Init::default() });
     state.apply(Event::tick(1_700_000_000), &mut Vec::new());
     state.apply(
         Event::Reading(Reading::Status(Status { battery: Some(50), volume: Some(50), brightness: Some(50), wifi: Some(50), ..Status::default() })),
@@ -129,7 +152,7 @@ fn the_keymap_screens_lay_out() {
         // The Nintendo layout with a layer added.
         let mut keymaps = Keymaps::initial();
         keymaps.get_mut(1).and_then(|k| k.add_layer("aim"));
-        let mut state = State::new(Init { library: clamshell_library::demo::library(), keymaps, ..Init::default() });
+        let mut state = State::new(Init { library: Some(clamshell_library::demo::library()), keymaps, ..Init::default() });
         for (name, events) in &screens {
             for e in events {
                 state.apply(e.clone(), &mut Vec::new());

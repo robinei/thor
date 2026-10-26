@@ -99,7 +99,7 @@ pub fn state(library: Library) -> State {
     State::new(Init {
         display_modes,
         profile: clamshell_state::Profile::thor(),
-        library,
+        library: Some(library),
         dock,
         keymaps: clamshell_state::keymap::Keymaps::initial(),
         curves: clamshell_state::curve::Curves::initial(),

@@ -104,8 +104,8 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     let rows = ((list.h / (h * ROW_H)).floor() as usize).max(1);
     list_rows(f, list, rows, s.shelf().list().len(), pad);
     // When there is nothing but ClamShell's own tools, say where games and apps come from, in the middle
-    // of the screen.
-    if s.shelf().library().entries.iter().all(|g| matches!(g.launch, Launch::Tool(_))) {
+    // of the screen. Not while the library is still being read at start, when shelf is empty for a moment.
+    if s.shelf().read() && s.shelf().library().entries.iter().all(|g| matches!(g.launch, Launch::Tool(_))) {
         let line = Rect::new(pad, h * 0.5 - h * ROW_H, w - 2.0 * pad, h * ROW_H);
         widgets::centred_text(f, line, h * DETAIL, Tone::Dim, "No games or apps found: see ~/.config/clamshell/library.json");
     }
