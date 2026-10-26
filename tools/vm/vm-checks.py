@@ -232,7 +232,8 @@ def capture(command, seconds, action):
     time.sleep(0.5)
     action()
     time.sleep(max(0.0, seconds - 0.5))
-    until(lambda: not sh("pgrep -f 'timeout .*thor-checks-capture' || true").strip(), 3)
+    # (Anchored: the remote shell's own command line holds the pattern too.)
+    until(lambda: not sh("pgrep -f '^timeout .*thor-checks-capture' || true").strip(), 3)
     return sh(f"cat {out}")
 
 

@@ -62,6 +62,8 @@ KERNEL_VIDEO = f"video=Virtual-1:{TOP[0]}x{TOP[1]}@60 video=Virtual-2:{BOTTOM[0]
 # Packages the session needs.
 PACKAGES = [
     "foot", "xorg-xwayland", "mesa", "pipewire", "pipewire-pulse", "wireplumber",
+    # The session's own, as on the device: the bus's environment tool, removable storage, the portals.
+    "dbus", "udiskie", "xdg-desktop-portal-gtk",
     "python", "libinput-tools", "evtest", "iw", "noto-fonts",
     # The checks' stand-in game: a window that doesn't ask for text input (foot does, which brings up the
     # keyboard and gives it the pad). Drawn without a GPU (--vo=wlshm): the VM has none.

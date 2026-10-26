@@ -13,8 +13,8 @@ StartLimitIntervalSec=60
 StartLimitBurst=4
 
 [Service]
-# Up once its loop turns; it says so every few seconds, and one that stops for 30 s (hung) is restarted:
-# what it launched runs on in its scopes.
+# Up once its loop turns; it says so every few seconds, and one that stops for 30 s (hung) is restarted.
+# What it launched keeps its services, but a program with a window ends with its display.
 Type=notify
 NotifyAccess=main
 WatchdogSec=30

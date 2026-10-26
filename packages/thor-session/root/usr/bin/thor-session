@@ -51,7 +51,8 @@ while :; do
 done
 # The session's displays out of the environment, and what it launched and mounted stopped.
 systemctl --user unset-environment WAYLAND_DISPLAY DISPLAY
-systemctl --user stop app-graphical.slice background-graphical.slice
+# (Quietly: a slice nothing ever ran in isn't there to stop.)
+systemctl --user stop app-graphical.slice background-graphical.slice 2> /dev/null
 if [ "$(state)" = failed ]; then
     echo "ClamShell failed again and again, and systemd stopped restarting it ($(date '+%H:%M:%S')). Its last words:"
     journalctl --user -u clamshell.service -n 15 -o cat --no-pager
