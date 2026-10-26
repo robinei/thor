@@ -21,6 +21,20 @@ impl Screen {
     }
 }
 
+/// What the core records and draws: a screen, or the overlay, drawn over the windows on the top screen
+/// (the HUD and the window arrows) at the top screen's size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Layer {
+    Screen(Screen),
+    Overlay,
+}
+
+impl From<Screen> for Layer {
+    fn from(screen: Screen) -> Layer {
+        Layer::Screen(screen)
+    }
+}
+
 /// A `T` for each screen.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct Screens<T> {

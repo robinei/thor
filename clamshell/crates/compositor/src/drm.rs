@@ -38,7 +38,7 @@ use crate::{
     base::Base,
     clients::Process,
     colour::render::Pipeline,
-    render::{self, Overlays, UiFrame},
+    render::{self, UiFrame},
     server::Server,
 };
 
@@ -100,8 +100,8 @@ struct Drawing {
     renderer: GlesRenderer,
     pipeline: Pipeline,
     screens: Vec<Screen>,
-    frames: [UiFrame; 2],
-    overlays: Overlays,
+    /// The top screen's UI, the second's, and the overlay over the top screen's window.
+    frames: [UiFrame; 3],
     cursor: crate::cursor::Cursor,
     elements: Vec<render::Element>,
     /// The scene's elements as last composed.
@@ -231,8 +231,7 @@ pub fn run(
         renderer,
         pipeline,
         screens,
-        frames: [UiFrame::new(top_ui)?, UiFrame::new(bottom_ui)?],
-        overlays: Overlays::new(top_ui)?,
+        frames: [UiFrame::new(top_ui)?, UiFrame::new(bottom_ui)?, UiFrame::new(top_ui)?],
         cursor: crate::cursor::Cursor::new(),
         elements: Vec::new(),
         states: RenderElementStates::default(),
@@ -630,8 +629,8 @@ fn compose(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnM
     server.frame();
     server.sync_pointer_capture(|_| Ok::<(), std::convert::Infallible>(()));
     server.import_dmabufs(&mut drawing.renderer);
-    let Drawing { renderer, pipeline, screens, frames, overlays, cursor, elements, states } = drawing;
-    render::elements(server, frames, overlays, renderer, elements)?;
+    let Drawing { renderer, pipeline, screens, frames, cursor, elements, states } = drawing;
+    render::elements(server, frames, renderer, elements)?;
     cursor.elements(server, renderer, elements)?;
     let (composed, changed) = pipeline.compose(server, renderer, elements)?;
     *states = composed;

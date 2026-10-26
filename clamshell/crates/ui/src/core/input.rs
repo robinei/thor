@@ -1,6 +1,7 @@
 //! Routes input, by the screen it is on, to the pure machines: presses, the wheel, pointer motion and
 //! releases, the pad and keys.
 
+use clamshell_state::device::buttons::DeviceKey;
 use clamshell_state::{Event, Id, ListEvent, PadInput, PointerEvent, ShelfEvent, State};
 use xkeysym::Keysym;
 
@@ -38,6 +39,19 @@ impl Core {
             _ => self.input.touch(source, &target, (x as f32, y as f32), now),
         };
         self.run_actions(actions);
+    }
+
+    /// A finger or button comes down at `position` on the top screen, over its window: it presses the
+    /// overlay's target there, if there is one, and says whether there was. The window arrows act as they
+    /// are pressed, as the pad's window keys do.
+    pub fn press_overlay(&mut self, (x, y): (f64, f64)) -> bool {
+        let found = self.overlay.frames.retained.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).map(|t| t.id.clone());
+        let Some(id) = found else { return false };
+        if let Id::WindowArrow { next } = id {
+            let key = if next { DeviceKey::WindowNext } else { DeviceKey::WindowPrevious };
+            self.handle(Event::Device(key));
+        }
+        true
     }
 
     /// The wheel on `screen` at `position`, by `notches`. Over the main screen it scrolls the shelf's

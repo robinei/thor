@@ -21,6 +21,7 @@ mod editor;
 mod keyboard;
 mod keymaps;
 mod levels;
+mod overlay;
 mod profiles;
 mod radio;
 mod settings;
@@ -51,6 +52,13 @@ pub fn top(f: &mut Frame, screen: Rect) {
         clamshell_state::device::TopView::Shelf => f.out.list_rows = Some(shelf::draw(f, screen)),
         clamshell_state::device::TopView::Device => device::draw(f, screen),
     }
+}
+
+/// Over the window on the top screen, over all of `screen`: the HUD and the window arrows. The frame
+/// starts clear (see `render`).
+pub fn overlay(f: &mut Frame, screen: Rect) {
+    f.body = screen;
+    overlay::draw(f, screen);
 }
 
 /// The windows' tab: the window moved down, which the compositor shows below the bar, or with none

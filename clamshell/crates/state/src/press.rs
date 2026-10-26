@@ -153,6 +153,7 @@ impl State {
             Id::Wake => {
                 self.bottom.wake();
             }
+            Id::WindowArrow { .. } => {}
         }
     }
 

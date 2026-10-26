@@ -214,6 +214,11 @@ impl Recording {
         self.size
     }
 
+    /// The buffer pixels drawn over the background: around every command but the clears.
+    pub fn ink(&self) -> Bounds {
+        self.cmds.iter().filter(|c| !matches!(c.op, Op::Clear(_))).fold(Bounds::EMPTY, |d, c| d.union(c.bounds))
+    }
+
     /// The bytes of a text command's text; none for any other command.
     pub(super) fn text_of(&self, op: &Op) -> &[u8] {
         match *op {

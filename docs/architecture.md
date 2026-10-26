@@ -96,7 +96,9 @@ are session rules. The detailed transitions and their tests are in `docs/state-m
 
 - **Core and host.** `ui::Core` is the UI without a backend: the state and the event queue, input routed
   by screen, the timers as deadlines (the core says when it next needs to run), each screen recorded and
-  drawn into a pixmap the host hands it, and the effects in order. The compositor hosts it: it gives it
+  drawn into a pixmap the host hands it, and the effects in order. Over the window on the top screen it
+  records and draws a third layer the same way, the overlay (the HUD and the window arrows, with their
+  targets); the host shows the part of it that draws. The compositor hosts it: it gives it
   input by screen and the screens' sizes, runs it at its deadlines, shows each screen's pixmap, and
   carries out the effects that are its own (the screens' power, the refresh rate, closing windows,
   screenshots, quitting).

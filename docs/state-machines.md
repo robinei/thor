@@ -309,7 +309,8 @@ routing, tab switching and bottom-slot swaps.
 Home + right stick press switches to the windows' tab and back; Home + Start controls bottom power; Home + R1 is
 still Screenshot; Home + B closes or quits. Select and the D-pad no longer move windows or switch the
 bottom view. Tests: `home_chords_use_the_right_stick_and_not_select_or_the_dpad`, the existing B and R1
-chord tests. The compositor draws the window arrows while Home is held.
+chord tests. The UI's overlay over the top screen's window draws the window arrows while Home is held
+(`Id::WindowArrow`); a press on one sends the same `Device` event as the pad's window keys, as it comes down.
 
 ## Keymaps (keymap/)
 
@@ -761,7 +762,8 @@ real client pixels across top, bottom, return and Home. The remaining protocols 
 A contact starts on a client surface, a UI screen, a Home arrow, or black. Client contacts retain their
 surface and inverse geometry from down until up; each slot has its own target, so both screens can be
 touched simultaneously. Motion across screens keeps that target. UI contacts use the existing Core
-press/move/release path on their initial screen. Arrows switch once on down and consume the contact;
+press/move/release path on their initial screen. Arrows, the targets of the overlay's frame drawn last
+(`Core::press_overlay`), switch once on down and consume the contact;
 black stays ignored even when the finger moves over a client. Unknown motion/up events do nothing.
 Tracking is bounded to 32 simultaneous contacts; additional downs are ignored. Reusing an active slot
 cancels the previous sequence before accepting the new down.

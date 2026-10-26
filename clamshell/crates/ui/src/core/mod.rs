@@ -3,7 +3,8 @@
 //! - gives it input by screen ([`Core::press`], [`Core::pad`], ...) and the screens' sizes;
 //! - runs it when its deadline comes and after each turn of its loop ([`Core::run`]);
 //! - draws a screen that is due when a frame can be shown: [`Core::record`], then [`Core::draw`] into a
-//!   pixmap of the screen's size, then [`Core::frames_done`];
+//!   pixmap of the screen's size, then [`Core::frames_done`]; and the same for the overlay over the
+//!   window on the top screen ([`Layer::Overlay`]), shown where it draws ([`Core::overlay_area`]);
 //! - carries out the effects, in order ([`Core::next_effect`]): the screens' power, the refresh rate and
 //!   quitting itself, the rest through the system crate.
 
@@ -26,7 +27,7 @@ use crate::gfx::{self, DrawCache, Rect};
 use crate::input::focus::Drawn;
 use crate::input::{Action, EventClock, Input, Source, Timer};
 use crate::render::{self, Placement, ScreenFrames};
-use crate::screens::{Screen, Screens};
+use crate::screens::{Layer, Screen, Screens};
 use crate::toolkit::Target;
 
 /// What came back from the font finder's and the image decoder's threads.
@@ -75,6 +76,8 @@ pub struct Core {
     images: Images,
     arrivals: Receiver<Arrival>,
     screens: Screens<ScreenCore>,
+    /// What is drawn over the window on the top screen, at the top screen's size.
+    overlay: ScreenCore,
     input: Input,
     /// The presses' running timers, each with when it fires.
     timers: Vec<(Source, Timer, Instant)>,
@@ -127,6 +130,7 @@ impl Core {
             images,
             arrivals,
             screens: Screens::default(),
+            overlay: ScreenCore::default(),
             input: Input::default(),
             timers: Vec::new(),
             clock: EventClock::default(),
@@ -251,12 +255,32 @@ impl Core {
         for (_, screen) in self.screens.iter_mut() {
             screen.stale = true;
         }
+        self.overlay.stale = true;
     }
 
-    /// `screen`'s logical size and integer scale, as the host shows it. It is recorded again.
+    /// `screen`'s logical size and integer scale, as the host shows it. It is recorded again, and with
+    /// the top screen the overlay.
     pub fn resize(&mut self, screen: Screen, size: (u32, u32), scale: u32) {
         let s = &mut self.screens[screen];
         (s.size, s.scale, s.stale) = (size, scale.max(1), true);
+        if screen == Screen::Top {
+            let o = &mut self.overlay;
+            (o.size, o.scale, o.stale) = (size, scale.max(1), true);
+        }
+    }
+
+    fn layer(&self, layer: Layer) -> &ScreenCore {
+        match layer {
+            Layer::Screen(screen) => &self.screens[screen],
+            Layer::Overlay => &self.overlay,
+        }
+    }
+
+    fn layer_mut(&mut self, layer: Layer) -> &mut ScreenCore {
+        match layer {
+            Layer::Screen(screen) => &mut self.screens[screen],
+            Layer::Overlay => &mut self.overlay,
+        }
     }
 
     /// Host-reported logical pixels per millimetre. Buffer scale is applied when publishing a frame.
@@ -267,9 +291,10 @@ impl Core {
         }
     }
 
-    /// `screen`'s logical size and its scale.
-    pub fn size(&self, screen: Screen) -> ((u32, u32), u32) {
-        (self.screens[screen].size, self.screens[screen].scale)
+    /// `layer`'s logical size and its scale.
+    pub fn size(&self, layer: impl Into<Layer>) -> ((u32, u32), u32) {
+        let s = self.layer(layer.into());
+        (s.size, s.scale)
     }
 
     /// The area below the bottom bar in the last recording, in logical pixels. A compositor uses the
@@ -278,27 +303,31 @@ impl Core {
         self.screens[screen].body.map(|r| Bounds::new(r.x.ceil() as i32, r.y.ceil() as i32, (r.x + r.w).floor() as i32, (r.y + r.h).floor() as i32))
     }
 
-    /// Whether `screen` may have changed since it was last recorded.
-    pub fn stale(&self, screen: Screen) -> bool {
-        self.screens[screen].stale
+    /// Whether `layer` may have changed since it was last recorded.
+    pub fn stale(&self, layer: impl Into<Layer>) -> bool {
+        self.layer(layer.into()).stale
     }
 
-    /// `screen` couldn't be drawn: it isn't tried again until something changes.
-    pub fn skip(&mut self, screen: Screen) {
-        self.screens[screen].stale = false;
+    /// `layer` couldn't be drawn: it isn't tried again until something changes.
+    pub fn skip(&mut self, layer: impl Into<Layer>) {
+        self.layer_mut(layer.into()).stale = false;
     }
 
-    /// Records `screen`'s next frame and compares it with the last one drawn. Returns what changed in
+    /// Records `layer`'s next frame and compares it with the last one drawn. Returns what changed in
     /// buffer pixels, the whole frame if `whole`, or `None` if nothing did. What the frame reports is kept
     /// for [`Core::frames_done`].
-    pub fn record(&mut self, screen: Screen, whole: bool) -> Option<Bounds> {
-        let s = &mut self.screens[screen];
+    pub fn record(&mut self, layer: impl Into<Layer>, whole: bool) -> Option<Bounds> {
+        let layer = layer.into();
+        let s = match layer {
+            Layer::Screen(screen) => &mut self.screens[screen],
+            Layer::Overlay => &mut self.overlay,
+        };
         let size_px = (s.size.0 * s.scale, s.size.1 * s.scale);
         let at = Placement { size_px, scale: s.scale, drift: render::orbit(self.state.clock().unix()) };
-        let out = s.frames.record(at, screen, &self.state, &mut self.fonts, &mut self.images);
+        let out = s.frames.record(at, layer, &self.state, &mut self.fonts, &mut self.images);
         s.stale = false;
         s.body = out.touchpad_area;
-        if screen == Screen::Bottom {
+        if layer == Layer::Screen(Screen::Bottom) {
             publish(&self.touch_layout, (size_px.0 as f32, size_px.1 as f32), self.bottom_density.map(|(x, y)| (x * s.scale as f32, y * s.scale as f32)));
         }
         self.rows = self.rows.or(out.list_rows.filter(|&rows| rows != self.state.shelf().rows()));
@@ -306,10 +335,22 @@ impl Core {
         if whole { Some(Bounds::of_size(size_px)) } else { s.frames.damage() }
     }
 
-    /// Draws `screen`'s frame just recorded into `pixmap`, which is its size in buffer pixels and holds
+    /// Draws `layer`'s frame just recorded into `pixmap`, which is its size in buffer pixels and holds
     /// frame `held` (0 for none), where `damage` says it changed. Returns the frame it now holds.
-    pub fn draw(&mut self, screen: Screen, pixmap: PixmapMut, held: u64, damage: Bounds) -> u64 {
-        self.screens[screen].frames.draw(pixmap, held, damage, &mut self.fonts, &self.images)
+    pub fn draw(&mut self, layer: impl Into<Layer>, pixmap: PixmapMut, held: u64, damage: Bounds) -> u64 {
+        let s = match layer.into() {
+            Layer::Screen(screen) => &mut self.screens[screen],
+            Layer::Overlay => &mut self.overlay,
+        };
+        s.frames.draw(pixmap, held, damage, &mut self.fonts, &self.images)
+    }
+
+    /// Where the overlay's frame drawn last draws, in buffer pixels: the part of it to show over the
+    /// window. None when it draws nothing.
+    pub fn overlay_area(&self) -> Option<Bounds> {
+        let drawn = &self.overlay.frames.retained.drawn;
+        let ink = drawn.ink().intersect(Bounds::of_size(drawn.size()));
+        (!ink.is_empty()).then_some(ink)
     }
 
     /// The frames recorded since the last call are done: the state learns what they report. The list's

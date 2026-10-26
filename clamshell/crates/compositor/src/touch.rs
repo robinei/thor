@@ -36,9 +36,7 @@ impl Server {
         let hit = self.hit(position);
         self.dismiss_menu_outside(hit.as_ref().map(|hit| hit.window));
         self.dismiss_x11_menus_outside(hit.as_ref().map(|hit| &hit.surface));
-        let arrows = clamshell_ui::window_arrows::WindowArrows::new(self.core.state(), (self.top_width as u32, self.size.1 as u32));
-        let target = if let Some(action) = arrows.hit((position.x, position.y)) {
-            self.core.handle(clamshell_state::Event::Device(action));
+        let target = if position.x < self.top_width as f64 && self.core.press_overlay((position.x, position.y)) {
             Target::Ignored
         } else if let Some(hit) = self.hit(position) {
             if let Some(geometry) = self.geometry(hit.window) {

@@ -26,7 +26,7 @@ use crate::gfx::record::{Bounds, Recording};
 use crate::gfx::{Canvas, DrawCache, Rect};
 use crate::toolkit::{Frame, FrameOut, Scratch, Target};
 use crate::views;
-use crate::{Error, Screen};
+use crate::{Error, Layer, Screen};
 
 /// OLED burn-in protection. Every screen is laid out inside a black margin of MARGIN buffer pixels on
 /// each side, and drawn moved within it by an offset that drifts slowly, about a pixel a minute along an
@@ -84,24 +84,28 @@ impl Retained {
     }
 }
 
-/// Records `screen` for `state` into `retained.next`, and moves its targets and the touchpad area into
-/// surface pixels. The frame starts with the whole buffer black.
-pub(crate) fn record(retained: &mut Retained, at: Placement, screen: Screen, state: &State, fonts: &mut DrawCache, images: &mut Images) -> FrameOut {
+/// Records `layer` for `state` into `retained.next`, and moves its targets and the touchpad area into
+/// surface pixels. A screen's frame starts with the whole buffer black, the overlay's clear.
+pub(crate) fn record(retained: &mut Retained, at: Placement, layer: Layer, state: &State, fonts: &mut DrawCache, images: &mut Images) -> FrameOut {
     let scale = at.scale.max(1);
     let ((lw, lh), offset) = inset(at.size_px, scale, at.drift);
     let mut out = {
         let mut canvas = Canvas::new(&mut retained.next, at.size_px, scale as f32, fonts).with_offset(offset);
-        // The views paint on black and have no background of their own.
-        canvas.clear(crate::toolkit::style::BG);
+        // The views paint on black and have no background of their own; the overlay shows the windows
+        // under it.
+        canvas.clear(if layer == Layer::Overlay { tiny_skia::Color::TRANSPARENT } else { crate::toolkit::style::BG.into() });
         let mut f = Frame::new(&mut canvas, state, images, &mut retained.scratch, &mut retained.targets);
         let layout = Rect::new(0.0, 0.0, lw, lh);
-        match screen {
-            Screen::Top => views::top(&mut f, layout),
-            Screen::Bottom => views::bottom(&mut f, layout),
+        match layer {
+            Layer::Screen(Screen::Top) => views::top(&mut f, layout),
+            Layer::Screen(Screen::Bottom) => views::bottom(&mut f, layout),
+            Layer::Overlay => views::overlay(&mut f, layout),
         }
         f.finish()
     };
-    images.end_frame(screen);
+    if let Layer::Screen(screen) = layer {
+        images.end_frame(screen);
+    }
     let (sx, sy) = (offset.0 as f32 / scale as f32, offset.1 as f32 / scale as f32);
     for target in &mut retained.targets {
         target.rect.x += sx;
@@ -114,13 +118,13 @@ pub(crate) fn record(retained: &mut Retained, at: Placement, screen: Screen, sta
     out
 }
 
-/// Draws `screen` for `state` into `pixmap`, which must be `at`'s size, as [`record`] and then the
+/// Draws `layer` for `state` into `pixmap`, which must be `at`'s size, as [`record`] and then the
 /// whole recording played.
 pub(crate) fn render(
     pixmap: PixmapMut,
     retained: &mut Retained,
     at: Placement,
-    screen: Screen,
+    layer: Layer,
     state: &State,
     fonts: &mut DrawCache,
     images: &mut Images,
@@ -129,7 +133,7 @@ pub(crate) fn render(
     if (pixmap.width(), pixmap.height()) != (w, h) {
         return Err(format!("a {}x{} pixmap for a {w}x{h} frame", pixmap.width(), pixmap.height()).into());
     }
-    let out = record(retained, at, screen, state, fonts, images);
+    let out = record(retained, at, layer, state, fonts, images);
     play(pixmap, &retained.next, Bounds::of_size(at.size_px), fonts, images);
     retained.drew();
     Ok(out)
@@ -166,8 +170,8 @@ pub(crate) struct ScreenFrames {
 
 impl ScreenFrames {
     /// Records the next frame (see [`record`]).
-    pub(crate) fn record(&mut self, at: Placement, screen: Screen, state: &State, fonts: &mut DrawCache, images: &mut Images) -> FrameOut {
-        record(&mut self.retained, at, screen, state, fonts, images)
+    pub(crate) fn record(&mut self, at: Placement, layer: Layer, state: &State, fonts: &mut DrawCache, images: &mut Images) -> FrameOut {
+        record(&mut self.retained, at, layer, state, fonts, images)
     }
 
     /// What the frame recorded changes from the one drawn last, or `None` if it looks the same.
@@ -315,11 +319,11 @@ mod frame_times {
                 // A whole frame: recorded and played into the buffer.
                 let t = Instant::now();
                 let target = tiny_skia::PixmapMut::from_bytes(&mut buffer, size.0, size.1).unwrap();
-                render(target, &mut retained, at, screen, &s, &mut fonts, &mut images).unwrap();
+                render(target, &mut retained, at, screen.into(), &s, &mut fonts, &mut images).unwrap();
                 let f = t.elapsed();
                 // Recorded again and found unchanged, which is all an event that changes nothing costs.
                 let t = Instant::now();
-                record(&mut retained, at, screen, &s, &mut fonts, &mut images);
+                record(&mut retained, at, screen.into(), &s, &mut fonts, &mut images);
                 assert_eq!(retained.damage(), None);
                 let c = t.elapsed();
                 // Only played.

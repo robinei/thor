@@ -143,12 +143,8 @@ impl Server {
                         let hit = self.hit(self.pointer);
                         self.dismiss_menu_outside(hit.as_ref().map(|hit| hit.window));
                         self.dismiss_x11_menus_outside(hit.as_ref().map(|hit| &hit.surface));
-                        let arrows = clamshell_ui::window_arrows::WindowArrows::new(self.core.state(), (self.top_width as u32, self.size.1 as u32));
-                        if event.button_code() == 0x110
-                            && let Some(action) = arrows.hit((self.pointer.x, self.pointer.y))
-                        {
+                        if event.button_code() == 0x110 && self.pointer.x < self.top_width as f64 && self.core.press_overlay((self.pointer.x, self.pointer.y)) {
                             self.arrow_pressed = true;
-                            self.core.handle(StateEvent::Device(action));
                             self.sync_windows();
                             return;
                         }

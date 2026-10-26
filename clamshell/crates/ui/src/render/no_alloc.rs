@@ -101,18 +101,18 @@ struct Screen1 {
     pixmap: tiny_skia::Pixmap,
     held: u64,
     at: Placement,
-    screen: Screen,
+    layer: crate::screens::Layer,
 }
 
 impl Screen1 {
-    fn new(screen: Screen, at: Placement) -> Self {
+    fn new(layer: impl Into<crate::screens::Layer>, at: Placement) -> Self {
         let pixmap = tiny_skia::Pixmap::new(at.size_px.0, at.size_px.1).expect("pixmap");
-        Screen1 { frames: ScreenFrames::default(), pixmap, held: 0, at, screen }
+        Screen1 { frames: ScreenFrames::default(), pixmap, held: 0, at, layer: layer.into() }
     }
 
     /// Records `state`, and plays what changed since the last frame.
     fn draw(&mut self, state: &State, cache: &mut DrawCache, images: &mut crate::gfx::images::Images) {
-        self.frames.record(self.at, self.screen, state, cache, images);
+        self.frames.record(self.at, self.layer, state, cache, images);
         if let Some(damage) = self.frames.damage() {
             self.held = self.frames.draw(self.pixmap.as_mut(), self.held, damage, cache, images);
         }
@@ -131,6 +131,7 @@ fn warm_frames_do_not_allocate() {
     let mut images = crate::gfx::images::Images::synchronous();
     let mut top = Screen1::new(Screen::Top, Placement { size_px: (1920, 1080), scale: 1, drift: (1, -2) });
     let mut bottom = Screen1::new(Screen::Bottom, Placement { size_px: (1240, 1080), scale: 1, drift: (-3, 0) });
+    let mut overlay = Screen1::new(crate::screens::Layer::Overlay, Placement { size_px: (1920, 1080), scale: 1, drift: (1, -2) });
 
     let cases: Vec<(&str, Vec<Event>)> = vec![
         ("sysinfo", vec![]),
@@ -170,6 +171,20 @@ fn warm_frames_do_not_allocate() {
                     .collect(),
                 ),
                 clamshell_state::WindowEvent::Activate(7).into(),
+            ],
+        ),
+        (
+            "window arrows, Home held",
+            vec![
+                Event::WindowBatch(
+                    [window(1, "test", Some("clamshell-run-test-1-0.service")), window(2, "test", Some("clamshell-run-test-1-0.service"))]
+                        .into_iter()
+                        .map(clamshell_state::WindowEvent::Opened)
+                        .collect(),
+                ),
+                clamshell_state::WindowEvent::Activate(1).into(),
+                Event::Reading(Reading::Frames { fps: Some(59.9), frame_ms: Some(16.7) }),
+                Event::HomeHeld(true),
             ],
         ),
         (
@@ -429,7 +444,8 @@ fn warm_frames_do_not_allocate() {
     // For the cases that are easy to get wrong: the state each must reach, so that it tests the screen it
     // is named for.
     type Reached = fn(&State) -> bool;
-    let reached: [(&str, Reached); 7] = [
+    let reached: [(&str, Reached); 8] = [
+        ("window arrows, Home held", |s| s.session().home_held() && s.session().has_other_top_window()),
         ("keymap name editor", |s| s.bottom().editor().is_some()),
         ("shelf, an open group", |s| s.shelf().group().is_some()),
         ("shelf, a video", |s| s.shelf().selected().is_some_and(|id| id.ends_with(".mkv"))),
@@ -466,6 +482,7 @@ fn warm_frames_do_not_allocate() {
             for s in [&last, &state] {
                 top.draw(s, &mut cache, &mut images);
                 bottom.draw(s, &mut cache, &mut images);
+                overlay.draw(s, &mut cache, &mut images);
             }
             let n = allocs() - before;
             // The first rounds fill the glyph cache and size the vectors.

@@ -90,8 +90,9 @@ pub enum Icon {
     Music,
     Star,
     Clock,
-    /// A folder in shelf's list, which opens: a chevron.
+    /// A folder in shelf's list, which opens: a chevron. With the one pointing back, the window arrows.
     Chevron,
+    ChevronBack,
     /// The Tools tab: a wrench.
     Wrench,
     /// Browsed entries without a picture. A folder; a file, shown as a sheet with a corner folded; the
@@ -392,6 +393,7 @@ pub fn draw(c: &mut Painter, icon: Icon, r: Rect, color: Color) {
         Icon::ArrowLeft => arrow(p, [(19.0, 12.0), (5.0, 12.0)], [(11.0, 6.0), (5.0, 12.0), (11.0, 18.0)]),
         Icon::ArrowRight => arrow(p, [(5.0, 12.0), (19.0, 12.0)], [(13.0, 6.0), (19.0, 12.0), (13.0, 18.0)]),
         Icon::Chevron => p.line(&[(9.0, 5.0), (16.0, 12.0), (9.0, 19.0)], 2.2),
+        Icon::ChevronBack => p.line(&[(15.0, 5.0), (8.0, 12.0), (15.0, 19.0)], 2.2),
         Icon::Check => p.line(&[(4.5, 12.5), (9.5, 17.5), (19.5, 6.5)], 2.4),
         Icon::Dot => p.dot(12.0, 12.0, 4.5),
         Icon::Archive => {
@@ -669,6 +671,7 @@ mod tests {
             Icon::Star,
             Icon::Clock,
             Icon::Chevron,
+            Icon::ChevronBack,
             Icon::Wrench,
             Icon::Folder,
             Icon::File,
@@ -683,7 +686,7 @@ mod tests {
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 59, "a variant is missing from the list");
+        assert_eq!(seen.len(), 60, "a variant is missing from the list");
         all
     }
 
@@ -749,6 +752,7 @@ mod tests {
             Icon::Size => 65,
             Icon::AntiAlias => 63,
             Icon::Sharpen => 64,
+            Icon::ChevronBack => 66,
         }
     }
 

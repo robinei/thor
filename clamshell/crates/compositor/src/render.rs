@@ -1,7 +1,7 @@
 //! UI pixmaps are retained; only the changed rectangle is uploaded into each texture.
 
 use crate::server::Server;
-use clamshell_ui::{Core, Error, Screen};
+use clamshell_ui::{Core, Error, Layer, Screen};
 use smithay::{
     backend::renderer::utils::import_surface_tree,
     backend::{
@@ -48,16 +48,17 @@ impl UiFrame {
         })
     }
 
-    pub fn update(&mut self, core: &mut Core, screen: Screen, renderer: &mut GlesRenderer) -> Result<(), Error> {
-        let (size, _) = core.size(screen);
+    pub fn update(&mut self, core: &mut Core, layer: impl Into<Layer>, renderer: &mut GlesRenderer) -> Result<(), Error> {
+        let layer = layer.into();
+        let (size, _) = core.size(layer);
         if self.pixmap.width() != size.0 || self.pixmap.height() != size.1 {
             *self = Self::new(size)?;
         }
-        if !core.stale(screen) && self.texture.is_some() {
+        if !core.stale(layer) && self.texture.is_some() {
             return Ok(());
         }
-        let Some(bounds) = core.record(screen, self.texture.is_none()) else { return Ok(()) };
-        self.held = core.draw(screen, self.pixmap.as_mut(), self.held, bounds);
+        let Some(bounds) = core.record(layer, self.texture.is_none()) else { return Ok(()) };
+        self.held = core.draw(layer, self.pixmap.as_mut(), self.held, bounds);
         self.upload(renderer, bounds)
     }
 
@@ -72,20 +73,25 @@ impl UiFrame {
         Ok(())
     }
 
-    fn element(&self, renderer: &GlesRenderer, x: i32, height: Option<i32>) -> Option<Element> {
-        let height = height.unwrap_or(self.pixmap.height() as i32).clamp(1, self.pixmap.height() as i32);
-        let size = (self.pixmap.width() as i32, height).into();
+    /// The texture shown at `x` in the scene, the whole of it, or only its `part`.
+    fn element(&self, renderer: &GlesRenderer, x: i32, part: Option<clamshell_ui::Bounds>) -> Option<Element> {
+        let (w, h) = (self.pixmap.width() as i32, self.pixmap.height() as i32);
+        let part = part.unwrap_or(clamshell_ui::Bounds::new(0, 0, w, h)).intersect(clamshell_ui::Bounds::new(0, 0, w, h));
+        if part.is_empty() {
+            return None;
+        }
+        let shown = Rectangle::<i32, smithay::utils::Logical>::new((part.x0, part.y0).into(), (part.width(), part.height()).into());
         Some(
             TextureRenderElement::from_texture_with_damage(
                 self.id.clone(),
                 renderer.context_id(),
-                (x as f64, 0.0),
+                ((x + part.x0) as f64, part.y0 as f64),
                 self.texture.clone()?,
                 1,
                 Transform::Normal,
                 None,
-                Some(Rectangle::from_size(size).to_f64()),
-                Some(size),
+                Some(shown.to_f64()),
+                Some(shown.size),
                 None,
                 self.damage.snapshot(),
                 Kind::Unspecified,
@@ -95,69 +101,11 @@ impl UiFrame {
     }
 }
 
-/// What the compositor draws over the windows on the top screen: the window arrows while Home is held,
-/// and the HUD.
-pub(crate) struct Overlays {
-    arrows: UiFrame,
-    last_arrows: Option<clamshell_ui::window_arrows::WindowArrows>,
-    hud: UiFrame,
-    last_hud: Option<clamshell_ui::hud::HudLine>,
-    hud_cache: clamshell_ui::DrawCache,
-}
-impl Overlays {
-    pub fn new(size: (u32, u32)) -> Result<Self, Error> {
-        Ok(Self {
-            arrows: UiFrame::new(size)?,
-            last_arrows: None,
-            hud: UiFrame::new(clamshell_ui::hud::HudLine::size(size.1))?,
-            last_hud: None,
-            hud_cache: clamshell_ui::DrawCache::load(),
-        })
-    }
-    fn update(&mut self, server: &Server, renderer: &mut GlesRenderer, out: &mut Vec<Element>) -> Result<(), Error> {
-        let size = (server.top_width as u32, server.size.1 as u32);
-        let arrows = clamshell_ui::window_arrows::WindowArrows::new(server.core.state(), size);
-        if self.arrows.pixmap.width() != size.0 || self.arrows.pixmap.height() != size.1 {
-            *self = Self::new(size)?;
-        }
-        if self.last_arrows != Some(arrows) {
-            if arrows.visible {
-                arrows.draw(self.arrows.pixmap.as_mut());
-                self.arrows.upload(renderer, clamshell_ui::Bounds::of_size(size))?;
-            }
-            self.last_arrows = Some(arrows);
-        }
-        if arrows.visible
-            && let Some(element) = self.arrows.element(renderer, 0, None)
-        {
-            out.push(element);
-        }
-        let hud = clamshell_ui::hud::HudLine::of(server.core.state(), size.1);
-        if self.last_hud != hud {
-            if let Some(hud) = &hud {
-                hud.draw(self.hud.pixmap.as_mut(), &mut self.hud_cache);
-                let (w, h) = (self.hud.pixmap.width(), self.hud.pixmap.height());
-                self.hud.upload(renderer, clamshell_ui::Bounds::of_size((w, h)))?;
-            }
-            self.last_hud = hud;
-        }
-        if self.last_hud.is_some()
-            && let Some(element) = self.hud.element(renderer, 0, None)
-        {
-            out.push(element);
-        }
-        Ok(())
-    }
-}
-
-pub(crate) fn elements(
-    server: &mut Server,
-    frames: &mut [UiFrame; 2],
-    overlays: &mut Overlays,
-    renderer: &mut GlesRenderer,
-    out: &mut Vec<Element>,
-) -> Result<(), Error> {
-    let [top, bottom] = frames;
+/// The scene's elements, front first: the overlay over the window on the top screen (the HUD and the
+/// window arrows), the UI's screens, and the windows shown. `frames` are the top screen's, the second's
+/// and the overlay's.
+pub(crate) fn elements(server: &mut Server, frames: &mut [UiFrame; 3], renderer: &mut GlesRenderer, out: &mut Vec<Element>) -> Result<(), Error> {
+    let [top, bottom, overlay] = frames;
     // The top screen's view isn't shown while a window covers it, so it isn't drawn either: it stays stale
     // in the core, and is drawn where it changed once uncovered (the texture holds the last frame drawn).
     let state = server.core.state();
@@ -166,12 +114,18 @@ pub(crate) fn elements(
         top.update(&mut server.core, Screen::Top, renderer)?;
     }
     bottom.update(&mut server.core, Screen::Bottom, renderer)?;
+    overlay.update(&mut server.core, Layer::Overlay, renderer)?;
     server.core.frames_done();
     out.clear();
-    overlays.update(server, renderer, out)?;
+    if let Some(area) = server.core.overlay_area()
+        && let Some(element) = overlay.element(renderer, 0, Some(area))
+    {
+        out.push(element);
+    }
     let state = server.core.state();
     let show_bottom = state.bottom().shows_windows(state.session());
-    if let Some(element) = bottom.element(renderer, server.top_width, show_bottom.then(|| server.area(true).loc.y)) {
+    let above_windows = show_bottom.then(|| clamshell_ui::Bounds::new(0, 0, i32::MAX, server.area(true).loc.y.max(1)));
+    if let Some(element) = bottom.element(renderer, server.top_width, above_windows) {
         out.push(element);
     }
     if !covered && let Some(element) = top.element(renderer, 0, None) {

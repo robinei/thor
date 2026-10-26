@@ -471,6 +471,8 @@ fn touching_a_home_arrow_switches_once_and_consumes_home_release() {
     server.core.handle(WindowEvent::Activate(1).into());
     server.core.handle(Event::HomeHeld(true));
     assert!(server.core.state().session().has_other_top_window());
+    // The arrows are drawn, as they are before they can be seen and touched.
+    assert!(server.core.record(clamshell_ui::Layer::Overlay, false).is_some());
     let time = InputTime::from_millis(10);
     let point = (server.top_width as f64 - 20.0, server.size.1 as f64 / 2.0).into();
     server.touch_down(Some(0).into(), point, time);

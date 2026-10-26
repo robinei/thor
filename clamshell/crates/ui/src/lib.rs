@@ -12,19 +12,17 @@
 
 mod core;
 mod gfx;
-pub mod hud;
 mod input;
 mod render;
 mod screens;
 mod toolkit;
 mod views;
-pub mod window_arrows;
 
 pub use crate::core::Core;
 pub use gfx::canvas::DrawCache;
 pub use gfx::record::Bounds;
 pub use input::{End, Source};
-pub use screens::Screen;
+pub use screens::{Layer, Screen};
 
 use std::sync::{Arc, Mutex};
 
@@ -52,7 +50,7 @@ pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, pat
     let at = Placement { size_px: (size.0 * scale, size.1 * scale), scale, drift: (0, 0) };
     let mut pixmap = tiny_skia::Pixmap::new(at.size_px.0, at.size_px.1).ok_or("no pixmap")?;
     let mut retained = Retained::default();
-    let rendered = render::render(pixmap.as_mut(), &mut retained, at, screen, state, &mut DrawCache::load(), &mut Images::synchronous())?;
+    let rendered = render::render(pixmap.as_mut(), &mut retained, at, screen.into(), state, &mut DrawCache::load(), &mut Images::synchronous())?;
     pixmap.save_png(path)?;
     Ok(render::frame_events(state, &rendered))
 }
@@ -91,7 +89,7 @@ impl Frames {
     /// Draws `state` as the next frame. Returns the pixels shown, premultiplied RGBA, and the events a
     /// live frame would send the state.
     pub fn draw(&mut self, state: &State) -> (&[u8], Vec<Event>) {
-        let out = self.frames.record(self.at, self.screen, state, &mut self.fonts, &mut self.images);
+        let out = self.frames.record(self.at, self.screen.into(), state, &mut self.fonts, &mut self.images);
         if let Some(damage) = self.frames.damage() {
             let next = (self.latest + 1) % self.buffers.len();
             if let Some((pixmap, held)) = self.buffers.get_mut(next) {
@@ -108,7 +106,7 @@ impl Frames {
     pub fn whole(&mut self, state: &State) -> Result<&[u8], Error> {
         let (pixmap, _) = self.buffers.first_mut().ok_or("no buffer")?;
         let mut retained = Retained::default();
-        render::record(&mut retained, self.at, self.screen, state, &mut self.fonts, &mut self.images);
+        render::record(&mut retained, self.at, self.screen.into(), state, &mut self.fonts, &mut self.images);
         gfx::paint::play_unbounded(pixmap.as_mut(), &retained.next, &mut self.fonts, &self.images);
         Ok(pixmap.data())
     }
@@ -163,7 +161,7 @@ impl PadFrames {
         let mut view = PadView { targets: screens::Screens::default(), sizes: screens::Screens::default() };
         for screen in Screen::BOTH {
             let at = self.at[screen];
-            render::record(&mut self.retained[screen], at, screen, state, &mut self.fonts, &mut self.images);
+            render::record(&mut self.retained[screen], at, screen.into(), state, &mut self.fonts, &mut self.images);
             view.targets[screen] = self.retained[screen].targets.clone();
             view.sizes[screen] = (at.size_px.0 as f32, at.size_px.1 as f32);
         }
