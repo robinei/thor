@@ -22,7 +22,6 @@ clamshell-library = { path = "crates/library" }
 clamshell-ui = { path = "crates/ui" }
 clamshell-compositor = { path = "crates/compositor" }
 clamshell-fan = { path = "crates/fan" }
-calloop = "0.14"
 xkeysym = "0.2"
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }

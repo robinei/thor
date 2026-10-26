@@ -373,7 +373,6 @@ dependencies = [
 name = "clamshell-ui"
 version = "0.1.0"
 dependencies = [
- "calloop",
  "clamshell-library",
  "clamshell-state",
  "fontdue",

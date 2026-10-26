@@ -5,6 +5,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use clamshell_compositor::EventSender;
 use clamshell_state::bottom::touch::TouchLayout;
 use clamshell_state::curve::Curves;
 use clamshell_state::keymap::Keymaps;
@@ -15,7 +16,7 @@ use clamshell_system::paths::Paths;
 use clamshell_system::store::Store;
 use clamshell_system::wiring::{self, Handles};
 use clamshell_system::{Closed, Sink};
-use clamshell_ui::{Config, EventSender};
+use clamshell_ui::Config;
 
 use crate::config::Env;
 use crate::control;

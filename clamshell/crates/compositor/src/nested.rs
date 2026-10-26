@@ -2,8 +2,9 @@
 
 use std::time::Duration;
 
+use crate::EventSender;
 use clamshell_state::{Effect, State};
-use clamshell_ui::{Config, Error, EventSender};
+use clamshell_ui::{Config, Error};
 use smithay::{
     backend::{
         renderer::{Frame, Renderer, damage::OutputDamageTracker, gles::GlesRenderer},

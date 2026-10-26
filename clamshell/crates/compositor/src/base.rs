@@ -5,8 +5,9 @@
 use std::os::fd::AsFd;
 use std::time::Instant;
 
+use crate::EventSender;
 use clamshell_state::{Effect, Event, State};
-use clamshell_ui::{Config, Error, EventSender};
+use clamshell_ui::{Config, Error};
 use smithay::{
     reexports::{
         calloop::{EventLoop, Interest, Mode, PostAction, channel, generic::Generic, ping},

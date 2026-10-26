@@ -28,7 +28,6 @@ pub use screens::Screen;
 
 use std::sync::{Arc, Mutex};
 
-use calloop::channel;
 use clamshell_state::bottom::touch::TouchLayout;
 use clamshell_state::{Event, State};
 
@@ -44,23 +43,6 @@ pub struct Config {
     /// Where the touchpad area and the bar's targets are, for the touchpad tab's input side. It is
     /// updated with every frame of the second screen.
     pub touch_layout: Arc<Mutex<TouchLayout>>,
-}
-
-/// Sends events into the compositor's event loop from other threads.
-#[derive(Clone)]
-pub struct EventSender(channel::Sender<Event>);
-
-impl EventSender {
-    /// A host's channel for events from system threads.
-    pub fn channel() -> (Self, channel::Channel<Event>) {
-        let (sender, receiver) = channel::channel();
-        (Self(sender), receiver)
-    }
-
-    /// False once the compositor has exited.
-    pub fn send(&self, event: Event) -> bool {
-        self.0.send(event).is_ok()
-    }
 }
 
 /// Renders one screen without Wayland, at `size` logical pixels and integer `scale`, to a PNG file.

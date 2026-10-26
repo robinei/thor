@@ -28,12 +28,31 @@ mod touch;
 pub mod trace;
 mod x11;
 
+use smithay::reexports::calloop::channel;
+
 pub use drm::run as run_drm;
 pub use nested::run;
 pub use server::Process;
 
 #[cfg(test)]
 mod tests;
+
+/// Sends events into the compositor's event loop from other threads.
+#[derive(Clone)]
+pub struct EventSender(channel::Sender<clamshell_state::Event>);
+
+impl EventSender {
+    /// The event loop's channel for events from system threads.
+    pub(crate) fn channel() -> (Self, channel::Channel<clamshell_state::Event>) {
+        let (sender, receiver) = channel::channel();
+        (Self(sender), receiver)
+    }
+
+    /// False once the compositor has exited.
+    pub fn send(&self, event: clamshell_state::Event) -> bool {
+        self.0.send(event).is_ok()
+    }
+}
 
 /// Where clients reach the compositor, for the system threads once it listens.
 pub struct Displays {
