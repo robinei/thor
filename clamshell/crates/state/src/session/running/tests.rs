@@ -105,6 +105,30 @@ fn quit_closes_the_windows_then_ends_the_slice_force_kill_at_once() {
     assert_eq!(force_kill(&mut s, "zelda-lttp"), vec![Effect::EndRun { key: key("zelda-lttp"), force: true }]);
 }
 
+/// A quit that ends a program known by its app id runs its runner's stop once: with the end, when its
+/// launch still runs after its windows closed, and not again when it stops running.
+#[test]
+fn a_quit_that_ends_an_entry_runs_its_runners_stop_once() {
+    let mut library = clamshell_library::demo::library();
+    let firefox = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
+    let stop = vec!["stop".to_owned(), "{id}".to_owned()].into();
+    firefox.runner = Some(clamshell_library::RunnerOf { handover: true, stop, ..clamshell_library::RunnerOf::new("android", "Android", true) });
+    let mut s = State::new(Init { library, ..init() });
+    s.applied(Event::tick(100));
+    let firefox = launch_now(&mut s, "desktop:firefox");
+    let instance = firefox.iter().find_map(|e| if let Effect::Launch { instance, .. } = e { Some(instance.clone()) } else { None }).unwrap();
+    crate::testkit::start(&mut s, "desktop:firefox");
+    s.observed(vec![win_of(6, "firefox", &instance)]);
+    let stop = Effect::RunnerCommand(vec!["stop".into(), "firefox".into()]);
+    quit(&mut s, "desktop:firefox");
+    let fx = s.observed(vec![]);
+    assert!(fx.contains(&Effect::EndRun { key: key("desktop:firefox"), force: false }) && fx.contains(&stop), "ended with its stop: {fx:?}");
+    s.applied(Event::tick(200 + HANDOFF));
+    let fx = crate::testkit::end(&mut s, "desktop:firefox");
+    assert!(s.session().running("desktop:firefox").is_none());
+    assert!(!fx.contains(&stop), "not again: {fx:?}");
+}
+
 /// A quit the program refuses, its "save changes?" answered with cancel, is given up once its windows
 /// are still there [`super::QUIT_WAIT`] after they were asked to close: the entry runs on, is paused
 /// hidden again, and isn't ended when its windows close later.

@@ -226,6 +226,22 @@ fn dark_for_a_game_on_battery_it_goes_off_and_a_tap_wakes_it() {
     assert_eq!(power(&s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::Wake)))), Some(true), "tapped: on");
 }
 
+/// Home+Start on a screen dark for a game turns it on as a tap does, and it stays on: the game no
+/// longer darkens it until the next game starts.
+#[test]
+fn home_start_wakes_a_screen_dark_for_a_game() {
+    let mut s = state();
+    on_battery(&mut s, true);
+    s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::DarkInGame.value());
+    s.applied(Event::tick(1000));
+    crate::testkit::start(&mut s, "zelda-lttp");
+    assert!(s.bottom().off());
+    assert_eq!(power(&key(&mut s, DeviceKey::BottomPower)), Some(true));
+    assert!(!s.bottom_dark() && !s.bottom().off());
+    assert_eq!(power(&s.applied(Event::tick(1001))), None, "it stays on");
+    assert!(!s.bottom().off());
+}
+
 #[test]
 fn windows_moved_down_keep_it_on() {
     let mut s = emulator();

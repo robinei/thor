@@ -42,13 +42,13 @@ window: it is in front when no top window is shown, and ShowShelf deselects the 
 | absent | Opened | present, home assigned synchronously, in front if its opening focus says so | Move before exact Focus when needed | windows `lifecycle_open_and_close_follow_launch_ownership`, `a_window_opens_in_front_as_its_opening_focus_says`, `a_launchs_window_and_its_rule_are_placed_before_its_unit_is_listed` |
 | present | duplicate Opened | unchanged | — | windows `lifecycle_messages_keep_one_window_and_ignore_late_messages` |
 | present | Title | updated title | matching bottom rule sends Down once | windows `lifecycle_title_applies_a_bottom_rule_once` |
-| present | Changed | updated identity, same place and selection | ownership rules may assign its home | windows `stale_identity_facts_cannot_undo_a_placement` |
-| present | Closed | absent; select remaining tab or recent top group, shelf last | exact Focus or ShowShelf when a group empties | windows `lifecycle_close_falls_back_once_and_retains_the_other_windows`; front tests |
+| present | Changed | updated identity, same place and selection; `x11` kept from Opened | ownership rules may assign its home | windows `stale_identity_facts_cannot_undo_a_placement`, `changed_facts_keep_a_window_x11` |
+| present | Closed | absent, out of the bottom slot; a dialog in front brings back its parent, another window its group's; else the recent top group, shelf last | exact Focus or ShowShelf when a group empties | windows `lifecycle_close_falls_back_once_and_retains_the_other_windows`, `a_dialogs_close_brings_back_its_parent`, `closing_the_window_below_empties_its_slot`; front tests |
 | absent | late Closed, Title, Changed, Activate or keyboard focus | unchanged | — | windows `lifecycle_messages_keep_one_window_and_ignore_late_messages`, `backend_changes_keep_the_placement`, `keyboard_focus_is_independent_of_both_screens_selected_content` |
 | present on top | validated Activate | selected now | thaw/resume owner before exact Focus or ShowShelf | windows `activation_selects_the_window_on_its_screen`, `activation_thaws_a_suspended_owner_before_selecting_its_window` |
 | present below | validated Activate | bottom shows this window now (the windows' tab opens) | thaw/resume owner, keyboard focus to it | same |
 | either screen selected | KeyboardFocus(Some(live id)) or None | keyboard target changes, content stays | — | windows `keyboard_focus_is_independent_of_both_screens_selected_content` |
-| top, regardless of keyboard focus | Down, including a remembered rule | previous bottom returned to its home without activation; requested window below; same-program next top or recent group/shelf selected | Return before Down, then exact top Focus/fallback | bottom `moving_another_window_down_swaps_the_single_bottom_slot`; windows `displacing_another_programs_bottom_window_does_not_activate_it`, `moving_the_top_window_does_not_require_keyboard_focus_there` |
+| top, regardless of keyboard focus | Down, including a remembered rule | previous bottom returned to its home without activation; requested window below; same-program next top or recent group/shelf selected; the keyboard to the top window | Return before Down, then exact top Focus/fallback | bottom `moving_another_window_down_swaps_the_single_bottom_slot`; windows `displacing_another_programs_bottom_window_does_not_activate_it`, `moving_the_top_window_does_not_require_keyboard_focus_there`, `a_window_sent_down_gives_the_keyboard_to_the_top_window` |
 | below, shown or covered | Up | top at retained home, selected now; bottom shows ClamShell | Up to explicit home | bottom `moving_another_window_down_swaps_the_single_bottom_slot` |
 | front launch waiting | Home or another explicit selection | foreground intent cancelled | navigation's own effects | windows `home_cancels_a_launchs_late_request_to_take_the_front`, `activating_another_window_cancels_a_launchs_late_request_to_take_the_front` |
 
@@ -114,9 +114,9 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Running | Show when every window is moved down | same | thaw, runner resumed; the bottom screen shows them (the windows' tab opens) | running `show_of_an_entry_whose_windows_are_all_below_shows_them_there` |
 | Running | Quit | Quitting | thaw, Close(windows) | running `quit_closes_the_windows_then_ends_…` |
 | Quitting | windows gone, still runs | Quitting(ended) | EndRun, or EndProcesses (found, own pid) | same |
-| Quitting | no longer runs | removed | runner stop (once) | same |
+| Quitting | no longer runs | removed | runner stop, unless the end ran it (once) | same; running `a_quit_that_ends_an_entry_runs_its_runners_stop_once` |
 | Quitting | its windows still there 10 s after they were asked to close (a close refused) | Running, not quitting: paused hidden again, not ended when its windows close later | — | running `a_quit_refused_is_given_up` |
-| Running | ForceKill | Quitting(ended), so that nothing quits it again while it still runs (Quits when closed) | thaw, EndRun{force} or EndProcesses{force} | same; background `a_force_killed_entry_isnt_quit_again_by_quits_closed` |
+| Running | ForceKill | Quitting(ended), so that nothing quits it again while it still runs (Quits when closed) | thaw, EndRun{force} or EndProcesses{force} | same; background `a_force_killed_entry_isnt_quit_again_by_quits_closed`, `force_kill_thaws_a_paused_entry_then_ends_it` |
 | not running | Quit / ForceKill | unchanged | nothing | running `quit_and_force_kill_of_an_entry_not_running_do_nothing` |
 
 ### Front and Home
@@ -238,7 +238,7 @@ opening, tells the bottom screen to open the windows' tab and turn on (`Bottom::
 | WindowUp: the window below goes back, its rule is forgotten | same; `moving_another_window_down_swaps_the_single_bottom_slot` |
 | settle: a window matching a rule moves down once, after the windows are followed (a found program's window too, in the event that found it); the tab it leaves is settled in the same event | `a_rule_sends_the_window_down_when_its_program_opens_it_again`; tests `a_found_programs_window_goes_down_by_its_rule_as_it_is_found`, `the_tab_a_rule_leaves_is_settled_in_the_same_event` |
 | dock tap or BottomWindows → windows shown (the windows' tab), the screen turned on if it was off by hand | running `show_of_an_entry_whose_windows_are_all_below_shows_them_there` |
-| Home+Start: wake if off by itself, else toggle off | `the_bottom_screen_turns_off_and_on`, `home_start_brings_back_…`, `…off_by_hand_and_by_itself_at_once` |
+| Home+Start: wake if off by itself (dark for a game too, which sets `woken` as a tap does), else toggle off | `the_bottom_screen_turns_off_and_on`, `home_start_brings_back_…`, `…off_by_hand_and_by_itself_at_once`, `home_start_wakes_a_screen_dark_for_a_game` |
 | settle: off by itself when on battery, not refreshing, not set to stay on, no windows shown, no editor, and dark in a game or untouched 4 min | `on_battery_the_untouched_…` and siblings; `a_refresh_calibration_or_an_editor_keeps_it_on` |
 | settle: dimmed after 60 s untouched, unless windows are shown | `the_bottom_screen_dims_untouched_and_lights_when_used` |
 | Wake tap sets `woken`; a game starting resets it | `dark_for_a_game_…`, `a_game_can_start_the_pad_mouse_…`, `a_game_starting_lets_a_woken_screen_go_dark_again`; touch or pad focus don't wake a dark screen (S16) |
@@ -250,8 +250,8 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 
 | Transition | Test |
 |---|---|
-| Awake → Dimmed → Off → Asleep by time; effects through sync: dim brightness, `Outputs{top: false}`, status watch off, `Sleep` (after `Outputs`) | `the_state_dims_turns_the_screens_off_and_back_and_sleeps_only_when_allowed` |
-| any input, KeptAwake, Resumed or a running refresh → Awake: undim, `Outputs{top: true}` | same; `off_by_itself_as_the_screens_go_off_…` |
+| Awake → Dimmed → Off → Asleep by time; effects through sync: dim brightness, `Outputs{top: false}`, status watch off, `Sleep` (after `Outputs`) | `the_state_dims_turns_the_screens_off_and_back_and_sleeps_only_when_allowed`; tests `the_screens_go_off_before_the_device_sleeps` |
+| any input, KeptAwake, Resumed or a running refresh → Awake: undim, `Outputs{top: true}` | same; `off_by_itself_as_the_screens_go_off_…`, `a_running_refresh_calibration_keeps_idle_awake` |
 | Resumed at State level (stage, and Apply resent) | tests `back_from_sleep_applies_the_settings_again_and_wakes_the_screens` |
 | a press on dark screens, or within 1 s of waking, is swallowed | idle `a_press_on_dark_screens_only_wakes_them`, `a_tap_on_dark_screens_wakes_them_and_does_nothing_else` |
 | Busy → sleep postponed 5 min | `a_busy_machine_sleeps_later` |
@@ -578,7 +578,7 @@ sent again, or what waits on it ends:
 | settings in force | parameters to launch and background; sync Apply | session, system | settings tests |
 | refresh rate | sync `Refresh(hz)`: a launch's rate from its launch, the settings in force's when applied, whichever came last (a refresh calibration's while it runs); sent when it changes | compositor | tests `the_refresh_rate_follows_a_launch_at_once_then_the_settings_in_force` |
 | screens' power | sync `Outputs{top, bottom}`: top is the screens on (idle), bottom the second screen as set (and off while a refresh calibration runs); sent when either changes. The compositor turns the screens off and on (DRM); how it is carried out is checked on the device | compositor | tests `the_screens_power_is_sent_when_it_changes`, idle and screen tests |
-| program in force | settle → pad mouse; sync Apply, Keymap, PadRoute (keymap before route: the pad thread takes the game's keymap before it has the pad) | pad, system | `a_game_coming_in_front_gets_its_settings_then_its_keymap_then_the_pad` |
+| program in force | settle → pad mouse; sync Apply, Keymap, PadRoute (keymap before route: the pad thread takes the game's keymap before it has the pad) | pad, system | `a_game_coming_in_front_gets_its_settings_then_its_keymap_then_the_pad`, `a_keymap_and_route_changed_in_one_event_are_sent_keymap_first` |
 | front, tab, listening, dock move | `reconcile_pad` | pad | pad tests |
 | windows down, program, battery, refresh, editor | `power()` for the bottom screen | bottom | screen tests |
 | idle stage | sync: dim and Outputs; status watch | levels, system | idle test |

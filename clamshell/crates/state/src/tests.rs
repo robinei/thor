@@ -173,6 +173,42 @@ fn a_game_coming_in_front_gets_its_settings_then_its_keymap_then_the_pad() {
     assert_eq!(sent, ["apply", "keymap", "route"], "{fx:?}");
 }
 
+/// When one event changes both the keymap in force and the pad's route, the keymap is sent first: the pad
+/// thread then holds the game's keymap as it gets the pad, and presses what that keymap makes of the
+/// buttons held rather than entering the game with the old keymap (see [`crate::sync::Sent::sync`]).
+#[test]
+fn a_keymap_and_route_changed_in_one_event_are_sent_keymap_first() {
+    let mut s = started(Init { keymaps: crate::keymap::Keymaps::initial(), ..init() });
+    s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Keymap, Some(1));
+    s.applied(Event::tick(1000));
+    let zelda = launch(&mut s, "zelda-lttp");
+    s.observed(vec![win_of(7, "zelda3", &zelda)]);
+    s.applied(WindowEvent::Activate(7).into());
+    let ff6 = launch(&mut s, "ff6");
+    s.observed(vec![win_of(7, "zelda3", &zelda), win_of(8, "ff6", &ff6)]);
+    s.applied(WindowEvent::Activate(8).into());
+    s.applied(Event::Home);
+    assert_eq!((s.pad().route(), s.in_force().get(Setting::Keymap)), (PadRoute::Ui, 0), "shelf in front, ff6's keymap in force");
+    let fx = s.applied(WindowEvent::Activate(7).into());
+    let keymap = fx.iter().position(|e| matches!(e, Effect::Keymap(k) if k.id == 1));
+    let route = fx.iter().position(|e| *e == Effect::PadRoute(PadRoute::Game));
+    assert!(keymap.is_some() && route.is_some() && keymap < route, "{fx:?}");
+}
+
+/// Going to sleep in one event, the screens are turned off before the device is asked to sleep, so they
+/// aren't left lit while it suspends, nor turned off after it wakes (see [`crate::sync::Sent::idle`]).
+#[test]
+fn the_screens_go_off_before_the_device_sleeps() {
+    let mut s = State::new(Init { device_session: true, ..init() });
+    s.ui_up();
+    s.applied(Event::tick(1000));
+    s.applied(Event::Idle(crate::device::idle::IdleEvent::Watching(true)));
+    let fx = s.applied(Event::tick(1900));
+    let off = fx.iter().position(|e| matches!(e, Effect::Compositor(Compositor::Outputs { top: false, .. })));
+    let sleep = fx.iter().position(|e| *e == Effect::Sleep);
+    assert!(off.is_some() && sleep.is_some() && off < sleep, "{fx:?}");
+}
+
 /// The events a rule queues are handled in the order queued, each with what it queues in turn before the
 /// next: Launch queues Play, whose launch comes before the screenshot queued after Launch.
 #[test]

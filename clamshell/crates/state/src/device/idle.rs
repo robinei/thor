@@ -317,6 +317,23 @@ mod tests {
         assert!(s.applied(Event::tick(1900)).contains(&Effect::Sleep));
     }
 
+    /// A refresh rate calibration measures on the main screen, so while it runs idle stays awake, and
+    /// once it is done idle counts from then.
+    #[test]
+    fn a_running_refresh_calibration_keeps_idle_awake() {
+        use crate::{DeviceId, Event, Id, PointerEvent};
+        let mut s = State::new(crate::Init { device_session: true, ..crate::testkit::init() });
+        s.applied(Event::tick(1000));
+        s.applied(Event::Idle(IdleEvent::Watching(true)));
+        s.applied(PointerEvent::Activate(Id::Device(DeviceId::Refresh)).into());
+        assert!(s.device().calibrating());
+        let fx = s.applied(Event::tick(1900));
+        assert_eq!(s.idle().stage(), Stage::Awake, "{fx:?}");
+        s.applied(Event::RefreshCalibrated(Ok("done".into())));
+        s.applied(Event::tick(1900 + 299));
+        assert_eq!(s.idle().stage(), Stage::Dimmed, "counted from the calibration's end");
+    }
+
     #[test]
     fn an_app_shown_that_keeps_the_screen_on_its_own_way_is_asked_before_dimming() {
         use crate::Event;

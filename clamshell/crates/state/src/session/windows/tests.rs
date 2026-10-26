@@ -472,3 +472,60 @@ fn moving_the_top_window_does_not_require_keyboard_focus_there() {
     assert_eq!(s.session().place(8), Some(WindowPlace::Top(Some(&group_of(&launch_of("bottom"))))));
     assert!(s.session().shelf_in_front());
 }
+
+/// A dialog that closes brings back its parent, not the window its group shows last: the parent is
+/// what the user was in when the dialog opened.
+#[test]
+fn a_dialogs_close_brings_back_its_parent() {
+    let mut s = state();
+    let one = launch_of("one");
+    s.observed(vec![win_of(7, "one", &one), win_of(8, "one", &one)]);
+    s.applied(WindowEvent::Activate(7).into());
+    s.applied(WindowEvent::Opened(WindowFacts { parent: Some(7), ..win_of(9, "one", &one) }).into());
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(9));
+    s.applied(WindowEvent::Closed(9).into());
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "the parent, not 8");
+    assert_eq!(s.session().keyboard_focus(), Some(7));
+}
+
+/// A window sent down by its rule while it has the keyboard gives the keyboard to the window in front on
+/// the top screen, which keeps it (see [`WindowCommand::Down`]). Here the compositor reports the keyboard
+/// on a window that opened behind, in the batch that opened it, before its rule sends it down.
+#[test]
+fn a_window_sent_down_gives_the_keyboard_to_the_top_window() {
+    use crate::session::below::{WindowRule, WindowRules};
+    let rules = WindowRules::from_list(vec![WindowRule { owner: "zelda-lttp".into(), app_id: "zelda3".into(), title: None }]);
+    let mut s = started(crate::Init { window_rules: rules, ..init() });
+    s.applied(WindowEvent::Opened(foot()).into());
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(1001));
+    let zelda = Instance { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 };
+    s.applied(Event::WindowBatch(vec![WindowEvent::Opened(win_of(9, "zelda3", &zelda)), WindowEvent::KeyboardFocus(Some(9))]));
+    assert_eq!(s.session().bottom_window().map(|w| w.id), Some(9));
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(1001));
+    assert_eq!(s.session().keyboard_focus(), Some(1001));
+}
+
+/// Whether a window is X11 is known when it opens; a later `Changed` doesn't carry it, so it is kept.
+#[test]
+fn changed_facts_keep_a_window_x11() {
+    let mut s = state();
+    let window = WindowFacts { x11: true, ..win_of(7, "one", &launch_of("one")) };
+    s.applied(WindowEvent::Opened(window.clone()).into());
+    s.applied(WindowEvent::Changed(WindowFacts { x11: false, pids: vec![100], ..window }).into());
+    let kept = s.session().window(7);
+    assert_eq!(kept.map(|w| (w.x11, w.pids.clone())), Some((true, vec![100])));
+}
+
+/// The window below closing empties the bottom screen's slot: a new window that reuses its id isn't
+/// taken for the window below.
+#[test]
+fn closing_the_window_below_empties_its_slot() {
+    let mut s = state();
+    top_and_bottom(&mut s);
+    s.applied(WindowEvent::Closed(8).into());
+    assert!(!s.session().below(8));
+    assert!(s.session().selections_valid());
+    s.applied(WindowEvent::Opened(win(8, "foot")).into());
+    assert!(matches!(s.session().place(8), Some(WindowPlace::Top(_))), "opened on top, not below");
+    assert_eq!(s.session().bottom_window(), None);
+}

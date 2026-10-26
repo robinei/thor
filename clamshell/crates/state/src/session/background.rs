@@ -547,6 +547,23 @@ mod tests {
         assert!(!s.applied(Event::tick(100)).iter().any(|e| matches!(e, Effect::EndRun { .. })));
     }
 
+    /// Force kill thaws a paused entry before it ends it, as anything asked of a paused entry is (see
+    /// [`Session::thaw`]); the thaw is what the state holds as sent, so a slice started again isn't
+    /// left marked frozen.
+    #[test]
+    fn force_kill_thaws_a_paused_entry_then_ends_it() {
+        let mut s = state();
+        let zelda = launch(&mut s, "zelda-lttp");
+        let key = zelda.key.clone();
+        s.applied(Event::tick(100));
+        s.observed(vec![win_of(3, "zelda3", &zelda)]);
+        s.applied(Event::Home);
+        s.applied(Event::tick(100 + GRACE));
+        assert!(s.session().paused("zelda-lttp"));
+        assert_eq!(force_kill(&mut s, "zelda-lttp"), vec![freeze(&key, false), Effect::EndRun { key: key.clone(), force: true }]);
+        assert!(!s.session().paused("zelda-lttp"));
+    }
+
     #[test]
     fn a_restarted_freezer_is_sent_each_slice_as_it_is() {
         let mut s = state();
