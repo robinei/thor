@@ -276,7 +276,11 @@ impl Server {
 
     /// The screen `point` is on, and where on it.
     pub(crate) fn screen_position(&self, point: Point<f64, Logical>) -> (Screen, (f64, f64)) {
-        if point.x < self.top_width as f64 { (Screen::Top, (point.x, point.y)) } else { (Screen::Bottom, (point.x - self.top_width as f64, point.y)) }
+        if point.x < self.screens.top_width as f64 {
+            (Screen::Top, (point.x, point.y))
+        } else {
+            (Screen::Bottom, (point.x - self.screens.top_width as f64, point.y))
+        }
     }
 }
 

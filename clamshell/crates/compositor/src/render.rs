@@ -118,7 +118,7 @@ pub(crate) fn elements(server: &mut Server, frames: &mut [UiFrame; 4], renderer:
     overlay_below.update(&mut server.core, Layer::Overlay(Screen::Bottom), renderer)?;
     server.core.frames_done();
     out.clear();
-    for (frame, screen, x) in [(&*overlay_below, Screen::Bottom, server.top_width), (&*overlay, Screen::Top, 0)] {
+    for (frame, screen, x) in [(&*overlay_below, Screen::Bottom, server.screens.top_width), (&*overlay, Screen::Top, 0)] {
         if let Some(area) = server.core.overlay_area(screen)
             && let Some(element) = frame.element(renderer, x, Some(area))
         {
@@ -128,7 +128,7 @@ pub(crate) fn elements(server: &mut Server, frames: &mut [UiFrame; 4], renderer:
     let state = server.core.state();
     let show_bottom = state.bottom().shows_windows(state.session());
     let above_windows = show_bottom.then(|| clamshell_ui::Bounds::new(0, 0, i32::MAX, server.area(true).loc.y.max(1)));
-    if let Some(element) = bottom.element(renderer, server.top_width, above_windows) {
+    if let Some(element) = bottom.element(renderer, server.screens.top_width, above_windows) {
         out.push(element);
     }
     if !covered && let Some(element) = top.element(renderer, 0, None) {

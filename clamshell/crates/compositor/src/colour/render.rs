@@ -195,9 +195,9 @@ impl Pipeline {
         renderer: &mut GlesRenderer,
         elements: &mut Vec<Element>,
     ) -> Result<(RenderElementStates, Option<Rectangle<i32, Physical>>), Error> {
-        if self.size != server.size {
+        if self.size != server.screens.size {
             let outputs = self.outputs.clone().map(|(description, _)| description);
-            *self = Self::new(renderer, server.size)?;
+            *self = Self::new(renderer, server.screens.size)?;
             self.set_outputs(renderer, outputs)?;
         }
         if self.revision != server.colour.revision {

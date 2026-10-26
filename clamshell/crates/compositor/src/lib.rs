@@ -24,6 +24,7 @@ mod pointer;
 mod popup;
 mod protocols;
 mod render;
+mod screens;
 mod server;
 mod surface;
 mod touch;

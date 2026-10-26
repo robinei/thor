@@ -496,7 +496,7 @@ fn touch_contacts_keep_independent_surfaces_and_native_coordinates() {
         server.touch_down(Some(2).into(), (0.0, 0.0).into(), time);
         server.touch_motion(Some(2).into(), top.origin + smithay::utils::Point::from((20.0, 20.0)), time);
         server.touch_up(Some(2).into(), time);
-        server.touch_down(Some(3).into(), (server.top_width as f64 + 10.0, 10.0).into(), time);
+        server.touch_down(Some(3).into(), (server.screens.top_width as f64 + 10.0, 10.0).into(), time);
         server.touch_cancel();
         server.touch_up(Some(1).into(), time);
         server.touch_motion(Some(1).into(), bottom.origin, time);
@@ -534,7 +534,7 @@ fn touching_a_home_arrow_switches_once_and_consumes_home_release() {
     // The arrows are drawn, as they are before they can be seen and touched.
     assert!(server.core.record(clamshell_ui::Layer::Overlay(clamshell_ui::Screen::Top), false).is_some());
     let time = InputTime::from_millis(10);
-    let point = (server.top_width as f64 - 20.0, server.size.1 as f64 / 2.0).into();
+    let point = (server.screens.top_width as f64 - 20.0, server.screens.size.1 as f64 / 2.0).into();
     server.touch_down(Some(0).into(), point, time);
     assert_eq!(server.core.state().session().top_window().map(|w| w.id), Some(2));
     server.touch_motion(Some(0).into(), point, time);
@@ -573,13 +573,13 @@ fn touching_a_notification_taps_it_and_its_close_mark_dismisses_it() {
     assert!(server.core.record(bottom, false).is_some());
     let time = InputTime::from_millis(10);
     // The newest, 2, is the first row below the bar; its close mark is at the row's right end.
-    let close = (f64::from(server.top_width) + 600.0, 100.0).into();
+    let close = (f64::from(server.screens.top_width) + 600.0, 100.0).into();
     server.touch_down(Some(0).into(), close, time);
     server.touch_up(Some(0).into(), time);
     let held = |server: &Server| server.core.state().notifications().iter().map(|n| n.id).collect::<Vec<_>>();
     assert_eq!(held(&server), [NotificationId::Bus(1)], "the close mark dismissed 2");
     assert!(server.core.record(bottom, false).is_some());
-    let row = (f64::from(server.top_width) + 100.0, 100.0).into();
+    let row = (f64::from(server.screens.top_width) + 100.0, 100.0).into();
     server.touch_down(Some(0).into(), row, time);
     server.touch_up(Some(0).into(), time);
     assert!(held(&server).is_empty(), "a tap on the row dismissed 1");
@@ -731,14 +731,14 @@ mod x11_popup_tests;
 #[test]
 fn requested_preview_geometry_sets_the_initial_canvas_and_resize_ratio() {
     let (_display, mut server) = ServerBuilder::new().sizes((800, 600), (400, 600)).build();
-    assert_eq!(server.size, (1200, 600));
-    assert_eq!(server.top_width, 800);
+    assert_eq!(server.screens.size, (1200, 600));
+    assert_eq!(server.screens.top_width, 800);
     server.resize((900, 400));
-    assert_eq!(server.top_width, 600);
+    assert_eq!(server.screens.top_width, 600);
     assert_eq!(server.core.size(clamshell_ui::Screen::Bottom).0, (300, 400));
     server.resize((1, 1));
-    assert_eq!(server.size, (4, 4));
-    assert_eq!(server.top_width, 2);
+    assert_eq!(server.screens.size, (4, 4));
+    assert_eq!(server.screens.top_width, 2);
 }
 
 /// Parallel process-spawn tests can retain CLOEXEC descriptors until their child reaches exec.

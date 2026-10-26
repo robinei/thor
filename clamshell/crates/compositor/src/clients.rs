@@ -159,10 +159,10 @@ impl Server {
     pub(crate) fn tell_game_mode(&mut self, output: &smithay::reexports::wayland_server::protocol::wl_output::WlOutput) {
         use smithay::reexports::wayland_server::{Resource, protocol::wl_output::Mode as WMode};
         let Some((resolution, _)) = output.client().and_then(|client| client.get_data::<ClientState>()?.game) else { return };
-        let screen = (self.top_width.max(0) as u32, self.size.1.max(0) as u32);
+        let screen = (self.screens.top_width.max(0) as u32, self.screens.size.1.max(0) as u32);
         let (w, h) = resolution.size_on(screen);
         if (w, h) != screen && w > 0 && h > 0 {
-            output.mode(WMode::Current, w as i32, h as i32, self.refresh);
+            output.mode(WMode::Current, w as i32, h as i32, self.screens.refresh);
             if output.version() >= 2 {
                 output.done();
             }

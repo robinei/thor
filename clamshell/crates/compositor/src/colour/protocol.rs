@@ -117,7 +117,7 @@ impl Dispatch2<WpColorManagerV1, Server> for Manager {
                 state.colour.feedback.push(resource);
             }
             manager::Request::GetOutput { id, output } => {
-                if let Some(index) = state.outputs.iter().position(|candidate| candidate.owns(&output)) {
+                if let Some(index) = state.screens.outputs.iter().position(|candidate| candidate.owns(&output)) {
                     let resource = init.init(id, Output(index));
                     state.colour.outputs.retain(Resource::is_alive);
                     state.colour.outputs.push(resource);

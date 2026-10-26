@@ -180,8 +180,8 @@ impl ShmHandler for Server {
 }
 impl OutputHandler for Server {
     fn output_bound(&mut self, output: smithay::output::Output, wl_output: smithay::reexports::wayland_server::protocol::wl_output::WlOutput) {
-        if output == self.outputs[0] {
-            self.top_bound.push(wl_output.downgrade());
+        if output == self.screens.outputs[0] {
+            self.screens.top_bound.push(wl_output.downgrade());
             self.tell_game_mode(&wl_output);
         }
     }

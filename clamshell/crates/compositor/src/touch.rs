@@ -79,7 +79,7 @@ impl Server {
                 }
             }
             Target::Ui(screen) => {
-                let x = if screen == Screen::Bottom { position.x - self.top_width as f64 } else { position.x };
+                let x = if screen == Screen::Bottom { position.x - self.screens.top_width as f64 } else { position.x };
                 self.core.moved(Source::Touch(slot.into()), (x, position.y), time.millis());
             }
             Target::Ignored => {}

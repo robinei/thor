@@ -207,8 +207,8 @@ impl Server {
                 }
             }
             let Some(root) = client.window.root() else { continue };
-            let output = if self.core.state().session().below(client.id) { &self.outputs[1] } else { &self.outputs[0] };
-            for candidate in &self.outputs {
+            let output = if self.core.state().session().below(client.id) { &self.screens.outputs[1] } else { &self.screens.outputs[0] };
+            for candidate in &self.screens.outputs {
                 if candidate == output {
                     candidate.enter(&root);
                 } else {

@@ -166,8 +166,8 @@ pub fn run(
     server.core.set_bottom_density(density);
     // No host window takes the focus away: pointer capture is always possible.
     server.pointer.host_focused = true;
-    server.refresh = i32::try_from(top.mode.vrefresh()).unwrap_or(60).saturating_mul(1000);
-    server.resize(server.size);
+    server.screens.refresh = i32::try_from(top.mode.vrefresh()).unwrap_or(60).saturating_mul(1000);
+    server.resize(server.screens.size);
     server.advertise_dmabuf(&renderer);
     // Explicit sync, where the GPU can wait on a timeline point by an eventfd; without it, clients' buffers
     // are waited on by their implicit fences (see `CompositorHandler::new_surface`).
@@ -177,7 +177,7 @@ pub fn run(
     } else {
         log::info!("drm: no syncobj eventfd on {}: no explicit sync, buffers' implicit fences only", gpu.display());
     }
-    let mut pipeline = Pipeline::new(&mut renderer, server.size)?;
+    let mut pipeline = Pipeline::new(&mut renderer, server.screens.size)?;
     crate::colour::protocol::install(&server.dh);
     // Each screen encoded for its panel, and described to clients as it, from the device profile.
     let panels = [ColourDescription::from(profile.top.colour), ColourDescription::from(profile.bottom.colour)];
@@ -197,7 +197,7 @@ pub fn run(
         let (w, h) = chosen.mode.size();
         let size = Size::from((i32::from(w), i32::from(h)));
         let width = if role == ScreenRole::Top { top_size.w } else { bottom_size.w };
-        let part = Rectangle::new((x, 0).into(), (width, server.size.1).into());
+        let part = Rectangle::new((x, 0).into(), (width, server.screens.size.1).into());
         let interval = Duration::from_micros(1_000_000 / u64::from(chosen.mode.vrefresh().max(1)));
         screens.push(Screen {
             role,
@@ -656,7 +656,7 @@ fn mode_for<'a, T>(modes: &'a [T], start: &'a T, rate: impl Fn(&T) -> u32, hz: u
 fn outputs(drawing: &mut Drawing, server: &mut Server) {
     for screen in &mut drawing.screens {
         let index = usize::from(screen.role == ScreenRole::Bottom);
-        let wanted = server.screens_on.get(index).copied().unwrap_or(true);
+        let wanted = server.screens.on.get(index).copied().unwrap_or(true);
         if let Some(power) = switched(Power { on: screen.on, dirty: screen.dirty, pending: screen.pending }, wanted) {
             log::info!("drm: {:?} screen {}", screen.role, if wanted { "on" } else { "off" });
             Power { on: screen.on, dirty: screen.dirty, pending: screen.pending } = power;
@@ -667,8 +667,8 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
                 log::warn!("drm: turning the {:?} screen off: {error}", screen.role);
             }
         }
-        if screen.role == ScreenRole::Top && server.refresh_wanted != screen.refresh {
-            screen.refresh = server.refresh_wanted;
+        if screen.role == ScreenRole::Top && server.screens.refresh_wanted != screen.refresh {
+            screen.refresh = server.screens.refresh_wanted;
             let hz = u32::from(screen.refresh);
             let mode = *mode_for(&screen.modes, &screen.start_mode, |m| m.vrefresh(), hz);
             if hz != 0 && mode.vrefresh() != hz {
@@ -680,8 +680,8 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
                     Ok(()) => {
                         screen.interval = Duration::from_micros(1_000_000 / u64::from(mode.vrefresh().max(1)));
                         screen.dirty = true;
-                        server.refresh = i32::try_from(mode.vrefresh()).unwrap_or(60).saturating_mul(1000);
-                        server.resize(server.size);
+                        server.screens.refresh = i32::try_from(mode.vrefresh()).unwrap_or(60).saturating_mul(1000);
+                        server.resize(server.screens.size);
                     }
                     Err(error) => log::warn!("drm: top screen at {} Hz: {error}", mode.vrefresh()),
                 }

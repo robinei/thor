@@ -40,11 +40,11 @@ pub fn run(
 
     let attributes =
         // In the host's pixels, so the screens are as many pixels as the device's, whatever the host's scale.
-        WindowAttributes::default().with_title("ClamShell nested").with_surface_size(PhysicalSize::new(server.size.0 as u32, server.size.1 as u32));
+        WindowAttributes::default().with_title("ClamShell nested").with_surface_size(PhysicalSize::new(server.screens.size.0 as u32, server.screens.size.1 as u32));
     let (mut backend, events) = winit::init_from_attributes::<GlesRenderer>(attributes)?;
     server.advertise_dmabuf(backend.renderer());
     // The device's drawing path, the only one: nested shows what the device would.
-    let mut pipeline = crate::colour::render::Pipeline::new(backend.renderer(), server.size)
+    let mut pipeline = crate::colour::render::Pipeline::new(backend.renderer(), server.screens.size)
         .map_err(|error| format!("nested compositor: the colour pipeline can't start, and nested draws only through it: {error}"))?;
     crate::colour::protocol::install(&server.dh);
     let mut host_colour = crate::colour::host::Host::new(backend.window());
@@ -77,7 +77,7 @@ pub fn run(
                     }
                     WinitEvent::Input(event) => {
                         // The window is the whole scene, its touch and pointer positions within it.
-                        let whole = Rectangle::from_size((f64::from(server.size.0), f64::from(server.size.1)).into());
+                        let whole = Rectangle::from_size((f64::from(server.screens.size.0), f64::from(server.screens.size.1)).into());
                         server.input(event, crate::input::Host { absolute_cursor: true, touch_frames: false }, |_| (whole, Transform::Normal));
                     }
                     // Through the state's quit, which saves where shelf and the second screen are.
@@ -87,10 +87,10 @@ pub fn run(
                         // at each frame until it does, and again after a resize.
                         if !refresh_known && let Some(refresh) = host_refresh(backend.window()) {
                             refresh_known = true;
-                            if refresh != server.refresh {
+                            if refresh != server.screens.refresh {
                                 log::info!("nested compositor: host refresh {} Hz", f64::from(refresh) / 1000.0);
-                                server.refresh = refresh;
-                                server.resize(server.size);
+                                server.screens.refresh = refresh;
+                                server.resize(server.screens.size);
                             }
                         }
                         server.frame();
@@ -113,7 +113,7 @@ pub fn run(
                         server.import_dmabufs(backend.renderer());
                         let capturing = std::mem::take(&mut server.screenshot_requested);
                         // Commits timed for no later than this frame, shown at the host's next, go ahead.
-                        let interval = Duration::from_secs_f64(1000.0 / f64::from(server.refresh.max(1000)));
+                        let interval = Duration::from_secs_f64(1000.0 / f64::from(server.screens.refresh.max(1000)));
                         server.release_timed_commits((Duration::from(server.clock.now()) + interval).into());
                         render::elements(server, &mut frames, backend.renderer(), &mut elements)?;
                         cursor.elements(server, backend.renderer(), &mut elements)?;
@@ -132,7 +132,7 @@ pub fn run(
                                 // bind() is lazy. Begin an empty frame to actually restore the
                                 // window EGL target after the surfaceless readback mapping.
                                 // No drawing is submitted by this frame; swap supplies presentation synchronization.
-                                drop(renderer.render(&mut framebuffer, server.size.into(), Transform::Flipped180)?.finish()?);
+                                drop(renderer.render(&mut framebuffer, server.screens.size.into(), Transform::Flipped180)?.finish()?);
                                 on_capture(captured);
                             }
                         }
@@ -141,7 +141,7 @@ pub fn run(
                         server.frame_shown(&states, None);
                         server.present_submission(&states, server.clock.now());
                         // The window redraws at each of the host's frames, so a held callback goes at a later one.
-                        let refresh = Duration::from_secs_f64(1000.0 / f64::from(server.refresh.max(1000)));
+                        let refresh = Duration::from_secs_f64(1000.0 / f64::from(server.screens.refresh.max(1000)));
                         server.frame_callbacks(None, refresh, std::time::Instant::now());
                         backend.window().request_redraw();
                     }

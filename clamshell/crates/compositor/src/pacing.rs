@@ -131,7 +131,7 @@ impl Server {
             if screen.is_some_and(|screen| screen != down) {
                 continue;
             }
-            let [top, bottom] = &self.outputs;
+            let [top, bottom] = &self.screens.outputs;
             let output = if down { bottom } else { top };
             if client.window.root().is_some_and(|root| rendered.element_was_presented(&root)) {
                 client.frames.shown(time.into());
@@ -156,7 +156,7 @@ impl Server {
     pub fn frame_callbacks(&mut self, down: Option<bool>, refresh: std::time::Duration, now: Instant) -> Option<Instant> {
         let shown: Vec<_> = self.windows.iter().map(|client| client.mapped && self.visible(client.id)).collect();
         let state = self.core.state();
-        let [top, bottom] = &self.outputs;
+        let [top, bottom] = &self.screens.outputs;
         let time = self.started.elapsed();
         let mut held: Option<Instant> = None;
         let mut barriers: Vec<smithay::reexports::wayland_server::Client> = Vec::new();

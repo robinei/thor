@@ -102,8 +102,8 @@ impl Cursor {
                     .into_iter()
                     .map(Element::from),
                 );
-                let [top, bottom] = &server.outputs;
-                let output = if server.pointer.location.x < server.top_width as f64 { top } else { bottom };
+                let [top, bottom] = &server.screens.outputs;
+                let output = if server.pointer.location.x < server.screens.top_width as f64 { top } else { bottom };
                 smithay::desktop::utils::send_frames_surface_tree(&surface, output, server.started.elapsed(), Some(Duration::ZERO), |_, _| {
                     Some(output.clone())
                 });

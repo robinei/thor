@@ -145,7 +145,7 @@ fn the_bottom_keyboard_commits_text_and_sends_shortcuts_without_stealing_focus()
         1 => {
             assert_eq!(server.core.state().bottom().tab(), Tab::Keyboard);
             let focus = server.core.state().session().keyboard_focus();
-            server.touch_down(Some(0).into(), (server.top_width as f64 + 10.0, 10.0).into(), InputTime::now());
+            server.touch_down(Some(0).into(), (server.screens.top_width as f64 + 10.0, 10.0).into(), InputTime::now());
             server.touch_cancel();
             assert_eq!(server.core.state().session().keyboard_focus(), focus);
             assert!(server.seat.get_keyboard().unwrap().is_focused());
