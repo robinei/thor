@@ -154,7 +154,7 @@ impl Ring {
 }
 
 pub(crate) fn save(recording: Recording, path: PathBuf) {
-    let spawned = std::thread::Builder::new().name("window trace".into()).spawn(move || match write_recording(&recording, &path) {
+    let spawned = clamshell_ui::threads::start("window trace", move || match write_recording(&recording, &path) {
         Ok(()) => log::info!("window events: {}", path.display()),
         Err(error) => log::warn!("window events: {}: {error}", path.display()),
     });

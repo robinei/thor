@@ -45,12 +45,17 @@ pub(super) fn find_font(ch: char, loaded: &mut dyn FnMut(&str) -> bool) -> Found
 }
 
 /// Starts the font finding thread. It takes characters from `requests` and passes the fonts found for
-/// them to `done`.
+/// them to `done`. A panic finding one (the panic hook has logged it) answers that character with no font.
 pub fn spawn_font_finder(requests: Receiver<char>, done: impl Fn(Found) -> bool + Send + 'static) -> std::io::Result<()> {
-    std::thread::Builder::new().name("fonts".into()).spawn(move || {
-        let mut read: Vec<String> = Vec::new();
-        for ch in requests {
-            let found = find_font(ch, &mut |path| read.iter().any(|p| p == path));
+    // The fonts read, kept through a restart of the thread so that none is read twice.
+    let mut read: Vec<String> = Vec::new();
+    crate::threads::lasting("fonts", move || {
+        for ch in requests.iter() {
+            let found =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| find_font(ch, &mut |path| read.iter().any(|p| p == path)))).unwrap_or_else(|_| {
+                    log::error!("fonts: finding a font for {ch:?} panicked; drawn without one");
+                    Found { ch, path: None, font: None }
+                });
             if found.font.is_some() {
                 read.extend(found.path.clone());
             }
@@ -58,8 +63,7 @@ pub fn spawn_font_finder(requests: Receiver<char>, done: impl Fn(Found) -> bool 
                 return;
             }
         }
-    })?;
-    Ok(())
+    })
 }
 
 /// The UI's font, Noto Sans Regular, built in so that text looks the same everywhere. It is unmodified and

@@ -236,8 +236,8 @@ fn load_svg(path: &Path, w: u32, h: u32) -> Option<Pixmap> {
 
 /// Starts the decoding thread. It takes requests from `requests` and passes the decoded images to `done`.
 pub fn spawn_worker(requests: Receiver<Request>, done: impl Fn(Key, Option<Pixmap>) -> bool + Send + 'static) -> std::io::Result<()> {
-    std::thread::Builder::new().name("images".into()).spawn(move || {
-        for Request { key, path } in requests {
+    crate::threads::lasting("images", move || {
+        for Request { key, path } in requests.iter() {
             // A panic decoding one file (the panic hook has logged it) costs that picture, not the thread.
             let pixmap = std::panic::catch_unwind(|| load(&path, key.w, key.h, key.slot == Slot::Thumb)).unwrap_or_else(|_| {
                 log::error!("images: {}: decoding panicked; shown without it", path.display());
@@ -247,8 +247,7 @@ pub fn spawn_worker(requests: Receiver<Request>, done: impl Fn(Key, Option<Pixma
                 return;
             }
         }
-    })?;
-    Ok(())
+    })
 }
 
 #[cfg(test)]

@@ -348,7 +348,7 @@ impl Drop for Supervisor {
         if let Some(mut running) = self.running.take() {
             running.remove_sources(&self.handle);
             let _ = running.child.kill();
-            if let Err(error) = std::thread::Builder::new().name("xwayland-reap".into()).spawn(move || {
+            if let Err(error) = clamshell_ui::threads::start("xwayland-reap", move || {
                 let _ = running.child.wait();
             }) {
                 log::warn!("compositor: starting Xwayland reaper: {error}");

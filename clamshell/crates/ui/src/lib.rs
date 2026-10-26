@@ -15,6 +15,7 @@ mod gfx;
 mod input;
 mod render;
 mod screens;
+pub mod threads;
 mod toolkit;
 mod views;
 
