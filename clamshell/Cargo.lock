@@ -316,6 +316,7 @@ dependencies = [
  "x11rb",
  "x11rb-protocol",
  "xcursor",
+ "xkeysym",
 ]
 
 [[package]]

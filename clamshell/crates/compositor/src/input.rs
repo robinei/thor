@@ -15,6 +15,7 @@ use smithay::{
     reexports::wayland_server::protocol::wl_surface::WlSurface,
     utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Transform},
 };
+use xkeysym::Keysym;
 
 /// How a host delivers input.
 #[derive(Debug, Clone, Copy)]
@@ -73,7 +74,8 @@ impl Server {
                     keyboard.input::<(), _>(self, event.key_code(), event.state(), SERIAL_COUNTER.next_serial(), event.time(), |server, _, key| {
                         let sym = key.modified_sym();
                         let down = event.state() == KeyState::Pressed;
-                        if sym.raw() == 0xffc9 {
+                        // F12 is the Thor's Home button.
+                        if sym == Keysym::F12 {
                             if down != server.keyboard_home {
                                 server.keyboard_home = down;
                                 server.core.handle(StateEvent::HomeHeld(down));
@@ -83,16 +85,16 @@ impl Server {
                             }
                             return FilterResult::Intercept(());
                         }
-                        // XF86Switch_VT_1 to _12: the keymap gives these for Ctrl+Alt+F1..F12.
-                        if (0x1008_fe01..=0x1008_fe0c).contains(&sym.raw()) {
+                        // The keymap gives these for Ctrl+Alt+F1..F12.
+                        if (Keysym::XF86_Switch_VT_1.raw()..=Keysym::XF86_Switch_VT_12.raw()).contains(&sym.raw()) {
                             if down {
-                                server.vt_switch = Some((sym.raw() - 0x1008_fe00) as i32);
+                                server.vt_switch = Some((sym.raw() - Keysym::XF86_Switch_VT_1.raw() + 1) as i32);
                             }
                             return FilterResult::Intercept(());
                         }
-                        let action = match sym.raw() {
-                            0xffc8 => Some(StateEvent::Device(DeviceKey::WindowDown)),
-                            0xffc7 => Some(StateEvent::Device(DeviceKey::WindowUp)),
+                        let action = match sym {
+                            Keysym::F11 => Some(StateEvent::Device(DeviceKey::WindowDown)),
+                            Keysym::F10 => Some(StateEvent::Device(DeviceKey::WindowUp)),
                             _ => None,
                         };
                         if let Some(action) = action {
