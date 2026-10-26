@@ -49,7 +49,7 @@ mod tests {
         let init = |ids: &[&str]| Init { autostart: ids.iter().map(|i| Arc::from(*i)).collect(), ..init() };
         // Zelda and Firefox are to start. Firefox's scope is there already, as after a ClamShell restart.
         let mut s = State::new(init(&["zelda-lttp", "desktop:firefox", "gone"]));
-        let firefox = Instance::Run { key: clamshell_library::key_of("desktop:firefox"), secs: 1, n: 0 };
+        let firefox = Instance { key: clamshell_library::key_of("desktop:firefox"), secs: 1, n: 0 };
         let fx = s.applied(Event::Units(vec![firefox]));
         assert_eq!(launches(&fx), 1, "Zelda only: Firefox runs, `gone` isn't in the library: {fx:?}");
         assert!(s.session().front_launch().is_none(), "not shown");

@@ -23,23 +23,19 @@ const SCOPE: &str = ".scope";
 /// Steam's app id for a game's windows: `steam_app_<id>`.
 pub const STEAM_APP_PREFIX: &str = "steam_app_";
 
-/// A launch of an entry, which names its unit, or shelf.
+/// A launch of an entry, which names its unit: the entry's key, the start time and a counter.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Instance {
-    /// Shelf, which has no unit.
-    Shelf,
-    /// A launch of an entry: its key, the start time, a counter.
-    Run { key: String, secs: u64, n: u64 },
+pub struct Instance {
+    pub key: String,
+    pub secs: u64,
+    pub n: u64,
 }
 
 impl Instance {
-    /// The instance whose name (a unit's without its suffix) is `name`, if it is ours.
+    /// The launch whose name (its unit's without the suffix) is `name`, if it is ours.
     pub fn parse(name: &str) -> Option<Instance> {
-        if name.strip_prefix(PREFIX)? == "shelf" {
-            return Some(Instance::Shelf);
-        }
         let (key, secs, n) = Instance::parse_run(name)?;
-        Some(Instance::Run { key: key.to_owned(), secs, n })
+        Some(Instance { key: key.to_owned(), secs, n })
     }
 
     /// A launch's key, start time and counter, from its name.
@@ -58,7 +54,7 @@ impl Instance {
 
     /// The launch whose unit `unit` (its service, or the scope of a program taken in) is, if it is ours.
     pub fn from_unit(unit: &str) -> Option<Instance> {
-        Instance::parse(Instance::unit_name(unit)?).filter(|i| matches!(i, Instance::Run { .. }))
+        Instance::parse(Instance::unit_name(unit)?)
     }
 
     /// Whether `unit` is a launch's ([`Instance::from_unit`]), found without allocating.
@@ -99,40 +95,29 @@ impl Instance {
         name.starts_with(PREFIX)
     }
 
-    /// Its name: for a launch, its unit's without the suffix.
+    /// Its name: its unit's without the suffix.
     pub fn name(&self) -> String {
         self.to_string()
     }
 
-    /// The service a launch runs in.
-    pub fn unit(&self) -> Option<String> {
-        matches!(self, Instance::Run { .. }).then(|| format!("{self}{SERVICE}"))
+    /// The service it runs in.
+    pub fn unit(&self) -> String {
+        format!("{self}{SERVICE}")
     }
 
-    /// The scope a program found running is taken into, for a launch.
-    pub fn scope(&self) -> Option<String> {
-        matches!(self, Instance::Run { .. }).then(|| format!("{self}{SCOPE}"))
+    /// The scope a program found running is taken into.
+    pub fn scope(&self) -> String {
+        format!("{self}{SCOPE}")
     }
 
-    /// Its slice's unit name, for a launch.
-    pub fn slice(&self) -> Option<String> {
-        self.key().map(Instance::slice_of)
+    /// Its entry's slice.
+    pub fn slice(&self) -> String {
+        Instance::slice_of(&self.key)
     }
 
     /// Its place in the order things were started: the start time and the counter.
     pub fn order(&self) -> (u64, u64) {
-        match self {
-            Instance::Run { secs, n, .. } => (*secs, *n),
-            _ => (0, 0),
-        }
-    }
-
-    /// The entry key, for a launch.
-    pub fn key(&self) -> Option<&str> {
-        match self {
-            Instance::Run { key, .. } => Some(key),
-            _ => None,
-        }
+        (self.secs, self.n)
     }
 
     /// Whether `name` is this instance's name, compared without allocating so it can be used while drawing.
@@ -156,10 +141,7 @@ impl Write for Rest<'_> {
 
 impl fmt::Display for Instance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Instance::Shelf => write!(f, "{PREFIX}shelf"),
-            Instance::Run { key, secs, n } => write!(f, "{RUN}{key}-{secs}-{n}"),
-        }
+        write!(f, "{RUN}{}-{}-{}", self.key, self.secs, self.n)
     }
 }
 
@@ -181,26 +163,23 @@ mod tests {
 
     #[test]
     fn names_read_back() {
-        let run = Instance::Run { key: "zelda_3fa2b1".into(), secs: 1234, n: 7 };
-        for i in [Instance::Shelf, run.clone()] {
-            assert_eq!(Instance::parse(&i.name()), Some(i.clone()), "{i}");
-            assert!(i.is(&i.name()) && !i.is("clamshell-") && !i.is(&format!("{i}-1")), "{i}");
-        }
+        let run = Instance { key: "zelda_3fa2b1".into(), secs: 1234, n: 7 };
+        assert_eq!(Instance::parse(&run.name()), Some(run.clone()), "{run}");
+        assert!(run.is(&run.name()) && !run.is("clamshell-") && !run.is(&format!("{run}-1")), "{run}");
         assert_eq!(run.name(), "clamshell-run-zelda_3fa2b1-1234-7");
-        assert_eq!(run.unit().as_deref(), Some("clamshell-run-zelda_3fa2b1-1234-7.service"));
-        assert_eq!(run.scope().as_deref(), Some("clamshell-run-zelda_3fa2b1-1234-7.scope"));
-        assert_eq!(run.slice().as_deref(), Some("app-graphical-clamshell-run-zelda_3fa2b1.slice"));
+        assert_eq!(run.unit(), "clamshell-run-zelda_3fa2b1-1234-7.service");
+        assert_eq!(run.scope(), "clamshell-run-zelda_3fa2b1-1234-7.scope");
+        assert_eq!(run.slice(), "app-graphical-clamshell-run-zelda_3fa2b1.slice");
         assert_eq!(Instance::parse("clamshell-run-zelda_3fa2b1"), None, "a key alone is no instance");
         assert_eq!(Instance::key_of("clamshell-run-zelda_3fa2b1-1234-7"), Some("zelda_3fa2b1"));
         assert_eq!(Instance::key_of("clamshell-run-zelda_3fa2b1-1234-7.scope"), Some("zelda_3fa2b1"));
         assert_eq!(Instance::key_of("clamshell-shelf"), None);
-        assert_eq!(Instance::Shelf.unit(), None, "only a launch has a unit");
-        assert_eq!(Instance::from_unit("clamshell-run-x_1-5-0.service").and_then(|i| i.key().map(str::to_owned)).as_deref(), Some("x_1"));
-        assert_eq!(Instance::from_unit("clamshell-run-x_1-5-0.scope").and_then(|i| i.key().map(str::to_owned)).as_deref(), Some("x_1"), "taken in");
+        assert_eq!(Instance::from_unit("clamshell-run-x_1-5-0.service").map(|i| i.key).as_deref(), Some("x_1"));
+        assert_eq!(Instance::from_unit("clamshell-run-x_1-5-0.scope").map(|i| i.key).as_deref(), Some("x_1"), "taken in");
         assert!(!Instance::is_service("clamshell-run-x_1-5-0.service"), "a launch is no system service");
         assert_eq!(Instance::from_unit("clamshell-shelf.scope"), None);
         assert_eq!(Instance::parse("1"), None);
-        assert!(Instance::Run { key: "x".into(), secs: 5, n: 10 }.order() > Instance::Run { key: "x".into(), secs: 5, n: 9 }.order());
-        assert_eq!("clamshell-shelf".parse(), Ok(Instance::Shelf));
+        assert!(Instance { key: "x".into(), secs: 5, n: 10 }.order() > Instance { key: "x".into(), secs: 5, n: 9 }.order());
+        assert_eq!("clamshell-shelf".parse::<Instance>(), Err(NotOurs));
     }
 }

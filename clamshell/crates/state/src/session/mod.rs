@@ -109,7 +109,7 @@ impl Session {
 
     /// Whether systemd lists a scope of the entry with `key`.
     pub(crate) fn has_units(&self, key: &str) -> bool {
-        self.units.iter().any(|u| u.key() == Some(key))
+        self.units.iter().any(|u| u.key == key)
     }
 
     /// Whether entry `id` is quitting.
@@ -199,9 +199,9 @@ impl Session {
     /// Whether `window` is one of launch `instance`'s: in its unit, of its entry by app id or process, or
     /// a dialog of one in its group.
     fn of_launch(&self, instance: &Instance, window: &WindowFacts) -> bool {
-        let running = self.running.iter().find(|r| Some(r.key.as_str()) == instance.key());
+        let running = self.running.iter().find(|r| r.key == instance.key);
         let in_scope = window.unit.as_deref().and_then(Instance::unit_name).is_some_and(|unit| instance.is(unit));
-        let parent = window.parent.and_then(|id| self.window(id)).is_some_and(|parent| parent.group.as_ref().and_then(Group::key) == instance.key());
+        let parent = window.parent.and_then(|id| self.window(id)).is_some_and(|parent| parent.group.as_ref().and_then(Group::key) == Some(&instance.key));
         in_scope || parent || running.is_some_and(|r| r.owns(window) || r.fathered(window))
     }
 
@@ -280,7 +280,7 @@ impl Session {
         if let Some(running) = id.and_then(|id| self.running.iter_mut().find(|r| r.id == id)) {
             running.told = Some(resolution);
         } else if let Some(key) = unit.and_then(Instance::key_of)
-            && let Some(launching) = self.launching.iter_mut().find(|l| l.instance.key() == Some(key))
+            && let Some(launching) = self.launching.iter_mut().find(|l| l.instance.key == key)
         {
             // Still starting: its program can connect before systemd lists its unit.
             launching.told = Some(resolution);
@@ -292,7 +292,7 @@ impl Session {
     pub fn entry_of_process(&self, unit: Option<&str>, steam_app: Option<u32>) -> Option<Arc<str>> {
         self.running_of_process(unit, steam_app).map(|r| r.id.clone()).or_else(|| {
             let key = unit.and_then(Instance::key_of)?;
-            self.launching.iter().find(|l| l.instance.key() == Some(key)).map(|l| l.entry.clone())
+            self.launching.iter().find(|l| l.instance.key == key).map(|l| l.entry.clone())
         })
     }
 
@@ -384,7 +384,7 @@ impl Session {
         self.front_launch.as_ref()
     }
 
-    /// The counter for a new instance's name (see [`crate::session::instance::Instance::Run`]).
+    /// The counter for a new instance's name (see [`crate::session::instance::Instance`]).
     pub(crate) fn next_instance(&mut self) -> u64 {
         let n = self.next_instance;
         self.next_instance += 1;
@@ -441,11 +441,7 @@ impl Session {
             self.cancel_front_launch();
         }
         let Some(instance) = &self.front_launch else { return };
-        let outside = self
-            .running
-            .iter()
-            .find(|r| Some(r.key.as_str()) == instance.key())
-            .is_some_and(|r| r.outside() || matches!(r.origin, running::Origin::Windows { .. }));
+        let outside = self.running.iter().find(|r| r.key == instance.key).is_some_and(|r| r.outside() || matches!(r.origin, running::Origin::Windows { .. }));
         if !outside && !self.units.contains(instance) && !self.launching.iter().any(|l| l.instance == *instance) {
             self.front_launch = None;
             return;
@@ -454,7 +450,7 @@ impl Session {
             .windows
             .iter()
             .find(|w| {
-                w.group.as_ref().and_then(Group::key) == instance.key()
+                w.group.as_ref().and_then(Group::key) == Some(&instance.key)
                     && (outside || w.unit.as_deref().and_then(Instance::unit_name).is_some_and(|unit| instance.is(unit)))
             })
             .map(|w| (w.id, w.down));

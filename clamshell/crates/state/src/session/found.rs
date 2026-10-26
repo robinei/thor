@@ -33,7 +33,7 @@ impl Session {
     /// `key`. Once systemd lists the scope, it runs as a launch (see [`Session::follow_units`]).
     fn adopt(&mut self, key: &str, pid: u32, clock: &Clock) -> Effect {
         let (secs, n) = (clock.unix(), self.next_instance());
-        Effect::Adopt { instance: Instance::Run { key: key.to_owned(), secs, n }, pid }
+        Effect::Adopt { instance: Instance { key: key.to_owned(), secs, n }, pid }
     }
 
     /// Makes the programs of windows that still belong to no entry run as entries found by them. `taken`
@@ -173,7 +173,7 @@ mod tests {
         let (instance, _) = adopted(&fx).unwrap();
         s.applied(Event::Units(vec![instance.clone()]));
         // Once moved, its window's unit is ours. Once closed, its scope is still listed for a moment.
-        s.observed(vec![WindowFacts { unit: instance.unit(), ..window(5, "foot", 500, "app-foot.scope") }]);
+        s.observed(vec![WindowFacts { unit: Some(instance.unit()), ..window(5, "foot", 500, "app-foot.scope") }]);
         s.observed(vec![]);
         // Another foot, in another process, appears before systemd's list says the scope is gone.
         let other = window(6, "foot", 600, "session-3.scope");
@@ -227,26 +227,26 @@ mod tests {
         let mut s = device();
         s.applied(Event::tick(1000));
         let key = |id: &str| clamshell_library::key_of(id);
-        let (thing, tray) = (Instance::Run { key: key("window:org.x.Thing"), secs: 1, n: 0 }, Instance::Run { key: key("tray:thing"), secs: 1, n: 1 });
+        let (thing, tray) = (Instance { key: key("window:org.x.Thing"), secs: 1, n: 0 }, Instance { key: key("tray:thing"), secs: 1, n: 1 });
         s.applied(Event::Units(vec![thing.clone(), tray.clone()]));
         assert!(s.session().running_entries().is_empty(), "not known yet");
-        s.applied(Event::Frozen(vec![thing.key().unwrap().into()]));
-        let in_scope = WindowFacts { unit: thing.unit(), ..window(5, "org.x.Thing", 500, "") };
+        s.applied(Event::Frozen(vec![thing.key.as_str().into()]));
+        let in_scope = WindowFacts { unit: Some(thing.unit()), ..window(5, "org.x.Thing", 500, "") };
         s.observed(vec![in_scope]);
         let r = s.session().running("window:org.x.Thing").unwrap();
-        assert_eq!((r.origin.clone(), r.key.as_str()), (Origin::Ours, thing.key().unwrap()));
+        assert_eq!((r.origin.clone(), r.key.as_str()), (Origin::Ours, thing.key.as_str()));
         assert!(s.dock().items().iter().any(|i| &*i.id == "window:org.x.Thing"), "on the dock");
         assert!(s.session().suspended("window:org.x.Thing"), "held frozen");
         let fx = show(&mut s, "window:org.x.Thing");
-        assert_eq!(fx.first(), Some(&Effect::Freeze { slice: Instance::slice_of(thing.key().unwrap()), frozen: false }), "{fx:?}");
-        assert_eq!(force_kill(&mut s, "window:org.x.Thing"), vec![Effect::EndRun { key: thing.key().unwrap().to_owned(), force: true }]);
+        assert_eq!(fx.first(), Some(&Effect::Freeze { slice: Instance::slice_of(&thing.key), frozen: false }), "{fx:?}");
+        assert_eq!(force_kill(&mut s, "window:org.x.Thing"), vec![Effect::EndRun { key: thing.key.clone(), force: true }]);
         // A program found by its tray icon is named by it.
         let icon = crate::session::tray::TrayItem {
             key: ":1.7/c".into(),
             id: "thing".into(),
             title: "Thing".into(),
             pid: Some(77),
-            unit: tray.unit(),
+            unit: Some(tray.unit()),
             icon: None,
             menu: vec![],
         };

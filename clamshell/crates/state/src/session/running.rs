@@ -236,7 +236,7 @@ impl Session {
         }
         let units = &self.units;
         for r in self.running.iter_mut().filter(|r| r.found()) {
-            if units.iter().any(|u| u.key() == Some(r.key.as_str())) {
+            if units.iter().any(|u| u.key == r.key.as_str()) {
                 // Its windows are now its scope's, not every window of that app id or process. That would
                 // tie another instance of the program, started later, to it.
                 r.origin = Origin::Ours;
@@ -244,16 +244,14 @@ impl Session {
             }
         }
         for unit in units {
-            let Some(key) = unit.key() else {
-                continue;
-            };
+            let key = unit.key.as_str();
             // A launch of the entry waiting doesn't hold it off: this scope is another launch's, such as
             // one given up that started late, and the entry runs.
             if self.running.iter().any(|r| r.key == key) {
                 continue;
             }
             let first = units.iter().filter_map(|u| match u {
-                Instance::Run { key: k, secs, .. } if k == key => Some(*secs),
+                Instance { key: k, secs, .. } if k == key => Some(*secs),
                 _ => None,
             });
             // Its scopes are named by the wall clock.
@@ -362,7 +360,7 @@ impl Session {
         let Some(r) = new.last() else {
             return false;
         };
-        self.set_front_launch(Instance::Run { key: r.key.clone(), secs: clock.unix(), n: 0 }, None);
+        self.set_front_launch(Instance { key: r.key.clone(), secs: clock.unix(), n: 0 }, None);
         self.running.extend(new);
         true
     }
@@ -459,7 +457,7 @@ impl Session {
                 Origin::Found { .. } => r.tray.as_ref().is_some_and(|k| icons.iter().any(|t| t.key == *k)) || has,
                 Origin::Windows { since, until } => {
                     // An entry with a scope listed has a launch of its own running.
-                    let launched = units.iter().any(|u| u.key() == Some(r.key.as_str()));
+                    let launched = units.iter().any(|u| u.key == r.key.as_str());
                     let runs = launched || if r.seen { has } else { now <= until };
                     if !runs && r.seen {
                         plays.push((r.id.clone(), since));
@@ -583,7 +581,7 @@ impl Session {
     /// Records a launch of `entry`, whose key is `key`, asked for now, and returns its instance. Started in
     /// front, its group is shown once its first window appears.
     fn begin_launch(&mut self, entry: Arc<str>, key: String, app_id: Option<Arc<str>>, clock: &Clock, start: Start) -> Instance {
-        let instance = Instance::Run { key, secs: clock.unix(), n: self.next_instance() };
+        let instance = Instance { key, secs: clock.unix(), n: self.next_instance() };
         self.launching.push(Launching { entry, instance: instance.clone(), app_id, at: clock.mono(), told: None });
         if start == Start::Front {
             self.set_front_launch(instance.clone(), None);
@@ -793,7 +791,7 @@ mod tests {
         let mut s = state();
         s.applied(Event::tick(100));
         let zelda = launch(&mut s, "zelda-lttp");
-        assert_eq!(zelda, Instance::Run { key: key("zelda-lttp"), secs: 100, n: 0 });
+        assert_eq!(zelda, Instance { key: key("zelda-lttp"), secs: 100, n: 0 });
         tap(&mut s, entry("ff6"));
         assert!(launches(&tap(&mut s, Id::Shelf(ShelfId::Launch)), "ff6"), "no choice: it starts");
         crate::testkit::start(&mut s, "ff6");
@@ -938,7 +936,7 @@ mod tests {
         assert!(!fx.iter().any(|e| matches!(e, Effect::Launch { .. })), "{fx:?}");
         assert_eq!(s.session().running_entries().len(), 1, "zelda only");
         // A game started by a Steam of ours is in Steam's scope, but the app id says whose it is.
-        let steam = Instance::Run { key: key("desktop:steam"), secs: 1, n: 0 };
+        let steam = Instance { key: key("desktop:steam"), secs: 1, n: 0 };
         let in_steam = win_of(8, "steam_app_620", &steam);
         let fx = s.observed(vec![win_of(1, "zelda3", &zelda), in_steam]);
         assert!(launches(&fx, "ff6"), "{fx:?}");
@@ -961,7 +959,7 @@ mod tests {
     #[test]
     fn a_steam_games_window_is_the_games_though_it_runs_in_steams_scope() {
         let mut s = steam_ff6();
-        let steam = Instance::Run { key: key("desktop:steam"), secs: 1, n: 0 };
+        let steam = Instance { key: key("desktop:steam"), secs: 1, n: 0 };
         s.applied(Event::Units(vec![steam.clone()]));
         launch(&mut s, "ff6");
         let window = win_of(7, "steam_app_620", &steam);
@@ -976,7 +974,7 @@ mod tests {
     #[test]
     fn steams_windows_open_behind_a_steam_games_launch() {
         let mut s = steam_ff6();
-        let steam = Instance::Run { key: key("desktop:steam"), secs: 1, n: 0 };
+        let steam = Instance { key: key("desktop:steam"), secs: 1, n: 0 };
         s.applied(Event::Units(vec![steam.clone()]));
         let client = win_of(5, "steam", &steam);
         s.observed(vec![client.clone()]);
@@ -1216,7 +1214,7 @@ mod tests {
     fn entries_started_before_clamshell_are_found_by_their_scopes() {
         let mut s = state();
         s.applied(Event::tick(1000));
-        let foot = Instance::Run { key: key("desktop:foot"), secs: 400, n: 0 };
+        let foot = Instance { key: key("desktop:foot"), secs: 400, n: 0 };
         s.applied(Event::Units(vec![foot.clone()]));
         assert!(s.session().running("desktop:foot").is_some(), "adopted");
         s.observed(vec![win_of(4, "foot", &foot)]);

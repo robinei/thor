@@ -45,14 +45,14 @@ pub fn start(s: &mut State, id: &str) -> Vec<Effect> {
     let key = s.entry(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());
     let launch = s.session().launching().iter().find(|l| &*l.entry == id).map(|l| l.instance.clone());
     let mut units = s.session().units().to_vec();
-    units.push(launch.unwrap_or(Instance::Run { key, secs: s.clock().unix(), n: 99 }));
+    units.push(launch.unwrap_or(Instance { key, secs: s.clock().unix(), n: 99 }));
     s.applied(Event::Units(units))
 }
 
 /// Entry `id`'s launches end, as systemd reports it: its scopes are no longer listed.
 pub fn end(s: &mut State, id: &str) -> Vec<Effect> {
     let key = s.entry(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());
-    let units = s.session().units().iter().filter(|u| u.key() != Some(key.as_str())).cloned().collect();
+    let units = s.session().units().iter().filter(|u| u.key != key.as_str()).cloned().collect();
     s.applied(Event::Units(units))
 }
 
@@ -85,24 +85,24 @@ pub fn win(id: i64, app_id: &str) -> WindowFacts {
 
 /// A window of launch `instance`: in its unit, and so in its entry's group.
 pub fn win_of(id: i64, app_id: &str, instance: &Instance) -> WindowFacts {
-    WindowFacts { unit: instance.unit(), ..win(id, app_id) }
+    WindowFacts { unit: Some(instance.unit()), ..win(id, app_id) }
 }
 
 /// A launch of the entry with key `key`, which need not be in the library: its windows ([`win_of`]) are
 /// in a group of that key.
 pub fn launch_of(key: &str) -> Instance {
-    Instance::Run { key: key.into(), secs: 1, n: 0 }
+    Instance { key: key.into(), secs: 1, n: 0 }
 }
 
 /// The group of `instance`'s entry, which holds its windows.
 pub fn group_of(instance: &Instance) -> Group {
-    Group::entry(instance.key().unwrap_or_default())
+    Group::entry(&instance.key)
 }
 
 /// A running entry's first window opens and its client asks to show it.
 pub fn show_window(s: &mut State, entry: &str, id: i64) -> Vec<Effect> {
     let key = clamshell_library::key_of(entry);
-    let unit = s.session().units().iter().find(|u| u.key() == Some(&key)).and_then(Instance::unit);
+    let unit = s.session().units().iter().find(|u| u.key == key).map(Instance::unit);
     let mut fx = s.observed(vec![WindowFacts { unit, ..win(id, entry) }]);
     fx.extend(s.applied(WindowEvent::Activate(id).into()));
     fx

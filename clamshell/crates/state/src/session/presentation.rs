@@ -430,7 +430,7 @@ mod tests {
         let mut s = state();
         let launch = launch(&mut s, "zelda-lttp");
         tap(&mut s, Id::Tab(Tab::Settings));
-        let unit = launch.unit();
+        let unit = Some(launch.unit());
         s.applied(crate::Event::Reading(crate::Reading::Told { unit: unit.clone(), steam_app: None, resolution: Resolution::Native }));
         assert!(!s.resolution_waits(), "as it was told");
         tap(&mut s, Id::Settings(SettingsId::Tile(Setting::Resolution)));
@@ -449,7 +449,7 @@ mod tests {
         let mut s = state();
         let mut fx = tap(&mut s, entry("zelda-lttp"));
         fx.extend(tap(&mut s, entry("zelda-lttp")));
-        let unit = fx.iter().find_map(|e| if let Effect::Launch { instance, .. } = e { instance.unit() } else { None });
+        let unit = fx.iter().find_map(|e| if let Effect::Launch { instance, .. } = e { Some(instance.unit()) } else { None });
         assert!(s.process_game(unit.as_deref(), None).is_some(), "a game, though its unit isn't listed yet");
         s.applied(crate::Event::Reading(crate::Reading::Told { unit, steam_app: None, resolution: Resolution::Half }));
         start(&mut s, "zelda-lttp");

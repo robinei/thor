@@ -45,7 +45,7 @@ fn a_launchs_start_and_end_come_to_the_same_in_any_order() {
         })
     };
     // If there is no launch, the shapes below show it.
-    let probe = start_end(&mut state()).unwrap_or(Instance::Run { key: String::new(), secs: 0, n: 0 });
+    let probe = start_end(&mut state()).unwrap_or(Instance { key: String::new(), secs: 0, n: 0 });
     let window = win_of(5, "zelda3", &probe);
     let starts = [Event::Units(vec![probe.clone()]), WindowEvent::Opened(window).into()];
     let ends = [Event::Units(vec![]), WindowEvent::Closed(5).into()];

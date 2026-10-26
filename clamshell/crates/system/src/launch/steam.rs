@@ -47,7 +47,7 @@ pub(super) fn start(request: &Request, appid: u32) -> Result<(), Error> {
     }
     let follower = std::env::current_exe()?.to_string_lossy().into_owned();
     let argv = vec![follower, "--follow-steam".to_owned(), appid.to_string()];
-    let job = Job { unit: request.instance.name(), slice: request.instance.slice(), argv, env: vec![], workdir: None };
+    let job = Job { unit: request.instance.name(), slice: Some(request.instance.slice()), argv, env: vec![], workdir: None };
     Ok(job::start(&job)?)
 }
 
@@ -81,9 +81,9 @@ pub(super) fn ask_steam(request: &Request, appid: u32) -> Result<(), Error> {
     // With `-silent`, a Steam that isn't running starts without its window, so only the game shows.
     let argv: Vec<String> = ["steam", "-gamepadui", "-silent", "-applaunch", &appid.to_string()].map(String::from).to_vec();
     if !steam_client_running() {
-        let instance = Instance::Run { key: clamshell_library::key_of(STEAM_ENTRY), secs: crate::time::clock::unix_secs(), n: 0 };
+        let instance = Instance { key: clamshell_library::key_of(STEAM_ENTRY), secs: crate::time::clock::unix_secs(), n: 0 };
         let displays = env.iter().filter(|(k, _)| k == "WAYLAND_DISPLAY" || k == "DISPLAY").cloned().collect();
-        let job = Job { unit: instance.name(), slice: instance.slice(), argv, env: displays, workdir: None };
+        let job = Job { unit: instance.name(), slice: Some(instance.slice()), argv, env: displays, workdir: None };
         log::info!("launcher: Steam isn't running: starting it in {}", job.unit);
         job::start(&job)?;
     } else {

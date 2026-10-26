@@ -275,7 +275,7 @@ mod live {
     #[allow(clippy::unwrap_used)]
     fn a_launch_comes_and_goes() {
         let mut bus = Bus::session().unwrap();
-        let instance = Instance::Run { key: "unittest".into(), secs: u64::from(std::process::id()), n: 0 };
+        let instance = Instance { key: "unittest".into(), secs: u64::from(std::process::id()), n: 0 };
         let name = instance.name();
         let mut child = Command::new("systemd-run").args(["--user", "--quiet", "--collect", &format!("--unit={name}"), "--", "sleep", "1"]).spawn().unwrap();
         let start = Instant::now();

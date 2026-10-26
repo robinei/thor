@@ -40,8 +40,8 @@ impl Session {
     fn still_running(&self, group: &Group) -> Option<Instance> {
         let key = group.key()?;
         let running = self.running.iter().find(|r| r.key == key)?;
-        let scope = self.units.iter().find(|unit| unit.key() == Some(key)).cloned();
-        scope.or_else(|| running.outside().then(|| Instance::Run { key: key.to_owned(), secs: running.start, n: 0 }))
+        let scope = self.units.iter().find(|unit| unit.key == key).cloned();
+        scope.or_else(|| running.outside().then(|| Instance { key: key.to_owned(), secs: running.start, n: 0 }))
     }
 
     /// Whether shelf is in front on the main screen, as it is before the compositor reports a window.

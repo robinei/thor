@@ -488,7 +488,7 @@ mod tests {
             id: "zelda3".into(),
             title: "Zelda".into(),
             pid: Some(77),
-            unit: zelda.unit(),
+            unit: Some(zelda.unit()),
             icon: None,
             menu,
         };

@@ -116,11 +116,11 @@ pub fn state(library: Library) -> State {
 /// back to `now` afterwards.
 fn a_play(entry: &str, start: u64, duration: u64, now: u64) -> Vec<Event> {
     // The game shows a window while it plays, as a real game would.
-    let launch = clamshell_state::Instance::Run { key: clamshell_library::key_of(entry), secs: start, n: 0 };
+    let launch = clamshell_state::Instance { key: clamshell_library::key_of(entry), secs: start, n: 0 };
     let window = clamshell_state::session::windows::WindowFacts {
         id: 900,
         app_id: "game".into(),
-        unit: launch.unit(),
+        unit: Some(launch.unit()),
         ..clamshell_state::session::windows::WindowFacts::default()
     };
     vec![

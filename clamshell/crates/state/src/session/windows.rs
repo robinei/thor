@@ -583,7 +583,7 @@ mod tests {
         let rules = WindowRules::from_list(vec![WindowRule { owner: "zelda-lttp".into(), app_id: "game".into(), title: None }]);
         let mut s = started(crate::Init { window_rules: rules, ..init() });
         let group = Group::entry(&clamshell_library::key_of("zelda-lttp"));
-        let unit = Instance::Run { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 };
+        let unit = Instance { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 };
         assert_eq!(s.applied(WindowEvent::Opened(win_of(7, "game", &unit)).into()), vec![Effect::Watch(crate::Watch::Metrics, false)]);
         assert_eq!(s.session().window(7).map(Window::place), Some(WindowPlace::Bottom));
         assert_eq!(s.session().window(7).and_then(|w| w.group.clone()), Some(group.clone()));
@@ -652,7 +652,7 @@ mod tests {
     #[test]
     fn windows_know_their_instance() {
         let w = |unit: Option<&str>, app_id: &str| WindowFacts { unit: unit.map(Into::into), app_id: app_id.into(), ..WindowFacts::default() };
-        let terminal = Instance::Run { key: "foot_1".into(), secs: 1234, n: 7 };
+        let terminal = Instance { key: "foot_1".into(), secs: 1234, n: 7 };
         let foot = w(Some("clamshell-run-foot_1-1234-7.scope"), "foot");
         assert_eq!(foot.instance(), Some(terminal.clone()));
         // Firefox started from that terminal belongs to the terminal.
@@ -715,8 +715,8 @@ mod tests {
     #[test]
     fn remembering_a_bottom_rule_does_not_move_existing_siblings_of_other_launches() {
         let mut s = state();
-        let instance = crate::Instance::Run { key: clamshell_library::key_of("desktop:foot"), secs: 100, n: 0 };
-        let another = crate::Instance::Run { key: clamshell_library::key_of("desktop:foot"), secs: 200, n: 1 };
+        let instance = crate::Instance { key: clamshell_library::key_of("desktop:foot"), secs: 100, n: 0 };
+        let another = crate::Instance { key: clamshell_library::key_of("desktop:foot"), secs: 200, n: 1 };
         s.applied(Event::Units(vec![instance.clone(), another.clone()]));
         s.observed(vec![win_of(7, "foot", &instance), win_of(8, "foot", &another)]);
         s.applied(WindowEvent::Activate(7).into());

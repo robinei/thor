@@ -116,7 +116,7 @@ impl Session {
     /// found by.
     pub fn tray_of(&self, entry: &str) -> Option<&TrayItem> {
         let r = self.running(entry)?;
-        let in_scope = |t: &&TrayItem| t.unit.as_deref().and_then(Instance::from_unit).is_some_and(|i| i.key() == Some(r.key.as_str()));
+        let in_scope = |t: &&TrayItem| t.unit.as_deref().and_then(Instance::from_unit).is_some_and(|i| i.key == r.key.as_str());
         self.tray.iter().find(|t| r.tray().is_some_and(|k| *k == t.key) || in_scope(t))
     }
 
@@ -130,7 +130,7 @@ impl Session {
         let Some(r) = self.running(entry) else {
             return false;
         };
-        self.set_front_launch(Instance::Run { key: r.key.clone(), secs: clock.unix(), n: 0 }, None);
+        self.set_front_launch(Instance { key: r.key.clone(), secs: clock.unix(), n: 0 }, None);
         out.effects.push(Effect::Tray(TrayCommand::Activate(key)));
         true
     }
@@ -175,7 +175,7 @@ mod tests {
         tap(&mut s, Id::Tab(crate::Tab::Dock));
         // The icon of a running entry, whose process is in the entry's scope, gives that entry its menu.
         let zelda = launch(&mut s, "zelda-lttp");
-        let zelda_icon = item(":1.5/a", "zelda3", zelda.unit().as_deref());
+        let zelda_icon = item(":1.5/a", "zelda3", Some(zelda.unit().as_str()));
         s.applied(Event::Tray(vec![zelda_icon.clone()]));
         assert_eq!(s.session().tray_of("zelda-lttp").map(|t| &*t.key), Some(":1.5/a"));
         assert_eq!(s.session().running_entries().len(), 1);
@@ -183,11 +183,7 @@ mod tests {
         // here Firefox's.
         let firefox_icon = item(":1.9/b", "firefox", None);
         let fx = s.applied(Event::Tray(vec![zelda_icon.clone(), firefox_icon.clone()]));
-        assert!(
-            fx.iter()
-                .any(|e| matches!(e, Effect::Adopt { pid: 77, instance } if instance.key() == Some(clamshell_library::key_of("desktop:firefox").as_str()))),
-            "{fx:?}"
-        );
+        assert!(fx.iter().any(|e| matches!(e, Effect::Adopt { pid: 77, instance } if instance.key == clamshell_library::key_of("desktop:firefox"))), "{fx:?}");
         let r = s.session().running("desktop:firefox").unwrap();
         assert_eq!((r.found(), r.pid()), (true, Some(77)));
         let ws = r.group();
@@ -245,7 +241,7 @@ mod tests {
         let not_started = |s: &State| matches!(notice(s), Some(crate::bottom::notice::NoticeKind::NotStarted(_)));
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
-        s.applied(Event::Tray(vec![item(":1.5/a", "zelda3", zelda.unit().as_deref())]));
+        s.applied(Event::Tray(vec![item(":1.5/a", "zelda3", Some(zelda.unit().as_str()))]));
         // Its icon goes before its scope, as when it exits.
         s.applied(Event::Tray(vec![]));
         crate::testkit::end(&mut s, "zelda-lttp");
@@ -304,7 +300,7 @@ mod tests {
     fn a_guest_in_a_desktops_session_adopts_none_of_its_programs() {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
-        s.applied(Event::Tray(vec![item(":1.5/a", "zelda3", zelda.unit().as_deref()), item(":1.9/b", "firefox", None)]));
+        s.applied(Event::Tray(vec![item(":1.5/a", "zelda3", Some(zelda.unit().as_str())), item(":1.9/b", "firefox", None)]));
         assert!(s.session().running("desktop:firefox").is_none(), "the desktop's");
         assert!(s.session().tray_of("zelda-lttp").is_some(), "its own launch's icon: its menu");
     }

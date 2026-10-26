@@ -161,7 +161,7 @@ impl Session {
         let (running, units) = (&self.running, &self.units);
         // A slice whose scope is listed is kept too: one held at start may belong to a program not known
         // to run until a window or tray icon says what it is.
-        self.background.entries.keep(|key| running.iter().filter(ours).any(|r| r.key == key) || units.iter().any(|u| u.key() == Some(key)));
+        self.background.entries.keep(|key| running.iter().filter(ours).any(|r| r.key == key) || units.iter().any(|u| u.key == key));
         let mut end = Vec::new();
         for r in self.running.iter().filter(ours) {
             let (has, shown) = {
@@ -296,7 +296,7 @@ mod tests {
     fn pauses_hidden_thawed_when_shown_or_asked() {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
-        let key = zelda.key().unwrap().to_owned();
+        let key = zelda.key.clone();
         s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Pauses.value()));
         s.applied(Event::tick(100));
         s.observed(vec![win_of(3, "zelda3", &zelda)]);
@@ -410,7 +410,7 @@ mod tests {
     fn a_suspended_entry_stays_frozen_until_shown() {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
-        let key = zelda.key().unwrap().to_owned();
+        let key = zelda.key.clone();
         // Set to Runs hidden, it is paused only by Suspend.
         s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Runs.value()));
         let window = || win_of(3, "zelda3", &zelda);
@@ -445,7 +445,7 @@ mod tests {
     fn one_paused_whose_windows_go_is_thawed_to_end() {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
-        let key = zelda.key().unwrap().to_owned();
+        let key = zelda.key.clone();
         s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Pauses.value()));
         let window = || win_of(3, "zelda3", &zelda);
         s.applied(Event::tick(100));
@@ -465,7 +465,7 @@ mod tests {
     fn a_paused_game_set_to_run_hidden_is_thawed_at_once() {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
-        let key = zelda.key().unwrap().to_owned();
+        let key = zelda.key.clone();
         s.applied(Event::tick(100));
         s.observed(vec![win_of(3, "zelda3", &zelda)]);
         s.applied(Event::Home);
@@ -489,13 +489,13 @@ mod tests {
         let fx = launch_now(&mut s, "desktop:foot");
         let foot = fx.iter().find_map(|e| if let Effect::Launch { instance, .. } = e { Some(instance.clone()) } else { None }).unwrap();
         crate::testkit::start(&mut s, "desktop:foot");
-        let key = zelda.key().unwrap().to_owned();
+        let key = zelda.key.clone();
         let windows = vec![win_of(3, "zelda3", &zelda), win_of(4, "foot", &foot)];
         s.applied(Event::tick(100));
         s.observed(windows);
         let fx = s.applied(Event::tick(100 + GRACE));
         assert!(fx.contains(&freeze(&key, true)), "a game: {fx:?}");
-        assert!(!fx.contains(&freeze(foot.key().unwrap(), true)), "an app: {fx:?}");
+        assert!(!fx.contains(&freeze(&foot.key, true)), "an app: {fx:?}");
         // With All set to run, the game runs too.
         s.settings_mut().set(None, Setting::Background, Some(InBackground::Runs.value()));
         assert!(s.applied(Event::tick(101 + GRACE)).contains(&freeze(&key, false)));
@@ -506,7 +506,7 @@ mod tests {
     fn quits_closed_ends_once_its_last_window_has_closed() {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
-        let key = zelda.key().unwrap().to_owned();
+        let key = zelda.key.clone();
         s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Quits.value()));
         // With no window yet, while starting, it is left alone.
         assert!(!s.observed(vec![]).iter().any(|e| matches!(e, Effect::EndRun { .. })));

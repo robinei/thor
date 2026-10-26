@@ -83,9 +83,8 @@ impl Spender {
     pub fn name<'a>(&'a self, library: &'a Library) -> &'a str {
         match &self.group {
             Group::Instance(instance) => {
-                let key = instance.key();
-                let entry = library.entries.iter().find(|g| Some(g.key.as_str()) == key);
-                entry.map_or_else(|| key.unwrap_or("?"), |g| g.title.as_str())
+                let entry = library.entries.iter().find(|g| g.key == instance.key);
+                entry.map_or(instance.key.as_str(), |g| g.title.as_str())
             }
             Group::App(app) => {
                 let entry = library.entries.iter().find(|g| clamshell_library::ids::desktop_file(&g.id) == Some(app.as_str()));
@@ -120,7 +119,7 @@ impl Sys {
                     return;
                 };
                 let entry = match &group {
-                    Group::Instance(instance) => session.running_entries().iter().find(|r| Some(r.key.as_str()) == instance.key()).map(|r| r.id.clone()),
+                    Group::Instance(instance) => session.running_entries().iter().find(|r| r.key == instance.key).map(|r| r.id.clone()),
                     Group::App(app) => session.running_app(app),
                     Group::Process(_) => {
                         let pids = self.battery.spenders.iter().find(|s| s.group == group).map(|s| s.pids.clone()).unwrap_or_default();
@@ -141,7 +140,7 @@ impl Sys {
     /// while the battery tab or the entry's dock menu is open.
     pub fn cost_of(&self, r: &Running) -> Option<Cost> {
         let mine = self.battery.spenders.iter().filter(|s| match &s.group {
-            Group::Instance(i) => i.key() == Some(r.key.as_str()),
+            Group::Instance(i) => i.key == r.key.as_str(),
             Group::App(app) => r.app_id.as_deref() == Some(app.as_str()),
             _ => false,
         });
@@ -176,7 +175,7 @@ mod tests {
         // Each scope keeps its own entry's name.
         let ff6 = launch(&mut s, "ff6");
         crate::testkit::start(&mut s, "ff6");
-        let terminal = Instance::Run { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 9 };
+        let terminal = Instance { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 9 };
         assert_eq!(spender(Group::Instance(terminal)).name(s.shelf().library()), "Terminal");
         let title = |id: &str| s.entry(id).map(|g| g.title.clone()).unwrap_or_default();
         assert_eq!(spender(Group::Instance(zelda)).name(s.shelf().library()), title(&first));
@@ -200,7 +199,7 @@ mod tests {
         assert_eq!(s.sys().spender_menu(), None);
         // An entry ends as from the dock. With no window, it is ended at once.
         tap(&mut s, Id::Battery(BatteryId::Spender(0)));
-        assert_eq!(tap(&mut s, Id::Battery(BatteryId::Quit)), vec![Effect::EndRun { key: zelda.key().unwrap().to_owned(), force: false }]);
+        assert_eq!(tap(&mut s, Id::Battery(BatteryId::Quit)), vec![Effect::EndRun { key: zelda.key.clone(), force: false }]);
         // The system's row, or the session's own, has no menu.
         tap(&mut s, Id::Battery(BatteryId::Spender(2)));
         assert_eq!(s.sys().spender_menu(), None);

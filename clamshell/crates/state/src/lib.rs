@@ -470,7 +470,7 @@ impl State {
                         .find(|g| crate::session::running::has_app_id(g, &facts.app_id))
                         .map(|g| crate::session::windows::Group::entry(&g.key))
                         .or_else(|| self.session.running_of(&facts).map(Running::group))
-                        .or_else(|| facts.instance().and_then(|i| i.key().map(crate::session::windows::Group::entry))),
+                        .or_else(|| facts.instance().map(|i| crate::session::windows::Group::entry(&i.key))),
                 };
                 let focus = !down && self.session.opening_focus(&facts);
                 let id = facts.id;

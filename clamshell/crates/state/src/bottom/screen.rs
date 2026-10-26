@@ -347,7 +347,7 @@ mod tests {
 
     /// The emulator's launch.
     fn emu() -> Instance {
-        Instance::Run { key: "melonds_1".into(), secs: 99, n: 1 }
+        Instance { key: "melonds_1".into(), secs: 99, n: 1 }
     }
 
     fn running(id: &str, key: &str) -> Running {
@@ -427,7 +427,7 @@ mod tests {
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
         // Another game's window with that title doesn't match the rule.
-        s.add_run(running("other", "other_2"), Instance::Run { key: "other_2".into(), secs: 5, n: 2 });
+        s.add_run(running("other", "other_2"), Instance { key: "other_2".into(), secs: 5, n: 2 });
         s.observed(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom")]);
         assert!(s.session().window(7).is_some_and(|w| !w.down));
     }

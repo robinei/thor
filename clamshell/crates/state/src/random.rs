@@ -420,8 +420,8 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             2 => w.window("foot", None),
             _ => {
                 let unit = rng.pick(&w.units)?.clone();
-                let app = format!("app-{}", unit.key().unwrap_or("x"));
-                w.window(&app, unit.unit())
+                let app = format!("app-{}", unit.key);
+                w.window(&app, Some(unit.unit()))
             }
         },
         // A window closes, by itself or as asked.
@@ -439,11 +439,11 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
         67..=69 => {
             let key = match w.ending.pop() {
                 Some(k) if !rng.one_in(4) => k,
-                _ => rng.pick(&w.units)?.key()?.to_owned(),
+                _ => rng.pick(&w.units)?.key.clone(),
             };
-            w.units.retain(|u| u.key() != Some(key.as_str()));
+            w.units.retain(|u| u.key != key.as_str());
             if !rng.one_in(4) {
-                let gone = |x: &WindowFacts| x.unit.as_deref().and_then(Instance::from_unit).is_some_and(|i| i.key() == Some(key.as_str()));
+                let gone = |x: &WindowFacts| x.unit.as_deref().and_then(Instance::from_unit).is_some_and(|i| i.key == key.as_str());
                 let closed = w.windows.iter().filter(|x| gone(x)).map(|x| WindowEvent::Closed(x.id)).collect();
                 w.windows.retain(|x| !gone(x));
                 w.next = Some(Event::WindowBatch(closed));
@@ -912,15 +912,13 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
                 let waiting = was_launching.iter().any(|(e, at)| e == entry && now < at + crate::session::running::LAUNCH_WAIT);
                 ensure!(!waiting && !launched.contains(entry), "11: {entry} launched while launching");
                 launched.push(entry.clone());
-                if let Some(key) = instance.key() {
-                    sent.ended.retain(|k| k != key);
-                }
+                sent.ended.retain(|k| *k != instance.key);
             }
             _ => {}
         }
     }
     // A slice with no scope listed is gone; one started again starts thawed.
-    let keys: Vec<String> = s.session().units().iter().filter_map(Instance::key).map(Instance::slice_of).collect();
+    let keys: Vec<String> = s.session().units().iter().map(Instance::slice).collect();
     sent.frozen.retain(|slice, _| keys.contains(slice));
     Ok(())
 }

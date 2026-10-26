@@ -24,7 +24,7 @@ pub fn event(event: &Event) -> String {
     match event {
         Event::Tick { unix_secs, .. } => format!("Tick {unix_secs}"),
         Event::Reading(r) => format!("Reading {}", short(r).split('(').next().unwrap_or_default()),
-        Event::Units(units) => format!("Units [{}]", units.iter().filter_map(|u| u.key()).collect::<Vec<_>>().join(", ")),
+        Event::Units(units) => format!("Units [{}]", units.iter().map(|u| u.key.as_str()).collect::<Vec<_>>().join(", ")),
         Event::Window(change) => window_change(change),
         Event::WindowBatch(changes) => format!("Windows [{}]", changes.iter().map(window_change).collect::<Vec<_>>().join(", ")),
         Event::Library(_) => "Library".into(),
@@ -47,7 +47,7 @@ fn window_change(change: &WindowEvent) -> String {
 /// What `effect` asks for, in one line.
 pub fn effect(effect: &Effect) -> String {
     match effect {
-        Effect::Launch { entry, instance, .. } => format!("Launch {entry} as {}", instance.key().unwrap_or("?")),
+        Effect::Launch { entry, instance, .. } => format!("Launch {entry} as {}", instance.key),
         Effect::Apply { entry, .. } => format!("Apply settings of {}", entry.as_deref().unwrap_or("all")),
         Effect::Keymap(k) => format!("Keymap {} {:?}", k.id, k.name),
         Effect::Save(save) => format!("Save {}", self::save(save)),

@@ -18,12 +18,12 @@ pub const STATUS_LOW: Status = Status { battery: Some(9), charging: false, disch
 
 /// A launch of entry `id`, the `n`th thing started.
 pub fn run(id: &str, n: u64) -> Instance {
-    Instance::Run { key: clamshell_library::key_of(id), secs: 1, n }
+    Instance { key: clamshell_library::key_of(id), secs: 1, n }
 }
 
 /// A window of a launch.
 fn window_of(id: i64, app_id: &str, launch: &Instance) -> WindowFacts {
-    WindowFacts { id, app_id: app_id.into(), unit: launch.unit(), ..WindowFacts::default() }
+    WindowFacts { id, app_id: app_id.into(), unit: Some(launch.unit()), ..WindowFacts::default() }
 }
 
 /// These windows opening, reported by the compositor in one batch.
