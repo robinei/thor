@@ -74,6 +74,10 @@ The compositor's tests check placement before the first configure with real clie
 adoption, input routes and services. Parent inheritance is checked in state tests
 (`a_dialog_of_a_window_below_is_placed_below_before_it_is_shown`).
 
+The settle steps that follow the session (units, windows, window rules, what is shown, background,
+quitting, dock) run in the order `State::settle`'s doc lists, with the test that pins each order that
+matters.
+
 ### Launches
 
 State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Windows{since, until}`,
@@ -95,7 +99,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Idle | `Units` lists a scope of a library entry (an earlier ClamShell) | Running(Ours) | — | running `entries_started_before_clamshell_…` |
 | Idle | `Units` lists a scope of a key not in the library, a window or tray icon in it | Running(Ours), as found, named by the name whose key is the scope's (until a window or icon comes, nothing) | — | found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
 | Idle | a window with a library app id (not Steam) | Running(Windows, seen) | Focus once in its group | running `an_app_handed_over_…` |
-| Idle | a Steam game's window by app id | Launching | as a launch | running `a_game_steam_started_is_followed…` |
+| Idle | a Steam game's window by app id | Launching, launched before the windows are followed, so its window isn't found as a program | as a launch | running `a_game_steam_started_is_followed…`; tests `a_steam_game_found_by_its_window_is_launched_not_found_as_a_program` |
 | Idle | a stray window of no entry | Running(Found) | Move, Focus if focused, FindIcon, Adopt (own pid) | found `a_window_of_no_entry_…` and its siblings |
 | Idle | a tray icon not in our scope (device session) | Running(Found{tray}) | Move/Focus, Adopt | tray `a_program_with_a_tray_icon_runs…` |
 | Running(Found) | its scope listed | Running(Ours) (pid dropped, tray key kept) | — | tray test; tray `an_adopted_tray_program_keeps_its_menu` |
@@ -231,7 +235,7 @@ opening, tells the bottom screen to open the windows' tab and turn on (`Bottom::
 | the windows' tab button: lit while open, standing out while the front program's window is below another tab, dim with nothing below | `the_windows_tab_shows_the_window_below_and_marks_one_hidden_by_another_tab` |
 | WindowDown: the selected top window moves down without needing keyboard focus; the old bottom window returns to its group, the screen shows it, a rule is added (notice, `Save(WindowRules)`) | same; `a_programs_only_window_is_remembered_by_its_app_id_alone`; `window_down_with_no_window_in_front_does_nothing` |
 | WindowUp: the window below goes back, its rule is forgotten | same; `moving_another_window_down_swaps_the_single_bottom_slot` |
-| settle: a window matching a rule moves down once | `a_rule_sends_the_window_down_when_its_program_opens_it_again` |
+| settle: a window matching a rule moves down once, after the windows are followed (a found program's window too, in the event that found it); the tab it leaves is settled in the same event | `a_rule_sends_the_window_down_when_its_program_opens_it_again`; tests `a_found_programs_window_goes_down_by_its_rule_as_it_is_found`, `the_tab_a_rule_leaves_is_settled_in_the_same_event` |
 | dock tap or BottomWindows → windows shown (the windows' tab), the screen turned on if it was off by hand | running `show_of_an_entry_whose_windows_are_all_below_shows_them_there` |
 | Home+Start: wake if off by itself, else toggle off | `the_bottom_screen_turns_off_and_on`, `home_start_brings_back_…`, `…off_by_hand_and_by_itself_at_once` |
 | settle: off by itself when on battery, not refreshing, not set to stay on, no windows shown, no editor, and dark in a game or untouched 4 min | `on_battery_the_untouched_…` and siblings; `a_refresh_calibration_or_an_editor_keeps_it_on` |

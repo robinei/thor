@@ -468,35 +468,44 @@ impl State {
 
     /// Brings the state up to date with what happened. The steps run in this order, since each reads
     /// what the earlier ones settled. They run after every event; a step does nothing when nothing
-    /// changed for it. The first eight follow the session's inputs (the windows, systemd's scopes, the
-    /// tray, the launcher's messages, the library and the clock) and what the event did to the session:
+    /// changed for it. Where an order is pinned by a test, the test is named.
     ///
-    /// 1. systemd's scopes: entries found running, found ones promoted to launches, and ours ended
-    ///    ([`crate::Session::follow_units`]). The first time, the entries to start with ClamShell are
-    ///    started.
-    /// 2. The windows: entries started by their app ids ([`crate::Session::start_by_app_id`]), with Steam's
-    ///    games launched before the windows are followed, since a starting launch's window is left where
-    ///    it is; then windows moved to their entries, programs found by them, and entries ended by them
+    /// 1. systemd's units: entries found running, found ones promoted to launches, and ours ended
+    ///    ([`crate::Session::follow_units`]). The first time, once what runs is known, the entries to
+    ///    start with ClamShell are started
+    ///    (`chosen_entries_start_once_what_runs_is_known_unless_they_run`).
+    /// 2. Entries started by their windows' app ids ([`crate::Session::start_by_app_id`]), and Steam's
+    ///    games among them launched before the windows are followed, since a starting launch's window is
+    ///    left where it is (`a_steam_game_found_by_its_window_is_launched_not_found_as_a_program`).
+    /// 3. The windows: moved to their entries, given to a browsed file waiting for one, programs found by
+    ///    them, the rest given groups of their own, and entries ended by them
     ///    ([`crate::Session::follow_windows`], which compares with the windows the last pass saw).
-    /// 3. The rules that send windows down.
-    /// 4. In the background: entries paused, thawed or ended by their setting. This reads 1 and 2.
-    /// 5. What is shown: a launch's first window, and a group whose window came back.
-    /// 6. Quitting entries are ended once their windows are gone. This reads 1 to 4.
-    /// 7. Going back to what was before when the one in front closed.
+    /// 4. The window rules send windows down, which reads the owners 3 found
+    ///    (`a_found_programs_window_goes_down_by_its_rule_as_it_is_found`), and the tab a window moved
+    ///    down left is settled as any tab left (`the_tab_a_rule_leaves_is_settled_in_the_same_event`).
+    /// 5. What is shown: a launch's first window, then a group whose window came back, so the one that
+    ///    came back ends in front (`a_launchs_first_window_is_shown_before_a_window_that_came_back`);
+    ///    then going back to what was before when the window in front closed.
+    /// 6. In the background: entries paused, thawed or ended by their setting, once the front is settled
+    ///    (`a_paused_game_shown_when_the_front_closes_is_thawed_at_once`).
+    /// 7. Quitting entries are ended once their windows are gone, after 6, which a quitting entry isn't
+    ///    paused for (`the_background_is_followed_before_the_quitting`).
     /// 8. The dock: running entries are added to it and ended ones removed.
+    /// 9. The windows and the group in front are remembered for the next pass's 3 and 5
+    ///    ([`crate::Session::followed`]; the tests of 5).
     ///
     /// Then the rest:
     ///
-    /// 9. The second screen's dimming.
-    /// 10. The browsed folder's selection and armed action.
-    /// 11. The idle stage.
-    /// 12. The program in force.
-    /// 13. The second screen turning off or on by itself, which reads the program in force's setting and
-    ///     darkness.
-    /// 14. The pad mouse, when the program in force changed.
-    /// 15. What claims the pad, and where it goes. The focus ring shows where the pad is, so it is hidden
+    /// 10. The second screen's dimming.
+    /// 11. The browsed folder's selection and armed action.
+    /// 12. The idle stage.
+    /// 13. The program in force.
+    /// 14. The second screen turning off or on by itself, which reads the program in force's setting and
+    ///     darkness (`dark_for_a_game_on_battery_it_goes_off_and_a_tap_wakes_it`).
+    /// 15. The pad mouse, when the program in force changed.
+    /// 16. What claims the pad, and where it goes. The focus ring shows where the pad is, so it is hidden
     ///     when the pad leaves ClamShell's screens.
-    /// 16. The scrolled lists keep their top items where they are ([`State::follow_lists`]).
+    /// 17. The scrolled lists keep their top items where they are ([`State::follow_lists`]).
     fn settle(&mut self, out: &mut Out) {
         if self.session.follow_units(&self.clock, self.shelf.library(), self.bottom.notice_mut(), &mut self.plays) {
             self.bottom.unwake();
@@ -517,6 +526,7 @@ impl State {
         }
         self.session.follow_windows(&self.clock, self.shelf.library(), &mut self.plays, out);
         self.record_plays(out);
+        // After the windows are followed, which finds their owners.
         if self.session.follow_window_rules(self.shelf.library()) {
             self.bottom.show_below();
         }

@@ -208,6 +208,50 @@ fn a_launchs_first_window_is_shown_before_a_window_that_came_back() {
     assert_eq!(s.session().top_window().map(|w| w.id), Some(3));
 }
 
+/// A Steam game found by its window is launched before the windows are followed, so that its window,
+/// left where it is while its launch starts, isn't taken for a program found by it.
+#[test]
+fn a_steam_game_found_by_its_window_is_launched_not_found_as_a_program() {
+    let mut library = clamshell_library::demo::library();
+    if let Some(g) = library.entries.iter_mut().find(|g| &*g.id == "ff6") {
+        g.launch = Launch::Steam { appid: 620 };
+    }
+    let mut s = started(Init { library, ..init() });
+    let fx = s.observed(vec![WindowFacts { pids: vec![500], ..win(7, "steam_app_620") }]);
+    assert!(fx.iter().any(|e| matches!(e, Effect::Launch { entry, .. } if &**entry == "ff6")), "{fx:?}");
+    assert!(!fx.iter().any(|e| matches!(e, Effect::Adopt { .. })), "{fx:?}");
+    assert!(s.session().running_entries().is_empty(), "no program found by its window");
+}
+
+/// The window rules are applied after the windows are followed, so that a window of a program found by
+/// it goes down by its rule in the event that found it.
+#[test]
+fn a_found_programs_window_goes_down_by_its_rule_as_it_is_found() {
+    use crate::session::below::{WindowRule, WindowRules};
+    let rules = WindowRules::from_list(vec![WindowRule { owner: "window:org.x.Thing".into(), app_id: "org.x.Thing".into(), title: None }]);
+    let mut s = started(Init { window_rules: rules, ..init() });
+    s.observed(vec![WindowFacts { pids: vec![500], unit: Some("app-thing.scope".into()), ..win(5, "org.x.Thing") }]);
+    assert!(s.session().running("window:org.x.Thing").is_some());
+    assert_eq!(s.session().bottom_window().map(|w| w.id), Some(5));
+}
+
+/// A window sent down by its rule opens the windows' tab, and the tab it leaves is settled in the same
+/// event, after the rules: here the dock's menu, which belongs to the dock's tab, closes with it.
+#[test]
+fn the_tab_a_rule_leaves_is_settled_in_the_same_event() {
+    use crate::session::below::{WindowRule, WindowRules};
+    let rules = WindowRules::from_list(vec![WindowRule { owner: "zelda-lttp".into(), app_id: "zelda3".into(), title: None }]);
+    let mut s = started(Init { window_rules: rules, ..init() });
+    let zelda = launch(&mut s, "zelda-lttp");
+    tap(&mut s, Id::Tab(Tab::Dock));
+    long(&mut s, Id::Dock(DockId::Entry(0)));
+    assert_eq!(s.dock().menu().map(|m| &**m), Some("zelda-lttp"));
+    s.applied(WindowEvent::Opened(win_of(7, "zelda3", &zelda)).into());
+    assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
+    assert_eq!(s.bottom().tab(), Tab::Windows);
+    assert_eq!(s.dock().menu(), None, "the dock's tab left: its menu closed");
+}
+
 /// The steps in the background run before the quitting entries are followed: here a paused game shown
 /// again as the quitting one's window in front closes is thawed, then the quitting one, its windows gone,
 /// is ended.

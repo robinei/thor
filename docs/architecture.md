@@ -64,8 +64,11 @@ How areas cooperate:
 
 1. **Handle** the event and the events it queued.
 2. **Settle**: one ordered list of steps that bring the state up to date with what happened and depend on
-   history: launches matched to systemd's scopes, windows to their entries, background pausing, quits in
-   progress, the front window closing, the dock, the idle stage, the program in force, the pad's route.
+   history: launches matched to systemd's units, entries started by their windows, the windows placed
+   with their entries, the window rules, what is shown (a launch's first window, a window come back,
+   what was before when the front window closed), background pausing, quits in progress, the dock, then
+   the second screen's dimming, the idle stage, the program in force, the second screen's power and the
+   pad's route. The list, with the test that pins each order that matters, is `State::settle`'s doc.
 3. **Sync**: what the outside should have now (`Wanted`: watches, screen power, the settings applied, the
    keymap, the pad route, files in use, ...) is computed from the settled state and compared with what it
    was last sent (`Sent`); only differences become effects, in one fixed order. Effects that are
