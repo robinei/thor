@@ -365,8 +365,42 @@ impl<S: Sink> Service for BtThread<S> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// BlueZ's objects as its object manager gives them, read in-process: the first adapter's devices,
+    /// named ones and paired ones, sorted; another adapter's left out.
+    #[test]
+    fn bluezs_objects_read_as_the_tab_shows_them() {
+        use ::dbus::arg::{PropMap, RefArg, Variant};
+        use std::collections::HashMap;
+        let props = |pairs: &[(&str, Box<dyn RefArg>)]| -> PropMap { pairs.iter().map(|(k, v)| ((*k).to_owned(), Variant(v.box_clone()))).collect() };
+        let iface = |name: &str, map: PropMap| -> HashMap<String, PropMap> { HashMap::from([(name.to_owned(), map)]) };
+        let device = |address: &str, name: Option<&str>, paired: bool, connected: bool| {
+            let mut pairs: Vec<(&str, Box<dyn RefArg>)> =
+                vec![("Address", Box::new(address.to_owned())), ("Paired", Box::new(paired)), ("Connected", Box::new(connected))];
+            if let Some(name) = name {
+                pairs.push(("Name", Box::new(name.to_owned())));
+            }
+            iface(bluez::DEVICE, props(&pairs))
+        };
+        let path = |p: &str| ::dbus::Path::new(p.to_owned()).unwrap();
+        let objects: bluez::ManagedObjects = HashMap::from([
+            (path("/org/bluez/hci0"), iface(bluez::ADAPTER, props(&[("Powered", Box::new(true))]))),
+            (path("/org/bluez/hci0/dev_A"), device("A", Some("Buds"), true, true)),
+            (path("/org/bluez/hci0/dev_B"), device("B", None, false, false)),
+            (path("/org/bluez/hci0/dev_C"), device("C", None, true, false)),
+            (path("/org/bluez/hci01/dev_D"), device("D", Some("Elsewhere"), false, false)),
+        ]);
+        let bt = read(&objects, &BtState::default());
+        assert!(bt.present && bt.on);
+        let mut addresses: Vec<&str> = bt.devices.iter().map(|d| d.address.as_str()).collect();
+        addresses.sort_unstable();
+        assert_eq!(addresses, ["A", "C"], "an unnamed one only if paired; another adapter's never");
+        assert!(bt.devices.iter().any(|d| d.address == "A" && d.connected && d.name == "Buds"));
+        assert!(!read(&HashMap::new(), &BtState::default()).present, "no adapter");
+    }
 
     #[test]
     fn a_device_is_its_adapters_alone() {
