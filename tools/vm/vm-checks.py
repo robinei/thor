@@ -1184,7 +1184,7 @@ class Checks:
         game = self._launch_test_game()
         if not game:
             return
-        slice_ = f"app-graphical-{game}.slice"
+        slice_ = f"app-graphical-clamshell-run-{game}.slice"
         state = lambda: sh(f"systemctl --user show {slice_} -p FreezerState --value").strip()
         time.sleep(1)
         control("home")
