@@ -19,7 +19,7 @@ impl State {
             EntryAct::ToggleAutostart => self.session.toggle_autostart(id, out),
             EntryAct::TogglePin => self.dock.toggle_pin(id, &self.session, out),
             EntryAct::Quit => self.session.quit(&id, self.clock.mono(), self.shelf.library(), out),
-            EntryAct::ForceKill => self.session.force_kill(&id, self.shelf.library(), out),
+            EntryAct::ForceKill => self.session.force_kill(&id, self.clock.mono(), self.shelf.library(), out),
         }
     }
 

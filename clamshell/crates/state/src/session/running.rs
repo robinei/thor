@@ -654,10 +654,14 @@ impl Session {
         self.follow_quitting(now, library, out);
     }
 
-    /// Force kill: ends the entry at once.
-    pub(crate) fn force_kill(&mut self, entry: &str, library: &Library, out: &mut Out) {
-        self.quitting.retain(|q| &*q.entry != entry);
+    /// Force kill: ends the entry at once. It is kept as quitting, already ended, until it no longer runs,
+    /// so that nothing quits it again meanwhile (its windows gone, Quits when closed would).
+    pub(crate) fn force_kill(&mut self, entry: &Arc<str>, now: u64, library: &Library, out: &mut Out) {
+        self.quitting.retain(|q| q.entry != *entry);
         self.thaw(entry, out);
+        if self.running(entry).is_some() {
+            self.quitting.push(crate::session::Quitting { entry: entry.clone(), ended: true, stop: None, asked: now });
+        }
         self.end(entry, true, library, out);
     }
 

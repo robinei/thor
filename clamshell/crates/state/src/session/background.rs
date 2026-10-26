@@ -530,6 +530,22 @@ mod tests {
         crate::testkit::end(&mut s, "zelda-lttp");
     }
 
+    /// A force kill of an entry that Quits when closed, its windows gone, ends it once: it isn't quit
+    /// again in the same event while it still runs.
+    #[test]
+    fn a_force_killed_entry_isnt_quit_again_by_quits_closed() {
+        let mut s = state();
+        let zelda = launch(&mut s, "zelda-lttp");
+        let key = zelda.key.clone();
+        s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Quits.value()));
+        s.observed(vec![win_of(3, "zelda3", &zelda)]);
+        assert!(s.observed(vec![]).contains(&Effect::EndRun { key: key.clone(), force: false }));
+        let fx = s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::ForceKill));
+        let ends: Vec<&Effect> = fx.iter().filter(|e| matches!(e, Effect::EndRun { .. })).collect();
+        assert_eq!(ends, [&Effect::EndRun { key: key.clone(), force: true }], "{fx:?}");
+        assert!(!s.applied(Event::tick(100)).iter().any(|e| matches!(e, Effect::EndRun { .. })));
+    }
+
     #[test]
     fn a_restarted_freezer_is_sent_each_slice_as_it_is() {
         let mut s = state();
