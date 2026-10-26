@@ -27,7 +27,7 @@ use crate::out::Out;
 use crate::profiles::picker::ProfileId;
 use crate::radios::bluetooth::{Bluetooth, Device as BtDevice, Kind};
 use crate::radios::wifi::{Network, Wifi};
-use crate::session::windows::Window;
+use crate::session::windows::WindowFacts;
 use crate::settings::Setting;
 use crate::settings::panel::Scope;
 use crate::*;
@@ -102,7 +102,7 @@ fn library() -> Library {
 #[derive(Default)]
 struct World {
     /// The open windows, as the compositor knows them: what they are, not where they are placed.
-    windows: Vec<Window>,
+    windows: Vec<WindowFacts>,
     next_window: i64,
     units: Vec<Instance>,
     /// Launches asked for and not answered.
@@ -144,19 +144,17 @@ impl World {
         }
     }
 
-    /// A window opens, as the compositor reports it: with no group, in front if the state would put it
-    /// there ([`crate::Session::opening_focus`]).
-    fn open(&mut self, s: &State, app_id: &str, unit: Option<String>, parent: Option<i64>) -> Window {
+    /// A window opens, as the compositor reports it: its facts, which say nothing of where it goes.
+    fn open(&mut self, app_id: &str, unit: Option<String>, parent: Option<i64>) -> WindowFacts {
         let id = self.next_window;
         self.next_window += 1;
-        let mut window = Window { id, app_id: app_id.into(), unit, parent, pids: vec![1000 + id as u32], ..Window::default() };
-        window.focused = s.session().opening_focus(&window);
+        let window = WindowFacts { id, app_id: app_id.into(), unit, parent, pids: vec![1000 + id as u32], ..WindowFacts::default() };
         self.windows.push(window.clone());
         window
     }
 
-    fn window(&mut self, s: &State, app_id: &str, unit: Option<String>) -> Event {
-        WindowEvent::Opened(self.open(s, app_id, unit, None)).into()
+    fn window(&mut self, app_id: &str, unit: Option<String>) -> Event {
+        WindowEvent::Opened(self.open(app_id, unit, None)).into()
     }
 }
 
@@ -417,13 +415,13 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
         // or a stray one.
         53..=60 if w.windows.len() > 8 => return None,
         53..=60 => match rng.below(6) {
-            0 => w.window(s, "steam_app_620", Some("app-steam.scope".into())),
-            1 => w.window(s, "firefox", None),
-            2 => w.window(s, "foot", None),
+            0 => w.window("steam_app_620", Some("app-steam.scope".into())),
+            1 => w.window("firefox", None),
+            2 => w.window("foot", None),
             _ => {
                 let unit = rng.pick(&w.units)?.clone();
                 let app = format!("app-{}", unit.key().unwrap_or("x"));
-                w.window(s, &app, unit.unit())
+                w.window(&app, unit.unit())
             }
         },
         // A window closes, by itself or as asked.
@@ -445,7 +443,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             };
             w.units.retain(|u| u.key() != Some(key.as_str()));
             if !rng.one_in(4) {
-                let gone = |x: &Window| x.unit.as_deref().and_then(Instance::from_unit).is_some_and(|i| i.key() == Some(key.as_str()));
+                let gone = |x: &WindowFacts| x.unit.as_deref().and_then(Instance::from_unit).is_some_and(|i| i.key() == Some(key.as_str()));
                 let closed = w.windows.iter().filter(|x| gone(x)).map(|x| WindowEvent::Closed(x.id)).collect();
                 w.windows.retain(|x| !gone(x));
                 w.next = Some(Event::WindowBatch(closed));
@@ -633,7 +631,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 0 => {
                     let window = if rng.one_in(2) && w.windows.len() < 9 {
                         let parent = if rng.one_in(3) { rng.pick(&w.windows).map(|p| p.id) } else { None };
-                        w.open(s, "foot", None, parent)
+                        w.open("foot", None, parent)
                     } else {
                         window
                     };

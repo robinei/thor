@@ -8,7 +8,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use clamshell_state::radios::wifi::{Network, Wifi};
-use clamshell_state::session::windows::Window;
+use clamshell_state::session::windows::WindowFacts;
 use clamshell_state::status::metrics::Metrics;
 use clamshell_state::{Effect, EntryAct, Event, Id, Init, Instance, ListEvent, ListId, PointerEvent, Reading, State, Status, Tab, WindowEvent};
 
@@ -72,7 +72,7 @@ fn count(s: &mut State, event: Event, effects: &mut Vec<Effect>) -> usize {
 
 /// A warm state: up, with two programs of ours running, each with a window, one of them in front, and a
 /// terminal of the user's on another workspace.
-fn warm() -> (State, Vec<Window>, Vec<Instance>) {
+fn warm() -> (State, Vec<WindowFacts>, Vec<Instance>) {
     let window_rules = clamshell_state::bottom::screen::WindowRules::from_list(vec![clamshell_state::bottom::screen::WindowRule {
         owner: "desktop:foot".into(),
         app_id: "foot".into(),
@@ -83,7 +83,7 @@ fn warm() -> (State, Vec<Window>, Vec<Instance>) {
     s.apply(Event::Start, &mut effects);
     s.apply(Event::Tick { unix_secs: T0, mono_secs: 10 }, &mut effects);
     let mut units = Vec::new();
-    let mut windows = vec![Window { id: 1, app_id: "foot".into(), workspace: "1".into(), ..Window::default() }];
+    let mut windows = vec![WindowFacts { id: 1, app_id: "foot".into(), ..WindowFacts::default() }];
     for (n, id) in ["desktop:firefox", "desktop:foot"].into_iter().enumerate() {
         effects.clear();
         s.apply(Event::Entry(id.into(), EntryAct::Play), &mut effects);
@@ -96,14 +96,11 @@ fn warm() -> (State, Vec<Window>, Vec<Instance>) {
             .unwrap();
         units.push(instance.clone());
         s.apply(Event::Units(units.clone()), &mut effects);
-        let window = Window {
+        let window = WindowFacts {
             id: 10 + n as i64,
             app_id: id.trim_start_matches("desktop:").into(),
             unit: Some(format!("{}.scope", instance.name())),
-            workspace: instance.workspace(),
-            focused: true,
-            visible: true,
-            ..Window::default()
+            ..WindowFacts::default()
         };
         s.apply(WindowEvent::Opened(window.clone()).into(), &mut effects);
         windows.push(window);

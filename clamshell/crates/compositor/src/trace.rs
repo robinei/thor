@@ -159,7 +159,7 @@ fn write_recording(recording: &Recording, path: &std::path::Path) -> Result<(), 
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use clamshell_state::{Init, session::windows::Window};
+    use clamshell_state::{Init, session::windows::WindowFacts};
     use clamshell_ui::Core;
     use std::{cell::RefCell, rc::Rc};
 
@@ -171,7 +171,7 @@ mod tests {
         core.observe_events(move |event, state| observed.borrow_mut().record(event, state));
         core.handle(Event::Start);
         core.handle(Event::Tick { unix_secs: 1000, mono_secs: 10 });
-        let window = Window { id: 1, app_id: "trace-test".into(), focused: true, visible: true, ..Window::default() };
+        let window = WindowFacts { id: 1, app_id: "trace-test".into(), ..WindowFacts::default() };
         core.handle(Event::WindowBatch(vec![WindowEvent::Opened(window), WindowEvent::Title { window: 1, title: "recorded".into() }]));
         core.handle(Event::Device(DeviceKey::WindowDown));
         core.handle(Event::Device(DeviceKey::WindowUp));
@@ -191,7 +191,7 @@ mod tests {
         assert_eq!(saved.records.len(), decoded.records.len());
         assert!(write_recording(&decoded, &directory.path().join("missing/events.json")).is_err());
         let mut mismatch = State::new(Init::default());
-        mismatch.apply(WindowEvent::Opened(Window { id: 9, focused: true, app_id: "other".into(), ..Window::default() }).into(), &mut Vec::new());
+        mismatch.apply(WindowEvent::Opened(WindowFacts { id: 9, app_id: "other".into(), ..WindowFacts::default() }).into(), &mut Vec::new());
         assert!(decoded.replay(&mut mismatch).is_err());
         let mut replay = State::new(Init::default());
         replay.apply(Event::Start, &mut Vec::new());

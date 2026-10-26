@@ -192,8 +192,13 @@ mod tests {
     use crate::testkit::*;
     use crate::*;
 
-    fn observed_route(s: &mut State, windows: Vec<Window>) -> PadRoute {
+    /// Reports `windows` and shows the first of them, as a tap on it would, and returns the pad's route.
+    fn shown_route(s: &mut State, windows: Vec<WindowFacts>) -> PadRoute {
+        let first = windows.first().map(|w| w.id);
         s.observed(windows);
+        if let Some(id) = first {
+            s.applied(crate::WindowEvent::Activate(id).into());
+        }
         s.pad().route()
     }
 
@@ -229,14 +234,14 @@ mod tests {
     #[test]
     fn the_pad_goes_to_shelf_the_program_or_typing_by_what_is_in_front() {
         let mut s = state();
-        let window = |app_id: &str, unit: Option<&str>| Window { unit: unit.map(Into::into), workspace: String::new(), ..win(1, app_id, "", true) };
+        let window = |app_id: &str, unit: Option<&str>| WindowFacts { unit: unit.map(Into::into), ..win(1, app_id) };
         assert_eq!(route(&mut s, Event::tick(1)), PadRoute::Ui, "nothing known, no game: shelf");
         crate::testkit::start(&mut s, "zelda-lttp");
         assert_eq!(s.pad().route(), PadRoute::Ui, "shelf keeps the pad until the first window arrives");
         assert_eq!(route(&mut s, Event::Home), PadRoute::Ui, "shelf in front");
-        assert_eq!(observed_route(&mut s, vec![window("foot", Some("clamshell-run-foot_1-1-0.scope"))]), PadRoute::Game, "an app: its pad, as a game's");
+        assert_eq!(shown_route(&mut s, vec![window("foot", Some("clamshell-run-foot_1-1-0.scope"))]), PadRoute::Game, "an app: its pad, as a game's");
         assert_eq!(route(&mut s, PointerEvent::Activate(Id::Tab(Tab::Keyboard)).into()), PadRoute::Keys, "an app and the keyboard: typing");
-        assert_eq!(observed_route(&mut s, vec![window("retroarch", Some("clamshell-run-zelda_1-1-0.scope"))]), PadRoute::Keys, "a game too");
+        assert_eq!(shown_route(&mut s, vec![window("retroarch", Some("clamshell-run-zelda_1-1-0.scope"))]), PadRoute::Keys, "a game too");
         assert_eq!(route(&mut s, PointerEvent::Activate(Id::Tab(Tab::Dock)).into()), PadRoute::Game);
         let fx = s.observed(vec![]);
         assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Ui)]);

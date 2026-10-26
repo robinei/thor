@@ -76,7 +76,9 @@ How areas cooperate:
 The session owns each window's group (`Window.workspace` in the code), whether it is on the top screen
 or moved down, and which window each screen shows. Keyboard focus is separate and may name either
 screen's client or ClamShell's UI. The compositor reports each window's life as events (opened, closed,
-changed, its title, keyboard focus, a client's request to be shown). Placing windows (focusing one,
+changed, its title, keyboard focus, a client's request to be shown); opened and changed carry only what
+the compositor knows of the window (`WindowFacts`), and whether a new window comes in front is the
+state's to decide. Placing windows (focusing one,
 moving it between groups, down to the second screen or back) is the state's own, done during
 `State::apply`; the compositor reads the result from the state after apply, so a new window is placed
 before it is first shown. The only window effect is closing one (`Effect::Close`). Shelf is not a

@@ -2,7 +2,7 @@
 
 use clamshell_state::session::{
     presentation::{WindowLayout, WindowPresentation, WindowScale},
-    windows::Window,
+    windows::WindowFacts,
 };
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
@@ -77,7 +77,7 @@ impl Geometry {
 /// area, or the resolution its game is set to, which [`Geometry`] scales up to the area), and any other its
 /// own size within the area.
 pub(crate) fn configure_size(
-    window: &Window,
+    window: &WindowFacts,
     policy: WindowPresentation,
     area: Size<i32, Logical>,
     fill: Size<i32, Logical>,
@@ -101,7 +101,7 @@ mod tests {
     fn fitting_preserves_aspect_and_uses_the_same_inverse_for_input() {
         let viewport = Rectangle::from_size((960, 540).into());
         let native = Rectangle::new((10, 20).into(), (640, 480).into());
-        let geometry = Geometry::new(viewport, native, Window::default().presentation(true, &[], Size::Default), Picture::default()).unwrap();
+        let geometry = Geometry::new(viewport, native, WindowFacts::default().presentation(true, &[], Size::Default), Picture::default()).unwrap();
         assert_eq!(geometry.scale, Scale::from(1.125));
         let screen = geometry.origin + Point::from((330.0 * geometry.scale.x, 260.0 * geometry.scale.y));
         assert_eq!(geometry.surface_coords(screen), (330.0, 260.0).into());
@@ -109,7 +109,7 @@ mod tests {
     }
     #[test]
     fn native_size_is_sharp_and_oversized_fixed_windows_scale_down() {
-        let policy = Window { parent: Some(1), ..Window::default() }.presentation(false, &[], Size::Default);
+        let policy = WindowFacts { parent: Some(1), ..WindowFacts::default() }.presentation(false, &[], Size::Default);
         let geometry = Geometry::new(Rectangle::from_size((960, 540).into()), Rectangle::from_size((400, 300).into()), policy, Picture::default()).unwrap();
         assert_eq!(geometry.scale, Scale::from(1.0));
         assert_eq!(geometry.origin, (280.0, 120.0).into());
@@ -117,7 +117,7 @@ mod tests {
             Geometry::new(Rectangle::new((960, 40).into(), (620, 500).into()), Rectangle::from_size((1240, 1000).into()), policy, Picture::default()).unwrap();
         assert_eq!(small.scale, Scale::from(0.5));
         assert_eq!(small.surface_coords((1270.0, 290.0).into()), (620.0, 500.0).into());
-        let fixed = Window { limits: WindowLimits { min: (1240, 1000), max: (1240, 1000) }, ..Window::default() };
+        let fixed = WindowFacts { limits: WindowLimits { min: (1240, 1000), max: (1240, 1000) }, ..WindowFacts::default() };
         assert_eq!(
             configure_size(&fixed, fixed.presentation(false, &[], Size::Default), (620, 500).into(), (620, 500).into(), (0, 0).into()),
             Some((1240, 1000).into())
@@ -126,14 +126,14 @@ mod tests {
 
     #[test]
     fn a_fullscreen_game_at_a_lower_resolution_is_configured_to_it_and_scaled_up() {
-        let game = Window::default();
+        let game = WindowFacts::default();
         let policy = game.presentation(true, &[], Size::Default);
         let size = configure_size(&game, policy, (1920, 1080).into(), (1280, 720).into(), (0, 0).into()).unwrap();
         assert_eq!(size, (1280, 720).into());
         let geometry = Geometry::new(Rectangle::from_size((1920, 1080).into()), Rectangle::from_size(size), policy, Picture::default()).unwrap();
         assert_eq!((geometry.scale, geometry.origin), (Scale::from(1.5), (0.0, 0.0).into()), "filling the screen");
         // A dialog keeps its own size.
-        let dialog = Window { parent: Some(1), ..Window::default() };
+        let dialog = WindowFacts { parent: Some(1), ..WindowFacts::default() };
         assert_eq!(
             configure_size(&dialog, dialog.presentation(true, &[], Size::Default), (1920, 1080).into(), (1280, 720).into(), (400, 300).into()),
             Some((400, 300).into())
@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn a_mode_stretched_over_the_screen_keeps_its_shape() {
         // Xwayland shows a 640x480 mode as a window of the screen's size; it is fitted as 4:3, centred.
-        let policy = Window::default().presentation(true, &[], Size::Default);
+        let policy = WindowFacts::default().presentation(true, &[], Size::Default);
         let screen = Rectangle::from_size((960, 540).into());
         let stretched = Picture { size: Some((640, 480).into()), place: None };
         let geometry = Geometry::new(screen, screen, policy, stretched).unwrap();
@@ -151,15 +151,15 @@ mod tests {
         assert_eq!(geometry.origin, (120.0, 0.0).into());
         assert_eq!(geometry.surface_coords((480.0, 270.0).into()), (480.0, 270.0).into(), "the middle is the middle");
         assert_eq!(geometry.surface_coords((120.0, 0.0).into()), (0.0, 0.0).into(), "the picture's corner");
-        let dialog = Window { parent: Some(1), ..Window::default() }.presentation(true, &[], Size::Default);
+        let dialog = WindowFacts { parent: Some(1), ..WindowFacts::default() }.presentation(true, &[], Size::Default);
         assert_eq!(Geometry::new(screen, screen, dialog, stretched).unwrap().scale, Scale::from(1.0), "only fullscreen");
-        let app = Window::default().presentation(false, &[], Size::Default);
+        let app = WindowFacts::default().presentation(false, &[], Size::Default);
         assert_eq!(Geometry::new(screen, screen, app, stretched).unwrap().scale, Scale::from(1.0), "only a game's");
     }
 
     #[test]
     fn integer_scaling_shows_the_largest_whole_multiple_of_the_picture() {
-        let game = Window::default().presentation(true, &[], Size::Integer);
+        let game = WindowFacts::default().presentation(true, &[], Size::Integer);
         let thor = Rectangle::from_size((1920, 1080).into());
         let whole = |size: (i32, i32)| Picture { size: Some(size.into()), place: None };
         // A 640x480 mode stretched over the screen: twice, 1280x960, centred.
@@ -181,13 +181,13 @@ mod tests {
     #[test]
     fn a_picture_in_part_of_its_window_is_what_is_fitted() {
         // Wine's 640x480 mode: shown at 720x540 between its own bars in a 960x540 window.
-        let game = Window::default().presentation(true, &[], Size::Default);
+        let game = WindowFacts::default().presentation(true, &[], Size::Default);
         let screen = Rectangle::from_size((960, 540).into());
         let wine = Picture { size: Some((640, 480).into()), place: Some(Rectangle::new((120, 0).into(), (720, 540).into())) };
         let g = Geometry::new(screen, screen, game, wine).unwrap();
         assert_eq!((g.scale, g.origin), (Scale::from(1.0), (0.0, 0.0).into()), "already fitted: as it is");
         // Integer: once, 640x480, centred; the window around it follows.
-        let integer = Window::default().presentation(true, &[], Size::Integer);
+        let integer = WindowFacts::default().presentation(true, &[], Size::Integer);
         let g = Geometry::new(screen, screen, integer, wine).unwrap();
         assert_eq!(g.scale, Scale::from((640.0 / 720.0, 480.0 / 540.0)));
         let corner = g.origin + Point::from(((120.0 * g.scale.x).round(), 0.0));
@@ -197,7 +197,7 @@ mod tests {
         let g = Geometry::new(thor, screen, game, wine).unwrap();
         assert_eq!((g.scale, g.surface_coords((240.0, 0.0).into())), (Scale::from(2.0), (120.0, 0.0).into()));
         // Stretch: the picture fills the screen, its shape aside.
-        let stretch = Window::default().presentation(true, &[], Size::Stretch);
+        let stretch = WindowFacts::default().presentation(true, &[], Size::Stretch);
         let g = Geometry::new(screen, screen, stretch, wine).unwrap();
         assert_eq!(g.scale, Scale::from((960.0 / 720.0, 1.0)));
         assert_eq!(g.origin + Point::from(((120.0 * g.scale.x).round(), 0.0)), (0.0, 0.0).into(), "the picture's corner, as drawn");

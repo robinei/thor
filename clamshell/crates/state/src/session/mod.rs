@@ -21,7 +21,7 @@ use crate::session::windows::WindowCommand;
 use crate::{Entry, Library};
 use instance::Instance;
 use running::{Front, Launching, Running};
-use windows::Window;
+use windows::{Window, WindowFacts};
 
 /// How soon after the window in front closed a new window on its workspace is shown again, in seconds.
 const REOPEN_SECS: u64 = 2;
@@ -178,11 +178,11 @@ impl Session {
         self.top_window().is_some_and(|front| self.windows.iter().any(|w| !w.down && w.id != front.id && w.workspace == front.workspace))
     }
 
-    /// Whether a window opening comes in front, which the compositor asks as it opens. While a launch
-    /// waits for its window, only its own windows come in front. A dialog comes in front if its parent's
-    /// program is in front. First windows of our scopes follow foreground launch intent; later windows of the shown
-    /// program may select themselves. An unowned program's window is shown at once.
-    pub fn opening_focus(&self, window: &Window) -> bool {
+    /// Whether a window opening comes in front. While a launch waits for its window, only its own windows
+    /// come in front. A dialog comes in front if its parent's program is in front. First windows of our
+    /// scopes follow foreground launch intent; later windows of the shown program may select themselves.
+    /// An unowned program's window is shown at once.
+    pub(crate) fn opening_focus(&self, window: &WindowFacts) -> bool {
         if let Some(instance) = &self.front_launch {
             return self.of_launch(instance, window);
         }
@@ -198,7 +198,7 @@ impl Session {
 
     /// Whether `window` is one of launch `instance`'s: in its unit, of its entry by app id or process, or
     /// a dialog of one on its workspace.
-    fn of_launch(&self, instance: &Instance, window: &Window) -> bool {
+    fn of_launch(&self, instance: &Instance, window: &WindowFacts) -> bool {
         let running = self.running.iter().find(|r| Some(r.key.as_str()) == instance.key());
         let in_scope = window.unit.as_deref().and_then(Instance::unit_name).is_some_and(|unit| instance.is(unit));
         let parent = window.parent.and_then(|id| self.window(id)).is_some_and(|parent| instance.on(&parent.workspace));
@@ -303,7 +303,9 @@ impl Session {
     /// - its scope, which also covers windows moved down;
     /// - its process, for a program found by its tray icon;
     /// - its workspace.
-    pub fn running_of(&self, w: &Window) -> Option<&Running> {
+    ///
+    /// A dialog's is its parent's.
+    pub fn running_of(&self, w: &WindowFacts) -> Option<&Running> {
         let mut w = w;
         for _ in 0..self.windows.len() {
             match w.parent.and_then(|id| self.window(id)) {
@@ -317,11 +319,11 @@ impl Session {
             .find(|r| r.owns(w))
             .or_else(|| by_key(w.unit.as_deref().and_then(Instance::key_of)))
             .or_else(|| self.running.iter().find(|r| r.fathered(w)))
-            .or_else(|| by_key(Instance::key_of(&w.workspace)))
+            .or_else(|| by_key(self.window(w.id).and_then(|w| Instance::key_of(&w.workspace))))
     }
 
     /// The id of the running entry a window belongs to (see [`Session::running_of`]).
-    pub(crate) fn owner_of(&self, w: &Window) -> Option<Arc<str>> {
+    pub(crate) fn owner_of(&self, w: &WindowFacts) -> Option<Arc<str>> {
         self.running_of(w).map(|r| r.id.clone())
     }
 

@@ -453,41 +453,39 @@ impl State {
 
     fn window_event(&mut self, event: WindowEvent, out: &mut Out) {
         match event {
-            WindowEvent::Opened(mut window) => {
-                if self.session.windows().iter().any(|w| w.id == window.id) {
+            WindowEvent::Opened(facts) => {
+                if self.session.window(facts.id).is_some() {
                     return;
                 }
-                let parent = window.parent.and_then(|id| self.session.window(id)).map(|w| (w.workspace.clone(), w.down));
-                let inherit_down = parent.as_ref().is_some_and(|(_, down)| *down) && !window.down;
-                if inherit_down {
-                    window.down = true;
-                    window.focused = false;
-                }
-                {
-                    let group = parent.map(|(group, _)| group).or_else(|| {
-                        self.shelf
-                            .library()
-                            .entries
-                            .iter()
-                            .find(|g| crate::session::running::has_app_id(g, &window.app_id))
-                            .map(|g| Instance::workspace_of(&g.key))
-                            .or_else(|| self.session.running_of(&window).map(|r| r.workspace()))
-                            .or_else(|| window.instance().map(|i| i.workspace()))
-                    });
-                    if let Some(group) = group {
-                        window.workspace = group;
-                    }
-                }
-                let id = window.id;
-                self.session.on_window(WindowEvent::Opened(window));
-                if inherit_down {
+                // A dialog goes with its parent, below if the parent is.
+                let parent = facts.parent.and_then(|id| self.session.window(id)).map(|w| (w.workspace.clone(), w.down));
+                let down = parent.as_ref().is_some_and(|(_, down)| *down);
+                let group = parent.map(|(group, _)| group).or_else(|| {
+                    self.shelf
+                        .library()
+                        .entries
+                        .iter()
+                        .find(|g| crate::session::running::has_app_id(g, &facts.app_id))
+                        .map(|g| Instance::workspace_of(&g.key))
+                        .or_else(|| self.session.running_of(&facts).map(|r| r.workspace()))
+                        .or_else(|| facts.instance().map(|i| i.workspace()))
+                });
+                let focus = !down && self.session.opening_focus(&facts);
+                let id = facts.id;
+                self.session.open(facts, group.unwrap_or_default(), focus);
+                if down {
                     self.bottom.show_down(id, &mut self.session);
                 }
             }
+            WindowEvent::Closed(id) => self.session.close(id),
+            WindowEvent::Title { window, title } => self.session.retitle(window, title),
+            WindowEvent::Changed(facts) => self.session.change(facts),
+            WindowEvent::KeyboardFocus(id) => self.session.focus_keyboard(id),
             WindowEvent::Activate(id) => {
-                if self.session.window(id).is_some() {
-                    self.session.cancel_front_launch();
+                if self.session.window(id).is_none() {
+                    return;
                 }
+                self.session.cancel_front_launch();
                 if let Some(owner) = self.session.window(id).and_then(|w| self.session.owner_of(w)) {
                     self.session.thaw(&owner, out);
                     self.session.resume_runner_of(&owner, self.shelf.library(), out);
@@ -496,10 +494,9 @@ impl State {
                     self.bottom.show_program_down(id, &mut self.session);
                     self.session.command(WindowCommand::KeyboardFocus(id));
                 } else {
-                    self.session.on_window(WindowEvent::Activate(id));
+                    self.session.command(WindowCommand::FocusWindow(id));
                 }
             }
-            event => self.session.on_window(event),
         }
     }
 

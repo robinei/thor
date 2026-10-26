@@ -24,8 +24,8 @@ use crate::effect::Effect;
 use crate::out::Out;
 use crate::session::instance::Instance;
 use crate::session::running::{Origin, Running};
-use crate::session::windows::Window;
 use crate::session::windows::WindowCommand;
+use crate::session::windows::{Window, WindowFacts};
 use crate::{Clock, Entry, Library, Session};
 
 impl Session {
@@ -100,7 +100,7 @@ impl Session {
 /// The entry that a program found by window `w` of its process `pid` runs as: the library's desktop entry
 /// named like the window's app id, or else one of its own, named by the app id, or without one by the
 /// process.
-pub(crate) fn window_entry(library: &Library, w: &Window, pid: u32) -> Entry {
+pub(crate) fn window_entry(library: &Library, w: &WindowFacts, pid: u32) -> Entry {
     found_entry(library, &w.app_id, || {
         let name = if w.app_id.is_empty() { pid.to_string() } else { w.app_id.clone() };
         let title = if w.app_id.is_empty() { &w.title } else { &w.app_id };
@@ -123,8 +123,8 @@ mod tests {
     use crate::{Event, Init, State};
 
     /// A window of process `pid`, whose parent is 1, in `unit`.
-    fn window(id: i64, app_id: &str, pid: u32, unit: &str, focused: bool) -> Window {
-        Window { pids: vec![pid], unit: Some(unit.into()), ..win(id, app_id, "1", focused) }
+    fn window(id: i64, app_id: &str, pid: u32, unit: &str) -> WindowFacts {
+        WindowFacts { pids: vec![pid], unit: Some(unit.into()), ..win(id, app_id) }
     }
 
     fn device() -> State {
@@ -142,13 +142,13 @@ mod tests {
     #[test]
     fn a_window_of_no_entry_makes_its_program_one() {
         let mut s = device();
-        let thing = window(5, "org.x.Thing", 500, "app-thing.scope", true);
-        let fx = s.observed(vec![thing.clone(), window(6, "org.x.Thing", 500, "app-thing.scope", false)]);
+        let thing = window(5, "org.x.Thing", 500, "app-thing.scope");
+        let fx = s.observed(vec![thing.clone(), window(6, "org.x.Thing", 500, "app-thing.scope")]);
         let r = s.session().running("window:org.x.Thing").unwrap();
         assert_eq!((r.found(), r.pid(), r.app_id.as_deref()), (true, Some(500), Some("org.x.Thing")));
         let ws = r.workspace();
         assert!([5, 6].iter().all(|id| s.session().window(*id).is_some_and(|w| w.workspace == ws)));
-        assert_eq!(s.session().top_window().map(|w| w.id), Some(5), "it was in front");
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(6), "the one in front, opened last");
         assert!(fx.iter().any(|e| matches!(e, Effect::Adopt { pid: 500, .. })), "{fx:?}");
         assert!(s.dock().items().iter().any(|i| &*i.id == "window:org.x.Thing"), "on the dock");
         // Its picture is looked up by its app id, and once found it is the entry's.
@@ -161,7 +161,7 @@ mod tests {
         s.observed(vec![]);
         assert!(s.session().running("window:org.x.Thing").is_none());
         // A program the library has a desktop file for runs as that entry.
-        s.observed(vec![window(7, "firefox", 501, "app-firefox.scope", false)]);
+        s.observed(vec![window(7, "firefox", 501, "app-firefox.scope")]);
         assert!(s.session().running("desktop:firefox").is_some());
     }
 
@@ -169,14 +169,14 @@ mod tests {
     fn a_window_of_another_process_after_its_entry_closed_is_found_anew() {
         let mut s = device();
         let adopted = |fx: &[Effect]| fx.iter().find_map(|e| if let Effect::Adopt { instance, pid } = e { Some((instance.clone(), *pid)) } else { None });
-        let fx = s.observed(vec![window(5, "foot", 500, "app-foot.scope", true)]);
+        let fx = s.observed(vec![window(5, "foot", 500, "app-foot.scope")]);
         let (instance, _) = adopted(&fx).unwrap();
         s.applied(Event::Units(vec![instance.clone()]));
         // Once moved, its window's unit is ours. Once closed, its scope is still listed for a moment.
-        s.observed(vec![Window { unit: instance.unit(), ..window(5, "foot", 500, "app-foot.scope", true) }]);
+        s.observed(vec![WindowFacts { unit: instance.unit(), ..window(5, "foot", 500, "app-foot.scope") }]);
         s.observed(vec![]);
         // Another foot, in another process, appears before systemd's list says the scope is gone.
-        let other = window(6, "foot", 600, "session-3.scope", true);
+        let other = window(6, "foot", 600, "session-3.scope");
         let fx = s.observed(vec![other.clone()]);
         let more = s.applied(Event::Units(vec![]));
         let again = s.observed(vec![other]);
@@ -187,11 +187,11 @@ mod tests {
     #[test]
     fn a_services_window_is_no_entry() {
         let mut s = device();
-        let portal = window(5, "xdg-desktop-portal-gtk", 300, "xdg-desktop-portal-gtk.service", true);
+        let portal = window(5, "xdg-desktop-portal-gtk", 300, "xdg-desktop-portal-gtk.service");
         let fx = s.observed(vec![portal.clone()]);
         assert!(s.session().running_entries().is_empty(), "the program that asked for it is its");
         assert!(!fx.iter().any(|e| matches!(e, Effect::Adopt { .. })), "{fx:?}");
-        assert_eq!(s.session().window(5).map(|w| w.workspace.as_str()), Some(portal.workspace.as_str()), "not moved");
+        assert_eq!(s.session().window(5).map(|w| w.workspace.as_str()), Some("clamshell-window-5"), "a group of its own");
     }
 
     #[test]
@@ -203,11 +203,11 @@ mod tests {
         launch_now(&mut s, "desktop:firefox");
         crate::testkit::start(&mut s, "desktop:firefox");
         crate::testkit::end(&mut s, "desktop:firefox");
-        let mine = window(5, "firefox", 700, "waydroid-session.scope", false);
+        let mine = window(5, "firefox", 700, "waydroid-session.scope");
         s.observed(vec![mine.clone()]);
         // Another program's window from the same process: Waydroid's session showing an app the library
         // doesn't have.
-        let fx = s.observed(vec![mine.clone(), window(6, "org.other", 700, "waydroid-session.scope", true)]);
+        let fx = s.observed(vec![mine.clone(), window(6, "org.other", 700, "waydroid-session.scope")]);
         let r = s.session().running("window:org.other").unwrap();
         assert_eq!(r.pid(), None, "not its own process");
         assert!(!fx.iter().any(|e| matches!(e, Effect::Adopt { .. })), "{fx:?}");
@@ -231,7 +231,7 @@ mod tests {
         s.applied(Event::Units(vec![thing.clone(), tray.clone()]));
         assert!(s.session().running_entries().is_empty(), "not known yet");
         s.applied(Event::Frozen(vec![thing.key().unwrap().into()]));
-        let in_scope = Window { unit: thing.unit(), workspace: thing.workspace(), ..window(5, "org.x.Thing", 500, "", false) };
+        let in_scope = WindowFacts { unit: thing.unit(), ..window(5, "org.x.Thing", 500, "") };
         s.observed(vec![in_scope]);
         let r = s.session().running("window:org.x.Thing").unwrap();
         assert_eq!((r.origin.clone(), r.key.as_str()), (Origin::Ours, thing.key().unwrap()));
@@ -259,7 +259,7 @@ mod tests {
         // As a guest in a desktop, a window in ClamShell's compositor belongs to that session, as on the
         // device.
         let mut s = state();
-        let fx = s.observed(vec![window(5, "org.x.Thing", 500, "app-thing.scope", true)]);
+        let fx = s.observed(vec![window(5, "org.x.Thing", 500, "app-thing.scope")]);
         assert!(s.session().running("window:org.x.Thing").is_some(), "on the dock");
         assert!(fx.iter().any(|e| matches!(e, Effect::Adopt { pid: 500, .. })), "{fx:?}");
     }

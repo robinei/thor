@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use clamshell_state::{Effect, State, WindowEvent, session::windows::Window};
+use clamshell_state::{Effect, State, WindowEvent, session::windows::WindowFacts};
 use clamshell_ui::{Config, Core, Error, Screen};
 use smithay::{
     desktop::{PopupManager, Window as SurfaceWindow},
@@ -143,7 +143,7 @@ pub(crate) struct Server {
     pub x11_selections: crate::x11::selection::SeatSelections,
     pub x11_close: Vec<i64>,
     pub x11_popup_dismiss: Vec<i64>,
-    pub x11_changes: Vec<Window>,
+    pub x11_changes: Vec<WindowFacts>,
     pub x11_display: Option<String>,
     /// Xwayland's surfaces by the serial it gave them, until their window is paired (see `x11::shell`).
     pub xwayland_serials: Vec<(u64, WlSurface)>,
@@ -367,7 +367,7 @@ impl Server {
         }
     }
 
-    pub fn facts(&self, surface: &ToplevelSurface, id: i64) -> Window {
+    pub fn facts(&self, surface: &ToplevelSurface, id: i64) -> WindowFacts {
         let (app_id, title, parent, dialog) = with_states(surface.wl_surface(), |states| {
             states
                 .data_map
@@ -395,7 +395,7 @@ impl Server {
                     .unwrap_or_default()
             });
         let limits = Self::size_limits(surface);
-        Window {
+        WindowFacts {
             id,
             app_id,
             title,
@@ -405,7 +405,7 @@ impl Server {
             pids: process.pids,
             limits,
             role: if dialog { clamshell_state::session::presentation::WindowRole::Dialog } else { clamshell_state::session::presentation::WindowRole::Normal },
-            ..Window::default()
+            ..WindowFacts::default()
         }
     }
 
@@ -435,11 +435,12 @@ impl Server {
         let Some(toplevel) = client.window.toplevel().cloned() else { return };
         let id = client.id;
         if !client.opened {
-            let mut facts = self.facts(&toplevel, id);
+            let facts = self.facts(&toplevel, id);
             let colour = facts.colour.as_ref().map_or("unspecified".to_string(), |c| format!("{:?} {:?}", c.primaries, c.transfer));
-            facts.focused = self.core.state().session().opening_focus(&facts);
-            log::info!("compositor: window {id} opens: {:?} {:?}, focused {}, colour {colour}", facts.app_id, facts.title, facts.focused);
+            let (app_id, title) = (facts.app_id.clone(), facts.title.clone());
             self.core.handle(WindowEvent::Opened(facts).into());
+            let focused = self.core.state().session().top_window().is_some_and(|w| w.id == id);
+            log::info!("compositor: window {id} opens: {app_id:?} {title:?}, focused {focused}, colour {colour}");
             if let Some(client) = self.windows.get_mut(index) {
                 client.opened = true;
             }

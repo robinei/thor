@@ -14,7 +14,7 @@ use clamshell_state::device::sticks::{Phase, Progress, StickAxis};
 use clamshell_state::keymap::{Button, Input, Keymaps, Layer, Param, Side};
 use clamshell_state::radios::{bluetooth, wifi};
 use clamshell_state::session::tray;
-use clamshell_state::session::windows::Window;
+use clamshell_state::session::windows::WindowFacts;
 use clamshell_state::settings::Setting;
 use clamshell_state::status::battery;
 use clamshell_state::{
@@ -56,9 +56,8 @@ fn allocs() -> usize {
     ALLOCS.with(Cell::get)
 }
 
-fn window(id: i64, app_id: &str, unit: Option<&str>, focused: bool) -> Window {
-    let workspace = unit.map_or("1", |u| u.trim_end_matches(".scope")).to_owned();
-    Window { id, app_id: app_id.into(), focused, unit: unit.map(Into::into), workspace, ..Default::default() }
+fn window(id: i64, app_id: &str, unit: Option<&str>) -> WindowFacts {
+    WindowFacts { id, app_id: app_id.into(), unit: unit.map(Into::into), ..Default::default() }
 }
 
 fn key(k: Key) -> Event {
@@ -162,14 +161,15 @@ fn warm_frames_do_not_allocate() {
                 Event::Units(["clamshell-run-zelda_1-1-0", "clamshell-run-foot_1-1-0"].into_iter().filter_map(Instance::parse).collect()),
                 Event::WindowBatch(
                     [
-                        window(5, "retroarch", Some("clamshell-run-zelda_1-1-0.scope"), false),
-                        window(7, "foot", Some("clamshell-run-foot_1-1-0.scope"), true),
-                        window(8, "foot", None, false),
+                        window(5, "retroarch", Some("clamshell-run-zelda_1-1-0.scope")),
+                        window(7, "foot", Some("clamshell-run-foot_1-1-0.scope")),
+                        window(8, "foot", None),
                     ]
                     .into_iter()
                     .map(clamshell_state::WindowEvent::Opened)
                     .collect(),
                 ),
+                clamshell_state::WindowEvent::Activate(7).into(),
             ],
         ),
         (

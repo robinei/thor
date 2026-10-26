@@ -1,6 +1,6 @@
 //! Shorthands for the tests.
 
-pub use crate::session::windows::Window;
+pub use crate::session::windows::WindowFacts;
 pub use crate::settings::Values;
 
 use crate::*;
@@ -10,13 +10,12 @@ pub trait Applied {
     /// Applies `event`, and returns the effects.
     fn applied(&mut self, event: Event) -> Vec<Effect>;
     /// Reports the windows as the compositor does, in one batch: the known windows not in `windows`
-    /// close, the others open as given, and a known window's changed facts and title are reported. Where
-    /// a known window is placed and whether it is shown are the state's, so those are not reported.
-    fn observed(&mut self, windows: Vec<Window>) -> Vec<Effect>;
+    /// close, the others open as given, and a known window's changed facts and title are reported.
+    fn observed(&mut self, windows: Vec<WindowFacts>) -> Vec<Effect>;
 }
 
 impl Applied for State {
-    fn observed(&mut self, windows: Vec<Window>) -> Vec<Effect> {
+    fn observed(&mut self, windows: Vec<WindowFacts>) -> Vec<Effect> {
         let known = self.session().windows();
         let mut events: Vec<WindowEvent> = known.iter().filter(|w| !windows.iter().any(|n| n.id == w.id)).map(|w| WindowEvent::Closed(w.id)).collect();
         for window in windows {
@@ -25,9 +24,8 @@ impl Applied for State {
                 continue;
             };
             let title = (old.title != window.title).then(|| WindowEvent::Title { window: window.id, title: window.title.clone() });
-            let facts =
-                Window { title: old.title.clone(), workspace: old.workspace.clone(), down: old.down, focused: old.focused, visible: old.visible, ..window };
-            if facts != *old {
+            let facts = WindowFacts { title: old.title.clone(), ..window };
+            if facts != old.facts {
                 events.push(WindowEvent::Changed(facts));
             }
             events.extend(title);
@@ -80,20 +78,34 @@ pub fn started(init: Init) -> State {
     s
 }
 
-pub fn win(id: i64, app_id: &str, workspace: &str, focused: bool) -> Window {
-    Window { id, app_id: app_id.into(), title: String::new(), focused, visible: focused, unit: None, workspace: workspace.into(), ..Window::default() }
+/// A window as the compositor reports it, of no launch of ours.
+pub fn win(id: i64, app_id: &str) -> WindowFacts {
+    WindowFacts { id, app_id: app_id.into(), ..WindowFacts::default() }
 }
 
-/// A running entry's first window becomes available and is shown by the backend.
+/// A window of launch `instance`: in its unit, and so in its entry's group.
+pub fn win_of(id: i64, app_id: &str, instance: &Instance) -> WindowFacts {
+    WindowFacts { unit: instance.unit(), ..win(id, app_id) }
+}
+
+/// A launch of the entry with key `key`, which need not be in the library: its windows ([`win_of`]) are
+/// in a group of that key.
+pub fn launch_of(key: &str) -> Instance {
+    Instance::Run { key: key.into(), secs: 1, n: 0 }
+}
+
+/// A running entry's first window opens and its client asks to show it.
 pub fn show_window(s: &mut State, entry: &str, id: i64) -> Vec<Effect> {
     let key = clamshell_library::key_of(entry);
     let unit = s.session().units().iter().find(|u| u.key() == Some(&key)).and_then(Instance::unit);
-    s.observed(vec![Window { unit, ..win(id, entry, &Instance::workspace_of(&key), true) }])
+    let mut fx = s.observed(vec![WindowFacts { unit, ..win(id, entry) }]);
+    fx.extend(s.applied(WindowEvent::Activate(id).into()));
+    fx
 }
 
-/// One of the user's terminals in front, not one of ours.
-pub fn foot() -> Window {
-    win(1001, "foot", "1", true)
+/// One of the user's terminals, not one of ours. Opened, it comes in front.
+pub fn foot() -> WindowFacts {
+    win(1001, "foot")
 }
 
 /// A game in shelf's list.

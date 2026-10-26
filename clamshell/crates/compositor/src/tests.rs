@@ -224,7 +224,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
                         server.sync_windows();
                     }
                     assert_eq!(server.presentation_revision, revision);
-                    let mut facts = server.core.state().session().windows()[0].clone();
+                    let mut facts = server.core.state().session().windows()[0].facts.clone();
                     facts.role = WindowRole::Utility;
                     server.core.handle(clamshell_state::WindowEvent::Changed(facts.clone()).into());
                     server.sync_windows();
@@ -452,17 +452,18 @@ fn touch_contacts_keep_independent_surfaces_and_native_coordinates() {
 
 #[test]
 fn touching_a_home_arrow_switches_once_and_consumes_home_release() {
-    use clamshell_state::{WindowEvent, session::windows::Window};
+    use clamshell_state::{WindowEvent, session::windows::WindowFacts};
     use smithay::backend::input::InputTime;
     let display = Display::<Server>::new().unwrap();
     let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
     let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
     server.core.handle(Event::Start);
-    for (id, focused) in [(1, true), (2, false)] {
-        server.core.handle(
-            WindowEvent::Opened(Window { id, app_id: "test".into(), workspace: "example".into(), focused, visible: focused, ..Window::default() }).into(),
-        );
+    // Two windows of one launch, the first in front.
+    for id in [1, 2] {
+        let unit = Some("clamshell-run-test-1-0.service".into());
+        server.core.handle(WindowEvent::Opened(WindowFacts { id, app_id: "test".into(), unit, ..WindowFacts::default() }).into());
     }
+    server.core.handle(WindowEvent::Activate(1).into());
     server.core.handle(Event::HomeHeld(true));
     assert!(server.core.state().session().has_other_top_window());
     let time = InputTime::from_millis(10);

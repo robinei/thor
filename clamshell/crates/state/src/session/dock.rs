@@ -338,8 +338,10 @@ mod tests {
         // A tap with no window of it to show leaves what is in front, and a notice says so.
         assert_eq!(tap(&mut s, dock(0)), vec![]);
         assert!(s.bottom().notice().is_some());
-        // With a window, a tap shows it, and its menu pins it.
-        s.observed(vec![win(3, "zelda3", &zelda.workspace(), false)]);
+        // With a window, a tap shows it, and its menu pins it. (After Home, so that its window opens
+        // behind.)
+        s.applied(Event::Home);
+        s.observed(vec![win_of(3, "zelda3", &zelda)]);
         assert_eq!(tap(&mut s, dock(0)), vec![Effect::PadRoute(crate::PadRoute::Game)]);
         assert_eq!(s.session().top_window().map(|w| w.id), Some(3));
         long(&mut s, dock(0));
@@ -434,7 +436,7 @@ mod tests {
         let mut s = state();
         tap(&mut s, Id::Tab(crate::Tab::Dock));
         let zelda = launch(&mut s, "zelda-lttp");
-        let w = Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) };
+        let w = win_of(5, "zelda3", &zelda);
         s.observed(vec![w.clone()]);
         long(&mut s, dock(0));
         assert_eq!(tap(&mut s, Id::Dock(DockId::Autostart)), vec![Effect::Save(Save::Autostart(vec!["zelda-lttp".into()])), closed()]);
@@ -458,7 +460,7 @@ mod tests {
         let mut s = state();
         tap(&mut s, Id::Tab(crate::Tab::Dock));
         let zelda = launch(&mut s, "zelda-lttp");
-        let w = Window { unit: zelda.unit(), visible: true, ..win(5, "zelda3", &zelda.workspace(), true) };
+        let w = win_of(5, "zelda3", &zelda);
         s.observed(vec![w]);
         let key = clamshell_library::key_of("zelda-lttp");
         long(&mut s, dock(0));

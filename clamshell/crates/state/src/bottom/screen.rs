@@ -20,8 +20,8 @@ use crate::bottom::notice::NoticeKind;
 use crate::effect::{Effect, Save};
 use crate::out::Out;
 use crate::session::instance::Instance;
-use crate::session::windows::Window;
 use crate::session::windows::WindowCommand;
+use crate::session::windows::WindowFacts;
 use crate::settings::BottomWhenIdle;
 use crate::{Clock, Session};
 
@@ -35,7 +35,7 @@ pub struct WindowRule {
 }
 
 impl WindowRule {
-    fn matches(&self, owner: &str, w: &Window) -> bool {
+    fn matches(&self, owner: &str, w: &WindowFacts) -> bool {
         &*self.owner == owner && self.app_id == w.app_id && self.title.as_ref().is_none_or(|t| *t == w.title)
     }
 }
@@ -66,13 +66,13 @@ impl WindowRules {
     }
 
     /// Forgets the rules that match a window of `owner`. Returns whether there were any.
-    fn forget(&mut self, owner: &str, w: &Window) -> bool {
+    fn forget(&mut self, owner: &str, w: &WindowFacts) -> bool {
         let before = self.list.len();
         self.list.retain(|r| !r.matches(owner, w));
         self.list.len() != before
     }
 
-    fn wants(&self, owner: &str, w: &Window) -> bool {
+    fn wants(&self, owner: &str, w: &WindowFacts) -> bool {
         self.list.iter().any(|r| r.matches(owner, w))
     }
 }
@@ -333,24 +333,14 @@ mod tests {
     use crate::Tab;
     use crate::device::buttons::DeviceKey;
     use crate::session::running::{Origin, Running};
+    use crate::session::windows::Window;
     use crate::settings::{Choice, Setting};
     use crate::testkit::Applied;
     use crate::testkit::{state, tap};
     use crate::{Event, State, WindowPlace};
 
-    fn win(id: i64, unit: &str, title: &str, focused: bool, down: bool) -> Window {
-        Window {
-            id,
-            visible: true,
-            app_id: "emu".into(),
-            title: title.into(),
-            focused,
-            unit: Some(unit.into()),
-            workspace: Instance::from_unit(unit).map_or_else(String::new, |i| i.workspace()),
-            down,
-            pids: vec![],
-            ..Window::default()
-        }
+    fn win(id: i64, unit: &str, title: &str) -> WindowFacts {
+        WindowFacts { id, app_id: "emu".into(), title: title.into(), unit: Some(unit.into()), ..WindowFacts::default() }
     }
 
     const GAME: &str = "clamshell-run-melonds_1-99-1.scope";
@@ -368,7 +358,8 @@ mod tests {
     fn emulator() -> State {
         let mut s = state();
         s.add_run(running("melonds", "melonds_1"), emu());
-        s.observed(vec![win(1, GAME, "Top", false, false), win(2, GAME, "Bottom", true, false)]);
+        s.observed(vec![win(1, GAME, "Top"), win(2, GAME, "Bottom")]);
+        s.applied(crate::WindowEvent::Activate(2).into());
         s
     }
 
@@ -380,12 +371,13 @@ mod tests {
     fn a_programs_only_window_is_remembered_by_its_app_id_alone() {
         let mut s = state();
         s.add_run(running("melonds", "melonds_1"), emu());
-        s.observed(vec![win(2, GAME, "Page one", true, false)]);
+        s.observed(vec![win(2, GAME, "Page one")]);
+        s.applied(crate::WindowEvent::Activate(2).into());
         let fx = key(&mut s, DeviceKey::WindowDown);
         let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: None };
         assert!(matches!(&fx[0], Effect::Save(Save::WindowRules(r)) if r.list() == [rule.clone()]), "{fx:?}");
         // A different title next time, such as a page or a command, still matches.
-        assert!(rule.matches("melonds", &win(3, GAME, "Page two", true, false)));
+        assert!(rule.matches("melonds", &win(3, GAME, "Page two")));
     }
 
     #[test]
@@ -421,13 +413,13 @@ mod tests {
         // down, once.
         let mut s = crate::testkit::started(crate::Init { window_rules: rules.clone(), ..crate::testkit::init() });
         s.add_run(running("melonds", "melonds_1"), emu());
-        s.observed(vec![win(5, GAME, "Top", true, false), win(6, GAME, "Bottom", false, false)]);
+        s.observed(vec![win(5, GAME, "Top"), win(6, GAME, "Bottom")]);
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(6));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(5));
         assert_eq!(s.session().windows_down().count(), 1);
         // Its window appears before its scope is listed, and is sent down when the scope appears.
         let mut s = crate::testkit::started(crate::Init { window_rules: rules.clone(), ..crate::testkit::init() });
-        s.observed(vec![win(8, GAME, "Bottom", true, false)]);
+        s.observed(vec![win(8, GAME, "Bottom")]);
         assert_eq!(s.session().bottom_window(), None, "no entry yet");
         s.add_run(running("melonds", "melonds_1"), emu());
         s.applied(Event::Units(vec![emu()]));
@@ -436,7 +428,7 @@ mod tests {
         key(&mut s, DeviceKey::WindowDown);
         // Another game's window with that title doesn't match the rule.
         s.add_run(running("other", "other_2"), Instance::Run { key: "other_2".into(), secs: 5, n: 2 });
-        s.observed(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom", false, false)]);
+        s.observed(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom")]);
         assert!(s.session().window(7).is_some_and(|w| !w.down));
     }
 
@@ -475,7 +467,8 @@ mod tests {
         assert!(s.bottom().shows_windows(s.session()));
         // With another program in front, its window below isn't marked as hidden.
         key(&mut s, DeviceKey::BottomView);
-        s.observed(vec![win(1, GAME, "Top", false, false), win(2, GAME, "Bottom", false, true), win(3, "clamshell-run-x_1-1-0.scope", "x", true, false)]);
+        s.observed(vec![win(1, GAME, "Top"), win(2, GAME, "Bottom"), win(3, "clamshell-run-x_1-1-0.scope", "x")]);
+        s.applied(crate::WindowEvent::Activate(3).into());
         assert_eq!(s.bottom().hidden_down(s.session()), None);
     }
 
@@ -566,7 +559,7 @@ mod tests {
         let mut s = emulator();
         on_battery(&mut s, true);
         key(&mut s, DeviceKey::WindowDown);
-        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
+        s.observed(vec![win(1, GAME, "Top"), win(2, GAME, "Bottom")]);
         s.applied(Event::tick(1000));
         assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), None, "a window shown there");
     }
@@ -614,7 +607,7 @@ mod tests {
         // Windows moved there are watched without touching, so they are never dimmed.
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
-        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
+        s.observed(vec![win(1, GAME, "Top"), win(2, GAME, "Bottom")]);
         s.applied(Event::tick(5000));
         s.applied(Event::tick(5000 + 2 * DIM_AFTER));
         assert!(s.bottom().shows_windows(s.session()) && !s.bottom().dimmed());
@@ -637,7 +630,7 @@ mod tests {
     fn window_down_with_no_window_in_front_does_nothing() {
         let mut s = state();
         assert_eq!(key(&mut s, DeviceKey::WindowDown), vec![], "no windows");
-        s.observed(vec![crate::testkit::win(2, "foot", "1", false)]);
+        s.observed(vec![crate::testkit::win_of(2, "foot", &crate::testkit::launch_of("foot_1"))]);
         assert_eq!(key(&mut s, DeviceKey::WindowDown), vec![], "shelf in front");
         assert!(s.bottom().window_rules().list().is_empty());
     }
@@ -647,7 +640,7 @@ mod tests {
     fn a_window_moved_up_says_its_rule_is_forgotten() {
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
-        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
+        s.observed(vec![win(1, GAME, "Top"), win(2, GAME, "Bottom")]);
         s.applied(Event::tick(100));
         key(&mut s, DeviceKey::WindowUp);
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::BottomRule(false)));
@@ -710,7 +703,7 @@ mod tests {
     fn the_keyboard_doesnt_come_up_over_a_window_shown_below() {
         let mut s = emulator();
         key(&mut s, DeviceKey::WindowDown);
-        s.observed(vec![win(1, GAME, "Top", true, false), win(2, GAME, "Bottom", false, true)]);
+        s.observed(vec![win(1, GAME, "Top"), win(2, GAME, "Bottom")]);
         assert!(s.bottom().shows_windows(s.session()));
         s.applied(Event::TextInput(true));
         assert_eq!(s.bottom().tab(), Tab::Windows, "the window keeps the screen");

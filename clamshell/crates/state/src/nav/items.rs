@@ -59,9 +59,9 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         let ff6 = launch(&mut s, "ff6");
         let windows = |zelda_open: bool| {
-            let mut w = vec![win(4, "ff6", &ff6.workspace(), false)];
+            let mut w = vec![win_of(4, "ff6", &ff6)];
             if zelda_open {
-                w.push(win(3, "zelda3", &zelda.workspace(), true));
+                w.push(win_of(3, "zelda3", &zelda));
             }
             w
         };

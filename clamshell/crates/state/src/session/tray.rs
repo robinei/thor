@@ -153,7 +153,6 @@ pub(crate) fn tray_entry(library: &Library, t: &TrayItem) -> Entry {
 mod tests {
     use super::*;
     use crate::id::{DockId, Id};
-    use crate::session::windows::Window;
     use crate::testkit::*;
     use crate::{Event, State};
 
@@ -197,7 +196,7 @@ mod tests {
         // of the icon's process, and is moved to its own workspace and shown there.
         let at = s.dock().items().iter().position(|i| &*i.id == "desktop:firefox").unwrap() as u16;
         assert_eq!(tap_dock(&mut s, DockId::Entry(at)), vec![Effect::Tray(TrayCommand::Activate(":1.9/b".into()))]);
-        let window = Window { pids: vec![900, 77], ..win(6, "firefox", &Instance::Shelf.name(), true) };
+        let window = WindowFacts { pids: vec![900, 77], ..win(6, "firefox") };
         s.observed(vec![window.clone()]);
         assert_eq!(s.session().window(6).map(|w| w.workspace.as_str()), Some(ws.as_str()));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(6));
@@ -288,7 +287,7 @@ mod tests {
         crate::testkit::start(&mut s, "desktop:firefox");
         crate::testkit::end(&mut s, "desktop:firefox");
         // Waydroid's session shows Firefox and the terminal, in one process.
-        let in_waydroid = |id, app_id: &str| Window { pids: vec![700], unit: Some("waydroid-session.scope".into()), ..win(id, app_id, "1", false) };
+        let in_waydroid = |id, app_id: &str| WindowFacts { pids: vec![700], unit: Some("waydroid-session.scope".into()), ..win(id, app_id) };
         s.observed(vec![in_waydroid(5, "firefox"), in_waydroid(6, "foot")]);
         assert_eq!(s.session().running("desktop:foot").map(Running::pid), Some(None));
         // An icon of that process named like the terminal's desktop file is the terminal's.

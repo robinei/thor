@@ -6,7 +6,7 @@ use crate::{
 };
 use clamshell_state::{
     WindowEvent,
-    session::{presentation::WindowLimits, windows::Window},
+    session::{presentation::WindowLimits, windows::WindowFacts},
 };
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::{backend::input::InputTime, utils::Point};
@@ -74,12 +74,11 @@ fn x11_popups_share_parent_scaling_keep_tooltips_passive_and_cancel_dismissed_co
             let second: WlSurface = peer.object_from_protocol_id(&server.dh, ids[2]).unwrap();
             let tooltip: WlSurface = peer.object_from_protocol_id(&server.dh, ids[3]).unwrap();
             server.core.handle(
-                WindowEvent::Opened(Window {
+                WindowEvent::Opened(WindowFacts {
                     id: 1,
                     app_id: "popup-test".into(),
-                    focused: true,
                     limits: WindowLimits { min: (1280, 720), max: (1280, 720) },
-                    ..Window::default()
+                    ..WindowFacts::default()
                 })
                 .into(),
             );

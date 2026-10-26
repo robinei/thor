@@ -1,7 +1,7 @@
 //! X11 properties become ordinary window facts here. No X11 types reach State.
 use clamshell_state::session::{
     presentation::{WindowLimits, WindowRole},
-    windows::Window,
+    windows::WindowFacts,
 };
 use x11rb_protocol::protocol::xproto::{AtomEnum, GetPropertyReply};
 
@@ -148,8 +148,8 @@ impl Properties {
             _ => {}
         }
     }
-    pub fn facts(&self, id: i64, parent: Option<i64>, process: crate::Process) -> Window {
-        Window {
+    pub fn facts(&self, id: i64, parent: Option<i64>, process: crate::Process) -> WindowFacts {
+        WindowFacts {
             id,
             app_id: self.class.clone(),
             title: self.utf8_name.as_ref().unwrap_or(&self.name).clone(),
@@ -159,7 +159,7 @@ impl Properties {
             role: if self.role == WindowRole::Normal && self.transient.is_some() { WindowRole::Dialog } else { self.role },
             unit: process.unit,
             pids: process.pids,
-            ..Window::default()
+            ..WindowFacts::default()
         }
     }
 }

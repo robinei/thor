@@ -88,8 +88,8 @@ fn open_device() -> Vec<Event> {
     vec![tap(Id::Shelf(ShelfId::Collection(u16::try_from(tools).unwrap_or(0)))), device(), device()]
 }
 
-/// The state the snapshots start from: a library with its apps pinned to the dock, and nothing else
-/// remembered.
+/// The state the snapshots start from: a library with its apps pinned to the dock, a window rule that
+/// sends the terminal's window titled [`demo::BELOW`] to the bottom screen, and nothing else remembered.
 pub fn state(library: Library) -> State {
     let dock = Dock::pinned(vec!["desktop:steam".into(), "desktop:foot".into(), "desktop:firefox".into()]);
     let mut display_modes = clamshell_state::device::display::DisplayModes::default();
@@ -103,6 +103,11 @@ pub fn state(library: Library) -> State {
         dock,
         keymaps: clamshell_state::keymap::Keymaps::initial(),
         curves: clamshell_state::curve::Curves::initial(),
+        window_rules: clamshell_state::bottom::screen::WindowRules::from_list(vec![clamshell_state::bottom::screen::WindowRule {
+            owner: "desktop:foot".into(),
+            app_id: "foot".into(),
+            title: Some(demo::BELOW.into()),
+        }]),
         ..Init::default()
     })
 }
@@ -110,19 +115,19 @@ pub fn state(library: Library) -> State {
 /// A play of `entry` from `start` for `duration` seconds, as the launcher reports one. The clock is set
 /// back to `now` afterwards.
 fn a_play(entry: &str, start: u64, duration: u64, now: u64) -> Vec<Event> {
-    // The game has a window on its workspace while it plays, as a real game would.
-    let workspace = clamshell_state::Instance::workspace_of(&clamshell_library::key_of(entry));
-    let window = clamshell_state::session::windows::Window {
+    // The game shows a window while it plays, as a real game would.
+    let launch = clamshell_state::Instance::Run { key: clamshell_library::key_of(entry), secs: start, n: 0 };
+    let window = clamshell_state::session::windows::WindowFacts {
         id: 900,
         app_id: "game".into(),
-        workspace,
-        visible: true,
-        ..clamshell_state::session::windows::Window::default()
+        unit: launch.unit(),
+        ..clamshell_state::session::windows::WindowFacts::default()
     };
     vec![
         Event::tick(start),
-        Event::Units(vec![clamshell_state::Instance::Run { key: clamshell_library::key_of(entry), secs: start, n: 0 }]),
+        Event::Units(vec![launch]),
         clamshell_state::WindowEvent::Opened(window).into(),
+        clamshell_state::WindowEvent::Activate(900).into(),
         Event::tick(start + duration),
         Event::Units(vec![]),
         clamshell_state::WindowEvent::Closed(900).into(),

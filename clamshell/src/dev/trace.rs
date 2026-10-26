@@ -35,10 +35,10 @@ pub fn event(event: &Event) -> String {
 
 fn window_change(change: &WindowEvent) -> String {
     match change {
-        WindowEvent::Opened(w) => format!("open {} on {}", w.app_id, w.workspace),
+        WindowEvent::Opened(w) => format!("open {}", w.app_id),
         WindowEvent::Closed(id) => format!("close {id}"),
         WindowEvent::Title { window, .. } => format!("title {window}"),
-        WindowEvent::Changed(w) => format!("changed {} on {}", w.app_id, w.workspace),
+        WindowEvent::Changed(w) => format!("changed {}", w.app_id),
         WindowEvent::Activate(id) => format!("activate {id}"),
         WindowEvent::KeyboardFocus(id) => format!("keyboard focus {id:?}"),
     }

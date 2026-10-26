@@ -4,7 +4,7 @@
 use clamshell_state::levels::{Audio, AudioOutput, Stream};
 use clamshell_state::radios::bluetooth::{self, Bluetooth, Kind};
 use clamshell_state::radios::wifi::{Network, Wifi};
-use clamshell_state::session::windows::Window;
+use clamshell_state::session::windows::WindowFacts;
 use clamshell_state::status::battery::{Battery, Charge, Group, Spender};
 use clamshell_state::status::metrics::Metrics;
 use clamshell_state::{Event, Id, Instance, PointerEvent, Reading, Status, Tab, WindowEvent};
@@ -21,15 +21,19 @@ pub fn run(id: &str, n: u64) -> Instance {
     Instance::Run { key: clamshell_library::key_of(id), secs: 1, n }
 }
 
-/// A window of a launch, on its entry's workspace, or moved to the bottom screen if `down` is set.
-fn window_of(id: i64, app_id: &str, launch: &Instance, focused: bool, down: bool) -> Window {
-    let workspace = launch.workspace();
-    Window { id, app_id: app_id.into(), focused, unit: launch.unit(), workspace, down, ..Window::default() }
+/// A window of a launch.
+fn window_of(id: i64, app_id: &str, launch: &Instance) -> WindowFacts {
+    WindowFacts { id, app_id: app_id.into(), unit: launch.unit(), ..WindowFacts::default() }
 }
 
 /// These windows opening, reported by the compositor in one batch.
-pub fn opened(windows: Vec<Window>) -> Event {
+pub fn opened(windows: Vec<WindowFacts>) -> Event {
     Event::WindowBatch(windows.into_iter().map(WindowEvent::Opened).collect())
+}
+
+/// A client asks to show window `id`, as a program does once it is up.
+fn activate(id: i64) -> Event {
+    WindowEvent::Activate(id).into()
 }
 
 /// A game, two terminals and a browser running, with their windows. The second terminal is in front.
@@ -38,25 +42,24 @@ pub fn running() -> Vec<Event> {
     // Their scopes as systemd lists them, which marks them as running.
     vec![
         Event::Units(vec![game.clone(), t1.clone(), t2.clone(), web.clone()]),
-        opened(vec![
-            window_of(5, "retroarch", &game, false, false),
-            window_of(7, "foot", &t1, false, false),
-            window_of(8, "foot", &t2, true, false),
-            window_of(9, "firefox", &web, false, false),
-        ]),
+        opened(vec![window_of(5, "retroarch", &game), window_of(7, "foot", &t1), window_of(8, "foot", &t2), window_of(9, "firefox", &web)]),
+        activate(8),
     ]
 }
 
-/// The terminal in front from [`running`], with a second window of it moved to the bottom screen.
+/// The terminal in front from [`running`], with a second window of it moved to the bottom screen by the
+/// snapshots' window rule (see [`BELOW`]), and the dock's tab shown again over it.
 pub fn window_below() -> Vec<Event> {
     let t2 = run("desktop:foot", 2);
-    vec![Event::WindowBatch(vec![
-        WindowEvent::Closed(5),
-        WindowEvent::Closed(7),
-        WindowEvent::Closed(9),
-        WindowEvent::Opened(window_of(10, "foot", &t2, false, true)),
-    ])]
+    let below = WindowFacts { title: BELOW.into(), ..window_of(10, "foot", &t2) };
+    vec![
+        Event::WindowBatch(vec![WindowEvent::Closed(5), WindowEvent::Closed(7), WindowEvent::Closed(9), WindowEvent::Opened(below)]),
+        Event::Device(clamshell_state::device::buttons::DeviceKey::BottomView),
+    ]
 }
+
+/// The title of the terminal's window that the snapshots' window rule sends to the bottom screen.
+pub const BELOW: &str = "below";
 
 /// The screens as the compositor describes them with the VM's HDR profile: the Thor's top panel with
 /// SDR white at the reference, 650 nits at its peak; its second panel, SDR.
@@ -72,7 +75,7 @@ pub fn screens() -> clamshell_state::session::presentation::Screens {
 pub fn sdr_game_measured(entry: &str) -> Vec<Event> {
     use clamshell_state::session::presentation::{HISTOGRAM_BINS, Histogram};
     let launch = run(entry, 0);
-    let window = window_of(30, "game", &launch, true, false);
+    let window = window_of(30, "game", &launch);
     let mut bins = [0u16; HISTOGRAM_BINS];
     for (i, bin) in bins.iter_mut().enumerate() {
         let x = (i as f64 + 0.5) / HISTOGRAM_BINS as f64;
@@ -83,7 +86,7 @@ pub fn sdr_game_measured(entry: &str) -> Vec<Event> {
         *last += 140;
     }
     let histogram = Histogram { window: 30, hdr: false, bins };
-    vec![Event::Units(vec![launch]), opened(vec![window]), Event::Reading(clamshell_state::Reading::Histogram(Box::new(histogram)))]
+    vec![Event::Units(vec![launch]), opened(vec![window]), activate(30), Event::Reading(clamshell_state::Reading::Histogram(Box::new(histogram)))]
 }
 
 pub fn hdr_game(entry: &str, declared: bool) -> Vec<Event> {
@@ -99,8 +102,8 @@ pub fn hdr_game(entry: &str, declared: bool) -> Vec<Event> {
     } else {
         ColourDescription { primaries: ColourPrimaries::Srgb, transfer: TransferFunction::Linear, luminance: None, target: None }
     };
-    let window = Window { colour: Some(std::sync::Arc::new(colour)), ..window_of(30, "game", &launch, true, false) };
-    vec![Event::Units(vec![launch]), opened(vec![window])]
+    let window = WindowFacts { colour: Some(std::sync::Arc::new(colour)), ..window_of(30, "game", &launch) };
+    vec![Event::Units(vec![launch]), opened(vec![window]), activate(30)]
 }
 
 /// Four networks in range, one connected.

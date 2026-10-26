@@ -11,14 +11,12 @@ Start
 -- top-back.png
 Units [zelda_lttp_650a1e]
   Apply settings of zelda-lttp
-open game on clamshell-run-zelda_lttp_650a1e
-  PadActivity(true)
+activate 900
   PadRoute Game
 Units []
   RecordPlay zelda-lttp from 1759900000 for 15660s
   Apply settings of all
 close 900
-  PadActivity(false)
   PadRoute Ui
 Shelf(ToggleFavourite)
   Save Favourites(["zelda-lttp"])
@@ -46,8 +44,7 @@ Start
 Units [1__the_shores_of_030fb1]
   Browse in use 1 files
   Apply settings of tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv
-open game on clamshell-run-1__the_shores_of_030fb1
-  PadActivity(true)
+activate 900
   PadRoute Game
 Units []
   RecordPlay tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv from 1759900000 for 3600s
@@ -55,7 +52,6 @@ Units []
   Browse in use 0 files
   Apply settings of all
 close 900
-  PadActivity(false)
   PadRoute Ui
 -- top-group.png
 -- top-recent.png
@@ -116,14 +112,12 @@ Pointer(Activate(Settings(Tile(ChargeLimit))))
 -- settings-global.png
 Units [zelda_lttp_650a1e]
   Apply settings of zelda-lttp
-open game on clamshell-run-zelda_lttp_650a1e
-  PadActivity(true)
+activate 900
   PadRoute Game
 Units []
   RecordPlay zelda-lttp from 1759999940 for 60s
   Apply settings of all
 close 900
-  PadActivity(false)
   PadRoute Ui
 Pointer(Activate(Settings(Tile(Scaling))))
   Save Settings
@@ -496,7 +490,7 @@ Slide(End)
   Save Curves(..)
 Units [ff6_09d141]
   Apply settings of ff6
-Windows [open game on clamshell-run-ff6_09d141]
+activate 30
   PadRoute Game
 -- curve-edit-hdr.png
 Slide(To { x: 1116.0 })
@@ -516,7 +510,7 @@ Tick 1760000005
   Save Resume
 Units [ff6_09d141]
   Apply settings of ff6
-Windows [open game on clamshell-run-ff6_09d141]
+activate 30
   PadRoute Game
 -- curve-edit-histogram.png
 == group curve-edit-scrgb.png
@@ -533,7 +527,7 @@ Tick 1760000005
   Save Resume
 Units [ff6_09d141]
   Apply settings of ff6
-Windows [open game on clamshell-run-ff6_09d141]
+activate 30
   PadRoute Game
 -- curve-edit-scrgb.png
 == group keymaps-chosen.png
@@ -629,7 +623,7 @@ Pointer(Activate(Tab(Dock)))
 -- launcher.png
 Units [zelda_lttp_650a1e, foot_666b83, foot_666b83, firefox_16b084]
   Apply settings of desktop:firefox
-Windows [open retroarch on clamshell-run-zelda_lttp_650a1e, open foot on clamshell-run-foot_666b83, open foot on clamshell-run-foot_666b83, open firefox on clamshell-run-firefox_16b084]
+activate 8
   Apply settings of desktop:foot
   PadRoute Game
 -- launcher-running.png

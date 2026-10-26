@@ -284,7 +284,6 @@ impl Session {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::session::windows::Window;
     use crate::settings::{Choice, Setting};
     use crate::testkit::*;
     use crate::{Event, State, WindowEvent};
@@ -300,7 +299,7 @@ mod tests {
         let key = zelda.key().unwrap().to_owned();
         s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Pauses.value()));
         s.applied(Event::tick(100));
-        s.observed(vec![Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), true) }]);
+        s.observed(vec![win_of(3, "zelda3", &zelda)]);
         // Once hidden for the grace period, it is paused.
         let fx = s.applied(Event::Home);
         assert!(!fx.contains(&freeze(&key, true)));
@@ -362,8 +361,7 @@ mod tests {
         crate::testkit::end(&mut s, "desktop:firefox");
         assert!(!s.applied(Event::tick(t + GRACE)).contains(&pause), "handed over, waiting for its window");
         // Shown, it isn't paused; hidden for the grace period, it is.
-        let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
-        assert!(!s.observed(vec![win(6, "firefox", &ws, true)]).contains(&pause));
+        assert!(!s.observed(vec![win(6, "firefox")]).contains(&pause));
         assert!(!s.applied(Event::tick(t + GRACE + 1)).contains(&pause));
         s.applied(Event::Home);
         assert!(s.applied(Event::tick(t + 2 * GRACE + 1)).contains(&pause));
@@ -400,7 +398,7 @@ mod tests {
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
         s.applied(Event::tick(100));
-        s.observed(vec![Window { unit: zelda.unit(), visible: true, ..win(3, "zelda3", &zelda.workspace(), true) }]);
+        s.observed(vec![win_of(3, "zelda3", &zelda)]);
         quit(&mut s, "zelda-lttp");
         assert!(!s.session().suspendable("zelda-lttp"));
         let fx = s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::Suspend));
@@ -415,9 +413,9 @@ mod tests {
         let key = zelda.key().unwrap().to_owned();
         // Set to Runs hidden, it is paused only by Suspend.
         s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Runs.value()));
-        let window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), visible) };
+        let window = || win_of(3, "zelda3", &zelda);
         s.applied(Event::tick(100));
-        s.observed(vec![window(true)]);
+        s.observed(vec![window()]);
         assert!(s.session().suspendable("zelda-lttp"));
         // Applied whole: its window is still shown when the event's steps follow, which doesn't thaw it.
         let fx = s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::Suspend));
@@ -425,7 +423,7 @@ mod tests {
         assert!(!fx.contains(&freeze(&key, false)), "{fx:?}");
         assert!(s.session().suspended("zelda-lttp") && !s.session().suspendable("zelda-lttp"));
         // Hidden, it stays frozen and isn't frozen twice.
-        s.observed(vec![window(false)]);
+        s.observed(vec![window()]);
         assert!(!s.applied(Event::tick(100 + 3 * GRACE)).contains(&freeze(&key, true)));
         assert!(s.session().paused("zelda-lttp"));
         // Resume, in its menu, shows and thaws it.
@@ -449,9 +447,9 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         let key = zelda.key().unwrap().to_owned();
         s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Pauses.value()));
-        let window = |visible| Window { unit: zelda.unit(), visible, ..win(3, "zelda3", &zelda.workspace(), visible) };
+        let window = || win_of(3, "zelda3", &zelda);
         s.applied(Event::tick(100));
-        s.observed(vec![window(false)]);
+        s.observed(vec![window()]);
         s.applied(Event::Home);
         s.applied(Event::tick(100 + GRACE));
         assert!(s.session().paused("zelda-lttp"));
@@ -469,7 +467,7 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         let key = zelda.key().unwrap().to_owned();
         s.applied(Event::tick(100));
-        s.observed(vec![Window { unit: zelda.unit(), visible: false, ..win(3, "zelda3", &zelda.workspace(), false) }]);
+        s.observed(vec![win_of(3, "zelda3", &zelda)]);
         s.applied(Event::Home);
         s.applied(Event::tick(100 + GRACE));
         assert!(s.session().paused("zelda-lttp"));
@@ -492,10 +490,7 @@ mod tests {
         let foot = fx.iter().find_map(|e| if let Effect::Launch { instance, .. } = e { Some(instance.clone()) } else { None }).unwrap();
         crate::testkit::start(&mut s, "desktop:foot");
         let key = zelda.key().unwrap().to_owned();
-        let windows = vec![
-            Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), false) },
-            Window { unit: foot.unit(), ..win(4, "foot", &foot.workspace(), false) },
-        ];
+        let windows = vec![win_of(3, "zelda3", &zelda), win_of(4, "foot", &foot)];
         s.applied(Event::tick(100));
         s.observed(windows);
         let fx = s.applied(Event::tick(100 + GRACE));
@@ -515,13 +510,13 @@ mod tests {
         s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Background, Some(InBackground::Quits.value()));
         // With no window yet, while starting, it is left alone.
         assert!(!s.observed(vec![]).iter().any(|e| matches!(e, Effect::EndRun { .. })));
-        s.observed(vec![Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), true) }]);
+        s.observed(vec![win_of(3, "zelda3", &zelda)]);
         let fx = s.observed(vec![]);
         assert!(fx.contains(&Effect::EndRun { key: key.clone(), force: false }), "{fx:?}");
         // With the default setting, a program without a window runs on.
         let mut s = state();
         let zelda = launch(&mut s, "zelda-lttp");
-        s.observed(vec![Window { unit: zelda.unit(), ..win(3, "zelda3", &zelda.workspace(), true) }]);
+        s.observed(vec![win_of(3, "zelda3", &zelda)]);
         assert!(!s.observed(vec![]).iter().any(|e| matches!(e, Effect::EndRun { .. })));
         crate::testkit::end(&mut s, "zelda-lttp");
     }

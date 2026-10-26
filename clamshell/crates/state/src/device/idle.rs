@@ -315,8 +315,6 @@ mod tests {
     #[test]
     fn an_app_shown_that_keeps_the_screen_on_its_own_way_is_asked_before_dimming() {
         use crate::Event;
-        use crate::session::instance::Instance;
-        use crate::session::windows::Window;
         let runner = clamshell_library::RunnerOf {
             handover: true,
             awake: vec!["awake".to_owned()].into(),
@@ -332,8 +330,7 @@ mod tests {
         crate::testkit::launch_now(&mut s, "desktop:firefox");
         crate::testkit::start(&mut s, "desktop:firefox");
         crate::testkit::end(&mut s, "desktop:firefox");
-        let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
-        s.observed(vec![Window { visible: true, ..crate::testkit::win(6, "firefox", &ws, true) }]);
+        s.observed(vec![crate::testkit::win(6, "firefox")]);
         let ask = Effect::AskAwake(vec!["awake".into()]);
         // Asked once, 10 s before the screens dim. They go off at 5 minutes and dim 30 s before that.
         assert!(!s.applied(Event::tick(1259)).contains(&ask));

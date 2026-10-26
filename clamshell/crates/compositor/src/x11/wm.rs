@@ -73,7 +73,7 @@ struct Window {
     surface: Option<WlSurface>,
     size: (u16, u16),
     configured: Option<Rectangle<i32, smithay::utils::Logical>>,
-    sent: Option<clamshell_state::session::windows::Window>,
+    sent: Option<clamshell_state::session::windows::WindowFacts>,
     dirty: bool,
     refresh: u16,
     revision: Option<u64>,
@@ -751,18 +751,11 @@ impl Window {
                 .window(self.id)
                 .map(|v| Process { unit: v.unit.clone(), pids: v.pids.clone(), steam_app: None })
                 .unwrap_or_else(|| self.pid.map(|pid| (server.identify)(pid)).unwrap_or_default());
-            let mut facts = self.properties.facts(self.id, parent, process);
+            let facts = self.properties.facts(self.id, parent, process);
             if !self.opened {
-                facts.focused = server.core.state().session().opening_focus(&facts);
-                log::info!(
-                    "compositor: X11 window {} opens: {:?} {:?}, focused {}, limits {:?}",
-                    self.id,
-                    facts.app_id,
-                    facts.title,
-                    facts.focused,
-                    facts.limits
-                );
                 server.core.handle(WindowEvent::Opened(facts.clone()).into());
+                let focused = server.core.state().session().top_window().is_some_and(|w| w.id == self.id);
+                log::info!("compositor: X11 window {} opens: {:?} {:?}, focused {focused}, limits {:?}", self.id, facts.app_id, facts.title, facts.limits);
                 self.opened = true;
                 self.sent = Some(facts);
             } else if self.sent.as_ref().is_none_or(|old| {
@@ -1063,7 +1056,7 @@ mod tests {
         wm.windows[0].properties.role = clamshell_state::session::presentation::WindowRole::Dialog;
         wm.windows[0].dirty = true;
         wm.settle(&mut wire, &mut server).unwrap();
-        let mut adopted = server.core.state().session().window(id).unwrap().clone();
+        let mut adopted = server.core.state().session().window(id).unwrap().facts.clone();
         adopted.unit = Some("adopted.scope".into());
         adopted.pids = vec![456];
         server.core.handle(WindowEvent::Changed(adopted).into());

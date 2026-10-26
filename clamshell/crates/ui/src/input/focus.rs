@@ -464,10 +464,11 @@ mod tests {
         let mut s = state();
         // A game started from shelf's actions is in front, with the focus left on an action.
         let key = clamshell_library::key_of(&s.shelf().entry_at(0).map(|e| e.id.to_string()).unwrap_or_default());
-        let workspace = clamshell_state::Instance::workspace_of(&key);
-        s.apply(Event::Units(vec![clamshell_state::Instance::Run { key, secs: 1, n: 0 }]), &mut Vec::new());
-        let window = clamshell_state::session::windows::Window { id: 1, app_id: "game".into(), workspace, focused: true, visible: true, ..Default::default() };
+        let launch = clamshell_state::Instance::Run { key, secs: 1, n: 0 };
+        s.apply(Event::Units(vec![launch.clone()]), &mut Vec::new());
+        let window = clamshell_state::session::windows::WindowFacts { id: 1, app_id: "game".into(), unit: launch.unit(), ..Default::default() };
         s.apply(clamshell_state::WindowEvent::Opened(window).into(), &mut Vec::new());
+        s.apply(clamshell_state::WindowEvent::Activate(1).into(), &mut Vec::new());
         let actions: Vec<Id> = s.shelf().actions().as_slice().iter().map(|a| Id::Shelf(a.id())).collect();
         let mut d = drawn(&s);
         d.0.top.extend(actions.iter().enumerate().map(|(i, id)| t(60.0, 15.0 * i as f32, id.clone())));

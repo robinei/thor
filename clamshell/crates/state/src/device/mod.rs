@@ -337,8 +337,7 @@ mod tests {
         let mut s = state();
         s.applied(Event::tick(1000));
         let zelda = launch(&mut s, "zelda-lttp");
-        let zelda_window = |focused| crate::testkit::win(3, "zelda3", &zelda.workspace(), focused);
-        s.observed(vec![zelda_window(true)]);
+        s.observed(vec![crate::testkit::win_of(3, "zelda3", &zelda)]);
         launch_now(&mut s, "tool:device");
         assert_eq!(s.device().top_view(), TopView::Device);
         s.applied(Event::Home);

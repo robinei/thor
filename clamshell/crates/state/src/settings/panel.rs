@@ -557,8 +557,8 @@ mod tests {
             g.runner = Some(clamshell_library::RunnerOf::new("text", "Text", false));
         }
         let mut s = started(Init { library, ..init() });
-        let zelda = launch(&mut s, "zelda-lttp").workspace();
-        s.observed(vec![win(3, "zelda3", &zelda, true)]);
+        let zelda = launch(&mut s, "zelda-lttp");
+        s.observed(vec![win_of(3, "zelda3", &zelda)]);
         assert_eq!(s.session().program().map(|p| &**p), Some("zelda-lttp"));
         let mut library = s.shelf().library().clone();
         library.runner_keymaps = vec![(runner_key("text"), "viewer".into())];

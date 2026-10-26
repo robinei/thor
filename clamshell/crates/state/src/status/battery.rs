@@ -216,11 +216,10 @@ mod tests {
         firefox.another = true;
         firefox.runner = Some(clamshell_library::RunnerOf { handover: true, ..clamshell_library::RunnerOf::new("android", "Android", true) });
         let mut s = state_with(library);
-        let ws = Instance::workspace_of(&clamshell_library::key_of("desktop:firefox"));
         launch_now(&mut s, "desktop:firefox");
         crate::testkit::start(&mut s, "desktop:firefox");
         crate::testkit::end(&mut s, "desktop:firefox");
-        s.observed(vec![win(6, "firefox", &ws, true)]);
+        s.observed(vec![win(6, "firefox")]);
         assert!(!s.opens_another("desktop:firefox"), "a launch would show the one it runs");
         // Its processes belong to another program, as Android apps do. The entry gets their cost, and
         // the row is named and ended as the entry.

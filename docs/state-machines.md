@@ -19,9 +19,11 @@ State commits placement and selection during `apply`. A compositor reads `Window
 home group. `Window.focused` records the selected top content; keyboard focus is independent and may
 belong to a bottom client or ClamShell's UI (`None`).
 
-`Opened` supplies identity and optional initial backend presentation. State resolves the home from a
-known parent, library app id, owner or launch scope before returning. A known parent's bottom placement
-is inherited. `Changed` updates only identity (app id, unit, process ancestry and parent);
+`Opened` and `Changed` carry the window's facts (`WindowFacts`: id, app id, title, parent, limits,
+role, colour, unit and processes), never its placement; the session's record of a window is those facts
+with its group and screen. On `Opened` the state resolves the home from a known parent, library app id,
+owner or launch scope, and decides whether the window comes in front (`Session::opening_focus`, below),
+before returning. A known parent's bottom placement is inherited. `Changed` updates only identity (app id, unit, process ancestry and parent);
 it cannot undo placement or change title. `Title` is independent. The compositor sends each change as it
 happens (Opened, Closed, Changed, Title, KeyboardFocus, and Activate once a token is checked); a later
 fact cannot overwrite a newer state decision.
@@ -33,7 +35,7 @@ window: it is in front when no top window is shown, and ShowShelf deselects the 
 
 | From | Event / condition | To | Effects | Test |
 |---|---|---|---|---|
-| absent | Opened | present, home assigned synchronously | Move before exact Focus when needed | windows `lifecycle_open_and_close_follow_launch_ownership`, `a_scope_window_and_its_rule_are_placed_before_the_scope_is_listed` |
+| absent | Opened | present, home assigned synchronously, in front if its opening focus says so | Move before exact Focus when needed | windows `lifecycle_open_and_close_follow_launch_ownership`, `a_window_opens_in_front_as_its_opening_focus_says`, `a_scope_window_and_its_rule_are_placed_before_the_scope_is_listed` |
 | present | duplicate Opened | unchanged | — | windows `lifecycle_messages_keep_one_window_and_ignore_late_messages` |
 | present | Title | updated title | matching bottom rule sends Down once | windows `lifecycle_title_applies_a_bottom_rule_once` |
 | present | Changed | updated identity, same place and selection | ownership rules may assign its home | windows `stale_identity_facts_cannot_undo_a_placement` |
@@ -697,12 +699,14 @@ shrink only when necessary. Rendering and pointer input share the same viewport,
 black around the client does not activate the shelf behind it. Colour metadata is reserved for future
 colour management; the host does not advertise HDR.
 
-While a launch waits for its window, only its own windows select themselves (in its scope, of its entry
+The state decides on `Opened` whether a window comes in front. While a launch waits for its window,
+only its own windows select themselves (in its scope, of its entry
 by app id or process, or a dialog of one); others open behind, as Steam's windows behind a Steam game's
 launch (`steams_windows_open_behind_a_steam_games_launch`). Otherwise an external client's first window
 selects itself, a first window of our own scope waits for foreground launch intent, and a later window
 may select itself only when that program is shown. A dialog selects itself when its parent's program is
-shown. Tests: `compositor_opening_focus_respects_launch_intent_and_shown_program`, the presentation
+shown. Tests: `opening_focus_respects_launch_intent_and_shown_program`,
+`a_window_opens_in_front_as_its_opening_focus_says`, the presentation
 policy tests, metadata-change and Home-tap tests in session/windows, and the randomized state test.
 The headless compositor protocol test checks first configure, fixed-size child placement and close;
 geometry tests check native sizing, fitting and inverse coordinates. `tests/nested-compositor.py` checks
