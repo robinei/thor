@@ -60,8 +60,7 @@ impl State {
             | Thread::Clock
             | Thread::InputWatch
             | Thread::Clipboard
-            | Thread::Sleep
-            | Thread::WaylandFilter => {}
+            | Thread::Sleep => {}
             // Nothing: the notifications are the state's, and the thread holds only its bus name, which it
             // asks for again. Its ids come from a counter that outlives it, so it doesn't give out an id
             // the state still holds. A signal it was emitting is lost.

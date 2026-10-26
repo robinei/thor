@@ -51,7 +51,8 @@ pub fn run(settings: PathBuf) -> io::Result<()> {
     let listener = UnixListener::bind(&path)?;
     log::info!("wayland filter: {} for {}", path.display(), upstream.display());
     let (ended, end) = mpsc::channel();
-    worker::lasting(clamshell_state::Thread::WaylandFilter.name(), move || {
+    // The filter is a process of its own, so no state hears of a restart.
+    worker::lasting("wayland filter", move || {
         for client in listener.incoming() {
             match client {
                 Ok(client) => connect(client, &upstream, &settings, &ended),

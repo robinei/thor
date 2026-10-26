@@ -163,7 +163,7 @@ listed, and ClamShell can be restarted without losing track.
 - **No panics by construction:** `unwrap`, `expect`, `panic!`, `unreachable!`, `todo!`,
   `unimplemented!`, indexing and unchecked time subtraction are denied outside tests. A panic that happens
   anyway is logged at `error`; a system thread is started again and sent again what it lost
-  (`state/src/restart.rs`); a panic on the compositor's thread ends ClamShell, which systemd starts again.
+  (`state/src/restart.rs`), unless it keeps panicking soon after starting, when it is given up; a panic on the compositor's thread ends ClamShell, which systemd starts again.
 - **`unsafe` denied:** allowed only for a block at an FFI boundary, with a `SAFETY:` comment.
 - **The compositor's thread doesn't block:** files, process walks, D-Bus calls and waiting on the GPU
   belong to a thread; drawing is bounded by what changed.

@@ -160,6 +160,10 @@ const RESTART_FIRST: Duration = Duration::from_millis(250);
 const RESTART_MOST: Duration = Duration::from_secs(5);
 /// A thread that ran this long before panicking is started again at once.
 const RESTART_CALM: Duration = Duration::from_secs(30);
+/// Panics in a row, each sooner than [`RESTART_CALM`] after its start, after which a thread is given up:
+/// what the state sends it again on a restart reproduces the panic, and starting it again would only
+/// repeat it.
+const RESTART_GIVE_UP: u32 = 5;
 
 /// Told the name of each thread started again after a panic (see [`on_restart`]).
 type Restarts = Box<dyn Fn(&'static str) + Send>;
@@ -173,7 +177,9 @@ pub(crate) fn on_restart(told: impl Fn(&'static str) + Send + 'static) {
 
 /// Runs `body` until it returns. A panic in it (the panic hook has logged it) is logged and `body` runs
 /// again: at once, then after waits that double to [`RESTART_MOST`] while it keeps panicking soon after
-/// starting. Before it runs again, [`on_restart`]'s function is told.
+/// starting. Before it runs again, [`on_restart`]'s function is told. After [`RESTART_GIVE_UP`] such
+/// panics in a row the thread is given up, logged as an error; its commands then go nowhere, which is
+/// logged once (`<name> is gone`).
 pub(crate) fn restarted(name: &'static str, mut body: impl FnMut()) {
     let mut backoff = Backoff::default();
     loop {
@@ -181,11 +187,17 @@ pub(crate) fn restarted(name: &'static str, mut body: impl FnMut()) {
         if std::panic::catch_unwind(std::panic::AssertUnwindSafe(&mut body)).is_ok() {
             return;
         }
-        let wait = backoff.after(started.elapsed());
+        let Some(wait) = backoff.after(started.elapsed()) else {
+            return given_up(name);
+        };
         log::error!("{name}: panicked; starting it again in {} ms", wait.as_millis());
         thread::sleep(wait);
         tell_restarted(name);
     }
+}
+
+fn given_up(name: &str) {
+    log::error!("{name}: panicked {RESTART_GIVE_UP} times soon after starting: given up, so what it does is lost until ClamShell starts again");
 }
 
 /// Tells [`on_restart`]'s function that thread `name` runs again after a panic.
@@ -196,18 +208,26 @@ fn tell_restarted(name: &'static str) {
 }
 
 /// The wait before running again after a panic: none at first, then doubling from [`RESTART_FIRST`] to
-/// [`RESTART_MOST`] while the runs keep panicking soon after starting; none again after a calm run.
+/// [`RESTART_MOST`] while the runs keep panicking soon after starting; none again after a calm run. None
+/// at all, to give up, once [`RESTART_GIVE_UP`] runs in a row panicked soon after starting.
 #[derive(Debug, Default)]
 struct Backoff {
     delay: Duration,
+    /// The runs in a row that panicked soon after starting.
+    quick: u32,
 }
 
 impl Backoff {
-    /// The wait after a run of `ran` that panicked.
-    fn after(&mut self, ran: Duration) -> Duration {
-        let wait = if ran >= RESTART_CALM { Duration::ZERO } else { self.delay };
+    /// The wait after a run of `ran` that panicked, or `None` to give up.
+    fn after(&mut self, ran: Duration) -> Option<Duration> {
+        let calm = ran >= RESTART_CALM;
+        self.quick = if calm { 0 } else { self.quick + 1 };
+        if self.quick >= RESTART_GIVE_UP {
+            return None;
+        }
+        let wait = if calm { Duration::ZERO } else { self.delay };
         self.delay = (wait * 2).clamp(RESTART_FIRST, RESTART_MOST);
-        wait
+        Some(wait)
     }
 }
 
@@ -371,7 +391,8 @@ pub(crate) trait Service {
 /// is up. While the service is down, it waits `retry` or for a command before trying again. A panic while
 /// connecting or running (the panic hook has logged it) doesn't end the thread: the service lets go of
 /// what the run held ([`Service::panicked`]), the UI is told as for a thread started again
-/// ([`on_restart`]), and it connects again at once, or after the waits of a run of panics ([`Backoff`]).
+/// ([`on_restart`]), and it connects again at once, or after the waits of a run of panics ([`Backoff`]);
+/// after too many such panics in a row it is given up, as [`restarted`] gives up a thread.
 pub(crate) fn supervise<S: Service>(service: &mut S, commands: &Receiver<S::Command>, retry: Duration) {
     let mut quiet = Quiet::default();
     let mut backoff = Backoff::default();
@@ -383,8 +404,11 @@ pub(crate) fn supervise<S: Service>(service: &mut S, commands: &Receiver<S::Comm
             Ok(None) => return,
             Err(_) => {
                 let wait = backoff.after(started.elapsed());
-                log::error!("{}: panicked; connecting again in {} ms", S::NAME, wait.as_millis());
                 service.panicked();
+                let Some(wait) = wait else {
+                    return given_up(S::NAME);
+                };
+                log::error!("{}: panicked; connecting again in {} ms", S::NAME, wait.as_millis());
                 thread::sleep(wait);
                 tell_restarted(S::NAME);
                 continue;
@@ -540,14 +564,43 @@ mod tests {
     }
 
     #[test]
-    fn the_wait_after_a_panic_is_none_then_doubles_to_its_most_and_none_after_a_calm_run() {
+    fn the_wait_after_a_panic_is_none_then_doubles_and_none_after_a_calm_run() {
         let mut backoff = Backoff::default();
         let soon = Duration::from_secs(1);
-        let waits: Vec<Duration> = (0..7).map(|_| backoff.after(soon)).collect();
-        let ms = |n: u64| Duration::from_millis(n);
-        assert_eq!(waits, [ms(0), ms(250), ms(500), ms(1000), ms(2000), ms(4000), ms(5000)]);
-        assert_eq!(backoff.after(RESTART_CALM), Duration::ZERO, "a calm run starts over");
-        assert_eq!(backoff.after(soon), RESTART_FIRST);
+        let waits: Vec<Option<Duration>> = (0..4).map(|_| backoff.after(soon)).collect();
+        let ms = |n: u64| Some(Duration::from_millis(n));
+        assert_eq!(waits, [ms(0), ms(250), ms(500), ms(1000)]);
+        assert_eq!(backoff.after(RESTART_CALM), Some(Duration::ZERO), "a calm run starts over");
+        assert_eq!(backoff.after(soon), Some(RESTART_FIRST));
+        let mut backoff = Backoff { delay: RESTART_MOST, quick: 0 };
+        assert_eq!(backoff.after(soon), Some(RESTART_MOST), "at most");
+    }
+
+    /// A thread whose every run panics soon after it starts, as when what it is sent again reproduces
+    /// the panic, is given up after a few: its commands then go nowhere.
+    #[test]
+    fn a_thread_that_keeps_panicking_soon_after_starting_is_given_up() {
+        let mut backoff = Backoff::default();
+        let soon = Duration::from_secs(1);
+        let waits: Vec<Option<Duration>> = (0..RESTART_GIVE_UP).map(|_| backoff.after(soon)).collect();
+        assert_eq!(waits.iter().filter(|w| w.is_some()).count() as u32, RESTART_GIVE_UP - 1);
+        assert_eq!(waits.last(), Some(&None), "given up at the last");
+        let (ran, runs) = mpsc::channel();
+        let w = Worker::spawn("test", move |commands: &Receiver<u8>| {
+            ran.send(()).unwrap();
+            // A few hundred ms apart at first, then given up.
+            let _ = commands.try_recv();
+            panic!("every run");
+        })
+        .unwrap();
+        let started = Instant::now();
+        let mut count = 0;
+        while runs.recv_timeout(Duration::from_secs(5)).is_ok() {
+            count += 1;
+        }
+        assert_eq!(count, RESTART_GIVE_UP);
+        assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
+        assert_eq!(w.try_send(1), Err(Gone), "its commands go nowhere");
     }
 
     #[test]

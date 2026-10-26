@@ -551,7 +551,9 @@ else the settings'. Tests `the_refresh_rate_follows_a_launch_at_once_then_the_se
 A system thread that panics is started again by `os::worker::restarted` and the wiring sends
 `Event::Restarted(thread)` (tested end to end in the system crate's wiring,
 `a_thread_started_again_after_a_panic_tells_the_state`). What the thread was carrying out is lost; what it was sent and still stands is
-sent again, or what waits on it ends:
+sent again, or what waits on it ends. A thread that panics five times in a row, each soon after it
+started (as when what it is sent again reproduces the panic), is given up, logged at error; its commands
+then go nowhere, logged once (system crate, `a_thread_that_keeps_panicking_soon_after_starting_is_given_up`):
 
 - `idle --Restarted(Pad)--> [Keymap, PadRoute, PadActivity, Apply]` (the pad keeps its virtual devices
   through the restart; tested `a_restarted_pad_is_sent_its_keymap_route_and_settings`)
