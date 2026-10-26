@@ -389,7 +389,7 @@ impl Thread {
             Thread::Status => "status",
             Thread::Wifi => "wifi",
             Thread::Bluetooth => "bluetooth",
-            Thread::BluetoothConnect => "bluetooth-connect",
+            Thread::BluetoothConnect => "bluetooth connect",
             Thread::Tray => "tray",
             Thread::Brightness => "brightness",
             Thread::Sound => "sound",
