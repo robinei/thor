@@ -305,7 +305,13 @@ stick flicks become WindowDown / WindowUp / WindowPrevious / WindowNext. Home re
 Home-held arrow already switched a window; otherwise it shows shelf. Direct Home always shows shelf. A stick still out on release remains taken
 until it returns, including during remap ticks and gyro samples. Unplugging releases Home for state.
 Tests: `home_flicks_once_and_neutralises_the_games_stick_until_it_returns`,
-`losing_the_controller_releases_home_for_the_state`. The VM `pad_windows` check exercises real evdev
+`losing_the_controller_releases_home_for_the_state`. Away from the game, Home's press gives the mapping
+in force the right stick at rest (`home_away_from_the_game_centres_the_right_stick_for_the_mapping`). The
+D-pad pressed with Home held is Home's, as any button is
+(`home_with_the_dpad_is_a_combination_the_game_doesnt_see`). After dropped events, `resync` makes up Home's
+press before the other buttons' and its release after theirs
+(`a_resync_presses_home_first_and_lets_it_go_last`). The activity watch counts a button press or an axis
+past 4096 (`game_activity_is_an_axis_past_a_threshold`). The VM `pad_windows` check exercises real evdev
 routing, tab switching and bottom-slot swaps.
 
 Home + right stick press switches to the windows' tab and back; Home + Start controls bottom power; Home + R1 is
@@ -1278,6 +1284,9 @@ existing request-order and state-trace tests.
 
 `placed --WL_SURFACE_SERIAL, the surface given that serial through xwayland_shell_v1 committed--> drawable`.
 Pairing by serial (never reused, unlike a surface's id) can't pair a window with a later surface.
+The serial is 64 bits, in two 32-bit halves on each side (tested by
+`a_window_is_paired_with_the_surface_committed_with_its_serial` and
+`a_committed_serial_pairs_its_surface_once_and_only_xwayland_sees_the_shell`).
 The shared surface wrapper uses the same rendering, geometry, input, frame and presentation-feedback
 paths. A window ignoring its configured size is treated by the existing geometry policy. X11 size
 requests cannot choose placement or stacking. WM_HINTS input and WM_TAKE_FOCUS are honoured when focus

@@ -344,3 +344,77 @@ fn losing_the_controller_releases_home_for_the_state() {
     r.lose(&mut out);
     assert_eq!(out.events, vec![Event::HomeHeld(true), Event::HomeHeld(false)]);
 }
+
+/// The D-pad's left and right with Home held are Home's too, as any button is: the game never sees them,
+/// and letting Home go isn't Home.
+#[test]
+fn home_with_the_dpad_is_a_combination_the_game_doesnt_see() {
+    let (mut r, _) = router(PadRoute::Game);
+    let now = Instant::now();
+    for axis in [AbsoluteAxisCode::ABS_HAT0X, AbsoluteAxisCode::ABS_HAT0Y] {
+        let mut out = Out::default();
+        r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+        r.event(Raw::abs(axis, 1), now, &mut out);
+        r.event(Raw::REPORT, now, &mut out);
+        r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
+        assert!(actions(&out).is_empty(), "not Home: {:?}", out.events);
+        assert!(!out.pad.contains(&Raw::abs(axis, 1)), "{:?}", out.pad);
+    }
+}
+
+/// Home pressed away from the game gives the mapping in force the right stick at rest, since while Home is
+/// held the stick is Home's for its flicks: the pad mouse stops scrolling rather than scrolling on.
+#[test]
+fn home_away_from_the_game_centres_the_right_stick_for_the_mapping() {
+    let (mut r, mut out) = router(PadRoute::Mouse);
+    for code in [AbsoluteAxisCode::ABS_RX, AbsoluteAxisCode::ABS_RY] {
+        r.snapshot.axes.push(Axis { code, value: 0, rest: 0 });
+    }
+    let t0 = Instant::now();
+    r.event(Raw::abs(AbsoluteAxisCode::ABS_RY, 32767), t0, &mut out);
+    assert!(r.tick(t0, &mut out).is_some(), "scrolling");
+    r.event(key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
+    out.mouse.clear();
+    assert_eq!(r.tick(t0 + std::time::Duration::from_secs(1), &mut out), None, "stopped");
+    assert!(out.mouse.is_empty(), "{:?}", out.mouse);
+}
+
+/// Activity is a button pressed or an axis moved past 4096 of its 32767, so that a stick resting a little
+/// off centre doesn't take the keyboard focus back.
+#[test]
+fn game_activity_is_an_axis_past_a_threshold() {
+    let (mut r, mut out) = router(PadRoute::Game);
+    let now = Instant::now();
+    out.events.clear();
+    r.watch_activity(true);
+    r.event(Raw::abs(AbsoluteAxisCode::ABS_X, 4096), now, &mut out);
+    r.event(Raw::abs(AbsoluteAxisCode::ABS_X, -4096), now, &mut out);
+    assert!(out.events.is_empty(), "{:?}", out.events);
+    r.event(Raw::abs(AbsoluteAxisCode::ABS_X, -4097), now, &mut out);
+    assert_eq!(out.events, vec![Event::PadActive]);
+}
+
+/// After dropped events, Home's press is made up before the other buttons', so that they are Home's
+/// combination as they were; and its release after theirs, so that a button Home took is let go while
+/// still Home's.
+#[test]
+fn a_resync_presses_home_first_and_lets_it_go_last() {
+    let (mut r, mut out) = router(PadRoute::Game);
+    let now = Instant::now();
+    let mut events = Vec::new();
+    r.resync(&[KeyCode::BTN_SOUTH, KeyCode::BTN_MODE], &[], &mut events);
+    assert_eq!(events, [key(KeyCode::BTN_MODE, Press::Down), key(KeyCode::BTN_SOUTH, Press::Down), Raw::REPORT]);
+    for e in events {
+        r.event(e, now, &mut out);
+    }
+    assert!(!held(&out.pad).contains(&KeyCode::BTN_SOUTH), "A is Home's");
+    let mut events = Vec::new();
+    r.resync(&[], &[], &mut events);
+    assert_eq!(events, [key(KeyCode::BTN_SOUTH, Press::Up), key(KeyCode::BTN_MODE, Press::Up), Raw::REPORT]);
+    out.events.clear();
+    for e in events {
+        r.event(e, now, &mut out);
+    }
+    assert!(actions(&out).is_empty(), "not Home: {:?}", out.events);
+    assert!(out.pad.iter().all(|e| e.as_key().is_none_or(|(k, _)| k != KeyCode::BTN_SOUTH)), "{:?}", out.pad);
+}
