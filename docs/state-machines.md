@@ -72,8 +72,9 @@ The allocation test includes repeated lifecycle events, Home-held changes, contr
 The compositor's tests check placement before the first configure with real clients
 (`xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu`), and
 `tests/nested-compositor.py` moves between the screens with real programs; the VM suite checks session
-adoption, input routes and services. Parent inheritance is checked in state tests
-(`a_dialog_of_a_window_below_is_placed_below_before_it_is_shown`).
+adoption, input routes and services. A dialog takes its parent's group; a dialog of the window below
+shows on the top screen while its parent stays below
+(`a_dialog_of_a_window_below_shows_on_top_while_its_parent_stays_below`).
 
 The settle steps that follow the session (units, windows, window rules, what is shown, background,
 quitting, dock) run in the order `State::settle`'s doc lists, with the test that pins each order that
@@ -226,8 +227,8 @@ State: `screen{off, idle_off}`, `used_at`, `dimmed`, `woken`; the window moved d
 tab, `Tab::Windows` (the bar's rightmost button), with `before_windows` the tab it was opened from and
 `left` a tab left as a window moved down, settled after the window rules as any tab left (`left_tab`).
 Which window is below, the rules that send windows there (`window_rules`) and the windows they sent
-(`sent_down`) are the session's (session/below.rs): a move down, by hand, by a rule or by a dialog
-opening, tells the bottom screen to open the windows' tab and turn on (`Bottom::show_below`).
+(`sent_down`) are the session's (session/below.rs): a move down, by hand or by a rule, tells the
+bottom screen to open the windows' tab and turn on (`Bottom::show_below`).
 
 | Transition | Test |
 |---|---|

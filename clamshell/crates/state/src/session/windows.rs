@@ -189,11 +189,11 @@ impl From<WindowEvent> for crate::Event {
 }
 
 impl crate::Session {
-    /// Applies a change to a window. Returns whether the bottom screen is to show its window: one opened
-    /// below, or one a client asked to show that is there.
+    /// Applies a change to a window. Returns whether the bottom screen is to show its window: one a client
+    /// asked to show that is there.
     pub(crate) fn on_window(&mut self, event: WindowEvent, library: &crate::Library, out: &mut crate::out::Out) -> bool {
         match event {
-            WindowEvent::Opened(facts) => return self.open(facts, library),
+            WindowEvent::Opened(facts) => self.open(facts, library),
             WindowEvent::Closed(id) => self.close(id),
             WindowEvent::Title { window, title } => self.retitle(window, title),
             WindowEvent::Changed(facts) => self.change(facts),
@@ -205,14 +205,16 @@ impl crate::Session {
 
     /// A window opened. Its group is known at once if it is a dialog, whose is its parent's, or a window
     /// of an entry, by its app id, its owner or its launch's unit; another gets one as the windows are
-    /// followed ([`Session::follow_windows`]). It comes in front as [`Session::opening_focus`] says. A
-    /// dialog of the window below goes below in its place; then this returns true.
-    fn open(&mut self, facts: WindowFacts, library: &crate::Library) -> bool {
+    /// followed ([`Session::follow_windows`]). It comes in front as [`Session::opening_focus`] says, and a
+    /// dialog of the window below does on the top screen.
+    fn open(&mut self, facts: WindowFacts, library: &crate::Library) {
         if self.window(facts.id).is_some() {
-            return false;
+            return;
         }
         let parent = facts.parent.and_then(|id| self.window(id)).map(|w| (w.group.clone(), self.below(w.id)));
-        let down = parent.as_ref().is_some_and(|(_, down)| *down);
+        // A dialog of the window below is shown on the top screen, where it can be answered, while its
+        // parent stays below: the bottom screen holds one window.
+        let parent_below = parent.as_ref().is_some_and(|(_, below)| *below);
         let group = match parent {
             Some((group, _)) => group,
             None => library
@@ -223,17 +225,13 @@ impl crate::Session {
                 .or_else(|| self.running_of(&facts).map(super::running::Running::group))
                 .or_else(|| facts.instance().map(|i| Group::entry(&i.key))),
         };
-        let focus = !down && self.opening_focus(&facts);
+        let focus = parent_below || self.opening_focus(&facts);
         let id = facts.id;
         self.opened.push(id);
         self.windows.push(Window { facts, group });
         if focus {
             self.select_top(id);
         }
-        if down {
-            self.command(WindowCommand::Down(id));
-        }
-        down
     }
 
     /// A client asks to show its window, after the compositor checked its token. Its program is thawed

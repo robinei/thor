@@ -381,7 +381,8 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
             Report::Child(size) => {
                 assert_eq!(windows.len(), 2);
                 assert_eq!(windows[1].parent, Some(windows[0].id));
-                assert_eq!(server.core.state().session().place(windows[1].id).unwrap(), WindowPlace::Bottom);
+                // A dialog of the window below shows on the top screen, where it can be answered.
+                assert!(matches!(server.core.state().session().place(windows[1].id).unwrap(), WindowPlace::Top(_)));
                 assert_eq!(size, (320, 240));
                 assert_eq!(windows[1].limits.fixed_size(), Some((320, 240)));
             }

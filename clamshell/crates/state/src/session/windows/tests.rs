@@ -295,16 +295,21 @@ fn a_dialog_inherits_its_parent_and_survives_the_parent_closing() {
 }
 
 #[test]
-fn a_dialog_of_a_window_below_is_placed_below_before_it_is_shown() {
+/// A dialog of the window below (a file picker of an emulator's second-screen window) shows on the top
+/// screen, where it can be answered, while its parent stays below; closed, the parent is still below.
+fn a_dialog_of_a_window_below_shows_on_top_while_its_parent_stays_below() {
     let mut s = state();
     let instance = launch(&mut s, "zelda-lttp");
     s.applied(WindowEvent::Opened(win_of(7, "game", &instance)).into());
     s.applied(Event::Device(DeviceKey::WindowDown));
     let dialog = WindowFacts { parent: Some(7), ..win(8, "dialog") };
-    assert_eq!(s.applied(WindowEvent::Opened(dialog).into()), vec![Effect::PadRoute(crate::PadRoute::Game)]);
-    assert_eq!(s.session().place(8), Some(WindowPlace::Bottom));
-    assert_eq!(s.session().bottom_window().map(|w| w.id), Some(8));
-    assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
+    s.applied(WindowEvent::Opened(dialog).into());
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
+    assert_eq!(s.session().keyboard_focus(), Some(8));
+    assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7), "the parent stays below");
+    s.applied(WindowEvent::Closed(8).into());
+    assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
+    assert_ne!(s.session().top_window().map(|w| w.id), Some(7));
 }
 
 #[test]
