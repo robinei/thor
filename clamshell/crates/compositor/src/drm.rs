@@ -165,7 +165,7 @@ pub fn run(
     log::info!("drm: second screen's density {density:?} pixels/mm (the touchpad's)");
     server.core.set_bottom_density(density);
     // No host window takes the focus away: pointer capture is always possible.
-    server.host_focused = true;
+    server.pointer.host_focused = true;
     server.refresh = i32::try_from(top.mode.vrefresh()).unwrap_or(60).saturating_mul(1000);
     server.resize(server.size);
     server.advertise_dmabuf(&renderer);

@@ -73,7 +73,7 @@ impl Cursor {
     }
 
     pub fn elements(&mut self, server: &mut Server, renderer: &mut GlesRenderer, out: &mut Vec<Element>) -> Result<(), Error> {
-        if !server.cursor_activity.visible(Instant::now()) {
+        if !server.pointer.cursor_activity.visible(Instant::now()) {
             return Ok(());
         }
         let status = server.effective_cursor();
@@ -82,13 +82,13 @@ impl Cursor {
             CursorImageStatus::Surface(surface) if surface.is_alive() => {
                 if let Err(error) = import_surface_tree(renderer, &surface) {
                     server.reject_client(&surface, &format!("cannot import cursor buffer: {error}"));
-                    server.cursor = CursorImageStatus::default_named();
+                    server.pointer.cursor = CursorImageStatus::default_named();
                     return Ok(());
                 }
                 let hotspot = with_states(&surface, |states| {
                     states.data_map.get::<CursorImageSurfaceData>().and_then(|data| data.lock().ok()).map(|data| data.hotspot).unwrap_or_default()
                 });
-                let location = server.pointer - hotspot.to_f64();
+                let location = server.pointer.location - hotspot.to_f64();
                 out.splice(
                     0..0,
                     render_elements_from_surface_tree::<_, WaylandSurfaceRenderElement<GlesRenderer>>(
@@ -103,14 +103,14 @@ impl Cursor {
                     .map(Element::from),
                 );
                 let [top, bottom] = &server.outputs;
-                let output = if server.pointer.x < server.top_width as f64 { top } else { bottom };
+                let output = if server.pointer.location.x < server.top_width as f64 { top } else { bottom };
                 smithay::desktop::utils::send_frames_surface_tree(&surface, output, server.started.elapsed(), Some(Duration::ZERO), |_, _| {
                     Some(output.clone())
                 });
             }
             CursorImageStatus::Named(icon) => self.named(icon, server, renderer, out)?,
             CursorImageStatus::Surface(_) => {
-                server.cursor = CursorImageStatus::default_named();
+                server.pointer.cursor = CursorImageStatus::default_named();
                 self.named(CursorIcon::Default, server, renderer, out)?;
             }
         }
@@ -146,7 +146,7 @@ impl Cursor {
         let Some((_, frames)) = self.cached.get(index) else { return Ok(()) };
         let frame = animation_frame(frames.iter().map(|frame| frame.delay), server.started.elapsed().as_millis());
         if let Some(frame) = frames.get(frame) {
-            let location = server.pointer - Point::from(frame.hotspot);
+            let location = server.pointer.location - Point::from(frame.hotspot);
             out.insert(
                 0,
                 TextureRenderElement::from_static_texture(
@@ -204,8 +204,8 @@ impl Server {
             return CursorImageStatus::Hidden;
         }
         let client = self.seat.get_pointer().is_some_and(|pointer| pointer.current_focus().is_some())
-            && (self.hit(self.pointer).is_some() || self.pointer_window.is_some_and(|window| self.visible(window)));
-        match &self.cursor {
+            && (self.hit(self.pointer.location).is_some() || self.pointer.window.is_some_and(|window| self.visible(window)));
+        match &self.pointer.cursor {
             CursorImageStatus::Surface(surface) if !surface.is_alive() => CursorImageStatus::default_named(),
             image if client => image.clone(),
             _ => CursorImageStatus::default_named(),

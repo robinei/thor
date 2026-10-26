@@ -268,7 +268,7 @@ impl SeatHandler for Server {
         crate::touch::ContactGrab::new(start)
     }
     fn cursor_image(&mut self, _: &Seat<Self>, image: smithay::input::pointer::CursorImageStatus) {
-        self.cursor = image;
+        self.pointer.cursor = image;
     }
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
         let client = focused.and_then(|s| self.dh.get_client(s.id()).ok());

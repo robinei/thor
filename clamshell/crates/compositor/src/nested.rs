@@ -69,9 +69,9 @@ pub fn run(
                         server.resize((size.w, size.h));
                     }
                     WinitEvent::Focus(focused) => {
-                        server.host_focused = focused;
+                        server.pointer.host_focused = focused;
                         if !focused {
-                            server.cursor_activity.hide();
+                            server.pointer.cursor_activity.hide();
                             server.touch_cancel();
                         }
                     }

@@ -95,7 +95,7 @@ impl Base {
                 .core
                 .deadline()
                 .into_iter()
-                .chain(server.cursor_activity.deadline(now))
+                .chain(server.pointer.cursor_activity.deadline(now))
                 .chain(server.pacing.frames_due)
                 .chain(x11.deadline())
                 .chain(host_deadline)

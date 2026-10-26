@@ -34,7 +34,7 @@ impl Wm {
             }
         }
         let focused = server.core.state().session().keyboard_focus();
-        let hovered = server.hit(server.pointer).map(|hit| hit.window);
+        let hovered = server.hit(server.pointer.location).map(|hit| hit.window);
         for index in 0..self.windows.len() {
             let Some(menu) = self.windows.get(index) else { continue };
             if !menu.override_redirect || !menu.wants_map || menu.outstanding != 0 || menu.input_only {

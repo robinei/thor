@@ -66,7 +66,7 @@ fn cursor_requests_keep_hotspots_ignore_old_serials_and_release_on_home() {
     let checked = client.serve(&mut display, &mut server, Server::frame, |_, server, phase| match phase {
         0 => {
             let root = server.windows[0].window.toplevel().unwrap().wl_surface().clone();
-            server.pointer = (200.0, 200.0).into();
+            server.pointer.location = (200.0, 200.0).into();
             let pointer = server.seat.get_pointer().unwrap();
             pointer.motion(
                 server,
@@ -85,16 +85,16 @@ fn cursor_requests_keep_hotspots_ignore_old_serials_and_release_on_home() {
             assert_eq!(hotspot, (3, 7).into());
             if phase == 3 {
                 let now = Instant::now();
-                server.cursor_activity.motion(now);
+                server.pointer.cursor_activity.motion(now);
                 server.touch_down(TouchSlot::from(Some(0)), (200.0, 200.0).into(), InputTime::now());
-                assert!(!server.cursor_activity.visible(now), "touch immediately hides a visible cursor");
-                server.cursor_activity.motion(now);
+                assert!(!server.pointer.cursor_activity.visible(now), "touch immediately hides a visible cursor");
+                server.pointer.cursor_activity.motion(now);
                 server.touch_motion(TouchSlot::from(Some(0)), (210.0, 200.0).into(), InputTime::now());
-                assert!(!server.cursor_activity.visible(now));
-                server.cursor_activity.motion(now);
+                assert!(!server.pointer.cursor_activity.visible(now));
+                server.pointer.cursor_activity.motion(now);
                 server.touch_up(TouchSlot::from(Some(0)), InputTime::now());
                 server.touch_frame();
-                assert!(!server.cursor_activity.visible(now));
+                assert!(!server.pointer.cursor_activity.visible(now));
             }
             if phase == 4 {
                 server.core.handle(Event::Home);

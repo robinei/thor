@@ -160,7 +160,7 @@ fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() 
                 }
                 1 => {
                     assert!(server.menu.is_some());
-                    assert!(server.capture.is_none(), "opening a menu releases the game's pointer capture");
+                    assert!(server.pointer.capture.is_none(), "opening a menu releases the game's pointer capture");
                     assert!(keyboard.is_grabbed());
                     assert_ne!(keyboard.current_focus(), Some(root.clone()));
                     let hit = server.hit((111.0, 111.0).into()).unwrap();
@@ -215,7 +215,7 @@ fn menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy() 
                 }
                 6 => {
                     assert!(server.pointer_locked());
-                    assert_eq!(server.host_capture, crate::pointer::CaptureMode::Locked);
+                    assert_eq!(server.pointer.host_capture, crate::pointer::CaptureMode::Locked);
                 }
                 _ => panic!("unexpected phase"),
             }

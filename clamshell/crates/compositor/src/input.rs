@@ -116,7 +116,7 @@ impl Server {
                 let time = Event::<B>::time(&event);
                 // Winit can report absolute and relative events for one physical movement.
                 // Its absolute event positions the free cursor; captured motion is relative-only.
-                if self.capture.is_some() || !host.absolute_cursor {
+                if self.pointer.capture.is_some() || !host.absolute_cursor {
                     self.pointer_relative(delta, unaccelerated, time);
                 } else {
                     self.relative_motion(delta, unaccelerated, time);
@@ -124,33 +124,33 @@ impl Server {
             }
             InputEvent::PointerMotionAbsolute { event, .. } => {
                 self.validate_capture();
-                if self.capture.is_none() {
+                if self.pointer.capture.is_none() {
                     let at = placed(&event, area(&event.device()));
                     log::debug!("compositor: absolute motion to {at:?}");
                     self.pointer_absolute(at, event.time());
                 }
             }
             InputEvent::PointerButton { event, .. } => {
-                log::debug!("compositor: button {:#x} {:?} at {:?}", event.button_code(), event.state(), self.pointer);
-                if event.button_code() == 0x110 && self.overlay_pressed {
+                log::debug!("compositor: button {:#x} {:?} at {:?}", event.button_code(), event.state(), self.pointer.location);
+                if event.button_code() == 0x110 && self.pointer.overlay_pressed {
                     if event.state() == ButtonState::Released {
-                        self.overlay_pressed = false;
+                        self.pointer.overlay_pressed = false;
                     }
                     return;
                 }
                 if event.state() == ButtonState::Pressed {
-                    if self.pointer_buttons.is_empty() {
-                        let hit = self.hit(self.pointer);
+                    if self.pointer.buttons.is_empty() {
+                        let hit = self.hit(self.pointer.location);
                         self.dismiss_menu_outside(hit.as_ref().map(|hit| hit.window));
                         self.dismiss_x11_menus_outside(hit.as_ref().map(|hit| &hit.surface));
-                        let (screen, position) = self.screen_position(self.pointer);
+                        let (screen, position) = self.screen_position(self.pointer.location);
                         if event.button_code() == 0x110 && self.core.press_overlay(screen, position) {
-                            self.overlay_pressed = true;
+                            self.pointer.overlay_pressed = true;
                             self.sync_windows();
                             return;
                         }
-                        let hit = self.hit(self.pointer);
-                        self.pointer_window = hit.as_ref().map(|hit| hit.window);
+                        let hit = self.hit(self.pointer.location);
+                        self.pointer.window = hit.as_ref().map(|hit| hit.window);
                         if let Some(hit) = hit {
                             self.core.handle(WindowEvent::Activate(hit.window).into());
                         } else if let Some((screen, position)) = self.ui_under() {
@@ -166,8 +166,8 @@ impl Server {
                             }
                         }
                     }
-                    if !self.pointer_buttons.contains(&event.button_code()) {
-                        self.pointer_buttons.push(event.button_code());
+                    if !self.pointer.buttons.contains(&event.button_code()) {
+                        self.pointer.buttons.push(event.button_code());
                     }
                     self.sync_windows();
                 } else if event.button_code() == 0x110 {
@@ -183,16 +183,16 @@ impl Server {
                     pointer.frame(self);
                 }
                 if event.state() == ButtonState::Released {
-                    self.pointer_buttons.retain(|code| *code != event.button_code());
-                    if self.pointer_buttons.is_empty() {
-                        self.pointer_window = None;
+                    self.pointer.buttons.retain(|code| *code != event.button_code());
+                    if self.pointer.buttons.is_empty() {
+                        self.pointer.window = None;
                     }
                 }
             }
 
             InputEvent::PointerAxis { event, .. } => {
                 let vertical = event.amount(Axis::Vertical).unwrap_or_else(|| event.amount_v120(Axis::Vertical).unwrap_or_default() / 8.0);
-                if self.hit(self.pointer).is_some() {
+                if self.hit(self.pointer.location).is_some() {
                     if let Some(pointer) = self.seat.get_pointer() {
                         let frame = AxisFrame::new(event.time()).source(event.source()).value(Axis::Vertical, vertical);
                         pointer.axis(self, frame);
@@ -229,26 +229,27 @@ impl Server {
     }
 
     pub(crate) fn pointer_absolute(&mut self, position: Point<f64, Logical>, time: smithay::backend::input::InputTime) {
-        self.cursor_activity.motion(std::time::Instant::now());
+        self.pointer.cursor_activity.motion(std::time::Instant::now());
         self.validate_capture();
         if self.pointer_locked() {
             return;
         }
-        self.pointer = self.constrain_pointer(position);
+        self.pointer.location = self.constrain_pointer(position);
         let (_, position) = self.ui_position();
         self.core.moved(Source::Mouse, position, time.millis());
         self.move_pointer(time);
     }
 
     fn move_pointer(&mut self, time: smithay::backend::input::InputTime) {
-        let hit = self.hit(self.pointer);
+        let hit = self.hit(self.pointer.location);
         let location = self
-            .pointer_window
-            .filter(|_| !self.pointer_buttons.is_empty())
+            .pointer
+            .window
+            .filter(|_| !self.pointer.buttons.is_empty())
             .and_then(|id| self.geometry(id))
-            .map(|geometry| geometry.surface_coords(self.pointer))
+            .map(|geometry| geometry.surface_coords(self.pointer.location))
             .or_else(|| hit.as_ref().map(|hit| hit.location))
-            .unwrap_or(self.pointer);
+            .unwrap_or(self.pointer.location);
         if let Some(pointer) = self.seat.get_pointer() {
             pointer.motion(self, hit.map(|hit| (hit.surface, hit.origin)), &MotionEvent { location, serial: SERIAL_COUNTER.next_serial(), time });
             pointer.frame(self);
@@ -256,7 +257,7 @@ impl Server {
     }
 
     fn ui_under(&self) -> Option<(Screen, (f64, f64))> {
-        self.ui_at(self.pointer)
+        self.ui_at(self.pointer.location)
     }
 
     pub(crate) fn ui_at(&self, point: Point<f64, Logical>) -> Option<(Screen, (f64, f64))> {
@@ -270,7 +271,7 @@ impl Server {
     }
 
     fn ui_position(&self) -> (Screen, (f64, f64)) {
-        self.screen_position(self.pointer)
+        self.screen_position(self.pointer.location)
     }
 
     /// The screen `point` is on, and where on it.
