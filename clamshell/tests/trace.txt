@@ -27,8 +27,8 @@ Units [zelda_lttp_650a1e]
   Apply settings of zelda-lttp
 -- top-played.png
 Pointer(Activate(Shelf(Entry("ff6"))))
-  Save Resume
   Launch ff6 as ff6_09d141
+  Save Resume
 -- top-switch.png
 == group top-actions.png
 Tick 1760000000
@@ -81,8 +81,8 @@ Tick 1760000000
 Start
   Watch Metrics on
 Pointer(Activate(Shelf(Entry("ff6"))))
-  Save Resume
   Launch ff6 as ff6_09d141
+  Save Resume
 Tick 1760000005
   Save Resume
 Pointer(Activate(Tab(Settings)))
@@ -150,8 +150,8 @@ Tick 1760000000
 Start
   Watch Metrics on
 Pointer(Activate(Shelf(Entry("ff6"))))
-  Save Resume
   Launch ff6 as ff6_09d141
+  Save Resume
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Tick 1760000005
@@ -417,8 +417,8 @@ Tick 1760000000
 Start
   Watch Metrics on
 Pointer(Activate(Shelf(Entry("ff6"))))
-  Save Resume
   Launch ff6 as ff6_09d141
+  Save Resume
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Pointer(Activate(Editor(Save)))
@@ -484,8 +484,8 @@ Tick 1760000000
 Start
   Watch Metrics on
 Pointer(Activate(Shelf(Entry("ff6"))))
-  Save Resume
   Launch ff6 as ff6_09d141
+  Save Resume
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Tick 1760000005
@@ -513,8 +513,8 @@ Tick 1760000000
 Start
   Watch Metrics on
 Pointer(Activate(Shelf(Entry("ff6"))))
-  Save Resume
   Launch ff6 as ff6_09d141
+  Save Resume
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Tick 1760000005
@@ -531,8 +531,8 @@ Tick 1760000000
 Start
   Watch Metrics on
 Pointer(Activate(Shelf(Entry("ff6"))))
-  Save Resume
   Launch ff6 as ff6_09d141
+  Save Resume
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Tick 1760000005
@@ -549,8 +549,8 @@ Tick 1760000000
 Start
   Watch Metrics on
 Pointer(Activate(Shelf(Entry("ff6"))))
-  Save Resume
   Launch ff6 as ff6_09d141
+  Save Resume
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Pointer(Activate(Editor(Save)))

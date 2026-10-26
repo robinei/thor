@@ -26,9 +26,8 @@ use std::sync::Arc;
 
 use clamshell_library::{Launch, ids};
 
-use crate::bottom::Tab;
 use crate::bottom::notice::{NoticeKind, NoticeSlot};
-use crate::effect::{Effect, Save};
+use crate::effect::Effect;
 use crate::out::Out;
 use crate::session::found::window_entry;
 use crate::session::instance::{Instance, STEAM_APP_PREFIX};
@@ -36,7 +35,7 @@ use crate::session::tray::{TrayItem, tray_entry};
 use crate::session::windows::WindowCommand;
 use crate::session::windows::{Group, Window, WindowFacts};
 use crate::settings::Settings;
-use crate::{Clock, Entry, Library, Resume, Session, Shelf};
+use crate::{Clock, Entry, Library, Session};
 
 /// What is in front on the main screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -550,6 +549,16 @@ pub(crate) enum Start {
     Background,
 }
 
+/// What came of a launch asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Launched {
+    Yes,
+    /// Nothing is to be done: a launch of it is starting, a tool was run, or there is no such entry.
+    No,
+    /// What State does in place of a launch.
+    Instead(Instead),
+}
+
 /// What State does in place of a launch: open the Device view on the main screen, show a group open in
 /// shelf, or show the entry, which runs already.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -606,32 +615,33 @@ impl Session {
 
     /// Launches the entry `request` names, again in another tab if it runs, unless a launch of it is
     /// starting. It runs the request's command instead of its own if given, and a group can then be
-    /// launched too. Before it starts, where shelf and the second screen (its tab `tab`) are is saved.
+    /// launched too.
     ///
-    /// What isn't launched is returned, for State to do instead: the Device view and a group are shown,
-    /// and so is an entry that runs in another program's processes, since Steam doesn't start a game
-    /// twice and Android doesn't start an app twice.
-    pub(crate) fn launch(&mut self, request: LaunchRequest, shelf: &Shelf, tab: Tab, settings: &Settings, clock: &Clock, out: &mut Out) -> Option<Instead> {
+    /// What isn't launched says what State does instead: the Device view and a group are shown, and so is
+    /// an entry that runs in another program's processes, since Steam doesn't start a game twice and
+    /// Android doesn't start an app twice.
+    pub(crate) fn launch(&mut self, request: LaunchRequest, library: &Library, settings: &Settings, clock: &Clock, out: &mut Out) -> Launched {
         let LaunchRequest { entry, command, start } = request;
-        let library = shelf.library();
         if let Some(Launch::Tool(tool)) = library.entry(&entry).map(|g| &g.launch) {
             // The Device view is ClamShell's own, on the main screen.
             if *tool == clamshell_library::Tool::Device {
-                return Some(Instead::Device);
+                return Launched::Instead(Instead::Device);
             }
             out.effects.push(Effect::Tool(*tool));
-            return None;
+            return Launched::No;
         }
         if command.is_none() && library.entry(&entry).is_some_and(Entry::is_group) {
-            return Some(Instead::Group);
+            return Launched::Instead(Instead::Group);
         }
         if self.is_launching(&entry) {
-            return None;
+            return Launched::No;
         }
         if self.running(&entry).is_some_and(|r| r.app_id.is_some()) {
-            return Some(Instead::Show);
+            return Launched::Instead(Instead::Show);
         }
-        let g = library.entry(&entry)?;
+        let Some(g) = library.entry(&entry) else {
+            return Launched::No;
+        };
         let app_id = app_id_of(g).filter(|_| command.is_none());
         let (launch, key) = (command.unwrap_or_else(|| g.launch.clone()), g.key.clone());
         let runner = g.runner.as_ref().map(|r| &*r.key);
@@ -642,10 +652,9 @@ impl Session {
         // If its runner, and so its container, is paused, it is resumed first.
         self.resume_runner_of(&entry, library, out);
         let instance = self.begin_launch(entry.clone(), key, app_id, clock, start);
-        out.effects.push(Effect::Save(Save::Resume(Resume::at(shelf, tab))));
         self.refresh_launch = Some((entry.clone(), clock.mono()));
         out.effects.push(Effect::Launch { entry, instance, settings: values, env, launch });
-        None
+        Launched::Yes
     }
 
     /// Quit, at `now`: asks the entry's windows to close. Once none is left, it is ended if it still runs,

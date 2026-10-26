@@ -4,9 +4,9 @@
 use std::sync::Arc;
 
 use crate::out::Out;
-use crate::session::running::{Instead, LaunchRequest, Start};
+use crate::session::running::{Instead, LaunchRequest, Launched, Start};
 use crate::session::windows::WindowCommand;
-use crate::{Effect, EntryAct, Launch, LaunchEvent, State};
+use crate::{Effect, EntryAct, Launch, LaunchEvent, Save, State};
 
 impl State {
     /// Something done to entry `id`.
@@ -43,11 +43,11 @@ impl State {
             return;
         }
         let title = self.shelf.entry(&entry).map(|g| g.title.clone());
-        let mark = out.effects.len();
-        self.launch(entry, None, Start::Front, out);
         // The notice comes at once, since a start may take a while: Android's first start, a Steam
         // game's, or Proton's setup.
-        if let Some(title) = title.filter(|_| out.effects.iter().skip(mark).any(|e| matches!(e, Effect::Launch { .. }))) {
+        if self.launch(entry, None, Start::Front, out) == Launched::Yes
+            && let Some(title) = title
+        {
             self.bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Starting(title), self.clock.mono());
         }
     }
@@ -68,24 +68,27 @@ impl State {
     }
 
     /// Launches `entry` (see [`crate::Session::launch`]), or does what the session says instead: the Device view
-    /// is opened, a group shown open in shelf, or a running entry shown.
-    pub(crate) fn launch(&mut self, entry: Arc<str>, command: Option<Launch>, start: Start, out: &mut Out) {
-        let tab = self.bottom.chosen_tab();
+    /// is opened, a group shown open in shelf, or a running entry shown. As a launch starts, where shelf
+    /// and the second screen are is saved.
+    pub(crate) fn launch(&mut self, entry: Arc<str>, command: Option<Launch>, start: Start, out: &mut Out) -> Launched {
         let request = LaunchRequest { entry: entry.clone(), command, start };
-        match self.session.launch(request, &self.shelf, tab, self.prefs.settings(), &self.clock, out) {
-            Some(Instead::Device) => {
+        let launched = self.session.launch(request, self.shelf.library(), self.prefs.settings(), &self.clock, out);
+        match launched {
+            Launched::Yes => out.effects.push(Effect::Save(Save::Resume(self.resume()))),
+            Launched::Instead(Instead::Device) => {
                 self.session.cancel_front_launch();
                 self.device.open(&mut self.pointer);
                 self.session.command(WindowCommand::ShowShelf);
             }
-            Some(Instead::Group) if self.shelf.reveal(&entry) => {
+            Launched::Instead(Instead::Group) if self.shelf.reveal(&entry) => {
                 self.session.cancel_front_launch();
                 self.shelf.moved(&mut self.pointer);
                 self.session.command(WindowCommand::ShowShelf);
             }
-            Some(Instead::Show) => self.show(&entry, out),
-            Some(Instead::Group) | None => {}
+            Launched::Instead(Instead::Show) => self.show(&entry, out),
+            Launched::Instead(Instead::Group) | Launched::No => {}
         }
+        launched
     }
 
     /// Enqueue was pressed on what shelf's details show. The entries are added to the running launch of
