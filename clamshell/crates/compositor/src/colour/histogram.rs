@@ -1,7 +1,8 @@
 //! The histogram of a window's picture for its curve's edit screen (see
 //! `clamshell_state::State::histogram_window`): the picture drawn small by a program that writes each
 //! pixel's luminance as a level of the content's signal, read back and counted, a few times a second
-//! while the screen is open.
+//! while the screen is open. The readback is read at a later turn, once a fence says the GPU has done
+//! the copy.
 
 use std::time::{Duration, Instant};
 
@@ -9,6 +10,7 @@ use clamshell_state::colour::{HISTOGRAM_BINS, Histogram};
 use smithay::{
     backend::{
         allocator::Fourcc,
+        egl::fence::EGLFence,
         renderer::{
             Bind, ExportMem, Offscreen, Renderer,
             element::Id,
@@ -35,10 +37,21 @@ pub(crate) struct Measure {
     failed: bool,
     /// The last histogram measured, for the state.
     pub measured: Option<Histogram>,
-    /// A readback started and not yet read: its pixels and what they are of (the window, whether HDR).
-    /// It is read at the next turn, by when the GPU has done the copy, so the compositor's thread doesn't
-    /// wait for it.
-    reading: Option<(<GlesRenderer as ExportMem>::TextureMapping, i64, bool)>,
+    /// A readback started and not yet read (see [`Reading`]).
+    reading: Option<Reading>,
+    /// Fences can't be made, logged once; a readback is then read at the next turn, which can wait for
+    /// the GPU.
+    no_fence: bool,
+}
+
+/// A readback of the picture drawn small, read once the GPU has done the copy, so that mapping it doesn't
+/// wait on the GPU.
+struct Reading {
+    mapping: <GlesRenderer as ExportMem>::TextureMapping,
+    /// Signalled once the copy is done; none if it couldn't be made.
+    fence: Option<EGLFence>,
+    window: i64,
+    hdr: bool,
 }
 
 impl Measure {
@@ -47,9 +60,13 @@ impl Measure {
         if self.failed {
             return;
         }
-        if let Some((mapping, window, hdr)) = self.reading.take() {
-            match renderer.map_texture(&mapping) {
-                Ok(bytes) => self.measured = Some(histogram(bytes, window, hdr)),
+        if let Some(reading) = self.reading.take() {
+            if !copied(renderer, reading.fence.as_ref()) {
+                self.reading = Some(reading);
+                return;
+            }
+            match renderer.map_texture(&reading.mapping) {
+                Ok(bytes) => self.measured = Some(histogram(bytes, reading.window, reading.hdr)),
                 Err(error) => log::warn!("compositor: the curve's histogram: reading it back: {error}"),
             }
         }
@@ -100,8 +117,38 @@ impl Measure {
         let bound = renderer.bind(target).map_err(|e| e.to_string())?;
         let mapping = renderer.copy_framebuffer(&bound, Rectangle::from_size(SIZE.into()), Fourcc::Abgr8888).map_err(|e| e.to_string())?;
         drop(bound);
-        self.reading = Some((mapping, window, hdr));
+        let display = renderer.egl_context().display().clone();
+        let fence = match renderer.with_context(|_| EGLFence::create(&display)) {
+            Ok(Ok(fence)) => Some(fence),
+            Ok(Err(error)) => self.without_fence(error.to_string()),
+            Err(error) => self.without_fence(error.to_string()),
+        };
+        self.reading = Some(Reading { mapping, fence, window, hdr });
         Ok(())
+    }
+
+    fn without_fence(&mut self, error: String) -> Option<EGLFence> {
+        if !std::mem::replace(&mut self.no_fence, true) {
+            log::warn!("compositor: the curve's histogram: no fence for its readback, so reading it may wait on the GPU: {error}");
+        }
+        None
+    }
+}
+
+/// Whether the GPU has done the copy `fence` follows, checked without waiting; a copy without a fence is
+/// taken as done. The check flushes the renderer's commands, so the fence comes without another frame.
+fn copied(renderer: &mut GlesRenderer, fence: Option<&EGLFence>) -> bool {
+    let Some(fence) = fence else { return true };
+    match renderer.with_context(|_| fence.client_wait(Some(Duration::ZERO), true)) {
+        Ok(Ok(signalled)) => signalled,
+        Ok(Err(error)) => {
+            log::warn!("compositor: the curve's histogram: checking its readback's fence: {error}; it is read now");
+            true
+        }
+        Err(error) => {
+            log::warn!("compositor: the curve's histogram: checking its readback's fence: {error}; it is read now");
+            true
+        }
     }
 }
 
