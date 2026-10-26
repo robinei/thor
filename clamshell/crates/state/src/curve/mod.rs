@@ -25,6 +25,7 @@
 //! peak from the knee where SDR's would start expanding. Without a curve an HDR game is only compressed
 //! into the screen.
 
+pub mod plot;
 pub mod screens;
 
 use crate::profiles::{Profile, Profiles};
