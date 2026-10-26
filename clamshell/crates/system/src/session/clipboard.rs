@@ -197,15 +197,9 @@ impl Keeper {
         Ok((Keeper { conn, manager, device, offers: Vec::new(), mode }, queue))
     }
 
-    /// The best text type `offer` has, if any. None for a secret: a password manager's copy, marked
-    /// `x-kde-passwordManagerHint`. The manager clears the clipboard itself after a while, which keeping
-    /// the text would undo, and the text must never be written down.
+    /// The best text type `offer` has, if any (see [`text_type`]).
     fn text_type(&self, offer: &ExtDataControlOfferV1) -> Option<&'static str> {
-        let types = &self.offers.iter().find(|(o, _)| o == offer)?.1;
-        if types.iter().any(|t| t == SECRET) {
-            return None;
-        }
-        TEXT.into_iter().find(|t| types.iter().any(|x| x == t))
+        text_type(&self.offers.iter().find(|(o, _)| o == offer)?.1)
     }
 
     /// The clipboard changed to `offer`, or was emptied if it is none.
@@ -296,6 +290,16 @@ impl Keeper {
     }
 }
 
+/// The best text type of an offer of `types`, if any. None for a secret: a password manager's copy, marked
+/// `x-kde-passwordManagerHint`. The manager clears the clipboard itself after a while, which keeping the
+/// text would undo, and the text must never be written down.
+fn text_type(types: &[String]) -> Option<&'static str> {
+    if types.iter().any(|t| t == SECRET) {
+        return None;
+    }
+    TEXT.into_iter().find(|t| types.iter().any(|x| x == t))
+}
+
 /// Asks `offer` for its text as `mime`. Returns the end of the pipe to read it from.
 fn receive(conn: &Connection, offer: &ExtDataControlOfferV1, mime: &str) -> Result<OwnedFd, String> {
     let (read, write) = rustix::pipe::pipe_with(rustix::pipe::PipeFlags::CLOEXEC).map_err(|e| e.to_string())?;
@@ -380,5 +384,41 @@ impl Dispatch<ExtDataControlSourceV1, ()> for Keeper {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn types(list: &[&str]) -> Vec<String> {
+        list.iter().map(|t| (*t).to_owned()).collect()
+    }
+
+    #[test]
+    fn the_best_text_type_is_taken_and_a_password_managers_copy_is_none() {
+        assert_eq!(text_type(&types(&["text/plain", "text/plain;charset=utf-8", "image/png"])), Some("text/plain;charset=utf-8"));
+        assert_eq!(text_type(&types(&["STRING", "UTF8_STRING"])), Some("UTF8_STRING"));
+        assert_eq!(text_type(&types(&["image/png"])), None, "not text");
+        assert_eq!(text_type(&types(&["text/plain;charset=utf-8", SECRET])), None, "a secret");
+        assert_eq!(text_type(&[]), None);
+    }
+
+    /// `bytes` as written to a file, read back through its descriptor as a pipe would be.
+    fn read(bytes: &[u8]) -> Option<String> {
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(bytes).unwrap();
+        std::io::Seek::rewind(&mut file).unwrap();
+        read_text(OwnedFd::from(file))
+    }
+
+    #[test]
+    fn a_copied_text_is_kept_up_to_its_limit_and_only_as_utf8() {
+        assert_eq!(read("héllo".as_bytes()).as_deref(), Some("héllo"));
+        assert_eq!(read(&[]).as_deref(), Some(""));
+        assert_eq!(read(&vec![b'a'; MOST]).map(|t| t.len()), Some(MOST), "at the limit");
+        assert_eq!(read(&vec![b'a'; MOST + 1]), None, "past it");
+        assert_eq!(read(&[0x66, 0x6f, 0xff, 0x6f]), None, "not UTF-8");
     }
 }
