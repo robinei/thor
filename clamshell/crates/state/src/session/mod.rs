@@ -21,7 +21,7 @@ use crate::session::windows::WindowCommand;
 use crate::{Entry, Library};
 use instance::Instance;
 use running::{Front, Launching, Running};
-use windows::{Group, Window, WindowFacts};
+use windows::{Group, Window, WindowFacts, WindowPlace};
 
 /// How soon after the window in front closed a new window in its group is shown again, in seconds.
 const REOPEN_SECS: u64 = 2;
@@ -36,6 +36,11 @@ pub struct Session {
     launching: Vec<Launching>,
     /// The compositor's windows.
     windows: Vec<Window>,
+    /// The window the top screen shows; none while shelf is in front.
+    top: Option<i64>,
+    /// The window placed on the bottom screen, if any. It is shown there while the windows' tab is open
+    /// (see [`crate::Bottom::shows_windows`]).
+    bottom: Option<i64>,
     /// The client with keyboard focus; none while ClamShell's own UI receives keys.
     keyboard_focus: Option<i64>,
     home_held: bool,
@@ -175,7 +180,7 @@ impl Session {
     }
 
     pub fn has_other_top_window(&self) -> bool {
-        self.top_window().is_some_and(|front| self.windows.iter().any(|w| !w.down && w.id != front.id && w.group == front.group))
+        self.top_window().is_some_and(|front| self.windows.iter().any(|w| !self.below(w.id) && w.id != front.id && w.group == front.group))
     }
 
     /// Whether a window opening comes in front. While a launch waits for its window, only its own windows
@@ -213,8 +218,8 @@ impl Session {
 
     pub(crate) fn step_window(&mut self, next: bool) {
         let Some(front) = self.top_window() else { return };
-        let mut group = self.windows.iter().filter(|w| !w.down && w.group == front.group).cycle();
-        let count = self.windows.iter().filter(|w| !w.down && w.group == front.group).count();
+        let mut group = self.windows.iter().filter(|w| !self.below(w.id) && w.group == front.group).cycle();
+        let count = self.windows.iter().filter(|w| !self.below(w.id) && w.group == front.group).count();
         let id = if next {
             group.find(|w| w.id == front.id).and_then(|_| group.next()).map(|w| w.id)
         } else {
@@ -233,21 +238,39 @@ impl Session {
         }
     }
 
-    /// The selected top window, or none while shelf is shown without a client surface of its own.
+    /// The window the top screen shows, or none while shelf is in front.
     pub fn top_window(&self) -> Option<&Window> {
-        self.windows
-            .iter()
-            .find(|w| w.focused && !w.down)
-            .or_else(|| self.windows.iter().filter(|w| !w.down && w.visible).max_by_key(|w| (self.selected.iter().any(|(_, id)| *id == w.id), w.id)))
+        self.top.and_then(|id| self.window(id))
     }
 
+    /// The window placed on the bottom screen, if any.
     pub fn bottom_window(&self) -> Option<&Window> {
-        self.windows.iter().find(|w| w.down && w.visible)
+        self.bottom.and_then(|id| self.window(id))
     }
 
+    /// Whether window `id` is in view: the one the top screen shows, or the one placed on the bottom
+    /// screen.
+    pub fn shown(&self, id: i64) -> bool {
+        self.top == Some(id) || self.bottom == Some(id)
+    }
+
+    /// Whether window `id` is the one placed on the bottom screen.
+    pub fn below(&self, id: i64) -> bool {
+        self.bottom == Some(id)
+    }
+
+    /// Where window `id` is: on the bottom screen, or in its group on the top screen.
+    pub fn place(&self, id: i64) -> Option<WindowPlace<'_>> {
+        let window = self.window(id)?;
+        Some(if self.below(id) { WindowPlace::Bottom } else { WindowPlace::Top(window.group.as_ref()) })
+    }
+
+    /// Whether the window slots and the groups' selections name open windows where they should be.
     #[cfg(test)]
     pub(crate) fn selections_valid(&self) -> bool {
-        self.selected.iter().all(|(group, id)| self.window(*id).is_some_and(|w| !w.down && w.group.as_ref() == Some(group)))
+        let selected = self.selected.iter().all(|(group, id)| self.window(*id).is_some_and(|w| !self.below(w.id) && w.group.as_ref() == Some(group)));
+        let open = |slot: Option<i64>| slot.is_none_or(|id| self.window(id).is_some());
+        selected && open(self.top) && open(self.bottom) && (self.top.is_none() || self.top != self.bottom)
     }
 
     pub fn units(&self) -> &[Instance] {
@@ -327,11 +350,6 @@ impl Session {
         self.running_of(w).map(|r| r.id.clone())
     }
 
-    /// The windows moved to the bottom screen, in the compositor's order.
-    pub fn windows_down(&self) -> impl Iterator<Item = &Window> {
-        self.windows.iter().filter(|w| w.down)
-    }
-
     /// The windows of running entry `id`, including those moved to the bottom screen.
     pub fn windows_of<'a>(&'a self, id: &'a str) -> impl Iterator<Item = &'a Window> + 'a {
         self.windows.iter().filter(move |w| self.running_of(w).is_some_and(|r| &*r.id == id))
@@ -339,7 +357,7 @@ impl Session {
 
     /// The `awake` command of the runner of a shown window, if it has one.
     pub(crate) fn awake_command(&self) -> Option<Arc<[String]>> {
-        self.windows.iter().filter(|w| w.visible).find_map(|w| {
+        self.top_window().into_iter().chain(self.bottom_window()).find_map(|w| {
             let runner = self.running_of(w)?.entry.as_ref()?.runner.as_ref()?;
             (!runner.awake.is_empty()).then(|| runner.awake.clone())
         })
@@ -348,8 +366,7 @@ impl Session {
     /// The window Home with B acts on. It is the one in front on the top screen. If there is none, it is the one in view on the bottom screen while it shows the windows moved there
     /// (`shows_windows`).
     pub(crate) fn home_b_window(&self, shows_windows: bool) -> Option<&Window> {
-        let windows = &self.windows;
-        self.top_window().or_else(|| shows_windows.then(|| windows.iter().filter(|w| w.down).max_by_key(|w| w.visible)).flatten())
+        self.top_window().or_else(|| shows_windows.then(|| self.bottom_window()).flatten())
     }
 
     /// Sets the icon of found entry `entry`, once it was found (see [`Effect::FindIcon`]).
@@ -393,9 +410,11 @@ impl Session {
 
     /// Keeps the front's history after the window set changes, whichever backend reported it.
     pub(crate) fn remember_front(&mut self) {
-        self.selected.retain(|(group, id)| self.windows.iter().any(|w| w.id == *id && !w.down && w.group.as_ref() == Some(group)));
-        for w in self.windows.iter().filter(|w| !w.down && (w.visible || w.focused)) {
-            let Some(group) = &w.group else { continue };
+        let bottom = self.bottom;
+        self.selected.retain(|(group, id)| bottom != Some(*id) && self.windows.iter().any(|w| w.id == *id && w.group.as_ref() == Some(group)));
+        if let Some(w) = self.top.and_then(|id| self.windows.iter().find(|w| w.id == id))
+            && let Some(group) = &w.group
+        {
             match self.selected.iter_mut().find(|(g, _)| g == group) {
                 Some((_, id)) => *id = w.id,
                 None => self.selected.push((group.clone(), w.id)),
@@ -426,7 +445,7 @@ impl Session {
         if now > at + REOPEN_SECS {
             return;
         }
-        if self.windows.iter().any(|w| w.group.as_ref() == Some(&group) && !w.down) {
+        if self.windows.iter().any(|w| w.group.as_ref() == Some(&group) && !self.below(w.id)) {
             self.focus(&group);
             return;
         }
@@ -453,7 +472,7 @@ impl Session {
                 w.group.as_ref().and_then(Group::key) == Some(&instance.key)
                     && (outside || w.unit.as_deref().and_then(Instance::unit_name).is_some_and(|unit| instance.is(unit)))
             })
-            .map(|w| (w.id, w.down));
+            .map(|w| (w.id, self.below(w.id)));
         if let Some((id, down)) = arrived {
             self.front_launch = None;
             if !down {

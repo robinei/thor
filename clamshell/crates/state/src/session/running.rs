@@ -405,8 +405,12 @@ impl Session {
     /// to `taken`.
     fn claim_opened_windows(&mut self, now: u64, taken: &mut Vec<i64>) -> Option<Arc<str>> {
         let opened = &self.opened;
-        let stray: Vec<i64> =
-            self.windows.iter().filter(|w| opened.contains(&w.id) && !w.launched() && !w.down && self.running_of(w).is_none()).map(|w| w.id).collect();
+        let stray: Vec<i64> = self
+            .windows
+            .iter()
+            .filter(|w| opened.contains(&w.id) && !w.launched() && !self.below(w.id) && self.running_of(w).is_none())
+            .map(|w| w.id)
+            .collect();
         let waiting = self
             .running
             .iter()
@@ -427,8 +431,8 @@ impl Session {
         let starting = |w: &crate::session::windows::Window| self.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
         let ids: Vec<i64> = self.windows.iter().filter(|w| w.group.is_none() && self.running_of(w).is_none() && !starting(w)).map(|w| w.id).collect();
         for id in ids {
-            let down = self.window(id).is_some_and(|w| w.down);
-            let group = self.windows.iter().find(|w| !down && w.focused && !w.down).and_then(|w| w.group.clone()).unwrap_or(Group::Window(id));
+            let down = self.below(id);
+            let group = self.top_window().filter(|_| !down).and_then(|w| w.group.clone()).unwrap_or(Group::Window(id));
             self.command(WindowCommand::Move { windows: vec![id], to: group });
             if !down {
                 self.command(WindowCommand::FocusWindow(id));
@@ -546,20 +550,20 @@ pub(crate) enum Instead {
 
 impl Session {
     /// Shows running entry `id`: its group, if a window of it is there to see. If all its windows are
-    /// on the bottom screen, the first of them is returned, for the bottom screen to show. Otherwise what
+    /// on the bottom screen, it returns true, for the bottom screen to show them. Otherwise what
     /// is in front stays, and a notice says it has no window. It may run without one, not have shown one
     /// yet, or have lost its display, in which case its dock menu's Quit ends it. It never shows an empty
     /// screen.
-    pub(crate) fn show(&mut self, id: &str, clock: &Clock, library: &Library, notice: &mut NoticeSlot, out: &mut Out) -> Option<i64> {
-        let r = self.running(id)?;
+    pub(crate) fn show(&mut self, id: &str, clock: &Clock, library: &Library, notice: &mut NoticeSlot, out: &mut Out) -> bool {
+        let Some(r) = self.running(id) else { return false };
         if self.windows_of(&r.id).next().is_some() {
-            let down = self.windows_of(&r.id).all(|w| w.down).then(|| self.windows_of(&r.id).next().map(|w| w.id)).flatten();
+            let down = self.windows_of(&r.id).all(|w| self.below(w.id));
             let group = r.group();
             self.cancel_front_launch();
             // If it or its runner is paused, it is thawed first, so that it draws as it is shown.
             self.thaw(id, out);
             self.resume_runner_of(id, library, out);
-            if down.is_none() {
+            if !down {
                 self.focus(&group);
             }
             return down;
@@ -570,7 +574,7 @@ impl Session {
         if !self.activate_tray(id, clock, out) {
             notice.show(NoticeKind::NoWindow(title), clock.mono());
         }
-        None
+        false
     }
 
     /// Whether a launch of entry `id` was asked for and hasn't started.

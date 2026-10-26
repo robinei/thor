@@ -223,7 +223,7 @@ fn activation_tokens_require_focus_expire_are_single_use_and_cannot_undo_home() 
                     assert_eq!(server.core.state().session().top_window().map(|window| window.id), Some(origin));
                     assert_eq!(server.core.state().session().bottom_window().map(|window| window.id), Some(target));
                     assert_eq!(server.core.state().session().keyboard_focus(), Some(target));
-                    assert!(server.core.state().session().window(target).unwrap().down, "activation does not move a window between screens");
+                    assert!(server.core.state().session().below(target), "activation does not move a window between screens");
                     assert_eq!(server.activation.tokens().count(), 0);
                     server.core.handle(clamshell_state::WindowEvent::Activate(origin).into());
                 }

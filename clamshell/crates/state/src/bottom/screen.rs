@@ -144,7 +144,7 @@ impl Bottom {
     /// Whether the bottom screen shows the windows moved there: the windows' tab is open and there are
     /// some. With none, the tab shows how to move one there.
     pub fn shows_windows(&self, session: &Session) -> bool {
-        self.shows(session.windows_down().next().is_some())
+        self.shows(session.bottom_window().is_some())
     }
 
     /// Whether the bottom screen shows the windows moved there, when there are any (`any_down`).
@@ -230,7 +230,7 @@ impl Bottom {
     /// Home + right stick up moves the window the bottom screen shows (the tab in view) back to its place on the top
     /// screen, and forgets its rule. The bottom screen then shows ClamShell's view.
     pub(crate) fn window_up(&mut self, session: &mut Session, now: u64, out: &mut Out) {
-        let Some(w) = session.windows_down().find(|w| w.visible).or_else(|| session.windows_down().next()).cloned() else {
+        let Some(w) = session.bottom_window().cloned() else {
             return;
         };
         session.command(WindowCommand::Up(w.id));
@@ -273,14 +273,13 @@ impl Bottom {
             return None;
         }
         let front = &session.top_window()?.group;
-        session.windows_down().find(|w| w.group == *front).map(|w| w.id)
+        session.bottom_window().filter(|w| w.group == *front).map(|w| w.id)
     }
 
-    /// A tap on a program whose windows are all on the bottom screen shows them there, with its first
-    /// tab in view, turning the bottom screen on again if it was off by hand.
-    pub(crate) fn show_program_down(&mut self, window: i64, session: &mut Session) {
+    /// Shows the window on the bottom screen, as for a tap on a program whose windows are all there: opens
+    /// the windows' tab, turning the bottom screen on again if it was off by hand.
+    pub(crate) fn show_below(&mut self) {
         self.open_windows_tab();
-        session.command(WindowCommand::ShowDown(window));
         self.screen.off = false;
     }
 
@@ -307,7 +306,7 @@ impl Bottom {
         let wanted: Vec<i64> = session
             .windows()
             .iter()
-            .filter(|w| !w.down && !self.sent_down.contains(&w.id))
+            .filter(|w| !session.below(w.id) && !self.sent_down.contains(&w.id))
             .filter(|w| {
                 let owner = session.owner_of(w).or_else(|| {
                     let key = w.group.as_ref()?.key()?;
@@ -333,7 +332,6 @@ mod tests {
     use crate::device::buttons::DeviceKey;
     use crate::session::instance::Instance;
     use crate::session::running::{Origin, Running};
-    use crate::session::windows::Window;
     use crate::settings::{Choice, Setting};
     use crate::testkit::Applied;
     use crate::testkit::{group_of, state, tap};
@@ -399,7 +397,7 @@ mod tests {
         assert!(!s.bottom().shows_windows(s.session()));
         // Up moves it back to its group, forgets the rule, and shows ClamShell's view below.
         let fx = key(&mut s, DeviceKey::WindowUp);
-        assert_eq!(s.session().window(2).map(Window::place), Some(WindowPlace::Top(Some(&group_of(&emu())))));
+        assert_eq!(s.session().place(2), Some(WindowPlace::Top(Some(&group_of(&emu())))));
         assert!(matches!(&fx[0], Effect::Save(Save::WindowRules(r)) if r.list().is_empty()), "{fx:?}");
         assert!(!s.bottom().shows_windows(s.session()), "none down: ClamShell's view");
     }
@@ -416,7 +414,6 @@ mod tests {
         s.observed(vec![win(5, GAME, "Top"), win(6, GAME, "Bottom")]);
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(6));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(5));
-        assert_eq!(s.session().windows_down().count(), 1);
         // Its window appears before its scope is listed, and is sent down when the scope appears.
         let mut s = crate::testkit::started(crate::Init { window_rules: rules.clone(), ..crate::testkit::init() });
         s.observed(vec![win(8, GAME, "Bottom")]);
@@ -429,7 +426,7 @@ mod tests {
         // Another game's window with that title doesn't match the rule.
         s.add_run(running("other", "other_2"), Instance { key: "other_2".into(), secs: 5, n: 2 });
         s.observed(vec![win(7, "clamshell-run-other_2-5-2.scope", "Bottom")]);
-        assert!(s.session().window(7).is_some_and(|w| !w.down));
+        assert!(s.session().window(7).is_some() && !s.session().below(7));
     }
 
     #[test]
@@ -438,15 +435,14 @@ mod tests {
         key(&mut s, DeviceKey::WindowDown);
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(2));
         key(&mut s, DeviceKey::WindowDown);
-        assert_eq!(s.session().window(2).map(Window::place), Some(WindowPlace::Top(Some(&group_of(&emu())))));
-        assert_eq!(s.session().windows_down().count(), 1);
+        assert_eq!(s.session().place(2), Some(WindowPlace::Top(Some(&group_of(&emu())))));
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(1));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(2));
         key(&mut s, DeviceKey::BottomView);
         assert!(!s.bottom().shows_windows(s.session()));
         key(&mut s, DeviceKey::WindowUp);
-        assert_eq!(s.session().window(1).map(Window::place), Some(WindowPlace::Top(Some(&group_of(&emu())))));
-        assert_eq!(s.session().windows_down().count(), 0);
+        assert_eq!(s.session().place(1), Some(WindowPlace::Top(Some(&group_of(&emu())))));
+        assert_eq!(s.session().bottom_window(), None);
         assert!(!s.bottom().shows_windows(s.session()));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(1));
     }

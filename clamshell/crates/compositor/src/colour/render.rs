@@ -216,7 +216,7 @@ impl Pipeline {
             let curve = client.shown.curve;
             // What the screen shows, as clients are told: nested, the host's real peak rather than the
             // PQ signal we send it.
-            let headroom = server.colour.screen(state.session().window(client.id).is_some_and(|w| w.down)).headroom() as f32;
+            let headroom = server.colour.screen(state.session().below(client.id)).headroom() as f32;
             let mut clarity = client.shown.clarity;
             let hdr_peak = client.shown.hdr_peak;
             // The game's picture: the window's surface with the largest buffer (Wine draws it in a subsurface

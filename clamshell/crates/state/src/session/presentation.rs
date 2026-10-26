@@ -267,13 +267,13 @@ impl crate::State {
         // second's size isn't known here, and games are shown on the top one.
         let mut screen: Vec<(u32, u32)> = self
             .top_size()
-            .filter(|_| !window.down)
+            .filter(|_| !self.session().below(id))
             .map(|top| {
                 use crate::settings::{Choice, Resolution, Setting};
                 Setting::Resolution.choices().iter().map(|value| Resolution::of(*value).size_on(top)).collect()
             })
             .unwrap_or_default();
-        if window.x11 && !window.down {
+        if window.x11 && !self.session().below(id) {
             screen.extend(&self.xwayland_modes);
         }
         let size = self.session().running_of(window).map_or_else(Default::default, |r| self.settings_of(&r.id).choice());
@@ -316,7 +316,7 @@ impl crate::State {
         let program = self.panel().editing().map(|program| program.id.clone());
         let id = program.as_deref().and_then(|id| {
             let mut windows = self.session().windows_of(id);
-            windows.find(|w| !w.down).or_else(|| self.session().windows_of(id).next()).map(|w| w.id)
+            windows.find(|w| !self.session().below(w.id)).or_else(|| self.session().windows_of(id).next()).map(|w| w.id)
         })?;
         self.session().window(id)
     }
@@ -330,7 +330,7 @@ impl crate::State {
     pub fn curve_plot(&self) -> CurvePlot {
         let window = self.plot_window();
         let colour = window.and_then(|w| w.colour.as_deref().copied()).filter(|colour| colour.hdr());
-        let screen = self.screen_colour(window.is_some_and(|w| w.down));
+        let screen = self.screen_colour(window.is_some_and(|w| self.session().below(w.id)));
         let luminance = screen.luminances();
         let black = f64::from(luminance.min) / 10000.0 / f64::from(luminance.reference.max(1));
         // The content's peak: the one set for the program edited (at the level edited), else what it

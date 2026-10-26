@@ -479,7 +479,7 @@ impl Server {
         for client in &self.windows {
             let Some(window) = self.core.state().session().window(client.id) else { continue };
             if let Some(surface) = client.window.toplevel() {
-                let area = self.area(window.down);
+                let area = self.area(self.core.state().session().below(client.id));
                 let Some(policy) = client.shown.presentation else { continue };
                 let fill = fill_size(client.shown.clarity, area.size);
                 let size = crate::geometry::configure_size(window, policy, area.size, fill, client.window.geometry().size);
@@ -503,7 +503,7 @@ impl Server {
                 }
             }
             let Some(root) = client.window.root() else { continue };
-            let output = if window.down { &self.outputs[1] } else { &self.outputs[0] };
+            let output = if self.core.state().session().below(client.id) { &self.outputs[1] } else { &self.outputs[0] };
             for candidate in &self.outputs {
                 if candidate == output {
                     candidate.enter(&root);
@@ -691,7 +691,7 @@ impl Server {
         let mut held: Option<Instant> = None;
         let mut barriers: Vec<smithay::reexports::wayland_server::Client> = Vec::new();
         for (client, shown) in self.windows.iter_mut().zip(shown) {
-            let on_down = state.session().window(client.id).is_some_and(|w| w.down);
+            let on_down = state.session().below(client.id);
             if !shown || down.is_some_and(|down| down != on_down) {
                 continue;
             }
@@ -796,11 +796,11 @@ impl Server {
     }
 
     pub fn geometry(&self, id: i64) -> Option<crate::geometry::Geometry> {
-        let window = self.core.state().session().window(id)?;
+        self.core.state().session().window(id)?;
         let client = self.windows.iter().find(|w| w.id == id && w.mapped)?;
         let (size, place) = client.window.picture().unzip();
         let picture = crate::geometry::Picture { size, place };
-        crate::geometry::Geometry::new(self.area(window.down), client.window.geometry(), client.shown.presentation?, picture)
+        crate::geometry::Geometry::new(self.area(self.core.state().session().below(id)), client.window.geometry(), client.shown.presentation?, picture)
     }
 }
 

@@ -9,7 +9,7 @@ impl Session {
     /// Runs after any event. The program in force follows the one in front, or, when that is gone, the
     /// latest that runs. Returns whether it changed, and so its settings are to be applied.
     pub(crate) fn follow_program(&mut self) -> bool {
-        let front = self.windows.iter().find(|w| w.focused && !w.down).and_then(|w| self.owner_of(w));
+        let front = self.top_window().and_then(|w| self.owner_of(w));
         let kept = self.program.clone().filter(|p| self.running(p).is_some());
         let program = front.or(kept).or_else(|| self.running.last().map(|r| r.id.clone()));
         crate::kit::replace(&mut self.program, program)

@@ -110,7 +110,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
         Tone::Accent
     } else if f.s.bottom().hidden_down(f.s.session()).is_some() {
         Tone::Fn
-    } else if f.s.session().windows_down().next().is_some() {
+    } else if f.s.session().bottom_window().is_some() {
         Tone::Normal
     } else {
         Tone::Dim

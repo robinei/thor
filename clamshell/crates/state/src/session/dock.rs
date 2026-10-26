@@ -301,11 +301,11 @@ fn tap(entry: Arc<str>, session: &Session, out: &mut Out) {
 
 impl Session {
     /// An entry's window in view, for the menu's Close window. It is the one in front on the top screen,
-    /// or else one shown there, or else, with nothing of the entry on top, one shown on the bottom screen.
+    /// or else, with nothing of the entry on top, the one on the bottom screen.
     pub fn entry_window(&self, id: &str) -> Option<i64> {
         let mine = || self.windows_of(id);
-        let on_top = mine().filter(|w| !w.down).find(|w| w.focused).or_else(|| mine().filter(|w| !w.down).find(|w| w.visible));
-        let shown = on_top.or_else(|| mine().all(|w| w.down).then(|| mine().filter(|w| w.down).find(|w| w.visible)).flatten());
+        let on_top = mine().find(|w| self.top_window().is_some_and(|top| top.id == w.id));
+        let shown = on_top.or_else(|| mine().all(|w| self.below(w.id)).then(|| mine().next()).flatten());
         shown.map(|w| w.id)
     }
 }

@@ -210,7 +210,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
                     assert_eq!(windows.len(), 1);
                     assert_eq!(windows[0].title, "before configure");
                     assert_eq!(windows[0].unit.as_deref(), Some("test.service"));
-                    assert!(matches!(windows[0].place(), WindowPlace::Top(_)));
+                    assert!(matches!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Top(_)));
                     assert!(!server.windows[0].mapped, "initial configure precedes the first buffer");
                     assert_eq!(server.core.state().session().top_window().map(|w| w.id), Some(windows[0].id));
                     next.send(()).unwrap();
@@ -245,7 +245,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
                     let geometry = server.geometry(windows[0].id).unwrap();
                     assert!(geometry.scale.x < 1.0);
                     assert_eq!(geometry.native.size, (960, 540).into());
-                    assert_eq!(windows[0].place(), WindowPlace::Bottom);
+                    assert_eq!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Bottom);
                     assert_eq!(size, (server.area(true).size.w, server.area(true).size.h));
                     next.send(()).unwrap();
                 }
@@ -258,7 +258,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
                         .count();
                     assert_eq!(titles, 1, "a title burst enters state and diagnostics once per frame");
                     assert_eq!(windows[0].title, "after configure");
-                    assert_eq!(windows[0].place(), WindowPlace::Bottom);
+                    assert_eq!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Bottom);
                     next.send(()).unwrap();
                 }
                 Report::Unmapped => {
@@ -271,7 +271,10 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
                     assert_eq!(windows[0].id, server.windows[0].id);
                     assert!(server.windows[0].mapped);
                     assert_eq!(windows[0].title, "after configure");
-                    assert!(matches!(windows[0].place(), WindowPlace::Top(_)), "this unowned client has no persistent bottom rule");
+                    assert!(
+                        matches!(server.core.state().session().place(windows[0].id).unwrap(), WindowPlace::Top(_)),
+                        "this unowned client has no persistent bottom rule"
+                    );
                     server.core.handle(Event::Device(DeviceKey::WindowDown));
                     server.frame();
                     next.send(()).unwrap();
@@ -279,7 +282,7 @@ fn xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu() {
                 Report::Child(size) => {
                     assert_eq!(windows.len(), 2);
                     assert_eq!(windows[1].parent, Some(windows[0].id));
-                    assert_eq!(windows[1].place(), WindowPlace::Bottom);
+                    assert_eq!(server.core.state().session().place(windows[1].id).unwrap(), WindowPlace::Bottom);
                     assert_eq!(size, (320, 240));
                     assert_eq!(windows[1].limits.fixed_size(), Some((320, 240)));
                     next.send(()).unwrap();

@@ -55,23 +55,18 @@ pub(crate) enum WindowCommand {
     Move { windows: Vec<i64>, to: Group },
     /// Bring shelf to the front.
     ShowShelf,
-    /// Move a window to the bottom screen and show it there. It is marked so it stays there. The top
-    /// screen keeps the keyboard.
+    /// Move a window to the bottom screen and show it there, returning the one there to its group. The
+    /// top screen keeps the keyboard.
     Down(i64),
     /// Move a window that was moved down back to the top screen, to its group, and select it.
     Up(i64),
     /// Return the displaced bottom window to its group without activating that program.
     Return(i64),
-    /// Show on the bottom screen this window that was moved there. The top screen keeps the keyboard.
-    ShowDown(i64),
 }
 
 impl Session {
     /// Carries out a placement decision on the session's windows.
     pub(crate) fn command(&mut self, command: WindowCommand) {
-        if let WindowCommand::Down(id) = &command {
-            self.return_bottom(*id);
-        }
         match &command {
             WindowCommand::KeyboardFocus(id) => {
                 if self.window(*id).is_some() {
@@ -81,10 +76,7 @@ impl Session {
             WindowCommand::FocusWindow(id) => self.select_top(*id),
             WindowCommand::ShowShelf => {
                 self.keyboard_focus = None;
-                for w in self.windows.iter_mut().filter(|w| !w.down) {
-                    w.focused = false;
-                    w.visible = false;
-                }
+                self.top = None;
             }
             WindowCommand::Move { windows, to } => {
                 for w in self.windows.iter_mut().filter(|w| windows.contains(&w.id)) {
@@ -92,80 +84,60 @@ impl Session {
                 }
             }
             WindowCommand::Down(id) => {
+                if let Some(other) = self.bottom.filter(|other| other != id) {
+                    self.command(WindowCommand::Return(other));
+                }
                 if self.keyboard_focus == Some(*id) {
                     self.keyboard_focus = None;
                 }
-                let group = self.windows.iter().find(|w| w.id == *id).and_then(|w| w.group.clone());
-                for w in &mut self.windows {
-                    if w.down {
-                        w.visible = w.id == *id;
-                    }
-                    if w.id == *id {
-                        w.down = true;
-                        w.focused = false;
-                        w.visible = true;
-                    }
+                if self.window(*id).is_some() {
+                    self.bottom = Some(*id);
                 }
-                if let Some(group) = group.filter(|_| !self.windows.iter().any(|w| w.focused && !w.down)) {
+                if self.top == Some(*id) {
+                    self.top = None;
+                }
+                let group = self.window(*id).and_then(|w| w.group.clone());
+                if let Some(group) = group.filter(|_| self.top.is_none()) {
                     self.focus_group(&group);
                 }
             }
             WindowCommand::Up(window) => {
-                if let Some(w) = self.windows.iter_mut().find(|w| w.id == *window) {
-                    w.down = false;
-                }
-                if !self.windows.iter().any(|w| w.down && w.visible)
-                    && let Some(w) = self.windows.iter_mut().rev().find(|w| w.down)
-                {
-                    w.visible = true;
+                if self.bottom == Some(*window) {
+                    self.bottom = None;
                 }
                 self.select_top(*window);
             }
             WindowCommand::Return(window) => {
                 let group = self.window(*window).and_then(|w| w.group.clone());
-                if !self.windows.iter().any(|w| !w.down && w.group == group) {
+                if !self.windows.iter().any(|w| !self.below(w.id) && w.group == group) {
                     self.recent.retain(|g| Some(g) != group.as_ref());
                 }
-                if let Some(w) = self.windows.iter_mut().find(|w| w.id == *window) {
-                    w.down = false;
-                    w.visible = false;
-                    w.focused = false;
-                }
-            }
-            WindowCommand::ShowDown(id) => {
-                for w in self.windows.iter_mut().filter(|w| w.down) {
-                    w.visible = w.id == *id;
+                if self.bottom == Some(*window) {
+                    self.bottom = None;
                 }
             }
         }
         self.remember_front();
-        let refocus = matches!(command, WindowCommand::Down(_)).then(|| self.top_window().map(|w| w.id)).flatten();
+        let refocus = matches!(command, WindowCommand::Down(_)).then_some(self.top).flatten();
         if let Some(id) = refocus {
             self.command(WindowCommand::FocusWindow(id));
         }
     }
 
-    pub(crate) fn return_bottom(&mut self, except: i64) {
-        while let Some(w) = self.windows.iter().find(|w| w.down && w.id != except) {
-            self.command(WindowCommand::Return(w.id));
-        }
-    }
-
     fn focus_group(&mut self, group: &Group) {
-        let id = self.group_window(group).map(|w| w.id);
-        if let Some(id) = id {
-            self.select_top(id);
-        } else {
-            for w in self.windows.iter_mut().filter(|w| !w.down) {
-                w.focused = false;
-                w.visible = false;
-            }
+        match self.group_window(group).map(|w| w.id) {
+            Some(id) => self.select_top(id),
+            None => self.top = None,
         }
     }
 
+    /// The window `group` shows: the one selected in it, else its last.
     fn group_window(&self, group: &Group) -> Option<&Window> {
         let selected = self.selected.iter().find(|(g, _)| g == group).map(|(_, id)| *id);
-        self.windows.iter().filter(|w| !w.down && w.group.as_ref() == Some(group)).max_by_key(|w| (Some(w.id) == selected, w.focused, w.visible, w.id))
+        self.windows
+            .iter()
+            .filter(|w| !self.below(w.id) && w.group.as_ref() == Some(group))
+            .max_by_key(|w| (Some(w.id) == selected, Some(w.id) == self.top, w.id))
     }
 
     pub(crate) fn focus(&mut self, group: &Group) {
@@ -174,9 +146,12 @@ impl Session {
         }
     }
 
+    /// Shows window `id` on the top screen, with the keyboard, unless it is below.
     pub(crate) fn select_top(&mut self, id: i64) {
-        let Some(group) = self.windows.iter().find(|w| w.id == id && !w.down).map(|w| &w.group) else { return };
-        self.keyboard_focus = Some(id);
+        if self.below(id) {
+            return;
+        }
+        let Some(group) = self.windows.iter().find(|w| w.id == id).map(|w| &w.group) else { return };
         // (A window not placed yet is selected in its group once it is.)
         if let Some(group) = group {
             match self.selected.iter_mut().find(|(g, _)| g == group) {
@@ -184,10 +159,8 @@ impl Session {
                 None => self.selected.push((group.clone(), id)),
             }
         }
-        for w in self.windows.iter_mut().filter(|w| !w.down) {
-            w.focused = w.id == id;
-            w.visible = w.focused;
-        }
+        self.keyboard_focus = Some(id);
+        self.top = Some(id);
     }
 }
 
@@ -220,31 +193,33 @@ impl crate::Session {
     pub(crate) fn open(&mut self, facts: WindowFacts, group: Option<Group>, focus: bool) {
         let id = facts.id;
         self.opened.push(id);
-        self.windows.push(Window { facts, group, down: false, visible: false, focused: false });
+        self.windows.push(Window { facts, group });
         if focus {
             self.select_top(id);
         }
     }
 
     /// A window closed. If it was the one in front, its parent or another window of its group comes in
-    /// front; if it was the one below, another window moved below is shown there.
+    /// front.
     pub(crate) fn close(&mut self, id: i64) {
-        let parent = self.window(id).and_then(|w| w.parent).filter(|parent| self.window(*parent).is_some_and(|w| !w.down));
+        let parent = self.window(id).and_then(|w| w.parent).filter(|parent| self.window(*parent).is_some() && !self.below(*parent));
         if self.keyboard_focus == Some(id) {
             self.keyboard_focus = None;
         }
-        let group = self.windows.iter().find(|w| w.id == id && w.focused && !w.down).and_then(|w| w.group.clone());
-        let bottom = self.windows.iter().any(|w| w.id == id && w.down && w.visible);
+        let group = self.top_window().filter(|w| w.id == id).and_then(|w| w.group.clone());
         self.windows.retain(|w| w.id != id);
-        if let Some(group) = group.filter(|g| self.windows.iter().any(|w| !w.down && w.group.as_ref() == Some(g))) {
+        if self.top == Some(id) {
+            self.top = None;
+        }
+        if self.bottom == Some(id) {
+            self.bottom = None;
+        }
+        if let Some(group) = group.filter(|g| self.windows.iter().any(|w| !self.below(w.id) && w.group.as_ref() == Some(g))) {
             if let Some(parent) = parent {
                 self.command(WindowCommand::FocusWindow(parent));
             } else {
                 self.focus(&group);
             }
-        }
-        if bottom && let Some(w) = self.windows.iter_mut().rev().find(|w| w.down) {
-            w.visible = true;
         }
     }
 
@@ -303,22 +278,15 @@ impl WindowFacts {
     }
 }
 
-/// An open toplevel as the session has it: the compositor's facts, and where the session placed it. The
-/// session owns its home group, screen and selection.
+/// An open toplevel as the session has it: the compositor's facts, and its home group. Which window each
+/// screen shows is the session's ([`Session::top_window`], [`Session::bottom_window`]).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Window {
     #[serde(flatten)]
     pub facts: WindowFacts,
-    /// Whether this is the selected top content. Keyboard focus is independent: see
-    /// [`Session::keyboard_focus`].
-    pub focused: bool,
-    /// Its home group, retained when it is moved below. None until the session has placed it: a window
-    /// that belongs to no entry is placed after the event that opened it.
+    /// Its home group, retained while it is on the bottom screen. None until the session has placed it: a
+    /// window that belongs to no entry is placed after the event that opened it.
     pub group: Option<Group>,
-    /// Whether the session placed it on the bottom screen.
-    pub down: bool,
-    /// Whether it is in view: the tab its group shows, of a group that is shown.
-    pub visible: bool,
 }
 
 impl std::ops::Deref for Window {
@@ -326,12 +294,6 @@ impl std::ops::Deref for Window {
 
     fn deref(&self) -> &WindowFacts {
         &self.facts
-    }
-}
-
-impl Window {
-    pub fn place(&self) -> WindowPlace<'_> {
-        if self.down { WindowPlace::Bottom } else { WindowPlace::Top(self.group.as_ref()) }
     }
 }
 
@@ -585,7 +547,7 @@ mod tests {
         let group = Group::entry(&clamshell_library::key_of("zelda-lttp"));
         let unit = Instance { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 };
         assert_eq!(s.applied(WindowEvent::Opened(win_of(7, "game", &unit)).into()), vec![Effect::Watch(crate::Watch::Metrics, false)]);
-        assert_eq!(s.session().window(7).map(Window::place), Some(WindowPlace::Bottom));
+        assert_eq!(s.session().place(7), Some(WindowPlace::Bottom));
         assert_eq!(s.session().window(7).and_then(|w| w.group.clone()), Some(group.clone()));
         assert!(s.session().units().is_empty());
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
@@ -601,7 +563,7 @@ mod tests {
         let identity = WindowFacts { pids: vec![100, 50], ..before.clone() };
         assert!(s.applied(WindowEvent::Changed(identity).into()).is_empty());
         let window = s.session().window(7);
-        assert_eq!(window.map(Window::place), Some(WindowPlace::Bottom));
+        assert_eq!(s.session().place(7), Some(WindowPlace::Bottom));
         assert_eq!(window.and_then(|w| w.group.clone()), Some(group_of(&instance)));
         assert_eq!(window.map(|w| w.pids.as_slice()), Some(&[100, 50][..]));
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
@@ -629,7 +591,7 @@ mod tests {
         s.applied(WindowEvent::Opened(win_of(7, "game", &instance)).into());
         let dialog = WindowFacts { parent: Some(7), unit: Some("portal.service".into()), ..win(8, "dialog") };
         assert!(s.applied(WindowEvent::Opened(dialog).into()).is_empty());
-        assert_eq!(s.session().window(8).map(Window::place), Some(WindowPlace::Top(Some(&group_of(&instance)))));
+        assert_eq!(s.session().place(8), Some(WindowPlace::Top(Some(&group_of(&instance)))));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
         assert_eq!(s.session().window(8).and_then(|w| s.session().running_of(w)).map(|r| &*r.id), Some("zelda-lttp"));
         assert!(s.applied(WindowEvent::Closed(7).into()).is_empty());
@@ -644,7 +606,7 @@ mod tests {
         s.applied(Event::Device(DeviceKey::WindowDown));
         let dialog = WindowFacts { parent: Some(7), ..win(8, "dialog") };
         assert_eq!(s.applied(WindowEvent::Opened(dialog).into()), vec![Effect::PadRoute(crate::PadRoute::Game)]);
-        assert_eq!(s.session().window(8).map(Window::place), Some(WindowPlace::Bottom));
+        assert_eq!(s.session().place(8), Some(WindowPlace::Bottom));
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(8));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
     }
@@ -704,7 +666,7 @@ mod tests {
         for _ in 0..2 {
             assert!(s.applied(WindowEvent::Changed(changed.clone()).into()).is_empty());
             let current = s.session().window(7);
-            assert_eq!(current.map(Window::place), Some(WindowPlace::Top(Some(&group_of(&one)))));
+            assert_eq!(s.session().place(7), Some(WindowPlace::Top(Some(&group_of(&one)))));
             assert_eq!(current.and_then(|w| w.colour.as_deref()).copied(), Some(colour));
             assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
             assert_eq!(s.session().keyboard_focus(), Some(7));
@@ -726,9 +688,8 @@ mod tests {
         // A later matching window does use that rule and displaces the bottom occupant.
         s.applied(WindowEvent::Opened(win_of(9, "foot", &another)).into());
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(9));
-        assert_eq!(s.session().window(7).map(Window::place), Some(WindowPlace::Top(Some(&group_of(&instance)))));
+        assert_eq!(s.session().place(7), Some(WindowPlace::Top(Some(&group_of(&instance)))));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
-        assert_eq!(s.session().windows_down().count(), 1);
     }
 
     #[test]
@@ -741,7 +702,7 @@ mod tests {
         s.applied(WindowEvent::Activate(7).into());
         s.applied(Event::Device(DeviceKey::WindowDown));
         // The returned foreign program receives no focus.
-        assert_eq!(s.session().window(8).map(Window::place), Some(WindowPlace::Top(Some(&group_of(&two)))));
+        assert_eq!(s.session().place(8), Some(WindowPlace::Top(Some(&group_of(&two)))));
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(9));
         assert_eq!(s.session().keyboard_focus(), Some(9));
@@ -810,8 +771,7 @@ mod tests {
         assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
         s.applied(Event::Device(DeviceKey::WindowDown));
         assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
-        assert_eq!(s.session().window(8).map(Window::place), Some(WindowPlace::Top(Some(&group_of(&launch_of("bottom"))))));
+        assert_eq!(s.session().place(8), Some(WindowPlace::Top(Some(&group_of(&launch_of("bottom"))))));
         assert!(s.session().shelf_in_front());
-        assert_eq!(s.session().windows_down().count(), 1);
     }
 }

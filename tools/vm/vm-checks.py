@@ -184,8 +184,8 @@ def chord(char, ctrl=False):
 
 def windows():
     """ClamShell's windows as its state has them (`window events`): each with its id, app id, group
-    (`group`: `{"Entry": key}`, `{"Window": id}` or none), whether it is below (`down`), shown and
-    focused."""
+    (`group`: `{"Entry": key}`, `{"Window": id}` or none), whether it is below (`down`), and whether the
+    top screen shows it (`focused`)."""
     path = f"{CHECKS_DIR}/windows.json"
     sh(f"rm -f {path}")
     control(f"window events {path}")
@@ -199,9 +199,8 @@ def windows():
 
 def front():
     """The group in front on the main screen, as the compositor shows it: the focused top window's, else
-    the last shown top window's, else "shelf". An entry's group is its key, a window's own "window <id>"."""
-    top = [w for w in windows() if not w["down"]]
-    shown = next((w for w in top if w["focused"]), None) or max((w for w in top if w["visible"]), key=lambda w: w["id"], default=None)
+    "shelf". An entry's group is its key, a window's own "window <id>"."""
+    shown = next((w for w in windows() if w["focused"]), None)
     if not shown:
         return "shelf"
     group = shown.get("group") or {}

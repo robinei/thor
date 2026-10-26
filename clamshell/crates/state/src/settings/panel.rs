@@ -205,7 +205,7 @@ impl<'a> Panel<'a> {
     ) -> Panel<'a> {
         let entry_of = |id: &str| session.entry(shelf.library(), id);
         let id = match session.front() {
-            Front::Program => session.windows().iter().find(|w| w.focused && !w.down).and_then(|w| session.owner_of(w)).or_else(|| session.program().cloned()),
+            Front::Program => session.top_window().and_then(|w| session.owner_of(w)).or_else(|| session.program().cloned()),
             Front::Shelf => shelf.selected().cloned().map(|id| shelf.entry_of_file(&id).unwrap_or(id)),
             Front::Other => None,
         };

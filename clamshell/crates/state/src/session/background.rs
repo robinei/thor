@@ -166,7 +166,7 @@ impl Session {
         for r in self.running.iter().filter(ours) {
             let (has, shown) = {
                 let mut mine = self.windows_of(&r.id).peekable();
-                (mine.peek().is_some(), mine.any(|w| w.visible))
+                (mine.peek().is_some(), mine.any(|w| self.shown(w.id)))
             };
             let setting = self.background_of(&r.id, library, settings);
             // An entry that is quitting isn't paused, since frozen it couldn't end. Nor is one without a
@@ -209,7 +209,7 @@ impl Session {
         for runner in &self.background.runners {
             let pauses = self.background_of(&runner.key, library, settings) == InBackground::Pauses;
             let of_runner = |r: &Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| o.key == runner.key);
-            let shown = self.windows.iter().filter(|w| w.visible).any(|w| self.running_of(w).is_some_and(of_runner));
+            let shown = self.windows.iter().filter(|w| self.shown(w.id)).any(|w| self.running_of(w).is_some_and(of_runner));
             let launching = self.launching.iter().any(|l| library.entry(&l.entry).and_then(|g| g.runner.as_ref()).is_some_and(|o| o.key == runner.key));
             let starting = launching || self.running.iter().filter(|r| of_runner(r)).any(|r| !r.found() && !r.seen);
             match self.background.runner_pauses.follow(&runner.key, !pauses || shown || starting, now) {
@@ -255,7 +255,7 @@ impl Session {
         if !self.suspendable(id) {
             return;
         }
-        let shown = self.windows_of(id).any(|w| w.visible);
+        let shown = self.windows_of(id).any(|w| self.shown(w.id));
         if shown {
             self.command(crate::session::windows::WindowCommand::ShowShelf);
         }

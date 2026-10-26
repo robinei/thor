@@ -81,9 +81,19 @@ pub struct Record {
 pub struct Recording {
     pub records: VecDeque<Record>,
     pub after: Selection,
-    /// The windows as the state has them at the end: their groups, which screen, which are shown and
-    /// focused (what the VM's checks read).
-    pub windows: Vec<clamshell_state::session::windows::Window>,
+    /// The windows as the state has them at the end, with their screens (what the VM's checks read).
+    pub windows: Vec<Placed>,
+}
+
+/// A window as the state has it, and where it is shown.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Placed {
+    #[serde(flatten)]
+    pub window: clamshell_state::session::windows::Window,
+    /// Whether it is on the bottom screen.
+    pub down: bool,
+    /// Whether the top screen shows it.
+    pub focused: bool,
 }
 impl Recording {
     /// Replay with the recording's library, rules and launch context supplied by the fixture.
@@ -133,7 +143,13 @@ impl Ring {
         self.sequence = self.sequence.wrapping_add(1);
     }
     pub fn snapshot(&self, state: &State) -> Recording {
-        Recording { records: self.records.clone(), after: Selection::of(state), windows: state.session().windows().to_vec() }
+        let session = state.session();
+        let placed = |window: &clamshell_state::session::windows::Window| Placed {
+            window: window.clone(),
+            down: session.below(window.id),
+            focused: session.top_window().is_some_and(|top| top.id == window.id),
+        };
+        Recording { records: self.records.clone(), after: Selection::of(state), windows: session.windows().iter().map(placed).collect() }
     }
 }
 

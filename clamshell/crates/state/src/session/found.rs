@@ -74,7 +74,7 @@ impl Session {
     pub(crate) fn start_found(&mut self, new: Vec<Running>, taken: &[i64], clock: &Clock, out: &mut Out) {
         for r in &new {
             let mine: Vec<&Window> = self.windows.iter().filter(|w| !taken.contains(&w.id) && (r.owns(w) || r.fathered(w))).collect();
-            let focused = mine.iter().any(|w| w.focused);
+            let focused = mine.iter().any(|w| self.top_window().is_some_and(|top| top.id == w.id));
             let ids: Vec<i64> = mine.iter().map(|w| w.id).collect();
             if !ids.is_empty() {
                 self.command(WindowCommand::Move { windows: ids, to: r.group() });

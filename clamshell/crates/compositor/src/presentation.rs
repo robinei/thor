@@ -46,7 +46,7 @@ impl Server {
     fn latch(&self, rendered: &RenderElementStates, down: Option<bool>, f: impl Fn(&mut Latched, smithay::backend::renderer::utils::CommitCounter)) {
         let state = self.core.state();
         for client in &self.windows {
-            let on_down = state.session().window(client.id).is_some_and(|window| window.down);
+            let on_down = state.session().below(client.id);
             if down.is_some_and(|down| down != on_down) {
                 continue;
             }
@@ -87,7 +87,7 @@ impl Server {
             if !shown {
                 continue;
             }
-            let down = state.session().window(client.id).is_some_and(|window| window.down);
+            let down = state.session().below(client.id);
             if screen.is_some_and(|screen| screen != down) {
                 continue;
             }

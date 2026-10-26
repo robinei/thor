@@ -18,10 +18,10 @@ impl Session {
     pub(crate) fn follow_front(&mut self, now: u64) {
         let windows = &self.windows;
         let Some(was) = &self.followed_front else { return };
-        if windows.iter().any(|w| !w.down && (w.focused || w.group.as_ref() == Some(was))) {
+        if self.top.is_some() || windows.iter().any(|w| !self.below(w.id) && w.group.as_ref() == Some(was)) {
             return;
         }
-        let shown = |group: &Group| windows.iter().any(|w| w.group.as_ref() == Some(group) && !w.down);
+        let shown = |group: &Group| windows.iter().any(|w| w.group.as_ref() == Some(group) && !self.below(w.id));
         let group = self.recent.iter().find(|group| shown(group)).cloned();
         let was = was.clone();
         let closed = !windows.iter().any(|w| w.group.as_ref() == Some(&was));

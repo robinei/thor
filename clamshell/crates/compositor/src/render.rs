@@ -161,7 +161,7 @@ pub(crate) fn elements(
     // The top screen's view isn't shown while a window covers it, so it isn't drawn either: it stays stale
     // in the core, and is drawn where it changed once uncovered (the texture holds the last frame drawn).
     let state = server.core.state();
-    let covered = server.windows.iter().any(|w| w.mapped && server.visible(w.id) && state.session().window(w.id).is_some_and(|w| !w.down));
+    let covered = server.windows.iter().any(|w| w.mapped && server.visible(w.id) && state.session().window(w.id).is_some() && !state.session().below(w.id));
     if !covered {
         top.update(&mut server.core, Screen::Top, renderer)?;
     }

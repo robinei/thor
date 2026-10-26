@@ -13,11 +13,13 @@ pass confirmed its suspicions with probe tests in a scratch copy.
 ### Window lifecycle and placement
 
 `Event::Window` applies one change; `WindowBatch` applies one backend dispatch before settling once.
-State commits placement and selection during `apply`. A compositor reads `Window::place`,
-`Session::top_window`, `bottom_window` and `keyboard_focus` immediately after it returns. Home groups
+State commits placement and selection during `apply`. A compositor reads `Session::place`,
+`top_window`, `bottom_window` and `keyboard_focus` immediately after it returns. Home groups
 (`Window.group`, a `Group`: an entry's by its key, holding all its launches' windows, or a window's own
 for a window of no entry) are not physical output locations: a window below retains its home group. A
-window of no entry has none until the settle after the event that opened it gives it one. `Window.focused` records the selected top content; keyboard focus is independent and may
+window of no entry has none until the settle after the event that opened it gives it one. The session holds the top screen's window (`top`, none while shelf is in front) and the bottom
+screen's one slot (`bottom`), each once, and each group's selected window while it is hidden; keyboard
+focus is independent and may
 belong to a bottom client or ClamShell's UI (`None`).
 
 `Opened` and `Changed` carry the window's facts (`WindowFacts`: id, app id, title, parent, limits,
@@ -30,7 +32,7 @@ happens (Opened, Closed, Changed, Title, KeyboardFocus, and Activate once a toke
 fact cannot overwrite a newer state decision.
 
 Placing is the session's own: the steps in the Effects columns here and below (Focus, ShowShelf, Move,
-Down, Up, Return, ShowDown) are its window commands (`WindowCommand`), applied to the state during
+Down, Up, Return) are its window commands (`WindowCommand`), applied to the state during
 `apply`, not effects sent out. The only window effect is closing (`Effect::Close`). Shelf is not a
 window: it is in front when no top window is shown, and ShowShelf deselects the top windows.
 
@@ -43,7 +45,7 @@ window: it is in front when no top window is shown, and ShowShelf deselects the 
 | present | Closed | absent; select remaining tab or recent top group, shelf last | exact Focus or ShowShelf when a group empties | windows `lifecycle_close_falls_back_once_and_retains_the_other_windows`; front tests |
 | absent | late Closed, Title, Changed, Activate or keyboard focus | unchanged | — | windows `lifecycle_messages_keep_one_window_and_ignore_late_messages`, `backend_changes_keep_the_placement`, `keyboard_focus_is_independent_of_both_screens_selected_content` |
 | present on top | validated Activate | selected now | thaw/resume owner before exact Focus or ShowShelf | windows `activation_selects_the_window_on_its_screen`, `activation_thaws_a_suspended_owner_before_selecting_its_window` |
-| present below | validated Activate | bottom shows this window now | thaw/resume owner, ShowDown | same |
+| present below | validated Activate | bottom shows this window now (the windows' tab opens) | thaw/resume owner, keyboard focus to it | same |
 | either screen selected | KeyboardFocus(Some(live id)) or None | keyboard target changes, content stays | — | windows `keyboard_focus_is_independent_of_both_screens_selected_content` |
 | top, regardless of keyboard focus | Down, including a remembered rule | previous bottom returned to its home without activation; requested window below; same-program next top or recent group/shelf selected | Return before Down, then exact top Focus/fallback | bottom `moving_another_window_down_swaps_the_single_bottom_slot`; windows `displacing_another_programs_bottom_window_does_not_activate_it`, `moving_the_top_window_does_not_require_keyboard_focus_there` |
 | below, shown or covered | Up | top at retained home, selected now; bottom shows ClamShell | Up to explicit home | bottom `moving_another_window_down_swaps_the_single_bottom_slot` |
@@ -60,8 +62,9 @@ program for `REWAIT_SECS` (30), so its next window comes in front however late, 
 its update dialog (`a_running_programs_next_window_is_shown_after_its_window_in_front_closed`). The
 compositor reads the placement they lead to from the state after `apply`.
 
-Live ids are unique, at most one top window is selected and one window placed below, remembered
-selections belong to their home groups, and keyboard focus names a live window or none. The randomized
+At most one window is shown on top and one placed below, since each is one slot. Live ids are unique,
+the slots name live windows and never the same one, remembered selections belong to their home groups,
+and keyboard focus names a live window or none. The randomized
 event-sequence test checks these after every event, including lifecycle, activation and keyboard focus.
 The allocation test includes repeated lifecycle events, Home-held changes, controller focus and activation with live bottom rules.
 
@@ -103,7 +106,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Running(Windows, unseen) | past `until` | Idle, no play | — | running `a_file_handed_…` |
 | Running(Windows, seen) | no windows left | Idle | `RecordPlay` from `since` | running `an_app_handed_over_…` |
 | Running | Show / Play | same | thaw, runner resumed, Focus; else tray Activate and `front_launch`; else NoWindow notice | background `pauses_hidden_thawed_…`; dock `running_entries_join_the_dock…` |
-| Running | Show when every window is moved down | same | thaw, runner resumed; the bottom screen shows them (`ShowDown`) | running `show_of_an_entry_whose_windows_are_all_below_shows_them_there` |
+| Running | Show when every window is moved down | same | thaw, runner resumed; the bottom screen shows them (the windows' tab opens) | running `show_of_an_entry_whose_windows_are_all_below_shows_them_there` |
 | Running | Quit | Quitting | thaw, Close(windows) | running `quit_closes_the_windows_then_ends_…` |
 | Quitting | windows gone, still runs | Quitting(ended) | EndRun, or EndProcesses (found, own pid) | same |
 | Quitting | no longer runs | removed | runner stop (once) | same |
@@ -225,9 +228,9 @@ as any tab left (`left_tab`).
 | a window moved down (by hand or by its rule), from any tab: the windows' tab opens, the screen turns on | `moving_a_window_down_from_another_tab_opens_the_windows_tab_with_the_screen_on` |
 | the windows' tab button: lit while open, standing out while the front program's window is below another tab, dim with nothing below | `the_windows_tab_shows_the_window_below_and_marks_one_hidden_by_another_tab` |
 | WindowDown: the selected top window moves down without needing keyboard focus; the old bottom window returns to its group, the screen shows it, a rule is added (notice, `Save(WindowRules)`) | same; `a_programs_only_window_is_remembered_by_its_app_id_alone`; `window_down_with_no_window_in_front_does_nothing` |
-| WindowUp: the visible down window goes back, its rule is forgotten | same; `moving_another_window_down_swaps_the_single_bottom_slot` |
+| WindowUp: the window below goes back, its rule is forgotten | same; `moving_another_window_down_swaps_the_single_bottom_slot` |
 | settle: a window matching a rule moves down once | `a_rule_sends_the_window_down_when_its_program_opens_it_again` |
-| dock tap or BottomWindows → windows shown, `ShowDown`, the screen turned on if it was off by hand | running `show_of_an_entry_whose_windows_are_all_below_shows_them_there` |
+| dock tap or BottomWindows → windows shown (the windows' tab), the screen turned on if it was off by hand | running `show_of_an_entry_whose_windows_are_all_below_shows_them_there` |
 | Home+Start: wake if off by itself, else toggle off | `the_bottom_screen_turns_off_and_on`, `home_start_brings_back_…`, `…off_by_hand_and_by_itself_at_once` |
 | settle: off by itself when on battery, not refreshing, not set to stay on, no windows shown, no editor, and dark in a game or untouched 4 min | `on_battery_the_untouched_…` and siblings; `a_refresh_calibration_or_an_editor_keeps_it_on` |
 | settle: dimmed after 60 s untouched, unless windows are shown | `the_bottom_screen_dims_untouched_and_lights_when_used` |

@@ -458,7 +458,7 @@ impl State {
                     return;
                 }
                 // A dialog goes with its parent, below if the parent is.
-                let parent = facts.parent.and_then(|id| self.session.window(id)).map(|w| (w.group.clone(), w.down));
+                let parent = facts.parent.and_then(|id| self.session.window(id)).map(|w| (w.group.clone(), self.session.below(w.id)));
                 let down = parent.as_ref().is_some_and(|(_, down)| *down);
                 let group = match parent {
                     Some((group, _)) => group,
@@ -492,8 +492,8 @@ impl State {
                     self.session.thaw(&owner, out);
                     self.session.resume_runner_of(&owner, self.shelf.library(), out);
                 }
-                if self.session.window(id).is_some_and(|w| w.down) {
-                    self.bottom.show_program_down(id, &mut self.session);
+                if self.session.below(id) {
+                    self.bottom.show_below();
                     self.session.command(WindowCommand::KeyboardFocus(id));
                 } else {
                     self.session.command(WindowCommand::FocusWindow(id));
@@ -1003,7 +1003,7 @@ impl State {
     /// What the second screen's power follows, as things are now.
     fn power(&self) -> Power {
         Power {
-            any_down: self.session.windows_down().next().is_some(),
+            any_down: self.session.bottom_window().is_some(),
             in_game: self.session.program().is_some(),
             when_idle: self.in_force().choice::<BottomWhenIdle>(),
             discharging: self.sys.status().discharging,
@@ -1332,11 +1332,9 @@ impl State {
 
     /// Shows running entry `id` (see [`Session::show`]), on the bottom screen if all its windows are there.
     fn show(&mut self, id: &str, out: &mut Out) {
-        let below = self.session.windows_of(id).find(|w| w.down).map(|w| w.id);
-        if let Some(window) = self.session.show(id, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out) {
-            self.bottom.show_program_down(window, &mut self.session);
-        } else if let Some(window) = below.filter(|_| !self.bottom.shows_windows(&self.session)) {
-            self.bottom.show_program_down(window, &mut self.session);
+        let below = self.session.windows_of(id).any(|w| self.session.below(w.id));
+        if self.session.show(id, &self.clock, self.shelf.library(), self.bottom.notice_mut(), out) || (below && !self.bottom.shows_windows(&self.session)) {
+            self.bottom.show_below();
         }
     }
 

@@ -795,7 +795,7 @@ impl Window {
             self.revision = Some(server.core.state_revision());
         }
         let Some(policy) = self.policy else { return Ok(()) };
-        let area = server.area(model.down);
+        let area = server.area(server.core.state().session().below(self.id));
         // (Its clarity as read for its window this revision, else from the state while it has none yet.)
         let clarity = server.windows.iter().find(|w| w.id == self.id).map_or_else(|| server.core.state().window_clarity(self.id), |w| w.shown.clarity);
         let fill = crate::server::fill_size(clarity, area.size);

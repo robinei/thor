@@ -697,10 +697,7 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
     for (i, window) in s.session().windows().iter().enumerate() {
         ensure!(!s.session().windows().iter().skip(i + 1).any(|other| other.id == window.id), "duplicate window id {}", window.id);
     }
-    ensure!(s.session().windows().iter().filter(|w| w.focused && !w.down).count() <= 1, "more than one top window selected");
-    ensure!(s.session().windows().iter().filter(|w| w.down && w.visible).count() <= 1, "more than one bottom tab selected");
-    ensure!(s.session().selections_valid(), "a selected window is not in its top group");
-    ensure!(s.session().windows_down().count() <= 1, "more than one window below");
+    ensure!(s.session().selections_valid(), "a selected window is not in its top group, or a screen's window is not open or on both screens");
     ensure!(s.session().keyboard_focus().is_none_or(|id| s.session().window(id).is_some()), "keyboard focus names a closed window");
     ensure!(s.device().display_modes().rates().iter().all(|hz| (1..=1000).contains(hz)), "invalid detected refresh rate");
     ensure!(s.device().display_modes().rates().windows(2).all(|pair| matches!(pair, [a,b] if a < b)), "refresh choices not sorted and unique");
@@ -809,7 +806,7 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
     if let Some(p) = session.program() {
         ensure!(session.running(p).is_some(), "4: program {p} doesn't run");
     }
-    if let Some(owner) = session.windows().iter().find(|w| w.focused && !w.down).and_then(|w| session.running_of(w)) {
+    if let Some(owner) = session.top_window().and_then(|w| session.running_of(w)) {
         ensure!(session.program() == Some(&owner.id), "4: program {:?}, the focused window's {}", session.program(), owner.id);
     }
     for q in session.quitting_entries() {
