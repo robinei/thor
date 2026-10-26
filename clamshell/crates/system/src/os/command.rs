@@ -73,7 +73,7 @@ fn shown<S: AsRef<OsStr>>(args: &[S]) -> String {
 }
 
 /// Reads a pipe to its end on a thread of its own and sends what it held through the channel.
-fn drain(program: &str, pipe: Option<impl Read + Send + 'static>) -> mpsc::Receiver<Vec<u8>> {
+pub(crate) fn drain(program: &str, pipe: Option<impl Read + Send + 'static>) -> mpsc::Receiver<Vec<u8>> {
     let (tx, rx) = mpsc::channel();
     // If the thread can't start, its sender is dropped and the output reads as empty.
     if let Some(mut pipe) = pipe {

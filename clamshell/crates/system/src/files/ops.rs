@@ -19,6 +19,10 @@ const EJECT_LIMIT: Duration = Duration::from_secs(60);
 /// How often, at most, a paste's progress is sent.
 const PROGRESS: Duration = Duration::from_millis(250);
 
+/// How long bsdtar may read nothing more of an archive before it is taken as stuck, stopped, and the
+/// extraction failed. It reads as it goes, so this is long only for a device that stopped answering.
+const EXTRACT_STALL: Duration = Duration::from_secs(120);
+
 /// Starts the files thread. It runs each operation, then sends what was done or what went wrong.
 pub(crate) fn spawn_ops(home: Option<PathBuf>, sink: impl Sink) -> io::Result<Worker<FileOp>> {
     Worker::spawn(clamshell_state::Thread::Files.name(), move |ops| {
@@ -190,24 +194,30 @@ fn extract(archive: &Path, name: &str, sink: &impl Sink) -> Result<String, Strin
         format!("Extracting {what}: bsdtar: {e}")
     })?;
     let total = archive.metadata().map_or(1, |m| m.len().max(1));
+    // Read as it comes, since a full pipe would stall bsdtar.
+    let errors = crate::os::command::drain("bsdtar", child.stderr.take());
+    let mut stall = Stall::new(Instant::now());
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Ok(status),
             Ok(None) => {}
             Err(e) => break Err(e),
         }
-        if let Some(read) = read_so_far(child.id(), archive) {
+        let read = read_so_far(child.id(), archive);
+        if let Some(read) = read {
             let fraction = (read as f64 / total as f64) as f32;
             let _ = sink.send(Event::Files(FilesEvent::Busy { what: format!("Extracting {what}"), fraction }));
         }
+        if stall.stuck(read, Instant::now()) {
+            log::warn!("files: bsdtar read nothing of {} for {} s: stopped", archive.display(), EXTRACT_STALL.as_secs());
+            if let Err(e) = child.kill().and_then(|()| child.wait().map(drop)) {
+                log::warn!("files: stopping bsdtar: {e}");
+            }
+            break Err(io::Error::other(format!("bsdtar read nothing for {} s, stopped", EXTRACT_STALL.as_secs())));
+        }
         std::thread::sleep(PROGRESS);
     };
-    let mut said = String::new();
-    if let Some(mut e) = child.stderr.take()
-        && let Err(e) = e.read_to_string(&mut said)
-    {
-        log::debug!("files: bsdtar's errors: {e}");
-    }
+    let said = String::from_utf8_lossy(&errors.recv_timeout(Duration::from_secs(1)).unwrap_or_default()).into_owned();
     match status {
         Ok(s) if s.success() => Ok(format!("Extracted {what} into {}", name_of(&into))),
         result => {
@@ -217,6 +227,27 @@ fn extract(archive: &Path, name: &str, sink: &impl Sink) -> Result<String, Strin
             let why = said.lines().rev().find(|l| !l.trim().is_empty()).map(str::trim).map(str::to_owned);
             Err(format!("Extracting {what}: {}", why.unwrap_or_else(|| result.map_or_else(|e| e.to_string(), |s| s.to_string()))))
         }
+    }
+}
+
+/// Whether bsdtar is stuck: how far it has read hasn't moved for [`EXTRACT_STALL`]. A position that
+/// can't be read counts as no move.
+struct Stall {
+    read: Option<u64>,
+    since: Instant,
+}
+
+impl Stall {
+    fn new(now: Instant) -> Stall {
+        Stall { read: None, since: now }
+    }
+
+    /// Takes how far it has read now; whether it is stuck.
+    fn stuck(&mut self, read: Option<u64>, now: Instant) -> bool {
+        if read.is_some() && read != self.read {
+            (self.read, self.since) = (read, now);
+        }
+        now.saturating_duration_since(self.since) >= EXTRACT_STALL
     }
 }
 
@@ -298,6 +329,21 @@ fn copy(from: &Path, to: &Path, progress: &mut Progress<impl Sink>) -> io::Resul
 mod tests {
     use super::*;
     use std::sync::mpsc;
+
+    /// bsdtar is stuck once how far it has read hasn't moved for the limit; a move, however small, starts
+    /// the wait again, and a position that can't be read is no move.
+    #[test]
+    fn bsdtar_is_stuck_once_it_reads_nothing_for_the_limit() {
+        let start = Instant::now();
+        let at = |secs: u64| start + Duration::from_secs(secs);
+        let limit = EXTRACT_STALL.as_secs();
+        let mut stall = Stall::new(start);
+        assert!(!stall.stuck(Some(10), at(1)));
+        assert!(!stall.stuck(Some(10), at(limit)), "not yet: it moved at 1 s");
+        assert!(!stall.stuck(Some(11), at(limit + 1)), "moved");
+        assert!(!stall.stuck(None, at(2 * limit)));
+        assert!(stall.stuck(None, at(2 * limit + 1)), "nothing read since");
+    }
 
     #[test]
     fn pastes_never_replace() {
