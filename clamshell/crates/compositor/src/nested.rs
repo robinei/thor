@@ -31,6 +31,9 @@ pub fn run(
 ) -> Result<(), Error> {
     let mut base = Base::new(state, config, false, identify, on_effect)?;
     let server = &mut base.server;
+    // The screens are the device's own pixels: its second screen's density, if the profile knows it.
+    let density = server.core.state().profile().bottom_pixels_per_mm_hint();
+    server.core.set_bottom_density(density.map(|density| (density, density)));
 
     let attributes =
         // In the host's pixels, so the screens are as many pixels as the device's, whatever the host's scale.

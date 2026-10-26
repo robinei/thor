@@ -106,12 +106,14 @@ struct Drawing {
     states: RenderElementStates,
 }
 
-/// A connector chosen for a screen: its handle, mode, the modes it has of that size, and its CRTC.
+/// A connector chosen for a screen: its handle, mode, the modes it has of that size, its CRTC, and its
+/// panel's size in millimetres, if it says.
 struct Chosen {
     connector: connector::Handle,
     mode: smithay::reexports::drm::control::Mode,
     modes: Vec<smithay::reexports::drm::control::Mode>,
     crtc: crtc::Handle,
+    millimetres: Option<(u32, u32)>,
 }
 
 /// Runs the compositor on the machine's screens until ClamShell quits.
@@ -151,6 +153,12 @@ pub fn run(
 
     let mut base = Base::new(state, config, true, identify, on_effect)?;
     let server = &mut base.server;
+    let millimetres = bottom.millimetres.map(|(w, h)| {
+        transform(profile.bottom.rotation).transform_size(Size::<i32, Physical>::from((i32::try_from(w).unwrap_or(0), i32::try_from(h).unwrap_or(0))))
+    });
+    let density = bottom_density(bottom_size, millimetres, profile.bottom_pixels_per_mm_hint());
+    log::info!("drm: second screen's density {density:?} pixels/mm (the touchpad's)");
+    server.core.set_bottom_density(density);
     // No host window takes the focus away: pointer capture is always possible.
     server.host_focused = true;
     server.refresh = i32::try_from(top.mode.vrefresh()).unwrap_or(60).saturating_mul(1000);
@@ -342,8 +350,9 @@ fn choose(drm: &DrmDevice, profile: &Profile, role: ScreenRole, taken: Option<cr
             .filter(|c| Some(*c) != taken)
             .and_then(|c| Some((c, drm.get_crtc(c).ok()?.mode()?)));
         let same_size = |mode: smithay::reexports::drm::control::Mode| info.modes().iter().filter(|m| m.size() == mode.size()).copied().collect();
+        let millimetres = info.size();
         if let Some((crtc, mode)) = current {
-            return Ok(Chosen { connector: handle, mode, modes: same_size(mode), crtc });
+            return Ok(Chosen { connector: handle, mode, modes: same_size(mode), crtc, millimetres });
         }
         let mode = info
             .modes()
@@ -359,9 +368,19 @@ fn choose(drm: &DrmDevice, profile: &Profile, role: ScreenRole, taken: Option<cr
             .flat_map(|e| resources.filter_crtcs(e.possible_crtcs()))
             .find(|c| Some(*c) != taken)
             .ok_or_else(|| format!("drm: no CRTC for {name}"))?;
-        return Ok(Chosen { connector: handle, mode, modes: same_size(mode), crtc });
+        return Ok(Chosen { connector: handle, mode, modes: same_size(mode), crtc, millimetres });
     }
     Err(format!("drm: no connector {name} for the {role:?} screen").into())
+}
+
+/// The second screen's pixels per millimetre, which the virtual touchpad's acceleration needs: from its
+/// panel's size as its connector gives it, turned as the screen is, else the profile's figure for the
+/// panel.
+fn bottom_density(size: Size<i32, Logical>, millimetres: Option<Size<i32, Physical>>, hint: Option<f32>) -> Option<(f32, f32)> {
+    match millimetres {
+        Some(mm) if mm.w > 0 && mm.h > 0 && size.w > 0 && size.h > 0 => Some((size.w as f32 / mm.w as f32, size.h as f32 / mm.h as f32)),
+        _ => hint.map(|density| (density, density)),
+    }
 }
 
 /// The frame queued on screen `index` is shown: its time is the presentation feedback, and the clients
@@ -576,6 +595,14 @@ fn identifier(device: &InputDevice) -> String {
 
 #[cfg(test)]
 mod next_shown_tests {
+    #[test]
+    fn the_second_screens_density_is_its_panels_or_else_the_profiles() {
+        let size = Size::from((1240, 1080));
+        assert_eq!(bottom_density(size, Some(Size::from((124, 108))), Some(16.5)), Some((10.0, 10.0)), "the connector's size first");
+        assert_eq!(bottom_density(size, Some(Size::from((0, 0))), Some(16.5)), Some((16.5, 16.5)));
+        assert_eq!(bottom_density(size, None, None), None);
+    }
+
     use super::*;
 
     #[test]
