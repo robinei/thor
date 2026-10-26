@@ -441,10 +441,7 @@ fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(
         let clock = server.clock.now();
         let next = top.next_shown(clock);
         let held = server.release_timed_commits(next);
-        held.map(|at| {
-            let wait = Duration::from(at).saturating_sub(Duration::from(clock)).saturating_sub(top.interval);
-            now + if wait.is_zero() { Duration::from(next).saturating_sub(Duration::from(clock)) } else { wait }
-        })
+        held.map(|at| timed_wake(now, Duration::from(clock), Duration::from(next), Duration::from(at), top.interval))
     });
     // Nothing to compose with both screens off, unless for a screenshot; the frame's own work (the X11
     // windows' changes to the state) goes on.
@@ -462,37 +459,22 @@ fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(
             continue;
         };
         let down = screen.role == ScreenRole::Bottom;
-        // Not while a frame is queued: it may hold the window's last picture, which its next (a FIFO
-        // barrier let go) would replace before it is shown. Its flip sends them.
-        if screen.held.is_some_and(|at| at <= now) && !screen.pending {
+        let turn = screen_turn(Timing::of(screen, server.commits), now);
+        if turn.send_held {
             screen.held = server.frame_callbacks(Some(down), screen.interval, now);
+            due = earlier(due, screen.held);
         }
-        // (While a frame is queued its flip sends them: not a wake now, which would turn the loop until it.)
-        if let Some(held) = screen.held.filter(|_| !screen.pending) {
-            due = Some(due.map_or(held, |due| due.min(held)));
-        }
-        if screen.pending {
-            continue;
-        }
-        if screen.dirty && screen.on {
+        due = earlier(due, turn.wake);
+        if turn.present {
             if let Err(error) = present(drawing, server, index) {
                 log::warn!("drm: drawing: {error}");
             }
-            continue;
-        }
-        if server.commits != screen.answered {
-            match screen.next_callbacks {
-                Some(at) if at > now => due = Some(due.map_or(at, |d| d.min(at))),
-                _ => {
-                    screen.answered = server.commits;
-                    screen.next_callbacks = Some(now + screen.interval);
-                    screen.held = server.frame_callbacks(Some(down), screen.interval, now);
-                    // A callback held back here is due later too (a FIFO client's empty commit, under a cap).
-                    if let Some(held) = screen.held {
-                        due = Some(due.map_or(held, |due| due.min(held)));
-                    }
-                }
-            }
+        } else if turn.answer {
+            screen.answered = server.commits;
+            screen.next_callbacks = Some(now + screen.interval);
+            screen.held = server.frame_callbacks(Some(down), screen.interval, now);
+            // A callback held back here is due later too (a FIFO client's empty commit, under a cap).
+            due = earlier(due, screen.held);
         }
     }
     // Commits let through after composing (a FIFO barrier the cap let go) are composed at once, not at
@@ -501,6 +483,94 @@ fn step(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(
         due = Some(now);
     }
     due
+}
+
+/// When the loop wakes for a commit timed for `at` (the clock's times since boot), the top screen's next
+/// frame `next` and its refresh `interval`, given the loop's `now` and the clock's `clock`: a refresh before
+/// it is due, to compose it in time; or, within a refresh of it already, at the next frame, when the one
+/// shown then is composed (not at once again, which would turn the loop until then).
+fn timed_wake(now: Instant, clock: Duration, next: Duration, at: Duration, interval: Duration) -> Instant {
+    let wait = at.saturating_sub(clock).saturating_sub(interval);
+    now + if wait.is_zero() { next.saturating_sub(clock) } else { wait }
+}
+
+/// The item whose rate (`rate`) is nearest `hz`, the first of those as near.
+fn nearest<T>(items: &[T], rate: impl Fn(&T) -> u32, hz: u32) -> Option<&T> {
+    items.iter().min_by_key(|item| rate(item).abs_diff(hz))
+}
+
+/// The earlier of two times, either or both absent.
+fn earlier(a: Option<Instant>, b: Option<Instant>) -> Option<Instant> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
+}
+
+/// What decides a screen's turn in [`step`].
+#[derive(Debug, Clone, Copy)]
+struct Timing {
+    /// A frame is queued, its flip not yet come.
+    pending: bool,
+    /// Its part of the scene changed since its last frame.
+    dirty: bool,
+    on: bool,
+    /// When frame callbacks held back (under a frame rate cap) are due.
+    held: Option<Instant>,
+    /// Whether the clients' commits have been answered with their frame callbacks.
+    answered: bool,
+    /// The soonest an idle screen answers commits again (at most once a refresh).
+    next_callbacks: Option<Instant>,
+}
+
+impl Timing {
+    /// `screen`'s, with the server's commit count `commits`.
+    fn of(screen: &Screen, commits: u64) -> Timing {
+        Timing {
+            pending: screen.pending,
+            dirty: screen.dirty,
+            on: screen.on,
+            held: screen.held,
+            answered: screen.answered == commits,
+            next_callbacks: screen.next_callbacks,
+        }
+    }
+}
+
+/// What a screen's turn does.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Turn {
+    /// Send the frame callbacks held back, now due.
+    send_held: bool,
+    /// Show a frame.
+    present: bool,
+    /// Answer the clients' commits with their frame callbacks, the screen being idle.
+    answer: bool,
+    /// When to wake for this screen, unless something comes before.
+    wake: Option<Instant>,
+}
+
+/// A screen's turn: nothing while a frame is queued (its flip sends what is held: a wake now would only
+/// turn the loop until it); the held callbacks once due; a frame if its part changed and it is on; else,
+/// with commits not answered, their callbacks at most once a refresh.
+fn screen_turn(timing: Timing, now: Instant) -> Turn {
+    let mut turn = Turn::default();
+    if timing.pending {
+        return turn;
+    }
+    match timing.held {
+        Some(at) if at <= now => turn.send_held = true,
+        held => turn.wake = held,
+    }
+    if timing.dirty && timing.on {
+        turn.present = true;
+    } else if !timing.answered {
+        match timing.next_callbacks {
+            Some(at) if at > now => turn.wake = earlier(turn.wake, Some(at)),
+            _ => turn.answer = true,
+        }
+    }
+    turn
 }
 
 /// Turns each screen off or on, and the top screen to the refresh, as the state last asked.
@@ -523,8 +593,10 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
         if screen.role == ScreenRole::Top && server.refresh_wanted != screen.refresh {
             screen.refresh = server.refresh_wanted;
             let hz = u32::from(screen.refresh);
-            let mode =
-                if hz == 0 { screen.start_mode } else { screen.modes.iter().copied().min_by_key(|m| m.vrefresh().abs_diff(hz)).unwrap_or(screen.start_mode) };
+            let mode = if hz == 0 { screen.start_mode } else { nearest(&screen.modes, |m| m.vrefresh(), hz).copied().unwrap_or(screen.start_mode) };
+            if hz != 0 && mode.vrefresh() != hz {
+                log::info!("drm: top screen: no mode at {hz} Hz, the nearest at {} Hz", mode.vrefresh());
+            }
             if mode != screen.surface.pending_mode() {
                 log::info!("drm: top screen at {} Hz", mode.vrefresh());
                 match screen.surface.use_mode(mode) {
@@ -636,6 +708,56 @@ fn names_ids(identifier: &str, vendor: u32, product: u32, name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::{Timing, Turn, screen_turn, timed_wake};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn the_mode_nearest_the_rate_asked_for() {
+        let rates = [60, 90, 120];
+        assert_eq!(super::nearest(&rates, |r| *r, 120), Some(&120));
+        assert_eq!(super::nearest(&rates, |r| *r, 100), Some(&90), "the nearer");
+        assert_eq!(super::nearest(&rates, |r| *r, 75), Some(&60), "as near as 90: the first");
+        assert_eq!(super::nearest(&[] as &[u32], |r| *r, 60), None);
+    }
+
+    const IDLE: Timing = Timing { pending: false, dirty: false, on: true, held: None, answered: true, next_callbacks: None };
+
+    #[test]
+    fn a_queued_frame_waits_for_its_flip_without_turning_the_loop() {
+        let now = Instant::now();
+        let held = Timing { pending: true, held: Some(now), dirty: true, answered: false, ..IDLE };
+        assert_eq!(screen_turn(held, now), Turn::default(), "no callbacks, no frame, no wake: the flip sends them");
+    }
+
+    #[test]
+    fn held_callbacks_go_once_due_and_wake_the_loop_until_then() {
+        let now = Instant::now();
+        let later = now + Duration::from_millis(5);
+        assert_eq!(screen_turn(Timing { held: Some(now), ..IDLE }, now), Turn { send_held: true, ..Turn::default() });
+        assert_eq!(screen_turn(Timing { held: Some(later), ..IDLE }, now), Turn { wake: Some(later), ..Turn::default() });
+    }
+
+    #[test]
+    fn a_changed_screen_shows_a_frame_if_on_and_an_idle_one_answers_at_most_once_a_refresh() {
+        let now = Instant::now();
+        let next = now + Duration::from_millis(8);
+        assert_eq!(screen_turn(Timing { dirty: true, answered: false, ..IDLE }, now), Turn { present: true, ..Turn::default() });
+        assert_eq!(screen_turn(Timing { dirty: true, on: false, answered: false, ..IDLE }, now), Turn { answer: true, ..Turn::default() }, "off: answered");
+        assert_eq!(screen_turn(Timing { answered: false, next_callbacks: Some(next), ..IDLE }, now), Turn { wake: Some(next), ..Turn::default() });
+        assert_eq!(screen_turn(Timing { answered: false, next_callbacks: Some(now), ..IDLE }, now), Turn { answer: true, ..Turn::default() });
+        assert_eq!(screen_turn(IDLE, now), Turn::default(), "nothing to answer");
+    }
+
+    #[test]
+    fn a_timed_commit_wakes_the_loop_a_refresh_before_it_or_at_the_next_frame() {
+        let now = Instant::now();
+        let ms = Duration::from_millis;
+        // The clock at 100 ms, the next frame at 108, a refresh of 8 ms.
+        assert_eq!(timed_wake(now, ms(100), ms(108), ms(130), ms(8)), now + ms(22), "a refresh before it");
+        assert_eq!(timed_wake(now, ms(100), ms(108), ms(110), ms(8)), now + ms(2), "a refresh before it, soon");
+        assert_eq!(timed_wake(now, ms(100), ms(108), ms(105), ms(8)), now + ms(8), "within a refresh of it: the next frame, not now");
+    }
+
     #[test]
     fn a_device_is_named_by_its_ids_and_its_name_with_underscores() {
         use super::names_ids;
