@@ -219,7 +219,13 @@ pub fn load(path: &Path, w: u32, h: u32, crop: bool) -> Option<Pixmap> {
 
 fn load_svg(path: &Path, w: u32, h: u32) -> Option<Pixmap> {
     let data = std::fs::read(path).inspect_err(|e| log::debug!("image {}: {e}", path.display())).ok()?;
-    let tree = resvg::usvg::Tree::from_data(&data, &resvg::usvg::Options::default()).inspect_err(|e| log::debug!("image {}: {e}", path.display())).ok()?;
+    // An SVG's `<image>` is drawn only from data in the file: one naming a file is skipped, so an icon a
+    // program offers (a tray icon) can't show other files of the user's.
+    let options = resvg::usvg::Options {
+        image_href_resolver: resvg::usvg::ImageHrefResolver { resolve_string: Box::new(|_, _| None), ..resvg::usvg::ImageHrefResolver::default() },
+        ..resvg::usvg::Options::default()
+    };
+    let tree = resvg::usvg::Tree::from_data(&data, &options).inspect_err(|e| log::debug!("image {}: {e}", path.display())).ok()?;
     let size = tree.size();
     let scale = (w as f32 / size.width()).min(h as f32 / size.height());
     let (tw, th) = (((size.width() * scale).round() as u32).max(1), ((size.height() * scale).round() as u32).max(1));

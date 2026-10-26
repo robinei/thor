@@ -333,6 +333,11 @@ fn read_item(bus: &mut Bus, key: &str, dirs: &[PathBuf]) -> Result<(TrayItem, Op
 /// An icon's image file. It is looked for in the program's own theme dir, directly or as a theme, and
 /// then in the icon themes.
 fn find_icon(name: &str, theme_path: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
+    // A name, not a path: one with a separator or `..` would lead out of the icon folders.
+    if name.contains('/') || name == ".." || name == "." {
+        log::warn!("tray: icon name {name:?} isn't a name: no icon");
+        return None;
+    }
     if !theme_path.is_empty() {
         let base = Path::new(theme_path);
         for ext in ["svg", "png"] {
@@ -474,5 +479,17 @@ mod tests {
         assert_eq!(entries.iter().map(|e| e.label.as_str()).collect::<Vec<_>>(), ["Games", "Big Picture"]);
         assert_eq!(entries[0].children[0].label, "Zelda");
         assert_eq!(entries[1].checked, Some(true));
+    }
+
+    #[test]
+    fn an_icon_name_that_is_a_path_finds_no_icon() {
+        let dir = std::env::temp_dir().join(format!("tray-icons-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("ok.png"), b"").unwrap();
+        let theme = dir.join("theme");
+        assert_eq!(find_icon("ok", &dir.to_string_lossy(), &[]), Some(dir.join("ok.png")));
+        assert_eq!(find_icon("../ok", &theme.to_string_lossy(), &[]), None);
+        assert_eq!(find_icon("..", &theme.to_string_lossy(), &[]), None);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
