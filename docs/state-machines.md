@@ -470,14 +470,47 @@ level nor touched the backlights. A level set while dimmed is sent dimmed. Tests
 
 ## Status (status/)
 
-- Battery warning: a notification at 10 % and at 5 % while discharging, each once until it stops
-  discharging; none on the charger in bypass mode; urgent at 5 %. Tests: `the_battery_warns_only_while_discharging`,
-  `the_battery_warning_says_the_level_and_is_urgent_at_5`.
+- Battery warning: a notification of ClamShell's own (`NotificationId::Battery`, see Notifications) at
+  10 % and at 5 % while discharging, each once until it stops discharging; none on the charger in bypass
+  mode; critical at 5 %; each replaces the one before. Tests: `the_battery_warns_only_while_discharging`,
+  `the_battery_warning_says_the_level_and_is_critical_at_5`.
 - Spender menu: opens on an endable row; Quit/ForceKill end a process or queue the entry's act. Test:
   `a_rows_menu_quits_or_kills_what_it_is`. It closes when the tab is left or its row is gone:
   `a_rows_menu_closes_when_the_tab_is_left_or_the_row_goes`.
 - Time pages: regions, a region's zones, set, back; reset on leaving the tab (`leaving_the_tab_resets_it_to_its_main_page`); NTP and stepping the
   clock by hand. Tests: `regions_then_their_zones_…`, `the_clock_set_by_the_network_or_by_hand…`.
+
+## Notifications (notifications/, notifying.rs)
+
+ClamShell is the session's notification server. A program's notification comes from the bus thread
+(`system/session/notifications.rs`) as `Notification(Notified)`, with the id the thread gave it; the
+battery warnings are ClamShell's own (`NotificationId::Battery`) and tell the bus nothing. They are held
+by id, newest first, at most 32. Each is waiting, or seen since `t` while the bottom screen is lit
+(`State::bottom_lit`: on, not refreshing, the screens not off by idle). How long it shows
+(`Notification::lasts`): the request's timeout in whole seconds rounded up, 5 s for -1, until dismissed
+for 0 or a critical one.
+
+| Transition | Test |
+|---|---|
+| timeouts: -1 → 5 s, 0 → never, 1500 ms → 2 s, critical → never | `the_time_a_notification_shows_follows_its_request` |
+| `--Notified(n)--> held, newest, waiting`; one with an id held replaces it and is the newest | `notifications_are_held_newest_first_and_one_sent_again_replaces_its_own` |
+| settle step 15: `waiting --lit--> seen since now`; `seen since t --now ≥ t + lasts--> gone [NotificationClosed(id, 1)]` | `a_notification_waits_for_the_bottom_screen_and_then_shows_its_time` |
+| `seen --not lit (off by hand or by itself, screens off)--> waiting` (its time starts again) | `its_time_starts_again_when_the_screen_is_lit_again`, `the_screens_going_off_by_idle_hold_its_time_too` |
+| `--Closed(id)--> gone [NotificationClosed(id, 3)]`; an id not held, or closed already, does nothing | `a_program_closes_its_own_and_an_unknown_id_closes_nothing` |
+| `--Tapped(id)--> gone [ActionInvoked(id, key), NotificationClosed(id, 2)]`, the action only if it has a default action; the order is pinned (a client may end on the close) | `a_tap_invokes_the_default_action_then_dismisses` |
+| `--Dismissed(id)--> gone [NotificationClosed(id, 2)]` (the close mark) | `the_close_mark_only_dismisses` |
+| Tapped or Dismissed on dark screens, or within 1 s of their waking → only wakes them | `a_tap_on_dark_screens_only_wakes_them` |
+| `--Notified--> past 32: the oldest gone [NotificationClosed(id, 4)]` | `past_the_most_the_oldest_is_closed` |
+| ClamShell's own (Battery) close without an effect | status `the_battery_warning_says_the_level_and_is_critical_at_5` |
+
+Interactions: a critical notification wakes the screens as input does (`idle.own_input`) and turns the
+bottom screen on (`Bottom::light`: off by hand or by itself, or dark for a game), routed through
+`State::notify`; an ordinary one waits (tests `a_critical_notification_wakes_the_screens_and_turns_the_bottom_screen_on`,
+`a_critical_notification_lights_a_screen_dark_for_a_game`). A tap on one is input and a use of the bottom
+screen. Taps reach the state from the UI's overlay as the press comes down (`Core::press_overlay`), not
+through the pointer's presses. What the bus thread does (the name, `Notify` answered with the id,
+`replaces_id`, the signals) is checked by its parsing tests and by the nested compositor test, which sends
+one with `gdbus` and closes it.
 
 ## Sync's resends (sync.rs)
 
@@ -548,12 +581,16 @@ sent again, or what waits on it ends:
 | Library read | problems notice, shelf reload, pausable runners, runner keymaps, dock pins, FetchFirst | bottom, session, keymap, settings, dock | tests `new_library_problems_are_said_once`, `a_library_read_updates_the_runners_paused_together`, `a_library_read_while_fetching_asks_for_shelfs_view_first_again`; shelf `listings_outlive_…`, `a_library_read_keeps_what_is_typed`; settings `a_runner_gets_its_keymap_once`; dock `pins_of_entries_gone_…` |
 | battery tab quit | queued `Event::Entry` | session | `a_rows_menu_quits_…` |
 | any event | settle `follow_lists` | every scroll | `a_list_changed_by_any_event_…` |
+| battery warning | `Sys::battery_warning` returns it, `State::notify` takes it | notifications | status battery tests |
+| critical notification | `State::notify`: `idle.own_input`, `Bottom::light` | idle, bottom | notification tests |
+| bottom screen lit | settle step 15 reads `bottom_lit()` after idle and power | notifications | `a_notification_waits_for_the_bottom_screen_…` |
 
 Effects answered by events: Launch → Units / LaunchFailed; Adopt → Units; EndRun / EndProcesses → Units,
 Windows, Tray; Close → Windows; Tray Activate → Windows; FindIcon → Icon; CalibrateSticks →
 Sticks; CalibrateRefresh → RefreshCalibrated; CalibrateGyro → GyroCalibrated; Account → AccountChanged and
 Account; AskAwake → KeptAwake; Sleep → Busy or Resumed; Screenshot → Screenshot; PadRoute(Listen) →
-Listened; Watch → readings. Freeze, RunnerCommand, Enqueue and saves are not answered.
+Listened; Watch → readings. Freeze, RunnerCommand, Enqueue, saves, NotificationClosed and ActionInvoked
+are not answered.
 
 ## Invariants (for the randomized event-sequence test)
 
@@ -590,13 +627,17 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
     forced) for a key until it is quit again or launched; at most one RecordPlay per entry per event, and
     only for an entry that ran before it; no Launch for an entry already launching (one given up in the
     same event may be launched again, as a Steam game whose window is there is).
+12. **Notifications:** ids unique; none past its time; a time runs only while the bottom screen is lit;
+    every NotificationClosed names one held before the event and gone after it, once; an ActionInvoked
+    names one held with an action and is followed at once by its NotificationClosed.
 
 The generator draws events valid for the current state: taps, holds and presses on the targets shown
 (shelf's only while shelf is in front, the Device view's while it is open, the tab's), Focus only while
 the route is Ui, shelf's pad events only while the pad is on shelf, a touch's HideFocus before its press,
-Listened only while listening, and results only after their requests (a unit or LaunchFailed after
-Launch, a unit ending after EndRun or by itself, windows closing after Close or by themselves, the
-calibrations', account's and screenshot's answers, Busy or Resumed after Sleep). A small model of the
+Listened only while listening, notifications sent (any urgency, timeout and action), closed by their
+program, tapped and dismissed (mostly ones held), and results only after their requests (a unit or
+LaunchFailed after Launch, a unit ending after EndRun or by itself, windows closing after Close or by
+themselves, the calibrations', account's and screenshot's answers, Busy or Resumed after Sleep). A small model of the
 compositor and systemd follows the effects (focus, moves, windows down). The library holds a Steam game
 (ff6), an app handed over to another program (desktop:firefox), an enqueue runner's album, a browsed file,
 a group (the series), the Device tool, and any program may open several windows; stray windows, a

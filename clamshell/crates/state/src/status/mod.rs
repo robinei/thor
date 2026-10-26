@@ -7,13 +7,12 @@ pub mod battery;
 pub mod metrics;
 pub mod time;
 
-use crate::effect::Effect;
-use crate::out::Out;
+use crate::notifications::{Notification, NotificationId, Urgency};
 use battery::{Battery, Group};
 use metrics::{History, Metrics};
 use time::{TimePage, TimeZones};
 
-/// Battery levels at which a notification warns, over whatever is running, while discharging. Each warns
+/// Battery levels at which a notification warns, over the bottom screen, while discharging. Each warns
 /// once until the battery stops discharging. On the charger with the charge held at a limit, it isn't
 /// charging but isn't discharging either. UPower hibernates the device at 3 % (the image's UPower.conf).
 const WARN_AT: [u8; 2] = [10, 5];
@@ -110,22 +109,28 @@ impl Sys {
         self.status = status;
     }
 
-    /// Runs after a status reading. Gives a warning when the battery has fallen to one of [`WARN_AT`],
-    /// with the lower one marked urgent.
-    pub(crate) fn battery_warning(&mut self, out: &mut Out) {
+    /// Runs after a status reading. Returns a warning when the battery has fallen to one of [`WARN_AT`],
+    /// the lower one critical, so it stays until dismissed and wakes the screens. Each replaces the one
+    /// before.
+    pub(crate) fn battery_warning(&mut self) -> Option<Notification> {
         let Status { battery: Some(level), discharging: true, .. } = self.status else {
             self.warned = None;
-            return;
+            return None;
         };
-        let Some(at) = WARN_AT.into_iter().filter(|&t| level <= t).min() else {
-            return;
-        };
+        let at = WARN_AT.into_iter().filter(|&t| level <= t).min()?;
         if self.warned.is_some_and(|w| w <= at) {
-            return;
+            return None;
         }
         self.warned = Some(at);
-        let summary = format!("Battery at {level} %");
-        out.effects.push(Effect::Notify { summary, body: "Plug in the charger: at 3 % the device hibernates.".to_owned(), urgent: at == WARN_AT[1] });
+        Some(Notification {
+            id: NotificationId::Battery,
+            app: "ClamShell".to_owned(),
+            summary: format!("Battery at {level} %"),
+            body: "Plug in the charger: at 3 % the device hibernates.".to_owned(),
+            urgency: if at == WARN_AT[1] { Urgency::Critical } else { Urgency::Normal },
+            action: None,
+            timeout_ms: -1,
+        })
     }
 
     /// A metrics reading. The frame rate comes separately (see [`Sys::frames`]) and is kept.
@@ -143,17 +148,24 @@ impl Sys {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use crate::testkit::*;
     use crate::*;
 
+    use crate::notifications::{NotificationId, Urgency};
+
+    /// The battery's notification a status reading gave, if any. The one before is dismissed first.
+    fn warned(s: &mut State, battery: Option<u8>, discharging: bool) -> Option<(String, Urgency)> {
+        s.applied(crate::notifications::NotificationEvent::Dismissed(NotificationId::Battery).into());
+        s.applied(Reading::Status(Status { battery, discharging, ..Status::default() }).into());
+        s.notifications().get(NotificationId::Battery).map(|n| (n.summary.clone(), n.urgency))
+    }
+
     #[test]
     fn the_battery_warns_only_while_discharging() {
         let mut s = state();
-        let warns = |s: &mut State, battery, discharging| {
-            let fx = s.applied(Reading::Status(Status { battery: Some(battery), discharging, ..Status::default() }).into());
-            fx.iter().any(|e| matches!(e, Effect::Notify { .. }))
-        };
+        let warns = |s: &mut State, battery, discharging| warned(s, Some(battery), discharging).is_some();
         assert!(!warns(&mut s, 9, false), "on the charger, held at a limit: not charging, not discharging");
         assert!(warns(&mut s, 9, true));
         assert!(!warns(&mut s, 8, true), "once");
@@ -162,24 +174,31 @@ mod tests {
         assert!(warns(&mut s, 5, true), "again after the charger");
     }
 
-    /// The warning says the level and what to do; the one at 5 % is urgent, so it stays over a game. A fall
-    /// past both at once warns once, urgently.
+    /// The warning says the level and what to do; the one at 5 % is critical, so it stays until
+    /// dismissed and wakes the screens. A fall past both at once warns once, critically. Each replaces the
+    /// one before, and none goes to the bus.
     #[test]
-    fn the_battery_warning_says_the_level_and_is_urgent_at_5() {
+    fn the_battery_warning_says_the_level_and_is_critical_at_5() {
         let mut s = state();
-        let notify = |s: &mut State, battery: Option<u8>| {
-            let fx = s.applied(Reading::Status(Status { battery, discharging: true, ..Status::default() }).into());
-            fx.into_iter().filter(|e| matches!(e, Effect::Notify { .. })).collect::<Vec<_>>()
-        };
-        let body = "Plug in the charger: at 3 % the device hibernates.".to_owned();
-        assert_eq!(notify(&mut s, Some(11)), []);
-        assert_eq!(notify(&mut s, None), [], "no battery");
-        assert_eq!(notify(&mut s, Some(10)), [Effect::Notify { summary: "Battery at 10 %".into(), body: body.clone(), urgent: false }]);
-        assert_eq!(notify(&mut s, Some(5)), [Effect::Notify { summary: "Battery at 5 %".into(), body: body.clone(), urgent: true }]);
-        assert_eq!(notify(&mut s, Some(4)), [], "once");
+        let notify = |s: &mut State, battery: Option<u8>| warned(s, battery, true);
+        assert_eq!(notify(&mut s, Some(11)), None);
+        assert_eq!(notify(&mut s, None), None, "no battery");
+        assert_eq!(notify(&mut s, Some(10)), Some(("Battery at 10 %".into(), Urgency::Normal)));
+        let body = &s.notifications().get(NotificationId::Battery).unwrap().body;
+        assert_eq!(body, "Plug in the charger: at 3 % the device hibernates.");
+        assert_eq!(notify(&mut s, Some(5)), Some(("Battery at 5 %".into(), Urgency::Critical)));
+        assert_eq!(notify(&mut s, Some(4)), None, "once");
         let mut s = state();
-        assert_eq!(notify(&mut s, Some(4)), [Effect::Notify { summary: "Battery at 4 %".into(), body, urgent: true }], "past both at once");
-        assert_eq!(notify(&mut s, Some(9)), [], "a higher reading while discharging doesn't warn again");
+        assert_eq!(notify(&mut s, Some(4)), Some(("Battery at 4 %".into(), Urgency::Critical)), "past both at once");
+        assert_eq!(notify(&mut s, Some(9)), None, "a higher reading while discharging doesn't warn again");
+        // A lower warning replaces the one before.
+        let mut s = state();
+        let low = |s: &mut State, battery| s.applied(Reading::Status(Status { battery: Some(battery), discharging: true, ..Status::default() }).into());
+        low(&mut s, 9);
+        low(&mut s, 4);
+        assert_eq!(s.notifications().iter().map(|n| n.summary.as_str()).collect::<Vec<_>>(), ["Battery at 4 %"]);
+        let fx = s.applied(crate::notifications::NotificationEvent::Dismissed(NotificationId::Battery).into());
+        assert!(fx.is_empty() && s.notifications().is_empty(), "ClamShell's own close without a word to the bus: {fx:?}");
     }
 
     #[test]

@@ -5,6 +5,5 @@ pub(crate) mod account;
 pub mod clipboard;
 pub mod environment;
 pub(crate) mod icons;
-pub(crate) mod notify;
 pub mod priority;
 pub mod tray;

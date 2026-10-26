@@ -71,6 +71,13 @@ pub enum Id {
     WindowArrow {
         next: bool,
     },
+    /// A notification over the second screen, or with `close` its close mark. The UI acts on it as it is
+    /// pressed, with [`crate::NotificationEvent::Tapped`] or [`crate::NotificationEvent::Dismissed`], so
+    /// it is never tapped.
+    Notification {
+        id: crate::notifications::NotificationId,
+        close: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

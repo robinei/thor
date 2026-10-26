@@ -156,6 +156,15 @@ impl Bottom {
         self.screen.off = false;
     }
 
+    /// A critical notification came at `now`: the screen turns on if it was off by hand or by itself, and
+    /// lights if it was dark for a game, as if tapped.
+    pub(crate) fn light(&mut self, now: u64) {
+        self.screen.off = false;
+        self.screen.idle_off = false;
+        self.used_at = Some(now);
+        self.woken = true;
+    }
+
     /// Home+Start turns the bottom screen off, or on again. If it had turned off by itself, this turns it
     /// on, as a touch would.
     pub(crate) fn toggle_power(&mut self, p: Power, now: u64) {

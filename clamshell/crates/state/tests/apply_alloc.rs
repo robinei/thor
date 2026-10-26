@@ -1,5 +1,5 @@
 //! `State::apply` allocates nothing for the events that come all the time, once the state is warm: ticks,
-//! readings, the windows and units listed again, presses and the pad's focus. The counts are printed
+//! readings, the windows and units listed again, presses and the pad's focus, with notifications held. The counts are printed
 //! (`cargo test -p clamshell-state --test apply_alloc -- --nocapture`), and with CLAMSHELL_ALLOC_TRACE set,
 //! where each allocation came from.
 #![allow(clippy::unwrap_used, unsafe_code)]
@@ -10,7 +10,10 @@ use std::cell::Cell;
 use clamshell_state::radios::wifi::{Network, Wifi};
 use clamshell_state::session::windows::WindowFacts;
 use clamshell_state::status::metrics::Metrics;
-use clamshell_state::{Effect, EntryAct, Event, Id, Init, Instance, ListEvent, ListId, PointerEvent, Reading, State, Status, Tab, WindowEvent};
+use clamshell_state::{
+    Effect, EntryAct, Event, Id, Init, Instance, ListEvent, ListId, Notification, NotificationEvent, NotificationId, PointerEvent, Reading, State, Status, Tab,
+    Urgency, WindowEvent,
+};
 
 thread_local! {
     static ALLOCS: Cell<usize> = const { Cell::new(0) };
@@ -133,6 +136,19 @@ fn allocations_per_event() {
         let wifi = Wifi { present: true, on: true, networks, ..Wifi::default() };
         s.apply(Event::Reading(Reading::Wifi(wifi.clone())), &mut Vec::new());
         s.apply(ListEvent::Visible(ListId::Wifi, 3.0).into(), &mut Vec::new());
+        // Notifications that stay until dismissed, so every event follows their times.
+        for id in 1..=3 {
+            let n = Notification {
+                id: NotificationId::Bus(id),
+                app: "mail".into(),
+                summary: format!("note {id}"),
+                body: String::new(),
+                urgency: Urgency::Normal,
+                action: None,
+                timeout_ms: 0,
+            };
+            s.apply(NotificationEvent::Notified(Box::new(n)).into(), &mut Vec::new());
+        }
         let windows = if state == "idle" { Vec::new() } else { windows.clone() };
         let units = if state == "idle" { Vec::new() } else { units.clone() };
         let name = |what: &str| format!("{state}: {what}");
@@ -159,6 +175,7 @@ fn allocations_per_event() {
             run(&name("keyboard focus, UI and client"), s, &|i| WindowEvent::KeyboardFocus((i % 2 == 0).then_some(window.id)).into());
         }
         run(&name("window close, already gone"), s, &|_| WindowEvent::Closed(i64::MAX).into());
+        run(&name("notification closed, already gone"), s, &|_| NotificationEvent::Closed(u32::MAX).into());
         run(&name("Home held and released"), s, &|i| Event::HomeHeld(i % 2 == 0));
         run(&name("controller keyboard focus"), s, &|_| Event::PadActive);
         run(&name("units, unchanged"), s, &|_| Event::Units(units.clone()));

@@ -61,7 +61,6 @@ pub fn effect(effect: &Effect) -> String {
         Effect::Browse(BrowseCommand::Open(None)) => "Browse close".into(),
         Effect::Browse(BrowseCommand::InUse(files)) => format!("Browse in use {} files", files.len()),
         Effect::RecordPlay { entry, start, duration } => format!("RecordPlay {entry} from {start} for {duration}s"),
-        Effect::Notify { summary, urgent, .. } => format!("Notify {summary:?}{}", if *urgent { " urgent" } else { "" }),
         other => short(other),
     }
 }

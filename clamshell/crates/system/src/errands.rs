@@ -1,5 +1,5 @@
 //! Errands: the one-off requests of the state that belong to no area's own thread, carried out one at a
-//! time on the "system" thread: a screenshot, sleep, a notification, the time zone and clock, the account,
+//! time on the "system" thread: a screenshot, sleep, the time zone and clock, the account,
 //! the panel's calibration. Each is done by the module for its area. Anything that may take seconds runs on a thread of its own.
 
 use std::io;
@@ -14,7 +14,6 @@ use crate::display::{refresh, screenshot};
 use crate::os::command;
 use crate::os::worker::Worker;
 use crate::power::sleep;
-use crate::session::notify;
 use crate::time::timedated;
 use crate::{Closed, Sink};
 
@@ -22,11 +21,6 @@ use crate::{Closed, Sink};
 pub(crate) enum Command {
     SaveScreenshot(Result<clamshell_state::ScreenshotPixels, String>),
     Sleep,
-    Notify {
-        summary: String,
-        body: String,
-        urgent: bool,
-    },
     /// Read the time zone and the ones to choose from.
     ReadTime,
     SetTimeZone(String),
@@ -60,11 +54,8 @@ fn awake(argv: &[String]) -> bool {
 /// so a screenshot or sleep asked for meanwhile doesn't wait for it.
 pub(crate) fn spawn(screenshots: Option<PathBuf>, calibration: Option<&'static str>, sink: impl Sink + Clone) -> io::Result<Worker<Command>> {
     Worker::spawn(clamshell_state::Thread::System.name(), move |commands| {
-        // Our last notification, which the next one replaces. For example, a lower battery warning
-        // replaces the earlier one.
-        let mut shown = 0;
         for command in commands {
-            if carry_out(command, screenshots.as_ref(), calibration, &mut shown, &sink).is_err() {
+            if carry_out(command, screenshots.as_ref(), calibration, &sink).is_err() {
                 return;
             }
         }
@@ -72,13 +63,7 @@ pub(crate) fn spawn(screenshots: Option<PathBuf>, calibration: Option<&'static s
 }
 
 /// Carries out one command. Returns `Closed` once the UI is gone.
-fn carry_out(
-    command: Command,
-    screenshots: Option<&PathBuf>,
-    calibration: Option<&'static str>,
-    shown: &mut u32,
-    sink: &(impl Sink + Clone),
-) -> Result<(), Closed> {
+fn carry_out(command: Command, screenshots: Option<&PathBuf>, calibration: Option<&'static str>, sink: &(impl Sink + Clone)) -> Result<(), Closed> {
     match command {
         Command::SaveScreenshot(pixels) => sink.send(Event::Screenshot(pixels.and_then(|pixels| screenshot::save(screenshots, pixels)))),
         // Busy means something is working that the user left running, such as a download or a build.
@@ -145,13 +130,6 @@ fn carry_out(
                 },
                 fallback,
             );
-            Ok(())
-        }
-        Command::Notify { summary, body, urgent } => {
-            match notify::notify(*shown, &summary, &body, urgent) {
-                Ok(id) => *shown = id,
-                Err(e) => log::warn!("notification \"{summary}\": {e}"),
-            }
             Ok(())
         }
     }

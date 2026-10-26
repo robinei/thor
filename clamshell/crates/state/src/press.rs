@@ -153,7 +153,7 @@ impl State {
             Id::Wake => {
                 self.bottom.wake();
             }
-            Id::WindowArrow { .. } => {}
+            Id::WindowArrow { .. } | Id::Notification { .. } => {}
         }
     }
 

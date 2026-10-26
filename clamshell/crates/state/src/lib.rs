@@ -17,6 +17,7 @@
 //! - [`settings`]: the settings table and panel, the environment variables, and the fan mode;
 //! - [`device`]: the Device view, the account, stick calibration, the device buttons, and idle;
 //! - [`status`]: the system readings ([`Sys`]), covering status, metrics, the battery and the time;
+//! - [`notifications`]: the desktop notifications shown over the bottom screen ([`Notifications`]);
 //! - [`keymap`]: keymaps and their screens;
 //! - [`nav`]: focus and presses ([`Pointer`]), the lists, and the pad's routing ([`Pad`]);
 //! - [`kit`]: generic parts the areas build on, which know nothing about them.
@@ -26,8 +27,9 @@
 //! more than one area is carried out in an `impl State` of its own file, by subject: what comes in from
 //! the system threads ([`incoming`]), presses ([`press`]), the hardware keys ([`keys`]), the lists'
 //! scrolling ([`scrolls`]), the second screen's tabs and the editor ([`tabs`]), the sliders
-//! ([`sliders`]), launches ([`launching`]), the settings tab ([`settings_tab`]), the queries across areas
-//! ([`queries`]), and a system thread restarted ([`restart`]). What only State uses is in modules beside
+//! ([`sliders`]), launches ([`launching`]), the settings tab ([`settings_tab`]), the notifications and the
+//! screens ([`notifying`]), the queries across areas ([`queries`]), and a system thread restarted
+//! ([`restart`]). What only State uses is in modules beside
 //! the areas: the record of what the outside was last sent ([`sync`]), the output of one event ([`out`]),
 //! and the resume record ([`resume`]). Outside code reads
 //! an area through State's accessor for it (`s.radios().wifi()`), and changes state only by sending an
@@ -63,6 +65,8 @@ pub mod kit;
 mod launching;
 pub mod levels;
 pub mod nav;
+pub mod notifications;
+mod notifying;
 pub(crate) mod out;
 mod press;
 pub mod profiles;
@@ -119,6 +123,7 @@ pub use levels::{Brightness, Level, Levels, Sound};
 pub use nav::lists::{ListEvent, ListId, Lists, RowPart};
 pub use nav::pad::{Claimant, Pad, PadInput, PadMouse, PadRoute};
 pub use nav::pointer::Pointer;
+pub use notifications::{CloseReason, Notification, NotificationEvent, NotificationId, Notifications, Urgency};
 pub use radios::{RadioStatus, Radios};
 pub use session::Session;
 pub use session::dock::{Dock, DockItem};
@@ -185,6 +190,7 @@ pub struct State {
     pad: Pad,
     pointer: Pointer,
     sys: Sys,
+    notifications: Notifications,
     /// Every entry's settings, and the scope the settings panel edits.
     prefs: Prefs,
     keyboard: Keyboard,
@@ -298,6 +304,10 @@ impl State {
         &self.sys
     }
 
+    pub fn notifications(&self) -> &Notifications {
+        &self.notifications
+    }
+
     pub fn prefs(&self) -> &Prefs {
         &self.prefs
     }
@@ -374,6 +384,7 @@ impl State {
             Event::DisplayModes(modes) => self.device.set_display_modes(modes),
             Event::Tick { unix_secs, mono_secs } => self.tick(unix_secs, mono_secs, out),
             Event::Reading(reading) => self.on_reading(reading, out),
+            Event::Notification(e) => self.on_notification(e, out),
             Event::List(e) => self.on_list(e),
             Event::Pointer(e) => self.on_pointer(e, out),
             Event::Slide(slide) => self.on_slide(slide, out),
@@ -492,10 +503,12 @@ impl State {
     /// 13. The program in force.
     /// 14. The second screen turning off or on by itself, which reads the program in force's setting and
     ///     darkness (`dark_for_a_game_on_battery_it_goes_off_and_a_tap_wakes_it`).
-    /// 15. The pad mouse, when the program in force changed.
-    /// 16. What claims the pad, and where it goes. The focus ring shows where the pad is, so it is hidden
+    /// 15. The notifications' times, which run while the second screen is lit, as 12 and 14 left it
+    ///     (`a_notification_waits_for_the_bottom_screen_and_then_shows_its_time`).
+    /// 16. The pad mouse, when the program in force changed.
+    /// 17. What claims the pad, and where it goes. The focus ring shows where the pad is, so it is hidden
     ///     when the pad leaves ClamShell's screens.
-    /// 17. The scrolled lists keep their top items where they are ([`State::follow_lists`]).
+    /// 18. The scrolled lists keep their top items where they are ([`State::follow_lists`]).
     fn settle(&mut self, out: &mut Out) {
         if self.session.follow_units(&self.clock, self.shelf.library(), self.bottom.notice_mut(), &mut self.plays) {
             self.bottom.unwake();
@@ -543,6 +556,8 @@ impl State {
         self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), out);
         let changed = self.session.follow_program(self.clock.mono());
         self.bottom.follow_power(self.power(), self.clock.mono());
+        let lit = self.bottom_lit();
+        self.notifications.follow(self.clock.mono(), lit, out);
         if changed {
             self.follow_pad_mouse();
         }

@@ -519,8 +519,34 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             }
             _ => return None,
         },
+        // Notifications: a program's sent, sent again or closed, and taps on them.
+        82 => {
+            let held: Vec<NotificationId> = s.notifications().iter().map(|n| n.id).collect();
+            let some = |rng: &mut Rng| match rng.pick(&held) {
+                Some(id) if !rng.one_in(4) => *id,
+                _ => NotificationId::Bus(1 + rng.below(8) as u32),
+            };
+            match rng.below(6) {
+                0..=2 => {
+                    let urgency = *rng.pick(&[Urgency::Low, Urgency::Normal, Urgency::Normal, Urgency::Critical])?;
+                    let n = Notification {
+                        id: NotificationId::Bus(1 + rng.below(6) as u32),
+                        app: "mail".into(),
+                        summary: "summary".into(),
+                        body: String::new(),
+                        urgency,
+                        action: rng.one_in(2).then(|| "default".into()),
+                        timeout_ms: *rng.pick(&[-1, 0, 1000, 3000, 20_000])?,
+                    };
+                    NotificationEvent::Notified(Box::new(n)).into()
+                }
+                3 => NotificationEvent::Closed(1 + rng.below(8) as u32).into(),
+                4 => NotificationEvent::Tapped(some(rng)).into(),
+                _ => NotificationEvent::Dismissed(some(rng)).into(),
+            }
+        }
         // Readings.
-        77..=82 => Event::Reading(match rng.below(6) {
+        77..=81 => Event::Reading(match rng.below(6) {
             0 => Reading::Status(Status {
                 battery: Some(rng.below(101) as u8),
                 discharging: rng.one_in(2),
@@ -692,8 +718,9 @@ fn sync_again(s: &mut State) -> Vec<Effect> {
     out.effects
 }
 
-/// The entries running before an event, and those launching with when they were asked for.
-type Before = (Vec<Arc<str>>, Vec<(Arc<str>, u64)>);
+/// The entries running before an event, those launching with when they were asked for, and the
+/// notifications held with whether each has an action.
+type Before = (Vec<Arc<str>>, Vec<(Arc<str>, u64)>, Vec<(NotificationId, bool)>);
 
 /// Checks the invariants after `event` gave `effects`. `before` is the state's running and launching
 /// entries before the event.
@@ -901,8 +928,42 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
         }
     }
 
+    // 12. Notifications.
+    let notes = s.notifications();
+    let now = s.clock().mono();
+    let lit = s.bottom_lit();
+    for (i, n) in notes.iter().enumerate() {
+        ensure!(!notes.iter().skip(i + 1).any(|o| o.id == n.id), "12: notification {:?} held twice", n.id);
+        let expires = notes.expires_at(n.id);
+        ensure!(expires.is_none_or(|at| at > now), "12: notification {:?} past its time ({expires:?} at {now})", n.id);
+        ensure!(lit || expires.is_none(), "12: notification {:?}'s time runs while the bottom screen is dark", n.id);
+    }
+    let (_, _, was_held) = before;
+    let mut closed = Vec::new();
+    for (k, e) in effects.iter().enumerate() {
+        match e {
+            Effect::NotificationClosed { id, .. } => {
+                let id = NotificationId::Bus(*id);
+                ensure!(was_held.iter().any(|(h, _)| *h == id), "12: {id:?} closed, not held");
+                ensure!(!closed.contains(&id), "12: {id:?} closed twice");
+                ensure!(notes.get(id).is_none(), "12: {id:?} closed and still held");
+                closed.push(id);
+            }
+            Effect::ActionInvoked { id, .. } => {
+                let id = NotificationId::Bus(*id);
+                ensure!(was_held.contains(&(id, true)), "12: an action of {id:?}, which had none");
+                let next = effects.get(k + 1);
+                ensure!(
+                    matches!(next, Some(Effect::NotificationClosed { id: c, .. }) if NotificationId::Bus(*c) == id),
+                    "12: {id:?}'s action not followed by its close"
+                );
+            }
+            _ => {}
+        }
+    }
+
     // 11. The effect stream.
-    let (was_running, was_launching) = before;
+    let (was_running, was_launching, _) = before;
     let mut launched = Vec::new();
     let mut recorded = Vec::new();
     for e in effects {
@@ -969,8 +1030,11 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
             Event::Device(DeviceKey::Quit) | Event::Pointer(PointerEvent::Activate(Id::Dock(DockId::Quit))) => sent.ended.clear(),
             _ => {}
         }
-        let before =
-            (s.session().running_entries().iter().map(|r| r.id.clone()).collect(), s.session().launching().iter().map(|l| (l.entry.clone(), l.at)).collect());
+        let before = (
+            s.session().running_entries().iter().map(|r| r.id.clone()).collect(),
+            s.session().launching().iter().map(|l| (l.entry.clone(), l.at)).collect(),
+            s.notifications().iter().map(|n| (n.id, n.action.is_some())).collect(),
+        );
         history.push(match &event {
             Event::Library(_) => format!("{i}: Library (the same)"),
             e => format!("{i}: {e:?}"),

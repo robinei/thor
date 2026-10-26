@@ -142,8 +142,6 @@ Pointer(Activate(Settings(Tile(FpsCap))))
 -- settings-env.png
 Pointer(Activate(Editor(Save)))
   Save Settings
-Reading Status
-  Notify "Battery at 9 %"
 -- status-low.png
 == group keymap-name.png
 Tick 1760000000

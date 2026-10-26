@@ -137,9 +137,8 @@ impl Handles {
             Effect::SetTimeZone(zone) => self.system.send(crate::errands::Command::SetTimeZone(zone.clone())),
             Effect::SetNtp(on) => self.system.send(crate::errands::Command::SetNtp(*on)),
             Effect::StepClock(field, by) => self.system.send(crate::errands::Command::StepClock(*field, *by)),
-            Effect::Notify { summary, body, urgent } => {
-                self.system.send(crate::errands::Command::Notify { summary: summary.clone(), body: body.clone(), urgent: *urgent })
-            }
+            // The notifications thread, which emits them, comes in the next change.
+            Effect::NotificationClosed { .. } | Effect::ActionInvoked { .. } => {}
             // The compositor carries out its own.
             Effect::Compositor(_) => {}
         }

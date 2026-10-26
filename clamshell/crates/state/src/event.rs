@@ -13,6 +13,7 @@ use crate::levels::slider::Control;
 use crate::levels::{Audio, Level};
 use crate::nav::lists::ListEvent;
 use crate::nav::pad::PadInput;
+use crate::notifications::NotificationEvent;
 use crate::radios::bluetooth::Bluetooth;
 use crate::radios::wifi::Wifi;
 use crate::session::instance::Instance;
@@ -34,6 +35,8 @@ pub enum Event {
     },
     /// Something a system thread read from the system.
     Reading(Reading),
+    /// A notification sent or closed by a program, or tapped (see [`crate::notifications`]).
+    Notification(crate::notifications::NotificationEvent),
     /// Touch, the mouse or the pad on a target.
     Pointer(PointerEvent),
     /// A right click on the second screen. Pastes the clipboard's text into the open field, like Ctrl+V.
@@ -298,7 +301,7 @@ macro_rules! into_event {
     };
 }
 
-into_event!(ListEvent => List, Reading => Reading, PointerEvent => Pointer, Slide => Slide, LevelEvent => Level, ShelfEvent => Shelf, LaunchEvent => Launch, Pointing => Pointing);
+into_event!(ListEvent => List, Reading => Reading, NotificationEvent => Notification, PointerEvent => Pointer, Slide => Slide, LevelEvent => Level, ShelfEvent => Shelf, LaunchEvent => Launch, Pointing => Pointing);
 
 impl Event {
     /// A tick at `secs` on both clocks, for tests and demos where the clocks never jump.

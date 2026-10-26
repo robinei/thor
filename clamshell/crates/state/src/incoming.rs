@@ -24,7 +24,7 @@ impl State {
     }
 
     /// A reading of the system from a system thread. It is stored, and after a status reading the
-    /// battery warning is checked.
+    /// battery warning is checked (a notification of ClamShell's own).
     pub(crate) fn on_reading(&mut self, reading: Reading, out: &mut Out) {
         let status = matches!(reading, Reading::Status(_));
         match reading {
@@ -50,8 +50,8 @@ impl State {
             Reading::Time(time) => self.sys.read_time(time),
             Reading::Account(account) => self.device.read_account(account),
         }
-        if status {
-            self.sys.battery_warning(out);
+        if status && let Some(warning) = self.sys.battery_warning() {
+            self.notify(warning, out);
         }
     }
 

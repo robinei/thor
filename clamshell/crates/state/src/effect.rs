@@ -130,12 +130,16 @@ pub enum Effect {
     /// Step one field of the system's clock, in local time. A month on from the 31st lands on the last
     /// day of that month. The time is read again afterwards.
     StepClock(crate::status::time::ClockField, i8),
-    /// A desktop notification, shown by the notification daemon on the main screen, over a game. Urgent
-    /// ones stay until dismissed.
-    Notify {
-        summary: String,
-        body: String,
-        urgent: bool,
+    /// A program's notification closed, for the reason given: emit `NotificationClosed` on the bus (see
+    /// [`crate::notifications`]).
+    NotificationClosed {
+        id: u32,
+        reason: crate::notifications::CloseReason,
+    },
+    /// A program's notification was tapped: emit `ActionInvoked` with its default action's key.
+    ActionInvoked {
+        id: u32,
+        key: Arc<str>,
     },
     /// Calibrate the gyro from its next second of readings, with the device held still. The result comes
     /// back as [`crate::Event::GyroCalibrated`].
