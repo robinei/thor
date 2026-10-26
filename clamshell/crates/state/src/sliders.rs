@@ -33,7 +33,7 @@ impl State {
                 };
                 let at = own.and_then(|v| (1..len).find(|i| self.setting_stop(setting, *i) == Some(Some(v)))).unwrap_or(0);
                 let (at, hi) = (u8::try_from(at).unwrap_or(0), u8::try_from(len.saturating_sub(1)).unwrap_or(0));
-                self.setting_slider = Some(Slider::ranged(control, at, 0, hi, x, width));
+                self.prefs.hold_slider(Some(Slider::ranged(control, at, 0, hi, x, width)));
             }
             Slide::Start { control, x, width } => {
                 self.levels.slide_start(control, x, width);
@@ -50,7 +50,9 @@ impl State {
                 self.levels.slide_end();
                 self.keymapping.param_slide_end(out);
                 self.curving.slide_end(out);
-                if self.setting_slider.take().is_some_and(|s| s.moved) {
+                let held = self.prefs.slider();
+                self.prefs.hold_slider(None);
+                if held.is_some_and(|s| s.moved) {
                     out.effects.push(self.prefs.save_effect());
                 }
             }
@@ -60,22 +62,22 @@ impl State {
     /// A setting's slider moved: the stop under the finger is written where the panel edits at once (Default
     /// clears it there), and saved when the finger lifts.
     fn setting_slide_to(&mut self, x: f32) {
-        let Some(slider) = self.setting_slider else { return };
+        let Some(slider) = self.prefs.slider() else { return };
         let Control::Setting(setting) = slider.control else { return };
         let position = slider.value_at(x);
         if position == slider.value {
             return;
         }
-        self.setting_slider = Some(Slider { value: position, moved: true, ..slider });
+        self.prefs.hold_slider(Some(Slider { value: position, moved: true, ..slider }));
         if let Some(stop) = self.setting_stop(setting, usize::from(position)) {
             let entry = self.panel().editing().map(|g| g.id.clone());
             self.prefs.set(entry.as_ref(), setting, stop);
         }
     }
 
-    /// A setting's slider held, if one is.
+    /// A setting's slider held, if one is (see [`crate::Prefs::slider`]).
     pub fn setting_slider(&self) -> Option<Slider> {
-        self.setting_slider
+        self.prefs.slider()
     }
 
     /// How many stops `setting`'s slider has at the level edited (see [`State::setting_stop`]).

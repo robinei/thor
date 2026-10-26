@@ -197,8 +197,6 @@ pub struct State {
     /// The keymaps and their screens (see [`crate::keymap::screens`]).
     keymapping: Keymapping,
     curving: crate::curve::screens::Curving,
-    /// A setting's slider held (see [`Control::Setting`]).
-    setting_slider: Option<Slider>,
     presentation: crate::session::presentation::Presentation,
     /// Where the lists but shelf are scrolled.
     scrolls: Scrolls,
@@ -229,7 +227,6 @@ impl State {
             prefs: Prefs::new(init.settings),
             keymapping: Keymapping::new(init.keymaps),
             curving: crate::curve::screens::Curving::new(init.curves),
-            setting_slider: None,
             bottom: Bottom::default(),
             sys: Sys::new(init.twelve_hour),
             levels: Levels::new(init.brightness),

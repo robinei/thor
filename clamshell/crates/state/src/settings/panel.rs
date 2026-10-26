@@ -55,11 +55,23 @@ pub struct Prefs {
     scope: Scope,
     /// The tile whose menu is open over the settings tab, by a long press: its values, and Reset.
     menu: Option<Setting>,
+    /// A setting's slider held, if one is.
+    slider: Option<crate::Slider>,
 }
 
 impl Prefs {
     pub(crate) fn new(settings: Settings) -> Prefs {
         Prefs { settings, ..Prefs::default() }
+    }
+
+    /// A setting's slider held, if one is.
+    pub fn slider(&self) -> Option<crate::Slider> {
+        self.slider
+    }
+
+    /// A setting's slider is held as `slider`, or let go with None.
+    pub(crate) fn hold_slider(&mut self, slider: Option<crate::Slider>) {
+        self.slider = slider;
     }
 
     pub fn settings(&self) -> &Settings {
