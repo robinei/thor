@@ -210,7 +210,7 @@ fn activation_tokens_require_focus_expire_are_single_use_and_cannot_undo_home() 
                     assert_eq!(server.activation.tokens().count(), 1);
                     use smithay::wayland::xdg_activation::XdgActivationHandler;
                     let mut data = server.activation.tokens().next().unwrap().1.clone();
-                    data.timestamp = Instant::now() - Duration::from_secs(5);
+                    data.timestamp = Instant::now().checked_sub(Duration::from_secs(5)).unwrap();
                     let expired = server.activation.create_external_token(Some(data.clone())).0.clone();
                     let surface = server.windows[1].window.toplevel().unwrap().wl_surface().clone();
                     server.request_activation(expired, data, surface);

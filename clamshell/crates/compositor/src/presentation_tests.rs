@@ -119,7 +119,7 @@ fn feedback_follows_submission_visibility_superseding_and_surface_destruction() 
                     child.destroy();
                 }
                 4 => assert_eq!(client.discarded, vec![2, 4], "surface destruction discards outstanding feedback"),
-                _ => unreachable!(),
+                _ => panic!(),
             }
         }
     });
@@ -162,7 +162,7 @@ fn feedback_follows_submission_visibility_superseding_and_surface_destruction() 
                     server.present_submission(&rendered, Duration::from_secs(456).into());
                 }
                 4 => assert!(server.windows.is_empty()),
-                _ => unreachable!(),
+                _ => panic!(),
             }
             phases += 1;
             next.send(()).unwrap();

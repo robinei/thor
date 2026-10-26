@@ -50,6 +50,7 @@ impl Resume {
 }
 
 #[cfg(test)]
+#[allow(clippy::panic)]
 mod tests {
     use crate::testkit::*;
     use crate::*;
@@ -63,7 +64,7 @@ mod tests {
         assert!(s.applied(Event::tick(101)).is_empty(), "not while moving");
         let fx = s.applied(Event::tick(103));
         let Some(Effect::Save(Save::Resume(resume))) = fx.first() else {
-            unreachable!("{fx:?}");
+            panic!("{fx:?}");
         };
         let place = |c: &str, id: &str| (c.to_owned(), vec![id.to_owned()]);
         assert_eq!((resume.collection.as_str(), resume.tab.as_str()), ("More", "sysinfo"));

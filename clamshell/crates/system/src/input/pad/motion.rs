@@ -264,7 +264,7 @@ impl MotionSource for EvdevMotion {
 pub fn interval(last: Option<Duration>, at: Duration) -> f32 {
     const MAX: f32 = 0.05;
     match last {
-        Some(last) if at > last => (at - last).as_secs_f32().min(MAX),
+        Some(last) if at > last => at.saturating_sub(last).as_secs_f32().min(MAX),
         _ => 0.0,
     }
 }

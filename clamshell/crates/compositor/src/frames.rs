@@ -83,7 +83,7 @@ impl Frames {
             newest.get_or_insert(at);
             oldest = at;
         }
-        let frame_ms = newest.filter(|_| count > 1).map(|newest: Duration| (newest - oldest).as_secs_f32() * 1000.0 / (count - 1) as f32);
+        let frame_ms = newest.filter(|_| count > 1).map(|newest: Duration| newest.saturating_sub(oldest).as_secs_f32() * 1000.0 / (count - 1) as f32);
         (count as f32 / SPAN.as_secs_f32(), frame_ms)
     }
 }

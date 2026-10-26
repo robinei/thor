@@ -85,7 +85,7 @@ fn next_shown(flipped: Option<Duration>, interval: Duration, pending: bool, now:
     let interval = interval.max(Duration::from_micros(1));
     let next = match flipped {
         Some(flipped) if flipped <= now => {
-            let whole = u32::try_from((now - flipped).as_nanos() / interval.as_nanos()).unwrap_or(u32::MAX);
+            let whole = u32::try_from(now.saturating_sub(flipped).as_nanos() / interval.as_nanos()).unwrap_or(u32::MAX);
             flipped + interval.saturating_mul(whole.saturating_add(1))
         }
         _ => now + interval,

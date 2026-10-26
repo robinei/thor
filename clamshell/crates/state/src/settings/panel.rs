@@ -422,7 +422,7 @@ impl<'a> Panel<'a> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use crate::bottom::keyboard::{Key, Named, find};
     use crate::settings::{self, Choice, PowerProfile, Setting};
@@ -627,7 +627,7 @@ mod tests {
         scope(&mut s, Scope::Content);
         let fx = taps(&mut s, Setting::Power, 1); // Balanced -> Performance
         let Some(Effect::Save(Save::Settings(saved))) = fx.first() else {
-            unreachable!("{fx:?}");
+            panic!("{fx:?}");
         };
         assert_eq!(saved, s.prefs().settings(), "saved whole");
         assert_eq!(saved.overrides_of("zelda-lttp").get(Setting::Power), Some(2));
@@ -664,7 +664,7 @@ mod tests {
         let mut s = state_with(&settings);
         taps(&mut s, Setting::FpsCap, 2);
         let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
-        let Some(Effect::Launch { settings, env, .. }) = fx.iter().find(|e| matches!(e, Effect::Launch { .. })) else { unreachable!("{fx:?}") };
+        let Some(Effect::Launch { settings, env, .. }) = fx.iter().find(|e| matches!(e, Effect::Launch { .. })) else { panic!("{fx:?}") };
         assert_eq!(settings.get(Setting::FpsCap), 40);
         let pairs: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
         assert_eq!(pairs, [("A", "1"), ("B", "2"), ("B", "3"), ("C", "x y")], "the game's last, so they win");

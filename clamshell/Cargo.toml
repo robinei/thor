@@ -51,6 +51,13 @@ unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
 indexing_slicing = "deny"
+unreachable = "deny"
+todo = "deny"
+unimplemented = "deny"
+# `Instant - Duration` panics before the clock's start; checked_sub says what then.
+unchecked_time_subtraction = "deny"
+# Copying between slices panics on a length mismatch.
+manual_memcpy = "deny"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

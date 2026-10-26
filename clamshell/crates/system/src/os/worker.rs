@@ -607,7 +607,7 @@ mod tests {
         });
         let [_, second, third] = runs[..] else { panic!("{runs:?}") };
         assert!(second < RESTART_FIRST, "at once: {runs:?}");
-        assert!(third - second >= RESTART_FIRST, "then after a wait: {runs:?}");
+        assert!(third.saturating_sub(second) >= RESTART_FIRST, "then after a wait: {runs:?}");
     }
 
     #[test]

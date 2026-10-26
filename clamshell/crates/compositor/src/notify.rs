@@ -99,7 +99,7 @@ mod tests {
         notifier.turned();
         notifier.turned();
         assert_eq!(sent(&systemd), ["READY=1", "WATCHDOG=1"], "the second turn too soon for another");
-        notifier.last = Some(Instant::now() - EVERY);
+        notifier.last = Instant::now().checked_sub(EVERY);
         notifier.turned();
         assert_eq!(sent(&systemd), ["WATCHDOG=1"]);
         notifier.status(1, 2, false);

@@ -489,6 +489,7 @@ impl Rows for Backlights {
 }
 
 #[cfg(test)]
+#[allow(clippy::panic)]
 mod tests {
     use super::*;
     use crate::testkit::*;
@@ -587,7 +588,7 @@ mod tests {
             read(s, Reading::Status(Status { brightness: Some(brightness), ..Status::default() }));
             match s.levels().dimmed_effect() {
                 Some(Effect::Brightness { level, .. }) => level,
-                other => unreachable!("{other:?}"),
+                other => panic!("{other:?}"),
             }
         };
         assert_eq!(dimmed(&mut s, 60), 20, "a third");

@@ -214,6 +214,7 @@ impl Server {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     #[test]
@@ -223,7 +224,7 @@ mod tests {
         assert!(!activity.visible(start));
         assert_eq!(activity.deadline(start), None);
         activity.motion(start);
-        assert!(activity.visible(start + HIDE_AFTER - Duration::from_nanos(1)));
+        assert!(activity.visible((start + HIDE_AFTER).checked_sub(Duration::from_nanos(1)).unwrap()));
         assert_eq!(activity.deadline(start), Some(start + HIDE_AFTER));
         assert!(!activity.visible(start + HIDE_AFTER));
         assert_eq!(activity.deadline(start + HIDE_AFTER), None);

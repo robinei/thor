@@ -77,7 +77,7 @@ impl Dispatch2<XwaylandShellV1, Server> for Shell {
                 init.init(id, XwaylandSurface(surface));
             }
             xwayland_shell_v1::Request::Destroy => {}
-            _ => unreachable!(),
+            request => log::warn!("xwayland_shell: unknown request {request:?}"),
         }
     }
 }
@@ -101,7 +101,7 @@ impl Dispatch2<XwaylandSurfaceV1, Server> for XwaylandSurface {
                 compositor::with_states(&self.0, |states| states.cached_state.get::<Serial>().pending().0 = Some(serial));
             }
             xwayland_surface_v1::Request::Destroy => {}
-            _ => unreachable!(),
+            request => log::warn!("xwayland_surface: unknown request {request:?}"),
         }
     }
 }
