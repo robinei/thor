@@ -687,3 +687,98 @@ pub(crate) fn wait_closed(fd: &impl AsFd) {
     assert_eq!(rustix::event::poll(&mut fds, Some(&Timespec { tv_sec: 2, tv_nsec: 0 })).unwrap(), 1);
     assert!(fds[0].revents().intersects(PollFlags::HUP | PollFlags::ERR));
 }
+
+mod xwayland_shell {
+    //! Xwayland pairs an X11 window with its surface by a serial given through `xwayland_shell_v1`.
+    use super::*;
+    use smithay::reexports::wayland_protocols::xwayland::shell::v1::client::{xwayland_shell_v1, xwayland_surface_v1};
+    use smithay::reexports::wayland_server::Resource;
+
+    delegate_noop!(Client: ignore xwayland_shell_v1::XwaylandShellV1);
+    delegate_noop!(Client: ignore xwayland_surface_v1::XwaylandSurfaceV1);
+
+    /// What a client did, step by step: the main loop checks the server after each.
+    enum Step {
+        /// Bound the shell, made a surface, gave it serial 7 and not yet committed.
+        SerialSet,
+        Committed,
+        Destroyed,
+    }
+
+    #[test]
+    fn a_committed_serial_pairs_its_surface_once_and_only_xwayland_sees_the_shell() {
+        let mut display = Display::<Server>::new().unwrap();
+        let config = Config { top_size: (960, 540), bottom_size: (620, 540), touch_layout: Arc::default() };
+        let mut server = Server::new(State::new(Init::default()), config, display.handle(), false, || {}, |_| Process::default(), |_| {}).unwrap();
+        // Another client doesn't see it.
+        let (server_socket, client_socket) = UnixStream::pair().unwrap();
+        display.handle().insert_client(server_socket, Arc::new(ClientState::default())).unwrap();
+        let other = std::thread::spawn(move || {
+            let connection = Connection::from_socket(client_socket).unwrap();
+            let (globals, _queue) = registry_queue_init::<Client>(&connection).unwrap();
+            globals.contents().with_list(|list| list.iter().any(|global| global.interface == "xwayland_shell_v1"))
+        });
+        while !other.is_finished() {
+            display.dispatch_clients(&mut server).unwrap();
+            display.flush_clients().unwrap();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(!other.join().unwrap(), "only Xwayland sees xwayland_shell_v1");
+
+        let (server_socket, client_socket) = UnixStream::pair().unwrap();
+        display.handle().insert_client(server_socket, Arc::new(ClientState { xwayland: true, ..ClientState::default() })).unwrap();
+        let (report, reports) = mpsc::channel();
+        let (next, steps) = mpsc::channel::<()>();
+        let thread = std::thread::spawn(move || {
+            let connection = Connection::from_socket(client_socket).unwrap();
+            let (globals, mut queue) = registry_queue_init::<Client>(&connection).unwrap();
+            let qh = queue.handle();
+            let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
+            let shell: xwayland_shell_v1::XwaylandShellV1 = globals.bind(&qh, 1..=1, ()).unwrap();
+            let surface = compositor.create_surface(&qh, ());
+            let xwayland = shell.get_xwayland_surface(&surface, &qh, ());
+            xwayland.set_serial(7, 0);
+            let mut client = Client::default();
+            queue.roundtrip(&mut client).unwrap();
+            report.send(Step::SerialSet).unwrap();
+            steps.recv_timeout(Duration::from_secs(5)).unwrap();
+            surface.commit();
+            queue.roundtrip(&mut client).unwrap();
+            report.send(Step::Committed).unwrap();
+            steps.recv_timeout(Duration::from_secs(5)).unwrap();
+            // Another surface given a serial, then destroyed before its window was paired.
+            let gone = compositor.create_surface(&qh, ());
+            let gone_xwayland = shell.get_xwayland_surface(&gone, &qh, ());
+            gone_xwayland.set_serial(8, 0);
+            gone.commit();
+            gone_xwayland.destroy();
+            gone.destroy();
+            queue.roundtrip(&mut client).unwrap();
+            report.send(Step::Destroyed).unwrap();
+            steps.recv_timeout(Duration::from_secs(5)).unwrap();
+        });
+        let until = Instant::now() + Duration::from_secs(15);
+        let mut steps_seen = 0;
+        while !thread.is_finished() && Instant::now() < until {
+            display.dispatch_clients(&mut server).unwrap();
+            display.flush_clients().unwrap();
+            if let Ok(step) = reports.try_recv() {
+                match step {
+                    Step::SerialSet => assert!(crate::x11::shell::take(&mut server, 7).is_none(), "not paired before its commit"),
+                    Step::Committed => {
+                        assert!(crate::x11::shell::take(&mut server, 7).is_some_and(|surface| surface.is_alive()), "paired once committed");
+                        assert!(crate::x11::shell::take(&mut server, 7).is_none(), "and only once");
+                    }
+                    Step::Destroyed => {
+                        assert!(crate::x11::shell::take(&mut server, 8).is_none_or(|surface| !surface.is_alive()), "a destroyed surface isn't paired alive");
+                    }
+                }
+                steps_seen += 1;
+                next.send(()).unwrap();
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(steps_seen, 3);
+        thread.join().unwrap();
+    }
+}
