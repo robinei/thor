@@ -44,11 +44,16 @@ readings, ticks, windows, units ─▶ Event ───┤
 - **The system crate** has a thread per concern (the launcher and systemd, the pad, Wi-Fi,
   Bluetooth, sound, the store, files, ...). Each takes its own commands on a channel (`os::worker`; a
   thread that polls devices is also woken by an eventfd bell) and sends events back through a `Sink`. No
-  thread touches `State`.
+  thread touches `State`. A thread that panics is started again, at once and then after growing waits,
+  and the state sends it again what it had been sent (`crates/state/src/restart.rs`).
+- **The compositor's thread** runs the event loop, the state and the drawing. It does no blocking work:
+  files, process walks, D-Bus calls and waiting on the GPU belong to a thread. It draws only what
+  changed.
 - **The binary** (`clamshell/src`) starts the threads, builds `Handles`, and gives the compositor the
   closure that passes effects to it, so the UI and the system crate don't depend on each other. The
-  compositor carries out only what is its own: the screens' power and refresh rate, closing windows, keys
-  sent to the window in front, screenshots, and quitting.
+  compositor carries out only its own effects, `Effect::Compositor` (the screens' power and refresh rate,
+  closing windows, keys sent to the window in front, screenshots, quitting), and passes every other
+  effect on unchanged.
 - So the cycle is event → apply → effects → threads → events. A new feature adds events and effects to
   the state crate, a rule there, and the thread or view that carries them out.
 
@@ -84,9 +89,15 @@ updates that document in the same change, and:
 
 ## Code
 
-- No panics by construction: `unwrap`, `expect`, `panic!` and indexing are denied outside tests, and
-  `unsafe` is denied. Don't crash unless there's no way on, and log a failure handled by falling back
-  (`warn` when it shouldn't happen, `debug` when expected or repeating on a timer).
+- No panics by construction: `unwrap`, `expect`, `panic!`, `unreachable!`, `todo!`, `unimplemented!`,
+  indexing and unchecked time subtraction are denied outside tests. A panic that happens anyway is logged
+  at `error` by the panic hook; a system thread is started again, and a panic on the compositor's thread
+  ends ClamShell, which systemd starts again.
+- `unsafe` is denied. Where an FFI boundary needs it, it is allowed for that one block, with a `SAFETY:`
+  comment.
+- Don't crash unless there's no way on, and log every failure handled by falling back (`warn` when it
+  shouldn't happen, `debug` when expected or repeating on a timer). A failure that changes what the user
+  gets is never logged only at `debug`.
 - Device facts live in the device profile (`crates/device`, `docs/device-profiles.md`; detect what can be
   detected first); code reads facts and never checks which device it runs on.
 - Comments and docs are plain sentences, matter-of-fact; they say what and why, not what the code

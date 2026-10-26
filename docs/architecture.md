@@ -115,7 +115,9 @@ are session rules. The detailed transitions and their tests are in `docs/state-m
 ## The system threads
 
 Each thread takes its own commands on a channel (`os::worker`); a thread that waits on devices is also
-woken by an eventfd. Services are reached over D-Bus (systemd, logind, timedated, UDisks2, NetworkManager,
+woken by an eventfd. A thread that panics runs again on the same channel, at once and then after waits
+that double up to 5 s, and the state is told (`Event::Restarted`) so it sends again what the thread
+held. Services are reached over D-Bus (systemd, logind, timedated, UDisks2, NetworkManager,
 BlueZ, UPower), PipeWire through `pw-dump` and `wpctl`, the controller through evdev and uinput. Launches
 are transient services of the user manager (`systemd-run --user`), each its own unit with its output in
 the journal as the unit's, so what runs is systemd's to say: a launch is running while its unit is
@@ -123,8 +125,15 @@ listed, and ClamShell can be restarted without losing track.
 
 ## Rules that hold everywhere
 
-- **No panics by construction:** `unwrap`, `expect`, `panic!`, indexing and `unsafe` are denied outside
-  tests.
+- **No panics by construction:** `unwrap`, `expect`, `panic!`, `unreachable!`, `todo!`,
+  `unimplemented!`, indexing and unchecked time subtraction are denied outside tests. A panic that happens
+  anyway is logged at `error`; a system thread is started again and sent again what it lost
+  (`state/src/restart.rs`); a panic on the compositor's thread ends ClamShell, which systemd starts again.
+- **`unsafe` denied:** allowed only for a block at an FFI boundary, with a `SAFETY:` comment.
+- **The compositor's thread doesn't block:** files, process walks, D-Bus calls and waiting on the GPU
+  belong to a thread; drawing is bounded by what changed.
+- **One place per effect:** the compositor carries out `Effect::Compositor` and passes every other effect
+  on unchanged to the system's dispatcher.
 - **No silent failures:** a failure handled by falling back is logged, at `warn` or, when expected or
   repeating, at `debug`.
 - **No allocation on the hot paths:** applying a steady-state event and drawing a frame allocate nothing,
