@@ -146,6 +146,10 @@ impl Server {
                             }
                             if event.button_code() == 0x110 {
                                 self.core.press(Source::Mouse, screen, position, event.time().millis());
+                            } else if event.button_code() == 0x111 && screen == Screen::Bottom {
+                                // A right click on the second screen pastes into the field open there, as
+                                // Ctrl+V does.
+                                self.core.handle(StateEvent::Paste);
                             }
                         }
                     }

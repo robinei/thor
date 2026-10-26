@@ -84,7 +84,8 @@ pub fn run(
                         let whole = Rectangle::from_size((f64::from(server.size.0), f64::from(server.size.1)).into());
                         server.input(event, crate::input::Host { absolute_cursor: true, touch_frames: false }, |_| (whole, Transform::Normal));
                     }
-                    WinitEvent::CloseRequested => server.exit = true,
+                    // Through the state's quit, which saves where shelf and the second screen are.
+                    WinitEvent::CloseRequested => server.core.handle(clamshell_state::Event::Quit),
                     WinitEvent::Redraw => {
                         // The host tells which monitor shows the window only after it is shown, so ask
                         // at each frame until it does, and again after a resize.
