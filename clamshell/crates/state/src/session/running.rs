@@ -1277,6 +1277,12 @@ mod tests {
         tap(&mut s, Id::Dock(DockId::Entry(0)));
         assert!(s.bottom().shows_windows(s.session()), "the dock tile's tap: the same");
         assert!(s.session().shelf_in_front());
+        // The bottom screen turned off by hand comes on again for them.
+        s.applied(Event::Device(crate::device::buttons::DeviceKey::BottomPower));
+        assert!(s.bottom().off());
+        s.applied(Event::Device(crate::device::buttons::DeviceKey::BottomView));
+        tap(&mut s, Id::Dock(DockId::Entry(0)));
+        assert!(!s.bottom().off() && s.bottom().shows_windows(s.session()), "on again");
         // With a window of it on the main screen, that is shown.
         let windows = vec![
             Window { unit: zelda.unit(), down: true, ..win(3, "zelda3", &zelda.workspace(), false) },
