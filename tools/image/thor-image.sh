@@ -197,10 +197,6 @@ if [ "$TARGET" = thor ]; then
 else
     say "boot: systemd-boot (the removable path, which UEFI starts without its variables)"
     arch-chroot "$ROOT" bootctl install --esp-path=/boot --no-variables --graceful > /dev/null
-    # No GPU acceleration in QEMU here: sway draws with the pixman renderer (uwsm's environment).
-    mkdir -p "$ROOT/home/$USER_NAME/.config/uwsm"
-    echo "export WLR_RENDERER=pixman" > "$ROOT/home/$USER_NAME/.config/uwsm/env"
-    arch-chroot "$ROOT" chown -R "$USER_NAME:$USER_NAME" "/home/$USER_NAME/.config"
     ls -l "$ROOT/boot" "$ROOT/boot/EFI/BOOT"
 fi
 

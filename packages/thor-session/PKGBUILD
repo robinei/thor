@@ -1,23 +1,22 @@
-# The AYN Thor's session around ClamShell (root/, as installed, plus ClamShell's sway config from clamshell/):
-# the first console's autologin into sway through uwsm (thor-session), sway's config for the Thor
-# (/usr/share/thor/sway), ClamShell, mako and udiskie as user services of the session, the home's starting
-# files where missing (thor-home: the starter library, the dock's pins, mpv's and RetroArch's configs),
-# foot's and mako's configs, Steam's starter and setup, the Maintenance app. Built from the checkout this
+# The AYN Thor's session around ClamShell (root/, as installed): the first console's autologin into
+# ClamShell's compositor through uwsm (thor-session), udiskie as a user service of the session, the home's
+# starting files where missing (thor-home: the starter library, the dock's pins, mpv's and RetroArch's
+# configs), foot's config, Steam's starter and setup, the Maintenance app. Built from the checkout this
 # PKGBUILD is in.
 pkgname=thor-session
 pkgver=r570.5759033
 pkgrel=1
-pkgdesc="The AYN Thor's session: autologin into sway and ClamShell, their configs, Steam's starter"
+pkgdesc="The AYN Thor's session: autologin into ClamShell, its configs, Steam's starter"
 arch=(any)
 url=https://github.com/robinei/thor
 license=('MIT OR Apache-2.0')
 # Everything the session and ClamShell use (ClamShell's own list of programs: crates/system's
 # library::NEEDED): the network, Bluetooth and the battery (NetworkManager, BlueZ, UPower), sound
 # (PipeWire, ALSA's default device through it too), X programs (Xwayland), removable storage (udisks2, udiskie; exFAT's tools), archives browsed
-# (ratarmount), screenshots (grim), opening files (xdg-utils, imv, zathura); the starter library's players
+# (ratarmount), opening files (xdg-utils, imv, zathura); the starter library's players
 # (RetroArch with its cores and XMB's assets, mpv; ffmpeg's ffprobe for videos' lengths).
-depends=(clamshell thor-system sway uwsm mako foot udiskie xorg-xwayland mesa noto-fonts python python-pillow curl unzip
-         networkmanager bluez upower pipewire pipewire-alsa pipewire-pulse wireplumber udisks2 exfatprogs ratarmount grim xdg-utils
+depends=(clamshell thor-system uwsm foot udiskie xorg-xwayland mesa noto-fonts python python-pillow curl unzip
+         networkmanager bluez upower pipewire pipewire-alsa pipewire-pulse wireplumber udisks2 exfatprogs ratarmount xdg-utils
          imv zathura zathura-pdf-mupdf mpv ffmpeg
          retroarch retroarch-assets-xmb retroarch-assets-glui retroarch-assets-ozone libretro-core-info
          libretro-nestopia libretro-snes9x libretro-mupen64plus-next libretro-gambatte libretro-mgba libretro-melonds
@@ -40,7 +39,6 @@ package() {
     repo=$(_repo)
     # (Owned by root in the package, not by whoever checked it out.)
     cp -a --no-preserve=ownership "$startdir/root/." "$pkgdir/"
-    install -Dm644 "$repo/clamshell/sway/clamshell.conf" "$share/sway/clamshell.conf"
     # The maintenance pass's playbook (Claude Code's /maintain, in thor-maintain's folder).
     install -Dm644 "$repo/.claude/commands/maintain.md" "$share/maintenance/.claude/commands/maintain.md"
     # (Ours: MIT or Apache-2.0, either.)

@@ -8,7 +8,7 @@ After=graphical-session.target
 [Service]
 ExecStart=/usr/bin/udiskie --automount --no-notify --no-tray --no-file-manager
 Restart=on-failure
-# (The session's own, as ClamShell and mako are: not offered to be ended.)
+# (The session's own, as ClamShell is: not offered to be ended.)
 Slice=session-graphical.slice
 
 [Install]

@@ -1,4 +1,0 @@
-#!/bin/sh
-# sway's output and touch mapping, from the same profile ClamShell uses in its session.
-set -eu
-clamshell device outputs > "$XDG_RUNTIME_DIR/thor-outputs.conf"
