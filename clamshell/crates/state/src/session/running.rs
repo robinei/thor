@@ -1,8 +1,8 @@
-//! Running entries: what was launched from shelf or the dock, games and apps alike. Each launch is a scope
+//! Running entries: what was launched from shelf or the dock, games and apps alike. Each launch is a unit
 //! of its own in the entry's slice, with its windows in the entry's group (see [`Instance`]). An entry
-//! may run more than once; another launch is another scope and another tab.
+//! may run more than once; another launch is another unit and another tab.
 //!
-//! Some entries run in another program's processes, not in a scope of ours, and are known by their
+//! Some entries run in another program's processes, not in a unit of ours, and are known by their
 //! windows' app id ([`app_id_of`]). These are Steam's games (`steam_app_<id>`, in Steam's scope) and the
 //! entries of a runner that hands its apps over, such as Waydroid's, whose app id is their desktop file's
 //! name and which run in the Waydroid session. Their windows are put in their entry's group as they
@@ -79,7 +79,7 @@ pub(crate) const HANDOFF: u64 = 15;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Running {
     pub id: Arc<str>,
-    /// Its key, which names its group and its launches' scopes and slice.
+    /// Its key, which names its group and its launches' units and slice.
     pub key: String,
     pub origin: Origin,
     /// The app id its windows have, if it runs in another program's processes (see [`app_id_of`]).
@@ -135,7 +135,7 @@ impl Running {
         self.pid().is_some_and(|pid| w.pids.contains(&pid))
     }
 
-    /// Whether its windows are found other than by its scope, by app id or by process, and so are moved
+    /// Whether its windows are found other than by its unit, by app id or by process, and so are moved
     /// to its group wherever they open.
     pub fn outside(&self) -> bool {
         self.app_id.is_some() || self.pid().is_some()
@@ -162,14 +162,14 @@ pub struct Launching {
     pub told: Option<crate::settings::Resolution>,
 }
 
-/// How long a launch waits for an answer from the launcher, its scope or its failure, in seconds, before
+/// How long a launch waits for an answer from the launcher, its unit or its failure, in seconds, before
 /// it is given up as not started.
 pub(crate) const LAUNCH_WAIT: u64 = 30;
 
 /// The app id an entry's windows have when it runs in another program's processes, which makes them its
 /// windows wherever they open. For Steam's games it is `steam_app_<id>`. For an entry whose runner hands
 /// its apps over, such as Waydroid's, it is the desktop file's name. It is none for the rest, which run in
-/// scopes of ours.
+/// units of ours.
 pub(crate) fn app_id_of(g: &Entry) -> Option<Arc<str>> {
     match &g.launch {
         Launch::Steam { appid } => Some(format!("{STEAM_APP_PREFIX}{appid}").into()),
@@ -195,17 +195,17 @@ fn handed_over_app(g: &Entry) -> Option<&str> {
 }
 
 impl Session {
-    /// Runs after systemd's list of our scopes changed, and after any event. A launch with no answer by
-    /// [`LAUNCH_WAIT`] is given up, with a notice that it didn't start. An entry with scopes listed that
-    /// isn't known to run, because an earlier ClamShell started it, runs from when its first scope
-    /// started, by the time in the scope's name. One the library doesn't have, because the earlier
+    /// Runs after systemd's list of our units changed, and after any event. A launch with no answer by
+    /// [`LAUNCH_WAIT`] is given up, with a notice that it didn't start. An entry with units listed that
+    /// isn't known to run, because an earlier ClamShell started it, runs from when its first unit
+    /// started, by the time in the unit's name. One the library doesn't have, because the earlier
     /// ClamShell found it, runs as found again by its windows or tray icon ([`found_in_scope`]). An entry
     /// found by its tray icon whose process is now in a scope of ours runs as a launch. Then the entries
     /// whose launches have ended are handled (see [`Session::follow_ours`]). Returns whether a launch of
     /// ours started, which may let a second screen tapped awake go dark again.
     pub(crate) fn follow_units(&mut self, clock: &Clock, library: &Library, notice: &mut NoticeSlot, plays: &mut Vec<Play>) -> bool {
         let (now, unix) = (clock.mono(), clock.unix());
-        // The entries of launches whose scope is there run as launches of ours, including one that was
+        // The entries of launches whose unit is there run as launches of ours, including one that was
         // handed over to its windows and launched again.
         let started: Vec<Launching> = {
             let units = &self.units;
@@ -238,7 +238,7 @@ impl Session {
         let units = &self.units;
         for r in self.running.iter_mut().filter(|r| r.found()) {
             if units.iter().any(|u| u.key == r.key.as_str()) {
-                // Its windows are now its scope's, not every window of that app id or process. That would
+                // Its windows are now its unit's, not every window of that app id or process. That would
                 // tie another instance of the program, started later, to it.
                 r.origin = Origin::Ours;
                 r.app_id = None;
@@ -246,7 +246,7 @@ impl Session {
         }
         for unit in units {
             let key = unit.key.as_str();
-            // A launch of the entry waiting doesn't hold it off: this scope is another launch's, such as
+            // A launch of the entry waiting doesn't hold it off: this unit is another launch's, such as
             // one given up that started late, and the entry runs.
             if self.running.iter().any(|r| r.key == key) {
                 continue;
@@ -255,7 +255,7 @@ impl Session {
                 Instance { key: k, secs, .. } if k == key => Some(*secs),
                 _ => None,
             });
-            // Its scopes are named by the wall clock.
+            // Its units are named by the wall clock.
             let start = first.min().map_or(now, |secs| now.saturating_sub(unix.saturating_sub(secs)));
             if let Some(g) = library.entries.iter().find(|g| g.key == key) {
                 self.running.push(Running { app_id: app_id_of(g), ..Running::of(g, Origin::Ours, start) });
@@ -272,9 +272,9 @@ impl Session {
         any_started
     }
 
-    /// Our launches' entries run while systemd lists a scope of theirs. A Steam game's scope holds its
+    /// Our launches' entries run while systemd lists a unit of theirs. A Steam game's unit holds its
     /// follower between Steam's setup and the game, and an entry started by an earlier ClamShell has its
-    /// scopes listed too. Once there are none, an entry known by its app id whose windows are open or may
+    /// units listed too. Once there are none, an entry known by its app id whose windows are open or may
     /// still come, or a browsed file's entry soon after it started, runs on by its windows (see
     /// [`Origin::Windows`]). The rest have ended, and their plays are added to `plays`.
     fn follow_ours(&mut self, now: u64, library: &Library, notice: &mut NoticeSlot, plays: &mut Vec<Play>) {
@@ -315,7 +315,7 @@ impl Session {
         plays.extend(ended);
     }
 
-    /// A launch that never started, its scope gone before it was seen. A browsed file's launch, or one
+    /// A launch that never started, its unit gone before it was seen. A browsed file's launch, or one
     /// known by its app id, waits for its window (see [`Origin::Windows`]). A failure of no launch waiting
     /// is a late answer to one already given up ([`LAUNCH_WAIT`]), which said so then, and is ignored.
     pub(crate) fn launch_failed(&mut self, entry: Arc<str>, library: &Library, clock: &Clock, notice: &mut NoticeSlot) {
@@ -339,7 +339,7 @@ impl Session {
     }
 
     /// Starts entries that were started elsewhere, found by their windows' app ids. A window's app id says
-    /// whose it is before its scope does, since a game Steam started is in Steam's scope. A Steam game is
+    /// whose it is before its unit does, since a game Steam started is in Steam's scope. A Steam game is
     /// to be launched, and the launcher finds it running: its id is added to `steam`. The rest run by
     /// their windows, and the last is shown. Returns whether one of those runs now, which may let a second
     /// screen tapped awake go dark again.
@@ -461,7 +461,7 @@ impl Session {
             match r.origin {
                 Origin::Found { .. } => r.tray.as_ref().is_some_and(|k| icons.iter().any(|t| t.key == *k)) || has,
                 Origin::Windows { since, until } => {
-                    // An entry with a scope listed has a launch of its own running.
+                    // An entry with a unit listed has a launch of its own running.
                     let launched = units.iter().any(|u| u.key == r.key.as_str());
                     let runs = launched || if r.seen { has } else { now <= until };
                     if !runs && r.seen {

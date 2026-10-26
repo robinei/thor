@@ -1,6 +1,6 @@
 //! The randomized event-sequence test. Seeded runs of a few thousand events each, drawn to be valid for
 //! the state as it is (ids that exist, taps on what is shown, results only after their requests), with a
-//! small model of the outside world (the compositor's windows, systemd's scopes, the system threads'
+//! small model of the outside world (the compositor's windows, systemd's units, the system threads'
 //! answers) that follows the effects. After every event the invariants of `docs/state-machines.md`
 //! ("Invariants") are checked; a failure prints the seed, the event's number and the events before it.
 //!
@@ -396,7 +396,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             let list = *rng.pick(&ListId::ALL)?;
             if rng.one_in(2) { ListEvent::Scroll(list, rng.below(9) as f32 - 4.0).into() } else { ListEvent::Visible(list, 2.0 + rng.below(6) as f32).into() }
         }
-        // A pending launch answered: its scope appears, or the launcher says it failed.
+        // A pending launch answered: its unit appears, or the launcher says it failed.
         46..=52 => {
             let i = rng.below(w.launches.len());
             if w.launches.is_empty() {
@@ -446,7 +446,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
         }
         // A window is tapped, or asks to be shown.
         65..=66 => WindowEvent::Activate(rng.pick(&w.windows)?.id).into(),
-        // A scope ends, by itself or as asked; its windows go with it most times.
+        // A unit ends, by itself or as asked; its windows go with it most times.
         67..=69 => {
             let key = match w.ending.pop() {
                 Some(k) if !rng.one_in(4) => k,
@@ -796,8 +796,8 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
     for (i, r) in running.iter().enumerate() {
         ensure!(!running.iter().skip(i + 1).any(|o| o.id == r.id), "4: {} runs twice", r.id);
         match r.origin {
-            Origin::Ours => ensure!(session.has_units(&r.key), "4: {} runs as ours without a scope", r.id),
-            Origin::Found { .. } => ensure!(!session.has_units(&r.key), "4: {} found with its scope listed", r.id),
+            Origin::Ours => ensure!(session.has_units(&r.key), "4: {} runs as ours without a unit", r.id),
+            Origin::Found { .. } => ensure!(!session.has_units(&r.key), "4: {} found with its unit listed", r.id),
             Origin::Windows { .. } => {}
         }
         if session.paused(&r.id) {
@@ -810,7 +810,7 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
     let launching = session.launching();
     for (i, l) in launching.iter().enumerate() {
         ensure!(!launching.iter().skip(i + 1).any(|o| o.entry == l.entry), "4: {} launching twice", l.entry);
-        ensure!(!session.units().contains(&l.instance), "4: {} launching with its scope listed", l.entry);
+        ensure!(!session.units().contains(&l.instance), "4: {} launching with its unit listed", l.entry);
     }
     if let Some(p) = session.program() {
         ensure!(session.running(p).is_some(), "4: program {p} doesn't run");
@@ -925,7 +925,7 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
             _ => {}
         }
     }
-    // A slice with no scope listed is gone; one started again starts thawed.
+    // A slice with no unit listed is gone; one started again starts thawed.
     let keys: Vec<String> = s.session().units().iter().map(Instance::slice).collect();
     sent.frozen.retain(|slice, _| keys.contains(slice));
     Ok(())

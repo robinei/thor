@@ -1,5 +1,5 @@
 //! `State::apply` allocates nothing for the events that come all the time, once the state is warm: ticks,
-//! readings, the windows and scopes listed again, presses and the pad's focus. The counts are printed
+//! readings, the windows and units listed again, presses and the pad's focus. The counts are printed
 //! (`cargo test -p clamshell-state --test apply_alloc -- --nocapture`), and with CLAMSHELL_ALLOC_TRACE set,
 //! where each allocation came from.
 #![allow(clippy::unwrap_used, unsafe_code)]

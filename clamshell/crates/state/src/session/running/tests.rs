@@ -64,7 +64,7 @@ fn an_entry_runs_its_plays_count_and_it_may_run_twice() {
     // Another launch, as from the dock's Open another, runs it twice until both end.
     assert!(launches(&launch_now(&mut s, &first), &first));
     crate::testkit::start(&mut s, &first);
-    // The first launch's scope is gone and the second's is listed.
+    // The first launch's unit is gone and the second's is listed.
     let second: Vec<Instance> = s.session().units().iter().skip(1).cloned().collect();
     s.applied(Event::Units(second));
     assert!(s.session().running(&first).is_some(), "the other still runs");
@@ -149,7 +149,7 @@ fn a_launch_never_answered_is_given_up() {
 
 /// A launch given up that starts after all runs as a launch of ours, though another launch of the
 /// entry waits meanwhile; until then its windows would be taken for a program found by them, with its
-/// scope listed.
+/// unit listed.
 #[test]
 fn a_launch_given_up_that_starts_late_runs_beside_the_one_waiting() {
     let mut s = state();
@@ -166,7 +166,7 @@ fn a_launch_given_up_that_starts_late_runs_beside_the_one_waiting() {
     let second = instance(&launch_now(&mut s, "desktop:foot")).unwrap();
     s.applied(Event::Units(vec![first.clone()]));
     let running = s.session().running("desktop:foot").map(|r| r.origin.clone());
-    assert_eq!(running, Some(Origin::Ours), "runs by the scope that started late");
+    assert_eq!(running, Some(Origin::Ours), "runs by the unit that started late");
     let fx = s.observed(vec![win_of(5, "foot", &first)]);
     assert!(!fx.iter().any(|e| matches!(e, Effect::Adopt { .. })), "its window is its own: {fx:?}");
     assert!(s.session().is_launching("desktop:foot"));
@@ -206,7 +206,7 @@ fn a_game_steam_started_is_followed_as_a_launch_beside_the_others() {
     let windows = vec![win_of(1, "zelda3", &zelda), win(7, "steam_app_620")];
     let fx = s.observed(windows.clone());
     // Found by its window, it is launched; the launcher finds it running and moves it into the
-    // launch's scope. Its window is placed synchronously before the scope is listed.
+    // launch's unit. Its window is placed synchronously before the unit is listed.
     assert!(launches(&fx, "ff6"), "{fx:?}");
     let ff6 = Group::entry(&key("ff6"));
     assert_eq!(s.session().windows().iter().find(|w| w.id == 7).and_then(|w| w.group.clone()), Some(ff6.clone()));
@@ -322,10 +322,10 @@ fn a_failed_launch_known_by_app_id_waits_for_its_window() {
     assert!(!fx.iter().any(|e| matches!(e, Effect::RecordPlay { .. })), "{fx:?}");
 }
 
-/// A Steam game whose launch's scope ends while its window is open, long after it started, runs on by
+/// A Steam game whose launch's unit ends while its window is open, long after it started, runs on by
 /// its window. Its play, recorded when the window closes, is from its launch.
 #[test]
-fn a_game_known_by_app_id_runs_on_by_its_windows_after_its_scope() {
+fn a_game_known_by_app_id_runs_on_by_its_windows_after_its_unit() {
     let mut s = steam_ff6();
     s.ui_up();
     s.applied(Event::tick(1000));
@@ -416,7 +416,7 @@ fn a_file_handed_to_another_program_runs_by_its_window() {
         _ => None,
     });
     let ws = ws.unwrap();
-    // xdg-open ended before its scope was seen; the app's window comes up with no group.
+    // xdg-open ended before its unit was seen; the app's window comes up with no group.
     s.applied(LaunchEvent::LaunchFailed("browse:Home/notes.md".into()).into());
     assert!(s.session().running("browse:Home/notes.md").is_some(), "waits for its window");
     // The demo's Terminal has foot's desktop file.
@@ -502,7 +502,7 @@ fn an_app_handed_over_runs_by_its_window_found_by_its_app_id() {
 }
 
 #[test]
-fn entries_started_before_clamshell_are_found_by_their_scopes() {
+fn entries_started_before_clamshell_are_found_by_their_units() {
     let mut s = state();
     s.applied(Event::tick(1000));
     let foot = Instance { key: key("desktop:foot"), secs: 400, n: 0 };
@@ -513,12 +513,12 @@ fn entries_started_before_clamshell_are_found_by_their_scopes() {
     assert_eq!(s.session().top_window().map(|w| w.id), Some(4), "on the dock, shown");
     s.applied(Event::tick(1300));
     let fx = s.applied(Event::Units(vec![]));
-    assert!(s.session().running("desktop:foot").is_none(), "its scopes gone: ended");
+    assert!(s.session().running("desktop:foot").is_none(), "its units gone: ended");
     assert!(fx.contains(&Effect::RecordPlay { entry: "desktop:foot".into(), start: 400, duration: 900 }), "played since its launch: {fx:?}");
 }
 
 #[test]
-fn a_launch_runs_while_a_scope_of_it_is_listed() {
+fn a_launch_runs_while_a_unit_of_it_is_listed() {
     let mut s = state();
     s.applied(Event::tick(100));
     let fx = tap(&mut s, entry("zelda-lttp"));
@@ -528,8 +528,8 @@ fn a_launch_runs_while_a_scope_of_it_is_listed() {
         _ => None,
     });
     let zelda = zelda.unwrap();
-    assert!(s.session().running("zelda-lttp").is_none(), "asked for, its scope not there yet: starting");
-    // While its scope is listed it runs. Once it is no longer listed, it has ended and its play is
+    assert!(s.session().running("zelda-lttp").is_none(), "asked for, its unit not there yet: starting");
+    // While its unit is listed it runs. Once it is no longer listed, it has ended and its play is
     // recorded once.
     s.applied(Event::Units(vec![zelda.clone()]));
     assert!(s.session().running("zelda-lttp").is_some());

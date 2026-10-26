@@ -1,5 +1,5 @@
 //! What comes in. Everything that changes the state is an [`Event`]. Events come from the UI (input and
-//! layout) or from a system thread (system readings, the compositor's windows, systemd's scopes, games
+//! layout) or from a system thread (system readings, the compositor's windows, systemd's units, games
 //! starting and ending), and are grouped by subject.
 
 use crate::bottom::touch::Pointing;
@@ -54,7 +54,7 @@ pub enum Event {
     Window(WindowEvent),
     /// Changes from one backend dispatch, settled together so a replacement doesn't briefly end an app.
     WindowBatch(Vec<WindowEvent>),
-    /// Our running scopes, after any change. These are dock app instances and games started by shelf.
+    /// Our running units, after any change. These are dock app instances and games started by shelf.
     Units(Vec<Instance>),
     /// The keys of our slices found frozen at start, sent after the first [`Event::Units`]. They are
     /// treated as suspended (see [`crate::session::background`]).
@@ -205,7 +205,7 @@ pub enum Reading {
     Screens(Box<crate::session::presentation::Screens>),
     /// Where the pixels of the plotted window's picture are (see [`crate::State::histogram_window`]).
     Histogram(Box<crate::colour::Histogram>),
-    /// The compositor told a game's process, known by its scope or Steam's app id, that its screen has this
+    /// The compositor told a game's process, known by its unit or Steam's app id, that its screen has this
     /// resolution, when it connected (see [`crate::State::process_game`]).
     Told { unit: Option<String>, steam_app: Option<u32>, resolution: crate::settings::Resolution },
     /// The sizes of the modes Xwayland offers X11 clients, read when it starts: a game switching to one
@@ -279,8 +279,8 @@ pub enum ShelfEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LaunchEvent {
-    /// The entry couldn't be started because its scope never appeared. Whether a launch is running, and
-    /// when it ends, comes from systemd's list of our scopes ([`crate::Event::Units`]).
+    /// The entry couldn't be started because its unit never appeared. Whether a launch is running, and
+    /// when it ends, comes from systemd's list of our units ([`crate::Event::Units`]).
     LaunchFailed(Arc<str>),
     /// A video played by mpv ended, with where mpv left it. None means it played to the end (see
     /// [`crate::Effect::ReadPosition`]).

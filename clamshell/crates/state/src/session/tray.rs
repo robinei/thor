@@ -1,6 +1,6 @@
 //! Programs' tray icons (StatusNotifierItem, over D-Bus) and their menus, as the system reads them.
 //!
-//! An icon belongs to the running entry whose scope its process is in, if ClamShell started it. Otherwise,
+//! An icon belongs to the running entry whose unit its process is in, if ClamShell started it. Otherwise,
 //! in the device's own session, the program runs as an entry found by its icon ([`Origin::Found`]). That is
 //! the library's desktop entry named like the icon's id, such as `desktop:steam` for Steam's `steam`, or else
 //! an entry of its own (`tray:<id>`) with the icon as its picture. In a desktop session the program is left
@@ -37,7 +37,7 @@ pub struct TrayItem {
     /// Its own id, such as `steam`.
     pub id: String,
     pub title: String,
-    /// Its process, and that process's systemd unit, which is `clamshell-run-…scope` if it is ours.
+    /// Its process, and that process's systemd unit, which is `clamshell-run-…` if it is ours.
     pub pid: Option<u32>,
     pub unit: Option<String>,
     /// Its icon's image file, if one was found.
@@ -79,7 +79,7 @@ impl Session {
     }
 
     /// Makes entries found by tray icons: one for each icon of a program not started by ClamShell, whose
-    /// process is in no scope of ours, unless the icon already has one. This happens only in the device's
+    /// process is in no unit of ours, unless the icon already has one. This happens only in the device's
     /// session. In a desktop's session the programs are the desktop's, and ClamShell is a guest there that
     /// manages only what it started.
     fn find_by_tray(&mut self, clock: &Clock, library: &Library, out: &mut Out) {
@@ -112,7 +112,7 @@ impl Session {
         self.start_found(new, &[], clock, out);
     }
 
-    /// The tray icon of a running entry, if it has one: the icon of its scope's process, or the one it was
+    /// The tray icon of a running entry, if it has one: the icon of its unit's process, or the one it was
     /// found by.
     pub fn tray_of(&self, entry: &str) -> Option<&TrayItem> {
         let r = self.running(entry)?;
@@ -174,7 +174,7 @@ mod tests {
     fn a_program_with_a_tray_icon_runs_with_its_windows_in_its_group() {
         let mut s = started(crate::Init { device_session: true, ..init() });
         tap(&mut s, Id::Tab(crate::Tab::Dock));
-        // The icon of a running entry, whose process is in the entry's scope, gives that entry its menu.
+        // The icon of a running entry, whose process is in the entry's unit, gives that entry its menu.
         let zelda = launch(&mut s, "zelda-lttp");
         let zelda_icon = item(":1.5/a", "zelda3", Some(zelda.unit().as_str()));
         s.applied(Event::Tray(vec![zelda_icon.clone()]));

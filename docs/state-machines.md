@@ -25,7 +25,7 @@ belong to a bottom client or ClamShell's UI (`None`).
 `Opened` and `Changed` carry the window's facts (`WindowFacts`: id, app id, title, parent, limits,
 role, colour, unit and processes), never its placement; the session's record of a window is those facts
 with its group and screen. On `Opened` the state resolves the home from a known parent, library app id,
-owner or launch scope, and decides whether the window comes in front (`Session::opening_focus`, below),
+owner or launch unit, and decides whether the window comes in front (`Session::opening_focus`, below),
 before returning. A known parent's bottom placement is inherited. `Changed` updates only identity (app id, unit, process ancestry and parent);
 it cannot undo placement or change title. `Title` is independent. The compositor sends each change as it
 happens (Opened, Closed, Changed, Title, KeyboardFocus, and Activate once a token is checked); a later
@@ -38,7 +38,7 @@ window: it is in front when no top window is shown, and ShowShelf deselects the 
 
 | From | Event / condition | To | Effects | Test |
 |---|---|---|---|---|
-| absent | Opened | present, home assigned synchronously, in front if its opening focus says so | Move before exact Focus when needed | windows `lifecycle_open_and_close_follow_launch_ownership`, `a_window_opens_in_front_as_its_opening_focus_says`, `a_scope_window_and_its_rule_are_placed_before_the_scope_is_listed` |
+| absent | Opened | present, home assigned synchronously, in front if its opening focus says so | Move before exact Focus when needed | windows `lifecycle_open_and_close_follow_launch_ownership`, `a_window_opens_in_front_as_its_opening_focus_says`, `a_launchs_window_and_its_rule_are_placed_before_its_unit_is_listed` |
 | present | duplicate Opened | unchanged | — | windows `lifecycle_messages_keep_one_window_and_ignore_late_messages` |
 | present | Title | updated title | matching bottom rule sends Down once | windows `lifecycle_title_applies_a_bottom_rule_once` |
 | present | Changed | updated identity, same place and selection | ownership rules may assign its home | windows `stale_identity_facts_cannot_undo_a_placement` |
@@ -91,21 +91,21 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Idle | Play of an id not in the library | Idle | nothing | same |
 | Idle | Play, OpenAnother, autostart, a Steam game found by app id | Launching | runner resumed if paused; `Save(Resume)`; `Launch`; `front_launch` if in front; Starting notice (from Play) | tests `a_launch_says_it_is_starting`; background `a_runner_paused_together…` |
 | Launching | the same launched again | Launching | nothing | running `an_entry_runs_its_plays_count_…` |
-| Launching | `Units` lists its instance | Running(Ours) | second screen may go dark again | running `a_launch_runs_while_a_scope_…`; tests `…start_and_end_come_to_the_same_in_any_order` |
+| Launching | `Units` lists its instance | Running(Ours) | second screen may go dark again | running `a_launch_runs_while_a_unit_…`; tests `…start_and_end_come_to_the_same_in_any_order` |
 | Launching | LaunchFailed, browsed file or app-id launch | Running(Windows, unseen, until now+15 s) | — | running `a_file_handed_to_another_program_…` (browsed); `a_failed_launch_known_by_app_id_waits_for_its_window` |
 | Launching | LaunchFailed otherwise | Idle | NotStarted notice | tests `a_launch_that_didnt_start_says_so` |
 | Launching | no answer from the launcher in 30 s | Idle | NotStarted notice; `front_launch` cleared | running `a_launch_never_answered_is_given_up` |
 | Idle | LaunchFailed of no launch waiting (a late answer to one given up) | Idle | nothing | running `a_launch_failure_after_it_was_given_up_says_nothing` |
-| Idle | `Units` lists a scope of a library entry (an earlier ClamShell) | Running(Ours) | — | running `entries_started_before_clamshell_…` |
+| Idle | `Units` lists a unit of a library entry (an earlier ClamShell) | Running(Ours) | — | running `entries_started_before_clamshell_…` |
 | Idle | `Units` lists a scope of a key not in the library, a window or tray icon in it | Running(Ours), as found, named by the name whose key is the scope's (until a window or icon comes, nothing) | — | found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
 | Idle | a window with a library app id (not Steam) | Running(Windows, seen) | Focus once in its group | running `an_app_handed_over_…` |
 | Idle | a Steam game's window by app id | Launching, launched before the windows are followed, so its window isn't found as a program | as a launch | running `a_game_steam_started_is_followed…`; tests `a_steam_game_found_by_its_window_is_launched_not_found_as_a_program` |
 | Idle | a stray window of no entry | Running(Found) | Move, Focus if focused, FindIcon, Adopt (own pid) | found `a_window_of_no_entry_…` and its siblings |
-| Idle | a tray icon not in our scope (device session) | Running(Found{tray}) | Move/Focus, Adopt | tray `a_program_with_a_tray_icon_runs…` |
+| Idle | a tray icon not in a unit of ours (device session) | Running(Found{tray}) | Move/Focus, Adopt | tray `a_program_with_a_tray_icon_runs…` |
 | Running(Found) | its scope listed | Running(Ours) (pid dropped, tray key kept) | — | tray test; tray `an_adopted_tray_program_keeps_its_menu` |
 | Running(Found) | icon gone and no windows | Idle, no play recorded | — | tray test |
-| Running(Ours) | scope gone, app id and windows (or just started) | Running(Windows) since its launch | — | running `a_game_known_by_app_id_runs_on_by_its_windows_after_its_scope` |
-| Running(Ours) | scope gone otherwise | Idle | `RecordPlay`; NotStarted if it never had a window or tray icon and isn't quitting | tests `a_launch_that_ends_without_a_window_didnt_start`; tray `a_program_with_only_a_tray_icon_started` |
+| Running(Ours) | unit gone, app id and windows (or just started) | Running(Windows) since its launch | — | running `a_game_known_by_app_id_runs_on_by_its_windows_after_its_unit` |
+| Running(Ours) | unit gone otherwise | Idle | `RecordPlay`; NotStarted if it never had a window or tray icon and isn't quitting | tests `a_launch_that_ends_without_a_window_didnt_start`; tray `a_program_with_only_a_tray_icon_started` |
 | Running(Windows, unseen) | a new stray window before `until` | Running(Windows, seen) | Move, Focus | running `a_file_handed_…` |
 | Running(Windows, unseen) | past `until` | Idle, no play | — | running `a_file_handed_…` |
 | Running(Windows, seen) | no windows left | Idle | `RecordPlay` from `since` | running `an_app_handed_over_…` |
@@ -144,7 +144,7 @@ State: `Pauses{unused, paused: Hidden | Held}`.
 | Held | shown after its windows were seen hidden (one suspended in view stays frozen while its window is still shown), Show, Quit, ForceKill | Running | Freeze off | same |
 | — | `Frozen(keys)` at start | Held (kept while the scope is listed, until its entry runs) | — | same; found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
 | Running | set to quit when closed, seen, no windows | Quitting | as Quit | background `quits_closed_ends_once_…` |
-| runner | none shown, launching or starting for 10 s | runner paused | RunnerCommand(pause) | background `a_runner_paused_together…`, `a_runner_isnt_paused_while_a_launch_waits_for_its_scope` |
+| runner | none shown, launching or starting for 10 s | runner paused | RunnerCommand(pause) | background `a_runner_paused_together…`, `a_runner_isnt_paused_while_a_launch_waits_for_its_unit` |
 
 Freeze and RunnerCommand have no acknowledgement; the state assumes they worked.
 
@@ -557,7 +557,7 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
 4. **Session:** live window ids and running ids unique; at most one selected top window and one window placed
    below; remembered selections belong to their top groups; keyboard focus is absent or names
    a live window; at most one launch waiting per entry; no launching instance listed in
-   units; Ours ⇒ its scope is listed; Found ⇒ not; program in force is running and is the selected top
+   units; Ours ⇒ a unit of it is listed; Found ⇒ not; program in force is running and is the selected top
    window's owner when it has one; quitting ⇒ running and not paused; paused ⇒ Ours; suspended ⇒ paused.
 5. **Dock:** ids unique; every running entry is on it; every item is pinned, running or being moved.
 6. **Shelf:** the cursor within the list; `selected` is the entry at the cursor; the collection index in
@@ -567,8 +567,8 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    shown is the shown tab's; the Touchpad tab ⇒ pointing.
 9. **Keymaps:** the open screen's keymap exists; its layer exists; every keymap id in the settings exists.
 10. **Settings:** no empty override; no global-only setting in overrides.
-11. **Effect stream across events:** Freeze alternates per slice, starting frozen, while a scope of it is
-    listed (a slice whose scopes are all gone is gone, and starts thawed again), except after the freezer
+11. **Effect stream across events:** Freeze alternates per slice, starting frozen, while a unit of it is
+    listed (a slice whose units are all gone is gone, and starts thawed again), except after the freezer
     is started again (`Event::Restarted`), when every slice is sent as it should be; no second EndRun (not
     forced) for a key until it is quit again or launched; at most one RecordPlay per entry per event, and
     only for an entry that ran before it; no Launch for an entry already launching (one given up in the
@@ -577,8 +577,8 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
 The generator draws events valid for the current state: taps, holds and presses on the targets shown
 (shelf's only while shelf is in front, the Device view's while it is open, the tab's), Focus only while
 the route is Ui, shelf's pad events only while the pad is on shelf, a touch's HideFocus before its press,
-Listened only while listening, and results only after their requests (a scope or LaunchFailed after
-Launch, a scope ending after EndRun or by itself, windows closing after Close or by themselves, the
+Listened only while listening, and results only after their requests (a unit or LaunchFailed after
+Launch, a unit ending after EndRun or by itself, windows closing after Close or by themselves, the
 calibrations', account's and screenshot's answers, Busy or Resumed after Sleep). A small model of the
 compositor and systemd follows the effects (focus, moves, windows down). The library holds a Steam game
 (ff6), an app handed over to another program (desktop:firefox), an enqueue runner's album, a browsed file,
@@ -651,8 +651,8 @@ Shelf, files, radios, levels, status:
 - S37. The Mute key shows its notice when the volume is unknown and nothing changes (`keys.rs`). Fixed: state/levels: the Mute key shows its notice only when the mute changed.
 - S38. The resume record can leave out a collection whose stored place is past its list after a relayout
   (`shelf/mod.rs:552`). Fixed: state/shelf: the resume record keeps a place past its shrunk list.
-- S39. An entry known by its app id (a Steam game) whose launch's scope ends while its window is open
-  runs on by its windows, but its play is then recorded from when the scope ended, not from its launch
+- S39. An entry known by its app id (a Steam game) whose launch's unit ends while its window is open
+  runs on by its windows, but its play is then recorded from when the unit ended, not from its launch
   (`running.rs` `follow_ours`); found by the test filling the GAP. Fixed: state/session: a play that goes
   on by its windows counts from its launch.
 - S40. Suspend of an entry in view (the usual case, from the dock below it) freezes it and thaws it in the
@@ -683,7 +683,7 @@ with what would make us change our minds.
   before, unpaused rules apply again. **Revisit** the 10 s, and whether a second Quit should then
   force-kill.
 - S7. A tray icon gives its pid only to an entry found by that program's own process.
-- S8. A launch waiting for its scope counts as starting, so its runner isn't paused again.
+- S8. A launch waiting for its unit counts as starting, so its runner isn't paused again.
 - S9. A launch with no answer from the launcher in 30 s is given up, with the "didn't start" notice.
   **Revisit** the 30 s for slow starts (Proton games on first run). The launcher's failure arriving after
   that is ignored, so the notice isn't shown twice.
@@ -730,8 +730,8 @@ with what would make us change our minds.
   play's start.
 - S40. A suspended entry counts as shown again only once its windows have been seen hidden; one found
   frozen at start counts as hidden already.
-- S50. A scope listed runs its entry whatever launch of it waits; the waiting launch joins it when its
-  own scope comes.
+- S50. A unit listed runs its entry whatever launch of it waits; the waiting launch joins it when its
+  own unit comes.
 - S51. A quitting entry can't be suspended; the dock menu's Suspend does nothing for it.
 
 ### In-process window presentation (compositor/)
@@ -744,10 +744,10 @@ black around the client does not activate the shelf behind it. Colour metadata i
 colour management; the host does not advertise HDR.
 
 The state decides on `Opened` whether a window comes in front. While a launch waits for its window,
-only its own windows select themselves (in its scope, of its entry
+only its own windows select themselves (in its unit, of its entry
 by app id or process, or a dialog of one); others open behind, as Steam's windows behind a Steam game's
 launch (`steams_windows_open_behind_a_steam_games_launch`). Otherwise an external client's first window
-selects itself, a first window of our own scope waits for foreground launch intent, and a later window
+selects itself, a first window of our own unit waits for foreground launch intent, and a later window
 may select itself only when that program is shown. A dialog selects itself when its parent's program is
 shown. Tests: `opening_focus_respects_launch_intent_and_shown_program`,
 `a_window_opens_in_front_as_its_opening_focus_says`, the presentation

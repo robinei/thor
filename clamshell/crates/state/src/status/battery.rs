@@ -8,7 +8,7 @@ use crate::session::instance::Instance;
 use crate::status::Sys;
 use crate::{BatteryId, Effect, EntryAct, Event, Library, Running, Session};
 
-/// Who a spender is. It is one of our instances or a game started by shelf, known by its scope. Or an
+/// Who a spender is. It is one of our instances or a game started by shelf, known by its unit. Or an
 /// app run in another program's processes, known by its app id, such as an Android app in Waydroid's
 /// container. Or another of the user's programs, known by process name. Or everything the system runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,7 +79,7 @@ pub struct Cost {
 }
 
 impl Spender {
-    /// Its name: the entry its scope is a launch of, the program's name, or "System".
+    /// Its name: the entry its unit is a launch of, the program's name, or "System".
     pub fn name<'a>(&'a self, library: &'a Library) -> &'a str {
         match &self.group {
             Group::Instance(instance) => {
@@ -173,7 +173,7 @@ mod tests {
         s.applied(Event::tick(1792010377));
         let first = s.shelf().selected().cloned().unwrap_or_default();
         let zelda = launch(&mut s, &first);
-        // Each scope keeps its own entry's name.
+        // Each unit keeps its own entry's name.
         let ff6 = launch(&mut s, "ff6");
         crate::testkit::start(&mut s, "ff6");
         let terminal = Instance { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 9 };

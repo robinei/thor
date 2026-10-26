@@ -19,7 +19,7 @@ use crate::session::running::Running;
 use crate::{Effect, Session, Shelf};
 
 impl Session {
-    /// The running entry of runner `key` that was most recently in front. Only entries in a scope of ours
+    /// The running entry of runner `key` that was most recently in front. Only entries in a unit of ours
     /// count, not those known by app id.
     pub(crate) fn enqueue_target(&self, key: &str) -> Option<&Running> {
         let runner_of = |r: &Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| &*o.key == key);

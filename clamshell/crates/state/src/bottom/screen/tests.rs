@@ -90,7 +90,7 @@ fn a_rule_sends_the_window_down_when_its_program_opens_it_again() {
     s.observed(vec![win(5, GAME, "Top"), win(6, GAME, "Bottom")]);
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(6));
     assert_eq!(s.session().top_window().map(|w| w.id), Some(5));
-    // Its window appears before its scope is listed, and is sent down when the scope appears.
+    // Its window appears before its unit is listed, and is sent down when the unit appears.
     let mut s = crate::testkit::started(crate::Init { window_rules: rules.clone(), ..crate::testkit::init() });
     s.observed(vec![win(8, GAME, "Bottom")]);
     assert_eq!(s.session().bottom_window(), None, "no entry yet");

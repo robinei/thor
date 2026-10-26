@@ -15,7 +15,7 @@ use crate::settings::Values;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
     /// Start this entry, by its launch command or Steam id and its file, with these settings and extra
-    /// environment. It runs in its own scope and in its own group.
+    /// environment. It runs in its own unit and in its own group.
     Launch {
         entry: Arc<str>,
         instance: Instance,

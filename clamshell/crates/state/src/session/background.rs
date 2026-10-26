@@ -156,10 +156,10 @@ impl Session {
 
     /// Runs after every event. Pauses, thaws or ends entries by their setting.
     pub(crate) fn follow_background(&mut self, now: u64, library: &Library, settings: &Settings, out: &mut Out) {
-        // Launches of ours, including a Steam game's, which is in its launch's own scope since it started.
+        // Launches of ours, including a Steam game's, which is in its launch's own unit since it started.
         let ours = |r: &&Running| r.origin == Origin::Ours;
         let (running, units) = (&self.running, &self.units);
-        // A slice whose scope is listed is kept too: one held at start may belong to a program not known
+        // A slice whose unit is listed is kept too: one held at start may belong to a program not known
         // to run until a window or tray icon says what it is.
         self.background.entries.keep(|key| running.iter().filter(ours).any(|r| r.key == key) || units.iter().any(|u| u.key == key));
         let mut end = Vec::new();
@@ -203,7 +203,7 @@ impl Session {
 
     /// Pauses each runner whose entries are paused together, when it is set to Pauses hidden and none of
     /// its entries has been shown for the grace period. None may be starting either, that is launched with
-    /// no window yet, or still waiting for its scope, since paused it would never draw one. Resumes the runner as one is shown, or when its
+    /// no window yet, or still waiting for its unit, since paused it would never draw one. Resumes the runner as one is shown, or when its
     /// setting changes.
     fn follow_runner_pauses(&mut self, now: u64, library: &Library, settings: &Settings, out: &mut Out) {
         for runner in &self.background.runners {
@@ -378,10 +378,10 @@ mod tests {
         assert!(s.applied(WindowEvent::Activate(6).into()).contains(&resume));
     }
 
-    /// A launch whose scope is slow to come counts as starting: its runner, resumed for it, isn't paused
+    /// A launch whose unit is slow to come counts as starting: its runner, resumed for it, isn't paused
     /// again while it waits.
     #[test]
-    fn a_runner_isnt_paused_while_a_launch_waits_for_its_scope() {
+    fn a_runner_isnt_paused_while_a_launch_waits_for_its_unit() {
         let runner = clamshell_library::RunnerOf {
             pause: vec!["pause".to_owned()].into(),
             resume: vec!["resume".to_owned()].into(),
@@ -396,7 +396,7 @@ mod tests {
         assert!(s.applied(Event::tick(100 + GRACE)).contains(&pause));
         launch_now(&mut s, "desktop:firefox");
         s.applied(Event::tick(101 + GRACE));
-        assert!(!s.applied(Event::tick(101 + 2 * GRACE)).contains(&pause), "launching, its scope not listed yet");
+        assert!(!s.applied(Event::tick(101 + 2 * GRACE)).contains(&pause), "launching, its unit not listed yet");
         crate::testkit::start(&mut s, "desktop:firefox");
         assert!(!s.applied(Event::tick(101 + 3 * GRACE)).contains(&pause), "started, no window yet");
     }

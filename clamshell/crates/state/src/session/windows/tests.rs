@@ -236,7 +236,7 @@ fn lifecycle_title_applies_a_bottom_rule_once() {
 }
 
 #[test]
-fn a_scope_window_and_its_rule_are_placed_before_the_scope_is_listed() {
+fn a_launchs_window_and_its_rule_are_placed_before_its_unit_is_listed() {
     use crate::session::below::{WindowRule, WindowRules};
     let rules = WindowRules::from_list(vec![WindowRule { owner: "zelda-lttp".into(), app_id: "game".into(), title: None }]);
     let mut s = started(crate::Init { window_rules: rules, ..init() });

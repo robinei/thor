@@ -1,4 +1,4 @@
-//! What runs and what is in front: the running entries (see [`crate::session::running`]), our scopes as
+//! What runs and what is in front: the running entries (see [`crate::session::running`]), our units as
 //! systemd lists them, the compositor's windows, and the launch to show once its first window appears.
 
 pub mod autostart;
@@ -54,7 +54,7 @@ pub struct Session {
     keyboard_focus: Option<i64>,
     home_held: bool,
     home_used: bool,
-    /// Our running scopes, as systemd lists them.
+    /// Our running units, as systemd lists them.
     units: Vec<Instance>,
     /// Groups by when they were last in front, most recent first.
     recent: Vec<Group>,
@@ -74,7 +74,7 @@ pub struct Session {
     /// The counter that numbers new instances' names. Together with the time, it makes them unique across
     /// restarts.
     next_instance: u64,
-    /// Whether systemd has listed our scopes at least once, so that what runs is known.
+    /// Whether systemd has listed our units at least once, so that what runs is known.
     units_known: bool,
     /// What the last [`crate::State::settle`] saw: the windows' ids and the group in front on the main
     /// screen. They tell which windows are new and when the one in front closes.
@@ -121,7 +121,7 @@ impl Session {
         self.device_session
     }
 
-    /// Whether systemd lists a scope of the entry with `key`.
+    /// Whether systemd lists a unit of the entry with `key`.
     pub(crate) fn has_units(&self, key: &str) -> bool {
         self.units.iter().any(|u| u.key == key)
     }
@@ -200,7 +200,7 @@ impl Session {
 
     /// Whether a window opening comes in front. While a launch waits for its window, only its own windows
     /// come in front. A dialog comes in front if its parent's program is in front. First windows of our
-    /// scopes follow foreground launch intent; later windows of the shown program may select themselves.
+    /// units follow foreground launch intent; later windows of the shown program may select themselves.
     /// An unowned program's window is shown at once.
     pub(crate) fn opening_focus(&self, window: &WindowFacts) -> bool {
         if let Some(instance) = &self.front_launch {
@@ -220,9 +220,9 @@ impl Session {
     /// a dialog of one in its group.
     fn of_launch(&self, instance: &Instance, window: &WindowFacts) -> bool {
         let running = self.running.iter().find(|r| r.key == instance.key);
-        let in_scope = window.unit.as_deref().and_then(Instance::unit_name).is_some_and(|unit| instance.is(unit));
+        let in_unit = window.unit.as_deref().and_then(Instance::unit_name).is_some_and(|unit| instance.is(unit));
         let parent = window.parent.and_then(|id| self.window(id)).is_some_and(|parent| parent.group.as_ref().and_then(Group::key) == Some(&instance.key));
-        in_scope || parent || running.is_some_and(|r| r.owns(window) || r.fathered(window))
+        in_unit || parent || running.is_some_and(|r| r.owns(window) || r.fathered(window))
     }
 
     /// Makes `instance` the launch to show when its window appears, waiting until `until` if given.
@@ -301,7 +301,7 @@ impl Session {
         }
     }
 
-    /// The running entry a client's process belongs to, before it has a window: by its scope, else the
+    /// The running entry a client's process belongs to, before it has a window: by its unit, else the
     /// Steam game it is (Steam's game launcher starts it in Steam's scope, which ClamShell then follows).
     pub fn running_of_process(&self, unit: Option<&str>, steam_app: Option<u32>) -> Option<&Running> {
         let by_key = unit.and_then(Instance::key_of).and_then(|key| self.running.iter().find(|r| r.key == key));
@@ -338,7 +338,7 @@ impl Session {
     ///
     /// - its app id (see [`crate::session::running::app_id_of`]), as for a Steam game that runs in Steam's
     ///   scope;
-    /// - its scope, which also covers windows moved down;
+    /// - its unit, which also covers windows moved down;
     /// - its process, for a program found by its tray icon;
     /// - its group.
     ///
@@ -391,7 +391,7 @@ impl Session {
         }
     }
 
-    /// Has `running` run in scope `unit`, as if it had started and systemd listed the scope.
+    /// Has `running` run in unit `unit`, as if it had started and systemd listed the unit.
     #[cfg(test)]
     pub(crate) fn add_run(&mut self, running: Running, unit: Instance) {
         self.running.push(running);
@@ -468,7 +468,7 @@ impl Session {
     }
 
     /// Shows the group of the launch just started, once its own first window is there. The entry's group
-    /// may already have windows of its other launches. An entry known by its app id has no scope
+    /// may already have windows of its other launches. An entry known by its app id has no unit
     /// of ours, so any of its windows counts.
     pub(crate) fn follow_front_launch(&mut self, now: u64) {
         if self.front_launch_until.is_some_and(|until| now > until) {

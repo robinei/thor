@@ -324,12 +324,12 @@ pub struct WindowFacts {
 }
 
 impl WindowFacts {
-    /// The launch it belongs to: its scope's, if we started it.
+    /// The launch it belongs to: its unit's, if we started it.
     pub fn instance(&self) -> Option<Instance> {
         self.unit.as_deref().and_then(Instance::from_unit)
     }
 
-    /// Whether it is in a scope we started ([`WindowFacts::instance`]), found without allocating.
+    /// Whether it is in a unit we started ([`WindowFacts::instance`]), found without allocating.
     pub(crate) fn launched(&self) -> bool {
         self.unit.as_deref().is_some_and(Instance::is_launch_unit)
     }

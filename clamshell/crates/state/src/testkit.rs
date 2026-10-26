@@ -40,7 +40,7 @@ impl Applied for State {
     }
 }
 
-/// Entry `id`'s launch starts, as systemd reports it: its scope is listed with the others. The scope is
+/// Entry `id`'s launch starts, as systemd reports it: its unit is listed with the others. The unit is
 /// the one the launch asked for, or else one of the entry's, as if an earlier ClamShell had started it.
 pub fn start(s: &mut State, id: &str) -> Vec<Effect> {
     let key = s.entry(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());
@@ -50,7 +50,7 @@ pub fn start(s: &mut State, id: &str) -> Vec<Effect> {
     s.applied(Event::Units(units))
 }
 
-/// Entry `id`'s launches end, as systemd reports it: its scopes are no longer listed.
+/// Entry `id`'s launches end, as systemd reports it: its units are no longer listed.
 pub fn end(s: &mut State, id: &str) -> Vec<Effect> {
     let key = s.entry(id).map_or_else(|| clamshell_library::key_of(id), |g| g.key.clone());
     let units = s.session().units().iter().filter(|u| u.key != key.as_str()).cloned().collect();
@@ -199,7 +199,7 @@ impl State {
         self.prefs.settings_mut()
     }
 
-    /// Has `running` run in scope `unit` (see [`Session::add_run`]).
+    /// Has `running` run in unit `unit` (see [`Session::add_run`]).
     pub(crate) fn add_run(&mut self, running: crate::Running, unit: crate::Instance) {
         self.session.add_run(running, unit);
     }

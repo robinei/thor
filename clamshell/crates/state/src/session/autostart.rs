@@ -1,5 +1,5 @@
 //! Entries started with ClamShell, chosen in an entry's dock menu (Start with ClamShell) and saved. Once
-//! ClamShell knows what runs, from systemd's first list of its scopes, each of these entries that the
+//! ClamShell knows what runs, from systemd's first list of its units, each of these entries that the
 //! library has and that doesn't run is launched. Waiting for that list keeps a restarted ClamShell from
 //! starting again what is still running. They are launched in the background, in their own groups and
 //! not shown, so that a window Steam opens doesn't cover shelf.
@@ -52,7 +52,7 @@ mod tests {
     fn chosen_entries_start_once_what_runs_is_known_unless_they_run() {
         let launches = |fx: &[Effect]| fx.iter().filter(|e| matches!(e, Effect::Launch { .. })).count();
         let init = |ids: &[&str]| Init { autostart: ids.iter().map(|i| Arc::from(*i)).collect(), ..init() };
-        // Zelda and Firefox are to start. Firefox's scope is there already, as after a ClamShell restart.
+        // Zelda and Firefox are to start. Firefox's unit is there already, as after a ClamShell restart.
         let mut s = State::new(init(&["zelda-lttp", "desktop:firefox", "gone"]));
         let firefox = Instance { key: clamshell_library::key_of("desktop:firefox"), secs: 1, n: 0 };
         let fx = s.applied(Event::Units(vec![firefox]));
