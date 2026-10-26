@@ -81,6 +81,9 @@ pub struct Record {
 pub struct Recording {
     pub records: VecDeque<Record>,
     pub after: Selection,
+    /// The windows as the state has them at the end: their groups, which screen, which are shown and
+    /// focused (what the VM's checks read).
+    pub windows: Vec<clamshell_state::session::windows::Window>,
 }
 impl Recording {
     /// Replay with the recording's library, rules and launch context supplied by the fixture.
@@ -130,7 +133,7 @@ impl Ring {
         self.sequence = self.sequence.wrapping_add(1);
     }
     pub fn snapshot(&self, state: &State) -> Recording {
-        Recording { records: self.records.clone(), after: Selection::of(state) }
+        Recording { records: self.records.clone(), after: Selection::of(state), windows: state.session().windows().to_vec() }
     }
 }
 
