@@ -1,3 +1,4 @@
+use crate::session::REOPEN_SECS;
 use crate::session::running::HANDOFF;
 use crate::testkit::*;
 use crate::*;
@@ -310,14 +311,16 @@ fn a_failed_launch_known_by_app_id_waits_for_its_window() {
     assert_eq!(s.session().window(7).and_then(|w| w.group.clone()), Some(Group::entry(&key("ff6"))));
     s.applied(Event::tick(1100));
     assert!(s.session().running("ff6").is_some(), "runs by its window");
-    let fx = s.observed(vec![]);
-    assert!(fx.contains(&Effect::RecordPlay { entry: "ff6".into(), start: 1000, duration: 100 }), "{fx:?}");
+    s.observed(vec![]);
+    assert!(s.session().running("ff6").is_some(), "kept a moment, for another window");
+    let fx = s.applied(Event::tick(1100 + REOPEN_SECS + 1));
+    assert!(fx.contains(&Effect::RecordPlay { entry: "ff6".into(), start: 1000, duration: 100 + REOPEN_SECS + 1 }), "{fx:?}");
     // Without a window it is gone once the wait is over, with no play.
     tap(&mut s, entry("ff6"));
     s.applied(LaunchEvent::LaunchFailed("ff6".into()).into());
-    s.applied(Event::tick(1100 + HANDOFF));
+    s.applied(Event::tick(1103 + HANDOFF));
     assert!(s.session().running("ff6").is_some());
-    let fx = s.applied(Event::tick(1101 + HANDOFF));
+    let fx = s.applied(Event::tick(1104 + HANDOFF));
     assert!(s.session().running("ff6").is_none());
     assert!(!fx.iter().any(|e| matches!(e, Effect::RecordPlay { .. })), "{fx:?}");
 }
@@ -337,8 +340,9 @@ fn a_game_known_by_app_id_runs_on_by_its_windows_after_its_unit() {
     let ff6 = s.session().running("ff6").unwrap();
     assert!(matches!(ff6.origin, Origin::Windows { .. }) && ff6.seen, "{ff6:?}");
     s.applied(Event::tick(1900));
-    let fx = s.observed(vec![]);
-    assert!(fx.contains(&Effect::RecordPlay { entry: "ff6".into(), start: 1000, duration: 900 }), "{fx:?}");
+    s.observed(vec![]);
+    let fx = s.applied(Event::tick(1900 + REOPEN_SECS + 1));
+    assert!(fx.contains(&Effect::RecordPlay { entry: "ff6".into(), start: 1000, duration: 900 + REOPEN_SECS + 1 }), "{fx:?}");
     assert!(s.session().running("ff6").is_none());
 }
 
@@ -435,6 +439,7 @@ fn a_file_handed_to_another_program_runs_by_its_window() {
     assert_eq!(s.entry("browse:Home/notes.md").map(|g| g.title.as_str()), Some("/h/notes.md"));
     s.applied(Event::Library(Box::new(files().shelf().library().clone())));
     s.observed(vec![other.clone()]);
+    s.applied(Event::tick(200 + REOPEN_SECS + 1));
     assert!(s.session().running("browse:Home/notes.md").is_none(), "its window closed: ended");
     // Another launch that never shows a window is gone after a while.
     // (The library read again left shelf on another collection: the file is selected first.)
@@ -443,9 +448,9 @@ fn a_file_handed_to_another_program_runs_by_its_window() {
     }
     assert!(launches(&tap(&mut s, Id::Shelf(ShelfId::Launch)), "browse:Home/notes.md"));
     s.applied(LaunchEvent::LaunchFailed("browse:Home/notes.md".into()).into());
-    s.applied(Event::tick(200 + HANDOFF));
+    s.applied(Event::tick(203 + HANDOFF));
     assert!(s.session().running("browse:Home/notes.md").is_some());
-    s.applied(Event::tick(201 + HANDOFF));
+    s.applied(Event::tick(204 + HANDOFF));
     assert!(s.session().running("browse:Home/notes.md").is_none());
     assert!(s.dock().items().is_empty(), "off the dock");
 }
@@ -474,9 +479,10 @@ fn an_app_handed_over_runs_by_its_window_found_by_its_app_id() {
     assert!(s.session().running("desktop:firefox").is_some(), "runs while its window is open");
     let fx = force_kill(&mut s, "desktop:firefox");
     assert!(fx.contains(&Effect::RunnerCommand(vec!["stop".into(), "firefox".into()])), "its runner's stop: {fx:?}");
-    let fx = s.observed(vec![]);
+    s.observed(vec![]);
+    let fx = s.applied(Event::tick(400 + REOPEN_SECS + 1));
     assert!(s.session().running("desktop:firefox").is_none(), "its window closed: ended");
-    assert!(fx.contains(&Effect::RecordPlay { entry: "desktop:firefox".into(), start: 100, duration: 300 }), "played until then: {fx:?}");
+    assert!(fx.contains(&Effect::RecordPlay { entry: "desktop:firefox".into(), start: 100, duration: 300 + REOPEN_SECS + 1 }), "played until then: {fx:?}");
     // Opened by another app, it runs, and its window goes to its group and is shown.
     s.observed(vec![app.clone()]);
     assert!(s.session().running("desktop:firefox").is_some());
@@ -599,4 +605,23 @@ fn a_capped_game_is_launched_presenting_in_fifo() {
     s.settings_mut().set(Some(&"zelda-lttp".into()), crate::settings::Setting::FpsCap, Some(40));
     let env = env_of(&launch_now(&mut s, "zelda-lttp")).unwrap();
     assert!(env.contains(&("MESA_VK_WSI_PRESENT_MODE".into(), "fifo".into())), "{env:?}");
+}
+
+/// A program running by its windows that closes its only window and opens another, as Waydroid's apps do
+/// as they start, runs on: it ends only once it has had no window for a moment.
+#[test]
+fn a_program_replacing_its_only_window_runs_on() {
+    let mut s = steam_ff6();
+    s.ui_up();
+    s.applied(Event::tick(1000));
+    launch(&mut s, "ff6");
+    s.observed(vec![win(7, "steam_app_620")]);
+    s.applied(Event::tick(1600));
+    crate::testkit::end(&mut s, "ff6");
+    let fx = s.observed(vec![]);
+    assert!(!fx.iter().any(|e| matches!(e, Effect::RecordPlay { .. } | Effect::Apply { entry: None, .. })), "{fx:?}");
+    let fx = s.observed(vec![win(8, "steam_app_620")]);
+    assert!(!fx.iter().any(|e| matches!(e, Effect::RecordPlay { .. } | Effect::Apply { .. })), "the same run: {fx:?}");
+    let ff6 = s.session().running("ff6").unwrap();
+    assert!(matches!(ff6.origin, Origin::Windows { since: 1000, .. }), "{ff6:?}");
 }

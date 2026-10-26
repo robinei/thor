@@ -12,7 +12,8 @@ pass confirmed its suspicions with probe tests in a scratch copy.
 
 ### Window lifecycle and placement
 
-`Event::Window` applies one change; `WindowBatch` applies one backend dispatch before settling once.
+`Event::Window` applies one change; `WindowBatch` applies one dispatch of the X11 window manager (a
+window's facts and its title) before settling once.
 State commits placement and selection during `apply`. A compositor reads `Session::place`,
 `top_window`, `bottom_window` and `keyboard_focus` immediately after it returns. Home groups
 (`Window.group`, a `Group`: an entry's by its key, holding all its launches' windows, or a window's own
@@ -108,14 +109,14 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Running(Ours) | unit gone otherwise | Idle | `RecordPlay`; NotStarted if it never had a window or tray icon and isn't quitting | tests `a_launch_that_ends_without_a_window_didnt_start`; tray `a_program_with_only_a_tray_icon_started` |
 | Running(Windows, unseen) | a new stray window before `until` | Running(Windows, seen) | Move, Focus | running `a_file_handed_…` |
 | Running(Windows, unseen) | past `until` | Idle, no play | — | running `a_file_handed_…` |
-| Running(Windows, seen) | no windows left | Idle | `RecordPlay` from `since` | running `an_app_handed_over_…` |
+| Running(Windows, seen) | no windows left | Running(Windows, seen) until `REOPEN_SECS` later, then Idle; a window again in the meantime keeps the run (a program replacing its only window) | `RecordPlay` from `since`, at the end | running `an_app_handed_over_…`, `a_program_replacing_its_only_window_runs_on` |
 | Running | Show / Play | same | thaw, runner resumed, Focus; else tray Activate and `front_launch`; else NoWindow notice | background `pauses_hidden_thawed_…`; dock `running_entries_join_the_dock…` |
 | Running | Show when every window is moved down | same | thaw, runner resumed; the bottom screen shows them (the windows' tab opens) | running `show_of_an_entry_whose_windows_are_all_below_shows_them_there` |
 | Running | Quit | Quitting | thaw, Close(windows) | running `quit_closes_the_windows_then_ends_…` |
 | Quitting | windows gone, still runs | Quitting(ended) | EndRun, or EndProcesses (found, own pid) | same |
 | Quitting | no longer runs | removed | runner stop (once) | same |
 | Quitting | its windows still there 10 s after they were asked to close (a close refused) | Running, not quitting: paused hidden again, not ended when its windows close later | — | running `a_quit_refused_is_given_up` |
-| Running | ForceKill | removed from quitting | thaw, EndRun{force} or EndProcesses{force} | same |
+| Running | ForceKill | Quitting(ended), so that nothing quits it again while it still runs (Quits when closed) | thaw, EndRun{force} or EndProcesses{force} | same; background `a_force_killed_entry_isnt_quit_again_by_quits_closed` |
 | not running | Quit / ForceKill | unchanged | nothing | running `quit_and_force_kill_of_an_entry_not_running_do_nothing` |
 
 ### Front and Home

@@ -52,7 +52,8 @@ pub enum Event {
     Launch(LaunchEvent),
     /// A window's lifecycle or an activation request. Placement is decided by the session.
     Window(WindowEvent),
-    /// Changes from one backend dispatch, settled together so a replacement doesn't briefly end an app.
+    /// Changes from one dispatch of the compositor's X11 window manager (a window's facts and its title),
+    /// applied as one event.
     WindowBatch(Vec<WindowEvent>),
     /// Our running units, after any change. These are dock app instances and games started by shelf.
     Units(Vec<Instance>),

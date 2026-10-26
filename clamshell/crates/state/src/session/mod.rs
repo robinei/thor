@@ -25,7 +25,7 @@ use running::{Front, Launching, Running};
 use windows::{Group, Window, WindowFacts, WindowPlace};
 
 /// How soon after the window in front closed a new window in its group is shown again, in seconds.
-const REOPEN_SECS: u64 = 2;
+pub(crate) const REOPEN_SECS: u64 = 2;
 
 #[derive(Debug, Default)]
 pub struct Session {

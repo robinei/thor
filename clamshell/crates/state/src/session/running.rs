@@ -62,10 +62,12 @@ pub enum Origin {
     Found { pid: Option<u32> },
     /// By its windows, since `since` (monotonic seconds, as in [`crate::Event::Tick`]). It was started by
     /// another program, or its launches ended while it ran on in a program not ours, and then `since` is
-    /// when it was launched. It ends once it has
-    /// had windows ([`Running::seen`]) and has none left, or when none came by `until`, and its play from
-    /// `since` is recorded then. Its windows are those with its app id, or, for a browsed file, a new window
-    /// of no launch of ours, taken until `until`.
+    /// when it was launched. It runs until `until`: before it has had windows ([`Running::seen`]), the
+    /// time given for the first to come; while it has windows, for good; once they are gone, a moment
+    /// longer ([`super::REOPEN_SECS`]), since a program may close its only window and open another (as
+    /// Waydroid's apps do as they start). Its play from `since` is recorded when it ends. Its windows are
+    /// those with its app id, or, for a browsed file, a new window of no launch of ours, taken until
+    /// `until`.
     Windows { since: u64, until: u64 },
 }
 
@@ -460,10 +462,17 @@ impl Session {
             r.seen |= has || (icon && !matches!(r.origin, Origin::Windows { .. }));
             match r.origin {
                 Origin::Found { .. } => r.tray.as_ref().is_some_and(|k| icons.iter().any(|t| t.key == *k)) || has,
-                Origin::Windows { since, until } => {
+                Origin::Windows { since, ref mut until } => {
                     // An entry with a unit listed has a launch of its own running.
                     let launched = units.iter().any(|u| u.key == r.key.as_str());
-                    let runs = launched || if r.seen { has } else { now <= until };
+                    if r.seen {
+                        *until = match (has, *until) {
+                            (true, _) => u64::MAX,
+                            (false, u64::MAX) => now + super::REOPEN_SECS,
+                            (false, at) => at,
+                        };
+                    }
+                    let runs = launched || has || now <= *until;
                     if !runs && r.seen {
                         plays.push((r.id.clone(), since));
                     }
