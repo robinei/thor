@@ -535,6 +535,7 @@ impl State {
         self.session.followed();
         self.bottom.follow_dim(&self.session, &self.clock);
         self.shelf.follow_folder();
+        self.radios.follow(self.clock.mono());
         // Sleep only in the device's own session. A program in front doesn't hold it off; one playing a
         // video asks the compositor to keep the screen on.
         let policy = crate::device::idle::Policy::of(&self.prefs.settings().global, self.session.device_session());

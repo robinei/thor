@@ -311,6 +311,26 @@ mod tests {
         assert_eq!(s.radios().wifi().status(), RadioStatus::Error(&Problem::WrongPassword { ssid: "home".into() }));
     }
 
+    /// A join that fails again the same way gives no reading that answers it: its busy mark goes once
+    /// the attempt's wait passed, or at once when the Wi-Fi thread was started again, and the error shows.
+    #[test]
+    fn a_join_no_reading_answers_is_given_up() {
+        let mut s = state();
+        let no_answer = || Some(Problem::NoAnswer { ssid: "home".into() });
+        let wifi = || Reading::Wifi(Wifi { present: true, on: true, networks: vec![net("home", 70, true, true, false)], busy: None, error: no_answer() });
+        s.applied(Event::tick(100));
+        read(&mut s, wifi());
+        tap(&mut s, ListId::Wifi.row(0));
+        read(&mut s, wifi());
+        s.applied(Event::tick(100 + crate::radios::ATTEMPT_WAIT - 1));
+        assert_eq!(s.radios().wifi().status(), RadioStatus::Busy("home"));
+        s.applied(Event::tick(100 + crate::radios::ATTEMPT_WAIT));
+        assert_eq!(s.radios().wifi().status(), RadioStatus::Error(&Problem::NoAnswer { ssid: "home".into() }));
+        tap(&mut s, ListId::Wifi.row(0));
+        s.applied(Event::Restarted(crate::Thread::Wifi));
+        assert_eq!(s.radios().wifi().status(), RadioStatus::Error(&Problem::NoAnswer { ssid: "home".into() }), "lost with the thread");
+    }
+
     #[test]
     fn a_login_needed_stays_until_the_next_attempt() {
         let mut s = state();

@@ -9,6 +9,12 @@ use crate::{Effect, Save, State, Thread};
 
 impl State {
     pub(crate) fn restarted(&mut self, thread: Thread, now: u64, out: &mut Out) {
+        // A radio's attempt under way is lost with its thread: its busy mark goes.
+        match thread {
+            Thread::Wifi => self.radios.restarted(true, now),
+            Thread::Bluetooth | Thread::BluetoothConnect => self.radios.restarted(false, now),
+            _ => {}
+        }
         match thread {
             // The keymap, the route, the activity watch and the settings applied (the rumble's strength).
             // The pad thread keeps its virtual controllers and the sticks' calibrations through a restart.
@@ -34,7 +40,7 @@ impl State {
             // A launch being started is its own thread, which ends as failed if it panics; a video's
             // position being read is lost (its progress bar isn't updated once).
             Thread::Launcher => {}
-            // A Bluetooth connection under way ends, shown as not busy; it can be tapped again.
+            // A Bluetooth connection under way ends (its busy mark went above); it can be tapped again.
             Thread::BluetoothConnect => {}
             // Nothing the state sent them stands: they read the system afresh as they start (the units
             // are listed again, input devices and the clipboard watched again, the saved clipboard

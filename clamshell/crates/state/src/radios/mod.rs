@@ -22,11 +22,15 @@ pub struct Radios {
 /// What a radio's tab set itself, kept over readings until one answers it. An attempt's busy mark is
 /// answered by a reading that shows the attempt (busy with it), its result (connected), or an error. As
 /// a reading sent before the command still carries the error from before the attempt, that error
-/// doesn't count. An error found here is answered by the system's own error or by a connection.
+/// doesn't count; so an attempt that failed again the same way is answered by [`ATTEMPT_WAIT`] passing,
+/// as one is whose thread was started again (it lost the attempt). An error found here is answered by the
+/// system's own error or by a connection.
 #[derive(Debug, Clone)]
 struct Local<P> {
     /// An attempt's busy mark is the radio's `busy`, and no reading has answered it.
     attempt: bool,
+    /// When the attempt was first seen by [`Radios::follow`] (monotonic seconds).
+    since: Option<u64>,
     /// The error shown when the attempt began.
     before: Option<P>,
     /// The radio's `error` was found here, and no reading has answered it.
@@ -35,21 +39,39 @@ struct Local<P> {
 
 impl<P> Default for Local<P> {
     fn default() -> Local<P> {
-        Local { attempt: false, before: None, error: false }
+        Local { attempt: false, since: None, before: None, error: false }
     }
 }
 
 impl<P> Local<P> {
     /// The attempt was answered.
     fn answered(&mut self) {
-        (self.attempt, self.before) = (false, None);
+        (self.attempt, self.since, self.before) = (false, None, None);
     }
 
     /// An attempt begins, with `error` shown until now.
     fn attempt(&mut self, error: Option<P>) {
-        *self = Local { attempt: true, before: error, error: false };
+        *self = Local { attempt: true, since: None, before: error, error: false };
+    }
+
+    /// The attempt is given up at `now` if [`ATTEMPT_WAIT`] passed without an answer, or `at_once`: its
+    /// busy mark goes (from `busy`), and the error from before shows again (in `error`), as the attempt
+    /// most likely ended the same way.
+    fn give_up(&mut self, now: u64, at_once: bool, busy: &mut Option<String>, error: &mut Option<P>) {
+        if !self.attempt {
+            return;
+        }
+        let since = *self.since.get_or_insert(now);
+        if at_once || now >= since + ATTEMPT_WAIT {
+            *busy = None;
+            *error = self.before.take();
+            self.answered();
+        }
     }
 }
+
+/// How long an attempt's busy mark waits for a reading to answer it, in seconds.
+pub(crate) const ATTEMPT_WAIT: u64 = 30;
 
 impl Radios {
     pub fn wifi(&self) -> &Wifi {
@@ -86,6 +108,22 @@ impl Radios {
             }
         }
         self.wifi = wifi;
+    }
+
+    /// Gives up attempts no reading answered within [`ATTEMPT_WAIT`] (see [`Local`]).
+    pub(crate) fn follow(&mut self, now: u64) {
+        self.wifi_local.give_up(now, false, &mut self.wifi.busy, &mut self.wifi.error);
+        self.bluetooth_local.give_up(now, false, &mut self.bluetooth.busy, &mut self.bluetooth.error);
+    }
+
+    /// The Wi-Fi (`wifi`) or a Bluetooth thread was started again after a panic, and lost the attempt it
+    /// was making: its busy mark goes.
+    pub(crate) fn restarted(&mut self, wifi: bool, now: u64) {
+        if wifi {
+            self.wifi_local.give_up(now, true, &mut self.wifi.busy, &mut self.wifi.error);
+        } else {
+            self.bluetooth_local.give_up(now, true, &mut self.bluetooth.busy, &mut self.bluetooth.error);
+        }
     }
 
     /// A reading of Bluetooth. An attempt's busy mark stays until the reading answers it (see [`Local`]).
