@@ -23,14 +23,6 @@ pub enum Rotation {
     Normal,
     Clockwise90,
 }
-impl Rotation {
-    pub const fn degrees(self) -> u16 {
-        match self {
-            Self::Normal => 0,
-            Self::Clockwise90 => 90,
-        }
-    }
-}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScreenRole {
     Top,

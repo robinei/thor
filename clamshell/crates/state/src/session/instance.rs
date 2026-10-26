@@ -115,11 +115,6 @@ impl Instance {
         Instance::slice_of(&self.key)
     }
 
-    /// Its place in the order things were started: the start time and the counter.
-    pub fn order(&self) -> (u64, u64) {
-        (self.secs, self.n)
-    }
-
     /// Whether `name` is this instance's name, compared without allocating so it can be used while drawing.
     pub fn is(&self, name: &str) -> bool {
         let mut rest = Rest(Some(name));
@@ -179,7 +174,6 @@ mod tests {
         assert!(!Instance::is_service("clamshell-run-x_1-5-0.service"), "a launch is no system service");
         assert_eq!(Instance::from_unit("clamshell-shelf.scope"), None);
         assert_eq!(Instance::parse("1"), None);
-        assert!(Instance { key: "x".into(), secs: 5, n: 10 }.order() > Instance { key: "x".into(), secs: 5, n: 9 }.order());
         assert_eq!("clamshell-shelf".parse::<Instance>(), Err(NotOurs));
     }
 }
