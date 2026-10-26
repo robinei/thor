@@ -519,10 +519,15 @@ pub(crate) fn switch_row(f: &mut Frame, id: Id, row: Rect, size: f32, label: &st
 /// A value's row: a dim `label` on the left and `value` on the right, brighter when `changed` from its
 /// default. The caller provides its target, such as a held slider's or a choice's.
 pub(crate) fn value_row(f: &mut Frame, row: Rect, size: f32, label: &str, value: &str, changed: bool) {
+    toned_value_row(f, row, size, label, value, Tone::high_if(changed));
+}
+
+/// [`value_row`] with its value in `tone`: dim, as its label, for a value that does nothing now.
+pub(crate) fn toned_value_row(f: &mut Frame, row: Rect, size: f32, label: &str, value: &str, tone: Tone) {
     let inner = row.inset(size * 0.4);
     let vw = f.c.text_width(size, value).min(inner.w * 0.5);
     f.c.text_fit(Rect::new(inner.x, row.y, inner.w - vw - size * 0.3, row.h), size, Tone::Dim, label, Keep::Start);
-    f.c.text_fit(Rect::new(inner.right() - vw, row.y, vw + 1.0, row.h), size, Tone::high_if(changed), value, Keep::Start);
+    f.c.text_fit(Rect::new(inner.right() - vw, row.y, vw + 1.0, row.h), size, tone, value, Keep::Start);
 }
 
 /// An action and the pad button that does it, as a target filling `r`. It shows the button's name in a

@@ -86,9 +86,11 @@ fn edit(f: &mut Frame, id: u16) {
             held = Some((row, sl, p));
         }
         let changed = value != p.get(&Curve::default());
+        // Dim, not hidden, when it does nothing for this content on this screen.
+        let tone = if inert(p, &curve, on) { Tone::Dim } else { Tone::high_if(changed) };
         f.button(Id::Control(Control::Curve(p)), row, Look::ROW, |f| {
             if sl.is_none() {
-                widgets::value_row(f, row, size, p.label(), shown(p, value).as_str(), changed);
+                widgets::toned_value_row(f, row, size, p.label(), shown(p, value).as_str(), tone);
             }
         });
         f.track(track);
@@ -134,6 +136,19 @@ fn edit(f: &mut Frame, id: u16) {
     if let Some((row, sl, value)) = held_setting {
         let text = Fmt::<64>::of(format_args!("{} {}", setting.title(), value.as_str()));
         widgets::held_slider(f, HeldSlider { slider: &sl, x0: track.x0, cy: row.y + row.h / 2.0, h: row.h * 0.75, within, icon: None, text: &text });
+    }
+}
+
+/// Whether parameter `p` of `curve` does nothing for the content and screen `on` plots: highlights expand
+/// only SDR content, into a screen's headroom, so "Highlights to" does nothing for HDR content or on a screen
+/// without headroom, and "Highlights from", the start of an expansion, nothing for SDR content that doesn't
+/// expand (for HDR content it is where compression starts).
+fn inert(p: CurveParam, curve: &Curve, on: CurvePlot) -> bool {
+    let room = on.headroom > 1.0 + 1e-3;
+    match p {
+        CurveParam::Highlights => on.hdr.is_some() || !room,
+        CurveParam::Start => on.hdr.is_none() && (!room || curve.highlights == 0),
+        _ => false,
     }
 }
 
