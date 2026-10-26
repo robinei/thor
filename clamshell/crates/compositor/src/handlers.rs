@@ -32,6 +32,52 @@ impl CompositorHandler for Server {
     fn compositor_state(&mut self) -> &mut CompositorState {
         &mut self.compositor
     }
+    /// A commit with a new dmabuf waits until the buffer is ready: its explicit sync acquire point is
+    /// signalled, or its implicit fence when it has none. Composed earlier, the GPU would wait for the
+    /// client's rendering in the compositor's frame, and a late frame would hold up the screen instead of
+    /// the screen showing the previous one.
+    fn new_surface(&mut self, surface: &WlSurface) {
+        compositor::add_pre_commit_hook::<Self, _>(surface, |server, _dh, surface| {
+            let (acquire, dmabuf) = compositor::with_states(surface, |states| {
+                let acquire = states.cached_state.get::<smithay::wayland::drm_syncobj::DrmSyncobjCachedState>().pending().acquire_point.clone();
+                let dmabuf = states.cached_state.get::<compositor::SurfaceAttributes>().pending().buffer.as_ref().and_then(|buffer| match buffer {
+                    compositor::BufferAssignment::NewBuffer(buffer) => smithay::wayland::dmabuf::get_dmabuf(buffer).cloned().ok(),
+                    compositor::BufferAssignment::Removed => None,
+                });
+                (acquire, dmabuf)
+            });
+            let (Some(dmabuf), Some(handle), Some(client)) = (dmabuf, server.loop_handle.clone(), surface.client()) else { return };
+            let woken = move |server: &mut Server| {
+                let dh = server.dh.clone();
+                server.client_compositor_state(&client).blocker_cleared(server, &dh);
+            };
+            if let Some(acquire) = acquire {
+                match acquire.generate_blocker() {
+                    Ok((blocker, source)) => {
+                        let woken = woken.clone();
+                        match handle.insert_source(source, move |_, _, server| {
+                            woken(server);
+                            Ok(())
+                        }) {
+                            Ok(_) => return compositor::add_blocker(surface, blocker),
+                            Err(error) => log::warn!("compositor: a buffer's acquire point can't be waited on, its fence is: {}", error.error),
+                        }
+                    }
+                    Err(error) => log::warn!("compositor: a buffer's acquire point can't be waited on, its fence is: {error}"),
+                }
+            }
+            // (A buffer already ready has nothing to wait for.)
+            if let Ok((blocker, source)) = dmabuf.generate_blocker(smithay::reexports::calloop::Interest::READ) {
+                match handle.insert_source(source, move |_, _, server| {
+                    woken(server);
+                    Ok(())
+                }) {
+                    Ok(_) => compositor::add_blocker(surface, blocker),
+                    Err(error) => log::warn!("compositor: a buffer's fence can't be waited on, it is shown as it comes: {}", error.error),
+                }
+            }
+        });
+    }
     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
         static MISSING: OnceLock<CompositorClientState> = OnceLock::new();
         match client.get_data::<ClientState>() {
@@ -246,6 +292,12 @@ impl DataDeviceHandler for Server {
     }
 }
 impl WaylandDndGrabHandler for Server {}
+
+impl smithay::wayland::drm_syncobj::DrmSyncobjHandler for Server {
+    fn drm_syncobj_state(&mut self) -> Option<&mut smithay::wayland::drm_syncobj::DrmSyncobjState> {
+        self.syncobj.as_mut()
+    }
+}
 
 smithay::delegate_dispatch2!(Server);
 

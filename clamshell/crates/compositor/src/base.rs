@@ -38,6 +38,7 @@ impl Base {
         let (wake, woken) = ping::make_ping()?;
         event_loop.handle().insert_source(woken, |_, _, _| {}).map_err(|e| e.error)?;
         let mut server = Server::new(state, config, display.handle(), relative_motion, move || wake.ping(), identify, on_effect)?;
+        server.loop_handle = Some(event_loop.handle());
         let socket = ListeningSocketSource::new_auto()?;
         server.socket = socket.socket_name().to_string_lossy().into_owned();
         log::info!("compositor: WAYLAND_DISPLAY={}", server.socket);

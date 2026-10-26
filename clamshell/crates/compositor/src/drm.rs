@@ -110,6 +110,7 @@ pub fn run(
     let fd = DrmDeviceFd::new(DeviceFd::from(fd));
     // The connectors are left as they are, so each screen can keep the mode the kernel already set.
     let (mut drm, drm_notifier) = DrmDevice::new(fd.clone(), false).map_err(|e| format!("drm: {e}"))?;
+    let sync_fd = fd.clone();
     let gbm = GbmDevice::new(fd).map_err(|e| format!("drm: gbm: {e}"))?;
     let mut renderer = gles(gbm.clone())?;
 
@@ -131,6 +132,14 @@ pub fn run(
     server.refresh = i32::try_from(top.mode.vrefresh()).unwrap_or(60).saturating_mul(1000);
     server.resize(server.size);
     server.advertise_dmabuf(&renderer);
+    // Explicit sync, where the GPU can wait on a timeline point by an eventfd; without it, clients' buffers
+    // are waited on by their implicit fences (see `CompositorHandler::new_surface`).
+    if smithay::wayland::drm_syncobj::supports_syncobj_eventfd(&sync_fd) {
+        server.syncobj = Some(smithay::wayland::drm_syncobj::DrmSyncobjState::new::<Server>(&server.dh, sync_fd));
+        log::info!("drm: explicit sync offered");
+    } else {
+        log::info!("drm: no syncobj eventfd on {}: no explicit sync, buffers' implicit fences only", gpu.display());
+    }
     let mut pipeline = Pipeline::new(&mut renderer, server.size)?;
     crate::colour::protocol::install(&server.dh);
     // Each screen encoded for its panel, and described to clients as it, from the device profile.
@@ -514,3 +523,4 @@ impl Areas {
 fn identifier(device: &InputDevice) -> String {
     format!("{}:{}:{}", device.id_vendor(), device.id_product(), device.name().replace(' ', "_"))
 }
+

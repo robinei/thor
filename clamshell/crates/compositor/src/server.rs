@@ -49,6 +49,10 @@ pub(crate) struct Server {
     pub core: Core,
     pub colour: crate::colour::State,
     pub dh: DisplayHandle,
+    /// The event loop's handle, for a commit's buffer to wake it when ready (see `CompositorHandler::new_surface`).
+    pub loop_handle: Option<smithay::reexports::calloop::LoopHandle<'static, Server>>,
+    /// Explicit sync (`linux-drm-syncobj-v1`), on a GPU that can wait on a timeline point by an eventfd.
+    pub syncobj: Option<smithay::wayland::drm_syncobj::DrmSyncobjState>,
     pub compositor: CompositorState,
     pub shell: XdgShellState,
     pub activation: smithay::wayland::xdg_activation::XdgActivationState,
@@ -187,6 +191,8 @@ impl Server {
             seats,
             seat,
             dh,
+            loop_handle: None,
+            syncobj: None,
             outputs,
             popups: PopupManager::default(),
             menu: None,
