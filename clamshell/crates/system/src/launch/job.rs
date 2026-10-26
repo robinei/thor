@@ -18,7 +18,7 @@ pub struct Job {
     pub slice: Option<String>,
     /// Program and arguments.
     pub argv: Vec<String>,
-    /// Its environment, beside the user manager's.
+    /// Its environment, beside ClamShell's own.
     pub env: Vec<(String, String)>,
     pub workdir: Option<PathBuf>,
 }
@@ -47,6 +47,23 @@ impl From<io::Error> for Error {
     }
 }
 
+/// What systemd sets for ClamShell's own unit, which a launch's unit doesn't take from it.
+const UNIT_OWN: [&str; 13] = [
+    "NOTIFY_SOCKET",
+    "WATCHDOG_USEC",
+    "WATCHDOG_PID",
+    "JOURNAL_STREAM",
+    "INVOCATION_ID",
+    "MANAGERPID",
+    "MANAGERPIDFDID",
+    "SYSTEMD_EXEC_PID",
+    "LISTEN_FDS",
+    "LISTEN_PID",
+    "LISTEN_FDNAMES",
+    "MEMORY_PRESSURE_WATCH",
+    "MEMORY_PRESSURE_WRITE",
+];
+
 /// The `systemd-run` that starts a job as the service `<unit>.service`, in its slice if it has one, in
 /// its workdir or else HOME, with its environment. `systemd-run` returns once systemd has started it, or
 /// failed to.
@@ -65,7 +82,11 @@ pub fn command(job: &Job) -> Option<Command> {
     }
     let workdir = job.workdir.clone().unwrap_or_else(|| std::env::var_os("HOME").map_or_else(|| PathBuf::from("/"), PathBuf::from));
     cmd.arg(format!("--working-directory={}", workdir.display()));
-    cmd.args(job.env.iter().map(|(k, v)| format!("--setenv={k}={v}")));
+    // ClamShell's own environment, as a program it started itself would have it (a service starts with
+    // the user manager's: a ClamShell run with its own runtime or config dirs, nested or in a test, would
+    // send its games to another compositor), then the job's own, which go before it.
+    let own = std::env::vars().filter(|(k, _)| !UNIT_OWN.contains(&k.as_str()));
+    cmd.args(own.chain(job.env.iter().cloned()).map(|(k, v)| format!("--setenv={k}={v}")));
     cmd.arg("--").arg(program).args(args);
     Some(cmd)
 }
