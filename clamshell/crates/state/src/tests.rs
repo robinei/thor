@@ -293,18 +293,26 @@ fn back_from_sleep_applies_the_settings_again_and_wakes_the_screens() {
     assert!(!s.applied(Event::Resumed).iter().any(|e| matches!(e, Effect::Outputs { .. })), "awake already: the screens aren't sent again");
 }
 
-/// The refresh rate calibration turns the bottom screen off while it runs and restores it as it found it.
-/// When it ends, the bottom screen is set to what ClamShell wants, here off, as it was turned by hand.
+/// The refresh rate calibration has the bottom screen off while it runs, and the main screen at the rates
+/// its tool asks for. When it ends, both are as ClamShell wants them: the main screen's rate as the
+/// settings say, and the bottom screen on, or off when it was turned off by hand.
 #[test]
-fn a_refresh_calibration_ending_sets_the_bottom_screens_power_again() {
+fn a_refresh_calibration_sets_the_screens_and_then_gives_them_back() {
+    let refresh = |fx: &[Effect]| fx.iter().filter_map(|e| if let Effect::Refresh(hz) = e { Some(*hz) } else { None }).collect::<Vec<_>>();
     let mut s = state();
     s.applied(Event::tick(1000));
+    let fx = s.applied(PointerEvent::Activate(Id::Device(DeviceId::Refresh)).into());
+    assert!(fx.contains(&Effect::Outputs { top: true, bottom: false }), "{fx:?}");
+    assert_eq!(refresh(&s.applied(Event::CalibrationRate(60))), [60]);
+    let fx = s.applied(Event::RefreshCalibrated(Ok("done".into())));
+    assert!(fx.contains(&Effect::Outputs { top: true, bottom: true }), "{fx:?}");
+    assert_eq!(refresh(&fx), [0], "the rate as it was");
     let fx = s.applied(Event::Device(crate::device::buttons::DeviceKey::BottomPower));
     assert!(fx.contains(&Effect::Outputs { top: true, bottom: false }), "{fx:?}");
     s.applied(PointerEvent::Activate(Id::Device(DeviceId::Refresh)).into());
     let fx = s.applied(Event::RefreshCalibrated(Ok("done".into())));
-    assert!(fx.contains(&Effect::Outputs { top: true, bottom: false }), "{fx:?}");
-    assert!(!s.applied(Event::tick(1001)).iter().any(|e| matches!(e, Effect::Outputs { .. })), "once");
+    assert!(!fx.iter().any(|e| matches!(e, Effect::Outputs { .. })), "off by hand, it stays off: {fx:?}");
+    assert!(s.applied(Event::CalibrationRate(120)).is_empty(), "none runs: the rate isn't changed");
 }
 
 /// The main screen's refresh rate goes to a game's as it launches, so that the switch, which blanks the

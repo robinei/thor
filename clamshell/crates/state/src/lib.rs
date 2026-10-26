@@ -432,6 +432,7 @@ impl State {
             Event::Screenshot(result) => self.bottom.notice_mut().show(NoticeKind::Screenshot(result), now),
             Event::Sticks(event) => self.device.sticks_event(event, now, out),
             Event::RefreshCalibrated(result) => self.refresh_calibrated(result),
+            Event::CalibrationRate(hz) => self.device.calibration_asks(hz),
             Event::CalibrateGyro => self.calibrate_gyro(out),
             Event::GyroCalibrated(ok) => self.bottom.notice_mut().show(NoticeKind::Gyro(Some(ok)), now),
             // What the helper did, or why it failed, shown for a moment.
@@ -581,7 +582,7 @@ impl State {
         // Sleep only in the device's own session. A program in front doesn't hold it off; one playing a
         // video asks the compositor to keep the screen on.
         let policy = crate::device::idle::Policy::of(&self.prefs.settings().global, self.session.device_session());
-        let refreshing = *self.device.refresh() == crate::device::Refresh::Running;
+        let refreshing = self.device.calibrating();
         self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), out);
         let changed = self.session.follow_program();
         self.bottom.follow_power(self.power(), self.clock.mono());
@@ -636,7 +637,9 @@ impl State {
             program: self.session.program(),
             settings,
             launched: None,
-            bottom_on: !self.bottom.off(),
+            // Off while the refresh rate calibration runs, so only the main screen's vblanks come.
+            bottom_on: !self.bottom.off() && !self.device.calibrating(),
+            calibration: self.device.calibration_rate(),
             bottom_seen: !self.bottom.shows_windows(&self.session) && !self.bottom.off(),
             tab,
             device_open: self.device.is_open(),
@@ -1005,7 +1008,7 @@ impl State {
             in_game: self.session.program().is_some(),
             when_idle: self.in_force().choice::<BottomWhenIdle>(),
             discharging: self.sys.status().discharging,
-            refreshing: *self.device.refresh() == crate::device::Refresh::Running,
+            refreshing: self.device.calibrating(),
         }
     }
 

@@ -116,6 +116,9 @@ pub enum Event {
     Sticks(crate::device::SticksEvent),
     /// The top screen's refresh rate calibration ended, with its output or the reason it failed.
     RefreshCalibrated(Result<String, String>),
+    /// The running refresh rate calibration asks for the main screen at this rate, in Hz (`clamshell ctl
+    /// calibration rate HZ`).
+    CalibrationRate(u16),
     /// A change requested of the account helper is done, with what it did, or failed, with the reason. A
     /// new account reading follows (see [`crate::device::account`]).
     AccountChanged(Result<String, String>),

@@ -653,17 +653,19 @@ mod tests {
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::BottomRule(false)));
     }
 
-    /// On battery and untouched, it stays on while the refresh rate is calibrated, since the tool turns
-    /// it off and on itself, and while something is typed there.
+    /// On battery and untouched, it doesn't go off by itself while the refresh rate is calibrated (the
+    /// calibration has it off meanwhile), only once that is done, nor while something is typed there.
     #[test]
     fn a_refresh_calibration_or_an_editor_keeps_it_on() {
         let mut s = state();
         on_battery(&mut s, true);
         s.applied(Event::tick(1000));
-        s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::Device(crate::DeviceId::Refresh))));
+        let fx = s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::Device(crate::DeviceId::Refresh))));
+        assert_eq!(power(&fx), Some(false), "off while calibrating");
         assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), None, "calibrating");
         assert!(!s.bottom().off());
-        assert_eq!(power(&s.applied(Event::RefreshCalibrated(Ok(String::new())))), Some(false), "done: off by itself");
+        assert_eq!(power(&s.applied(Event::RefreshCalibrated(Ok(String::new())))), None, "done: off by itself, so it stays off");
+        assert!(s.bottom().off());
         let mut s = state();
         on_battery(&mut s, true);
         s.applied(Event::tick(1000));

@@ -102,7 +102,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     let (value, ok) = match device.refresh() {
         Refresh::Idle if s.profile().refresh_calibration.is_none() => (Fmt::<128>::of(format_args!("Unavailable")), false),
         Refresh::Idle => (Fmt::<128>::of(format_args!("Calibrate")), true),
-        Refresh::Running => (Fmt::of(format_args!("Calibrating (the bottom screen goes off)")), false),
+        Refresh::Running(_) => (Fmt::of(format_args!("Calibrating (the bottom screen goes off)")), false),
         Refresh::Done(Ok(said)) => (Fmt::of(format_args!("{}", said.lines().last().unwrap_or("Calibrated"))), true),
         Refresh::Done(Err(why)) => (Fmt::of(format_args!("{}", why.lines().last().unwrap_or("Failed"))), false),
     };

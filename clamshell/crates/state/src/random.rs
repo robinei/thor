@@ -489,6 +489,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 w.gyro = false;
                 Event::GyroCalibrated(rng.one_in(2))
             }
+            2 if w.refresh && rng.one_in(2) => Event::CalibrationRate(if rng.one_in(2) { 60 } else { 120 }),
             2 if w.refresh => {
                 w.refresh = false;
                 Event::RefreshCalibrated(Ok("done".into()))
@@ -734,9 +735,11 @@ fn check(s: &mut State, sent: &mut Sent, effects: &[Effect], before: &Before, st
     }
     let screens_on = s.idle().stage() < Stage::Off;
     ensure!(sent.status == screens_on, "2: status watched {}, screens on {screens_on}", sent.status);
-    let outputs = (screens_on, !s.bottom().off());
+    // (The refresh rate calibration keeps the bottom screen off while it runs.)
+    let outputs = (screens_on, !s.bottom().off() && !s.device().calibrating());
     ensure!(sent.outputs == outputs, "2: outputs sent {:?}, state {outputs:?}", sent.outputs);
-    ensure!(sent.refresh == sent.refresh_wanted, "2: refresh sent {}, last launched or applied {}", sent.refresh, sent.refresh_wanted);
+    let refresh = s.device().calibration_rate().unwrap_or(sent.refresh_wanted);
+    ensure!(sent.refresh == refresh, "2: refresh sent {}, the calibration's or last launched or applied {refresh}", sent.refresh);
     let apply = (s.session().program().cloned(), s.in_force());
     ensure!(sent.apply.as_ref() == Some(&apply), "2: applied {:?}, in force {:?}", sent.apply, apply);
 

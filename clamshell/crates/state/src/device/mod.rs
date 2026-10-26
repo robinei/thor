@@ -42,7 +42,9 @@ pub enum TopView {
 pub enum Refresh {
     #[default]
     Idle,
-    Running,
+    /// Running: the bottom screen is off, so only the main screen's vblanks come, and the main screen is
+    /// at the rate the tool asked for, if it has.
+    Running(Option<u16>),
     /// The tool's output, with the rates before and after, or the reason it failed.
     Done(Result<String, String>),
 }
@@ -193,8 +195,8 @@ impl Device {
             }
             DeviceId::Sticks => {}
             DeviceId::Gyro => out.events.push(Event::CalibrateGyro),
-            DeviceId::Refresh if self.refresh != Refresh::Running => {
-                self.refresh = Refresh::Running;
+            DeviceId::Refresh if !self.calibrating() => {
+                self.refresh = Refresh::Running(None);
                 out.effects.push(Effect::CalibrateRefresh);
             }
             DeviceId::Refresh => {}
@@ -233,6 +235,27 @@ impl Device {
     /// The refresh rate calibration ended, with its output.
     pub(crate) fn refresh_done(&mut self, result: Result<String, String>) {
         self.refresh = Refresh::Done(result);
+    }
+
+    /// Whether the refresh rate calibration runs.
+    pub fn calibrating(&self) -> bool {
+        matches!(self.refresh, Refresh::Running(_))
+    }
+
+    /// The main screen's rate the running refresh rate calibration asked for, if it has.
+    pub(crate) fn calibration_rate(&self) -> Option<u16> {
+        match self.refresh {
+            Refresh::Running(hz) => hz,
+            _ => None,
+        }
+    }
+
+    /// The running refresh rate calibration asks for the main screen at `hz`. Without one running, the
+    /// screen stays as the settings want it.
+    pub(crate) fn calibration_asks(&mut self, hz: u16) {
+        if let Refresh::Running(rate) = &mut self.refresh {
+            *rate = Some(hz);
+        }
     }
 }
 
@@ -490,7 +513,7 @@ mod tests {
     #[test]
     fn the_refresh_calibration_runs_once_at_a_time_and_says_how_it_went() {
         let mut s = State::new(init());
-        assert_eq!(tap(&mut s, DeviceId::Refresh), vec![Effect::CalibrateRefresh]);
+        assert_eq!(tap(&mut s, DeviceId::Refresh), vec![Effect::CalibrateRefresh, Effect::Outputs { top: true, bottom: false }]);
         assert!(tap(&mut s, DeviceId::Refresh).is_empty());
         s.applied(Event::RefreshCalibrated(Ok("120 Hz: 118.630 -> 120.089 Hz".into())));
         assert!(matches!(s.device().refresh(), Refresh::Done(Ok(_))));

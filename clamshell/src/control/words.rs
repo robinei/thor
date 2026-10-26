@@ -43,6 +43,9 @@ pub const COMMANDS: &[Form<Vec<Event>>] = &[
     form("bottom view", "Home + right stick press: the bottom screen shows ClamShell's view or the windows moved there", |_| device(DeviceKey::BottomView)),
     form("bottom power", "Home+Start: the bottom screen off, or on", |_| device(DeviceKey::BottomPower)),
     form("window events FILE", "dump the last 256 window inputs and the windows", |a| Ok(vec![Event::DumpWindowEvents(arg(a, 0).into())])),
+    form("calibration rate HZ", "the main screen at HZ while the refresh rate calibration runs (its tool asks)", |a| {
+        Ok(vec![Event::CalibrationRate(number(arg(a, 0))?)])
+    }),
     form("window down", "Home + right stick down: the window in front to the bottom screen (remembered for its program)", |_| device(DeviceKey::WindowDown)),
     form("window up", "Home + right stick up: the bottom screen's window back up (forgotten)", |_| device(DeviceKey::WindowUp)),
     form("window previous", "the program's previous window on top", |_| device(DeviceKey::WindowPrevious)),

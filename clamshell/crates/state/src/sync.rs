@@ -40,6 +40,8 @@ pub(crate) struct Wanted<'a> {
     pub(crate) modes: crate::device::display::DisplayModes,
     /// The bottom screen is on (see [`crate::Bottom::off`]).
     pub(crate) bottom_on: bool,
+    /// The main screen's rate the running refresh rate calibration asked for.
+    pub(crate) calibration: Option<u16>,
     /// ClamShell's view is on the bottom screen, and that screen is on.
     pub(crate) bottom_seen: bool,
     /// What the open tab watches.
@@ -126,8 +128,8 @@ pub(crate) enum Resend {
     /// Back from sleep, which may have reset what the settings set, such as frequency caps and cores: they
     /// are applied again.
     Resumed,
-    /// The refresh rate calibration turned the bottom screen off while it ran and then restored it: it is
-    /// set to what ClamShell wants.
+    /// The refresh rate calibration set the main screen's rates while it ran: it is set as the settings
+    /// want again.
     RefreshCalibrated,
 }
 
@@ -138,7 +140,7 @@ impl Sent {
             Resend::Start => (self.keymap, self.route) = (None, None),
             Resend::FetchFirst => self.fetch_view = None,
             Resend::Resumed => self.applied = None,
-            Resend::RefreshCalibrated => self.outputs = None,
+            Resend::RefreshCalibrated => self.applied = None,
         }
     }
 
@@ -250,9 +252,14 @@ impl Sent {
 
     /// The main screen's refresh rate follows the settings of the last entry launched, from its launch,
     /// and the settings in force when they are applied, whichever came last: their Refresh, or under a
-    /// frame rate cap one it divides (see [`crate::device::display::DisplayModes::refresh_for`]).
+    /// frame rate cap one it divides (see [`crate::device::display::DisplayModes::refresh_for`]). The
+    /// refresh rate calibration's rate goes before either while it runs.
     fn refresh(&mut self, w: &Wanted, applied: bool, out: &mut Out) {
-        let hz = if applied { Some(w.modes.refresh_for(w.settings.get(Setting::Refresh), w.settings.get(Setting::FpsCap))) } else { w.launched };
+        let hz = match w.calibration {
+            Some(hz) => Some(hz),
+            None if applied => Some(w.modes.refresh_for(w.settings.get(Setting::Refresh), w.settings.get(Setting::FpsCap))),
+            None => w.launched,
+        };
         if let Some(hz) = hz.filter(|&hz| hz != self.refresh) {
             self.refresh = hz;
             out.effects.push(Effect::Refresh(hz));
