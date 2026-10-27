@@ -11,6 +11,8 @@ pub(crate) mod math;
 pub(crate) mod host;
 pub(crate) mod protocol;
 pub(crate) mod render;
+#[cfg_attr(not(test), expect(dead_code, reason = "used by direct scanout, still to come"))]
+pub(crate) mod scanout;
 mod shaders;
 pub(crate) mod smaa;
 use clamshell_state::colour::ColourDescription;

@@ -442,7 +442,7 @@ fn clarity_uniform(clarity: clamshell_state::presentation::Clarity, (w, h): (i32
 /// HDR one its own peak (`hdr_peak`, in units of its white); then white over the reference, saturation,
 /// the screen's headroom, and whether a curve is on.
 /// Without one, an SDR surface is only decoded and an HDR one compressed into the screen.
-fn curve_uniforms(curve: Option<&Curve>, headroom: f32, hdr_peak: Option<f32>) -> [[f32; 4]; 2] {
+pub(super) fn curve_uniforms(curve: Option<&Curve>, headroom: f32, hdr_peak: Option<f32>) -> [[f32; 4]; 2] {
     let Some(c) = curve else {
         return [[0.0, 1.0, 1.0, hdr_peak.unwrap_or(1.0)], [1.0, 1.0, headroom, 0.0]];
     };
