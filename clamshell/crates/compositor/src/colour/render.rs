@@ -62,6 +62,8 @@ struct Scene {
     /// The surface drawn straight onto the screen, and what of it was drawn last, to know when it changed.
     direct: Option<Converted>,
     direct_drawn: Option<(Id, CommitCounter)>,
+    /// Its draws' uniforms' list (see [`Converted::uniforms`]).
+    uniforms: Uniforms,
 }
 
 impl Scene {
@@ -79,6 +81,7 @@ impl Scene {
             chains: Default::default(),
             direct: None,
             direct_drawn: None,
+            uniforms: Default::default(),
         })
     }
 
@@ -122,7 +125,13 @@ struct Converted {
     /// SMAA's blending weights, when its blending is done in this pass: bound to the second texture unit
     /// while the element is drawn, as Smithay's programs take one texture (`docs/picture.md`).
     smaa_blend: Option<GlesTexture>,
+    /// The uniforms' list, its scene's, taken for a draw and given back after, so that drawing allocates
+    /// nothing.
+    uniforms: Uniforms,
 }
+
+/// A scene's list of a draw's uniforms, shared by its elements, which draw one at a time.
+type Uniforms = std::rc::Rc<std::cell::RefCell<Vec<Uniform<'static>>>>;
 impl ElementTrait for Converted {
     fn id(&self) -> &Id {
         self.inner.id()
@@ -170,18 +179,22 @@ impl RenderElement<GlesRenderer> for Converted {
         opaque: &[Rectangle<i32, Physical>],
         cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
-        // The weights' sampler is always on the second unit: left on the first, beside an external
-        // texture, it would be a GL error at the draw.
-        let uniforms = self.curve.map_or_else(Vec::new, |[a, b, c]| {
+        let mut uniforms = std::mem::take(&mut *self.uniforms.borrow_mut());
+        uniforms.clear();
+        if let Some([a, b, c]) = self.curve {
+            // The weights' sampler is always on the second unit: left on the first, beside an external
+            // texture, it would be a GL error at the draw.
             let second = smithay::backend::renderer::gles::UniformValue::_1i(1);
-            vec![Uniform::new("curve_a", a), Uniform::new("curve_b", b), Uniform::new("clarity", c), Uniform::new("smaa_blend_tex", second)]
-        });
+            uniforms.extend([Uniform::new("curve_a", a), Uniform::new("curve_b", b), Uniform::new("clarity", c), Uniform::new("smaa_blend_tex", second)]);
+        }
         if let Some(weights) = &self.smaa_blend {
             bind_second(frame, Some(weights.tex_id()))?;
         }
         frame.override_default_tex_program(self.shader.clone(), uniforms);
         let result = self.inner.draw(frame, src, dst, damage, opaque, cache);
-        frame.clear_tex_program_override();
+        if let Some((_, uniforms)) = frame.take_tex_program_override() {
+            *self.uniforms.borrow_mut() = uniforms;
+        }
         if self.smaa_blend.is_some() {
             bind_second(frame, None)?;
         }
@@ -392,7 +405,7 @@ impl Pipeline {
                 Some(super::chain::Chained::Weights(weights)) => Some(weights.clone()),
                 _ => None,
             };
-            let converted = Converted { inner, offset: part.loc, shader: program, curve, smaa_blend };
+            let converted = Converted { inner, offset: part.loc, shader: program, curve, smaa_blend, uniforms: scene.uniforms.clone() };
             if direct {
                 scene.direct = Some(converted);
             } else {
