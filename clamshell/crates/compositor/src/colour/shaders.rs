@@ -33,8 +33,17 @@ pub(super) fn direct(description: ColourDescription, output: ColourDescription, 
 /// A shader with a decoding, an encoding, or both in turn, each its GLSL functions and its statements on
 /// `v`; `description` the surface's, or the screen's for an encoding alone.
 fn source(decoding: Option<(String, String)>, encoding: Option<(String, String)>, description: ColourDescription, curved: bool) -> Result<String, Error> {
+    // Drawn straight onto the screen, a surface is over black as in a scene: composed in linear light, then
+    // encoded, opaque.
+    let straight = decoding.is_some() && encoding.is_some();
     let (decoding, decoded) = decoding.unwrap_or_default();
     let (encoding, encoded) = encoding.unwrap_or_default();
+    let out = if straight {
+        "v *= sample.a * alpha;\n    {encoded}\n    gl_FragColor = vec4(v, 1.0);"
+    } else {
+        "{encoded}\n    gl_FragColor = vec4(v * sample.a, sample.a) * alpha;"
+    };
+    let out = out.replace("{encoded}", &encoded);
     let uniforms = if curved { "uniform vec4 curve_a;\nuniform vec4 curve_b;\nuniform vec4 clarity;\nuniform sampler2D smaa_blend_tex;" } else { "" };
     let fetch = if curved {
         let linear = format!("const bool LINEAR = {};\n", description.transfer == TransferFunction::Linear);
@@ -70,8 +79,7 @@ void main() {{
 #endif
     vec3 v = sample.a > 0.0 ? sample.rgb / sample.a : vec3(0.0);
     {decoded}
-    {encoded}
-    gl_FragColor = vec4(v * sample.a, sample.a) * alpha;
+    {out}
 }}"#
     );
     Ok(source)

@@ -992,6 +992,8 @@ mod direct_tests {
             let mut target = renderer.bind(&mut out).unwrap();
             let mut frame = renderer.render(&mut target, (size.w, size.h).into(), Transform::Normal).unwrap();
             let whole = Rectangle::<i32, Physical>::from_size((size.w, size.h).into());
+            // On opaque black, as a scene and a screen start.
+            frame.clear([0.0, 0.0, 0.0, 1.0].into(), &[whole]).unwrap();
             frame
                 .render_texture_from_to(texture, Rectangle::from_size(size).to_f64(), whole, &[whole], &[], Transform::Normal, 1.0, Some(program), uniforms)
                 .unwrap();
@@ -1015,6 +1017,10 @@ mod direct_tests {
         let mut renderer = renderer();
         let picture: Vec<u8> = (0..256u32).flat_map(|i| [i as u8, (255 - i) as u8, (i * 7 % 256) as u8, 255]).collect();
         let texture = renderer.import_memory(&picture, Fourcc::Abgr8888, (256, 1).into(), false).unwrap();
+        // Premultiplied: each alpha, a colour of each scaled by it.
+        let picture: Vec<u8> = (0..256u32).flat_map(|a| [200 * a / 255, 90 * a / 255, (a * 7 % 256) * a / 255, a].map(|c| c as u8)).collect();
+        let translucent = renderer.import_memory(&picture, Fourcc::Abgr8888, (256, 1).into(), false).unwrap();
+        let picture: Vec<u8> = (0..256u32).flat_map(|i| [i as u8, (255 - i) as u8, (i * 7 % 256) as u8, 255]).collect();
         let srgb = ColourDescription::default();
         let pq = ColourDescription { primaries: ColourPrimaries::Bt2020, transfer: TransferFunction::Pq, ..ColourDescription::default() };
         let panel = ColourDescription::from(clamshell_device::colour::PanelColour::srgb());
@@ -1045,6 +1051,15 @@ mod direct_tests {
                         assert!((got - want[c]).abs() <= 1.0, "{surface:?} on {output:?} {path}: pixel {i} channel {c} {got}, not {:.2}", want[c]);
                     }
                 }
+            }
+            // Translucent, it is over black either way, composed in linear light: the same straight as
+            // through the scene (which the opaque picture above pins to the CPU's).
+            let straight = draw(&mut renderer, &translucent, &program, &uniforms, Fourcc::Abgr8888);
+            let scene = draw(&mut renderer, &translucent, &decode, &uniforms, Fourcc::Abgr16161616f);
+            let through = draw(&mut renderer, &scene, &encode, &[], Fourcc::Abgr8888);
+            let (straight, through) = (pixels(&mut renderer, &straight), pixels(&mut renderer, &through));
+            for (i, (a, b)) in straight.iter().zip(&through).enumerate() {
+                assert!(a.abs_diff(*b) <= 1, "{surface:?} on {output:?} translucent: byte {i} straight {a}, through the scene {b}");
             }
         }
     }
