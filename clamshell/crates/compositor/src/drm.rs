@@ -937,14 +937,22 @@ fn record_overlays(server: &mut Server) {
 
 /// Decides for each screen with its own buffers whether it shows them: while the scene has nothing but
 /// ClamShell's view on it, or its overlay and cursor on their planes. A screen going back to composing
-/// clears the CRTC's colour in its next commit and is drawn whole.
+/// clears the CRTC's colour in its next commit and is drawn whole; one going back to its own buffers draws
+/// and commits them whole.
 fn ui_scanout_decide(drawing: &mut Drawing, server: &mut Server) {
     for screen in &mut drawing.screens {
-        let Some(ui) = &screen.ui else { continue };
+        if screen.ui.is_none() {
+            continue;
+        }
         let now = ui_only(server, screen.role == ScreenRole::Bottom, screen.planed());
+        let Some(ui) = &mut screen.ui else { continue };
         if screen.ui_shown && !now {
             screen.surface.clear_after(ui.clear());
             screen.dirty = true;
+        }
+        if !screen.ui_shown && now {
+            // Committed whole even if the UI didn't change meanwhile: the screen shows a composed frame.
+            ui.reset();
         }
         if now != screen.ui_shown {
             log::info!("ui scanout: the {:?} screen is {}", screen.role, if now { "scanned out" } else { "composed" });
