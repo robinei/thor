@@ -591,6 +591,7 @@ fn step(
     // `plane_layers`). A screen showing only ClamShell shows its own buffers, and isn't composed for (see
     // `ui_scanout`); one showing one window alone may show the window's (see `window_scanout`), or draw it
     // straight onto itself.
+    record_overlays(server);
     layers_decide(drawing, server);
     ui_scanout_decide(drawing, server);
     window_scanout_decide(drawing, server);
@@ -917,14 +918,10 @@ fn present_layers(screen: &mut Screen, server: &mut Server, cursor: &crate::curs
     }
 }
 
-/// Decides for each screen with its own buffers whether it shows them: while the scene has nothing but
-/// ClamShell's view on it. Overlays waiting to be recorded are first, as a notice coming up has the screen
-/// composed. A screen going back to composing clears the CRTC's colour in its next commit and is drawn
-/// whole.
-fn ui_scanout_decide(drawing: &mut Drawing, server: &mut Server) {
-    if drawing.screens.iter().all(|s| s.ui.is_none()) {
-        return;
-    }
+/// Records the screens' overlays that are stale, and places the scene again if any was: what an overlay
+/// shows decides whether it goes on a plane, a screen shows its own buffers, or a window is shown from its
+/// own, all of which follow. (Composing would record it too, but only after those decisions, a turn late.)
+fn record_overlays(server: &mut Server) {
     let mut recorded = false;
     for screen in [clamshell_ui::Screen::Top, clamshell_ui::Screen::Bottom] {
         let overlay = clamshell_ui::Layer::Overlay(screen);
@@ -936,6 +933,12 @@ fn ui_scanout_decide(drawing: &mut Drawing, server: &mut Server) {
     if recorded {
         server.place();
     }
+}
+
+/// Decides for each screen with its own buffers whether it shows them: while the scene has nothing but
+/// ClamShell's view on it, or its overlay and cursor on their planes. A screen going back to composing
+/// clears the CRTC's colour in its next commit and is drawn whole.
+fn ui_scanout_decide(drawing: &mut Drawing, server: &mut Server) {
     for screen in &mut drawing.screens {
         let Some(ui) = &screen.ui else { continue };
         let now = ui_only(server, screen.role == ScreenRole::Bottom, screen.planed());
