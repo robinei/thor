@@ -409,6 +409,13 @@ impl PlaneLayers {
         }
     }
 
+    /// Whether the next commit shows something on them, rather than only turning them off (which no
+    /// display engine refuses): a commit refused with them showing may be refused for them.
+    pub(crate) fn shows(&self) -> bool {
+        let wanted = |plane: &Plane| plane.wanted.is_some();
+        self.overlay.as_ref().is_some_and(|o| wanted(&o.plane)) || self.cursor.as_ref().is_some_and(|c| wanted(&c.plane))
+    }
+
     /// The display engine refused a commit with them: off from now on, logged; the screen composes them.
     pub(crate) fn fail(&mut self, error: &Error, role: &str) {
         if !self.failed {
@@ -418,16 +425,14 @@ impl PlaneLayers {
         self.planed = Planed::default();
     }
 
-    /// Their buffers hold nothing any more (the screen was away): drawn whole next, and shown as if never.
+    /// Their buffers hold nothing any more (the screen was away, or a flip was lost): drawn whole next. What
+    /// each plane showed is kept, as the display engine may show it still: a plane not wanted next is turned
+    /// off, and its buffers aren't dropped meanwhile.
     pub(crate) fn reset(&mut self) {
-        if let Some(overlay) = &mut self.overlay {
-            if let Some(buffers) = &mut overlay.buffers {
-                buffers.reset();
-            }
-            overlay.plane.shown = None;
+        if let Some(buffers) = self.overlay.as_mut().and_then(|overlay| overlay.buffers.as_mut()) {
+            buffers.reset();
         }
         if let Some(cursor) = &mut self.cursor {
-            cursor.plane.shown = None;
             cursor.shown = None;
         }
     }

@@ -1043,9 +1043,9 @@ fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipel
     // The window's place turned as the composed frame is, its buffer the other way, as the plane takes it.
     let logical = screen.transform.transform_size(screen.size);
     let dst = screen.transform.transform_rect_in(candidate.dst.to_physical(1), &logical);
+    let with_layers = screen.layers.as_ref().is_some_and(PlaneLayers::shows);
     let surface = &mut screen.surface;
     let states = screen.layers.iter().flat_map(PlaneLayers::states);
-    let with_layers = states.clone().next().is_some();
     let shown = scanout.framebuffer(&candidate.dmabuf).and_then(|fb| {
         let properties = scanout.colour(candidate.colour)?;
         surface.show_window(candidate.buffer.clone(), fb, candidate.src, dst, screen.transform.invert(), properties, states, test)
@@ -1101,8 +1101,8 @@ fn present_ui(screen: &mut Screen, server: &mut Server, cursor: &crate::cursor::
     if let Some(layers) = &mut screen.layers {
         layers.prepare(server, ui_screen(screen.role), cursor);
     }
+    let with_layers = screen.layers.as_ref().is_some_and(PlaneLayers::shows);
     let states = screen.layers.iter().flat_map(PlaneLayers::states);
-    let with_layers = states.clone().next().is_some();
     let shown = match fb {
         Some(fb) => screen.surface.show_ui(fb, ui.colour(), states),
         None => screen.surface.show_again(states),
@@ -1116,7 +1116,12 @@ fn present_ui(screen: &mut Screen, server: &mut Server, cursor: &crate::cursor::
             screen.pending = true;
             screen.queued_at = Some(Instant::now());
         }
-        Err(error) if with_layers => layers_failed(screen, &error),
+        Err(error) if with_layers => {
+            if fb.is_some() {
+                ui.failed();
+            }
+            layers_failed(screen, &error);
+        }
         Err(error) => {
             // Composed instead from now on, with the reason.
             log::warn!("ui scanout: the {:?} screen: {error}: composed from now on", screen.role);
@@ -1143,8 +1148,8 @@ fn present(drawing: &mut Drawing, server: &mut Server, index: usize) -> Result<(
         pipeline.present_screen(renderer, &mut target, screen.role == ScreenRole::Bottom, screen.size, screen.transform)?
     };
     screen.queued.states.clone_from(&states.states);
+    let with_layers = screen.layers.as_ref().is_some_and(PlaneLayers::shows);
     let layers = screen.layers.iter().flat_map(PlaneLayers::states);
-    let with_layers = layers.clone().next().is_some();
     if let Err(error) = screen.surface.queue(Some(sync), layers) {
         if with_layers {
             layers_failed(screen, &error);

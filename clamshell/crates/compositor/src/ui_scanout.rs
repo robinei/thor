@@ -64,6 +64,11 @@ impl UiScanout {
         self.buffers.reset();
     }
 
+    /// The commit showing the buffer drawn failed: it holds a frame nobody saw, and is drawn whole next.
+    pub(crate) fn failed(&mut self) {
+        self.buffers.failed();
+    }
+
     /// The buffer drawn was committed: the other is drawn next.
     pub(crate) fn committed(&mut self) {
         self.buffers.committed();
@@ -184,6 +189,13 @@ impl LayerBuffers {
     /// Its buffers hold nothing any more: each is drawn whole next.
     pub(crate) fn reset(&mut self) {
         for buffer in &mut self.buffers {
+            buffer.held = 0;
+        }
+    }
+
+    /// The commit showing the buffer drawn failed: it holds a frame nobody saw, and is drawn whole next.
+    pub(crate) fn failed(&mut self) {
+        if let Some(buffer) = self.buffers.get_mut(self.next) {
             buffer.held = 0;
         }
     }
