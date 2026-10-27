@@ -19,8 +19,10 @@ for step in "$@"; do
                      xz:xz depmod:kmod patch:patch cpio:cpio meson:meson ninja:ninja; do need "${t%%:*}" "${t#*:}"; done
             for t in makepkg:pacman fakeroot:fakeroot git:git rustup:rustup clang:clang ld.lld:lld pkg-config:pkgconf \
                      repo-add:pacman gpg:gnupg unsquashfs:squashfs-tools bsdtar:libarchive curl:curl; do need "${t%%:*}" "${t#*:}"; done
-            command -v rustup > /dev/null && ! rustup target list --installed | grep -qx aarch64-unknown-linux-gnu \
-                && notes+=("rustup target add aarch64-unknown-linux-gnu")
+            # In clamshell/, so that rustup answers for the toolchain it pins (which it installs on first use,
+            # with the target).
+            command -v rustup > /dev/null && ! (cd "$(dirname "$0")/../clamshell" && rustup target list --installed 2>/dev/null) \
+                | grep -qx aarch64-unknown-linux-gnu && notes+=("cd clamshell && rustup target add aarch64-unknown-linux-gnu")
             ;;
         image | vm-image)
             for t in pacstrap:arch-install-scripts arch-chroot:arch-install-scripts mkfs.vfat:dosfstools mkfs.ext4:e2fsprogs \
