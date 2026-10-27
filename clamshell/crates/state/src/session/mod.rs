@@ -25,6 +25,13 @@ use launch_unit::LaunchUnit;
 use running::{Front, Launching, Running};
 use windows::{Group, Window, WindowFacts, WindowPlace};
 
+/// What was in front, as [`Session::follow_front`] goes back to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum InFront {
+    Shelf,
+    Group(Group),
+}
+
 /// The launch to show when its first window appears, and when waiting for it gives up: set for a program
 /// still running whose window in front closed (see [`Session::follow_front`]); none for a launch.
 #[derive(Debug, Clone)]
@@ -66,8 +73,9 @@ pub struct Session {
     home_used: bool,
     /// Our running units, as systemd lists them.
     units: Vec<LaunchUnit>,
-    /// Groups by when they were last in front, most recent first.
-    recent: Vec<Group>,
+    /// What was in front, most recent first: groups, and shelf once something put it in front
+    /// ([`WindowCommand::ShowShelf`]), so that a closed window goes back to where it was opened from.
+    recent: Vec<InFront>,
     /// The selected window of each top group, retained while the group is hidden.
     selected: Vec<(Group, i64)>,
     /// The launch to show when its first window appears. Until then, other programs' new windows open
@@ -444,10 +452,18 @@ impl Session {
             }
         }
         let present = |group: &Group| self.windows.iter().any(|w| w.group.as_ref() == Some(group));
-        self.recent.retain(present);
-        // Already first, it stays.
-        if let Some(front) = self.top_window().and_then(|w| w.group.as_ref()).filter(|f| self.recent.first() != Some(*f)) {
-            let front = front.clone();
+        self.recent.retain(|was| match was {
+            InFront::Shelf => true,
+            InFront::Group(group) => present(group),
+        });
+        if let Some(group) = self.top_window().and_then(|w| w.group.clone()) {
+            self.remember_in_front(InFront::Group(group));
+        }
+    }
+
+    /// Puts `front` first in what was in front. Already first, it stays.
+    fn remember_in_front(&mut self, front: InFront) {
+        if self.recent.first() != Some(&front) {
             self.recent.retain(|n| *n != front);
             self.recent.insert(0, front);
         }

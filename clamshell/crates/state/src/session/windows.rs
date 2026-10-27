@@ -77,6 +77,7 @@ impl Session {
             WindowCommand::ShowShelf => {
                 self.keyboard_focus = None;
                 self.top = None;
+                self.remember_in_front(super::InFront::Shelf);
             }
             WindowCommand::Move { windows, to } => {
                 for w in self.windows.iter_mut().filter(|w| windows.contains(&w.id)) {
@@ -110,7 +111,7 @@ impl Session {
             WindowCommand::Return(window) => {
                 let group = self.window(*window).and_then(|w| w.group.clone());
                 if !self.windows.iter().any(|w| !self.below(w.id) && w.group == group) {
-                    self.recent.retain(|g| Some(g) != group.as_ref());
+                    self.recent.retain(|was| !matches!(was, super::InFront::Group(g) if Some(g) == group.as_ref()));
                 }
                 if self.bottom == Some(*window) {
                     self.bottom = None;

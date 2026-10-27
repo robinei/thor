@@ -3,6 +3,7 @@
 
 use crate::Compositor;
 use crate::out::Out;
+use crate::session::InFront;
 use crate::session::windows::{Group, WindowCommand};
 use crate::{Effect, EntryAct, Event, LaunchUnit, Session};
 
@@ -13,7 +14,8 @@ pub(crate) const REWAIT_SECS: u64 = 30;
 impl Session {
     /// Runs after every event. If the window in front when the last pass ran (see
     /// [`Session::followed`]) closed and nothing of its group is left, goes back to what was in front
-    /// before it, with shelf as the last resort. The group is remembered in case a window appears in it
+    /// before it: a group still shown, or shelf, if shelf was in front since, as when the program was
+    /// launched from it; shelf is the last resort. The group is remembered in case a window appears in it
     /// soon after (see [`Session::follow_replacement`]). If its program still runs, its next window is
     /// shown as a launch's first is, for [`REWAIT_SECS`].
     pub(crate) fn follow_front(&mut self, now: u64) {
@@ -23,7 +25,14 @@ impl Session {
             return;
         }
         let shown = |group: &Group| windows.iter().any(|w| w.group.as_ref() == Some(group) && !self.below(w.id));
-        let group = self.recent.iter().find(|group| shown(group)).cloned();
+        let back = self.recent.iter().find(|was| match was {
+            InFront::Shelf => true,
+            InFront::Group(group) => shown(group),
+        });
+        let group = match back {
+            Some(InFront::Group(group)) => Some(group.clone()),
+            Some(InFront::Shelf) | None => None,
+        };
         let was = was.clone();
         let closed = !windows.iter().any(|w| w.group.as_ref() == Some(&was));
         match group {
@@ -93,6 +102,27 @@ mod tests {
         assert_eq!(s.applied(Event::Home), vec![Effect::PadRoute(crate::PadRoute::Ui)]);
         assert!(s.session().shelf_in_front());
         assert!(s.applied(Event::Home).is_empty());
+    }
+
+    /// A game launched from shelf goes back to shelf when it quits, not to the program in front before,
+    /// such as the launcher that ran it; a game started from the launcher goes back to the launcher.
+    #[test]
+    fn a_closed_window_goes_back_to_shelf_if_shelf_was_in_front_before_it() {
+        let mut s = state();
+        let (launcher, game) = (launch_of("heroic"), launch_of("zelda"));
+        s.observed(vec![win_of(2, "heroic", &launcher)]);
+        s.applied(WindowEvent::Activate(2).into());
+        s.applied(Event::Home);
+        s.observed(vec![win_of(2, "heroic", &launcher), win_of(3, "zelda", &game)]);
+        s.applied(WindowEvent::Activate(3).into());
+        s.observed(vec![win_of(2, "heroic", &launcher)]);
+        assert!(s.session().shelf_in_front(), "where it was launched from");
+        // Started from the launcher, it goes back there.
+        s.applied(WindowEvent::Activate(2).into());
+        s.observed(vec![win_of(2, "heroic", &launcher), win_of(3, "zelda", &game)]);
+        s.applied(WindowEvent::Activate(3).into());
+        s.observed(vec![win_of(2, "heroic", &launcher)]);
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(2));
     }
 
     #[test]
