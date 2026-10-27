@@ -31,6 +31,7 @@ png = "0.18"
 evdev = "0.13"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 rustix = { version = "1", features = ["event", "fs", "time", "param", "process", "net", "pipe", "thread"] }
+drm-ffi = "0.9.1"
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }
 log = "0.4"
 libc = "0.2"

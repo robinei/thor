@@ -542,8 +542,11 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       is the left one.
 - [ ] GPU: Freedreno (the compositor's GLES) and Turnip (`vkcube`, a game); the compositor's frame rate
       in sysinfo.
-- [ ] Direct scanout. The spec sheet gives the panels as 1080x1920 (main, 120 Hz) and 1080x1240 (second, 60
-      Hz): natively portrait, mounted sideways, as our configs' transforms assume. Confirm with the
+- [ ] Direct scanout. With `CLAMSHELL_SCANOUT=1` ClamShell logs, at start, every plane either screen can
+      use (rotations, formats and modifiers, colour pipelines and their operations) and the CRTCs' colour
+      properties: the first boot answers what follows. The spec sheet gives the panels as 1080x1920 (main,
+      120 Hz) and 1080x1240 (second, 60 Hz): natively portrait, mounted sideways, as our configs' transforms
+      assume. Confirm with the
       connectors' native modes. Rotated, ClamShell's compositor composites a fullscreen game every frame (it
       always composes for now: `docs/history/compositor-mvp.md`, phase 4): measure what that pass costs at 120 Hz (GPU
       time, power). Whether the display engine's planes rotate RGB buffers by 90° (`drm_info`: each plane's

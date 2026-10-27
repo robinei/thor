@@ -24,6 +24,7 @@ calloop = { version = "0.14", features = ["signals"] }
 x11rb-protocol = { version = "0.13.2", features = ["res", "composite", "xfixes", "randr"] }
 command-fds = "0.3.3"
 rustix.workspace = true
+drm-ffi.workspace = true
 wayland-client.workspace = true
 winit-wayland = { version = "=0.31.0-beta.3", default-features = false }
 

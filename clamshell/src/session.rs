@@ -128,7 +128,7 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
         *started.borrow_mut() = Some(start(&system_config, &paths, sources, &global, sender));
     };
     let result = match host {
-        Host::Drm => clamshell_compositor::run_drm(state, config, start, on_effect, identify, on_capture, quit),
+        Host::Drm => clamshell_compositor::run_drm(state, config, start, on_effect, identify, on_capture, quit, env.scanout),
         Host::Nested => clamshell_compositor::run_nested(state, config, start, on_effect, identify, on_capture, quit),
     };
     result.map_err(|e| e.to_string())

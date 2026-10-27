@@ -303,6 +303,7 @@ dependencies = [
  "clamshell-state",
  "clamshell-ui",
  "command-fds",
+ "drm-ffi",
  "log",
  "rustix 1.1.5",
  "serde",

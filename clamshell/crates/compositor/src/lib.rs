@@ -26,6 +26,7 @@ mod pointer;
 mod popup;
 mod protocols;
 mod render;
+mod scanout;
 mod scene;
 mod screens;
 mod server;

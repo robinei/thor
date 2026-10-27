@@ -123,7 +123,9 @@ struct Chosen {
     millimetres: Option<(u32, u32)>,
 }
 
-/// Runs the compositor on the machine's screens until ClamShell quits.
+/// Runs the compositor on the machine's screens until ClamShell quits. With `scanout` (CLAMSHELL_SCANOUT=1),
+/// direct scanout is tried (see `crate::scanout`).
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     state: State,
     mut config: Config,
@@ -132,6 +134,7 @@ pub fn run(
     identify: impl Fn(u32) -> Process + Send + Sync + 'static,
     on_capture: impl FnMut(Result<clamshell_state::ScreenshotPixels, String>) + 'static,
     quit: crate::QuitSignals,
+    scanout: bool,
 ) -> Result<(), Error> {
     let profile = *state.profile();
     let (mut session, notifier) = LibSeatSession::new().map_err(|e| format!("drm: no seat: {e}"))?;
@@ -150,6 +153,9 @@ pub fn run(
 
     let top = choose(&drm, &profile, ScreenRole::Top, None)?;
     let bottom = choose(&drm, &profile, ScreenRole::Bottom, Some(top.crtc))?;
+    if scanout {
+        crate::scanout::report(&drm, &[("the top screen", top.crtc), ("the second screen", bottom.crtc)]);
+    }
     let logical = |chosen: &Chosen, role: ScreenRole| {
         let (w, h) = chosen.mode.size();
         let turned = transform(profile.screen(role).rotation).transform_size(Size::<i32, Physical>::from((i32::from(w), i32::from(h))));

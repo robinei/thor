@@ -25,6 +25,9 @@ pub struct Env {
     /// CLAMSHELL_BACKLIGHTS: a folder laid out like /sys/class/backlight to use instead, for tests and
     /// for desktops without a backlight.
     pub backlights: PathBuf,
+    /// CLAMSHELL_SCANOUT=1: try direct scanout on the device's screens (best effort; see the compositor's
+    /// `scanout`).
+    pub scanout: bool,
     /// CLAMSHELL_CHARGE_LIMIT: how the charge limit is held (threshold, firmware, current), when not as
     /// detected.
     pub charge_limit: Option<String>,
@@ -46,6 +49,7 @@ impl Env {
             pad_mouse: flag("CLAMSHELL_PAD_MOUSE", "1"),
             control: path("CLAMSHELL_CONTROL"),
             backlights: path("CLAMSHELL_BACKLIGHTS").unwrap_or_else(|| PathBuf::from("/sys/class/backlight")),
+            scanout: flag("CLAMSHELL_SCANOUT", "1"),
             charge_limit: var("CLAMSHELL_CHARGE_LIMIT"),
             base: Base::from_env(),
         })
