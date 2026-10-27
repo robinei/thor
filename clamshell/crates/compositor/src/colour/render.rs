@@ -1,7 +1,9 @@
 //! The colour pipeline, through which both hosts draw. Each screen has its own scene, composed on its own:
 //! its surfaces decoded from their own colour into half floats kept between frames, with each game's curve
 //! and clarity applied, and encoded once in the screen's colour when presented. Only what changed is drawn
-//! into a scene, and a screen that changed nothing draws nothing. A screen whose whole frame is one surface
+//! into a scene, and a screen that changed nothing draws nothing. A scene's texture is made when its screen
+//! composes through it and dropped a while after it last did (`crate::hold`): a screen showing a game
+//! alone, or ClamShell alone from its own buffers, holds none. A screen whose whole frame is one surface
 //! (a game alone on it) has it drawn straight onto the screen instead, decoded and encoded in one pass: the
 //! scene, a full screen of half floats written and read again, is left out, and with nothing to blend the
 //! picture is the same.
@@ -39,6 +41,17 @@ pub(crate) struct Pipeline {
     chained: Vec<(Id, WlSurface, AntiAliasing, bool, bool)>,
     /// The histogram of the picture a curve's edit screen plots.
     histogram: super::histogram::Measure,
+    /// What a screenshot is drawn with, kept between screenshots taken close together (see `crate::hold`).
+    capture: Option<Capture>,
+    capture_hold: crate::hold::Hold,
+}
+
+/// A screenshot's texture, of the layout's size, and the shaders encoding each scene, by its primaries, in
+/// sRGB for it.
+struct Capture {
+    texture: GlesTexture,
+    size: (i32, i32),
+    programs: [(ColourPrimaries, GlesTexProgram); 2],
 }
 
 /// A screen's scene: its surfaces decoded into half floats, kept between frames, of which only what changed
@@ -47,7 +60,9 @@ struct Scene {
     /// The screen's area in the layout of both screens; its elements are moved from there to the scene's
     /// origin.
     part: Rectangle<i32, Physical>,
-    texture: GlesTexture,
+    /// Its texture while it is used, and when it last was.
+    texture: Option<GlesTexture>,
+    hold: crate::hold::Hold,
     damage: OutputDamageTracker,
     first: bool,
     converted: Vec<Converted>,
@@ -67,11 +82,12 @@ struct Scene {
 }
 
 impl Scene {
-    fn new(renderer: &mut GlesRenderer, part: Rectangle<i32, Physical>, output: (ColourDescription, GlesTexProgram)) -> Result<Scene, Error> {
+    fn new(part: Rectangle<i32, Physical>, output: (ColourDescription, GlesTexProgram)) -> Scene {
         let size = (part.size.w.max(1), part.size.h.max(1));
-        Ok(Scene {
+        Scene {
             part,
-            texture: renderer.create_buffer(Fourcc::Abgr16161616f, size.into())?,
+            texture: None,
+            hold: Default::default(),
             damage: OutputDamageTracker::new(size, 1.0, Transform::Normal),
             first: true,
             converted: Vec::new(),
@@ -82,7 +98,7 @@ impl Scene {
             direct: None,
             direct_drawn: None,
             uniforms: Default::default(),
-        })
+        }
     }
 
     /// Draws all of it at its next compose.
@@ -91,6 +107,11 @@ impl Scene {
         self.damage = OutputDamageTracker::new(size, 1.0, Transform::Normal);
         self.first = true;
     }
+}
+
+/// A scene's size in megabytes, at `size` in half floats.
+fn megabytes((w, h): (i32, i32)) -> f64 {
+    f64::from(w.max(0)) * f64::from(h.max(0)) * 8.0 / 1_000_000.0
 }
 
 /// Each screen's area in the layout of both: the top screen's at the origin, the second's to its right.
@@ -233,12 +254,14 @@ impl Pipeline {
         let program = encode_shader(renderer, output.primaries, output)?;
         let [top, bottom] = parts(server);
         Ok(Self {
-            scenes: [Scene::new(renderer, top, (output, program.clone()))?, Scene::new(renderer, bottom, (output, program))?],
+            scenes: [Scene::new(top, (output, program.clone())), Scene::new(bottom, (output, program))],
             shaders: Vec::new(),
             direct_shaders: Vec::new(),
             revision: 0,
             chained: Vec::new(),
             histogram: Default::default(),
+            capture: None,
+            capture_hold: Default::default(),
         })
     }
 
@@ -289,7 +312,7 @@ impl Pipeline {
         let [top, bottom] = scenes;
         let scene = if down { bottom } else { top };
         if scene.part != part {
-            *scene = Scene::new(renderer, part, scene.output.clone())?;
+            *scene = Scene::new(part, scene.output.clone());
         }
         scene.curves.clear();
         // The surface holding each window's picture, if it takes passes before the scene (see `super::chain`):
@@ -412,11 +435,26 @@ impl Pipeline {
                 scene.converted.push(converted);
             }
         }
-        let mut target = renderer.bind(&mut scene.texture)?;
-        let result = scene.damage.render_output(renderer, &mut target, usize::from(!scene.first), &scene.converted, [0.0, 0.0, 0.0, 1.0])?;
-        let mut changed = result.damage.is_some_and(|damage| !damage.is_empty());
-        let last = std::mem::replace(states, result.states);
-        scene.damage.reuse_states(last);
+        let mut changed = false;
+        if direct {
+            // The scene isn't drawn: its texture, if it has one, goes when its hold runs out.
+            states.states.clear();
+        } else {
+            if scene.texture.is_none() {
+                let size = (part.size.w.max(1), part.size.h.max(1));
+                scene.texture = Some(renderer.create_buffer(Fourcc::Abgr16161616f, size.into())?);
+                scene.redraw();
+                log::info!("colour: the {} screen's scene made, {:.1} MB", if down { "second" } else { "top" }, megabytes(size));
+            }
+            scene.hold.used(std::time::Instant::now());
+            if let Some(texture) = &mut scene.texture {
+                let mut target = renderer.bind(texture)?;
+                let result = scene.damage.render_output(renderer, &mut target, usize::from(!scene.first), &scene.converted, [0.0, 0.0, 0.0, 1.0])?;
+                changed = result.damage.is_some_and(|damage| !damage.is_empty());
+                let last = std::mem::replace(states, result.states);
+                scene.damage.reuse_states(last);
+            }
+        }
         // Drawn straight, the screen changes whole when its element does, and the element is shown there.
         let now = scene.direct.as_ref().map(|element| (element.id().clone(), element.current_commit()));
         if let Some(element) = &scene.direct {
@@ -433,6 +471,31 @@ impl Pipeline {
         scene.converted.clear();
         scene.first = false;
         Ok(changed)
+    }
+
+    /// Drops the textures of scenes not composed through for a while by `now` (see `crate::hold`). Returns
+    /// when the next one held runs out, to be called again then.
+    pub(crate) fn trim(&mut self, now: std::time::Instant) -> Option<std::time::Instant> {
+        let mut next = None::<std::time::Instant>;
+        if self.capture.is_some() && self.capture_hold.expired(now) {
+            self.capture = None;
+            crate::hold::give_back();
+        }
+        if let Some(due) = self.capture_hold.due() {
+            next = Some(due);
+        }
+        for (scene, name) in self.scenes.iter_mut().zip(["top", "second"]) {
+            if scene.texture.is_some() && scene.hold.expired(now) {
+                log::info!("colour: the {name} screen's scene dropped, {:.1} MB", megabytes((scene.part.size.w, scene.part.size.h)));
+                scene.texture = None;
+                scene.first = true;
+                crate::hold::give_back();
+            }
+            if let Some(due) = scene.hold.due() {
+                next = Some(next.map_or(due, |next| next.min(due)));
+            }
+        }
+        next
     }
 
     /// Draws every scene whole at its next compose, as after the screens were away.
@@ -456,8 +519,9 @@ impl Pipeline {
         let rectangle = Rectangle::from_size(size.into());
         frame.clear([0.0, 0.0, 0.0, 1.0].into(), &[rectangle])?;
         for (scene, program) in self.scenes.iter().zip(programs) {
-            let whole = Rectangle::from_size(scene.texture.size()).to_f64();
-            frame.render_texture_from_to(&scene.texture, whole, scene.part, &[scene.part], &[], Transform::Normal, 1.0, Some(program), &[])?;
+            let Some(texture) = &scene.texture else { continue };
+            let whole = Rectangle::from_size(texture.size()).to_f64();
+            frame.render_texture_from_to(texture, whole, scene.part, &[scene.part], &[], Transform::Normal, 1.0, Some(program), &[])?;
         }
         drop(frame.finish()?);
         Ok(())
@@ -485,24 +549,38 @@ impl Pipeline {
                 element.draw(&mut frame, element.src(), dst, &[Rectangle::from_size(dst.size)], &[], None)?;
             }
             None => {
-                let all = Rectangle::from_size(scene.texture.size()).to_f64();
-                frame.render_texture_from_to(&scene.texture, all, whole, &[whole], &[], Transform::Normal, 1.0, Some(&scene.output.1), &[])?;
+                if let Some(texture) = &scene.texture {
+                    let all = Rectangle::from_size(texture.size()).to_f64();
+                    frame.render_texture_from_to(texture, all, whole, &[whole], &[], Transform::Normal, 1.0, Some(&scene.output.1), &[])?;
+                }
             }
         }
         Ok(frame.finish()?)
     }
 
-    /// Both scenes side by side in sRGB, for a screenshot, `size` being the layout's.
-    pub fn capture(&self, renderer: &mut GlesRenderer, size: (i32, i32)) -> Result<clamshell_state::ScreenshotPixels, String> {
-        let srgb = |scene: &Scene, renderer: &mut GlesRenderer| encode_shader(renderer, scene.output.0.primaries, ColourDescription::default());
-        let [top, bottom] = &self.scenes;
-        let programs = [srgb(top, renderer), srgb(bottom, renderer)];
-        let [top, bottom] = programs.map(|program| program.map_err(|error| error.to_string()));
-        let (top, bottom) = (top?, bottom?);
-        let mut texture: GlesTexture = renderer.create_buffer(Fourcc::Abgr8888, size.into()).map_err(|error| error.to_string())?;
-        let mut target = renderer.bind(&mut texture).map_err(|error| error.to_string())?;
-        self.present_with(renderer, &mut target, size, [&top, &bottom]).map_err(|error| error.to_string())?;
-        read_back(renderer, &target, size)
+    /// Both scenes side by side in sRGB, for a screenshot, `size` being the layout's. What it is drawn with is
+    /// kept for the next taken soon after.
+    pub fn capture(&mut self, renderer: &mut GlesRenderer, size: (i32, i32)) -> Result<clamshell_state::ScreenshotPixels, String> {
+        let primaries = self.scenes.each_ref().map(|scene| scene.output.0.primaries);
+        let fits = self.capture.as_ref().is_some_and(|capture| capture.size == size && capture.programs.each_ref().map(|(p, _)| *p) == primaries);
+        if !fits {
+            let srgb =
+                |primaries, renderer: &mut GlesRenderer| encode_shader(renderer, primaries, ColourDescription::default()).map_err(|error| error.to_string());
+            let [top, bottom] = primaries;
+            let programs = [(top, srgb(top, renderer)?), (bottom, srgb(bottom, renderer)?)];
+            let texture = renderer.create_buffer(Fourcc::Abgr8888, size.into()).map_err(|error| error.to_string())?;
+            self.capture = Some(Capture { texture, size, programs });
+        }
+        self.capture_hold.used(std::time::Instant::now());
+        let mut capture = self.capture.take().ok_or("no capture texture")?;
+        let result = (|| {
+            let mut target = renderer.bind(&mut capture.texture).map_err(|error| error.to_string())?;
+            let [(_, top), (_, bottom)] = &capture.programs;
+            self.present_with(renderer, &mut target, size, [top, bottom]).map_err(|error| error.to_string())?;
+            read_back(renderer, &target, size)
+        })();
+        self.capture = Some(capture);
+        result
     }
 }
 

@@ -30,38 +30,68 @@ smithay::backend::renderer::element::render_elements! {
     Dim=SolidColorRenderElement,
 }
 
-/// A layer of the UI, drawn into a software surface of the layer's size when it may have changed.
+/// A layer of the UI as composed: drawn into a software surface of the layer's size when it may have
+/// changed. The surface is made when the layer is composed and dropped a while after it last was (see
+/// `crate::hold`): a screen showing ClamShell alone from its own buffers composes none of its layers.
 pub(crate) struct UiFrame {
-    surface: SoftwareSurface,
+    surface: Option<SoftwareSurface>,
     held: u64,
+    hold: crate::hold::Hold,
+    /// The layer last drawn, for the log.
+    layer: Option<Layer>,
 }
 
 impl UiFrame {
-    pub fn new(size: (u32, u32)) -> Result<Self, Error> {
-        Ok(Self { surface: SoftwareSurface::new(size)?, held: 0 })
+    pub fn new() -> Self {
+        Self { surface: None, held: 0, hold: Default::default(), layer: None }
     }
 
     pub fn update(&mut self, core: &mut Core, layer: impl Into<Layer>, renderer: &mut GlesRenderer) -> Result<(), Error> {
         let layer = layer.into();
         let (size, _) = core.size(layer);
-        if self.surface.size() != size {
-            *self = Self::new(size)?;
+        if self.surface.as_ref().is_none_or(|surface| surface.size() != size) {
+            self.surface = Some(SoftwareSurface::new(size)?);
+            self.held = 0;
+            log::info!("compositor: {layer:?} composed, {:.1} MB", megabytes(size));
         }
+        self.hold.used(std::time::Instant::now());
+        self.layer = Some(layer);
+        let Some(surface) = &mut self.surface else { return Ok(()) };
         // Recorded when stale; drawn when that changed something, or when the layer was drawn elsewhere
         // meanwhile (into a screen's scanout buffers), which this texture catches up with.
-        if core.stale(layer) || !self.surface.drawn() {
+        if core.stale(layer) || !surface.drawn() {
             core.record(layer, false);
         }
-        if !core.behind(layer, self.held) && self.surface.drawn() {
+        if !core.behind(layer, self.held) && surface.drawn() {
             return Ok(());
         }
         let held = &mut self.held;
-        self.surface.draw(renderer, |pixmap| {
+        surface.draw(renderer, |pixmap| {
             let (frame, area) = core.draw(layer, pixmap, *held);
             *held = frame;
             (!area.is_empty()).then_some(area)
         })
     }
+
+    /// Drops its surface if the layer hasn't been composed for a while by `now`. Returns when it will be
+    /// dropped otherwise.
+    pub fn trim(&mut self, now: std::time::Instant) -> Option<std::time::Instant> {
+        if let Some(surface) = &self.surface
+            && self.hold.expired(now)
+        {
+            let layer = self.layer.map_or_else(|| "a layer".to_owned(), |layer| format!("{layer:?}"));
+            log::info!("compositor: {layer} no longer composed, {:.1} MB dropped", megabytes(surface.size()));
+            self.surface = None;
+            self.held = 0;
+            crate::hold::give_back();
+        }
+        self.hold.due()
+    }
+}
+
+/// A software surface's size in megabytes, at `size`: its pixmap and its texture, four bytes a pixel each.
+fn megabytes((w, h): (u32, u32)) -> f64 {
+    f64::from(w) * f64::from(h) * 8.0 / 1_000_000.0
 }
 
 /// The UI's frames: the top screen's, the second's, and their overlays'.
@@ -120,7 +150,7 @@ pub(crate) fn elements(
             Some(Shown::Software { layer, .. }) if !matches!(layer, Layer::Screen(s) | Layer::Overlay(s) if s == screen) => continue,
             Some(Shown::Software { layer: Layer::Overlay(_), .. }) if planed.overlay => continue,
             Some(Shown::Software { layer, x, part }) => {
-                if let Some(element) = frame(frames, layer).and_then(|frame| frame.surface.element(renderer, x, part)) {
+                if let Some(element) = frame(frames, layer).and_then(|frame| frame.surface.as_ref()?.element(renderer, x, part)) {
                     out.push(element);
                 }
                 continue;

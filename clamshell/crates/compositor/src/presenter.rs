@@ -6,7 +6,9 @@
 //! screen: a screen showing only ClamShell shows a buffer of its own (see `ui_scanout`), one showing only
 //! a window shows the window's (see `window_scanout`). Every commit carries the screen's other planes too,
 //! its overlay and cursor (see `plane_layers`), and a change to those alone commits the frame shown again
-//! ([`Presenter::show_again`]).
+//! ([`Presenter::show_again`]). The buffers composed into are dropped a while after the screen last composed
+//! (see `crate::hold`), as when it shows ClamShell's own buffers or a window's, and made again when it
+//! composes.
 
 use smithay::backend::allocator::format::get_opaque;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBuffer};
@@ -38,6 +40,9 @@ pub(crate) struct Presenter {
     properties: Vec<crate::scanout::Property>,
     /// What the primary plane showed in the last commit, to commit again with other planes changed.
     last: Option<Primary>,
+    /// When it last composed, and whether it holds buffers to compose into.
+    hold: crate::hold::Hold,
+    composing_buffers: bool,
 }
 
 /// What the primary plane shows: which framebuffer, which part of it, where, turned how.
@@ -68,7 +73,11 @@ impl Presenter {
         for code in formats {
             let Some(chosen) = allocator.take() else { break };
             match Self::try_format(&surface, chosen, *code, renderer) {
-                Ok((swapchain, current, opaque)) => {
+                Ok((mut swapchain, tried, opaque)) => {
+                    // Only the format was wanted of the buffer tried: it goes now, and the first frame composed
+                    // makes its own.
+                    drop(tried);
+                    swapchain.reset_buffers();
                     let fencing = !surface.is_legacy()
                         && smithay::reexports::drm::Device::get_driver_capability(&surface, smithay::reexports::drm::DriverCapability::SyncObj)
                             .is_ok_and(|v| v != 0)
@@ -80,10 +89,12 @@ impl Presenter {
                         fencing,
                         next: None,
                         pending: None,
-                        current: Some(Shown::Composed(current)),
+                        current: None,
                         clear: Vec::new(),
                         properties: Vec::new(),
                         last: None,
+                        hold: Default::default(),
+                        composing_buffers: false,
                     });
                 }
                 Err((back, error)) => {
@@ -156,6 +167,8 @@ impl Presenter {
 
     /// The buffer to draw the next frame into: the same until it is queued.
     pub(crate) fn next_buffer(&mut self) -> Result<Dmabuf, Error> {
+        self.hold.used(std::time::Instant::now());
+        self.composing_buffers = true;
         if self.next.is_none() {
             let slot = self.swapchain.acquire().map_err(|e| format!("allocating: {e}"))?.ok_or("no free buffer: a flip not seen")?;
             if slot.userdata().get::<GbmFramebuffer>().is_none() {
@@ -278,6 +291,23 @@ impl Presenter {
             }
             None => false,
         }
+    }
+
+    /// Drops the buffers composed into if it hasn't composed for a while by `now` and none of them is shown or
+    /// on its way. Returns when they will be dropped otherwise.
+    pub(crate) fn trim(&mut self, now: std::time::Instant) -> Option<std::time::Instant> {
+        let in_use = |shown: &Option<Shown>| matches!(shown, Some(Shown::Composed(_)));
+        if !self.composing_buffers || self.next.is_some() || in_use(&self.pending) || in_use(&self.current) {
+            return None;
+        }
+        if self.hold.expired(now) {
+            log::info!("drm: plane {:?}'s buffers to compose into dropped", self.surface.plane());
+            self.swapchain.reset_buffers();
+            self.composing_buffers = false;
+            crate::hold::give_back();
+            return None;
+        }
+        self.hold.due()
     }
 
     /// Drops the buffers' contents and any frame in flight, as after the seat was away or a flip was lost:

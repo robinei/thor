@@ -343,13 +343,11 @@ pub fn run(
     rates.set_start(i32::try_from(top.mode.vrefresh()).unwrap_or(0).saturating_mul(1000));
     server.core.handle(clamshell_state::Reading::DisplayModes(rates).into());
 
-    let top_ui = server.core.size(clamshell_ui::Screen::Top).0;
-    let bottom_ui = server.core.size(clamshell_ui::Screen::Bottom).0;
     let drawing = Rc::new(RefCell::new(Drawing {
         renderer,
         pipeline,
         screens,
-        frames: [UiFrame::new(top_ui)?, UiFrame::new(bottom_ui)?, UiFrame::new(top_ui)?, UiFrame::new(bottom_ui)?],
+        frames: std::array::from_fn(|_| UiFrame::new()),
         cursor: crate::cursor::Cursor::new(),
         elements: Vec::new(),
         states: [RenderElementStates::default(), RenderElementStates::default()],
@@ -612,7 +610,17 @@ fn step(
         on_capture(drawing.pipeline.capture(&mut drawing.renderer, server.screens.size));
     }
     let composed = server.pacing.commits;
-    let mut due: Option<Instant> = timed.flatten();
+    // Buffers not used for a while are dropped (see `crate::hold`), and the loop wakes when the next would be.
+    let mut due: Option<Instant> = earlier(timed.flatten(), drawing.pipeline.trim(now));
+    for frame in &mut drawing.frames {
+        due = earlier(due, frame.trim(now));
+    }
+    for screen in &mut drawing.screens {
+        due = earlier(due, screen.surface.trim(now));
+        if let Some(layers) = &mut screen.layers {
+            due = earlier(due, layers.trim(now));
+        }
+    }
     for screen in &mut drawing.screens {
         if flip_lost(screen.pending, screen.queued_at, now) {
             log::warn!("drm: {:?} screen: no flip {} ms after its frame: drawn again", screen.role, FLIP_LOST.as_millis());

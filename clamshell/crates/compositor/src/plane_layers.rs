@@ -2,7 +2,8 @@
 //! own, with CLAMSHELL_SCANOUT=1: blended over whatever the screen's primary plane shows (ClamShell's own
 //! buffer, a window's, or a frame composed) by the display engine, so that neither has the screen composed
 //! nor redrawn when it changes. The overlay is drawn by its painter into buffers of its own, turned to the
-//! panel's mounting, as `ui_scanout` draws a screen; the cursor's image is copied into a small square buffer
+//! panel's mounting, as `ui_scanout` draws a screen, made when it first shows and dropped a while after it
+//! last did (see `crate::hold`); the cursor's image is copied into a small square buffer
 //! when it changes, and moving it only moves its plane.
 //!
 //! While a layer has its plane it isn't composed at all: the scene leaves it out, and a screen showing a
@@ -90,9 +91,18 @@ impl Plane {
     }
 }
 
+/// The overlay's plane, and its buffers while it shows (made on the device, for the plane's formats).
+struct OverlayPlane {
+    plane: Plane,
+    buffers: Option<LayerBuffers>,
+    device: DrmDeviceFd,
+    formats: smithay::backend::allocator::format::FormatSet,
+    hold: crate::hold::Hold,
+}
+
 /// A screen's overlay and cursor planes.
 pub(crate) struct PlaneLayers {
-    overlay: Option<(Plane, LayerBuffers)>,
+    overlay: Option<OverlayPlane>,
     cursor: Option<CursorPlane>,
     /// Whether each goes on its plane this turn (see [`PlaneLayers::decide`]).
     pub planed: Planed,
@@ -107,7 +117,8 @@ pub(crate) struct PlaneLayers {
     unsent: bool,
     /// The CRTC, for the cursor's immediate moves.
     crtc: crtc::Handle,
-    /// The screen's height, the screen's way up, and whether its panel is turned a quarter.
+    /// The screen's size and height, the screen's way up, and whether its panel is turned a quarter.
+    size: (u32, u32),
     height: i32,
     quarter: bool,
 }
@@ -152,14 +163,13 @@ impl PlaneLayers {
         let free = |info: &&smithay::backend::drm::PlaneInfo, taken: &[plane::Handle]| !taken.contains(&info.handle);
         let mut overlay = None;
         for info in planes.overlay.iter().filter(|info| free(info, taken)) {
-            match LayerBuffers::new(device, &info.formats, size, quarter, BLENDED) {
-                Ok(buffers) => {
-                    taken.push(info.handle);
-                    overlay = Some((plane(device, info, primary_zpos, 1), buffers));
-                    break;
-                }
-                Err(error) => log::info!("plane layers: plane {:?} for the {role} screen's overlay: {error}", info.handle),
+            if crate::ui_scanout::takes(&info.formats, BLENDED) {
+                taken.push(info.handle);
+                let plane = plane(device, info, primary_zpos, 1);
+                overlay = Some(OverlayPlane { plane, buffers: None, device: device.clone(), formats: info.formats.clone(), hold: Default::default() });
+                break;
             }
+            log::info!("plane layers: plane {:?} for the {role} screen's overlay takes no format with alpha linear", info.handle);
         }
         use smithay::reexports::drm::Device as _;
         let cap = |c| drm.get_driver_capability(c).ok().and_then(|v| u32::try_from(v).ok()).filter(|v| *v > 0).unwrap_or(64);
@@ -179,13 +189,14 @@ impl PlaneLayers {
         let name = |plane: Option<&Plane>| plane.map_or_else(|| "none (composed)".to_owned(), |plane| format!("plane {:?}", plane.handle));
         log::info!(
             "plane layers: the {role} screen's overlay on {}, its cursor on {}",
-            name(overlay.as_ref().map(|(plane, _)| plane)),
+            name(overlay.as_ref().map(|overlay| &overlay.plane)),
             name(cursor.as_ref().map(|cursor| &cursor.plane))
         );
         PlaneLayers { overlay, cursor, ..PlaneLayers::off(size, quarter, crtc) }
     }
 
-    fn off((_, height): (u32, u32), quarter: bool, crtc: crtc::Handle) -> PlaneLayers {
+    fn off(size: (u32, u32), quarter: bool, crtc: crtc::Handle) -> PlaneLayers {
+        let height = size.1;
         PlaneLayers {
             overlay: None,
             cursor: None,
@@ -196,6 +207,7 @@ impl PlaneLayers {
             moved: false,
             unsent: false,
             crtc,
+            size,
             height: i32::try_from(height).unwrap_or(0),
             quarter,
         }
@@ -217,7 +229,11 @@ impl PlaneLayers {
         let area = server.core.overlay_area(screen);
         self.planed.overlay = !self.failed && self.overlay.is_some() && area.is_some();
         let overlay_changed = self.planed.overlay
-            && (area != self.area || self.overlay.as_ref().is_some_and(|(_, buffers)| buffers.behind(&server.core, Layer::Overlay(screen))));
+            && (area != self.area
+                || self
+                    .overlay
+                    .as_ref()
+                    .is_some_and(|overlay| overlay.buffers.as_ref().is_none_or(|buffers| buffers.behind(&server.core, Layer::Overlay(screen)))));
         let shape = at.and_then(|at| cursor.shape(server, renderer, at)).map(|shape| shape.from(origin));
         let fits = |side: u32| shape.as_ref().is_some_and(|shape| shape.size.0 <= side && shape.size.1 <= side);
         self.planed.cursor = !self.failed && self.cursor.as_ref().is_some_and(|cursor| fits(cursor.side));
@@ -234,21 +250,35 @@ impl PlaneLayers {
     /// copied into its next if its image changed, each placed; those not planed this turn (the screen
     /// composes them) off.
     pub(crate) fn prepare(&mut self, server: &mut crate::server::Server, screen: Screen, cursor: &Cursor) {
-        let (height, quarter) = (self.height, self.quarter);
+        let (height, quarter, size) = (self.height, self.quarter, self.size);
         let area = server.core.overlay_area(screen);
-        if let Some((plane, buffers)) = &mut self.overlay {
+        if let Some(overlay) = &mut self.overlay {
+            let plane = &mut overlay.plane;
             plane.drew = false;
             plane.wanted = None;
             if self.planed.overlay
                 && let Some(area) = area
             {
-                let fb = match buffers.draw(&mut server.core, Layer::Overlay(screen)) {
-                    Some(fb) => {
+                overlay.hold.used(std::time::Instant::now());
+                if overlay.buffers.is_none() {
+                    match LayerBuffers::new(&overlay.device, &overlay.formats, size, quarter, BLENDED) {
+                        Ok(buffers) => {
+                            log::info!("plane layers: the {screen:?} screen's overlay buffers made, {:.1} MB", megabytes(size));
+                            overlay.buffers = Some(buffers);
+                        }
+                        Err(error) => log::warn!("plane layers: the {screen:?} screen's overlay buffers: {error}"),
+                    }
+                }
+                // Without its buffers (they couldn't be made, logged), it shows nothing this turn.
+                let drawn = overlay.buffers.as_mut().map(|buffers| buffers.draw(&mut server.core, Layer::Overlay(screen)));
+                let fb = match drawn {
+                    Some(Some(fb)) => {
                         server.core.frames_done();
                         plane.drew = true;
                         Some(fb)
                     }
-                    None => plane.shown.map(|shown| shown.fb),
+                    Some(None) => plane.shown.map(|shown| shown.fb),
+                    None => None,
                 };
                 if let Some(fb) = fb {
                     let rect = turned(Rectangle::new((area.x0, area.y0).into(), (area.x1 - area.x0, area.y1 - area.y0).into()), height, quarter);
@@ -333,9 +363,21 @@ impl PlaneLayers {
         }
     }
 
+    /// Drops the overlay's buffers once its plane is off and it hasn't shown for a while by `now`. Returns
+    /// when they will be dropped otherwise.
+    pub(crate) fn trim(&mut self, now: std::time::Instant) -> Option<std::time::Instant> {
+        let overlay = self.overlay.as_mut()?;
+        if !self.planed.overlay && overlay.plane.shown.is_none() && overlay.buffers.is_some() && overlay.hold.expired(now) {
+            log::info!("plane layers: overlay buffers dropped, {:.1} MB", megabytes(self.size));
+            overlay.buffers = None;
+            crate::hold::give_back();
+        }
+        overlay.hold.due().filter(|_| overlay.buffers.is_some())
+    }
+
     /// The planes' states for the next commit.
     pub(crate) fn states(&self) -> impl Iterator<Item = PlaneState<'_>> + Clone {
-        let overlay = self.overlay.as_ref().and_then(|(plane, _)| plane.state());
+        let overlay = self.overlay.as_ref().and_then(|overlay| overlay.plane.state());
         let cursor = self.cursor.as_ref().and_then(|cursor| cursor.plane.state());
         overlay.into_iter().chain(cursor)
     }
@@ -343,11 +385,13 @@ impl PlaneLayers {
     /// The commit with them went through: they show as placed.
     pub(crate) fn committed(&mut self) {
         self.unsent = false;
-        if let Some((plane, buffers)) = &mut self.overlay {
-            if plane.drew {
+        if let Some(overlay) = &mut self.overlay {
+            if overlay.plane.drew
+                && let Some(buffers) = &mut overlay.buffers
+            {
                 buffers.committed();
             }
-            plane.shown = plane.wanted;
+            overlay.plane.shown = overlay.plane.wanted;
         }
         if let Some(cursor) = &mut self.cursor {
             if cursor.plane.drew {
@@ -369,9 +413,11 @@ impl PlaneLayers {
 
     /// Their buffers hold nothing any more (the screen was away): drawn whole next, and shown as if never.
     pub(crate) fn reset(&mut self) {
-        if let Some((plane, buffers)) = &mut self.overlay {
-            buffers.reset();
-            plane.shown = None;
+        if let Some(overlay) = &mut self.overlay {
+            if let Some(buffers) = &mut overlay.buffers {
+                buffers.reset();
+            }
+            overlay.plane.shown = None;
         }
         if let Some(cursor) = &mut self.cursor {
             cursor.plane.shown = None;
@@ -391,6 +437,12 @@ fn plane(device: &DrmDeviceFd, info: &smithay::backend::drm::PlaneInfo, primary:
     };
     let hotspot = find("HOTSPOT_X").zip(find("HOTSPOT_Y"));
     Plane { handle: info.handle, zpos, hotspot, properties: zpos.into_iter().collect(), shown: None, wanted: None, drew: false }
+}
+
+/// The overlay's buffers' size in megabytes, for a screen of `size`: two buffers and the picture painted,
+/// four bytes a pixel each.
+fn megabytes((w, h): (u32, u32)) -> f64 {
+    f64::from(w) * f64::from(h) * 12.0 / 1_000_000.0
 }
 
 /// `rect`, the screen's way up on a screen `height` high, as the panel takes it: turned a quarter clockwise

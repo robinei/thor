@@ -16,6 +16,7 @@ mod drm;
 mod frames;
 mod geometry;
 mod handlers;
+mod hold;
 mod idle;
 mod input;
 mod keyboard;

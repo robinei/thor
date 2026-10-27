@@ -59,9 +59,7 @@ pub fn run(
     backend.window().set_cursor_visible(false);
     let mut cursor = crate::cursor::Cursor::new();
     log::info!("nested output format: {:?}", backend.renderer().egl_context().pixel_format());
-    let top_size = server.core.size(clamshell_ui::Screen::Top).0;
-    let bottom_size = server.core.size(clamshell_ui::Screen::Bottom).0;
-    let mut frames = [UiFrame::new(top_size)?, UiFrame::new(bottom_size)?, UiFrame::new(top_size)?, UiFrame::new(bottom_size)?];
+    let mut frames: [UiFrame; 4] = std::array::from_fn(|_| UiFrame::new());
     let mut elements = Vec::new();
     // Each screen's elements' states (the top's, the second's).
     let mut states = [RenderElementStates::default(), RenderElementStates::default()];
@@ -126,6 +124,8 @@ pub fn run(
                             render::elements(server, &mut frames, &mut cursor, backend.renderer(), &mut elements, down, None, Default::default())?;
                             pipeline.compose(server, backend.renderer(), down, &mut elements, states, false)?;
                         }
+                        // What a screenshot was drawn with goes a while after it (see `crate::hold`).
+                        pipeline.trim(std::time::Instant::now());
                         if let Some(histogram) = pipeline.take_histogram() {
                             server.report_histogram(histogram);
                         }

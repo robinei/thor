@@ -304,6 +304,7 @@ dependencies = [
  "clamshell-ui",
  "command-fds",
  "drm-ffi",
+ "libc",
  "log",
  "rustix 1.1.5",
  "serde",

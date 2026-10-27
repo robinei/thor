@@ -107,6 +107,11 @@ pub(crate) struct LayerBuffers {
     size: (u32, u32),
 }
 
+/// Whether a plane taking `formats` takes one of `choices` linear, as [`LayerBuffers::new`] needs.
+pub(crate) fn takes(formats: &smithay::backend::allocator::format::FormatSet, choices: &[(DrmFourcc, bool)]) -> bool {
+    choices.iter().any(|(code, _)| formats.iter().any(|f| f.code == *code && matches!(f.modifier, DrmModifier::Linear | DrmModifier::Invalid)))
+}
+
 impl LayerBuffers {
     /// Buffers for a picture of `size` (the screen's way up), turned a quarter clockwise if `quarter`, in the
     /// first of `choices` (a format, and whether it is blue first) the plane, taking `formats`, takes linear;
