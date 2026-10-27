@@ -449,9 +449,12 @@ fn blend_at(target: &mut Pixels, x: i32, y: i32, src: u32, k: u32) {
 /// pixel; at full coverage, plain source-over.
 fn blend(px: &mut [u8; 4], src: u32, k: u32) {
     // Two channels to a word, each in a 16-bit lane: bytes 0 and 2, then 1 and 3. A lane's product of
-    // two bytes, and its division by 255, stay within the lane, so this is the per-channel blend.
+    // two bytes, and its division by 255 rounded, stay within the lane, so this is the per-channel blend.
     const LANES: u32 = 0x00ff_00ff;
-    let div = |x: u32| ((x + 0x0001_0001 + ((x >> 8) & LANES)) >> 8) & LANES;
+    let div = |x: u32| {
+        let x = x + 0x0080_0080;
+        ((x + ((x >> 8) & LANES)) >> 8) & LANES
+    };
     let s = src;
     let d = u32::from_le_bytes(*px);
     let inverse = 255 - u32::from(div255(((s >> 24) * k) as u16));
@@ -460,10 +463,10 @@ fn blend(px: &mut [u8; 4], src: u32, k: u32) {
     *px = (even | odd << 8).to_le_bytes();
 }
 
-/// `x / 255` for `x` up to 255 * 255, done with shifts so that it vectorises. The result is exact for
-/// every such `x`.
+/// `x / 255` rounded, for `x` up to 255 * 255, done with shifts so that it vectorises.
 fn div255(x: u16) -> u16 {
-    (x + 1 + (x >> 8)) >> 8
+    let x = x + 128;
+    (x + (x >> 8)) >> 8
 }
 
 #[cfg(test)]
@@ -471,10 +474,33 @@ fn div255(x: u16) -> u16 {
 mod tests {
     use super::*;
 
+    /// The blend, two channels to a word, is source-over per channel: for every alpha and coverage, each of
+    /// the four bytes (both lanes) as the per-channel formula gives it, within its three roundings (the
+    /// source's term, the destination's, and the coverage of alpha it is scaled by), half a level each.
+    #[test]
+    fn blend_is_source_over_per_channel() {
+        for a in 0..=255u32 {
+            for k in (0..=255u32).step_by(3).chain([255]) {
+                for d in [0u32, 1, 77, 128, 254, 255] {
+                    // Premultiplied: each channel at most alpha, a different one in each byte.
+                    let src = [a, a / 2, a / 3, a];
+                    let mut px = [d as u8, (255 - d) as u8, (d / 2) as u8, d as u8];
+                    let before = px;
+                    blend(&mut px, u32::from_le_bytes(src.map(|c| c as u8)), k);
+                    let inverse = 255.0 - (a * k) as f32 / 255.0;
+                    for (c, ((got, s), d)) in px.iter().zip(src).zip(before).enumerate() {
+                        let want = (s * k) as f32 / 255.0 + f32::from(d) * inverse / 255.0;
+                        assert!((f32::from(*got) - want).abs() <= 1.5, "a {a} k {k} d {d}: byte {c} is {got}, want {want}");
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn div255_divides() {
         for x in 0..=255 * 255 {
-            assert_eq!(div255(x), x / 255, "{x}");
+            assert_eq!(div255(x), (x + 127) / 255, "{x}");
         }
     }
 }
