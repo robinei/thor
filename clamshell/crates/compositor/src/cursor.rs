@@ -72,6 +72,12 @@ pub(crate) struct Shape {
 }
 
 impl Shape {
+    /// A named cursor's first frame, `size`, its top left `at` and its hotspot `hotspot`.
+    #[cfg(test)]
+    pub fn named(size: (u32, u32), at: (i32, i32), hotspot: (i32, i32)) -> Shape {
+        Shape { image: ShapeImage::Named(CursorIcon::Default, 0), size, at: at.into(), hotspot }
+    }
+
     /// The same, with its top left taken relative to `origin`.
     pub fn from(&self, origin: Point<i32, Logical>) -> Shape {
         Shape { at: self.at - origin, ..self.clone() }

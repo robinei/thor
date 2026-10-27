@@ -308,13 +308,9 @@ impl PlaneLayers {
                     }
                 };
                 if let Some(fb) = fb {
-                    let square = i32::try_from(side).unwrap_or(0);
-                    let dst = turned(Rectangle::new((shape.at.x, shape.at.y).into(), (square, square).into()), height, quarter);
+                    let (dst, hotspot) = cursor_place(shape, side, height, quarter);
                     let src = Rectangle::from_size((f64::from(side), f64::from(side)).into());
                     plane.plane.wanted = Some(Placement { fb, src, dst });
-                    // The hotspot in the buffer, turned as the image is.
-                    let (x, y) = shape.hotspot;
-                    let hotspot = if quarter { (square - 1 - y, x) } else { (x, y) };
                     plane.plane.set_hotspot(hotspot);
                 }
             }
@@ -334,10 +330,7 @@ impl PlaneLayers {
         if !self.moved || self.unsent || !cursor.immediate {
             return false;
         }
-        let square = i32::try_from(cursor.side).unwrap_or(0);
-        let dst = turned(Rectangle::new((shape.at.x, shape.at.y).into(), (square, square).into()), height, quarter);
-        let (x, y) = shape.hotspot;
-        let (hot_x, hot_y) = if quarter { (square - 1 - y, x) } else { (x, y) };
+        let (dst, (hot_x, hot_y)) = cursor_place(shape, cursor.side, height, quarter);
         let mut request = drm_ffi::drm_mode_cursor2 {
             flags: drm_ffi::DRM_MODE_CURSOR_MOVE,
             crtc_id: u32::from(crtc),
@@ -484,6 +477,15 @@ fn megabytes((w, h): (u32, u32)) -> f64 {
 
 /// `rect`, the screen's way up on a screen `height` high, as the panel takes it: turned a quarter clockwise
 /// if `quarter` (a screen pixel (x, y) in buffer column height - 1 - y, row x, as `clamshell_ui::Pixels`).
+/// Where the cursor's square buffer, `side` pixels a side, goes on a screen `height` high for `shape`, turned
+/// a quarter if `quarter`; and its hotspot in the buffer, turned as `Cursor::copy` turns the image.
+fn cursor_place(shape: &Shape, side: u32, height: i32, quarter: bool) -> (Rectangle<i32, Physical>, (i32, i32)) {
+    let square = i32::try_from(side).unwrap_or(0);
+    let dst = turned(Rectangle::new((shape.at.x, shape.at.y).into(), (square, square).into()), height, quarter);
+    let (x, y) = shape.hotspot;
+    (dst, if quarter { (square - 1 - y, x) } else { (x, y) })
+}
+
 fn turned(rect: Rectangle<i32, Logical>, height: i32, quarter: bool) -> Rectangle<i32, Physical> {
     let (x, y, w, h) = (rect.loc.x, rect.loc.y, rect.size.w, rect.size.h);
     if quarter { Rectangle::new((height - (y + h), x).into(), (h, w).into()) } else { Rectangle::new((x, y).into(), (w, h).into()) }
@@ -499,5 +501,21 @@ mod tests {
         assert_eq!(turned(rect, 100, false), Rectangle::new((10, 20).into(), (30, 5).into()));
         // Rows 20..25 of a screen 100 high are buffer columns 75..80; columns 10..40 are rows 10..40.
         assert_eq!(turned(rect, 100, true), Rectangle::new((75, 10).into(), (5, 30).into()));
+    }
+
+    /// The cursor's buffer placed, plus its hotspot in the buffer, is the pointer's place on the panel,
+    /// turned or not: (x, y) on a screen `height` high is (height - 1 - y, x) on a panel turned a quarter.
+    #[test]
+    fn the_cursors_hotspot_is_where_the_pointer_is() {
+        let (height, side) = (1080, 64);
+        for (at, hotspot) in [((100, 200), (0, 0)), ((100, 200), (5, 17)), ((-3, 1070), (63, 63))] {
+            let shape = Shape::named((24, 24), at, hotspot);
+            let pointer = (at.0 + hotspot.0, at.1 + hotspot.1);
+            for (quarter, want) in [(false, pointer), (true, (height - 1 - pointer.1, pointer.0))] {
+                let (dst, (hx, hy)) = cursor_place(&shape, side, height, quarter);
+                assert_eq!((dst.loc.x + hx, dst.loc.y + hy), want, "at {at:?} hotspot {hotspot:?} quarter {quarter}");
+                assert_eq!((dst.size.w, dst.size.h), (64, 64));
+            }
+        }
     }
 }
