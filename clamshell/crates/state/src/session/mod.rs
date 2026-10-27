@@ -308,15 +308,48 @@ impl Session {
         self.bottom.and_then(|id| self.window(id))
     }
 
-    /// Whether window `id` is in view: the one the top screen shows, or the one placed on the bottom
-    /// screen.
-    pub fn shown(&self, id: i64) -> bool {
-        self.top == Some(id) || self.bottom == Some(id)
+    /// What a screen shows, the bottom screen's if `below`, back to front: the window in its slot's root
+    /// (see [`Session::root_of`]), then the root's dialogs in the order they opened. The last takes the
+    /// input; the compositor darkens those before it, which shows why they don't.
+    pub fn stack(&self, below: bool) -> impl Iterator<Item = &Window> {
+        let slot = if below { self.bottom } else { self.top };
+        self.windows.iter().filter(move |w| slot.is_some_and(|slot| self.root_of(w.id) == self.root_of(slot)))
     }
 
-    /// Whether window `id` is the one placed on the bottom screen.
+    /// Window `id`'s stack as a screen would show it (see [`Session::stack`]), as the overview shows it in
+    /// its cell.
+    pub fn stack_of(&self, id: i64) -> impl Iterator<Item = &Window> {
+        let root = self.root_of(id);
+        self.windows.iter().filter(move |w| self.root_of(w.id) == root)
+    }
+
+    /// The window that window `id`'s parents lead to, its main window: itself if it has no parent open.
+    pub fn root_of(&self, id: i64) -> i64 {
+        let mut at = id;
+        // A bound, so that a cycle of parents can't loop.
+        for _ in 0..self.windows.len() {
+            match self.window(at).and_then(|w| w.parent).filter(|parent| *parent != at && self.window(*parent).is_some()) {
+                Some(parent) => at = parent,
+                None => break,
+            }
+        }
+        at
+    }
+
+    /// The window of `root`'s stack that takes the input: its last dialog opened, or itself.
+    pub(crate) fn topmost(&self, root: i64) -> i64 {
+        self.windows.iter().rev().find(|w| self.root_of(w.id) == root).map_or(root, |w| w.id)
+    }
+
+    /// Whether window `id` is in view: in the top screen's stack or the bottom screen's (see
+    /// [`Session::stack`]).
+    pub fn shown(&self, id: i64) -> bool {
+        self.top.is_some_and(|top| self.root_of(top) == self.root_of(id)) || self.below(id)
+    }
+
+    /// Whether window `id` is on the bottom screen: the window placed there, or one of its stack.
     pub fn below(&self, id: i64) -> bool {
-        self.bottom == Some(id)
+        self.bottom.is_some_and(|bottom| bottom == id || self.root_of(bottom) == self.root_of(id))
     }
 
     /// Where window `id` is: on the bottom screen, or in its group on the top screen.
@@ -332,7 +365,7 @@ impl Session {
         // At most one selection per group.
         let selected = selected && self.selected.iter().enumerate().all(|(i, (group, _))| !self.selected.iter().take(i).any(|(other, _)| other == group));
         let open = |slot: Option<i64>| slot.is_none_or(|id| self.window(id).is_some());
-        selected && open(self.top) && open(self.bottom) && (self.top.is_none() || self.top != self.bottom)
+        selected && open(self.top) && open(self.bottom) && self.top.is_none_or(|top| !self.below(top))
     }
 
     pub fn units(&self) -> &[LaunchUnit] {
@@ -470,8 +503,9 @@ impl Session {
 
     /// Keeps the front's history after the window set changes, whichever backend reported it.
     pub(crate) fn remember_front(&mut self) {
-        let bottom = self.bottom;
-        self.selected.retain(|(group, id)| bottom != Some(*id) && self.windows.iter().any(|w| w.id == *id && w.group.as_ref() == Some(group)));
+        let mut selected = std::mem::take(&mut self.selected);
+        selected.retain(|(group, id)| !self.below(*id) && self.windows.iter().any(|w| w.id == *id && w.group.as_ref() == Some(group)));
+        self.selected = selected;
         if let Some(w) = self.top.and_then(|id| self.windows.iter().find(|w| w.id == id))
             && let Some(group) = &w.group
         {

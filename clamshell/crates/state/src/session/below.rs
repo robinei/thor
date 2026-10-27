@@ -140,7 +140,8 @@ impl Session {
         let wanted: Vec<i64> = self
             .windows
             .iter()
-            .filter(|w| !self.below(w.id) && !self.sent_down.contains(&w.id))
+            // A dialog follows its main window.
+            .filter(|w| !self.below(w.id) && !self.sent_down.contains(&w.id) && self.root_of(w.id) == w.id)
             .filter(|w| {
                 let owner = self.owner_of(w).or_else(|| {
                     let key = w.group.as_ref()?.key()?;

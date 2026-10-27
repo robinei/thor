@@ -85,6 +85,8 @@ impl Session {
                 }
             }
             WindowCommand::Down(id) => {
+                // A dialog goes with its main window: the stack goes down (see [`Session::stack`]).
+                let id = &self.root_of(*id);
                 if let Some(other) = self.bottom.filter(|other| other != id) {
                     self.command(WindowCommand::Return(other));
                 }
@@ -94,7 +96,7 @@ impl Session {
                 if self.window(*id).is_some() {
                     self.bottom = Some(*id);
                 }
-                if self.top == Some(*id) {
+                if self.top.is_some_and(|top| self.root_of(top) == *id) {
                     self.top = None;
                 }
                 let group = self.window(*id).and_then(|w| w.group.clone());
@@ -103,7 +105,7 @@ impl Session {
                 }
             }
             WindowCommand::Up(window) => {
-                if self.bottom == Some(*window) {
+                if self.below(*window) {
                     self.bottom = None;
                 }
                 self.select_top(*window);
@@ -147,11 +149,13 @@ impl Session {
         }
     }
 
-    /// Shows window `id` on the top screen, with the keyboard, unless it is below.
+    /// Shows window `id` on the top screen, with the keyboard, unless it is below. A window with dialogs
+    /// open shows its last, which takes the input (see [`Session::stack`]).
     pub(crate) fn select_top(&mut self, id: i64) {
         if self.below(id) {
             return;
         }
+        let id = self.topmost(self.root_of(id));
         let Some(group) = self.windows.iter().find(|w| w.id == id).map(|w| &w.group) else { return };
         // (A window not placed yet is selected in its group once it is.)
         if let Some(group) = group {
@@ -213,8 +217,7 @@ impl crate::Session {
             return;
         }
         let parent = facts.parent.and_then(|id| self.window(id)).map(|w| (w.group.clone(), self.below(w.id)));
-        // A dialog of the window below is shown on the top screen, where it can be answered, while its
-        // parent stays below: the bottom screen holds one window.
+        // A dialog of the window below is shown there over it, and takes the keyboard.
         let parent_below = parent.as_ref().is_some_and(|(_, below)| *below);
         let group = match parent {
             Some((group, _)) => group,
@@ -236,7 +239,9 @@ impl crate::Session {
         let id = facts.id;
         self.opened.push(id);
         self.windows.push(Window { facts, group });
-        if focus {
+        if parent_below {
+            self.keyboard_focus = Some(id);
+        } else if focus {
             self.select_top(id);
         }
     }

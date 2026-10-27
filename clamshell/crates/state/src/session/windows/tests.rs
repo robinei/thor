@@ -295,21 +295,43 @@ fn a_dialog_inherits_its_parent_and_survives_the_parent_closing() {
 }
 
 #[test]
-/// A dialog of the window below (a file picker of an emulator's second-screen window) shows on the top
-/// screen, where it can be answered, while its parent stays below; closed, the parent is still below.
-fn a_dialog_of_a_window_below_shows_on_top_while_its_parent_stays_below() {
+/// A dialog of the window below (a file picker of an emulator's second-screen window) shows on the bottom
+/// screen over its parent, and takes the keyboard; closed, the parent is still below.
+fn a_dialog_of_a_window_below_shows_below_over_it() {
     let mut s = state();
     let unit = launch(&mut s, "zelda-lttp");
     s.applied(WindowEvent::Opened(win_of(7, "game", &unit)).into());
     s.applied(Event::HardwareKey(HardwareKey::WindowDown));
     let dialog = WindowFacts { parent: Some(7), ..win(8, "dialog") };
     s.applied(WindowEvent::Opened(dialog).into());
-    assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
+    let stack = |s: &crate::State, below: bool| s.session().stack(below).map(|w| w.id).collect::<Vec<_>>();
+    assert_eq!(stack(&s, true), [7, 8], "over its parent, below");
+    assert!(stack(&s, false).is_empty());
     assert_eq!(s.session().keyboard_focus(), Some(8));
-    assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7), "the parent stays below");
     s.applied(WindowEvent::Closed(8).into());
-    assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
+    assert_eq!(stack(&s, true), [7]);
     assert_ne!(s.session().top_window().map(|w| w.id), Some(7));
+}
+
+#[test]
+/// A window's dialogs show over it, the last opened taking the input: selecting the window selects it.
+/// Moving a dialog down moves its window with it.
+fn a_windows_dialogs_show_over_it_the_last_taking_the_input() {
+    let mut s = state();
+    let unit = launch(&mut s, "zelda-lttp");
+    s.applied(WindowEvent::Opened(win_of(7, "game", &unit)).into());
+    s.applied(WindowEvent::Opened(WindowFacts { parent: Some(7), ..win_of(8, "game", &unit) }).into());
+    s.applied(WindowEvent::Opened(WindowFacts { parent: Some(8), ..win_of(9, "game", &unit) }).into());
+    let stack = |s: &crate::State, below: bool| s.session().stack(below).map(|w| w.id).collect::<Vec<_>>();
+    assert_eq!(stack(&s, false), [7, 8, 9]);
+    assert_eq!((s.session().top_window().map(|w| w.id), s.session().keyboard_focus()), (Some(9), Some(9)));
+    s.applied(WindowEvent::Activate(7).into());
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(9), "the window's last dialog, not the window");
+    s.applied(WindowEvent::Closed(9).into());
+    assert_eq!((s.session().top_window().map(|w| w.id), stack(&s, false)), (Some(8), vec![7, 8]));
+    s.applied(Event::HardwareKey(HardwareKey::WindowDown));
+    assert_eq!(stack(&s, true), [7, 8], "the dialog took its window down");
+    assert!(stack(&s, false).is_empty());
 }
 
 #[test]

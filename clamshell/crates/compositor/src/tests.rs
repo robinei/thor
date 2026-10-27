@@ -456,7 +456,7 @@ fn an_unmapped_window_leaves_the_state_and_comes_back_on_top() {
 }
 
 #[test]
-fn a_dialog_of_a_window_below_shows_on_the_top_screen_at_its_fixed_size() {
+fn a_dialog_of_a_window_below_shows_over_it_there_at_its_fixed_size() {
     let (mut display, mut server) = ServerBuilder::new().started();
     let client = spawn_client(&mut display, launched(), |globals, mut queue, steps| {
         let qh = queue.handle();
@@ -485,10 +485,12 @@ fn a_dialog_of_a_window_below_shows_on_the_top_screen_at_its_fixed_size() {
         let windows = server.core.state().session().windows();
         assert_eq!(windows.len(), 2);
         assert_eq!(windows[1].parent, Some(windows[0].id));
-        // A dialog of the window below shows on the top screen, where it can be answered.
-        assert!(matches!(server.core.state().session().place(windows[1].id).unwrap(), WindowPlace::Top(_)));
-        assert_eq!(size, (320, 240));
+        // A dialog of the window below shows there over it.
+        let (parent, dialog) = (windows[0].id, windows[1].id);
         assert_eq!(windows[1].limits.fixed_size(), Some((320, 240)));
+        assert!(matches!(server.core.state().session().place(dialog).unwrap(), WindowPlace::Bottom));
+        assert_eq!(server.core.state().session().stack(true).map(|w| w.id).collect::<Vec<_>>(), [parent, dialog]);
+        assert_eq!(size, (320, 240));
     });
     assert_eq!(checked, 2);
 }
