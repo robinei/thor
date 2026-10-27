@@ -123,7 +123,7 @@ pub fn run(
                         let interval = Duration::from_secs_f64(1000.0 / f64::from(server.screens.refresh.max(1000)));
                         server.release_timed_commits((Duration::from(server.clock.now()) + interval).into());
                         for (down, states) in [false, true].into_iter().zip(&mut states) {
-                            render::elements(server, &mut frames, &mut cursor, backend.renderer(), &mut elements, down, None)?;
+                            render::elements(server, &mut frames, &mut cursor, backend.renderer(), &mut elements, down, None, Default::default())?;
                             pipeline.compose(server, backend.renderer(), down, &mut elements, states, false)?;
                         }
                         if let Some(histogram) = pipeline.take_histogram() {

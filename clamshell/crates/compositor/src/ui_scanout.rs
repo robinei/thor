@@ -3,11 +3,11 @@
 //! shows, turned to the panel's mounting (`clamshell_ui::Pixels`), and the GPU does nothing for it; with
 //! both screens so, nothing at all.
 //!
-//! Each screen has two dumb buffers, CPU-mapped once and kept, drawn in turn: each catches up from the
-//! frame it holds (`Core::draw`). They are XBGR8888, tiny-skia's red first, where the plane takes it, else
-//! XRGB8888 (virtio-gpu takes nothing else), drawn blue first. The panel's colour, as the composed pass
-//! encodes it, is the CRTC's while
-//! the screen is scanned out: its degamma decoding sRGB, its colour matrix taking sRGB to the panel's
+//! Each screen has two dumb buffers, CPU-mapped once and kept, drawn in turn ([`LayerBuffers`], which the
+//! overlay's plane uses too, see `plane_layers`): each catches up from the frame it holds (`Core::draw`).
+//! They are XBGR8888, tiny-skia's red first, where the plane takes it, else XRGB8888 (virtio-gpu takes
+//! nothing else), drawn blue first. The panel's colour, as the composed pass encodes it, is the CRTC's
+//! while the screen is scanned out: its degamma decoding sRGB, its colour matrix taking sRGB to the panel's
 //! primaries, its gamma encoding for the panel; cleared when it composes again. A screen whose panel needs
 //! that but whose CRTC can't do it is composed.
 
@@ -26,15 +26,7 @@ use crate::scanout::Blobs;
 pub(crate) use crate::scanout::Property;
 
 pub(crate) struct UiScanout {
-    buffers: [Dumb; 2],
-    /// The buffer drawn next: not the one shown.
-    next: usize,
-    /// Whether the buffers hold the screen turned a quarter clockwise, as its panel is mounted.
-    quarter: bool,
-    /// Whether the buffers' pixels are blue first.
-    bgra: bool,
-    /// The screen layer's size in buffer pixels, the screen's way up.
-    size: (u32, u32),
+    buffers: LayerBuffers,
     colour: Colour,
 }
 
@@ -56,23 +48,82 @@ impl UiScanout {
         if turned != mode {
             return Err(format!("the UI, {turned:?} as the panel takes it, isn't the mode's {mode:?}").into());
         }
-        let linear = |code| formats.iter().any(|f| f.code == code && matches!(f.modifier, DrmModifier::Linear | DrmModifier::Invalid));
-        let (format, bgra) = if linear(DrmFourcc::Xbgr8888) {
-            (DrmFourcc::Xbgr8888, false)
-        } else if linear(DrmFourcc::Xrgb8888) {
-            (DrmFourcc::Xrgb8888, true)
-        } else {
-            return Err("the plane takes neither XBGR8888 nor XRGB8888 linear".into());
-        };
         let colour = Colour::new(device, crtc, panel)?;
-        let buffers = [Dumb::new(device, mode, format)?, Dumb::new(device, mode, format)?];
-        Ok(UiScanout { buffers, next: 0, quarter, bgra, size, colour })
+        let buffers = LayerBuffers::new(device, formats, size, quarter, OPAQUE)?;
+        Ok(UiScanout { buffers, colour })
     }
 
     /// Draws `screen`'s UI layer into the next buffer if that is behind, recording it first if it is stale.
     /// Returns the buffer's framebuffer to show, or none if it holds the latest frame already.
     pub(crate) fn draw(&mut self, core: &mut Core, screen: Screen) -> Option<framebuffer::Handle> {
-        let layer = Layer::Screen(screen);
+        self.buffers.draw(core, Layer::Screen(screen))
+    }
+
+    /// Its buffers hold nothing any more: each is drawn whole next.
+    pub(crate) fn reset(&mut self) {
+        self.buffers.reset();
+    }
+
+    /// The buffer drawn was committed: the other is drawn next.
+    pub(crate) fn committed(&mut self) {
+        self.buffers.committed();
+    }
+
+    /// The CRTC's colour properties while it is scanned out.
+    pub(crate) fn colour(&self) -> &[Property] {
+        &self.colour.set
+    }
+
+    /// Those properties cleared, for its first composed commit after.
+    pub(crate) fn clear(&self) -> &[Property] {
+        &self.colour.clear
+    }
+}
+
+/// The formats of an opaque picture, the first the plane takes linear: tiny-skia's red first, else blue
+/// first (virtio-gpu takes nothing else).
+pub(crate) const OPAQUE: &[(DrmFourcc, bool)] = &[(DrmFourcc::Xbgr8888, false), (DrmFourcc::Xrgb8888, true)];
+/// The same with alpha, premultiplied as the painter draws, for a plane over another.
+pub(crate) const BLENDED: &[(DrmFourcc, bool)] = &[(DrmFourcc::Abgr8888, false), (DrmFourcc::Argb8888, true)];
+
+/// Two dumb buffers a picture of a screen's way up is drawn into in turn, turned to the panel's mounting:
+/// a UI layer by its painter ([`LayerBuffers::draw`]), each buffer catching up from the frame it holds, or
+/// anything else written in ([`LayerBuffers::write`]). CPU-mapped once and kept.
+pub(crate) struct LayerBuffers {
+    buffers: [Dumb; 2],
+    /// The buffer drawn next: not the one shown.
+    next: usize,
+    /// Whether the buffers hold the picture turned a quarter clockwise, as its panel is mounted.
+    quarter: bool,
+    /// Whether the buffers' pixels are blue first.
+    bgra: bool,
+    /// The picture's size in buffer pixels, the screen's way up.
+    size: (u32, u32),
+}
+
+impl LayerBuffers {
+    /// Buffers for a picture of `size` (the screen's way up), turned a quarter clockwise if `quarter`, in the
+    /// first of `choices` (a format, and whether it is blue first) the plane, taking `formats`, takes linear;
+    /// or why not.
+    pub(crate) fn new(
+        device: &DrmDeviceFd,
+        formats: &smithay::backend::allocator::format::FormatSet,
+        size: (u32, u32),
+        quarter: bool,
+        choices: &[(DrmFourcc, bool)],
+    ) -> Result<LayerBuffers, Error> {
+        let linear = |code| formats.iter().any(|f| f.code == code && matches!(f.modifier, DrmModifier::Linear | DrmModifier::Invalid));
+        let Some(&(format, bgra)) = choices.iter().find(|(code, _)| linear(*code)) else {
+            return Err(format!("the plane takes none of {:?} linear", choices.iter().map(|(code, _)| *code).collect::<Vec<_>>()).into());
+        };
+        let turned = if quarter { (size.1, size.0) } else { size };
+        let buffers = [Dumb::new(device, turned, format)?, Dumb::new(device, turned, format)?];
+        Ok(LayerBuffers { buffers, next: 0, quarter, bgra, size })
+    }
+
+    /// Draws `layer` into the next buffer if that is behind, recording it first if it is stale. Returns the
+    /// buffer's framebuffer to show, or none if it holds the latest frame already.
+    pub(crate) fn draw(&mut self, core: &mut Core, layer: Layer) -> Option<framebuffer::Handle> {
         if core.stale(layer) {
             core.record(layer, false);
         }
@@ -89,6 +140,24 @@ impl UiScanout {
         Some(buffer.fb)
     }
 
+    /// Whether the next buffer is behind `layer`'s latest frame (or the layer is stale), so that drawing it
+    /// would change it.
+    pub(crate) fn behind(&self, core: &Core, layer: Layer) -> bool {
+        core.stale(layer) || self.buffers.get(self.next).is_some_and(|buffer| core.behind(layer, buffer.held))
+    }
+
+    /// Has `write` fill the next buffer: given its bytes, its row length in pixels, whether it is turned a
+    /// quarter and whether its pixels are blue first. Returns its framebuffer.
+    pub(crate) fn write(&mut self, write: impl FnOnce(&mut [u8], usize, bool, bool)) -> Option<framebuffer::Handle> {
+        let (quarter, bgra) = (self.quarter, self.bgra);
+        let buffer = self.buffers.get_mut(self.next)?;
+        // Not a UI frame: drawn whole if it is ever drawn by a painter.
+        buffer.held = 0;
+        let stride = buffer.pitch / 4;
+        write(buffer.bytes(), stride, quarter, bgra);
+        Some(buffer.fb)
+    }
+
     /// Its buffers hold nothing any more: each is drawn whole next.
     pub(crate) fn reset(&mut self) {
         for buffer in &mut self.buffers {
@@ -99,16 +168,6 @@ impl UiScanout {
     /// The buffer drawn was committed: the other is drawn next.
     pub(crate) fn committed(&mut self) {
         self.next ^= 1;
-    }
-
-    /// The CRTC's colour properties while it is scanned out.
-    pub(crate) fn colour(&self) -> &[Property] {
-        &self.colour.set
-    }
-
-    /// Those properties cleared, for its first composed commit after.
-    pub(crate) fn clear(&self) -> &[Property] {
-        &self.colour.clear
     }
 }
 

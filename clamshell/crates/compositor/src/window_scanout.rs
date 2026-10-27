@@ -87,20 +87,23 @@ impl Server {
         down: bool,
         screen: Rectangle<i32, Logical>,
         output: ColourDescription,
+        planed: crate::plane_layers::Planed,
     ) -> Option<(i64, Result<Candidate, &'static str>)> {
-        let placed = self.lone_window(down, screen)?;
+        let placed = self.lone_window(down, screen, planed)?;
         Some((placed.id, self.candidate(placed.id, placed.geometry, down, screen, output)))
     }
 
     /// The window that is all there is on screen `down`, `screen` being its area in the scene, covering it
-    /// and taking the input: no other window, dim layer, UI layer or cursor on it.
-    pub(crate) fn lone_window(&self, down: bool, screen: Rectangle<i32, Logical>) -> Option<&crate::scene::Placed> {
+    /// and taking the input: no other window, dim layer, UI layer or cursor on it, but for the overlay
+    /// layer and the cursor on planes of their own (`planed`, see `plane_layers`).
+    pub(crate) fn lone_window(&self, down: bool, screen: Rectangle<i32, Logical>, planed: crate::plane_layers::Planed) -> Option<&crate::scene::Placed> {
         let ui = if down { clamshell_ui::Screen::Bottom } else { clamshell_ui::Screen::Top };
         let mut on = self.scene.shown().iter().filter(|shown| match shown {
             Shown::Window(placed) => placed.below == down,
-            Shown::Software { layer, .. } => matches!(layer, clamshell_ui::Layer::Screen(s) | clamshell_ui::Layer::Overlay(s) if *s == ui),
+            Shown::Software { layer: clamshell_ui::Layer::Overlay(s), .. } => *s == ui && !planed.overlay,
+            Shown::Software { layer: clamshell_ui::Layer::Screen(s), .. } => *s == ui,
             Shown::Dim { area } => area.overlaps(screen),
-            Shown::Cursor { at } => screen.to_f64().contains(*at),
+            Shown::Cursor { at } => screen.to_f64().contains(*at) && !planed.cursor,
         });
         let Some(Shown::Window(placed)) = on.next() else { return None };
         (on.next().is_none() && placed.input && placed.geometry.viewport == screen).then_some(placed)

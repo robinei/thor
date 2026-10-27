@@ -77,10 +77,12 @@ fn frame(frames: &UiFrames, layer: Layer) -> Option<&UiFrame> {
 }
 
 /// Screen `down`'s elements (the second's, or the top's), front first, as the scene lists what is shown,
-/// but for the window `skip`, which the screen shows from its own buffer (see `window_scanout`). The
+/// but for the window `skip`, which the screen shows from its own buffer (see `window_scanout`), and the
+/// overlay layer and the cursor while they are on planes of their own (`planed`, see `plane_layers`). The
 /// screen's UI layers are drawn first, the top screen's not while a window covers it: that stays stale in
 /// the core, and is drawn where it changed once uncovered (the texture holds the last frame drawn).
 /// Drawing may change the state, so the scene is placed again after.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn elements(
     server: &mut Server,
     frames: &mut UiFrames,
@@ -89,17 +91,22 @@ pub(crate) fn elements(
     out: &mut Vec<Element>,
     down: bool,
     skip: Option<i64>,
+    planed: crate::plane_layers::Planed,
 ) -> Result<(), Error> {
     server.place();
     let [top, bottom, overlay, overlay_below] = frames;
     if down {
         bottom.update(&mut server.core, Screen::Bottom, renderer)?;
-        overlay_below.update(&mut server.core, Layer::Overlay(Screen::Bottom), renderer)?;
+        if !planed.overlay {
+            overlay_below.update(&mut server.core, Layer::Overlay(Screen::Bottom), renderer)?;
+        }
     } else {
         if !server.scene.covers_top() {
             top.update(&mut server.core, Screen::Top, renderer)?;
         }
-        overlay.update(&mut server.core, Layer::Overlay(Screen::Top), renderer)?;
+        if !planed.overlay {
+            overlay.update(&mut server.core, Layer::Overlay(Screen::Top), renderer)?;
+        }
     }
     server.core.frames_done();
     let screen = if down { Screen::Bottom } else { Screen::Top };
@@ -111,13 +118,14 @@ pub(crate) fn elements(
     for i in 0..server.scene.shown().len() {
         let placed = match server.scene.shown().get(i).copied() {
             Some(Shown::Software { layer, .. }) if !matches!(layer, Layer::Screen(s) | Layer::Overlay(s) if s == screen) => continue,
+            Some(Shown::Software { layer: Layer::Overlay(_), .. }) if planed.overlay => continue,
             Some(Shown::Software { layer, x, part }) => {
                 if let Some(element) = frame(frames, layer).and_then(|frame| frame.surface.element(renderer, x, part)) {
                     out.push(element);
                 }
                 continue;
             }
-            Some(Shown::Cursor { at }) if !on_screen(at.x) => continue,
+            Some(Shown::Cursor { at }) if !on_screen(at.x) || planed.cursor => continue,
             Some(Shown::Cursor { at }) => {
                 cursor.elements(server, renderer, at, out)?;
                 continue;

@@ -4,7 +4,9 @@
 //! shown before is free again. Smithay's `GbmBufferedSurface` did this; ClamShell's own owns every commit
 //! of the screen, so that a frame scanned out is another kind of commit rather than a second owner of the
 //! screen: a screen showing only ClamShell shows a buffer of its own (see `ui_scanout`), one showing only
-//! a window shows the window's (see `window_scanout`).
+//! a window shows the window's (see `window_scanout`). Every commit carries the screen's other planes too,
+//! its overlay and cursor (see `plane_layers`), and a change to those alone commits the frame shown again
+//! ([`Presenter::show_again`]).
 
 use smithay::backend::allocator::format::get_opaque;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBuffer};
@@ -34,6 +36,17 @@ pub(crate) struct Presenter {
     clear: Vec<crate::scanout::Property>,
     /// The next commit's properties: those cleared, then its own.
     properties: Vec<crate::scanout::Property>,
+    /// What the primary plane showed in the last commit, to commit again with other planes changed.
+    last: Option<Primary>,
+}
+
+/// What the primary plane shows: which framebuffer, which part of it, where, turned how.
+#[derive(Clone, Copy)]
+struct Primary {
+    fb: smithay::reexports::drm::control::framebuffer::Handle,
+    src: Rectangle<f64, smithay::utils::Buffer>,
+    dst: Rectangle<i32, smithay::utils::Physical>,
+    transform: Transform,
 }
 
 /// A frame committed: a buffer composed into or a window's, each kept from reuse until it is off the
@@ -42,6 +55,8 @@ enum Shown {
     Composed(#[allow(dead_code, reason = "held so that the swapchain doesn't reuse it while shown")] Slot<GbmBuffer>),
     Ui,
     Window(#[allow(dead_code, reason = "held so that the client doesn't reuse it while shown")] smithay::backend::renderer::utils::Buffer),
+    /// The frame shown, committed again: it stays.
+    Again,
 }
 
 impl Presenter {
@@ -68,6 +83,7 @@ impl Presenter {
                         current: Some(Shown::Composed(current)),
                         clear: Vec::new(),
                         properties: Vec::new(),
+                        last: None,
                     });
                 }
                 Err((back, error)) => {
@@ -152,8 +168,9 @@ impl Presenter {
     }
 
     /// Commits the buffer drawn into, once `sync` says the drawing is done: by the commit waiting on its
-    /// fence where it can, else after waiting here. It is shown at the next flip.
-    pub(crate) fn queue(&mut self, sync: Option<SyncPoint>) -> Result<(), Error> {
+    /// fence where it can, else after waiting here, with the other planes `layers`. It is shown at the next
+    /// flip.
+    pub(crate) fn queue<'l>(&mut self, sync: Option<SyncPoint>, layers: impl Iterator<Item = PlaneState<'l>> + Clone) -> Result<(), Error> {
         let slot = self.next.take().ok_or("no buffer drawn")?;
         self.swapchain.submitted(&slot);
         let fence = sync.and_then(|sync| {
@@ -167,25 +184,31 @@ impl Presenter {
         });
         let fb = *slot.userdata().get::<GbmFramebuffer>().ok_or("no framebuffer")?.as_ref();
         let (src, dst) = whole(&self.surface);
-        self.commit(fb, src, dst, Transform::Normal, fence.as_ref().map(std::os::fd::AsFd::as_fd), &[], false).map_err(|e| format!("committing: {e}"))?;
+        self.commit(fb, src, dst, Transform::Normal, fence.as_ref().map(std::os::fd::AsFd::as_fd), &[], layers, false)
+            .map_err(|e| format!("committing: {e}"))?;
         self.pending = Some(Shown::Composed(slot));
         Ok(())
     }
 
     /// Commits framebuffer `fb`, one of ClamShell's own buffers (see `ui_scanout`), with the CRTC's colour
-    /// `properties`. It is shown at the next flip.
-    pub(crate) fn show_ui(&mut self, fb: smithay::reexports::drm::control::framebuffer::Handle, properties: &[crate::scanout::Property]) -> Result<(), Error> {
+    /// `properties` and the other planes `layers`. It is shown at the next flip.
+    pub(crate) fn show_ui<'l>(
+        &mut self,
+        fb: smithay::reexports::drm::control::framebuffer::Handle,
+        properties: &[crate::scanout::Property],
+        layers: impl Iterator<Item = PlaneState<'l>> + Clone,
+    ) -> Result<(), Error> {
         let (src, dst) = whole(&self.surface);
-        self.commit(fb, src, dst, Transform::Normal, None, properties, false).map_err(|e| format!("committing ClamShell's own buffer: {e}"))?;
+        self.commit(fb, src, dst, Transform::Normal, None, properties, layers, false).map_err(|e| format!("committing ClamShell's own buffer: {e}"))?;
         self.pending = Some(Shown::Ui);
         Ok(())
     }
 
     /// Commits a window's `buffer`, its framebuffer `fb`, its part `src` shown at `dst` on the panel turned
-    /// by `transform`, with the plane's colour `properties`; first in a test commit if `test`. It is shown
-    /// at the next flip, and the buffer held until it is off the screen.
+    /// by `transform`, with the plane's colour `properties` and the other planes `layers`; first in a test
+    /// commit if `test`. It is shown at the next flip, and the buffer held until it is off the screen.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn show_window(
+    pub(crate) fn show_window<'l>(
         &mut self,
         buffer: smithay::backend::renderer::utils::Buffer,
         fb: smithay::reexports::drm::control::framebuffer::Handle,
@@ -193,10 +216,20 @@ impl Presenter {
         dst: Rectangle<i32, smithay::utils::Physical>,
         transform: Transform,
         properties: &[crate::scanout::Property],
+        layers: impl Iterator<Item = PlaneState<'l>> + Clone,
         test: bool,
     ) -> Result<(), Error> {
-        self.commit(fb, src, dst, transform, None, properties, test)?;
+        self.commit(fb, src, dst, transform, None, properties, layers, test)?;
         self.pending = Some(Shown::Window(buffer));
+        Ok(())
+    }
+
+    /// Commits the frame shown again, with the other planes `layers` changed (the cursor moved, the overlay
+    /// redrawn). It stays shown.
+    pub(crate) fn show_again<'l>(&mut self, layers: impl Iterator<Item = PlaneState<'l>> + Clone) -> Result<(), Error> {
+        let Primary { fb, src, dst, transform } = self.last.ok_or("nothing shown to commit again")?;
+        self.commit(fb, src, dst, transform, None, &[], layers, false)?;
+        self.pending = Some(Shown::Again);
         Ok(())
     }
 
@@ -206,9 +239,10 @@ impl Presenter {
     }
 
     /// Commits `fb` on the primary plane, `src` of it shown at `dst`, turned by `transform`, after `fence`,
-    /// with the properties cleared and then `properties`; first in a test commit if `test`.
+    /// with the properties cleared and then `properties`, and the other planes `layers`; first in a test
+    /// commit if `test`.
     #[allow(clippy::too_many_arguments)]
-    fn commit(
+    fn commit<'l>(
         &mut self,
         fb: smithay::reexports::drm::control::framebuffer::Handle,
         src: Rectangle<f64, smithay::utils::Buffer>,
@@ -216,24 +250,28 @@ impl Presenter {
         transform: Transform,
         fence: Option<std::os::fd::BorrowedFd<'_>>,
         properties: &[crate::scanout::Property],
+        layers: impl Iterator<Item = PlaneState<'l>> + Clone,
         test: bool,
     ) -> Result<(), Error> {
         self.properties.clear();
         self.properties.extend_from_slice(&self.clear);
         self.properties.extend_from_slice(properties);
         let state = primary(&self.surface, fb, src, dst, transform, fence, &self.properties);
+        let states = || std::iter::once(state.clone()).chain(layers.clone().map(narrowed));
         if test {
-            self.surface.test_state([state.clone()], false).map_err(|e| format!("the display engine refused it: {e}"))?;
+            self.surface.test_state(states(), false).map_err(|e| format!("the display engine refused it: {e}"))?;
         }
-        let committed = if self.surface.commit_pending() { self.surface.commit([state], true) } else { self.surface.page_flip([state], true) };
+        let committed = if self.surface.commit_pending() { self.surface.commit(states(), true) } else { self.surface.page_flip(states(), true) };
         committed.map_err(|e| e.to_string())?;
         self.clear.clear();
+        self.last = Some(Primary { fb, src, dst, transform });
         Ok(())
     }
 
     /// The frame committed is shown: the buffer shown before is free again. Whether there was one.
     pub(crate) fn flipped(&mut self) -> bool {
         match self.pending.take() {
+            Some(Shown::Again) => true,
             Some(pending) => {
                 self.current = Some(pending);
                 true
@@ -269,6 +307,11 @@ fn framebuffer(surface: &DrmSurface, slot: &Slot<GbmBuffer>, opaque: bool) -> Re
     let fb = framebuffer_from_bo(surface.device_fd(), slot, opaque).map_err(|e| format!("its framebuffer: {e}"))?;
     slot.userdata().insert_if_missing_threadsafe(|| fb);
     Ok(())
+}
+
+/// A plane's state, its borrows taken as shorter, to go in one commit with the primary plane's.
+fn narrowed<'a: 'b, 'b>(state: PlaneState<'a>) -> PlaneState<'b> {
+    state
 }
 
 /// A buffer of the screen's mode shown whole: all of it, over all the screen.

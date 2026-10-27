@@ -9,6 +9,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use crate::EventSender;
+use crate::plane_layers::{PlaneLayers, Planed};
 use crate::presenter::Presenter;
 use crate::ui_scanout::UiScanout;
 use crate::window_scanout::{Candidate, Shape, WindowScanout};
@@ -94,6 +95,10 @@ struct Screen {
     /// The window drawn straight onto it, composed without the scene between (see `colour::render`), if
     /// it shows one alone.
     direct: Option<i64>,
+    /// With CLAMSHELL_SCANOUT=1, its overlay layer and cursor on planes of their own (see `plane_layers`),
+    /// and whether what they show changed since its last commit.
+    layers: Option<PlaneLayers>,
+    layers_dirty: bool,
 }
 
 impl Screen {
@@ -104,6 +109,15 @@ impl Screen {
         if let Some(ui) = &mut self.ui {
             ui.reset();
         }
+        if let Some(layers) = &mut self.layers {
+            layers.reset();
+            self.layers_dirty = true;
+        }
+    }
+
+    /// Which of its layers are on their planes this turn.
+    fn planed(&self) -> Planed {
+        self.layers.as_ref().map(|layers| layers.planed).unwrap_or_default()
     }
 
     /// When a frame composed at `now` would be shown (see [`next_shown`]).
@@ -173,6 +187,9 @@ pub fn run(
     let fd = session.open(&gpu, OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK).map_err(|e| format!("drm: {}: {e}", gpu.display()))?;
     let fd = DrmDeviceFd::new(DeviceFd::from(fd));
     // The connectors are left as they are, so each screen can keep the mode the kernel already set.
+    if scanout {
+        crate::plane_layers::ask_for_cursor_planes(&fd);
+    }
     let (mut drm, drm_notifier) = DrmDevice::new(fd.clone(), false).map_err(|e| format!("drm: {e}"))?;
     let sync_fd = fd.clone();
     let gbm = GbmDevice::new(fd).map_err(|e| format!("drm: gbm: {e}"))?;
@@ -261,6 +278,8 @@ pub fn run(
             tested: None,
             composed_why: None,
             direct: None,
+            layers: None,
+            layers_dirty: false,
         });
     }
     // With CLAMSHELL_SCANOUT=1, each screen's own buffers, for while it shows only ClamShell.
@@ -305,6 +324,14 @@ pub fn run(
                 feedback.inspect_err(|error| log::warn!("window scanout: the {:?} screen tells no window the plane's formats: {error}", screen.role)).ok();
             let plane = screen.surface.surface().plane();
             screen.window = Some(WindowScanout::new(drm.device_fd(), &gbm, plane, formats, feedback));
+        }
+        // And each screen's overlay and cursor planes, each plane for one screen only.
+        let mut taken = Vec::new();
+        for screen in &mut screens {
+            let ((w, h), scale) = server.core.size(ui_screen(screen.role));
+            let quarter = profile.screen(screen.role).rotation == Rotation::Clockwise90;
+            let role = format!("{:?}", screen.role);
+            screen.layers = Some(PlaneLayers::new(&drm, screen.crtc, (w * scale, h * scale), quarter, &mut taken, &role));
         }
     }
 
@@ -416,7 +443,7 @@ fn ui_screen(role: ScreenRole) -> clamshell_ui::Screen {
 
 /// Whether the screen, the bottom one if `down`, shows nothing but ClamShell's own view in the scene: no
 /// window, overlay, dim layer or cursor on it (see `ui_scanout`).
-fn ui_only(server: &Server, down: bool) -> bool {
+fn ui_only(server: &Server, down: bool, planed: Planed) -> bool {
     use crate::scene::Shown;
     let edge = server.screens.top_width;
     let on_it = |x: i32| (x >= edge) == down;
@@ -424,8 +451,8 @@ fn ui_only(server: &Server, down: bool) -> bool {
     server.scene.shown().iter().all(|shown| match shown {
         Shown::Window(placed) => placed.below != down,
         Shown::Dim { area } => !on_it(area.loc.x),
-        Shown::Cursor { at } => !on_it(at.x as i32),
-        Shown::Software { layer, .. } => *layer != clamshell_ui::Layer::Overlay(screen),
+        Shown::Cursor { at } => planed.cursor || !on_it(at.x as i32),
+        Shown::Software { layer, .. } => planed.overlay || *layer != clamshell_ui::Layer::Overlay(screen),
     })
 }
 
@@ -562,9 +589,11 @@ fn step(
     server.frame();
     server.sync_pointer_capture(|_| Ok::<(), std::convert::Infallible>(()));
     server.import_dmabufs(&mut drawing.renderer);
-    // A screen showing only ClamShell shows its own buffers, and isn't composed for (see `ui_scanout`); one
-    // showing one window alone may show the window's (see `window_scanout`), or draw it straight onto
-    // itself.
+    // What goes on the screens' overlay and cursor planes, which the scene then leaves out (see
+    // `plane_layers`). A screen showing only ClamShell shows its own buffers, and isn't composed for (see
+    // `ui_scanout`); one showing one window alone may show the window's (see `window_scanout`), or draw it
+    // straight onto itself.
+    layers_decide(drawing, server);
     ui_scanout_decide(drawing, server);
     window_scanout_decide(drawing, server);
     direct_decide(drawing, server);
@@ -605,10 +634,10 @@ fn step(
         due = earlier(due, turn.wake);
         if screen.ui_shown {
             if screen.on && !screen.pending {
-                present_ui(screen, server);
+                present_ui(screen, server, &drawing.cursor);
             }
         } else if turn.present && screen.window_shown.is_some() {
-            if !present_window(screen, server, &mut drawing.pipeline) {
+            if !present_window(screen, server, &mut drawing.pipeline, &drawing.cursor) {
                 // Refused: composed at once.
                 due = Some(now);
             }
@@ -616,6 +645,9 @@ fn step(
             if let Err(error) = present(drawing, server, index) {
                 log::warn!("drm: drawing: {error}");
             }
+        } else if screen.layers_dirty && screen.on && !screen.pending {
+            // Only the overlay or the cursor changed: the frame shown, committed again with them.
+            present_layers(screen, server, &drawing.cursor);
         } else if turn.answer {
             screen.answered = server.pacing.commits;
             screen.next_callbacks = Some(now + screen.interval);
@@ -801,7 +833,7 @@ fn compose(drawing: &mut Drawing, server: &mut Server, index: usize, capture: bo
     }
     let down = screen.role == ScreenRole::Bottom;
     let skip = screen.window_shown.as_ref().map(|shown| shown.id);
-    render::elements(server, frames, cursor, renderer, elements, down, skip)?;
+    render::elements(server, frames, cursor, renderer, elements, down, skip, screen.planed())?;
     screen.dirty |= pipeline.compose(server, renderer, down, elements, states, screen.direct.is_some())?;
     Ok(())
 }
@@ -810,6 +842,58 @@ fn compose(drawing: &mut Drawing, server: &mut Server, index: usize, capture: bo
 /// window's; or for a screenshot, whatever it shows.
 fn composes(on: bool, pending: bool, shows_own: bool, capture: bool) -> bool {
     capture || (on && !pending && !shows_own)
+}
+
+/// Decides for each screen with overlay and cursor planes what goes on them this turn, the cursor if its
+/// hotspot is on the screen; a change to what they show has the screen commit (see `plane_layers`).
+fn layers_decide(drawing: &mut Drawing, server: &mut Server) {
+    let Drawing { screens, cursor, renderer, .. } = drawing;
+    let at = server.scene.shown().iter().find_map(|shown| match shown {
+        crate::scene::Shown::Cursor { at } => Some(*at),
+        _ => None,
+    });
+    let edge = f64::from(server.screens.top_width);
+    for screen in screens.iter_mut() {
+        let Some(layers) = &mut screen.layers else { continue };
+        let down = screen.role == ScreenRole::Bottom;
+        let at = at.filter(|at| (at.x >= edge) == down);
+        let origin = smithay::utils::Point::<i32, Logical>::from((screen.part.loc.x, screen.part.loc.y));
+        screen.layers_dirty |= layers.decide(server, ui_screen(screen.role), cursor, renderer, at, origin);
+    }
+}
+
+/// The screen's commit with its planes went through: they show as placed.
+fn layers_committed(screen: &mut Screen) {
+    if let Some(layers) = &mut screen.layers {
+        layers.committed();
+    }
+    screen.layers_dirty = false;
+}
+
+/// The screen's commit with its planes failed: they are off from now on, composed, and the screen is
+/// committed again.
+fn layers_failed(screen: &mut Screen, error: &Error) {
+    if let Some(layers) = &mut screen.layers {
+        layers.fail(error, &format!("{:?}", screen.role));
+    }
+    screen.dirty = true;
+    screen.layers_dirty = true;
+}
+
+/// Commits the frame the screen shows again, with its overlay and cursor planes as they now are.
+fn present_layers(screen: &mut Screen, server: &mut Server, cursor: &crate::cursor::Cursor) {
+    if let Some(layers) = &mut screen.layers {
+        layers.prepare(server, ui_screen(screen.role), cursor);
+    }
+    let states = screen.layers.iter().flat_map(PlaneLayers::states);
+    match screen.surface.show_again(states) {
+        Ok(()) => {
+            layers_committed(screen);
+            screen.pending = true;
+            screen.queued_at = Some(Instant::now());
+        }
+        Err(error) => layers_failed(screen, &error),
+    }
 }
 
 /// Decides for each screen with its own buffers whether it shows them: while the scene has nothing but
@@ -833,7 +917,7 @@ fn ui_scanout_decide(drawing: &mut Drawing, server: &mut Server) {
     }
     for screen in &mut drawing.screens {
         let Some(ui) = &screen.ui else { continue };
-        let now = ui_only(server, screen.role == ScreenRole::Bottom);
+        let now = ui_only(server, screen.role == ScreenRole::Bottom, screen.planed());
         if screen.ui_shown && !now {
             screen.surface.clear_after(ui.clear());
             screen.dirty = true;
@@ -854,10 +938,11 @@ fn ui_scanout_decide(drawing: &mut Drawing, server: &mut Server) {
 fn window_scanout_decide(drawing: &mut Drawing, server: &mut Server) {
     let Drawing { screens, pipeline, .. } = drawing;
     for screen in screens.iter_mut() {
+        let planed = screen.planed();
         let Some(scanout) = &mut screen.window else { continue };
         let down = screen.role == ScreenRole::Bottom;
         let area = Rectangle::new((screen.part.loc.x, screen.part.loc.y).into(), (screen.part.size.w, screen.part.size.h).into());
-        let found = if screen.ui_shown || !screen.on { None } else { server.scanout_window(down, area, pipeline.output_description(down)) };
+        let found = if screen.ui_shown || !screen.on { None } else { server.scanout_window(down, area, pipeline.output_description(down), planed) };
         let alone = found.as_ref().map(|(id, _)| *id);
         if alone != screen.fed {
             if let (Some(id), Some(default)) = (screen.fed, &server.protocols.dmabuf_feedback) {
@@ -909,7 +994,7 @@ fn direct_decide(drawing: &mut Drawing, server: &Server) {
     for screen in &mut drawing.screens {
         let down = screen.role == ScreenRole::Bottom;
         let area = Rectangle::new((screen.part.loc.x, screen.part.loc.y).into(), (screen.part.size.w, screen.part.size.h).into());
-        let lone = server.lone_window(down, area).map(|placed| placed.id);
+        let lone = server.lone_window(down, area, screen.planed()).map(|placed| placed.id);
         let direct = lone.filter(|_| !server.screenshot_requested && !screen.ui_shown && screen.window_shown.is_none());
         if direct != screen.direct {
             match direct {
@@ -924,7 +1009,10 @@ fn direct_decide(drawing: &mut Drawing, server: &Server) {
 /// Shows the window decided on (see [`window_scanout_decide`]) from its own buffer, in a test commit
 /// first when its shape is new. Returns whether it is: refused, the window is composed until its buffer
 /// changes, and the scene, which left it out, is drawn whole.
-fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipeline) -> bool {
+fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipeline, cursor: &crate::cursor::Cursor) -> bool {
+    if let Some(layers) = &mut screen.layers {
+        layers.prepare(server, ui_screen(screen.role), cursor);
+    }
     let (Some(scanout), Some(candidate)) = (&mut screen.window, &screen.window_shown) else { return true };
     let shape = candidate.shape();
     let test = screen.tested != Some(shape);
@@ -932,9 +1020,11 @@ fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipel
     let logical = screen.transform.transform_size(screen.size);
     let dst = screen.transform.transform_rect_in(candidate.dst.to_physical(1), &logical);
     let surface = &mut screen.surface;
+    let states = screen.layers.iter().flat_map(PlaneLayers::states);
+    let with_layers = states.clone().next().is_some();
     let shown = scanout.framebuffer(&candidate.dmabuf).and_then(|fb| {
         let properties = scanout.colour(candidate.colour)?;
-        surface.show_window(candidate.buffer.clone(), fb, candidate.src, dst, screen.transform.invert(), properties, test)
+        surface.show_window(candidate.buffer.clone(), fb, candidate.src, dst, screen.transform.invert(), properties, states, test)
     });
     let down = screen.role == ScreenRole::Bottom;
     match shown {
@@ -948,11 +1038,17 @@ fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipel
             screen.queued.states.clear();
             screen.queued.states.insert(smithay::backend::renderer::element::Id::from_wayland_resource(&candidate.surface), state);
             server.frame_queued(&screen.queued, Some(down));
+            layers_committed(screen);
             screen.pending = true;
             screen.queued_at = Some(Instant::now());
             screen.dirty = false;
             screen.answered = server.pacing.commits;
             true
+        }
+        // Tried again without the planes before the window is refused.
+        Err(error) if with_layers => {
+            layers_failed(screen, &error);
+            false
         }
         Err(error) => {
             log::info!(
@@ -971,18 +1067,32 @@ fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipel
 }
 
 /// Shows the screen's own buffer drawn with what changed in ClamShell's view, if anything did.
-fn present_ui(screen: &mut Screen, server: &mut Server) {
+fn present_ui(screen: &mut Screen, server: &mut Server, cursor: &crate::cursor::Cursor) {
     let Some(ui) = &mut screen.ui else { return };
-    let Some(fb) = ui.draw(&mut server.core, ui_screen(screen.role)) else {
+    let fb = ui.draw(&mut server.core, ui_screen(screen.role));
+    if fb.is_none() && !screen.layers_dirty {
         return;
-    };
+    }
     server.core.frames_done();
-    match screen.surface.show_ui(fb, ui.colour()) {
+    if let Some(layers) = &mut screen.layers {
+        layers.prepare(server, ui_screen(screen.role), cursor);
+    }
+    let states = screen.layers.iter().flat_map(PlaneLayers::states);
+    let with_layers = states.clone().next().is_some();
+    let shown = match fb {
+        Some(fb) => screen.surface.show_ui(fb, ui.colour(), states),
+        None => screen.surface.show_again(states),
+    };
+    match shown {
         Ok(()) => {
-            ui.committed();
+            if fb.is_some() {
+                ui.committed();
+            }
+            layers_committed(screen);
             screen.pending = true;
             screen.queued_at = Some(Instant::now());
         }
+        Err(error) if with_layers => layers_failed(screen, &error),
         Err(error) => {
             // Composed instead from now on, with the reason.
             log::warn!("ui scanout: the {:?} screen: {error}: composed from now on", screen.role);
@@ -995,18 +1105,30 @@ fn present_ui(screen: &mut Screen, server: &mut Server) {
 }
 
 /// Shows screen `index` its part of the scene.
-fn present(drawing: &mut Drawing, server: &Server, index: usize) -> Result<(), Error> {
-    let Drawing { renderer, pipeline, screens, states, .. } = drawing;
+fn present(drawing: &mut Drawing, server: &mut Server, index: usize) -> Result<(), Error> {
+    let Drawing { renderer, pipeline, screens, states, cursor, .. } = drawing;
     let (Some(screen), Some(states)) = (screens.get_mut(index), states.get(index)) else {
         return Ok(());
     };
+    if let Some(layers) = &mut screen.layers {
+        layers.prepare(server, ui_screen(screen.role), cursor);
+    }
     let mut buffer = screen.surface.next_buffer().map_err(|e| format!("{:?} screen: {e}", screen.role))?;
     let sync = {
         let mut target = renderer.bind(&mut buffer)?;
         pipeline.present_screen(renderer, &mut target, screen.role == ScreenRole::Bottom, screen.size, screen.transform)?
     };
     screen.queued.states.clone_from(&states.states);
-    screen.surface.queue(Some(sync)).map_err(|e| format!("{:?} screen: {e}", screen.role))?;
+    let layers = screen.layers.iter().flat_map(PlaneLayers::states);
+    let with_layers = layers.clone().next().is_some();
+    if let Err(error) = screen.surface.queue(Some(sync), layers) {
+        if with_layers {
+            layers_failed(screen, &error);
+            return Ok(());
+        }
+        return Err(format!("{:?} screen: {error}", screen.role).into());
+    }
+    layers_committed(screen);
     server.frame_queued(states, Some(screen.role == ScreenRole::Bottom));
     screen.pending = true;
     screen.queued_at = Some(Instant::now());
