@@ -28,6 +28,9 @@ pub(crate) struct Pacing {
     /// What committed since the scene was last composed, for a host that composes only when a screen can
     /// show it (see `drm::compose_now`).
     pub committed: Committed,
+    /// The clients whose blockers a frame's callbacks or a shown frame cleared, told once each; kept, so
+    /// that pacing a frame allocates nothing.
+    cleared: Vec<smithay::reexports::wayland_server::Client>,
 }
 
 /// What committed since the scene was last composed.
@@ -154,7 +157,6 @@ impl Server {
         let [top, bottom] = &self.screens.outputs;
         let time = self.started.elapsed();
         let mut held: Option<Instant> = None;
-        let mut barriers: Vec<smithay::reexports::wayland_server::Client> = Vec::new();
         for client in self.windows.iter_mut() {
             let Some(on_down) = self.scene.window(client.id).map(|placed| placed.below) else { continue };
             if down.is_some_and(|down| down != on_down) {
@@ -185,8 +187,8 @@ impl Server {
                         let barrier = states.cached_state.get::<smithay::wayland::fifo::FifoBarrierCachedState>().current().barrier.take();
                         if let Some(barrier) = barrier {
                             barrier.signal();
-                            if let Some(owner) = surface.client().filter(|owner| !barriers.iter().any(|c| c.id() == owner.id())) {
-                                barriers.push(owner);
+                            if let Some(owner) = surface.client().filter(|owner| !self.pacing.cleared.iter().any(|c| c.id() == owner.id())) {
+                                self.pacing.cleared.push(owner);
                             }
                         }
                     });
@@ -194,12 +196,19 @@ impl Server {
                 Err(due) => held = Some(held.map_or(due, |held| held.min(due))),
             }
         }
+        self.tell_cleared();
+        held
+    }
+
+    /// Tells the clients in `cleared` that their blockers cleared, so that their held commits go ahead.
+    fn tell_cleared(&mut self) {
+        use smithay::wayland::compositor::CompositorHandler;
         let dh = self.dh.clone();
-        for owner in barriers {
-            use smithay::wayland::compositor::CompositorHandler;
+        let mut cleared = std::mem::take(&mut self.pacing.cleared);
+        for owner in cleared.drain(..) {
             self.client_compositor_state(&owner).blocker_cleared(self, &dh);
         }
-        held
+        self.pacing.cleared = cleared;
     }
 
     /// Lets the windows' commits timed (`wp_commit_timing`) for no later than `shown`, when the frame about
@@ -208,7 +217,6 @@ impl Server {
     /// further each frame the cap holds back. Returns the earliest time a commit is still held for.
     pub fn release_timed_commits(&mut self, shown: smithay::utils::Time<smithay::utils::Monotonic>) -> Option<smithay::utils::Time<smithay::utils::Monotonic>> {
         use smithay::wayland::commit_timing::{CommitTimerBarrierStateUserData, Timestamp};
-        let mut released: Vec<smithay::reexports::wayland_server::Client> = Vec::new();
         let mut held: Option<Timestamp> = None;
         for client in &self.windows {
             let until = if client.shown.fps_cap.is_some() {
@@ -219,20 +227,16 @@ impl Server {
             client.window.with_surfaces(|surface, states| {
                 let Some(mut timers) = states.data_map.get::<CommitTimerBarrierStateUserData>().and_then(|timers| timers.lock().ok()) else { return };
                 if timers.signal_until(until)
-                    && let Some(owner) = surface.client().filter(|owner| !released.iter().any(|c| c.id() == owner.id()))
+                    && let Some(owner) = surface.client().filter(|owner| !self.pacing.cleared.iter().any(|c| c.id() == owner.id()))
                 {
-                    released.push(owner);
+                    self.pacing.cleared.push(owner);
                 }
                 if let Some(next) = timers.next_deadline() {
                     held = Some(held.map_or(next, |held| held.min(next)));
                 }
             });
         }
-        let dh = self.dh.clone();
-        for owner in released {
-            use smithay::wayland::compositor::CompositorHandler;
-            self.client_compositor_state(&owner).blocker_cleared(self, &dh);
-        }
+        self.tell_cleared();
         held.map(Into::into)
     }
 
