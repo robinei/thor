@@ -141,7 +141,7 @@ impl Sys {
     pub fn cost_of(&self, r: &Running) -> Option<Cost> {
         let mine = self.battery.spenders.iter().filter(|s| match &s.group {
             Group::Launch(i) => i.key == r.key.as_str(),
-            Group::App(app) => r.app_id.as_deref() == Some(app.as_str()),
+            Group::App(app) => r.mark.as_deref() == Some(app.as_str()),
             _ => false,
         });
         mine.fold(None, |sum, s| {

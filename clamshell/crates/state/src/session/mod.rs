@@ -9,6 +9,7 @@ pub mod enqueue;
 pub(crate) mod found;
 mod front;
 pub mod launch_unit;
+pub mod launchers;
 pub mod overview;
 pub mod program;
 pub(crate) mod running;
@@ -142,9 +143,9 @@ impl Session {
         &self.running
     }
 
-    /// The running entry whose windows have app id `app`.
+    /// The running entry whose windows are known by app id `app`.
     pub(crate) fn running_app(&self, app: &str) -> Option<Arc<str>> {
-        self.running.iter().find(|r| r.app_id.as_deref() == Some(app)).map(|r| r.id.clone())
+        self.running.iter().find(|r| r.mark.as_deref() == Some(app)).map(|r| r.id.clone())
     }
 
     /// An entry by its id: the library's, or else, for an entry that is still running after leaving the
@@ -310,20 +311,18 @@ impl Session {
         }
     }
 
-    /// The running entry a client's process belongs to, before it has a window: by its unit, else the
-    /// Steam game it is (Steam's game launcher starts it in Steam's scope, which ClamShell then follows).
-    pub fn running_of_process(&self, unit: Option<&str>, steam_app: Option<u32>) -> Option<&Running> {
+    /// The running entry a client's process belongs to, before it has a window: by its unit, else by the
+    /// game its launcher marked it with (see [`launchers`]), as Steam's game launcher starts a game in
+    /// Steam's scope.
+    pub fn running_of_process(&self, unit: Option<&str>, game: Option<&str>) -> Option<&Running> {
         let by_key = unit.and_then(LaunchUnit::key_of).and_then(|key| self.running.iter().find(|r| r.key == key));
-        by_key.or_else(|| {
-            let app_id = format!("{}{}", crate::session::launch_unit::STEAM_APP_PREFIX, steam_app?);
-            self.running.iter().find(|r| r.app_id.as_deref() == Some(app_id.as_str()))
-        })
+        by_key.or_else(|| self.running.iter().find(|r| game.is_some() && r.mark.as_deref() == game))
     }
 
     /// Notes the resolution a client's process was told, on the running entry it belongs to (see
     /// [`Session::running_of_process`]).
-    pub(crate) fn told(&mut self, unit: Option<&str>, steam_app: Option<u32>, resolution: crate::settings::Resolution) {
-        let id = self.running_of_process(unit, steam_app).map(|r| r.id.clone());
+    pub(crate) fn told(&mut self, unit: Option<&str>, game: Option<&str>, resolution: crate::settings::Resolution) {
+        let id = self.running_of_process(unit, game).map(|r| r.id.clone());
         if let Some(running) = id.and_then(|id| self.running.iter_mut().find(|r| r.id == id)) {
             running.told = Some(resolution);
         } else if let Some(key) = unit.and_then(LaunchUnit::key_of)
@@ -334,10 +333,10 @@ impl Session {
         }
     }
 
-    /// The entry a client's process (by its unit, or Steam's app id) belongs to: one running, or a launch
-    /// still starting, whose program can connect before systemd lists its unit.
-    pub(crate) fn entry_of_process(&self, unit: Option<&str>, steam_app: Option<u32>) -> Option<Arc<str>> {
-        self.running_of_process(unit, steam_app).map(|r| r.id.clone()).or_else(|| {
+    /// The entry a client's process (by its unit, or its launcher's mark) belongs to: one running, or a
+    /// launch still starting, whose program can connect before systemd lists its unit.
+    pub(crate) fn entry_of_process(&self, unit: Option<&str>, game: Option<&str>) -> Option<Arc<str>> {
+        self.running_of_process(unit, game).map(|r| r.id.clone()).or_else(|| {
             let key = unit.and_then(LaunchUnit::key_of)?;
             self.launching.iter().find(|l| l.unit.key == key).map(|l| l.entry.clone())
         })
@@ -345,8 +344,8 @@ impl Session {
 
     /// The running entry a window belongs to, by the first of these that matches:
     ///
-    /// - its app id (see [`crate::session::running::app_id_of`]), as for a Steam game that runs in Steam's
-    ///   scope;
+    /// - its mark (see [`crate::session::running::mark_of`]), as for a launcher's game that runs in the
+    ///   launcher's unit;
     /// - its unit, which also covers windows moved down;
     /// - its process, for a program found by its tray icon;
     /// - its group.

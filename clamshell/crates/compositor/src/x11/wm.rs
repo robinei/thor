@@ -769,7 +769,7 @@ impl Window {
                 .state()
                 .session()
                 .window(self.id)
-                .map(|v| Process { unit: v.unit.clone(), pids: v.pids.clone(), steam_app: None })
+                .map(|v| Process { unit: v.unit.clone(), pids: v.pids.clone(), game: v.game.clone() })
                 .unwrap_or_else(|| self.process.clone());
             let facts = self.properties.facts(self.id, parent, process);
             if !self.opened {
@@ -954,7 +954,7 @@ mod tests {
     /// has no process id doesn't wait.
     #[test]
     fn a_window_opens_once_its_process_is_identified() {
-        let identify = |pid| Process { unit: Some("app-x11.scope".into()), pids: vec![pid, 1000], steam_app: None };
+        let identify = |pid| Process { unit: Some("app-x11.scope".into()), pids: vec![pid, 1000], game: None };
         let (_display, mut server) = crate::tests::ServerBuilder::new().identify(identify).build();
         let (socket, _peer) = UnixStream::pair().unwrap();
         let now = Instant::now();

@@ -276,7 +276,7 @@ impl Toplevel {
 
 /// A client of a launch's unit, `test.service`.
 fn launched() -> ClientState {
-    ClientState { process: Some(Process { unit: Some("test.service".into()), pids: vec![100], steam_app: None }), ..ClientState::default() }
+    ClientState { process: Some(Process { unit: Some("test.service".into()), pids: vec![100], game: None }), ..ClientState::default() }
 }
 
 #[test]

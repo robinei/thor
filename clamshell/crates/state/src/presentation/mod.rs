@@ -252,8 +252,8 @@ impl crate::State {
     /// The game a client's process is (see [`crate::session::Session::running_of_process`]): its resolution,
     /// and whether it shows a window on the second screen (a dual-screen emulator, by its rule to move one
     /// down). None for a process of anything else.
-    pub fn process_game(&self, unit: Option<&str>, steam_app: Option<u32>) -> Option<(crate::settings::Resolution, bool)> {
-        let id = self.session().entry_of_process(unit, steam_app)?;
+    pub fn process_game(&self, unit: Option<&str>, game: Option<&str>) -> Option<(crate::settings::Resolution, bool)> {
+        let id = self.session().entry_of_process(unit, game)?;
         let game = self.session().entry(self.shelf().library(), &id).is_some_and(crate::Entry::is_game);
         let dual = self.session().window_rules().list().iter().any(|rule| *rule.owner == *id);
         game.then(|| (self.settings_of(&id).choice(), dual))
@@ -321,13 +321,13 @@ mod tests {
         let launch = launch(&mut s, "zelda-lttp");
         tap(&mut s, Id::Tab(Tab::Settings));
         let unit = Some(launch.service());
-        s.applied(crate::Event::Reading(crate::Reading::Told { unit: unit.clone(), steam_app: None, resolution: Resolution::Native }));
+        s.applied(crate::Event::Reading(crate::Reading::Told { unit: unit.clone(), game: None, resolution: Resolution::Native }));
         assert!(!s.resolution_waits(), "as it was told");
         tap(&mut s, Id::Settings(SettingsId::Tile(Setting::Resolution)));
         assert!(s.resolution_waits(), "changed while it runs");
         // Started again with it: told the new one.
         let set: Resolution = crate::settings::Choice::of(s.panel().tile_value(Setting::Resolution));
-        s.applied(crate::Event::Reading(crate::Reading::Told { unit, steam_app: None, resolution: set }));
+        s.applied(crate::Event::Reading(crate::Reading::Told { unit, game: None, resolution: set }));
         assert!(!s.resolution_waits());
     }
     /// A launch's program can connect before systemd lists its unit, as a service's program starts with
@@ -341,7 +341,7 @@ mod tests {
         fx.extend(tap(&mut s, entry("zelda-lttp")));
         let unit = fx.iter().find_map(|e| if let Effect::Launch { unit, .. } = e { Some(unit.service()) } else { None });
         assert!(s.process_game(unit.as_deref(), None).is_some(), "a game, though its unit isn't listed yet");
-        s.applied(crate::Event::Reading(crate::Reading::Told { unit, steam_app: None, resolution: Resolution::Half }));
+        s.applied(crate::Event::Reading(crate::Reading::Told { unit, game: None, resolution: Resolution::Half }));
         start(&mut s, "zelda-lttp");
         assert_eq!(s.session().running_entries().iter().find(|r| &*r.id == "zelda-lttp").and_then(|r| r.told), Some(Resolution::Half));
     }

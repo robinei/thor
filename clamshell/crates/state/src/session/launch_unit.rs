@@ -20,8 +20,6 @@ const RUN: &str = "clamshell-run-";
 pub const SLICE_PREFIX: &str = "app-graphical-clamshell-run-";
 const SERVICE: &str = ".service";
 const SCOPE: &str = ".scope";
-/// Steam's app id for a game's windows: `steam_app_<id>`.
-pub(crate) const STEAM_APP_PREFIX: &str = "steam_app_";
 
 /// A launch of an entry, which names its unit: the entry's key, the start time and a counter.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

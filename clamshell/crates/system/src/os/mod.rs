@@ -15,7 +15,7 @@
 
 pub(crate) mod cgroup;
 pub use cgroup::unit_of;
-pub use sys::{lineage, steam_app_of};
+pub use sys::{launcher_game_of, lineage};
 pub(crate) mod command;
 pub mod dbus;
 pub(crate) mod drm;

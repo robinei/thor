@@ -711,7 +711,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             // A game's process told its resolution as it connected.
             5 => {
                 let unit = rng.pick(&w.units).map(LaunchUnit::service);
-                Event::Reading(Reading::Told { unit, steam_app: None, resolution: crate::settings::Resolution::Half })
+                Event::Reading(Reading::Told { unit, game: None, resolution: crate::settings::Resolution::Half })
             }
             6 => Event::Reading(Reading::XwaylandModes(vec![(640, 480), (1280, 720)])),
             // The files thread's progress and ends, for the operations sent.
@@ -803,8 +803,11 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     ensure!(s.session().overview_valid(), "the overview is open for a group not in front, or with fewer than two windows, or a choice not in it");
     // Every window has a group once the event is settled, except one of a program still starting, whose
     // window waits for its launch to say whose it is.
-    let unplaced =
-        s.session().windows().iter().find(|w| w.group.is_none() && !s.session().launching().iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str())));
+    let unplaced = s
+        .session()
+        .windows()
+        .iter()
+        .find(|w| w.group.is_none() && !s.session().launching().iter().any(|l| l.mark.as_deref().is_some_and(|mark| w.marked(mark))));
     ensure!(unplaced.is_none(), "window {:?} has no group after the settle", unplaced.map(|w| w.id));
     ensure!(s.session().keyboard_focus().is_none_or(|id| s.session().window(id).is_some()), "keyboard focus names a closed window");
     ensure!(s.presentation().display_modes().rates().iter().all(|hz| (1..=1000).contains(hz)), "invalid detected refresh rate");

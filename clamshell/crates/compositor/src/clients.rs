@@ -18,8 +18,8 @@ use crate::server::Server;
 pub struct Process {
     pub unit: Option<String>,
     pub pids: Vec<u32>,
-    /// The Steam game it belongs to, if Steam started it (see [`Server::tell_game_mode`]).
-    pub steam_app: Option<u32>,
+    /// The game its launcher marked it with, if one did (see `clamshell_state::session::launchers`).
+    pub game: Option<String>,
 }
 
 #[derive(Default)]
@@ -135,8 +135,8 @@ impl Server {
     /// the top screen, at its resolution as it is now, so a change applies the next time the game starts.
     /// A client gone meanwhile is taken in all the same, and ends at the next dispatch.
     pub(crate) fn admit_identified(&mut self, stream: UnixStream, process: Process) {
-        let game = self.core.state().process_game(process.unit.as_deref(), process.steam_app);
-        let told = game.map(|(resolution, _)| clamshell_state::Reading::Told { unit: process.unit.clone(), steam_app: process.steam_app, resolution });
+        let game = self.core.state().process_game(process.unit.as_deref(), process.game.as_deref());
+        let told = game.map(|(resolution, _)| clamshell_state::Reading::Told { unit: process.unit.clone(), game: process.game.clone(), resolution });
         insert_client(&mut self.dh, stream, ClientState { process: Some(process), game, ..ClientState::default() });
         if let Some(told) = told {
             self.core.handle(clamshell_state::Event::Reading(told));

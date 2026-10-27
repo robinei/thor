@@ -209,9 +209,10 @@ pub enum Reading {
     Screens(Box<crate::presentation::Screens>),
     /// Where the pixels of the plotted window's picture are (see [`crate::State::histogram_window`]).
     Histogram(Box<crate::colour::Histogram>),
-    /// The compositor told a game's process, known by its unit or Steam's app id, that its screen has this
-    /// resolution, when it connected (see [`crate::State::process_game`]).
-    Told { unit: Option<String>, steam_app: Option<u32>, resolution: crate::settings::Resolution },
+    /// The compositor told a game's process, known by its unit or its launcher's mark (see
+    /// [`crate::session::launchers`]), that its screen has this resolution, when it connected (see
+    /// [`crate::State::process_game`]).
+    Told { unit: Option<String>, game: Option<String>, resolution: crate::settings::Resolution },
     /// The top screen's refresh rates at its current size, and its rate at start, from the DRM host at
     /// its start; the nested host sends none.
     DisplayModes(crate::presentation::modes::DisplayModes),

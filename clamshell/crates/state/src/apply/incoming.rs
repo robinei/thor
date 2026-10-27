@@ -40,7 +40,7 @@ impl State {
             Reading::Frames { fps, frame_ms } => self.sys.frames(fps, frame_ms),
             Reading::Screens(screens) => self.presentation.read_screens(*screens),
             Reading::Histogram(histogram) => self.presentation.read_histogram(*histogram),
-            Reading::Told { unit, steam_app, resolution } => self.session.told(unit.as_deref(), steam_app, resolution),
+            Reading::Told { unit, game, resolution } => self.session.told(unit.as_deref(), game.as_deref(), resolution),
             Reading::XwaylandModes(modes) => self.presentation.read_xwayland_modes(modes),
             Reading::DisplayModes(modes) => self.presentation.read_display_modes(modes),
             Reading::Wifi(wifi) => self.radios.read_wifi(wifi),

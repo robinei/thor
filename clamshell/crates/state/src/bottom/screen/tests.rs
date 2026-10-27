@@ -25,7 +25,7 @@ fn emu() -> LaunchUnit {
 }
 
 fn running(id: &str, key: &str) -> Running {
-    Running { id: id.into(), key: key.into(), origin: Origin::Ours, app_id: None, start: 0, seen: false, tray: None, entry: None, told: None }
+    Running { id: id.into(), key: key.into(), origin: Origin::Ours, mark: None, start: 0, seen: false, tray: None, entry: None, told: None }
 }
 
 /// A game started by shelf, running with a top window and a second window, the second in front.

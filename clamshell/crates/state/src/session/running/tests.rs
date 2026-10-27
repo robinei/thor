@@ -20,16 +20,25 @@ fn key(id: &str) -> String {
 }
 
 #[test]
-fn has_app_id_agrees_with_app_id_of() {
+fn has_mark_agrees_with_mark_of() {
     let steam = Entry { launch: Launch::Steam { appid: 620 }, ..Entry::new("steam:620", "Portal 2") };
     let handed = Entry {
         runner: Some(clamshell_library::RunnerOf { handover: true, ..clamshell_library::RunnerOf::new("android", "Android", false) }),
         ..Entry::new("desktop:org.app", "App")
     };
+    let heroic = Entry { launch: Launch::program(vec!["xdg-open".into(), "heroic://launch?appName=x&runner=gog".into()]), ..Entry::new("desktop:X", "X") };
     let ours = Entry::new("desktop:foot", "Terminal");
-    for g in [&steam, &handed, &ours] {
-        for app_id in ["steam_app_620", "steam_app_62", "org.app", "foot", ""] {
-            assert_eq!(super::has_app_id(g, app_id), super::app_id_of(g).as_deref() == Some(app_id), "{} {app_id}", g.id);
+    let library = crate::Library { entries: vec![steam.clone(), handed.clone(), heroic.clone(), ours.clone()], ..crate::Library::default() };
+    let marks = ["steam_app_620", "steam_app_62", "org.app", "foot", "heroic:gog:x", ""];
+    for g in [&steam, &handed, &heroic, &ours] {
+        for mark in marks {
+            let mark_of = super::mark_of(&library, g);
+            let by_app_id = WindowFacts { app_id: mark.into(), ..win(1, "") };
+            let by_process = WindowFacts { game: Some(mark.into()), ..win(1, "other") };
+            // A handed-over app is known by its app id alone; a launcher's game by either.
+            let expected = mark_of.as_deref() == Some(mark);
+            assert_eq!(super::has_mark(&library, g, &by_app_id), expected, "{} app id {mark}", g.id);
+            assert_eq!(super::has_mark(&library, g, &by_process), expected && g.id != handed.id, "{} process {mark}", g.id);
         }
     }
 }
@@ -263,7 +272,7 @@ fn a_steam_game_shelf_started_ends_by_the_launcher_not_its_windows() {
     let mut s = steam_ff6();
     launch(&mut s, "ff6");
     let ff6 = s.session().running("ff6").unwrap();
-    assert_eq!((ff6.origin.clone(), ff6.app_id.as_deref()), (Origin::Ours, Some("steam_app_620")));
+    assert_eq!((ff6.origin.clone(), ff6.mark.as_deref()), (Origin::Ours, Some("steam_app_620")));
     s.observed(vec![win(7, "steam_app_620")]);
     let ff6 = Group::entry(&key("ff6"));
     assert_eq!(s.session().window(7).and_then(|w| w.group.clone()), Some(ff6.clone()), "its windows go to its group");
@@ -529,6 +538,87 @@ fn an_app_handed_over_runs_by_its_window_found_by_its_app_id() {
     crate::testkit::start(&mut s, "desktop:firefox");
     crate::testkit::end(&mut s, "desktop:firefox");
     assert!(s.session().running("desktop:firefox").is_none());
+}
+
+/// Heroic, with its game's shortcut, and Lutris, with its game's (see [`crate::session::launchers`]).
+fn launchers() -> State {
+    let mut library = clamshell_library::demo::library();
+    let shortcut = |id: &str, title: &str, argv: &[&str]| Entry {
+        launch: Launch::program(argv.iter().map(|a| (*a).to_owned()).collect()),
+        app: argv.len() == 1,
+        ..Entry::new(id, title)
+    };
+    library.entries.extend([
+        shortcut("desktop:com.heroicgameslauncher.hgl", "Heroic Games Launcher", &["heroic"]),
+        shortcut("desktop:Pattern Game", "Pattern Game", &["xdg-open", "heroic://launch?appName=patterngame&runner=sideload"]),
+        shortcut("desktop:net.lutris.Lutris", "Lutris", &["lutris"]),
+        shortcut("desktop:net.lutris.cave-1", "Cave", &["env", "LUTRIS_SKIP_INIT=1", "lutris", "lutris:rungameid/1"]),
+    ]);
+    State::new(Init { library: Some(library), ..init() })
+}
+
+/// A game whose launch hands it over to its launcher, already running, runs by its window, which the
+/// launcher's mark makes the game's though it is in the launcher's unit: it comes in front, and its play
+/// is the game's.
+#[test]
+fn a_game_handed_over_to_its_running_launcher_is_known_by_the_launchers_mark() {
+    let mut s = launchers();
+    s.ui_up();
+    s.applied(Event::tick(1000));
+    launch_now(&mut s, "desktop:com.heroicgameslauncher.hgl");
+    crate::testkit::start(&mut s, "desktop:com.heroicgameslauncher.hgl");
+    let heroic = s.session().units().first().cloned().unwrap();
+    s.observed(vec![win_of(5, "heroic", &heroic)]);
+    s.applied(Event::tick(1010));
+    launch_now(&mut s, "desktop:Pattern Game");
+    crate::testkit::start(&mut s, "desktop:Pattern Game");
+    // Its shortcut handed the game to Heroic and ended.
+    crate::testkit::end(&mut s, "desktop:Pattern Game");
+    assert!(s.session().running("desktop:Pattern Game").is_some(), "waits for its window");
+    let game = WindowFacts { game: Some("heroic:sideload:patterngame".into()), ..win_of(7, "sdl-pattern", &heroic) };
+    s.observed(vec![win_of(5, "heroic", &heroic), game.clone()]);
+    assert_eq!(s.session().window(7).and_then(|w| w.group.clone()), Some(Group::entry(&key("desktop:Pattern Game"))), "the game's, not Heroic's");
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "in front");
+    s.applied(Event::tick(1300));
+    s.observed(vec![win_of(5, "heroic", &heroic)]);
+    let fx = s.applied(Event::tick(1300 + REOPEN_SECS + 1));
+    assert!(fx.contains(&Effect::RecordPlay { entry: "desktop:Pattern Game".into(), start: 1010, duration: 290 + REOPEN_SECS + 1 }), "{fx:?}");
+    assert!(s.session().running("desktop:com.heroicgameslauncher.hgl").is_some(), "Heroic runs on");
+}
+
+/// A game whose launcher ran it in the launch's own unit, as Lutris does when it isn't running, ends with
+/// that unit once its window has come and gone, however soon, and its play is recorded.
+#[test]
+fn a_launchers_game_ends_with_its_unit_once_its_window_has_closed() {
+    let mut s = launchers();
+    s.ui_up();
+    s.applied(Event::tick(1000));
+    launch_now(&mut s, "desktop:net.lutris.cave-1");
+    crate::testkit::start(&mut s, "desktop:net.lutris.cave-1");
+    let cave = s.session().units().first().cloned().unwrap();
+    s.observed(vec![WindowFacts { game: Some("lutris:Cave".into()), ..win_of(7, "cave", &cave) }]);
+    s.applied(Event::tick(1008));
+    s.observed(vec![]);
+    let fx = crate::testkit::end(&mut s, "desktop:net.lutris.cave-1");
+    assert!(fx.contains(&Effect::RecordPlay { entry: "desktop:net.lutris.cave-1".into(), start: 1000, duration: 8 }), "{fx:?}");
+    assert!(s.session().running("desktop:net.lutris.cave-1").is_none());
+}
+
+/// A game started in its launcher's own window runs as its entry, shown, though ClamShell didn't launch
+/// it.
+#[test]
+fn a_game_started_in_its_launcher_runs_as_its_entry() {
+    let mut s = launchers();
+    s.ui_up();
+    launch_now(&mut s, "desktop:net.lutris.Lutris");
+    crate::testkit::start(&mut s, "desktop:net.lutris.Lutris");
+    let lutris = s.session().units().first().cloned().unwrap();
+    s.observed(vec![win_of(5, "net.lutris.Lutris", &lutris)]);
+    let game = WindowFacts { game: Some("lutris:Cave".into()), ..win_of(7, "cave", &lutris) };
+    s.observed(vec![win_of(5, "net.lutris.Lutris", &lutris), game]);
+    assert!(s.session().running("desktop:net.lutris.cave-1").is_some());
+    assert_eq!(s.session().window(7).and_then(|w| w.group.clone()), Some(Group::entry(&key("desktop:net.lutris.cave-1"))));
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "shown");
 }
 
 #[test]

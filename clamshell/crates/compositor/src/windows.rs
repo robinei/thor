@@ -93,7 +93,7 @@ impl Server {
             .state()
             .session()
             .window(id)
-            .map(|window| Process { unit: window.unit.clone(), pids: window.pids.clone(), steam_app: None })
+            .map(|window| Process { unit: window.unit.clone(), pids: window.pids.clone(), game: window.game.clone() })
             .unwrap_or_else(|| {
                 // Its client's, identified before it was admitted.
                 surface.wl_surface().client().and_then(|c| c.get_data::<crate::clients::ClientState>()?.process.clone()).unwrap_or_default()
@@ -107,6 +107,7 @@ impl Server {
             parent: parent.and_then(|p| self.surface_id(&p)),
             unit: process.unit,
             pids: process.pids,
+            game: process.game,
             limits,
             role: if dialog { clamshell_state::presentation::WindowRole::Dialog } else { clamshell_state::presentation::WindowRole::Normal },
             ..WindowFacts::default()

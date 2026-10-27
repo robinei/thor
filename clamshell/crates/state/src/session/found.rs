@@ -42,7 +42,7 @@ impl Session {
         let now = clock.mono();
         // A starting launch's window is left out, such as a Steam game found running whose launch is
         // still to come.
-        let starting = |w: &Window| self.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
+        let starting = |w: &Window| self.launching.iter().any(|l| l.mark.as_deref().is_some_and(|mark| w.marked(mark)));
         let service = |w: &Window| w.unit.as_deref().is_some_and(LaunchUnit::is_service);
         let mut new: Vec<Running> = Vec::new();
         for w in self.windows.iter().filter(|w| !taken.contains(&w.id) && !w.launched() && self.running_of(w).is_none()) {
@@ -54,16 +54,16 @@ impl Session {
             }
             // Its process is its own if none of the process's windows belongs to another entry.
             let own = !self.windows.iter().any(|o| o.pids.first() == Some(&pid) && self.running_of(o).is_some());
-            let app_id: Option<Arc<str>> = (!w.app_id.is_empty()).then(|| w.app_id.as_str().into());
+            let mark: Option<Arc<str>> = (!w.app_id.is_empty()).then(|| w.app_id.as_str().into());
             // Known by neither its app id nor its process, no entry would find it again.
-            if app_id.is_none() && !own {
+            if mark.is_none() && !own {
                 continue;
             }
             let entry = window_entry(library, w, pid);
             if self.running(&entry.id).is_some() {
                 continue;
             }
-            new.push(Running { app_id, seen: true, ..Running::of(&entry, Origin::Found { pid: own.then_some(pid) }, now) });
+            new.push(Running { mark, seen: true, ..Running::of(&entry, Origin::Found { pid: own.then_some(pid) }, now) });
         }
         self.start_found(new, taken, clock, out);
     }
@@ -116,7 +116,7 @@ pub(crate) fn found_entry(library: &Library, name: &str, own: impl FnOnce() -> E
 
 /// The icon to look for, for an entry found by its window.
 fn find_icon(r: &Running) -> Option<Effect> {
-    let app_id = r.app_id.as_ref().filter(|_| r.id.starts_with(ids::WINDOW))?;
+    let app_id = r.mark.as_ref().filter(|_| r.id.starts_with(ids::WINDOW))?;
     Some(Effect::FindIcon { entry: r.id.clone(), app_id: app_id.to_string() })
 }
 
@@ -159,7 +159,7 @@ mod tests {
         let thing = window(5, "org.x.Thing", 500, "app-thing.scope");
         let fx = s.observed(vec![thing.clone(), window(6, "org.x.Thing", 500, "app-thing.scope")]);
         let r = s.session().running("window:org.x.Thing").unwrap();
-        assert_eq!((r.found(), r.pid(), r.app_id.as_deref()), (true, Some(500), Some("org.x.Thing")));
+        assert_eq!((r.found(), r.pid(), r.mark.as_deref()), (true, Some(500), Some("org.x.Thing")));
         let ws = r.group();
         assert!([5, 6].iter().all(|id| s.session().window(*id).is_some_and(|w| w.group.as_ref() == Some(&ws))));
         assert_eq!(s.session().top_window().map(|w| w.id), Some(6), "the one in front, opened last");

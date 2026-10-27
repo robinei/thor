@@ -97,10 +97,10 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
             handles.dispatch(effect);
         }
     };
-    let identify = |pid| clamshell_compositor::Process {
-        unit: clamshell_system::os::unit_of(pid),
-        pids: clamshell_system::os::lineage(pid),
-        steam_app: clamshell_system::os::steam_app_of(pid),
+    let identify = |pid| {
+        let pids = clamshell_system::os::lineage(pid);
+        let game = clamshell_system::os::launcher_game_of(pid, &pids);
+        clamshell_compositor::Process { unit: clamshell_system::os::unit_of(pid), pids, game }
     };
     let on_capture = move |captured: Result<clamshell_state::ScreenshotPixels, String>| {
         if let Some(handles) = capture_handles.borrow().as_ref() {

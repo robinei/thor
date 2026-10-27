@@ -24,9 +24,9 @@ focus is independent and may
 belong to a bottom client or ClamShell's UI (`None`).
 
 `Opened` and `Changed` carry the window's facts (`WindowFacts`: id, app id, title, parent, limits,
-role, colour, unit and processes), never its placement; the session's record of a window is those facts
-with its group and screen. On `Opened` the state resolves the home from a known parent, library app id,
-owner or launch unit, and decides whether the window comes in front (`Session::opening_focus`, below),
+role, colour, unit, processes and the game its launcher marked its process with), never its placement; the session's record of a window is those facts
+with its group and screen. On `Opened` the state resolves the home from a known parent, a library entry's mark
+(app id or launcher's game), owner or launch unit, and decides whether the window comes in front (`Session::opening_focus`, below),
 before returning. A known parent's bottom placement is inherited. `Changed` updates only identity (app id, unit, process ancestry and parent);
 it cannot undo placement or change title. `Title` is independent. The compositor sends each change as it
 happens (Opened, Closed, Changed, Title, KeyboardFocus, and Activate once a token is checked); a later
@@ -100,13 +100,13 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Idle | LaunchFailed of no launch waiting (a late answer to one given up; the failure names its launch, so a newer launch of the entry waits on) | Idle | nothing | running `a_launch_failure_after_it_was_given_up_says_nothing`, `a_late_failure_leaves_a_newer_launch_of_the_entry_waiting` |
 | Idle | `Units` lists a unit of a library entry (an earlier ClamShell) | Running(Ours) | — | running `entries_started_before_clamshell_…` |
 | Idle | `Units` lists a scope of a key not in the library, a window or tray icon in it | Running(Ours), as found, named by the name whose key is the scope's (until a window or icon comes, nothing) | — | found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
-| Idle | a window with a library app id (not Steam) | Running(Windows, seen) | Focus once in its group | running `an_app_handed_over_…` |
+| Idle | a window with a library entry's mark (not Steam's): a handed-over app's app id, a Heroic or Lutris game | Running(Windows, seen) | Focus once in its group | running `an_app_handed_over_…`, `a_game_started_in_its_launcher_runs_as_its_entry` |
 | Idle | a Steam game's window by app id | Launching, launched before the windows are followed, so its window isn't found as a program | as a launch | running `a_game_steam_started_is_followed…`; tests `a_steam_game_found_by_its_window_is_launched_not_found_as_a_program` |
 | Idle | a stray window of no entry | Running(Found) | Move, Focus if focused, FindIcon, Adopt (own pid) | found `a_window_of_no_entry_…` and its siblings |
 | Idle | a tray icon not in a unit of ours (device session) | Running(Found{tray}) | Move/Focus, Adopt | tray `a_program_with_a_tray_icon_runs…` |
 | Running(Found) | its scope listed | Running(Ours) (pid dropped, tray key kept) | — | tray test; tray `an_adopted_tray_program_keeps_its_menu` |
 | Running(Found) | icon gone and no windows | Idle, no play recorded | — | tray test |
-| Running(Ours) | unit gone, app id and windows (or just started) | Running(Windows) since its launch | — | running `a_game_known_by_app_id_runs_on_by_its_windows_after_its_unit` |
+| Running(Ours) | unit gone, a mark and windows (or just started, no window yet) | Running(Windows) since its launch | — | running `a_game_known_by_app_id_runs_on_by_its_windows_after_its_unit`, `a_game_handed_over_to_its_running_launcher_is_known_by_the_launchers_mark`; its window come and gone: as below, `a_launchers_game_ends_with_its_unit_once_its_window_has_closed` |
 | Running(Ours) | unit gone otherwise | Idle | `RecordPlay`; NotStarted if it never had a window or tray icon and isn't quitting | tests `a_launch_that_ends_without_a_window_didnt_start`; tray `a_program_with_only_a_tray_icon_started` |
 | Running(Windows, unseen) | a new stray window before `until` | Running(Windows, seen) | Move, Focus | running `a_file_handed_…` |
 | Running(Windows, unseen) | past `until` | Idle, no play | — | running `a_file_handed_…` |
@@ -644,7 +644,7 @@ On Opened the state decides whether the window comes in front (`Session::opening
 
 | Condition at Opened | Result | Test |
 |---|---|---|
-| a launch waits for its window | in front only if it is that launch's (in its unit, of its entry by app id or process, or a dialog of one); others open behind | `steams_windows_open_behind_a_steam_games_launch` |
+| a launch waits for its window | in front only if it is that launch's (in its unit, of its entry by mark or process, or a dialog of one); others open behind | `steams_windows_open_behind_a_steam_games_launch` |
 | it has a parent | in front if the parent's program is shown | `opening_focus_respects_launch_intent_and_shown_program` |
 | not in a unit of ours | in front | same; `a_window_opens_in_front_as_its_opening_focus_says` |
 | the first window of a unit of ours | behind (it waits for the launch's intent) | same |

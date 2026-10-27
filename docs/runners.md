@@ -191,12 +191,24 @@ instance already running elsewhere. A file's launch that hands over and ends run
 files-tab.md); Quit closes them, Force kill can't reach them. On the Thor nothing in the image starts that
 way.
 
-Two kinds of entry run in another program's processes on purpose, and are known by their windows' app id:
-Steam's games (`steam_app_<id>`, in Steam's unit) and the entries of a runner with `handover` (their
-desktop file's name: Waydroid's apps, in the Waydroid session). Alike for both:
+Two kinds of entry run in another program's processes on purpose, and are known by a mark of their
+windows:
 
-- Their windows are found by their app id and put in their entry's group as they open; one opening while
-  the entry doesn't run (a game started in Steam, an Android app opened by another) starts it, shown.
+- Launchers' games, by the mark the launcher gives the game's processes, read from a window's process:
+  Steam's (`SteamAppId`; also the window's app id `steam_app_<id>`), in Steam's unit; Heroic's (`HEROIC_APP_NAME`
+  and `HEROIC_APP_RUNNER`, matching the `heroic://launch?appName=…&runner=…` of its shortcut); Lutris's (the
+  game's name in the `lutris-wrapper` process it runs under, matching the name of a `lutris:rungameid/`
+  shortcut; two shortcuts of one name are known by none). Heroic and Lutris, when they already run, take a
+  game's launch from its shortcut, which ends, and start the game in their own unit. See
+  `clamshell/crates/state/src/session/launchers.rs`.
+- The entries of a runner with `handover`, by their windows' app id, their desktop file's name: Waydroid's
+  apps, in the Waydroid session.
+
+Alike for both:
+
+- Their windows are found by their mark and put in their entry's group as they open; one opening while
+  the entry doesn't run (a game started in Steam's, Heroic's or Lutris's own window, an Android app opened
+  by another) starts it, shown.
 - Such an entry runs once: launching it again shows it.
 - It runs on by its windows after its launch ends, until the last closes; its play counts until then.
 - Force kill ends Steam's launcher for a game and the processes under it, and runs a `handover` runner's

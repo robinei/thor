@@ -73,13 +73,13 @@ pub(crate) fn same_process(pid: u32) -> bool {
     known.is_none_or(|start| start_time(pid) == Some(start))
 }
 
-/// The Steam game a process belongs to, by the `SteamAppId` Steam gives its games' environment.
-pub fn steam_app_of(pid: u32) -> Option<u32> {
-    steam_app_in(&fs::read(format!("/proc/{pid}/environ")).ok()?)
-}
-
-fn steam_app_in(environ: &[u8]) -> Option<u32> {
-    environ.split(|b| *b == 0).find_map(|var| std::str::from_utf8(var.strip_prefix(b"SteamAppId=")?).ok()?.parse().ok()).filter(|id| *id != 0)
+/// The game a launcher started process `pid` for, as it marks it (see
+/// `clamshell_state::session::launchers`), from its environment and the command lines of the processes
+/// in `lineage`, its own first. A process whose environment can't be read, another user's, has none.
+pub fn launcher_game_of(pid: u32, lineage: &[u32]) -> Option<String> {
+    let environ = fs::read(format!("/proc/{pid}/environ")).ok()?;
+    let cmdlines = lineage.iter().map(|p| fs::read(format!("/proc/{p}/cmdline")).unwrap_or_default());
+    clamshell_state::session::launchers::of_process(&environ, cmdlines)
 }
 
 /// A process, then its parent, and so on up to but not including pid 1, as far as /proc says.
@@ -177,13 +177,6 @@ mod tests {
     #[test]
     fn this_process_is_listed() {
         assert!(processes().any(|(pid, _)| pid == std::process::id()));
-    }
-
-    #[test]
-    fn a_steam_game_is_known_by_its_app_id() {
-        assert_eq!(steam_app_in(b"HOME=/home/a\0SteamAppId=1478500\0SteamGameId=1478500\0"), Some(1478500));
-        assert_eq!(steam_app_in(b"SteamAppId=0\0"), None, "Steam's own client");
-        assert_eq!(steam_app_in(b"HOME=/home/a\0"), None);
     }
 
     #[test]

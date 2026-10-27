@@ -2,10 +2,11 @@
 //! of its own in the entry's slice, with its windows in the entry's group (see [`LaunchUnit`]). An entry
 //! may run more than once; another launch is another unit and another tab.
 //!
-//! Some entries run in another program's processes, not in a unit of ours, and are known by their
-//! windows' app id ([`app_id_of`]). These are Steam's games (`steam_app_<id>`, in Steam's scope) and the
-//! entries of a runner that hands its apps over, such as Waydroid's, whose app id is their desktop file's
-//! name and which run in the Waydroid session. Their windows are put in their entry's group as they
+//! Some entries run in another program's processes, not in a unit of ours, and are known by a mark of
+//! their windows ([`mark_of`]): the game a launcher marks their process with (see [`super::launchers`]),
+//! as Steam, Heroic and Lutris do, or their app id. These are launchers' games (Steam's in Steam's scope)
+//! and the entries of a runner that hands its apps over, such as Waydroid's, whose app id is their desktop
+//! file's name and which run in the Waydroid session. Their windows are put in their entry's group as they
 //! open. A window that opens while the entry doesn't run, such as a game started in Steam or an app opened by another app, starts the entry.
 //! Such an entry runs once, so another launch shows it instead. It runs on by its windows after its launch
 //! ends, until the last one closes.
@@ -30,7 +31,8 @@ use crate::bottom::notice::{NoticeKind, NoticeSlot};
 use crate::effect::Effect;
 use crate::out::Out;
 use crate::session::found::window_entry;
-use crate::session::launch_unit::{LaunchUnit, STEAM_APP_PREFIX};
+use crate::session::launch_unit::LaunchUnit;
+use crate::session::launchers;
 use crate::session::tray::{TrayItem, tray_entry};
 use crate::session::windows::WindowCommand;
 use crate::session::windows::{Group, Window, WindowFacts};
@@ -83,8 +85,8 @@ pub struct Running {
     /// Its key, which names its group and its launches' units and slice.
     pub key: String,
     pub origin: Origin,
-    /// The app id its windows have, if it runs in another program's processes (see [`app_id_of`]).
-    pub app_id: Option<Arc<str>>,
+    /// What its windows are known by, if it runs in another program's processes (see [`mark_of`]).
+    pub mark: Option<Arc<str>>,
     /// When it first started, in monotonic seconds as in [`crate::Event::Tick`].
     pub start: u64,
     /// Whether a window of it has been there since it started, or since it went on by its windows, or,
@@ -106,7 +108,7 @@ impl Running {
     /// `entry` running as `origin` since `start`, with no launch followed and no window seen yet.
     pub(crate) fn of(entry: &Entry, origin: Origin, start: u64) -> Running {
         let (id, key) = (entry.id.clone(), entry.key.clone());
-        Running { id, key, origin, app_id: None, start, seen: false, tray: None, entry: Some(Box::new(entry.clone())), told: None }
+        Running { id, key, origin, mark: None, start, seen: false, tray: None, entry: Some(Box::new(entry.clone())), told: None }
     }
 
     /// Its own process, if it was found and has one (see [`Origin::Found`]).
@@ -126,9 +128,9 @@ impl Running {
         matches!(self.origin, Origin::Found { .. })
     }
 
-    /// Whether `w` is one of its windows by its app id.
+    /// Whether `w` is one of its windows by its mark.
     pub fn owns(&self, w: &WindowFacts) -> bool {
-        self.app_id.as_deref() == Some(w.app_id.as_str())
+        self.mark.as_deref().is_some_and(|mark| w.marked(mark))
     }
 
     /// Whether `w` is one of its windows by its process: its own process, or one that process started.
@@ -136,10 +138,10 @@ impl Running {
         self.pid().is_some_and(|pid| w.pids.contains(&pid))
     }
 
-    /// Whether its windows are found other than by its unit, by app id or by process, and so are moved
+    /// Whether its windows are found other than by its unit, by mark or by process, and so are moved
     /// to its group wherever they open.
     pub fn outside(&self) -> bool {
-        self.app_id.is_some() || self.pid().is_some()
+        self.mark.is_some() || self.pid().is_some()
     }
 
     /// Its group, which holds its windows.
@@ -154,8 +156,8 @@ impl Running {
 pub struct Launching {
     pub entry: Arc<str>,
     pub unit: LaunchUnit,
-    /// The app id its windows have, if it runs in another program's processes.
-    pub app_id: Option<Arc<str>>,
+    /// What its windows are known by, if it runs in another program's processes (see [`mark_of`]).
+    pub mark: Option<Arc<str>>,
     /// When it was asked for, in monotonic seconds.
     pub at: u64,
     /// The resolution its process was told as it connected, before its unit was listed (see
@@ -167,23 +169,21 @@ pub struct Launching {
 /// it is given up as not started.
 pub(crate) const LAUNCH_WAIT: u64 = 30;
 
-/// The app id an entry's windows have when it runs in another program's processes, which makes them its
-/// windows wherever they open. For Steam's games it is `steam_app_<id>`. For an entry whose runner hands
-/// its apps over, such as Waydroid's, it is the desktop file's name. It is none for the rest, which run in
-/// units of ours.
-pub(crate) fn app_id_of(g: &Entry) -> Option<Arc<str>> {
-    match &g.launch {
-        Launch::Steam { appid } => Some(format!("{STEAM_APP_PREFIX}{appid}").into()),
-        _ => handed_over_app(g).map(Into::into),
-    }
+/// What an entry's windows are known by when it runs in another program's processes, which makes them its
+/// windows wherever they open. For a launcher's game it is the mark the launcher gives its processes (see
+/// [`super::launchers`]), Steam's `steam_app_<id>` also its windows' app id. For an entry whose runner
+/// hands its apps over, such as Waydroid's, it is its windows' app id, the desktop file's name. It is none
+/// for the rest, which run in units of ours.
+pub(crate) fn mark_of(library: &Library, g: &Entry) -> Option<Arc<str>> {
+    handed_over_app(g).map(Into::into).or_else(|| launchers::of_entry(library, g).map(Into::into))
 }
 
-/// Whether `app_id` is [`app_id_of`] `g`, without building it, since this is asked for every window and
-/// entry.
-pub(crate) fn has_app_id(g: &Entry, app_id: &str) -> bool {
-    match &g.launch {
-        Launch::Steam { appid } => app_id.strip_prefix(STEAM_APP_PREFIX).and_then(|n| n.parse::<u32>().ok()) == Some(*appid),
-        _ => handed_over_app(g) == Some(app_id),
+/// Whether window `w` is marked as [`mark_of`] `g`, without building the mark, since this is asked for
+/// every window and entry.
+pub(crate) fn has_mark(library: &Library, g: &Entry, w: &WindowFacts) -> bool {
+    match handed_over_app(g) {
+        Some(app) => w.app_id == app,
+        None => [Some(w.app_id.as_str()), w.game.as_deref()].into_iter().flatten().any(|mark| launchers::is_marked(library, g, mark)),
     }
 }
 
@@ -219,7 +219,7 @@ impl Session {
                     // An entry gone from the library meanwhile is known by its id alone.
                     let known = library.entry(&l.entry).cloned();
                     let entry = known.clone().unwrap_or_else(|| Entry::new(&l.entry, &l.entry));
-                    let r = Running { app_id: l.app_id, told: l.told, ..Running::of(&entry, Origin::Ours, now) };
+                    let r = Running { mark: l.mark, told: l.told, ..Running::of(&entry, Origin::Ours, now) };
                     self.running.push(Running { entry: r.entry.filter(|_| known.is_some()), ..r });
                 }
             }
@@ -239,7 +239,7 @@ impl Session {
                 // Its windows are now its unit's, not every window of that app id or process. That would
                 // tie another instance of the program, started later, to it.
                 r.origin = Origin::Ours;
-                r.app_id = None;
+                r.mark = None;
             }
         }
         for unit in units {
@@ -256,7 +256,7 @@ impl Session {
             // Its units are named by the wall clock.
             let start = first.min().map_or(now, |secs| now.saturating_sub(unix.saturating_sub(secs)));
             if let Some(g) = library.entries.iter().find(|g| g.key == key) {
-                self.running.push(Running { app_id: app_id_of(g), ..Running::of(g, Origin::Ours, start) });
+                self.running.push(Running { mark: mark_of(library, g), ..Running::of(g, Origin::Ours, start) });
                 continue;
             }
             // A program an earlier ClamShell found and moved into a scope of ours, or a file it opened,
@@ -286,8 +286,8 @@ impl Session {
             let has = self.windows_of(&r.id).next().is_some();
             let soon = now.saturating_sub(r.start) <= HANDOFF;
             let browsed = library.entry(&r.id).is_some_and(|g| g.browsed.is_some());
-            // Its play goes on from its launch's start.
-            if r.app_id.is_some() && (has || soon) {
+            // Its play goes on from its launch's start. One whose windows came and went has ended with them.
+            if r.mark.is_some() && (has || (soon && !r.seen)) {
                 handed.push((r.id.clone(), Origin::Windows { since: r.start, until: now + HANDOFF }, has));
             } else if browsed && soon {
                 handed.push((r.id.clone(), Origin::Windows { since: r.start, until: r.start + HANDOFF }, has));
@@ -321,8 +321,8 @@ impl Session {
         let Some(i) = self.launching.iter().position(|l| l.entry == entry && l.unit == *unit) else {
             return;
         };
-        let app_id = self.launching.remove(i).app_id;
-        let Some(known) = library.entry(&entry).filter(|g| g.browsed.is_some() || app_id.is_some()) else {
+        let mark = self.launching.remove(i).mark;
+        let Some(known) = library.entry(&entry).filter(|g| g.browsed.is_some() || mark.is_some()) else {
             // There is nothing to wait for, so it didn't start, and a notice says so.
             let title = library.entry(&entry).map_or_else(|| entry.to_string(), |g| g.title.clone());
             if self.running(&entry).is_none() {
@@ -333,7 +333,7 @@ impl Session {
         if self.running(&entry).is_none() {
             let now = clock.mono();
             let origin = Origin::Windows { since: now, until: now + HANDOFF };
-            self.running.push(Running { app_id, ..Running::of(known, origin, now) });
+            self.running.push(Running { mark, ..Running::of(known, origin, now) });
         }
     }
 
@@ -346,7 +346,7 @@ impl Session {
         let now = clock.mono();
         let mut new: Vec<&Entry> = Vec::new();
         for w in self.windows.iter().filter(|w| !self.running.iter().any(|r| r.owns(w))) {
-            let Some(g) = library.entries.iter().find(|g| has_app_id(g, &w.app_id)) else {
+            let Some(g) = library.entries.iter().find(|g| has_mark(library, g, w)) else {
                 continue;
             };
             if !self.launching.iter().any(|l| l.entry == g.id) && !new.iter().any(|n| n.id == g.id) {
@@ -355,8 +355,10 @@ impl Session {
         }
         let (steam_games, new): (Vec<&Entry>, Vec<&Entry>) = new.into_iter().partition(|g| matches!(g.launch, Launch::Steam { .. }));
         steam.extend(steam_games.into_iter().map(|g| g.id.clone()));
-        let new: Vec<Running> =
-            new.into_iter().map(|g| Running { app_id: app_id_of(g), seen: true, ..Running::of(g, Origin::Windows { since: now, until: now }, now) }).collect();
+        let new: Vec<Running> = new
+            .into_iter()
+            .map(|g| Running { mark: mark_of(library, g), seen: true, ..Running::of(g, Origin::Windows { since: now, until: now }, now) })
+            .collect();
         let Some(r) = new.last() else {
             return false;
         };
@@ -414,7 +416,7 @@ impl Session {
         let waiting = self
             .running
             .iter()
-            .filter(|r| r.app_id.is_none() && !r.seen && matches!(r.origin, Origin::Windows { until, .. } if now <= until))
+            .filter(|r| r.mark.is_none() && !r.seen && matches!(r.origin, Origin::Windows { until, .. } if now <= until))
             .max_by_key(|r| r.start);
         let r = waiting.filter(|_| !stray.is_empty())?;
         let id = r.id.clone();
@@ -428,7 +430,7 @@ impl Session {
     /// starting launch already has its group, and is left alone. A service dialog uses the current
     /// program's group; without one it gets a group of its own so Home can still return to shelf.
     fn place_unowned(&mut self) {
-        let starting = |w: &crate::session::windows::Window| self.launching.iter().any(|l| l.app_id.as_deref() == Some(w.app_id.as_str()));
+        let starting = |w: &crate::session::windows::Window| self.launching.iter().any(|l| l.mark.as_deref().is_some_and(|mark| w.marked(mark)));
         let ids: Vec<i64> = self.windows.iter().filter(|w| w.group.is_none() && self.running_of(w).is_none() && !starting(w)).map(|w| w.id).collect();
         for id in ids {
             let down = self.below(id);
@@ -601,9 +603,9 @@ impl Session {
 
     /// Records a launch of `entry`, whose key is `key`, asked for now, and returns its unit. Started in
     /// front, its group is shown once its first window appears.
-    fn begin_launch(&mut self, entry: Arc<str>, key: String, app_id: Option<Arc<str>>, clock: &Clock, start: Start) -> LaunchUnit {
+    fn begin_launch(&mut self, entry: Arc<str>, key: String, mark: Option<Arc<str>>, clock: &Clock, start: Start) -> LaunchUnit {
         let unit = LaunchUnit { key, secs: clock.unix(), n: self.next_unit() };
-        self.launching.push(Launching { entry, unit: unit.clone(), app_id, at: clock.mono(), told: None });
+        self.launching.push(Launching { entry, unit: unit.clone(), mark, at: clock.mono(), told: None });
         if start == Start::Front {
             self.set_front_launch(unit.clone(), None);
         }
@@ -633,13 +635,13 @@ impl Session {
         if self.is_launching(&entry) {
             return Launched::No;
         }
-        if self.running(&entry).is_some_and(|r| r.app_id.is_some()) {
+        if self.running(&entry).is_some_and(|r| r.mark.is_some()) {
             return Launched::Instead(Instead::Show);
         }
         let Some(g) = library.entry(&entry) else {
             return Launched::No;
         };
-        let app_id = app_id_of(g).filter(|_| command.is_none());
+        let mark = mark_of(library, g).filter(|_| command.is_none());
         let (launch, key) = (command.unwrap_or_else(|| g.launch.clone()), g.key.clone());
         let runner = g.runner.as_ref().map(|r| &*r.key);
         let values = settings.of_in(&entry, runner.as_slice());
@@ -649,7 +651,7 @@ impl Session {
         settings.env_in(&entry, runner.as_slice(), &mut env);
         // If its runner, and so its container, is paused, it is resumed first.
         self.resume_runner_of(&entry, library, out);
-        let unit = self.begin_launch(entry.clone(), key, app_id, clock, start);
+        let unit = self.begin_launch(entry.clone(), key, mark, clock, start);
         self.refresh_launch = Some((entry.clone(), clock.mono()));
         out.effects.push(Effect::Launch { entry, unit, settings: values, env, launch });
         Launched::Yes
@@ -700,10 +702,10 @@ impl Session {
         out.effects.extend(self.stop_of(entry, library));
     }
 
-    /// The runner's `stop` command for a running entry known by its app id, with `{id}` replaced by the
-    /// app id.
+    /// The runner's `stop` command for a running entry known by its mark, a handed-over app's app id, with
+    /// `{id}` replaced by it.
     fn stop_of(&self, entry: &str, library: &Library) -> Option<Effect> {
-        let app_id = self.running(entry)?.app_id.as_ref()?;
+        let app_id = self.running(entry)?.mark.as_ref()?;
         let stop = self.entry(library, entry)?.runner.as_ref().map(|o| &o.stop).filter(|s| !s.is_empty())?;
         Some(Effect::RunnerCommand(stop.iter().map(|a| a.replace("{id}", app_id)).collect()))
     }

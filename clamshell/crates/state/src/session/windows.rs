@@ -220,7 +220,7 @@ impl crate::Session {
             None => library
                 .entries
                 .iter()
-                .find(|g| super::running::has_app_id(g, &facts.app_id))
+                .find(|g| super::running::has_mark(library, g, &facts))
                 .map(|g| Group::entry(&g.key))
                 .or_else(|| self.running_of(&facts).map(super::running::Running::group))
                 .or_else(|| facts.launch_unit().map(|i| Group::entry(&i.key))),
@@ -319,9 +319,17 @@ pub struct WindowFacts {
     /// Its process, then that process's parent, and so on, leaving out pid 1. A program found by its tray
     /// icon's process has the windows of that process and of the processes it started.
     pub pids: Vec<u32>,
+    /// The game its process's launcher marked it with, if one did (see [`super::launchers`]).
+    pub game: Option<String>,
 }
 
 impl WindowFacts {
+    /// Whether it is known by `mark`, as its app id or its launcher's game (see
+    /// [`super::running::mark_of`]).
+    pub(crate) fn marked(&self, mark: &str) -> bool {
+        self.app_id == mark || self.game.as_deref() == Some(mark)
+    }
+
     /// The launch it belongs to: its unit's, if we started it.
     pub fn launch_unit(&self) -> Option<LaunchUnit> {
         self.unit.as_deref().and_then(LaunchUnit::from_unit)
