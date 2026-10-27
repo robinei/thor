@@ -6,7 +6,9 @@
 use crate::{render::Element, server::Server};
 use clamshell_state::colour::{ColourDescription, TransferFunction};
 use clamshell_state::curve::{Curve, REFERENCE_NITS};
+use clamshell_state::settings::AntiAliasing;
 use clamshell_ui::Error;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::{
     backend::{
         allocator::Fourcc,
@@ -37,6 +39,8 @@ pub(crate) struct Pipeline {
     last_curves: Vec<(Id, Look)>,
     /// The windows whose pictures take passes before the scene (FSR with sharpening), and their textures.
     chains: super::chain::Chains,
+    /// The surfaces whose pictures take those passes this frame, kept so that composing allocates nothing.
+    chained: Vec<(Id, WlSurface, AntiAliasing, bool, bool)>,
     /// The histogram of the picture a curve's edit screen plots.
     histogram: super::histogram::Measure,
 }
@@ -171,6 +175,7 @@ impl Pipeline {
             curves: Vec::new(),
             last_curves: Vec::new(),
             chains: Default::default(),
+            chained: Vec::new(),
             histogram: Default::default(),
         })
     }
@@ -213,14 +218,13 @@ impl Pipeline {
         self.curves.clear();
         // The surface holding each window's picture, if it takes passes before the scene (see `super::chain`): SMAA,
         // and with FSR and sharpening, FSR's upscale.
-        let mut chained: Vec<(Id, smithay::reexports::wayland_server::protocol::wl_surface::WlSurface, clamshell_state::settings::AntiAliasing, bool, bool)> =
-            Vec::new();
-        let state = server.core.state();
-        for client in server.windows.iter().filter(|client| client.mapped && server.visible(client.id)) {
+        self.chained.clear();
+        for placed in server.scene.windows() {
+            let Some(client) = server.windows.iter().find(|client| client.id == placed.id) else { continue };
             let curve = client.shown.curve;
             // What the screen shows, as clients are told: nested, the host's real peak rather than the
             // PQ signal we send it.
-            let headroom = server.colour.screen(state.session().below(client.id)).headroom() as f32;
+            let headroom = server.colour.screen(placed.below).headroom() as f32;
             let mut clarity = client.shown.clarity;
             let hdr_peak = client.shown.hdr_peak;
             // The game's picture: the window's surface with the largest buffer (Wine draws it in a subsurface
@@ -233,7 +237,7 @@ impl Pipeline {
                 });
                 (surface, unscaled.unwrap_or(false))
             });
-            let one_to_one = server.geometry(client.id).is_some_and(|g| g.one_to_one()) && picture.as_ref().is_some_and(|(_, unscaled)| *unscaled);
+            let one_to_one = placed.geometry.one_to_one() && picture.as_ref().is_some_and(|(_, unscaled)| *unscaled);
             // FSR shown one to one would upscale nothing: sampled as it is, its sharpening CAS's.
             if one_to_one && clarity.scaling == clamshell_state::settings::Scaling::Fsr {
                 clarity.scaling = clamshell_state::settings::Scaling::Bilinear;
@@ -241,8 +245,8 @@ impl Pipeline {
             // Anti-aliasing at the texel's centre, as the window is shown one to one or nearest and nothing is
             // sharpened after it, is done in the final pass: FXAA all of it, SMAA its blending.
             let at_centre = (one_to_one || clarity.integer) && clarity.sharpen == 0;
-            let fxaa_here = clarity.anti_aliasing == clamshell_state::settings::AntiAliasing::Fxaa && at_centre;
-            let smaa_fused = clarity.anti_aliasing == clamshell_state::settings::AntiAliasing::Smaa && at_centre;
+            let fxaa_here = clarity.anti_aliasing == AntiAliasing::Fxaa && at_centre;
+            let smaa_fused = clarity.anti_aliasing == AntiAliasing::Smaa && at_centre;
             client.window.with_surfaces(|surface, states| {
                 let renderer_state = states.data_map.get::<smithay::backend::renderer::utils::RendererSurfaceStateUserData>();
                 let buffer = renderer_state.and_then(|state| state.lock().ok()?.buffer_size()).map_or((0, 0), |size| (size.w, size.h));
@@ -251,9 +255,9 @@ impl Pipeline {
             // At Integer, nearest-neighbour: no FSR whatever Scaling says.
             let upscale = clarity.scaling == clamshell_state::settings::Scaling::Fsr && clarity.sharpen > 0 && !clarity.integer;
             // FXAA done in the final pass takes no passes before it.
-            let aa = if fxaa_here { clamshell_state::settings::AntiAliasing::Off } else { clarity.anti_aliasing };
-            if let (true, Some((surface, ..))) = (upscale || aa != clamshell_state::settings::AntiAliasing::Off, picture) {
-                chained.push((Id::from_wayland_resource(&surface), surface, aa, upscale, smaa_fused));
+            let aa = if fxaa_here { AntiAliasing::Off } else { clarity.anti_aliasing };
+            if let (true, Some((surface, ..))) = (upscale || aa != AntiAliasing::Off, picture) {
+                self.chained.push((Id::from_wayland_resource(&surface), surface, aa, upscale, smaa_fused));
             }
         }
         if self.curves != self.last_curves {
@@ -261,9 +265,9 @@ impl Pipeline {
             self.first = true;
             std::mem::swap(&mut self.curves, &mut self.last_curves);
         }
+        let chained = &self.chained;
         let replaced = self.chains.run(renderer, elements, |id| {
             chained.iter().find(|(chained, ..)| chained == id).map(|(id, surface, aa, upscale, fused)| {
-                use clamshell_state::settings::AntiAliasing;
                 let hdr = server.colour.surfaces.get(id).is_some_and(|colour| colour.hdr());
                 let linear = server.colour.surfaces.get(id).is_some_and(|colour| colour.transfer == TransferFunction::Linear);
                 super::chain::Want { surface, smaa: *aa == AntiAliasing::Smaa, fxaa: *aa == AntiAliasing::Fxaa, upscale: *upscale, hdr, linear, fuse: *fused }

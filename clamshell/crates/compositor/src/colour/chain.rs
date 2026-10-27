@@ -70,6 +70,10 @@ pub(crate) struct Chains {
     smaa: Option<Result<super::smaa::Smaa, String>>,
     /// The windows whose passes failed, logged once.
     failed: std::collections::HashSet<Id>,
+    /// What a run keeps, wants and gives back, kept so that running allocates nothing.
+    kept: Vec<Id>,
+    wanting: Vec<Id>,
+    chained: Vec<(Id, Chained)>,
 }
 
 /// What a window's surface element needs for its passes: the surface, whose buffer's texture they read,
@@ -104,13 +108,13 @@ impl Chains {
         renderer: &mut GlesRenderer,
         elements: &mut [Element],
         wants: impl Fn(&Id) -> Option<Want<'a>>,
-    ) -> Result<Vec<(Id, Chained)>, Error> {
-        let mut kept = Vec::new();
-        let mut wanting = Vec::new();
-        let mut chained = Vec::new();
+    ) -> Result<&[(Id, Chained)], Error> {
+        self.kept.clear();
+        self.wanting.clear();
+        self.chained.clear();
         for element in elements.iter_mut() {
             let Some(want) = wants(element.id()) else { continue };
-            wanting.push(element.id().clone());
+            self.wanting.push(element.id().clone());
             let geometry = element.geometry(Scale::from(1.0));
             let context = renderer.context_id();
             let formats = renderer.egl_context().dmabuf_render_formats();
@@ -146,8 +150,8 @@ impl Chains {
                 (Some(texture), _, _) => (texture.clone(), Transform::Normal),
                 (None, Some(SmaaTextures { out: Some(out), .. }), _) => (out.clone(), if flipped { Transform::Flipped180 } else { Transform::Normal }),
                 (None, Some(smaa), _) => {
-                    chained.push((id.clone(), Chained::Weights(smaa.blend.clone())));
-                    kept.push(id.clone());
+                    self.chained.push((id.clone(), Chained::Weights(smaa.blend.clone())));
+                    self.kept.push(id.clone());
                     self.chains.insert(id, chain);
                     continue;
                 }
@@ -172,15 +176,17 @@ impl Chains {
                 Kind::Unspecified,
             ));
             if chain.upscaled.is_some() {
-                chained.push((id.clone(), Chained::Upscaled([1.0 / shown.w as f32, 1.0 / shown.h as f32])));
+                self.chained.push((id.clone(), Chained::Upscaled([1.0 / shown.w as f32, 1.0 / shown.h as f32])));
             }
-            kept.push(id.clone());
+            self.kept.push(id.clone());
             self.chains.insert(id, chain);
         }
+        let kept = &self.kept;
         self.chains.retain(|id, _| kept.contains(id));
         // A window gone, or no longer wanting passes, is forgotten as failed too.
+        let wanting = &self.wanting;
         self.failed.retain(|id| wanting.contains(id));
-        Ok(chained)
+        Ok(&self.chained)
     }
 
     /// Makes a window's textures as its settings and sizes need them now, and draws its passes when they
