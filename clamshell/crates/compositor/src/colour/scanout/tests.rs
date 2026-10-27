@@ -78,7 +78,7 @@ fn lab(screen: ColourDescription, signal: [f64; 3]) -> [f64; 3] {
 /// The difference between what the LUTs show and the pass, as ΔE76 over a grid of signals (`signal` of each
 /// point from 0 to 1): the most, and what 99 % of the grid is within.
 fn errors(transform: &Transform, screen: ColourDescription, signal: impl Fn([f64; 3]) -> [f64; 3]) -> (f64, f64) {
-    let (lut1d, lut3d) = (transform.lut1d(), transform.lut3d());
+    let (lut1d, lut3d) = (transform.lut1d(LUT1D_SIZE), transform.lut3d(LUT3D_EDGE));
     let steps = 32;
     let mut all = Vec::new();
     for r in 0..=steps {

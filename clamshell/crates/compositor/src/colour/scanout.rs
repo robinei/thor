@@ -157,19 +157,23 @@ impl Transform {
         self.rest(v.map(|c| self.shaper(c)))
     }
 
-    /// The 1D LUT, from 0 to 1 of the signal, each entry red, green, blue (the same shaper on each).
-    pub(crate) fn lut1d(&self) -> Vec<[f64; 3]> {
-        (0..LUT1D_SIZE).map(|i| [self.shaper(i as f64 / (LUT1D_SIZE - 1) as f64); 3]).collect()
+    /// The 1D LUT of `size` entries ([`LUT1D_SIZE`] on the Thor), from 0 to 1 of the signal, each entry
+    /// red, green, blue (the same shaper on each).
+    pub(crate) fn lut1d(&self, size: usize) -> Vec<[f64; 3]> {
+        let size = size.max(2);
+        (0..size).map(|i| [self.shaper(i as f64 / (size - 1) as f64); 3]).collect()
     }
 
-    /// The 3D LUT, its nodes in the display engine's order, red fastest: node `r + 17 (g + 17 b)` (as the
-    /// patch streams them, the order its DSPP gamut LUT documents).
-    pub(crate) fn lut3d(&self) -> Vec<[f64; 3]> {
-        let at = |i: usize| i as f64 / (LUT3D_EDGE - 1) as f64;
-        let mut lut = Vec::with_capacity(LUT3D_EDGE.pow(3));
-        for b in 0..LUT3D_EDGE {
-            for g in 0..LUT3D_EDGE {
-                for r in 0..LUT3D_EDGE {
+    /// The 3D LUT of `edge` nodes along each axis ([`LUT3D_EDGE`] on the Thor), in the display engine's
+    /// order, red fastest: node `r + edge (g + edge b)` (as the patch streams them, the order its DSPP
+    /// gamut LUT documents, and the upstream colorop's).
+    pub(crate) fn lut3d(&self, edge: usize) -> Vec<[f64; 3]> {
+        let edge = edge.max(2);
+        let at = |i: usize| i as f64 / (edge - 1) as f64;
+        let mut lut = Vec::with_capacity(edge.pow(3));
+        for b in 0..edge {
+            for g in 0..edge {
+                for r in 0..edge {
                     lut.push(self.rest([at(r), at(g), at(b)]).map(|c| c.clamp(0.0, 1.0)));
                 }
             }
