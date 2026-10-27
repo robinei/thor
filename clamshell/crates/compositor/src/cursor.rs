@@ -167,8 +167,8 @@ impl Cursor {
     }
 
     /// The cursor's shape with its hotspot `at`, for a cursor plane: none while it is hidden, or for a
-    /// client's cursor the CPU can't copy (with surfaces under it, or a buffer not in shared memory), which
-    /// is composed.
+    /// client's cursor the CPU can't copy (with surfaces under it, or a buffer not in shared memory) or that
+    /// isn't shown pixel for pixel (scaled, cropped or turned, as composing shows it), which is composed.
     pub fn shape(&mut self, server: &mut Server, renderer: &mut GlesRenderer, at: Point<f64, Logical>) -> Option<Shape> {
         match server.effective_cursor() {
             CursorImageStatus::Hidden => None,
@@ -179,8 +179,17 @@ impl Cursor {
                 let hotspot = with_states(&surface, |states| {
                     states.data_map.get::<CursorImageSurfaceData>().and_then(|data| data.lock().ok()).map(|data| data.hotspot).unwrap_or_default()
                 });
-                let (buffer, commit) =
-                    smithay::backend::renderer::utils::with_renderer_surface_state(&surface, |state| (state.buffer().cloned(), state.current_commit()))?;
+                let (buffer, commit, one_to_one) = smithay::backend::renderer::utils::with_renderer_surface_state(&surface, |state| {
+                    let whole = state
+                        .view()
+                        .zip(state.buffer_size())
+                        .is_some_and(|(view, size)| view.dst == size && view.src == smithay::utils::Rectangle::from_size(size.to_f64()));
+                    let one_to_one = whole && state.buffer_scale() == 1 && state.buffer_transform() == Transform::Normal;
+                    (state.buffer().cloned(), state.current_commit(), one_to_one)
+                })?;
+                if !one_to_one {
+                    return None;
+                }
                 let size = smithay::wayland::shm::with_buffer_contents(&*buffer?, |_, _, data| {
                     (u32::try_from(data.width).unwrap_or(0), u32::try_from(data.height).unwrap_or(0))
                 })
