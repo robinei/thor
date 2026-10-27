@@ -1,0 +1,6 @@
+# The compiler ClamShell is built and checked with, so that a later build uses the same one (rustup reads
+# this; a distribution's own cargo, as the package build may use, ignores it). Moved on deliberately, with
+# `rust-version` in Cargo.toml.
+[toolchain]
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]
