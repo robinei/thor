@@ -295,27 +295,40 @@ impl Presenter {
 
     /// Drops the buffers composed into if it hasn't composed for a while by `now` and none of them is shown or
     /// on its way. Returns when they will be dropped otherwise.
-    pub(crate) fn trim(&mut self, now: std::time::Instant) -> Option<std::time::Instant> {
+    pub(crate) fn trim(&mut self, now: std::time::Instant, trims: &mut crate::hold::Trims) {
+        if !self.composing_buffers {
+            return;
+        }
         let in_use = |shown: &Option<Shown>| matches!(shown, Some(Shown::Composed(_)));
-        if !self.composing_buffers || self.next.is_some() || in_use(&self.pending) || in_use(&self.current) {
-            return None;
+        if self.next.is_some() || in_use(&self.pending) || in_use(&self.current) {
+            // In use: kept until a while after it no longer is.
+            self.hold.used(now);
+            return;
         }
         if self.hold.expired(now) {
             log::info!("drm: plane {:?}'s buffers to compose into dropped", self.surface.plane());
             self.swapchain.reset_buffers();
             self.composing_buffers = false;
-            crate::hold::give_back();
-            return None;
+            trims.dropped();
+            return;
         }
-        self.hold.due()
+        trims.held(&self.hold);
     }
 
     /// Drops the buffers' contents and any frame in flight, as after the seat was away or a flip was lost:
     /// the next frame is drawn whole.
     pub(crate) fn reset_buffers(&mut self) {
         self.swapchain.reset_buffers();
+        self.composing_buffers = false;
         self.next = None;
         self.pending = None;
+    }
+
+    /// The screen was turned off: its plane shows none of its buffers any more, so they may be dropped.
+    pub(crate) fn off(&mut self) {
+        self.next = None;
+        self.pending = None;
+        self.current = None;
     }
 
     pub(crate) fn pending_mode(&self) -> Mode {

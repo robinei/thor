@@ -75,7 +75,7 @@ impl UiFrame {
 
     /// Drops its surface if the layer hasn't been composed for a while by `now`. Returns when it will be
     /// dropped otherwise.
-    pub fn trim(&mut self, now: std::time::Instant) -> Option<std::time::Instant> {
+    pub fn trim(&mut self, now: std::time::Instant, trims: &mut crate::hold::Trims) {
         if let Some(surface) = &self.surface
             && self.hold.expired(now)
         {
@@ -83,9 +83,9 @@ impl UiFrame {
             log::info!("compositor: {layer} no longer composed, {:.1} MB dropped", megabytes(surface.size()));
             self.surface = None;
             self.held = 0;
-            crate::hold::give_back();
+            trims.dropped();
         }
-        self.hold.due()
+        trims.held(&self.hold);
     }
 }
 

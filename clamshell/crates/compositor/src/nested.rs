@@ -124,8 +124,11 @@ pub fn run(
                             render::elements(server, &mut frames, &mut cursor, backend.renderer(), &mut elements, down, None, Default::default())?;
                             pipeline.compose(server, backend.renderer(), down, &mut elements, states, false)?;
                         }
-                        // What a screenshot was drawn with goes a while after it (see `crate::hold`).
-                        pipeline.trim(std::time::Instant::now());
+                        // What a screenshot was drawn with goes a while after it (see `crate::hold`); a host
+                        // frame comes often enough to drop it near its time.
+                        let mut trims = crate::hold::Trims::default();
+                        pipeline.trim(std::time::Instant::now(), &mut trims);
+                        trims.finish();
                         if let Some(histogram) = pipeline.take_histogram() {
                             server.report_histogram(histogram);
                         }

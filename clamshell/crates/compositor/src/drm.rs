@@ -611,16 +611,18 @@ fn step(
     }
     let composed = server.pacing.commits;
     // Buffers not used for a while are dropped (see `crate::hold`), and the loop wakes when the next would be.
-    let mut due: Option<Instant> = earlier(timed.flatten(), drawing.pipeline.trim(now));
+    let mut trims = crate::hold::Trims::default();
+    drawing.pipeline.trim(now, &mut trims);
     for frame in &mut drawing.frames {
-        due = earlier(due, frame.trim(now));
+        frame.trim(now, &mut trims);
     }
     for screen in &mut drawing.screens {
-        due = earlier(due, screen.surface.trim(now));
+        screen.surface.trim(now, &mut trims);
         if let Some(layers) = &mut screen.layers {
-            due = earlier(due, layers.trim(now));
+            layers.trim(now, &mut trims);
         }
     }
+    let mut due: Option<Instant> = earlier(timed.flatten(), trims.finish());
     for screen in &mut drawing.screens {
         if flip_lost(screen.pending, screen.queued_at, now) {
             log::warn!("drm: {:?} screen: no flip {} ms after its frame: drawn again", screen.role, FLIP_LOST.as_millis());
@@ -811,8 +813,11 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
             if wanted {
                 // The next frame turns it back on.
                 screen.reset_buffers();
-            } else if let Err(error) = screen.surface.surface().clear() {
-                log::warn!("drm: turning the {:?} screen off: {error}", screen.role);
+            } else {
+                match screen.surface.surface().clear() {
+                    Ok(()) => screen.surface.off(),
+                    Err(error) => log::warn!("drm: turning the {:?} screen off: {error}", screen.role),
+                }
             }
         }
         if screen.role == ScreenRole::Top && server.screens.refresh_wanted != screen.refresh {

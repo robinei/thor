@@ -473,29 +473,24 @@ impl Pipeline {
         Ok(changed)
     }
 
-    /// Drops the textures of scenes not composed through for a while by `now` (see `crate::hold`). Returns
-    /// when the next one held runs out, to be called again then.
-    pub(crate) fn trim(&mut self, now: std::time::Instant) -> Option<std::time::Instant> {
-        let mut next = None::<std::time::Instant>;
+    /// Drops the textures of scenes not composed through for a while by `now`, and the screenshot's (see
+    /// `crate::hold`).
+    pub(crate) fn trim(&mut self, now: std::time::Instant, trims: &mut crate::hold::Trims) {
         if self.capture.is_some() && self.capture_hold.expired(now) {
+            log::info!("colour: the screenshot texture dropped");
             self.capture = None;
-            crate::hold::give_back();
+            trims.dropped();
         }
-        if let Some(due) = self.capture_hold.due() {
-            next = Some(due);
-        }
+        trims.held(&self.capture_hold);
         for (scene, name) in self.scenes.iter_mut().zip(["top", "second"]) {
             if scene.texture.is_some() && scene.hold.expired(now) {
                 log::info!("colour: the {name} screen's scene dropped, {:.1} MB", megabytes((scene.part.size.w, scene.part.size.h)));
                 scene.texture = None;
                 scene.first = true;
-                crate::hold::give_back();
+                trims.dropped();
             }
-            if let Some(due) = scene.hold.due() {
-                next = Some(next.map_or(due, |next| next.min(due)));
-            }
+            trims.held(&scene.hold);
         }
-        next
     }
 
     /// Draws every scene whole at its next compose, as after the screens were away.

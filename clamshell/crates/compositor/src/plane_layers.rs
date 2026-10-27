@@ -365,14 +365,21 @@ impl PlaneLayers {
 
     /// Drops the overlay's buffers once its plane is off and it hasn't shown for a while by `now`. Returns
     /// when they will be dropped otherwise.
-    pub(crate) fn trim(&mut self, now: std::time::Instant) -> Option<std::time::Instant> {
-        let overlay = self.overlay.as_mut()?;
-        if !self.planed.overlay && overlay.plane.shown.is_none() && overlay.buffers.is_some() && overlay.hold.expired(now) {
+    pub(crate) fn trim(&mut self, now: std::time::Instant, trims: &mut crate::hold::Trims) {
+        let Some(overlay) = &mut self.overlay else { return };
+        if self.planed.overlay || overlay.plane.shown.is_some() {
+            // In use: kept until a while after it no longer is.
+            overlay.hold.used(now);
+            return;
+        }
+        if overlay.buffers.is_some() && overlay.hold.expired(now) {
             log::info!("plane layers: overlay buffers dropped, {:.1} MB", megabytes(self.size));
             overlay.buffers = None;
-            crate::hold::give_back();
+            trims.dropped();
         }
-        overlay.hold.due().filter(|_| overlay.buffers.is_some())
+        if overlay.buffers.is_some() {
+            trims.held(&overlay.hold);
+        }
     }
 
     /// The planes' states for the next commit.
