@@ -37,6 +37,8 @@ struct Entry {
     hidden: bool,
     /// SingleMainWindow, meaning a second launch doesn't give a useful second window.
     single_window: bool,
+    /// StartupWMClass: its windows' app id or class, where that isn't the file's name.
+    wm_class: String,
 }
 
 /// Desktop files, by id, whose only category is Game but which aren't games: game launchers and tools for
@@ -103,6 +105,7 @@ pub(crate) fn entries(dirs: &[PathBuf]) -> Vec<Desktop> {
             let mut game = clamshell_library::Entry::new(&format!("{}{id}", clamshell_library::ids::DESKTOP), &title);
             game.launch = clamshell_library::Launch::Program { argv, workdir: (!entry.path.is_empty()).then(|| PathBuf::from(&entry.path)) };
             game.icon = (!entry.icon.is_empty()).then(|| xdg::find_icon(&entry.icon, dirs)).flatten();
+            game.wm_class = (!entry.wm_class.is_empty()).then(|| entry.wm_class.clone());
             // A game launcher or a tool for games isn't a game; its games are entries of their own.
             let no_game =
                 NOT_GAMES.iter().any(|n| n.eq_ignore_ascii_case(&id)) || ["Emulator", "PackageManager", "Network", "Utility"].iter().any(|c| category(c));
@@ -145,6 +148,7 @@ fn parse(text: &str) -> Entry {
             "Categories" => entry.categories = value,
             "NoDisplay" | "Hidden" if value == "true" => entry.hidden = true,
             "SingleMainWindow" if value == "true" => entry.single_window = true,
+            "StartupWMClass" => entry.wm_class = value,
             _ => {}
         }
     }
@@ -211,7 +215,11 @@ mod tests {
         write(&system, "helper", "[Desktop Entry]\nType=Application\nName=Helper\nExec=helper\nNoDisplay=true\n");
         write(&system, "link", "[Desktop Entry]\nType=Link\nName=Link\nURL=x\n");
         write(&system, "celeste", "[Desktop Entry]\nType=Application\nName=Celeste\nExec=Celeste\nPath=/opt/celeste\nCategories=Game;ActionGame;\n");
-        write(&system, "retroarch", "[Desktop Entry]\nType=Application\nName=RetroArch\nExec=retroarch\nCategories=Game;Emulator;\nSingleMainWindow=true\n");
+        write(
+            &system,
+            "retroarch",
+            "[Desktop Entry]\nType=Application\nName=RetroArch\nExec=retroarch\nCategories=Game;Emulator;\nSingleMainWindow=true\nStartupWMClass=RetroArch\n",
+        );
         write(&user, "steam_9", "[Desktop Entry]\nType=Application\nName=Nine\nExec=steam steam://rungameid/9\nCategories=Game;\n");
         let entries: Vec<clamshell_library::Entry> = entries(&[user.clone(), system.clone()]).into_iter().map(|d| d.game).collect();
         let found: Vec<(&str, &str, bool)> = entries.iter().map(|g| (&*g.id, g.title.as_str(), g.app)).collect();
@@ -228,6 +236,8 @@ mod tests {
         assert_eq!(another, [true, false, false], "an app opens another, a game doesn't, nor one main window's");
         assert_eq!(entries[0].launch, launch(&["firefox", "--private"], None));
         assert_eq!(entries[1].launch, launch(&["Celeste"], Some("/opt/celeste")));
+        let classes: Vec<Option<&str>> = entries.iter().map(|g| g.wm_class.as_deref()).collect();
+        assert_eq!(classes, [None, None, Some("RetroArch")], "StartupWMClass");
     }
 
     #[test]

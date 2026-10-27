@@ -2,7 +2,7 @@
 //! (see [`crate::session::tray`]), so that anything with a window is on the dock.
 //!
 //! Each such program runs as an entry ([`Origin::Found`]). That is the library's desktop entry named like
-//! the window's app id, or else an entry of its own (`window:<app id>`). An entry of its own gets a picture
+//! the window's app id, or whose `StartupWMClass` it is, or else an entry of its own (`window:<app id>`). An entry of its own gets a picture
 //! looked up by the app id in the icon themes, or else the UI's app glyph. The program's windows, those
 //! with its app id or of its process, go to its group, which is shown if one of them was in front.
 //!
@@ -105,9 +105,12 @@ pub(crate) fn window_entry(library: &Library, w: &WindowFacts, pid: u32) -> Entr
 }
 
 /// The entry that a program found by `name`, its window's app id or its tray icon's id, runs as. It is the
-/// library's desktop entry of that name, ignoring case, or else one of its own made by `own`.
+/// library's desktop entry of that name or with that `StartupWMClass`, ignoring case, or else one of its own
+/// made by `own`.
 pub(crate) fn found_entry(library: &Library, name: &str, own: impl FnOnce() -> Entry) -> Entry {
-    let named = |g: &&Entry| ids::desktop_file(&g.id).is_some_and(|d| d.eq_ignore_ascii_case(name));
+    let named = |g: &&Entry| {
+        ids::desktop_file(&g.id).is_some_and(|d| d.eq_ignore_ascii_case(name)) || g.wm_class.as_deref().is_some_and(|c| c.eq_ignore_ascii_case(name))
+    };
     library.entries.iter().find(named).cloned().unwrap_or_else(own)
 }
 
@@ -174,6 +177,21 @@ mod tests {
         // A program the library has a desktop file for runs as that entry.
         s.observed(vec![window(7, "firefox", 501, "app-firefox.scope")]);
         assert!(s.session().running("desktop:firefox").is_some());
+    }
+
+    #[test]
+    fn a_window_is_found_as_the_desktop_entry_naming_its_class() {
+        let mut s = device();
+        let mut library = clamshell_library::demo::library();
+        library.entries.push(Entry {
+            launch: clamshell_library::Launch::program(vec!["heroic".into()]),
+            app: true,
+            wm_class: Some("heroic".into()),
+            ..Entry::new("desktop:com.heroicgameslauncher.hgl", "Heroic Games Launcher")
+        });
+        s.applied(Event::Library(Box::new(library)));
+        s.observed(vec![window(5, "heroic", 500, "app-heroic-500.scope")]);
+        assert!(s.session().running("desktop:com.heroicgameslauncher.hgl").is_some(), "by StartupWMClass, not window:heroic");
     }
 
     #[test]

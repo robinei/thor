@@ -93,6 +93,10 @@ pub struct Entry {
     /// and browsed files have their runner; apps and games from desktop files have Desktop, and Steam
     /// games have Steam. ClamShell's own tools have none.
     pub runner: Option<RunnerOf>,
+    /// For an app or game from a desktop file, its `StartupWMClass`: the app id or X11 class its windows
+    /// have, where that isn't the file's name (Heroic's windows are `heroic`, its file
+    /// `com.heroicgameslauncher.hgl`).
+    pub wm_class: Option<String>,
 }
 
 /// What was fetched about an entry (see [`crate::Meta`]): a screenshot or a film's backdrop, a summary,
@@ -200,6 +204,7 @@ impl Entry {
             favourite: false,
             browsed: None,
             runner: None,
+            wm_class: None,
         }
     }
 

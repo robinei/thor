@@ -98,7 +98,7 @@ What runs is shown and controlled as entries (the dock's): one per program, each
   by its launcher process, not its cgroup.
 - A program ClamShell didn't start is found by its tray icon, or by a window no entry has; anything with
   a window is on the dock. Its entry: the library's desktop entry named as the icon's id or the window's
-  app id, else one of its own (`tray:…`, `window:<app id>`). Its windows are its group (shown if
+  app id, or whose `StartupWMClass` that is, else one of its own (`tray:…`, `window:<app id>`). Its windows are its group (shown if
   one was in front). In the device session its process and those it started are moved into a scope of
   the entry's, named as a launch's service is but `.scope`, since a service can't take in processes that
   already run (systemd's StartTransientUnit with their PIDs, or AttachProcessesToUnit into one there
