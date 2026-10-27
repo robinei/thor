@@ -10,12 +10,14 @@ use clamshell_ui::{Core, Error, Layer, Screen};
 use smithay::{
     backend::renderer::{
         element::{
+            Kind,
+            solid::SolidColorRenderElement,
             surface::WaylandSurfaceRenderElement,
             texture::TextureRenderElement,
             utils::{CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement},
         },
         gles::{GlesRenderer, GlesTexture},
-        utils::import_surface_tree,
+        utils::{CommitCounter, import_surface_tree},
     },
     desktop::PopupManager,
 };
@@ -25,6 +27,7 @@ smithay::backend::renderer::element::render_elements! {
     Surface=CropRenderElement<RelocateRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>>>,
     Cursor=WaylandSurfaceRenderElement<GlesRenderer>,
     Ui=TextureRenderElement<GlesTexture>,
+    Dim=SolidColorRenderElement,
 }
 
 /// A layer of the UI, drawn into a software surface of the layer's size when it may have changed.
@@ -90,6 +93,7 @@ pub(crate) fn elements(
     server.core.frames_done();
     server.place();
     out.clear();
+    let mut dims = 0;
     for i in 0..server.scene.shown().len() {
         let placed = match server.scene.shown().get(i).copied() {
             Some(Shown::Software { layer, x, part }) => {
@@ -100,6 +104,15 @@ pub(crate) fn elements(
             }
             Some(Shown::Cursor { at }) => {
                 cursor.elements(server, renderer, at, out)?;
+                continue;
+            }
+            Some(Shown::Dim { area }) => {
+                let id = server.scene.dim_id(dims);
+                dims += 1;
+                out.push(
+                    SolidColorRenderElement::new(id, area.to_physical(1), CommitCounter::default(), [0.0, 0.0, 0.0, clamshell_ui::DIM], Kind::Unspecified)
+                        .into(),
+                );
                 continue;
             }
             Some(Shown::Window(placed)) => placed,

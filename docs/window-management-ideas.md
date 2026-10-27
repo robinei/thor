@@ -6,7 +6,7 @@ decided.
 
 Today each screen shows one window: the top screen the selected window of the group in front (an
 entry's, or the window's own), the bottom screen the window moved there (remembered per program).
-Dialogs are centred at their own size. Switching is through the dock, Home, and the program's previous
+Dialogs are centred at their own size over their window, which is darkened under them. Switching is through the dock, Home, and the program's previous
 and next window.
 
 ## 1. Launchers handing over to their game

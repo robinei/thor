@@ -1,13 +1,12 @@
 //! A program's windows shown together on the top screen. A tap on the dock entry of the program in front,
-//! with more than one window on the top screen, opens the overview: its top-level windows in a grid, each
-//! scaled into its cell in its own shape ([`cell`]). A dialog stays with its parent, and the bottom
-//! screen's window stays out of it.
+//! with more than one window on the top screen, opens the overview: its top-level windows in a grid
+//! ([`cell`]), each cell showing what the screen would with that window in front, its dialogs over it,
+//! scaled down to fit. The bottom screen's window stays out of it.
 //!
 //! The window in front stays in front underneath. A tap on a window, or A on the chosen one, brings it in
 //! front; another tap on the entry, or B, goes back. The D-pad moves the choice through the grid, since the
-//! pad goes to ClamShell while the overview is open (see [`crate::nav::pad`]). The compositor draws each
-//! window's last frame in its cell, and the top screen's overlay the cells' targets and the ring around
-//! the chosen one.
+//! pad goes to ClamShell while the overview is open (see [`crate::nav::pad`]). The compositor draws the
+//! cells, and the top screen's overlay the cells' targets and the ring around the chosen one.
 //!
 //! It closes when another group comes in front, as Home or another dock entry brings it, or when fewer
 //! than two windows are left in it.

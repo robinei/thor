@@ -68,6 +68,19 @@ impl Geometry {
         ((position.x - self.origin.x) / self.scale.x, (position.y - self.origin.y) / self.scale.y).into()
     }
 
+    /// The same, with `from`, a screen's area, brought into `to` in its own shape: scaled to fit and
+    /// centred, as the overview shows a screen in a cell.
+    pub fn mapped(&self, from: Rectangle<i32, Logical>, to: Rectangle<i32, Logical>) -> Self {
+        let k = (to.size.w as f64 / from.size.w.max(1) as f64).min(to.size.h as f64 / from.size.h.max(1) as f64);
+        let x = to.loc.x as f64 + (to.size.w as f64 - from.size.w as f64 * k) / 2.0;
+        let y = to.loc.y as f64 + (to.size.h as f64 - from.size.h as f64 * k) / 2.0;
+        let point = |p: Point<f64, Logical>| Point::<f64, Logical>::from((x + (p.x - from.loc.x as f64) * k, y + (p.y - from.loc.y as f64) * k));
+        let corner = point(self.viewport.loc.to_f64());
+        let size = (self.viewport.size.w as f64 * k, self.viewport.size.h as f64 * k);
+        let viewport = Rectangle::new(corner.to_i32_round(), (size.0.round() as i32, size.1.round() as i32).into());
+        Self { viewport, native: self.native, origin: point(self.origin), scale: Scale::from((self.scale.x * k, self.scale.y * k)) }
+    }
+
     /// Whether the window is shown at its own size.
     pub fn one_to_one(&self) -> bool {
         self.scale.x == 1.0 && self.scale.y == 1.0
@@ -139,6 +152,21 @@ mod tests {
             configure_size(&dialog, dialog.presentation(true, &[], Size::Default), (1920, 1080).into(), (1280, 720).into(), (400, 300).into()),
             Some((400, 300).into())
         );
+    }
+
+    #[test]
+    fn a_screen_is_brought_into_a_cell_in_its_own_shape() {
+        // A 400x300 dialog centred on a 1920x1080 screen, shown in a 480x480 cell at (100, 50): the screen
+        // is scaled by a quarter and centred in the cell, 135 high.
+        let screen = Rectangle::from_size((1920, 1080).into());
+        let policy = WindowFacts { parent: Some(1), ..WindowFacts::default() }.presentation(true, &[], Size::Default);
+        let dialog = Geometry::new(screen, Rectangle::from_size((400, 300).into()), policy, Picture::default()).unwrap();
+        assert_eq!(dialog.origin, (760.0, 390.0).into());
+        let cell = Rectangle::new((100, 50).into(), (480, 480).into());
+        let shown = dialog.mapped(screen, cell);
+        assert_eq!(shown.scale, Scale::from(0.25));
+        assert_eq!(shown.origin, (100.0 + 760.0 / 4.0, 50.0 + (480.0 - 270.0) / 2.0 + 390.0 / 4.0).into());
+        assert_eq!(shown.viewport, Rectangle::new((100, 155).into(), (480, 270).into()), "the screen's place in the cell");
     }
 
     #[test]

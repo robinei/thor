@@ -20,6 +20,11 @@ mod toolkit;
 mod views;
 
 pub use crate::core::Core;
+
+/// How much a black layer hides what is under it where ClamShell dims something: the second screen while
+/// it is dimmed, and the windows under a dialog (the compositor's). A third is left, as with the screens'
+/// brightness when idle dims them.
+pub const DIM: f32 = 2.0 / 3.0;
 #[cfg(any(test, feature = "dev"))]
 use gfx::canvas::DrawCache;
 pub use gfx::record::Bounds;

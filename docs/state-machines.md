@@ -72,9 +72,15 @@ The allocation test includes repeated lifecycle events, Home-held changes, contr
 The compositor's tests check placement before the first configure with real clients
 (`xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu`), and
 `tests/nested-compositor.py` moves between the screens with real programs; the VM suite checks session
-adoption, input routes and services. A dialog takes its parent's group; a dialog of the window below
-shows on the top screen while its parent stays below
-(`a_dialog_of_a_window_below_shows_on_top_while_its_parent_stays_below`).
+adoption, input routes and services. A dialog takes its parent's group and its parent's screen.
+
+A screen shows a stack (`Session::stack`): the window in its slot's root, the window its parents lead to,
+then the root's dialogs in the order they opened. The last takes the input and the keyboard; selecting a
+window with dialogs selects its last. The compositor draws the stack back to front, each window placed by
+its own presentation, with a black layer (`clamshell_ui::DIM`) behind the topmost darkening the rest, which
+shows why they take no input; a touch there reaches nothing. Moving a dialog down moves its stack, and
+window rules leave dialogs to their parent (`a_windows_dialogs_show_over_it_the_last_taking_the_input`,
+`a_dialog_of_a_window_below_shows_below_over_it`).
 
 The settle steps that follow the session (units, windows, window rules, what is shown, background,
 quitting, dock) run in the order `State::settle`'s doc lists, with the test that pins each order that
@@ -651,9 +657,9 @@ On Opened the state decides whether the window comes in front (`Session::opening
 | the first window of a unit of ours | behind (it waits for the launch's intent) | same |
 | a later window of a unit of ours whose program is shown | in front, with the keyboard | same |
 
-A dialog of a window on the bottom screen is placed on the top screen
-(`a_dialog_of_a_window_below_shows_on_top_while_its_parent_stays_below`; the compositor test above checks it
-with a real fixed-size child).
+A dialog of a window on the bottom screen is placed there over it, with the keyboard
+(`a_dialog_of_a_window_below_shows_below_over_it`; the compositor test above checks it with a real
+fixed-size child).
 
 ### Presentation and geometry (state/presentation/, geometry.rs)
 

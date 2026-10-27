@@ -41,9 +41,6 @@ use crate::toolkit::Frame;
 
 /// How much the black layer over the area below the bar hides it while that area is a touchpad.
 const POINTING_FADE: f32 = 0.7;
-/// How much the black layer over the second screen hides it while it is dimmed. A third is left, as with
-/// the screens' brightness when idle dims them.
-const BOTTOM_DIM: f32 = 2.0 / 3.0;
 
 /// The main screen, over all of `screen`: the shelf, or the Device view shown in its place. The frame
 /// starts black (see `render`).
@@ -122,7 +119,7 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
     // Dimmed when untouched for a while and the pad is in use elsewhere, as the screens are before they
     // go off.
     if f.s.bottom().dimmed() {
-        f.c.fill(screen, crate::gfx::Rgb(0).alpha(BOTTOM_DIM));
+        f.c.fill(screen, crate::gfx::Rgb(0).alpha(crate::DIM));
     }
 }
 

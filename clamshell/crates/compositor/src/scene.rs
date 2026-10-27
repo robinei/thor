@@ -1,6 +1,9 @@
 //! What is shown where, front first: the cursor, the software surfaces (the UI's overlays and screens,
 //! see `software`), each at its place with the part of it shown, then the windows, each with its
-//! geometry. A window's popups and subsurfaces are its own, placed and scaled with it. One
+//! geometry. A screen shows a window and its dialogs (`Session::stack`): the topmost takes the input, with
+//! a black layer behind it darkening the rest. The overview shows each of its windows' stacks in a cell,
+//! placed as on the screen and brought into the cell. A window's popups and subsurfaces are its own,
+//! placed and scaled with it. One
 //! function places everything ([`Server::place`]); drawing makes its elements from the list, and input,
 //! frame pacing and popups read the windows' places from it, so that a window is touched where it is
 //! drawn. The list is kept and refilled: placing allocates nothing once it has held the most there have
@@ -11,7 +14,6 @@
 //! each read of a window's place is checked against a fresh placement, so that a missed one fails the
 //! tests rather than leaving a window drawn where it isn't touched.
 
-use clamshell_state::presentation::{WindowLayout, WindowPresentation, WindowScale};
 use clamshell_ui::{Bounds, Layer, Screen};
 use smithay::input::pointer::CursorImageStatus;
 use smithay::utils::{Logical, Point, Rectangle};
@@ -33,6 +35,10 @@ pub(crate) enum Shown {
         x: i32,
         part: Option<Bounds>,
     },
+    /// A black layer over `area`, darkening what is under it: the windows under their topmost dialog.
+    Dim {
+        area: Rectangle<i32, Logical>,
+    },
     Window(Placed),
 }
 
@@ -49,6 +55,9 @@ pub(crate) struct Placed {
 #[derive(Debug, Default)]
 pub(crate) struct Scene {
     shown: Vec<Shown>,
+    /// The element ids of the dim layers, the `n`th for the `n`th in the list, kept so that each keeps
+    /// its damage from frame to frame.
+    dims: Vec<smithay::backend::renderer::element::Id>,
 }
 
 impl Scene {
@@ -61,12 +70,22 @@ impl Scene {
     pub fn windows(&self) -> impl Iterator<Item = &Placed> {
         self.shown.iter().filter_map(|shown| match shown {
             Shown::Window(placed) => Some(placed),
-            Shown::Software { .. } | Shown::Cursor { .. } => None,
+            Shown::Software { .. } | Shown::Cursor { .. } | Shown::Dim { .. } => None,
         })
     }
 
     pub fn window(&self, id: i64) -> Option<&Placed> {
         self.windows().find(|placed| placed.id == id)
+    }
+
+    /// The element id of the `n`th dim layer (see [`Scene::dims`]), asked for in order from the first.
+    pub fn dim_id(&mut self, n: usize) -> smithay::backend::renderer::element::Id {
+        if let Some(id) = self.dims.get(n) {
+            return id.clone();
+        }
+        let id = smithay::backend::renderer::element::Id::new();
+        self.dims.push(id.clone());
+        id
     }
 
     /// Whether a window covers the top screen, whose view is then neither shown nor drawn.
@@ -83,7 +102,7 @@ impl Server {
     pub(crate) fn place(&mut self) {
         let mut shown = std::mem::take(&mut self.scene.shown);
         shown.clear();
-        shown.extend(self.windows.iter().rev().filter_map(|client| self.placed(client)).map(Shown::Window));
+        self.place_windows(&mut shown);
         let covered = shown.iter().any(|s| matches!(s, Shown::Window(placed) if !placed.below));
         if !covered {
             shown.insert(0, Shown::Software { layer: Layer::Screen(Screen::Top), x: 0, part: None });
@@ -103,38 +122,71 @@ impl Server {
         }
     }
 
-    /// Where `client`'s window is shown, if it is: the top screen's window, the second screen's while that
-    /// shows its window, or one of the overview's, fitted into its cell whatever its presentation (it
-    /// keeps the size it was configured to). It is shown once it has a buffer and a size.
-    fn placed(&self, client: &ClientWindow) -> Option<Placed> {
+    /// Places the windows shown, front first, into `shown`: the top screen's stack, or while the overview
+    /// is open its windows' stacks in their cells (shown to be chosen, so input doesn't reach them), and the
+    /// bottom screen's stack while it shows the windows.
+    fn place_windows(&self, shown: &mut Vec<Shown>) {
+        let state = self.core.state();
+        let session = state.session();
+        if session.overview().is_some() {
+            for w in session.overview_windows() {
+                self.place_stack(shown, w.id, false, self.overview_cell(w.id));
+            }
+        } else if let Some(top) = session.top_window() {
+            self.place_stack(shown, top.id, false, None);
+        }
+        if state.bottom().shows_windows(session)
+            && let Some(bottom) = session.bottom_window()
+        {
+            self.place_stack(shown, bottom.id, true, None);
+        }
+    }
+
+    /// Places window `id`'s stack (see `Session::stack`) on the bottom screen if `below`, else the top,
+    /// front first, at the end of `shown`: each window as on its screen, brought into `cell` if given; the
+    /// topmost takes the input unless in a cell, with a black layer behind it if there are others.
+    fn place_stack(&self, shown: &mut Vec<Shown>, id: i64, below: bool, cell: Option<Rectangle<i32, Logical>>) {
+        let session = self.core.state().session();
+        let area = self.area(below);
+        let start = shown.len();
+        for w in session.stack_of(id) {
+            let Some(client) = self.windows.iter().find(|client| client.id == w.id) else { continue };
+            let Some(geometry) = Self::geometry_in(client, area) else { continue };
+            let geometry = cell.map_or(geometry, |cell| geometry.mapped(area, cell));
+            shown.insert(start, Shown::Window(Placed { id: w.id, below, geometry, input: false }));
+        }
+        if let Some(Shown::Window(topmost)) = shown.get_mut(start) {
+            topmost.input = cell.is_none();
+        }
+        if shown.len() > start + 1 {
+            let full = Geometry { viewport: area, native: area, origin: area.loc.to_f64(), scale: (1.0, 1.0).into() };
+            let area = cell.map_or(area, |cell| full.mapped(area, cell).viewport);
+            shown.insert(start + 1, Shown::Dim { area });
+        }
+    }
+
+    /// Where `client`'s window is shown in `area` by its presentation, once it has a buffer and a size. A
+    /// window keeps the size it was configured to.
+    fn geometry_in(client: &ClientWindow, area: Rectangle<i32, Logical>) -> Option<Geometry> {
         if !client.mapped {
             return None;
         }
-        let state = self.core.state();
-        let session = state.session();
-        let id = client.id;
-        let below = session.below(id);
-        let cell = self.overview_cell(id);
-        let shown = session.top_window().is_some_and(|w| w.id == id) || (below && state.bottom().shows_windows(session)) || cell.is_some();
-        if !shown {
-            return None;
-        }
-        let (area, policy) = match cell {
-            Some(cell) => (cell, WindowPresentation { layout: WindowLayout::Fullscreen, scale: WindowScale::Fit }),
-            None => (self.area(below), client.shown.presentation?),
-        };
         let (size, place) = client.window.picture().unzip();
         let picture = crate::geometry::Picture { size, place };
-        let geometry = Geometry::new(area, client.window.geometry(), policy, picture)?;
-        Some(Placed { id, below, geometry, input: cell.is_none() })
+        Geometry::new(area, client.window.geometry(), client.shown.presentation?, picture)
     }
 
-    /// Where window `id` is shown, if it is (see [`Server::placed`]).
+    /// Where window `id` is shown, if it is (see [`Server::place_windows`]).
     pub(crate) fn shown(&self, id: i64) -> Option<&Placed> {
         let placed = self.scene.window(id);
         #[cfg(debug_assertions)]
         {
-            let fresh = self.windows.iter().find(|client| client.id == id).and_then(|client| self.placed(client));
+            let mut fresh = Vec::new();
+            self.place_windows(&mut fresh);
+            let fresh = fresh.iter().find_map(|shown| match shown {
+                Shown::Window(placed) if placed.id == id => Some(*placed),
+                _ => None,
+            });
             debug_assert_eq!(placed.copied(), fresh, "the scene wasn't placed again after window {id} moved");
         }
         placed
