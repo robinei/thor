@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 use crate::EventSender;
 use crate::presenter::Presenter;
+use crate::ui_scanout::UiScanout;
 use clamshell_device::{DeviceProfile, Rotation, ScreenRole, TouchSelector, Touchscreen};
 use clamshell_state::colour::ColourDescription;
 use clamshell_state::{Effect, State};
@@ -77,9 +78,22 @@ struct Screen {
     refresh: u16,
     /// When its last frame was shown, by the flip's time.
     flipped: Option<Time<Monotonic>>,
+    /// Its own buffers, with CLAMSHELL_SCANOUT=1, for while it shows nothing but ClamShell (see
+    /// `ui_scanout`); and whether it shows one now.
+    ui: Option<UiScanout>,
+    ui_shown: bool,
 }
 
 impl Screen {
+    /// Drops what its buffers hold, as after it was off or away, or a flip was lost: the next frame is
+    /// drawn whole, composed or its own.
+    fn reset_buffers(&mut self) {
+        self.surface.reset_buffers();
+        if let Some(ui) = &mut self.ui {
+            ui.reset();
+        }
+    }
+
     /// When a frame composed at `now` would be shown (see [`next_shown`]).
     fn next_shown(&self, now: Time<Monotonic>) -> Time<Monotonic> {
         Time::from(next_shown(self.flipped.map(Duration::from), self.interval, self.pending, Duration::from(now)))
@@ -227,7 +241,28 @@ pub fn run(
             refresh: 0,
             flipped: None,
             queued: RenderElementStates::default(),
+            ui: None,
+            ui_shown: false,
         });
+    }
+    // With CLAMSHELL_SCANOUT=1, each screen's own buffers, for while it shows only ClamShell.
+    if scanout {
+        for (screen, panel) in screens.iter_mut().zip(panels) {
+            let layer = ui_screen(screen.role);
+            let ((w, h), scale) = server.core.size(layer);
+            // Turned as the composed frame turns it: a quarter clockwise in Smithay's projection for
+            // `Transform::_90`, a screen pixel (x, y) landing in column h - 1 - y, row x.
+            let quarter = profile.screen(screen.role).rotation == Rotation::Clockwise90;
+            let mode = screen.surface.pending_mode().size();
+            let formats = &screen.surface.surface().plane_info().formats;
+            match UiScanout::new(drm.device_fd(), screen.crtc, mode, formats, (w * scale, h * scale), quarter, panel) {
+                Ok(ui) => {
+                    log::info!("ui scanout: the {:?} screen shows ClamShell alone from its own buffers", screen.role);
+                    screen.ui = Some(ui);
+                }
+                Err(error) => log::warn!("ui scanout: the {:?} screen is composed: {error}", screen.role),
+            }
+        }
     }
 
     // The top screen's rates, for the refresh setting.
@@ -314,7 +349,7 @@ pub fn run(
                 }
                 let drawing = &mut *resumed.borrow_mut();
                 for screen in &mut drawing.screens {
-                    screen.surface.reset_buffers();
+                    screen.reset_buffers();
                     screen.pending = false;
                     screen.queued_at = None;
                 }
@@ -326,6 +361,29 @@ pub fn run(
 
     drop(switcher);
     base.run(start, move |server, now| step(&mut drawing.borrow_mut(), server, &mut *on_capture.borrow_mut(), now))
+}
+
+/// The UI's screen for `role`.
+fn ui_screen(role: ScreenRole) -> clamshell_ui::Screen {
+    match role {
+        ScreenRole::Top => clamshell_ui::Screen::Top,
+        ScreenRole::Bottom => clamshell_ui::Screen::Bottom,
+    }
+}
+
+/// Whether the screen, the bottom one if `down`, shows nothing but ClamShell's own view in the scene: no
+/// window, overlay, dim layer or cursor on it (see `ui_scanout`).
+fn ui_only(server: &Server, down: bool) -> bool {
+    use crate::scene::Shown;
+    let edge = server.screens.top_width;
+    let on_it = |x: i32| (x >= edge) == down;
+    let screen = if down { clamshell_ui::Screen::Bottom } else { clamshell_ui::Screen::Top };
+    server.scene.shown().iter().all(|shown| match shown {
+        Shown::Window(placed) => placed.below != down,
+        Shown::Dim { area } => !on_it(area.loc.x),
+        Shown::Cursor { at } => !on_it(at.x as i32),
+        Shown::Software { layer, .. } => *layer != clamshell_ui::Layer::Overlay(screen),
+    })
 }
 
 /// A GLES renderer on the GPU's GBM device.
@@ -454,7 +512,11 @@ fn step(
     // The scene is composed when a screen can show it (see `compose_now`). Otherwise the frame's own work
     // (the X11 windows' changes to the state) goes on, and so do the buffers' imports, which their clients
     // wait for.
-    let power = |role| drawing.screens.iter().find(|s| s.role == role).map_or(Power::default(), |s| Power { on: s.on, dirty: s.dirty, pending: s.pending });
+    // A screen showing only ClamShell shows its own buffers, and isn't composed for (see `ui_scanout`).
+    ui_scanout_decide(drawing, server);
+    let power = |role| {
+        drawing.screens.iter().find(|s| s.role == role).map_or(Power::default(), |s| Power { on: s.on && !s.ui_shown, dirty: s.dirty, pending: s.pending })
+    };
     if compose_now([power(ScreenRole::Top), power(ScreenRole::Bottom)], server.pacing.committed, server.screenshot_requested) {
         if let Err(error) = compose(drawing, server, on_capture) {
             log::warn!("drm: drawing: {error}");
@@ -468,7 +530,7 @@ fn step(
     for screen in &mut drawing.screens {
         if flip_lost(screen.pending, screen.queued_at, now) {
             log::warn!("drm: {:?} screen: no flip {} ms after its frame: drawn again", screen.role, FLIP_LOST.as_millis());
-            screen.surface.reset_buffers();
+            screen.reset_buffers();
             (screen.pending, screen.queued_at, screen.dirty) = (false, None, true);
         }
         due = earlier(due, screen.queued_at.filter(|_| screen.pending).map(|at| at + FLIP_LOST));
@@ -484,7 +546,11 @@ fn step(
             due = earlier(due, screen.held);
         }
         due = earlier(due, turn.wake);
-        if turn.present {
+        if screen.ui_shown {
+            if screen.on && !screen.pending {
+                present_ui(screen, server);
+            }
+        } else if turn.present {
             if let Err(error) = present(drawing, server, index) {
                 log::warn!("drm: drawing: {error}");
             }
@@ -653,7 +719,7 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
             Power { on: screen.on, dirty: screen.dirty, pending: screen.pending } = power;
             if wanted {
                 // The next frame turns it back on.
-                screen.surface.reset_buffers();
+                screen.reset_buffers();
             } else if let Err(error) = screen.surface.surface().clear() {
                 log::warn!("drm: turning the {:?} screen off: {error}", screen.role);
             }
@@ -703,6 +769,60 @@ fn compose(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnM
         }
     }
     Ok(())
+}
+
+/// Decides for each screen with its own buffers whether it shows them: while the scene has nothing but
+/// ClamShell's view on it. Overlays waiting to be recorded are first, as a notice coming up has the screen
+/// composed. A screen going back to composing clears the CRTC's colour in its next commit and is drawn
+/// whole.
+fn ui_scanout_decide(drawing: &mut Drawing, server: &mut Server) {
+    if drawing.screens.iter().all(|s| s.ui.is_none()) {
+        return;
+    }
+    let mut recorded = false;
+    for screen in [clamshell_ui::Screen::Top, clamshell_ui::Screen::Bottom] {
+        let overlay = clamshell_ui::Layer::Overlay(screen);
+        if server.core.stale(overlay) {
+            server.core.record(overlay, false);
+            recorded = true;
+        }
+    }
+    if recorded {
+        server.place();
+    }
+    for screen in &mut drawing.screens {
+        let Some(ui) = &screen.ui else { continue };
+        let now = ui_only(server, screen.role == ScreenRole::Bottom);
+        if screen.ui_shown && !now {
+            screen.surface.clear_after_ui(ui.clear());
+            screen.dirty = true;
+        }
+        screen.ui_shown = now;
+    }
+}
+
+/// Shows the screen's own buffer drawn with what changed in ClamShell's view, if anything did.
+fn present_ui(screen: &mut Screen, server: &mut Server) {
+    let Some(ui) = &mut screen.ui else { return };
+    let Some(fb) = ui.draw(&mut server.core, ui_screen(screen.role)) else {
+        return;
+    };
+    server.core.frames_done();
+    match screen.surface.show_ui(fb, ui.colour()) {
+        Ok(()) => {
+            ui.committed();
+            screen.pending = true;
+            screen.queued_at = Some(Instant::now());
+        }
+        Err(error) => {
+            // Composed instead from now on, with the reason.
+            log::warn!("ui scanout: the {:?} screen: {error}: composed from now on", screen.role);
+            screen.surface.clear_after_ui(ui.clear());
+            screen.ui = None;
+            screen.ui_shown = false;
+            screen.dirty = true;
+        }
+    }
 }
 
 /// Shows screen `index` its part of the scene.

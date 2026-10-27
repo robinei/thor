@@ -149,6 +149,25 @@ fn values(device: &DrmDevice, id: u32, kind: u32) -> Vec<(String, Vec<u32>)> {
         .collect()
 }
 
+/// The properties of object `id` of DRM type `kind`: each one's name, handle and value.
+pub(crate) fn properties_of(device: &impl AsFd, id: u32, kind: u32) -> Vec<(String, smithay::reexports::drm::control::property::Handle, u64)> {
+    let fd = device.as_fd();
+    let (mut props, mut raw) = (Vec::new(), Vec::new());
+    if let Err(e) = drm_ffi::mode::get_properties(fd, id, kind, Some(&mut props), Some(&mut raw)) {
+        log::warn!("drm: object {id}'s properties: {e}");
+        return Vec::new();
+    }
+    props
+        .iter()
+        .zip(&raw)
+        .filter_map(|(prop, value)| {
+            let info = drm_ffi::mode::get_property(fd, *prop, None, None).ok()?;
+            let handle = smithay::reexports::drm::control::from_u32(*prop)?;
+            Some((c_name(&info.name), handle, *value))
+        })
+        .collect()
+}
+
 fn c_name(name: &[std::ffi::c_char]) -> String {
     let bytes: Vec<u8> = name.iter().take_while(|c| **c != 0).map(|c| *c as u8).collect();
     String::from_utf8_lossy(&bytes).into_owned()

@@ -35,6 +35,7 @@ mod software;
 mod surface;
 mod touch;
 pub mod trace;
+mod ui_scanout;
 mod windows;
 mod x11;
 

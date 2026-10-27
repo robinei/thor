@@ -3,7 +3,8 @@
 //! committed ([`Presenter::queue`]), and shown at the next flip ([`Presenter::flipped`]), when the buffer
 //! shown before is free again. Smithay's `GbmBufferedSurface` did this; ClamShell's own owns every commit
 //! of the screen, so that a frame scanned out (see `scanout`) is another kind of commit rather than a
-//! second owner of the screen.
+//! second owner of the screen. A screen showing only ClamShell shows a buffer of its own instead (see
+//! `ui_scanout`), the same way.
 
 use smithay::backend::allocator::format::get_opaque;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBuffer};
@@ -25,10 +26,19 @@ pub(crate) struct Presenter {
     fencing: bool,
     /// The buffer taken to draw into, until it is queued.
     next: Option<Slot<GbmBuffer>>,
-    /// The buffer committed, until its flip.
-    pending: Option<Slot<GbmBuffer>>,
-    /// The buffer shown.
-    current: Option<Slot<GbmBuffer>>,
+    /// The frame committed, until its flip.
+    pending: Option<Shown>,
+    /// The frame shown.
+    current: Option<Shown>,
+    /// Properties the next composed commit sets: the CRTC's colour cleared after ClamShell's own buffers.
+    clear: Vec<crate::ui_scanout::Property>,
+}
+
+/// A frame committed: a buffer composed into, kept from reuse until it is off the screen, or one of
+/// ClamShell's own buffers, which `ui_scanout` keeps.
+enum Shown {
+    Composed(#[allow(dead_code, reason = "held so that the swapchain doesn't reuse it while shown")] Slot<GbmBuffer>),
+    Ui,
 }
 
 impl Presenter {
@@ -45,7 +55,16 @@ impl Presenter {
                         && smithay::reexports::drm::Device::get_driver_capability(&surface, smithay::reexports::drm::DriverCapability::SyncObj)
                             .is_ok_and(|v| v != 0)
                         && plane_has(&surface, "IN_FENCE_FD");
-                    return Ok(Presenter { surface, swapchain, opaque, fencing, next: None, pending: None, current: Some(current) });
+                    return Ok(Presenter {
+                        surface,
+                        swapchain,
+                        opaque,
+                        fencing,
+                        next: None,
+                        pending: None,
+                        current: Some(Shown::Composed(current)),
+                        clear: Vec::new(),
+                    });
                 }
                 Err((back, error)) => {
                     log::info!("drm: {code} on plane {:?}: {error}", surface.plane());
@@ -98,7 +117,7 @@ impl Presenter {
             return Err((swapchain.allocator, error));
         }
         let Some(fb) = buffer.userdata().get::<GbmFramebuffer>() else { return Err((swapchain.allocator, "no framebuffer".into())) };
-        let state = primary(surface, *fb.as_ref(), None);
+        let state = primary(surface, *fb.as_ref(), None, &[]);
         if let Err(error) = surface.test_state([state], true) {
             return Err((swapchain.allocator, format!("the test commit: {error}")));
         }
@@ -142,11 +161,33 @@ impl Presenter {
             fence
         });
         let fb = *slot.userdata().get::<GbmFramebuffer>().ok_or("no framebuffer")?.as_ref();
-        let state = primary(&self.surface, fb, fence.as_ref().map(std::os::fd::AsFd::as_fd));
+        let state = primary(&self.surface, fb, fence.as_ref().map(std::os::fd::AsFd::as_fd), &self.clear);
         let committed = if self.surface.commit_pending() { self.surface.commit([state], true) } else { self.surface.page_flip([state], true) };
         committed.map_err(|e| format!("committing: {e}"))?;
-        self.pending = Some(slot);
+        self.clear.clear();
+        self.pending = Some(Shown::Composed(slot));
         Ok(())
+    }
+
+    /// Commits framebuffer `fb`, one of ClamShell's own buffers (see `ui_scanout`), with the CRTC's colour
+    /// `properties`. It is shown at the next flip.
+    pub(crate) fn show_ui(
+        &mut self,
+        fb: smithay::reexports::drm::control::framebuffer::Handle,
+        properties: &[crate::ui_scanout::Property],
+    ) -> Result<(), Error> {
+        let state = primary(&self.surface, fb, None, properties);
+        let committed = if self.surface.commit_pending() { self.surface.commit([state], true) } else { self.surface.page_flip([state], true) };
+        committed.map_err(|e| format!("committing ClamShell's own buffer: {e}"))?;
+        self.pending = Some(Shown::Ui);
+        Ok(())
+    }
+
+    /// The next composed commit sets `properties` too: the CRTC's colour cleared after ClamShell's own
+    /// buffers were shown with it.
+    pub(crate) fn clear_after_ui(&mut self, properties: &[crate::ui_scanout::Property]) {
+        self.clear.clear();
+        self.clear.extend_from_slice(properties);
     }
 
     /// The frame committed is shown: the buffer shown before is free again. Whether there was one.
@@ -189,8 +230,14 @@ fn framebuffer(surface: &DrmSurface, slot: &Slot<GbmBuffer>, opaque: bool) -> Re
     Ok(())
 }
 
-/// The primary plane showing framebuffer `fb` over the whole screen, after `fence`.
-fn primary<'a>(surface: &DrmSurface, fb: smithay::reexports::drm::control::framebuffer::Handle, fence: Option<std::os::fd::BorrowedFd<'a>>) -> PlaneState<'a> {
+/// The primary plane showing framebuffer `fb` over the whole screen, after `fence`, with further
+/// `properties`.
+fn primary<'a>(
+    surface: &DrmSurface,
+    fb: smithay::reexports::drm::control::framebuffer::Handle,
+    fence: Option<std::os::fd::BorrowedFd<'a>>,
+    properties: &'a [crate::ui_scanout::Property],
+) -> PlaneState<'a> {
     let (w, h) = surface.pending_mode().size();
     let (w, h) = (i32::from(w), i32::from(h));
     PlaneState {
@@ -203,7 +250,7 @@ fn primary<'a>(surface: &DrmSurface, fb: smithay::reexports::drm::control::frame
             damage_clips: None,
             fb,
             fence,
-            properties: &[],
+            properties,
         }),
     }
 }
