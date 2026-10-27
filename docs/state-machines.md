@@ -149,6 +149,9 @@ the device.
 | Home, shelf not in front | ShowShelf; cancel foreground launch intent | front `home_always_shows_shelf_and_repeated_home_stays_there` |
 | Home, shelf in front | stays; close Device view first if open | same; device `home_closes_the_device_view_first` |
 | WindowPrevious / WindowNext | wrap within the selected top program, skipping the bottom slot; absent/single/shelf do nothing | windows `top_window_switching_wraps_within_the_program_and_skips_the_bottom_slot` |
+| dock tap on the entry in front with two or more top-level windows on the top screen | Overview open, the window in front chosen (a dialog's parent); the window in front stays; again closes it | overview `a_tap_on_the_entry_in_front_shows_its_windows_and_the_pad_picks_one`, `one_window_and_its_dialog_open_no_overview` |
+| Overview: Step(dir) / Choose or Pick(id) / Close | the choice moves within the grid; the window comes in front and it closes; it closes | overview `the_entry_again_or_b_goes_back_and_a_tapped_window_comes_in_front` |
+| settle: Overview open, its group not in front or one window left | closed; a chosen window gone leaves the first chosen | overview `it_closes_with_its_group_out_of_front_or_one_window_left` |
 | HomeHeld(bool) | the button's state, by which the overlay draws the window arrows (with another top window); a new hold starts unused, so the HomeTap after a Home-held arrow is taken by it; repeated values do nothing | windows `pad_activity_returns_keyboard_focus_to_top_without_moving_windows` |
 | PadActive | keyboard focus returns to selected top content; placement stays | same |
 | settle: program in force | the focused top window's owner, else the kept one if it runs, else the last running | running `the_settings_follow_the_front`, `the_program_in_force_falls_back_to_the_last_started` |
@@ -302,7 +305,7 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 
 Claimant: pad mouse, else shelf in front, else Typing on the Keyboard tab, else the game. Route: Ui for
 shelf; else Ui if switched there by View, else Game/Keys/Mouse; Listen while a keymap screen listens; Ui
-while a dock entry is being moved. The focus ring hides when the route leaves Ui.
+while a dock entry is being moved or the overview of the program's windows is open. The focus ring hides when the route leaves Ui.
 
 | Transition | Test |
 |---|---|

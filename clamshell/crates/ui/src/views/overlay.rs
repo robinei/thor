@@ -1,5 +1,6 @@
 //! What the compositor shows over the window on the top screen: the HUD, when the program's HUD setting
-//! asks, and the window arrows while Home is held. The frame starts clear, so the window shows through.
+//! asks, the window arrows while Home is held, and the overview's cells. The frame starts clear, so the
+//! window shows through.
 
 use clamshell_state::Id;
 use clamshell_state::settings::Hud;
@@ -21,8 +22,28 @@ const ARROW_HEIGHT: f32 = 100.0;
 const ARROW_ICON: f32 = 48.0;
 
 pub fn draw(f: &mut Frame, screen: Rect) {
+    if f.s.session().overview().is_some() {
+        return overview(f, screen);
+    }
     hud(f, screen);
     arrows(f, screen);
+}
+
+/// The overview of the program's windows (`clamshell_state::session::overview`), which the compositor draws
+/// in their cells: each cell a target, acted on as it is pressed (`Core::press_overlay`), and the ring
+/// around the one the pad has chosen, as a tile's.
+fn overview(f: &mut Frame, screen: Rect) {
+    let session = f.s.session();
+    let Some(chosen) = session.overview().map(|o| o.chosen()) else { return };
+    let n = session.overview_windows().count();
+    for (i, window) in session.overview_windows().enumerate() {
+        let (x, y, w, h) = clamshell_state::session::overview::cell(i, n, (screen.w, screen.h));
+        let rect = Rect::new(screen.x + x, screen.y + y, w, h);
+        f.button(Id::OverviewWindow(window.id), rect, Look::TILE, |_| {});
+        if window.id == chosen {
+            f.ring(rect, Look::TILE);
+        }
+    }
 }
 
 /// The frame rate of the window on the top screen, and with the full HUD the frame time too, from the
@@ -107,5 +128,18 @@ mod tests {
         let hidden = overlay(&state(false));
         assert!(hidden.targets.is_empty());
         assert!(hidden.next.ink().is_empty(), "nothing drawn, so nothing is shown over the window");
+    }
+
+    /// The overview's cells are its targets, side by side for two windows, and take the arrows' place.
+    #[test]
+    fn the_overviews_cells_are_targets_in_place_of_the_arrows() {
+        let mut s = state(true);
+        s.apply(Event::Overview(clamshell_state::session::overview::OverviewEvent::Toggle), &mut Vec::new());
+        let shown = overlay(&s);
+        let ids: Vec<_> = shown.targets.iter().map(|t| t.id.clone()).collect();
+        assert_eq!(ids, [Id::OverviewWindow(1), Id::OverviewWindow(2)]);
+        let (left, right) = (shown.targets[0].rect, shown.targets[1].rect);
+        assert!(left.contains(240.0, 270.0) && right.contains(720.0, 270.0) && !left.contains(720.0, 270.0));
+        assert!(!shown.next.ink().is_empty(), "the chosen one's ring");
     }
 }

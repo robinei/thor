@@ -135,6 +135,8 @@ pub enum Event {
     Profile(crate::profiles::picker::Kind, crate::profiles::picker::ProfileEvent),
     /// Something done to an entry, by its id.
     Entry(Arc<str>, EntryAct),
+    /// The program in front's windows shown together (see [`crate::session::overview`]).
+    Overview(crate::session::overview::OverviewEvent),
     /// Adds what shelf's details show, or the entries picked in its open folder, to what their runner
     /// plays (see [`crate::session::enqueue`]). It is about shelf's selection, so it names no entry.
     Enqueue,

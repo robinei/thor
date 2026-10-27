@@ -2,6 +2,7 @@
 //! releases, the pad and keys.
 
 use clamshell_state::HardwareKey;
+use clamshell_state::session::overview::OverviewEvent;
 use clamshell_state::{Event, Id, ListEvent, NotificationEvent, PadInput, PointerEvent, ShelfEvent, State};
 use xkeysym::Keysym;
 
@@ -43,8 +44,8 @@ impl Core {
 
     /// A finger or button comes down at `position` on `screen`: it presses the target of the screen's
     /// overlay there, if there is one, and says whether there was. Overlay targets act as they are
-    /// pressed: the window arrows as the pad's window keys do, a notification is tapped, and its close
-    /// mark dismisses it.
+    /// pressed: the window arrows as the pad's window keys do, a window of the overview comes in front, a
+    /// notification is tapped, and its close mark dismisses it.
     pub fn press_overlay(&mut self, screen: Screen, (x, y): (f64, f64)) -> bool {
         let found = self.overlays[screen].frames.retained.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).map(|t| t.id.clone());
         let Some(id) = found else { return false };
@@ -53,6 +54,7 @@ impl Core {
                 let key = if next { HardwareKey::WindowNext } else { HardwareKey::WindowPrevious };
                 self.handle(Event::HardwareKey(key));
             }
+            Id::OverviewWindow(window) => self.handle(Event::Overview(OverviewEvent::Pick(window))),
             Id::Notification { id, close: false } => self.handle(NotificationEvent::Tapped(id).into()),
             Id::Notification { id, close: true } => self.handle(NotificationEvent::Dismissed(id).into()),
             _ => {}
@@ -94,7 +96,8 @@ impl Core {
         self.run_actions(actions);
     }
 
-    /// The pad on ClamShell's screens (see `focus`):
+    /// The pad on ClamShell's screens (see `focus`), unless a dock entry is being moved or the overview of
+    /// the program's windows is open, which take the D-pad, A and B:
     /// - directions move focus;
     /// - A acts on the focused target, and B goes back (see `focus::back`);
     /// - Y, X and Start do the shelf details' actions while the pad is on the shelf (see
@@ -122,6 +125,21 @@ impl Core {
                 self.handle(PointerEvent::Activate(Id::Dock(id)).into());
             }
             return;
+        }
+        // While the overview of the program's windows is open, the D-pad moves its choice, A brings the
+        // chosen window in front and B or Back goes back.
+        if self.state.session().overview().is_some() {
+            use clamshell_state::keymap::Dir as Step;
+            let event = match input {
+                PadInput::Up => OverviewEvent::Step(Step::Up),
+                PadInput::Down => OverviewEvent::Step(Step::Down),
+                PadInput::Left => OverviewEvent::Step(Step::Left),
+                PadInput::Right => OverviewEvent::Step(Step::Right),
+                PadInput::A(true) => OverviewEvent::Choose,
+                PadInput::B | PadInput::Back => OverviewEvent::Close,
+                _ => return,
+            };
+            return self.handle(Event::Overview(event));
         }
         let dir = match input {
             PadInput::Up => Some(Dir::Up),

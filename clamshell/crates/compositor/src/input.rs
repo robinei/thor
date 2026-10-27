@@ -52,9 +52,12 @@ fn upright(on_panel: Point<f64, Logical>, area: Rectangle<f64, Logical>, turn: T
 }
 
 impl Server {
-    /// The surface of the frontmost window shown at `pos` in the scene, and where `pos` is on it.
+    /// The surface of the frontmost window shown at `pos` in the scene, and where `pos` is on it. The
+    /// overview's windows are shown to be chosen, not used: they are never hit.
     pub fn hit(&self, pos: Point<f64, Logical>) -> Option<Hit> {
-        self.windows.iter().rev().filter(|w| w.mapped && self.visible(w.id)).find_map(|client| {
+        let session = self.core.state().session();
+        let overview = session.overview().is_some();
+        self.windows.iter().rev().filter(|w| w.mapped && self.visible(w.id) && (!overview || session.below(w.id))).find_map(|client| {
             let geometry = self.geometry(client.id)?;
             if !geometry.viewport.to_f64().contains(pos) {
                 return None;

@@ -21,12 +21,14 @@ use std::sync::Arc;
 use crate::HardwareKey;
 use crate::bottom::keyboard::{KeyPos, slot};
 use crate::idle::{IdleEvent, Stage};
+use crate::keymap::Dir;
 use crate::keymap::{Button, Input};
 use crate::levels::{Audio, AudioOutput, Stream};
 use crate::out::Out;
 use crate::profiles::picker::ProfileId;
 use crate::radios::bluetooth::{Bluetooth, Device as BtDevice, Kind};
 use crate::radios::wifi::{Network, Wifi};
+use crate::session::overview::OverviewEvent;
 use crate::session::windows::WindowFacts;
 use crate::settings::Setting;
 use crate::settings::panel::SettingsLevel;
@@ -618,12 +620,19 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             ];
             Event::HardwareKey(*rng.pick(&keys)?)
         }
-        87..=89 => match rng.below(5) {
+        87..=89 => match rng.below(7) {
             0 => Event::Home,
             1 => Event::PadSwitch,
             2 => Event::TextInput(rng.one_in(2)),
             3 => Event::BottomTouched,
-            _ => Event::Paste,
+            4 => Event::Paste,
+            5 => Event::Overview(OverviewEvent::Toggle),
+            _ => Event::Overview(match rng.below(4) {
+                0 => OverviewEvent::Step(*rng.pick(&[Dir::Up, Dir::Down, Dir::Left, Dir::Right])?),
+                1 => OverviewEvent::Pick(rng.pick(s.session().windows())?.id),
+                2 => OverviewEvent::Choose,
+                _ => OverviewEvent::Close,
+            }),
         },
         // Idle's sources.
         90..=92 => Event::Idle(match rng.below(5) {
@@ -791,6 +800,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         ensure!(!s.session().windows().iter().skip(i + 1).any(|other| other.id == window.id), "duplicate window id {}", window.id);
     }
     ensure!(s.session().selections_valid(), "a selected window is not in its top group, or a screen's window is not open or on both screens");
+    ensure!(s.session().overview_valid(), "the overview is open for a group not in front, or with fewer than two windows, or a choice not in it");
     // Every window has a group once the event is settled, except one of a program still starting, whose
     // window waits for its launch to say whose it is.
     let unplaced =

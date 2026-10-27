@@ -9,6 +9,7 @@ pub mod enqueue;
 pub(crate) mod found;
 mod front;
 pub mod launch_unit;
+pub mod overview;
 pub mod program;
 pub(crate) mod running;
 pub mod tray;
@@ -52,6 +53,8 @@ pub struct Session {
     /// The window placed on the bottom screen, if any. It is shown there while the windows' tab is open
     /// (see [`crate::Bottom::shows_windows`]).
     bottom: Option<i64>,
+    /// The program in front's windows shown together on the top screen (see [`crate::session::overview`]).
+    overview: Option<overview::Overview>,
     /// Which programs' windows go to the bottom screen (see [`crate::session::below`]).
     window_rules: below::WindowRules,
     /// Windows a rule sent to the bottom screen. Each is sent once and dropped from here when it closes.

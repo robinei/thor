@@ -7,7 +7,9 @@
 //!
 //! A game keeps the pad, since View is the game's own button there. Only a switch from outside the pad
 //! (`clamshell ctl pad switch`) moves it to the second screen, and View there moves it back. While a
-//! dock entry is being moved, the second screen has the pad, since the D-pad moves the entry.
+//! dock entry is being moved, the second screen has the pad, since the D-pad moves the entry; while the
+//! overview of the program's windows is open, ClamShell has it, since the D-pad moves the choice (see
+//! [`crate::session::overview`]).
 //!
 //! When the claimant changes, the pad goes to the new one, with one exception. If View moved the pad to
 //! the second screen, it stays there until View moves it back or shelf comes to the front. This way the
@@ -143,7 +145,7 @@ impl Pad {
 
     /// Runs after anything changed. Works out the claimant from what is in front and the tab, and then
     /// where the pad goes. Returns the new route if it changed.
-    pub(crate) fn reconcile(&mut self, front: Front, tab: Tab, listening: bool, moving: bool) -> Option<PadRoute> {
+    pub(crate) fn reconcile(&mut self, front: Front, tab: Tab, listening: bool, stepping: bool) -> Option<PadRoute> {
         let claimant = self.claimant(front, tab);
         if claimant != self.last_claimant {
             // Shelf has both screens, so a later claimant gets the pad again.
@@ -152,8 +154,8 @@ impl Pad {
         }
         let route = match self.wanted_route() {
             PadRoute::Ui if listening => PadRoute::Listen,
-            // A dock entry is being moved with the D-pad.
-            _ if moving => PadRoute::Ui,
+            // A dock entry is being moved with the D-pad, or the overview's choice is.
+            _ if stepping => PadRoute::Ui,
             route => route,
         };
         (route != self.route).then(|| {

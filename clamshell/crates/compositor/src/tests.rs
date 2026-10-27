@@ -668,6 +668,37 @@ fn touching_a_home_arrow_switches_once_and_consumes_home_release() {
 }
 
 #[test]
+fn the_overview_draws_its_windows_in_cells_and_a_touch_brings_one_in_front() {
+    use clamshell_state::session::overview::OverviewEvent;
+    use clamshell_state::{WindowEvent, session::windows::WindowFacts};
+    use smithay::backend::input::InputTime;
+    let (_display, mut server) = ServerBuilder::new().build();
+    server.core.handle(Event::Start);
+    for id in [1, 2] {
+        let unit = Some("clamshell-run-test-1-0.service".into());
+        server.core.handle(WindowEvent::Opened(WindowFacts { id, app_id: "test".into(), unit, ..WindowFacts::default() }).into());
+    }
+    server.core.handle(WindowEvent::Activate(2).into());
+    assert!(!server.visible(1));
+    server.core.handle(Event::Overview(OverviewEvent::Toggle));
+    assert!(server.visible(1) && server.visible(2), "both shown");
+    // Side by side on the top screen.
+    let (left, right) = (server.overview_cell(1).unwrap(), server.overview_cell(2).unwrap());
+    assert!(left.loc.x > 0 && left.loc.x + left.size.w < right.loc.x && right.loc.x + right.size.w < server.screens.top_width);
+    assert_eq!((left.loc.y, left.size), (right.loc.y, right.size));
+    // The cells are drawn, as they are before they can be seen and touched.
+    assert!(server.core.record(clamshell_ui::Layer::Overlay(clamshell_ui::Screen::Top), false).is_some());
+    let time = InputTime::from_millis(10);
+    let point = (f64::from(left.loc.x + left.size.w / 2), f64::from(left.loc.y + left.size.h / 2)).into();
+    server.touch_down(Some(0).into(), point, time);
+    server.touch_up(Some(0).into(), time);
+    server.touch_frame();
+    let session = server.core.state().session();
+    assert_eq!((session.top_window().map(|w| w.id), session.overview()), (Some(1), None));
+    assert!(!server.visible(2));
+}
+
+#[test]
 fn touching_a_notification_taps_it_and_its_close_mark_dismisses_it() {
     use clamshell_state::{Notification, NotificationEvent, NotificationId, Urgency};
     use smithay::backend::input::InputTime;

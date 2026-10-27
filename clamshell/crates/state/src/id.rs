@@ -71,6 +71,10 @@ pub enum Id {
     WindowArrow {
         next: bool,
     },
+    /// A window in the overview of the program in front's windows (see [`crate::session::overview`]). The
+    /// UI acts on it as it is pressed, with [`crate::session::overview::OverviewEvent::Pick`], so it is
+    /// never tapped.
+    OverviewWindow(i64),
     /// A notification over the second screen, or with `close` its close mark. The UI acts on it as it is
     /// pressed, with [`crate::NotificationEvent::Tapped`] or [`crate::NotificationEvent::Dismissed`], so
     /// it is never tapped.

@@ -438,6 +438,7 @@ impl State {
             }
             Event::ChooseTab(tab) => self.choose_tab(tab),
             Event::Entry(id, act) => self.on_entry(id, act, out),
+            Event::Overview(event) => self.session.on_overview(event),
             Event::Enqueue => self.enqueue(out),
             Event::Keymap(e) => self.keymap_event(e, out),
             Event::Profile(kind, e) => self.profile_event(kind, e, out),
@@ -538,6 +539,7 @@ impl State {
         self.session.follow_front_launch(self.clock.mono());
         self.session.follow_replacement(self.clock.mono());
         self.session.follow_front(self.clock.mono());
+        self.session.follow_overview();
         // Once the front is settled, so a program shown again when the front window closed is thawed at
         // once; before the quitting, which a quitting entry isn't paused for.
         self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
@@ -582,8 +584,8 @@ impl State {
     /// Works out where the pad goes as things are now. Returns the new route if it changed.
     fn reconcile_pad(&mut self) -> Option<PadRoute> {
         let listening = self.listening();
-        let moving = self.dock.moving().is_some() && self.bottom.tab() == Tab::Dock;
-        self.pad.reconcile(self.session.front(), self.bottom.tab(), listening, moving)
+        let stepping = (self.dock.moving().is_some() && self.bottom.tab() == Tab::Dock) || self.session.overview().is_some();
+        self.pad.reconcile(self.session.front(), self.bottom.tab(), listening, stepping)
     }
 
     /// What the outside should have as things are now. The second screen watches what the open tab

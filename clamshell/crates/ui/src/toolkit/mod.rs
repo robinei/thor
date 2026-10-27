@@ -127,10 +127,15 @@ impl<'f, 'c> Frame<'f, 'c> {
         }
         content(self);
         if self.s.pointer().focused(&id) {
-            self.c.outline(shown.inset(look.ring), look.radius.max(RADIUS_S), 2.0, Tone::Accent);
+            self.ring(shown, look);
         }
         let item = self.s.lists().item_key(&id);
         self.targets.push(Target { rect, id, track: None, list: None, item });
+    }
+
+    /// The focus ring of a button of `look` shown at `shown`.
+    pub(crate) fn ring(&mut self, shown: Rect, look: Look) {
+        self.c.outline(shown.inset(look.ring), look.radius.max(RADIUS_S), 2.0, Tone::Accent);
     }
 
     /// Whether `id` is held down by a finger or the pad's A. A list item is lit where the item pressed is

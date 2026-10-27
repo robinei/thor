@@ -1,7 +1,8 @@
 //! The dock: the entries pinned there, in the user's saved order, and the running entries, added at the end
 //! as they start and removed when they stop unless pinned. A pinned entry that isn't running shows dimmed,
 //! and a tap starts it. A tap on a running entry shows its group, or, if all its windows are on the
-//! bottom screen, shows them there.
+//! bottom screen, shows them there. A tap on the entry in front with more than one window on the top
+//! screen shows them together, and another goes back (see [`crate::session::overview`]).
 //!
 //! A long press opens the entry's menu:
 //!
@@ -294,8 +295,12 @@ impl Dock {
     }
 }
 
-/// A tap on a dock entry. A stopped entry starts. A running one is shown (see [`Session::show`]).
+/// A tap on a dock entry. A stopped entry starts. A running one is shown (see [`Session::show`]), or, in
+/// front with more than one window, its windows are shown together or no longer.
 fn tap(entry: Arc<str>, session: &Session, out: &mut Out) {
+    if session.overview_of(&entry) {
+        return out.events.push(Event::Overview(crate::session::overview::OverviewEvent::Toggle));
+    }
     let act = if session.running(&entry).is_some() { EntryAct::Show } else { EntryAct::Play };
     out.events.push(Event::Entry(entry, act));
 }
