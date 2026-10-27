@@ -7,7 +7,7 @@
 //! picture is the same.
 
 use crate::{render::Element, server::Server};
-use clamshell_state::colour::{ColourDescription, TransferFunction};
+use clamshell_state::colour::{ColourDescription, ColourPrimaries, TransferFunction};
 use clamshell_state::curve::{Curve, REFERENCE_NITS};
 use clamshell_state::settings::AntiAliasing;
 use clamshell_ui::Error;
@@ -29,7 +29,8 @@ use smithay::{
 pub(crate) struct Pipeline {
     /// The top screen's scene and the second's.
     scenes: [Scene; 2],
-    shaders: Vec<(ColourDescription, GlesTexProgram)>,
+    /// The shaders decoding a surface into a scene, by its colour and the scene's primaries.
+    shaders: Vec<((ColourDescription, ColourPrimaries), GlesTexProgram)>,
     /// The shaders decoding a surface and encoding it for a screen in one pass, by the two colours.
     direct_shaders: Vec<((ColourDescription, ColourDescription), GlesTexProgram)>,
     revision: u64,
@@ -216,7 +217,7 @@ impl Pipeline {
     /// The scenes of the screens laid out as `server` has them.
     pub(crate) fn new(renderer: &mut GlesRenderer, server: &Server) -> Result<Self, Error> {
         let output = ColourDescription::default();
-        let program = shader(renderer, output, false)?;
+        let program = encode_shader(renderer, output.primaries, output)?;
         let [top, bottom] = parts(server);
         Ok(Self {
             scenes: [Scene::new(renderer, top, (output, program.clone()))?, Scene::new(renderer, bottom, (output, program))?],
@@ -232,7 +233,7 @@ impl Pipeline {
     pub(crate) fn set_outputs(&mut self, renderer: &mut GlesRenderer, outputs: [ColourDescription; 2]) -> Result<(), Error> {
         for (scene, output) in self.scenes.iter_mut().zip(outputs) {
             if scene.output.0 != output {
-                scene.output = (output, shader(renderer, output, false)?);
+                scene.output = (output, encode_shader(renderer, output.primaries, output)?);
             }
         }
         Ok(())
@@ -374,14 +375,15 @@ impl Pipeline {
                     }
                 }
             } else {
-                match shaders.iter().find(|(description, _)| *description == colour) {
+                let primaries = scene.output.0.primaries;
+                match shaders.iter().find(|(colours, _)| *colours == (colour, primaries)) {
                     Some((_, program)) => program.clone(),
                     None => {
-                        let program = shader(renderer, colour, true)?;
+                        let program = decode_shader(renderer, colour, primaries)?;
                         if shaders.len() == 32 {
                             shaders.remove(0);
                         }
-                        shaders.push((colour, program.clone()));
+                        shaders.push(((colour, primaries), program.clone()));
                         program
                     }
                 }
@@ -427,18 +429,20 @@ impl Pipeline {
         }
     }
 
-    /// Both scenes side by side in the top screen's encoding, as the nested host shows both screens in one
-    /// window.
+    /// Both scenes side by side, each in its screen's encoding, as the nested host shows both screens in
+    /// one window.
     pub(crate) fn present(&self, renderer: &mut GlesRenderer, target: &mut GlesTarget<'_>, size: (i32, i32)) -> Result<(), Error> {
-        let program = self.scene(false).output.1.clone();
-        self.present_with(renderer, target, size, &program)
+        let [top, bottom] = &self.scenes;
+        self.present_with(renderer, target, size, [&top.output.1, &bottom.output.1])
     }
 
-    fn present_with(&self, renderer: &mut GlesRenderer, target: &mut GlesTarget<'_>, size: (i32, i32), program: &GlesTexProgram) -> Result<(), Error> {
+    /// Both scenes side by side into `target`, of the layout's `size`, the top's encoded by the first of
+    /// `programs` and the second's by the other.
+    fn present_with(&self, renderer: &mut GlesRenderer, target: &mut GlesTarget<'_>, size: (i32, i32), programs: [&GlesTexProgram; 2]) -> Result<(), Error> {
         let mut frame = renderer.render(target, size.into(), Transform::Flipped180)?;
         let rectangle = Rectangle::from_size(size.into());
         frame.clear([0.0, 0.0, 0.0, 1.0].into(), &[rectangle])?;
-        for scene in &self.scenes {
+        for (scene, program) in self.scenes.iter().zip(programs) {
             let whole = Rectangle::from_size(scene.texture.size()).to_f64();
             frame.render_texture_from_to(&scene.texture, whole, scene.part, &[scene.part], &[], Transform::Normal, 1.0, Some(program), &[])?;
         }
@@ -477,10 +481,14 @@ impl Pipeline {
 
     /// Both scenes side by side in sRGB, for a screenshot, `size` being the layout's.
     pub fn capture(&self, renderer: &mut GlesRenderer, size: (i32, i32)) -> Result<clamshell_state::ScreenshotPixels, String> {
-        let program = shader(renderer, ColourDescription::default(), false).map_err(|error| error.to_string())?;
+        let srgb = |scene: &Scene, renderer: &mut GlesRenderer| encode_shader(renderer, scene.output.0.primaries, ColourDescription::default());
+        let [top, bottom] = &self.scenes;
+        let programs = [srgb(top, renderer), srgb(bottom, renderer)];
+        let [top, bottom] = programs.map(|program| program.map_err(|error| error.to_string()));
+        let (top, bottom) = (top?, bottom?);
         let mut texture: GlesTexture = renderer.create_buffer(Fourcc::Abgr8888, size.into()).map_err(|error| error.to_string())?;
         let mut target = renderer.bind(&mut texture).map_err(|error| error.to_string())?;
-        self.present_with(renderer, &mut target, size, &program).map_err(|error| error.to_string())?;
+        self.present_with(renderer, &mut target, size, [&top, &bottom]).map_err(|error| error.to_string())?;
         read_back(renderer, &target, size)
     }
 }
@@ -580,9 +588,10 @@ fn direct_shader(renderer: &mut GlesRenderer, colour: ColourDescription, output:
     Ok(renderer.compile_custom_texture_shader(source, if curved { &names } else { &[] })?)
 }
 
-fn shader(renderer: &mut GlesRenderer, description: ColourDescription, input: bool) -> Result<GlesTexProgram, Error> {
-    let curved = input && (sdr(description) || hdr(description));
-    let source = super::shaders::surface(description, input, curved)?;
+/// The shader drawing a surface of `colour` into a scene in `scene`'s primaries.
+fn decode_shader(renderer: &mut GlesRenderer, colour: ColourDescription, scene: ColourPrimaries) -> Result<GlesTexProgram, Error> {
+    let curved = sdr(colour) || hdr(colour);
+    let source = super::shaders::decode(colour, scene, curved)?;
     let names = [
         UniformName::new("curve_a", UniformType::_4f),
         UniformName::new("curve_b", UniformType::_4f),
@@ -590,6 +599,11 @@ fn shader(renderer: &mut GlesRenderer, description: ColourDescription, input: bo
         UniformName::new("smaa_blend_tex", UniformType::_1i),
     ];
     Ok(renderer.compile_custom_texture_shader(source, if curved { &names } else { &[] })?)
+}
+
+/// The shader encoding a scene in `scene`'s primaries for a screen of `output`.
+fn encode_shader(renderer: &mut GlesRenderer, scene: ColourPrimaries, output: ColourDescription) -> Result<GlesTexProgram, Error> {
+    Ok(renderer.compile_custom_texture_shader(super::shaders::encode(scene, output)?, &[])?)
 }
 
 #[cfg(test)]
@@ -904,11 +918,11 @@ mod direct_tests {
         renderer.map_texture(&mapping).unwrap().to_vec()
     }
 
-    /// A surface drawn straight onto a screen shows as the final pass would, as `scanout::Transform` works it
-    /// out on the CPU, within a level: an sRGB surface on an unprofiled panel and on the Thor's top panel,
-    /// and an HDR one (PQ) on the Thor's top panel. (Through the scene it is further off near black: the
-    /// scene's half floats, in BT.2020's primaries, leave a little of the other channels where the screen's
-    /// primaries have none, which the encoding's steep start makes up to a few levels.)
+    /// A surface drawn straight onto a screen, or through its scene, shows as the final pass would, as
+    /// `scanout::Transform` works it out on the CPU, within a level: an sRGB surface on an unprofiled panel
+    /// and on the Thor's top panel, and an HDR one (PQ) on the Thor's top panel. (A scene in BT.2020's
+    /// primaries was a few levels off near zero: its half floats left a little of the channels the screen's
+    /// primaries have none of, which the encoding's steep start made more.)
     #[test]
     fn a_surface_drawn_straight_is_the_final_pass() {
         let mut renderer = renderer();
@@ -927,15 +941,22 @@ mod direct_tests {
                 Uniform::new("clarity", [0.0f32; 4]),
                 Uniform::new("smaa_blend_tex", smithay::backend::renderer::gles::UniformValue::_1i(1)),
             ];
-            let program = direct_shader(&mut renderer, surface, output).unwrap();
-            let drawn = draw(&mut renderer, &texture, &program, &uniforms, Fourcc::Abgr8888);
-            let drawn = pixels(&mut renderer, &drawn);
             let transform = super::super::scanout::Transform::new(surface, curve, output).unwrap();
-            for (i, px) in picture.as_chunks::<4>().0.iter().enumerate() {
-                let want = transform.apply([0, 1, 2].map(|c| f64::from(px[c]) / 255.0)).map(|c| c.clamp(0.0, 1.0) * 255.0);
-                for c in 0..3 {
-                    let got = f64::from(drawn[i * 4 + c]);
-                    assert!((got - want[c]).abs() <= 1.0, "{surface:?} on {output:?}: pixel {i} channel {c} {got}, not {:.2}", want[c]);
+            // Straight onto the screen, and through its scene in half floats.
+            let program = direct_shader(&mut renderer, surface, output).unwrap();
+            let straight = draw(&mut renderer, &texture, &program, &uniforms, Fourcc::Abgr8888);
+            let decode = decode_shader(&mut renderer, surface, output.primaries).unwrap();
+            let encode = encode_shader(&mut renderer, output.primaries, output).unwrap();
+            let scene = draw(&mut renderer, &texture, &decode, &uniforms, Fourcc::Abgr16161616f);
+            let through = draw(&mut renderer, &scene, &encode, &[], Fourcc::Abgr8888);
+            for (path, drawn) in [("straight", straight), ("through the scene", through)] {
+                let drawn = pixels(&mut renderer, &drawn);
+                for (i, px) in picture.as_chunks::<4>().0.iter().enumerate() {
+                    let want = transform.apply([0, 1, 2].map(|c| f64::from(px[c]) / 255.0)).map(|c| c.clamp(0.0, 1.0) * 255.0);
+                    for c in 0..3 {
+                        let got = f64::from(drawn[i * 4 + c]);
+                        assert!((got - want[c]).abs() <= 1.0, "{surface:?} on {output:?} {path}: pixel {i} channel {c} {got}, not {:.2}", want[c]);
+                    }
                 }
             }
         }

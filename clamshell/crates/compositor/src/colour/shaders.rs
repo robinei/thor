@@ -1,29 +1,40 @@
-//! The colour pipeline's GLSL: the final pass that decodes each surface into the scene and encodes the
-//! scene for a screen ([`surface`]), the passes a picture takes before it ([`pass`], SMAA's [`smaa`]), and
-//! the histogram's measure.
+//! The colour pipeline's GLSL: the final pass that decodes each surface into its screen's scene
+//! ([`decode`]) and encodes the scene for the screen ([`encode`]), or does both in one pass ([`direct`]);
+//! the passes a picture takes before it ([`pass`], SMAA's [`smaa`]); and the histogram's measure.
+//!
+//! A scene is linear light in its screen's own primaries, one unit at reference white: a surface's curve is
+//! worked in BT.2020 and the result taken to the screen's primaries before it is stored, so that the
+//! encoding needs no matrix. Stored in BT.2020, a colour the screen shows with a channel at zero would be
+//! stored with that channel a little off zero, the half floats' rounding, which the encoding's steep start
+//! makes a few levels. Colours beyond the screen's gamut are stored as they are, negative or above one, and
+//! clipped as they are encoded.
 
 use clamshell_state::colour::{ColourDescription, ColourPrimaries, TransferFunction};
 use clamshell_ui::Error;
 
-/// The source of the final pass's shader for a surface of `description` (`input`), or of the encoding to a
-/// screen of it: decoded, converted to the working space with its curve when `curved`, and encoded.
-pub(super) fn surface(description: ColourDescription, input: bool, curved: bool) -> Result<String, Error> {
-    if input { source(Some(description), None, curved) } else { source(None, Some(description), false) }
+/// The source of the final pass's shader for a surface of `description` drawn into a scene in `scene`'s
+/// primaries: decoded, with its curve when `curved`.
+pub(super) fn decode(description: ColourDescription, scene: ColourPrimaries, curved: bool) -> Result<String, Error> {
+    source(Some(decoding(description, Some(scene))?), None, description, curved)
+}
+
+/// The source of the shader encoding a scene in `scene`'s primaries for a screen of `output`.
+pub(super) fn encode(scene: ColourPrimaries, output: ColourDescription) -> Result<String, Error> {
+    source(None, Some(encoding(output, scene)?), output, false)
 }
 
 /// The source of the final pass's shader for a surface of `description` drawn straight onto a screen of
 /// `output`: decoded, converted with its curve when `curved`, and encoded for the screen in the same pass,
 /// with no scene between (a screen showing only it, see `render::Pipeline::compose`).
 pub(super) fn direct(description: ColourDescription, output: ColourDescription, curved: bool) -> Result<String, Error> {
-    source(Some(description), Some(output), curved)
+    source(Some(decoding(description, None)?), Some(encoding(output, ColourPrimaries::Bt2020)?), description, curved)
 }
 
-/// A shader decoding a surface of `input` into the working space, encoding the working space for a screen
-/// of `output`, or both in turn.
-fn source(input: Option<ColourDescription>, output: Option<ColourDescription>, curved: bool) -> Result<String, Error> {
-    let (decoding, decoded) = input.map(decoding).transpose()?.unwrap_or_default();
-    let (encoding, encoded) = output.map(encoding).transpose()?.unwrap_or_default();
-    let description = input.or(output).ok_or("a shader with neither side")?;
+/// A shader with a decoding, an encoding, or both in turn, each its GLSL functions and its statements on
+/// `v`; `description` the surface's, or the screen's for an encoding alone.
+fn source(decoding: Option<(String, String)>, encoding: Option<(String, String)>, description: ColourDescription, curved: bool) -> Result<String, Error> {
+    let (decoding, decoded) = decoding.unwrap_or_default();
+    let (encoding, encoded) = encoding.unwrap_or_default();
     let uniforms = if curved { "uniform vec4 curve_a;\nuniform vec4 curve_b;\nuniform vec4 clarity;\nuniform sampler2D smaa_blend_tex;" } else { "" };
     let fetch = if curved {
         let linear = format!("const bool LINEAR = {};\n", description.transfer == TransferFunction::Linear);
@@ -90,9 +101,10 @@ fn mat3([[a, b, c], [d, e, f], [g, h, i]]: [[f64; 3]; 3]) -> String {
     format!("mat3({a:.12},{d:.12},{g:.12},{b:.12},{e:.12},{h:.12},{c:.12},{f:.12},{i:.12})")
 }
 
-/// The decoding of a surface of `description` into the working space, with its curve: its GLSL functions
-/// (`convert`, `matrix`) and the statements on `v`.
-fn decoding(description: ColourDescription) -> Result<(String, String), Error> {
+/// The decoding of a surface of `description` into linear light with its curve, worked in BT.2020, then
+/// taken to `scene`'s primaries where it is stored in a scene: its GLSL functions (`convert`, `matrix`,
+/// `to_scene`) and the statements on `v`.
+fn decoding(description: ColourDescription, scene: Option<ColourPrimaries>) -> Result<(String, String), Error> {
     let matrix = super::math::matrix(description.primaries, ColourPrimaries::Bt2020).ok_or("unsupported colour primary matrix")?;
     let expression = transfer(description, true)?;
     let reference = f64::from(description.luminances().reference);
@@ -148,22 +160,32 @@ fn decoding(description: ColourDescription) -> Result<(String, String), Error> {
     } else {
         format!("v = convert(v) * {scaling:.12}; v = matrix * v;")
     };
-    Ok((format!("vec3 convert(vec3 v) {{ return {expression}; }}\nconst mat3 matrix = {};", mat3(matrix)), conversion))
+    let mut functions = format!("vec3 convert(vec3 v) {{ return {expression}; }}\nconst mat3 matrix = {};", mat3(matrix));
+    let mut conversion = conversion;
+    if let Some(scene) = scene {
+        let to_scene = super::math::matrix(ColourPrimaries::Bt2020, scene).ok_or("unsupported colour primary matrix")?;
+        functions.push_str(&format!("\nconst mat3 to_scene = {};", mat3(to_scene)));
+        conversion.push_str("\n    v = to_scene * v;");
+    }
+    Ok((functions, conversion))
 }
 
-/// The encoding of the working space for a screen of `description`: its GLSL functions (`encode`,
-/// `to_screen`) and the statements on `v`.
-fn encoding(description: ColourDescription) -> Result<(String, String), Error> {
-    let matrix = super::math::matrix(ColourPrimaries::Bt2020, description.primaries).ok_or("unsupported colour primary matrix")?;
+/// The encoding of linear light in `from`'s primaries for a screen of `description`: its GLSL functions
+/// (`encode`, `to_screen`) and the statements on `v`. From the screen's own primaries (its scene's), no
+/// matrix.
+fn encoding(description: ColourDescription, from: ColourPrimaries) -> Result<(String, String), Error> {
+    let matrix = super::math::matrix(from, description.primaries).ok_or("unsupported colour primary matrix")?;
+    let same = from.coordinates() == description.primaries.coordinates();
     super::math::encode(1.0, description).ok_or("unsupported output transfer")?;
     let expression = transfer(description, false)?;
     let reference = f64::from(description.luminances().reference);
     let scaling = if description.transfer == TransferFunction::Pq { 1.0 } else { f64::from(description.luminances().max) / reference };
+    let to_screen = if same { "" } else { "v = to_screen * v; " };
     let conversion = if description.transfer == TransferFunction::Pq {
-        format!("v = to_screen * v; v /= {scaling:.12}; v = encode(v);")
+        format!("{to_screen}v /= {scaling:.12}; v = encode(v);")
     } else {
         // Above the screen's peak, each pixel is brought down whole, keeping its hue.
-        format!("v = to_screen * v; v /= {scaling:.12}; float m = max(max(v.r, v.g), v.b); if (m > 1.0) {{ v /= m; }} v = encode(v);")
+        format!("{to_screen}v /= {scaling:.12}; float m = max(max(v.r, v.g), v.b); if (m > 1.0) {{ v /= m; }} v = encode(v);")
     };
     Ok((format!("vec3 encode(vec3 v) {{ return {expression}; }}\nconst mat3 to_screen = {};", mat3(matrix)), conversion))
 }
