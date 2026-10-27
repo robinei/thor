@@ -4,21 +4,19 @@
 
 use smithay::{
     backend::renderer::{
-        element::{
-            AsRenderElements, Kind,
-            surface::{WaylandSurfaceRenderElement, render_elements_from_surface_tree},
-        },
+        element::{Kind, surface::WaylandSurfaceRenderElement},
         gles::GlesRenderer,
+        utils::RendererSurfaceStateUserData,
     },
     desktop::{
-        Window, WindowSurfaceType,
+        PopupManager, Window, WindowSurfaceType,
         utils::{bbox_from_surface_tree, send_frames_surface_tree, under_from_surface_tree, with_surfaces_surface_tree},
     },
     output::Output,
     reexports::wayland_server::{Resource, protocol::wl_surface::WlSurface},
-    utils::{Logical, Point, Rectangle},
+    utils::{Logical, Physical, Point, Rectangle},
     wayland::{
-        compositor::{SurfaceData, get_parent},
+        compositor::{SurfaceData, TraversalAction, get_parent, with_surface_tree_downward},
         shell::xdg::ToplevelSurface,
     },
 };
@@ -173,17 +171,60 @@ impl Surface {
             }
         }
     }
+    /// The window's elements, front first: its popups, then its own surfaces, as Smithay's
+    /// `Window::render_elements` gives them, handed to `f` one by one rather than collected.
     pub fn for_each_element(&self, renderer: &mut GlesRenderer, mut f: impl FnMut(WaylandSurfaceRenderElement<GlesRenderer>)) {
         match self {
-            Self::Wayland(window) => window.render_elements(renderer, (0, 0).into(), 1.0.into(), 1.0).into_iter().for_each(f),
+            Self::Wayland(window) => {
+                let Some(toplevel) = window.toplevel() else { return };
+                let root = toplevel.wl_surface();
+                let geometry = window.geometry().loc;
+                for (popup, offset) in PopupManager::popups_for_surface(root) {
+                    let at = (geometry + offset - popup.geometry().loc).to_physical_precise_round(1.0);
+                    surface_tree_elements(renderer, popup.wl_surface(), at, Kind::Unspecified, &mut f);
+                }
+                surface_tree_elements(renderer, root, (0, 0).into(), Kind::Unspecified, f);
+            }
             Self::X11(window) => {
                 for popup in window.popups.iter().rev() {
-                    render_elements_from_surface_tree(renderer, &popup.surface, (popup.location.x, popup.location.y), 1.0, 1.0, Kind::Unspecified)
-                        .into_iter()
-                        .for_each(&mut f);
+                    surface_tree_elements(renderer, &popup.surface, (popup.location.x, popup.location.y).into(), Kind::Unspecified, &mut f);
                 }
-                render_elements_from_surface_tree(renderer, &window.root, (0, 0), 1.0, 1.0, Kind::Unspecified).into_iter().for_each(f);
+                surface_tree_elements(renderer, &window.root, (0, 0).into(), Kind::Unspecified, f);
             }
         }
     }
+}
+
+/// The elements of `surface`'s tree at `location`, front first, handed to `f` one by one: Smithay's
+/// `render_elements_from_surface_tree` (at scale 1, opaque) without collecting them into a list, so that
+/// drawing a frame allocates nothing. A surface that can't be imported is left out, logged.
+pub(crate) fn surface_tree_elements(
+    renderer: &mut GlesRenderer,
+    surface: &WlSurface,
+    location: Point<i32, Physical>,
+    kind: Kind,
+    mut f: impl FnMut(WaylandSurfaceRenderElement<GlesRenderer>),
+) {
+    let offset = |states: &SurfaceData, location: Point<f64, Physical>| {
+        let data = states.data_map.get::<RendererSurfaceStateUserData>()?;
+        let view = data.lock().ok()?.view()?;
+        Some(location + view.offset.to_f64().to_physical(1.0))
+    };
+    with_surface_tree_downward(
+        surface,
+        location.to_f64(),
+        |_, states, location| match offset(states, *location) {
+            Some(location) => TraversalAction::DoChildren(location),
+            None => TraversalAction::SkipChildren,
+        },
+        |surface, states, location| {
+            let Some(location) = offset(states, *location) else { return };
+            match WaylandSurfaceRenderElement::from_surface(renderer, surface, states, location, 1.0, kind) {
+                Ok(Some(element)) => f(element),
+                Ok(None) => {}
+                Err(error) => log::warn!("compositor: a surface can't be imported: {error}"),
+            }
+        },
+        |_, _, _| true,
+    );
 }

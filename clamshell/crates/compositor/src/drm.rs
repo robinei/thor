@@ -46,7 +46,10 @@ use crate::{
 struct Screen {
     role: ScreenRole,
     crtc: crtc::Handle,
-    surface: GbmBufferedSurface<GbmAllocator<DrmDeviceFd>, RenderElementStates>,
+    surface: GbmBufferedSurface<GbmAllocator<DrmDeviceFd>, ()>,
+    /// The elements' states in the frame queued, for its flip; refilled in place for each frame, so that
+    /// queueing one allocates nothing.
+    queued: RenderElementStates,
     /// The screen's part of the scene, and its mode's size before its panel's turn.
     part: Rectangle<i32, Buffer>,
     size: Size<i32, Physical>,
@@ -215,6 +218,7 @@ pub fn run(
             start_mode: chosen.mode,
             refresh: 0,
             flipped: None,
+            queued: RenderElementStates::default(),
         });
     }
 
@@ -405,11 +409,11 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
     };
     screen.pending = false;
     screen.queued_at = None;
-    let states = match screen.surface.frame_submitted() {
-        Ok(states) => states,
+    let submitted = match screen.surface.frame_submitted() {
+        Ok(submitted) => submitted.is_some(),
         Err(error) => {
             log::warn!("drm: {:?} screen: {error}", screen.role);
-            None
+            false
         }
     };
     let (time, hw_clock): (Time<Monotonic>, bool) = match metadata.map(|m| m.time) {
@@ -418,11 +422,9 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
     };
     let down = screen.role == ScreenRole::Bottom;
     screen.flipped = Some(time);
-    if let Some(states) = &states {
-        server.frame_shown(states, Some(down));
-    }
-    if let Some(states) = states {
-        server.present_flip(&states, time, hw_clock, down, screen.interval, metadata.map_or(0, |m| u64::from(m.sequence)));
+    if submitted {
+        server.frame_shown(&screen.queued, Some(down));
+        server.present_flip(&screen.queued, time, hw_clock, down, screen.interval, metadata.map_or(0, |m| u64::from(m.sequence)));
     }
     screen.held = server.frame_callbacks(Some(down), screen.interval, Instant::now());
 }
@@ -713,7 +715,8 @@ fn present(drawing: &mut Drawing, server: &Server, index: usize) -> Result<(), E
         let mut target = renderer.bind(&mut buffer)?;
         pipeline.present_part(renderer, &mut target, screen.role == ScreenRole::Bottom, screen.part, screen.size, screen.transform)?
     };
-    screen.surface.queue_buffer(Some(sync), None, states.clone()).map_err(|e| format!("{:?} screen: {e}", screen.role))?;
+    screen.queued.states.clone_from(&states.states);
+    screen.surface.queue_buffer(Some(sync), None, ()).map_err(|e| format!("{:?} screen: {e}", screen.role))?;
     server.frame_queued(states, Some(screen.role == ScreenRole::Bottom));
     screen.pending = true;
     screen.queued_at = Some(Instant::now());

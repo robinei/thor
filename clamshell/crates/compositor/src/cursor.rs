@@ -11,11 +11,7 @@ use smithay::{
         allocator::Fourcc,
         renderer::{
             ImportMem, Renderer,
-            element::{
-                Id, Kind,
-                surface::{WaylandSurfaceRenderElement, render_elements_from_surface_tree},
-                texture::TextureRenderElement,
-            },
+            element::{Id, Kind, texture::TextureRenderElement},
             gles::{GlesRenderer, GlesTexture},
             utils::import_surface_tree,
         },
@@ -91,18 +87,9 @@ impl Cursor {
                     states.data_map.get::<CursorImageSurfaceData>().and_then(|data| data.lock().ok()).map(|data| data.hotspot).unwrap_or_default()
                 });
                 let location = at - hotspot.to_f64();
-                out.extend(
-                    render_elements_from_surface_tree::<_, WaylandSurfaceRenderElement<GlesRenderer>>(
-                        renderer,
-                        &surface,
-                        location.to_physical(1.0).to_i32_round(),
-                        1.0,
-                        1.0,
-                        Kind::Cursor,
-                    )
-                    .into_iter()
-                    .map(Element::from),
-                );
+                crate::surface::surface_tree_elements(renderer, &surface, location.to_physical(1.0).to_i32_round(), Kind::Cursor, |element| {
+                    out.push(element.into());
+                });
                 let [top, bottom] = &server.screens.outputs;
                 let output = if at.x < server.screens.top_width as f64 { top } else { bottom };
                 smithay::desktop::utils::send_frames_surface_tree(&surface, output, server.started.elapsed(), Some(Duration::ZERO), |_, _| {
