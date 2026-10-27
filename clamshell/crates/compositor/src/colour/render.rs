@@ -1,7 +1,9 @@
 //! The colour pipeline, through which both hosts draw: every surface is decoded from its own colour into
 //! one scene of half floats kept between frames, with its game's curve and clarity applied, and each
 //! screen's part of the scene is encoded once in that screen's colour. Only what changed is drawn into the
-//! scene.
+//! scene. A screen whose whole frame is one surface (a game alone on it) has it drawn straight onto the
+//! screen instead, decoded and encoded in one pass: the scene, a full screen of half floats written and
+//! read again, is left out, and with nothing to blend the picture is the same.
 
 use crate::{render::Element, server::Server};
 use clamshell_state::colour::{ColourDescription, TransferFunction};
@@ -43,6 +45,12 @@ pub(crate) struct Pipeline {
     chained: Vec<(Id, WlSurface, AntiAliasing, bool, bool)>,
     /// The histogram of the picture a curve's edit screen plots.
     histogram: super::histogram::Measure,
+    /// Each screen's surface drawn straight onto it (the top's, the second's), if its frame is one, and
+    /// what of it was drawn last, to know when it changed.
+    direct: [Option<Converted>; 2],
+    direct_drawn: [Option<(Id, CommitCounter)>; 2],
+    /// The shaders decoding a surface and encoding it for a screen in one pass, by the two colours.
+    direct_shaders: Vec<((ColourDescription, ColourDescription), GlesTexProgram)>,
 }
 
 /// How a window's surface is shown: the HDR curve of the game running it (or none), the headroom of its
@@ -177,6 +185,9 @@ impl Pipeline {
             chains: Default::default(),
             chained: Vec::new(),
             histogram: Default::default(),
+            direct: [None, None],
+            direct_drawn: [None, None],
+            direct_shaders: Vec::new(),
         })
     }
     /// Each screen's encoding: the top's, then the second's.
@@ -202,14 +213,17 @@ impl Pipeline {
     }
 
     /// Draws what changed in the scene, and refills `states` with the elements' states, handing the last
-    /// ones back to the damage tracker to fill next. Returns the part of the scene that changed, if anything
-    /// did.
+    /// ones back to the damage tracker to fill next. Each screen whose part is given in `direct` (one with a
+    /// window alone on it) has its element kept to be drawn straight onto it when presented, if it is the
+    /// only one there. Returns the part of the scene that changed, if anything did, a screen drawn so
+    /// changing whole when its element did.
     pub(crate) fn compose(
         &mut self,
         server: &Server,
         renderer: &mut GlesRenderer,
         elements: &mut Vec<Element>,
         states: &mut RenderElementStates,
+        direct: [Option<Rectangle<i32, Physical>>; 2],
     ) -> Result<Option<Rectangle<i32, Physical>>, Error> {
         if self.size != server.screens.size {
             let outputs = self.outputs.clone().map(|(description, _)| description);
@@ -281,6 +295,16 @@ impl Pipeline {
             })
         })?;
         self.converted.clear();
+        // A screen is drawn straight only while its whole frame is one element. One that no longer is has
+        // the scene drawn whole, its part having been left out.
+        let one = |part: Rectangle<i32, Physical>| elements.iter().filter(|e| e.geometry(Scale::from(1.0)).overlaps(part)).count() == 1;
+        let direct = direct.map(|part| part.filter(|part| one(*part)));
+        for (was, now) in self.direct_drawn.iter().zip(&direct) {
+            if was.is_some() && now.is_none() {
+                self.first = true;
+            }
+        }
+        self.direct = [None, None];
         for inner in elements.drain(..) {
             let colour = server.colour.surfaces.get(inner.id()).map(|colour| **colour).unwrap_or_default();
             let look = self.last_curves.iter().find(|(id, _)| id == inner.id()).map(|(_, look)| *look);
@@ -300,28 +324,65 @@ impl Pipeline {
                 };
                 [a, b, clarity]
             });
-            let program = match self.shaders.iter().find(|(description, _)| *description == colour) {
-                Some((_, program)) => program.clone(),
-                None => {
-                    let program = shader(renderer, colour, true)?;
-                    if self.shaders.len() == 32 {
-                        self.shaders.remove(0);
+            let geometry = inner.geometry(Scale::from(1.0));
+            let screen = direct.iter().position(|part| part.is_some_and(|part| geometry.overlaps(part)));
+            let program = match screen {
+                Some(i) => {
+                    let output = self.outputs.get(i).map_or_else(ColourDescription::default, |(output, _)| *output);
+                    match self.direct_shaders.iter().find(|(colours, _)| *colours == (colour, output)) {
+                        Some((_, program)) => program.clone(),
+                        None => {
+                            let program = direct_shader(renderer, colour, output)?;
+                            if self.direct_shaders.len() == 32 {
+                                self.direct_shaders.remove(0);
+                            }
+                            self.direct_shaders.push(((colour, output), program.clone()));
+                            program
+                        }
                     }
-                    self.shaders.push((colour, program.clone()));
-                    program
                 }
+                None => match self.shaders.iter().find(|(description, _)| *description == colour) {
+                    Some((_, program)) => program.clone(),
+                    None => {
+                        let program = shader(renderer, colour, true)?;
+                        if self.shaders.len() == 32 {
+                            self.shaders.remove(0);
+                        }
+                        self.shaders.push((colour, program.clone()));
+                        program
+                    }
+                },
             };
             let smaa_blend = match replaced.iter().find(|(id, _)| id == inner.id()).map(|(_, chained)| chained) {
                 Some(super::chain::Chained::Weights(weights)) => Some(weights.clone()),
                 _ => None,
             };
-            self.converted.push(Converted { inner, shader: program, curve, smaa_blend });
+            let converted = Converted { inner, shader: program, curve, smaa_blend };
+            match screen.and_then(|i| self.direct.get_mut(i)) {
+                Some(slot) => *slot = Some(converted),
+                None => self.converted.push(converted),
+            }
         }
         let mut target = renderer.bind(&mut self.texture)?;
         let result = self.damage.render_output(renderer, &mut target, usize::from(!self.first), &self.converted, [0.0, 0.0, 0.0, 1.0])?;
-        let changed = result.damage.and_then(|d| d.iter().copied().reduce(|a, b| a.merge(b)));
+        let mut changed = result.damage.and_then(|d| d.iter().copied().reduce(|a, b| a.merge(b)));
         let last = std::mem::replace(states, result.states);
         self.damage.reuse_states(last);
+        // A screen drawn straight changes whole when its element does, and the element is shown there.
+        for ((element, drawn), part) in self.direct.iter().zip(&mut self.direct_drawn).zip(direct) {
+            let now = element.as_ref().map(|element| (element.id().clone(), element.current_commit()));
+            if let (Some(element), Some(part)) = (element, part) {
+                if now != *drawn || self.first {
+                    changed = Some(changed.map_or(part, |changed| changed.merge(part)));
+                }
+                let size = element.geometry(Scale::from(1.0)).size;
+                let visible_area = usize::try_from(size.w).unwrap_or(0) * usize::try_from(size.h).unwrap_or(0);
+                let presentation_state = smithay::backend::renderer::element::RenderElementPresentationState::Rendering { reason: None };
+                let state = smithay::backend::renderer::element::RenderElementState { visible_area, presentation_state, needs_capture: false };
+                states.states.insert(element.id().clone(), state);
+            }
+            *drawn = now;
+        }
         // Dropped now rather than at the next compose, so that the UI's next upload holds the only reference
         // to its damage and adds to it in place.
         self.converted.clear();
@@ -369,7 +430,17 @@ impl Pipeline {
         let mut frame = renderer.render(target, size, transform)?;
         let whole = Rectangle::from_size(transform.transform_size(size));
         frame.clear([0.0, 0.0, 0.0, 1.0].into(), &[whole])?;
-        frame.render_texture_from_to(&self.texture, part.to_f64(), whole, &[whole], &[], Transform::Normal, 1.0, Some(&self.output(down).1), &[])?;
+        match self.direct.get(usize::from(down)).and_then(Option::as_ref) {
+            // The screen's one surface, decoded and encoded for it in one pass.
+            Some(element) => {
+                let geometry = element.geometry(Scale::from(1.0));
+                let dst = Rectangle::new((geometry.loc.x - part.loc.x, geometry.loc.y - part.loc.y).into(), geometry.size);
+                element.draw(&mut frame, element.src(), dst, &[Rectangle::from_size(dst.size)], &[], None)?;
+            }
+            None => {
+                frame.render_texture_from_to(&self.texture, part.to_f64(), whole, &[whole], &[], Transform::Normal, 1.0, Some(&self.output(down).1), &[])?;
+            }
+        }
         Ok(frame.finish()?)
     }
 
@@ -463,6 +534,19 @@ pub(crate) fn curve_uniforms(curve: Option<&Curve>, headroom: f32, hdr_peak: Opt
         [f32::from(c.black) / 1000.0, f32::from(c.contrast) / 100.0, f32::from(c.start) / 100.0, peak],
         [white / REFERENCE_NITS as f32, f32::from(c.saturation) / 100.0, headroom, 1.0],
     ]
+}
+
+/// The shader drawing a surface of `colour` straight onto a screen of `output` (see [`Pipeline::compose`]).
+fn direct_shader(renderer: &mut GlesRenderer, colour: ColourDescription, output: ColourDescription) -> Result<GlesTexProgram, Error> {
+    let curved = sdr(colour) || hdr(colour);
+    let source = super::shaders::direct(colour, output, curved)?;
+    let names = [
+        UniformName::new("curve_a", UniformType::_4f),
+        UniformName::new("curve_b", UniformType::_4f),
+        UniformName::new("clarity", UniformType::_4f),
+        UniformName::new("smaa_blend_tex", UniformType::_1i),
+    ];
+    Ok(renderer.compile_custom_texture_shader(source, if curved { &names } else { &[] })?)
 }
 
 fn shader(renderer: &mut GlesRenderer, description: ColourDescription, input: bool) -> Result<GlesTexProgram, Error> {
@@ -744,6 +828,83 @@ mod tests {
                 for light in [[0.0, 0.0, 0.0], [0.01, 0.01, 0.01], [0.5, 0.4, 0.3], [1.0, 1.0, 1.0], [3.0, 2.0, 1.0], [peak, peak, peak], [6.0, 0.5, 0.2]] {
                     let got = shaded_hdr(light, curve_uniforms(curve, headroom as f32, Some(peak as f32)));
                     close(map_hdr(curve, light, peak, headroom), got, &format!("{curve:?} {headroom} {light:?}"));
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod direct_tests {
+    #![allow(clippy::unwrap_used, clippy::indexing_slicing, unsafe_code)]
+    use super::*;
+    use clamshell_state::colour::ColourPrimaries;
+    use smithay::backend::renderer::{ExportMem, ImportMem};
+
+    /// A GLES renderer on the machine's render node.
+    fn renderer() -> GlesRenderer {
+        let file = std::fs::OpenOptions::new().read(true).write(true).open("/dev/dri/renderD128").unwrap();
+        let gbm = smithay::backend::allocator::gbm::GbmDevice::new(smithay::utils::DeviceFd::from(std::os::fd::OwnedFd::from(file))).unwrap();
+        // SAFETY: the GBM device lives as long as the display, which the context and renderer keep.
+        let display = unsafe { smithay::backend::egl::EGLDisplay::new(gbm) }.unwrap();
+        let context = smithay::backend::egl::EGLContext::new(&display).unwrap();
+        // SAFETY: the context was made on this thread, for this renderer alone.
+        unsafe { GlesRenderer::new(context) }.unwrap()
+    }
+
+    /// `texture` drawn whole by `program` with `uniforms` into a new texture of `format`.
+    fn draw(renderer: &mut GlesRenderer, texture: &GlesTexture, program: &GlesTexProgram, uniforms: &[Uniform<'_>], format: Fourcc) -> GlesTexture {
+        let size = texture.size();
+        let mut out: GlesTexture = renderer.create_buffer(format, size).unwrap();
+        {
+            let mut target = renderer.bind(&mut out).unwrap();
+            let mut frame = renderer.render(&mut target, (size.w, size.h).into(), Transform::Normal).unwrap();
+            let whole = Rectangle::<i32, Physical>::from_size((size.w, size.h).into());
+            frame
+                .render_texture_from_to(texture, Rectangle::from_size(size).to_f64(), whole, &[whole], &[], Transform::Normal, 1.0, Some(program), uniforms)
+                .unwrap();
+            frame.finish().unwrap().wait().unwrap();
+        }
+        out
+    }
+
+    fn pixels(renderer: &mut GlesRenderer, texture: &GlesTexture) -> Vec<u8> {
+        let mapping = renderer.copy_texture(texture, Rectangle::from_size(texture.size()), Fourcc::Abgr8888).unwrap();
+        renderer.map_texture(&mapping).unwrap().to_vec()
+    }
+
+    /// A surface drawn straight onto a screen shows as the final pass would, as `scanout::Transform` works it
+    /// out on the CPU, within a level: an sRGB surface on an unprofiled panel and on the Thor's top panel,
+    /// and an HDR one (PQ) on the Thor's top panel. (Through the scene it is further off near black: the
+    /// scene's half floats, in BT.2020's primaries, leave a little of the other channels where the screen's
+    /// primaries have none, which the encoding's steep start makes up to a few levels.)
+    #[test]
+    fn a_surface_drawn_straight_is_the_final_pass() {
+        let mut renderer = renderer();
+        let picture: Vec<u8> = (0..256u32).flat_map(|i| [i as u8, (255 - i) as u8, (i * 7 % 256) as u8, 255]).collect();
+        let texture = renderer.import_memory(&picture, Fourcc::Abgr8888, (256, 1).into(), false).unwrap();
+        let srgb = ColourDescription::default();
+        let pq = ColourDescription { primaries: ColourPrimaries::Bt2020, transfer: TransferFunction::Pq, ..ColourDescription::default() };
+        let panel = ColourDescription::from(clamshell_device::colour::PanelColour::srgb());
+        let thor = ColourDescription::from(clamshell_device::DeviceProfile::thor().top.colour);
+        for (surface, output) in [(srgb, panel), (srgb, thor), (pq, thor)] {
+            let curve = curve_uniforms(None, output.headroom() as f32, hdr_peak(surface, 0));
+            let [a, b] = curve;
+            let uniforms = [
+                Uniform::new("curve_a", a),
+                Uniform::new("curve_b", b),
+                Uniform::new("clarity", [0.0f32; 4]),
+                Uniform::new("smaa_blend_tex", smithay::backend::renderer::gles::UniformValue::_1i(1)),
+            ];
+            let program = direct_shader(&mut renderer, surface, output).unwrap();
+            let drawn = draw(&mut renderer, &texture, &program, &uniforms, Fourcc::Abgr8888);
+            let drawn = pixels(&mut renderer, &drawn);
+            let transform = super::super::scanout::Transform::new(surface, curve, output).unwrap();
+            for (i, px) in picture.as_chunks::<4>().0.iter().enumerate() {
+                let want = transform.apply([0, 1, 2].map(|c| f64::from(px[c]) / 255.0)).map(|c| c.clamp(0.0, 1.0) * 255.0);
+                for c in 0..3 {
+                    let got = f64::from(drawn[i * 4 + c]);
+                    assert!((got - want[c]).abs() <= 1.0, "{surface:?} on {output:?}: pixel {i} channel {c} {got}, not {:.2}", want[c]);
                 }
             }
         }

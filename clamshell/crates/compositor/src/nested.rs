@@ -122,7 +122,7 @@ pub fn run(
                         let interval = Duration::from_secs_f64(1000.0 / f64::from(server.screens.refresh.max(1000)));
                         server.release_timed_commits((Duration::from(server.clock.now()) + interval).into());
                         render::elements(server, &mut frames, &mut cursor, backend.renderer(), &mut elements, [None; 2])?;
-                        pipeline.compose(server, backend.renderer(), &mut elements, &mut states)?;
+                        pipeline.compose(server, backend.renderer(), &mut elements, &mut states, [None; 2])?;
                         if let Some(histogram) = pipeline.take_histogram() {
                             server.report_histogram(histogram);
                         }

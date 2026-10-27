@@ -80,14 +80,21 @@ impl Candidate {
 
 impl Server {
     /// The window screen `down` could show from its own buffer, `screen` being its area in the scene and
-    /// `output` its encoding: none unless one window is all there is on the screen and covers it, else that
-    /// window and whether its buffer can be shown so, or why not.
+    /// `output` its encoding: none unless one window is all there is on the screen and covers it (see
+    /// [`Server::lone_window`]), else that window and whether its buffer can be shown so, or why not.
     pub(crate) fn scanout_window(
         &self,
         down: bool,
         screen: Rectangle<i32, Logical>,
         output: ColourDescription,
     ) -> Option<(i64, Result<Candidate, &'static str>)> {
+        let placed = self.lone_window(down, screen)?;
+        Some((placed.id, self.candidate(placed.id, placed.geometry, down, screen, output)))
+    }
+
+    /// The window that is all there is on screen `down`, `screen` being its area in the scene, covering it
+    /// and taking the input: no other window, dim layer, UI layer or cursor on it.
+    pub(crate) fn lone_window(&self, down: bool, screen: Rectangle<i32, Logical>) -> Option<&crate::scene::Placed> {
         let ui = if down { clamshell_ui::Screen::Bottom } else { clamshell_ui::Screen::Top };
         let mut on = self.scene.shown().iter().filter(|shown| match shown {
             Shown::Window(placed) => placed.below == down,
@@ -96,10 +103,7 @@ impl Server {
             Shown::Cursor { at } => screen.to_f64().contains(*at),
         });
         let Some(Shown::Window(placed)) = on.next() else { return None };
-        if on.next().is_some() || !placed.input || placed.geometry.viewport != screen {
-            return None;
-        }
-        Some((placed.id, self.candidate(placed.id, placed.geometry, down, screen, output)))
+        (on.next().is_none() && placed.input && placed.geometry.viewport == screen).then_some(placed)
     }
 
     fn candidate(

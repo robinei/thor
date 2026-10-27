@@ -8,11 +8,68 @@ use clamshell_ui::Error;
 /// The source of the final pass's shader for a surface of `description` (`input`), or of the encoding to a
 /// screen of it: decoded, converted to the working space with its curve when `curved`, and encoded.
 pub(super) fn surface(description: ColourDescription, input: bool, curved: bool) -> Result<String, Error> {
-    let (from, to) = if input { (description.primaries, ColourPrimaries::Bt2020) } else { (ColourPrimaries::Bt2020, description.primaries) };
-    let [[a, b, c], [d, e, f], [g, h, i]] = super::math::matrix(from, to).ok_or("unsupported colour primary matrix")?;
-    super::math::encode(1.0, description).ok_or("unsupported output transfer")?;
+    if input { source(Some(description), None, curved) } else { source(None, Some(description), false) }
+}
+
+/// The source of the final pass's shader for a surface of `description` drawn straight onto a screen of
+/// `output`: decoded, converted with its curve when `curved`, and encoded for the screen in the same pass,
+/// with no scene between (a screen showing only it, see `render::Pipeline::compose`).
+pub(super) fn direct(description: ColourDescription, output: ColourDescription, curved: bool) -> Result<String, Error> {
+    source(Some(description), Some(output), curved)
+}
+
+/// A shader decoding a surface of `input` into the working space, encoding the working space for a screen
+/// of `output`, or both in turn.
+fn source(input: Option<ColourDescription>, output: Option<ColourDescription>, curved: bool) -> Result<String, Error> {
+    let (decoding, decoded) = input.map(decoding).transpose()?.unwrap_or_default();
+    let (encoding, encoded) = output.map(encoding).transpose()?.unwrap_or_default();
+    let description = input.or(output).ok_or("a shader with neither side")?;
+    let uniforms = if curved { "uniform vec4 curve_a;\nuniform vec4 curve_b;\nuniform vec4 clarity;\nuniform sampler2D smaa_blend_tex;" } else { "" };
+    let fetch = if curved {
+        let linear = format!("const bool LINEAR = {};\n", description.transfer == TransferFunction::Linear);
+        [linear.as_str(), PERCEIVE, EASU, FXAA, SMAA_BLEND, RCAS, FETCH].concat()
+    } else {
+        "vec4 fetch() { return texture2D(tex, v_coords); }".to_owned()
+    };
+    let source = format!(
+        r#"#version 100
+//_DEFINES_
+#if defined(EXTERNAL)
+#extension GL_OES_EGL_image_external : require
+#endif
+precision highp float;
+#if defined(EXTERNAL)
+uniform samplerExternalOES tex;
+#else
+uniform sampler2D tex;
+#endif
+uniform float alpha;
+{uniforms}
+varying vec2 v_coords;
+#if defined(DEBUG_FLAGS)
+uniform float tint;
+#endif
+{decoding}
+{encoding}
+{fetch}
+void main() {{
+    vec4 sample = fetch();
+#if defined(NO_ALPHA)
+    sample.a = 1.0;
+#endif
+    vec3 v = sample.a > 0.0 ? sample.rgb / sample.a : vec3(0.0);
+    {decoded}
+    {encoded}
+    gl_FragColor = vec4(v * sample.a, sample.a) * alpha;
+}}"#
+    );
+    Ok(source)
+}
+
+/// A transfer function, as GLSL on `v`: `description`'s decoding (`input`) or its encoding.
+fn transfer(description: ColourDescription, input: bool) -> Result<String, Error> {
     let reference = f64::from(description.luminances().reference);
-    let expression = match (input, description.transfer) {
+    Ok(match (input, description.transfer) {
         (true, TransferFunction::Srgb) => "mix(v/12.92,pow(max((v+0.055)/1.055,vec3(0.0)),vec3(2.4)),step(vec3(0.04045),v))".into(),
         (false, TransferFunction::Srgb) => "mix(v*12.92,1.055*pow(max(v,vec3(0.0)),vec3(1.0/2.4))-0.055,step(vec3(0.0031308),v))".into(),
         (true, TransferFunction::Gamma(exponent)) => format!("pow(max(v,vec3(0.0)),vec3({:.12}))", f64::from(exponent) / 10000.0),
@@ -25,12 +82,25 @@ pub(super) fn surface(description: ColourDescription, input: bool, curved: bool)
             "pow((vec3(3424.0/4096.0)+2413.0/128.0*pow(max(v,vec3(0.0))*({reference:.12}/10000.0),vec3(2610.0/16384.0)))/(vec3(1.0)+2392.0/128.0*pow(max(v,vec3(0.0))*({reference:.12}/10000.0),vec3(2610.0/16384.0))),vec3(2523.0/32.0))"
         ),
         _ => return Err("unsupported colour transfer".into()),
-    };
+    })
+}
+
+/// A matrix as a GLSL `mat3` constructor.
+fn mat3([[a, b, c], [d, e, f], [g, h, i]]: [[f64; 3]; 3]) -> String {
+    format!("mat3({a:.12},{d:.12},{g:.12},{b:.12},{e:.12},{h:.12},{c:.12},{f:.12},{i:.12})")
+}
+
+/// The decoding of a surface of `description` into the working space, with its curve: its GLSL functions
+/// (`convert`, `matrix`) and the statements on `v`.
+fn decoding(description: ColourDescription) -> Result<(String, String), Error> {
+    let matrix = super::math::matrix(description.primaries, ColourPrimaries::Bt2020).ok_or("unsupported colour primary matrix")?;
+    let expression = transfer(description, true)?;
+    let reference = f64::from(description.luminances().reference);
     let scaling = if description.transfer == TransferFunction::Pq { 1.0 } else { f64::from(description.luminances().max) / reference };
     // An SDR surface's HDR curve, as clamshell_state::curve::Curve::map_on does it: on the signal, the
     // black point and contrast; on the light, highlights expanded on luminance within the screen's peak
     // (curve_b.z) and saturation around it.
-    let conversion = if input && super::render::sdr(description) {
+    let conversion = if super::render::sdr(description) {
         format!(
             "bool on = curve_b.w > 0.5;
     if (on) {{ v = pow(clamp((v - curve_a.x) / max(1.0 - curve_a.x, 0.000001), 0.0, 1.0), vec3(curve_a.y)); }}
@@ -47,7 +117,7 @@ pub(super) fn surface(description: ColourDescription, input: bool, curved: bool)
     }}
     v = matrix * v;"
         )
-    } else if input && super::render::hdr(description) {
+    } else if super::render::hdr(description) {
         // An HDR surface, as clamshell_state::curve::map_hdr does it, in BT.2020: with a curve, the black
         // point and contrast on each channel's light below white, and the white; with or without one, the
         // highlights above the knee compressed into the screen's peak when its own peak (curve_a.w) is
@@ -75,53 +145,27 @@ pub(super) fn surface(description: ColourDescription, input: bool, curved: bool)
     vec3 c = y > 0.0 ? v * (e / y) : vec3(0.0);
     v = max(vec3(e) + (c - vec3(e)) * (on ? curve_b.y : 1.0), vec3(0.0)) * white;"
         )
-    } else if input {
+    } else {
         format!("v = convert(v) * {scaling:.12}; v = matrix * v;")
-    } else if description.transfer == TransferFunction::Pq {
-        format!("v = matrix * v; v /= {scaling:.12}; v = convert(v);")
+    };
+    Ok((format!("vec3 convert(vec3 v) {{ return {expression}; }}\nconst mat3 matrix = {};", mat3(matrix)), conversion))
+}
+
+/// The encoding of the working space for a screen of `description`: its GLSL functions (`encode`,
+/// `to_screen`) and the statements on `v`.
+fn encoding(description: ColourDescription) -> Result<(String, String), Error> {
+    let matrix = super::math::matrix(ColourPrimaries::Bt2020, description.primaries).ok_or("unsupported colour primary matrix")?;
+    super::math::encode(1.0, description).ok_or("unsupported output transfer")?;
+    let expression = transfer(description, false)?;
+    let reference = f64::from(description.luminances().reference);
+    let scaling = if description.transfer == TransferFunction::Pq { 1.0 } else { f64::from(description.luminances().max) / reference };
+    let conversion = if description.transfer == TransferFunction::Pq {
+        format!("v = to_screen * v; v /= {scaling:.12}; v = encode(v);")
     } else {
         // Above the screen's peak, each pixel is brought down whole, keeping its hue.
-        format!("v = matrix * v; v /= {scaling:.12}; float m = max(max(v.r, v.g), v.b); if (m > 1.0) {{ v /= m; }} v = convert(v);")
+        format!("v = to_screen * v; v /= {scaling:.12}; float m = max(max(v.r, v.g), v.b); if (m > 1.0) {{ v /= m; }} v = encode(v);")
     };
-    let uniforms = if curved { "uniform vec4 curve_a;\nuniform vec4 curve_b;\nuniform vec4 clarity;\nuniform sampler2D smaa_blend_tex;" } else { "" };
-    let fetch = if curved {
-        let linear = format!("const bool LINEAR = {};\n", description.transfer == TransferFunction::Linear);
-        [linear.as_str(), PERCEIVE, EASU, FXAA, SMAA_BLEND, RCAS, FETCH].concat()
-    } else {
-        "vec4 fetch() { return texture2D(tex, v_coords); }".to_owned()
-    };
-    let source = format!(
-        r#"#version 100
-//_DEFINES_
-#if defined(EXTERNAL)
-#extension GL_OES_EGL_image_external : require
-#endif
-precision highp float;
-#if defined(EXTERNAL)
-uniform samplerExternalOES tex;
-#else
-uniform sampler2D tex;
-#endif
-uniform float alpha;
-{uniforms}
-varying vec2 v_coords;
-#if defined(DEBUG_FLAGS)
-uniform float tint;
-#endif
-vec3 convert(vec3 v) {{ return {expression}; }}
-{fetch}
-void main() {{
-    vec4 sample = fetch();
-#if defined(NO_ALPHA)
-    sample.a = 1.0;
-#endif
-    vec3 v = sample.a > 0.0 ? sample.rgb / sample.a : vec3(0.0);
-    mat3 matrix = mat3({a:.12},{d:.12},{g:.12},{b:.12},{e:.12},{h:.12},{c:.12},{f:.12},{i:.12});
-    {conversion}
-    gl_FragColor = vec4(v * sample.a, sample.a) * alpha;
-}}"#
-    );
-    Ok(source)
+    Ok((format!("vec3 encode(vec3 v) {{ return {expression}; }}\nconst mat3 to_screen = {};", mat3(matrix)), conversion))
 }
 
 /// FSR 1's upscale (EASU) of a picture, with the GLSL it needs, on the texture `tex` whose texel size is

@@ -91,6 +91,9 @@ struct Screen {
     fed: Option<i64>,
     tested: Option<Shape>,
     composed_why: Option<&'static str>,
+    /// The window drawn straight onto it, composed without the scene between (see `colour::render`), if
+    /// it shows one alone.
+    direct: Option<i64>,
 }
 
 impl Screen {
@@ -257,6 +260,7 @@ pub fn run(
             fed: None,
             tested: None,
             composed_why: None,
+            direct: None,
         });
     }
     // With CLAMSHELL_SCANOUT=1, each screen's own buffers, for while it shows only ClamShell.
@@ -559,6 +563,7 @@ fn step(
     // showing one window alone may show the window's (see `window_scanout`).
     ui_scanout_decide(drawing, server);
     window_scanout_decide(drawing, server);
+    direct_decide(drawing, server);
     let power = |role| {
         drawing.screens.iter().find(|s| s.role == role).map_or(Power::default(), |s| Power { on: s.on && !s.ui_shown, dirty: s.dirty, pending: s.pending })
     };
@@ -806,7 +811,11 @@ fn compose(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnM
     let Drawing { renderer, pipeline, screens, frames, cursor, elements, states } = drawing;
     let skip = [0, 1].map(|i| screens.get(i).and_then(|screen| screen.window_shown.as_ref()).map(|shown| shown.id));
     render::elements(server, frames, cursor, renderer, elements, skip)?;
-    let changed = pipeline.compose(server, renderer, elements, states)?;
+    let direct = [0, 1].map(|i| {
+        let screen = screens.get(i).filter(|screen| screen.direct.is_some())?;
+        Some(Rectangle::<i32, Physical>::new((screen.part.loc.x, screen.part.loc.y).into(), (screen.part.size.w, screen.part.size.h).into()))
+    });
+    let changed = pipeline.compose(server, renderer, elements, states, direct)?;
     if let Some(histogram) = pipeline.take_histogram() {
         server.report_histogram(histogram);
     }
@@ -909,6 +918,26 @@ fn window_scanout_decide(drawing: &mut Drawing, server: &mut Server) {
             screen.dirty = true;
         }
         screen.window_shown = now;
+    }
+}
+
+/// Decides for each screen whether a window alone on it is drawn straight onto it, composed without the
+/// scene between (see `colour::render`): unless it is shown from its own buffer, or the scene is wanted
+/// with it (a screenshot, or the histogram of its curve being edited).
+fn direct_decide(drawing: &mut Drawing, server: &Server) {
+    for screen in &mut drawing.screens {
+        let down = screen.role == ScreenRole::Bottom;
+        let area = Rectangle::new((screen.part.loc.x, screen.part.loc.y).into(), (screen.part.size.w, screen.part.size.h).into());
+        let lone = server.lone_window(down, area).map(|placed| placed.id);
+        let scene_wanted = server.screenshot_requested || lone.is_some_and(|id| server.core.state().histogram_window() == Some(id));
+        let direct = lone.filter(|_| !scene_wanted && !screen.ui_shown && screen.window_shown.is_none());
+        if direct != screen.direct {
+            match direct {
+                Some(id) => log::info!("drm: the {:?} screen draws window {id} straight onto it", screen.role),
+                None => log::info!("drm: the {:?} screen composes through the scene again", screen.role),
+            }
+            screen.direct = direct;
+        }
     }
 }
 
