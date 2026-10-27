@@ -542,30 +542,61 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       is the left one.
 - [ ] GPU: Freedreno (the compositor's GLES) and Turnip (`vkcube`, a game); the compositor's frame rate
       in sysinfo.
-- [ ] Direct scanout. With `CLAMSHELL_SCANOUT=1` ClamShell logs, at start, every plane either screen can
-      use (rotations, formats and modifiers, colour pipelines and their operations) and the CRTCs' colour
-      properties: the first boot answers what follows. The spec sheet gives the panels as 1080x1920 (main,
-      120 Hz) and 1080x1240 (second, 60 Hz): natively portrait, mounted sideways, as our configs' transforms
-      assume. Confirm with the
-      connectors' native modes. Rotated, ClamShell's compositor composites a fullscreen game every frame (it
-      always composes for now: `docs/history/compositor-mvp.md`, phase 4): measure what that pass costs at 120 Hz (GPU
-      time, power). Whether the display engine's planes rotate RGB buffers by 90° (`drm_info`: each plane's
-      rotation property and values): if so, gamescope (which uses it) could show games without a composition
-      pass. From the kernel's source (2026-10-23, `docs/history/compositor-mvp.md` section 4): Armada's patch 0066
-      (ROCKNIX) gives the VIG planes 90°/270° rotation for UBWC buffers only, 8888 and 2101010 formats, height
-      up to 1088; a rotated fullscreen plane on the top panel takes two of the four VIG pipes. ClamShell's
-      compositor would use it with direct scanout (Smithay tries it); sway doesn't. That is the preferred way,
-      needing no app patches; the pre-rotation patches below become the fallback for what it doesn't cover. If
-      the pass costs enough (a few hundred mW at 120 Hz, not tens), the way without plane rotation: games
-      render portrait themselves. A compositor can scan out a buffer whose buffer transform matches the
-      output's, telling clients the transform it prefers (`wl_surface.preferred_buffer_transform`), as
-      wlroots' scene does; ClamShell's would need the same for direct scanout. Mesa's Wayland WSI needs a
-      patch: report the preferred transform as `currentTransform`, and set `wl_surface.set_buffer_transform`
-      when an app presents with that pre-transform (as Android's WSI does). DXVK needs one too, a cheap one:
-      its present pass already copies the back buffer into the swapchain image, so that copy writes it rotated
-      into a 1080x1920 swapchain (VKD3D-Proton likewise, probably). Only through Wine's Wayland driver
-      (`PROTON_ENABLE_WAYLAND=1`): an X11 window under Xwayland can't set a buffer transform. Native games
-      gain nothing. Both patches are upstream candidates.
+- [ ] Scanout, with `CLAMSHELL_SCANOUT=1` (opt-in, for this). At start ClamShell logs every plane either
+      screen can use (rotations, formats and modifiers, colour pipelines and their operations) and the
+      CRTCs' colour properties; keep that log. The spec sheet gives the panels as 1080x1920 (main, 120 Hz)
+      and 1080x1240 (second, 60 Hz): natively portrait, mounted sideways, as our profiles assume; confirm
+      with the connectors' native modes. From the kernel's source (`docs/history/compositor-mvp.md` section
+      4): Armada's patch 0066 gives the VIG planes 90°/270° rotation for UBWC buffers only, 8888 and 2101010
+      formats, height up to 1088, a rotated fullscreen plane taking two of the four VIG pipes.
+- [ ] ClamShell alone on a screen, shown from its own buffers (`ui_scanout`): "ui scanout: the Top screen
+      can show ClamShell alone from its own buffers", or "is composed: the CRTC has no degamma, colour
+      matrix and gamma for the panel's colour", for each screen. Then "is scanned out" while it shows only
+      ClamShell, and "is composed" while a window is on it. Its colours scanned out against composed (open
+      and close a window over the same view): the CRTC's degamma, matrix and gamma (Armada's 0068) should
+      look the same as the composed pass. A whole redraw on the turned panels (a tab switch) without a
+      visible hitch.
+- [ ] A fullscreen game shown from its own buffer (`window_scanout`): "window scanout: the Top screen shows
+      window N from its own buffer", or "window N, alone on the Top screen, is composed: …" with the reason
+      (a format the plane doesn't take, a refused test commit, picture settings only composing does). The
+      panel's turn: the game the right way up, not mirrored. UBWC: a game refused first, then shown a
+      moment later once it reallocates after the dmabuf feedback (native Vulkan, and through Proton, whose
+      buffers come by Xwayland); `WAYLAND_DEBUG=1` on the game shows the feedback and the new buffers'
+      modifier. Colour: whether the plane log has a pipeline of a 1D then a 3D LUT ("window scanout: plane
+      N has no colour pipeline" if not); a game's picture with a curve on, shown directly against composed
+      (a dialog over it composes it), should match.
+- [ ] A game composed in one pass (`colour::render`): with SMAA or FSR on, or a buffer the plane refuses,
+      "drm: the Top screen draws window N straight onto it"; a dialog over it "composes through the scene
+      again".
+- [ ] The GPU off with ClamShell alone: with both screens on their own buffers, the GPU's runtime power
+      state (`cat /sys/bus/platform/devices/*.gpu/power/runtime_status`: suspended; the GPU's devfreq,
+      `/sys/class/devfreq/*.gpu/`, at its lowest and its `trans_stat` not moving) and the battery's draw, against the same without
+      `CLAMSHELL_SCANOUT`. Then with a game shown directly, against composed.
+- [ ] The overlay and the cursor on planes (`plane_layers`): "plane layers: the Top screen's overlay on
+      plane N, its cursor on plane M" (or "none (composed)"), and no "commit with its overlay and cursor
+      planes failed". The HUD on over a game shown directly keeps it shown directly. The cursor (the pad's
+      mouse mode, a desktop program): no "moving the cursor at once" warning, which would mean the DPU
+      refuses the cursor-only update; it moves without lag while a game runs.
+- [ ] The compositor's GPU priority: "EGL context created priority=Some(High)" in ClamShell's log (none:
+      freedreno doesn't offer it here), and `cat /sys/module/msm/parameters/enable_preemption` (-1 or 1:
+      the A740's four priority rings). Whether ClamShell's frames keep their pace while a game loads the GPU
+      fully and is composed (the compositor's frame rate in sysinfo).
+- [ ] The costs: the compositor's GPU time per frame while a game is composed at 120 Hz, with SMAA, FSR and
+      sharpening on and off; ClamShell's memory (`grep VmRSS /proc/$(pgrep -x clamshell)/status`) idle and
+      with a game, and the "made" and "dropped" lines of the buffers made on demand (`crate::hold`). In the
+      GL VM it is about 83 MB idle, half of it shared libraries, and a game shown directly adds 1 MB.
+- [ ] Whether `CLAMSHELL_SCANOUT` becomes the default: once the above hold, and nothing looks different
+      from composed.
+- [ ] If the planes don't rotate what games draw, the way without plane rotation: games render portrait
+      themselves. A compositor can scan out a buffer whose buffer transform matches the output's, telling
+      clients the transform it prefers (`wl_surface.preferred_buffer_transform`), as wlroots' scene does.
+      Mesa's Wayland WSI needs a patch: report the preferred transform as `currentTransform`, and set
+      `wl_surface.set_buffer_transform` when an app presents with that pre-transform (as Android's WSI
+      does). DXVK needs one too, a cheap one: its present pass already copies the back buffer into the
+      swapchain image, so that copy writes it rotated into a 1080x1920 swapchain (VKD3D-Proton likewise,
+      probably). Only through Wine's Wayland driver (`PROTON_ENABLE_WAYLAND=1`): an X11 window under
+      Xwayland can't set a buffer transform. Native games gain nothing. Both patches are upstream
+      candidates.
 - [ ] HDR, an experiment (the panels do no tone mapping of their own: no PQ signal or metadata as an HDR
       monitor takes, and an 8-bit link as the drivers set it; HDR as on phones: the panel driven brighter,
       ordinary content drawn dimmer within it, highlights above). Peaks from the spec sheets: top 650
