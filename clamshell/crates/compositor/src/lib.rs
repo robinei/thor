@@ -24,6 +24,7 @@ mod notify;
 mod pacing;
 mod pointer;
 mod popup;
+mod presenter;
 mod protocols;
 mod render;
 mod scanout;

@@ -9,6 +9,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use crate::EventSender;
+use crate::presenter::Presenter;
 use clamshell_device::{DeviceProfile, Rotation, ScreenRole, TouchSelector, Touchscreen};
 use clamshell_state::colour::ColourDescription;
 use clamshell_state::{Effect, State};
@@ -19,7 +20,7 @@ use smithay::{
             Fourcc,
             gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
         },
-        drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, GbmBufferedSurface},
+        drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime},
         egl::{EGLContext, EGLDisplay},
         input::{DeviceCapability, InputEvent},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
@@ -46,7 +47,7 @@ use crate::{
 struct Screen {
     role: ScreenRole,
     crtc: crtc::Handle,
-    surface: GbmBufferedSurface<GbmAllocator<DrmDeviceFd>, ()>,
+    surface: Presenter,
     /// The elements' states in the frame queued, for its flip; refilled in place for each frame, so that
     /// queueing one allocates nothing.
     queued: RenderElementStates,
@@ -197,7 +198,8 @@ pub fn run(
         let surface = drm.create_surface(chosen.crtc, chosen.mode, &[chosen.connector]).map_err(|e| format!("drm: {role:?} screen: {e}"))?;
         let allocator = GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT);
         // Ten bits a channel where the screen takes them, for HDR later; else eight.
-        let surface = GbmBufferedSurface::new(surface, allocator, &[Fourcc::Xrgb2101010, Fourcc::Xrgb8888], renderer_formats.iter().copied())
+        let renderer_formats: Vec<_> = renderer_formats.iter().copied().collect();
+        let surface = Presenter::new(surface, allocator, &[Fourcc::Xrgb2101010, Fourcc::Xrgb8888], &renderer_formats)
             .map_err(|e| format!("drm: {role:?} screen: {e}"))?;
         log::info!("drm: {role:?} screen on {} at {:?}, {}", profile.screen(role).connector, chosen.mode.size(), surface.format());
         let (w, h) = chosen.mode.size();
@@ -415,13 +417,7 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
     };
     screen.pending = false;
     screen.queued_at = None;
-    let submitted = match screen.surface.frame_submitted() {
-        Ok(submitted) => submitted.is_some(),
-        Err(error) => {
-            log::warn!("drm: {:?} screen: {error}", screen.role);
-            false
-        }
-    };
+    let submitted = screen.surface.flipped();
     let (time, hw_clock): (Time<Monotonic>, bool) = match metadata.map(|m| m.time) {
         Some(DrmEventTime::Monotonic(at)) => (at.into(), true),
         _ => (server.clock.now(), false),
@@ -715,13 +711,13 @@ fn present(drawing: &mut Drawing, server: &Server, index: usize) -> Result<(), E
     let Some(screen) = screens.get_mut(index) else {
         return Ok(());
     };
-    let (mut buffer, _age) = screen.surface.next_buffer().map_err(|e| format!("{:?} screen: {e}", screen.role))?;
+    let mut buffer = screen.surface.next_buffer().map_err(|e| format!("{:?} screen: {e}", screen.role))?;
     let sync = {
         let mut target = renderer.bind(&mut buffer)?;
         pipeline.present_part(renderer, &mut target, screen.role == ScreenRole::Bottom, screen.part, screen.size, screen.transform)?
     };
     screen.queued.states.clone_from(&states.states);
-    screen.surface.queue_buffer(Some(sync), None, ()).map_err(|e| format!("{:?} screen: {e}", screen.role))?;
+    screen.surface.queue(Some(sync)).map_err(|e| format!("{:?} screen: {e}", screen.role))?;
     server.frame_queued(states, Some(screen.role == ScreenRole::Bottom));
     screen.pending = true;
     screen.queued_at = Some(Instant::now());
