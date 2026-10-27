@@ -67,7 +67,7 @@ impl Bounds {
     }
 
     /// The whole of a `w` x `h` buffer.
-    pub(crate) fn of_size((w, h): (u32, u32)) -> Bounds {
+    pub fn of_size((w, h): (u32, u32)) -> Bounds {
         Bounds::new(0, 0, i32::try_from(w).unwrap_or(i32::MAX), i32::try_from(h).unwrap_or(i32::MAX))
     }
 

@@ -27,7 +27,6 @@ pub use crate::core::Core;
 pub const DIM: f32 = 2.0 / 3.0;
 #[cfg(any(test, feature = "dev"))]
 use gfx::canvas::DrawCache;
-pub use gfx::paint::Pixels;
 pub use gfx::record::Bounds;
 pub use input::{End, Source};
 pub use screens::{Layer, Screen};
@@ -56,9 +55,9 @@ pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, pat
     let at = Placement { size_px: (size.0 * scale, size.1 * scale), scale, drift: (0, 0) };
     let (mut fonts, mut images) = (DrawCache::load(), Images::synchronous());
     let mut pixmap = tiny_skia::Pixmap::new(at.size_px.0, at.size_px.1).ok_or("no pixmap")?;
-    let rendered = render::render((&mut pixmap).into(), &mut Retained::default(), at, screen.into(), state, &mut fonts, &mut images)?;
+    let rendered = render::render(&mut pixmap, &mut Retained::default(), at, screen.into(), state, &mut fonts, &mut images)?;
     let mut overlay = tiny_skia::Pixmap::new(at.size_px.0, at.size_px.1).ok_or("no pixmap")?;
-    render::render((&mut overlay).into(), &mut Retained::default(), at, Layer::Overlay(screen), state, &mut fonts, &mut images)?;
+    render::render(&mut overlay, &mut Retained::default(), at, Layer::Overlay(screen), state, &mut fonts, &mut images)?;
     pixmap.draw_pixmap(0, 0, overlay.as_ref(), &tiny_skia::PixmapPaint::default(), tiny_skia::Transform::identity(), None);
     pixmap.save_png(path)?;
     Ok(render::frame_events(state, &rendered))
@@ -104,7 +103,7 @@ impl Frames {
         if self.frames.damage().is_some() {
             let next = (self.latest + 1) % self.buffers.len();
             if let Some((pixmap, held)) = self.buffers.get_mut(next) {
-                *held = self.frames.draw(pixmap.into(), *held, &mut self.fonts, &self.images).0;
+                *held = self.frames.draw(pixmap, *held, &mut self.fonts, &self.images).0;
                 self.latest = next;
             }
         }

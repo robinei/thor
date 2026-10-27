@@ -265,7 +265,6 @@ impl Core {
             Layer::Overlay(screen) => &self.overlays[screen],
         }
     }
-
     /// `layer`'s logical size and its scale.
     pub fn size(&self, layer: impl Into<Layer>) -> ((u32, u32), u32) {
         let s = self.layer(layer.into());
@@ -306,41 +305,35 @@ impl Core {
         s.frames.damage()
     }
 
-    /// Draws `layer`'s frame recorded last into `target` (a pixmap, or a buffer of the display engine's,
-    /// maybe turned), which is its size in buffer pixels and holds frame `held` (0 for none): what changed
-    /// since. Any number of buffers draw the same frames, each catching up from the frame it holds.
+    /// Draws `layer`'s latest frame into `target`, which is its size in buffer pixels and holds frame `held`
+    /// (0 for none): what changed since. Any number of pixmaps draw the same frames, each catching up from
+    /// the frame it holds.
     /// Returns the frame it now holds and the area drawn.
-    pub fn draw<'a, const Q: bool, const B: bool>(&mut self, layer: impl Into<Layer>, target: impl Into<crate::Pixels<'a, Q, B>>, held: u64) -> (u64, Bounds) {
+    pub fn draw(&mut self, layer: impl Into<Layer>, target: &mut tiny_skia::Pixmap, held: u64) -> (u64, Bounds) {
         let s = match layer.into() {
             Layer::Screen(screen) => &mut self.screens[screen],
             Layer::Overlay(screen) => &mut self.overlays[screen],
         };
-        s.frames.draw(target.into(), held, &mut self.fonts, &self.images)
+        s.frames.draw(target, held, &mut self.fonts, &self.images)
     }
 
     /// Whether a buffer of `layer` that holds frame `held` has something to draw (see [`Core::draw`]).
     pub fn behind(&self, layer: impl Into<Layer>, held: u64) -> bool {
-        match layer.into() {
-            Layer::Screen(screen) => self.screens[screen].frames.behind(held),
-            Layer::Overlay(screen) => self.overlays[screen].frames.behind(held),
-        }
+        self.layer(layer.into()).frames.behind(held)
     }
 
-    /// What a buffer of `layer` holding frame `held` lacks of the frame drawn last, in buffer pixels: what
+    /// What a buffer of `layer` holding frame `held` lacks of the latest frame, in buffer pixels: what
     /// changed since, or all of it from too far back (see [`Core::draw`]). For a buffer brought up to date by
-    /// copying from one drawn ([`crate::Pixels::copy_area`]).
+    /// copying from one drawn, so after that one has drawn the latest frame.
     pub fn since(&self, layer: impl Into<Layer>, held: u64) -> Bounds {
-        match layer.into() {
-            Layer::Screen(screen) => self.screens[screen].frames.since(held),
-            Layer::Overlay(screen) => self.overlays[screen].frames.since(held),
-        }
+        self.layer(layer.into()).frames.since(held)
     }
 
-    /// Where `screen`'s overlay's frame drawn last draws, in buffer pixels: the part of it to show over
+    /// Where `screen`'s overlay's latest frame draws, in buffer pixels: the part of it to show over
     /// what the screen shows. None when it draws nothing.
     pub fn overlay_area(&self, screen: Screen) -> Option<Bounds> {
-        let drawn = &self.overlays[screen].frames.retained.drawn;
-        let ink = drawn.ink().intersect(Bounds::of_size(drawn.size()));
+        let latest = &self.overlays[screen].frames.retained.latest;
+        let ink = latest.ink().intersect(Bounds::of_size(latest.size()));
         (!ink.is_empty()).then_some(ink)
     }
 

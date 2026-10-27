@@ -6,10 +6,9 @@
 //! rectangles, circles and lines are computed per pixel from their coverage, with no path at all. Only the
 //! strokes drawn into the icon cache go through tiny-skia.
 //!
-//! The pixels are drawn into a [`Pixels`], which may be turned: a panel mounted sideways is drawn into
-//! its own buffer turned, so that the display engine shows that buffer as it is (see the compositor's
-//! software scanout). Drawing is the same either way, in the screen's pixels; only where each lands
-//! differs.
+//! The pixels are drawn into a picture in ordinary memory, the screen's way up and red first; a display
+//! buffer laid out otherwise (a panel mounted sideways, blue first) is brought up to date by copying from
+//! it (see the compositor's software scanout).
 
 use tiny_skia::{Color, LineCap, LineJoin, Paint, Path, Pixmap, PixmapMut, PremultipliedColorU8, Stroke, Transform};
 
@@ -18,169 +17,87 @@ use super::geom::Rect;
 use super::images::Images;
 use super::record::{Bounds, Op, Px, Recording};
 
-/// The pixels a painter draws into, premultiplied, seen the screen's way up: a screen `width` by `height`
-/// pixels, held in a buffer of rows `stride` pixels long. With `QUARTER`, the buffer is the screen turned a
-/// quarter clockwise (a panel mounted so): the screen's top row is its right column, top to bottom. With
-/// `BGRA`, a pixel's bytes are blue first (DRM's XRGB8888, which some display engines take alone) rather
-/// than tiny-skia's red first. Both are types, so that each painter is compiled for its own: the unturned
-/// one draws rows as contiguous runs, the turned one as strided ones, neither with a branch for the other.
-pub struct Pixels<'a, const QUARTER: bool = false, const BGRA: bool = false> {
+/// The pixels a painter draws into, premultiplied, red first: `width` by `height`, rows one after another.
+pub(crate) struct Pixels<'a> {
     data: &'a mut [u8],
     width: u32,
     height: u32,
-    stride: usize,
 }
 
 impl<'a> From<&'a mut Pixmap> for Pixels<'a> {
     fn from(pixmap: &'a mut Pixmap) -> Self {
         let (width, height) = (pixmap.width(), pixmap.height());
-        Pixels { data: pixmap.data_mut(), width, height, stride: width as usize }
+        Pixels { data: pixmap.data_mut(), width, height }
     }
 }
 
-impl<'a, const QUARTER: bool, const BGRA: bool> Pixels<'a, QUARTER, BGRA> {
-    /// A screen of `size` held in `data`, rows of `stride` pixels, turned and ordered as the type says;
-    /// none if `data` is too short for it.
-    pub fn new(data: &'a mut [u8], (width, height): (u32, u32), stride: usize) -> Option<Self> {
-        let (columns, rows) = if QUARTER { (height, width) } else { (width, height) };
-        (stride >= columns as usize && data.len() >= rows as usize * stride * 4).then_some(Pixels { data, width, height, stride })
-    }
-
-    pub fn width(&self) -> u32 {
+impl Pixels<'_> {
+    fn width(&self) -> u32 {
         self.width
     }
 
-    pub fn height(&self) -> u32 {
+    fn height(&self) -> u32 {
         self.height
     }
 
-    /// The byte of screen pixel (x, y), inside the screen.
-    fn at(&self, x: i32, y: i32) -> isize {
-        let (h, s) = (self.height as isize, self.stride as isize);
-        let (x, y) = (x as isize, y as isize);
-        if QUARTER { (x * s + h - 1 - y) * 4 } else { (y * s + x) * 4 }
-    }
-
-    /// The pixel at byte `i`.
-    fn pixel(&mut self, i: isize) -> Option<&mut [u8; 4]> {
-        let i = usize::try_from(i).ok()?;
-        self.data.get_mut(i..i + 4).and_then(|px| px.as_mut_array())
-    }
-
-    /// Row `y` from `x` on, `len` pixels, as one slice: unturned only, where a row is contiguous.
+    /// Row `y` from `x` on, `len` pixels, as one slice; none if it runs outside the pixels (which callers'
+    /// clipping rules out).
     fn row(&mut self, y: i32, x: i32, len: usize) -> Option<&mut [[u8; 4]]> {
-        if QUARTER {
-            return None;
-        }
-        let from = usize::try_from(self.at(x, y)).ok()?;
+        let from = (usize::try_from(y).ok()? * self.width as usize + usize::try_from(x).ok()?) * 4;
         self.data.get_mut(from..from + len * 4).map(|row| row.as_chunks_mut::<4>().0)
     }
 
-    /// Calls `f` on each pixel of row `y` from `x` on (inside the screen) with the item of `src` that goes
-    /// there, one item a pixel. Unturned, it walks the row as one slice, which the compiler vectorises;
-    /// turned, a row is a column of the buffer, a pixel each buffer row down.
+    /// Calls `f` on each pixel of row `y` from `x` on (inside the pixels) with the item of `src` that goes
+    /// there, one item a pixel. It walks the row as one slice, which the compiler vectorises.
     fn zip<T: Copy>(&mut self, y: i32, x: i32, src: impl IntoIterator<Item = T, IntoIter: ExactSizeIterator>, mut f: impl FnMut(&mut [u8; 4], T)) {
         let src = src.into_iter();
         if let Some(row) = self.row(y, x, src.len()) {
             for (px, item) in row.iter_mut().zip(src) {
                 f(px, item);
             }
-            return;
-        }
-        let step = self.stride as isize * 4;
-        let mut i = self.at(x, y);
-        for item in src {
-            if let Some(px) = self.pixel(i) {
-                f(px, item);
-            }
-            i += step;
         }
     }
 
-    /// Calls `f` on each pixel of row `y` from `x0` to `x1` (inside the screen), with its x.
+    /// Calls `f` on each pixel of row `y` from `x0` to `x1` (inside the pixels), with its x.
     fn run(&mut self, y: i32, x0: i32, x1: i32, mut f: impl FnMut(&mut [u8; 4], i32)) {
         self.zip(y, x0, x0..x1.max(x0), |px, x| f(px, x));
     }
 
     /// Row `y` from `x0` to `x1` set to `word`.
     fn fill_run(&mut self, y: i32, x0: i32, x1: i32, word: u32) {
-        let px = word.to_le_bytes();
-        match self.row(y, x0, (x1 - x0).max(0) as usize) {
-            Some(row) => row.fill(px),
-            None => self.run(y, x0, x1, |p, _| *p = px),
+        if let Some(row) = self.row(y, x0, (x1 - x0).max(0) as usize) {
+            row.fill(word.to_le_bytes());
         }
     }
 
-    /// Row `y` from `x` set to the pixels of `src` (red first), as many as it has.
+    /// Row `y` from `x` set to the pixels of `src`, as many as it has.
     fn copy_run(&mut self, y: i32, x: i32, src: &[u8]) {
         let pixels = src.as_chunks::<4>().0;
-        if !BGRA && let Some(row) = self.row(y, x, pixels.len()) {
+        if let Some(row) = self.row(y, x, pixels.len()) {
             row.copy_from_slice(pixels);
-            return;
-        }
-        self.zip(y, x, pixels.iter(), |p, s| *p = Self::word(*s).to_le_bytes());
-    }
-
-    /// Copies `area` (screen pixels, inside both) of `source`, a picture of the same screen unturned and
-    /// red first, rows of `width` pixels, into this target, turned and ordered as it is. Turned, it goes along
-    /// the target's rows, so that it writes in order (a display buffer's memory may be fast only so).
-    pub fn copy_area(&mut self, source: &[u8], width: usize, area: Bounds) {
-        let pixels = source.as_chunks::<4>().0;
-        let area = area.intersect(Bounds::of_size((self.width, self.height)));
-        let (x0, y0, x1, y1) = (area.x0, area.y0, area.x1, area.y1);
-        if !QUARTER {
-            for y in y0..y1 {
-                let from = y as usize * width;
-                if let Some(row) = source.get((from + x0 as usize) * 4..(from + x1 as usize) * 4) {
-                    self.copy_run(y, x0, row);
-                }
-            }
-            return;
-        }
-        // Turned, screen column x is buffer row x, its pixels from the bottom (y1 - 1) up in buffer order.
-        for x in x0..x1 {
-            let len = (y1 - y0).max(0) as usize;
-            if let Some(row) = self.row_turned(x, y1 - 1, len) {
-                for (px, y) in row.iter_mut().zip((y0..y1).rev()) {
-                    if let Some(s) = pixels.get(y as usize * width + x as usize) {
-                        *px = Self::word(*s).to_le_bytes();
-                    }
-                }
-            }
         }
     }
 
-    /// Turned, buffer row `x` from screen pixel (x, y) on, `len` pixels, as one slice: the screen's column
-    /// x going up from y.
-    fn row_turned(&mut self, x: i32, y: i32, len: usize) -> Option<&mut [[u8; 4]]> {
-        let from = usize::try_from(self.at(x, y)).ok()?;
-        self.data.get_mut(from..from + len * 4).map(|row| row.as_chunks_mut::<4>().0)
-    }
-
-    /// A premultiplied colour, red first, as this target holds a pixel: bytes in its order, packed into a
-    /// little-endian word, so that alpha is the top byte either way.
-    fn word(rgba: [u8; 4]) -> u32 {
-        let [r, g, b, a] = rgba;
-        u32::from_le_bytes(if BGRA { [b, g, r, a] } else { [r, g, b, a] })
-    }
-
-    /// `color` premultiplied, as this target holds a pixel.
-    fn color(color: Color) -> u32 {
-        let c = color.premultiply().to_color_u8();
-        Self::word([c.red(), c.green(), c.blue(), c.alpha()])
-    }
-}
-
-impl Pixels<'_> {
-    /// The target as a tiny-skia pixmap: none for a buffer with padded rows.
+    /// The target as a tiny-skia pixmap.
     fn pixmap(&mut self) -> Option<PixmapMut<'_>> {
         PixmapMut::from_bytes(self.data, self.width, self.height)
     }
 }
 
+/// A premultiplied pixel packed into a little-endian word, so that alpha is the top byte.
+fn word(rgba: [u8; 4]) -> u32 {
+    u32::from_le_bytes(rgba)
+}
+
+/// `color` premultiplied, as a pixel's word.
+fn color_word(color: Color) -> u32 {
+    let c = color.premultiply().to_color_u8();
+    word([c.red(), c.green(), c.blue(), c.alpha()])
+}
+
 /// Draws the commands of `rec` that meet `damage` into `target`, in order and within `damage`. The pixels
 /// outside `damage` are left as they are.
-pub fn play<'a, const Q: bool, const B: bool>(target: impl Into<Pixels<'a, Q, B>>, rec: &Recording, damage: Bounds, cache: &mut DrawCache, images: &Images) {
+pub fn play<'a>(target: impl Into<Pixels<'a>>, rec: &Recording, damage: Bounds, cache: &mut DrawCache, images: &Images) {
     let mut p = Painter::new(target.into(), rec.scale.get(), rec.offset, cache);
     for cmd in &rec.cmds {
         let clip = cmd.bounds.intersect(damage);
@@ -196,7 +113,7 @@ pub fn play<'a, const Q: bool, const B: bool>(target: impl Into<Pixels<'a, Q, B>
 /// within its bounds. It is what the commands draw, to check against: it equals what [`play`] draws only
 /// if every command's bounds hold all of its pixels.
 #[cfg(any(test, feature = "dev"))]
-pub fn play_unbounded<'a, const Q: bool, const B: bool>(target: impl Into<Pixels<'a, Q, B>>, rec: &Recording, cache: &mut DrawCache, images: &Images) {
+pub fn play_unbounded<'a>(target: impl Into<Pixels<'a>>, rec: &Recording, cache: &mut DrawCache, images: &Images) {
     let mut p = Painter::new(target.into(), rec.scale.get(), rec.offset, cache);
     let all = Bounds::of_size(rec.size);
     let mut clips = rec.clips.iter().peekable();
@@ -215,7 +132,7 @@ pub fn play_unbounded<'a, const Q: bool, const B: bool>(target: impl Into<Pixels
 }
 
 /// Draws one command of `rec` with `p`, within the clip `p` has.
-fn draw<const Q: bool, const B: bool>(p: &mut Painter<Q, B>, rec: &Recording, op: Op, images: &Images) {
+fn draw(p: &mut Painter, rec: &Recording, op: Op, images: &Images) {
     let c = Color::from;
     match op {
         Op::Clear(color) => p.clear(c(color)),
@@ -241,19 +158,19 @@ fn draw<const Q: bool, const B: bool>(p: &mut Painter<Q, B>, rec: &Recording, op
 }
 
 /// Draws into a target. It is the player's, and draws icons into their cache.
-pub struct Painter<'a, const Q: bool = false, const B: bool = false> {
-    pub(super) target: Pixels<'a, Q, B>,
+pub struct Painter<'a> {
+    pub(super) target: Pixels<'a>,
     pub(super) scale: f32,
     /// How many whole buffer pixels everything is moved by, for the burn-in orbit.
     pub(super) offset: (f32, f32),
-    /// The area drawing is limited to, as (x0, y0, x1, y1) in buffer pixels. It is the whole pixmap or a
-    /// scrolled list's area.
+    /// The area drawing is limited to, as (x0, y0, x1, y1) in buffer pixels: the area being drawn, within
+    /// a scrolled list's while one draws.
     pub(super) clip: (i32, i32, i32, i32),
     pub(super) cache: &'a mut DrawCache,
 }
 
-impl<'a, const Q: bool, const B: bool> Painter<'a, Q, B> {
-    pub fn new(target: Pixels<'a, Q, B>, scale: f32, (dx, dy): (i32, i32), cache: &'a mut DrawCache) -> Self {
+impl<'a> Painter<'a> {
+    pub(crate) fn new(target: Pixels<'a>, scale: f32, (dx, dy): (i32, i32), cache: &'a mut DrawCache) -> Self {
         let clip = (0, 0, target.width() as i32, target.height() as i32);
         Painter { target, scale, offset: (dx as f32, dy as f32), clip, cache }
     }
@@ -265,7 +182,7 @@ impl<'a, const Q: bool, const B: bool> Painter<'a, Q, B> {
 
     /// `color` over the pixels in the clip, replacing them.
     fn clear(&mut self, color: Color) {
-        let word = Pixels::<Q, B>::color(color);
+        let word = color_word(color);
         let (x0, y0, x1, y1) = self.clip;
         for y in y0.max(0)..y1.max(0) {
             self.target.fill_run(y, x0.max(0), x1, word);
@@ -334,7 +251,7 @@ impl<'a, const Q: bool, const B: bool> Painter<'a, Q, B> {
         let (cx0, cy0, cx1, cy1) = self.clip;
         let (x0, y0) = ((x0.floor() as i32).max(cx0), (y0.floor() as i32).max(cy0));
         let (x1, y1) = ((x1.ceil() as i32).min(cx1), (y1.ceil() as i32).min(cy1));
-        let src = Pixels::<Q, B>::color(color);
+        let src = color_word(color);
         let k_at = |x: i32, y: i32| (coverage(x as f32 + 0.5, y as f32 + 0.5) * 255.0) as u32;
         let target = &mut self.target;
         for y in y0..y1 {
@@ -401,7 +318,7 @@ impl<'a, const Q: bool, const B: bool> Painter<'a, Q, B> {
             match grey {
                 // Rows without transparency, as in box art and screenshots, are copied whole.
                 None if pixels.iter().fold(255, |all, px| all & px[3]) == 255 => self.target.copy_run(y, x, src),
-                None => self.target.zip(y, x, pixels.iter(), |d, s| blend(d, Pixels::<Q, B>::word(*s), 255)),
+                None => self.target.zip(y, x, pixels.iter(), |d, s| blend(d, word(*s), 255)),
                 Some(level) => self.target.zip(y, x, pixels.iter(), |d, &[r, g, b, a]| {
                     let luma = ((u32::from(r) * 54 + u32::from(g) * 183 + u32::from(b) * 19) / 256 * level / 256) as u8;
                     blend(d, u32::from_le_bytes([luma, luma, luma, a]), 255);
@@ -409,10 +326,7 @@ impl<'a, const Q: bool, const B: bool> Painter<'a, Q, B> {
             }
         }
     }
-}
 
-/// Strokes, which only the icon cache draws: tiny-skia draws them, and needs a plain pixmap.
-impl Painter<'_> {
     /// Connected lines through `points`, with round caps and joins. It uses tiny-skia, which allocates,
     /// so it is only for drawing icons into their cache.
     pub fn polyline(&mut self, points: &[(f32, f32)], width: f32, color: Color) {
@@ -443,14 +357,14 @@ impl Painter<'_> {
         }
     }
 
-    /// Strokes `path` with tiny-skia.
+    /// Strokes `path` with tiny-skia: only the icon cache draws strokes.
     fn stroke_path(&mut self, path: Path, stroke: &Stroke, color: Color) {
         let mut paint = Paint::default();
         paint.set_color(color);
         paint.anti_alias = true;
         match self.target.pixmap() {
             Some(mut pixmap) => pixmap.stroke_path(&path, &paint, stroke, Transform::identity(), None),
-            None => log::warn!("paint: a stroke into a buffer with padded rows, which tiny-skia can't draw, is left out"),
+            None => log::warn!("paint: a stroke into pixels tiny-skia can't take (none wide or high) is left out"),
         }
         self.cache.recycle(path);
     }
@@ -458,22 +372,14 @@ impl Painter<'_> {
 
 /// Blends a glyph's coverage, `width` bytes per row, in `color` onto `target` at (x, y). It blends
 /// source-over with premultiplied alpha, within `clip` (x0, y0, x1, y1, inside the target).
-pub(super) fn blend_mask<const Q: bool, const B: bool>(
-    target: &mut Pixels<Q, B>,
-    clip: (i32, i32, i32, i32),
-    x: i32,
-    y: i32,
-    width: usize,
-    coverage: &[u8],
-    color: PremultipliedColorU8,
-) {
+pub(super) fn blend_mask(target: &mut Pixels, clip: (i32, i32, i32, i32), x: i32, y: i32, width: usize, coverage: &[u8], color: PremultipliedColorU8) {
     if width == 0 {
         return;
     }
     let Some((skip, x, len)) = span(clip, x, width) else {
         return;
     };
-    let src = Pixels::<Q, B>::word([color.red(), color.green(), color.blue(), color.alpha()]);
+    let src = word([color.red(), color.green(), color.blue(), color.alpha()]);
     for (gy, row) in coverage.chunks_exact(width).enumerate() {
         let ty = y + gy as i32;
         let Some(cov) = row.get(skip..skip + len).filter(|_| (clip.1..clip.3).contains(&ty)) else {
@@ -530,16 +436,16 @@ enum Runs {
     Any,
 }
 
-/// [`blend`] at screen pixel (x, y) of `target`, if it is covered.
-fn blend_at<const Q: bool, const B: bool>(target: &mut Pixels<Q, B>, x: i32, y: i32, src: u32, k: u32) {
+/// [`blend`] at pixel (x, y) of `target`, if it is covered.
+fn blend_at(target: &mut Pixels, x: i32, y: i32, src: u32, k: u32) {
     if k > 0
-        && let Some(px) = target.pixel(target.at(x, y))
+        && let Some([px]) = target.row(y, x, 1)
     {
         blend(px, src, k);
     }
 }
 
-/// Source-over of the premultiplied word `src` (see [`Pixels::word`]) at coverage `k` (0-255) onto one
+/// Source-over of the premultiplied word `src` (see [`word`]) at coverage `k` (0-255) onto one
 /// pixel; at full coverage, plain source-over.
 fn blend(px: &mut [u8; 4], src: u32, k: u32) {
     // Two channels to a word, each in a 16-bit lane: bytes 0 and 2, then 1 and 3. A lane's product of

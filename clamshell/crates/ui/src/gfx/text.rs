@@ -27,7 +27,7 @@ const ELLIPSIS: &str = "…";
 /// [`LINE`], for easier reading.
 pub const WRAP_LINE: f32 = 1.3;
 
-impl<const Q: bool, const B: bool> Painter<'_, Q, B> {
+impl Painter<'_> {
     /// Draws one line of text with its top at `y`. A character waiting for a font ends it.
     pub fn text(&mut self, x: f32, y: f32, size: f32, color: impl Into<Color>, text: &str) {
         let px = size * self.scale;
