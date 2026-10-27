@@ -92,6 +92,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Idle | Play of a group | Idle | shelf reveals it, `ShowShelf` | dock `shelf_pins_and_unpins_any_entry_…` |
 | Idle | Play of an id not in the library | Idle | nothing | same |
 | Idle | Play, OpenAnother, autostart, a Steam game found by app id | Launching | runner resumed if paused; `Save(Resume)`; `Launch`; `front_launch` if in front; Starting notice (from Play) | tests `a_launch_says_it_is_starting`; background `a_runner_paused_together…` |
+| Idle | Play of a Heroic game (Heroic's entry in the library) | Running(Windows) until `LAUNCHER_WAIT`, known by Heroic's mark; Heroic's entry Launching, in the background | `Launch` of Heroic's entry with `--no-gui` and the game's URL; `front_launch` of the game if in front | running `a_heroic_game_is_launched_by_heroic_and_runs_as_its_own_entry` |
 | Launching | the same launched again | Launching | nothing | running `an_entry_runs_its_plays_count_…` |
 | Launching | `Units` lists its unit | Running(Ours) | second screen may go dark again | running `a_launch_runs_while_a_unit_…`; tests `…start_and_end_come_to_the_same_in_any_order` |
 | Launching | LaunchFailed, browsed file or app-id launch | Running(Windows, unseen, until now+15 s) | — | running `a_file_handed_to_another_program_…` (browsed); `a_failed_launch_known_by_app_id_waits_for_its_window` |
@@ -106,7 +107,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Idle | a tray icon not in a unit of ours (device session) | Running(Found{tray}) | Move/Focus, Adopt | tray `a_program_with_a_tray_icon_runs…` |
 | Running(Found) | its scope listed | Running(Ours) (pid dropped, tray key kept) | — | tray test; tray `an_adopted_tray_program_keeps_its_menu` |
 | Running(Found) | icon gone and no windows | Idle, no play recorded | — | tray test |
-| Running(Ours) | unit gone, a mark and windows (or just started, no window yet) | Running(Windows) since its launch | — | running `a_game_known_by_app_id_runs_on_by_its_windows_after_its_unit`, `a_game_handed_over_to_its_running_launcher_is_known_by_the_launchers_mark`; its window come and gone: as below, `a_launchers_game_ends_with_its_unit_once_its_window_has_closed` |
+| Running(Ours) | unit gone, a mark and windows (or just started, no window yet) | Running(Windows) since its launch, its first window waited for `HANDOFF`, a launcher's game's `LAUNCHER_WAIT` | — | running `a_game_known_by_app_id_runs_on_by_its_windows_after_its_unit`, `a_game_handed_over_to_its_running_launcher_is_known_by_the_launchers_mark`; its window come and gone: as below, `a_launchers_game_ends_with_its_unit_once_its_window_has_closed` |
 | Running(Ours) | unit gone otherwise | Idle | `RecordPlay`; NotStarted if it never had a window or tray icon and isn't quitting | tests `a_launch_that_ends_without_a_window_didnt_start`; tray `a_program_with_only_a_tray_icon_started` |
 | Running(Windows, unseen) | a new stray window before `until` | Running(Windows, seen) | Move, Focus | running `a_file_handed_…` |
 | Running(Windows, unseen) | past `until` | Idle, no play | — | running `a_file_handed_…` |

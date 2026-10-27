@@ -199,8 +199,10 @@ windows:
   and `HEROIC_APP_RUNNER`, matching the `heroic://launch?appName=…&runner=…` of its shortcut); Lutris's (the
   game's name in the `lutris-wrapper` process it runs under, matching the name of a `lutris:rungameid/`
   shortcut; two shortcuts of one name are known by none). Heroic and Lutris, when they already run, take a
-  game's launch from its shortcut, which ends, and start the game in their own unit. See
-  `clamshell/crates/state/src/session/launchers.rs`.
+  game's launch from its shortcut, which ends, and start the game in their own unit. A Heroic game is
+  launched as a launch of Heroic's entry, without Heroic's window (see process-control.md), so that Heroic,
+  which runs on after the game, is an entry of its own. A launcher's game waits up to 2 minutes for its
+  first window. See `clamshell/crates/state/src/session/launchers.rs`.
 - The entries of a runner with `handover`, by their windows' app id, their desktop file's name: Waydroid's
   apps, in the Waydroid session.
 

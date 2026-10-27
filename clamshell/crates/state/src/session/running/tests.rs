@@ -1,5 +1,5 @@
 use crate::session::REOPEN_SECS;
-use crate::session::running::HANDOFF;
+use crate::session::running::{HANDOFF, LAUNCHER_WAIT};
 use crate::testkit::*;
 use crate::*;
 
@@ -557,33 +557,68 @@ fn launchers() -> State {
     State::new(Init { library: Some(library), ..init() })
 }
 
-/// A game whose launch hands it over to its launcher, already running, runs by its window, which the
-/// launcher's mark makes the game's though it is in the launcher's unit: it comes in front, and its play
-/// is the game's.
+/// A Heroic game launched from shelf is launched as a launch of Heroic's entry, which starts Heroic
+/// without its window and hands it the game: Heroic and the game are entries of their own. The game runs by
+/// its window, which Heroic's mark makes the game's though it is in Heroic's unit; it comes in front, its
+/// play is the game's, and when it closes shelf comes back while Heroic runs on.
+#[test]
+fn a_heroic_game_is_launched_by_heroic_and_runs_as_its_own_entry() {
+    let mut s = launchers();
+    s.ui_up();
+    s.applied(Event::tick(1000));
+    let fx = launch_now(&mut s, "desktop:Pattern Game");
+    let launch = fx.iter().find_map(|e| match e {
+        Effect::Launch { entry, unit, launch, .. } => Some((entry.clone(), unit.clone(), launch.clone())),
+        _ => None,
+    });
+    let (entry, heroic, launch) = launch.unwrap();
+    assert_eq!(&*entry, "desktop:com.heroicgameslauncher.hgl", "a launch of Heroic's");
+    let argv = ["heroic", "--no-gui", "--no-sandbox", "heroic://launch?appName=patterngame&runner=sideload"];
+    assert_eq!(launch, Launch::program(argv.iter().map(|a| (*a).to_owned()).collect()));
+    let game = s.session().running("desktop:Pattern Game").unwrap();
+    assert_eq!(game.origin, Origin::Windows { since: 1000, until: 1000 + LAUNCHER_WAIT });
+    s.applied(Event::Units(vec![heroic.clone()]));
+    assert!(s.session().running("desktop:com.heroicgameslauncher.hgl").is_some(), "Heroic runs as itself");
+    s.applied(Event::tick(1060));
+    let window = WindowFacts { game: Some("heroic:sideload:patterngame".into()), ..win_of(7, "sdl-pattern", &heroic) };
+    s.observed(vec![window]);
+    assert_eq!(s.session().window(7).and_then(|w| w.group.clone()), Some(Group::entry(&key("desktop:Pattern Game"))), "the game's, not Heroic's");
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "in front, after a minute");
+    s.applied(Event::tick(1300));
+    s.observed(vec![]);
+    assert!(s.session().shelf_in_front(), "back where it was launched from");
+    let fx = s.applied(Event::tick(1300 + REOPEN_SECS + 1));
+    assert!(fx.contains(&Effect::RecordPlay { entry: "desktop:Pattern Game".into(), start: 1000, duration: 300 + REOPEN_SECS + 1 }), "{fx:?}");
+    assert!(s.session().running("desktop:com.heroicgameslauncher.hgl").is_some(), "Heroic runs on");
+    // Launched again while Heroic runs, it is again a launch of Heroic's, which hands it over and ends.
+    let fx = launch_now(&mut s, "desktop:Pattern Game");
+    assert!(launches(&fx, "desktop:com.heroicgameslauncher.hgl"), "{fx:?}");
+}
+
+/// A game that its launcher, already running, took from its own shortcut runs by its window in the
+/// launcher's unit, known by the launcher's mark, and waits for it as long as a launcher may take.
 #[test]
 fn a_game_handed_over_to_its_running_launcher_is_known_by_the_launchers_mark() {
     let mut s = launchers();
     s.ui_up();
     s.applied(Event::tick(1000));
-    launch_now(&mut s, "desktop:com.heroicgameslauncher.hgl");
-    crate::testkit::start(&mut s, "desktop:com.heroicgameslauncher.hgl");
-    let heroic = s.session().units().first().cloned().unwrap();
-    s.observed(vec![win_of(5, "heroic", &heroic)]);
+    launch_now(&mut s, "desktop:net.lutris.Lutris");
+    crate::testkit::start(&mut s, "desktop:net.lutris.Lutris");
+    let lutris = s.session().units().first().cloned().unwrap();
+    s.observed(vec![win_of(5, "net.lutris.Lutris", &lutris)]);
+    s.applied(Event::Home);
     s.applied(Event::tick(1010));
-    launch_now(&mut s, "desktop:Pattern Game");
-    crate::testkit::start(&mut s, "desktop:Pattern Game");
-    // Its shortcut handed the game to Heroic and ended.
-    crate::testkit::end(&mut s, "desktop:Pattern Game");
-    assert!(s.session().running("desktop:Pattern Game").is_some(), "waits for its window");
-    let game = WindowFacts { game: Some("heroic:sideload:patterngame".into()), ..win_of(7, "sdl-pattern", &heroic) };
-    s.observed(vec![win_of(5, "heroic", &heroic), game.clone()]);
-    assert_eq!(s.session().window(7).and_then(|w| w.group.clone()), Some(Group::entry(&key("desktop:Pattern Game"))), "the game's, not Heroic's");
+    launch_now(&mut s, "desktop:net.lutris.cave-1");
+    crate::testkit::start(&mut s, "desktop:net.lutris.cave-1");
+    crate::testkit::end(&mut s, "desktop:net.lutris.cave-1");
+    s.applied(Event::tick(1010 + LAUNCHER_WAIT));
+    assert!(s.session().running("desktop:net.lutris.cave-1").is_some(), "waits for its window");
+    let game = WindowFacts { game: Some("lutris:Cave".into()), ..win_of(7, "cave", &lutris) };
+    s.observed(vec![win_of(5, "net.lutris.Lutris", &lutris), game]);
+    assert_eq!(s.session().window(7).and_then(|w| w.group.clone()), Some(Group::entry(&key("desktop:net.lutris.cave-1"))), "the game's, not Lutris's");
     assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "in front");
-    s.applied(Event::tick(1300));
-    s.observed(vec![win_of(5, "heroic", &heroic)]);
-    let fx = s.applied(Event::tick(1300 + REOPEN_SECS + 1));
-    assert!(fx.contains(&Effect::RecordPlay { entry: "desktop:Pattern Game".into(), start: 1010, duration: 290 + REOPEN_SECS + 1 }), "{fx:?}");
-    assert!(s.session().running("desktop:com.heroicgameslauncher.hgl").is_some(), "Heroic runs on");
+    s.observed(vec![win_of(5, "net.lutris.Lutris", &lutris)]);
+    assert!(s.session().shelf_in_front(), "back to shelf, where it was launched from");
 }
 
 /// A game whose launcher ran it in the launch's own unit, as Lutris does when it isn't running, ends with

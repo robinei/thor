@@ -96,11 +96,14 @@ What runs is shown and controlled as entries (the dock's): one per program, each
   (`steam_app_<id>`; the app id says whose it is, though the process is in Steam's unit), which makes it
   a launch: its follower finds it running and moves it in the same way. Steam's Running state and its Stop are unaffected: Steam goes
   by its launcher process, not its cgroup.
-- A Heroic or Lutris game: its shortcut starts the launcher, which runs the game in the launch's unit; or,
-  when the launcher already runs, hands the game to it and ends, and the game runs in the launcher's unit.
-  Either way the game's windows are known by the mark the launcher gives its processes (see runners.md),
-  and the entry runs on by them as a handed-over app does. A game started in the launcher's own window
-  starts its entry the same way.
+- A Heroic or Lutris game, launched so that the launcher isn't seen and runs as an entry of its own. A
+  Heroic game is launched as a launch of Heroic's entry, in the background: Heroic's command with
+  `--no-gui --no-sandbox` and the game's URL, which starts Heroic without its window if it doesn't run and
+  hands it the game, which runs in Heroic's unit. A Lutris game's shortcut runs Lutris without its window,
+  which runs the game in the launch's unit and ends with it; when Lutris already runs, it takes the game,
+  which runs in Lutris's unit, and the launch ends. The game's windows are known by the mark the launcher
+  gives its processes (see runners.md), waited for up to 2 minutes, and the entry runs by them as a
+  handed-over app does. A game started in the launcher's own window starts its entry the same way.
 - A program ClamShell didn't start is found by its tray icon, or by a window no entry has; anything with
   a window is on the dock. Its entry: the library's desktop entry named as the icon's id or the window's
   app id, or whose `StartupWMClass` that is, else one of its own (`tray:…`, `window:<app id>`). Its windows are its group (shown if

@@ -18,10 +18,62 @@
 //!   `lutris:rungameid/` and whose name that is, as Lutris's shortcuts are. The wrapper's arguments are
 //!   Lutris's own rather than meant to be read, and names can repeat: a wrapper not like this, or two such
 //!   entries of one name, mark nothing, and the game's windows are Lutris's.
+//!
+//! A game launched from shelf is to run without its launcher being seen, and the launcher, which may go on
+//! running after it (Heroic does, syncing saves), is an entry of its own. Steam's games run their own way
+//! (`clamshell --follow-steam`), and Lutris's shortcuts already start a game without Lutris's window, Lutris
+//! ending with the game. Heroic's shortcut would show Heroic's window and leave Heroic in the game's
+//! launch, so a Heroic game is launched as a launch of Heroic's entry, as Heroic's own shortcuts for
+//! Steam do it: Heroic's command with `--no-gui --no-sandbox` and the game's URL, which starts Heroic
+//! without its window if it doesn't run and hands it the game. The game then runs by its windows (see
+//! [`crate::Session::launch`]).
 
-use clamshell_library::Launch;
+use clamshell_library::{Launch, ids};
 
 use crate::{Entry, Library};
+
+/// A launcher that runs games: the names of its desktop files, whose entry is the launcher's own.
+pub(crate) struct Launcher {
+    desktop: &'static [&'static str],
+    /// The arguments its command takes before a game's URL to start the game without its window, if
+    /// the game is to be launched that way (see the module's doc).
+    headless: Option<&'static [&'static str]>,
+}
+
+const STEAM_LAUNCHER: Launcher = Launcher { desktop: &["steam"], headless: None };
+const HEROIC_LAUNCHER: Launcher = Launcher { desktop: &["com.heroicgameslauncher.hgl", "heroic"], headless: Some(&["--no-gui", "--no-sandbox"]) };
+const LUTRIS_LAUNCHER: Launcher = Launcher { desktop: &["net.lutris.Lutris", "lutris"], headless: None };
+
+/// The launcher entry `g`'s game runs in, if any.
+pub(crate) fn launcher_of(g: &Entry) -> Option<&'static Launcher> {
+    match &g.launch {
+        Launch::Steam { .. } => Some(&STEAM_LAUNCHER),
+        Launch::Program { argv, .. } if argv.iter().any(|a| heroic_game(a).is_some()) => Some(&HEROIC_LAUNCHER),
+        Launch::Program { argv, .. } if argv.iter().any(|a| a.starts_with("lutris:rungameid/")) => Some(&LUTRIS_LAUNCHER),
+        _ => None,
+    }
+}
+
+impl Launcher {
+    /// Its own entry in `library`: its desktop file's.
+    pub(crate) fn entry<'a>(&self, library: &'a Library) -> Option<&'a Entry> {
+        library.entries.iter().find(|g| ids::desktop_file(&g.id).is_some_and(|d| self.desktop.contains(&d)))
+    }
+}
+
+/// How game `g` is launched without its launcher's window, if it is launched as a launch of its launcher
+/// (see the module's doc): the launcher's entry, and the command, the launcher's own with its headless
+/// arguments and the game's URL.
+pub(crate) fn headless<'a>(library: &'a Library, g: &Entry) -> Option<(&'a Entry, Vec<String>)> {
+    let launcher = launcher_of(g)?;
+    let arguments = launcher.headless?;
+    let Launch::Program { argv, .. } = &g.launch else { return None };
+    let url = argv.iter().find(|a| heroic_game(a).is_some())?;
+    let entry = launcher.entry(library)?;
+    let Launch::Program { argv: own, .. } = &entry.launch else { return None };
+    let command = own.iter().cloned().chain(arguments.iter().map(|a| (*a).to_owned())).chain([url.clone()]).collect();
+    Some((entry, command))
+}
 
 /// Steam's app id for a game's windows, and the mark of its processes: `steam_app_<id>`.
 pub(crate) const STEAM: &str = "steam_app_";
@@ -92,4 +144,5 @@ fn lutris_unique(library: &Library, g: &Entry) -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests;

@@ -49,3 +49,17 @@ fn an_entry_is_marked_by_its_launchers_shortcut() {
     assert_eq!(of_entry(&twins, &lutris), None);
     assert!(!is_marked(&twins, &lutris, "lutris:Pattern Game"));
 }
+
+#[test]
+fn a_heroic_game_is_launched_by_heroic_without_its_window() {
+    let heroic = shortcut("desktop:com.heroicgameslauncher.hgl", "Heroic Games Launcher", &["heroic"]);
+    let game = shortcut("desktop:Pattern Game", "Pattern Game", &["xdg-open", "heroic://launch?appName=patterngame&runner=sideload"]);
+    let lutris = shortcut("desktop:net.lutris.cave-1", "Cave", &["env", "LUTRIS_SKIP_INIT=1", "lutris", "lutris:rungameid/1"]);
+    let all = library(vec![heroic.clone(), game.clone(), lutris.clone()]);
+    let (launcher, command) = headless(&all, &game).unwrap();
+    assert_eq!(launcher.id, heroic.id);
+    assert_eq!(command, ["heroic", "--no-gui", "--no-sandbox", "heroic://launch?appName=patterngame&runner=sideload"]);
+    assert!(headless(&all, &lutris).is_none(), "Lutris's shortcut already hides Lutris");
+    assert!(launcher_of(&lutris).is_some());
+    assert!(headless(&library(vec![game.clone()]), &game).is_none(), "without Heroic's entry, its shortcut as it is");
+}

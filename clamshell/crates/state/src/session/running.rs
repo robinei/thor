@@ -78,6 +78,16 @@ pub(crate) const QUIT_WAIT: u64 = 10;
 /// How long a launch that handed over waits for its window, in seconds.
 pub(crate) const HANDOFF: u64 = 15;
 
+/// How long a launcher's game waits for its window, in seconds, as the launcher may start, or update,
+/// first (see [`super::launchers`]).
+pub(crate) const LAUNCHER_WAIT: u64 = 120;
+
+/// How long entry `g`'s launch, handed over, waits for its window: a launcher's game's [`LAUNCHER_WAIT`],
+/// another's [`HANDOFF`].
+fn window_wait(g: Option<&Entry>) -> u64 {
+    if g.and_then(launchers::launcher_of).is_some() { LAUNCHER_WAIT } else { HANDOFF }
+}
+
 /// An entry that runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Running {
@@ -284,11 +294,12 @@ impl Session {
                 continue;
             }
             let has = self.windows_of(&r.id).next().is_some();
-            let soon = now.saturating_sub(r.start) <= HANDOFF;
+            let wait = window_wait(r.entry.as_deref());
+            let soon = now.saturating_sub(r.start) <= wait;
             let browsed = library.entry(&r.id).is_some_and(|g| g.browsed.is_some());
             // Its play goes on from its launch's start. One whose windows came and went has ended with them.
             if r.mark.is_some() && (has || (soon && !r.seen)) {
-                handed.push((r.id.clone(), Origin::Windows { since: r.start, until: now + HANDOFF }, has));
+                handed.push((r.id.clone(), Origin::Windows { since: r.start, until: r.start + wait }, has));
             } else if browsed && soon {
                 handed.push((r.id.clone(), Origin::Windows { since: r.start, until: r.start + HANDOFF }, has));
             } else {
@@ -641,6 +652,12 @@ impl Session {
         let Some(g) = library.entry(&entry) else {
             return Launched::No;
         };
+        if command.is_none()
+            && let Some((launcher, argv)) = launchers::headless(library, g)
+        {
+            self.launch_in_launcher(g, (launcher, argv), library, settings, clock, start, out);
+            return Launched::Yes;
+        }
         let mark = mark_of(library, g).filter(|_| command.is_none());
         let (launch, key) = (command.unwrap_or_else(|| g.launch.clone()), g.key.clone());
         let runner = g.runner.as_ref().map(|r| &*r.key);
@@ -655,6 +672,38 @@ impl Session {
         self.refresh_launch = Some((entry.clone(), clock.mono()));
         out.effects.push(Effect::Launch { entry, unit, settings: values, env, launch });
         Launched::Yes
+    }
+
+    /// Launches launcher's game `g` as a launch of the launcher's entry `launcher`, running `argv`, which
+    /// starts the launcher without its window if it doesn't run and hands it the game (see
+    /// [`launchers::headless`]). The launch is the launcher's, in the background, with its settings; the
+    /// game runs by its windows, known by the launcher's mark, waiting for the first for
+    /// [`LAUNCHER_WAIT`], and is shown when it comes if `start` says so.
+    #[allow(clippy::too_many_arguments)]
+    fn launch_in_launcher(
+        &mut self,
+        g: &Entry,
+        (launcher, argv): (&Entry, Vec<String>),
+        library: &Library,
+        settings: &Settings,
+        clock: &Clock,
+        start: Start,
+        out: &mut Out,
+    ) {
+        let runner = launcher.runner.as_ref().map(|r| &*r.key);
+        let values = settings.of_in(&launcher.id, runner.as_slice());
+        let mut env = Vec::new();
+        cap_env(&values, &mut env);
+        settings.env_in(&launcher.id, runner.as_slice(), &mut env);
+        let unit = self.begin_launch(launcher.id.clone(), launcher.key.clone(), None, clock, Start::Background);
+        let now = clock.mono();
+        self.running.push(Running { mark: mark_of(library, g), ..Running::of(g, Origin::Windows { since: now, until: now + LAUNCHER_WAIT }, now) });
+        if start == Start::Front {
+            self.set_front_launch(LaunchUnit { key: g.key.clone(), secs: clock.unix(), n: 0 }, Some(now + LAUNCHER_WAIT));
+        }
+        self.refresh_launch = Some((g.id.clone(), now));
+        let launch = Launch::Program { argv, workdir: None };
+        out.effects.push(Effect::Launch { entry: launcher.id.clone(), unit, settings: values, env, launch });
     }
 
     /// Quit, at `now`: asks the entry's windows to close. Once none is left, it is ended if it still runs,
