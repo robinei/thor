@@ -272,6 +272,10 @@ impl Pipeline {
     pub(crate) fn set_outputs(&mut self, renderer: &mut GlesRenderer, outputs: [ColourDescription; 2]) -> Result<(), Error> {
         for (scene, output) in self.scenes.iter_mut().zip(outputs) {
             if scene.output.0 != output {
+                // A scene is in its screen's primaries: with new ones, what it holds is wrong.
+                if scene.output.0.primaries != output.primaries {
+                    scene.redraw();
+                }
                 scene.output = (output, encode_shader(renderer, output.primaries, output)?);
             }
         }
