@@ -310,7 +310,7 @@ impl Core {
     /// maybe turned), which is its size in buffer pixels and holds frame `held` (0 for none): what changed
     /// since. Any number of buffers draw the same frames, each catching up from the frame it holds.
     /// Returns the frame it now holds and the area drawn.
-    pub fn draw<'a>(&mut self, layer: impl Into<Layer>, target: impl Into<crate::Pixels<'a>>, held: u64) -> (u64, Bounds) {
+    pub fn draw<'a, const Q: bool, const B: bool>(&mut self, layer: impl Into<Layer>, target: impl Into<crate::Pixels<'a, Q, B>>, held: u64) -> (u64, Bounds) {
         let s = match layer.into() {
             Layer::Screen(screen) => &mut self.screens[screen],
             Layer::Overlay(screen) => &mut self.overlays[screen],

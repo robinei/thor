@@ -124,8 +124,8 @@ pub(crate) fn record(retained: &mut Retained, at: Placement, layer: Layer, state
 /// Draws `layer` for `state` into `pixmap`, which must be `at`'s size, as [`record`] and then the
 /// whole recording played.
 #[cfg(any(test, feature = "dev"))]
-pub(crate) fn render(
-    pixmap: crate::Pixels,
+pub(crate) fn render<const Q: bool, const B: bool>(
+    pixmap: crate::Pixels<Q, B>,
     retained: &mut Retained,
     at: Placement,
     layer: Layer,
@@ -146,7 +146,14 @@ pub(crate) fn render(
 /// Brings `pixmap`, a buffer that holds frame `held` of `history` (0 if none), up to the frame recorded
 /// last in `retained` (its `drawn`). Only the commands that meet what changed since `held` are played,
 /// within it. Returns the frame the buffer now holds and the area drawn.
-pub(crate) fn draw_damaged(pixmap: crate::Pixels, held: u64, retained: &Retained, history: &History, fonts: &mut DrawCache, images: &Images) -> (u64, Bounds) {
+pub(crate) fn draw_damaged<const Q: bool, const B: bool>(
+    pixmap: crate::Pixels<Q, B>,
+    held: u64,
+    retained: &Retained,
+    history: &History,
+    fonts: &mut DrawCache,
+    images: &Images,
+) -> (u64, Bounds) {
     let area = history.since(held, Bounds::of_size(retained.drawn.size()));
     if !area.is_empty() {
         play(pixmap, &retained.drawn, area, fonts, images);
@@ -194,7 +201,13 @@ impl ScreenFrames {
     /// Draws the frame recorded last into `pixmap`, which holds frame `held` (0 for none): what changed
     /// since (see [`draw_damaged`]). The first buffer to draw after frames were recorded adds what they
     /// changed to the history. Returns the frame the pixmap now holds and the area drawn.
-    pub(crate) fn draw(&mut self, pixmap: crate::Pixels, held: u64, fonts: &mut DrawCache, images: &Images) -> (u64, Bounds) {
+    pub(crate) fn draw<const Q: bool, const B: bool>(
+        &mut self,
+        pixmap: crate::Pixels<Q, B>,
+        held: u64,
+        fonts: &mut DrawCache,
+        images: &Images,
+    ) -> (u64, Bounds) {
         if let Some(undrawn) = self.undrawn.take() {
             self.history.push(undrawn);
         }
@@ -334,22 +347,22 @@ mod frame_times {
             frames.record(at, Screen::Top.into(), &s, &mut fonts, &mut images);
             // At step 4 no buffer draws: what it changed is kept for the next draw.
             if step != 4 {
-                held_every = frames.draw(every.as_mut().into(), held_every, &mut fonts, &images).0;
+                held_every = frames.draw((&mut every).into(), held_every, &mut fonts, &images).0;
             }
             if step % 3 == 2 {
-                held_sometimes = frames.draw(sometimes.as_mut().into(), held_sometimes, &mut fonts, &images).0;
+                held_sometimes = frames.draw((&mut sometimes).into(), held_sometimes, &mut fonts, &images).0;
                 let mut whole = tiny_skia::Pixmap::new(w, h).unwrap();
-                render(whole.as_mut().into(), &mut Retained::default(), at, Screen::Top.into(), &s, &mut fonts, &mut images).unwrap();
+                render((&mut whole).into(), &mut Retained::default(), at, Screen::Top.into(), &s, &mut fonts, &mut images).unwrap();
                 assert!(every.data() == whole.data() && sometimes.data() == whole.data(), "step {step}");
             }
         }
     }
 
     /// A screen drawn turned, as into a panel's buffer mounted sideways, holds the very pixels drawn
-    /// unturned, turned: shelf, the dock and the keyboard, at each turn, in a buffer with padded rows.
+    /// unturned, turned: shelf, the dock and the keyboard, turned and not, in a buffer with padded rows,
+    /// its bytes red first or blue first.
     #[test]
     fn a_turned_frame_is_the_frame_turned() {
-        use crate::{Pixels, Turn};
         let tab = |t| vec![Event::Pointer(PointerEvent::Activate(Id::Tab(t)))];
         let cases = [(Screen::Top, (480u32, 270u32), vec![]), (Screen::Bottom, (310, 270), tab(Tab::Dock)), (Screen::Bottom, (310, 270), tab(Tab::Keyboard))];
         let (mut fonts, mut images) = (DrawCache::load(), Images::synchronous());
@@ -357,27 +370,30 @@ mod frame_times {
             let s = state(events);
             let at = Placement { size_px: (w, h), scale: 1, drift: (1, -2) };
             let mut plain = tiny_skia::Pixmap::new(w, h).unwrap();
-            render(plain.as_mut().into(), &mut Retained::default(), at, screen.into(), &s, &mut fonts, &mut images).unwrap();
-            for turn in [Turn::Quarter, Turn::Half, Turn::ThreeQuarters] {
-                let (bw, bh) = if turn == Turn::Half { (w, h) } else { (h, w) };
-                let stride = bw as usize + 7;
-                let mut buffer = vec![0u8; stride * bh as usize * 4];
-                let target = Pixels::turned(&mut buffer, (w, h), stride, turn).unwrap();
-                render(target, &mut Retained::default(), at, screen.into(), &s, &mut fonts, &mut images).unwrap();
+            render((&mut plain).into(), &mut Retained::default(), at, screen.into(), &s, &mut fonts, &mut images).unwrap();
+            let check = |buffer: &[u8], stride: usize, quarter: bool, bgra: bool| {
                 for y in 0..h {
                     for x in 0..w {
-                        let (bx, by) = match turn {
-                            Turn::Quarter => (h - 1 - y, x),
-                            Turn::Half => (w - 1 - x, h - 1 - y),
-                            Turn::ThreeQuarters => (y, w - 1 - x),
-                            Turn::None => (x, y),
-                        };
+                        let (bx, by) = if quarter { (h - 1 - y, x) } else { (x, y) };
                         let i = (by as usize * stride + bx as usize) * 4;
                         let j = (y * w + x) as usize * 4;
-                        assert_eq!(buffer[i..i + 4], plain.data()[j..j + 4], "{screen:?} {turn:?} at ({x}, {y})");
+                        let [r, g, b, a] = [plain.data()[j], plain.data()[j + 1], plain.data()[j + 2], plain.data()[j + 3]];
+                        let want = if bgra { [b, g, r, a] } else { [r, g, b, a] };
+                        assert_eq!(buffer[i..i + 4], want, "{screen:?} quarter {quarter} bgra {bgra} at ({x}, {y})");
                     }
                 }
-            }
+            };
+            let stride = w.max(h) as usize + 7;
+            let mut buffer = vec![0u8; stride * w.max(h) as usize * 4];
+            let target = crate::Pixels::<true, false>::new(&mut buffer, (w, h), stride).unwrap();
+            render(target, &mut Retained::default(), at, screen.into(), &s, &mut fonts, &mut images).unwrap();
+            check(&buffer, stride, true, false);
+            let target = crate::Pixels::<true, true>::new(&mut buffer, (w, h), stride).unwrap();
+            render(target, &mut Retained::default(), at, screen.into(), &s, &mut fonts, &mut images).unwrap();
+            check(&buffer, stride, true, true);
+            let target = crate::Pixels::<false, true>::new(&mut buffer, (w, h), stride).unwrap();
+            render(target, &mut Retained::default(), at, screen.into(), &s, &mut fonts, &mut images).unwrap();
+            check(&buffer, stride, false, true);
         }
     }
 
@@ -399,12 +415,12 @@ mod frame_times {
             let len = size.0 as usize * size.1 as usize * 4;
             let mut buffer = vec![0u8; len];
             let rounds = 200;
-            let (mut full, mut checked, mut played) = (Vec::new(), Vec::new(), Vec::new());
+            let (mut full, mut checked, mut played, mut turned) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
             for round in 0..rounds + 20 {
                 // A whole frame: recorded and played into the buffer.
                 let t = Instant::now();
-                let target = tiny_skia::PixmapMut::from_bytes(&mut buffer, size.0, size.1).unwrap();
-                render(target.into(), &mut retained, at, screen.into(), &s, &mut fonts, &mut images).unwrap();
+                let target = crate::Pixels::<false, false>::new(&mut buffer, size, size.0 as usize).unwrap();
+                render(target, &mut retained, at, screen.into(), &s, &mut fonts, &mut images).unwrap();
                 let f = t.elapsed();
                 // Recorded again and found unchanged, which is all an event that changes nothing costs.
                 let t = Instant::now();
@@ -413,18 +429,30 @@ mod frame_times {
                 let c = t.elapsed();
                 // Only played.
                 let t = Instant::now();
-                let target = tiny_skia::PixmapMut::from_bytes(&mut buffer, size.0, size.1).unwrap();
+                let target = crate::Pixels::<false, false>::new(&mut buffer, size, size.0 as usize).unwrap();
                 play(target, &retained.next, Bounds::of_size(size), &mut fonts, &images);
                 let p = t.elapsed();
+                // Only played, into a buffer turned a quarter, as a panel mounted sideways takes it.
+                let t = Instant::now();
+                let target = crate::Pixels::<true, false>::new(&mut buffer, size, size.1 as usize).unwrap();
+                play(target, &retained.next, Bounds::of_size(size), &mut fonts, &images);
+                let q = t.elapsed();
                 // The first rounds warm the caches.
                 if round >= 20 {
                     full.push(f);
                     checked.push(c);
                     played.push(p);
+                    turned.push(q);
                 }
             }
             let ms = |v: Vec<Duration>| median(v).as_secs_f64() * 1e3;
-            println!("{name:18} whole frame {:>7.3} ms   played {:>7.3} ms   recorded and compared {:>7.3} ms", ms(full), ms(played), ms(checked),);
+            println!(
+                "{name:18} whole frame {:>7.3} ms   played {:>7.3} ms   played turned {:>7.3} ms   recorded and compared {:>7.3} ms",
+                ms(full),
+                ms(played),
+                ms(turned),
+                ms(checked),
+            );
         }
     }
 }

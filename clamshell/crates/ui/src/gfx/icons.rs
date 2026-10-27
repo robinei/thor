@@ -164,7 +164,7 @@ impl Canvas<'_> {
     }
 }
 
-impl Painter<'_> {
+impl<const Q: bool, const B: bool> Painter<'_, Q, B> {
     /// Draws `icon` centred in `r`, as large as fits. It is rendered once per size, then blended as a mask.
     pub fn icon(&mut self, icon: Icon, r: Rect, color: impl Into<Color>) {
         let side = (r.w.min(r.h) * self.scale).round().max(1.0) as u32;
@@ -176,7 +176,7 @@ impl Painter<'_> {
             {
                 let logical = side as f32 / self.scale;
                 let clip = (0, 0, side as i32, side as i32);
-                let mut c = Painter { target: mask.as_mut().into(), scale: self.scale, offset: (0.0, 0.0), clip, cache: &mut *self.cache };
+                let mut c = Painter { target: (&mut mask).into(), scale: self.scale, offset: (0.0, 0.0), clip, cache: &mut *self.cache };
                 draw(&mut c, icon, Rect::new(0.0, 0.0, logical, logical), Color::WHITE);
             }
             let coverage = mask.data().chunks_exact(4).filter_map(|px| px.get(3).copied()).collect();
@@ -769,7 +769,7 @@ mod tests {
         let mut cache = DrawCache::load();
         for icon in every() {
             let mut pixmap = Pixmap::new(48, 48).expect("pixmap");
-            Painter::new(pixmap.as_mut().into(), 1.0, (0, 0), &mut cache).icon(icon, Rect::new(0.0, 0.0, 48.0, 48.0), Color::WHITE);
+            Painter::new((&mut pixmap).into(), 1.0, (0, 0), &mut cache).icon(icon, Rect::new(0.0, 0.0, 48.0, 48.0), Color::WHITE);
             let covered = pixmap.data().chunks_exact(4).filter(|px| px.get(3).is_some_and(|&a| a > 0)).count();
             assert!(covered > 20, "{icon:?}: {covered} pixels");
         }

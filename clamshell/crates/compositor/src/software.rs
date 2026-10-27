@@ -41,8 +41,8 @@ impl SoftwareSurface {
 
     /// Draws into the pixmap with `draw`, which returns the part it changed, if any; that part is uploaded
     /// and is the texture's damage. The first upload makes the texture, of all of it.
-    pub fn draw(&mut self, renderer: &mut GlesRenderer, draw: impl FnOnce(tiny_skia::PixmapMut<'_>) -> Option<Bounds>) -> Result<(), Error> {
-        let Some(bounds) = draw(self.pixmap.as_mut()) else { return Ok(()) };
+    pub fn draw(&mut self, renderer: &mut GlesRenderer, draw: impl FnOnce(&mut tiny_skia::Pixmap) -> Option<Bounds>) -> Result<(), Error> {
+        let Some(bounds) = draw(&mut self.pixmap) else { return Ok(()) };
         let (w, h) = self.size();
         let damage = Rectangle::new((bounds.x0, bounds.y0).into(), (bounds.x1 - bounds.x0, bounds.y1 - bounds.y0).into());
         match &self.texture {
