@@ -6,7 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 publish.workspace = true
-description = "ClamShell's drawing: both screens, immediate mode with tiny-skia"
+description = "ClamShell's drawing: both screens, recorded each frame and drawn by its own painter"
 
 [dependencies]
 resvg.workspace = true
