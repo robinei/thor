@@ -17,7 +17,6 @@ use std::time::Instant;
 
 use clamshell_state::bottom::touch::{Contact, Pointing};
 use clamshell_state::{Effect, Event, Id, ShelfEvent, State};
-use tiny_skia::PixmapMut;
 
 use crate::Error;
 use crate::gfx::fonts::Found;
@@ -303,14 +302,15 @@ impl Core {
         if whole { Some(Bounds::of_size(size_px)) } else { s.frames.damage() }
     }
 
-    /// Draws `layer`'s frame just recorded into `pixmap`, which is its size in buffer pixels and holds
-    /// frame `held` (0 for none), where `damage` says it changed. Returns the frame it now holds.
-    pub fn draw(&mut self, layer: impl Into<Layer>, pixmap: PixmapMut, held: u64, damage: Bounds) -> u64 {
+    /// Draws `layer`'s frame just recorded into `target` (a pixmap, or a buffer of the display engine's,
+    /// maybe turned), which is its size in buffer pixels and holds frame `held` (0 for none), where
+    /// `damage` says it changed. Returns the frame it now holds.
+    pub fn draw<'a>(&mut self, layer: impl Into<Layer>, target: impl Into<crate::Pixels<'a>>, held: u64, damage: Bounds) -> u64 {
         let s = match layer.into() {
             Layer::Screen(screen) => &mut self.screens[screen],
             Layer::Overlay(screen) => &mut self.overlays[screen],
         };
-        s.frames.draw(pixmap, held, damage, &mut self.fonts, &self.images)
+        s.frames.draw(target.into(), held, damage, &mut self.fonts, &self.images)
     }
 
     /// Where `screen`'s overlay's frame drawn last draws, in buffer pixels: the part of it to show over

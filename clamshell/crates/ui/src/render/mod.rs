@@ -20,7 +20,6 @@ mod no_alloc;
 #[cfg(any(test, feature = "dev"))]
 use clamshell_state::ShelfEvent;
 use clamshell_state::{Event, ListEvent, ListId, State};
-use tiny_skia::PixmapMut;
 
 #[cfg(any(test, feature = "dev"))]
 use crate::Error;
@@ -126,7 +125,7 @@ pub(crate) fn record(retained: &mut Retained, at: Placement, layer: Layer, state
 /// whole recording played.
 #[cfg(any(test, feature = "dev"))]
 pub(crate) fn render(
-    pixmap: PixmapMut,
+    pixmap: crate::Pixels,
     retained: &mut Retained,
     at: Placement,
     layer: Layer,
@@ -149,7 +148,7 @@ pub(crate) fn render(
 /// changed since `held` are played, within it. Returns the new frame's number, which the buffer now
 /// holds.
 pub(crate) fn draw_damaged(
-    pixmap: PixmapMut,
+    pixmap: crate::Pixels,
     held: u64,
     damage: Bounds,
     retained: &mut Retained,
@@ -186,7 +185,7 @@ impl ScreenFrames {
 
     /// Draws the frame recorded into `pixmap`, which holds frame `held` (0 for none), where `damage`
     /// says it changed (see [`draw_damaged`]). Returns the frame the pixmap now holds.
-    pub(crate) fn draw(&mut self, pixmap: PixmapMut, held: u64, damage: Bounds, fonts: &mut DrawCache, images: &Images) -> u64 {
+    pub(crate) fn draw(&mut self, pixmap: crate::Pixels, held: u64, damage: Bounds, fonts: &mut DrawCache, images: &Images) -> u64 {
         draw_damaged(pixmap, held, damage, &mut self.retained, &mut self.history, fonts, images)
     }
 }
@@ -302,6 +301,42 @@ mod frame_times {
         v[v.len() / 2]
     }
 
+    /// A screen drawn turned, as into a panel's buffer mounted sideways, holds the very pixels drawn
+    /// unturned, turned: shelf, the dock and the keyboard, at each turn, in a buffer with padded rows.
+    #[test]
+    fn a_turned_frame_is_the_frame_turned() {
+        use crate::{Pixels, Turn};
+        let tab = |t| vec![Event::Pointer(PointerEvent::Activate(Id::Tab(t)))];
+        let cases = [(Screen::Top, (480u32, 270u32), vec![]), (Screen::Bottom, (310, 270), tab(Tab::Dock)), (Screen::Bottom, (310, 270), tab(Tab::Keyboard))];
+        let (mut fonts, mut images) = (DrawCache::load(), Images::synchronous());
+        for (screen, (w, h), events) in cases {
+            let s = state(events);
+            let at = Placement { size_px: (w, h), scale: 1, drift: (1, -2) };
+            let mut plain = tiny_skia::Pixmap::new(w, h).unwrap();
+            render(plain.as_mut().into(), &mut Retained::default(), at, screen.into(), &s, &mut fonts, &mut images).unwrap();
+            for turn in [Turn::Quarter, Turn::Half, Turn::ThreeQuarters] {
+                let (bw, bh) = if turn == Turn::Half { (w, h) } else { (h, w) };
+                let stride = bw as usize + 7;
+                let mut buffer = vec![0u8; stride * bh as usize * 4];
+                let target = Pixels::turned(&mut buffer, (w, h), stride, turn).unwrap();
+                render(target, &mut Retained::default(), at, screen.into(), &s, &mut fonts, &mut images).unwrap();
+                for y in 0..h {
+                    for x in 0..w {
+                        let (bx, by) = match turn {
+                            Turn::Quarter => (h - 1 - y, x),
+                            Turn::Half => (w - 1 - x, h - 1 - y),
+                            Turn::ThreeQuarters => (y, w - 1 - x),
+                            Turn::None => (x, y),
+                        };
+                        let i = (by as usize * stride + bx as usize) * 4;
+                        let j = (y * w + x) as usize * 4;
+                        assert_eq!(buffer[i..i + 4], plain.data()[j..j + 4], "{screen:?} {turn:?} at ({x}, {y})");
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     #[ignore = "a measurement, by hand in release"]
     fn frame_times() {
@@ -325,7 +360,7 @@ mod frame_times {
                 // A whole frame: recorded and played into the buffer.
                 let t = Instant::now();
                 let target = tiny_skia::PixmapMut::from_bytes(&mut buffer, size.0, size.1).unwrap();
-                render(target, &mut retained, at, screen.into(), &s, &mut fonts, &mut images).unwrap();
+                render(target.into(), &mut retained, at, screen.into(), &s, &mut fonts, &mut images).unwrap();
                 let f = t.elapsed();
                 // Recorded again and found unchanged, which is all an event that changes nothing costs.
                 let t = Instant::now();

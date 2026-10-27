@@ -176,7 +176,7 @@ impl Painter<'_> {
             {
                 let logical = side as f32 / self.scale;
                 let clip = (0, 0, side as i32, side as i32);
-                let mut c = Painter { pixmap: mask.as_mut(), scale: self.scale, offset: (0.0, 0.0), clip, cache: &mut *self.cache };
+                let mut c = Painter { target: mask.as_mut().into(), scale: self.scale, offset: (0.0, 0.0), clip, cache: &mut *self.cache };
                 draw(&mut c, icon, Rect::new(0.0, 0.0, logical, logical), Color::WHITE);
             }
             let coverage = mask.data().chunks_exact(4).filter_map(|px| px.get(3).copied()).collect();
@@ -186,7 +186,7 @@ impl Painter<'_> {
         let x = (self.px(cx) - side as f32 / 2.0).round() as i32;
         let y = (self.py(cy) - side as f32 / 2.0).round() as i32;
         if let Some(coverage) = self.cache.icons.get(&key) {
-            blend_mask(&mut self.pixmap, self.clip, x, y, side as usize, coverage, color.into().premultiply().to_color_u8());
+            blend_mask(&mut self.target, self.clip, x, y, side as usize, coverage, color.into().premultiply().to_color_u8());
         }
     }
 }
@@ -769,7 +769,7 @@ mod tests {
         let mut cache = DrawCache::load();
         for icon in every() {
             let mut pixmap = Pixmap::new(48, 48).expect("pixmap");
-            Painter::new(pixmap.as_mut(), 1.0, (0, 0), &mut cache).icon(icon, Rect::new(0.0, 0.0, 48.0, 48.0), Color::WHITE);
+            Painter::new(pixmap.as_mut().into(), 1.0, (0, 0), &mut cache).icon(icon, Rect::new(0.0, 0.0, 48.0, 48.0), Color::WHITE);
             let covered = pixmap.data().chunks_exact(4).filter(|px| px.get(3).is_some_and(|&a| a > 0)).count();
             assert!(covered > 20, "{icon:?}: {covered} pixels");
         }

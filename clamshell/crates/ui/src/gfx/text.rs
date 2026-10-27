@@ -40,7 +40,7 @@ impl Painter<'_> {
             };
             let gx = (pen + metrics.xmin as f32).round() as i32;
             let gy = (baseline - metrics.height as f32 - metrics.ymin as f32) as i32;
-            blend_mask(&mut self.pixmap, self.clip, gx, gy, metrics.width, coverage, color);
+            blend_mask(&mut self.target, self.clip, gx, gy, metrics.width, coverage, color);
             pen += metrics.advance_width;
         }
     }
