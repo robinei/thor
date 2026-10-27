@@ -88,6 +88,15 @@ impl<'a, const QUARTER: bool, const BGRA: bool> Pixels<'a, QUARTER, BGRA> {
         }
     }
 
+    /// Row `y` from `x` on, `len` pixels, as one slice: unturned only, where a row is contiguous.
+    fn row(&mut self, y: i32, x: i32, len: usize) -> Option<&mut [[u8; 4]]> {
+        if QUARTER {
+            return None;
+        }
+        let from = usize::try_from(self.at(x, y)).ok()?;
+        self.data.get_mut(from..from + len * 4).map(|row| row.as_chunks_mut::<4>().0)
+    }
+
     /// Row `y` from `x0` to `x1` set to `px`.
     fn fill_run(&mut self, y: i32, x0: i32, x1: i32, px: [u8; 4]) {
         if !QUARTER
@@ -446,11 +455,20 @@ pub(super) fn blend_mask<const Q: bool, const B: bool>(
         let Some(cov) = row.get(skip..skip + len).filter(|_| (clip.1..clip.3).contains(&ty)) else {
             continue;
         };
-        target.run(ty, x, x + len as i32, |px, tx| {
-            if let Some(&k) = cov.get((tx - x) as usize) {
-                blend(px, src, u32::from(k));
+        // Unturned, the row and the coverage are walked together without a branch, which the compiler
+        // vectorises: coverage 0 leaves a pixel as it is, full coverage of an opaque colour sets it.
+        match target.row(ty, x, len) {
+            Some(row) => {
+                for (px, &k) in row.iter_mut().zip(cov) {
+                    blend(px, src, u32::from(k));
+                }
             }
-        });
+            None => target.run(ty, x, x + len as i32, |px, tx| {
+                if let Some(&k) = cov.get((tx - x) as usize) {
+                    blend(px, src, u32::from(k));
+                }
+            }),
+        }
     }
 }
 
@@ -524,11 +542,16 @@ fn blend_at<const Q: bool, const B: bool>(target: &mut Pixels<Q, B>, x: i32, y: 
 
 /// Source-over of premultiplied `src` at coverage `k` (0-255) onto one RGBA pixel.
 fn blend(px: &mut [u8; 4], src: [u32; 4], k: u32) {
-    let k = k as u16;
-    let inverse = 255 - div255(src[3] as u16 * k);
-    for (d, s) in px.iter_mut().zip(src) {
-        *d = (div255(s as u16 * k) + div255(u16::from(*d) * inverse)) as u8;
-    }
+    // Two channels to a word, each in a 16-bit lane: bytes 0 and 2, then 1 and 3. A lane's product of
+    // two bytes, and its division by 255, stay within the lane, so this is the per-channel blend.
+    const LANES: u32 = 0x00ff_00ff;
+    let div = |x: u32| ((x + 0x0001_0001 + ((x >> 8) & LANES)) >> 8) & LANES;
+    let s = u32::from_ne_bytes(src.map(|c| c as u8));
+    let d = u32::from_ne_bytes(*px);
+    let inverse = 255 - u32::from(div255((src[3] * k) as u16));
+    let even = div((s & LANES) * k) + div((d & LANES) * inverse);
+    let odd = div((s >> 8 & LANES) * k) + div((d >> 8 & LANES) * inverse);
+    *px = (even | odd << 8).to_ne_bytes();
 }
 
 /// `x / 255` for `x` up to 255 * 255, done with shifts so that it vectorises. The result is exact for
