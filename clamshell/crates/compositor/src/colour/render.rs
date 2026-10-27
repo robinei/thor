@@ -196,14 +196,16 @@ impl Pipeline {
         if down { bottom } else { top }
     }
 
-    /// Draws what changed in the scene. Returns the elements' states, and the part of the scene that
-    /// changed, if anything did.
+    /// Draws what changed in the scene, and refills `states` with the elements' states, handing the last
+    /// ones back to the damage tracker to fill next. Returns the part of the scene that changed, if anything
+    /// did.
     pub(crate) fn compose(
         &mut self,
         server: &Server,
         renderer: &mut GlesRenderer,
         elements: &mut Vec<Element>,
-    ) -> Result<(RenderElementStates, Option<Rectangle<i32, Physical>>), Error> {
+        states: &mut RenderElementStates,
+    ) -> Result<Option<Rectangle<i32, Physical>>, Error> {
         if self.size != server.screens.size {
             let outputs = self.outputs.clone().map(|(description, _)| description);
             *self = Self::new(renderer, server.screens.size)?;
@@ -317,9 +319,13 @@ impl Pipeline {
         let mut target = renderer.bind(&mut self.texture)?;
         let result = self.damage.render_output(renderer, &mut target, usize::from(!self.first), &self.converted, [0.0, 0.0, 0.0, 1.0])?;
         let changed = result.damage.and_then(|d| d.iter().copied().reduce(|a, b| a.merge(b)));
-        let states = result.states;
+        let last = std::mem::replace(states, result.states);
+        self.damage.reuse_states(last);
+        // Dropped now rather than at the next compose, so that the UI's next upload holds the only reference
+        // to its damage and adds to it in place.
+        self.converted.clear();
         self.first = false;
-        Ok((states, changed))
+        Ok(changed)
     }
     /// Draws the whole scene at the next compose, as after the screens were away.
     pub(crate) fn redraw_all(&mut self) {

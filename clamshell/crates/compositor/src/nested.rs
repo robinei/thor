@@ -11,7 +11,7 @@ use clamshell_state::{Effect, State};
 use clamshell_ui::{Config, Error};
 use smithay::{
     backend::{
-        renderer::{Frame, Renderer, gles::GlesRenderer},
+        renderer::{Frame, Renderer, element::RenderElementStates, gles::GlesRenderer},
         winit::{self, WinitEvent},
     },
     reexports::winit::{dpi::PhysicalSize, window::WindowAttributes},
@@ -63,6 +63,7 @@ pub fn run(
     let bottom_size = server.core.size(clamshell_ui::Screen::Bottom).0;
     let mut frames = [UiFrame::new(top_size)?, UiFrame::new(bottom_size)?, UiFrame::new(top_size)?, UiFrame::new(bottom_size)?];
     let mut elements = Vec::new();
+    let mut states = RenderElementStates::default();
     let mut refresh_known = false;
     base.event_loop
         .handle()
@@ -121,7 +122,7 @@ pub fn run(
                         let interval = Duration::from_secs_f64(1000.0 / f64::from(server.screens.refresh.max(1000)));
                         server.release_timed_commits((Duration::from(server.clock.now()) + interval).into());
                         render::elements(server, &mut frames, &mut cursor, backend.renderer(), &mut elements)?;
-                        let (states, _) = pipeline.compose(server, backend.renderer(), &mut elements)?;
+                        pipeline.compose(server, backend.renderer(), &mut elements, &mut states)?;
                         if let Some(histogram) = pipeline.take_histogram() {
                             server.report_histogram(histogram);
                         }
