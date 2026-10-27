@@ -54,6 +54,9 @@ pub const COMMANDS: &[Form<Vec<Event>>] = &[
     form("window up", "Home + right stick up: the bottom screen's window back up (forgotten)", |_| hardware_key(HardwareKey::WindowUp)),
     form("window previous", "the program's previous window on top", |_| hardware_key(HardwareKey::WindowPrevious)),
     form("window next", "the program's next window on top", |_| hardware_key(HardwareKey::WindowNext)),
+    form("window overview", "the program in front's windows shown together, or no longer (a tap on its dock entry)", |_| {
+        Ok(vec![Event::Overview(clamshell_state::session::overview::OverviewEvent::Toggle)])
+    }),
     form("window close", "Home+B: the window in front closes", |_| hardware_key(HardwareKey::CloseWindow)),
     form("window quit", "Home+B held: the program in front quits (as its dock menu's Quit)", |_| hardware_key(HardwareKey::Quit)),
     form("home", "the Home button", |_| Ok(vec![Event::Home])),
