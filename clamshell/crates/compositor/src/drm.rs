@@ -257,7 +257,7 @@ pub fn run(
             let formats = &screen.surface.surface().plane_info().formats;
             match UiScanout::new(drm.device_fd(), screen.crtc, mode, formats, (w * scale, h * scale), quarter, panel) {
                 Ok(ui) => {
-                    log::info!("ui scanout: the {:?} screen shows ClamShell alone from its own buffers", screen.role);
+                    log::info!("ui scanout: the {:?} screen can show ClamShell alone from its own buffers", screen.role);
                     screen.ui = Some(ui);
                 }
                 Err(error) => log::warn!("ui scanout: the {:?} screen is composed: {error}", screen.role),
@@ -796,6 +796,9 @@ fn ui_scanout_decide(drawing: &mut Drawing, server: &mut Server) {
         if screen.ui_shown && !now {
             screen.surface.clear_after_ui(ui.clear());
             screen.dirty = true;
+        }
+        if now != screen.ui_shown {
+            log::info!("ui scanout: the {:?} screen is {}", screen.role, if now { "scanned out" } else { "composed" });
         }
         screen.ui_shown = now;
     }
