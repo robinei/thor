@@ -245,7 +245,7 @@ impl History {
     /// What a buffer that holds frame `held` (0 for none) needs drawn to hold the latest frame: what
     /// changed in each frame since, or `all` if that is too long ago.
     fn since(&self, held: u64, all: Bounds) -> Bounds {
-        if held == 0 || held > self.frame || self.frame - held >= AGES as u64 {
+        if held == 0 || held > self.frame || self.frame - held > AGES as u64 {
             return all;
         }
         (held + 1..=self.frame).fold(Bounds::EMPTY, |d, f| d.union(self.damage.get(f as usize % AGES).copied().unwrap_or(all)))
@@ -291,7 +291,8 @@ mod tests {
         }
         assert_eq!(h.since(9, all), Bounds::EMPTY);
         assert_eq!(h.since(6, all), Bounds::new(0, 7, 100, 10));
-        assert_eq!(h.since(5, all), all, "too long ago");
+        assert_eq!(h.since(5, all), Bounds::new(0, 6, 100, 10), "as far back as it remembers");
+        assert_eq!(h.since(4, all), all, "too long ago");
     }
 
     #[test]
