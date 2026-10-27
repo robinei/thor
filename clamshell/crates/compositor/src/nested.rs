@@ -129,7 +129,7 @@ pub fn run(
                         let mut trims = crate::hold::Trims::default();
                         pipeline.trim(std::time::Instant::now(), &mut trims);
                         trims.finish();
-                        if let Some(histogram) = pipeline.take_histogram() {
+                        if let Some(histogram) = pipeline.take_histogram(backend.renderer(), server) {
                             server.report_histogram(histogram);
                         }
                         {

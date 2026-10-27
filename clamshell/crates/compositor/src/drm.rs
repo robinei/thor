@@ -604,7 +604,7 @@ fn step(
             log::warn!("drm: drawing: {error}");
         }
     }
-    if let Some(histogram) = drawing.pipeline.take_histogram() {
+    if let Some(histogram) = drawing.pipeline.take_histogram(&mut drawing.renderer, server) {
         server.report_histogram(histogram);
     }
     if capture {

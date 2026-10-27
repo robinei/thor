@@ -119,6 +119,10 @@ impl Server {
         output: ColourDescription,
     ) -> Result<Candidate, &'static str> {
         let client = self.windows.iter().find(|client| client.id == id).ok_or("no such window")?;
+        if self.core.state().histogram_window() == Some(id) {
+            // Measured from its texture, which only composing brings up to date.
+            return Err("its picture is measured for a curve's histogram");
+        }
         let root = client.window.root().ok_or("no surface")?;
         if PopupManager::popups_for_surface(&root).next().is_some() || !client.window.x11_popups().is_empty() {
             return Err("a popup on it");

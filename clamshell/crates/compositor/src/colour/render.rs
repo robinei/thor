@@ -243,8 +243,11 @@ fn bind_second(frame: &mut GlesFrame<'_, '_>, texture: Option<u32>) -> Result<()
 }
 
 impl Pipeline {
-    /// The histogram measured since the last call, for the state (see [`super::histogram`]).
-    pub(crate) fn take_histogram(&mut self) -> Option<clamshell_state::colour::Histogram> {
+    /// Measures the histogram if it is time to, and returns one measured since the last call, for the state
+    /// (see [`super::histogram`]). Once a turn, after the screens composed (which brings the window's
+    /// texture up to date).
+    pub(crate) fn take_histogram(&mut self, renderer: &mut GlesRenderer, server: &Server) -> Option<clamshell_state::colour::Histogram> {
+        self.histogram.turn(renderer, server, std::time::Instant::now());
         self.histogram.measured.take()
     }
 
@@ -307,7 +310,6 @@ impl Pipeline {
             }
             self.revision = server.colour.revision;
         }
-        self.histogram.turn(renderer, server, std::time::Instant::now());
         let Pipeline { scenes, shaders, direct_shaders, chained, .. } = self;
         let [top, bottom] = scenes;
         let scene = if down { bottom } else { top };
