@@ -318,6 +318,9 @@ impl Pipeline {
         let [top, bottom] = scenes;
         let scene = if down { bottom } else { top };
         if scene.part != part {
+            if scene.texture.is_some() {
+                log::info!("colour: the {} screen's scene dropped for the screens' new layout", if down { "second" } else { "top" });
+            }
             *scene = Scene::new(part, scene.output.clone());
         }
         scene.curves.clear();
@@ -405,30 +408,10 @@ impl Pipeline {
             });
             let program = if direct {
                 let output = scene.output.0;
-                match direct_shaders.iter().find(|(colours, _)| *colours == (colour, output)) {
-                    Some((_, program)) => program.clone(),
-                    None => {
-                        let program = direct_shader(renderer, colour, output)?;
-                        if direct_shaders.len() == 32 {
-                            direct_shaders.remove(0);
-                        }
-                        direct_shaders.push(((colour, output), program.clone()));
-                        program
-                    }
-                }
+                cached(direct_shaders, (colour, output), || direct_shader(renderer, colour, output))?
             } else {
                 let primaries = scene.output.0.primaries;
-                match shaders.iter().find(|(colours, _)| *colours == (colour, primaries)) {
-                    Some((_, program)) => program.clone(),
-                    None => {
-                        let program = decode_shader(renderer, colour, primaries)?;
-                        if shaders.len() == 32 {
-                            shaders.remove(0);
-                        }
-                        shaders.push(((colour, primaries), program.clone()));
-                        program
-                    }
-                }
+                cached(shaders, (colour, primaries), || decode_shader(renderer, colour, primaries))?
             };
             let smaa_blend = match replaced.iter().find(|(id, _)| id == inner.id()).map(|(_, chained)| chained) {
                 Some(super::chain::Chained::Weights(weights)) => Some(weights.clone()),
@@ -670,28 +653,41 @@ pub(crate) fn curve_uniforms(curve: Option<&Curve>, headroom: f32, hdr_peak: Opt
 
 /// The shader drawing a surface of `colour` straight onto a screen of `output` (see [`Pipeline::compose`]).
 fn direct_shader(renderer: &mut GlesRenderer, colour: ColourDescription, output: ColourDescription) -> Result<GlesTexProgram, Error> {
-    let curved = sdr(colour) || hdr(colour);
-    let source = super::shaders::direct(colour, output, curved)?;
-    let names = [
-        UniformName::new("curve_a", UniformType::_4f),
-        UniformName::new("curve_b", UniformType::_4f),
-        UniformName::new("clarity", UniformType::_4f),
-        UniformName::new("smaa_blend_tex", UniformType::_1i),
-    ];
-    Ok(renderer.compile_custom_texture_shader(source, if curved { &names } else { &[] })?)
+    final_shader(renderer, colour, |curved| super::shaders::direct(colour, output, curved))
 }
 
 /// The shader drawing a surface of `colour` into a scene in `scene`'s primaries.
 fn decode_shader(renderer: &mut GlesRenderer, colour: ColourDescription, scene: ColourPrimaries) -> Result<GlesTexProgram, Error> {
+    final_shader(renderer, colour, |curved| super::shaders::decode(colour, scene, curved))
+}
+
+/// A final pass's shader for a surface of `colour`, from its `source` given whether it takes a curve, and
+/// then the curve's uniforms.
+fn final_shader(renderer: &mut GlesRenderer, colour: ColourDescription, source: impl FnOnce(bool) -> Result<String, Error>) -> Result<GlesTexProgram, Error> {
     let curved = sdr(colour) || hdr(colour);
-    let source = super::shaders::decode(colour, scene, curved)?;
     let names = [
         UniformName::new("curve_a", UniformType::_4f),
         UniformName::new("curve_b", UniformType::_4f),
         UniformName::new("clarity", UniformType::_4f),
         UniformName::new("smaa_blend_tex", UniformType::_1i),
     ];
-    Ok(renderer.compile_custom_texture_shader(source, if curved { &names } else { &[] })?)
+    Ok(renderer.compile_custom_texture_shader(source(curved)?, if curved { &names } else { &[] })?)
+}
+
+/// How many final pass shaders are kept of each kind, the oldest dropped for a new one.
+const SHADERS: usize = 32;
+
+/// The shader for `key` in `cache`, made by `make` the first time.
+fn cached<K: PartialEq>(cache: &mut Vec<(K, GlesTexProgram)>, key: K, make: impl FnOnce() -> Result<GlesTexProgram, Error>) -> Result<GlesTexProgram, Error> {
+    if let Some((_, program)) = cache.iter().find(|(cached, _)| *cached == key) {
+        return Ok(program.clone());
+    }
+    let program = make()?;
+    if cache.len() == SHADERS {
+        cache.remove(0);
+    }
+    cache.push((key, program.clone()));
+    Ok(program)
 }
 
 /// The shader encoding a scene in `scene`'s primaries for a screen of `output`.

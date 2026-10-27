@@ -1040,7 +1040,7 @@ fn direct_decide(drawing: &mut Drawing, server: &Server) {
         let direct = lone.filter(|_| !server.screenshot_requested && !screen.ui_shown && screen.window_shown.is_none());
         if direct != screen.direct {
             match direct {
-                Some(id) => log::info!("drm: the {:?} screen draws window {id} straight onto it", screen.role),
+                Some(id) => log::info!("drm: the {:?} screen draws window {id} straight onto it while it is one element", screen.role),
                 None => log::info!("drm: the {:?} screen composes through the scene again", screen.role),
             }
             screen.direct = direct;

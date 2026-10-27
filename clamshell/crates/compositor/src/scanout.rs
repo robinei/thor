@@ -3,7 +3,7 @@
 //! before it could be tried on the Thor, whose display engine and Armada's colour patches decide what
 //! passes (`docs/history/compositor-mvp.md`, phase 4's direct scanout).
 //!
-//! So far, at start, what the display engine offers is logged ([`report`]): each plane either screen can
+//! At start, what the display engine offers is logged ([`report`]): each plane either screen can
 //! use, its properties (its type, rotations, colour pipelines) and formats with their modifiers; each
 //! colour pipeline's operations; each screen's CRTC's colour properties. The plane colour pipeline
 //! capability is set first, without which the kernel hides the pipelines.

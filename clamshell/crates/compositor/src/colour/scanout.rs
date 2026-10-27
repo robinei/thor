@@ -1,4 +1,4 @@
-//! A surface's colour as the final pass draws it on a screen (see `shaders::surface`), baked into a display
+//! A surface's colour as the final pass draws it on a screen (see `shaders::direct`), baked into a display
 //! plane's colour pipeline, so that a window scanned out directly shows as it would composed. Armada's
 //! kernel gives each VIG plane of the Thor's display engine a pipeline of a 1D LUT, then a 3D LUT, ahead of
 //! blending (its patch 0077, the `drm_colorop` API).
