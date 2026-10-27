@@ -719,6 +719,36 @@ class Checks:
         self.check("  moved up, forgotten: opened again on top", up == [False], up)
         sh("pkill -x foot || true")
 
+    def ui_scanout(self):
+        def shown(role):
+            """Whether ClamShell's journal last said the screen is scanned out (True) or composed."""
+            lines = [l for l in sh("journalctl --user -u clamshell -b -o cat --no-pager").splitlines() if f"ui scanout: the {role} screen is " in l]
+            return bool(lines) and lines[-1].endswith("scanned out")
+
+        def bar_drawn():
+            """Whether the bottom screen, as QEMU shows it, has the bar's icons."""
+            return light_pixels(self.i.screenshot(head=1), BAR_Y, 0, ICONS["windows-below"] + 40, level=100) > 50
+
+        sh("pkill -x foot || true")
+        until(lambda: not any(w["app_id"] == "foot" for w in windows()), 8)
+        top = until(lambda: shown("Top"), 5)
+        shelf = self.i.screenshot(head=0)
+        self.check("main screen: ClamShell alone, scanned out from its own buffers", top and max(shelf[2]) > 100)
+        bottom = until(lambda: shown("Bottom"), 5)
+        self.check("bottom screen: scanned out, the bar shown", bottom and bar_drawn())
+        control("tap dock 0")  # foot, pinned by the setup, opened on the main screen
+        opened = until(lambda: any(w["app_id"] == "foot" for w in windows()), 8)
+        self.check("main screen: composed while a window is on it", opened and until(lambda: not shown("Top"), 5))
+        control("window down")
+        self.check("  moved below: the bottom screen composed, the main one scanned out again",
+                   until(lambda: not shown("Bottom") and shown("Top"), 5))
+        # (Up again before it closes: that forgets that foot goes below, for the checks after.)
+        control("window up")
+        back = until(lambda: shown("Bottom") and not shown("Top"), 5)
+        self.check("  moved up: the bottom screen scanned out again, the bar shown", back and until(bar_drawn, 3))
+        sh("pkill -x foot || true")
+        self.check("  closed: the main screen scanned out again", until(lambda: shown("Top"), 8))
+
     def pad_windows(self):
         if not plug_pad():
             return self.check("window flicks: the fake pad grabbed", False)
@@ -1428,7 +1458,7 @@ GLib.MainLoop().run()
 
 
 
-CHECKS = ["confirm_key", "session_units", "shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "pad_windows",
+CHECKS = ["confirm_key", "session_units", "shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "ui_scanout", "pad_windows",
           "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
           "keymap_actuations", "rumble", "launch_and_quit", "pause_hidden", "found_window", "tray_program", "clipboard",
           "bluetooth", "gyro_sleep"]

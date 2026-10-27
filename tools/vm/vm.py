@@ -173,9 +173,10 @@ fi
 """
 
 def service():
-    """The device's clamshell.service, with this machine's build and profile."""
+    """The device's clamshell.service, with this machine's build and profile, and ClamShell's screens
+    scanned out while they show it alone (its virtual screens take sRGB as it is)."""
     unit = (REPO / "packages/thor-session/root/usr/lib/systemd/user/clamshell.service").read_text()
-    return unit.replace("ExecStart=/usr/bin/clamshell --drm", f"ExecStart={A.program} --drm\nEnvironment=CLAMSHELL_DEVICE=vm")
+    return unit.replace("ExecStart=/usr/bin/clamshell --drm", f"ExecStart={A.program} --drm\nEnvironment=CLAMSHELL_DEVICE=vm\nEnvironment=CLAMSHELL_SCANOUT=1")
 
 
 def session_files():
