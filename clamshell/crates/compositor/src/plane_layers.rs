@@ -492,6 +492,7 @@ fn turned(rect: Rectangle<i32, Logical>, height: i32, quarter: bool) -> Rectangl
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -501,6 +502,27 @@ mod tests {
         assert_eq!(turned(rect, 100, false), Rectangle::new((10, 20).into(), (30, 5).into()));
         // Rows 20..25 of a screen 100 high are buffer columns 75..80; columns 10..40 are rows 10..40.
         assert_eq!(turned(rect, 100, true), Rectangle::new((75, 10).into(), (5, 30).into()));
+    }
+
+    /// A plane's state in the next commit: none if it neither showed nor is wanted, off if it showed and
+    /// isn't wanted, placed if it is wanted (with its properties).
+    #[test]
+    fn a_plane_is_placed_when_wanted_and_turned_off_once_not() {
+        fn handle<T: smithay::reexports::drm::control::ResourceHandle>(id: u32) -> T {
+            smithay::reexports::drm::control::from_u32(id).unwrap()
+        }
+        let placement = Placement { fb: handle(7), src: Rectangle::from_size((64.0, 64.0).into()), dst: Rectangle::new((5, 6).into(), (64, 64).into()) };
+        let mut plane = Plane { handle: handle(3), zpos: None, hotspot: None, properties: Vec::new(), shown: None, wanted: None, drew: false };
+        assert!(plane.state().is_none(), "neither shown nor wanted");
+        plane.wanted = Some(placement);
+        let state = plane.state().unwrap();
+        let config = state.config.unwrap();
+        assert_eq!((state.handle, config.fb, config.dst), (handle(3), handle(7), placement.dst));
+        plane.shown = plane.wanted.take();
+        let state = plane.state().unwrap();
+        assert!(state.config.is_none(), "shown and no longer wanted: off");
+        plane.shown = None;
+        assert!(plane.state().is_none());
     }
 
     /// The cursor's buffer placed, plus its hotspot in the buffer, is the pointer's place on the panel,
