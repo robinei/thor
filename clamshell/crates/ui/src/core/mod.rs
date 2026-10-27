@@ -304,13 +304,23 @@ impl Core {
 
     /// Draws `layer`'s frame just recorded into `target` (a pixmap, or a buffer of the display engine's,
     /// maybe turned), which is its size in buffer pixels and holds frame `held` (0 for none), where
-    /// `damage` says it changed. Returns the frame it now holds.
-    pub fn draw<'a>(&mut self, layer: impl Into<Layer>, target: impl Into<crate::Pixels<'a>>, held: u64, damage: Bounds) -> u64 {
+    /// `damage` says it changed: the frame's damage for the first buffer to draw it, nothing for the
+    /// others, which catch up from the frame they hold. Returns the frame it now holds and the area drawn.
+    pub fn draw<'a>(&mut self, layer: impl Into<Layer>, target: impl Into<crate::Pixels<'a>>, held: u64, damage: Bounds) -> (u64, Bounds) {
         let s = match layer.into() {
             Layer::Screen(screen) => &mut self.screens[screen],
             Layer::Overlay(screen) => &mut self.overlays[screen],
         };
         s.frames.draw(target.into(), held, damage, &mut self.fonts, &self.images)
+    }
+
+    /// The number of `layer`'s latest frame drawn, into any buffer: a buffer that holds an older one has
+    /// something to catch up (see [`Core::draw`]).
+    pub fn frame(&self, layer: impl Into<Layer>) -> u64 {
+        match layer.into() {
+            Layer::Screen(screen) => self.screens[screen].frames.frame(),
+            Layer::Overlay(screen) => self.overlays[screen].frames.frame(),
+        }
     }
 
     /// Where `screen`'s overlay's frame drawn last draws, in buffer pixels: the part of it to show over

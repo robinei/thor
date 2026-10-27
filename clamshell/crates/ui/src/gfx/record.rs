@@ -60,7 +60,7 @@ pub struct Bounds {
 }
 
 impl Bounds {
-    pub(crate) const EMPTY: Bounds = Bounds { x0: 0, y0: 0, x1: 0, y1: 0 };
+    pub const EMPTY: Bounds = Bounds { x0: 0, y0: 0, x1: 0, y1: 0 };
 
     pub fn new(x0: i32, y0: i32, x1: i32, y1: i32) -> Bounds {
         Bounds { x0, y0, x1, y1 }

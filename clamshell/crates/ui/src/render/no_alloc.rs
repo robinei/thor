@@ -128,7 +128,7 @@ impl Screen1 {
     fn draw(&mut self, state: &State, cache: &mut DrawCache, images: &mut crate::gfx::images::Images) {
         self.frames.record(self.at, self.layer, state, cache, images);
         if let Some(damage) = self.frames.damage() {
-            self.held = self.frames.draw(self.pixmap.as_mut().into(), self.held, damage, cache, images);
+            self.held = self.frames.draw(self.pixmap.as_mut().into(), self.held, damage, cache, images).0;
         }
     }
 }

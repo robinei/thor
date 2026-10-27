@@ -104,7 +104,7 @@ impl Frames {
         if let Some(damage) = self.frames.damage() {
             let next = (self.latest + 1) % self.buffers.len();
             if let Some((pixmap, held)) = self.buffers.get_mut(next) {
-                *held = self.frames.draw(pixmap.as_mut().into(), *held, damage, &mut self.fonts, &self.images);
+                *held = self.frames.draw(pixmap.as_mut().into(), *held, damage, &mut self.fonts, &self.images).0;
                 self.latest = next;
             }
         }
