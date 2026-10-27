@@ -685,6 +685,7 @@ impl Session {
         // If its runner, and so its container, is paused, it is resumed first.
         self.resume_runner_of(&entry, library, out);
         let unit = self.begin_launch(entry.clone(), key, mark, clock, start);
+        self.front_launch_in_launcher(g, library);
         self.refresh_launch = Some((entry.clone(), clock.mono()));
         out.effects.push(Effect::Launch { entry, unit, settings: values, env, launch });
         Launched::Yes
@@ -716,6 +717,7 @@ impl Session {
         self.running.push(Running { mark: mark_of(library, g), ..Running::of(g, Origin::Windows { since: now, until: now + LAUNCHER_WAIT }, now) });
         if start == Start::Front {
             self.set_front_launch(LaunchUnit { key: g.key.clone(), secs: clock.unix(), n: 0 }, Some(now + LAUNCHER_WAIT));
+            self.front_launch_in_launcher(g, library);
         }
         self.refresh_launch = Some((g.id.clone(), now));
         let launch = Launch::Program { argv, workdir: None };

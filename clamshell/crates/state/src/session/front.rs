@@ -24,25 +24,27 @@ impl Session {
         if self.top.is_some() || windows.iter().any(|w| !self.below(w.id) && w.group.as_ref() == Some(was)) {
             return;
         }
-        let shown = |group: &Group| windows.iter().any(|w| w.group.as_ref() == Some(group) && !self.below(w.id));
-        let back = self.recent.iter().find(|was| match was {
-            InFront::Shelf => true,
-            InFront::Group(group) => shown(group),
-        });
-        let group = match back {
-            Some(InFront::Group(group)) => Some(group.clone()),
-            Some(InFront::Shelf) | None => None,
-        };
         let was = was.clone();
         let closed = !windows.iter().any(|w| w.group.as_ref() == Some(&was));
-        match group {
-            Some(group) => self.focus(&group),
-            None => self.command(WindowCommand::ShowShelf),
-        }
+        self.go_back();
         if let Some(unit) = closed.then(|| self.still_running(&was)).flatten() {
             self.set_front_launch(unit, Some(now + REWAIT_SECS));
         }
         self.closed_front = closed.then_some((was, now));
+    }
+
+    /// Shows what was in front before: the most recent group still shown, or shelf if shelf was in front
+    /// since; shelf is the last resort.
+    pub(crate) fn go_back(&mut self) {
+        let shown = |group: &Group| self.windows.iter().any(|w| w.group.as_ref() == Some(group) && !self.below(w.id));
+        let back = self.recent.iter().find(|was| match was {
+            InFront::Shelf => true,
+            InFront::Group(group) => shown(group),
+        });
+        match back.cloned() {
+            Some(InFront::Group(group)) => self.focus(&group),
+            Some(InFront::Shelf) | None => self.command(WindowCommand::ShowShelf),
+        }
     }
 
     /// The launch to wait for again in `group`, if its entry still runs: its unit, or for an entry known

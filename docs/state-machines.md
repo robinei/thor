@@ -645,7 +645,7 @@ On Opened the state decides whether the window comes in front (`Session::opening
 
 | Condition at Opened | Result | Test |
 |---|---|---|
-| a launch waits for its window | in front only if it is that launch's (in its unit, of its entry by mark or process, or a dialog of one); others open behind | `steams_windows_open_behind_a_steam_games_launch` |
+| a launch waits for its window | in front only if it is that launch's (in its unit, of its entry by mark or process, or a dialog of one), or, for a launcher's game, a dialog of the launcher (a dialog or a window with a parent), whose group is then promoted: in front while the launch waits, not remembered as having been, and back behind once no dialog of it is left; others open behind | `steams_windows_open_behind_a_steam_games_launch`, `a_launchers_dialog_comes_in_front_while_its_game_starts_and_goes_back_after` |
 | it has a parent | in front if the parent's program is shown | `opening_focus_respects_launch_intent_and_shown_program` |
 | not in a unit of ours | in front | same; `a_window_opens_in_front_as_its_opening_focus_says` |
 | the first window of a unit of ours | behind (it waits for the launch's intent) | same |

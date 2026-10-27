@@ -294,8 +294,8 @@ fn a_steam_games_window_is_the_games_though_it_runs_in_steams_scope() {
     assert_eq!(s.session().running_of(&window).map(|r| &*r.id), Some("ff6"));
 }
 
-/// While a Steam game's launch waits for its window, Steam's own windows (raised by the launch, or a
-/// dialog of Steam's) open behind; the game's comes in front.
+/// While a Steam game's launch waits for its window, Steam's own windows (raised by the launch) open
+/// behind, but a dialog of Steam's comes in front; the game's comes in front.
 #[test]
 fn steams_windows_open_behind_a_steam_games_launch() {
     let mut s = steam_ff6();
@@ -306,9 +306,38 @@ fn steams_windows_open_behind_a_steam_games_launch() {
     s.applied(crate::WindowEvent::Activate(5).into());
     launch(&mut s, "ff6");
     assert!(!s.session().opening_focus(&WindowFacts { id: 6, ..client.clone() }), "Steam's window");
-    assert!(!s.session().opening_focus(&WindowFacts { id: 6, parent: Some(5), ..client.clone() }), "a dialog of Steam's");
+    assert!(s.session().opening_focus(&WindowFacts { id: 6, parent: Some(5), ..client.clone() }), "a dialog of Steam's");
     let game = win_of(7, "steam_app_620", &steam);
     assert!(s.session().opening_focus(&game), "the game's, though in Steam's scope");
+}
+
+/// While a Steam game starts, Steam's main window stays behind but a dialog of Steam's, asking which
+/// version to launch, comes in front with Steam's group. That isn't remembered as having been in front:
+/// once the dialog is answered shelf comes back, and when the game quits, shelf, where it was launched
+/// from, not Steam.
+#[test]
+fn a_launchers_dialog_comes_in_front_while_its_game_starts_and_goes_back_after() {
+    let mut s = steam_ff6();
+    s.ui_up();
+    let steam = LaunchUnit { key: key("desktop:steam"), secs: 1, n: 0 };
+    s.applied(Event::Units(vec![steam.clone()]));
+    let main = win_of(5, "steam", &steam);
+    s.observed(vec![main.clone()]);
+    s.applied(Event::Home);
+    launch(&mut s, "ff6");
+    let main2 = win_of(6, "steam", &steam);
+    s.observed(vec![main.clone(), main2.clone()]);
+    assert!(s.session().shelf_in_front(), "Steam's main windows stay behind");
+    let dialog = WindowFacts { role: crate::presentation::WindowRole::Dialog, ..win_of(7, "steam", &steam) };
+    s.observed(vec![main.clone(), main2.clone(), dialog.clone()]);
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "its dialog in front");
+    s.observed(vec![main.clone(), main2.clone()]);
+    assert!(s.session().shelf_in_front(), "answered: back to shelf, not Steam");
+    s.observed(vec![main.clone(), main2.clone(), dialog.clone()]);
+    s.observed(vec![main.clone(), main2.clone(), dialog, win(8, "steam_app_620")]);
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(8), "the game in front");
+    s.observed(vec![main.clone(), main2.clone()]);
+    assert!(s.session().shelf_in_front(), "the game quit: shelf, not Steam");
 }
 
 /// Another tool than the Device view is asked of the system; an id the library doesn't have plays

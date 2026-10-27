@@ -38,6 +38,12 @@ pub(crate) enum InFront {
 pub(crate) struct FrontLaunch {
     unit: LaunchUnit,
     until: Option<u64>,
+    /// For a launcher's game, the key of the launcher's entry, whose dialogs come in front meanwhile
+    /// (see [`Session::launcher_dialog`]).
+    launcher: Option<String>,
+    /// Whether the launcher's group is in front for a dialog of it. It is not remembered as having been in
+    /// front, so that what comes after the game is what would have come without it.
+    promoted: bool,
 }
 
 /// How soon after the window in front closed a new window in its group is shown again, in seconds.
@@ -221,7 +227,7 @@ impl Session {
     /// An unowned program's window is shown at once.
     pub(crate) fn opening_focus(&self, window: &WindowFacts) -> bool {
         if let Some(FrontLaunch { unit, .. }) = &self.front_launch {
-            return self.of_launch(unit, window);
+            return self.of_launch(unit, window) || self.launcher_dialog(window);
         }
         if let Some(parent) = window.parent.and_then(|id| self.window(id)) {
             return self.top_window().is_some_and(|top| top.group == parent.group);
@@ -242,9 +248,32 @@ impl Session {
         in_unit || parent || running.is_some_and(|r| r.owns(window) || r.fathered(window))
     }
 
+    /// Whether `window`, opening while a launcher's game starts, is a dialog of that launcher, such as
+    /// Steam asking which version to launch: a dialog, or a window with a parent, of the launcher's entry.
+    /// It comes in front, its group promoted for as long as the game's launch waits (see
+    /// [`FrontLaunch::promoted`]); the launcher's other windows stay behind.
+    pub(crate) fn launcher_dialog(&self, window: &WindowFacts) -> bool {
+        let Some(launcher) = self.front_launch.as_ref().and_then(|f| f.launcher.as_deref()) else { return false };
+        let dialog = window.role == crate::presentation::WindowRole::Dialog || window.parent.is_some();
+        dialog && self.running_of(window).is_some_and(|r| r.key == launcher)
+    }
+
     /// Makes `unit` the launch to show when its window appears, waiting until `until` if given.
     pub(crate) fn set_front_launch(&mut self, unit: LaunchUnit, until: Option<u64>) {
-        self.front_launch = Some(FrontLaunch { unit, until });
+        self.front_launch = Some(FrontLaunch { unit, until, launcher: None, promoted: false });
+    }
+
+    /// The launch in front, `g`'s, is a launcher's game: the launcher's dialogs come in front meanwhile.
+    pub(crate) fn front_launch_in_launcher(&mut self, g: &Entry, library: &Library) {
+        let launcher = launchers::launcher_of(g).and_then(|l| l.entry(library)).map(|l| l.key.clone());
+        if let Some(front) = self.front_launch.as_mut().filter(|f| f.unit.key == g.key) {
+            front.launcher = launcher;
+        }
+    }
+
+    /// Whether `group` is a launcher's, promoted for a dialog of it while its game starts.
+    fn promoted(&self, group: &Group) -> bool {
+        self.front_launch.as_ref().is_some_and(|f| f.promoted && f.launcher.as_deref() == group.key())
     }
 
     pub(crate) fn step_window(&mut self, next: bool) {
@@ -456,7 +485,7 @@ impl Session {
             InFront::Shelf => true,
             InFront::Group(group) => present(group),
         });
-        if let Some(group) = self.top_window().and_then(|w| w.group.clone()) {
+        if let Some(group) = self.top_window().and_then(|w| w.group.clone()).filter(|g| !self.promoted(g)) {
             self.remember_in_front(InFront::Group(group));
         }
     }

@@ -227,6 +227,12 @@ impl crate::Session {
                 .or_else(|| facts.launch_unit().map(|i| Group::entry(&i.key))),
         };
         let focus = parent_below || self.opening_focus(&facts);
+        if focus
+            && self.launcher_dialog(&facts)
+            && let Some(front) = self.front_launch.as_mut()
+        {
+            front.promoted = true;
+        }
         let id = facts.id;
         self.opened.push(id);
         self.windows.push(Window { facts, group });
@@ -271,7 +277,14 @@ impl crate::Session {
             self.bottom = None;
         }
         if let Some(group) = group.filter(|g| self.windows.iter().any(|w| !self.below(w.id) && w.group.as_ref() == Some(g))) {
-            if let Some(parent) = parent {
+            // A launcher promoted for its dialog goes back behind once no dialog of it is left.
+            let dialog = |w: &Window| w.role == crate::presentation::WindowRole::Dialog || w.parent.is_some();
+            if self.promoted(&group) && !self.windows.iter().any(|w| w.group.as_ref() == Some(&group) && dialog(w)) {
+                if let Some(front) = self.front_launch.as_mut() {
+                    front.promoted = false;
+                }
+                self.go_back();
+            } else if let Some(parent) = parent {
                 self.command(WindowCommand::FocusWindow(parent));
             } else {
                 self.focus(&group);
