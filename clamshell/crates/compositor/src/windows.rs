@@ -1,11 +1,10 @@
 //! Clients' windows: their facts told to the state, and how the state places them told back to them.
 
-use clamshell_state::presentation::{WindowLayout, WindowPresentation, WindowScale};
 use clamshell_state::{State, WindowEvent, session::windows::WindowFacts};
 use smithay::{
     desktop::Window as SurfaceWindow,
     reexports::wayland_server::{Resource, protocol::wl_surface::WlSurface},
-    utils::{Logical, Rectangle, SERIAL_COUNTER, Size},
+    utils::{Logical, SERIAL_COUNTER, Size},
     wayland::{
         compositor::with_states,
         shell::xdg::{SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceData},
@@ -170,9 +169,6 @@ impl Server {
     }
 
     pub fn sync_windows(&mut self) {
-        self.sync_x11_popups();
-        self.validate_capture();
-        self.cancel_hidden_touches();
         let revision = self.core.state_revision();
         if self.presentation_revision != Some(revision) {
             for client in &mut self.windows {
@@ -180,6 +176,10 @@ impl Server {
             }
             self.presentation_revision = Some(revision);
         }
+        self.place();
+        self.sync_x11_popups();
+        self.validate_capture();
+        self.cancel_hidden_touches();
         let focus = self.core.state().session().keyboard_focus();
         for client in &self.windows {
             let Some(window) = self.core.state().session().window(client.id) else { continue };
@@ -250,42 +250,6 @@ impl Server {
                 }
             }
         }
-    }
-
-    /// Whether window `id` is shown: the top screen's, the bottom screen's while it shows its window, or
-    /// one of the overview's.
-    pub fn visible(&self, id: i64) -> bool {
-        let session = self.core.state().session();
-        session.top_window().is_some_and(|w| w.id == id)
-            || (self.core.state().bottom().shows_windows(session) && session.bottom_window().is_some_and(|w| w.id == id))
-            || session.overview_windows().any(|w| w.id == id)
-    }
-
-    /// Where and how window `id` is drawn. A window of the overview is fitted into its cell, whatever its
-    /// presentation, and keeps the size it was configured to.
-    pub fn geometry(&self, id: i64) -> Option<crate::geometry::Geometry> {
-        let session = self.core.state().session();
-        session.window(id)?;
-        let client = self.windows.iter().find(|w| w.id == id && w.mapped)?;
-        let (size, place) = client.window.picture().unzip();
-        let picture = crate::geometry::Picture { size, place };
-        let (area, policy) = match self.overview_cell(id) {
-            Some(cell) => (cell, WindowPresentation { layout: WindowLayout::Fullscreen, scale: WindowScale::Fit }),
-            None => (self.area(session.below(id)), client.shown.presentation?),
-        };
-        crate::geometry::Geometry::new(area, client.window.geometry(), policy, picture)
-    }
-
-    /// Window `id`'s cell in the overview on the top screen, if it is one of the overview's.
-    pub(crate) fn overview_cell(&self, id: i64) -> Option<Rectangle<i32, Logical>> {
-        let session = self.core.state().session();
-        let i = session.overview_windows().position(|w| w.id == id)?;
-        let area = self.area(false);
-        let (x, y, w, h) = clamshell_state::session::overview::cell(i, session.overview_windows().count(), (area.size.w as f32, area.size.h as f32));
-        Some(Rectangle::new(
-            (area.loc.x + x.round() as i32, area.loc.y + y.round() as i32).into(),
-            ((w.round() as i32).max(1), (h.round() as i32).max(1)).into(),
-        ))
     }
 }
 

@@ -127,6 +127,8 @@ impl Wm {
         self.sync_selection(wire, server, now)?;
         self.take_identified(server);
         self.settle(wire, server)?;
+        // The menus are placed by their windows, which what came from X11 may have moved.
+        server.place();
         self.settle_menus(wire, server)?;
         server.sync_windows();
         Ok(())

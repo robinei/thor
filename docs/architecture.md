@@ -140,7 +140,8 @@ and fixed once. Seven rules:
   another layer the same way, its overlay (over the top screen's window the HUD and the window arrows, or the overview's cells,
   over the bottom screen the notifications, with their targets); the host shows the part of it that
   draws, over a window or ClamShell's view. The compositor hosts it: it gives it
-  input by screen and the screens' sizes, runs it at its deadlines, shows each screen's pixmap, and
+  input by screen and the screens' sizes, runs it at its deadlines, shows each screen's pixmap (a
+  software surface: kept, with only what changed uploaded) where the scene places it, and
   carries out the effects that are its own (the screens' power, the refresh rate, closing windows,
   screenshots, quitting).
 - **Drawing.** Views are functions of `&State` that draw on a canvas. The canvas records commands (fills,

@@ -40,6 +40,8 @@ pub(crate) struct Server {
     pub menu: Option<crate::popup::Menu>,
     /// The clients' windows, in stacking order, the frontmost last.
     pub windows: Vec<ClientWindow>,
+    /// What is shown where (see `scene`).
+    pub scene: crate::scene::Scene,
     pub screens: crate::screens::Screens,
     pub pointer: crate::pointer::Pointer,
     pub touch: crate::touch::Touches,
@@ -122,6 +124,7 @@ impl Server {
             started: Instant::now(),
             idle: crate::idle::Idle::new(),
             presentation_revision: None,
+            scene: crate::scene::Scene::default(),
             trace,
             socket: String::new(),
             on_effect: Box::new(on_effect),

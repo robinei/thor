@@ -171,6 +171,8 @@ impl CompositorHandler for Server {
         {
             self.reject_client(surface, &format!("cannot configure popup: {error}"));
         }
+        // A window's size or picture may have changed: a subsurface's commit doesn't sync the windows.
+        self.place();
     }
 }
 impl BufferHandler for Server {

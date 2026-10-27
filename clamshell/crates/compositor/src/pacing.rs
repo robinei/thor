@@ -121,13 +121,9 @@ impl Server {
 
     /// The windows shown get their presentation feedback, and a frame counted if a new buffer was shown.
     fn feedback(&mut self, rendered: &RenderElementStates, time: Time<Monotonic>, screen: Option<bool>, refresh: Refresh, sequence: u64, kind: Kind) {
-        let shown: Vec<_> = self.windows.iter().map(|client| client.mapped && self.visible(client.id)).collect();
-        let state = self.core.state();
-        for (client, shown) in self.windows.iter_mut().zip(shown) {
-            if !shown {
-                continue;
-            }
-            let down = state.session().below(client.id);
+        self.place();
+        for client in self.windows.iter_mut() {
+            let Some(down) = self.scene.window(client.id).map(|placed| placed.below) else { continue };
             if screen.is_some_and(|screen| screen != down) {
                 continue;
             }
@@ -154,15 +150,14 @@ impl Server {
     /// showing a frame every `refresh`, and with them their surfaces' FIFO barriers, whose held commits
     /// then go ahead. Returns when a callback held back is due.
     pub fn frame_callbacks(&mut self, down: Option<bool>, refresh: std::time::Duration, now: Instant) -> Option<Instant> {
-        let shown: Vec<_> = self.windows.iter().map(|client| client.mapped && self.visible(client.id)).collect();
-        let state = self.core.state();
+        self.place();
         let [top, bottom] = &self.screens.outputs;
         let time = self.started.elapsed();
         let mut held: Option<Instant> = None;
         let mut barriers: Vec<smithay::reexports::wayland_server::Client> = Vec::new();
-        for (client, shown) in self.windows.iter_mut().zip(shown) {
-            let on_down = state.session().below(client.id);
-            if !shown || down.is_some_and(|down| down != on_down) {
+        for client in self.windows.iter_mut() {
+            let Some(on_down) = self.scene.window(client.id).map(|placed| placed.below) else { continue };
+            if down.is_some_and(|down| down != on_down) {
                 continue;
             }
             // A capped window uses its turn only while it waits for a callback or on a FIFO barrier, so

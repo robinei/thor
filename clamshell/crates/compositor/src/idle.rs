@@ -54,6 +54,7 @@ impl IdleInhibitHandler for Server {
 }
 impl Server {
     pub(crate) fn update_idle(&mut self, now: Instant) {
+        self.place();
         self.idle.inhibitors.retain(Resource::is_alive);
         let inhibited = self.idle.inhibitors.iter().any(|surface| {
             if !with_renderer_surface_state(surface, |state| state.buffer().is_some()).unwrap_or(false) {

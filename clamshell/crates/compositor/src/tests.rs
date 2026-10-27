@@ -668,7 +668,7 @@ fn touching_a_home_arrow_switches_once_and_consumes_home_release() {
 }
 
 #[test]
-fn the_overview_draws_its_windows_in_cells_and_a_touch_brings_one_in_front() {
+fn the_overview_has_its_windows_in_cells_and_a_touch_brings_one_in_front() {
     use clamshell_state::session::overview::OverviewEvent;
     use clamshell_state::{WindowEvent, session::windows::WindowFacts};
     use smithay::backend::input::InputTime;
@@ -679,9 +679,8 @@ fn the_overview_draws_its_windows_in_cells_and_a_touch_brings_one_in_front() {
         server.core.handle(WindowEvent::Opened(WindowFacts { id, app_id: "test".into(), unit, ..WindowFacts::default() }).into());
     }
     server.core.handle(WindowEvent::Activate(2).into());
-    assert!(!server.visible(1));
+    assert_eq!(server.overview_cell(1), None);
     server.core.handle(Event::Overview(OverviewEvent::Toggle));
-    assert!(server.visible(1) && server.visible(2), "both shown");
     // Side by side on the top screen.
     let (left, right) = (server.overview_cell(1).unwrap(), server.overview_cell(2).unwrap());
     assert!(left.loc.x > 0 && left.loc.x + left.size.w < right.loc.x && right.loc.x + right.size.w < server.screens.top_width);
@@ -695,7 +694,7 @@ fn the_overview_draws_its_windows_in_cells_and_a_touch_brings_one_in_front() {
     server.touch_frame();
     let session = server.core.state().session();
     assert_eq!((session.top_window().map(|w| w.id), session.overview()), (Some(1), None));
-    assert!(!server.visible(2));
+    assert_eq!(server.overview_cell(2), None);
 }
 
 #[test]
