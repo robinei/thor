@@ -123,6 +123,9 @@ pub(crate) struct PlaneLayers {
     quarter: bool,
 }
 
+/// The longest a cursor-only update may take: longer, it waited for the frame queued.
+const IMMEDIATE: std::time::Duration = std::time::Duration::from_millis(2);
+
 struct CursorPlane {
     plane: Plane,
     buffers: LayerBuffers,
@@ -130,9 +133,10 @@ struct CursorPlane {
     side: u32,
     /// The shape the buffer shown holds.
     shown: Option<Shape>,
-    /// Whether it is the CRTC's own cursor plane and the kernel takes moves of it at once (see
-    /// [`PlaneLayers::move_now`]).
+    /// Whether it is a cursor plane and the kernel takes moves of it at once (see [`PlaneLayers::move_now`]),
+    /// and whether a move has been seen to move it.
     immediate: bool,
+    checked: bool,
 }
 
 /// Asks for a virtual machine's cursor planes, which its GPU hides from a client that gives no hotspot:
@@ -180,7 +184,7 @@ impl PlaneLayers {
                 Ok(buffers) => {
                     taken.push(info.handle);
                     let immediate = info.type_ == smithay::reexports::drm::control::PlaneType::Cursor;
-                    cursor = Some(CursorPlane { plane: plane(device, info, primary_zpos, 2), buffers, side, shown: None, immediate });
+                    cursor = Some(CursorPlane { plane: plane(device, info, primary_zpos, 2), buffers, side, shown: None, immediate, checked: false });
                     break;
                 }
                 Err(error) => log::info!("plane layers: plane {:?} for the {role} screen's cursor: {error}", info.handle),
@@ -318,9 +322,11 @@ impl PlaneLayers {
     }
 
     /// Moves the cursor's plane at once, by the kernel's cursor-only update on `device`, if only where the
-    /// cursor is changed this turn and its plane is the CRTC's own. Returns whether it did: the change is
-    /// then shown at the next refresh, without waiting for the frame queued. Refused, its moves wait for the
-    /// commits from now on, logged.
+    /// cursor is changed this turn. Returns whether it did: the change is then shown at the next refresh,
+    /// without waiting for the frame queued. Its moves wait for the commits from now on, logged, if the
+    /// kernel refuses one, waits for the frame queued instead (a driver without cursor updates of their own
+    /// does), or moves another plane than ours (the CRTC's own cursor plane, which the kernel moves, may be
+    /// another of its cursor planes): the first move is checked by our plane's place after it.
     pub(crate) fn move_now(&mut self, device: &impl std::os::fd::AsFd) -> bool {
         let (height, quarter, crtc) = (self.height, self.quarter, self.crtc);
         let (Some(cursor), Some(shape)) = (&mut self.cursor, &self.shape) else { return false };
@@ -342,9 +348,28 @@ impl PlaneLayers {
             ..Default::default()
         };
         const CURSOR2: rustix::ioctl::Opcode = rustix::ioctl::opcode::read_write::<drm_ffi::drm_mode_cursor2>(b'd', 0xBB);
+        let started = std::time::Instant::now();
         // SAFETY: DRM_IOCTL_MODE_CURSOR2 on the device, with the request it reads and writes.
         #[allow(unsafe_code)]
         let moved = unsafe { rustix::ioctl::ioctl(device, rustix::ioctl::Updater::<CURSOR2, _>::new(&mut request)) };
+        let took = started.elapsed();
+        if moved.is_ok() && took > IMMEDIATE {
+            log::warn!("plane layers: moving the cursor at once waited {took:?} for the frame queued: it moves with the screen's frames from now on");
+            cursor.immediate = false;
+        }
+        if moved.is_ok() && !cursor.checked {
+            cursor.checked = true;
+            let props = crate::scanout::properties_of(device, u32::from(cursor.plane.handle), drm_ffi::DRM_MODE_OBJECT_PLANE);
+            let x = props.iter().find(|(name, ..)| name == "CRTC_X").map(|&(_, _, value)| value as i64);
+            if x != Some(i64::from(dst.loc.x)) {
+                log::warn!(
+                    "plane layers: moving the cursor at once moved another plane than its own (its place is {x:?}, not {}): it moves with the screen's frames from now on",
+                    dst.loc.x
+                );
+                cursor.immediate = false;
+                return false;
+            }
+        }
         match moved {
             Ok(()) => {
                 let placement = Placement { dst, ..shown };
