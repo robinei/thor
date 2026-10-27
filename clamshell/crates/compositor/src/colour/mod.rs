@@ -8,6 +8,7 @@ pub(crate) mod chain;
 pub(crate) mod histogram;
 pub(crate) mod math;
 
+#[cfg(feature = "nested")]
 pub(crate) mod host;
 pub(crate) mod protocol;
 pub(crate) mod render;
@@ -89,6 +90,7 @@ impl State {
 mod tests;
 
 impl crate::server::Server {
+    #[cfg(feature = "nested")]
     /// The declared content volume, anchored at the PQ output's reference white. Unknown metadata
     /// conservatively uses the primary volume. Hidden windows cannot change the presented volume.
     pub fn colour_volume(&self) -> (u32, u32) {

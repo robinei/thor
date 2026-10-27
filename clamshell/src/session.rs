@@ -129,7 +129,10 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
     };
     let result = match host {
         Host::Drm => clamshell_compositor::run_drm(state, config, start, on_effect, identify, on_capture, quit, env.scanout),
+        #[cfg(feature = "nested")]
         Host::Nested => clamshell_compositor::run_nested(state, config, start, on_effect, identify, on_capture, quit),
+        #[cfg(not(feature = "nested"))]
+        Host::Nested => Err("this build has no nested session (built without the `nested` feature)".into()),
     };
     result.map_err(|e| e.to_string())
 }

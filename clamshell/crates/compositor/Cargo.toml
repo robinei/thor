@@ -12,7 +12,7 @@ description = "ClamShell's in-process compositor, developed nested on the deskto
 clamshell-device.workspace = true
 clamshell-state.workspace = true
 clamshell-ui.workspace = true
-smithay = { git = "https://github.com/robinei/smithay", rev = "9e2e6b8e78f2356aa78bd3899595d6e912b4264a", default-features = false, features = ["backend_winit", "backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_libseat", "desktop", "wayland_frontend"] }
+smithay = { git = "https://github.com/robinei/smithay", rev = "9e2e6b8e78f2356aa78bd3899595d6e912b4264a", default-features = false, features = ["backend_drm", "backend_egl", "renderer_gl", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_libseat", "desktop", "wayland_frontend"] }
 tiny-skia.workspace = true
 log.workspace = true
 serde.workspace = true
@@ -27,7 +27,11 @@ rustix.workspace = true
 libc.workspace = true
 drm-ffi.workspace = true
 wayland-client.workspace = true
-winit-wayland = { version = "=0.31.0-beta.3", default-features = false }
+winit-wayland = { version = "=0.31.0-beta.3", default-features = false, optional = true }
+
+[features]
+# The session in a window on a desktop (`--nested`, winit): for development, not the device's build.
+nested = ["smithay/backend_winit", "dep:winit-wayland"]
 
 [dev-dependencies]
 clamshell-library = { workspace = true, features = ["demo"] }

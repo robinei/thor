@@ -505,6 +505,7 @@ impl Pipeline {
         }
     }
 
+    #[cfg(feature = "nested")]
     /// Both scenes side by side, each in its screen's encoding, as the nested host shows both screens in
     /// one window.
     pub(crate) fn present(&self, renderer: &mut GlesRenderer, target: &mut GlesTarget<'_>, size: (i32, i32)) -> Result<(), Error> {

@@ -20,6 +20,7 @@ mod hold;
 mod idle;
 mod input;
 mod keyboard;
+#[cfg(feature = "nested")]
 mod nested;
 mod notify;
 mod pacing;
@@ -46,6 +47,7 @@ use smithay::reexports::calloop::channel;
 
 pub use clients::Process;
 pub use drm::run as run_drm;
+#[cfg(feature = "nested")]
 pub use nested::run as run_nested;
 pub use notify::{Held, Readiness};
 
