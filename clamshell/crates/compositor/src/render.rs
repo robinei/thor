@@ -76,16 +76,18 @@ fn frame(frames: &UiFrames, layer: Layer) -> Option<&UiFrame> {
     })
 }
 
-/// The scene's elements, front first, as the scene lists what is shown. The UI's layers are drawn first,
-/// all but the top screen's while a window covers it: that stays stale in the core, and is drawn where it
-/// changed once uncovered (the texture holds the last frame drawn). Drawing may change the state, so the
-/// scene is placed again after.
+/// The scene's elements, front first, as the scene lists what is shown, but for the windows `skip`, which a
+/// screen shows from their own buffers (see `window_scanout`). The UI's layers are drawn first, all but the
+/// top screen's while a window covers it: that stays stale in the core, and is drawn where it changed once
+/// uncovered (the texture holds the last frame drawn). Drawing may change the state, so the scene is placed
+/// again after.
 pub(crate) fn elements(
     server: &mut Server,
     frames: &mut UiFrames,
     cursor: &mut crate::cursor::Cursor,
     renderer: &mut GlesRenderer,
     out: &mut Vec<Element>,
+    skip: [Option<i64>; 2],
 ) -> Result<(), Error> {
     server.place();
     let [top, bottom, overlay, overlay_below] = frames;
@@ -120,6 +122,7 @@ pub(crate) fn elements(
                 );
                 continue;
             }
+            Some(Shown::Window(placed)) if skip.contains(&Some(placed.id)) => continue,
             Some(Shown::Window(placed)) => placed,
             None => break,
         };

@@ -16,6 +16,9 @@ pub(crate) struct Protocols {
     pub activation: smithay::wayland::xdg_activation::XdgActivationState,
     pub shm: ShmState,
     pub dmabuf: smithay::wayland::dmabuf::DmabufState,
+    /// The feedback every surface gets but a window shown from its own buffer (see `window_scanout`): the
+    /// render device and its formats.
+    pub dmabuf_feedback: Option<smithay::wayland::dmabuf::DmabufFeedback>,
     /// Explicit sync (`linux-drm-syncobj-v1`), on a GPU that can wait on a timeline point by an eventfd.
     pub syncobj: Option<smithay::wayland::drm_syncobj::DrmSyncobjState>,
     pub seats: SeatState<Server>,
@@ -56,6 +59,7 @@ impl Protocols {
             activation: smithay::wayland::xdg_activation::XdgActivationState::new::<Server>(dh),
             shm: ShmState::new::<Server>(dh, vec![smithay::reexports::wayland_server::protocol::wl_shm::Format::Abgr8888]),
             dmabuf: smithay::wayland::dmabuf::DmabufState::new(),
+            dmabuf_feedback: None,
             syncobj: None,
             seats: SeatState::new(),
             data_device: DataDeviceState::new::<Server>(dh),

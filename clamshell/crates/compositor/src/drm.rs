@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use crate::EventSender;
 use crate::presenter::Presenter;
 use crate::ui_scanout::UiScanout;
+use crate::window_scanout::{Candidate, Shape, WindowScanout};
 use clamshell_device::{DeviceProfile, Rotation, ScreenRole, TouchSelector, Touchscreen};
 use clamshell_state::colour::ColourDescription;
 use clamshell_state::{Effect, State};
@@ -82,6 +83,14 @@ struct Screen {
     /// `ui_scanout`); and whether it shows one now.
     ui: Option<UiScanout>,
     ui_shown: bool,
+    /// With CLAMSHELL_SCANOUT=1, its means to show a window from the window's own buffer (see
+    /// `window_scanout`), the window it shows so if it does, the window told the plane's formats, the shape
+    /// the display engine last took, and why a window alone on it is composed, as last logged.
+    window: Option<WindowScanout>,
+    window_shown: Option<Candidate>,
+    fed: Option<i64>,
+    tested: Option<Shape>,
+    composed_why: Option<&'static str>,
 }
 
 impl Screen {
@@ -243,6 +252,11 @@ pub fn run(
             queued: RenderElementStates::default(),
             ui: None,
             ui_shown: false,
+            window: None,
+            window_shown: None,
+            fed: None,
+            tested: None,
+            composed_why: None,
         });
     }
     // With CLAMSHELL_SCANOUT=1, each screen's own buffers, for while it shows only ClamShell.
@@ -262,6 +276,31 @@ pub fn run(
                 }
                 Err(error) => log::warn!("ui scanout: the {:?} screen is composed: {error}", screen.role),
             }
+        }
+        // And each screen's means to show a window from its own buffer, with the feedback a window alone on
+        // it gets: the plane's formats the renderer takes too (to compose them if refused), preferred.
+        let main = crate::dmabuf::render_device(&renderer);
+        let node = smithay::backend::drm::DrmNode::from_file(drm.device_fd());
+        for screen in &mut screens {
+            let formats = screen.surface.surface().plane_info().formats.clone();
+            let preferred: Vec<_> = formats.iter().copied().filter(|f| renderer_formats.contains(f)).collect();
+            let feedback = match (main, &node) {
+                (Some(main), Ok(node)) => smithay::wayland::dmabuf::DmabufFeedbackBuilder::new(main, renderer_formats.iter().copied())
+                    .add_preference_tranche(
+                        node.dev_id(),
+                        smithay::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags::Scanout,
+                        preferred,
+                        4..=u32::MAX,
+                    )
+                    .build()
+                    .map_err(|e| e.to_string()),
+                (None, _) => Err("no render device".into()),
+                (_, Err(e)) => Err(format!("the display device: {e}")),
+            };
+            let feedback =
+                feedback.inspect_err(|error| log::warn!("window scanout: the {:?} screen tells no window the plane's formats: {error}", screen.role)).ok();
+            let plane = screen.surface.surface().plane();
+            screen.window = Some(WindowScanout::new(drm.device_fd(), &gbm, plane, formats, feedback));
         }
     }
 
@@ -512,8 +551,10 @@ fn step(
     // The scene is composed when a screen can show it (see `compose_now`). Otherwise the frame's own work
     // (the X11 windows' changes to the state) goes on, and so do the buffers' imports, which their clients
     // wait for.
-    // A screen showing only ClamShell shows its own buffers, and isn't composed for (see `ui_scanout`).
+    // A screen showing only ClamShell shows its own buffers, and isn't composed for (see `ui_scanout`); one
+    // showing one window alone may show the window's (see `window_scanout`).
     ui_scanout_decide(drawing, server);
+    window_scanout_decide(drawing, server);
     let power = |role| {
         drawing.screens.iter().find(|s| s.role == role).map_or(Power::default(), |s| Power { on: s.on && !s.ui_shown, dirty: s.dirty, pending: s.pending })
     };
@@ -549,6 +590,11 @@ fn step(
         if screen.ui_shown {
             if screen.on && !screen.pending {
                 present_ui(screen, server);
+            }
+        } else if turn.present && screen.window_shown.is_some() {
+            if !present_window(screen, server, &mut drawing.pipeline) {
+                // Refused: composed at once.
+                due = Some(now);
             }
         } else if turn.present {
             if let Err(error) = present(drawing, server, index) {
@@ -754,7 +800,8 @@ fn compose(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnM
     server.sync_pointer_capture(|_| Ok::<(), std::convert::Infallible>(()));
     server.import_dmabufs(&mut drawing.renderer);
     let Drawing { renderer, pipeline, screens, frames, cursor, elements, states } = drawing;
-    render::elements(server, frames, cursor, renderer, elements)?;
+    let skip = [0, 1].map(|i| screens.get(i).and_then(|screen| screen.window_shown.as_ref()).map(|shown| shown.id));
+    render::elements(server, frames, cursor, renderer, elements, skip)?;
     let changed = pipeline.compose(server, renderer, elements, states)?;
     if let Some(histogram) = pipeline.take_histogram() {
         server.report_histogram(histogram);
@@ -794,13 +841,119 @@ fn ui_scanout_decide(drawing: &mut Drawing, server: &mut Server) {
         let Some(ui) = &screen.ui else { continue };
         let now = ui_only(server, screen.role == ScreenRole::Bottom);
         if screen.ui_shown && !now {
-            screen.surface.clear_after_ui(ui.clear());
+            screen.surface.clear_after(ui.clear());
             screen.dirty = true;
         }
         if now != screen.ui_shown {
             log::info!("ui scanout: the {:?} screen is {}", screen.role, if now { "scanned out" } else { "composed" });
         }
         screen.ui_shown = now;
+    }
+}
+
+/// Decides for each screen that can show a window from the window's own buffer whether it does: while the
+/// window is all there is on it, its buffer is one the plane can show as composing would, and the display
+/// engine hasn't refused that (see `window_scanout`). The window alone on a screen is told the plane's
+/// formats, and told the renderer's again once it isn't. A screenshot, taken of the scene composed, has
+/// the window composed for it. A screen going back to composing clears the plane's colour in its next
+/// commit, and the scene, which left the window out, is drawn whole.
+fn window_scanout_decide(drawing: &mut Drawing, server: &mut Server) {
+    let Drawing { screens, pipeline, .. } = drawing;
+    for screen in screens.iter_mut() {
+        let Some(scanout) = &mut screen.window else { continue };
+        let down = screen.role == ScreenRole::Bottom;
+        let area = Rectangle::new((screen.part.loc.x, screen.part.loc.y).into(), (screen.part.size.w, screen.part.size.h).into());
+        let found = if screen.ui_shown || !screen.on { None } else { server.scanout_window(down, area, pipeline.output_description(down)) };
+        let alone = found.as_ref().map(|(id, _)| *id);
+        if alone != screen.fed {
+            if let (Some(id), Some(default)) = (screen.fed, &server.protocols.dmabuf_feedback) {
+                server.dmabuf_feedback(id, default);
+            }
+            if let (Some(id), Some(feedback)) = (alone, &scanout.feedback) {
+                server.dmabuf_feedback(id, feedback);
+            }
+            screen.fed = alone;
+        }
+        let chosen = match found {
+            Some((_, Ok(candidate))) if candidate.colour.is_some() && !scanout.has_pipeline() => Err("its colour needs a colour pipeline the plane hasn't"),
+            Some((_, Ok(candidate))) if scanout.refused == Some(candidate.shape()) => Err("the display engine refused its buffer"),
+            Some((_, Ok(candidate))) => Ok(Some(candidate)),
+            Some((_, Err(why))) => Err(why),
+            None => Ok(None),
+        };
+        let why = chosen.as_ref().err().copied();
+        if why != screen.composed_why {
+            if let (Some(why), Some(id)) = (why, alone) {
+                log::info!("window scanout: window {id}, alone on the {:?} screen, is composed: {why}", screen.role);
+            }
+            screen.composed_why = why;
+        }
+        let now = chosen.ok().flatten().filter(|_| !server.screenshot_requested);
+        match (&now, &screen.window_shown) {
+            (Some(candidate), None) => log::info!("window scanout: the {:?} screen shows window {} from its own buffer", screen.role, candidate.id),
+            (None, Some(shown)) => {
+                log::info!("window scanout: the {:?} screen no longer shows window {} from its own buffer", screen.role, shown.id);
+                screen.surface.clear_after(scanout.clear());
+                screen.dirty = true;
+                pipeline.redraw_all();
+            }
+            _ => {}
+        }
+        if let Some(candidate) = &now
+            && screen.window_shown.as_ref().is_none_or(|shown| shown.commit != candidate.commit || shown.shape() != candidate.shape())
+        {
+            screen.dirty = true;
+        }
+        screen.window_shown = now;
+    }
+}
+
+/// Shows the window decided on (see [`window_scanout_decide`]) from its own buffer, in a test commit
+/// first when its shape is new. Returns whether it is: refused, the window is composed until its buffer
+/// changes, and the scene, which left it out, is drawn whole.
+fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipeline) -> bool {
+    let (Some(scanout), Some(candidate)) = (&mut screen.window, &screen.window_shown) else { return true };
+    let shape = candidate.shape();
+    let test = screen.tested != Some(shape);
+    // The window's place turned as the composed frame is, its buffer the other way, as the plane takes it.
+    let logical = screen.transform.transform_size(screen.size);
+    let dst = screen.transform.transform_rect_in(candidate.dst.to_physical(1), &logical);
+    let surface = &mut screen.surface;
+    let shown = scanout.framebuffer(&candidate.dmabuf).and_then(|fb| {
+        let properties = scanout.colour(candidate.colour)?;
+        surface.show_window(candidate.buffer.clone(), fb, candidate.src, dst, screen.transform.invert(), properties, test)
+    });
+    let down = screen.role == ScreenRole::Bottom;
+    match shown {
+        Ok(()) => {
+            screen.tested = Some(shape);
+            let state = smithay::backend::renderer::element::RenderElementState {
+                visible_area: usize::try_from(dst.size.w).unwrap_or(0) * usize::try_from(dst.size.h).unwrap_or(0),
+                presentation_state: smithay::backend::renderer::element::RenderElementPresentationState::ZeroCopy,
+                needs_capture: false,
+            };
+            screen.queued.states.clear();
+            screen.queued.states.insert(smithay::backend::renderer::element::Id::from_wayland_resource(&candidate.surface), state);
+            server.frame_queued(&screen.queued, Some(down));
+            screen.pending = true;
+            screen.queued_at = Some(Instant::now());
+            screen.dirty = false;
+            screen.answered = server.pacing.commits;
+            true
+        }
+        Err(error) => {
+            log::info!(
+                "window scanout: the {:?} screen can't show window {} from its own buffer: {error}: composed until its buffer changes",
+                screen.role,
+                candidate.id
+            );
+            scanout.refused = Some(shape);
+            screen.surface.clear_after(scanout.clear());
+            screen.window_shown = None;
+            screen.dirty = true;
+            pipeline.redraw_all();
+            false
+        }
     }
 }
 
@@ -820,7 +973,7 @@ fn present_ui(screen: &mut Screen, server: &mut Server) {
         Err(error) => {
             // Composed instead from now on, with the reason.
             log::warn!("ui scanout: the {:?} screen: {error}: composed from now on", screen.role);
-            screen.surface.clear_after_ui(ui.clear());
+            screen.surface.clear_after(ui.clear());
             screen.ui = None;
             screen.ui_shown = false;
             screen.dirty = true;

@@ -36,6 +36,7 @@ mod surface;
 mod touch;
 pub mod trace;
 mod ui_scanout;
+mod window_scanout;
 mod windows;
 mod x11;
 

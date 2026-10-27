@@ -18,12 +18,12 @@ use clamshell_state::colour::{ColourDescription, ColourPrimaries};
 use clamshell_ui::{Core, Error, Layer, Pixels, Screen};
 use smithay::backend::drm::DrmDeviceFd;
 use smithay::reexports::drm::buffer::{DrmFourcc, DrmModifier, Handle as BufferHandle, PlanarBuffer};
-use smithay::reexports::drm::control::{Device as ControlDevice, FbCmd2Flags, RawResourceHandle, crtc, framebuffer, property};
+use smithay::reexports::drm::control::{Device as ControlDevice, FbCmd2Flags, RawResourceHandle, crtc, framebuffer};
 
 use crate::colour::math;
+use crate::scanout::Blobs;
 
-/// A property to set in a commit: of which object, which, to what.
-pub(crate) type Property = (RawResourceHandle, property::Handle, property::RawValue);
+pub(crate) use crate::scanout::Property;
 
 pub(crate) struct UiScanout {
     buffers: [Dumb; 2],
@@ -223,20 +223,18 @@ impl PlanarBuffer for Planar {
     }
 }
 
-/// The CRTC's colour stages for the panel: the properties to set, their blobs (destroyed with it), and the
-/// properties cleared.
+/// The CRTC's colour stages for the panel: the properties to set, their blobs, and the properties cleared.
 struct Colour {
-    device: DrmDeviceFd,
     set: Vec<Property>,
     clear: Vec<Property>,
-    blobs: Vec<u32>,
+    _blobs: Blobs,
 }
 
 impl Colour {
     /// For a panel described as `panel`: none for sRGB's, the UI's own; else degamma, matrix and gamma, if
     /// the CRTC has them.
     fn new(device: &DrmDeviceFd, crtc: crtc::Handle, panel: ColourDescription) -> Result<Colour, Error> {
-        let mut colour = Colour { device: device.clone(), set: Vec::new(), clear: Vec::new(), blobs: Vec::new() };
+        let mut colour = Colour { set: Vec::new(), clear: Vec::new(), _blobs: Blobs::new(device) };
         if panel.matches_output(ColourDescription::default()) {
             return Ok(colour);
         }
@@ -271,22 +269,11 @@ impl Colour {
             .flat_map(u64::to_ne_bytes)
             .collect();
         let object: RawResourceHandle = crtc.into();
-        for (property, mut data) in [(degamma, decode), (ctm, matrix), (gamma, encode)] {
-            let blob = drm_ffi::mode::create_property_blob(device.as_fd(), &mut data).map_err(|e| format!("a colour blob: {e}"))?.blob_id;
-            colour.blobs.push(blob);
+        for (property, data) in [(degamma, decode), (ctm, matrix), (gamma, encode)] {
+            let blob = colour._blobs.create(data)?;
             colour.set.push((object, property, u64::from(blob)));
             colour.clear.push((object, property, 0));
         }
         Ok(colour)
-    }
-}
-
-impl Drop for Colour {
-    fn drop(&mut self) {
-        for blob in &self.blobs {
-            if let Err(e) = self.device.destroy_property_blob(u64::from(*blob)) {
-                log::warn!("ui scanout: a colour blob: {e}");
-            }
-        }
     }
 }

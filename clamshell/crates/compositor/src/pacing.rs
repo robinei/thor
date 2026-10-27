@@ -139,6 +139,11 @@ impl Server {
                 if !rendered.element_was_presented(surface) {
                     return;
                 }
+                // Shown from its own buffer (see `window_scanout`): without a copy.
+                let zero_copy = rendered
+                    .element_render_state(surface)
+                    .is_some_and(|state| state.presentation_state == smithay::backend::renderer::element::RenderElementPresentationState::ZeroCopy);
+                let kind = if zero_copy { kind | Kind::ZeroCopy } else { kind };
                 let mut cached = states.cached_state.get::<PresentationFeedbackCachedState>();
                 let current = cached.current();
                 for callback in current.callbacks.drain(..) {

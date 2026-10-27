@@ -2,9 +2,9 @@
 //! plane. One frame is in flight at a time: a buffer is taken ([`Presenter::next_buffer`]), drawn and
 //! committed ([`Presenter::queue`]), and shown at the next flip ([`Presenter::flipped`]), when the buffer
 //! shown before is free again. Smithay's `GbmBufferedSurface` did this; ClamShell's own owns every commit
-//! of the screen, so that a frame scanned out (see `scanout`) is another kind of commit rather than a
-//! second owner of the screen. A screen showing only ClamShell shows a buffer of its own instead (see
-//! `ui_scanout`), the same way.
+//! of the screen, so that a frame scanned out is another kind of commit rather than a second owner of the
+//! screen: a screen showing only ClamShell shows a buffer of its own (see `ui_scanout`), one showing only
+//! a window shows the window's (see `window_scanout`).
 
 use smithay::backend::allocator::format::get_opaque;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBuffer};
@@ -30,15 +30,18 @@ pub(crate) struct Presenter {
     pending: Option<Shown>,
     /// The frame shown.
     current: Option<Shown>,
-    /// Properties the next composed commit sets: the CRTC's colour cleared after ClamShell's own buffers.
-    clear: Vec<crate::ui_scanout::Property>,
+    /// Properties the next commit of any kind sets: what the kind of commit shown before set, cleared.
+    clear: Vec<crate::scanout::Property>,
+    /// The next commit's properties: those cleared, then its own.
+    properties: Vec<crate::scanout::Property>,
 }
 
-/// A frame committed: a buffer composed into, kept from reuse until it is off the screen, or one of
-/// ClamShell's own buffers, which `ui_scanout` keeps.
+/// A frame committed: a buffer composed into or a window's, each kept from reuse until it is off the
+/// screen, or one of ClamShell's own buffers, which `ui_scanout` keeps.
 enum Shown {
     Composed(#[allow(dead_code, reason = "held so that the swapchain doesn't reuse it while shown")] Slot<GbmBuffer>),
     Ui,
+    Window(#[allow(dead_code, reason = "held so that the client doesn't reuse it while shown")] smithay::backend::renderer::utils::Buffer),
 }
 
 impl Presenter {
@@ -64,6 +67,7 @@ impl Presenter {
                         pending: None,
                         current: Some(Shown::Composed(current)),
                         clear: Vec::new(),
+                        properties: Vec::new(),
                     });
                 }
                 Err((back, error)) => {
@@ -117,7 +121,8 @@ impl Presenter {
             return Err((swapchain.allocator, error));
         }
         let Some(fb) = buffer.userdata().get::<GbmFramebuffer>() else { return Err((swapchain.allocator, "no framebuffer".into())) };
-        let state = primary(surface, *fb.as_ref(), None, &[]);
+        let (src, dst) = whole(surface);
+        let state = primary(surface, *fb.as_ref(), src, dst, Transform::Normal, None, &[]);
         if let Err(error) = surface.test_state([state], true) {
             return Err((swapchain.allocator, format!("the test commit: {error}")));
         }
@@ -161,33 +166,69 @@ impl Presenter {
             fence
         });
         let fb = *slot.userdata().get::<GbmFramebuffer>().ok_or("no framebuffer")?.as_ref();
-        let state = primary(&self.surface, fb, fence.as_ref().map(std::os::fd::AsFd::as_fd), &self.clear);
-        let committed = if self.surface.commit_pending() { self.surface.commit([state], true) } else { self.surface.page_flip([state], true) };
-        committed.map_err(|e| format!("committing: {e}"))?;
-        self.clear.clear();
+        let (src, dst) = whole(&self.surface);
+        self.commit(fb, src, dst, Transform::Normal, fence.as_ref().map(std::os::fd::AsFd::as_fd), &[], false).map_err(|e| format!("committing: {e}"))?;
         self.pending = Some(Shown::Composed(slot));
         Ok(())
     }
 
     /// Commits framebuffer `fb`, one of ClamShell's own buffers (see `ui_scanout`), with the CRTC's colour
     /// `properties`. It is shown at the next flip.
-    pub(crate) fn show_ui(
-        &mut self,
-        fb: smithay::reexports::drm::control::framebuffer::Handle,
-        properties: &[crate::ui_scanout::Property],
-    ) -> Result<(), Error> {
-        let state = primary(&self.surface, fb, None, properties);
-        let committed = if self.surface.commit_pending() { self.surface.commit([state], true) } else { self.surface.page_flip([state], true) };
-        committed.map_err(|e| format!("committing ClamShell's own buffer: {e}"))?;
+    pub(crate) fn show_ui(&mut self, fb: smithay::reexports::drm::control::framebuffer::Handle, properties: &[crate::scanout::Property]) -> Result<(), Error> {
+        let (src, dst) = whole(&self.surface);
+        self.commit(fb, src, dst, Transform::Normal, None, properties, false).map_err(|e| format!("committing ClamShell's own buffer: {e}"))?;
         self.pending = Some(Shown::Ui);
         Ok(())
     }
 
-    /// The next composed commit sets `properties` too: the CRTC's colour cleared after ClamShell's own
-    /// buffers were shown with it.
-    pub(crate) fn clear_after_ui(&mut self, properties: &[crate::ui_scanout::Property]) {
-        self.clear.clear();
+    /// Commits a window's `buffer`, its framebuffer `fb`, its part `src` shown at `dst` on the panel turned
+    /// by `transform`, with the plane's colour `properties`; first in a test commit if `test`. It is shown
+    /// at the next flip, and the buffer held until it is off the screen.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn show_window(
+        &mut self,
+        buffer: smithay::backend::renderer::utils::Buffer,
+        fb: smithay::reexports::drm::control::framebuffer::Handle,
+        src: Rectangle<f64, smithay::utils::Buffer>,
+        dst: Rectangle<i32, smithay::utils::Physical>,
+        transform: Transform,
+        properties: &[crate::scanout::Property],
+        test: bool,
+    ) -> Result<(), Error> {
+        self.commit(fb, src, dst, transform, None, properties, test)?;
+        self.pending = Some(Shown::Window(buffer));
+        Ok(())
+    }
+
+    /// The commit after this kind's sets `properties` too: what this kind set, cleared.
+    pub(crate) fn clear_after(&mut self, properties: &[crate::scanout::Property]) {
         self.clear.extend_from_slice(properties);
+    }
+
+    /// Commits `fb` on the primary plane, `src` of it shown at `dst`, turned by `transform`, after `fence`,
+    /// with the properties cleared and then `properties`; first in a test commit if `test`.
+    #[allow(clippy::too_many_arguments)]
+    fn commit(
+        &mut self,
+        fb: smithay::reexports::drm::control::framebuffer::Handle,
+        src: Rectangle<f64, smithay::utils::Buffer>,
+        dst: Rectangle<i32, smithay::utils::Physical>,
+        transform: Transform,
+        fence: Option<std::os::fd::BorrowedFd<'_>>,
+        properties: &[crate::scanout::Property],
+        test: bool,
+    ) -> Result<(), Error> {
+        self.properties.clear();
+        self.properties.extend_from_slice(&self.clear);
+        self.properties.extend_from_slice(properties);
+        let state = primary(&self.surface, fb, src, dst, transform, fence, &self.properties);
+        if test {
+            self.surface.test_state([state.clone()], false).map_err(|e| format!("the display engine refused it: {e}"))?;
+        }
+        let committed = if self.surface.commit_pending() { self.surface.commit([state], true) } else { self.surface.page_flip([state], true) };
+        committed.map_err(|e| e.to_string())?;
+        self.clear.clear();
+        Ok(())
     }
 
     /// The frame committed is shown: the buffer shown before is free again. Whether there was one.
@@ -230,29 +271,25 @@ fn framebuffer(surface: &DrmSurface, slot: &Slot<GbmBuffer>, opaque: bool) -> Re
     Ok(())
 }
 
-/// The primary plane showing framebuffer `fb` over the whole screen, after `fence`, with further
-/// `properties`.
+/// A buffer of the screen's mode shown whole: all of it, over all the screen.
+fn whole(surface: &DrmSurface) -> (Rectangle<f64, smithay::utils::Buffer>, Rectangle<i32, smithay::utils::Physical>) {
+    let (w, h) = surface.pending_mode().size();
+    let (w, h) = (i32::from(w), i32::from(h));
+    (Rectangle::from_size((w, h).into()).to_f64(), Rectangle::from_size((w, h).into()))
+}
+
+/// The primary plane showing `src` of framebuffer `fb` at `dst`, turned by `transform`, after `fence`,
+/// with further `properties`.
 fn primary<'a>(
     surface: &DrmSurface,
     fb: smithay::reexports::drm::control::framebuffer::Handle,
+    src: Rectangle<f64, smithay::utils::Buffer>,
+    dst: Rectangle<i32, smithay::utils::Physical>,
+    transform: Transform,
     fence: Option<std::os::fd::BorrowedFd<'a>>,
-    properties: &'a [crate::ui_scanout::Property],
+    properties: &'a [crate::scanout::Property],
 ) -> PlaneState<'a> {
-    let (w, h) = surface.pending_mode().size();
-    let (w, h) = (i32::from(w), i32::from(h));
-    PlaneState {
-        handle: surface.plane(),
-        config: Some(PlaneConfig {
-            src: Rectangle::from_size((w, h).into()).to_f64(),
-            dst: Rectangle::from_size((w, h).into()),
-            transform: Transform::Normal,
-            alpha: 1.0,
-            damage_clips: None,
-            fb,
-            fence,
-            properties,
-        }),
-    }
+    PlaneState { handle: surface.plane(), config: Some(PlaneConfig { src, dst, transform, alpha: 1.0, damage_clips: None, fb, fence, properties }) }
 }
 
 /// Whether the screen's primary plane has property `name`.

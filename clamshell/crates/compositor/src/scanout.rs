@@ -172,3 +172,52 @@ fn c_name(name: &[std::ffi::c_char]) -> String {
     let bytes: Vec<u8> = name.iter().take_while(|c| **c != 0).map(|c| *c as u8).collect();
     String::from_utf8_lossy(&bytes).into_owned()
 }
+
+/// A property to set in a commit: of which object, which, to what.
+pub(crate) type Property = (smithay::reexports::drm::control::RawResourceHandle, smithay::reexports::drm::control::property::Handle, u64);
+
+/// Property blobs made for commits (colour LUTs and matrices), destroyed with it.
+pub(crate) struct Blobs {
+    device: smithay::backend::drm::DrmDeviceFd,
+    ids: Vec<u32>,
+}
+
+impl Blobs {
+    pub(crate) fn new(device: &smithay::backend::drm::DrmDeviceFd) -> Blobs {
+        Blobs { device: device.clone(), ids: Vec::new() }
+    }
+
+    /// A blob of `data`; its id.
+    pub(crate) fn create(&mut self, mut data: Vec<u8>) -> Result<u32, clamshell_ui::Error> {
+        let id = drm_ffi::mode::create_property_blob(self.device.as_fd(), &mut data).map_err(|e| format!("a property blob: {e}"))?.blob_id;
+        self.ids.push(id);
+        Ok(id)
+    }
+}
+
+impl Drop for Blobs {
+    fn drop(&mut self) {
+        use smithay::reexports::drm::control::Device;
+        for id in &self.ids {
+            if let Err(e) = self.device.destroy_property_blob(u64::from(*id)) {
+                log::warn!("drm: destroying a property blob: {e}");
+            }
+        }
+    }
+}
+
+/// The name of enum property `property`'s value `value`.
+pub(crate) fn enum_name(device: &impl AsFd, property: smithay::reexports::drm::control::property::Handle, value: u64) -> Option<String> {
+    let mut enums = Vec::new();
+    drm_ffi::mode::get_property(device.as_fd(), property.into(), None, Some(&mut enums)).ok()?;
+    enums.iter().find(|e| e.value == value).map(|e| c_name(&e.name))
+}
+
+/// The values enum property `property` may have, but 0 (a plane's colour pipelines: their first colorops).
+pub(crate) fn enum_values(device: &impl AsFd, property: smithay::reexports::drm::control::property::Handle) -> Vec<u64> {
+    let mut enums = Vec::new();
+    if drm_ffi::mode::get_property(device.as_fd(), property.into(), None, Some(&mut enums)).is_err() {
+        return Vec::new();
+    }
+    enums.iter().map(|e| e.value).filter(|v| *v != 0).collect()
+}

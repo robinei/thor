@@ -30,8 +30,7 @@ impl Server {
             log::debug!("compositor: software EGL has no native dmabuf transport");
             return;
         }
-        let device = device.and_then(|device| device.render_device_path()).ok().and_then(|path| std::fs::metadata(path).ok()).map(|metadata| metadata.rdev());
-        self.advertise_dmabuf_formats(formats, device);
+        self.advertise_dmabuf_formats(formats, render_device(renderer));
     }
 
     pub(super) fn advertise_dmabuf_formats(&mut self, formats: impl IntoIterator<Item = Format>, device: Option<u64>) {
@@ -45,6 +44,7 @@ impl Server {
         });
         if let Some(feedback) = feedback {
             self.protocols.dmabuf.create_global_with_default_feedback::<Self>(&self.dh, &feedback);
+            self.protocols.dmabuf_feedback = Some(feedback);
         } else {
             log::debug!("compositor: no render-device feedback, advertising dmabuf v3");
             self.protocols.dmabuf.create_global::<Self>(&self.dh, formats);
@@ -73,6 +73,12 @@ impl Server {
         }
         pending
     }
+}
+
+/// The renderer's render device, as a device number, if EGL says.
+pub(crate) fn render_device(renderer: &GlesRenderer) -> Option<u64> {
+    let device = EGLDevice::device_for_display(renderer.egl_context().display()).ok()?;
+    std::fs::metadata(device.render_device_path().ok()?).ok().map(|metadata| metadata.rdev())
 }
 
 impl DmabufHandler for Server {

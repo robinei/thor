@@ -190,6 +190,11 @@ impl Pipeline {
         Ok(())
     }
 
+    /// Screen `down`'s encoding (the second's, or the top's).
+    pub(crate) fn output_description(&self, down: bool) -> ColourDescription {
+        self.output(down).0
+    }
+
     /// Screen `down`'s encoding (the second's, or the top's) and its shader.
     fn output(&self, down: bool) -> &(ColourDescription, GlesTexProgram) {
         let [top, bottom] = &self.outputs;
@@ -280,11 +285,7 @@ impl Pipeline {
             let colour = server.colour.surfaces.get(inner.id()).map(|colour| **colour).unwrap_or_default();
             let look = self.last_curves.iter().find(|(id, _)| id == inner.id()).map(|(_, look)| *look);
             let (curve, headroom) = look.as_ref().map_or((None, 1.0), |look| (look.curve.as_ref(), look.headroom));
-            // An HDR surface's peak: the one set for its program, else what it declares or is assumed.
-            let peak = hdr(colour).then(|| match look.map_or(0, |look| look.hdr_peak) {
-                0 => colour.peak() as f32,
-                set => f32::from(set) / colour.luminances().reference.max(1) as f32,
-            });
+            let peak = hdr_peak(colour, look.map_or(0, |look| look.hdr_peak));
             let curve = (sdr(colour) || hdr(colour)).then(|| {
                 let [a, b] = curve_uniforms(curve, headroom, peak);
                 // A picture the chain upscaled is sharpened one texel to a pixel (RCAS); one whose SMAA weights
@@ -408,13 +409,13 @@ fn read_back(
 
 /// Whether a surface of `description` is SDR: an sRGB or power-law signal, the curve applied to its signal
 /// (`Curve::map_on`).
-pub(super) fn sdr(description: ColourDescription) -> bool {
+pub(crate) fn sdr(description: ColourDescription) -> bool {
     matches!(description.transfer, TransferFunction::Srgb | TransferFunction::Gamma(_))
 }
 
 /// Whether a surface of `description` is HDR: PQ or linear light (scRGB's), the curve applied to its light
 /// and its highlights compressed into the screen (`curve::map_hdr`).
-pub(super) fn hdr(description: ColourDescription) -> bool {
+pub(crate) fn hdr(description: ColourDescription) -> bool {
     description.hdr()
 }
 
@@ -437,12 +438,21 @@ fn clarity_uniform(clarity: clamshell_state::presentation::Clarity, (w, h): (i32
     [1.0 / w as f32, 1.0 / h as f32, f32::from(clarity.sharpen.min(100)) / 100.0, sampling]
 }
 
+/// An HDR surface's peak, in units of its white: `set` for its program (in nits; 0 for none), else what it
+/// declares or is assumed. None for an SDR surface.
+pub(crate) fn hdr_peak(colour: ColourDescription, set: u16) -> Option<f32> {
+    hdr(colour).then(|| match set {
+        0 => colour.peak() as f32,
+        set => f32::from(set) / colour.luminances().reference.max(1) as f32,
+    })
+}
+
 /// A tone curve as the input shaders' uniforms: black point, contrast, where highlights start, and for an
 /// SDR surface their peak (in units of white: the curve's share of the screen's room above white), for an
 /// HDR one its own peak (`hdr_peak`, in units of its white); then white over the reference, saturation,
 /// the screen's headroom, and whether a curve is on.
 /// Without one, an SDR surface is only decoded and an HDR one compressed into the screen.
-pub(super) fn curve_uniforms(curve: Option<&Curve>, headroom: f32, hdr_peak: Option<f32>) -> [[f32; 4]; 2] {
+pub(crate) fn curve_uniforms(curve: Option<&Curve>, headroom: f32, hdr_peak: Option<f32>) -> [[f32; 4]; 2] {
     let Some(c) = curve else {
         return [[0.0, 1.0, 1.0, hdr_peak.unwrap_or(1.0)], [1.0, 1.0, headroom, 0.0]];
     };

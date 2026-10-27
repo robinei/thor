@@ -154,7 +154,7 @@ impl Surface {
     }
 
     /// How a surface with a buffer shows it.
-    fn view(states: &SurfaceData) -> Option<smithay::backend::renderer::utils::SurfaceView> {
+    pub(crate) fn view(states: &SurfaceData) -> Option<smithay::backend::renderer::utils::SurfaceView> {
         let state = states.data_map.get::<smithay::backend::renderer::utils::RendererSurfaceStateUserData>()?;
         let state = state.lock().ok()?;
         state.buffer_size()?;
