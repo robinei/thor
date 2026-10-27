@@ -1,5 +1,5 @@
 //! ClamShell's own screens scanned out directly, with CLAMSHELL_SCANOUT=1: while a screen shows nothing but
-//! its UI (no window, overlay or cursor on it), the UI is shown from buffers the display engine scans out,
+//! its UI (no window on it; its overlay and cursor, if any, on planes of their own), the UI is shown from buffers the display engine scans out,
 //! and the GPU does nothing for it; with both screens so, nothing at all.
 //!
 //! Each screen has two dumb buffers, CPU-mapped and drawn in turn ([`LayerBuffers`], which the overlay's
@@ -117,7 +117,13 @@ pub(crate) struct LayerBuffers {
 
 /// Whether a plane taking `formats` takes one of `choices` linear, as [`LayerBuffers::new`] needs.
 pub(crate) fn takes(formats: &smithay::backend::allocator::format::FormatSet, choices: &[(DrmFourcc, bool)]) -> bool {
-    choices.iter().any(|(code, _)| formats.iter().any(|f| f.code == *code && matches!(f.modifier, DrmModifier::Linear | DrmModifier::Invalid)))
+    choice(formats, choices).is_some()
+}
+
+/// The first of `choices` a plane taking `formats` takes linear.
+fn choice(formats: &smithay::backend::allocator::format::FormatSet, choices: &[(DrmFourcc, bool)]) -> Option<(DrmFourcc, bool)> {
+    let linear = |code| formats.iter().any(|f| f.code == code && matches!(f.modifier, DrmModifier::Linear | DrmModifier::Invalid));
+    choices.iter().find(|(code, _)| linear(*code)).copied()
 }
 
 impl LayerBuffers {
@@ -131,8 +137,7 @@ impl LayerBuffers {
         quarter: bool,
         choices: &[(DrmFourcc, bool)],
     ) -> Result<LayerBuffers, Error> {
-        let linear = |code| formats.iter().any(|f| f.code == code && matches!(f.modifier, DrmModifier::Linear | DrmModifier::Invalid));
-        let Some(&(format, bgra)) = choices.iter().find(|(code, _)| linear(*code)) else {
+        let Some((format, bgra)) = choice(formats, choices) else {
             return Err(format!("the plane takes none of {:?} linear", choices.iter().map(|(code, _)| *code).collect::<Vec<_>>()).into());
         };
         let turned = if quarter { (size.1, size.0) } else { size };
@@ -374,28 +379,9 @@ impl Colour {
             return Err("the CRTC has no degamma, colour matrix and gamma for the panel's colour".into());
         };
         let srgb = ColourDescription::default();
-        let table = |n: u64, f: &dyn Fn(f64) -> f64| -> Vec<u8> {
-            (0..n.max(2))
-                .flat_map(|i| {
-                    let v = (f(i as f64 / (n.max(2) - 1) as f64).clamp(0.0, 1.0) * 65535.0).round() as u16;
-                    [v, v, v, 0]
-                })
-                .flat_map(u16::to_ne_bytes)
-                .collect()
-        };
-        let decode = table(degamma_size, &|x| math::decode(x, srgb).unwrap_or(x));
-        let encode = table(gamma_size, &|x| math::encode(x, panel).unwrap_or(x));
-        let matrix = math::matrix(ColourPrimaries::Srgb, panel.primaries).ok_or("no matrix to the panel's primaries")?;
-        // S31.32 sign-magnitude, row by row.
-        let matrix: Vec<u8> = matrix
-            .iter()
-            .flatten()
-            .map(|v| {
-                let magnitude = (v.abs() * 4_294_967_296.0).round() as u64 & !(1 << 63);
-                if *v < 0.0 { magnitude | 1 << 63 } else { magnitude }
-            })
-            .flat_map(u64::to_ne_bytes)
-            .collect();
+        let decode = lut_blob(degamma_size, |x| math::decode(x, srgb).unwrap_or(x));
+        let encode = lut_blob(gamma_size, |x| math::encode(x, panel).unwrap_or(x));
+        let matrix = ctm_blob(math::matrix(ColourPrimaries::Srgb, panel.primaries).ok_or("no matrix to the panel's primaries")?);
         let object: RawResourceHandle = crtc.into();
         for (property, data) in [(degamma, decode), (ctm, matrix), (gamma, encode)] {
             let blob = colour._blobs.create(data)?;
@@ -406,10 +392,53 @@ impl Colour {
     }
 }
 
+/// A CRTC's LUT blob (`drm_color_lut`) of `size` entries (two at least), each `f` of its place from 0 to 1,
+/// the same for each channel, in 16 bits.
+fn lut_blob(size: u64, f: impl Fn(f64) -> f64) -> Vec<u8> {
+    let n = size.max(2);
+    (0..n)
+        .flat_map(|i| {
+            let v = (f(i as f64 / (n - 1) as f64).clamp(0.0, 1.0) * 65535.0).round() as u16;
+            [v, v, v, 0]
+        })
+        .flat_map(u16::to_ne_bytes)
+        .collect()
+}
+
+/// A CRTC's colour matrix blob (`drm_color_ctm`): `matrix` row by row, each value S31.32 sign-magnitude.
+fn ctm_blob(matrix: [[f64; 3]; 3]) -> Vec<u8> {
+    matrix
+        .iter()
+        .flatten()
+        .map(|v| {
+            let magnitude = (v.abs() * 4_294_967_296.0).round() as u64 & !(1 << 63);
+            if *v < 0.0 { magnitude | 1 << 63 } else { magnitude }
+        })
+        .flat_map(u64::to_ne_bytes)
+        .collect()
+}
+
 #[cfg(test)]
 #[allow(clippy::indexing_slicing)]
 mod tests {
     use super::*;
+
+    /// A LUT blob is its entries, red, green, blue and a reserved zero in 16 bits each, from 0 to 1.
+    #[test]
+    fn a_lut_is_its_entries_in_16_bits() {
+        let words = |bytes: Vec<u8>| bytes.chunks_exact(2).map(|b| u16::from_ne_bytes([b[0], b[1]])).collect::<Vec<_>>();
+        assert_eq!(words(lut_blob(3, |x| x)), [0, 0, 0, 0, 32768, 32768, 32768, 0, 65535, 65535, 65535, 0]);
+        assert_eq!(words(lut_blob(0, |x| x * 2.0)), [0, 0, 0, 0, 65535, 65535, 65535, 0], "two entries at least, clamped");
+    }
+
+    /// A colour matrix blob is its values row by row, each a sign bit and a 31.32 fixed-point magnitude.
+    #[test]
+    fn a_colour_matrix_is_sign_magnitude_fixed_point() {
+        let values = |bytes: Vec<u8>| bytes.chunks_exact(8).map(|b| u64::from_ne_bytes(b.try_into().unwrap_or_default())).collect::<Vec<_>>();
+        let got = values(ctm_blob([[1.0, -0.5, 0.0], [0.25, 1.0, -2.0], [0.0, 0.0, 1.0]]));
+        let (one, half, quarter) = (1u64 << 32, 1u64 << 31, 1u64 << 30);
+        assert_eq!(got, [one, (1 << 63) | half, 0, quarter, one, (1 << 63) | (2 * one), 0, 0, one]);
+    }
 
     /// A picture whose every pixel says where it is: x's and y's low bytes, their high bits, and 255.
     fn picture((w, h): (u32, u32)) -> Vec<u8> {
