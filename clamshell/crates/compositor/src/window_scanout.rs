@@ -23,10 +23,11 @@ use smithay::backend::drm::gbm::{GbmFramebuffer, framebuffer_from_dmabuf};
 use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::utils::{Buffer, CommitCounter, with_renderer_surface_state};
 use smithay::desktop::PopupManager;
-use smithay::reexports::drm::control::{RawResourceHandle, framebuffer, plane, property};
+use smithay::reexports::drm::control::{RawResourceHandle, plane, property};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Rectangle, Transform};
 use smithay::wayland::dmabuf::{DmabufFeedback, SurfaceDmabufFeedbackState, get_dmabuf};
+use std::rc::Rc;
 
 use clamshell_state::colour::ColourDescription;
 use clamshell_ui::Error;
@@ -198,8 +199,8 @@ pub(crate) struct WindowScanout {
     /// a render device to name.
     pub feedback: Option<DmabufFeedback>,
     /// The framebuffers of buffers shown, each with its buffer, kept while it lives: a game draws into a
-    /// few in turn.
-    framebuffers: Vec<(WeakDmabuf, GbmFramebuffer)>,
+    /// few in turn. A frame shown holds its own, so that dropping one here never takes it off the screen.
+    framebuffers: Vec<(WeakDmabuf, Rc<GbmFramebuffer>)>,
     /// The LUTs made last, for a window's colour.
     colour: Option<(ColourKey, Blobs, Vec<Property>)>,
     /// The pipeline turned off, for a window that needs none and the commits after a window.
@@ -242,10 +243,10 @@ impl WindowScanout {
     }
 
     /// The framebuffer of `dmabuf`, made the first time and kept with it.
-    pub(crate) fn framebuffer(&mut self, dmabuf: &Dmabuf) -> Result<framebuffer::Handle, Error> {
+    pub(crate) fn framebuffer(&mut self, dmabuf: &Dmabuf) -> Result<Rc<GbmFramebuffer>, Error> {
         self.framebuffers.retain(|(weak, _)| weak.upgrade().is_some());
         if let Some((_, fb)) = self.framebuffers.iter().find(|(weak, _)| weak.upgrade().as_ref() == Some(dmabuf)) {
-            return Ok(*fb.as_ref());
+            return Ok(fb.clone());
         }
         let format = dmabuf.format();
         let code = format.code;
@@ -254,13 +255,12 @@ impl WindowScanout {
         if !taken(code) && !smithay::backend::allocator::format::get_opaque(code).is_some_and(taken) {
             return Err(format!("the plane doesn't take its format, {code} {:?}", format.modifier).into());
         }
-        let fb = framebuffer_from_dmabuf(&self.device, &self.gbm, dmabuf, opaque, false).map_err(|e| format!("its framebuffer: {e}"))?;
-        let handle = *fb.as_ref();
+        let fb = Rc::new(framebuffer_from_dmabuf(&self.device, &self.gbm, dmabuf, opaque, false).map_err(|e| format!("its framebuffer: {e}"))?);
         if self.framebuffers.len() == FRAMEBUFFERS {
             self.framebuffers.remove(0);
         }
-        self.framebuffers.push((dmabuf.weak(), fb));
-        Ok(handle)
+        self.framebuffers.push((dmabuf.weak(), fb.clone()));
+        Ok(fb)
     }
 
     /// The plane's properties for a window's colour `key`: the pipeline off for none, else its LUTs, made

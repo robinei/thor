@@ -941,7 +941,7 @@ fn record_overlays(server: &mut Server) {
 /// and commits them whole.
 fn ui_scanout_decide(drawing: &mut Drawing, server: &mut Server) {
     for screen in &mut drawing.screens {
-        if screen.ui.is_none() {
+        if screen.ui.as_ref().is_none_or(|ui| ui.refused) {
             continue;
         }
         let now = ui_only(server, screen.role == ScreenRole::Bottom, screen.planed());
@@ -1134,7 +1134,7 @@ fn present_ui(screen: &mut Screen, server: &mut Server, cursor: &crate::cursor::
             // Composed instead from now on, with the reason.
             log::warn!("ui scanout: the {:?} screen: {error}: composed from now on", screen.role);
             screen.surface.clear_after(ui.clear());
-            screen.ui = None;
+            ui.refused = true;
             screen.ui_shown = false;
             screen.dirty = true;
         }

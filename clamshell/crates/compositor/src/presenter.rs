@@ -32,6 +32,8 @@ pub(crate) struct Presenter {
     next: Option<Slot<GbmBuffer>>,
     /// The frame committed, until its flip.
     pending: Option<Shown>,
+    /// A frame committed whose flip was lost: it may be the one shown, so it is kept until a flip.
+    lost: Option<Shown>,
     /// The frame shown.
     current: Option<Shown>,
     /// Properties the next commit of any kind sets: what the kind of commit shown before set, cleared.
@@ -59,7 +61,10 @@ struct Primary {
 enum Shown {
     Composed(#[allow(dead_code, reason = "held so that the swapchain doesn't reuse it while shown")] Slot<GbmBuffer>),
     Ui,
-    Window(#[allow(dead_code, reason = "held so that the client doesn't reuse it while shown")] smithay::backend::renderer::utils::Buffer),
+    Window(
+        #[allow(dead_code, reason = "held so that the client doesn't reuse it while shown")] smithay::backend::renderer::utils::Buffer,
+        #[allow(dead_code, reason = "held so that it isn't removed while shown")] std::rc::Rc<smithay::backend::drm::gbm::GbmFramebuffer>,
+    ),
     /// The frame shown, committed again: it stays.
     Again,
 }
@@ -89,6 +94,7 @@ impl Presenter {
                         fencing,
                         next: None,
                         pending: None,
+                        lost: None,
                         current: None,
                         clear: Vec::new(),
                         properties: Vec::new(),
@@ -224,7 +230,7 @@ impl Presenter {
     pub(crate) fn show_window<'l>(
         &mut self,
         buffer: smithay::backend::renderer::utils::Buffer,
-        fb: smithay::reexports::drm::control::framebuffer::Handle,
+        fb: std::rc::Rc<smithay::backend::drm::gbm::GbmFramebuffer>,
         src: Rectangle<f64, smithay::utils::Buffer>,
         dst: Rectangle<i32, smithay::utils::Physical>,
         transform: Transform,
@@ -232,8 +238,8 @@ impl Presenter {
         layers: impl Iterator<Item = PlaneState<'l>> + Clone,
         test: bool,
     ) -> Result<(), Error> {
-        self.commit(fb, src, dst, transform, None, properties, layers, test)?;
-        self.pending = Some(Shown::Window(buffer));
+        self.commit(*(*fb).as_ref(), src, dst, transform, None, properties, layers, test)?;
+        self.pending = Some(Shown::Window(buffer, fb));
         Ok(())
     }
 
@@ -283,6 +289,7 @@ impl Presenter {
 
     /// The frame committed is shown: the buffer shown before is free again. Whether there was one.
     pub(crate) fn flipped(&mut self) -> bool {
+        self.lost = None;
         match self.pending.take() {
             Some(Shown::Again) => true,
             Some(pending) => {
@@ -300,7 +307,7 @@ impl Presenter {
             return;
         }
         let in_use = |shown: &Option<Shown>| matches!(shown, Some(Shown::Composed(_)));
-        if self.next.is_some() || in_use(&self.pending) || in_use(&self.current) {
+        if self.next.is_some() || in_use(&self.pending) || in_use(&self.lost) || in_use(&self.current) {
             // In use: kept until a while after it no longer is.
             self.hold.used(now);
             return;
@@ -321,13 +328,16 @@ impl Presenter {
         self.swapchain.reset_buffers();
         self.composing_buffers = false;
         self.next = None;
-        self.pending = None;
+        if let Some(pending) = self.pending.take().filter(|pending| !matches!(pending, Shown::Again)) {
+            self.lost = Some(pending);
+        }
     }
 
     /// The screen was turned off: its plane shows none of its buffers any more, so they may be dropped.
     pub(crate) fn off(&mut self) {
         self.next = None;
         self.pending = None;
+        self.lost = None;
         self.current = None;
     }
 

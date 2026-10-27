@@ -28,6 +28,9 @@ pub(crate) use crate::scanout::Property;
 pub(crate) struct UiScanout {
     buffers: LayerBuffers,
     colour: Colour,
+    /// The display engine refused a commit of them: the screen is composed from then on. They are kept, as
+    /// one of them may be on the screen still.
+    pub refused: bool,
 }
 
 impl UiScanout {
@@ -50,7 +53,7 @@ impl UiScanout {
         }
         let colour = Colour::new(device, crtc, panel)?;
         let buffers = LayerBuffers::new(device, formats, size, quarter, OPAQUE)?;
-        Ok(UiScanout { buffers, colour })
+        Ok(UiScanout { buffers, colour, refused: false })
     }
 
     /// Draws `screen`'s UI layer into the next buffer if that is behind, recording it first if it is stale.
