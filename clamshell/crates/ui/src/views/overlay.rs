@@ -23,7 +23,7 @@ const ARROW_ICON: f32 = 48.0;
 
 pub fn draw(f: &mut Frame, screen: Rect) {
     if f.s.session().overview().is_some() {
-        return overview(f, screen);
+        return overview(f);
     }
     hud(f, screen);
     arrows(f, screen);
@@ -31,14 +31,16 @@ pub fn draw(f: &mut Frame, screen: Rect) {
 
 /// The overview of the program's windows (`clamshell_state::session::overview`), which the compositor draws
 /// in their cells: each cell a target, acted on as it is pressed (`Core::press_overlay`), and the ring
-/// around the one the pad has chosen, as a tile's.
-fn overview(f: &mut Frame, screen: Rect) {
+/// around the one the pad has chosen, as a tile's. The cells are the compositor's, on the whole screen in
+/// its pixels, so they don't move with the burn-in drift.
+fn overview(f: &mut Frame) {
     let session = f.s.session();
     let Some(chosen) = session.overview().map(|o| o.chosen()) else { return };
     let n = session.overview_windows().count();
+    let (screen_w, screen_h) = f.c.buffer_size();
     for (i, window) in session.overview_windows().enumerate() {
-        let (x, y, w, h) = clamshell_state::session::overview::cell(i, n, (screen.w, screen.h));
-        let rect = Rect::new(screen.x + x, screen.y + y, w, h);
+        let (x, y, w, h) = clamshell_state::session::overview::cell(i, n, (screen_w as f32, screen_h as f32));
+        let rect = f.c.pinned(Rect::new(x, y, w, h));
         f.button(Id::OverviewWindow(window.id), rect, Look::TILE, |_| {});
         if window.id == chosen {
             f.ring(rect, Look::TILE);
@@ -110,8 +112,12 @@ mod tests {
     }
 
     fn overlay(s: &State) -> Retained {
+        overlay_at(s, (0, 0))
+    }
+
+    fn overlay_at(s: &State, drift: (i32, i32)) -> Retained {
         let mut retained = Retained::default();
-        let at = Placement { size_px: (960, 540), scale: 1, drift: (0, 0) };
+        let at = Placement { size_px: (960, 540), scale: 1, drift };
         record(&mut retained, at, Layer::Overlay(crate::Screen::Top), s, &mut DrawCache::load(), &mut Images::synchronous());
         retained
     }
@@ -141,5 +147,12 @@ mod tests {
         let (left, right) = (shown.targets[0].rect, shown.targets[1].rect);
         assert!(left.contains(240.0, 270.0) && right.contains(720.0, 270.0) && !left.contains(720.0, 270.0));
         assert!(!shown.next.ink().is_empty(), "the chosen one's ring");
+        // The cells are the compositor's, in the screen's pixels, whatever the burn-in drift.
+        let drifted = overlay_at(&s, (3, -2));
+        for (i, target) in drifted.targets.iter().enumerate() {
+            let (x, y, w, h) = clamshell_state::session::overview::cell(i, 2, (960.0, 540.0));
+            let r = target.rect;
+            assert!((r.x - x).abs() < 0.01 && (r.y - y).abs() < 0.01 && (r.w - w).abs() < 0.01 && (r.h - h).abs() < 0.01, "{r:?}");
+        }
     }
 }

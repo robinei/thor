@@ -183,6 +183,17 @@ impl<'a> Canvas<'a> {
         self.scale
     }
 
+    /// The buffer's size in pixels.
+    pub fn buffer_size(&self) -> (u32, u32) {
+        self.rec.size
+    }
+
+    /// `r`, given in buffer pixels, in logical pixels, pinned there: unmoved by the burn-in offset, for what
+    /// must line up with what the compositor shows on the screen, such as the overview's cells.
+    pub fn pinned(&self, r: Rect) -> Rect {
+        Rect::new((r.x - self.offset.0) / self.scale, (r.y - self.offset.1) / self.scale, r.w / self.scale, r.h / self.scale)
+    }
+
     /// Converts logical x and y to buffer pixels.
     pub(super) fn px(&self, x: f32) -> f32 {
         x * self.scale + self.offset.0
