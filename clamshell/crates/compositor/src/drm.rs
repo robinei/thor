@@ -425,13 +425,17 @@ fn ui_only(server: &Server, down: bool) -> bool {
     })
 }
 
-/// A GLES renderer on the GPU's GBM device.
+/// A GLES renderer on the GPU's GBM device, its context at high priority: where the GPU preempts (the
+/// Thor's Adreno, by its kernel's priority rings), ClamShell's frames go ahead of a game's work rather
+/// than queueing behind it. Where the driver doesn't offer it, the context is an ordinary one; Smithay
+/// logs the priority granted either way.
 #[allow(unsafe_code)]
 fn gles(gbm: GbmDevice<DrmDeviceFd>) -> Result<GlesRenderer, Error> {
     // SAFETY: EGL is given a GBM device that stays open as long as the display, which the context and
     // the renderer keep.
     let display = unsafe { EGLDisplay::new(gbm) }.map_err(|e| format!("drm: egl: {e}"))?;
-    let context = EGLContext::new(&display).map_err(|e| format!("drm: egl context: {e}"))?;
+    let context =
+        EGLContext::new_with_priority(&display, smithay::backend::egl::context::ContextPriority::High).map_err(|e| format!("drm: egl context: {e}"))?;
     // SAFETY: the context was just made on this thread and only this renderer uses it.
     unsafe { GlesRenderer::new(context) }.map_err(|e| format!("drm: renderer: {e}").into())
 }
