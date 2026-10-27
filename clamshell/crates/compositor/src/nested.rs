@@ -49,7 +49,7 @@ pub fn run(
     let (mut backend, events) = winit::init_from_attributes::<GlesRenderer>(attributes)?;
     server.advertise_dmabuf(backend.renderer());
     // The device's drawing path, the only one: nested shows what the device would.
-    let mut pipeline = crate::colour::render::Pipeline::new(backend.renderer(), server.screens.size)
+    let mut pipeline = crate::colour::render::Pipeline::new(backend.renderer(), server)
         .map_err(|error| format!("nested compositor: the colour pipeline can't start, and nested draws only through it: {error}"))?;
     crate::colour::protocol::install(&server.dh);
     let mut host_colour = crate::colour::host::Host::new(backend.window());
@@ -63,7 +63,8 @@ pub fn run(
     let bottom_size = server.core.size(clamshell_ui::Screen::Bottom).0;
     let mut frames = [UiFrame::new(top_size)?, UiFrame::new(bottom_size)?, UiFrame::new(top_size)?, UiFrame::new(bottom_size)?];
     let mut elements = Vec::new();
-    let mut states = RenderElementStates::default();
+    // Each screen's elements' states (the top's, the second's).
+    let mut states = [RenderElementStates::default(), RenderElementStates::default()];
     let mut refresh_known = false;
     base.event_loop
         .handle()
@@ -121,16 +122,18 @@ pub fn run(
                         // Commits timed for no later than this frame, shown at the host's next, go ahead.
                         let interval = Duration::from_secs_f64(1000.0 / f64::from(server.screens.refresh.max(1000)));
                         server.release_timed_commits((Duration::from(server.clock.now()) + interval).into());
-                        render::elements(server, &mut frames, &mut cursor, backend.renderer(), &mut elements, [None; 2])?;
-                        pipeline.compose(server, backend.renderer(), &mut elements, &mut states, [None; 2])?;
+                        for (down, states) in [false, true].into_iter().zip(&mut states) {
+                            render::elements(server, &mut frames, &mut cursor, backend.renderer(), &mut elements, down, None)?;
+                            pipeline.compose(server, backend.renderer(), down, &mut elements, states, false)?;
+                        }
                         if let Some(histogram) = pipeline.take_histogram() {
                             server.report_histogram(histogram);
                         }
                         {
                             let (renderer, mut framebuffer) = backend.bind()?;
-                            pipeline.present(renderer, &mut framebuffer)?;
+                            pipeline.present(renderer, &mut framebuffer, server.screens.size)?;
                             if capturing {
-                                let captured = pipeline.capture(renderer);
+                                let captured = pipeline.capture(renderer, server.screens.size);
                                 if let Err(error) = &captured {
                                     log::warn!("compositor screenshot: {error}");
                                 }
@@ -142,9 +145,11 @@ pub fn run(
                             }
                         }
                         backend.submit(Some(&[Rectangle::from_size(backend.window_size())]))?;
-                        server.frame_queued(&states, None);
-                        server.frame_shown(&states, None);
-                        server.present_submission(&states, server.clock.now());
+                        for (down, states) in [false, true].into_iter().zip(&states) {
+                            server.frame_queued(states, Some(down));
+                            server.frame_shown(states, Some(down));
+                            server.present_submission(states, server.clock.now());
+                        }
                         // The window redraws at each of the host's frames, so a held callback goes at a later one.
                         let refresh = Duration::from_secs_f64(1000.0 / f64::from(server.screens.refresh.max(1000)));
                         server.frame_callbacks(None, refresh, std::time::Instant::now());

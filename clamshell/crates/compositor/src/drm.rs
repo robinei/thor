@@ -1,8 +1,8 @@
 //! ClamShell's compositor on the machine's own screens: a seat from libseat, the GPU through DRM and GBM,
 //! input from libinput. The device profile names the connector of each screen and how its panel is
-//! mounted. The scene is composed once (the colour pipeline), and each screen is shown its part of it,
-//! turned as its panel is; each screen's page flips pace its frames and the composing of commits to it,
-//! and their times are the presentation feedback clients get.
+//! mounted. Each screen is composed on its own (the colour pipeline, a scene each), turned as its panel
+//! is; its page flips pace its frames and the composing of commits to it, independently of the other
+//! screen's, and their times are the presentation feedback clients get.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -136,8 +136,8 @@ struct Drawing {
     frames: [UiFrame; 4],
     cursor: crate::cursor::Cursor,
     elements: Vec<render::Element>,
-    /// The scene's elements as last composed.
-    states: RenderElementStates,
+    /// Each screen's elements as last composed.
+    states: [RenderElementStates; 2],
 }
 
 /// A connector chosen for a screen: its handle, mode, the modes it has of that size, its CRTC, and its
@@ -210,7 +210,7 @@ pub fn run(
     } else {
         log::info!("drm: no syncobj eventfd on {}: no explicit sync, buffers' implicit fences only", gpu.display());
     }
-    let mut pipeline = Pipeline::new(&mut renderer, server.screens.size)?;
+    let mut pipeline = Pipeline::new(&mut renderer, server)?;
     crate::colour::protocol::install(&server.dh);
     // Each screen encoded for its panel, and described to clients as it, from the device profile.
     let panels = [ColourDescription::from(profile.top.colour), ColourDescription::from(profile.bottom.colour)];
@@ -325,7 +325,7 @@ pub fn run(
         frames: [UiFrame::new(top_ui)?, UiFrame::new(bottom_ui)?, UiFrame::new(top_ui)?, UiFrame::new(bottom_ui)?],
         cursor: crate::cursor::Cursor::new(),
         elements: Vec::new(),
-        states: RenderElementStates::default(),
+        states: [RenderElementStates::default(), RenderElementStates::default()],
     }));
     let on_capture = Rc::new(RefCell::new(on_capture));
 
@@ -536,10 +536,11 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
     screen.held = server.frame_callbacks(Some(down), screen.interval, Instant::now());
 }
 
-/// Composes what changed in the scene when a screen can show it (see [`compose_now`]), and shows it on
-/// each screen whose part changed and that has no flip pending; nothing changed means no frame. Clients that committed without a visible change get
-/// their frame callbacks, at most once a refresh, so that an idle screen never spins. Returns when those
-/// are next due.
+/// Composes each screen that is free and composed for (see [`composes`]) and shows it if it changed;
+/// nothing changed means no frame. A screen waiting for its flip is composed at the flip, with whatever
+/// came meanwhile, and the other screen doesn't wait for it. Clients that committed without a visible
+/// change get their frame callbacks, at most once a refresh, so that an idle screen never spins. Returns
+/// when those are next due.
 fn step(
     drawing: &mut Drawing,
     server: &mut Server,
@@ -556,24 +557,30 @@ fn step(
         let held = server.release_timed_commits(next);
         held.map(|at| timed_wake(now, Duration::from(clock), Duration::from(next), Duration::from(at), top.interval))
     });
-    // The scene is composed when a screen can show it (see `compose_now`). Otherwise the frame's own work
-    // (the X11 windows' changes to the state) goes on, and so do the buffers' imports, which their clients
-    // wait for.
+    // The frame's own work (the X11 windows' changes to the state) and the buffers' imports, which their
+    // clients wait for, every turn.
+    server.frame();
+    server.sync_pointer_capture(|_| Ok::<(), std::convert::Infallible>(()));
+    server.import_dmabufs(&mut drawing.renderer);
     // A screen showing only ClamShell shows its own buffers, and isn't composed for (see `ui_scanout`); one
-    // showing one window alone may show the window's (see `window_scanout`).
+    // showing one window alone may show the window's (see `window_scanout`), or draw it straight onto
+    // itself.
     ui_scanout_decide(drawing, server);
     window_scanout_decide(drawing, server);
     direct_decide(drawing, server);
-    let power = |role| {
-        drawing.screens.iter().find(|s| s.role == role).map_or(Power::default(), |s| Power { on: s.on && !s.ui_shown, dirty: s.dirty, pending: s.pending })
-    };
-    if compose_now([power(ScreenRole::Top), power(ScreenRole::Bottom)], server.pacing.committed, server.screenshot_requested) {
-        if let Err(error) = compose(drawing, server, on_capture) {
+    // Each screen composes on its own: when it is free (not waiting for a flip, which composes it with
+    // what came meanwhile), unless it shows its own buffers or a window's; for a screenshot, all of them.
+    let capture = std::mem::take(&mut server.screenshot_requested);
+    for index in 0..drawing.screens.len() {
+        if let Err(error) = compose(drawing, server, index, capture) {
             log::warn!("drm: drawing: {error}");
         }
-    } else {
-        server.frame();
-        server.import_dmabufs(&mut drawing.renderer);
+    }
+    if let Some(histogram) = drawing.pipeline.take_histogram() {
+        server.report_histogram(histogram);
+    }
+    if capture {
+        on_capture(drawing.pipeline.capture(&mut drawing.renderer, server.screens.size));
     }
     let composed = server.pacing.commits;
     let mut due: Option<Instant> = timed.flatten();
@@ -724,25 +731,6 @@ fn screen_turn(timing: Timing, now: Instant) -> Turn {
     turn
 }
 
-/// Whether the scene is composed this turn, the screens being `screens` (the top's, the second's) and
-/// `committed` what committed since it was last composed: always for a screenshot, never with both
-/// screens off, and otherwise unless every commit is a window's on a screen with a frame queued. Such a
-/// screen shows nothing new before its flip, and an uncapped game commits faster than the screen
-/// refreshes: its commits until the flip are composed once, at the flip, rather than each in turn. A
-/// commit on a screen that is off holds nothing back, since no flip comes there. A turn without commits
-/// composes whatever else changed, and the rest of the scene waits at most a refresh for a flip.
-fn compose_now(screens: [Power; 2], committed: crate::pacing::Committed, screenshot: bool) -> bool {
-    if screenshot {
-        return true;
-    }
-    if !screens.iter().any(|screen| screen.on) {
-        return false;
-    }
-    let mut on_screens = screens.iter().zip(committed.screens).filter(|(screen, committed)| *committed && screen.on).map(|(screen, _)| screen);
-    let held = !committed.elsewhere && on_screens.clone().next().is_some() && on_screens.all(|screen| screen.pending);
-    !held
-}
-
 /// What of a screen's state its power changes.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct Power {
@@ -802,33 +790,26 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
     }
 }
 
-/// Draws what changed in the scene, marking the screens whose part it is in.
-fn compose(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnMut(Result<clamshell_state::ScreenshotPixels, String>)) -> Result<(), Error> {
-    server.pacing.committed = Default::default();
-    server.frame();
-    server.sync_pointer_capture(|_| Ok::<(), std::convert::Infallible>(()));
-    server.import_dmabufs(&mut drawing.renderer);
+/// Composes screen `index` if it is composed now (see [`composes`]), or for a screenshot (`capture`),
+/// marking it changed if its picture did.
+fn compose(drawing: &mut Drawing, server: &mut Server, index: usize, capture: bool) -> Result<(), Error> {
     let Drawing { renderer, pipeline, screens, frames, cursor, elements, states } = drawing;
-    let skip = [0, 1].map(|i| screens.get(i).and_then(|screen| screen.window_shown.as_ref()).map(|shown| shown.id));
-    render::elements(server, frames, cursor, renderer, elements, skip)?;
-    let direct = [0, 1].map(|i| {
-        let screen = screens.get(i).filter(|screen| screen.direct.is_some())?;
-        Some(Rectangle::<i32, Physical>::new((screen.part.loc.x, screen.part.loc.y).into(), (screen.part.size.w, screen.part.size.h).into()))
-    });
-    let changed = pipeline.compose(server, renderer, elements, states, direct)?;
-    if let Some(histogram) = pipeline.take_histogram() {
-        server.report_histogram(histogram);
+    let (Some(screen), Some(states)) = (screens.get_mut(index), states.get_mut(index)) else { return Ok(()) };
+    let shows_own = screen.ui_shown || screen.window_shown.is_some();
+    if !composes(screen.on, screen.pending, shows_own, capture) {
+        return Ok(());
     }
-    if std::mem::take(&mut server.screenshot_requested) {
-        on_capture(pipeline.capture(renderer));
-    }
-    if let Some(changed) = changed {
-        for screen in screens.iter_mut() {
-            let part = Rectangle::<i32, Physical>::new((screen.part.loc.x, screen.part.loc.y).into(), (screen.part.size.w, screen.part.size.h).into());
-            screen.dirty |= part.overlaps(changed);
-        }
-    }
+    let down = screen.role == ScreenRole::Bottom;
+    let skip = screen.window_shown.as_ref().map(|shown| shown.id);
+    render::elements(server, frames, cursor, renderer, elements, down, skip)?;
+    screen.dirty |= pipeline.compose(server, renderer, down, elements, states, screen.direct.is_some())?;
     Ok(())
+}
+
+/// Whether a screen composes this turn: on, not waiting for a flip, and not showing its own buffers or a
+/// window's; or for a screenshot, whatever it shows.
+fn composes(on: bool, pending: bool, shows_own: bool, capture: bool) -> bool {
+    capture || (on && !pending && !shows_own)
 }
 
 /// Decides for each screen with its own buffers whether it shows them: while the scene has nothing but
@@ -922,15 +903,14 @@ fn window_scanout_decide(drawing: &mut Drawing, server: &mut Server) {
 }
 
 /// Decides for each screen whether a window alone on it is drawn straight onto it, composed without the
-/// scene between (see `colour::render`): unless it is shown from its own buffer, or the scene is wanted
-/// with it (a screenshot, or the histogram of its curve being edited).
+/// scene between (see `colour::render`): unless it is shown from its own buffer, or a screenshot wants the
+/// scene.
 fn direct_decide(drawing: &mut Drawing, server: &Server) {
     for screen in &mut drawing.screens {
         let down = screen.role == ScreenRole::Bottom;
         let area = Rectangle::new((screen.part.loc.x, screen.part.loc.y).into(), (screen.part.size.w, screen.part.size.h).into());
         let lone = server.lone_window(down, area).map(|placed| placed.id);
-        let scene_wanted = server.screenshot_requested || lone.is_some_and(|id| server.core.state().histogram_window() == Some(id));
-        let direct = lone.filter(|_| !scene_wanted && !screen.ui_shown && screen.window_shown.is_none());
+        let direct = lone.filter(|_| !server.screenshot_requested && !screen.ui_shown && screen.window_shown.is_none());
         if direct != screen.direct {
             match direct {
                 Some(id) => log::info!("drm: the {:?} screen draws window {id} straight onto it", screen.role),
@@ -1017,13 +997,13 @@ fn present_ui(screen: &mut Screen, server: &mut Server) {
 /// Shows screen `index` its part of the scene.
 fn present(drawing: &mut Drawing, server: &Server, index: usize) -> Result<(), Error> {
     let Drawing { renderer, pipeline, screens, states, .. } = drawing;
-    let Some(screen) = screens.get_mut(index) else {
+    let (Some(screen), Some(states)) = (screens.get_mut(index), states.get(index)) else {
         return Ok(());
     };
     let mut buffer = screen.surface.next_buffer().map_err(|e| format!("{:?} screen: {e}", screen.role))?;
     let sync = {
         let mut target = renderer.bind(&mut buffer)?;
-        pipeline.present_part(renderer, &mut target, screen.role == ScreenRole::Bottom, screen.part, screen.size, screen.transform)?
+        pipeline.present_screen(renderer, &mut target, screen.role == ScreenRole::Bottom, screen.size, screen.transform)?
     };
     screen.queued.states.clone_from(&states.states);
     screen.surface.queue(Some(sync)).map_err(|e| format!("{:?} screen: {e}", screen.role))?;
@@ -1178,22 +1158,13 @@ mod tests {
     }
 
     #[test]
-    fn commits_on_a_screen_with_a_frame_queued_wait_for_its_flip() {
-        use crate::pacing::Committed;
-        let free = Power { on: true, dirty: false, pending: false };
-        let queued = Power { pending: true, ..free };
-        let off = Power::default();
-        let top = Committed { screens: [true, false], elsewhere: false };
-        assert!(!compose_now([queued, free], top, false), "the top screen's flip shows it no sooner");
-        assert!(compose_now([free, queued], top, false), "the top screen shows it at its next refresh");
-        assert!(compose_now([queued, free], Committed { elsewhere: true, ..top }, false), "a popup or a cursor: at once");
-        assert!(!compose_now([queued, queued], Committed { screens: [true, true], elsewhere: false }, false));
-        assert!(compose_now([queued, free], Committed { screens: [true, true], elsewhere: false }, false), "the second screen shows its part");
-        assert!(compose_now([queued, free], Committed::default(), false), "no commits: whatever else changed, as before");
-        assert!(compose_now([queued, off], Committed { screens: [false, true], elsewhere: false }, false), "no flip comes on a screen off");
-        assert!(!compose_now([off, off], top, false), "both off: nothing shows it");
-        assert!(compose_now([off, off], top, true), "a screenshot");
-        assert!(compose_now([queued, queued], top, true));
+    fn a_screen_composes_when_free_and_composed_or_for_a_screenshot() {
+        assert!(composes(true, false, false, false), "on and free");
+        assert!(!composes(true, true, false, false), "a frame queued: at its flip");
+        assert!(!composes(false, false, false, false), "off");
+        assert!(!composes(true, false, true, false), "showing its own buffers or a window's");
+        assert!(composes(true, true, true, true), "a screenshot: whatever it shows");
+        assert!(composes(false, false, false, true));
     }
 
     #[test]

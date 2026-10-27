@@ -76,53 +76,66 @@ fn frame(frames: &UiFrames, layer: Layer) -> Option<&UiFrame> {
     })
 }
 
-/// The scene's elements, front first, as the scene lists what is shown, but for the windows `skip`, which a
-/// screen shows from their own buffers (see `window_scanout`). The UI's layers are drawn first, all but the
-/// top screen's while a window covers it: that stays stale in the core, and is drawn where it changed once
-/// uncovered (the texture holds the last frame drawn). Drawing may change the state, so the scene is placed
-/// again after.
+/// Screen `down`'s elements (the second's, or the top's), front first, as the scene lists what is shown,
+/// but for the window `skip`, which the screen shows from its own buffer (see `window_scanout`). The
+/// screen's UI layers are drawn first, the top screen's not while a window covers it: that stays stale in
+/// the core, and is drawn where it changed once uncovered (the texture holds the last frame drawn).
+/// Drawing may change the state, so the scene is placed again after.
 pub(crate) fn elements(
     server: &mut Server,
     frames: &mut UiFrames,
     cursor: &mut crate::cursor::Cursor,
     renderer: &mut GlesRenderer,
     out: &mut Vec<Element>,
-    skip: [Option<i64>; 2],
+    down: bool,
+    skip: Option<i64>,
 ) -> Result<(), Error> {
     server.place();
     let [top, bottom, overlay, overlay_below] = frames;
-    if !server.scene.covers_top() {
-        top.update(&mut server.core, Screen::Top, renderer)?;
+    if down {
+        bottom.update(&mut server.core, Screen::Bottom, renderer)?;
+        overlay_below.update(&mut server.core, Layer::Overlay(Screen::Bottom), renderer)?;
+    } else {
+        if !server.scene.covers_top() {
+            top.update(&mut server.core, Screen::Top, renderer)?;
+        }
+        overlay.update(&mut server.core, Layer::Overlay(Screen::Top), renderer)?;
     }
-    bottom.update(&mut server.core, Screen::Bottom, renderer)?;
-    overlay.update(&mut server.core, Layer::Overlay(Screen::Top), renderer)?;
-    overlay_below.update(&mut server.core, Layer::Overlay(Screen::Bottom), renderer)?;
     server.core.frames_done();
+    let screen = if down { Screen::Bottom } else { Screen::Top };
+    let top_width = server.screens.top_width;
+    let on_screen = |x: f64| (x >= f64::from(top_width)) == down;
     server.place();
     out.clear();
     let mut dims = 0;
     for i in 0..server.scene.shown().len() {
         let placed = match server.scene.shown().get(i).copied() {
+            Some(Shown::Software { layer, .. }) if !matches!(layer, Layer::Screen(s) | Layer::Overlay(s) if s == screen) => continue,
             Some(Shown::Software { layer, x, part }) => {
                 if let Some(element) = frame(frames, layer).and_then(|frame| frame.surface.element(renderer, x, part)) {
                     out.push(element);
                 }
                 continue;
             }
+            Some(Shown::Cursor { at }) if !on_screen(at.x) => continue,
             Some(Shown::Cursor { at }) => {
                 cursor.elements(server, renderer, at, out)?;
                 continue;
             }
             Some(Shown::Dim { area }) => {
+                // Numbered across both screens, so that each keeps its id from frame to frame.
                 let id = server.scene.dim_id(dims);
                 dims += 1;
+                if !on_screen(f64::from(area.loc.x)) {
+                    continue;
+                }
                 out.push(
                     SolidColorRenderElement::new(id, area.to_physical(1), CommitCounter::default(), [0.0, 0.0, 0.0, clamshell_ui::DIM], Kind::Unspecified)
                         .into(),
                 );
                 continue;
             }
-            Some(Shown::Window(placed)) if skip.contains(&Some(placed.id)) => continue,
+            Some(Shown::Window(placed)) if placed.below != down || skip == Some(placed.id) => continue,
             Some(Shown::Window(placed)) => placed,
             None => break,
         };

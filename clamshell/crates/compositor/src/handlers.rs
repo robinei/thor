@@ -122,15 +122,6 @@ impl CompositorHandler for Server {
                 root = parent;
             }
             let client = self.windows.iter_mut().find(|w| w.window.root().as_ref() == Some(&root));
-            match &client {
-                Some(client) => {
-                    let below = self.core.state().session().below(client.id);
-                    if let Some(screen) = self.pacing.committed.screens.get_mut(usize::from(below)) {
-                        *screen = true;
-                    }
-                }
-                None => self.pacing.committed.elsewhere = true,
-            }
             if let Some(client) = client {
                 // A frame is a new buffer on the window's root, or on a subsurface drawn apart from it (not
                 // synchronised: here only those come), as Wine's Wayland driver and pattern-game draw a

@@ -25,21 +25,9 @@ pub(crate) struct Pacing {
     /// last sent.
     pub frames_due: Option<Instant>,
     frames_sent: (Option<f32>, Option<f32>),
-    /// What committed since the scene was last composed, for a host that composes only when a screen can
-    /// show it (see `drm::compose_now`).
-    pub committed: Committed,
     /// The clients whose blockers a frame's callbacks or a shown frame cleared, told once each; kept, so
     /// that pacing a frame allocates nothing.
     cleared: Vec<smithay::reexports::wayland_server::Client>,
-}
-
-/// What committed since the scene was last composed.
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Committed {
-    /// A window on the top screen; on the second.
-    pub screens: [bool; 2],
-    /// A surface of no window: a popup, a cursor, an X11 window's surface not yet paired.
-    pub elsewhere: bool,
 }
 
 /// The commits of a surface's content in the frame queued for its screen and in the one last shown (see
