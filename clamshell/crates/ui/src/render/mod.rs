@@ -214,6 +214,11 @@ impl ScreenFrames {
         draw_damaged(pixmap, held, &self.retained, &self.history, fonts, images)
     }
 
+    /// What a buffer holding frame `held` lacks of the frame drawn last: what changed since, or all of it.
+    pub(crate) fn since(&self, held: u64) -> Bounds {
+        self.history.since(held, Bounds::of_size(self.retained.drawn.size()))
+    }
+
     /// Whether a buffer that holds frame `held` has something to draw.
     pub(crate) fn behind(&self, held: u64) -> bool {
         self.undrawn.is_some() || held != self.history.frame
@@ -394,6 +399,45 @@ mod frame_times {
             let target = crate::Pixels::<false, true>::new(&mut buffer, (w, h), stride).unwrap();
             render(target, &mut Retained::default(), at, screen.into(), &s, &mut fonts, &mut images).unwrap();
             check(&buffer, stride, false, true);
+        }
+    }
+
+    /// A frame drawn unturned and copied into a turned buffer, whole or a part of it, holds there what
+    /// drawing it turned would: the copy a screen's display buffers are brought up to date by.
+    #[test]
+    fn a_frame_copied_turned_is_the_frame_turned() {
+        let (mut fonts, mut images) = (DrawCache::load(), Images::synchronous());
+        let (w, h) = (310u32, 270u32);
+        let s = state(vec![]);
+        let at = Placement { size_px: (w, h), scale: 1, drift: (1, -2) };
+        let mut plain = tiny_skia::Pixmap::new(w, h).unwrap();
+        render((&mut plain).into(), &mut Retained::default(), at, Screen::Bottom.into(), &s, &mut fonts, &mut images).unwrap();
+        let stride = h as usize + 5;
+        let check = |buffer: &[u8], bgra: bool, area: Bounds| {
+            for y in 0..h as i32 {
+                for x in 0..w as i32 {
+                    let i = ((x as usize) * stride + (h as i32 - 1 - y) as usize) * 4;
+                    let j = (y as usize * w as usize + x as usize) * 4;
+                    let inside = x >= area.x0 && x < area.x1 && y >= area.y0 && y < area.y1;
+                    let [r, g, b, a] = [plain.data()[j], plain.data()[j + 1], plain.data()[j + 2], plain.data()[j + 3]];
+                    let want = if !inside {
+                        [7; 4]
+                    } else if bgra {
+                        [b, g, r, a]
+                    } else {
+                        [r, g, b, a]
+                    };
+                    assert_eq!(buffer[i..i + 4], want, "bgra {bgra} at ({x}, {y})");
+                }
+            }
+        };
+        for area in [Bounds::of_size((w, h)), Bounds::new(20, 30, 150, 90)] {
+            let mut buffer = vec![7u8; stride * w as usize * 4];
+            crate::Pixels::<true, false>::new(&mut buffer, (w, h), stride).unwrap().copy_area(plain.data(), w as usize, area);
+            check(&buffer, false, area);
+            let mut buffer = vec![7u8; stride * w as usize * 4];
+            crate::Pixels::<true, true>::new(&mut buffer, (w, h), stride).unwrap().copy_area(plain.data(), w as usize, area);
+            check(&buffer, true, area);
         }
     }
 

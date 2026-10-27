@@ -121,6 +121,42 @@ impl<'a, const QUARTER: bool, const BGRA: bool> Pixels<'a, QUARTER, BGRA> {
         self.zip(y, x, pixels.iter(), |p, s| *p = Self::word(*s).to_le_bytes());
     }
 
+    /// Copies `area` (screen pixels, inside both) of `source`, a picture of the same screen unturned and
+    /// red first, rows of `width` pixels, into this target, turned and ordered as it is. Turned, it goes along
+    /// the target's rows, so that it writes in order (a display buffer's memory may be fast only so).
+    pub fn copy_area(&mut self, source: &[u8], width: usize, area: Bounds) {
+        let pixels = source.as_chunks::<4>().0;
+        let area = area.intersect(Bounds::of_size((self.width, self.height)));
+        let (x0, y0, x1, y1) = (area.x0, area.y0, area.x1, area.y1);
+        if !QUARTER {
+            for y in y0..y1 {
+                let from = y as usize * width;
+                if let Some(row) = source.get((from + x0 as usize) * 4..(from + x1 as usize) * 4) {
+                    self.copy_run(y, x0, row);
+                }
+            }
+            return;
+        }
+        // Turned, screen column x is buffer row x, its pixels from the bottom (y1 - 1) up in buffer order.
+        for x in x0..x1 {
+            let len = (y1 - y0).max(0) as usize;
+            if let Some(row) = self.row_turned(x, y1 - 1, len) {
+                for (px, y) in row.iter_mut().zip((y0..y1).rev()) {
+                    if let Some(s) = pixels.get(y as usize * width + x as usize) {
+                        *px = Self::word(*s).to_le_bytes();
+                    }
+                }
+            }
+        }
+    }
+
+    /// Turned, buffer row `x` from screen pixel (x, y) on, `len` pixels, as one slice: the screen's column
+    /// x going up from y.
+    fn row_turned(&mut self, x: i32, y: i32, len: usize) -> Option<&mut [[u8; 4]]> {
+        let from = usize::try_from(self.at(x, y)).ok()?;
+        self.data.get_mut(from..from + len * 4).map(|row| row.as_chunks_mut::<4>().0)
+    }
+
     /// A premultiplied colour, red first, as this target holds a pixel: bytes in its order, packed into a
     /// little-endian word, so that alpha is the top byte either way.
     fn word(rgba: [u8; 4]) -> u32 {

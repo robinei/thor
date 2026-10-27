@@ -326,6 +326,16 @@ impl Core {
         }
     }
 
+    /// What a buffer of `layer` holding frame `held` lacks of the frame drawn last, in buffer pixels: what
+    /// changed since, or all of it from too far back (see [`Core::draw`]). For a buffer brought up to date by
+    /// copying from one drawn ([`crate::Pixels::copy_area`]).
+    pub fn since(&self, layer: impl Into<Layer>, held: u64) -> Bounds {
+        match layer.into() {
+            Layer::Screen(screen) => self.screens[screen].frames.since(held),
+            Layer::Overlay(screen) => self.overlays[screen].frames.since(held),
+        }
+    }
+
     /// Where `screen`'s overlay's frame drawn last draws, in buffer pixels: the part of it to show over
     /// what the screen shows. None when it draws nothing.
     pub fn overlay_area(&self, screen: Screen) -> Option<Bounds> {

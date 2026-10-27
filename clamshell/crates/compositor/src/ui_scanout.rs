@@ -86,11 +86,17 @@ pub(crate) const OPAQUE: &[(DrmFourcc, bool)] = &[(DrmFourcc::Xbgr8888, false), 
 /// The same with alpha, premultiplied as the painter draws, for a plane over another.
 pub(crate) const BLENDED: &[(DrmFourcc, bool)] = &[(DrmFourcc::Abgr8888, false), (DrmFourcc::Argb8888, true)];
 
-/// Two dumb buffers a picture of a screen's way up is drawn into in turn, turned to the panel's mounting:
-/// a UI layer by its painter ([`LayerBuffers::draw`]), each buffer catching up from the frame it holds, or
-/// anything else written in ([`LayerBuffers::write`]). CPU-mapped once and kept.
+/// Two dumb buffers a picture of a screen's way up is shown from in turn, turned to the panel's mounting: a
+/// UI layer ([`LayerBuffers::draw`]), or anything else written in ([`LayerBuffers::write`]). CPU-mapped once
+/// and kept. A UI layer is painted once per change into a picture in ordinary memory, unturned, and each
+/// buffer catches up by copying what it lacks of it: the painter reads what it blends over, which a display
+/// buffer's memory may be slow at (write-combined, as on many display engines), and a change is painted
+/// once rather than once for each buffer.
 pub(crate) struct LayerBuffers {
     buffers: [Dumb; 2],
+    /// The layer painted, the screen's way up, and the frame it holds.
+    picture: tiny_skia::Pixmap,
+    picture_held: u64,
     /// The buffer drawn next: not the one shown.
     next: usize,
     /// Whether the buffers hold the picture turned a quarter clockwise, as its panel is mounted.
@@ -118,11 +124,13 @@ impl LayerBuffers {
         };
         let turned = if quarter { (size.1, size.0) } else { size };
         let buffers = [Dumb::new(device, turned, format)?, Dumb::new(device, turned, format)?];
-        Ok(LayerBuffers { buffers, next: 0, quarter, bgra, size })
+        let picture = tiny_skia::Pixmap::new(size.0, size.1).ok_or("a picture of no size")?;
+        Ok(LayerBuffers { buffers, picture, picture_held: 0, next: 0, quarter, bgra, size })
     }
 
-    /// Draws `layer` into the next buffer if that is behind, recording it first if it is stale. Returns the
-    /// buffer's framebuffer to show, or none if it holds the latest frame already.
+    /// Brings the next buffer up to `layer`'s latest frame if it is behind, recording the layer first if
+    /// it is stale and painting the picture if that is behind. Returns the buffer's framebuffer to show, or
+    /// none if it holds the latest frame already.
     pub(crate) fn draw(&mut self, core: &mut Core, layer: Layer) -> Option<framebuffer::Handle> {
         if core.stale(layer) {
             core.record(layer, false);
@@ -131,12 +139,18 @@ impl LayerBuffers {
         if !core.behind(layer, buffer.held) {
             return None;
         }
-        buffer.held = match (self.quarter, self.bgra) {
-            (false, false) => draw_into::<false, false>(core, layer, buffer, self.size)?,
-            (false, true) => draw_into::<false, true>(core, layer, buffer, self.size)?,
-            (true, false) => draw_into::<true, false>(core, layer, buffer, self.size)?,
-            (true, true) => draw_into::<true, true>(core, layer, buffer, self.size)?,
-        };
+        if core.behind(layer, self.picture_held) {
+            self.picture_held = core.draw(layer, &mut self.picture, self.picture_held).0;
+        }
+        let area = core.since(layer, buffer.held);
+        let (picture, width) = (self.picture.data(), self.size.0 as usize);
+        match (self.quarter, self.bgra) {
+            (false, false) => copy_into::<false, false>(buffer, self.size, picture, width, area)?,
+            (false, true) => copy_into::<false, true>(buffer, self.size, picture, width, area)?,
+            (true, false) => copy_into::<true, false>(buffer, self.size, picture, width, area)?,
+            (true, true) => copy_into::<true, true>(buffer, self.size, picture, width, area)?,
+        }
+        buffer.held = self.picture_held;
         Some(buffer.fb)
     }
 
@@ -171,12 +185,12 @@ impl LayerBuffers {
     }
 }
 
-/// Draws `layer` into `buffer`, a screen of `size` laid out as `Q` and `B` say (see [`Pixels`]); returns the
-/// frame it now holds.
-fn draw_into<const Q: bool, const B: bool>(core: &mut Core, layer: Layer, buffer: &mut Dumb, size: (u32, u32)) -> Option<u64> {
-    let (stride, held) = (buffer.pitch / 4, buffer.held);
-    let pixels = Pixels::<Q, B>::new(buffer.bytes(), size, stride)?;
-    Some(core.draw(layer, pixels, held).0)
+/// Copies `area` of `picture` (a screen of `size`, rows of `width` pixels) into `buffer`, laid out as `Q`
+/// and `B` say (see [`Pixels`]).
+fn copy_into<const Q: bool, const B: bool>(buffer: &mut Dumb, size: (u32, u32), picture: &[u8], width: usize, area: clamshell_ui::Bounds) -> Option<()> {
+    let stride = buffer.pitch / 4;
+    Pixels::<Q, B>::new(buffer.bytes(), size, stride)?.copy_area(picture, width, area);
+    Some(())
 }
 
 /// A dumb buffer, mapped for the CPU, with its framebuffer and the UI frame it holds.
