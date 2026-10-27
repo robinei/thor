@@ -87,6 +87,7 @@ clamshell-library.workspace = true
 clamshell-ui.workspace = true
 clamshell-compositor.workspace = true
 log.workspace = true
+jiff.workspace = true
 rustix.workspace = true
 
 [dev-dependencies]

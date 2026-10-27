@@ -227,6 +227,7 @@ dependencies = [
  "clamshell-system",
  "clamshell-ui",
  "image",
+ "jiff",
  "log",
  "rustix 1.1.5",
  "serde_json",

@@ -1,6 +1,6 @@
-//! ClamShell's logger: each record a line on stderr, `[LEVEL target] message`; to the journal (as a
-//! service), each line starts with its syslog priority, which journald takes as the entry's, so that
-//! `journalctl -p err` finds the errors. `RUST_LOG` filters as env_logger's plain form does: comma-separated
+//! ClamShell's logger: each record a line on stderr, `[time LEVEL target] message`, the time in UTC to the
+//! second; to the journal (as a service), which keeps the time itself, without it, and starting with its
+//! syslog priority, which journald takes as the entry's, so that `journalctl -p err` finds the errors. `RUST_LOG` filters as env_logger's plain form does: comma-separated
 //! `level` for everything and `target=level` for a module and those under it, the most specific winning;
 //! without it, `info,tracing=warn`.
 
@@ -40,7 +40,8 @@ impl Log for Logger {
             };
             format!("<{priority}>[{:<5} {}] {}\n", record.level(), record.target(), record.args())
         } else {
-            format!("[{:<5} {}] {}\n", record.level(), record.target(), record.args())
+            let time = jiff::Timestamp::now().strftime("%Y-%m-%dT%H:%M:%SZ");
+            format!("[{time} {:<5} {}] {}\n", record.level(), record.target(), record.args())
         };
         // One write, so that lines from threads don't interleave.
         let _ = std::io::stderr().lock().write_all(line.as_bytes());
