@@ -626,6 +626,14 @@ fn step(
             continue;
         };
         let down = screen.role == ScreenRole::Bottom;
+        // A frame waits for its flip: a move of the cursor alone goes at once.
+        if screen.pending
+            && screen.layers_dirty
+            && let Some(layers) = &mut screen.layers
+            && layers.move_now(screen.surface.surface())
+        {
+            screen.layers_dirty = false;
+        }
         let turn = screen_turn(Timing::of(screen, server.pacing.commits), now);
         if turn.send_held {
             screen.held = server.frame_callbacks(Some(down), screen.interval, now);

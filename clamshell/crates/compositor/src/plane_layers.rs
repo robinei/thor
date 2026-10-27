@@ -16,6 +16,10 @@
 //! composed from then on. A virtual machine's GPU shows its cursor plane only to a client that gives the
 //! cursor's hotspot with it (`DRM_CLIENT_CAP_CURSOR_PLANE_HOTSPOT`, for the host to draw its own pointer
 //! there): ClamShell does, so its cursor is on a plane there too.
+//!
+//! While a frame waits for its flip, a move of the cursor alone, on the CRTC's own cursor plane, goes to the
+//! display engine at once by the kernel's cursor-only update rather than with the next commit, a refresh
+//! later ([`PlaneLayers::move_now`]); refused, moves wait for the flip from then on, logged.
 
 use smithay::backend::drm::{DrmDevice, DrmDeviceFd, PlaneConfig, PlaneState};
 use smithay::reexports::drm::control::{RawResourceHandle, crtc, framebuffer, plane, property};
@@ -97,6 +101,12 @@ pub(crate) struct PlaneLayers {
     area: Option<Bounds>,
     /// The display engine refused a commit with them: off from now on.
     failed: bool,
+    /// Whether the cursor moved this turn, its image the same; and whether anything else changed since the
+    /// last commit, which an immediate move would leave unsent.
+    moved: bool,
+    unsent: bool,
+    /// The CRTC, for the cursor's immediate moves.
+    crtc: crtc::Handle,
     /// The screen's height, the screen's way up, and whether its panel is turned a quarter.
     height: i32,
     quarter: bool,
@@ -109,6 +119,9 @@ struct CursorPlane {
     side: u32,
     /// The shape the buffer shown holds.
     shown: Option<Shape>,
+    /// Whether it is the CRTC's own cursor plane and the kernel takes moves of it at once (see
+    /// [`PlaneLayers::move_now`]).
+    immediate: bool,
 }
 
 /// Asks for a virtual machine's cursor planes, which its GPU hides from a client that gives no hotspot:
@@ -132,7 +145,7 @@ impl PlaneLayers {
             Ok(planes) => planes,
             Err(error) => {
                 log::warn!("plane layers: the {role} screen's planes: {error}");
-                return PlaneLayers::off(size, quarter);
+                return PlaneLayers::off(size, quarter, crtc);
             }
         };
         let primary_zpos = planes.primary.first().and_then(|plane| plane.zpos);
@@ -156,7 +169,8 @@ impl PlaneLayers {
             match LayerBuffers::new(device, &info.formats, (side, side), quarter, BLENDED) {
                 Ok(buffers) => {
                     taken.push(info.handle);
-                    cursor = Some(CursorPlane { plane: plane(device, info, primary_zpos, 2), buffers, side, shown: None });
+                    let immediate = info.type_ == smithay::reexports::drm::control::PlaneType::Cursor;
+                    cursor = Some(CursorPlane { plane: plane(device, info, primary_zpos, 2), buffers, side, shown: None, immediate });
                     break;
                 }
                 Err(error) => log::info!("plane layers: plane {:?} for the {role} screen's cursor: {error}", info.handle),
@@ -168,10 +182,10 @@ impl PlaneLayers {
             name(overlay.as_ref().map(|(plane, _)| plane)),
             name(cursor.as_ref().map(|cursor| &cursor.plane))
         );
-        PlaneLayers { overlay, cursor, ..PlaneLayers::off(size, quarter) }
+        PlaneLayers { overlay, cursor, ..PlaneLayers::off(size, quarter, crtc) }
     }
 
-    fn off((_, height): (u32, u32), quarter: bool) -> PlaneLayers {
+    fn off((_, height): (u32, u32), quarter: bool, crtc: crtc::Handle) -> PlaneLayers {
         PlaneLayers {
             overlay: None,
             cursor: None,
@@ -179,6 +193,9 @@ impl PlaneLayers {
             shape: None,
             area: None,
             failed: false,
+            moved: false,
+            unsent: false,
+            crtc,
             height: i32::try_from(height).unwrap_or(0),
             quarter,
         }
@@ -204,7 +221,11 @@ impl PlaneLayers {
         let shape = at.and_then(|at| cursor.shape(server, renderer, at)).map(|shape| shape.from(origin));
         let fits = |side: u32| shape.as_ref().is_some_and(|shape| shape.size.0 <= side && shape.size.1 <= side);
         self.planed.cursor = !self.failed && self.cursor.as_ref().is_some_and(|cursor| fits(cursor.side));
-        let cursor_changed = self.planed.cursor && shape != self.cursor.as_ref().and_then(|cursor| cursor.shown.clone());
+        let shown = self.cursor.as_ref().and_then(|cursor| cursor.shown.as_ref());
+        let cursor_changed = self.planed.cursor && shape.as_ref() != shown;
+        let same_image = shape.as_ref().zip(shown).is_some_and(|(shape, shown)| shape.same_image(shown));
+        self.moved = cursor_changed && same_image;
+        self.unsent |= self.planed != was || overlay_changed || (cursor_changed && !same_image);
         self.shape = shape.filter(|_| self.planed.cursor);
         self.planed != was || overlay_changed || cursor_changed
     }
@@ -266,6 +287,52 @@ impl PlaneLayers {
         }
     }
 
+    /// Moves the cursor's plane at once, by the kernel's cursor-only update on `device`, if only where the
+    /// cursor is changed this turn and its plane is the CRTC's own. Returns whether it did: the change is
+    /// then shown at the next refresh, without waiting for the frame queued. Refused, its moves wait for the
+    /// commits from now on, logged.
+    pub(crate) fn move_now(&mut self, device: &impl std::os::fd::AsFd) -> bool {
+        let (height, quarter, crtc) = (self.height, self.quarter, self.crtc);
+        let (Some(cursor), Some(shape)) = (&mut self.cursor, &self.shape) else { return false };
+        let Some(shown) = cursor.plane.shown else { return false };
+        if !self.moved || self.unsent || !cursor.immediate {
+            return false;
+        }
+        let square = i32::try_from(cursor.side).unwrap_or(0);
+        let dst = turned(Rectangle::new((shape.at.x, shape.at.y).into(), (square, square).into()), height, quarter);
+        let (x, y) = shape.hotspot;
+        let (hot_x, hot_y) = if quarter { (square - 1 - y, x) } else { (x, y) };
+        let mut request = drm_ffi::drm_mode_cursor2 {
+            flags: drm_ffi::DRM_MODE_CURSOR_MOVE,
+            crtc_id: u32::from(crtc),
+            x: dst.loc.x,
+            y: dst.loc.y,
+            hot_x,
+            hot_y,
+            ..Default::default()
+        };
+        const CURSOR2: rustix::ioctl::Opcode = rustix::ioctl::opcode::read_write::<drm_ffi::drm_mode_cursor2>(b'd', 0xBB);
+        // SAFETY: DRM_IOCTL_MODE_CURSOR2 on the device, with the request it reads and writes.
+        #[allow(unsafe_code)]
+        let moved = unsafe { rustix::ioctl::ioctl(device, rustix::ioctl::Updater::<CURSOR2, _>::new(&mut request)) };
+        match moved {
+            Ok(()) => {
+                let placement = Placement { dst, ..shown };
+                cursor.plane.shown = Some(placement);
+                cursor.plane.wanted = Some(placement);
+                cursor.plane.set_hotspot((hot_x, hot_y));
+                cursor.shown = Some(shape.clone());
+                self.moved = false;
+                true
+            }
+            Err(error) => {
+                log::warn!("plane layers: moving the cursor at once: {error}: it moves with the screen's frames from now on");
+                cursor.immediate = false;
+                false
+            }
+        }
+    }
+
     /// The planes' states for the next commit.
     pub(crate) fn states(&self) -> impl Iterator<Item = PlaneState<'_>> + Clone {
         let overlay = self.overlay.as_ref().and_then(|(plane, _)| plane.state());
@@ -275,6 +342,7 @@ impl PlaneLayers {
 
     /// The commit with them went through: they show as placed.
     pub(crate) fn committed(&mut self) {
+        self.unsent = false;
         if let Some((plane, buffers)) = &mut self.overlay {
             if plane.drew {
                 buffers.committed();
