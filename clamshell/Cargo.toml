@@ -26,7 +26,8 @@ xkeysym = "0.2"
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 fontdue = "0.9"
-jiff = "0.2"
+# The system's zone database (/usr/share/zoneinfo) only: none bundled.
+jiff = { version = "0.2", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo", "perf-inline"] }
 png = "0.18"
 evdev = "0.13"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
