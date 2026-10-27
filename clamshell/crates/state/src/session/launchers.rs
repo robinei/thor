@@ -32,17 +32,20 @@ use clamshell_library::{Launch, ids};
 
 use crate::{Entry, Library};
 
-/// A launcher that runs games: the names of its desktop files, whose entry is the launcher's own.
+/// A launcher that runs games: its name, as shelf says a game starts in it, and the names of its desktop
+/// files, whose entry is the launcher's own.
 pub(crate) struct Launcher {
+    pub(crate) name: &'static str,
     desktop: &'static [&'static str],
     /// The arguments its command takes before a game's URL to start the game without its window, if
     /// the game is to be launched that way (see the module's doc).
     headless: Option<&'static [&'static str]>,
 }
 
-const STEAM_LAUNCHER: Launcher = Launcher { desktop: &["steam"], headless: None };
-const HEROIC_LAUNCHER: Launcher = Launcher { desktop: &["com.heroicgameslauncher.hgl", "heroic"], headless: Some(&["--no-gui", "--no-sandbox"]) };
-const LUTRIS_LAUNCHER: Launcher = Launcher { desktop: &["net.lutris.Lutris", "lutris"], headless: None };
+const STEAM_LAUNCHER: Launcher = Launcher { name: "Steam", desktop: &["steam"], headless: None };
+const HEROIC_LAUNCHER: Launcher =
+    Launcher { name: "Heroic", desktop: &["com.heroicgameslauncher.hgl", "heroic"], headless: Some(&["--no-gui", "--no-sandbox"]) };
+const LUTRIS_LAUNCHER: Launcher = Launcher { name: "Lutris", desktop: &["net.lutris.Lutris", "lutris"], headless: None };
 
 /// The launcher entry `g`'s game runs in, if any.
 pub(crate) fn launcher_of(g: &Entry) -> Option<&'static Launcher> {

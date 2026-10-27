@@ -612,6 +612,22 @@ impl Session {
         self.launching.iter().any(|l| &*l.entry == id)
     }
 
+    /// Whether entry `id` is starting, as shelf shows it: its launch is asked for, or it runs with no
+    /// window yet while one is waited for, a launch's in front or a launcher's game's. A program started
+    /// in the background, as a launcher for its game, isn't.
+    pub fn starting(&self, id: &str) -> bool {
+        let waited = |r: &Running| !r.seen && (matches!(r.origin, Origin::Windows { .. }) || self.front_launch.as_ref().is_some_and(|f| f.unit.key == r.key));
+        self.is_launching(id) || self.running(id).is_some_and(waited)
+    }
+
+    /// The launcher entry `g` starts in, if any (see [`launchers`]): its name, and whether it is up, having
+    /// shown a window or tray icon. Until then it is starting too, as Heroic does for its game.
+    pub fn starts_in(&self, g: &Entry, library: &Library) -> Option<(&'static str, bool)> {
+        let launcher = launchers::launcher_of(g)?;
+        let up = launcher.entry(library).and_then(|l| self.running(&l.id)).is_some_and(|r| r.seen);
+        Some((launcher.name, up))
+    }
+
     /// Records a launch of `entry`, whose key is `key`, asked for now, and returns its unit. Started in
     /// front, its group is shown once its first window appears.
     fn begin_launch(&mut self, entry: Arc<str>, key: String, mark: Option<Arc<str>>, clock: &Clock, start: Start) -> LaunchUnit {

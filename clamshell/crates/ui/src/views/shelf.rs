@@ -159,13 +159,14 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         f.button(Id::Shelf(ShelfId::Entry(entry.id.clone())), r, look, |f| {
             widgets::thumb(f.c, f.images, entry, thumb, THUMB_RADIUS, false);
             // The marks at the row's right end, from right to left: a folder's chevron, running (dim
-            // while paused), on the dock, and favourite.
+            // while starting or paused), on the dock, and favourite.
             let mark = r.h * MARK;
             let mut right = r.x + r.w - pad * 0.5;
-            let paused = s.session().paused(&entry.id) || s.session().suspended(&entry.id);
+            let starting = s.session().starting(&entry.id);
+            let paused = starting || s.session().paused(&entry.id) || s.session().suspended(&entry.id);
             let marks = [
                 (entry.is_group(), Icon::Chevron, Tone::Normal),
-                (s.session().running(&entry.id).is_some(), Icon::Dot, if paused { Tone::Dim } else { Tone::Go }),
+                (starting || s.session().running(&entry.id).is_some(), Icon::Dot, if paused { Tone::Dim } else { Tone::Go }),
                 (s.shelf().files().selected().contains(&entry.id), Icon::Check, Tone::Accent),
                 (s.dock().is_pinned(&entry.id), Icon::for_tab(Tab::Dock), Tone::Normal),
                 (entry.favourite, Icon::Star, Tone::Accent),
@@ -324,8 +325,15 @@ fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f3
             _ => "",
         };
         let running = s.session().running(&entry.id).is_some();
+        let starting = s.session().starting(&entry.id);
         let (label, tone) = match action {
             Action::Open if entry.is_group() => (Fmt::<192>::of(format_args!("Open")), Tone::Normal),
+            // A launcher's game says in which launcher it starts, or that the launcher starts first.
+            Action::Open if starting => match s.session().starts_in(entry, s.shelf().library()) {
+                Some((launcher, true)) => (Fmt::of(format_args!("Starting · in {launcher}")), Tone::Dim),
+                Some((launcher, false)) => (Fmt::of(format_args!("Starting · {launcher} first")), Tone::Dim),
+                None => (Fmt::of(format_args!("Starting…")), Tone::Dim),
+            },
             Action::Open if running => (Fmt::of(format_args!("Running · show it")), Tone::Go),
             Action::Open if matches!(entry.launch, clamshell_state::Launch::Tool(_)) => (Fmt::of(format_args!("Run")), Tone::Normal),
             Action::Open if entry.browsed.is_some() => (Fmt::of(format_args!("Open")), Tone::Normal),

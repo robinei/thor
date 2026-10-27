@@ -77,7 +77,7 @@ top-folder.png ca62fee6cde677d0
 top-group.png 1dad9289b024a19b
 top-played.png 1d90e14ae87529e4
 top-recent.png 6d0fcdbe00c36bba
-top-switch.png fac25f46cabe2a87
+top-switch.png 790d35e7cb597c6d
 top-tab2-down.png 2f9878901ee7788a
 top-tab2.png 5c13abb6931c2454
 top.png c12fbd7eadfb54ba

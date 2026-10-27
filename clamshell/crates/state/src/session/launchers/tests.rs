@@ -60,6 +60,6 @@ fn a_heroic_game_is_launched_by_heroic_without_its_window() {
     assert_eq!(launcher.id, heroic.id);
     assert_eq!(command, ["heroic", "--no-gui", "--no-sandbox", "heroic://launch?appName=patterngame&runner=sideload"]);
     assert!(headless(&all, &lutris).is_none(), "Lutris's shortcut already hides Lutris");
-    assert!(launcher_of(&lutris).is_some());
+    assert_eq!(launcher_of(&lutris).map(|l| l.name), Some("Lutris"));
     assert!(headless(&library(vec![game.clone()]), &game).is_none(), "without Heroic's entry, its shortcut as it is");
 }

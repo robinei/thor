@@ -104,6 +104,7 @@ What runs is shown and controlled as entries (the dock's): one per program, each
   which runs in Lutris's unit, and the launch ends. The game's windows are known by the mark the launcher
   gives its processes (see runners.md), waited for up to 2 minutes, and the entry runs by them as a
   handed-over app does. A game started in the launcher's own window starts its entry the same way.
+  While such a game starts, shelf says in which launcher, or that the launcher starts first.
 - A program ClamShell didn't start is found by its tray icon, or by a window no entry has; anything with
   a window is on the dock. Its entry: the library's desktop entry named as the icon's id or the window's
   app id, or whose `StartupWMClass` that is, else one of its own (`tray:…`, `window:<app id>`). Its windows are its group (shown if
