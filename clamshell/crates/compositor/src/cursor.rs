@@ -22,7 +22,7 @@ use smithay::{
     },
     input::pointer::{CursorIcon, CursorImageStatus, CursorImageSurfaceData},
     reexports::wayland_server::Resource,
-    utils::{Point, Transform},
+    utils::{Logical, Point, Transform},
     wayland::compositor::with_states,
 };
 use xcursor::{
@@ -75,10 +75,9 @@ impl Cursor {
         }
     }
 
-    pub fn elements(&mut self, server: &mut Server, renderer: &mut GlesRenderer, out: &mut Vec<Element>) -> Result<(), Error> {
-        if !server.pointer.cursor_activity.visible(Instant::now()) {
-            return Ok(());
-        }
+    /// The cursor's elements, with its hotspot `at` (where the scene places it, see `scene`), added to
+    /// `out`, which is front first.
+    pub fn elements(&mut self, server: &mut Server, renderer: &mut GlesRenderer, at: Point<f64, Logical>, out: &mut Vec<Element>) -> Result<(), Error> {
         let status = server.effective_cursor();
         match status {
             CursorImageStatus::Hidden => {}
@@ -91,9 +90,8 @@ impl Cursor {
                 let hotspot = with_states(&surface, |states| {
                     states.data_map.get::<CursorImageSurfaceData>().and_then(|data| data.lock().ok()).map(|data| data.hotspot).unwrap_or_default()
                 });
-                let location = server.pointer.location - hotspot.to_f64();
-                out.splice(
-                    0..0,
+                let location = at - hotspot.to_f64();
+                out.extend(
                     render_elements_from_surface_tree::<_, WaylandSurfaceRenderElement<GlesRenderer>>(
                         renderer,
                         &surface,
@@ -106,21 +104,21 @@ impl Cursor {
                     .map(Element::from),
                 );
                 let [top, bottom] = &server.screens.outputs;
-                let output = if server.pointer.location.x < server.screens.top_width as f64 { top } else { bottom };
+                let output = if at.x < server.screens.top_width as f64 { top } else { bottom };
                 smithay::desktop::utils::send_frames_surface_tree(&surface, output, server.started.elapsed(), Some(Duration::ZERO), |_, _| {
                     Some(output.clone())
                 });
             }
-            CursorImageStatus::Named(icon) => self.named(icon, server, renderer, out)?,
+            CursorImageStatus::Named(icon) => self.named(icon, server, renderer, at, out)?,
             CursorImageStatus::Surface(_) => {
                 server.pointer.cursor = CursorImageStatus::default_named();
-                self.named(CursorIcon::Default, server, renderer, out)?;
+                self.named(CursorIcon::Default, server, renderer, at, out)?;
             }
         }
         Ok(())
     }
 
-    fn named(&mut self, icon: CursorIcon, server: &Server, renderer: &mut GlesRenderer, out: &mut Vec<Element>) -> Result<(), Error> {
+    fn named(&mut self, icon: CursorIcon, server: &Server, renderer: &mut GlesRenderer, at: Point<f64, Logical>, out: &mut Vec<Element>) -> Result<(), Error> {
         let index = if let Some(index) = self.cached.iter().position(|(cached, _)| *cached == icon) {
             index
         } else {
@@ -149,9 +147,8 @@ impl Cursor {
         let Some((_, frames)) = self.cached.get(index) else { return Ok(()) };
         let frame = animation_frame(frames.iter().map(|frame| frame.delay), server.started.elapsed().as_millis());
         if let Some(frame) = frames.get(frame) {
-            let location = server.pointer.location - Point::from(frame.hotspot);
-            out.insert(
-                0,
+            let location = at - Point::from(frame.hotspot);
+            out.push(
                 TextureRenderElement::from_static_texture(
                     frame.id.clone(),
                     renderer.context_id(),

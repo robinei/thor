@@ -120,8 +120,7 @@ pub fn run(
                         // Commits timed for no later than this frame, shown at the host's next, go ahead.
                         let interval = Duration::from_secs_f64(1000.0 / f64::from(server.screens.refresh.max(1000)));
                         server.release_timed_commits((Duration::from(server.clock.now()) + interval).into());
-                        render::elements(server, &mut frames, backend.renderer(), &mut elements)?;
-                        cursor.elements(server, backend.renderer(), &mut elements)?;
+                        render::elements(server, &mut frames, &mut cursor, backend.renderer(), &mut elements)?;
                         let (states, _) = pipeline.compose(server, backend.renderer(), &mut elements)?;
                         if let Some(histogram) = pipeline.take_histogram() {
                             server.report_histogram(histogram);

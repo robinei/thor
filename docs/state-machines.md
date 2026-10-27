@@ -670,10 +670,10 @@ as Wine's game subsurface), in the picture's own shape when that differs from it
 Native never scales up. A press on the black around a top window reaches neither the window nor shelf
 behind it.
 
-What is shown where is placed in one list, the scene (`scene.rs`), front first: the UI's software
-surfaces (its overlays and screens, with the part of each shown) and the windows shown, each with its
-`Geometry` and whether input reaches it (not the overview's on the top screen, which the overlay's cells
-take). Drawing makes its elements from it; `hit`, frame callbacks and presentation feedback, popups and
+What is shown where is placed in one list, the scene (`scene.rs`), front first: the cursor while it
+shows, the UI's software surfaces (its overlays and screens, with the part of each shown) and the windows
+shown, each with its `Geometry` and whether input reaches it (not the overview's on the top screen, which
+the overlay's cells take); a window's popups and subsurfaces are drawn and hit with it. Drawing makes its elements from it; `hit`, frame callbacks and presentation feedback, popups and
 idle inhibition read the windows' places from it. It is placed again after the state changes
 (`sync_windows`), after every commit, after the X11 window manager's events, and before drawing, frame
 pacing and idle read it; the list is kept, so placing allocates nothing once it has held the most there

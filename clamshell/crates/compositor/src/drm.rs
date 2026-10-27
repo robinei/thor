@@ -684,8 +684,7 @@ fn compose(drawing: &mut Drawing, server: &mut Server, on_capture: &mut impl FnM
     server.sync_pointer_capture(|_| Ok::<(), std::convert::Infallible>(()));
     server.import_dmabufs(&mut drawing.renderer);
     let Drawing { renderer, pipeline, screens, frames, cursor, elements, states } = drawing;
-    render::elements(server, frames, renderer, elements)?;
-    cursor.elements(server, renderer, elements)?;
+    render::elements(server, frames, cursor, renderer, elements)?;
     let (composed, changed) = pipeline.compose(server, renderer, elements)?;
     *states = composed;
     if let Some(histogram) = pipeline.take_histogram() {

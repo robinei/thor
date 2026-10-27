@@ -1,5 +1,5 @@
-//! The scene's elements for a host to compose (see `scene`): the UI's screens and overlays from their
-//! software surfaces, and the windows shown, each scaled and cropped to its place by its geometry. The UI
+//! The scene's elements for a host to compose (see `scene`): the cursor, the UI's screens and overlays
+//! from their software surfaces, and the windows shown, each scaled and cropped to its place by its geometry. The UI
 //! draws each layer into its surface's pixmap, kept between frames ([`UiFrame`]); only the rectangle that
 //! changed is uploaded, and is the texture's damage.
 
@@ -72,7 +72,13 @@ fn frame(frames: &UiFrames, layer: Layer) -> Option<&UiFrame> {
 /// all but the top screen's while a window covers it: that stays stale in the core, and is drawn where it
 /// changed once uncovered (the texture holds the last frame drawn). Drawing may change the state, so the
 /// scene is placed again after.
-pub(crate) fn elements(server: &mut Server, frames: &mut UiFrames, renderer: &mut GlesRenderer, out: &mut Vec<Element>) -> Result<(), Error> {
+pub(crate) fn elements(
+    server: &mut Server,
+    frames: &mut UiFrames,
+    cursor: &mut crate::cursor::Cursor,
+    renderer: &mut GlesRenderer,
+    out: &mut Vec<Element>,
+) -> Result<(), Error> {
     server.place();
     let [top, bottom, overlay, overlay_below] = frames;
     if !server.scene.covers_top() {
@@ -90,6 +96,10 @@ pub(crate) fn elements(server: &mut Server, frames: &mut UiFrames, renderer: &mu
                 if let Some(element) = frame(frames, layer).and_then(|frame| frame.surface.element(renderer, x, part)) {
                     out.push(element);
                 }
+                continue;
+            }
+            Some(Shown::Cursor { at }) => {
+                cursor.elements(server, renderer, at, out)?;
                 continue;
             }
             Some(Shown::Window(placed)) => placed,

@@ -1,5 +1,6 @@
-//! What is shown where, front first: the software surfaces (the UI's overlays and screens, see
-//! `software`), each at its place with the part of it shown, then the windows, each with its geometry. One
+//! What is shown where, front first: the cursor, the software surfaces (the UI's overlays and screens,
+//! see `software`), each at its place with the part of it shown, then the windows, each with its
+//! geometry. A window's popups and subsurfaces are its own, placed and scaled with it. One
 //! function places everything ([`Server::place`]); drawing makes its elements from the list, and input,
 //! frame pacing and popups read the windows' places from it, so that a window is touched where it is
 //! drawn. The list is kept and refilled: placing allocates nothing once it has held the most there have
@@ -12,7 +13,8 @@
 
 use clamshell_state::presentation::{WindowLayout, WindowPresentation, WindowScale};
 use clamshell_ui::{Bounds, Layer, Screen};
-use smithay::utils::{Logical, Rectangle};
+use smithay::input::pointer::CursorImageStatus;
+use smithay::utils::{Logical, Point, Rectangle};
 
 use crate::geometry::Geometry;
 use crate::server::Server;
@@ -21,6 +23,10 @@ use crate::windows::ClientWindow;
 /// One thing shown.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Shown {
+    /// The cursor, its hotspot `at` the pointer (see `cursor`).
+    Cursor {
+        at: Point<f64, Logical>,
+    },
     /// The software surface of the UI's `layer`, at `x` in the scene: the whole of it, or only `part`.
     Software {
         layer: Layer,
@@ -55,7 +61,7 @@ impl Scene {
     pub fn windows(&self) -> impl Iterator<Item = &Placed> {
         self.shown.iter().filter_map(|shown| match shown {
             Shown::Window(placed) => Some(placed),
-            Shown::Software { .. } => None,
+            Shown::Software { .. } | Shown::Cursor { .. } => None,
         })
     }
 
@@ -72,7 +78,8 @@ impl Scene {
 impl Server {
     /// Places what is shown (see the module's doc): the windows, the frontmost last in [`Server::windows`]
     /// first here, then in front of them the UI: the second screen's view (only above its windows' area
-    /// while it shows them), the top screen's while no window covers it, and the overlays where they draw.
+    /// while it shows them), the top screen's while no window covers it, and the overlays where they draw;
+    /// and in front of all the cursor, while it shows.
     pub(crate) fn place(&mut self) {
         let mut shown = std::mem::take(&mut self.scene.shown);
         shown.clear();
@@ -90,6 +97,10 @@ impl Server {
             }
         }
         self.scene.shown = shown;
+        // Once the windows are placed: what the cursor shows is the client's under it.
+        if self.pointer.cursor_activity.visible(std::time::Instant::now()) && self.effective_cursor() != CursorImageStatus::Hidden {
+            self.scene.shown.insert(0, Shown::Cursor { at: self.pointer.location });
+        }
     }
 
     /// Where `client`'s window is shown, if it is: the top screen's window, the second screen's while that
