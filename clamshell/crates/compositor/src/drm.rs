@@ -904,18 +904,28 @@ fn layers_failed(screen: &mut Screen, error: &Error) {
 
 /// Commits the frame the screen shows again, with its overlay and cursor planes as they now are.
 fn present_layers(screen: &mut Screen, server: &mut Server, cursor: &crate::cursor::Cursor) {
+    prepare_layers(screen, server, cursor);
+    let states = screen.layers.iter().flat_map(PlaneLayers::states);
+    match screen.surface.show_again(states) {
+        Ok(()) => committed(screen),
+        Err(error) => layers_failed(screen, &error),
+    }
+}
+
+/// Readies the screen's overlay and cursor planes for its next commit (see `PlaneLayers::prepare`).
+/// Returns whether they show something in it, so that a refusal of it may be theirs.
+fn prepare_layers(screen: &mut Screen, server: &mut Server, cursor: &crate::cursor::Cursor) -> bool {
     if let Some(layers) = &mut screen.layers {
         layers.prepare(server, ui_screen(screen.role), cursor);
     }
-    let states = screen.layers.iter().flat_map(PlaneLayers::states);
-    match screen.surface.show_again(states) {
-        Ok(()) => {
-            layers_committed(screen);
-            screen.pending = true;
-            screen.queued_at = Some(Instant::now());
-        }
-        Err(error) => layers_failed(screen, &error),
-    }
+    screen.layers.as_ref().is_some_and(PlaneLayers::shows)
+}
+
+/// The screen's commit went through: its planes show as placed, and its flip is awaited.
+fn committed(screen: &mut Screen) {
+    layers_committed(screen);
+    screen.pending = true;
+    screen.queued_at = Some(Instant::now());
 }
 
 /// Records the screens' overlays that are stale, and places the scene again if any was: what an overlay
@@ -1042,16 +1052,13 @@ fn direct_decide(drawing: &mut Drawing, server: &Server) {
 /// first when its shape is new. Returns whether it is: refused, the window is composed until its buffer
 /// changes, and the scene, which left it out, is drawn whole.
 fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipeline, cursor: &crate::cursor::Cursor) -> bool {
-    if let Some(layers) = &mut screen.layers {
-        layers.prepare(server, ui_screen(screen.role), cursor);
-    }
+    let with_layers = prepare_layers(screen, server, cursor);
     let (Some(scanout), Some(candidate)) = (&mut screen.window, &screen.window_shown) else { return true };
     let shape = candidate.shape();
     let test = screen.tested != Some(shape);
     // The window's place turned as the composed frame is, its buffer the other way, as the plane takes it.
     let logical = screen.transform.transform_size(screen.size);
     let dst = screen.transform.transform_rect_in(candidate.dst.to_physical(1), &logical);
-    let with_layers = screen.layers.as_ref().is_some_and(PlaneLayers::shows);
     let surface = &mut screen.surface;
     let states = screen.layers.iter().flat_map(PlaneLayers::states);
     let shown = scanout.framebuffer(&candidate.dmabuf).and_then(|fb| {
@@ -1070,9 +1077,7 @@ fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipel
             screen.queued.states.clear();
             screen.queued.states.insert(smithay::backend::renderer::element::Id::from_wayland_resource(&candidate.surface), state);
             server.frame_queued(&screen.queued, Some(down));
-            layers_committed(screen);
-            screen.pending = true;
-            screen.queued_at = Some(Instant::now());
+            committed(screen);
             screen.dirty = false;
             screen.answered = server.pacing.commits;
             true
@@ -1106,10 +1111,8 @@ fn present_ui(screen: &mut Screen, server: &mut Server, cursor: &crate::cursor::
         return;
     }
     server.core.frames_done();
-    if let Some(layers) = &mut screen.layers {
-        layers.prepare(server, ui_screen(screen.role), cursor);
-    }
-    let with_layers = screen.layers.as_ref().is_some_and(PlaneLayers::shows);
+    let with_layers = prepare_layers(screen, server, cursor);
+    let Some(ui) = &mut screen.ui else { return };
     let states = screen.layers.iter().flat_map(PlaneLayers::states);
     let shown = match fb {
         Some(fb) => screen.surface.show_ui(fb, ui.colour(), states),
@@ -1120,9 +1123,7 @@ fn present_ui(screen: &mut Screen, server: &mut Server, cursor: &crate::cursor::
             if fb.is_some() {
                 ui.committed();
             }
-            layers_committed(screen);
-            screen.pending = true;
-            screen.queued_at = Some(Instant::now());
+            committed(screen);
         }
         Err(error) if with_layers => {
             if fb.is_some() {
@@ -1147,16 +1148,13 @@ fn present(drawing: &mut Drawing, server: &mut Server, index: usize) -> Result<(
     let (Some(screen), Some(states)) = (screens.get_mut(index), states.get(index)) else {
         return Ok(());
     };
-    if let Some(layers) = &mut screen.layers {
-        layers.prepare(server, ui_screen(screen.role), cursor);
-    }
+    let with_layers = prepare_layers(screen, server, cursor);
     let mut buffer = screen.surface.next_buffer().map_err(|e| format!("{:?} screen: {e}", screen.role))?;
     let sync = {
         let mut target = renderer.bind(&mut buffer)?;
         pipeline.present_screen(renderer, &mut target, screen.role == ScreenRole::Bottom, screen.size, screen.transform)?
     };
     screen.queued.states.clone_from(&states.states);
-    let with_layers = screen.layers.as_ref().is_some_and(PlaneLayers::shows);
     let layers = screen.layers.iter().flat_map(PlaneLayers::states);
     if let Err(error) = screen.surface.queue(Some(sync), layers) {
         if with_layers {
@@ -1165,10 +1163,8 @@ fn present(drawing: &mut Drawing, server: &mut Server, index: usize) -> Result<(
         }
         return Err(format!("{:?} screen: {error}", screen.role).into());
     }
-    layers_committed(screen);
+    committed(screen);
     server.frame_queued(states, Some(screen.role == ScreenRole::Bottom));
-    screen.pending = true;
-    screen.queued_at = Some(Instant::now());
     screen.dirty = false;
     screen.answered = server.pacing.commits;
     Ok(())
