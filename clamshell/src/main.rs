@@ -9,10 +9,10 @@ mod config;
 mod control;
 #[cfg(any(test, feature = "dev"))]
 mod dev;
+mod logging;
 mod profile;
 mod session;
 
-use std::io::Write;
 use std::process::ExitCode;
 
 use clamshell_state::{Init, State};
@@ -23,21 +23,7 @@ use cli::Command;
 use config::Env;
 
 fn main() -> ExitCode {
-    let mut logger = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,tracing=warn"));
-    // To the journal (as a service), each line starts with its syslog priority, which journald takes as
-    // the entry's: `journalctl -p err` finds the errors.
-    if to_journal() {
-        logger.format(|out, record| {
-            let priority = match record.level() {
-                log::Level::Error => 3,
-                log::Level::Warn => 4,
-                log::Level::Info => 6,
-                log::Level::Debug | log::Level::Trace => 7,
-            };
-            writeln!(out, "<{priority}>[{:<5} {}] {}", record.level(), record.target(), record.args())
-        });
-    }
-    logger.init();
+    logging::init(to_journal());
     // A panic is logged at error (the journal's priority), with its thread and place: a system thread's
     // panic doesn't end the program, so it would go unseen at stderr's info.
     std::panic::set_hook(Box::new(|info| {
