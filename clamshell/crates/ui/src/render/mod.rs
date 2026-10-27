@@ -144,23 +144,14 @@ pub(crate) fn render(
 }
 
 /// Brings `pixmap`, a buffer that holds frame `held` of `history` (0 if none), up to the frame recorded
-/// last in `retained` (its `drawn`), which changed `damage` from the one before: what the first buffer to
-/// draw it is told, the others told nothing, as `history` holds it by then. Only the commands that meet
-/// what changed since `held` are played, within it. Returns the new frame's number, which the buffer now
-/// holds, and the area drawn.
-pub(crate) fn draw_damaged(
-    pixmap: crate::Pixels,
-    held: u64,
-    damage: Bounds,
-    retained: &mut Retained,
-    history: &mut History,
-    fonts: &mut DrawCache,
-    images: &Images,
-) -> (u64, Bounds) {
-    let frame = history.push(damage);
+/// last in `retained` (its `drawn`). Only the commands that meet what changed since `held` are played,
+/// within it. Returns the frame the buffer now holds and the area drawn.
+pub(crate) fn draw_damaged(pixmap: crate::Pixels, held: u64, retained: &Retained, history: &History, fonts: &mut DrawCache, images: &Images) -> (u64, Bounds) {
     let area = history.since(held, Bounds::of_size(retained.drawn.size()));
-    play(pixmap, &retained.drawn, area, fonts, images);
-    (frame, area)
+    if !area.is_empty() {
+        play(pixmap, &retained.drawn, area, fonts, images);
+    }
+    (history.frame, area)
 }
 
 /// One screen drawn frame after frame, live or not: what its last frame left behind and what changed in
@@ -173,6 +164,8 @@ pub(crate) struct ScreenFrames {
     history: History,
     /// What the frame recorded last changed from the one before.
     damage: Option<Bounds>,
+    /// What the frames recorded since one was last drawn changed, for the history once one is.
+    undrawn: Option<Bounds>,
 }
 
 impl ScreenFrames {
@@ -180,6 +173,9 @@ impl ScreenFrames {
     pub(crate) fn record(&mut self, at: Placement, layer: Layer, state: &State, fonts: &mut DrawCache, images: &mut Images) -> FrameOut {
         let out = record(&mut self.retained, at, layer, state, fonts, images);
         self.damage = self.retained.damage();
+        if let Some(damage) = self.damage {
+            self.undrawn = Some(self.undrawn.map_or(damage, |undrawn| undrawn.union(damage)));
+        }
         // The frame recorded is the one to draw from now on.
         self.retained.drew();
         out
@@ -190,15 +186,24 @@ impl ScreenFrames {
         self.damage
     }
 
-    /// The number of the latest frame drawn into any buffer (0 for none).
-    pub(crate) fn frame(&self) -> u64 {
-        self.history.frame
+    /// Has every buffer draw all of the frame, `all` (after the layer's size changed).
+    pub(crate) fn redraw_all(&mut self, all: Bounds) {
+        self.undrawn = Some(all);
     }
 
-    /// Draws the frame recorded last into `pixmap`, which holds frame `held` (0 for none), where `damage`
-    /// says it changed (see [`draw_damaged`]). Returns the frame the pixmap now holds and the area drawn.
-    pub(crate) fn draw(&mut self, pixmap: crate::Pixels, held: u64, damage: Bounds, fonts: &mut DrawCache, images: &Images) -> (u64, Bounds) {
-        draw_damaged(pixmap, held, damage, &mut self.retained, &mut self.history, fonts, images)
+    /// Draws the frame recorded last into `pixmap`, which holds frame `held` (0 for none): what changed
+    /// since (see [`draw_damaged`]). The first buffer to draw after frames were recorded adds what they
+    /// changed to the history. Returns the frame the pixmap now holds and the area drawn.
+    pub(crate) fn draw(&mut self, pixmap: crate::Pixels, held: u64, fonts: &mut DrawCache, images: &Images) -> (u64, Bounds) {
+        if let Some(undrawn) = self.undrawn.take() {
+            self.history.push(undrawn);
+        }
+        draw_damaged(pixmap, held, &self.retained, &self.history, fonts, images)
+    }
+
+    /// Whether a buffer that holds frame `held` has something to draw.
+    pub(crate) fn behind(&self, held: u64) -> bool {
+        self.undrawn.is_some() || held != self.history.frame
     }
 }
 
@@ -313,8 +318,8 @@ mod frame_times {
         v[v.len() / 2]
     }
 
-    /// Two buffers drawing one screen's frames: one draws each frame told its damage, the other catches
-    /// up now and then, told nothing; both hold what a whole frame draws.
+    /// Two buffers drawing one screen's frames: one draws nearly each frame, the other now and then; both
+    /// hold what a whole frame draws, also after a frame no buffer drew.
     #[test]
     fn a_buffer_that_draws_now_and_then_catches_up() {
         let (w, h) = (480u32, 270u32);
@@ -327,10 +332,12 @@ mod frame_times {
             // The shelf's selection a row further down each frame.
             let s = state(vec![Event::Shelf(ShelfEvent::ListStep(step + 1))]);
             frames.record(at, Screen::Top.into(), &s, &mut fonts, &mut images);
-            let damage = frames.damage().unwrap_or(Bounds::EMPTY);
-            held_every = frames.draw(every.as_mut().into(), held_every, damage, &mut fonts, &images).0;
+            // At step 4 no buffer draws: what it changed is kept for the next draw.
+            if step != 4 {
+                held_every = frames.draw(every.as_mut().into(), held_every, &mut fonts, &images).0;
+            }
             if step % 3 == 2 {
-                held_sometimes = frames.draw(sometimes.as_mut().into(), held_sometimes, Bounds::EMPTY, &mut fonts, &images).0;
+                held_sometimes = frames.draw(sometimes.as_mut().into(), held_sometimes, &mut fonts, &images).0;
                 let mut whole = tiny_skia::Pixmap::new(w, h).unwrap();
                 render(whole.as_mut().into(), &mut Retained::default(), at, Screen::Top.into(), &s, &mut fonts, &mut images).unwrap();
                 assert!(every.data() == whole.data() && sometimes.data() == whole.data(), "step {step}");

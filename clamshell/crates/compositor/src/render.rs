@@ -49,14 +49,15 @@ impl UiFrame {
         }
         // Recorded when stale; drawn when that changed something, or when the layer was drawn elsewhere
         // meanwhile (into a screen's scanout buffers), which this texture catches up with.
-        let stale = core.stale(layer) || !self.surface.drawn();
-        let damage = if stale { core.record(layer, !self.surface.drawn()) } else { None };
-        if damage.is_none() && self.held == core.frame(layer) {
+        if core.stale(layer) || !self.surface.drawn() {
+            core.record(layer, false);
+        }
+        if !core.behind(layer, self.held) && self.surface.drawn() {
             return Ok(());
         }
         let held = &mut self.held;
         self.surface.draw(renderer, |pixmap| {
-            let (frame, area) = core.draw(layer, pixmap, *held, damage.unwrap_or(clamshell_ui::Bounds::EMPTY));
+            let (frame, area) = core.draw(layer, pixmap, *held);
             *held = frame;
             (!area.is_empty()).then_some(area)
         })

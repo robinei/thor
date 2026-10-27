@@ -101,10 +101,10 @@ impl Frames {
     /// live frame would send the state.
     pub fn draw(&mut self, state: &State) -> (&[u8], Vec<Event>) {
         let out = self.frames.record(self.at, self.screen.into(), state, &mut self.fonts, &mut self.images);
-        if let Some(damage) = self.frames.damage() {
+        if self.frames.damage().is_some() {
             let next = (self.latest + 1) % self.buffers.len();
             if let Some((pixmap, held)) = self.buffers.get_mut(next) {
-                *held = self.frames.draw(pixmap.as_mut().into(), *held, damage, &mut self.fonts, &self.images).0;
+                *held = self.frames.draw(pixmap.as_mut().into(), *held, &mut self.fonts, &self.images).0;
                 self.latest = next;
             }
         }

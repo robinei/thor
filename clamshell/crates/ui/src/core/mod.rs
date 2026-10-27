@@ -283,9 +283,9 @@ impl Core {
         self.layer(layer.into()).stale
     }
 
-    /// Records `layer`'s next frame and compares it with the last one drawn. Returns what changed in
-    /// buffer pixels, the whole frame if `whole`, or `None` if nothing did. What the frame reports is kept
-    /// for [`Core::frames_done`].
+    /// Records `layer`'s next frame and compares it with the last one. Returns what changed in buffer
+    /// pixels, the whole frame if `whole` (each buffer then draws all of it), or `None` if nothing did.
+    /// What the frame reports is kept for [`Core::frames_done`].
     pub fn record(&mut self, layer: impl Into<Layer>, whole: bool) -> Option<Bounds> {
         let layer = layer.into();
         let s = match layer {
@@ -299,27 +299,30 @@ impl Core {
         s.body = out.touchpad_area;
         self.rows = self.rows.or(out.list_rows.filter(|&rows| rows != self.state.shelf().rows()));
         self.lists.extend(render::list_changes(&self.state, &out));
-        if whole { Some(Bounds::of_size(size_px)) } else { s.frames.damage() }
+        if whole {
+            s.frames.redraw_all(Bounds::of_size(size_px));
+            return Some(Bounds::of_size(size_px));
+        }
+        s.frames.damage()
     }
 
-    /// Draws `layer`'s frame just recorded into `target` (a pixmap, or a buffer of the display engine's,
-    /// maybe turned), which is its size in buffer pixels and holds frame `held` (0 for none), where
-    /// `damage` says it changed: the frame's damage for the first buffer to draw it, nothing for the
-    /// others, which catch up from the frame they hold. Returns the frame it now holds and the area drawn.
-    pub fn draw<'a>(&mut self, layer: impl Into<Layer>, target: impl Into<crate::Pixels<'a>>, held: u64, damage: Bounds) -> (u64, Bounds) {
+    /// Draws `layer`'s frame recorded last into `target` (a pixmap, or a buffer of the display engine's,
+    /// maybe turned), which is its size in buffer pixels and holds frame `held` (0 for none): what changed
+    /// since. Any number of buffers draw the same frames, each catching up from the frame it holds.
+    /// Returns the frame it now holds and the area drawn.
+    pub fn draw<'a>(&mut self, layer: impl Into<Layer>, target: impl Into<crate::Pixels<'a>>, held: u64) -> (u64, Bounds) {
         let s = match layer.into() {
             Layer::Screen(screen) => &mut self.screens[screen],
             Layer::Overlay(screen) => &mut self.overlays[screen],
         };
-        s.frames.draw(target.into(), held, damage, &mut self.fonts, &self.images)
+        s.frames.draw(target.into(), held, &mut self.fonts, &self.images)
     }
 
-    /// The number of `layer`'s latest frame drawn, into any buffer: a buffer that holds an older one has
-    /// something to catch up (see [`Core::draw`]).
-    pub fn frame(&self, layer: impl Into<Layer>) -> u64 {
+    /// Whether a buffer of `layer` that holds frame `held` has something to draw (see [`Core::draw`]).
+    pub fn behind(&self, layer: impl Into<Layer>, held: u64) -> bool {
         match layer.into() {
-            Layer::Screen(screen) => self.screens[screen].frames.frame(),
-            Layer::Overlay(screen) => self.overlays[screen].frames.frame(),
+            Layer::Screen(screen) => self.screens[screen].frames.behind(held),
+            Layer::Overlay(screen) => self.overlays[screen].frames.behind(held),
         }
     }
 
