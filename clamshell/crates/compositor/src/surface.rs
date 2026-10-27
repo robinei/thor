@@ -126,15 +126,19 @@ impl Surface {
     /// mode a game picked as a buffer a viewport stretches, or crops. Smaller surfaces above, such as
     /// overlays, aren't the picture.
     pub fn picture_surface(&self) -> Option<WlSurface> {
-        let mut surfaces: Vec<(WlSurface, i64)> = Vec::new();
-        // Topmost first, as Smithay goes through them.
+        // Asked for every frame: two passes over the surfaces rather than a list of them. Topmost first, as
+        // Smithay goes through them.
+        let area = |states: &SurfaceData| Self::view(states).map(|view| i64::from(view.dst.w) * i64::from(view.dst.h));
+        let mut largest = None;
+        self.with_surfaces(|_, states| largest = largest.max(area(states)));
+        let largest = largest?;
+        let mut picture = None;
         self.with_surfaces(|surface, states| {
-            if let Some(view) = Self::view(states) {
-                surfaces.push((surface.clone(), i64::from(view.dst.w) * i64::from(view.dst.h)));
+            if picture.is_none() && area(states).is_some_and(|area| area * 2 >= largest) {
+                picture = Some(surface.clone());
             }
         });
-        let largest = surfaces.iter().map(|(_, area)| *area).max()?;
-        surfaces.into_iter().find(|(_, area)| area * 2 >= largest).map(|(surface, _)| surface)
+        picture
     }
 
     /// The window's picture: the size of the part of its buffer shown, and where it is shown in the
