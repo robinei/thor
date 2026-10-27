@@ -87,7 +87,7 @@ impl Server {
         }
     }
 
-    #[cfg(feature = "nested")]
+    #[cfg(any(feature = "nested", test))]
     /// Called only after a successful host swap. Hidden or occluded surfaces retain their feedback
     /// until they appear, are superseded by another commit, or are destroyed.
     pub(crate) fn present_submission(&mut self, rendered: &RenderElementStates, time: Time<Monotonic>) {

@@ -41,3 +41,12 @@ wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
 
 [lints]
 workspace = true
+
+# Clients in a winit window of their own, through Smithay's backend that the nested session brings.
+[[example]]
+name = "egl-client"
+required-features = ["nested"]
+
+[[example]]
+name = "colour-client"
+required-features = ["nested"]
