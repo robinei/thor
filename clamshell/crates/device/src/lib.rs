@@ -127,8 +127,8 @@ impl DeviceProfile {
     pub const fn vm() -> Self {
         Self {
             name: "vm",
-            top: Screen { connector: "Virtual-1", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb(), millimetres: None },
-            bottom: Screen { connector: "Virtual-2", rotation: Rotation::Normal, backlight: None, colour: PanelColour::srgb(), millimetres: None },
+            top: Screen { connector: "Virtual-1", rotation: Rotation::Normal, backlight: None, colour: PanelColour::virtual_screen(), millimetres: None },
+            bottom: Screen { connector: "Virtual-2", rotation: Rotation::Normal, backlight: None, colour: PanelColour::virtual_screen(), millimetres: None },
             touchscreens: VM_TOUCH,
             refresh_calibration: None,
             controls: input::Controls::thor(),

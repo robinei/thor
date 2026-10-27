@@ -16,6 +16,8 @@ pub struct Primaries {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Transfer {
     Gamma22,
+    /// The sRGB curve, as a host shows a virtual screen.
+    Srgb,
 }
 /// Luminance in millinits. Missing measurements remain unknown rather than invented.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +52,10 @@ impl PanelColour {
             sdr_white: None,
         }
     }
+    /// A virtual machine's screen, a window on its host, which shows it as sRGB.
+    pub const fn virtual_screen() -> Self {
+        Self { transfer: Transfer::Srgb, ..Self::srgb() }
+    }
     /// ICNA3520 starting facts from gamescope's Thor profile (Armada PR #261), not new measurements.
     pub const fn icna3520() -> Self {
         Self {
@@ -80,8 +86,9 @@ mod tests {
         assert_eq!(bottom.link_bits_per_channel, Some(8));
         assert!(!bottom.hdr_capable);
         assert_eq!(bottom.primaries, PanelColour::srgb().primaries);
+        assert_eq!(crate::DeviceProfile::vm().top.colour, PanelColour::virtual_screen());
         for panel in [crate::DeviceProfile::vm().top, crate::DeviceProfile::generic().bottom] {
-            assert_eq!(panel.colour, PanelColour::srgb());
+            assert_eq!(panel.colour.primaries, PanelColour::srgb().primaries);
             assert!(!panel.colour.hdr_capable);
             assert_eq!(panel.colour.luminance, None);
             assert_eq!(panel.colour.link_bits_per_channel, None);

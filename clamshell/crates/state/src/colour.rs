@@ -114,7 +114,11 @@ impl From<clamshell_device::colour::PanelColour> for ColourDescription {
             max_cll: Some(value.peak / 1000),
             max_fall: Some(value.frame_average / 1000),
         });
-        Self { primaries, transfer: TransferFunction::Gamma(22000), luminance, target }
+        let transfer = match panel.transfer {
+            clamshell_device::colour::Transfer::Gamma22 => TransferFunction::Gamma(22000),
+            clamshell_device::colour::Transfer::Srgb => TransferFunction::Srgb,
+        };
+        Self { primaries, transfer, luminance, target }
     }
 }
 

@@ -237,7 +237,7 @@ impl Colour {
     /// the CRTC has them.
     fn new(device: &DrmDeviceFd, crtc: crtc::Handle, panel: ColourDescription) -> Result<Colour, Error> {
         let mut colour = Colour { device: device.clone(), set: Vec::new(), clear: Vec::new(), blobs: Vec::new() };
-        if panel == ColourDescription::default() {
+        if panel.matches_output(ColourDescription::default()) {
             return Ok(colour);
         }
         let props = crate::scanout::properties_of(device, u32::from(crtc), drm_ffi::DRM_MODE_OBJECT_CRTC);
