@@ -311,6 +311,23 @@ fn steams_windows_open_behind_a_steam_games_launch() {
     assert!(s.session().opening_focus(&game), "the game's, though in Steam's scope");
 }
 
+/// Another program's window over a starting launch's window is a dialog of that launch's program: not
+/// found as a program of its own, so not moved into a scope of ours, on this event or any after.
+#[test]
+fn a_dialog_over_a_starting_launchs_window_is_not_found_again_and_again() {
+    let mut s = steam_ff6();
+    launch_now(&mut s, "ff6");
+    let game = WindowFacts { pids: vec![1001], unit: None, game: Some("steam_app_620".into()), ..win(7, "steam_app_620") };
+    let dialog = WindowFacts { parent: Some(7), pids: vec![1002], unit: None, ..win(8, "foot") };
+    let mut effects = s.observed(vec![game.clone()]);
+    effects.extend(s.applied(Event::tick(21)));
+    effects.extend(s.observed(vec![game.clone(), dialog.clone()]));
+    for t in 22..26 {
+        effects.extend(s.applied(Event::tick(t)));
+    }
+    assert!(!effects.iter().any(|e| matches!(e, Effect::Adopt { .. })), "{effects:?}");
+}
+
 /// While a Steam game starts, Steam's main window stays behind but a dialog of Steam's, asking which
 /// version to launch, comes in front with Steam's group. That isn't remembered as having been in front:
 /// once the dialog is answered shelf comes back, and when the game quits, shelf, where it was launched

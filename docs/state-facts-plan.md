@@ -46,7 +46,7 @@ What isn't, and where the bugs were:
 
 ## Bugs found, fixed first
 
-- [ ] **A found program adopted on every event.** A window of another program over a starting launch's
+- [x] **A found program adopted on every event.** A window of another program over a starting launch's
   window: it is found by its own process, but `running_of` walks to the root, which it doesn't own, so the
   entry has no windows and ends in the same settle; the next settle finds it again, each time asking for a
   new scope. Predates today's changes.
