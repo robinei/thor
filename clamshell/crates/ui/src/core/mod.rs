@@ -175,6 +175,9 @@ impl Core {
         }
         self.effects.clear();
         self.state.apply(event, &mut self.effects);
+        for line in self.state.take_log() {
+            log::warn!("{line}");
+        }
         self.state_revision = self.state_revision.wrapping_add(1);
         self.changed();
         let released = self.input.pad_route(self.state.pad().route(), &self.state);

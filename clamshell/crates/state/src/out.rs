@@ -11,4 +11,6 @@ pub(crate) struct Out {
     /// Requests for State, handled in order after the event that queued them, so that their effects
     /// follow the ones pushed before them.
     pub(crate) events: Vec<Event>,
+    /// What went wrong and was worked around, for the journal (see [`crate::State::take_log`]).
+    pub(crate) log: Vec<String>,
 }

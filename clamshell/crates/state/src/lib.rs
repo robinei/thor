@@ -186,6 +186,8 @@ pub struct State {
     pointer: Pointer,
     sys: Sys,
     notifications: Notifications,
+    /// What went wrong and was worked around, until taken (see [`State::take_log`]).
+    log: Vec<String>,
     /// Apps' file choosers waiting (see [`portal`]).
     portal: portal::Portal,
     /// Every entry's settings, and the level the settings panel edits.
@@ -382,7 +384,7 @@ impl State {
     /// state is settled ([`State::settle`]), and then the outside is told what changed for it
     /// ([`State::sync`]).
     pub fn apply(&mut self, event: Event, effects: &mut Vec<Effect>) {
-        let mut out = Out { effects: std::mem::take(effects), events: std::mem::take(&mut self.queue) };
+        let mut out = Out { effects: std::mem::take(effects), events: std::mem::take(&mut self.queue), log: std::mem::take(&mut self.log) };
         self.apply_event(event, &mut out);
         self.settle(&mut out);
         self.sync(&mut out);
@@ -397,6 +399,13 @@ impl State {
         *effects = out.effects;
         out.events.clear();
         self.queue = out.events;
+        self.log = out.log;
+    }
+
+    /// What went wrong and was worked around since the last look, a line each, for the journal: the
+    /// state's fallbacks, which it can't log itself.
+    pub fn take_log(&mut self) -> std::vec::Drain<'_, String> {
+        self.log.drain(..)
     }
 
     /// Hands `event` to the rule that handles it, then handles what that queued.

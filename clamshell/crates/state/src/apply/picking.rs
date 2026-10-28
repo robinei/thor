@@ -40,7 +40,7 @@ impl State {
                 self.show_builtin(Builtin::Library);
                 break;
             }
-            // (The portal thread logs it, as it does every answer.)
+            out.log.push(format!("portal: request {id} answered with nothing: the library has no Files tab to pick in"));
             self.portal.asked.remove(0);
             out.effects.push(Effect::FileChosen { request: id, path: None });
         }

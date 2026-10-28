@@ -139,7 +139,9 @@ impl LibraryView {
                 if let Some(e) = &mut self.edit {
                     e.select_field(usize::from(i));
                 }
-                self.start_pick(takes, pick::PickFor::Field(field));
+                if !self.start_pick(takes, pick::PickFor::Field(field)) {
+                    out.log.push(format!("library edit: {} not picked: the library has no Files tab", field.label()));
+                }
             }
             return;
         }
@@ -148,7 +150,9 @@ impl LibraryView {
             let read = self.library.config.as_ref();
             let Some(place) = self.edit.as_ref().and_then(|e| e.selected(e.config(read)?)).filter(|p| p.within.is_some()) else { return };
             let images = ["*.png", "*.jpg", "*.jpeg", "*.webp", "*.svg"].map(String::from).to_vec();
-            self.start_pick(pick::Takes::Files(images), pick::PickFor::PlacePicture(place.id.clone()));
+            if !self.start_pick(pick::Takes::Files(images), pick::PickFor::PlacePicture(place.id.clone())) {
+                out.log.push("library edit: the picture not picked: the library has no Files tab".to_owned());
+            }
             return;
         }
         let read = self.library.config.as_ref();

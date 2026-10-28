@@ -213,7 +213,7 @@ impl State {
     /// Handles `events` as if a rule had queued them, without the steps that follow, and returns the
     /// effects.
     pub(crate) fn handle_as_queued(&mut self, events: Vec<Event>) -> Vec<Effect> {
-        let mut out = Out { effects: Vec::new(), events };
+        let mut out = Out { effects: Vec::new(), events, log: Vec::new() };
         self.handle_queued(0, &mut out);
         out.effects
     }

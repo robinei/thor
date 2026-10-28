@@ -104,7 +104,7 @@ mod tests {
         assert!(s.session().top_window().is_none() && s.library_view().pick().is_none());
     }
 
-    /// Without a Files tab to pick in, a request is answered at once with nothing.
+    /// Without a Files tab to pick in, a request is answered at once with nothing, which is logged.
     #[test]
     fn without_a_files_tab_nothing_is_chosen() {
         let mut library = clamshell_library::demo::library();
@@ -112,5 +112,7 @@ mod tests {
         let mut s = state_with(library);
         assert_eq!(chosen(&ask(&mut s, 1, false)), Some((1, None)));
         assert!(s.library_view().pick().is_none());
+        assert!(s.take_log().any(|line| line.contains("no Files tab")), "logged");
+        assert_eq!(s.take_log().count(), 0, "taken");
     }
 }
