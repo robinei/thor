@@ -22,7 +22,7 @@ and 4 and at the end.
 - [x] 1. **Commit errors by kind** (`presenter.rs`). Commits return `Refused` (the test commit failed, or
   `EINVAL`/`ERANGE`), `Busy` (`EBUSY`), `Away` (`DeviceInactive`) or `Failed` (anything else), sorted by
   one function tested against Smithay's errors.
-- [ ] 2. **One present path, one outcome table** (`drm.rs`). The four present paths return an outcome;
+- [x] 2. **One present path, one outcome table** (`drm.rs`). The four present paths return an outcome;
   one function applies it. Committed as now. Refused with the planes showing: planes off. Refused
   otherwise: the screen's own buffers, or that window's shape, refused. Busy or Failed: the screen stays
   dirty and the loop wakes at its next refresh, logged once a run of failures. Away: nothing.

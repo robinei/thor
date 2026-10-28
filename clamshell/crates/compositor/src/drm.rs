@@ -101,6 +101,8 @@ struct Screen {
     /// and whether what they show changed since its last commit.
     layers: Option<PlaneLayers>,
     layers_dirty: bool,
+    /// Whether its commits fail for a while now (busy, or failing otherwise), logged at the first.
+    failing: bool,
 }
 
 impl Screen {
@@ -287,6 +289,7 @@ pub fn run(
             direct: None,
             layers: None,
             layers_dirty: false,
+            failing: false,
         });
     }
     // With CLAMSHELL_SCANOUT=1, each screen's own buffers, for while it shows only ClamShell.
@@ -682,22 +685,18 @@ fn step(
             due = earlier(due, screen.held);
         }
         due = earlier(due, turn.wake);
+        // A commit that failed wakes the loop for the next try (see `failed`).
         if screen.ui_shown {
             if screen.on && !screen.pending {
-                present_ui(screen, server, &drawing.cursor);
+                due = earlier(due, present_ui(screen, server, &mut drawing.pipeline, &drawing.cursor));
             }
         } else if turn.present && screen.window_shown.is_some() {
-            if !present_window(screen, server, &mut drawing.pipeline, &drawing.cursor) {
-                // Refused: composed at once.
-                due = Some(now);
-            }
+            due = earlier(due, present_window(screen, server, &mut drawing.pipeline, &drawing.cursor));
         } else if turn.present {
-            if let Err(error) = present(drawing, server, index) {
-                log::warn!("drm: drawing: {error}");
-            }
+            due = earlier(due, present(drawing, server, index));
         } else if screen.layers_dirty && screen.on && !screen.pending {
             // Only the overlay or the cursor changed: the frame shown, committed again with them.
-            present_layers(screen, server, &drawing.cursor);
+            due = earlier(due, present_layers(screen, server, &mut drawing.pipeline, &drawing.cursor));
         } else if turn.answer {
             screen.answered = server.pacing.commits;
             screen.next_callbacks = Some(now + screen.interval);
@@ -940,17 +939,120 @@ fn layers_failed(screen: &mut Screen, error: &impl std::fmt::Display) {
     screen.layers_dirty = true;
 }
 
-/// Commits the frame the screen shows again, with its overlay and cursor planes as they now are.
-fn present_layers(screen: &mut Screen, server: &mut Server, cursor: &crate::cursor::Cursor) {
+/// Commits the frame the screen shows again, with its overlay and cursor planes as they now are. Returns
+/// when to try again if it failed.
+fn present_layers(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipeline, cursor: &crate::cursor::Cursor) -> Option<Instant> {
     let with_layers = prepare_layers(screen, server, cursor);
     let states = screen.layers.iter().flat_map(PlaneLayers::states);
     match screen.surface.show_again(states) {
-        Ok(()) => committed(screen),
-        Err(error) if with_layers => layers_failed(screen, &error),
-        // Only turning the planes off, which no display engine refuses: tried again.
-        Err(error) => {
-            log::warn!("drm: the {:?} screen's frame with its planes off: {error}", screen.role);
-            screen.layers_dirty = true;
+        Ok(()) => {
+            committed(screen);
+            None
+        }
+        Err(error) => failed(screen, pipeline, Commit::Again, with_layers, error),
+    }
+}
+
+/// What a commit showed on the primary plane, for what its failure means.
+#[derive(Debug, Clone, Copy)]
+enum Commit {
+    /// A frame composed.
+    Composed,
+    /// The screen's own buffer, drawn anew for it if `drew`.
+    Own { drew: bool },
+    /// Window `id`'s buffer (the one decided on, see [`window_scanout_decide`]).
+    Window { id: i64 },
+    /// The frame shown, again, with the planes changed.
+    Again,
+}
+
+/// What is done about a commit that failed, by its error (see `CommitError`), and whether the overlay and
+/// cursor planes showed something in it.
+#[derive(Debug, PartialEq)]
+enum Remedy {
+    /// The seat is away: nothing, until it is back.
+    Wait,
+    /// Tried again at the next refresh, as it was.
+    Retry,
+    /// The planes are off from now on: composed, at once.
+    PlanesOff,
+    /// What the primary plane showed is refused: the screen's own buffers, or the window's shape; composed
+    /// at once.
+    Refuse,
+}
+
+impl Commit {
+    /// Whether the screen has something else to show if it is refused: composing, for the screen's own
+    /// buffer or a window's; nothing, for a frame composed or the frame shown again.
+    fn refusable(self) -> bool {
+        matches!(self, Commit::Own { .. } | Commit::Window { .. })
+    }
+}
+
+/// The remedy for a commit that failed with `error`, `with_layers` showing, `refusable` or not (see
+/// [`Commit::refusable`]).
+fn remedy(refusable: bool, with_layers: bool, error: &crate::presenter::CommitError) -> Remedy {
+    use crate::presenter::CommitError;
+    match error {
+        CommitError::Away => Remedy::Wait,
+        CommitError::Busy(_) | CommitError::Failed(_) => Remedy::Retry,
+        CommitError::Refused(_) if with_layers => Remedy::PlanesOff,
+        CommitError::Refused(_) if refusable => Remedy::Refuse,
+        // Nothing else to show: tried again.
+        CommitError::Refused(_) => Remedy::Retry,
+    }
+}
+
+/// Applies the remedy for the screen's commit `kind` that failed with `error`, `with_layers` showing.
+/// Returns when to try again.
+fn failed(screen: &mut Screen, pipeline: &mut Pipeline, kind: Commit, with_layers: bool, error: crate::presenter::CommitError) -> Option<Instant> {
+    if let (Commit::Own { drew: true }, Some(ui)) = (kind, &mut screen.ui) {
+        ui.failed();
+    }
+    let role = screen.role;
+    match remedy(kind.refusable(), with_layers, &error) {
+        Remedy::Wait => None,
+        Remedy::Retry => {
+            if !screen.failing {
+                log::warn!("drm: the {role:?} screen's commit failed ({error}): tried again at each refresh until one goes through");
+                screen.failing = true;
+            }
+            // (The screen's own buffer, not drawn anew, is committed again as the frame shown is.)
+            match kind {
+                Commit::Again | Commit::Own { drew: false } => screen.layers_dirty = true,
+                Commit::Own { drew: true } | Commit::Window { .. } | Commit::Composed => screen.dirty = true,
+            }
+            Some(Instant::now() + screen.interval)
+        }
+        Remedy::PlanesOff => {
+            layers_failed(screen, &error);
+            Some(Instant::now())
+        }
+        Remedy::Refuse => {
+            match kind {
+                Commit::Own { .. } => {
+                    log::warn!("ui scanout: the {role:?} screen: {error}: composed from now on");
+                    if let Some(ui) = &mut screen.ui {
+                        screen.surface.clear_after(ui.clear());
+                        ui.refused = true;
+                    }
+                    screen.ui_shown = false;
+                }
+                Commit::Window { id } => {
+                    log::info!(
+                        "window scanout: the {role:?} screen can't show window {id} from its own buffer: {error}: composed until its buffers' shape changes"
+                    );
+                    if let Some(scanout) = &mut screen.window {
+                        scanout.refused = screen.window_shown.as_ref().map(Candidate::shape);
+                        screen.surface.clear_after(scanout.clear());
+                    }
+                    screen.window_shown = None;
+                    pipeline.redraw_all();
+                }
+                Commit::Composed | Commit::Again => {}
+            }
+            screen.dirty = true;
+            Some(Instant::now())
         }
     }
 }
@@ -972,6 +1074,9 @@ fn prepare_layers(screen: &mut Screen, server: &mut Server, cursor: &crate::curs
 
 /// The screen's commit went through: its planes show as placed, and its flip is awaited.
 fn committed(screen: &mut Screen) {
+    if std::mem::take(&mut screen.failing) {
+        log::info!("drm: the {:?} screen's commits go through again", screen.role);
+    }
     layers_committed(screen);
     screen.pending = true;
     screen.queued_at = Some(Instant::now());
@@ -1098,11 +1203,11 @@ fn direct_decide(drawing: &mut Drawing, server: &Server) {
 }
 
 /// Shows the window decided on (see [`window_scanout_decide`]) from its own buffer, in a test commit
-/// first when its shape is new. Returns whether it is: refused, the window is composed until its buffer
-/// changes, and the scene, which left it out, is drawn whole.
-fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipeline, cursor: &crate::cursor::Cursor) -> bool {
+/// first when its shape is new. Returns when to try again if it failed (see [`failed`]): refused, the
+/// window is composed until its buffers' shape changes, and the scene, which left it out, is drawn whole.
+fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipeline, cursor: &crate::cursor::Cursor) -> Option<Instant> {
     let with_layers = prepare_layers(screen, server, cursor);
-    let (Some(scanout), Some(candidate)) = (&mut screen.window, &screen.window_shown) else { return true };
+    let (Some(scanout), Some(candidate)) = (&mut screen.window, &screen.window_shown) else { return None };
     let shape = candidate.shape();
     let test = screen.tested != Some(shape);
     // The window's place turned as the composed frame is, its buffer the other way, as the plane takes it.
@@ -1132,39 +1237,26 @@ fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipel
             committed(screen);
             screen.dirty = false;
             screen.answered = server.pacing.commits;
-            true
-        }
-        // Tried again without the planes before the window is refused.
-        Err(error) if with_layers => {
-            layers_failed(screen, &error);
-            false
+            None
         }
         Err(error) => {
-            log::info!(
-                "window scanout: the {:?} screen can't show window {} from its own buffer: {error}: composed until its buffers' shape changes",
-                screen.role,
-                candidate.id
-            );
-            scanout.refused = Some(shape);
-            screen.surface.clear_after(scanout.clear());
-            screen.window_shown = None;
-            screen.dirty = true;
-            pipeline.redraw_all();
-            false
+            let id = candidate.id;
+            failed(screen, pipeline, Commit::Window { id }, with_layers, error)
         }
     }
 }
 
-/// Shows the screen's own buffer drawn with what changed in ClamShell's view, if anything did.
-fn present_ui(screen: &mut Screen, server: &mut Server, cursor: &crate::cursor::Cursor) {
-    let Some(ui) = &mut screen.ui else { return };
+/// Shows the screen's own buffer drawn with what changed in ClamShell's view, if anything did. Returns when
+/// to try again if it failed (see [`failed`]).
+fn present_ui(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipeline, cursor: &crate::cursor::Cursor) -> Option<Instant> {
+    let ui = screen.ui.as_mut()?;
     let fb = ui.draw(&mut server.core, ui_screen(screen.role));
     if fb.is_none() && !screen.layers_dirty {
-        return;
+        return None;
     }
     server.core.frames_done();
     let with_layers = prepare_layers(screen, server, cursor);
-    let Some(ui) = &mut screen.ui else { return };
+    let ui = screen.ui.as_mut()?;
     let states = screen.layers.iter().flat_map(PlaneLayers::states);
     let shown = match fb {
         Some(fb) => screen.surface.show_ui(fb, ui.colour(), states),
@@ -1176,53 +1268,40 @@ fn present_ui(screen: &mut Screen, server: &mut Server, cursor: &crate::cursor::
                 ui.committed();
             }
             committed(screen);
+            None
         }
-        Err(error) if with_layers => {
-            if fb.is_some() {
-                ui.failed();
-            }
-            layers_failed(screen, &error);
-        }
-        Err(error) => {
-            // Composed instead from now on, with the reason.
-            log::warn!("ui scanout: the {:?} screen: {error}: composed from now on", screen.role);
-            screen.surface.clear_after(ui.clear());
-            ui.refused = true;
-            screen.ui_shown = false;
-            screen.dirty = true;
-        }
+        Err(error) => failed(screen, pipeline, Commit::Own { drew: fb.is_some() }, with_layers, error),
     }
 }
 
-/// Shows screen `index` its part of the scene.
-fn present(drawing: &mut Drawing, server: &mut Server, index: usize) -> Result<(), Error> {
+/// Shows screen `index` its part of the scene. Returns when to try again if it failed (see [`failed`]):
+/// drawing it failing too.
+fn present(drawing: &mut Drawing, server: &mut Server, index: usize) -> Option<Instant> {
+    use crate::presenter::CommitError;
     let Drawing { renderer, pipeline, screens, states, cursor, .. } = drawing;
-    let (Some(screen), Some(states)) = (screens.get_mut(index), states.get(index)) else {
-        return Ok(());
-    };
+    let (screen, states) = (screens.get_mut(index)?, states.get(index)?);
     let with_layers = prepare_layers(screen, server, cursor);
-    let mut buffer = screen.surface.next_buffer().map_err(|e| format!("{:?} screen: {e}", screen.role))?;
-    let sync = {
+    let drawn = screen.surface.next_buffer().and_then(|mut buffer| {
         let mut target = renderer.bind(&mut buffer)?;
-        pipeline.present_screen(renderer, &mut target, screen.role == ScreenRole::Bottom, screen.size, screen.transform)?
+        pipeline.present_screen(renderer, &mut target, screen.role == ScreenRole::Bottom, screen.size, screen.transform)
+    });
+    let sync = match drawn {
+        Ok(sync) => sync,
+        Err(error) => return failed(screen, pipeline, Commit::Composed, false, CommitError::Failed(format!("drawing: {error}"))),
     };
     // (Not clone_from: a map of another capacity would be allocated anew.)
     screen.queued.states.clear();
     screen.queued.states.extend(states.states.iter().map(|(id, state)| (id.clone(), *state)));
     let layers = screen.layers.iter().flat_map(PlaneLayers::states);
     if let Err(error) = screen.surface.queue(Some(sync), layers) {
-        if with_layers {
-            layers_failed(screen, &error);
-            return Ok(());
-        }
-        return Err(format!("{:?} screen: {error}", screen.role).into());
+        return failed(screen, pipeline, Commit::Composed, with_layers, error);
     }
     committed(screen);
     server.frame_queued(states, Some(screen.role == ScreenRole::Bottom));
     server.take_feedback(states, Some(screen.role == ScreenRole::Bottom), &mut screen.feedback);
     screen.dirty = false;
     screen.answered = server.pacing.commits;
-    Ok(())
+    None
 }
 
 /// Where each absolute input device lies in the scene: on the screen the profile places it, else, for a
@@ -1285,6 +1364,23 @@ fn names_ids(identifier: &str, vendor: u32, product: u32, name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// A failed commit's remedy: away waits, busy or failing tries again, a refusal with the planes showing
+    /// turns them off, and one without them refuses what the primary plane showed if the screen can
+    /// compose instead.
+    #[test]
+    fn a_failed_commit_is_remedied_by_what_failed_and_what_it_showed() {
+        use super::{Remedy, remedy};
+        use crate::presenter::CommitError::*;
+        let refused = || Refused(String::new());
+        assert_eq!(remedy(true, true, &Away), Remedy::Wait);
+        assert_eq!(remedy(true, true, &Busy(String::new())), Remedy::Retry);
+        assert_eq!(remedy(true, false, &Failed(String::new())), Remedy::Retry);
+        assert_eq!(remedy(false, true, &refused()), Remedy::PlanesOff);
+        assert_eq!(remedy(true, true, &refused()), Remedy::PlanesOff, "the planes first, being what is tried");
+        assert_eq!(remedy(true, false, &refused()), Remedy::Refuse);
+        assert_eq!(remedy(false, false, &refused()), Remedy::Retry, "composed, with nothing else to show");
+    }
+
     use super::{Timing, Turn, screen_turn, timed_wake};
     use std::time::{Duration, Instant};
 
