@@ -95,6 +95,8 @@ pub enum Effect {
     /// Run one of ClamShell's own tools from the Tools tab. `rescan` reads the library again. `refetch`
     /// tries again for metadata that wasn't found, then rescans.
     Tool(clamshell_library::Tool),
+    /// Write library.json as this, then read the library again (the Library's edit mode).
+    WriteLibrary(std::sync::Arc<clamshell_library::config::Config>),
     /// The entries the Library shows, the selected one first. Fetch their metadata before the rest.
     FetchFirst(Vec<Arc<str>>),
     /// Read where mpv left the video `file` of `entry` when it stopped playing. The answer comes back as

@@ -5,6 +5,7 @@
 //! The crate has no I/O and no dependencies. Scanning (library.json's content dirs, Steam, desktop
 //! files), play time and favourites live in clamshell-system's `library`.
 
+pub mod config;
 #[cfg(any(test, feature = "demo"))]
 pub mod demo;
 pub mod hash;

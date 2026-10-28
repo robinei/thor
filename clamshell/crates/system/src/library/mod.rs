@@ -10,10 +10,12 @@ mod steam;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use clamshell_library::{BrowseKind, Browsed, Collection, Details, Entry, Launch, Library, Meta, Tool, ids};
 
 use meta::{How, Keys, RETRY_MISS, Wanted};
+use runners::Opens as _;
 
 use crate::paths::Paths;
 
@@ -56,7 +58,7 @@ impl Sources {
 /// pictures. Image file paths in the places are relative to `config_dir`, or to the home dir with `~/`.
 struct Folders<'a> {
     made: HashMap<(String, String), usize>,
-    places: &'a [content::Place],
+    places: &'a [content::Placed],
     home: Option<&'a Path>,
     config_dir: Option<&'a Path>,
 }
@@ -175,9 +177,17 @@ pub struct Loaded {
 /// Reads library.json's sources into its places (see [`content`]), with each entry's runner and where
 /// its metadata comes from. Adds ClamShell's own tabs as declared and puts the tabs in order. Then adds
 /// each entry's plays, whether it is a favourite, and what was fetched about it.
+/// Writes library.json as `config` (see [`content::write_config`]). Errs if there is no library.json
+/// to write (no config dir) or writing failed.
+pub fn write(sources: &Sources, config: &clamshell_library::config::Config) -> std::io::Result<()> {
+    let file = sources.config.as_deref().ok_or_else(|| std::io::Error::other("no config dir"))?;
+    content::write_config(file, config)
+}
+
 pub fn load(sources: &Sources) -> Loaded {
-    let (mut config, config_problem) = sources.config.as_deref().map(content::read_config).unwrap_or_default();
-    let place_problems = content::paths(&mut config.places);
+    let (config, config_problem) = sources.config.as_deref().map(content::read_config).unwrap_or_default();
+    let config_problem_none = config_problem.is_none();
+    let (places, place_problems) = content::placed(&config.places);
     let (runners, runner_problems) = runners::in_force(&config.runners);
     let config_dir = sources.config.as_deref().and_then(Path::parent);
     let mut b = Builder {
@@ -186,7 +196,8 @@ pub fn load(sources: &Sources) -> Loaded {
         sources,
         games: Vec::new(),
         collections: Vec::new(),
-        folders: Folders { made: HashMap::new(), places: &config.places, home: sources.home.as_deref(), config_dir },
+        places: &places,
+        folders: Folders { made: HashMap::new(), places: &places, home: sources.home.as_deref(), config_dir },
         hows: Vec::new(),
         problems: config_problem.into_iter().chain(place_problems).chain(runner_problems).collect(),
         away: Vec::new(),
@@ -215,10 +226,11 @@ pub fn load(sources: &Sources) -> Loaded {
     b.mark_recent();
     b.tools();
     let runner_keymaps = runners.iter().filter_map(|r| Some((clamshell_library::runner_key(&r.id), r.keymap.clone()?))).collect();
-    let order: Vec<String> = config.places.iter().map(|p| p.path.trim().trim_matches('/')).filter(|p| !p.contains('/')).map(str::to_owned).collect();
+    let order: Vec<String> = places.iter().map(|p| p.path.trim().trim_matches('/')).filter(|p| !p.contains('/')).map(str::to_owned).collect();
     let (recent, favourites) = (b.own(content::OwnTab::Recent), b.own(content::OwnTab::Favourites));
     let Builder { games, collections, hows, problems, away, .. } = b;
-    let mut library = Library { collections, entries: games, problems, away, runner_keymaps, order, recent, favourites, ..Library::default() };
+    let parsed = config_problem_none.then(|| Arc::new(config.clone()));
+    let mut library = Library { collections, entries: games, problems, away, runner_keymaps, order, recent, favourites, config: parsed, ..Library::default() };
     let wanted = known(&mut library, hows, sources);
     library.rebuild_derived();
     Loaded { library, wanted, keys: config.keys }
@@ -228,6 +240,8 @@ pub fn load(sources: &Sources) -> Loaded {
 /// comes from, the problems, the sources that are away, and the mounted removable filesystems.
 struct Builder<'a> {
     config: &'a content::Config,
+    /// The declared places with their paths.
+    places: &'a [content::Placed],
     runners: &'a [runners::Runner],
     sources: &'a Sources,
     games: Vec<Entry>,
@@ -243,7 +257,7 @@ impl Builder<'_> {
     /// Reports tabs with a picture or an image icon. A tab shows only an icon from the UI's set, because
     /// something in it is always selected.
     fn check_tabs(&mut self) {
-        for p in self.config.places.iter().filter(|p| !p.path.trim().trim_matches('/').contains('/')) {
+        for p in self.places.iter().filter(|p| !p.path.trim().trim_matches('/').contains('/')) {
             if p.picture.is_some() || p.icon.as_deref().is_some_and(|i| i.contains(['/', '.'])) {
                 self.problems.push(format!("{}: a tab has an icon of the UI's (gamepad, film, ...), no picture", p.path));
             }
@@ -253,7 +267,7 @@ impl Builder<'_> {
     /// The path of the place declared as `id`. If there is none, the problem is recorded and none is
     /// returned.
     fn resolve(&mut self, place: &str) -> Option<String> {
-        content::resolve(place, &self.config.places).map_err(|e| self.problems.push(e)).ok()
+        content::resolve(place, self.places).map_err(|e| self.problems.push(e)).ok()
     }
 
     /// Puts `entries` at the resolved `place`: in its tab, or in a folder in it that takes its art from
@@ -319,7 +333,7 @@ impl Builder<'_> {
         };
         // The dir is either on a removable filesystem, away while no matching one is mounted, or as given.
         let dir = match &source.on {
-            Some(on) => match self.mounts.iter().find(|m| on.matches(&m.label, &m.uuid, &m.fs)) {
+            Some(on) => match self.mounts.iter().find(|m| content::on_matches(on, &m.label, &m.uuid, &m.fs)) {
                 Some(m) => m.dir.join(source.dir.trim_start_matches('/')),
                 None => {
                     self.problems.push(format!("{}: its card or stick isn't in", source.id));
@@ -400,7 +414,7 @@ impl Builder<'_> {
             })
             .collect();
         for m in std::mem::take(&mut self.mounts) {
-            let Some(rule) = rules.iter().find(|r| r.matches(&m.label, &m.uuid, &m.fs)) else {
+            let Some(rule) = rules.iter().find(|r| content::mount_matches(r, &m.label, &m.uuid, &m.fs)) else {
                 continue;
             };
             let Some(within) = rule.within.as_deref().filter(|_| !rule.hide) else {
@@ -530,14 +544,14 @@ impl Builder<'_> {
     }
 
     /// The declared place that is tab `name`, if any.
-    fn tab_place(&self, name: &str) -> Option<&content::Place> {
-        self.config.places.iter().find(|p| p.path.trim().trim_matches('/') == name)
+    fn tab_place(&self, name: &str) -> Option<&content::Placed> {
+        self.places.iter().find(|p| p.path.trim().trim_matches('/') == name)
     }
 
     /// Marks what is left out of Recent: anything in a place, or a folder of one, with `recent: false`.
     /// Also sets the tabs' icons from their places.
     fn mark_recent(&mut self) {
-        let places = &self.config.places;
+        let places = &self.places;
         for c in 0..self.collections.len() {
             let Some(name) = self.collections.get(c).map(|c| c.name.clone()) else {
                 continue;
@@ -562,7 +576,7 @@ impl Builder<'_> {
 
     /// One of ClamShell's own tabs, as a place declares it.
     fn own(&self, kind: content::OwnTab) -> Option<clamshell_library::OwnTab> {
-        let p = self.config.places.iter().find(|p| p.kind == Some(kind))?;
+        let p = self.places.iter().find(|p| p.kind == Some(kind))?;
         Some(clamshell_library::OwnTab { name: p.path.trim().trim_matches('/').to_owned(), icon: p.icon.clone() })
     }
 
@@ -658,7 +672,7 @@ fn builtin_entry(builtin: clamshell_library::Builtin) -> Entry {
 
 /// The first of `rules` matching an entry with this id, name and categories.
 fn first_match<'r>(rules: &[&'r content::Rule], id: &str, name: &str, categories: &[String]) -> Option<&'r content::Rule> {
-    rules.iter().copied().find(|r| r.matches(id, name, categories))
+    rules.iter().copied().find(|r| content::rule_matches(r, id, name, categories))
 }
 
 /// Applies what is stored about `library`'s entries: their plays, whether each is a favourite, what was
@@ -825,11 +839,14 @@ mod tests {
     fn desktop_rules_move_or_hide_entries() {
         let rule = |json: &str| serde_json::from_str::<content::Rule>(json).unwrap();
         let cats = |c: &[&str]| c.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
-        assert!(rule(r#"{ "name": "battle.NET", "place": "Apps" }"#).matches("net.lutris.battlenet-1", "Battle.net", &cats(&["Game"])), "any case");
-        assert!(rule(r#"{ "id": "*lutris*" }"#).matches("net.lutris.Lutris", "Lutris", &[]));
-        assert!(rule(r#"{ "categories": "Emu*" }"#).matches("x", "RetroArch", &cats(&["Game", "Emulator"])));
-        assert!(!rule(r#"{ "id": "*lutris*", "name": "Steam" }"#).matches("net.lutris.Lutris", "Lutris", &[]), "all of them");
-        assert!(rule("{}").matches("any", "Any", &[]), "nothing to match: every entry");
+        assert!(
+            content::rule_matches(&rule(r#"{ "name": "battle.NET", "place": "Apps" }"#), "net.lutris.battlenet-1", "Battle.net", &cats(&["Game"])),
+            "any case"
+        );
+        assert!(content::rule_matches(&rule(r#"{ "id": "*lutris*" }"#), "net.lutris.Lutris", "Lutris", &[]));
+        assert!(content::rule_matches(&rule(r#"{ "categories": "Emu*" }"#), "x", "RetroArch", &cats(&["Game", "Emulator"])));
+        assert!(!content::rule_matches(&rule(r#"{ "id": "*lutris*", "name": "Steam" }"#), "net.lutris.Lutris", "Lutris", &[]), "all of them");
+        assert!(content::rule_matches(&rule("{}"), "any", "Any", &[]), "nothing to match: every entry");
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         let apps = root.join("data/applications");

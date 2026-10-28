@@ -60,17 +60,36 @@ fn log_failed_start(name: &str, result: io::Result<()>) {
     }
 }
 
-/// The Tools tab's rescan, and the library's first read at start. On a thread of its own, it forgets the
-/// metadata misses if `refetch` is set, reads the library and sends it, and fetches what the library
-/// wants.
-fn rescanner<S: Sink + Clone>(sources: Sources, paths: Paths, queue: meta::Queue, sink: S) -> Box<dyn Fn(bool)> {
-    Box::new(move |refetch| {
+/// What a read of the library does first (see [`rescanner`]).
+pub(crate) enum Rescan {
+    Read,
+    /// The metadata misses forgotten, so that they are fetched again.
+    Refetch,
+    /// library.json written as this, from the Library's edit mode.
+    Write(std::sync::Arc<clamshell_library::config::Config>),
+}
+
+/// The Tools tab's rescan, the library's first read at start, and its read after an edit. On a thread of
+/// its own, it does what `Rescan` says first, reads the library and sends it, and fetches what the
+/// library wants.
+fn rescanner<S: Sink + Clone>(sources: Sources, paths: Paths, queue: meta::Queue, sink: S) -> Box<dyn Fn(Rescan)> {
+    Box::new(move |first| {
         let (sources, paths, queue, sink) = (sources.clone(), paths.clone(), queue.clone(), sink.clone());
         log_failed_start(
             "rescan",
             crate::os::worker::detached("rescan", move || {
-                if refetch && let Some(art) = paths.art.as_deref() {
-                    log::info!("rescan: {} misses forgotten", Cache::open(art).forget_misses());
+                match first {
+                    Rescan::Read => {}
+                    Rescan::Refetch => {
+                        if let Some(art) = paths.art.as_deref() {
+                            log::info!("rescan: {} misses forgotten", Cache::open(art).forget_misses());
+                        }
+                    }
+                    // A failed write leaves the file as it was, and what is read shows that.
+                    Rescan::Write(config) => match library::write(&sources, &config) {
+                        Ok(()) => log::info!("library.json written"),
+                        Err(e) => log::error!("library.json not written: {e}"),
+                    },
                 }
                 let loaded = library::load(&sources);
                 log::info!("rescan: {} entries", loaded.library.entries.len());
@@ -101,7 +120,7 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, gl
     let metrics = started("metrics", metrics::spawn(sink.clone()));
     let fetching = meta::Queue::default();
     let rescan = rescanner(sources.clone(), paths.clone(), fetching.clone(), sink.clone());
-    rescan(false);
+    rescan(Rescan::Read);
     let touchpad = started("touchpad", touchpad::spawn());
     // Watch input on every device for idle, and the hardware keys in the device's own session.
     log_failed_start("input watch", crate::input::watch::spawn(env.device_session, sink.clone()));

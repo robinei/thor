@@ -14,7 +14,7 @@ use rustix::fs::inotify;
 use super::mounts::media_mounts;
 use crate::Sink;
 use crate::library::content;
-use crate::library::runners::{self, Runner};
+use crate::library::runners::{self, Opens as _, Runner};
 use crate::os::worker::{Bell, Worker};
 
 /// What a browse thread reads and how it handles videos. `config` is library.json, which says how files

@@ -55,6 +55,9 @@ pub struct Library {
     pub order: Vec<String>,
     pub recent: Option<OwnTab>,
     pub favourites: Option<OwnTab>,
+    /// library.json as read, which the edit mode changes and has written. None if it didn't parse, so
+    /// that it isn't written over; a file that isn't there is an empty one.
+    pub config: Option<std::sync::Arc<crate::config::Config>>,
 }
 
 /// One of ClamShell's own tabs as declared: its name and icon.

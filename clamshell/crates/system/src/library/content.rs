@@ -104,102 +104,31 @@ use std::path::{Path, PathBuf};
 use clamshell_library::pattern::{self, hidden};
 use clamshell_library::titles::{episode_title, season_of, stem, untagged};
 use clamshell_library::{Entry, Launch, sort};
-use serde::Deserialize;
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Config {
-    /// The declared places: the tabs and the folders in them, by their ids, with their icons and
-    /// pictures. They set the tabs' order and declare ClamShell's own tabs.
-    #[serde(default)]
-    pub(crate) places: Vec<Place>,
-    #[serde(default)]
-    pub(crate) runners: Vec<super::runners::Runner>,
-    /// Where entries come from, and where they go.
-    #[serde(default)]
-    pub(crate) sources: Vec<Source>,
-    #[serde(default)]
-    pub(crate) keys: crate::library::meta::Keys,
-}
+pub(crate) use clamshell_library::config::{BrowseRoot, BuiltinPlace, Config, MountRule, On, OwnTab, Place, Rule, Scan, Source};
 
-/// Where entries come from, by `type`, and where they go. The types are a scanned dir (`dir`), a browsed
-/// dir (`browse`), the apps and games from desktop files (`desktop`), Steam's installed games (`steam`),
-/// the mounted removable filesystems (`removable`) and ClamShell's own screens (`builtin`).
-///
-/// For the last three, the sources of a type take their entries in turn. Each takes the remaining ones it
-/// matches (see [`Rule`], [`MountRule`]) and puts them at its place, or leaves them out with `hide`.
-/// Entries no source takes are left out.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub(crate) enum Source {
-    Dir(Scan),
-    Browse(BrowseRoot),
-    Desktop(Rule),
-    Steam(Rule),
-    Removable(MountRule),
-    Builtin(BuiltinPlace),
-}
-
-/// One of ClamShell's own screens, by `id` (`library`, `device`), placed at `place`.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct BuiltinPlace {
-    pub(crate) id: String,
-    pub(crate) place: String,
-}
-
-/// A declared place.
-///
-/// - `id` refers to it elsewhere, as `"place": "snes"`. Its folder's id is `place:snes`, which stays the
-///   same as it is renamed or moved.
-/// - `name` is its title, and `in` the id of the place it is in; without one, it is a tab.
-/// - `icon` is one of the UI's icons by name, such as `gamepad`. A folder's icon can also be an image
-///   file, shown in its row.
-/// - `picture` is a folder's image file, shown large when it is selected. A tab has none, because
-///   something in it is always selected.
-/// - `recent: false` keeps what is in it out of Recent, for apps. Its folders inherit this unless they
-///   set it themselves.
-/// - `type` makes it one of ClamShell's own tabs (`recent`, `favourites`, `tools`).
-///
-/// Image file paths starting with `~/` are in the home dir; others are relative to library.json's dir.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Place {
-    pub(crate) id: String,
-    pub(crate) name: String,
-    #[serde(default, rename = "in")]
-    pub(crate) within: Option<String>,
-    /// Its tab and the folders in it to it, as `Games/SNES`: worked out from `name` and `in` (see
-    /// [`paths`]).
-    #[serde(skip)]
+/// A declared place with its path: its tab and the folders in it to it, as `Games/SNES`, worked out from
+/// its `name` and the places it is `in` (see [`placed`]).
+#[derive(Debug, Clone)]
+pub(crate) struct Placed {
+    pub(crate) place: Place,
     pub(crate) path: String,
-    #[serde(default)]
-    pub(crate) icon: Option<String>,
-    #[serde(default)]
-    pub(crate) picture: Option<String>,
-    #[serde(default)]
-    pub(crate) recent: Option<bool>,
-    #[serde(default, rename = "type")]
-    pub(crate) kind: Option<OwnTab>,
 }
 
-/// One of ClamShell's own tabs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum OwnTab {
-    /// The entries played last, except those in a place with `recent: false`.
-    Recent,
-    Favourites,
-    /// ClamShell's own tools, such as rescanning the library and fetching what is missing again.
-    Tools,
+impl std::ops::Deref for Placed {
+    type Target = Place;
+
+    fn deref(&self) -> &Place {
+        &self.place
+    }
 }
 
-/// Works out each place's path from its `name` and the places it is in. A place in one that isn't
-/// declared, or in itself through others, is a tab; each is a problem returned.
-pub(crate) fn paths(places: &mut [Place]) -> Vec<String> {
+/// The declared places with their paths, worked out from each one's `name` and the places it is in. A
+/// place in one that isn't declared, or in itself through others, is a tab; each is a problem returned.
+pub(crate) fn placed(places: &[Place]) -> (Vec<Placed>, Vec<String>) {
     let mut problems = Vec::new();
-    let mut paths = Vec::with_capacity(places.len());
-    for place in places.iter() {
+    let mut out = Vec::with_capacity(places.len());
+    for place in places {
         let mut names = vec![place.name.trim()];
         let mut within = place.within.as_deref();
         while let Some(id) = within {
@@ -221,148 +150,33 @@ pub(crate) fn paths(places: &mut [Place]) -> Vec<String> {
             }
         }
         names.reverse();
-        paths.push(names.join("/"));
+        out.push(Placed { place: place.clone(), path: names.join("/") });
     }
-    for (place, path) in places.iter_mut().zip(paths) {
-        place.path = path;
-    }
-    problems
+    (out, problems)
 }
 
-/// The path of the place declared as `id` (see [`paths`]). Errs if there is none.
-pub(crate) fn resolve(id: &str, places: &[Place]) -> Result<String, String> {
+/// The path of the place declared as `id` (see [`placed`]). Errs if there is none.
+pub(crate) fn resolve(id: &str, places: &[Placed]) -> Result<String, String> {
     places.iter().find(|p| p.id == id.trim()).map(|p| p.path.clone()).ok_or_else(|| format!("no place {id} declared"))
 }
 
-/// A browsed dir. It is a folder of its own, titled `name`, in the place `in`, listed when it is opened.
-/// `trash` marks it as the Trash's `files` dir, whose entries can be restored or deleted.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct BrowseRoot {
-    #[serde(rename = "in")]
-    pub(crate) within: String,
-    pub(crate) name: String,
-    pub(crate) dir: String,
-    #[serde(default)]
-    pub(crate) trash: bool,
+/// Whether a desktop or Steam source's `rule` matches an entry with this id, name and categories.
+pub(crate) fn rule_matches(rule: &Rule, id: &str, name: &str, categories: &[String]) -> bool {
+    let glob = |pattern: &str, value: &str| pattern::matches(&pattern.to_lowercase(), &value.to_lowercase());
+    rule.id.as_deref().is_none_or(|p| glob(p, id))
+        && rule.name.as_deref().is_none_or(|p| glob(p, name))
+        && rule.categories.as_deref().is_none_or(|p| categories.iter().any(|c| glob(p, c)))
 }
 
-/// A removable source. The remaining mounted removable filesystems that match all of its `label`, `uuid`
-/// and `fs` go in the place `in` as their own folders, or are left out with `hide`. The fields are globs
-/// in any case, and an unset one matches anything. The folder is titled `name`, where `{label}` is
-/// replaced by the filesystem's label, or its UUID if it has none; that is the default name.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct MountRule {
-    #[serde(default)]
-    label: Option<String>,
-    #[serde(default)]
-    uuid: Option<String>,
-    #[serde(default)]
-    fs: Option<String>,
-    #[serde(default, rename = "in")]
-    pub(crate) within: Option<String>,
-    #[serde(default)]
-    pub(crate) name: Option<String>,
-    #[serde(default)]
-    pub(crate) hide: bool,
+/// Whether a removable source's `rule` matches a filesystem with this label, UUID and type.
+pub(crate) fn mount_matches(rule: &MountRule, label: &str, uuid: &str, fs: &str) -> bool {
+    on_matches(&On { label: rule.label.clone(), uuid: rule.uuid.clone(), fs: rule.fs.clone() }, label, uuid, fs)
 }
 
-impl MountRule {
-    /// Whether it matches a filesystem with this label, UUID and type.
-    pub(crate) fn matches(&self, label: &str, uuid: &str, fs: &str) -> bool {
-        On { label: self.label.clone(), uuid: self.uuid.clone(), fs: self.fs.clone() }.matches(label, uuid, fs)
-    }
-}
-
-/// A desktop or Steam source. The remaining desktop file entries or Steam games that match all of its
-/// `id`, `name` and `categories` go at `place`, a declared place's id, or are left out with `hide`. The fields are globs in any case, and an unset one matches anything. `categories`
-/// matches if any of an entry's categories does; Steam games have none.
-///
-/// `runner`, an id, is the runner that opens them; by default it is the first runner of the type.
-/// `metadata` is where their covers and details come from: `steamgriddb`, or `steam` (the Steam store)
-/// for a Steam source.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Rule {
-    #[serde(default)]
-    id: Option<String>,
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    categories: Option<String>,
-    #[serde(default)]
-    pub(crate) place: Option<String>,
-    #[serde(default)]
-    pub(crate) hide: bool,
-    #[serde(default)]
-    pub(crate) runner: Option<String>,
-    #[serde(default)]
-    pub(crate) metadata: Option<String>,
-}
-
-impl Rule {
-    /// Whether it matches an entry with this id, name and categories.
-    pub(crate) fn matches(&self, id: &str, name: &str, categories: &[String]) -> bool {
-        let glob = |pattern: &str, value: &str| pattern::matches(&pattern.to_lowercase(), &value.to_lowercase());
-        self.id.as_deref().is_none_or(|p| glob(p, id))
-            && self.name.as_deref().is_none_or(|p| glob(p, name))
-            && self.categories.as_deref().is_none_or(|p| categories.iter().any(|c| glob(p, c)))
-    }
-}
-
-/// A dir whose entries go in the library.
-///
-/// `id` names the entries as `<id>:<path in dir>`, and `place`, a declared place's id, says where they
-/// show. `match` and `items` say what is an entry: `match` is matched against paths in `dir`, one part
-/// per folder level (`*/*.cue`), and `items` against a matched folder's own entries; without `match`, the
-/// runner's patterns are used, and `also` adds to either. `metadata` says where their covers and
-/// details come from. `runner`, an id, opens them all; without it, each opens with the runner its file
-/// name matches (see [`super::runners`]).
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Scan {
-    pub(crate) id: String,
-    pub(crate) dir: String,
-    /// Where its entries go: a declared place's id.
-    pub(crate) place: String,
-    #[serde(default, rename = "match")]
-    pub(crate) patterns: Vec<String>,
-    #[serde(default)]
-    pub(crate) also: Vec<String>,
-    #[serde(default)]
-    pub(crate) items: Vec<String>,
-    #[serde(default)]
-    pub(crate) metadata: Option<String>,
-    #[serde(default)]
-    pub(crate) runner: Option<String>,
-    /// The removable filesystem `dir` is on: the first mounted one matching this. `dir` is then a path
-    /// inside it (`roms/snes`), and the source is away while none is mounted.
-    #[serde(default)]
-    pub(crate) on: Option<On>,
-}
-
-/// A removable filesystem, matched by its `label`, `uuid` and `fs`. These are globs in any case, and an
-/// unset one matches anything.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct On {
-    #[serde(default)]
-    label: Option<String>,
-    #[serde(default)]
-    uuid: Option<String>,
-    #[serde(default)]
-    fs: Option<String>,
-}
-
-impl On {
-    /// Whether it matches a filesystem with this label, UUID and type.
-    pub(crate) fn matches(&self, label: &str, uuid: &str, fs: &str) -> bool {
-        let glob = |pattern: &str, value: &str| pattern::matches(&pattern.to_lowercase(), &value.to_lowercase());
-        self.label.as_deref().is_none_or(|p| glob(p, label))
-            && self.uuid.as_deref().is_none_or(|p| glob(p, uuid))
-            && self.fs.as_deref().is_none_or(|p| glob(p, fs))
-    }
+/// Whether `on` matches a filesystem with this label, UUID and type.
+pub(crate) fn on_matches(on: &On, label: &str, uuid: &str, fs: &str) -> bool {
+    let glob = |pattern: &str, value: &str| pattern::matches(&pattern.to_lowercase(), &value.to_lowercase());
+    on.label.as_deref().is_none_or(|p| glob(p, label)) && on.uuid.as_deref().is_none_or(|p| glob(p, uuid)) && on.fs.as_deref().is_none_or(|p| glob(p, fs))
 }
 
 /// How a scanned file opens: its command and its runner, if a runner opens it.
@@ -396,6 +210,74 @@ pub(crate) fn read_config(file: &Path) -> (Config, Option<String>) {
             log::warn!("library: {}: {e}", file.display());
             (Config::default(), Some(format!("library.json: {e}")))
         }
+    }
+}
+
+/// Writes `config` to `file`, one place, runner or source a line as the starter is written, through a
+/// file beside it moved over it.
+pub(crate) fn write_config(file: &Path, config: &Config) -> std::io::Result<()> {
+    fs::write(file.with_extension("json.new"), config_text(config)?)?;
+    fs::rename(file.with_extension("json.new"), file)
+}
+
+/// `config` as library.json's text: one place, runner or source a line.
+fn config_text(config: &Config) -> std::io::Result<String> {
+    let line = |v: &dyn erased::Line| v.line();
+    let list = |name: &str, items: Vec<String>| {
+        let lines: Vec<String> = items.iter().map(|i| format!("    {i}")).collect();
+        format!("  \"{name}\": [\n{}\n  ]", lines.join(",\n"))
+    };
+    let places = config.places.iter().map(|p| line(p)).collect::<Result<Vec<_>, _>>()?;
+    let runners = config.runners.iter().map(|r| line(r)).collect::<Result<Vec<_>, _>>()?;
+    let sources = config.sources.iter().map(|s| line(s)).collect::<Result<Vec<_>, _>>()?;
+    let keys = line(&config.keys)?;
+    Ok(format!("{{\n{},\n{},\n{},\n  \"keys\": {keys}\n}}\n", list("places", places), list("runners", runners), list("sources", sources)))
+}
+
+mod erased {
+    /// A value as one line of JSON, with spaces inside its braces.
+    pub(super) trait Line {
+        fn line(&self) -> std::io::Result<String>;
+    }
+
+    impl<T: serde::Serialize> Line for T {
+        fn line(&self) -> std::io::Result<String> {
+            let text = serde_json::to_string(self).map_err(std::io::Error::other)?;
+            Ok(spaced(&text))
+        }
+    }
+
+    /// `{"a":1,"b":[2,3]}` as `{ "a": 1, "b": [2, 3] }`, leaving strings as they are.
+    fn spaced(json: &str) -> String {
+        let mut out = String::with_capacity(json.len() * 5 / 4);
+        let (mut in_string, mut escaped) = (false, false);
+        let mut chars = json.chars().peekable();
+        while let Some(c) = chars.next() {
+            if in_string {
+                out.push(c);
+                match c {
+                    _ if escaped => escaped = false,
+                    '\\' => escaped = true,
+                    '"' => in_string = false,
+                    _ => {}
+                }
+                continue;
+            }
+            match c {
+                '"' => {
+                    in_string = true;
+                    out.push(c);
+                }
+                '{' if chars.peek() == Some(&'}') => out.push('{'),
+                '{' => out.push_str("{ "),
+                '}' if out.ends_with('{') => out.push('}'),
+                '}' => out.push_str(" }"),
+                ':' => out.push_str(": "),
+                ',' => out.push_str(", "),
+                c => out.push(c),
+            }
+        }
+        out
     }
 }
 
@@ -762,6 +644,18 @@ mod tests {
         assert_eq!(titles(&games[show.items[1]].items), ["1. Pilot"]);
     }
 
+    /// The starter library.json, read and written back, is the same file, and reads the same.
+    #[test]
+    fn the_starter_is_written_as_it_is_read() {
+        let starter = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../packages/thor-session/root/usr/share/thor/home/.config/clamshell/library.json");
+        let (config, problem) = read_config(&starter);
+        assert_eq!(problem, None);
+        let text = config_text(&config).unwrap();
+        assert_eq!(text, fs::read_to_string(&starter).unwrap());
+        let reread: Config = serde_json::from_str(&text).unwrap();
+        assert_eq!(reread, config);
+    }
+
     #[test]
     fn a_config_that_doesnt_parse_is_none() {
         let file = std::env::temp_dir().join(format!("clamshell-library-{}.json", std::process::id()));
@@ -776,12 +670,12 @@ mod tests {
 
     #[test]
     fn places_are_named_in_the_places_they_are_in() {
-        let mut places: Vec<Place> = serde_json::from_str(
+        let places: Vec<Place> = serde_json::from_str(
             r#"[{ "id": "games", "name": "Games" }, { "id": "rpg", "name": "RPG", "in": "snes" }, { "id": "snes", "name": "SNES", "in": "games" },
                 { "id": "lost", "name": "Lost", "in": "nowhere" }, { "id": "a", "name": "A", "in": "b" }, { "id": "b", "name": "B", "in": "a" }]"#,
         )
         .unwrap();
-        let problems = paths(&mut places);
+        let (places, problems) = placed(&places);
         assert_eq!(resolve("snes", &places).unwrap(), "Games/SNES");
         assert_eq!(resolve("rpg", &places).unwrap(), "Games/SNES/RPG", "declared before what it is in");
         assert_eq!(resolve("lost", &places).unwrap(), "Lost", "in one not declared: a tab");

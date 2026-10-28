@@ -43,7 +43,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use clamshell_state::{Event, Meta};
-use serde::Deserialize;
 
 use cache::Cache;
 use libretro::Database;
@@ -61,14 +60,7 @@ const LISTS_KEPT: std::time::Duration = std::time::Duration::from_secs(30 * 86_4
 pub(crate) const RETRY_MISS: u64 = 30 * 86_400;
 
 /// The services' keys, from library.json's `keys`.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Keys {
-    #[serde(default)]
-    pub(crate) tmdb: Option<String>,
-    #[serde(default)]
-    pub(crate) steamgriddb: Option<String>,
-}
+pub use clamshell_library::config::Keys;
 
 /// Where an entry's metadata comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -13,92 +13,24 @@
 use std::path::Path;
 
 use clamshell_library::{Launch, pattern};
-use serde::Deserialize;
 
-/// A runner, as library.json gives it.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Runner {
-    /// What its settings, environment and keymap are kept by (see the module's doc).
-    #[serde(default)]
-    pub(crate) id: String,
-    /// Its settings page's title.
-    #[serde(default)]
-    name: String,
-    /// Set for a runner that finds its items itself (see the module's doc). Without it, the runner opens
-    /// files with its command.
-    #[serde(default, rename = "type")]
-    pub(crate) kind: Option<Kind>,
-    /// Patterns for the file names it opens, like `*.sfc`. Each matches a single name, in any case.
-    #[serde(default, rename = "match")]
-    pub(crate) patterns: Vec<String>,
-    /// The command, with `{path}` for the file. A desktop runner's command, if it has one, replaces the
-    /// command from each entry's desktop file. In it, `{id}` is the desktop file's name and `{exec}` is the
-    /// file's command, as separate arguments. That way it can wrap the command or launch the app another
-    /// way, as the Android runner's script does (docs/android.md).
-    #[serde(default)]
-    launch: Vec<String>,
-    /// One of ClamShell's keymaps that it comes with, such as `viewer` (the D-pad, A, B and the shoulders
-    /// as keys). It is used until another is chosen for the runner.
-    #[serde(default)]
-    pub(crate) keymap: Option<String>,
-    /// Whether its entries have their own settings tab beside the runner's. If not, only the runner has
-    /// settings. Defaults to on; a browsed file or a folder has none either way.
-    #[serde(default)]
-    item_settings: Option<bool>,
-    /// What to write to a launch's control socket (`{socket}` in its command) to add a file while it runs.
-    /// `{path}` in it is the file, escaped as JSON string contents. If set, its entries can be enqueued.
-    #[serde(default)]
-    pub(crate) enqueue: Option<String>,
-    /// Whether its launches hand their app over to something running outside them and then end. This is
-    /// for a desktop runner such as Waydroid's, whose apps' windows belong to the Waydroid session. Its
-    /// entries are tracked by their windows instead, found by their app id (the desktop file's name).
-    #[serde(default)]
-    handover: bool,
-    /// For a runner that hands its apps over, the command that ends one, with `{id}` for its windows' app
-    /// id. It is used for Force kill, and for Quit once the app's windows are closed.
-    #[serde(default)]
-    stop: Vec<String>,
-    /// For a runner whose entries share one container, as Waydroid's do, the commands that pause and
-    /// resume all of it. Pausing is used when the runner's "In the background" setting is "Pauses hidden".
-    #[serde(default)]
-    pause: Vec<String>,
-    #[serde(default)]
-    resume: Vec<String>,
-    /// A command that succeeds while the runner's app on screen keeps the screen on in a way the
-    /// compositor doesn't see, such as Android's keep-screen-on for a video or the camera. It is run before
-    /// the screens dim.
-    #[serde(default)]
-    awake: Vec<String>,
-    /// The BIOS files its emulator needs, and the folder it looks for them in. One missing is a problem.
-    #[serde(default)]
-    pub(crate) bios: Option<Bios>,
+pub(crate) use clamshell_library::config::{Runner, RunnerKind as Kind};
+
+/// What a runner does with what it opens (see the module's doc).
+pub(crate) trait Opens {
+    fn command(&self, path: &Path, home: Option<&Path>) -> Launch;
+    fn title(&self) -> &str;
+    fn of(&self, home: Option<&Path>) -> clamshell_library::RunnerOf;
+    fn template(&self, home: Option<&Path>) -> Vec<String>;
+    fn wrap(&self, id: &str, exec: &Launch, home: Option<&Path>) -> Option<Launch>;
+    fn opens(&self, name: &str) -> bool;
+    fn opens_as_its_own(&self, name: &str) -> bool;
 }
 
-/// A runner's BIOS files (see [`Runner::bios`]).
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Bios {
-    /// Where its emulator looks for them; `~` and environment variables as in a source's `dir`.
-    pub(crate) dir: String,
-    pub(crate) files: Vec<String>,
-}
-
-/// A runner that finds its items itself, each with its own command.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum Kind {
-    /// The apps and games from desktop files, run by their `Exec`, and a `.desktop` file opened from the
-    /// Files tab.
-    Desktop,
-    /// Steam's installed games, run by Steam.
-    Steam,
-}
-
-impl Runner {
+impl Opens for Runner {
     /// Its command for file `path`, run in the file's folder, with `{path}` filled in and `~/` as the home
     /// dir. A desktop file uses its own command, and a Steam runner has none.
-    pub(crate) fn command(&self, path: &Path, home: Option<&Path>) -> Launch {
+    fn command(&self, path: &Path, home: Option<&Path>) -> Launch {
         match self.kind {
             Some(Kind::Desktop) => crate::library::desktop::command(path).unwrap_or_default(),
             Some(Kind::Steam) => Launch::None,
@@ -108,12 +40,12 @@ impl Runner {
     }
 
     /// Its title, as its settings page shows it.
-    pub(crate) fn title(&self) -> &str {
+    fn title(&self) -> &str {
         &self.name
     }
 
     /// The runner in the form an entry keeps it, with `~/` expanded to the home dir in its commands.
-    pub(crate) fn of(&self, home: Option<&Path>) -> clamshell_library::RunnerOf {
+    fn of(&self, home: Option<&Path>) -> clamshell_library::RunnerOf {
         clamshell_library::RunnerOf {
             command: self.template(home).into(),
             enqueue: self.enqueue.as_deref().map(Into::into),
@@ -135,7 +67,7 @@ impl Runner {
     /// A desktop entry's command as this runner launches it: the runner's `launch` filled in with the
     /// desktop file's `id` and its own command `exec`, and `~/` as the home dir. None if the runner has no
     /// `launch`, in which case the entry's own command is used.
-    pub(crate) fn wrap(&self, id: &str, exec: &Launch, home: Option<&Path>) -> Option<Launch> {
+    fn wrap(&self, id: &str, exec: &Launch, home: Option<&Path>) -> Option<Launch> {
         if self.kind != Some(Kind::Desktop) || self.launch.is_empty() {
             return None;
         }
@@ -154,13 +86,13 @@ impl Runner {
     }
 
     /// Whether it opens a file named `name`.
-    pub(crate) fn opens(&self, name: &str) -> bool {
+    fn opens(&self, name: &str) -> bool {
         let name = name.to_lowercase();
         self.patterns.iter().any(|p| pattern::matches(&p.to_lowercase(), &name))
     }
 
     /// Whether it opens file name `name` by a specific pattern, not the catch-all `*`.
-    pub(crate) fn opens_as_its_own(&self, name: &str) -> bool {
+    fn opens_as_its_own(&self, name: &str) -> bool {
         let name = name.to_lowercase();
         self.patterns.iter().filter(|p| p.as_str() != "*").any(|p| pattern::matches(&p.to_lowercase(), &name))
     }
