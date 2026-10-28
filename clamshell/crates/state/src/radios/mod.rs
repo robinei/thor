@@ -1,9 +1,7 @@
 //! The radios as their tabs show them. Wi-Fi and Bluetooth are each kept as their system thread last
-//! read them, along with what the tab's header says about each. Their rules are in their modules.
-//!
-//! A reading replaces the radio whole, except for what the tab set itself and the reading doesn't answer
-//! yet (see [`Local`]): the busy mark of an attempt, which a reading sent before the command doesn't
-//! know of, and an error found here, such as a network that needs a login.
+//! read them, untouched, along with what the tab did itself and no reading has answered yet: an attempt to
+//! join or connect ([`Attempt`]), and a network found here to need a login. What the tab shows is worked
+//! out from these alone ([`Radios::show_wifi`]), whenever one changes. Their rules are in their modules.
 
 pub mod bluetooth;
 pub mod wifi;
@@ -13,65 +11,57 @@ use wifi::Wifi;
 
 #[derive(Debug, Clone, Default)]
 pub struct Radios {
+    /// As the system threads last read them.
+    wifi_read: Wifi,
+    bluetooth_read: Bluetooth,
+    /// The attempts made in the tabs that no reading has answered yet.
+    wifi_attempt: Option<Attempt<wifi::Problem>>,
+    bluetooth_attempt: Option<Attempt<bluetooth::Problem>>,
+    /// A network found here to need a login (an enterprise one not saved), by SSID, until the system's own
+    /// error, a connection to it or another attempt answers it.
+    login: Option<String>,
+    /// What the tabs show: worked out from the above (see [`Radios::show_wifi`]).
     wifi: Wifi,
     bluetooth: Bluetooth,
-    wifi_local: Local<wifi::Problem>,
-    bluetooth_local: Local<bluetooth::Problem>,
 }
 
-/// What a radio's tab set itself, kept over readings until one answers it. An attempt's busy mark is
-/// answered by a reading that shows the attempt (busy with it), its result (connected), or an error. As
-/// a reading sent before the command still carries the error from before the attempt, that error
-/// doesn't count; so an attempt that failed again the same way is answered by [`ATTEMPT_WAIT`] passing,
-/// as one is whose thread was started again (it lost the attempt). An error found here is answered by the
-/// system's own error or by a connection.
+/// An attempt made in a tab, to join a network or connect a device. A reading sent before the command
+/// doesn't know of it, so the tab shows it busy until a reading answers it: one that shows the attempt
+/// (busy with it), its result (connected), or an error other than the one from before (a reading from
+/// before the command still carries that). An attempt that failed again the same way gives no such
+/// reading, so one is given up [`ATTEMPT_WAIT`] after it was first seen, as one is whose thread was
+/// started again (it lost the attempt).
 #[derive(Debug, Clone)]
-struct Local<P> {
-    /// An attempt's busy mark is the radio's `busy`, and no reading has answered it.
-    attempt: bool,
-    /// When the attempt was first seen by [`Radios::follow`] (monotonic seconds).
+struct Attempt<P> {
+    /// The network's SSID, or the device's address.
+    target: String,
+    /// When it was first seen by [`Radios::follow`] (monotonic seconds).
     since: Option<u64>,
-    /// The error shown when the attempt began.
+    /// The error the reading had when it began.
     before: Option<P>,
-    /// The radio's `error` was found here, and no reading has answered it.
-    error: bool,
 }
 
-impl<P> Default for Local<P> {
-    fn default() -> Local<P> {
-        Local { attempt: false, since: None, before: None, error: false }
-    }
-}
-
-impl<P> Local<P> {
-    /// The attempt was answered.
-    fn answered(&mut self) {
-        (self.attempt, self.since, self.before) = (false, None, None);
-    }
-
-    /// An attempt begins, with `error` shown until now.
-    fn attempt(&mut self, error: Option<P>) {
-        *self = Local { attempt: true, since: None, before: error, error: false };
-    }
-
-    /// The attempt is given up at `now` if [`ATTEMPT_WAIT`] passed without an answer, or `at_once`: its
-    /// busy mark goes (from `busy`), and the error from before shows again (in `error`), as the attempt
-    /// most likely ended the same way.
-    fn give_up(&mut self, now: u64, at_once: bool, busy: &mut Option<String>, error: &mut Option<P>) {
-        if !self.attempt {
-            return;
-        }
-        let since = *self.since.get_or_insert(now);
-        if at_once || now >= since + ATTEMPT_WAIT {
-            *busy = None;
-            *error = self.before.take();
-            self.answered();
-        }
+impl<P: PartialEq> Attempt<P> {
+    /// Whether a reading answers it: busy with it, `connected` to it, or with an error not from before.
+    fn answered(&self, busy: Option<&str>, connected: bool, error: Option<&P>) -> bool {
+        busy == Some(self.target.as_str()) || connected || error.is_some_and(|e| self.before.as_ref() != Some(e))
     }
 }
 
 /// How long an attempt's busy mark waits for a reading to answer it, in seconds.
 pub(crate) const ATTEMPT_WAIT: u64 = 30;
+
+/// Gives up `attempt` once [`ATTEMPT_WAIT`] has passed by `now` since it was first seen. Returns whether it
+/// did.
+fn wait_out<P>(attempt: &mut Option<Attempt<P>>, now: u64) -> bool {
+    let Some(a) = attempt else { return false };
+    let since = *a.since.get_or_insert(now);
+    let over = now >= since + ATTEMPT_WAIT;
+    if over {
+        *attempt = None;
+    }
+    over
+}
 
 impl Radios {
     pub fn wifi(&self) -> &Wifi {
@@ -82,65 +72,99 @@ impl Radios {
         &self.bluetooth
     }
 
-    /// A reading of Wi-Fi. What the tab set itself stays until the reading answers it (see [`Local`]).
-    pub(crate) fn read_wifi(&mut self, mut wifi: Wifi) {
-        let local = &mut self.wifi_local;
-        let connected = |ssid: &str| wifi.networks.iter().any(|n| n.connected && n.ssid == ssid);
-        if local.attempt {
-            let ssid = self.wifi.busy.as_deref();
-            let new_error = wifi.error.is_some() && wifi.error != local.before;
-            if wifi.busy.as_deref() == ssid || ssid.is_some_and(connected) || new_error {
-                local.answered();
-            } else {
-                wifi.busy = self.wifi.busy.take();
-                wifi.error = None;
-            }
+    /// What the Wi-Fi tab shows: the reading, busy with the attempt while there is one, and the login
+    /// needed while it stands. Worked out in place, so that it allocates nothing once its room is there.
+    fn show_wifi(&mut self) {
+        self.wifi.clone_from(&self.wifi_read);
+        if let Some(a) = &self.wifi_attempt {
+            self.wifi.busy = Some(a.target.clone());
+            self.wifi.error = None;
+        } else if let Some(ssid) = &self.login {
+            self.wifi.error = Some(wifi::Problem::NeedsLogin { ssid: ssid.clone() });
         }
-        if local.error {
-            let login = match &self.wifi.error {
-                Some(wifi::Problem::NeedsLogin { ssid }) => connected(ssid),
-                _ => false,
-            };
-            if wifi.error.is_some() || login {
-                local.error = false;
-            } else {
-                wifi.error = self.wifi.error.take();
-            }
-        }
-        self.wifi = wifi;
     }
 
-    /// Gives up attempts no reading answered within [`ATTEMPT_WAIT`] (see [`Local`]).
+    /// What the Bluetooth tab shows: the reading, busy with the attempt while there is one.
+    fn show_bluetooth(&mut self) {
+        self.bluetooth.clone_from(&self.bluetooth_read);
+        if let Some(a) = &self.bluetooth_attempt {
+            self.bluetooth.busy = Some(a.target.clone());
+            self.bluetooth.error = None;
+        }
+    }
+
+    /// A reading of Wi-Fi. It answers the attempt or the login needed if it can (see [`Attempt`]).
+    pub(crate) fn read_wifi(&mut self, wifi: Wifi) {
+        let connected = |ssid: &str| wifi.networks.iter().any(|n| n.connected && n.ssid == ssid);
+        let mut answered = false;
+        if self.wifi_attempt.as_ref().is_some_and(|a| a.answered(wifi.busy.as_deref(), connected(&a.target), wifi.error.as_ref())) {
+            self.wifi_attempt = None;
+            answered = true;
+        }
+        if self.login.as_deref().is_some_and(|ssid| wifi.error.is_some() || connected(ssid)) {
+            self.login = None;
+            answered = true;
+        }
+        // (The same reading again, answering nothing, shows nothing new.)
+        if answered || wifi != self.wifi_read {
+            self.wifi_read = wifi;
+            self.show_wifi();
+        }
+    }
+
+    /// A reading of Bluetooth. It answers the attempt if it can (see [`Attempt`]).
+    pub(crate) fn read_bluetooth(&mut self, bluetooth: Bluetooth) {
+        let connected = |a: &str| bluetooth.devices.iter().any(|d| d.connected && d.address == a);
+        let mut answered = false;
+        if self.bluetooth_attempt.as_ref().is_some_and(|a| a.answered(bluetooth.busy.as_deref(), connected(&a.target), bluetooth.error.as_ref())) {
+            self.bluetooth_attempt = None;
+            answered = true;
+        }
+        if answered || bluetooth != self.bluetooth_read {
+            self.bluetooth_read = bluetooth;
+            self.show_bluetooth();
+        }
+    }
+
+    /// Gives up attempts no reading answered within [`ATTEMPT_WAIT`] (see [`Attempt`]).
     pub(crate) fn follow(&mut self, now: u64) {
-        self.wifi_local.give_up(now, false, &mut self.wifi.busy, &mut self.wifi.error);
-        self.bluetooth_local.give_up(now, false, &mut self.bluetooth.busy, &mut self.bluetooth.error);
+        if wait_out(&mut self.wifi_attempt, now) {
+            self.show_wifi();
+        }
+        if wait_out(&mut self.bluetooth_attempt, now) {
+            self.show_bluetooth();
+        }
     }
 
     /// The Wi-Fi (`wifi`) or a Bluetooth thread was started again after a panic, and lost the attempt it
-    /// was making: its busy mark goes.
-    pub(crate) fn restarted(&mut self, wifi: bool, now: u64) {
+    /// was making.
+    pub(crate) fn restarted(&mut self, wifi: bool) {
         if wifi {
-            self.wifi_local.give_up(now, true, &mut self.wifi.busy, &mut self.wifi.error);
+            self.wifi_attempt = None;
+            self.show_wifi();
         } else {
-            self.bluetooth_local.give_up(now, true, &mut self.bluetooth.busy, &mut self.bluetooth.error);
+            self.bluetooth_attempt = None;
+            self.show_bluetooth();
         }
     }
 
-    /// A reading of Bluetooth. An attempt's busy mark stays until the reading answers it (see [`Local`]).
-    pub(crate) fn read_bluetooth(&mut self, mut bluetooth: Bluetooth) {
-        let local = &mut self.bluetooth_local;
-        if local.attempt {
-            let address = self.bluetooth.busy.as_deref();
-            let connected = |a: &str| bluetooth.devices.iter().any(|d| d.connected && d.address == a);
-            let new_error = bluetooth.error.is_some() && bluetooth.error != local.before;
-            if bluetooth.busy.as_deref() == address || address.is_some_and(connected) || new_error {
-                local.answered();
-            } else {
-                bluetooth.busy = self.bluetooth.busy.take();
-                bluetooth.error = None;
-            }
-        }
-        self.bluetooth = bluetooth;
+    /// An attempt to join network `ssid` begins.
+    fn attempt_wifi(&mut self, ssid: String) {
+        self.wifi_attempt = Some(Attempt { target: ssid, since: None, before: self.wifi_read.error.clone() });
+        self.login = None;
+        self.show_wifi();
+    }
+
+    /// An attempt to connect device `address` begins.
+    fn attempt_bluetooth(&mut self, address: String) {
+        self.bluetooth_attempt = Some(Attempt { target: address, since: None, before: self.bluetooth_read.error.clone() });
+        self.show_bluetooth();
+    }
+
+    /// Network `ssid` was found here to need a login.
+    fn needs_login(&mut self, ssid: String) {
+        self.login = Some(ssid);
+        self.show_wifi();
     }
 }
 

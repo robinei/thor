@@ -182,8 +182,7 @@ impl Radios {
             return;
         }
         if n.enterprise && !n.saved {
-            self.wifi.error = Some(Problem::NeedsLogin { ssid });
-            self.wifi_local.error = true;
+            self.needs_login(ssid);
             return;
         }
         if n.secure && !n.saved {
@@ -194,8 +193,7 @@ impl Radios {
     }
 
     pub(crate) fn join(&mut self, ssid: String, password: Option<String>, out: &mut Out) {
-        self.wifi.busy = Some(ssid.clone());
-        self.wifi_local.attempt(self.wifi.error.take());
+        self.attempt_wifi(ssid.clone());
         out.effects.push(Effect::Wifi(Command::Connect { ssid, password: password.map(Secret) }));
     }
 }

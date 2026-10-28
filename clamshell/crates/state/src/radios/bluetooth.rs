@@ -199,8 +199,7 @@ impl Radios {
     /// A tap on the device at `index` connects it, or disconnects it if it is connected. A long press
     /// forgets a paired device.
     pub(crate) fn tap_device(&mut self, index: usize, long: bool, out: &mut Out) {
-        let bt = &mut self.bluetooth;
-        let Some(d) = bt.devices.get(index) else {
+        let Some(d) = self.bluetooth.devices.get(index) else {
             return;
         };
         let address = d.address.clone();
@@ -209,8 +208,7 @@ impl Radios {
             (true, false, _) => return,
             (false, _, true) => Command::Disconnect(address),
             (false, _, false) => {
-                bt.busy = Some(address.clone());
-                self.bluetooth_local.attempt(bt.error.take());
+                self.attempt_bluetooth(address.clone());
                 Command::Connect(address)
             }
         };

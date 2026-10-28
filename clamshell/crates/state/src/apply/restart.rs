@@ -11,8 +11,8 @@ impl State {
     pub(crate) fn restarted(&mut self, thread: Thread, now: u64, out: &mut Out) {
         // A radio's attempt under way is lost with its thread: its busy mark goes.
         match thread {
-            Thread::Wifi => self.radios.restarted(true, now),
-            Thread::Bluetooth | Thread::BluetoothConnect => self.radios.restarted(false, now),
+            Thread::Wifi => self.radios.restarted(true),
+            Thread::Bluetooth | Thread::BluetoothConnect => self.radios.restarted(false),
             // A sleep it was asked for may not have happened. It is taken as refused for now (Busy), and
             // asked again after the retry, by when a wake would have come had the device slept.
             Thread::System if self.idle.stage() == crate::idle::Stage::Asleep => {
