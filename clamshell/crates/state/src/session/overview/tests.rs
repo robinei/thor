@@ -2,8 +2,9 @@ use super::*;
 use crate::testkit::*;
 use crate::{DockId, Event, Id, PadRoute, Tab};
 
+/// The dock's tile `i`, after the Library's, which is first.
 fn dock(i: u16) -> Id {
-    Id::Dock(DockId::Entry(i))
+    Id::Dock(DockId::Entry(i + 1))
 }
 
 fn top(s: &crate::State) -> Option<i64> {

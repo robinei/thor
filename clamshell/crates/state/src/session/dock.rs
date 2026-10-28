@@ -17,6 +17,7 @@
 //! with each submenu as another page.
 
 use crate::Compositor;
+use clamshell_library::Builtin;
 use std::sync::Arc;
 
 use crate::effect::{Effect, Save};
@@ -141,7 +142,7 @@ impl Dock {
     pub(crate) fn follow(&mut self, session: &Session) -> bool {
         let before = self.items.len();
         let moving = &self.moving;
-        self.items.retain(|i| i.pinned || session.running(&i.id).is_some() || moving.as_ref() == Some(&i.id));
+        self.items.retain(|i| i.pinned || session.runs(&i.id) || moving.as_ref() == Some(&i.id));
         let removed = before != self.items.len();
         if removed {
             self.end_gone();
@@ -150,6 +151,14 @@ impl Dock {
         for r in session.running_entries() {
             if self.position(&r.id).is_none() {
                 self.items.push(DockItem { id: r.id.clone(), pinned: false });
+                added = true;
+            }
+        }
+        // The built-ins that run: the Library first, unless it was pinned elsewhere.
+        for b in Builtin::ALL.into_iter().filter(|b| session.runs_builtin(*b)) {
+            if self.position(b.id()).is_none() {
+                let at = if b == Builtin::Library { 0 } else { self.items.len() };
+                self.items.insert(at, DockItem { id: b.id().into(), pinned: false });
                 added = true;
             }
         }
@@ -232,6 +241,10 @@ impl Dock {
     /// Pins `entry` to the dock, at the end if it isn't there, or unpins it, which removes it unless it
     /// runs. The pins are saved.
     pub(crate) fn toggle_pin(&mut self, entry: Arc<str>, session: &Session, out: &mut Out) {
+        // The Library stays pinned.
+        if &*entry == Builtin::Library.id() {
+            return;
+        }
         match self.position(&entry).and_then(|i| self.items.get_mut(i)) {
             Some(item) => item.pinned = !item.pinned,
             None => self.items.push(DockItem { id: entry, pinned: true }),
@@ -327,12 +340,13 @@ mod tests {
         Effect::Watch(crate::effect::Watch::Battery, false)
     }
 
+    /// The dock's entry and tile `i`, after the Library's, which is first: it always runs.
     fn entry(s: &State, i: usize) -> Option<&str> {
-        s.dock().items().get(i).map(|item| &*item.id)
+        s.dock().items().get(i + 1).map(|item| &*item.id)
     }
 
     fn dock(i: u16) -> Id {
-        Id::Dock(DockId::Entry(i))
+        Id::Dock(DockId::Entry(i + 1))
     }
 
     #[test]
@@ -377,7 +391,7 @@ mod tests {
         // A tap on it opens it in the Library.
         tap(&mut s, Id::LibraryView(LibraryViewId::Collection(0)));
         assert!(tap(&mut s, dock(0)).is_empty());
-        assert!(s.session().library_view_in_front());
+        assert!(s.session().shown_builtin().is_some());
         assert_eq!(s.library_view().group().map(|g| &*g.id), Some("tv:Cosmos"));
         // Unpinned from the Library, it is removed, since it doesn't run.
         tap(&mut s, Id::LibraryView(LibraryViewId::Up));
@@ -415,9 +429,30 @@ mod tests {
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.len() == 1)), "{fx:?}");
     }
 
+    /// The Library always runs, so its tile is always there, first unless pinned elsewhere. It stays
+    /// pinned once pinned, and its Quit does nothing.
+    #[test]
+    fn the_librarys_tile_is_always_there() {
+        let mut s = State::new(Init { dock: crate::session::dock::Dock::pinned(vec!["ff6".into(), "builtin:library".into()]), ..init() });
+        s.applied(Event::tick(1));
+        let ids = |s: &State| s.dock().items().iter().map(|i| i.id.to_string()).collect::<Vec<_>>();
+        assert_eq!(ids(&s), ["ff6", "builtin:library"], "pinned where it was moved");
+        assert!(s.applied(Event::Entry("builtin:library".into(), EntryAct::TogglePin)).is_empty());
+        assert!(s.dock().is_pinned("builtin:library"), "stays pinned");
+        s.applied(Event::Entry("builtin:library".into(), EntryAct::Quit));
+        assert_eq!(ids(&s), ["ff6", "builtin:library"]);
+        let s = {
+            let mut s = state();
+            s.applied(Event::tick(1));
+            s
+        };
+        assert_eq!(ids(&s), ["builtin:library"], "unpinned: first");
+    }
+
     #[test]
     fn move_mode_reorders_by_the_dpad_and_saves_the_pins() {
         let mut s = State::new(Init { dock: crate::session::dock::Dock::pinned(vec!["zelda-lttp".into(), "ff6".into()]), ..init() });
+        s.applied(Event::tick(1));
         assert_eq!((entry(&s, 0), entry(&s, 1)), (Some("zelda-lttp"), Some("ff6")));
         long(&mut s, dock(0));
         tap(&mut s, Id::Dock(DockId::Move));
@@ -433,6 +468,7 @@ mod tests {
     fn move_mode_steps_left_and_by_rows() {
         let ids = ["zelda-lttp", "metroid-zm", "mk-ds", "ff6", "dark-souls", "hades"];
         let mut s = State::new(Init { dock: crate::session::dock::Dock::pinned(ids.iter().map(|&i| i.into()).collect()), ..init() });
+        s.applied(Event::tick(1));
         long(&mut s, dock(5));
         tap(&mut s, Id::Dock(DockId::Move));
         let order = |fx: &[Effect]| match fx {
@@ -444,7 +480,8 @@ mod tests {
         assert_eq!(order(&step(&mut s, keymap::Dir::Up)), ["hades", "zelda-lttp", "metroid-zm", "mk-ds", "ff6", "dark-souls"], "past the start: first");
         assert_eq!(step(&mut s, keymap::Dir::Left), vec![], "first");
         assert_eq!(step(&mut s, keymap::Dir::Up), vec![]);
-        assert_eq!(order(&step(&mut s, keymap::Dir::Down)), ["zelda-lttp", "metroid-zm", "mk-ds", "ff6", "hades", "dark-souls"], "a row down");
+        // (The Library, unpinned, is first on the dock: four tiles on is after mk-ds.)
+        assert_eq!(order(&step(&mut s, keymap::Dir::Down)), ["zelda-lttp", "metroid-zm", "mk-ds", "hades", "ff6", "dark-souls"], "a row down");
         assert_eq!(order(&step(&mut s, keymap::Dir::Down)), ["zelda-lttp", "metroid-zm", "mk-ds", "ff6", "dark-souls", "hades"], "past the end: last");
     }
 
@@ -465,7 +502,7 @@ mod tests {
         let slice = LaunchUnit::slice_of(&clamshell_library::key_of("zelda-lttp"));
         let fx = tap(&mut s, Id::Dock(DockId::Suspend));
         assert_eq!(fx, vec![Effect::Freeze { slice: slice.clone(), frozen: true }, closed(), Effect::PadRoute(crate::PadRoute::Ui)]);
-        assert!(s.session().library_view_in_front());
+        assert!(s.session().shown_builtin().is_some());
         assert!(s.session().suspended("zelda-lttp"));
         long(&mut s, dock(0));
         let fx = tap(&mut s, Id::Dock(DockId::Suspend));

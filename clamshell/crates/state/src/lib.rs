@@ -127,7 +127,7 @@ pub use status::{Status, Sys};
 
 pub use clamshell_device::DeviceProfile;
 pub use clamshell_device::layout::{ControlLayout, Group as ControlGroup, Labels as ControlLabels};
-pub use clamshell_library::{BrowseKind, Browsed, Collection, Entry, Launch, Library, Meta, RunnerOf, runner_key};
+pub use clamshell_library::{BrowseKind, Browsed, Builtin, Collection, Entry, Launch, Library, Meta, RunnerOf, runner_key};
 
 /// What the state starts from, as read from disk and the environment.
 #[derive(Debug, Default)]
@@ -650,7 +650,7 @@ impl State {
             bottom_on: !bottom_off && !self.setup.calibrating(),
             bottom_seen: !self.bottom.shows_windows(&self.session) && !bottom_off,
             tab,
-            setup_open: self.setup.reads_account(),
+            setup_open: self.setup.reads_account(self.session.runs_builtin(clamshell_library::Builtin::Device)),
             ui_up: self.ui_up,
             keymap: self.keymapping.version_of(settings.get(Setting::Keymap)),
             keymapping: &self.keymapping,

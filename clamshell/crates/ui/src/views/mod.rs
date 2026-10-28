@@ -47,7 +47,7 @@ const POINTING_FADE: f32 = 0.7;
 /// The frame starts black (see `render`).
 pub fn top(f: &mut Frame, screen: Rect) {
     f.body = screen;
-    match f.s.setup().top_view() {
+    match f.s.top_view() {
         clamshell_state::setup::TopView::LibraryView => f.out.list_rows = Some(library_view::draw(f, screen)),
         clamshell_state::setup::TopView::Device => device::draw(f, screen),
         clamshell_state::setup::TopView::Setup => setup::draw(f, screen),

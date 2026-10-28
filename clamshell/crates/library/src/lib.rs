@@ -20,8 +20,18 @@ mod library;
 mod meta;
 mod runner;
 
-pub use entry::{BrowseKind, Browsed, DONE, Details, Entry, Launch, Playback, Tool, key_of};
+pub use entry::{BrowseKind, Browsed, Builtin, DONE, Details, Entry, Launch, Playback, Tool, key_of};
 pub use library::{Collection, Library, OwnTab};
 pub use meta::Meta;
 pub use plays::Plays;
 pub use runner::{RunnerOf, runner_key};
+
+/// ClamShell's own screens' entries, in the Tools tab: the built-in, its title and what it is for.
+pub const BUILTINS: [(Builtin, &str, &str); 2] = [
+    (Builtin::Library, "Library", "What the device has: games, films, files and apps."),
+    (
+        Builtin::Device,
+        "Device",
+        "Calibrates the controller's sticks and gyro and the top screen's refresh rate; sets the password and remote login; Wi-Fi and the time zone.",
+    ),
+];

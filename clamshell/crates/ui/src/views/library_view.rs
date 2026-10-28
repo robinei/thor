@@ -105,7 +105,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     list_rows(f, list, rows, s.library_view().list().len(), pad);
     // When there is nothing but ClamShell's own tools, say where games and apps come from, in the middle
     // of the screen. Not while the library is still being read at start, when the Library is empty for a moment.
-    if s.library_view().read() && s.library_view().library().entries.iter().all(|g| matches!(g.launch, Launch::Tool(_))) {
+    if s.library_view().read() && s.library_view().library().entries.iter().all(|g| matches!(g.launch, Launch::Tool(_) | Launch::Builtin(_))) {
         let line = Rect::new(pad, h * 0.5 - h * ROW_H, w - 2.0 * pad, h * ROW_H);
         widgets::centred_text(f, line, h * DETAIL, Tone::Dim, "No games or apps found: see ~/.config/clamshell/library.json");
     }
@@ -166,7 +166,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
             let paused = starting || s.session().paused(&entry.id) || s.session().suspended(&entry.id);
             let marks = [
                 (entry.is_group(), Icon::Chevron, Tone::Normal),
-                (starting || s.session().running(&entry.id).is_some(), Icon::Dot, if paused { Tone::Dim } else { Tone::Go }),
+                (starting || s.session().runs(&entry.id), Icon::Dot, if paused { Tone::Dim } else { Tone::Go }),
                 (s.library_view().files().selected().contains(&entry.id), Icon::Check, Tone::Accent),
                 (s.dock().is_pinned(&entry.id), Icon::for_tab(Tab::Dock), Tone::Normal),
                 (entry.favourite, Icon::Star, Tone::Accent),
@@ -324,7 +324,7 @@ fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f3
             _ if shortcut(Shortcut::X) == Some(action) => "X",
             _ => "",
         };
-        let running = s.session().running(&entry.id).is_some();
+        let running = s.session().runs(&entry.id);
         let starting = s.session().starting(&entry.id);
         let (label, tone) = match action {
             Action::Open if entry.is_group() => (Fmt::<192>::of(format_args!("Open")), Tone::Normal),
@@ -354,6 +354,8 @@ fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f3
             Action::Favourite if entry.favourite => (Fmt::of(format_args!("Favourite")), Tone::Accent),
             Action::Favourite => (Fmt::of(format_args!("Not a favourite")), Tone::Dim),
             Action::Pin if s.dock().is_pinned(&entry.id) => (Fmt::of(format_args!("On the dock")), Tone::Normal),
+            // It always runs, so it is always on the dock, pinned or not.
+            Action::Pin if *entry.id == *clamshell_state::Builtin::Library.id() => (Fmt::of(format_args!("Always on the dock")), Tone::Dim),
             Action::Pin => (Fmt::of(format_args!("Not on the dock")), Tone::Dim),
             Action::File(a) if s.library_view().file_armed(a) => (Fmt::of(format_args!("{} · press again", a.label())), Tone::Accent),
             Action::File(a) => {

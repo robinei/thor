@@ -244,14 +244,14 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
     if s.bottom_dark() {
         ids.push(Id::Wake);
     }
-    match s.setup().top_view() {
+    match s.top_view() {
         TopView::Device => ids.extend(
             [DeviceId::Wifi, DeviceId::Zone, DeviceId::Password, DeviceId::Ssh, DeviceId::Sticks, DeviceId::Gyro, DeviceId::Refresh, DeviceId::Close]
                 .map(Id::Device),
         ),
         // The step's own; the tab's below are the step's tab's.
         TopView::Setup => ids.extend([SetupId::Password, SetupId::Next, SetupId::Back].map(Id::Setup)),
-        TopView::LibraryView if s.session().library_view_in_front() => {
+        TopView::LibraryView if s.session().shown_builtin().is_some() => {
             let sh = s.library_view();
             ids.extend(sh.list().iter().filter_map(|&i| sh.library().entries.get(i)).map(|g| Id::LibraryView(LibraryViewId::Entry(g.id.clone()))));
             ids.extend((0..sh.library().collections.len() as u16).map(|i| Id::LibraryView(LibraryViewId::Collection(i))));
@@ -912,7 +912,8 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         ensure!(sent.route == Some(s.pad().route()), "2: route sent {:?}, state {:?}", sent.route, s.pad().route());
         let in_force = s.keymapping().in_force(s.in_force().get(Setting::Keymap));
         ensure!(sent.keymap.as_ref() == Some(&in_force), "2: keymap sent {:?}, in force {}", sent.keymap.as_ref().map(|k| k.id), in_force.id);
-        ensure!(sent.account == s.setup().reads_account(), "2: account watched {}, read {}", sent.account, s.setup().reads_account());
+        let reads = s.setup().reads_account(s.session().runs_builtin(clamshell_library::Builtin::Device));
+        ensure!(sent.account == reads, "2: account watched {}, read {reads}", sent.account);
     }
     let screens_on = s.idle().stage() < Stage::Off;
     ensure!(sent.status == screens_on, "2: status watched {}, screens on {screens_on}", sent.status);
@@ -972,7 +973,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         PadRoute::Mouse
     } else {
         match (s.session().front(), s.bottom().tab()) {
-            (Front::LibraryView, _) => PadRoute::Ui,
+            (Front::Builtin(_), _) => PadRoute::Ui,
             (_, Tab::Keyboard) => PadRoute::Keys,
             _ => PadRoute::Game,
         }
@@ -1054,10 +1055,13 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     let items = s.dock().items();
     for (i, item) in items.iter().enumerate() {
         ensure!(!items.iter().skip(i + 1).any(|o| o.id == item.id), "5: {} on the dock twice", item.id);
-        ensure!(item.pinned || session.running(&item.id).is_some() || s.dock().moving() == Some(&item.id), "5: {} on the dock for nothing", item.id);
+        ensure!(item.pinned || session.runs(&item.id) || s.dock().moving() == Some(&item.id), "5: {} on the dock for nothing", item.id);
     }
     for r in running {
         ensure!(items.iter().any(|i| i.id == r.id), "5: {} runs off the dock", r.id);
+    }
+    for b in clamshell_library::Builtin::ALL.into_iter().filter(|b| session.runs_builtin(*b)) {
+        ensure!(items.iter().any(|i| &*i.id == b.id()), "5: built-in {b:?} runs off the dock");
     }
 
     // 6. The Library.

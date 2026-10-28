@@ -218,8 +218,8 @@ impl<'a> Panel<'a> {
         let entry_of = |id: &str| session.entry(library_view.library(), id);
         let id = match session.front() {
             Front::Program => session.top_window().and_then(|w| session.owner_of(w)).or_else(|| session.program().cloned()),
-            Front::LibraryView => library_view.selected().cloned().map(|id| library_view.entry_of_file(&id).unwrap_or(id)),
-            Front::Other => None,
+            Front::Builtin(clamshell_library::Builtin::Library) => library_view.selected().cloned().map(|id| library_view.entry_of_file(&id).unwrap_or(id)),
+            Front::Builtin(_) | Front::Other => None,
         };
         let context = id.and_then(|id| entry_of(&id).map(|g| Program { id, title: &g.title }));
         let entry = context.as_ref().and_then(|item| entry_of(&item.id));

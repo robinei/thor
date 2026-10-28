@@ -243,7 +243,7 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
 
 /// Whether the pad is on the Library, rather than on a view shown in its place.
 fn on_library_view(s: &State, d: &impl Drawn) -> bool {
-    s.pad().on_top() && focus_screen(s, d) == Screen::Top && s.setup().top_view() == clamshell_state::setup::TopView::LibraryView
+    s.pad().on_top() && focus_screen(s, d) == Screen::Top && s.top_view() == clamshell_state::setup::TopView::LibraryView
 }
 
 /// L2 and R2 go to the Library's first or last entry.
@@ -296,11 +296,11 @@ pub(crate) fn back(s: &State) -> Option<Event> {
         return Some(PointerEvent::Activate(Id::Profile(Kind::Keymap, ProfileId::Back)).into());
     }
     // Setup goes back a step, where it can.
-    if s.setup().top_view() == clamshell_state::setup::TopView::Setup {
+    if s.top_view() == clamshell_state::setup::TopView::Setup {
         return Some(PointerEvent::Activate(Id::Setup(clamshell_state::SetupId::Back)).into());
     }
     // The Device view in the Library's place goes back to the Library.
-    if s.setup().top_view() == clamshell_state::setup::TopView::Device {
+    if s.top_view() == clamshell_state::setup::TopView::Device {
         return Some(PointerEvent::Activate(Id::Device(clamshell_state::DeviceId::Close)).into());
     }
     // On the Library's actions, which holding A led to, go back to the entry in the list.

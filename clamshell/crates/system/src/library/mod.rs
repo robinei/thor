@@ -142,13 +142,7 @@ const NEEDED: [(&str, &str); 8] = [
 ];
 
 /// The Tools tab's entries: id, title, the tool and what it does.
-const TOOLS: [(&str, &str, Tool, &str); 3] = [
-    (
-        "tool:device",
-        "Device",
-        Tool::Device,
-        "Calibrates the controller's sticks and gyro and the top screen's refresh rate; sets the password and remote login; Wi-Fi and the time zone.",
-    ),
+const TOOLS: [(&str, &str, Tool, &str); 2] = [
     (
         "tool:rescan",
         "Rescan library",
@@ -559,13 +553,17 @@ impl Builder<'_> {
         }
     }
 
-    /// Adds ClamShell's own tools, in their tab, if a place declares it. The rescan entry's details list
-    /// the library's current problems.
+    /// Adds ClamShell's own screens and tools, in their tab, if a place declares it. The rescan entry's
+    /// details list the library's current problems.
     fn tools(&mut self) {
         let Some(tab) = self.own(content::OwnTab::Tools) else {
             return;
         };
         let first = self.games.len();
+        for (builtin, title, summary) in clamshell_library::BUILTINS {
+            let details = Details { summary: summary.into(), ..Details::default() };
+            self.games.push(Entry { launch: Launch::Builtin(builtin), app: true, details, ..Entry::new(builtin.id(), title) });
+        }
         for (id, title, tool, summary) in TOOLS {
             let mut summary = summary.to_owned();
             if tool == Tool::Rescan && !self.problems.is_empty() {

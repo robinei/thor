@@ -265,7 +265,7 @@ impl Session {
         }
         let shown = self.windows_of(id).any(|w| self.shown(w.id));
         if shown {
-            self.command(crate::session::windows::WindowCommand::ShowLibraryView);
+            self.command(crate::session::windows::WindowCommand::Show(clamshell_library::Builtin::Library));
         }
         let Some(r) = self.running.iter().find(|r| &*r.id == id) else {
             return;
@@ -429,7 +429,7 @@ mod tests {
         assert!(s.session().suspendable("zelda-lttp"));
         // Applied whole: its window is still shown when the event's steps follow, which doesn't thaw it.
         let fx = s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::Suspend));
-        assert!(fx.contains(&freeze(&key, true)) && s.session().library_view_in_front(), "{fx:?}");
+        assert!(fx.contains(&freeze(&key, true)) && s.session().shown_builtin().is_some(), "{fx:?}");
         assert!(!fx.contains(&freeze(&key, false)), "{fx:?}");
         assert!(s.session().suspended("zelda-lttp") && !s.session().suspendable("zelda-lttp"));
         // Hidden, it stays frozen and isn't frozen twice.

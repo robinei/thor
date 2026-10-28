@@ -132,7 +132,7 @@ impl State {
                     Some(stroke) if self.keymapping.capturing(self.bottom.tab(), self.bottom.editor().is_some()) => {
                         self.keymapping.captured(crate::keymap::screens::chord(stroke), out);
                     }
-                    Some(stroke) if self.session.front() == crate::session::running::Front::LibraryView => {
+                    Some(stroke) if self.session.shown_builtin() == Some(clamshell_library::Builtin::Library) => {
                         self.library_view.find(stroke, out);
                     }
                     Some(stroke) => out.effects.push(Effect::Compositor(Compositor::Key(stroke))),
@@ -140,9 +140,8 @@ impl State {
                 }
             }
             Id::Time(id) => self.sys.on_time(id, self.scrolls.get_mut(ListId::Time), out),
-            Id::Device(id) => {
-                self.setup.tap(id, self.clock.mono(), &mut self.pointer, self.library_view.selected(), out);
-            }
+            Id::Device(crate::DeviceId::Close) => self.close_device(),
+            Id::Device(id) => self.setup.tap(id, self.clock.mono(), out),
             Id::Setup(id) => self.setup.wizard_tap(id, &mut self.pointer, self.library_view.selected(), out),
             Id::Battery(id) => {
                 self.sys.on_battery(id, &self.session, out);

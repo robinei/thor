@@ -6,6 +6,7 @@ use crate::out::Out;
 use crate::session::InFront;
 use crate::session::windows::{Group, WindowCommand};
 use crate::{Effect, EntryAct, Event, LaunchUnit, Session};
+use clamshell_library::Builtin;
 
 /// How long a program whose window in front closed, still running, is waited for to show another (see
 /// [`Session::follow_front`]): Steam replacing its update dialog with its window takes a while.
@@ -38,12 +39,13 @@ impl Session {
     pub(crate) fn go_back(&mut self) {
         let shown = |group: &Group| self.windows.iter().any(|w| w.group.as_ref() == Some(group) && !self.below(w.id));
         let back = self.recent.iter().find(|was| match was {
-            InFront::LibraryView => true,
+            InFront::Builtin(_) => true,
             InFront::Group(group) => shown(group),
         });
         match back.cloned() {
             Some(InFront::Group(group)) => self.focus(&group),
-            Some(InFront::LibraryView) | None => self.command(WindowCommand::ShowLibraryView),
+            Some(InFront::Builtin(b)) => self.command(WindowCommand::Show(b)),
+            None => self.command(WindowCommand::Show(Builtin::Library)),
         }
     }
 
@@ -56,17 +58,11 @@ impl Session {
         unit.or_else(|| running.outside().then(|| LaunchUnit { key: key.to_owned(), secs: running.start, n: 0 }))
     }
 
-    /// Whether the Library is in front on the main screen, as it is before the compositor reports a window.
-    pub(crate) fn library_view_in_front(&self) -> bool {
-        self.top_window().is_none()
-    }
-
-    /// The Home button always goes to the Library. (When the Device view is in the Library's place, Home closes it instead: see
-    /// [`crate::setup::Setup::close`].)
+    /// The Home button always goes to the Library.
     pub(crate) fn home(&mut self) {
         self.cancel_front_launch();
-        if !self.library_view_in_front() {
-            self.command(WindowCommand::ShowLibraryView);
+        if self.shown_builtin() != Some(Builtin::Library) {
+            self.command(WindowCommand::Show(Builtin::Library));
         }
     }
 
@@ -102,7 +98,7 @@ mod tests {
         assert!(s.applied(Event::Home).is_empty());
         s.observed(vec![win(7, "app")]);
         assert_eq!(s.applied(Event::Home), vec![Effect::PadRoute(crate::PadRoute::Ui)]);
-        assert!(s.session().library_view_in_front());
+        assert!(s.session().shown_builtin().is_some());
         assert!(s.applied(Event::Home).is_empty());
     }
 
@@ -118,7 +114,7 @@ mod tests {
         s.observed(vec![win_of(2, "heroic", &launcher), win_of(3, "zelda", &game)]);
         s.applied(WindowEvent::Activate(3).into());
         s.observed(vec![win_of(2, "heroic", &launcher)]);
-        assert!(s.session().library_view_in_front(), "where it was launched from");
+        assert!(s.session().shown_builtin().is_some(), "where it was launched from");
         // Started from the launcher, it goes back there.
         s.applied(WindowEvent::Activate(2).into());
         s.observed(vec![win_of(2, "heroic", &launcher), win_of(3, "zelda", &game)]);
@@ -141,7 +137,7 @@ mod tests {
         assert_eq!(s.session().top_window().map(|w| w.id), Some(2));
         // When the terminal quits, the Library comes back.
         s.observed(vec![]);
-        assert!(s.session().library_view_in_front());
+        assert!(s.session().shown_builtin().is_some());
         // When a program's window closes, its other window comes in front.
         s.observed(vec![win_of(3, "retroarch", &zelda), win_of(4, "retroarch", &zelda)]);
         s.applied(WindowEvent::Activate(3).into());
@@ -159,14 +155,14 @@ mod tests {
         // Its window closes and the Library shows. Another window comes in its group, not in front, and the
         // group is shown again.
         s.observed(vec![]);
-        assert!(s.session().library_view_in_front());
+        assert!(s.session().shown_builtin().is_some());
         s.observed(vec![win_of(3, "waydroid.org.fdroid.fdroid", &app)]);
         assert_eq!(s.session().top_window().map(|w| w.id), Some(3));
         // Later than that, it isn't.
         s.observed(vec![]);
         s.applied(Event::tick(103));
         s.observed(vec![win_of(4, "waydroid.org.fdroid.fdroid", &app)]);
-        assert!(s.session().library_view_in_front(), "too late: it stays behind");
+        assert!(s.session().shown_builtin().is_some(), "too late: it stays behind");
     }
 
     /// A program still running whose window in front closed, as Steam's update dialog does before its
@@ -180,7 +176,7 @@ mod tests {
         let window = |id| win_of(id, "zelda3", &zelda);
         s.observed(vec![window(3)]);
         s.observed(vec![]);
-        assert!(s.session().library_view_in_front());
+        assert!(s.session().shown_builtin().is_some());
         s.applied(Event::tick(1010));
         assert!(!opening_focus(&s, &foot()), "another program's window opens behind");
         s.observed(vec![window(4)]);
@@ -189,7 +185,7 @@ mod tests {
         s.observed(vec![]);
         s.applied(Event::tick(1011 + super::REWAIT_SECS));
         s.observed(vec![window(5)]);
-        assert!(s.session().library_view_in_front(), "too late: it stays behind");
+        assert!(s.session().shown_builtin().is_some(), "too late: it stays behind");
     }
 
     #[test]
@@ -200,7 +196,7 @@ mod tests {
         // With its window moved to the bottom screen and the Library in front, there is nothing to go back to on
         // the main screen.
         s.applied(Event::HardwareKey(crate::HardwareKey::WindowDown));
-        assert!(s.session().library_view_in_front());
+        assert!(s.session().shown_builtin().is_some());
         assert_eq!(s.applied(Event::Home), vec![]);
     }
 
@@ -210,6 +206,6 @@ mod tests {
         s.observed(vec![foot()]);
         s.applied(Event::Home);
         assert!(s.applied(Event::Home).is_empty());
-        assert!(s.session().library_view_in_front());
+        assert!(s.session().shown_builtin().is_some());
     }
 }

@@ -21,6 +21,7 @@ use std::sync::Arc;
 use crate::effect::Effect;
 use crate::session::windows::WindowCommand;
 use crate::{Entry, Library};
+use clamshell_library::Builtin;
 use launch_unit::LaunchUnit;
 use running::{Front, Launching, Running};
 use windows::{Group, Window, WindowFacts, WindowPlace};
@@ -28,7 +29,8 @@ use windows::{Group, Window, WindowFacts, WindowPlace};
 /// What was in front, as [`Session::follow_front`] goes back to it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum InFront {
-    LibraryView,
+    /// One of ClamShell's own screens, with no window in front.
+    Builtin(Builtin),
     Group(Group),
 }
 
@@ -113,9 +115,14 @@ pub struct Session {
     home_used: bool,
     /// Our running units, as systemd lists them.
     units: Vec<LaunchUnit>,
-    /// What was in front, most recent first: groups, and the Library once something put it in front
-    /// ([`WindowCommand::ShowLibraryView`]), so that a closed window goes back to where it was opened from.
+    /// What was in front, most recent first: groups, and the built-ins once something put them in front
+    /// ([`WindowCommand::Show`]), so that a closed window goes back to where it was opened from.
     recent: Vec<InFront>,
+    /// The built-in shown while no window is in front (see [`Session::shown_builtin`]).
+    builtin: Builtin,
+    /// The Device view runs: shown, or on the dock behind what is in front, until it is closed. The
+    /// Library always runs.
+    device_open: bool,
     /// The selected stack of each top group, by its root, retained while the group is hidden.
     selected: Vec<(Group, i64)>,
     /// The launch to show when its first window appears. Until then, other programs' new windows open
@@ -444,12 +451,36 @@ impl Session {
         &self.units
     }
 
-    /// What is in front on the main screen: the Library, a running entry's window, or another.
+    /// What is in front on the main screen: a built-in, a running entry's window, or another.
     pub fn front(&self) -> Front {
         match self.top_window() {
             Some(w) if self.running_of(w).is_some() => Front::Program,
             Some(_) => Front::Other,
-            None => Front::LibraryView,
+            None => Front::Builtin(self.builtin),
+        }
+    }
+
+    /// The built-in shown on the main screen, if no window is in front.
+    pub fn shown_builtin(&self) -> Option<Builtin> {
+        self.top_window().is_none().then_some(self.builtin)
+    }
+
+    /// Whether built-in `b` runs: the Library always, the Device view while it is open.
+    pub fn runs_builtin(&self, b: Builtin) -> bool {
+        b == Builtin::Library || self.device_open
+    }
+
+    /// Whether entry `id` runs: a launch or a program found, or a built-in.
+    pub fn runs(&self, id: &str) -> bool {
+        self.running(id).is_some() || Builtin::of(id).is_some_and(|b| self.runs_builtin(b))
+    }
+
+    /// Closes the Device view. If it showed, the Library shows in its place.
+    pub(crate) fn close_device(&mut self) {
+        self.device_open = false;
+        self.recent.retain(|was| *was != InFront::Builtin(Builtin::Device));
+        if self.builtin == Builtin::Device {
+            self.builtin = Builtin::Library;
         }
     }
 
@@ -649,8 +680,9 @@ impl Session {
             }
         }
         let present = |group: &Group| self.windows.iter().any(|w| w.group.as_ref() == Some(group));
+        let device_open = self.device_open;
         self.recent.retain(|was| match was {
-            InFront::LibraryView => true,
+            InFront::Builtin(b) => *b == Builtin::Library || device_open,
             InFront::Group(group) => present(group),
         });
         if let Some(group) = self.top_window().and_then(|w| w.group.clone()).filter(|g| !self.promoted(g)) {

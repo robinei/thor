@@ -298,7 +298,8 @@ mod tests {
     fn a_list_changed_by_any_event_stays_within_its_ends() {
         let mut s = state();
         let ids: Vec<std::sync::Arc<str>> =
-            s.library_view().library().entries.iter().take(3 * crate::session::dock::DOCK_COLUMNS).map(|g| g.id.clone()).collect();
+            // Three rows with the Library's tile, which is always there.
+            s.library_view().library().entries.iter().take(3 * crate::session::dock::DOCK_COLUMNS - 1).map(|g| g.id.clone()).collect();
         for id in &ids {
             s.applied(Event::Entry(id.clone(), EntryAct::TogglePin));
         }

@@ -1,7 +1,7 @@
 //! A demo library for tests and snapshots, behind the `demo` feature. It has placeholder games, apps and
 //! a series, none of which launch anything real.
 
-use crate::{Collection, Details, Entry, Launch, Library, OwnTab, Playback, Tool};
+use crate::{Collection, Details, Entry, Launch, Library, OwnTab, Playback};
 
 /// Placeholder games.
 pub fn games() -> Vec<Entry> {
@@ -74,21 +74,22 @@ pub fn library() -> Library {
             g.items.push(s);
         }
     }
-    // ClamShell's own tools, as a library.json with a Tools place would have them.
+    // ClamShell's own screens, as a library.json with a Tools place would have them.
     let tools = games.len();
-    let summary = "Calibrates the controller's sticks and gyro and the top screen's refresh rate; sets the password and remote login.";
-    games.push(Entry {
-        launch: Launch::Tool(Tool::Device),
-        app: true,
-        details: Details { summary: summary.into(), ..Details::default() },
-        ..Entry::new("tool:device", "Device")
-    });
+    for (builtin, title, summary) in crate::BUILTINS {
+        games.push(Entry {
+            launch: Launch::Builtin(builtin),
+            app: true,
+            details: Details { summary: summary.into(), ..Details::default() },
+            ..Entry::new(builtin.id(), title)
+        });
+    }
     let collections = vec![
         Collection::with_icon("Games", "gamepad", (0..n).collect()),
         Collection::new("More", ["ff6", "metroid-zm"].iter().filter_map(|id| games.iter().position(|g| &*g.id == *id)).collect()),
         Collection::with_icon("TV", "tv", vec![series]),
         Collection::with_icon("Apps", "apps", (n..n + apps.len()).collect()),
-        Collection::with_icon("Tools", "tools", vec![tools]),
+        Collection::with_icon("Tools", "tools", vec![tools, tools + 1]),
     ];
     let own = |name: &str, icon: &str| Some(OwnTab { name: name.into(), icon: Some(icon.into()) });
     Library {

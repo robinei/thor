@@ -20,6 +20,36 @@ pub enum Launch {
     Program { argv: Vec<String>, workdir: Option<PathBuf> },
     /// One of ClamShell's own tools (the Tools tab).
     Tool(Tool),
+    /// One of ClamShell's own screens on the main screen.
+    Builtin(Builtin),
+}
+
+/// ClamShell's own screens on the main screen, entries like any other: placed in the library, pinned
+/// and on the dock while they run (see clamshell-state's session).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Builtin {
+    /// What the device has, browsed. It always runs.
+    #[default]
+    Library,
+    /// Calibrating the controller and the screen, the password and remote login.
+    Device,
+}
+
+impl Builtin {
+    pub const ALL: [Builtin; 2] = [Builtin::Library, Builtin::Device];
+
+    /// Its entry's id.
+    pub fn id(self) -> &'static str {
+        match self {
+            Builtin::Library => "builtin:library",
+            Builtin::Device => "builtin:device",
+        }
+    }
+
+    /// The built-in whose entry is `id`, if one is.
+    pub fn of(id: &str) -> Option<Builtin> {
+        Builtin::ALL.into_iter().find(|b| b.id() == id)
+    }
 }
 
 /// ClamShell's own tools.
@@ -30,9 +60,6 @@ pub enum Tool {
     Rescan,
     /// Tries again for the entries whose covers and details weren't found, then rescans.
     Refetch,
-    /// The Device view on the main screen, for calibrating the controller and the screen, the password
-    /// and remote login.
-    Device,
 }
 
 impl Launch {

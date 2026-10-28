@@ -8,14 +8,14 @@
 == top.png (top; the pad on both screens)
 start "zelda-lttp"; back -
 -- library
-Collection(0), Collection(1), Collection(2), Collection(3), Collection(4): ^"zelda-lttp" v"metroid-zm" <"tool:device" >"ff6"
-"zelda-lttp": ^[ListStep(0)] v"metroid-zm" <"tool:device" >"ff6"
-"metroid-zm": ^"zelda-lttp" v"mk-ds" <"tool:device" >"ff6"
-"mk-ds": ^"metroid-zm" v"ff6" <"tool:device" >"ff6"
-"ff6": ^"mk-ds" v"dark-souls" <"tool:device" >[CollectionStep(1)]
-"dark-souls": ^"ff6" v"hades" <"tool:device" >"ff6"
-"hades": ^"dark-souls" v"celeste" <"tool:device" >"ff6"
-"celeste": ^"hades" vTab(Keyboard) <"tool:device" >"ff6"
+Collection(0), Collection(1), Collection(2), Collection(3), Collection(4): ^"zelda-lttp" v"metroid-zm" <"builtin:library" >"ff6"
+"zelda-lttp": ^[ListStep(0)] v"metroid-zm" <"builtin:library" >"ff6"
+"metroid-zm": ^"zelda-lttp" v"mk-ds" <"builtin:library" >"ff6"
+"mk-ds": ^"metroid-zm" v"ff6" <"builtin:library" >"ff6"
+"ff6": ^"mk-ds" v"dark-souls" <"builtin:library" >[CollectionStep(1)]
+"dark-souls": ^"ff6" v"hades" <"builtin:library" >"ff6"
+"hades": ^"dark-souls" v"celeste" <"builtin:library" >"ff6"
+"celeste": ^"hades" vTab(Keyboard) <"builtin:library" >"ff6"
 == top-tab2.png (top; the pad on both screens)
 start "ff6"; back -
 -- library
@@ -71,8 +71,8 @@ Up: ^Collection(1) v"tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv" <
 == top-recent.png (top; the pad on both screens)
 start "tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv"; back -
 -- library
-Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5): ^"tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv" v"tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv" <"tool:device" >"zelda-lttp"
-"tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv": ^[ListStep(0)] vTab(Keyboard) <"tool:device" >"zelda-lttp"
+Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5): ^"tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv" v"tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv" <"builtin:library" >"zelda-lttp"
+"tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv": ^[ListStep(0)] vTab(Keyboard) <"builtin:library" >"zelda-lttp"
 == bottom.png (bottom; the pad on both screens)
 start "zelda-lttp"; back -
 -- bar
@@ -552,14 +552,15 @@ Km(ConfirmSave): ^Km(Back) v- <Km(Back) >Tab(Touchpad)
 == launcher.png (bottom; the pad on both screens)
 start Tab(Dock); back -
 -- bar as in bottom.png except
-Tab(Windows), PadMouse, Tab(Time): vDock[2]
+Tab(Windows), PadMouse, Tab(Time): vDock[3]
 Tab(Settings), Tab(Dock), Tab(Keyboard): vDock[0]
 Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vDock[1]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vDock[2]
 -- screen
 Dock[0]: ^Tab(Dock) v- <Tab(Settings) >Dock[1]
 Dock[1]: ^Tab(Sysinfo) v- <Dock[0] >Dock[2]
-Dock[2]: ^Tab(Wifi) v- <Dock[1] >Tab(Wifi)
+Dock[2]: ^Tab(Wifi) v- <Dock[1] >Dock[3]
+Dock[3]: ^PadMouse v- <Dock[2] >Tab(Windows)
 == launcher-running.png (bottom; the pad on the second screen)
 start Tab(Dock); back -
 -- bar as in bottom.png except
@@ -568,10 +569,11 @@ Tab(Settings), Tab(Dock), Tab(Keyboard): ^- vDock[0]
 Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): ^- vDock[1]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vDock[2]
 -- screen
-Dock[0]: ^Tab(Dock) v- <Tab(Settings) >Dock[1]
-Dock[1]: ^Tab(Sysinfo) v- <Dock[0] >Dock[2]
-Dock[2]: ^Tab(Wifi) v- <Dock[1] >Dock[3]
-Dock[3]: ^PadMouse v- <Dock[2] >Tab(Windows)
+Dock[0]: ^Tab(Dock) vDock[4] <Tab(Settings) >Dock[1]
+Dock[1]: ^Tab(Sysinfo) vDock[4] <Dock[0] >Dock[2]
+Dock[2]: ^Tab(Wifi) vDock[4] <Dock[1] >Dock[3]
+Dock[3]: ^PadMouse vDock[4] <Dock[2] >Tab(Windows)
+Dock[4]: ^Dock[0] v- <Tab(Settings) >Dock[1]
 == bar-window-below.png (bottom; the pad on the second screen)
 start Tab(Dock); back -
 -- bar as in bottom.png except
@@ -583,18 +585,14 @@ Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vDock[2]
 == dock-menu.png (bottom; the pad on the second screen)
 start Tab(Dock); back -
 -- bar as in bottom.png except
-Tab(Windows), PadMouse, Tab(Time): ^- vDock(CloseWindow)
+Tab(Windows), PadMouse, Tab(Time): ^- vDock(Pin)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): ^- vDock(Back)
-Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vDock(CloseWindow)
+Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vDock(Pin)
 -- screen
-Dock(Back): ^Tab(Settings) vDock(CloseWindow) <Tab(Settings) >Tab(Dock)
-Dock(CloseWindow): ^Dock(Back) vDock(Pin) <Dock(Back) >Tab(Touchpad)
-Dock(Pin): ^Dock(CloseWindow) vDock(Autostart) <Dock(Back) >Tab(Touchpad)
+Dock(Back): ^Tab(Settings) vDock(Pin) <Tab(Settings) >Tab(Dock)
+Dock(Pin): ^Dock(Back) vDock(Autostart) <Dock(Back) >Tab(Touchpad)
 Dock(Autostart): ^Dock(Pin) vDock(Move) <Dock(Back) >Tab(Touchpad)
-Dock(Move): ^Dock(Autostart) vDock(Suspend) <Dock(Back) >Tab(Touchpad)
-Dock(Suspend): ^Dock(Move) vDock(Quit) <Dock(Back) >Tab(Touchpad)
-Dock(Quit): ^Dock(Suspend) vDock(ForceKill) <Dock(Back) >Tab(Touchpad)
-Dock(ForceKill): ^Dock(Quit) v- <Dock(Back) >Tab(Touchpad)
+Dock(Move): ^Dock(Autostart) v- <Dock(Back) >Tab(Touchpad)
 == wifi.png (bottom; the pad on both screens)
 start Tab(Wifi); back -
 -- bar as in bottom.png except
@@ -819,7 +817,7 @@ Backlights[1].Level: ^Backlights[0].Level v- <[Step Backlight(1) -1] >[Step Back
 == slider.png (bottom; the pad on both screens)
 start Tab(Dock); back -
 -- bar as in bottom.png except
-Tab(Windows), PadMouse, Tab(Time): vDock[2]
+Tab(Windows), PadMouse, Tab(Time): vDock[3]
 Tab(Settings), Tab(Dock), Tab(Keyboard): vDock[0]
 Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vDock[1]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vDock[2]

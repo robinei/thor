@@ -66,20 +66,21 @@ mod tests {
             w
         };
         s.observed(windows(true));
-        let tile = Id::Dock(DockId::Entry(1));
-        assert_eq!(s.dock().items().get(1).map(|i| &*i.id), Some("ff6"));
+        // After the Library's tile, which is first.
+        let tile = Id::Dock(DockId::Entry(2));
+        assert_eq!(s.dock().items().get(2).map(|i| &*i.id), Some("ff6"));
         s.applied(PointerEvent::Down(tile.clone(), None).into());
         s.observed(windows(false));
         end(&mut s, "zelda-lttp");
-        assert_eq!(s.dock().items().first().map(|i| &*i.id), Some("ff6"), "moved up");
+        assert_eq!(s.dock().items().get(1).map(|i| &*i.id), Some("ff6"), "moved up");
         tap(&mut s, tile.clone());
         assert_eq!(s.session().top_window().map(|w| w.id), Some(4));
         s.applied(PointerEvent::Up(tile.clone()).into());
-        let first = Id::Dock(DockId::Entry(0));
+        let first = Id::Dock(DockId::Entry(1));
         s.applied(PointerEvent::Down(first.clone(), None).into());
         s.observed(vec![]);
         end(&mut s, "ff6");
-        assert!(s.dock().items().is_empty());
+        assert_eq!(s.dock().items().len(), 1, "the Library's alone");
         assert_eq!(tap(&mut s, first), [], "gone");
     }
 

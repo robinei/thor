@@ -73,7 +73,7 @@ fn entry_tile(f: &mut Frame, r: Rect, i: usize, id: &std::sync::Arc<str>, severa
     let Some(entry) = s.entry(id) else {
         return;
     };
-    let running = s.session().running(id).is_some();
+    let running = s.session().runs(id);
     let in_force = several && s.session().program() == Some(id);
     let moving = s.dock().moving() == Some(id);
     let caption_tone = if moving { Tone::Accent } else { Tone::Normal };
@@ -117,10 +117,14 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
         return draw_tray_menu(f, &tray.title, entries);
     }
     let title = s.entry(entry).map_or("", |g| g.title.as_str());
-    let running = s.session().running(entry).is_some();
+    let running = s.session().runs(entry);
     let pinned = s.dock().items().iter().any(|i| i.id == *entry && i.pinned);
+    // A built-in isn't a process: it isn't started with ClamShell or killed, the Device view's Quit
+    // closes it, and the Library stays pinned and running.
+    let builtin = clamshell_state::Builtin::of(entry);
+    let library = builtin == Some(clamshell_state::Builtin::Library);
     // A tile for a tray icon alone isn't a library entry, so it can't be pinned.
-    let pinnable = s.library_view().library().has(entry);
+    let pinnable = s.library_view().library().has(entry) && !library;
     let item = |id, label, tone| Some((Id::Dock(id), label, tone));
     // An array with `None` for the items that don't apply, so that drawing it every frame doesn't allocate.
     let items = [
@@ -128,7 +132,7 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
         if running && s.session().entry_window(entry).is_some() { item(DockId::CloseWindow, "Close window", Tone::Fn) } else { None },
         if s.session().tray_of(entry).is_some() { item(DockId::TrayMenu, "Menu", Tone::Fn) } else { None },
         if pinnable { item(DockId::Pin, if pinned { "Unpin" } else { "Pin" }, Tone::Fn) } else { None },
-        if pinnable {
+        if pinnable && builtin.is_none() {
             item(DockId::Autostart, if s.session().autostarts(entry) { "Don't start with ClamShell" } else { "Start with ClamShell" }, Tone::Fn)
         } else {
             None
@@ -141,8 +145,8 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
         } else {
             None
         },
-        if running { item(DockId::Quit, "Quit", Tone::Accent) } else { None },
-        if running { item(DockId::ForceKill, "Force kill", Tone::Accent) } else { None },
+        if running && !library { item(DockId::Quit, if builtin.is_some() { "Close" } else { "Quit" }, Tone::Accent) } else { None },
+        if running && builtin.is_none() { item(DockId::ForceKill, "Force kill", Tone::Accent) } else { None },
     ];
     let mut area = widgets::header(f, Some(Id::Dock(DockId::Back)), title, false, HeaderRight::None);
     // What it currently costs, once that has been read (see the battery tab).

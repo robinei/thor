@@ -40,6 +40,19 @@ impl State {
         self.prefs.settings().of_in(id, self.runner_of(id).as_slice())
     }
 
+    /// What the main screen shows of ClamShell's own: Setup while it shows, else the built-in shown, the
+    /// Library also while a window is in front.
+    pub fn top_view(&self) -> crate::setup::TopView {
+        use crate::setup::TopView;
+        if self.setup.wizard().is_some() {
+            return TopView::Setup;
+        }
+        match self.session.shown_builtin() {
+            Some(clamshell_library::Builtin::Device) => TopView::Device,
+            _ => TopView::LibraryView,
+        }
+    }
+
     /// The settings panel as it is now (see [`Panel::new`]).
     pub fn panel(&self) -> Panel<'_> {
         Panel::new(&self.session, &self.library_view, &self.prefs, &self.keymapping, &self.curving)

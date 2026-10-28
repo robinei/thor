@@ -7,17 +7,26 @@ use crate::out::Out;
 use crate::session::running::{Instead, LaunchRequest, Launched, Start};
 use crate::session::windows::WindowCommand;
 use crate::{Effect, EntryAct, Launch, LaunchEvent, Save, State};
+use clamshell_library::Builtin;
 
 impl State {
     /// Something done to entry `id`.
     pub(crate) fn on_entry(&mut self, id: Arc<str>, act: EntryAct, out: &mut Out) {
         match act {
             EntryAct::Play => self.play(id, out),
+            // A built-in is shown as it is started.
+            EntryAct::Show if Builtin::of(&id).is_some() => self.play(id, out),
             EntryAct::Show => self.show(&id, out),
             EntryAct::OpenAnother => self.open_another(id, out),
             EntryAct::Suspend => self.session.suspend(&id, out),
             EntryAct::ToggleAutostart => self.session.toggle_autostart(id, out),
             EntryAct::TogglePin => self.dock.toggle_pin(id, &self.session, out),
+            // A built-in isn't a process: Quit closes the Device view, and the Library always runs.
+            EntryAct::Quit | EntryAct::ForceKill if Builtin::of(&id).is_some() => {
+                if Builtin::of(&id) == Some(Builtin::Device) {
+                    self.close_device();
+                }
+            }
             EntryAct::Quit => self.session.quit(&id, self.clock.mono(), self.library_view.library(), out),
             EntryAct::ForceKill => self.session.force_kill(&id, self.clock.mono(), self.library_view.library(), out),
         }
@@ -62,6 +71,26 @@ impl State {
         }
     }
 
+    /// Shows built-in `b` on the main screen, with the pad's focus on it: the Device view's first row, or the
+    /// Library's selection.
+    pub(crate) fn show_builtin(&mut self, b: Builtin) {
+        self.session.cancel_front_launch();
+        self.session.command(WindowCommand::Show(b));
+        match b {
+            Builtin::Device => self.pointer.focus_on(crate::Id::Device(crate::DeviceId::Wifi)),
+            Builtin::Library => self.pointer.focus_library_view(self.library_view.selected()),
+        }
+    }
+
+    /// Closes the Device view: the Library shows in its place if it showed.
+    pub(crate) fn close_device(&mut self) {
+        let shown = self.session.shown_builtin() == Some(Builtin::Device);
+        self.session.close_device();
+        if shown {
+            self.pointer.focus_library_view(self.library_view.selected());
+        }
+    }
+
     /// The dock menu's Open another: launches `id` again, if that is offered (see [`State::opens_another`]).
     fn open_another(&mut self, id: Arc<str>, out: &mut Out) {
         if self.opens_another(&id) {
@@ -82,15 +111,8 @@ impl State {
         let launched = self.session.launch(request, self.library_view.library(), self.prefs.settings(), &self.clock, out);
         match launched {
             Launched::Yes => out.effects.push(Effect::Save(Save::Resume(self.resume()))),
-            Launched::Instead(Instead::Device) => {
-                self.session.cancel_front_launch();
-                self.setup.open(&mut self.pointer);
-                self.session.command(WindowCommand::ShowLibraryView);
-            }
-            Launched::Instead(Instead::Group) if self.library_view.reveal(&entry) => {
-                self.session.cancel_front_launch();
-                self.session.command(WindowCommand::ShowLibraryView);
-            }
+            Launched::Instead(Instead::Builtin(b)) => self.show_builtin(b),
+            Launched::Instead(Instead::Group) if self.library_view.reveal(&entry) => self.show_builtin(Builtin::Library),
             Launched::Instead(Instead::Show) => self.show(&entry, out),
             Launched::Instead(Instead::Group) | Launched::No => {}
         }

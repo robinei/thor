@@ -42,7 +42,8 @@ use crate::{Clock, Entry, Library, Session};
 /// What is in front on the main screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Front {
-    LibraryView,
+    /// One of ClamShell's own screens: no window is in front.
+    Builtin(clamshell_library::Builtin),
     /// A window of a running entry.
     Program,
     /// Another window, not one of ours.
@@ -583,11 +584,11 @@ pub(crate) enum Launched {
     Instead(Instead),
 }
 
-/// What State does in place of a launch: open the Device view on the main screen, show a group open in
-/// the Library, or show the entry, which runs already.
+/// What State does in place of a launch: show a built-in on the main screen, show a group open in the
+/// Library, or show the entry, which runs already.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Instead {
-    Device,
+    Builtin(clamshell_library::Builtin),
     Group,
     Show,
 }
@@ -662,13 +663,14 @@ impl Session {
     /// Android doesn't start an app twice.
     pub(crate) fn launch(&mut self, request: LaunchRequest, library: &Library, settings: &Settings, clock: &Clock, out: &mut Out) -> Launched {
         let LaunchRequest { entry, command, start } = request;
-        if let Some(Launch::Tool(tool)) = library.entry(&entry).map(|g| &g.launch) {
-            // The Device view is ClamShell's own, on the main screen.
-            if *tool == clamshell_library::Tool::Device {
-                return Launched::Instead(Instead::Device);
+        match library.entry(&entry).map(|g| &g.launch) {
+            Some(Launch::Tool(tool)) => {
+                out.effects.push(Effect::Tool(*tool));
+                return Launched::No;
             }
-            out.effects.push(Effect::Tool(*tool));
-            return Launched::No;
+            // ClamShell's own screens, on the main screen.
+            Some(Launch::Builtin(b)) => return Launched::Instead(Instead::Builtin(*b)),
+            _ => {}
         }
         if command.is_none() && library.entry(&entry).is_some_and(Entry::is_group) {
             return Launched::Instead(Instead::Group);

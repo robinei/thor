@@ -129,7 +129,7 @@ fn start(config: &Config, request: &Request) -> Result<(), Error> {
         Launch::Program { argv, .. } if argv.is_empty() => Err(Error::EmptyCommand),
         Launch::Program { argv, workdir } => start_program(config, request, argv.clone(), workdir.clone()),
         Launch::Steam { appid } => steam::start(request, *appid),
-        Launch::None | Launch::Tool(_) => Err(Error::NoCommand),
+        Launch::None | Launch::Tool(_) | Launch::Builtin(_) => Err(Error::NoCommand),
     }
 }
 

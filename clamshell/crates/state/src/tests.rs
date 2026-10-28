@@ -239,7 +239,7 @@ fn a_launchs_first_window_is_shown_before_a_window_that_came_back() {
     s.observed(vec![zelda_window.clone()]);
     // Its window closes with nothing else in front: the Library is shown, and the group remembered.
     s.observed(vec![]);
-    assert!(s.session().library_view_in_front());
+    assert!(s.session().shown_builtin().is_some());
     let ff6 = launch(&mut s, "ff6");
     let ff6_window = win_of(4, "ff6", &ff6);
     s.observed(vec![zelda_window, ff6_window]);
@@ -282,7 +282,7 @@ fn the_tab_a_rule_leaves_is_settled_in_the_same_event() {
     let mut s = started(Init { window_rules: rules, ..init() });
     let zelda = launch(&mut s, "zelda-lttp");
     tap(&mut s, Id::Tab(Tab::Dock));
-    long(&mut s, Id::Dock(DockId::Entry(0)));
+    long(&mut s, Id::Dock(DockId::Entry(1)));
     assert_eq!(s.dock().menu().map(|m| &**m), Some("zelda-lttp"));
     s.applied(WindowEvent::Opened(win_of(7, "zelda3", &zelda)).into());
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));

@@ -116,7 +116,7 @@ pub(crate) fn of_entry(library: &Library, g: &Entry) -> Option<String> {
             Some((runner, name)) => Some(format!("{HEROIC}{runner}:{name}")),
             None => lutris_unique(library, g).then(|| format!("{LUTRIS}{}", g.title)),
         },
-        Launch::None | Launch::Tool(_) => None,
+        Launch::None | Launch::Tool(_) | Launch::Builtin(_) => None,
     }
 }
 
@@ -129,7 +129,7 @@ pub(crate) fn is_marked(library: &Library, g: &Entry, mark: &str) -> bool {
             Some(game) => argv.iter().filter_map(|a| heroic_game(a)).any(|game_of| game.split_once(':') == Some(game_of)),
             None => mark.strip_prefix(LUTRIS) == Some(g.title.as_str()) && lutris_unique(library, g),
         },
-        Launch::None | Launch::Tool(_) => false,
+        Launch::None | Launch::Tool(_) | Launch::Builtin(_) => false,
     }
 }
 

@@ -1,6 +1,7 @@
-//! The Device view, where the device is set up. It shows on the main screen in the Library's place
-//! ([`TopView`]). It is opened by the Device entry in Tools, from the Library or pinned to the dock. B,
-//! Home or Close go back to the Library. The first start's steps are Setup's ([`wizard`]).
+//! The Device view, where the device is set up: a built-in entry ([`clamshell_library::Builtin::Device`]),
+//! which the session runs and shows on the main screen ([`TopView`]). It is opened from Tools or the
+//! dock, and runs until Close, B or Quit closes it; Home goes to the Library and leaves it running. The
+//! first start's steps are Setup's ([`wizard`]).
 //!
 //! It has a row for each thing a device needs set up once, or now and then:
 //!
@@ -15,13 +16,12 @@ pub mod sticks;
 pub mod wizard;
 
 use crate::DeviceId;
-use std::sync::Arc;
 
+use crate::Event;
 use crate::bottom::Tab;
 use crate::bottom::editor::{Editor, Purpose};
 use crate::effect::{Effect, Save};
 use crate::out::Out;
-use crate::{Event, Id, Pointer};
 use account::{Account, AccountCommand, PasswordStep};
 use sticks::{Calibrations, Progress, Sticks};
 
@@ -50,7 +50,6 @@ pub enum Refresh {
 /// The Device view's own state.
 #[derive(Debug, Clone, Default)]
 pub struct Setup {
-    open: bool,
     /// When a stick calibration was asked for or last reported progress (monotonic seconds), until it
     /// ends. Another isn't asked for until it has, or until [`ANSWER_WAIT`] has passed with no word from
     /// the pad thread, in case it died.
@@ -99,24 +98,10 @@ impl Setup {
         Setup { calibrations, first_start, ..Setup::default() }
     }
 
-    /// What the main screen shows of ClamShell's own: Setup while it shows, else the Device view while it
-    /// is open, else the Library.
-    pub fn top_view(&self) -> TopView {
-        match (self.wizard(), self.open) {
-            (Some(_), _) => TopView::Setup,
-            (None, true) => TopView::Device,
-            (None, false) => TopView::LibraryView,
-        }
-    }
-
-    pub(crate) fn is_open(&self) -> bool {
-        self.open
-    }
-
     /// Whether the account is read: once at start, so that one without a password brings Setup back (see
-    /// [`wizard`]), and while the Device view is open or Setup shows.
-    pub fn reads_account(&self) -> bool {
-        !self.account_read || self.open || self.wizard().is_some()
+    /// [`wizard`]), and while the Device view runs (`device_open`) or Setup shows.
+    pub fn reads_account(&self, device_open: bool) -> bool {
+        !self.account_read || device_open || self.wizard().is_some()
     }
 
     pub fn sticks(&self) -> Option<&Progress> {
@@ -149,20 +134,6 @@ impl Setup {
         self.account
     }
 
-    /// Opens the view on the main screen, in the Library's place (State brings the Library to the front), with the
-    /// pad's focus on its first row. The account is read while it is open
-    /// ([`crate::sync::Sent::watches`]).
-    pub(crate) fn open(&mut self, pointer: &mut Pointer) {
-        self.open = true;
-        pointer.focus_on(Id::Device(DeviceId::Wifi));
-    }
-
-    /// Goes back to the Library, with the focus on its `selected` entry.
-    pub(crate) fn close(&mut self, pointer: &mut Pointer, selected: Option<&Arc<str>>) {
-        self.open = false;
-        pointer.focus_library_view(selected);
-    }
-
     /// A reading of the account. A password set answers what went wrong with the one before.
     pub(crate) fn read_account(&mut self, account: Account) {
         if account.password {
@@ -178,10 +149,9 @@ impl Setup {
         self.password_problem = result.as_ref().err().cloned();
     }
 
-    /// A tap on one of the Device view's targets at `now` (monotonic seconds). Closing it gives the focus
-    /// back to the Library's selection (`selected`). A tab to open is queued as an event, since State changes
-    /// tabs.
-    pub(crate) fn tap(&mut self, id: DeviceId, now: u64, pointer: &mut Pointer, selected: Option<&Arc<str>>, out: &mut Out) {
+    /// A tap on one of the Device view's targets at `now` (monotonic seconds). A tab to open is queued as an
+    /// event, since State changes tabs. Close is the session's ([`crate::Session::close_device`]).
+    pub(crate) fn tap(&mut self, id: DeviceId, now: u64, out: &mut Out) {
         let account = self.account;
         match id {
             DeviceId::Wifi => out.events.push(Event::ChooseTab(Tab::Wifi)),
@@ -211,7 +181,7 @@ impl Setup {
                 out.effects.push(Effect::CalibrateRefresh);
             }
             DeviceId::Refresh => {}
-            DeviceId::Close => self.close(pointer, selected),
+            DeviceId::Close => {}
         }
     }
 
@@ -268,7 +238,7 @@ mod tests {
     use crate::Compositor;
     use crate::id::DeviceId;
     use crate::testkit::*;
-    use crate::{EditorId, Event, Reading, State};
+    use crate::{EditorId, Event, Id, Reading, State};
 
     fn tap(s: &mut State, id: DeviceId) -> Vec<Effect> {
         s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Device(id))))
@@ -288,45 +258,72 @@ mod tests {
     #[test]
     fn the_device_entry_opens_it_and_close_goes_back_to_library_view() {
         let mut s = State::new(init());
-        let effects = launch_now(&mut s, "tool:device");
-        assert_eq!(s.setup().top_view(), TopView::Device);
+        let effects = launch_now(&mut s, "builtin:device");
+        assert_eq!(s.top_view(), TopView::Device);
         assert!(effects.is_empty());
-        assert!(s.session().library_view_in_front());
+        assert!(s.session().shown_builtin().is_some());
         assert_eq!(s.pointer().focus(), Some(&Id::Device(DeviceId::Wifi)));
         let effects = tap(&mut s, DeviceId::Close);
-        assert_eq!(s.setup().top_view(), TopView::LibraryView);
+        assert_eq!(s.top_view(), TopView::LibraryView);
         assert!(!effects.contains(&Effect::Save(Save::FirstStartDone)), "not the first start: nothing saved");
+    }
+
+    /// The Device view is an entry that runs while it is open: on the dock, shown again by its tile after
+    /// Home went to the Library, gone back to when a window opened over it closes, and closed by Quit.
+    #[test]
+    fn the_device_view_runs_on_the_dock_until_it_is_closed() {
+        let mut s = state();
+        s.applied(Event::tick(1000));
+        let on_dock = |s: &State| s.dock().items().iter().any(|i| &*i.id == "builtin:device");
+        s.applied(Event::Entry("builtin:device".into(), crate::EntryAct::Play));
+        assert!(on_dock(&s));
+        s.applied(Event::Home);
+        assert_eq!(s.top_view(), TopView::LibraryView);
+        assert!(on_dock(&s), "still running");
+        let tile = s.dock().items().iter().position(|i| &*i.id == "builtin:device").and_then(|i| u16::try_from(i).ok());
+        s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Dock(crate::DockId::Entry(tile.unwrap_or(u16::MAX))))));
+        assert_eq!(s.top_view(), TopView::Device);
+        // A program launched from it, whose window closes, goes back to it.
+        let zelda = launch(&mut s, "zelda-lttp");
+        s.observed(vec![crate::testkit::win_of(3, "zelda3", &zelda)]);
+        assert_eq!(s.top_view(), TopView::LibraryView, "a window in front");
+        s.observed(vec![]);
+        s.applied(Event::tick(1100));
+        assert_eq!(s.top_view(), TopView::Device, "back where it was launched from");
+        s.applied(Event::Entry("builtin:device".into(), crate::EntryAct::Quit));
+        assert_eq!(s.top_view(), TopView::LibraryView);
+        assert!(!on_dock(&s), "closed");
     }
 
     /// The Wi-Fi and time zone rows open their tabs below, whose readings are then watched.
     #[test]
     fn the_wifi_and_zone_rows_open_their_tabs() {
         let mut s = state();
-        launch_now(&mut s, "tool:device");
+        launch_now(&mut s, "builtin:device");
         let fx = tap(&mut s, DeviceId::Wifi);
         assert_eq!(s.bottom().tab(), Tab::Wifi);
         assert!(fx.contains(&Effect::Watch(crate::Watch::Wifi, true)), "{fx:?}");
         let fx = tap(&mut s, DeviceId::Zone);
         assert_eq!(s.bottom().tab(), Tab::Time);
         assert!(fx.contains(&Effect::Watch(crate::Watch::Wifi, false)) && fx.contains(&Effect::Watch(crate::Watch::Time, true)), "{fx:?}");
-        assert_eq!(s.setup().top_view(), TopView::Device, "the view stays open");
+        assert_eq!(s.top_view(), TopView::Device, "the view stays open");
     }
 
     /// Home closes the Device view back to the Library. Repeated Home stays on the Library.
     #[test]
-    fn home_closes_the_device_view_first() {
+    fn home_goes_to_the_library_from_the_device_view() {
         let mut s = state();
         s.applied(Event::tick(1000));
         let zelda = launch(&mut s, "zelda-lttp");
         s.observed(vec![crate::testkit::win_of(3, "zelda3", &zelda)]);
-        launch_now(&mut s, "tool:device");
-        assert_eq!(s.setup().top_view(), TopView::Device);
+        launch_now(&mut s, "builtin:device");
+        assert_eq!(s.top_view(), TopView::Device);
         s.applied(Event::Home);
-        assert!(s.session().library_view_in_front(), "nothing shown but the Library");
-        assert_eq!(s.setup().top_view(), TopView::LibraryView);
+        assert!(s.session().shown_builtin().is_some(), "nothing shown but the Library");
+        assert_eq!(s.top_view(), TopView::LibraryView);
         assert_eq!(s.pointer().focus(), Some(&crate::testkit::entry("zelda-lttp")), "the focus on the Library's selection");
         s.applied(Event::Home);
-        assert!(s.session().library_view_in_front());
+        assert!(s.session().shown_builtin().is_some());
     }
 
     /// The account is read while the view is open, from when the UI is up (and once at start, see
@@ -337,17 +334,18 @@ mod tests {
         assert!(!s.applied(Event::tick(1)).contains(&Effect::Watch(crate::Watch::Account, true)), "the UI isn't up");
         s.applied(Event::Start);
         available(&mut s, true);
-        // Opened from the Library, and closed by Home.
-        let fx = s.applied(Event::Entry("tool:device".into(), crate::EntryAct::Play));
+        // Opened from the Library; Home leaves it running, and Close closes it.
+        let fx = s.applied(Event::Entry("builtin:device".into(), crate::EntryAct::Play));
         assert!(fx.contains(&Effect::Watch(crate::Watch::Account, true)), "{fx:?}");
-        assert!(s.applied(Event::Home).contains(&Effect::Watch(crate::Watch::Account, false)));
+        assert!(!s.applied(Event::Home).contains(&Effect::Watch(crate::Watch::Account, false)));
+        assert!(tap(&mut s, DeviceId::Close).contains(&Effect::Watch(crate::Watch::Account, false)));
     }
 
     #[test]
     fn the_password_is_typed_below_the_current_one_first() {
         let mut s = State::new(init());
         s.sent_at_start();
-        launch_now(&mut s, "tool:device");
+        launch_now(&mut s, "builtin:device");
         assert!(tap(&mut s, DeviceId::Password).is_empty(), "unavailable off the device");
         available(&mut s, true);
         let tab = s.bottom().tab();
@@ -363,7 +361,7 @@ mod tests {
     #[test]
     fn the_password_editor_goes_back_where_it_came_from() {
         let mut s = State::new(init());
-        launch_now(&mut s, "tool:device");
+        launch_now(&mut s, "builtin:device");
         available(&mut s, true);
         s.applied(Event::ChooseTab(Tab::Dock));
         tap(&mut s, DeviceId::Password);

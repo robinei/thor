@@ -105,7 +105,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 
 | From | Event / condition | To | Effects | Test |
 |---|---|---|---|---|
-| Idle | Play of the Device tool | Idle | the Device view opens | device `the_device_entry_opens_it_…` |
+| Idle | Play of the Device entry (`builtin:device`) | Idle | the Device view opens | device `the_device_entry_opens_it_…` |
 | Idle | Play of another tool | Idle | `Tool` | running `play_of_a_tool_asks_for_it_and_of_an_unknown_id_does_nothing` |
 | Idle | Play of a group | Idle | the Library reveals it, `ShowLibraryView` | dock `library_view_pins_and_unpins_any_entry_…` |
 | Idle | Play of an id not in the library | Idle | nothing | same |
@@ -166,7 +166,7 @@ the device.
 | settle: within 2 s a window reappears there | Focus it | front `a_window_in_front_replaced_at_once_…` |
 | settle: `front_launch` and its window arrived | Focus, cleared | tests `a_launchs_first_window_is_shown_before_…` |
 | Home, the Library not in front | ShowLibraryView; cancel foreground launch intent | front `home_always_shows_library_view_and_repeated_home_stays_there` |
-| Home, the Library in front | stays; close Device view first if open | same; device `home_closes_the_device_view_first` |
+| Home, the Library in front | stays; close Device view first if open | same; device `home_goes_to_the_library_from_the_device_view` |
 | WindowPrevious / WindowNext | wrap within the selected top program's stacks, skipping the bottom slot; absent/single/the Library do nothing | windows `top_window_switching_wraps_within_the_program_and_skips_the_bottom_slot`, `top_window_switching_steps_over_whole_stacks` |
 | dock tap on the entry in front with two or more top-level windows on the top screen | Overview open, the window in front chosen (a dialog's root); the window in front stays; again closes it | overview `a_tap_on_the_entry_in_front_shows_its_windows_and_the_pad_picks_one`, `one_window_and_its_dialog_open_no_overview` |
 | Overview: Step(dir) / Choose or Pick(id) / Close | the choice moves within the grid; the window comes in front and it closes; it closes | overview `the_entry_again_or_b_goes_back_and_a_tapped_window_comes_in_front` |
@@ -310,8 +310,8 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 | Transition | Test |
 |---|---|
 | Setup (`setup::wizard`): first start, or an account read with no password → Setup in the Library's place; steps Password (typed twice; Next only without a helper), Wi-Fi (Skip or Next), Time zone (Back, Done); each step's tab below, the bar hidden, keys only to the editor; launches and autostart held; Done → `Save(FirstStartDone)`, the default tab, focus to the Library | `setup_goes_password_wifi_zone_and_done_ends_it_for_good`, `without_a_helper_the_password_step_is_passed`, `no_password_brings_setup_back_and_holds_launches`, `keys_without_an_editor_go_nowhere_while_setup_shows` |
-| the Device tool → open; Close → closed, focus to the Library | `the_device_entry_opens_it_and_close_goes_back_to_library_view` |
-| Home with the view open → closed, focus to the Library's selection; repeated Home stays on the Library | `home_closes_the_device_view_first` |
+| the Device entry → it runs (on the dock) and shows, focus on its first row; Close or Quit → closed, the Library in its place if it showed, focus to the Library's selection | `the_device_view_runs_on_the_dock_until_it_is_closed`,  `the_device_entry_opens_it_and_close_goes_back_to_library_view` |
+| Home with the view shown → the Library, focus to its selection, the view still running; repeated Home stays on the Library | `home_goes_to_the_library_from_the_device_view` |
 | open, or Setup showing, while the UI is up → `Watch(Account)` on; closed → off | `the_account_is_watched_while_the_view_is_open` |
 | Wifi / Zone rows → their tab, its watch | `the_wifi_and_zone_rows_open_their_tabs` |
 | Password → editor for the current, the new, then the new again → `Account(Password)`; the two differing → `AccountChanged(Err)` | `the_password_is_typed_below_the_current_one_first` |
@@ -1512,7 +1512,7 @@ The Fan tile is dimmed when the profile has no fan (GAP).
 | From | Route | To | Test |
 |---|---|---|---|
 | the Library play, Continue, Open in, Pin | queued `Event::Entry` | session, dock | the Library tests |
-| launch of a group / the Device tool | `Session::launch` returns what to do instead | the Library, Device view | `a_group_started_…`, device tests |
+| launch of a group / a built-in | `Session::launch` returns what to do instead | the Library, Device view | `a_group_started_…`, device tests |
 | plays ended | settle fills a reused buffer, then `library_view.record_play` | the Library | tests `a_launchs_start_and_end…`; the Library `a_play_recorded_keeps_library_views_place_and_focus` |
 | a game starting | settle returns it | bottom (`unwake`) | `dark_for_a_game_…` |
 | notices | `&mut NoticeSlot` | bottom | per area |

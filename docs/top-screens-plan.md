@@ -316,8 +316,14 @@ touches the session or the outside.
 - [x] 1. **Rename** shelf to Library (`LibraryView` in code), in the UI, the code and the docs.
 - [x] 2. **Setup as a wizard**: password, Wi-Fi, time zone; the bottom screen locked to the keyboard; the
   launch gate; Volume Up removed from `thor-account` (a thor-system release) and from `security.md`.
-- [ ] 3. **Built-ins as entries**: Library always running and pinned at 0 by the starter, Device an entry;
+- [x] 3. **Built-ins as entries**: Library always running and pinned at 0 by the starter, Device an entry;
   `InFront::Shelf` and `TopView` gone.
+  Done as: `Launch::Builtin`, the entries in Tools (the loader puts them there until step 4's `builtin`
+  source); the session keeps which built-in shows with no window in front and whether Device runs, so the
+  front, its history and Home go by built-ins (`InFront::Builtin`, `Front::Builtin`,
+  `WindowCommand::Show`). `TopView` stays, worked out by State. The Library's tile is first on the dock
+  whenever it isn't pinned (it always runs), so no starter pin is needed for position 0; once pinned it
+  stays pinned, and can be moved. The code wasn't regrouped into `builtin::` modules.
 - [ ] 4. **The format**: places by `id`, `name`, `in`; the `match` default and `also`; built-in sources;
   runners' `bios`.
 - [ ] 5. **What the image ships**: the repos' emulators and runners, `~/Roms`, the menu, the first pins,

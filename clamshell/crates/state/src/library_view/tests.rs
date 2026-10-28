@@ -218,7 +218,7 @@ fn a_library_read_keeps_what_is_typed() {
 }
 
 #[test]
-fn typing_with_library_view_in_front_finds_entries_by_their_titles_start() {
+fn typing_with_builtin_in_front_finds_entries_by_their_titles_start() {
     use crate::bottom::keyboard::find;
     let mut s = state();
     tap(&mut s, Id::Tab(crate::Tab::Keyboard));
@@ -272,7 +272,7 @@ fn a_group_started_from_elsewhere_opens_in_library_view() {
     let mut s = state();
     let fx = launch_now(&mut s, "tv:Cosmos/Season 1");
     assert!(fx.is_empty());
-    assert!(s.session().library_view_in_front());
+    assert!(s.session().shown_builtin().is_some());
     assert_eq!(s.library_view().collection().map(|c| c.name.as_str()), Some("TV"));
     assert_eq!(s.library_view().group().map(|g| &*g.id), Some("tv:Cosmos/Season 1"));
     assert_eq!(s.library_view().selected().map(|g| &**g), Some("tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv"));

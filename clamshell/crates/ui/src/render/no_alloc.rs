@@ -68,7 +68,7 @@ fn key(k: Key) -> Event {
 fn device() -> Vec<Event> {
     let library = clamshell_library::demo::library();
     let tools = library.collections.iter().position(|c| c.name == "Tools").unwrap_or(0);
-    let entry = || tap(Id::LibraryView(LibraryViewId::Entry("tool:device".into())));
+    let entry = || tap(Id::LibraryView(LibraryViewId::Entry("builtin:device".into())));
     vec![tap(Id::LibraryView(LibraryViewId::Collection(u16::try_from(tools).unwrap_or(0)))), entry(), entry()]
 }
 

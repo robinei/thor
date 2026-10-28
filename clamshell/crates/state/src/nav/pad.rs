@@ -125,7 +125,7 @@ impl Pad {
             return Some(Claimant::Mouse);
         }
         match (front, tab) {
-            (Front::LibraryView, _) => Some(Claimant::LibraryView),
+            (Front::Builtin(_), _) => Some(Claimant::LibraryView),
             (Front::Program | Front::Other, Tab::Keyboard) => Some(Claimant::Typing),
             (Front::Program | Front::Other, _) => Some(Claimant::Game),
         }
@@ -253,7 +253,7 @@ mod tests {
     /// With the Library in front the pad has both screens, so View has nothing to switch, and a program coming
     /// in front after it gets the pad.
     #[test]
-    fn view_does_nothing_with_library_view_in_front() {
+    fn view_does_nothing_with_a_builtin_in_front() {
         let mut s = state();
         assert_eq!(s.pad().route(), PadRoute::Ui);
         assert_eq!(s.applied(Event::PadSwitch), vec![]);
