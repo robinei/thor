@@ -52,8 +52,8 @@ What isn't, and where the bugs were:
   new scope. Predates today's changes.
 - [ ] **The screens can stay dimmed after waking.** A backlight reading taken while dimmed that arrives
   after the wake is taken as the brightness on a device where the user hasn't set one, and each dim
-  compounds it (the failure 65ec9f62 fixed, still open as a race). Fix: keep the backlight as read before
-  ClamShell first set it, frozen from then on.
+  compounds it (the failure 65ec9f62 fixed, still open as a race). Fixed by step 5's readings tagged with
+  the command they have seen: a reading from before the wake is older than the wake's command.
 - [ ] **A launcher's dialog opens behind on three paths.** `FrontLaunch.launcher` is set by a second call
   on two of the five ways a launch starts waiting (not the re-wait after the window in front closed, nor
   a found or tray program's), so Steam's "which version" dialog opens behind there. Fix: derive it.
@@ -85,11 +85,25 @@ Each ends in commits that pass `tools/check.sh` and the randomized test at 3000 
   callers), the program's pad mouse, the focus ring hidden, the front remembered once per apply. Resume
   saved when a hash of the place differs from the last saved, replacing both `unsaved` flags. Cost: a few
   compares and a hash over a few dozen ids, no allocation.
-- [ ] 5. **Commands sent as facts, readings kept as received.** One helper for "sent this at time t":
-  what a level shows is our send while it is younger than the readings' period, else the reading
-  (replacing `Held`, `holding`, its three releases and the edits to the audio reading); Wi-Fi's and
-  Bluetooth's busy and error derived from the attempt and the reading (replacing `Local`, `give_up` and
-  their follow). One slide gesture on State instead of four `slider` fields. Cost: a scan of a few sends.
+- [ ] 5. **Commands as facts, readings kept as received.** Three kinds of value:
+  - **Only ClamShell changes it:** the wanted value is stored (the user's choice), `wanted()` derives the
+    rest, and sync sends the difference from what was sent. No readings needed.
+  - **Others change it too:** volume and mute (PipeWire restores each output's own on a switch, a
+    headset's buttons, other apps) and brightness (another tool, a desktop session, the firmware). Each
+    command carries a number, and the thread applying commands reads the value back with the number of the
+    last command it applied. What is shown is our latest command until a reading has seen it, then the
+    reading; a reading that has seen our latest command and differs from it is a change from outside,
+    taken as the user's value (for brightness: not while ClamShell has dimmed the screens, whose level is
+    ours). No timing, and a reading from before a command can't win over it. This replaces `Held`,
+    `holding` and its three releases, the edits to the audio reading, and the brightness reading filtered
+    by the idle stage; the volume reading moves from the status thread to the mixer thread, which applies
+    the commands.
+  - **An attempt with an outcome:** Wi-Fi and Bluetooth connections. The attempt is stored as a fact;
+    busy and error are derived from it and the latest reading, and a reading that answers it (the target
+    busy, connected, or a new error) clears it. The timeout stays, the outcome possibly never coming. This
+    replaces `Local`, `give_up` and their follow, and the edits to the readings.
+
+  One slide gesture on State instead of four `slider` fields. Cost: a compare per value, no allocation.
 - [ ] 6. **`Sent` only what was sent.** A watch's state per watch (on, off, unknown), a restart setting
   what its thread held to unknown (replacing `tab`, `tab_again`, `status_off`, `account`); freezing and
   runner pauses wanted as a condition and diffed in sync (replacing `freeze_again`); the backlights
