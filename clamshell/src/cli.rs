@@ -42,7 +42,7 @@ pub enum Command {
 
 pub const USAGE: &str = "usage: clamshell --drm | --nested | ctl COMMAND...
   --drm                the session on the screens, from a VT
-  --nested             the session in a window on a desktop
+  --nested             the session in a window on a desktop (built with the nested feature, the default)
   device panel         panel facts as JSON for calibration tools
   device confirm       waits 20 s for Volume Up on a physical device: exit 0 if pressed (thor-account)
   ctl COMMAND...       drive the running ClamShell (`clamshell ctl help` lists the commands)
