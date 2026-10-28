@@ -81,7 +81,12 @@ fn warm() -> (State, Vec<WindowFacts>, Vec<LaunchUnit>) {
         app_id: "foot".into(),
         title: Some("lower".into()),
     }]);
-    let mut s = State::new(Init { library: Some(clamshell_library::demo::library()), window_rules, ..Init::default() });
+    let mut s = State::new(Init {
+        library: Some(clamshell_library::demo::library()),
+        window_rules,
+        account: clamshell_state::setup::account::Account::NoHelper,
+        ..Init::default()
+    });
     let mut effects = Vec::new();
     s.apply(Event::Start, &mut effects);
     s.apply(Event::Tick { unix_secs: T0, mono_secs: 10 }, &mut effects);
@@ -128,7 +133,8 @@ fn allocations_per_event() {
         let n = (3..6).map(|i| count(s, make(i), &mut effects)).max().unwrap_or(0);
         rows.push((name.to_owned(), n));
     };
-    let mut s = State::new(Init { library: Some(clamshell_library::demo::library()), ..Init::default() });
+    let mut s =
+        State::new(Init { library: Some(clamshell_library::demo::library()), account: clamshell_state::setup::account::Account::NoHelper, ..Init::default() });
     s.apply(Event::Start, &mut Vec::new());
     let (mut w, windows, units) = warm();
     for (state, s) in [("idle", &mut s), ("running", &mut w)] {

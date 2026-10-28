@@ -681,7 +681,14 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 streams.truncate(rng.below(3));
                 Reading::Audio(Audio { outputs, streams, seen: 0 })
             }
-            4 => Reading::Account(crate::setup::account::Account { available: true, password: !rng.one_in(3), ssh: rng.one_in(2) }),
+            4 => Reading::Account({
+                use crate::setup::account::Account;
+                match rng.below(6) {
+                    0 => Account::NoHelper,
+                    1 => Account::Failed("no polkit agent".into()),
+                    _ => Account::Read { password: !rng.one_in(3), ssh: rng.one_in(2) },
+                }
+            }),
             _ => Reading::Clipboard(rng.one_in(2).then(|| "pasted".into())),
         }),
         // The device's keys and buttons.
@@ -879,6 +886,13 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
             }
         };
     }
+    // The user's programs aren't started while the account holds them: unread, unreadable or without a
+    // password (see `crate::setup::wizard`). And Setup, while it shows, is in front.
+    ensure!(!(s.setup().holds_programs() && effects.iter().any(|e| matches!(e, Effect::Launch { .. }))), "launched while the account holds programs");
+    ensure!(
+        s.setup().wizard().is_none() || s.session().shown_builtin() == Some(clamshell_library::Builtin::Library),
+        "Setup shows but the Library isn't in front"
+    );
     // 4. Live window ids are unique.
     for (i, window) in s.session().windows().iter().enumerate() {
         ensure!(!s.session().windows().iter().skip(i + 1).any(|other| other.id == window.id), "duplicate window id {}", window.id);
@@ -1250,6 +1264,9 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
     // start, so that the runs aren't spent on an empty Library.
     let unread = rng.one_in(4);
     let first_start = rng.one_in(3);
+    // The account is read soon after the start, as at a start on the device, but now and then only by
+    // the readings drawn later, which hold programs meanwhile.
+    let account_late = rng.one_in(5);
     let init = Init { library: (!unread).then(library), keymaps: crate::keymap::Keymaps::initial(), device_session: true, first_start, ..Init::default() };
     let mut s = State::new(init);
     // As the outside starts: the settings in force applied, the screens on at their own rate (0), the
@@ -1265,6 +1282,10 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
             1 => Event::Start,
             2 => Event::Units(Vec::new()),
             3 if unread => Event::Library(Box::new(library())),
+            4 if !account_late => {
+                let password = !(first_start && rng.one_in(2));
+                Event::Reading(Reading::Account(crate::setup::account::Account::Read { password, ssh: false }))
+            }
             _ => draw(&mut rng, &s, &mut world, &mut clock),
         };
         // A quit asked for may end its entry again.

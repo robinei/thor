@@ -45,7 +45,7 @@ fn edit(id: EditId) -> Id {
 
 /// The device's account, before it has a password.
 fn no_password() -> clamshell_state::setup::account::Account {
-    clamshell_state::setup::account::Account { available: true, password: false, ssh: false }
+    clamshell_state::setup::account::Account::Read { password: false, ssh: false }
 }
 
 /// One file: the screen drawn after the events in `before`.
@@ -121,6 +121,8 @@ pub fn state(library: Library, first_start: bool) -> State {
             title: Some(demo::BELOW.into()),
         }]),
         first_start,
+        // As on a desktop: no account helper, so programs run; at the first start the shots give readings.
+        account: if first_start { clamshell_state::setup::account::Account::Unread } else { clamshell_state::setup::account::Account::NoHelper },
         ..Init::default()
     })
 }
@@ -617,11 +619,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
             vec![LibraryViewEvent::Rows(8).into()],
             vec![
                 shot("device-unavailable.png", Top, open_device().into_iter().chain([Reading::Time(demo::time_zones()).into()]).collect()),
-                shot(
-                    "device.png",
-                    Top,
-                    vec![Reading::Account(clamshell_state::setup::account::Account { available: true, password: true, ssh: false }).into()],
-                ),
+                shot("device.png", Top, vec![Reading::Account(clamshell_state::setup::account::Account::Read { password: true, ssh: false }).into()]),
                 shot("device-sticks.png", Top, vec![tap(Id::Device(DeviceId::Sticks)), Event::Sticks(SticksEvent::Progress(demo::sticks_progress()))]),
                 shot("device-password.png", Bottom, [tap(Id::Device(DeviceId::Password))].into_iter().chain(control::type_text("secret")?).collect()),
             ],
@@ -692,8 +690,14 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                     [tap(Id::Setup(clamshell_state::SetupId::Password))].into_iter().chain(control::type_text("secret")?).collect(),
                 ),
                 shot("setup-problem.png", Top, vec![Event::AccountChanged(Err("too short".into()))]),
-                shot("setup-wifi.png", Top, vec![Reading::Account(clamshell_state::setup::account::Account { password: true, ..no_password() }).into()]),
+                shot("setup-wifi.png", Top, vec![Reading::Account(clamshell_state::setup::account::Account::Read { password: true, ssh: false }).into()]),
                 shot("setup-zone.png", Top, vec![tap(Id::Setup(clamshell_state::SetupId::Next))]),
+                // An account that couldn't be read: the password step again, saying why.
+                shot(
+                    "setup-unreadable.png",
+                    Top,
+                    vec![Reading::Account(clamshell_state::setup::account::Account::Failed("pkexec: no authentication agent".into())).into()],
+                ),
             ],
             first_start: true,
         },

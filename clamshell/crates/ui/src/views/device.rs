@@ -68,15 +68,15 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
 
     let account = s.setup().account();
     let password = col.take(row_h);
-    if account.available {
-        let value = if account.password { "Set" } else { "Not set" };
-        f.button(Id::Device(DeviceId::Password), password, Look::ROW, |f| widgets::value_row(f, password, size, "Password", value, account.password));
+    if account.available() {
+        let value = if account.password() { "Set" } else { "Not set" };
+        f.button(Id::Device(DeviceId::Password), password, Look::ROW, |f| widgets::value_row(f, password, size, "Password", value, account.password()));
     } else {
         widgets::value_row(f, password, size, "Password", "Unavailable", false);
     }
     let ssh = col.take(row_h);
-    match (account.available, account.password) {
-        (true, true) => widgets::switch_row(f, Id::Device(DeviceId::Ssh), ssh, size, "Remote login (ssh)", account.ssh),
+    match (account.available(), account.password()) {
+        (true, true) => widgets::switch_row(f, Id::Device(DeviceId::Ssh), ssh, size, "Remote login (ssh)", account.ssh()),
         (true, false) => widgets::value_row(f, ssh, size, "Remote login (ssh)", "Needs a password", false),
         (false, _) => widgets::value_row(f, ssh, size, "Remote login (ssh)", "Unavailable", false),
     }

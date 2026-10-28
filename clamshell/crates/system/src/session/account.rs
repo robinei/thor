@@ -21,16 +21,16 @@ const HELPER: &str = "/usr/lib/thor/thor-account";
 /// How long the helper may take. Setting a password hashes it, and turning remote login on starts sshd.
 const HELPER_LIMIT: Duration = Duration::from_secs(30);
 
-/// The account as the helper reads it. It is unavailable if there is no helper or it fails.
+/// The account as the helper reads it: none without a helper, and why if it couldn't.
 pub(crate) fn read() -> Account {
     if !Path::new(HELPER).exists() {
-        return Account::default();
+        return Account::NoHelper;
     }
     match run(&["status"], None) {
         Ok(out) => parse(&out),
         Err(e) => {
             log::warn!("account: {e}");
-            Account::default()
+            Account::Failed(e)
         }
     }
 }
@@ -38,7 +38,7 @@ pub(crate) fn read() -> Account {
 /// What the helper's `status` says.
 fn parse(out: &str) -> Account {
     let line = |l: &str| out.lines().any(|x| x.trim() == l);
-    Account { available: true, password: line("password set"), ssh: line("ssh on") }
+    Account::Read { password: line("password set"), ssh: line("ssh on") }
 }
 
 /// Asks the helper for a change. Returns what it did, or why it didn't. [`AccountCommand::Read`] is
@@ -88,8 +88,8 @@ mod tests {
 
     #[test]
     fn the_helpers_status_and_messages() {
-        assert_eq!(parse("password set\nssh off\n"), Account { available: true, password: true, ssh: false });
-        assert_eq!(parse("password none\nssh on\n"), Account { available: true, password: false, ssh: true });
+        assert_eq!(parse("password set\nssh off\n"), Account::Read { password: true, ssh: false });
+        assert_eq!(parse("password none\nssh on\n"), Account::Read { password: false, ssh: true });
         assert_eq!(capitalised("wrong password"), "Wrong password");
         assert_eq!(capitalised(""), "");
     }

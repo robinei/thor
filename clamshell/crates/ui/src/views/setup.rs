@@ -4,6 +4,7 @@
 //! the Wi-Fi step shows the Wi-Fi tab's networks and the time zone step the time tab, each in a panel in
 //! the middle. The second screen shows only the keyboard meanwhile (see `super::bottom`).
 
+use clamshell_state::setup::account::Account;
 use clamshell_state::setup::wizard::Step;
 use clamshell_state::{Id, SetupId};
 
@@ -53,14 +54,18 @@ fn password(f: &mut Frame, panel: Rect) {
     let s = f.s;
     let size = f.text(Text::Body);
     let mut col = panel;
-    if s.setup().password_passable() {
+    let unreadable = match s.setup().account() {
+        Account::NoHelper => Some("There is no account here to set one for: Next goes on."),
+        Account::Unread => Some("Reading the account…"),
+        Account::Failed(_) => Some("The account couldn't be read. Trying again…"),
+        Account::Read { .. } => None,
+    };
+    if let Some(text) = unreadable {
         col.take_top(size * 2.0);
-        f.c.text_in(col.take_top(size * 1.6), size, Tone::Dim, "There is no account here to set one for: Next goes on.", Align::Center);
-        return;
-    }
-    if !s.setup().account().available {
-        col.take_top(size * 2.0);
-        f.c.text_in(col.take_top(size * 1.6), size, Tone::Dim, "Reading the account…", Align::Center);
+        f.c.text_in(col.take_top(size * 1.6), size, Tone::Dim, text, Align::Center);
+        if let Account::Failed(why) = s.setup().account() {
+            f.c.text_in(col.take_top(size * 1.6), size, Tone::Accent, why, Align::Center);
+        }
         return;
     }
     col.take_top(size * 2.0);

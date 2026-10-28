@@ -102,9 +102,9 @@ impl State {
     /// is opened, a group shown open in the Library, or a running entry shown. As a launch starts, where the Library
     /// and the second screen are is saved.
     pub(crate) fn launch(&mut self, entry: Arc<str>, command: Option<Launch>, start: Start, out: &mut Out) -> Launched {
-        // Nothing of the user's runs while Setup shows, on the main screen: the account may have no password
-        // yet, which any program of the user could then set (see `crate::setup::wizard`).
-        if self.setup.wizard().is_some() {
+        // Nothing of the user's runs until the account reads with a password (or there is no helper): it may
+        // have none yet, which any program of the user could then set (see `crate::setup::wizard`).
+        if self.setup.holds_programs() {
             return Launched::No;
         }
         let request = LaunchRequest { entry: entry.clone(), command, start };

@@ -825,6 +825,8 @@ Time(Ntp): ^Time(Zone) vTime(TwelveHour) <Setup(Back) >Setup(Next)
 Time(TwelveHour): ^Time(Ntp) vSetup(Back) <Setup(Back) >Setup(Next)
 Setup(Back): ^Time(TwelveHour) vKey[0,1] <- >Time(TwelveHour)
 Setup(Next): ^Time(TwelveHour) vKey[0,8] <Time(TwelveHour) >-
+== setup-unreadable.png (top; the pad on both screens)
+start Setup(Password); back Activate Editor(Cancel)
 == time-by-hand.png (bottom; the pad on both screens)
 start Time(TwelveHour); back -
 -- bar as in bottom.png except

@@ -165,6 +165,9 @@ pub struct Init {
     pub twelve_hour: bool,
     /// This is ClamShell's first start, meaning the Device view hasn't been closed with Done yet. The
     /// Device view opens (see [`setup`]).
+    /// The account as known before the state starts: ClamShell's starts unread (tests and the snapshots
+    /// give one, see [`crate::setup::account::Account`]).
+    pub account: crate::setup::account::Account,
     pub first_start: bool,
     /// The sticks' calibrations, by controller (see [`crate::setup::sticks`]).
     pub sticks: crate::setup::sticks::Calibrations,
@@ -238,7 +241,7 @@ impl State {
             levels: Levels::new(init.brightness),
             session: Session::new(init.autostart, init.device_session, init.window_rules),
             dock: init.dock,
-            setup: setup::Setup::new(init.sticks, init.first_start),
+            setup: setup::Setup::new(init.sticks, init.first_start, init.account),
             ..State::default()
         };
         if let Some(resume) = &init.resume {
@@ -552,9 +555,9 @@ impl State {
         }
         self.record_plays(out);
         let mut due = Vec::new();
-        // The entries to start are looked for in the library, so not before it is read, and not while
-        // Setup holds launches.
-        if self.library_view.read() && self.setup.wizard().is_none() {
+        // The entries to start are looked for in the library, so not before it is read, and not while the
+        // account holds programs.
+        if self.library_view.read() && !self.setup.holds_programs() {
             self.session.autostart_due(self.library_view.library(), &mut due);
         }
         for id in due {
@@ -585,6 +588,10 @@ impl State {
         self.session.follow_front_launch(self.clock.mono());
         self.session.follow_replacement(self.clock.mono());
         self.session.follow_front(self.clock.mono());
+        // Setup is drawn in the Library's place: while it shows, the Library is in front, over any window.
+        if self.setup.wizard().is_some() && self.session.shown_builtin() != Some(clamshell_library::Builtin::Library) {
+            self.show_builtin(clamshell_library::Builtin::Library);
+        }
         // Order: once the front is settled (a launch's window, a closed window's replacement), which an
         // app's pick is shown over or set aside for; before the overview, which follows what is in front, so
         // a pick shown or a program back after it is what the overview and the next steps see.

@@ -65,9 +65,8 @@ pub struct Setup {
     first_start: bool,
     /// The step of Setup reached (see [`wizard`]).
     step: wizard::Step,
-    /// The account, as last read (see [`account`]), and whether it has been.
+    /// The account, as last read (see [`account`]).
     account: Account,
-    account_read: bool,
     /// Why the password last typed in Setup wasn't set, until another is (see [`wizard`]).
     password_problem: Option<String>,
     /// When remote login was turned on or off (monotonic seconds), until the helper answers. Another tap
@@ -94,14 +93,20 @@ pub enum SticksEvent {
 
 impl Setup {
     /// The view as ClamShell starts: Setup shows at the first start (see [`wizard`]).
-    pub(crate) fn new(calibrations: Calibrations, first_start: bool) -> Setup {
-        Setup { calibrations, first_start, ..Setup::default() }
+    pub(crate) fn new(calibrations: Calibrations, first_start: bool, account: Account) -> Setup {
+        Setup { calibrations, first_start, account, ..Setup::default() }
     }
 
-    /// Whether the account is read: once at start, so that one without a password brings Setup back (see
-    /// [`wizard`]), and while the Device view runs (`device_open`) or Setup shows.
+    /// Whether the account is read: at start, so that one without a password brings Setup back (see
+    /// [`wizard`]), again until it reads, and while the Device view runs (`device_open`) or Setup shows.
     pub fn reads_account(&self, device_open: bool) -> bool {
-        !self.account_read || device_open || self.wizard().is_some()
+        matches!(self.account, Account::Unread | Account::Failed(_)) || device_open || self.wizard().is_some()
+    }
+
+    /// Whether the user's programs are held: launches and autostart wait (see
+    /// [`Account::lets_programs_run`]).
+    pub fn holds_programs(&self) -> bool {
+        !self.account.lets_programs_run()
     }
 
     pub fn sticks(&self) -> Option<&Progress> {
@@ -130,16 +135,16 @@ impl Setup {
         self.first_start
     }
 
-    pub fn account(&self) -> Account {
-        self.account
+    pub fn account(&self) -> &Account {
+        &self.account
     }
 
     /// A reading of the account. A password set answers what went wrong with the one before.
     pub(crate) fn read_account(&mut self, account: Account) {
-        if account.password {
+        if account.password() {
             self.password_problem = None;
         }
-        (self.account, self.account_read) = (account, true);
+        self.account = account;
     }
 
     /// The account helper answered a change with `result`, or can't any more (its thread was started
@@ -152,20 +157,20 @@ impl Setup {
     /// A tap on one of the Device view's targets at `now` (monotonic seconds). A tab to open is queued as an
     /// event, since State changes tabs. Close is the session's ([`crate::Session::close_device`]).
     pub(crate) fn tap(&mut self, id: DeviceId, now: u64, out: &mut Out) {
-        let account = self.account;
+        let (available, password, ssh) = (self.account.available(), self.account.password(), self.account.ssh());
         match id {
             DeviceId::Wifi => out.events.push(Event::ChooseTab(Tab::Wifi)),
             DeviceId::Zone => out.events.push(Event::ChooseTab(Tab::Time)),
             // Typed in the editor on the second screen's keyboard.
-            DeviceId::Password if account.available => {
-                let step = if account.password { PasswordStep::Current } else { PasswordStep::New { current: None } };
+            DeviceId::Password if available => {
+                let step = if password { PasswordStep::Current } else { PasswordStep::New { current: None } };
                 out.events.push(Event::EditOnKeyboard(Editor { purpose: Purpose::AccountPassword(step), text: String::new() }));
             }
             // Remote login needs a password to log in with.
             // One change at a time: the next tap reads the account the answer brings.
-            DeviceId::Ssh if account.available && account.password && !waits(self.ssh_asked, now) => {
+            DeviceId::Ssh if available && password && !waits(self.ssh_asked, now) => {
                 self.ssh_asked = Some(now);
-                out.effects.push(Effect::Account(AccountCommand::Ssh(!account.ssh)));
+                out.effects.push(Effect::Account(AccountCommand::Ssh(!ssh)));
             }
             DeviceId::Password | DeviceId::Ssh => {}
             DeviceId::Sticks if !waits(self.sticks_asked, now) => {
@@ -252,7 +257,7 @@ mod tests {
     }
 
     fn available(s: &mut State, password: bool) {
-        s.applied(Event::Reading(Reading::Account(crate::setup::account::Account { available: true, password, ssh: false })));
+        s.applied(Event::Reading(Reading::Account(crate::setup::account::Account::Read { password, ssh: false })));
     }
 
     #[test]
@@ -411,7 +416,7 @@ mod tests {
         assert_eq!(tap(&mut s, DeviceId::Ssh), vec![Effect::Account(AccountCommand::Ssh(true))]);
         assert!(tap(&mut s, DeviceId::Ssh).is_empty(), "not sent twice");
         s.applied(Event::AccountChanged(Ok("Remote login on".into())));
-        s.applied(Event::Reading(Reading::Account(crate::setup::account::Account { available: true, password: true, ssh: true })));
+        s.applied(Event::Reading(Reading::Account(crate::setup::account::Account::Read { password: true, ssh: true })));
         assert_eq!(tap(&mut s, DeviceId::Ssh), vec![Effect::Account(AccountCommand::Ssh(false))], "answered: off again");
         s.applied(Event::AccountChanged(Err("failed".into())));
         assert_eq!(tap(&mut s, DeviceId::Ssh), vec![Effect::Account(AccountCommand::Ssh(false))], "a failure answers too");

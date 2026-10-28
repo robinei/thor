@@ -11,15 +11,39 @@ use crate::effect::Effect;
 use crate::kit::secret::Secret;
 use crate::out::Out;
 
-/// The account as the helper read it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Account {
-    /// The helper is there, as on the device's image, and answered.
-    pub available: bool,
-    /// The session's user has a password.
-    pub password: bool,
-    /// Remote login (sshd) is on.
-    pub ssh: bool,
+/// The account, as last read. Launches and Setup are functions of it (see [`crate::setup::wizard`]).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum Account {
+    /// Not read yet since ClamShell started.
+    #[default]
+    Unread,
+    /// There is no helper, as off the device: nothing to set.
+    NoHelper,
+    /// The helper is there but couldn't read it: why. It is read again while Setup shows.
+    Failed(String),
+    /// Read: whether the session's user has a password, and whether remote login (sshd) is on.
+    Read { password: bool, ssh: bool },
+}
+
+impl Account {
+    /// Whether the helper read it, and so can change it.
+    pub fn available(&self) -> bool {
+        matches!(self, Account::Read { .. })
+    }
+
+    pub fn password(&self) -> bool {
+        matches!(self, Account::Read { password: true, .. })
+    }
+
+    pub fn ssh(&self) -> bool {
+        matches!(self, Account::Read { ssh: true, .. })
+    }
+
+    /// Whether the user's programs may run: the account has a password, or there is no helper to give
+    /// it one. Unread or unreadable, it may have none, which any program of the user could then set.
+    pub fn lets_programs_run(&self) -> bool {
+        matches!(self, Account::NoHelper | Account::Read { password: true, .. })
+    }
 }
 
 /// What the helper is asked to do.

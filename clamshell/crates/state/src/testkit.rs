@@ -64,9 +64,10 @@ pub fn end(s: &mut State, id: &str) -> Vec<Effect> {
     s.applied(Event::Units(units))
 }
 
-/// What a test state starts from: the demo library and nothing else.
+/// What a test state starts from: the demo library, and the account as on a desktop (no helper, so
+/// programs run).
 pub fn init() -> Init {
-    Init { library: Some(clamshell_library::demo::library()), ..Init::default() }
+    Init { library: Some(clamshell_library::demo::library()), account: crate::setup::account::Account::NoHelper, ..Init::default() }
 }
 
 /// A test state that is up, as after the UI's Start, with its watches in force.
@@ -76,7 +77,7 @@ pub fn state() -> State {
 
 /// A test state with this library.
 pub fn state_with(library: Library) -> State {
-    started(Init { library: Some(library), ..Init::default() })
+    started(Init { library: Some(library), ..init() })
 }
 
 /// A test state from `init` that is up, as after the UI's Start, with its watches in force.

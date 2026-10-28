@@ -134,7 +134,7 @@ impl Screen1 {
 }
 
 fn account() -> Account {
-    Account { available: true, password: true, ssh: true }
+    Account::Read { password: true, ssh: true }
 }
 
 /// Each case starts from the same base state, the demo library at a fixed time, so that the cases don't

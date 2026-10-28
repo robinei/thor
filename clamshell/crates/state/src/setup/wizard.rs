@@ -9,13 +9,16 @@
 //! 3. The time zone: the time tab. Done ends Setup for good.
 //!
 //! What shows is worked out from the account as read and the step reached: an account read with no
-//! password shows the first step whatever was reached, even after Setup was done; a password set moves past
-//! it. The step reached isn't saved: after a restart Setup begins at Wi-Fi again.
+//! password, or one that couldn't be read, shows the first step whatever was reached, even after Setup was
+//! done; a password set moves past it. At the first start the first step shows while it is being read; at
+//! a later one nothing shows meanwhile, though programs are held until it reads with a password
+//! ([`crate::setup::Setup::holds_programs`]). The step reached isn't saved: after a restart Setup begins at
+//! Wi-Fi again.
 
 use std::sync::Arc;
 
 use super::Setup;
-use super::account::PasswordStep;
+use super::account::{Account, PasswordStep};
 use crate::bottom::Tab;
 use crate::bottom::editor::{Editor, Purpose};
 use crate::effect::{Effect, Save};
@@ -46,22 +49,19 @@ impl Step {
 impl Setup {
     /// The step of Setup showing, if it shows (see the module's doc).
     pub fn wizard(&self) -> Option<Step> {
-        if self.account.available && !self.account.password {
-            return Some(Step::Password);
+        match (&self.account, self.first_start) {
+            (Account::Read { password: false, .. } | Account::Failed(_), _) | (Account::Unread, true) => Some(Step::Password),
+            (_, false) => None,
+            (account, true) => Some(match self.step {
+                Step::Password if account.password() => Step::Wifi,
+                step => step,
+            }),
         }
-        if !self.first_start {
-            return None;
-        }
-        Some(match self.step {
-            Step::Password if self.account.password => Step::Wifi,
-            step => step,
-        })
     }
 
-    /// Whether the password step may be gone past without a password: the account was read, and there is
-    /// no helper to set one.
+    /// Whether the password step may be gone past without a password: there is no helper to set one.
     pub fn password_passable(&self) -> bool {
-        self.account_read && !self.account.available
+        self.account == Account::NoHelper
     }
 
     /// Why the password typed last wasn't set, until one is.
@@ -74,7 +74,7 @@ impl Setup {
     pub(crate) fn wizard_tap(&mut self, id: SetupId, pointer: &mut Pointer, selected: Option<&Arc<str>>, out: &mut Out) {
         let Some(step) = self.wizard() else { return };
         match (id, step) {
-            (SetupId::Password, Step::Password) if self.account.available => {
+            (SetupId::Password, Step::Password) if self.account.available() => {
                 let purpose = Purpose::AccountPassword(PasswordStep::New { current: None });
                 out.events.push(Event::EditOnKeyboard(Editor { purpose, text: String::new() }));
             }
@@ -115,7 +115,7 @@ mod tests {
     use crate::{EditorId, Init, Reading, State};
 
     fn first_start() -> State {
-        let mut s = State::new(Init { first_start: true, ..init() });
+        let mut s = State::new(Init { first_start: true, account: Account::Unread, ..init() });
         s.applied(Event::Start);
         s
     }
@@ -124,8 +124,10 @@ mod tests {
         s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Setup(id))))
     }
 
+    /// A reading: with a helper (`available`), whether there is a password; without, no helper.
     fn account(s: &mut State, available: bool, password: bool) {
-        s.applied(Event::Reading(Reading::Account(Account { available, password, ssh: false })));
+        let account = if available { Account::Read { password, ssh: false } } else { Account::NoHelper };
+        s.applied(Event::Reading(Reading::Account(account)));
     }
 
     fn type_and_save(s: &mut State, text: &str) -> Vec<Effect> {
@@ -185,17 +187,38 @@ mod tests {
     /// once Setup is done; nothing is launched until there is one.
     #[test]
     fn no_password_brings_setup_back_and_holds_launches() {
-        let mut s = State::new(init());
+        let mut s = State::new(Init { account: Account::Unread, ..init() });
         assert!(s.applied(Event::Start).contains(&Effect::Watch(crate::Watch::Account, true)), "read at start");
         assert_eq!(s.setup().wizard(), None);
         account(&mut s, true, false);
         assert_eq!(s.setup().wizard(), Some(Step::Password));
         assert!(!launch_now(&mut s, "zelda-lttp").iter().any(|e| matches!(e, Effect::Launch { .. })), "held");
         assert!(s.session().launching().is_empty());
-        let fx = s.applied(Event::Reading(Reading::Account(Account { available: true, password: true, ssh: false })));
+        let fx = s.applied(Event::Reading(Reading::Account(Account::Read { password: true, ssh: false })));
         assert!(fx.contains(&Effect::Watch(crate::Watch::Account, false)), "read, and Setup gone: {fx:?}");
         assert_eq!(s.setup().wizard(), None);
         assert!(launch_now(&mut s, "zelda-lttp").iter().any(|e| matches!(e, Effect::Launch { .. })));
+    }
+
+    /// An account that couldn't be read isn't one without a helper: the password step stays, Next can't
+    /// pass it, programs are held, and it is read again; even at a later start, and over a window in front.
+    #[test]
+    fn an_unreadable_account_keeps_setup_and_holds_programs() {
+        let mut s = first_start();
+        s.applied(Event::Reading(Reading::Account(Account::Failed("no polkit agent".into()))));
+        tap(&mut s, SetupId::Next);
+        assert_eq!(s.setup().wizard(), Some(Step::Password), "not passable");
+        assert!(s.setup().holds_programs() && s.setup().reads_account(false));
+        // A later start: nothing shows while it is read, but programs wait for it.
+        let mut s = State::new(Init { account: Account::Unread, ..init() });
+        s.applied(Event::Start);
+        assert_eq!(s.setup().wizard(), None);
+        assert!(!launch_now(&mut s, "zelda-lttp").iter().any(|e| matches!(e, Effect::Launch { .. })), "held while unread");
+        s.observed(vec![win(7, "app")]);
+        s.applied(crate::WindowEvent::Activate(7).into());
+        s.applied(Event::Reading(Reading::Account(Account::Failed("no polkit agent".into()))));
+        assert_eq!(s.setup().wizard(), Some(Step::Password));
+        assert!(s.session().top_window().is_none(), "Setup in front of the window");
     }
 
     /// While Setup shows, keys typed on the keyboard go only to its editor.

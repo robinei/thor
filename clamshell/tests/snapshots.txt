@@ -81,6 +81,7 @@ settings.png f11082fe58d3dd0c
 setup-password.png bc21c471ddcd9b06
 setup-problem.png eb5f8f4e7ff3a240
 setup-typing.png a57d1d0dc99de9bf
+setup-unreadable.png 082c4f45ccd95337
 setup-wifi.png 8ea91506c11bd0b4
 setup-zone.png 260a82bc3dbfc2ef
 slider.png 55e23d69fe356b89

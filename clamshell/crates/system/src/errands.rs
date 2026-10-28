@@ -118,7 +118,12 @@ fn carry_out(command: Command, screenshots: Option<&PathBuf>, calibration: Optio
         }
         Command::Account(command) => {
             let changing = command != AccountCommand::Read;
-            let fallback = move || if changing { vec![Event::AccountChanged(Err("it panicked".into()))] } else { Vec::new() };
+            // A crash leaves the account unread as far as anyone knows: read as failed, so Setup says so and
+            // reads it again.
+            let fallback = move || {
+                let failed = Event::Reading(Reading::Account(clamshell_state::setup::account::Account::Failed("the reading crashed".into())));
+                if changing { vec![Event::AccountChanged(Err("it panicked".into())), failed] } else { vec![failed] }
+            };
             in_background(
                 "account",
                 sink,
