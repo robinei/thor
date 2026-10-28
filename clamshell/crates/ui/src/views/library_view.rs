@@ -62,7 +62,9 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
 
     // Tabs: the collections' icons and names.
     let tabs_h = h * TABS_H;
-    let collections = s.library_view().library().collections.iter().enumerate();
+    // Picking, the Files tab alone.
+    let picking = s.library_view().pick().is_some();
+    let collections = s.library_view().library().collections.iter().enumerate().filter(|(i, _)| !picking || *i == s.library_view().current());
     let items = collections.map(|(i, coll)| {
         let icon = coll.icon.as_deref().and_then(Icon::named);
         (Id::LibraryView(LibraryViewId::Collection(i as u16)), icon, coll.name.as_str(), i == s.library_view().current())
@@ -72,7 +74,14 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     // The first problem found reading the library, such as in library.json or a missing folder, shown at
     // the right end.
     let problems = &s.library_view().library().problems;
-    if let Some(first) = problems.first() {
+    // Picking, what is asked for and Cancel take their place.
+    if let Some(pick) = s.library_view().pick() {
+        let size = h * TAB_TEXT;
+        let cancel = Rect::new(w - pad - h * 0.2, 0.0, h * 0.2, tabs_h);
+        f.text_button(Id::LibraryView(LibraryViewId::CancelPick), cancel, size, Tone::Fn, "Cancel", crate::gfx::Align::End);
+        let asks = Rect::new(tabs_end + pad * 2.0, 0.0, cancel.x - tabs_end - pad * 3.0, tabs_h);
+        f.c.text_fit(asks, h * DETAIL, Tone::Accent, pick.asks(), Keep::End);
+    } else if let Some(first) = problems.first() {
         let more = Fmt::<16>::of(format_args!(" (+{})", problems.len() - 1));
         let text = Fmt::<256>::of(format_args!("{first}{}", if problems.len() > 1 { &*more } else { "" }));
         let x = tabs_end + pad * 2.0;
@@ -148,6 +157,9 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         let tone = if selected {
             Tone::High
         } else if (entry.mpv_file().is_some() && entry.watched()) || entry.is_empty_folder() {
+            Tone::Dim
+        } else if s.library_view().pick().is_some_and(|p| !entry.is_group() && !p.takes(entry)) {
+            // Picking, a file it doesn't take.
             Tone::Dim
         } else {
             Tone::Normal
@@ -327,6 +339,8 @@ fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f3
         let running = s.session().runs(&entry.id);
         let starting = s.session().starting(&entry.id);
         let (label, tone) = match action {
+            Action::Choose if entry.is_group() => (Fmt::<192>::of(format_args!("Choose this folder")), Tone::Accent),
+            Action::Choose => (Fmt::<192>::of(format_args!("Choose")), Tone::Accent),
             Action::Open if entry.is_group() => (Fmt::<192>::of(format_args!("Open")), Tone::Normal),
             // A launcher's game says in which launcher it starts, or that the launcher starts first.
             Action::Open if starting => match s.session().starts_in(entry, s.library_view().library()) {

@@ -56,7 +56,18 @@ pub enum EditId {
     /// Writes the form, or leaves it as it was.
     Save,
     Cancel,
+    /// Chooses the form's folder in the Library (see [`super::pick`]).
+    PickDir,
+    /// Shows the icons to choose the selected place's from, and chooses one of them ([`ICONS`]), the
+    /// first being none.
+    Icon,
+    IconChoice(u16),
+    /// Chooses the selected folder's picture in the Library (see [`super::pick`]).
+    Picture,
 }
+
+/// The UI's icons that a place may have, by name (clamshell-ui's `Icon::named` draws each).
+pub const ICONS: [&str; 13] = ["gamepad", "apps", "film", "tv", "music", "star", "clock", "tools", "folder", "archive", "file", "trash", "card"];
 
 /// What the edit mode shows: the tabs' places, the sources or the runners.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -102,6 +113,8 @@ pub enum Row<'a> {
 #[derive(Debug, Clone, Default)]
 pub struct Edit {
     panel: Panel,
+    /// The icons show, to choose the selected place's from.
+    choosing_icon: bool,
     /// The form open over the sources or runners.
     form: Option<Form>,
     /// The tab, by position among the tabs.
@@ -174,6 +187,10 @@ impl Edit {
 
     pub fn panel(&self) -> Panel {
         self.panel
+    }
+
+    pub fn choosing_icon(&self) -> bool {
+        self.choosing_icon
     }
 
     pub fn form(&self) -> Option<&Form> {
@@ -249,7 +266,7 @@ impl Edit {
             EditId::Done => return true,
             EditId::Sources | EditId::Runners => self.show_panel(id),
             EditId::Tab(i) => {
-                (self.tab, self.cursor) = (usize::from(i), 0);
+                (self.tab, self.cursor, self.choosing_icon) = (usize::from(i), 0, false);
                 self.open.clear();
             }
             EditId::Up => {
@@ -292,7 +309,24 @@ impl Edit {
                 }
                 self.write(changed, out);
             }
-            EditId::Open | EditId::MoveUp | EditId::MoveDown | EditId::Field(_) | EditId::Choice(_) | EditId::Save | EditId::Cancel => {}
+            EditId::Open
+            | EditId::MoveUp
+            | EditId::MoveDown
+            | EditId::Field(_)
+            | EditId::Choice(_)
+            | EditId::Save
+            | EditId::Cancel
+            | EditId::PickDir
+            | EditId::Picture => {}
+            EditId::Icon => self.choosing_icon = !self.choosing_icon,
+            EditId::IconChoice(j) => {
+                let Some(id) = self.selected(&config).map(|p| p.id.clone()) else { return false };
+                let mut changed = config.clone();
+                let Some(p) = changed.places.iter_mut().find(|p| p.id == id) else { return false };
+                p.icon = ICONS.get(usize::from(j).wrapping_sub(1)).map(|i| (*i).to_owned());
+                self.choosing_icon = false;
+                self.write(changed, out);
+            }
             EditId::Remove => {
                 let Some(id) = self.selected(&config).map(|p| p.id.clone()) else { return false };
                 if used(&config, &id) || config.places.iter().any(|p| p.id == id && p.kind.is_some()) {
@@ -427,6 +461,14 @@ impl Edit {
         if let Some(form) = &mut self.form {
             form.item.type_in(field, text);
         }
+    }
+
+    /// Place `id`'s picture, chosen: written.
+    pub(crate) fn set_picture(&mut self, id: &str, path: &str, read: Option<&Arc<Config>>, out: &mut Out) {
+        let Some(mut changed) = self.config(read).cloned() else { return };
+        let Some(p) = changed.places.iter_mut().find(|p| p.id == id) else { return };
+        p.picture = Some(path.to_owned());
+        self.write(changed, out);
     }
 
     /// A name typed for `what`.

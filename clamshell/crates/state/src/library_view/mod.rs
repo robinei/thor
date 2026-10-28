@@ -11,6 +11,7 @@ pub mod actions;
 pub mod edit;
 pub mod files;
 pub mod form;
+pub mod pick;
 mod rules;
 
 use std::sync::Arc;
@@ -76,6 +77,8 @@ pub struct LibraryView {
     listings_shown: u32,
     /// The edit mode, while the Library is in it (see [`edit`]).
     edit: Option<edit::Edit>,
+    /// The pick going on (see [`pick`]).
+    pick: Option<pick::Pick>,
 }
 
 /// A level of a collection's place kept across a library read: the entry selected in its list (the
@@ -124,8 +127,19 @@ impl LibraryView {
         self.edit.get_or_insert_with(edit::Edit::default);
     }
 
-    /// A tap on one of the edit mode's targets (see [`edit::Edit::tap`]); Done leaves it.
+    /// A tap on one of the edit mode's targets (see [`edit::Edit::tap`]); Done leaves it. Choosing a
+    /// folder for the form starts a pick.
     pub(crate) fn edit_tap(&mut self, id: edit::EditId, out: &mut crate::out::Out) {
+        if id == edit::EditId::PickDir {
+            return self.start_pick(true, Vec::new(), pick::PickFor::SourceDir);
+        }
+        // A folder's picture: an image chosen in the Library.
+        if id == edit::EditId::Picture {
+            let read = self.library.config.as_ref();
+            let Some(place) = self.edit.as_ref().and_then(|e| e.selected(e.config(read)?)).filter(|p| p.within.is_some()) else { return };
+            let images = ["*.png", "*.jpg", "*.jpeg", "*.webp", "*.svg"].map(String::from).to_vec();
+            return self.start_pick(false, images, pick::PickFor::PlacePicture(place.id.clone()));
+        }
         let read = self.library.config.as_ref();
         if self.edit.as_mut().is_some_and(|e| e.tap(id, read, out)) {
             self.edit = None;
@@ -465,7 +479,8 @@ impl LibraryView {
 
     /// Makes collection `i` the current one, if it exists. Returns whether it does.
     pub(crate) fn set_collection(&mut self, i: usize) -> bool {
-        if i >= self.library.collections.len() {
+        // While picking, the Files tab stays.
+        if i >= self.library.collections.len() || self.pick.is_some() && Some(i) != self.files_tab() {
             return false;
         }
         self.current = i;

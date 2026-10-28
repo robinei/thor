@@ -32,7 +32,20 @@ impl LibraryView {
             LibraryViewId::Collection(i) => {
                 self.set_collection(usize::from(i));
             }
+            // Picking, a file is chosen rather than opened.
+            LibraryViewId::Launch if self.pick().is_some() && self.selected_entry().is_some_and(|g| !g.is_group()) => self.choose(out),
             LibraryViewId::Launch => self.activate(out),
+            LibraryViewId::Choose | LibraryViewId::CancelPick => {
+                if id == LibraryViewId::Choose {
+                    self.choose(out);
+                } else {
+                    self.cancel_pick();
+                }
+                // Back in the edit mode's form, on what began the pick.
+                if self.pick().is_none() && self.edit().is_some() {
+                    pointer.focus_on(crate::library_view::edit::EditId::PickDir.into());
+                }
+            }
             LibraryViewId::Favourite => self.toggle_favourite(out),
             LibraryViewId::Pin => self.ask(EntryAct::TogglePin, out),
             LibraryViewId::Continue => self.continue_selected(out),
@@ -40,8 +53,8 @@ impl LibraryView {
             LibraryViewId::File(action) => self.on_file(action, out),
             LibraryViewId::Edit(id) => {
                 self.edit_tap(id, out);
-                // Left: the focus goes back to the Library's selection.
-                if self.edit().is_none() {
+                // Left, or a pick begun: the focus goes to the Library's selection.
+                if self.edit().is_none() || self.pick().is_some() {
                     pointer.focus_library_view(self.selected());
                 }
             }

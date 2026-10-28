@@ -199,6 +199,11 @@ fn form_view(f: &mut Frame, h: f32, config: &Config, open: &Form, body: Rect) {
     let half = left.w * 0.3;
     f.text_button(EditId::Save.into(), Rect::new(left.x, y, half, detail * ACTION), detail, Tone::Fn, "Save", Align::Start);
     f.text_button(EditId::Cancel.into(), Rect::new(left.x + half, y, half, detail * ACTION), detail, Tone::Fn, "Cancel", Align::Start);
+    // A folder is chosen in the Library, as well as typed.
+    if open.item.fields().contains(&form::Field::Dir) {
+        y += detail * ACTION;
+        f.text_button(EditId::PickDir.into(), Rect::new(left.x, y, left.w * 0.6, detail * ACTION), detail, Tone::Fn, "Choose the folder…", Align::Start);
+    }
     let right = Rect::new(body.x + body.w * 0.55 + pad, body.y, body.w * 0.45 - pad, body.h);
     let Some(&field) = open.item.fields().get(open.field) else { return };
     if open.choosing {
@@ -317,6 +322,31 @@ fn details(f: &mut Frame, h: f32, edit: &Edit, config: &Config, place: &Place, r
         None => f.text_button(EditId::Cut.into(), row(y), detail, Tone::Fn, "Cut, to move it", Align::Start),
     }
     y += detail * ACTION;
+    let icon = Fmt::<64>::of(format_args!("Icon: {}", place.icon.as_deref().unwrap_or("none")));
+    f.text_button(EditId::Icon.into(), row(y), detail, Tone::Fn, &icon, Align::Start);
+    y += detail * ACTION;
+    // A tab has no picture: something in it is always selected.
+    if place.within.is_some() {
+        let file = place.picture.as_deref().map_or("none", |p| p.rsplit('/').next().unwrap_or(p));
+        let picture = Fmt::<128>::of(format_args!("Picture: {file}"));
+        f.text_button(EditId::Picture.into(), row(y), detail, Tone::Fn, &picture, Align::Start);
+        y += detail * ACTION;
+    }
+    if edit.choosing_icon() {
+        // The icons, after none, in three columns.
+        for (j, name) in std::iter::once("none").chain(edit::ICONS).enumerate() {
+            let (col, line) = ((j % 3) as f32, (j / 3) as f32);
+            let r = Rect::new(r.x + detail + col * r.w / 3.0, y + line * detail * ACTION, r.w / 3.0 - detail, detail * ACTION);
+            let current = place.icon.as_deref().unwrap_or("none") == name;
+            f.button(EditId::IconChoice(j as u16).into(), r, Look::ROW, |f| {
+                if let Some(glyph) = Icon::named(name) {
+                    f.c.icon(glyph, Rect::new(r.x, r.y + r.h * 0.2, r.h * 0.6, r.h * 0.6), Tone::Normal);
+                }
+                f.c.text_fit(Rect::new(r.x + r.h, r.y, r.w - r.h, r.h), detail, if current { Tone::Accent } else { Tone::Fn }, name, Keep::Start);
+            });
+        }
+        return;
+    }
     if place.kind.is_some() {
         f.c.text_fit(row(y), detail, Tone::Dim, "Remove: ClamShell's own tabs stay", Keep::Start);
     } else if edit::used(config, &place.id) {

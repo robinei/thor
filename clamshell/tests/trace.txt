@@ -738,6 +738,7 @@ Tick 1760000005
   Save Resume
 -- library-edit.png
 -- library-edit-cut.png
+-- library-edit-icons.png
 -- library-edit-scrolled.png
 -- library-edit-sources.png
 -- library-edit-form.png

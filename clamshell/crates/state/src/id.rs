@@ -106,6 +106,9 @@ pub enum LibraryViewId {
     File(crate::library_view::files::FileAction),
     /// The edit mode's targets (see [`crate::library_view::edit`]).
     Edit(crate::library_view::edit::EditId),
+    /// The pick's Choose and Cancel (see [`crate::library_view::pick`]).
+    Choose,
+    CancelPick,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

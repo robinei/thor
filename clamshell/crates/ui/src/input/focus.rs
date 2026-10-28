@@ -57,7 +57,7 @@ pub(crate) fn scope(s: &State) -> PadScope {
 pub(crate) fn default_focus(s: &State, screen: Screen) -> Option<Id> {
     match screen {
         Screen::Top if let Some(step) = s.setup().wizard() => Some(Id::Setup(step.first_target())),
-        Screen::Top if let Some(edit) = s.library_view().edit() => Some(EditId::Row(edit.cursor() as u16).into()),
+        Screen::Top if let Some(edit) = s.library_view().edit().filter(|_| s.library_view().pick().is_none()) => Some(EditId::Row(edit.cursor() as u16).into()),
         Screen::Top => s.library_view().selected().cloned().map(|g| Id::LibraryView(LibraryViewId::Entry(g))),
         Screen::Bottom => Some(Id::Tab(s.bottom().tab())),
     }
@@ -245,7 +245,8 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
 
 /// Whether the pad is on the Library, rather than on a view shown in its place.
 fn on_library_view(s: &State, d: &impl Drawn) -> bool {
-    s.pad().on_top() && focus_screen(s, d) == Screen::Top && s.top_view() == clamshell_state::setup::TopView::LibraryView && s.library_view().edit().is_none()
+    let editing = s.library_view().edit().is_some() && s.library_view().pick().is_none();
+    s.pad().on_top() && focus_screen(s, d) == Screen::Top && s.top_view() == clamshell_state::setup::TopView::LibraryView && !editing
 }
 
 /// L2 and R2 go to the Library's first or last entry.
@@ -296,6 +297,10 @@ pub(crate) fn back(s: &State) -> Option<Event> {
     }
     if s.keymapping().screen().is_some() {
         return Some(PointerEvent::Activate(Id::Profile(Kind::Keymap, ProfileId::Back)).into());
+    }
+    // A pick is left as it was.
+    if s.library_view().pick().is_some() && s.top_view() == clamshell_state::setup::TopView::LibraryView {
+        return Some(PointerEvent::Activate(Id::LibraryView(LibraryViewId::CancelPick)).into());
     }
     // The Library's edit mode goes out of the open folder, or else leaves.
     if let Some(edit) = s.library_view().edit().filter(|_| s.top_view() == clamshell_state::setup::TopView::LibraryView) {

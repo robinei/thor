@@ -783,3 +783,14 @@ mod tests {
         assert_eq!(Icon::battery(100, true), Icon::Battery { tenths: 10, charging: true });
     }
 }
+
+#[cfg(test)]
+mod named_tests {
+    /// Every icon a place may be given in the Library's edit mode is drawn.
+    #[test]
+    fn every_icon_a_place_may_have_is_named() {
+        for name in clamshell_state::library_view::edit::ICONS {
+            assert!(super::Icon::named(name).is_some(), "{name}");
+        }
+    }
+}

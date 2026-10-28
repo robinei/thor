@@ -50,7 +50,8 @@ pub fn top(f: &mut Frame, screen: Rect) {
     f.body = screen;
     match f.s.top_view() {
         clamshell_state::setup::TopView::LibraryView => {
-            f.out.list_rows = Some(match f.s.library_view().edit() {
+            // Picking shows the Library, in the edit mode too.
+            f.out.list_rows = Some(match f.s.library_view().edit().filter(|_| f.s.library_view().pick().is_none()) {
                 Some(edit) => library_edit::draw(f, screen, edit),
                 None => library_view::draw(f, screen),
             });

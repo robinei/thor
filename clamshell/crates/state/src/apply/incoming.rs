@@ -114,6 +114,8 @@ impl State {
             self.keymapping.back(&mut self.keyboard);
             return;
         }
+        // A pick going on is left as it was.
+        self.library_view.cancel_pick();
         let from_device = self.session.shown_builtin() == Some(clamshell_library::Builtin::Device);
         self.session.home();
         if from_device {

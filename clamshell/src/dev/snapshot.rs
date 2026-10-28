@@ -633,6 +633,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
             vec![
                 shot("library-edit.png", Top, vec![tap(edit(EditId::Tab(2)))]),
                 shot("library-edit-cut.png", Top, vec![tap(edit(EditId::Cut))]),
+                shot("library-edit-icons.png", Top, vec![tap(edit(EditId::Icon))]),
                 // The last tab, past the row's room: the row scrolls to it.
                 shot("library-edit-scrolled.png", Top, vec![tap(edit(EditId::Tab(6)))]),
                 shot("library-edit-sources.png", Top, vec![tap(edit(EditId::Sources))]),

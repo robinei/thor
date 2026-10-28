@@ -25,6 +25,8 @@ pub enum Action {
     Favourite,
     Pin,
     File(FileAction),
+    /// The pick's answer (see [`super::pick`]).
+    Choose,
 }
 
 /// Room for every action once: the five of an entry and the fourteen file actions.
@@ -80,6 +82,7 @@ impl Action {
             Action::Favourite => LibraryViewId::Favourite,
             Action::Pin => LibraryViewId::Pin,
             Action::File(a) => LibraryViewId::File(a),
+            Action::Choose => LibraryViewId::Choose,
         }
     }
 }
@@ -91,6 +94,13 @@ impl LibraryView {
         let Some((entry, selected)) = self.file_target() else {
             return actions;
         };
+        // Picking, the one action is Choose, on what the pick takes; folders open as they do.
+        if let Some(pick) = self.pick() {
+            if selected && pick.takes(entry) {
+                actions.push(Action::Choose);
+            }
+            return actions;
+        }
         if selected && !entry.is_empty_folder() {
             actions.push(Action::Open);
         }
@@ -152,6 +162,7 @@ impl LibraryView {
             Action::Favourite => self.toggle_favourite(out),
             Action::Pin => self.ask(EntryAct::TogglePin, out),
             Action::File(a) => self.on_file(a, out),
+            Action::Choose => self.choose(out),
         }
     }
 }

@@ -337,10 +337,12 @@ touches the session or the outside.
   first pins (the Library, Firefox, foot, Steam, Maintenance). An empty system's folder is dimmed with
   where its files go and its missing BIOS. Tabs with nothing in them (Films, TV, Music on a new home)
   are still left out, as before. Packaging Dolphin, Azahar, ARMSX2, DOSBox Pure and FBNeo is still to do.
-- [ ] 6. **The editors**: Library's edit mode with its tabs and folders, Sources and Runners; the keyboard's field keys;
+- [x] 6. **The editors**: Library's edit mode with its tabs and folders, Sources and Runners; the keyboard's field keys;
   the picker for ClamShell's own screens.
-  In parts: 6a tabs and folders (Rename, New tab and folder, Cut and Paste, Remove; entered from the
-  Device view) [done]; 6b icons and pictures; 6c Sources; 6d Runners; 6e the keyboard's field keys; 6f
-  the picker. Under it all, library.json is shared data (clamshell-library's `config`), carried by the
+  In parts, all done: 6a tabs and folders (Rename, New tab and folder, Cut and Paste, Remove; entered
+  from the Device view); 6c Sources and 6d Runners, in one form generic over either; 6e the snippets
+  beside the keyboard; 6f the picker (Library's pick mode, the Files tab alone, Choose); 6b icons (the
+  UI's, chosen in the details) and folders' pictures (picked). The tab row scrolls when its tabs don't
+  fit. Under it all, library.json is shared data (clamshell-library's `config`), carried by the
   library as read and written back by `WriteLibrary`.
 - [ ] 7. **The portal**: Open, then Save, then the session's environment.
