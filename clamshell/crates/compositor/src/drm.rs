@@ -926,7 +926,7 @@ fn layers_committed(screen: &mut Screen) {
 /// committed again.
 fn layers_failed(screen: &mut Screen, error: &Error) {
     if let Some(layers) = &mut screen.layers {
-        layers.fail(error, &format!("{:?}", screen.role));
+        layers.fail(&format!("a commit with them failed: {error}").into(), &format!("{:?}", screen.role));
     }
     screen.dirty = true;
     screen.layers_dirty = true;
@@ -951,7 +951,13 @@ fn present_layers(screen: &mut Screen, server: &mut Server, cursor: &crate::curs
 /// Returns whether they show something in it, so that a refusal of it may be theirs.
 fn prepare_layers(screen: &mut Screen, server: &mut Server, cursor: &crate::cursor::Cursor) -> bool {
     if let Some(layers) = &mut screen.layers {
+        let failed = layers.failed();
         layers.prepare(server, ui_screen(screen.role), cursor);
+        if layers.failed() && !failed {
+            // Off from now on: composed, from the next frame.
+            screen.dirty = true;
+            screen.layers_dirty = true;
+        }
     }
     screen.layers.as_ref().is_some_and(PlaneLayers::shows)
 }

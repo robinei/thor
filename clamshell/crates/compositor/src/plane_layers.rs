@@ -256,9 +256,15 @@ impl PlaneLayers {
     pub(crate) fn prepare(&mut self, server: &mut crate::server::Server, screen: Screen, cursor: &Cursor) {
         let (height, quarter, size) = (self.height, self.quarter, self.size);
         let area = server.core.overlay_area(screen);
+        let mut unmade = None;
         if let Some(overlay) = &mut self.overlay {
             let plane = &mut overlay.plane;
-            plane.drew = false;
+            // A buffer drawn for a commit that didn't go through holds a frame nobody saw: drawn whole next.
+            if std::mem::take(&mut plane.drew)
+                && let Some(buffers) = &mut overlay.buffers
+            {
+                buffers.failed();
+            }
             plane.wanted = None;
             if self.planed.overlay
                 && let Some(area) = area
@@ -270,10 +276,10 @@ impl PlaneLayers {
                             log::info!("plane layers: the {screen:?} screen's overlay buffers made, {:.1} MB", megabytes(size));
                             overlay.buffers = Some(buffers);
                         }
-                        Err(error) => log::warn!("plane layers: the {screen:?} screen's overlay buffers: {error}"),
+                        Err(error) => unmade = Some(error),
                     }
                 }
-                // Without its buffers (they couldn't be made, logged), it shows nothing this turn.
+                // Without its buffers it shows nothing this turn; the planes are off after (see below).
                 let drawn = overlay.buffers.as_mut().map(|buffers| buffers.draw(&mut server.core, Layer::Overlay(screen)));
                 let fb = match drawn {
                     Some(Some(fb)) => {
@@ -291,6 +297,9 @@ impl PlaneLayers {
                 }
                 self.area = Some(area);
             }
+        }
+        if let Some(error) = unmade {
+            self.fail(&format!("its overlay buffers couldn't be made: {error}").into(), &format!("{screen:?}"));
         }
         if let Some(plane) = &mut self.cursor {
             plane.plane.drew = false;
@@ -421,6 +430,7 @@ impl PlaneLayers {
             {
                 buffers.committed();
             }
+            overlay.plane.drew = false;
             overlay.plane.shown = overlay.plane.wanted;
         }
         if let Some(cursor) = &mut self.cursor {
@@ -439,10 +449,16 @@ impl PlaneLayers {
         self.overlay.as_ref().is_some_and(|o| wanted(&o.plane)) || self.cursor.as_ref().is_some_and(|c| wanted(&c.plane))
     }
 
-    /// The display engine refused a commit with them: off from now on, logged; the screen composes them.
+    /// Whether they are off for good (see [`PlaneLayers::fail`]).
+    pub(crate) fn failed(&self) -> bool {
+        self.failed
+    }
+
+    /// The display engine refused a commit with them, or the overlay's buffers couldn't be made: off from
+    /// now on, logged; the screen composes them.
     pub(crate) fn fail(&mut self, error: &Error, role: &str) {
         if !self.failed {
-            log::warn!("plane layers: the {role} screen's commit with its overlay and cursor planes failed ({error}): they are composed from now on");
+            log::warn!("plane layers: the {role} screen's overlay and cursor planes: {error}: they are composed from now on");
         }
         self.failed = true;
         self.planed = Planed::default();
