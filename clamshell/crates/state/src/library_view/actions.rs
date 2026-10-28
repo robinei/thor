@@ -113,7 +113,10 @@ impl LibraryView {
         }
         if selected && entry.browsed.is_none() {
             actions.push(Action::Favourite);
-            actions.push(Action::Pin);
+            // The Library is always on the dock (see `crate::session::dock`).
+            if &*entry.id != clamshell_library::Builtin::Library.id() {
+                actions.push(Action::Pin);
+            }
         }
         for &a in self.file_actions().as_slice() {
             actions.push(a);

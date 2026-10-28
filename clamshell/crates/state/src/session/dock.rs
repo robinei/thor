@@ -154,11 +154,12 @@ impl Dock {
                 added = true;
             }
         }
-        // The built-ins that run: the Library first, unless it was pinned elsewhere.
+        // The built-ins that run: the Library always pinned, first unless it was moved; the others where
+        // a running entry goes.
         for b in Builtin::ALL.into_iter().filter(|b| session.runs_builtin(*b)) {
             if self.position(b.id()).is_none() {
-                let at = if b == Builtin::Library { 0 } else { self.items.len() };
-                self.items.insert(at, DockItem { id: b.id().into(), pinned: false });
+                let (at, pinned) = if b == Builtin::Library { (0, true) } else { (self.items.len(), false) };
+                self.items.insert(at, DockItem { id: b.id().into(), pinned });
                 added = true;
             }
         }
@@ -385,7 +386,7 @@ mod tests {
         let mut s = state();
         tap(&mut s, Id::LibraryView(LibraryViewId::Collection(2)));
         let fx = s.applied(LibraryViewEvent::TogglePin.into());
-        assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids))] if ids.iter().map(|i| &**i).eq(["tv:Cosmos"])), "{fx:?}");
+        assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids))] if ids.iter().map(|i| &**i).eq(["builtin:library", "tv:Cosmos"])), "{fx:?}");
         assert_eq!(entry(&s, 0), Some("tv:Cosmos"));
         assert!(s.dock().is_pinned("tv:Cosmos"));
         // A tap on it opens it in the Library.
@@ -413,7 +414,7 @@ mod tests {
         library.entries.retain(|g| &*g.id != "ff6");
         library.collections.iter_mut().for_each(|c| c.entries.clear());
         let fx = s.applied(Event::Library(Box::new(library)));
-        assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.is_empty())), "{fx:?}");
+        assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.iter().map(|i| &**i).eq(["builtin:library"]))), "{fx:?}");
     }
 
     /// Before the library is read, every pin stays: the entries aren't known yet, not gone. They are
@@ -425,12 +426,12 @@ mod tests {
         assert!(s.dock().pinned_ids().map(|i| &**i).eq(["ff6", "gone:x"]));
         assert!(!s.applied(Event::Start).iter().any(|e| matches!(e, Effect::Save(Save::Dock(_)))));
         let fx = s.applied(Event::Library(Box::new(clamshell_library::demo::library())));
-        assert!(s.dock().pinned_ids().map(|i| &**i).eq(["ff6"]));
-        assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.len() == 1)), "{fx:?}");
+        assert!(s.dock().pinned_ids().map(|i| &**i).eq(["builtin:library", "ff6"]));
+        assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.len() == 2)), "{fx:?}");
     }
 
-    /// The Library always runs, so its tile is always there, first unless pinned elsewhere. It stays
-    /// pinned once pinned, and its Quit does nothing.
+    /// The Library always runs, so its tile is always there, pinned: first unless it was moved, and where
+    /// it was moved after a restart. It can't be unpinned, and its Quit does nothing.
     #[test]
     fn the_librarys_tile_is_always_there() {
         let mut s = State::new(Init { dock: crate::session::dock::Dock::pinned(vec!["ff6".into(), "builtin:library".into()]), ..init() });
@@ -441,12 +442,10 @@ mod tests {
         assert!(s.dock().is_pinned("builtin:library"), "stays pinned");
         s.applied(Event::Entry("builtin:library".into(), EntryAct::Quit));
         assert_eq!(ids(&s), ["ff6", "builtin:library"]);
-        let s = {
-            let mut s = state();
-            s.applied(Event::tick(1));
-            s
-        };
-        assert_eq!(ids(&s), ["builtin:library"], "unpinned: first");
+        let mut s = state();
+        s.applied(Event::tick(1));
+        assert_eq!(ids(&s), ["builtin:library"], "not in the pins saved: first");
+        assert!(s.dock().is_pinned("builtin:library"), "and pinned, so a move is saved");
     }
 
     #[test]
@@ -457,7 +456,7 @@ mod tests {
         long(&mut s, dock(0));
         tap(&mut s, Id::Dock(DockId::Move));
         let fx = tap(&mut s, Id::Dock(DockId::Step(keymap::Dir::Right)));
-        assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids))] if ids.iter().map(|i| &**i).eq(["ff6", "zelda-lttp"])), "{fx:?}");
+        assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids))] if ids.iter().map(|i| &**i).eq(["builtin:library", "ff6", "zelda-lttp"])), "{fx:?}");
         assert_eq!(tap(&mut s, Id::Dock(DockId::Step(keymap::Dir::Right))), vec![], "at the end");
         tap(&mut s, Id::Dock(DockId::Done));
         assert_eq!(s.dock().moving(), None);
@@ -476,13 +475,14 @@ mod tests {
             _ => vec![format!("{fx:?}")],
         };
         let step = |s: &mut State, dir| tap(s, Id::Dock(DockId::Step(dir)));
-        assert_eq!(order(&step(&mut s, keymap::Dir::Up)), ["zelda-lttp", "hades", "metroid-zm", "mk-ds", "ff6", "dark-souls"], "a row up");
-        assert_eq!(order(&step(&mut s, keymap::Dir::Up)), ["hades", "zelda-lttp", "metroid-zm", "mk-ds", "ff6", "dark-souls"], "past the start: first");
+        // (The Library, pinned, is first on the dock, and one of the pins.)
+        let lib = "builtin:library";
+        assert_eq!(order(&step(&mut s, keymap::Dir::Up)), [lib, "zelda-lttp", "hades", "metroid-zm", "mk-ds", "ff6", "dark-souls"], "a row up");
+        assert_eq!(order(&step(&mut s, keymap::Dir::Up)), ["hades", lib, "zelda-lttp", "metroid-zm", "mk-ds", "ff6", "dark-souls"], "past the start: first");
         assert_eq!(step(&mut s, keymap::Dir::Left), vec![], "first");
         assert_eq!(step(&mut s, keymap::Dir::Up), vec![]);
-        // (The Library, unpinned, is first on the dock: four tiles on is after mk-ds.)
-        assert_eq!(order(&step(&mut s, keymap::Dir::Down)), ["zelda-lttp", "metroid-zm", "mk-ds", "hades", "ff6", "dark-souls"], "a row down");
-        assert_eq!(order(&step(&mut s, keymap::Dir::Down)), ["zelda-lttp", "metroid-zm", "mk-ds", "ff6", "dark-souls", "hades"], "past the end: last");
+        assert_eq!(order(&step(&mut s, keymap::Dir::Down)), [lib, "zelda-lttp", "metroid-zm", "mk-ds", "hades", "ff6", "dark-souls"], "a row down");
+        assert_eq!(order(&step(&mut s, keymap::Dir::Down)), [lib, "zelda-lttp", "metroid-zm", "mk-ds", "ff6", "dark-souls", "hades"], "past the end: last");
     }
 
     /// The menu's Start with ClamShell toggles and saves the entries started; Suspend freezes a running

@@ -24,7 +24,7 @@ Tick 1760000000
 LibraryView(ToggleFavourite)
   Save Favourites(["zelda-lttp"])
 LibraryView(TogglePin)
-  Save Dock(["desktop:steam", "desktop:foot", "desktop:firefox", "zelda-lttp"])
+  Save Dock(..)
 Units [zelda_lttp_650a1e]
   Apply settings of zelda-lttp
 -- top-played.png

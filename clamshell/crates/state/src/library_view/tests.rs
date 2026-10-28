@@ -285,7 +285,7 @@ fn the_details_actions_toggle_the_favourite_and_the_pin() {
     let fx = tap(&mut s, Id::LibraryView(LibraryViewId::Favourite));
     assert_eq!(fx, vec![Effect::Save(Save::Favourites(vec!["zelda-lttp".into()]))]);
     let fx = tap(&mut s, Id::LibraryView(LibraryViewId::Pin));
-    assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids))] if ids.len() == 1), "{fx:?}");
+    assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids))] if ids.len() == 2), "{fx:?}");
     assert!(s.dock().is_pinned("zelda-lttp"));
 }
 
