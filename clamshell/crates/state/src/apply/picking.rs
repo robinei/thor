@@ -67,6 +67,12 @@ impl State {
         {
             let Some(request) = self.portal.asked.get(i).map(|w| w.request.clone()) else { break };
             let id = request.id;
+            if let crate::portal::Asks::Save { name } = &request.asks
+                && !name.is_empty()
+                && !crate::library_view::pick::file_name(name)
+            {
+                out.log(crate::LogLevel::Info, format!("portal: request {id}: {name:?} isn't a file's name: Save here waits for one typed"));
+            }
             if self.library_view.start_pick(request.takes(), PickFor::App { request: id, title: request.title.clone() }) {
                 if let Some(folder) = &request.folder
                     && let Err(e) = self.library_view.go_to(folder)

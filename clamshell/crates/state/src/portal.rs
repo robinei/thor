@@ -82,6 +82,7 @@ pub(crate) struct Waiting {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::library_view::pick::SaveHere;
     use crate::testkit::*;
     use crate::{Effect, Event, Id, LibraryViewId, WindowEvent};
 
@@ -207,11 +208,11 @@ mod tests {
         let mut s = state();
         let here = Id::LibraryView(LibraryViewId::SaveHere);
         save(&mut s, 1, Asks::Save { name: "notes.txt".into() });
-        assert!(s.library_view().save_here().is_none() && chosen(&tap(&mut s, here.clone())).is_none(), "no folder open");
+        assert!(s.library_view().save_here() == SaveHere::Off && chosen(&tap(&mut s, here.clone())).is_none(), "no folder open");
         tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
-        assert_eq!(s.library_view().save_here(), Some((vec!["/home/thor/notes.txt".into()], true)));
+        assert_eq!(s.library_view().save_here(), SaveHere::Replaces { first: "notes.txt", more: 0, asked: false });
         assert!(chosen(&tap(&mut s, here.clone())).is_none(), "asks again: notes.txt is there");
-        assert!(s.library_view().pick().unwrap().confirming(std::path::Path::new("/home/thor/notes.txt")));
+        assert_eq!(s.library_view().save_here(), SaveHere::Replaces { first: "notes.txt", more: 0, asked: true });
         // Another name: saved at once.
         tap(&mut s, Id::LibraryView(LibraryViewId::SaveAs));
         assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some("notes.txt"), "the name on the keyboard");
@@ -228,7 +229,35 @@ mod tests {
         assert_eq!(chosen(&tap(&mut s, choose)), Some((2, vec!["/home/thor/notes.txt".into()])));
         // Several files: each in the folder.
         save(&mut s, 3, Asks::SaveFiles { names: vec!["a.txt".into(), "b.txt".into()] });
-        assert_eq!(chosen(&tap(&mut s, here)), Some((3, vec!["/home/thor/a.txt".into(), "/home/thor/b.txt".into()])));
+        assert_eq!(chosen(&tap(&mut s, here.clone())), Some((3, vec!["/home/thor/a.txt".into(), "/home/thor/b.txt".into()])));
+        // Several, one of them there: Replace names that one.
+        save(&mut s, 4, Asks::SaveFiles { names: vec!["a.txt".into(), "notes.txt".into()] });
+        assert_eq!(s.library_view().save_here(), SaveHere::Replaces { first: "notes.txt", more: 0, asked: false });
+        tap(&mut s, Id::LibraryView(LibraryViewId::CancelPick));
+        // A hidden name may be there while hidden files aren't listed: asked again first.
+        save(&mut s, 5, Asks::Save { name: ".bashrc".into() });
+        assert_eq!(s.library_view().save_here(), SaveHere::Replaces { first: ".bashrc", more: 0, asked: false });
+        // A name that isn't one file's: nothing, until another is typed.
+        for name in ["../x", "/etc/x", "a/b", "..", ""] {
+            s.library_view.save_named(name);
+            assert_eq!(s.library_view().save_here(), SaveHere::Off, "{name:?}");
+            assert!(chosen(&tap(&mut s, here.clone())).is_none());
+        }
+        s.library_view.save_named("fine.txt");
+        assert_eq!(s.library_view().save_here(), SaveHere::Saves);
+    }
+
+    /// Until the open folder is listed, what is in it isn't known: Save here waits for its listing.
+    #[test]
+    fn a_save_waits_for_the_folder_to_be_listed() {
+        let mut s = state();
+        let folder = Some(std::path::PathBuf::from("/home/thor/Pictures"));
+        s.applied(Event::Portal(PortalEvent::Asked(FileRequest { id: 1, asks: Asks::Save { name: "a.png".into() }, folder, ..request() })));
+        assert_eq!(s.library_view().group().map(|g| g.title.as_str()), Some("Pictures"));
+        assert_eq!(s.library_view().save_here(), SaveHere::Off, "not listed");
+        let listed = crate::library_view::files::FilesEvent::Listed { folder: "browse:Files/Home/Pictures".into(), entries: vec![] };
+        s.applied(Event::Files(listed));
+        assert_eq!(s.library_view().save_here(), SaveHere::Saves);
     }
 
     /// Without a Files tab to pick in, a request is answered at once with nothing, which is logged.

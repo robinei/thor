@@ -27,6 +27,24 @@ pub struct Pick {
     back: usize,
 }
 
+/// What Save here would do (see [`LibraryView::save_here`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveHere<'a> {
+    /// Nothing: no folder that things may be put in is open, it isn't listed yet, or a name isn't one
+    /// file's (empty, with a `/`, or `.` or `..`).
+    Off,
+    /// Save, nothing being in the way.
+    Saves,
+    /// Save over `first`, and `more` others, that are or may be there: once `asked` again.
+    Replaces { first: &'a str, more: usize, asked: bool },
+}
+
+/// Whether `name` names one file in a folder: not empty, no `/`, not `.` or `..`.
+pub fn file_name(name: &str) -> bool {
+    let mut parts = Path::new(name).components();
+    matches!((parts.next(), parts.next()), (Some(std::path::Component::Normal(_)), None)) && !name.contains('/')
+}
+
 /// What a pick takes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Takes {
@@ -188,27 +206,50 @@ impl LibraryView {
         }
     }
 
-    /// Where Save here saves, and whether a file of a name saved is there already: the open folder, if
-    /// things may be put in it, with the name typed or each of the names asked for.
-    pub fn save_here(&self) -> Option<(Vec<PathBuf>, bool)> {
-        let names: Vec<&str> = match &self.pick.as_ref()?.takes {
-            Takes::Save { name, .. } => vec![name.as_str()],
-            Takes::SaveFiles(names) => names.iter().map(String::as_str).collect(),
-            _ => return None,
-        };
-        let dir = self.open_dir().filter(|_| names.iter().all(|n| !n.is_empty()))?;
-        let there = self.group().is_some_and(|g| g.items.iter().filter_map(|&i| self.library.entries.get(i)).any(|e| names.contains(&e.title.as_str())));
-        Some((names.iter().map(|n| dir.join(n)).collect(), there))
+    /// The names a save is of: the one typed, or each of those asked for; none if the pick isn't a save.
+    fn save_names(&self) -> &[String] {
+        match self.pick.as_ref().map(|p| &p.takes) {
+            Some(Takes::Save { name, .. }) => std::slice::from_ref(name),
+            Some(Takes::SaveFiles(names)) => names,
+            _ => &[],
+        }
     }
 
-    /// Save here: answered with the paths in the open folder; over a file that is there, once asked
-    /// again (see [`Pick::confirming`]).
+    /// What Save here would do, from what is known: the open folder, whether it is listed, whether hidden
+    /// files are, and the names (see [`SaveHere`]).
+    pub fn save_here(&self) -> SaveHere<'_> {
+        let names = self.save_names();
+        let folder = self.group().filter(|g| g.browsed.as_ref().is_some_and(|b| b.listed));
+        if names.is_empty() || !names.iter().all(|n| file_name(n)) || self.open_dir().is_none() {
+            return SaveHere::Off;
+        }
+        // Until it is listed, what is in it isn't known.
+        let Some(folder) = folder else { return SaveHere::Off };
+        let listed = |n: &str| folder.items.iter().filter_map(|&i| self.library.entries.get(i)).any(|e| e.title == n);
+        // A hidden file isn't listed while hidden files don't show: it may be there.
+        let hidden_unknown = !self.files.hidden();
+        let mut there = names.iter().filter(|n| listed(n) || (hidden_unknown && n.starts_with('.')));
+        let Some(first) = there.next() else { return SaveHere::Saves };
+        let asked = self.open_dir().zip(self.pick.as_ref()).is_some_and(|(dir, p)| p.confirming(&dir.join(first)));
+        SaveHere::Replaces { first, more: there.count(), asked }
+    }
+
+    /// Save here: answered with the paths in the open folder; over a file that is or may be there, once
+    /// asked again (see [`SaveHere::Replaces`]).
     pub(crate) fn save(&mut self) {
-        let Some((paths, there)) = self.save_here() else { return };
-        let Some(first) = paths.first().cloned() else { return };
-        if there && self.pick.as_mut().is_some_and(|p| p.confirm.replace(first.clone()) != Some(first)) {
+        let replaces = match self.save_here() {
+            SaveHere::Off => return,
+            SaveHere::Saves => None,
+            SaveHere::Replaces { first, asked, .. } => (!asked).then(|| first.to_owned()),
+        };
+        let Some(dir) = self.open_dir() else { return };
+        if let Some(first) = replaces {
+            if let Some(pick) = &mut self.pick {
+                pick.confirm = Some(dir.join(first));
+            }
             return;
         }
+        let paths = self.save_names().iter().map(|n| dir.join(n)).collect();
         self.answer(paths);
     }
 

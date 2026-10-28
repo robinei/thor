@@ -82,17 +82,18 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
         f.text_button(Id::LibraryView(LibraryViewId::CancelPick), cancel, size, Tone::Fn, "Cancel", crate::gfx::Align::End);
         let mut end = cancel.x;
         if pick.saves() {
+            use clamshell_state::library_view::pick::SaveHere;
             let here = s.library_view().save_here();
-            let label = match &here {
-                Some((paths, true)) if paths.first().is_some_and(|p| pick.confirming(p)) => {
-                    let name = paths.first().and_then(|p| p.file_name()).map(|n| n.to_string_lossy());
-                    Fmt::<192>::of(format_args!("Replace {}?", name.as_deref().unwrap_or("")))
-                }
+            let label = match here {
+                SaveHere::Replaces { first, more: 0, asked: true } => Fmt::<192>::of(format_args!("Replace {first}?")),
+                SaveHere::Replaces { first, more, asked: true } => Fmt::of(format_args!("Replace {first} and {more} more?")),
                 _ => Fmt::of(format_args!("Save here")),
             };
-            let save_w = f.c.text_width(size, &label) + pad;
+            // At most half the room between the tab and Cancel: a long name is cut, not drawn over the rest.
+            let room = end - tabs_end - pad * 3.0;
+            let save_w = (f.c.text_width(size, &label) + pad).min(room * 0.5);
             let save = Rect::new(end - pad * 2.0 - save_w, 0.0, save_w, tabs_h);
-            let tone = if here.is_some() { Tone::Accent } else { Tone::Dim };
+            let tone = if here == SaveHere::Off { Tone::Dim } else { Tone::Accent };
             f.text_button(Id::LibraryView(LibraryViewId::SaveHere), save, size, tone, &label, crate::gfx::Align::End);
             end = save.x;
         }
