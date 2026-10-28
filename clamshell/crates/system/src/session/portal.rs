@@ -37,9 +37,10 @@ const BUS_PATH: &str = "/org/freedesktop/DBus";
 /// How long to wait before trying the bus, or the name, again.
 const RETRY: Duration = Duration::from_secs(5);
 
-/// The portal's responses: chosen, and cancelled by the person.
+/// The portal's responses: chosen, cancelled by the person, and ended otherwise (the app gave it up).
 const CHOSEN: u32 = 0;
 const CANCELLED: u32 = 1;
+const ENDED: u32 = 2;
 
 /// The last request number given out. It outlives the thread, so that one started again after a panic
 /// doesn't give out a number the state still holds.
@@ -76,14 +77,18 @@ impl From<dbus::Error> for Error {
 
 lost_on!(Error: dbus::Error);
 
-/// A request kept until the state answers it.
+/// A request kept until the state answers it or the app gives it up. What is done with it follows from
+/// what is known of it ([`Server::tend`]).
 struct Pending {
-    id: u32,
-    /// The object path xdg-desktop-portal closes it by.
     handle: String,
     call: Message,
-    /// The request, until it is sent on (`run_while_up`), the asking process found first.
-    unsent: Option<FileRequest>,
+    request: FileRequest,
+    /// The asking process has been looked for.
+    asker_found: bool,
+    /// The state has it ([`PortalEvent::Asked`]).
+    sent: bool,
+    /// xdg-desktop-portal closed it: the app gave it up.
+    closed: bool,
 }
 
 type Requests = Arc<Mutex<Vec<Pending>>>;
@@ -108,11 +113,11 @@ impl<S: Sink + Clone> Service for Server<S> {
     const NAME: &'static str = "portal";
 
     fn connect(&mut self) -> Result<Bus, Error> {
-        // The calls of a connection that failed can't be answered: their pickers close.
+        // The calls of a connection that failed can't be answered: the pickers of those the state has close.
         for gone in std::mem::take(&mut *lock(&self.requests)) {
-            log::info!("portal: request {} gone with the bus", gone.id);
-            if self.sink.send(Event::Portal(PortalEvent::Closed(gone.id))).is_err() {
-                log::debug!("portal: request {} not closed, the UI is gone", gone.id);
+            log::info!("portal: request {} gone with the bus", gone.request.id);
+            if gone.sent && self.sink.send(Event::Portal(PortalEvent::Closed(gone.request.id))).is_err() {
+                log::debug!("portal: request {} not closed, the UI is gone", gone.request.id);
             }
         }
         let mut bus = Bus::session()?;
@@ -124,8 +129,8 @@ impl<S: Sink + Clone> Service for Server<S> {
         log::info!("portal: {NAME} is ours");
         let requests = self.requests.clone();
         bus.serve_later(Box::new(move |call| keep(call, &requests)));
-        let (sink, requests) = (self.sink.clone(), self.requests.clone());
-        bus.serve(Box::new(move |call| answer(call, &requests, &sink)));
+        let requests = self.requests.clone();
+        bus.serve(Box::new(move |call| answer(call, &requests)));
         Ok(bus)
     }
 
@@ -138,9 +143,15 @@ impl<S: Sink + Clone> Service for Server<S> {
                     Err(TryRecvError::Disconnected) => return Ok(()),
                 }
             }
-            // Keeps or answers the calls that came, and sends on the requests kept.
-            bus.signals()?;
-            self.send_kept(&mut bus);
+            // Keeps or answers the calls that came, and tends the requests kept; again while that brings
+            // anything new, since the bus calls it makes read what comes meanwhile into libdbus' queue,
+            // which polling the socket doesn't see.
+            loop {
+                bus.signals()?;
+                if !self.tend(&mut bus)? {
+                    break;
+                }
+            }
             // Sleep until a command or a call comes.
             let mut fds = [
                 rustix::event::PollFd::from_borrowed_fd(self.bell.fd(), rustix::event::PollFlags::IN),
@@ -161,29 +172,46 @@ impl<S: Sink + Clone> Service for Server<S> {
 }
 
 impl<S: Sink> Server<S> {
-    /// Sends on the requests kept since the last look, each with the asking process and its parents. They
-    /// are found here and not as the call is kept, when the bus can't be called.
-    fn send_kept(&mut self, bus: &mut Bus) {
-        let unsent: Vec<(String, FileRequest)> = lock(&self.requests).iter_mut().filter_map(|p| Some((p.handle.clone(), p.unsent.take()?))).collect();
-        for (handle, mut request) in unsent {
-            let pid = sender(&handle).and_then(|name| {
+    /// Does what the requests kept call for, and says whether it called the bus, which may have read
+    /// more in. First each new one's asking process is found, by the bus (not as the call is kept, when
+    /// the bus can't be called); then, with no bus call between, so the state hears of a request before
+    /// its end: one not closed is sent on, and one closed is answered as ended (response 2), the state
+    /// told if it has it.
+    fn tend(&mut self, bus: &mut Bus) -> dbus::Result<bool> {
+        let new: Vec<(u32, String)> = lock(&self.requests).iter().filter(|p| !p.asker_found && !p.closed).map(|p| (p.request.id, p.handle.clone())).collect();
+        for (id, handle) in &new {
+            let pid = sender(handle).and_then(|name| {
                 bus.call::<(u32,)>(BUS_NAME, BUS_PATH, BUS_NAME, "GetConnectionUnixProcessID", (name.as_str(),))
-                    .inspect_err(|e| log::warn!("portal: request {}: the asking process of {name}: {e}", request.id))
+                    .inspect_err(|e| log::warn!("portal: request {id}: the asking process of {name}: {e}"))
                     .ok()
             });
-            request.asker = pid.map(|(pid,)| crate::os::sys::lineage(pid)).unwrap_or_default();
-            log::info!(
-                "portal: request {}: {:?}, {:?}, asked by {:?}, from {:?}",
-                request.id,
-                request.asks,
-                request.patterns,
-                request.asker.first(),
-                request.folder
-            );
-            if self.sink.send(Event::Portal(PortalEvent::Asked(request))).is_err() {
-                log::debug!("portal: a request not shown, the UI is gone");
+            let asker = pid.map(|(pid,)| crate::os::sys::lineage(pid)).unwrap_or_default();
+            if let Some(p) = lock(&self.requests).iter_mut().find(|p| p.request.id == *id) {
+                (p.request.asker, p.asker_found) = (asker, true);
             }
         }
+        let mut replies = Vec::new();
+        let mut requests = lock(&self.requests);
+        for p in requests.iter_mut().filter(|p| p.asker_found && !p.sent && !p.closed) {
+            let r = &p.request;
+            log::info!("portal: request {}: {:?}, {:?}, asked by {:?}, from {:?}", r.id, r.asks, r.patterns, r.asker.first(), r.folder);
+            if self.sink.send(Event::Portal(PortalEvent::Asked(r.clone()))).is_err() {
+                log::debug!("portal: request {} not shown, the UI is gone", r.id);
+            }
+            p.sent = true;
+        }
+        for p in requests.iter().filter(|p| p.closed) {
+            if p.sent && self.sink.send(Event::Portal(PortalEvent::Closed(p.request.id))).is_err() {
+                log::debug!("portal: request {} not closed, the UI is gone", p.request.id);
+            }
+            replies.push(p.call.return_with_args((ENDED, PropMap::new())));
+        }
+        requests.retain(|p| !p.closed);
+        drop(requests);
+        for reply in replies {
+            bus.send(reply)?;
+        }
+        Ok(!new.is_empty())
     }
 }
 
@@ -223,24 +251,19 @@ fn keep(call: Message, requests: &Requests) -> Option<Message> {
     let id = LAST_ID.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
     let request = request(id, &member, title, &options);
     log::info!("portal: request {id}: a {member} call from {app:?}");
-    lock(requests).push(Pending { id, handle: handle.to_string(), call, unsent: Some(request) });
+    lock(requests).push(Pending { handle: handle.to_string(), call, request, asker_found: false, sent: false, closed: false });
     None
 }
 
 /// The reply to a call that isn't kept, or none for one that isn't served.
-fn answer(call: &Message, requests: &Requests, sink: &impl Sink) -> Option<Message> {
+fn answer(call: &Message, requests: &Requests) -> Option<Message> {
     match (call.interface().as_deref()?, &*call.member()?) {
+        // Ended by the worker ([`Server::tend`]).
         (REQUEST, "Close") => {
             let path = call.path()?.to_string();
-            let mut requests = lock(requests);
-            if let Some(i) = requests.iter().position(|r| r.handle == path) {
-                let given_up = requests.swap_remove(i);
-                let id = given_up.id;
-                log::info!("portal: request {id} given up by the app");
-                // One not sent on yet is just dropped: the state never had it.
-                if given_up.unsent.is_none() && sink.send(Event::Portal(PortalEvent::Closed(id))).is_err() {
-                    log::debug!("portal: request {id} not closed, the UI is gone");
-                }
+            if let Some(p) = lock(requests).iter_mut().find(|p| p.handle == path) {
+                log::info!("portal: request {} given up by the app", p.request.id);
+                p.closed = true;
             }
             Some(call.method_return())
         }
@@ -255,10 +278,10 @@ fn reply(bus: &mut Bus, requests: &Requests, command: Command) -> dbus::Result<(
     let Command::Answer { id, paths } = command;
     let pending = {
         let mut requests = lock(requests);
-        requests.iter().position(|r| r.id == id).map(|i| requests.swap_remove(i))
+        requests.iter().position(|r| r.request.id == id && !r.closed).map(|i| requests.swap_remove(i))
     };
     let Some(pending) = pending else {
-        log::debug!("portal: request {id} answered, but it was given up");
+        log::info!("portal: request {id} answered, but the app had given it up");
         return Ok(());
     };
     let message = if paths.is_empty() {
@@ -399,7 +422,7 @@ mod live {
         let r = requests.clone();
         server.serve_later(Box::new(move |call| keep(call, &r)));
         let r = requests.clone();
-        server.serve(Box::new(move |call| answer(call, &r, &sink)));
+        server.serve(Box::new(move |call| answer(call, &r)));
         let mut portal = Server { sink: events_sink, bell: Bell::new().unwrap(), requests: requests.clone() };
         let caller = {
             let name = name.clone();
@@ -415,7 +438,7 @@ mod live {
         };
         let asked = loop {
             server.wait(Some(Duration::from_millis(100))).unwrap();
-            portal.send_kept(&mut server);
+            portal.tend(&mut server).unwrap();
             if let Ok(Event::Portal(PortalEvent::Asked(asked))) = events.try_recv() {
                 break asked;
             }
@@ -428,5 +451,24 @@ mod live {
         assert_eq!(response, CHOSEN);
         let uris: Vec<String> = results.get("uris").and_then(|v| v.0.as_iter()).unwrap().filter_map(|u| u.as_str().map(str::to_owned)).collect();
         assert_eq!(uris, ["file:///h/a%20b.sav"]);
+        // Another, closed by its handle as xdg-desktop-portal does when the app gives it up: its call is
+        // answered as ended.
+        let closed = std::thread::spawn(move || {
+            let mut client = Bus::session().unwrap().with_timeout(Duration::from_secs(10));
+            let handle = dbus::Path::from("/org/freedesktop/portal/desktop/request/1_1/closed");
+            client.call::<(u32, PropMap)>(&name, PATH, FILE_CHOOSER, "OpenFile", (handle, "app", "", "", PropMap::new())).unwrap()
+        });
+        while lock(&requests).is_empty() {
+            server.wait(Some(Duration::from_millis(100))).unwrap();
+        }
+        if let Some(p) = lock(&requests).first_mut() {
+            p.closed = true;
+        }
+        while !closed.is_finished() {
+            server.wait(Some(Duration::from_millis(100))).unwrap();
+            portal.tend(&mut server).unwrap();
+        }
+        assert_eq!(closed.join().unwrap().0, ENDED);
+        assert!(lock(&requests).is_empty());
     }
 }
