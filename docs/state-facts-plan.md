@@ -81,12 +81,15 @@ Each ends in commits that pass `tools/check.sh` and the randomized test at 3000 
   settle rather than two or three times.
   Done but for the pad's route: it is recomputed each settle and checked to converge, and its change is
   the focus ring's edge (hidden as the pad leaves ClamShell's screens), so it stays as recorded.
-- [ ] 4. **Edges from recorded values.** One `Followed` record written at the end of settle: the tab, shelf's
+- [x] 4. **Edges from recorded values.** One `Followed` record written at the end of settle: the tab, shelf's
   place, the program, the route, the front. A step compares the derived value with it: the tab left
   (replacing `Bottom.left` and the four immediate calls), shelf moved (replacing `moved()` and its 12
   callers), the program's pad mouse, the focus ring hidden, the front remembered once per apply. Resume
   saved when a hash of the place differs from the last saved, replacing both `unsaved` flags. Cost: a few
   compares and a hash over a few dozen ids, no allocation.
+  Done for the tab left and shelf's moves and saves. The program's pad mouse and the focus ring's hiding
+  were already edges found in settle; the front's history stays recorded by the window commands, a front
+  shown within an event being part of that history.
 - [ ] 5. **Commands as facts, readings kept as received.** Three kinds of value:
   - **Only ClamShell changes it:** the wanted value is stored (the user's choice), `wanted()` derives the
     rest, and sync sends the difference from what was sent. No readings needed.
