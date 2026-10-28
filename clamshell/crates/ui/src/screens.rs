@@ -4,7 +4,7 @@ use std::ops::{Index, IndexMut};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Screen {
-    /// The main screen: shelf.
+    /// The main screen: the Library.
     Top,
     /// The second screen: the bar and its tabs.
     Bottom,

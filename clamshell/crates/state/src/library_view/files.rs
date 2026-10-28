@@ -1,4 +1,4 @@
-//! Shelf's file actions on browsed entries (see [`crate::Library::set_listing`]). The open folder is
+//! The Library's file actions on browsed entries (see [`crate::Library::set_listing`]). The open folder is
 //! listed and watched while it is open. The selected entry can be renamed, copied or cut and then pasted
 //! into the open folder, or moved to the Trash; in the Trash it can be restored or deleted. A new folder
 //! can be made, and a removable filesystem ejected.
@@ -15,9 +15,9 @@ use clamshell_library::BrowseKind;
 use crate::bottom::editor::{Editor, Purpose};
 use crate::bottom::notice::{NoticeKind, NoticeSlot};
 use crate::effect::Effect;
+use crate::library_view::LibraryView;
+use crate::library_view::actions::{Action, Actions};
 use crate::out::Out;
-use crate::shelf::Shelf;
-use crate::shelf::actions::{Action, Actions};
 use crate::{Entry, EntryAct, Event, Running};
 
 /// What can be done to a browsed entry, or in the open folder.
@@ -242,7 +242,7 @@ pub(crate) fn named(purpose: FileName, name: &str) -> Option<FileOp> {
     })
 }
 
-impl Shelf {
+impl LibraryView {
     pub fn files(&self) -> &Files {
         &self.files
     }
@@ -282,7 +282,7 @@ impl Shelf {
         parent.and_then(|p| p.browsed.as_ref()).is_some_and(|b| b.locked)
     }
 
-    /// The file actions of what the details show (see [`Shelf::file_target`]), given by its place. They
+    /// The file actions of what the details show (see [`LibraryView::file_target`]), given by its place. They
     /// are its own actions if it is the selected entry, then the open folder's: Paste when something is
     /// copied, New folder, and Hidden files.
     pub(crate) fn file_actions(&self) -> Actions {

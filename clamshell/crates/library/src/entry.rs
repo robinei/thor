@@ -10,7 +10,7 @@ use crate::{Plays, RunnerOf, hash, sort};
 /// How an entry starts.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Launch {
-    /// Nothing to start. This is a group, which opens in shelf.
+    /// Nothing to start. This is a group, which opens in the Library.
     #[default]
     None,
     /// Through Steam.

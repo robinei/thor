@@ -3,7 +3,7 @@
 
 use clamshell_state::HardwareKey;
 use clamshell_state::session::overview::OverviewEvent;
-use clamshell_state::{Event, Id, ListEvent, NotificationEvent, PadInput, PointerEvent, ShelfEvent, State};
+use clamshell_state::{Event, Id, LibraryViewEvent, ListEvent, NotificationEvent, PadInput, PointerEvent, State};
 use xkeysym::Keysym;
 
 use crate::Screen;
@@ -62,11 +62,11 @@ impl Core {
         true
     }
 
-    /// The wheel on `screen` at `position`, by `notches`. Over the main screen it scrolls the shelf's
+    /// The wheel on `screen` at `position`, by `notches`. Over the main screen it scrolls the Library's
     /// list by a game per notch. Over a list on the second screen, it scrolls by a row per notch.
     pub fn wheel(&mut self, screen: Screen, (x, y): (f64, f64), notches: i32) {
         if screen == Screen::Top {
-            return self.handle(Event::Shelf(ShelfEvent::ListStep(notches)));
+            return self.handle(Event::LibraryView(LibraryViewEvent::ListStep(notches)));
         }
         let list = self.screens[screen].frames.retained.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).and_then(|t| t.list);
         if let Some(list) = list {
@@ -100,11 +100,11 @@ impl Core {
     /// the program's windows is open, which take the D-pad, A and B:
     /// - directions move focus;
     /// - A acts on the focused target, and B goes back (see `focus::back`);
-    /// - Y, X and Start do the shelf details' actions while the pad is on the shelf (see
+    /// - Y, X and Start do the Library details' actions while the pad is on the Library (see
     ///   `focus::shortcut`). On the keyboard, X is Backspace;
-    /// - the shoulders page through the shelf or step through the second screen's tabs;
-    /// - the triggers go to the shelf's first or last entry;
-    /// - View moves focus to the other screen while the shelf is in front. Otherwise it moves the pad
+    /// - the shoulders page through the Library or step through the second screen's tabs;
+    /// - the triggers go to the Library's first or last entry;
+    /// - View moves focus to the other screen while the Library is in front. Otherwise it moves the pad
     ///   between the second screen and whatever else wants it, such as the pad mouse or typing. The pad
     ///   thread sends View from there too.
     pub(crate) fn pad(&mut self, input: PadInput) {

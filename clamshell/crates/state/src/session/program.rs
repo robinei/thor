@@ -1,4 +1,4 @@
-//! The program in force: the running entry most recently in front. It stays in force while shelf, or a
+//! The program in force: the running entry most recently in front. It stays in force while the Library, or a
 //! window that isn't ours, is in front, as long as it runs. Once it stops, the entry started last that
 //! still runs takes over. Its settings are in force, its keymap is the pad's, and its pad mouse setting
 //! decides the pad mouse.

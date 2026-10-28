@@ -51,7 +51,7 @@ passes each effect to the system crate's dispatcher.
 ## The state
 
 `State` (`crates/state/src/lib.rs`) is a coordinator over **areas**, each a type with private fields, its
-rules and the getters the UI reads: `Shelf` (the game list), `Session` (launches, windows, background),
+rules and the getters the UI reads: `LibraryView` (the game list), `Session` (launches, windows, background),
 `Bottom` (the second screen, its tabs, editor and notices), `Radios`, `Levels`, `Sys` (status, battery,
 time), `Setup` (the Device view: calibrations, account), `Idle`, `Prefs` (settings), `Keymapping`,
 `Presentation` (what the compositor said of the screens), the pad route, the pointer and the lists'
@@ -93,7 +93,7 @@ be shown); opened and changed carry only what the compositor knows of the window
 whether a new window comes in front is the state's to decide. Placing windows (focusing one, moving it
 between groups, down to the second screen or back) is done during `State::apply`; the compositor reads
 the result from the state after apply, so a new window is placed before it is first shown. The only
-window effect is closing one (`Compositor::Close`). Shelf is not a window: it is in front when no top window
+window effect is closing one (`Compositor::Close`). The Library is not a window: it is in front when no top window
 is. The program in front's windows can be shown together on the top screen (`session/overview.rs`): the
 state holds the overview and the pad's choice in it, and the cells are one function both sides use, the
 compositor to draw each window's stack in its cell, as its screen would show it, and the UI's overlay for
@@ -118,7 +118,7 @@ and fixed once. Seven rules:
    the state never sees X11. An app quirk is a fact derived wrongly, fixed in that translation, and tested
    with the recorded properties as input and the expected facts as output, without running the app.
 4. **The user can always get out.** Home goes through our pad router before any client sees it: Home
-   returns to the shelf, Home+B closes the window, held it ends the program, whatever the window
+   returns to the Library, Home+B closes the window, held it ends the program, whatever the window
    does. The worst case of an app bug is pressing Home.
 5. **Bugs fixed once stay fixed.** A set of real clients in the headless harness (a Wayland app, an X11
    app, a fixed-size dialog, a window ignoring its size, one that hides and reappears, a menu), growing by
@@ -197,7 +197,7 @@ listed, and ClamShell can be restarted without losing track.
 | allocation tests | the event path and frame drawing allocate nothing | every commit and CI |
 | `clamshell/tests/nested-compositor.py` | ClamShell's compositor nested (in a headless sway as the host) with real clients: Wayland and X11 windows, Xwayland's restart, the clipboard, screenshots, moves between the screens | by hand, for compositor behaviour |
 | `clamshell/tests/real-apps.py` | real apps installed on the desktop (RetroArch, Firefox, Wine's Notepad, Lutris, Heroic) in nested ClamShell: each one's window in front, drawn, no compositor error, ended when ClamShell closes it | by hand, for compositor behaviour |
-| `clamshell/tests/picture-scaling.py` (`--gpu` for the Wine games) | test games launched from shelf, their pictures filling the top screen at each Resolution and Scaling | by hand, for the picture |
+| `clamshell/tests/picture-scaling.py` (`--gpu` for the Wine games) | test games launched from the Library, their pictures filling the top screen at each Resolution and Scaling | by hand, for the picture |
 | `tools/vm/vm-test.sh` | the whole device image in QEMU: a fake controller with gyro and rumble, simulated Wi-Fi and Bluetooth, sleep and wake, the session's files; named only: `soak` (a long run: memory, files and threads don't grow) and `faults` (PipeWire, NetworkManager and BlueZ restarted under ClamShell) | by hand, for changes to devices, services and the session |
 
 Every commit passes `tools/check.sh` (the first six rows) through the pre-commit hook, and CI runs it again

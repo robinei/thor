@@ -89,13 +89,13 @@ pub enum Effect {
         lines: Vec<String>,
     },
     /// Tell the browse thread a folder to list and watch, or the files in use.
-    Browse(crate::shelf::files::BrowseCommand),
+    Browse(crate::library_view::files::BrowseCommand),
     /// A file operation, for the files thread.
-    Files(crate::shelf::files::FileOp),
+    Files(crate::library_view::files::FileOp),
     /// Run one of ClamShell's own tools from the Tools tab. `rescan` reads the library again. `refetch`
     /// tries again for metadata that wasn't found, then rescans.
     Tool(clamshell_library::Tool),
-    /// The entries shelf shows, the selected one first. Fetch their metadata before the rest.
+    /// The entries the Library shows, the selected one first. Fetch their metadata before the rest.
     FetchFirst(Vec<Arc<str>>),
     /// Read where mpv left the video `file` of `entry` when it stopped playing. The answer comes back as
     /// [`crate::LaunchEvent::Position`].
@@ -252,7 +252,7 @@ pub enum Save {
     Curves(crate::curve::Curves),
     /// The favourite entries' ids.
     Favourites(Vec<String>),
-    /// Where shelf and the second screen are, to start there next time.
+    /// Where the Library and the second screen are, to start there next time.
     Resume(crate::Resume),
     /// The screens' brightness, to apply at the next start.
     Brightness(crate::levels::Brightness),

@@ -14,7 +14,7 @@ through the dock, Home, the program's previous and next window, and the overview
 Steam, Heroic and Lutris open a launcher window, then the game opens its own. To find out, and settle:
 
 - whether the game comes in front, and the launcher gets out of the way;
-- where a quit game leaves you: shelf, or the launcher;
+- where a quit game leaves you: the Library, or the launcher;
 - whether play time is recorded against the right entry (a Proton game's especially).
 
 The most common path on a handheld. Steam is the case `real-apps.py` doesn't cover: it allows one

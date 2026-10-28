@@ -143,7 +143,7 @@ impl Look {
     pub const TEXT: Look = Look { radius: RADIUS, fill: None, inset: 0.0, ring: -2.0, press_fill: false };
     /// A button on a background of its own.
     pub const CARD: Look = Look { radius: RADIUS, fill: Some(SURFACE_HI), inset: 0.0, ring: -2.0, press_fill: true };
-    /// A tab's label (shelf's collections, the settings' scopes).
+    /// A tab's label (the Library's collections, the settings' scopes).
     pub const TAB: Look = Look { radius: RADIUS_S, fill: None, inset: 4.0, ring: 2.0, press_fill: true };
     /// A keyboard key: a square cell with the ring just inside it.
     pub const KEY: Look = Look { radius: 0.0, fill: None, inset: 0.0, ring: 3.0, press_fill: true };

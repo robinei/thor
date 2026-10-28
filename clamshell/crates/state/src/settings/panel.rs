@@ -11,7 +11,7 @@ use crate::keymap::screens::Keymapping;
 use crate::profiles::picker::{Owner, PickerRow};
 use crate::session::running::Front;
 use crate::settings::{Setting, Settings};
-use crate::{Session, Shelf};
+use crate::{LibraryView, Session};
 
 /// The level the settings panel edits: the global settings (All), the runner of the item in context, or the
 /// item itself. The item can be a game, an app or a film, but not a browsed file or a folder, nor an
@@ -206,19 +206,19 @@ pub struct Panel<'a> {
 
 impl<'a> Panel<'a> {
     /// The settings panel as it is now. Its item is chosen by what is in front: the entry whose window is
-    /// in front, or shelf's selection, where a browsed file that belongs to a library entry stands for
+    /// in front, or the Library's selection, where a browsed file that belongs to a library entry stands for
     /// that entry. There is none for a window of no program.
     pub(crate) fn new(
         session: &'a Session,
-        shelf: &'a Shelf,
+        library_view: &'a LibraryView,
         prefs: &'a Prefs,
         keymapping: &'a Keymapping,
         curving: &'a crate::curve::screens::Curving,
     ) -> Panel<'a> {
-        let entry_of = |id: &str| session.entry(shelf.library(), id);
+        let entry_of = |id: &str| session.entry(library_view.library(), id);
         let id = match session.front() {
             Front::Program => session.top_window().and_then(|w| session.owner_of(w)).or_else(|| session.program().cloned()),
-            Front::Shelf => shelf.selected().cloned().map(|id| shelf.entry_of_file(&id).unwrap_or(id)),
+            Front::LibraryView => library_view.selected().cloned().map(|id| library_view.entry_of_file(&id).unwrap_or(id)),
             Front::Other => None,
         };
         let context = id.and_then(|id| entry_of(&id).map(|g| Program { id, title: &g.title }));

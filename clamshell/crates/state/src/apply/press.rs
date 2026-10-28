@@ -63,14 +63,14 @@ impl State {
         let Some(id) = self.lists().resolve(id) else {
             return;
         };
-        // A shelf entry that isn't in the list shown takes nothing, not even the focus.
-        if !self.shelf.has_target(&id) {
+        // The Library entry that isn't in the list shown takes nothing, not even the focus.
+        if !self.library_view.has_target(&id) {
             return;
         }
         self.pointer.focus_on(id.clone());
         match id {
-            Id::Shelf(id) => {
-                self.shelf.on_target(id, long, &mut self.pointer, out);
+            Id::LibraryView(id) => {
+                self.library_view.on_target(id, long, &mut self.pointer, out);
             }
             Id::Dock(id) => {
                 self.dock.on(id, long, &self.session, out);
@@ -119,7 +119,7 @@ impl State {
             Id::Control(_) | Id::Level(_) | Id::List(_) | Id::Blank => {}
             Id::Key(pos) => {
                 let stroke = self.keyboard.press(pos, long);
-                // The key goes to the editor while it is open, to finding an entry while shelf is in
+                // The key goes to the editor while it is open, to finding an entry while the Library is in
                 // front, and otherwise to the focused app.
                 match stroke {
                     Some(stroke) if self.bottom.editor().is_some() => {
@@ -130,8 +130,8 @@ impl State {
                     Some(stroke) if self.keymapping.capturing(self.bottom.tab(), self.bottom.editor().is_some()) => {
                         self.keymapping.captured(crate::keymap::screens::chord(stroke), out);
                     }
-                    Some(stroke) if self.session.front() == crate::session::running::Front::Shelf => {
-                        self.shelf.find(stroke, out);
+                    Some(stroke) if self.session.front() == crate::session::running::Front::LibraryView => {
+                        self.library_view.find(stroke, out);
                     }
                     Some(stroke) => out.effects.push(Effect::Compositor(Compositor::Key(stroke))),
                     None => {}
@@ -139,7 +139,7 @@ impl State {
             }
             Id::Time(id) => self.sys.on_time(id, self.scrolls.get_mut(ListId::Time), out),
             Id::Device(id) => {
-                self.setup.tap(id, self.clock.mono(), &mut self.pointer, self.shelf.selected(), out);
+                self.setup.tap(id, self.clock.mono(), &mut self.pointer, self.library_view.selected(), out);
             }
             Id::Battery(id) => {
                 self.sys.on_battery(id, &self.session, out);
@@ -177,8 +177,8 @@ impl State {
             ListId::Time => self.sys.on_time_row(i, self.scrolls.get_mut(ListId::Time), out),
             // Their tiles are targets of their own.
             ListId::Dock | ListId::Settings => {}
-            // A shelf game's row is its game's target, and a backlight's row is only its level.
-            ListId::Shelf | ListId::Backlights => {}
+            // The Library game's row is its game's target, and a backlight's row is only its level.
+            ListId::LibraryView | ListId::Backlights => {}
         }
     }
 }

@@ -1,5 +1,5 @@
 //! `--snapshot DIR` draws both screens at the Thor's size into PNG files, without Wayland. The shots cover
-//! shelf, the second screen and every tab. Each is drawn after the events that lead to it, in groups that
+//! the Library, the second screen and every tab. Each is drawn after the events that lead to it, in groups that
 //! each start from a fresh state. They are taken at a fixed time unless CLAMSHELL_SNAPSHOT_NOW is set, so
 //! they come out the same on every run. The test below keeps three references in tests/: hashes of the
 //! shots' pixels (snapshots.txt), where the pad's focus goes on each shot (focus.txt, see
@@ -16,8 +16,8 @@ use clamshell_state::levels::Level;
 use clamshell_state::settings::Setting;
 use clamshell_state::setup::SticksEvent;
 use clamshell_state::{
-    Dock, EditorId, Event, Id, Init, KeymapId, LevelEvent, Library, ListEvent, ListId, PointerEvent, Reading, SettingsId, SettingsLevel, ShelfEvent, ShelfId,
-    Slide, State, Status, Tab, Target, TimeId,
+    Dock, EditorId, Event, Id, Init, KeymapId, LevelEvent, Library, LibraryViewEvent, LibraryViewId, ListEvent, ListId, PointerEvent, Reading, SettingsId,
+    SettingsLevel, Slide, State, Status, Tab, Target, TimeId,
 };
 use clamshell_ui::Screen;
 
@@ -79,13 +79,13 @@ impl From<ParseError> for Error {
     }
 }
 
-/// Opens shelf's Tools collection and runs its Device entry by selecting and then activating it. This
+/// Opens the Library's Tools collection and runs its Device entry by selecting and then activating it. This
 /// shows the Device view.
 fn open_device() -> Vec<Event> {
     let library = clamshell_library::demo::library();
-    let tools = state(library).shelf().library().collections.iter().position(|c| c.name == "Tools").unwrap_or(0);
-    let device = || tap(Id::Shelf(ShelfId::Entry("tool:device".into())));
-    vec![tap(Id::Shelf(ShelfId::Collection(u16::try_from(tools).unwrap_or(0)))), device(), device()]
+    let tools = state(library).library_view().library().collections.iter().position(|c| c.name == "Tools").unwrap_or(0);
+    let device = || tap(Id::LibraryView(LibraryViewId::Entry("tool:device".into())));
+    vec![tap(Id::LibraryView(LibraryViewId::Collection(u16::try_from(tools).unwrap_or(0)))), device(), device()]
 }
 
 /// The state the snapshots start from: a library with its apps pinned to the dock, a window rule that
@@ -256,7 +256,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
     use Screen::{Bottom, Top};
     let shot = |name, screen, before| Shot { name, screen, before };
     let group = |start, shots| Group { start, shots };
-    let ff6 = || tap(Id::Shelf(ShelfId::Entry("ff6".into())));
+    let ff6 = || tap(Id::LibraryView(LibraryViewId::Entry("ff6".into())));
     let ctrl = || control::key(Key::Mod(Modifier::Ctrl));
     let volume = Id::Control(Control::Volume);
     Ok(vec![
@@ -264,52 +264,52 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
             vec![],
             vec![
                 shot("top.png", Top, vec![]),
-                shot("top-tab2.png", Top, vec![ShelfEvent::CollectionStep(1).into()]),
-                shot("top-tab2-down.png", Top, vec![ShelfEvent::ListStep(5).into()]),
-                shot("top-back.png", Top, vec![ShelfEvent::CollectionStep(-1).into()]),
+                shot("top-tab2.png", Top, vec![LibraryViewEvent::CollectionStep(1).into()]),
+                shot("top-tab2-down.png", Top, vec![LibraryViewEvent::ListStep(5).into()]),
+                shot("top-back.png", Top, vec![LibraryViewEvent::CollectionStep(-1).into()]),
                 shot(
                     "top-played.png",
                     Top,
                     a_play("zelda-lttp", 1_759_900_000, 4 * 3600 + 1260, now)
                         .into_iter()
-                        .chain([ShelfEvent::ToggleFavourite.into(), ShelfEvent::TogglePin.into(), Event::Units(vec![demo::run("zelda-lttp", 0)])])
+                        .chain([LibraryViewEvent::ToggleFavourite.into(), LibraryViewEvent::TogglePin.into(), Event::Units(vec![demo::run("zelda-lttp", 0)])])
                         .collect(),
                 ),
                 shot("top-switch.png", Top, vec![ff6(), ff6()]),
             ],
         ),
         // A held on the selected entry with the pad opens its actions, with A and B shown at the bottom.
-        // Shelf is in front, so the pad is on them. The start sets shelf's rows as a frame would have
+        // The Library is in front, so the pad is on them. The start sets the Library's rows as a frame would have
         // reported them before the taps.
         group(
-            vec![ShelfEvent::Rows(8).into()],
+            vec![LibraryViewEvent::Rows(8).into()],
             vec![shot(
                 "top-actions.png",
                 Top,
                 vec![
                     ff6(),
-                    Event::Pointer(PointerEvent::Focus(Id::Shelf(ShelfId::Entry("ff6".into())))),
-                    Event::Pointer(PointerEvent::LongPress(Id::Shelf(ShelfId::Entry("ff6".into())))),
+                    Event::Pointer(PointerEvent::Focus(Id::LibraryView(LibraryViewId::Entry("ff6".into())))),
+                    Event::Pointer(PointerEvent::LongPress(Id::LibraryView(LibraryViewId::Entry("ff6".into())))),
                 ],
             )],
         ),
-        // A series selected in shelf and then opened, showing its first season's episodes with the first one
-        // played. The start sets shelf's rows as a frame would have reported them before the taps.
+        // A series selected in the Library and then opened, showing its first season's episodes with the first one
+        // played. The start sets the Library's rows as a frame would have reported them before the taps.
         group(
-            vec![ShelfEvent::Rows(8).into()],
+            vec![LibraryViewEvent::Rows(8).into()],
             vec![
-                shot("top-folder.png", Top, vec![tap(Id::Shelf(ShelfId::Collection(2)))]),
+                shot("top-folder.png", Top, vec![tap(Id::LibraryView(LibraryViewId::Collection(2)))]),
                 shot(
                     "top-group.png",
                     Top,
-                    [tap(Id::Shelf(ShelfId::Launch)), tap(Id::Shelf(ShelfId::Launch))]
+                    [tap(Id::LibraryView(LibraryViewId::Launch)), tap(Id::LibraryView(LibraryViewId::Launch))]
                         .into_iter()
                         .chain(a_play("tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv", 1_759_900_000, 3600, now))
-                        .chain([ShelfEvent::ListStep(2).into()])
+                        .chain([LibraryViewEvent::ListStep(2).into()])
                         .collect(),
                 ),
                 // Recent shows the played episode with its series and season before its title.
-                shot("top-recent.png", Top, vec![tap(Id::Shelf(ShelfId::Collection(0)))]),
+                shot("top-recent.png", Top, vec![tap(Id::LibraryView(LibraryViewId::Collection(0)))]),
             ],
         ),
         group(vec![], vec![shot("bottom.png", Bottom, vec![])]),
@@ -595,11 +595,11 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot("time-europe.png", Bottom, vec![PointerEvent::Activate(ListId::Time.row(7)).into()]),
             ],
         ),
-        // The Device view, opened from the Tools' Device entry in shelf. First off the device, where there is
+        // The Device view, opened from the Tools' Device entry in the Library. First off the device, where there is
         // no helper. Then with an account without a password, a stick calibration in progress, and the
         // password typed on the bottom screen, shown as dots.
         group(
-            vec![ShelfEvent::Rows(8).into()],
+            vec![LibraryViewEvent::Rows(8).into()],
             vec![
                 shot("device-unavailable.png", Top, open_device().into_iter().chain([Reading::Time(demo::time_zones()).into()]).collect()),
                 shot(
@@ -710,7 +710,7 @@ pub trait Visit {
     fn applied(&mut self, _event: &Event, _effects: &[clamshell_state::Effect]) {}
 
     /// The state is at the shot `name` of `screen`, after the events in `log` applied to a fresh state.
-    /// Returns what the frame reports, which is applied next, as a live frame's report is: shelf's rows
+    /// Returns what the frame reports, which is applied next, as a live frame's report is: the Library's rows
     /// and the lists' rows keep the selections on screen.
     fn shot(&mut self, state: &State, log: &[Event], name: &str, screen: Screen) -> Result<Vec<Event>, Error>;
 }
@@ -783,10 +783,10 @@ mod tests {
                                  # what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots";
     const FOCUS_HEADER: &str = "# Where the pad's focus goes on each snapshot (src/dev/focus_map.rs): where the pad starts, what B does,\n\
                                 # and for each target the pad may focus on the shot's screen, where ^ up, v down, < left and > right\n\
-                                # lead, in sections for the bar, shelf, the keyboard and the rest of the screen. \"-\" stays; [event] is what a move\n\
+                                # lead, in sections for the bar, the Library, the keyboard and the rest of the screen. \"-\" stays; [event] is what a move\n\
                                 # does that leaves the focus where it is, such as a level's step. Targets written the same next to\n\
                                 # each other share a line. \"-- bar as in x.png\": the same as in that shot; \"... except\" then, for\n\
-                                # the targets whose moves differ, only the moves that differ. Shelf entries are their quoted ids,\n\
+                                # the targets whose moves differ, only the moves that differ. The Library entries are their quoted ids,\n\
                                 # list rows List[i], dock tiles Dock[i], keys Key[row,col].";
     const TRACE_HEADER: &str = "# The effects of the snapshot scenario's events (src/dev/trace.rs), group by group: each event that\n\
                                 # had effects, then its effects. \"-- name\" is where a shot is taken.";

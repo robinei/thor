@@ -99,7 +99,7 @@ pub struct Bottom {
     /// Whether the area below the bar is pointing (see [`crate::bottom::touch`]).
     pointing: bool,
     /// The text on the system clipboard, for Ctrl+V in the editor. Files copied in the Files tab use their
-    /// own clipboard (see [`crate::shelf::files`]).
+    /// own clipboard (see [`crate::library_view::files`]).
     clipboard: Option<std::sync::Arc<str>>,
     /// The tab the windows' tab was opened from, which Home + right stick press goes back to.
     before_windows: Tab,
@@ -279,7 +279,7 @@ mod tests {
     }
 
     fn rename(text: &str) -> Editor {
-        let purpose = crate::bottom::editor::Purpose::FileName(crate::shelf::files::FileName::Rename("/a/b".into()));
+        let purpose = crate::bottom::editor::Purpose::FileName(crate::library_view::files::FileName::Rename("/a/b".into()));
         Editor { purpose, text: text.to_owned() }
     }
 

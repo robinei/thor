@@ -1,17 +1,17 @@
-//! Coming back to the same place after a restart. This covers shelf's current collection, each
+//! Coming back to the same place after a restart. This covers the Library's current collection, each
 //! collection's open groups and selected entry, and the second screen's tab, and also the screens'
 //! brightness. Both are written once changes have stopped for a moment.
 
-use crate::Shelf;
+use crate::LibraryView;
 use crate::bottom::{Bottom, Tab};
 
 /// Seconds after the last change before it is saved.
 pub(crate) const SAVE_AFTER: u64 = 2;
 
-/// Where shelf and the second screen are, to come back to after a restart.
+/// Where the Library and the second screen are, to come back to after a restart.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Resume {
-    /// Shelf's current collection, by name.
+    /// The Library's current collection, by name.
     pub collection: String,
     /// The second screen's tab, by name. This is the tab that was chosen, not the keyboard a text field
     /// brought up.
@@ -21,20 +21,20 @@ pub struct Resume {
 }
 
 impl Resume {
-    /// Where `shelf` and the second screen (`bottom`) are.
-    pub(crate) fn of(shelf: &Shelf, bottom: &Bottom) -> Resume {
-        Resume::at(shelf, bottom.chosen_tab())
+    /// Where `library_view` and the second screen (`bottom`) are.
+    pub(crate) fn of(library_view: &LibraryView, bottom: &Bottom) -> Resume {
+        Resume::at(library_view, bottom.chosen_tab())
     }
 
-    /// Where `shelf` is, with the second screen's chosen tab `tab`. Before the library is read, where it
+    /// Where `library_view` is, with the second screen's chosen tab `tab`. Before the library is read, where it
     /// was at the last start, which it goes back to then.
-    pub(crate) fn at(shelf: &Shelf, tab: Tab) -> Resume {
-        if let Some(waiting) = shelf.waiting() {
+    pub(crate) fn at(library_view: &LibraryView, tab: Tab) -> Resume {
+        if let Some(waiting) = library_view.waiting() {
             return Resume { tab: tab.name().to_owned(), ..waiting.clone() };
         }
         let mut places = Vec::new();
-        shelf.places(&mut places);
-        Resume { collection: shelf.collection().map(|c| c.name.clone()).unwrap_or_default(), tab: tab.name().to_owned(), places }
+        library_view.places(&mut places);
+        Resume { collection: library_view.collection().map(|c| c.name.clone()).unwrap_or_default(), tab: tab.name().to_owned(), places }
     }
 
     /// Takes the second screen back to its tab.
@@ -46,13 +46,13 @@ impl Resume {
         }
     }
 
-    /// Takes `shelf` back to its collection and places. Collections and entries that are gone are skipped.
-    pub(crate) fn restore_shelf(&self, shelf: &mut Shelf) {
+    /// Takes `library_view` back to its collection and places. Collections and entries that are gone are skipped.
+    pub(crate) fn restore_library_view(&self, library_view: &mut LibraryView) {
         for (name, ids) in &self.places {
             let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
-            shelf.restore_selection(name, &ids);
+            library_view.restore_selection(name, &ids);
         }
-        shelf.restore_current(&self.collection);
+        library_view.restore_current(&self.collection);
     }
 }
 
@@ -66,8 +66,8 @@ mod tests {
     fn the_place_is_saved_after_a_pause_and_restored() {
         let mut s = state();
         s.applied(Event::tick(100));
-        s.applied(ShelfEvent::ListStep(3).into());
-        s.applied(ShelfEvent::CollectionStep(1).into());
+        s.applied(LibraryViewEvent::ListStep(3).into());
+        s.applied(LibraryViewEvent::CollectionStep(1).into());
         assert!(s.applied(Event::tick(101)).is_empty(), "not while moving");
         let fx = s.applied(Event::tick(103));
         let Some(Effect::Save(Save::Resume(resume))) = fx.first() else {
@@ -80,48 +80,48 @@ mod tests {
             vec![place("Games", "ff6"), place("More", "ff6"), place("TV", "tv:Cosmos"), place("Apps", "desktop:steam"), place("Tools", "tool:device")]
         );
         let mut fresh = State::new(Init { resume: Some(resume.clone()), ..init() });
-        assert_eq!(fresh.shelf().collection().map(|c| c.name.as_str()), Some("More"));
-        fresh.applied(ShelfEvent::CollectionStep(-1).into());
-        assert_eq!(fresh.shelf().selected().map(|g| &**g), Some("ff6"));
+        assert_eq!(fresh.library_view().collection().map(|c| c.name.as_str()), Some("More"));
+        fresh.applied(LibraryViewEvent::CollectionStep(-1).into());
+        assert_eq!(fresh.library_view().selected().map(|g| &**g), Some("ff6"));
     }
 
-    /// ClamShell starts before the library is read. Its tab comes back at once; shelf goes back to its
-    /// place as the library comes, and a save meanwhile keeps that place rather than the empty shelf's.
+    /// ClamShell starts before the library is read. Its tab comes back at once; the Library goes back to its
+    /// place as the library comes, and a save meanwhile keeps that place rather than the empty Library's.
     #[test]
     fn before_the_library_is_read_the_place_waits_for_it() {
         let mut s = state();
-        s.applied(ShelfEvent::CollectionStep(1).into());
-        s.applied(ShelfEvent::ListStep(2).into());
+        s.applied(LibraryViewEvent::CollectionStep(1).into());
+        s.applied(LibraryViewEvent::ListStep(2).into());
         tap(&mut s, Id::Tab(Tab::Wifi));
         let resume = s.resume();
-        let selected = s.shelf().selected().cloned();
+        let selected = s.library_view().selected().cloned();
         let mut fresh = started(Init { resume: Some(resume.clone()), library: None, ..init() });
-        assert!(!fresh.shelf().read() && fresh.shelf().library().entries.is_empty());
+        assert!(!fresh.library_view().read() && fresh.library_view().library().entries.is_empty());
         assert_eq!(fresh.bottom().tab(), Tab::Wifi, "the tab at once");
         assert_eq!(fresh.resume(), resume, "saved meanwhile: the place it goes back to");
         let mut tapped = started(Init { resume: Some(resume.clone()), library: None, ..init() });
         tap(&mut tapped, Id::Tab(Tab::Sysinfo));
         assert_eq!(tapped.resume(), Resume { tab: "sysinfo".into(), ..resume.clone() }, "with the tab chosen since");
         fresh.applied(Event::Library(Box::new(clamshell_library::demo::library())));
-        assert!(fresh.shelf().read());
-        assert_eq!(fresh.shelf().collection().map(|c| c.name.as_str()), Some("More"));
-        assert_eq!(fresh.shelf().selected(), selected.as_ref());
-        assert_eq!(fresh.pointer().focus(), selected.map(|id| Id::Shelf(ShelfId::Entry(id))).as_ref(), "the pad's focus on it");
+        assert!(fresh.library_view().read());
+        assert_eq!(fresh.library_view().collection().map(|c| c.name.as_str()), Some("More"));
+        assert_eq!(fresh.library_view().selected(), selected.as_ref());
+        assert_eq!(fresh.pointer().focus(), selected.map(|id| Id::LibraryView(LibraryViewId::Entry(id))).as_ref(), "the pad's focus on it");
     }
 
     #[test]
     fn open_groups_are_restored() {
         let mut s = state();
-        tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
-        tap(&mut s, Id::Shelf(ShelfId::Launch));
-        tap(&mut s, Id::Shelf(ShelfId::Launch));
-        s.applied(ShelfEvent::ListStep(2).into());
+        tap(&mut s, Id::LibraryView(LibraryViewId::Collection(2)));
+        tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
+        tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
+        s.applied(LibraryViewEvent::ListStep(2).into());
         let resume = s.resume();
         let path = ["tv:Cosmos", "tv:Cosmos/Season 1", "tv:Cosmos/Season 1/10. The Edge of Forever.mkv"].map(str::to_owned).to_vec();
         assert!(resume.places.contains(&("TV".to_owned(), path)), "{resume:?}");
         let fresh = State::new(Init { resume: Some(resume), ..init() });
-        assert_eq!(fresh.shelf().group().map(|g| g.title.as_str()), Some("Season 1"));
-        assert_eq!(fresh.shelf().selected().map(|g| &**g), Some("tv:Cosmos/Season 1/10. The Edge of Forever.mkv"));
+        assert_eq!(fresh.library_view().group().map(|g| g.title.as_str()), Some("Season 1"));
+        assert_eq!(fresh.library_view().selected().map(|g| &**g), Some("tv:Cosmos/Season 1/10. The Edge of Forever.mkv"));
     }
 
     #[test]

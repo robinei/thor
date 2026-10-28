@@ -265,7 +265,7 @@ impl Session {
         }
         let shown = self.windows_of(id).any(|w| self.shown(w.id));
         if shown {
-            self.command(crate::session::windows::WindowCommand::ShowShelf);
+            self.command(crate::session::windows::WindowCommand::ShowLibraryView);
         }
         let Some(r) = self.running.iter().find(|r| &*r.id == id) else {
             return;
@@ -429,7 +429,7 @@ mod tests {
         assert!(s.session().suspendable("zelda-lttp"));
         // Applied whole: its window is still shown when the event's steps follow, which doesn't thaw it.
         let fx = s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::Suspend));
-        assert!(fx.contains(&freeze(&key, true)) && s.session().shelf_in_front(), "{fx:?}");
+        assert!(fx.contains(&freeze(&key, true)) && s.session().library_view_in_front(), "{fx:?}");
         assert!(!fx.contains(&freeze(&key, false)), "{fx:?}");
         assert!(s.session().suspended("zelda-lttp") && !s.session().suspendable("zelda-lttp"));
         // Hidden, it stays frozen and isn't frozen twice.
@@ -484,7 +484,7 @@ mod tests {
         assert_eq!(s.panel().editing().map(|g| &*g.id), Some("zelda-lttp"));
         let mut fx = Vec::new();
         for _ in 0..4 {
-            if s.session().background_of("zelda-lttp", s.shelf().library(), s.prefs().settings()) == InBackground::Runs {
+            if s.session().background_of("zelda-lttp", s.library_view().library(), s.prefs().settings()) == InBackground::Runs {
                 break;
             }
             fx = tap(&mut s, crate::Id::Settings(crate::SettingsId::Tile(Setting::Background)));
@@ -509,7 +509,7 @@ mod tests {
         // With All set to run, the game runs too.
         s.settings_mut().set(None, Setting::Background, Some(InBackground::Runs.value()));
         assert!(s.applied(Event::tick(101 + GRACE)).contains(&freeze(&key, false)));
-        assert_eq!(s.session().background_of("zelda-lttp", s.shelf().library(), s.prefs().settings()), InBackground::Runs);
+        assert_eq!(s.session().background_of("zelda-lttp", s.library_view().library(), s.prefs().settings()), InBackground::Runs);
     }
 
     #[test]

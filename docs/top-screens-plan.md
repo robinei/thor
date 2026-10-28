@@ -13,12 +13,12 @@ needs room and is rare: the device's setup, and editing the library.
 ## Names
 
 - **Library** is the top screen that browses what the device has (shelf until now). In code it is
-  `Browser` (`ShelfEvent` → `BrowserEvent`, `ShelfId` → `BrowserId`): `Library` stays the data, the
-  `clamshell-library` crate and library.json.
+  `LibraryView` (`LibraryViewEvent`, `LibraryViewId`, `library_view`), "the Library" in prose: `Library`
+  stays the data, the `clamshell-library` crate and library.json.
 - **Device** is today's Device view: password, remote login, stick, gyro and refresh calibration, Wi-Fi and
   the time zone (opening their tabs).
 - **Setup** is the first start's wizard.
-- In code the three are `builtin::{browser, device, setup}`; `TopView` goes.
+- In code the three are `builtin::{library_view, device, setup}`; `TopView` goes.
 
 ## Built-ins as entries
 
@@ -309,7 +309,7 @@ Then for apps, through xdg-desktop-portal:
 Each ends in commits that pass `tools/check.sh` and the randomized test; the VM suite where the step
 touches the session or the outside.
 
-- [ ] 1. **Rename** shelf to Library (`Browser` in code), in the UI, the code and the docs.
+- [x] 1. **Rename** shelf to Library (`LibraryView` in code), in the UI, the code and the docs.
 - [ ] 2. **Setup as a wizard**: password, Wi-Fi, time zone; the bottom screen locked to the keyboard; the
   launch gate; Volume Up removed from `thor-account` (a thor-system release) and from `security.md`.
 - [ ] 3. **Built-ins as entries**: Library always running and pinned at 0 by the starter, Device an entry;

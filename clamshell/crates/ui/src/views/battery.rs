@@ -75,7 +75,7 @@ pub(super) fn draw(f: &mut Frame) {
         let r = Rect::new(list.x, list.y + i as f32 * row_h, list.w, row_h);
         let row = |f: &mut Frame| {
             let name_w = r.w * NAME_W;
-            f.c.text_fit(Rect::new(r.x, r.y, name_w - pad, r.h), size, Tone::Normal, p.name(s.shelf().library()), Keep::Start);
+            f.c.text_fit(Rect::new(r.x, r.y, name_w - pad, r.h), size, Tone::Normal, p.name(s.library_view().library()), Keep::Start);
             let figures = Fmt::<64>::of(format_args!("CPU {} · GPU {} · {}", Share(p.cpu), MaybeShare(p.group.gpu_known().then_some(p.gpu)), Bytes(p.memory)));
             let figures_w = f.c.text_width(size * SMALL, &figures);
             // In smaller text, on the same line as the name.
@@ -101,7 +101,7 @@ pub(super) fn draw(f: &mut Frame) {
 /// dock; for another program they act on its processes. The back arrow returns to the tab.
 fn spender_menu(f: &mut Frame, group: &Group) {
     let s = f.s;
-    let name = s.sys().battery().spenders.iter().find(|p| p.group == *group).map_or("", |p| p.name(s.shelf().library()));
+    let name = s.sys().battery().spenders.iter().find(|p| p.group == *group).map_or("", |p| p.name(s.library_view().library()));
     let area = widgets::header(f, Some(Id::Battery(BatteryId::Back)), name, false, HeaderRight::None);
     let items = [(Id::Battery(BatteryId::Quit), "Quit", Tone::Accent), (Id::Battery(BatteryId::ForceKill), "Force kill", Tone::Accent)];
     widgets::menu(f, area, items);

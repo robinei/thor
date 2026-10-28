@@ -58,7 +58,7 @@ impl Track {
 /// What a frame tells the rest of the program besides its picture and targets.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct FrameOut {
-    /// How many rows the shelf's list on the main screen shows. The state keeps the selection within them.
+    /// How many rows the Library's list on the main screen shows. The state keeps the selection within them.
     pub list_rows: Option<usize>,
     /// The area below the bar on the second screen, where a finger may point (see clamshell-state's
     /// `touch`).

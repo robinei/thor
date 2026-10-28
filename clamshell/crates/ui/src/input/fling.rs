@@ -1,6 +1,6 @@
 //! What a list does after the finger dragging it lets go. It flings on at the finger's speed and slows
 //! down with friction until it is slow or reaches an end. A list that rests on whole rows, such as the
-//! shelf, then settles on the nearest row with a short ease-out. [`Trail`] measures the finger's speed as
+//! the Library, then settles on the nearest row with a short ease-out. [`Trail`] measures the finger's speed as
 //! it lets go.
 //!
 //! The code is pure: the caller steps it on a timer ([`FLING_EVERY`]) and scrolls the list by what each

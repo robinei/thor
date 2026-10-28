@@ -156,7 +156,7 @@ chain forward: iifname "waydroid0" accept
 ```
 
 The rest runs where ClamShell's display is (on the desktop, in a terminal started from the nested
-session's shelf), with the session running (`waydroid session start &`, until "Android with user 0 is
+session's the Library), with the session running (`waydroid session start &`, until "Android with user 0 is
 ready"). Android without a window shown suspends at once (Waydroid freezes the container): thaw it
 first, and turn that off, so that what pauses Android is ClamShell's In the background:
 

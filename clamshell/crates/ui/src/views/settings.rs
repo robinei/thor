@@ -5,7 +5,7 @@
 //! how the game looks or plays.
 //!
 //! Tabs along the top choose the level: All games (the defaults) and the current game, which is the
-//! running one or else the shelf's selection. A game's own choices override the defaults one by one.
+//! running one or else the Library's selection. A game's own choices override the defaults one by one.
 //! Those tiles carry a dot, and the rest show the default's value dimmed. Changes reach a running game at
 //! once. The environment tile opens an editor over the on-screen keyboard.
 

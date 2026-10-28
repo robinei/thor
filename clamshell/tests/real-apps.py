@@ -76,7 +76,7 @@ def case(n, name, process, before_ids, before_pixels, log_before):
         opened = n.wait(window, f"{name}: its window", 60)
         seen = [f"window {opened.get('app_id')!r} {opened.get('title')!r}"]
         n.wait(lambda: any(w["id"] == opened["id"] and w.get("focused") for w in n.windows()) or None, f"{name}: in front", 15)
-        # Something drawn: the top screen changed from the shelf, and not to one colour (a window that
+        # Something drawn: the top screen changed from the Library, and not to one colour (a window that
         # draws nothing is black).
         def drew():
             pixels = top_screen(n)

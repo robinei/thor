@@ -2,7 +2,7 @@
 //! `<data dir>/applications` of the XDG data dirs is read, the user's first, skipping hidden ones. Each
 //! entry gets its name, command, working dir and icon, the icon looked up in the icon themes.
 //!
-//! The categories decide between game and app. `Game` is a game (shelf's Games) unless it is also
+//! The categories decide between game and app. `Game` is a game (the Library's Games) unless it is also
 //! `Emulator`, since an emulator is started for a game and so is an app. Anything else is an app (Apps).
 //! Steam's shortcuts to its games (`steam://rungameid/`) are left out because Steam's own library has
 //! them.

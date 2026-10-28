@@ -125,7 +125,7 @@ fn a_launch_that_didnt_start_says_so() {
 #[test]
 fn starts_with_first_game_selected_and_focused() {
     let s = state();
-    assert_eq!(s.shelf().selected().map(|g| &**g), Some("zelda-lttp"));
+    assert_eq!(s.library_view().selected().map(|g| &**g), Some("zelda-lttp"));
     assert_eq!(s.pointer().focus(), Some(&entry("zelda-lttp")));
 }
 
@@ -136,16 +136,16 @@ fn starts_where_it_was_told() {
 }
 
 #[test]
-fn while_metadata_is_fetched_shelfs_view_goes_first() {
+fn while_metadata_is_fetched_library_views_view_goes_first() {
     let mut s = state();
-    assert!(!s.applied(ShelfEvent::ListStep(1).into()).iter().any(|e| matches!(e, Effect::FetchFirst(_))), "not fetching");
+    assert!(!s.applied(LibraryViewEvent::ListStep(1).into()).iter().any(|e| matches!(e, Effect::FetchFirst(_))), "not fetching");
     let fx = s.applied(Event::Fetching(true));
     assert_eq!(fx, vec![Effect::FetchFirst(vec!["metroid-zm".into(), "mk-ds".into()])], "the selected first, then the rows shown");
     assert!(!s.applied(Event::tick(5)).iter().any(|e| matches!(e, Effect::FetchFirst(_))), "the same view: not again");
-    let fx = s.applied(ShelfEvent::ListStep(1).into());
+    let fx = s.applied(LibraryViewEvent::ListStep(1).into());
     assert!(fx.contains(&Effect::FetchFirst(vec!["mk-ds".into(), "ff6".into()])), "{fx:?}");
     s.applied(Event::Fetching(false));
-    assert!(!s.applied(ShelfEvent::ListStep(1).into()).iter().any(|e| matches!(e, Effect::FetchFirst(_))), "done");
+    assert!(!s.applied(LibraryViewEvent::ListStep(1).into()).iter().any(|e| matches!(e, Effect::FetchFirst(_))), "done");
 }
 
 /// Sync sends the settings in force, then the keymap, then the pad's route. Nothing outside depends on
@@ -188,7 +188,7 @@ fn a_keymap_and_route_changed_in_one_event_are_sent_keymap_first() {
     s.observed(vec![win_of(7, "zelda3", &zelda), win_of(8, "ff6", &ff6)]);
     s.applied(WindowEvent::Activate(8).into());
     s.applied(Event::Home);
-    assert_eq!((s.pad().route(), s.in_force().get(Setting::Keymap)), (PadRoute::Ui, 0), "shelf in front, ff6's keymap in force");
+    assert_eq!((s.pad().route(), s.in_force().get(Setting::Keymap)), (PadRoute::Ui, 0), "the Library in front, ff6's keymap in force");
     let fx = s.applied(WindowEvent::Activate(7).into());
     let keymap = fx.iter().position(|e| matches!(e, Effect::Keymap(k) if k.id == 1));
     let route = fx.iter().position(|e| *e == Effect::PadRoute(PadRoute::Game));
@@ -214,7 +214,8 @@ fn the_screens_go_off_before_the_device_sleeps() {
 #[test]
 fn queued_events_are_handled_in_order_with_what_they_queue_first() {
     let mut s = state();
-    let fx = s.handle_as_queued(vec![PointerEvent::Activate(Id::Shelf(ShelfId::Launch)).into(), Event::HardwareKey(crate::HardwareKey::Screenshot)]);
+    let fx =
+        s.handle_as_queued(vec![PointerEvent::Activate(Id::LibraryView(LibraryViewId::Launch)).into(), Event::HardwareKey(crate::HardwareKey::Screenshot)]);
     let kinds: Vec<&str> = fx
         .iter()
         .map(|e| match e {
@@ -236,9 +237,9 @@ fn a_launchs_first_window_is_shown_before_a_window_that_came_back() {
     let zelda = launch(&mut s, "zelda-lttp");
     let zelda_window = win_of(3, "zelda3", &zelda);
     s.observed(vec![zelda_window.clone()]);
-    // Its window closes with nothing else in front: shelf is shown, and the group remembered.
+    // Its window closes with nothing else in front: the Library is shown, and the group remembered.
     s.observed(vec![]);
-    assert!(s.session().shelf_in_front());
+    assert!(s.session().library_view_in_front());
     let ff6 = launch(&mut s, "ff6");
     let ff6_window = win_of(4, "ff6", &ff6);
     s.observed(vec![zelda_window, ff6_window]);
@@ -510,10 +511,10 @@ fn the_screens_power_is_sent_when_it_changes() {
     assert!(outputs(&s.applied(Event::tick(1301))).is_empty(), "once");
 }
 
-/// While metadata is fetched, a library read again asks for shelf's entries shown first again, since the
+/// While metadata is fetched, a library read again asks for the Library's entries shown first again, since the
 /// metadata thread starts over with the new library.
 #[test]
-fn a_library_read_while_fetching_asks_for_shelfs_view_first_again() {
+fn a_library_read_while_fetching_asks_for_library_views_view_first_again() {
     let mut s = state();
     let first = Effect::FetchFirst(vec!["zelda-lttp".into(), "metroid-zm".into()]);
     assert_eq!(s.applied(Event::Fetching(true)), std::slice::from_ref(&first));
@@ -566,7 +567,7 @@ fn a_video_ended_asks_where_it_was_left() {
     let read = fx.iter().position(|e| *e == Effect::ReadPosition { entry: episode.into(), file: file.clone() });
     assert!(at.is_some() && read == at.map(|i| i + 1), "the play, then the position: {fx:?}");
     s.applied(LaunchEvent::Position { entry: episode.into(), position: Some(700) }.into());
-    assert_eq!(s.shelf().entry(episode).map(|g| g.playback.position), Some(Some(700)));
+    assert_eq!(s.library_view().entry(episode).map(|g| g.playback.position), Some(Some(700)));
 }
 
 #[test]
@@ -593,7 +594,7 @@ fn immutable_device_profile_is_carried_from_init_through_state_events() {
 }
 
 /// Quit (SIGTERM at a poweroff or a restart, or nested's window closed) saves at once what waits a moment
-/// to be saved, and where shelf and the bottom screen are, then ends ClamShell.
+/// to be saved, and where the Library and the bottom screen are, then ends ClamShell.
 #[test]
 fn quit_saves_what_waits_then_ends() {
     let mut s = state();

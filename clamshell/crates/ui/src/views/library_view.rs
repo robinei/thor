@@ -1,4 +1,4 @@
-//! shelf on the main screen. The collections are tabs along the top, each an icon and a name. The current
+//! The Library on the main screen. The collections are tabs along the top, each an icon and a name. The current
 //! list is on the left with box art thumbnails, scrolled to keep the selection on screen. It holds the
 //! collection's entries, or an open group's entries under a header that goes back. The selected entry's
 //! large box art and details are on the right. Images come from the image cache, with placeholders in
@@ -6,7 +6,7 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use clamshell_state::{Entry, Id, Launch, ListId, ShelfId, State, Tab};
+use clamshell_state::{Entry, Id, Launch, LibraryViewId, ListId, State, Tab};
 
 use crate::gfx::icons::Icon;
 use crate::gfx::{Column, Keep, Rect, Span, WRAP_LINE};
@@ -52,7 +52,7 @@ const SHOT_H: f32 = 0.45;
 /// fits within it. Landscape art is this wide, with the screenshot under it.
 const COVER_W: f32 = 0.55;
 
-/// Draws shelf over `screen` and returns how many list rows fit. The state keeps the selection within
+/// Draws the Library over `screen` and returns how many list rows fit. The state keeps the selection within
 /// them.
 pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     let s = f.s;
@@ -62,16 +62,16 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
 
     // Tabs: the collections' icons and names.
     let tabs_h = h * TABS_H;
-    let collections = s.shelf().library().collections.iter().enumerate();
+    let collections = s.library_view().library().collections.iter().enumerate();
     let items = collections.map(|(i, coll)| {
         let icon = coll.icon.as_deref().and_then(Icon::named);
-        (Id::Shelf(ShelfId::Collection(i as u16)), icon, coll.name.as_str(), i == s.shelf().current())
+        (Id::LibraryView(LibraryViewId::Collection(i as u16)), icon, coll.name.as_str(), i == s.library_view().current())
     });
     let tabs_end = widgets::tabs(f, Rect::new(pad, 0.0, w - 2.0 * pad, tabs_h), h * TAB_TEXT, pad * 0.8, f32::INFINITY, items);
 
     // The first problem found reading the library, such as in library.json or a missing folder, shown at
     // the right end.
-    let problems = &s.shelf().library().problems;
+    let problems = &s.library_view().library().problems;
     if let Some(first) = problems.first() {
         let more = Fmt::<16>::of(format_args!(" (+{})", problems.len() - 1));
         let text = Fmt::<256>::of(format_args!("{first}{}", if problems.len() > 1 { &*more } else { "" }));
@@ -85,33 +85,33 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
 
     // The list fills the height below the tabs, and below an open group's header, exactly with whole rows.
     let mut list = Rect::new(pad, tabs_h + pad * 0.5, w * LIST_W - pad, h - tabs_h - pad * 1.5);
-    if let Some(group) = s.shelf().group() {
+    if let Some(group) = s.library_view().group() {
         let header = list.take_top(h * ROW_H);
         group_header(f, group, header, pad);
     }
     // The filter text typed on the bottom screen's keyboard to find an entry, over the list.
-    let filter = s.shelf().filter();
+    let filter = s.library_view().filter();
     if !filter.is_empty() {
         let line = list.take_top(h * ROW_H * 0.7);
         let size = line.h * HEADER_TEXT;
         let text = Fmt::<96>::of(format_args!("{filter}…"));
         f.c.text_fit(Rect::new(line.x + pad * 0.4, line.y, line.w - pad, line.h), size, Tone::Accent, &text, Keep::End);
-        if s.shelf().list().is_empty() {
+        if s.library_view().list().is_empty() {
             let none = Fmt::<128>::of(format_args!("No title starts with \u{201c}{filter}\u{201d}"));
             f.c.text_fit(Rect::new(list.x + pad * 0.4, list.y, list.w - pad, h * ROW_H), size, Tone::Dim, &none, Keep::Start);
         }
     }
     let rows = ((list.h / (h * ROW_H)).floor() as usize).max(1);
-    list_rows(f, list, rows, s.shelf().list().len(), pad);
+    list_rows(f, list, rows, s.library_view().list().len(), pad);
     // When there is nothing but ClamShell's own tools, say where games and apps come from, in the middle
-    // of the screen. Not while the library is still being read at start, when shelf is empty for a moment.
-    if s.shelf().read() && s.shelf().library().entries.iter().all(|g| matches!(g.launch, Launch::Tool(_))) {
+    // of the screen. Not while the library is still being read at start, when the Library is empty for a moment.
+    if s.library_view().read() && s.library_view().library().entries.iter().all(|g| matches!(g.launch, Launch::Tool(_))) {
         let line = Rect::new(pad, h * 0.5 - h * ROW_H, w - 2.0 * pad, h * ROW_H);
         widgets::centred_text(f, line, h * DETAIL, Tone::Dim, "No games or apps found: see ~/.config/clamshell/library.json");
     }
     // The selected entry. In an empty browsed folder, the folder itself, for its actions (paste, new
     // folder).
-    if let Some((entry, _)) = s.shelf().file_target().filter(|(g, selected)| *selected || g.browsed.is_some()) {
+    if let Some((entry, _)) = s.library_view().file_target().filter(|(g, selected)| *selected || g.browsed.is_some()) {
         selected(f, entry, screen, list, pad);
     }
     rows
@@ -121,7 +121,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
 /// GBA"), cut at the start when it doesn't fit. A tap goes back out.
 fn group_header(f: &mut Frame, group: &Entry, r: Rect, pad: f32) {
     let s = f.s;
-    f.button(Id::Shelf(ShelfId::Up), r, Look::ICON, |f| {
+    f.button(Id::LibraryView(LibraryViewId::Up), r, Look::ICON, |f| {
         let arrow = Rect::new(r.x, r.y, r.h, r.h);
         f.c.icon(Icon::ArrowLeft, arrow.square_center(r.h * 0.4), Tone::Normal);
         let title = Rect::new(r.x + r.h + pad * 0.2, r.y, r.w - r.h - pad * 0.2, r.h);
@@ -135,10 +135,10 @@ fn group_header(f: &mut Frame, group: &Entry, r: Rect, pad: f32) {
 fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
     let s = f.s;
     let row_h = list.h / rows as f32;
-    let cursor = s.shelf().cursor();
-    let scrolled = Scrolled::begin(f, ListId::Shelf, list, row_h, len);
+    let cursor = s.library_view().cursor();
+    let scrolled = Scrolled::begin(f, ListId::LibraryView, list, row_h, len);
     for position in scrolled.shown() {
-        let Some(entry) = s.shelf().entry_at(position) else {
+        let Some(entry) = s.library_view().entry_at(position) else {
             break;
         };
         let at = scrolled.row(position);
@@ -156,7 +156,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         // Every row's picture is a square, cropped to fill it, so that the titles line up.
         let thumb_h = r.h * THUMB;
         let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * ROW_ASPECT, thumb_h);
-        f.button(Id::Shelf(ShelfId::Entry(entry.id.clone())), r, look, |f| {
+        f.button(Id::LibraryView(LibraryViewId::Entry(entry.id.clone())), r, look, |f| {
             widgets::thumb(f.c, f.images, entry, thumb, THUMB_RADIUS, false);
             // The marks at the row's right end, from right to left: a folder's chevron, running (dim
             // while starting or paused), on the dock, and favourite.
@@ -167,7 +167,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
             let marks = [
                 (entry.is_group(), Icon::Chevron, Tone::Normal),
                 (starting || s.session().running(&entry.id).is_some(), Icon::Dot, if paused { Tone::Dim } else { Tone::Go }),
-                (s.shelf().files().selected().contains(&entry.id), Icon::Check, Tone::Accent),
+                (s.library_view().files().selected().contains(&entry.id), Icon::Check, Tone::Accent),
                 (s.dock().is_pinned(&entry.id), Icon::for_tab(Tab::Dock), Tone::Normal),
                 (entry.favourite, Icon::Star, Tone::Accent),
             ];
@@ -181,8 +181,8 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
             let tx = thumb.x + thumb.w + pad * 0.6;
             let title = Rect::new(tx, r.y, right - tx - pad * 0.3, r.h);
             // Outside its folder, as in Recent or Favourites, the folders it is in go before its title.
-            let open = s.shelf().group().map(|g| &g.id);
-            let in_view = entry.parent.and_then(|p| s.shelf().library().entries.get(p)).is_none_or(|p| Some(&p.id) == open);
+            let open = s.library_view().group().map(|g| &g.id);
+            let in_view = entry.parent.and_then(|p| s.library_view().library().entries.get(p)).is_none_or(|p| Some(&p.id) == open);
             if in_view {
                 f.c.text_fit(title, row_h * ROW_TEXT, tone, &entry.title, Keep::Start);
             } else {
@@ -305,18 +305,18 @@ fn selected(f: &mut Frame, entry: &Entry, screen: Rect, list: Rect, pad: f32) {
 /// favourite and on the dock, or Copy and Paste for a browsed file. Then come the file actions, where
 /// Delete and Empty Trash ask to be pressed again, and how far a paste under way has got.
 fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f32 {
-    use clamshell_state::shelf::actions::{Action, Shortcut};
-    use clamshell_state::shelf::files::FileAction;
+    use clamshell_state::library_view::actions::{Action, Shortcut};
+    use clamshell_state::library_view::files::FileAction;
     let s = f.s;
     let mut y = r.y;
     // A row is fourteen times the details' text size wide. Continue's row, which names the next video,
     // is as wide as the details.
     let w = r.w.min(action_h / ACTION * 14.0);
-    let shortcut = |key| s.shelf().button_of(key);
+    let shortcut = |key| s.library_view().button_of(key);
     // While the pad is on the actions themselves, their shortcuts are off and faded, and A and B are
     // explained below.
-    let in_actions = s.shelf().in_actions(s.pointer());
-    for &action in s.shelf().actions().as_slice() {
+    let in_actions = s.library_view().in_actions(s.pointer());
+    for &action in s.library_view().actions().as_slice() {
         let key = match action {
             Action::Open => "A",
             _ if shortcut(Shortcut::Start) == Some(action) => "Start",
@@ -329,7 +329,7 @@ fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f3
         let (label, tone) = match action {
             Action::Open if entry.is_group() => (Fmt::<192>::of(format_args!("Open")), Tone::Normal),
             // A launcher's game says in which launcher it starts, or that the launcher starts first.
-            Action::Open if starting => match s.session().starts_in(entry, s.shelf().library()) {
+            Action::Open if starting => match s.session().starts_in(entry, s.library_view().library()) {
                 Some((launcher, true)) => (Fmt::of(format_args!("Starting · in {launcher}")), Tone::Dim),
                 Some((launcher, false)) => (Fmt::of(format_args!("Starting · {launcher} first")), Tone::Dim),
                 None => (Fmt::of(format_args!("Starting…")), Tone::Dim),
@@ -340,24 +340,24 @@ fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f3
             Action::Open => (Fmt::of(format_args!("Play")), Tone::Normal),
             Action::Continue => {
                 // The position within it is mpv's.
-                let library = s.shelf().library();
+                let library = s.library_view().library();
                 let next = library.entries.iter().position(|g| g.id == entry.id).and_then(|g| library.to_continue(g)).and_then(|i| library.entries.get(i));
                 match next {
                     Some(n) => (Fmt::of(format_args!("Play · {}", Within(s, n, entry))), Tone::Go),
                     None => (Fmt::of(format_args!("Play")), Tone::Go),
                 }
             }
-            Action::Enqueue if !s.shelf().files().selected().is_empty() => {
-                (Fmt::of(format_args!("Enqueue · {} selected", s.shelf().files().selected().len())), Tone::Normal)
+            Action::Enqueue if !s.library_view().files().selected().is_empty() => {
+                (Fmt::of(format_args!("Enqueue · {} selected", s.library_view().files().selected().len())), Tone::Normal)
             }
             Action::Enqueue => (Fmt::of(format_args!("Enqueue")), Tone::Normal),
             Action::Favourite if entry.favourite => (Fmt::of(format_args!("Favourite")), Tone::Accent),
             Action::Favourite => (Fmt::of(format_args!("Not a favourite")), Tone::Dim),
             Action::Pin if s.dock().is_pinned(&entry.id) => (Fmt::of(format_args!("On the dock")), Tone::Normal),
             Action::Pin => (Fmt::of(format_args!("Not on the dock")), Tone::Dim),
-            Action::File(a) if s.shelf().file_armed(a) => (Fmt::of(format_args!("{} · press again", a.label())), Tone::Accent),
+            Action::File(a) if s.library_view().file_armed(a) => (Fmt::of(format_args!("{} · press again", a.label())), Tone::Accent),
             Action::File(a) => {
-                let files = s.shelf().files();
+                let files = s.library_view().files();
                 let clip = files.clip();
                 let selected = files.selected().len();
                 let label = match (a, clip) {
@@ -365,7 +365,7 @@ fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f3
                     (FileAction::Paste, Some(clip)) => Fmt::of(format_args!("Paste · {}", clip.entries.first().map_or("", |(_, n)| n.as_str()))),
                     (FileAction::Select, _) if files.selected().contains(&entry.id) => Fmt::of(format_args!("Selected · {selected}")),
                     (FileAction::ShowHidden, _) => Fmt::of(format_args!("{} hidden files", if files.hidden() { "Hide" } else { "Show" })),
-                    (FileAction::OpenIn, _) => Fmt::of(format_args!("Open in {}", s.shelf().opened_in(entry).map_or("", |r| &*r.name))),
+                    (FileAction::OpenIn, _) => Fmt::of(format_args!("Open in {}", s.library_view().opened_in(entry).map_or("", |r| &*r.name))),
                     (FileAction::Copy | FileAction::Cut | FileAction::Trash | FileAction::Restore | FileAction::Delete, _) if selected > 0 => {
                         Fmt::of(format_args!("{} · {selected} selected", a.label()))
                     }
@@ -380,10 +380,10 @@ fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f3
             }
         };
         let row_w = if action == Action::Continue { r.w } else { w };
-        widgets::key_action(f, Id::Shelf(action.id()), Rect::new(r.x, y, row_w, action_h), key, &label, tone, in_actions);
+        widgets::key_action(f, Id::LibraryView(action.id()), Rect::new(r.x, y, row_w, action_h), key, &label, tone, in_actions);
         y += action_h + pad * 0.15;
     }
-    if let Some(clamshell_state::shelf::files::Busy { what, fraction }) = s.shelf().files().busy() {
+    if let Some(clamshell_state::library_view::files::Busy { what, fraction }) = s.library_view().files().busy() {
         y += pad * 0.3;
         let size = action_h * 0.62;
         f.c.text_fit(Rect::new(r.x, y, r.w, size * 1.4), size, Tone::Normal, what, Keep::Start);
@@ -426,7 +426,7 @@ struct Within<'a>(&'a State, &'a Entry, &'a Entry);
 
 impl Display for Within<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let entries = &self.0.shelf().library().entries;
+        let entries = &self.0.library_view().library().entries;
         // The folders from the entry up to the folder, collected bottom up and written top down.
         let mut chain = [None; 8];
         let mut at = self.1.parent;
@@ -451,7 +451,7 @@ struct Inside<'a>(&'a State, &'a Entry);
 
 impl Display for Inside<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let all = &self.0.shelf().library().entries;
+        let all = &self.0.library_view().library().entries;
         let folders = self.1.items.iter().filter(|&&i| all.get(i).is_some_and(Entry::is_group)).count();
         let entries = self.1.items.len() - folders;
         let plural = |n: usize| if n == 1 { "" } else { "s" };
@@ -492,7 +492,7 @@ struct Groups<'a> {
 
 impl Display for Groups<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let entries = &self.s.shelf().library().entries;
+        let entries = &self.s.library_view().library().entries;
         // At most a few levels, walked from the entry up and written from the top down.
         let mut chain = [None; 8];
         let mut at = self.entry.parent;

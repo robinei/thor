@@ -1,10 +1,10 @@
-//! Shelf's navigation. Each collection keeps its own place: the groups opened in it, such as a series and
+//! The Library's navigation. Each collection keeps its own place: the groups opened in it, such as a series and
 //! then a season, and a cursor over the list at each level, kept in range and on screen. Changes to the
 //! library, such as plays and favourites, keep the current collection and the selection.
 //!
-//! Shelf's rules are here too: its targets, the pad's steps through it, typing to find a title, the
+//! The Library's rules are here too: its targets, the pad's steps through it, typing to find a title, the
 //! details' actions and the file actions. A change to the place marks it to be saved (see
-//! [`crate::State::resume`]), and a focus in shelf's list follows the selection. What needs another
+//! [`crate::State::resume`]), and a focus in the Library's list follows the selection. What needs another
 //! area, such as playing an entry, is queued as an event.
 
 pub mod actions;
@@ -50,12 +50,12 @@ impl Default for Nav {
 }
 
 #[derive(Debug, Default)]
-pub struct Shelf {
+pub struct LibraryView {
     library: Library,
     /// Whether the library has been read. ClamShell starts before it is, with none, and it comes as
     /// [`crate::Event::Library`].
     read: bool,
-    /// Where shelf was at the last start, to go back to once the library is read.
+    /// Where the Library was at the last start, to go back to once the library is read.
     waiting: Option<crate::Resume>,
     /// The current collection, and each collection's place.
     current: usize,
@@ -67,10 +67,10 @@ pub struct Shelf {
     listings: Vec<(Arc<str>, Vec<Entry>)>,
     /// The clipboard and confirmation for file actions, and the folder being browsed (see [`files`]).
     files: files::Files,
-    /// Whether metadata is being fetched (see [`Shelf::fetch_first`]).
+    /// Whether metadata is being fetched (see [`LibraryView::fetch_first`]).
     fetching: bool,
     /// Counts the listings that changed the entries in the current list, so that the view changes with
-    /// them (see [`ShelfView`]).
+    /// them (see [`ShownList`]).
     listings_shown: u32,
 }
 
@@ -78,10 +78,10 @@ pub struct Shelf {
 /// group opened from it, for all but the last), and what is typed in it.
 type KeptLevel = (Option<Arc<str>>, String);
 
-/// What shelf's list shows: the collection, the open group, the first row shown, how many rows, the
+/// What the Library's list shows: the collection, the open group, the first row shown, how many rows, the
 /// selected position, and the listings that changed the list's entries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ShelfView {
+pub(crate) struct ShownList {
     collection: usize,
     group: Option<usize>,
     top: usize,
@@ -90,32 +90,32 @@ pub(crate) struct ShelfView {
     listings: u32,
 }
 
-impl Shelf {
-    pub(crate) fn new(library: Library) -> Shelf {
+impl LibraryView {
+    pub(crate) fn new(library: Library) -> LibraryView {
         let navs = vec![Nav::default(); library.collections.len()];
-        let mut shelf = Shelf { library, read: true, navs, rows: 1, ..Shelf::default() };
-        shelf.sync();
-        shelf
+        let mut library_view = LibraryView { library, read: true, navs, rows: 1, ..LibraryView::default() };
+        library_view.sync();
+        library_view
     }
 
-    /// Shelf before the library is read, empty. `resume` is where it was, restored once the library comes
-    /// ([`Shelf::reload`]).
-    pub(crate) fn unread(resume: Option<crate::Resume>) -> Shelf {
-        let mut shelf = Shelf { waiting: resume, rows: 1, ..Shelf::default() };
-        shelf.sync();
-        shelf
+    /// The Library before the library is read, empty. `resume` is where it was, restored once the library comes
+    /// ([`LibraryView::reload`]).
+    pub(crate) fn unread(resume: Option<crate::Resume>) -> LibraryView {
+        let mut library_view = LibraryView { waiting: resume, rows: 1, ..LibraryView::default() };
+        library_view.sync();
+        library_view
     }
 
     pub fn library(&self) -> &Library {
         &self.library
     }
 
-    /// Whether the library has been read (see [`Shelf::unread`]).
+    /// Whether the library has been read (see [`LibraryView::unread`]).
     pub fn read(&self) -> bool {
         self.read
     }
 
-    /// Where shelf was at the last start, while the library isn't read yet.
+    /// Where the Library was at the last start, while the library isn't read yet.
     pub(crate) fn waiting(&self) -> Option<&crate::Resume> {
         self.waiting.as_ref()
     }
@@ -129,7 +129,7 @@ impl Shelf {
         self.rows
     }
 
-    /// The id of the selected entry: the current list's, at its cursor. It is shown in shelf's list on the
+    /// The id of the selected entry: the current list's, at its cursor. It is shown in the Library's list on the
     /// top screen and in its settings below.
     pub fn selected(&self) -> Option<&Arc<str>> {
         self.selected_entry().map(|g| &g.id)
@@ -271,13 +271,13 @@ impl Shelf {
         self.list_of(c).iter().position(|&i| self.library.entries.get(i).is_some_and(|g| &*g.id == entry))
     }
 
-    /// Where shelf is, for telling when it moved (see [`crate::State::follow_shelf`]): the collection, the
+    /// Where the Library is, for telling when it moved (see [`crate::State::follow_library_view`]): the collection, the
     /// group open in it, and the entry selected.
     pub(crate) fn place_key(&self) -> (usize, Option<usize>, Option<&Arc<str>>) {
         (self.current, self.navs.get(self.current).and_then(|n| n.open.last().copied()), self.selected())
     }
 
-    /// Adds to `hasher` what of shelf a resume saves (see [`crate::Resume::at`]): the collection, and each
+    /// Adds to `hasher` what of the Library a resume saves (see [`crate::Resume::at`]): the collection, and each
     /// collection's open groups and selected entry. It allocates nothing, so that a change is told each
     /// event (see [`crate::State::apply`]).
     pub(crate) fn hash_place(&self, hasher: &mut impl std::hash::Hasher) {
@@ -328,18 +328,18 @@ impl Shelf {
         self.sync()
     }
 
-    /// Whether `id` is one of shelf's targets as they are now: an entry has to be in the current list.
+    /// Whether `id` is one of the Library's targets as they are now: an entry has to be in the current list.
     /// Other ids are taken as they come.
     pub(crate) fn has_target(&self, id: &crate::Id) -> bool {
         match id {
-            crate::Id::Shelf(crate::ShelfId::Entry(entry)) => self.position_in(self.current, entry).is_some(),
+            crate::Id::LibraryView(crate::LibraryViewId::Entry(entry)) => self.position_in(self.current, entry).is_some(),
             _ => true,
         }
     }
 
     /// What the list shows, to tell when it changed.
-    pub(crate) fn view(&self) -> ShelfView {
-        ShelfView {
+    pub(crate) fn view(&self) -> ShownList {
+        ShownList {
             collection: self.current,
             group: self.navs.get(self.current).and_then(|n| n.open.last().copied()),
             top: self.cursor().top.floor().max(0.0) as usize,
@@ -352,7 +352,7 @@ impl Shelf {
     /// Adds the entries in view to `ids`: the selected one first, then the rows shown, then the groups the
     /// list is in, such as a series when its episodes show.
     pub(crate) fn in_view(&self, ids: &mut Vec<Arc<str>>) {
-        let ShelfView { group, top, rows, selected, .. } = self.view();
+        let ShownList { group, top, rows, selected, .. } = self.view();
         let list = self.list();
         let rows = (top..top + rows + 1).filter(|&p| p != selected);
         let id = |i: usize| self.library.entries.get(i).map(|g| g.id.clone());
@@ -488,7 +488,7 @@ impl Shelf {
         let current = self.collection().map(|c| c.name.clone());
         let listings = std::mem::take(&mut self.listings);
         let waiting = self.waiting.take();
-        // The places start over in the new library, and are restored below; the rest of shelf stays.
+        // The places start over in the new library, and are restored below; the rest of the Library stays.
         self.navs = vec![Nav::default(); library.collections.len()];
         (self.library, self.read, self.current) = (library, true, 0);
         self.listings_shown = self.listings_shown.wrapping_add(1);
@@ -502,9 +502,9 @@ impl Shelf {
             self.restore_place(name, levels);
         }
         self.restore_current(current.as_deref().unwrap_or(""));
-        // The first library read: shelf goes back to where it was at the last start.
+        // The first library read: the Library goes back to where it was at the last start.
         if let Some(resume) = waiting {
-            resume.restore_shelf(self);
+            resume.restore_library_view(self);
         }
         self.library_changed(None);
         self.selected() != before.as_ref()
@@ -562,7 +562,7 @@ impl Shelf {
         let Some(f) = self.library.entries.iter().position(|g| g.id == folder) else {
             return false;
         };
-        let shown = |s: &Shelf| s.list().iter().filter_map(|&i| s.library.entries.get(i)).map(|g| g.id.clone()).collect::<Vec<_>>();
+        let shown = |s: &LibraryView| s.list().iter().filter_map(|&i| s.library.entries.get(i)).map(|g| g.id.clone()).collect::<Vec<_>>();
         let shown_before = shown(self);
         let before = self.selected().cloned();
         self.listings.retain(|(id, _)| *id != folder);
@@ -685,7 +685,7 @@ impl Shelf {
 
 /// The current list's entries as a list's rows. Their place is kept by position, per collection and
 /// group.
-impl Rows for Shelf {
+impl Rows for LibraryView {
     fn len(&self) -> usize {
         self.list().len()
     }

@@ -171,18 +171,18 @@ mod tests {
     fn spenders_are_named_after_their_app_or_game() {
         let mut s = state();
         s.applied(Event::tick(1792010377));
-        let first = s.shelf().selected().cloned().unwrap_or_default();
+        let first = s.library_view().selected().cloned().unwrap_or_default();
         let zelda = launch(&mut s, &first);
         // Each unit keeps its own entry's name.
         let ff6 = launch(&mut s, "ff6");
         crate::testkit::start(&mut s, "ff6");
         let terminal = LaunchUnit { key: clamshell_library::key_of("desktop:foot"), secs: 1, n: 9 };
-        assert_eq!(spender(Group::Launch(terminal)).name(s.shelf().library()), "Terminal");
+        assert_eq!(spender(Group::Launch(terminal)).name(s.library_view().library()), "Terminal");
         let title = |id: &str| s.entry(id).map(|g| g.title.clone()).unwrap_or_default();
-        assert_eq!(spender(Group::Launch(zelda)).name(s.shelf().library()), title(&first));
-        assert_eq!(spender(Group::Launch(ff6)).name(s.shelf().library()), title("ff6"));
-        assert_eq!(spender(Group::Process("firefox".into())).name(s.shelf().library()), "firefox");
-        assert_eq!(spender(Group::System).name(s.shelf().library()), "System");
+        assert_eq!(spender(Group::Launch(zelda)).name(s.library_view().library()), title(&first));
+        assert_eq!(spender(Group::Launch(ff6)).name(s.library_view().library()), title("ff6"));
+        assert_eq!(spender(Group::Process("firefox".into())).name(s.library_view().library()), "firefox");
+        assert_eq!(spender(Group::System).name(s.library_view().library()), "System");
     }
 
     #[test]
@@ -231,7 +231,7 @@ mod tests {
             Some(Cost { cpu: 0.1, gpu: None, memory: 0 }),
             "its GPU time: another user's"
         );
-        assert_eq!(spender(Group::App("firefox".into())).name(s.shelf().library()), "Firefox");
+        assert_eq!(spender(Group::App("firefox".into())).name(s.library_view().library()), "Firefox");
         tap(&mut s, Id::Battery(BatteryId::Spender(1)));
         assert_eq!(s.sys().spender_menu(), None, "an app that isn't an entry running: no menu");
         tap(&mut s, Id::Battery(BatteryId::Spender(0)));

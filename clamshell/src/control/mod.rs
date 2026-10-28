@@ -144,7 +144,9 @@ mod tests {
     use clamshell_state::bottom::keyboard::{Key, Modifier};
     use clamshell_state::keymap::{Actuation, Dir, Input, Layer, MouseButton, Output, PadOut, Side};
     use clamshell_state::levels::Level;
-    use clamshell_state::{BtId, DockId, EditorId, Id, KeymapId, LevelEvent, ListId, PadInput, RowPart, ShelfEvent, ShelfId, Slide, Tab, Target, WifiId};
+    use clamshell_state::{
+        BtId, DockId, EditorId, Id, KeymapId, LevelEvent, LibraryViewEvent, LibraryViewId, ListId, PadInput, RowPart, Slide, Tab, Target, WifiId,
+    };
 
     fn activate(id: Id) -> Vec<Event> {
         vec![PointerEvent::Activate(id).into()]
@@ -158,10 +160,13 @@ mod tests {
         assert_eq!(parse("tap dock-tray 2"), Ok(activate(Id::Dock(DockId::Tray(2)))));
         assert_eq!(parse("tap tray-entry 6"), Ok(activate(Id::Dock(DockId::TrayEntry(6)))));
         assert_eq!(parse("tap dock-step right"), Ok(activate(Id::Dock(DockId::Step(clamshell_state::keymap::Dir::Right)))));
-        assert_eq!(parse("tap launch"), Ok(activate(Id::Shelf(ShelfId::Launch))));
-        assert_eq!(parse("tap collection 1"), Ok(activate(Id::Shelf(ShelfId::Collection(1)))));
-        assert_eq!(parse("tap up"), Ok(activate(Id::Shelf(ShelfId::Up))));
-        assert_eq!(parse("tap file new-folder"), Ok(activate(Id::Shelf(ShelfId::File(clamshell_state::shelf::files::FileAction::NewFolder)))));
+        assert_eq!(parse("tap launch"), Ok(activate(Id::LibraryView(LibraryViewId::Launch))));
+        assert_eq!(parse("tap collection 1"), Ok(activate(Id::LibraryView(LibraryViewId::Collection(1)))));
+        assert_eq!(parse("tap up"), Ok(activate(Id::LibraryView(LibraryViewId::Up))));
+        assert_eq!(
+            parse("tap file new-folder"),
+            Ok(activate(Id::LibraryView(LibraryViewId::File(clamshell_state::library_view::files::FileAction::NewFolder))))
+        );
         assert_eq!(parse("tap network 2"), Ok(activate(ListId::Wifi.row(2))));
         assert_eq!(parse("long network 0"), Ok(vec![PointerEvent::LongPress(ListId::Wifi.row(0)).into()]));
         assert_eq!(parse("tap wifi-power"), Ok(activate(Id::Wifi(WifiId::Power))));
@@ -229,7 +234,7 @@ mod tests {
         assert_eq!(parse("tab wifi"), Ok(activate(Id::Tab(Tab::Wifi))));
         assert_eq!(parse("tab nowhere"), Err(ParseError::Name("nowhere".into())));
         assert_eq!(parse("home"), Ok(vec![Event::Home]));
-        assert_eq!(parse("list -2"), Ok(vec![ShelfEvent::ListStep(-2).into()]));
+        assert_eq!(parse("list -2"), Ok(vec![LibraryViewEvent::ListStep(-2).into()]));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! The Device view, shown on the main screen in place of the shelf (see `clamshell_state::setup`). It
+//! The Device view, shown on the main screen in place of the Library (see `clamshell_state::setup`). It
 //! has one row per setting, styled like the time tab's rows: Wi-Fi (opens its tab), the time zone (opens
 //! the time tab), the password (typed in the second screen's editor and shown as dots there), remote
 //! login, calibrating the sticks and the gyro, and calibrating the top screen's refresh rate. The last

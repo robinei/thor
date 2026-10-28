@@ -9,8 +9,8 @@ use clamshell_state::levels::Level;
 use clamshell_state::profiles::picker::{Kind, ProfileId};
 use clamshell_state::settings::Setting;
 use clamshell_state::{
-    BtId, DockId, EditorId, Event, Id, KeymapId, LevelEvent, ListId, PadInput, PointerEvent, RowPart, SettingsId, ShelfEvent, ShelfId, Slide, Tab, Target,
-    WifiId,
+    BtId, DockId, EditorId, Event, Id, KeymapId, LevelEvent, LibraryViewEvent, LibraryViewId, ListId, PadInput, PointerEvent, RowPart, SettingsId, Slide, Tab,
+    Target, WifiId,
 };
 use clamshell_state::{ClockField, SettingsLevel, TimeId};
 
@@ -60,9 +60,9 @@ pub const COMMANDS: &[Form<Vec<Event>>] = &[
     form("window close", "Home+B: the window in front closes", |_| hardware_key(HardwareKey::CloseWindow)),
     form("window quit", "Home+B held: the program in front quits (as its dock menu's Quit)", |_| hardware_key(HardwareKey::Quit)),
     form("home", "the Home button", |_| Ok(vec![Event::Home])),
-    form("list N", "shelf's selection moved by N", |a| Ok(vec![ShelfEvent::ListStep(number(arg(a, 0))?).into()])),
-    form("pin", "shelf's selected entry pinned to the dock, or unpinned (the pad's X)", |_| Ok(vec![ShelfEvent::TogglePin.into()])),
-    form("favourite", "shelf's selected entry a favourite, or not (the pad's Y)", |_| Ok(vec![ShelfEvent::ToggleFavourite.into()])),
+    form("list N", "the Library's selection moved by N", |a| Ok(vec![LibraryViewEvent::ListStep(number(arg(a, 0))?).into()])),
+    form("pin", "the Library's selected entry pinned to the dock, or unpinned (the pad's X)", |_| Ok(vec![LibraryViewEvent::TogglePin.into()])),
+    form("favourite", "the Library's selected entry a favourite, or not (the pad's Y)", |_| Ok(vec![LibraryViewEvent::ToggleFavourite.into()])),
     form("tab NAME", "a tab opened (dock, wifi, keyboard, ...)", |a| {
         let name = arg(a, 0);
         Ok(vec![PointerEvent::Activate(Id::Tab(Tab::from_name(name).ok_or_else(|| name_err(name))?)).into()])
@@ -141,16 +141,16 @@ pub const TARGETS: &[Form<Id>] = &[
         })))
     }),
     form("dock-done", "moving a dock entry: done", |_| Ok(Id::Dock(DockId::Done))),
-    form("launch", "shelf's launch", |_| Ok(Id::Shelf(ShelfId::Launch))),
-    form("enqueue", "shelf's Enqueue (added to what its runner plays, else played)", |_| Ok(Id::Shelf(ShelfId::Enqueue))),
-    form("up", "out of shelf's open group", |_| Ok(Id::Shelf(ShelfId::Up))),
-    form("collection N", "shelf's collection tab N", |a| Ok(Id::Shelf(ShelfId::Collection(number(arg(a, 0))?)))),
+    form("launch", "the Library's launch", |_| Ok(Id::LibraryView(LibraryViewId::Launch))),
+    form("enqueue", "the Library's Enqueue (added to what its runner plays, else played)", |_| Ok(Id::LibraryView(LibraryViewId::Enqueue))),
+    form("up", "out of the Library's open group", |_| Ok(Id::LibraryView(LibraryViewId::Up))),
+    form("collection N", "the Library's collection tab N", |a| Ok(Id::LibraryView(LibraryViewId::Collection(number(arg(a, 0))?)))),
     form(
         "file ACTION",
         "a browsed entry's file action: copy, cut, rename, trash, restore, delete, empty-trash, eject, select, paste, new-folder, show-hidden, extract, open-in",
         |a| {
-            use clamshell_state::shelf::files::FileAction;
-            Ok(Id::Shelf(ShelfId::File(match arg(a, 0) {
+            use clamshell_state::library_view::files::FileAction;
+            Ok(Id::LibraryView(LibraryViewId::File(match arg(a, 0) {
                 "copy" => FileAction::Copy,
                 "cut" => FileAction::Cut,
                 "rename" => FileAction::Rename,

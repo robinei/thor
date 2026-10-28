@@ -255,7 +255,7 @@ impl crate::State {
     /// down). None for a process of anything else.
     pub fn process_game(&self, unit: Option<&str>, game: Option<&str>) -> Option<(crate::settings::Resolution, bool)> {
         let id = self.session().entry_of_process(unit, game)?;
-        let game = self.session().entry(self.shelf().library(), &id).is_some_and(crate::Entry::is_game);
+        let game = self.session().entry(self.library_view().library(), &id).is_some_and(crate::Entry::is_game);
         let dual = self.session().window_rules().list().iter().any(|rule| *rule.owner == *id);
         game.then(|| (self.settings_of(&id).choice(), dual))
     }

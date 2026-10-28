@@ -2,14 +2,14 @@
 //! what it is on, the shoulders and View, and on a desktop, keys that stand in for the pad. These are pure
 //! functions of the state and what the last frames drew ([`Drawn`]), and they answer with events.
 //!
-//! [`PadScope`] says where the pad may go. With shelf in front, it may go anywhere on both screens, and
-//! in shelf's list up and down step through the games. With anything else in front, it stays on the
+//! [`PadScope`] says where the pad may go. With the Library in front, it may go anywhere on both screens, and
+//! in the Library's list up and down step through the games. With anything else in front, it stays on the
 //! second screen.
 
 use clamshell_state::bottom::keyboard;
 use clamshell_state::levels::Level;
 use clamshell_state::profiles::picker::{Kind, ProfileId};
-use clamshell_state::{DockId, EditorId, Event, Id, LevelEvent, PadInput, PointerEvent, RowPart, ShelfEvent, ShelfId, State, Tab};
+use clamshell_state::{DockId, EditorId, Event, Id, LevelEvent, LibraryViewEvent, LibraryViewId, PadInput, PointerEvent, RowPart, State, Tab};
 use xkeysym::Keysym;
 
 use crate::gfx::Rect;
@@ -26,36 +26,36 @@ pub(crate) trait Drawn {
 /// Where the pad's focus may go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PadScope {
-    /// Shelf is in front and the focus is in its list or on its tabs. Up and down step through the
+    /// The Library is in front and the focus is in its list or on its tabs. Up and down step through the
     /// games, and left and right through the collections.
-    ShelfList,
-    /// Shelf is in front, and the focus may go anywhere on both screens.
+    LibraryViewList,
+    /// The Library is in front, and the focus may go anywhere on both screens.
     BothScreens,
     /// Something else is in front, and the focus stays on the second screen.
     BottomOnly,
 }
 
-/// Whether the pad is on shelf's actions, reached by holding A. Only while shelf is in front: with
-/// anything else in front shelf isn't shown, and the pad goes to the second screen even if the focus was
+/// Whether the pad is on the Library's actions, reached by holding A. Only while the Library is in front: with
+/// anything else in front the Library isn't shown, and the pad goes to the second screen even if the focus was
 /// left on an action, as it is after one that starts a game.
 fn on_actions(s: &State) -> bool {
-    s.pad().on_top() && s.shelf().in_actions(s.pointer())
+    s.pad().on_top() && s.library_view().in_actions(s.pointer())
 }
 
 pub(crate) fn scope(s: &State) -> PadScope {
-    let in_list = matches!(s.pointer().focus(), Some(Id::Shelf(ShelfId::Entry(_) | ShelfId::Collection(_))));
+    let in_list = matches!(s.pointer().focus(), Some(Id::LibraryView(LibraryViewId::Entry(_) | LibraryViewId::Collection(_))));
     match (s.pad().on_top(), in_list) {
-        (true, true) => PadScope::ShelfList,
+        (true, true) => PadScope::LibraryViewList,
         (true, false) => PadScope::BothScreens,
         (false, _) => PadScope::BottomOnly,
     }
 }
 
-/// Where the focus goes on `screen` when nothing better is known: shelf's selected game on the top
+/// Where the focus goes on `screen` when nothing better is known: the Library's selected game on the top
 /// screen, or the open tab's button on the bottom one.
 pub(crate) fn default_focus(s: &State, screen: Screen) -> Option<Id> {
     match screen {
-        Screen::Top => s.shelf().selected().cloned().map(|g| Id::Shelf(ShelfId::Entry(g))),
+        Screen::Top => s.library_view().selected().cloned().map(|g| Id::LibraryView(LibraryViewId::Entry(g))),
         Screen::Bottom => Some(Id::Tab(s.bottom().tab())),
     }
 }
@@ -84,7 +84,7 @@ pub(crate) fn focus_bottom(s: &State, d: &impl Drawn, memory: &Screens<Option<Id
     PointerEvent::Focus(target).into()
 }
 
-/// Moves the focus to the other screen, with shelf in front. It goes where it last was on that screen if
+/// Moves the focus to the other screen, with the Library in front. It goes where it last was on that screen if
 /// that is still drawn, else to the screen's default, else to the first thing drawn there. Where it was
 /// is remembered in `memory`.
 pub(crate) fn switch_screen(s: &State, d: &impl Drawn, memory: &mut Screens<Option<Id>>) -> Option<Event> {
@@ -98,26 +98,26 @@ pub(crate) fn switch_screen(s: &State, d: &impl Drawn, memory: &mut Screens<Opti
     Some(PointerEvent::Focus(target).into())
 }
 
-/// The position in shelf's list of the focused entry, if the focus is on one.
+/// The position in the Library's list of the focused entry, if the focus is on one.
 fn focused_entry(s: &State) -> Option<usize> {
-    let Some(Id::Shelf(ShelfId::Entry(id))) = s.pointer().focus() else {
+    let Some(Id::LibraryView(LibraryViewId::Entry(id))) = s.pointer().focus() else {
         return None;
     };
-    (0..s.shelf().list().len()).find(|&i| s.shelf().entry_at(i).is_some_and(|e| &e.id == id))
+    (0..s.library_view().list().len()).find(|&i| s.library_view().entry_at(i).is_some_and(|e| &e.id == id))
 }
 
-/// The targets the pad may move between, each with its screen. On shelf's actions, reached by holding A,
+/// The targets the pad may move between, each with its screen. On the Library's actions, reached by holding A,
 /// they are the actions alone. Otherwise they are the targets on the screens the pad may use, except
 /// those for fingers: a list's area (the pad goes to its rows instead) and a dock tile's tray mark (the
-/// pad uses the Menu entry in the tile's long-press menu). Shelf's actions are left out, as they are
+/// pad uses the Menu entry in the tile's long-press menu). The Library's actions are left out, as they are
 /// reached only by holding A.
 pub(crate) fn candidates<'d>(s: &State, d: &'d impl Drawn) -> Vec<(Screen, &'d Target)> {
     if on_actions(s) {
-        let actions: Vec<Id> = s.shelf().actions().as_slice().iter().map(|a| Id::Shelf(a.id())).collect();
+        let actions: Vec<Id> = s.library_view().actions().as_slice().iter().map(|a| Id::LibraryView(a.id())).collect();
         return d.targets(Screen::Top).iter().filter(|t| actions.contains(&t.id)).map(|t| (Screen::Top, t)).collect();
     }
     let screens: &[Screen] = if scope(s) == PadScope::BottomOnly { &[Screen::Bottom] } else { &Screen::BOTH };
-    let actions = |id: &Id| matches!(id, Id::Shelf(s) if !matches!(s, ShelfId::Entry(_) | ShelfId::Collection(_) | ShelfId::Up));
+    let actions = |id: &Id| matches!(id, Id::LibraryView(s) if !matches!(s, LibraryViewId::Entry(_) | LibraryViewId::Collection(_) | LibraryViewId::Up));
     let fingers = |id: &Id| matches!(id, Id::List(_) | Id::Dock(DockId::Tray(_)));
     screens.iter().flat_map(|&screen| d.targets(screen).iter().map(move |t| (screen, t))).filter(|(_, t)| !fingers(&t.id) && !actions(&t.id)).collect()
 }
@@ -136,7 +136,7 @@ fn placed(d: &impl Drawn, screen: Screen, t: &Target) -> NavTarget {
 /// Pad-style focus movement over the screens' targets, as if the second screen were right below the
 /// main one.
 pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, dir: Dir) -> Option<Event> {
-    // On shelf's actions, reached by holding A, up and down move through them only.
+    // On the Library's actions, reached by holding A, up and down move through them only.
     if on_actions(s) {
         let rows: Vec<NavTarget> = candidates(s, d).into_iter().map(|(screen, t)| placed(d, screen, t)).collect();
         return match dir {
@@ -145,27 +145,27 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
         };
     }
     let scope = scope(s);
-    // In shelf's list, up and down move through the games, scrolling it, and left and right switch
+    // In the Library's list, up and down move through the games, scrolling it, and left and right switch
     // collections. Down past the last game goes on to the second screen. The steps count from the
     // focused game, which isn't the selected one when the focus came up from the second screen.
-    if scope == PadScope::ShelfList {
-        let len = s.shelf().list().len();
-        let cursor = s.shelf().cursor().index;
+    if scope == PadScope::LibraryViewList {
+        let len = s.library_view().list().len();
+        let cursor = s.library_view().cursor().index;
         let from = focused_entry(s).unwrap_or(cursor);
         let at_end = from + 1 >= len;
-        let to = |n: usize| ShelfEvent::ListStep(i32::try_from(n).unwrap_or(i32::MAX).saturating_sub(i32::try_from(cursor).unwrap_or(i32::MAX)));
+        let to = |n: usize| LibraryViewEvent::ListStep(i32::try_from(n).unwrap_or(i32::MAX).saturating_sub(i32::try_from(cursor).unwrap_or(i32::MAX)));
         let step = match dir {
             Dir::Up => Some(to(from.saturating_sub(1))),
             Dir::Down if !at_end => Some(to(from + 1)),
-            Dir::Left => Some(ShelfEvent::CollectionStep(-1)),
-            Dir::Right => Some(ShelfEvent::CollectionStep(1)),
+            Dir::Left => Some(LibraryViewEvent::CollectionStep(-1)),
+            Dir::Right => Some(LibraryViewEvent::CollectionStep(1)),
             Dir::Down => None,
         };
         if let Some(step) = step {
             return Some(step.into());
         }
     }
-    // Away from shelf, only the second screen is used. If the focus is elsewhere, it moves there first.
+    // Away from the Library, only the second screen is used. If the focus is elsewhere, it moves there first.
     if scope == PadScope::BottomOnly && focus_screen(s, d) != Screen::Bottom {
         return Some(focus_bottom(s, d, memory));
     }
@@ -218,17 +218,17 @@ pub(crate) fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> 
     }
 }
 
-/// The shoulders. On shelf they move a page through the list. Elsewhere they step through the bar's
+/// The shoulders. On the Library they move a page through the list. Elsewhere they step through the bar's
 /// tabs from left to right, opening and focusing each.
 pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
-    // On shelf's actions, shelf stays where it is.
+    // On the Library's actions, the Library stays where it is.
     if on_actions(s) {
         return vec![];
     }
-    // On shelf, move a page, which is the rows on screen.
-    if on_shelf(s, d) {
-        let page = i32::try_from(s.shelf().rows()).unwrap_or(1).max(1);
-        return vec![ShelfEvent::ListStep(step * page).into()];
+    // On the Library, move a page, which is the rows on screen.
+    if on_library_view(s, d) {
+        let page = i32::try_from(s.library_view().rows()).unwrap_or(1).max(1);
+        return vec![LibraryViewEvent::ListStep(step * page).into()];
     }
     let tabs: Vec<Tab> = Tab::ALL.to_vec();
     let at = tabs.iter().position(|t| *t == s.bottom().tab()).unwrap_or(0) as i32;
@@ -240,35 +240,35 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     }
 }
 
-/// Whether the pad is on shelf, rather than on a view shown in its place.
-fn on_shelf(s: &State, d: &impl Drawn) -> bool {
-    s.pad().on_top() && focus_screen(s, d) == Screen::Top && s.setup().top_view() == clamshell_state::setup::TopView::Shelf
+/// Whether the pad is on the Library, rather than on a view shown in its place.
+fn on_library_view(s: &State, d: &impl Drawn) -> bool {
+    s.pad().on_top() && focus_screen(s, d) == Screen::Top && s.setup().top_view() == clamshell_state::setup::TopView::LibraryView
 }
 
-/// L2 and R2 go to shelf's first or last entry.
+/// L2 and R2 go to the Library's first or last entry.
 pub(crate) fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     if on_actions(s) {
         return vec![];
     }
-    if on_shelf(s, d) {
-        let len = i32::try_from(s.shelf().list().len()).unwrap_or(i32::MAX);
-        return vec![ShelfEvent::ListStep(step * len).into()];
+    if on_library_view(s, d) {
+        let len = i32::try_from(s.library_view().list().len()).unwrap_or(i32::MAX);
+        return vec![LibraryViewEvent::ListStep(step * len).into()];
     }
     vec![]
 }
 
-/// Y, X and Start run the details' actions while the pad is on shelf (see clamshell-state's `actions`).
+/// Y, X and Start run the details' actions while the pad is on the Library (see clamshell-state's `actions`).
 /// For an entry these are favourite, on the dock and Continue; for a browsed file, Copy, Paste and
 /// Select. On the second screen with the keyboard open, for typing with the pad, X is Backspace.
 /// Elsewhere they do nothing.
 pub(crate) fn shortcut(s: &State, d: &impl Drawn, button: PadInput) -> Vec<Event> {
     let event = match button {
-        PadInput::Y => ShelfEvent::ToggleFavourite,
-        PadInput::X => ShelfEvent::TogglePin,
-        PadInput::Start => ShelfEvent::Continue,
+        PadInput::Y => LibraryViewEvent::ToggleFavourite,
+        PadInput::X => LibraryViewEvent::TogglePin,
+        PadInput::Start => LibraryViewEvent::Continue,
         _ => return vec![],
     };
-    if on_shelf(s, d) {
+    if on_library_view(s, d) {
         return vec![event.into()];
     }
     let backspace = keyboard::find(keyboard::Key::Named(keyboard::Named::Backspace));
@@ -279,8 +279,8 @@ pub(crate) fn shortcut(s: &State, d: &impl Drawn, button: PadInput) -> Vec<Event
 }
 
 /// B cancels the editor if one is open. Otherwise it goes back a page in the Time tab or one of the
-/// keymaps' screens, closes the Device view, or, with shelf in focus, goes back from shelf's actions,
-/// clears the search, or leaves shelf's open group.
+/// keymaps' screens, closes the Device view, or, with the Library in focus, goes back from the Library's actions,
+/// clears the search, or leaves the Library's open group.
 pub(crate) fn back(s: &State) -> Option<Event> {
     if s.bottom().editor().is_some() {
         return Some(PointerEvent::Activate(Id::Editor(EditorId::Cancel)).into());
@@ -294,25 +294,25 @@ pub(crate) fn back(s: &State) -> Option<Event> {
     if s.keymapping().screen().is_some() {
         return Some(PointerEvent::Activate(Id::Profile(Kind::Keymap, ProfileId::Back)).into());
     }
-    // The Device view in shelf's place goes back to shelf.
+    // The Device view in the Library's place goes back to the Library.
     if s.setup().top_view() == clamshell_state::setup::TopView::Device {
         return Some(PointerEvent::Activate(Id::Device(clamshell_state::DeviceId::Close)).into());
     }
-    // On shelf's actions, which holding A led to, go back to the entry in the list.
-    if matches!(s.pointer().focus(), Some(Id::Shelf(id)) if !matches!(id, ShelfId::Entry(_) | ShelfId::Collection(_) | ShelfId::Up)) {
+    // On the Library's actions, which holding A led to, go back to the entry in the list.
+    if matches!(s.pointer().focus(), Some(Id::LibraryView(id)) if !matches!(id, LibraryViewId::Entry(_) | LibraryViewId::Collection(_) | LibraryViewId::Up)) {
         return default_focus(s, Screen::Top).map(|id| PointerEvent::Focus(id).into());
     }
-    // In shelf, clear what was typed to find an entry, or else leave the open group.
-    let in_shelf = matches!(s.pointer().focus(), Some(Id::Shelf(_)));
-    if in_shelf && !s.shelf().filter().is_empty() {
-        return Some(clamshell_state::ShelfEvent::ClearFilter.into());
+    // In the Library, clear what was typed to find an entry, or else leave the open group.
+    let in_library_view = matches!(s.pointer().focus(), Some(Id::LibraryView(_)));
+    if in_library_view && !s.library_view().filter().is_empty() {
+        return Some(clamshell_state::LibraryViewEvent::ClearFilter.into());
     }
-    (in_shelf && s.shelf().group().is_some()).then(|| PointerEvent::Activate(Id::Shelf(ShelfId::Up)).into())
+    (in_library_view && s.library_view().group().is_some()).then(|| PointerEvent::Activate(Id::LibraryView(LibraryViewId::Up)).into())
 }
 
 /// On a desktop, keys stand in for the pad. The arrows move the focus, Enter or Space is A (press and
 /// hold), Tab is View, Backspace is B, Q and E are the shoulders, Home and End the triggers, F is Y, P is
-/// X and C is Start. This is not done on the device, where keys reaching shelf's window are typing.
+/// X and C is Start. This is not done on the device, where keys reaching the Library's window are typing.
 const DESKTOP_KEYS: [(Keysym, PadInput); 16] = [
     (Keysym::Left, PadInput::Left),
     (Keysym::Right, PadInput::Right),
@@ -367,7 +367,7 @@ mod tests {
     }
 
     fn entry(s: &State, i: usize) -> Id {
-        Id::Shelf(ShelfId::Entry(s.shelf().entry_at(i).map(|g| g.id.clone()).unwrap_or_else(|| "?".into())))
+        Id::LibraryView(LibraryViewId::Entry(s.library_view().entry_at(i).map(|g| g.id.clone()).unwrap_or_else(|| "?".into())))
     }
 
     fn drawn(s: &State) -> Fake {
@@ -426,17 +426,17 @@ mod tests {
     }
 
     #[test]
-    fn in_shelfs_list_up_and_down_step_and_the_end_goes_on_down() {
+    fn in_library_views_list_up_and_down_step_and_the_end_goes_on_down() {
         let mut s = state();
         let d = drawn(&s);
         let memory = Screens::default();
         let g = entry(&s, 0);
         focus(&mut s, g);
-        assert_eq!(scope(&s), PadScope::ShelfList);
-        assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(ShelfEvent::ListStep(1).into()));
-        assert_eq!(navigate(&s, &d, &memory, Dir::Right), Some(ShelfEvent::CollectionStep(1).into()));
-        let len = s.shelf().collection().map_or(0, |c| c.entries.len());
-        s.apply(ShelfEvent::ListStep(len as i32).into(), &mut Vec::new());
+        assert_eq!(scope(&s), PadScope::LibraryViewList);
+        assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(LibraryViewEvent::ListStep(1).into()));
+        assert_eq!(navigate(&s, &d, &memory, Dir::Right), Some(LibraryViewEvent::CollectionStep(1).into()));
+        let len = s.library_view().collection().map_or(0, |c| c.entries.len());
+        s.apply(LibraryViewEvent::ListStep(len as i32).into(), &mut Vec::new());
         let last = entry(&s, len - 1);
         focus(&mut s, last.clone());
         // Past the last game, the focus moves by direction on to the second screen.
@@ -447,33 +447,33 @@ mod tests {
     }
 
     #[test]
-    fn in_shelfs_list_up_and_down_step_from_the_focused_entry() {
+    fn in_library_views_list_up_and_down_step_from_the_focused_entry() {
         let mut s = state();
         let d = drawn(&s);
         let memory = Screens::default();
         // The focus came up from the second screen onto entry 1, while entry 0 is selected.
         let g = entry(&s, 1);
         focus(&mut s, g);
-        assert_eq!(s.shelf().cursor().index, 0);
-        assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(ShelfEvent::ListStep(2).into()), "to entry 2");
-        assert_eq!(navigate(&s, &d, &memory, Dir::Up), Some(ShelfEvent::ListStep(0).into()), "to entry 0");
+        assert_eq!(s.library_view().cursor().index, 0);
+        assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(LibraryViewEvent::ListStep(2).into()), "to entry 2");
+        assert_eq!(navigate(&s, &d, &memory, Dir::Up), Some(LibraryViewEvent::ListStep(0).into()), "to entry 0");
     }
 
     #[test]
-    fn with_a_game_in_front_the_pad_leaves_shelfs_actions_for_the_second_screen() {
+    fn with_a_game_in_front_the_pad_leaves_library_views_actions_for_the_second_screen() {
         let mut s = state();
-        // A game started from shelf's actions is in front, with the focus left on an action.
-        let key = clamshell_library::key_of(&s.shelf().entry_at(0).map(|e| e.id.to_string()).unwrap_or_default());
+        // A game started from the Library's actions is in front, with the focus left on an action.
+        let key = clamshell_library::key_of(&s.library_view().entry_at(0).map(|e| e.id.to_string()).unwrap_or_default());
         let launch = clamshell_state::LaunchUnit { key, secs: 1, n: 0 };
         s.apply(Event::Units(vec![launch.clone()]), &mut Vec::new());
         let window = clamshell_state::session::windows::WindowFacts { id: 1, app_id: "game".into(), unit: Some(launch.service()), ..Default::default() };
         s.apply(clamshell_state::WindowEvent::Opened(window).into(), &mut Vec::new());
         s.apply(clamshell_state::WindowEvent::Activate(1).into(), &mut Vec::new());
-        let actions: Vec<Id> = s.shelf().actions().as_slice().iter().map(|a| Id::Shelf(a.id())).collect();
+        let actions: Vec<Id> = s.library_view().actions().as_slice().iter().map(|a| Id::LibraryView(a.id())).collect();
         let mut d = drawn(&s);
         d.0.top.extend(actions.iter().enumerate().map(|(i, id)| t(60.0, 15.0 * i as f32, id.clone())));
         focus(&mut s, actions[0].clone());
-        assert!(s.shelf().in_actions(s.pointer()));
+        assert!(s.library_view().in_actions(s.pointer()));
         assert!(!s.pad().on_top(), "a game is in front");
         let memory = Screens::default();
         assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(Id::Tab(s.bottom().tab())).into()));
@@ -502,7 +502,7 @@ mod tests {
     }
 
     #[test]
-    fn the_shoulders_step_the_tabs_from_the_second_screen_and_page_through_shelf() {
+    fn the_shoulders_step_the_tabs_from_the_second_screen_and_page_through_library_view() {
         let mut s = state();
         let d = drawn(&s);
         focus(&mut s, Id::Tab(Tab::Sysinfo));
@@ -513,61 +513,72 @@ mod tests {
         assert_eq!(shoulder(&s, &d, 1), vec![PointerEvent::Activate(Id::Tab(next)).into(), PointerEvent::Focus(icon).into()], "its icon in the bar focused");
         let g = entry(&s, 0);
         focus(&mut s, g);
-        let page = s.shelf().rows() as i32;
-        assert_eq!(shoulder(&s, &d, -1), vec![ShelfEvent::ListStep(-page).into()], "in shelf: a page");
-        let len = s.shelf().list().len() as i32;
-        assert_eq!(trigger(&s, &d, 1), vec![ShelfEvent::ListStep(len).into()], "the last entry");
+        let page = s.library_view().rows() as i32;
+        assert_eq!(shoulder(&s, &d, -1), vec![LibraryViewEvent::ListStep(-page).into()], "in the Library: a page");
+        let len = s.library_view().list().len() as i32;
+        assert_eq!(trigger(&s, &d, 1), vec![LibraryViewEvent::ListStep(len).into()], "the last entry");
     }
 
     #[test]
-    fn on_shelfs_actions_the_pad_stays_on_them() {
+    fn on_library_views_actions_the_pad_stays_on_them() {
         let mut s = state();
         let mut d = drawn(&s);
-        d.0.top.extend([t(60.0, 0.0, Id::Shelf(ShelfId::Launch)), t(60.0, 15.0, Id::Shelf(ShelfId::Favourite)), t(60.0, 30.0, Id::Shelf(ShelfId::Pin))]);
-        focus(&mut s, Id::Shelf(ShelfId::Launch));
-        assert!(s.shelf().in_actions(s.pointer()));
+        d.0.top.extend([
+            t(60.0, 0.0, Id::LibraryView(LibraryViewId::Launch)),
+            t(60.0, 15.0, Id::LibraryView(LibraryViewId::Favourite)),
+            t(60.0, 30.0, Id::LibraryView(LibraryViewId::Pin)),
+        ]);
+        focus(&mut s, Id::LibraryView(LibraryViewId::Launch));
+        assert!(s.library_view().in_actions(s.pointer()));
         let memory = Screens::default();
-        assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(Id::Shelf(ShelfId::Favourite)).into()));
+        assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(Id::LibraryView(LibraryViewId::Favourite)).into()));
         assert_eq!(navigate(&s, &d, &memory, Dir::Left), None, "not out to the list");
-        focus(&mut s, Id::Shelf(ShelfId::Pin));
-        assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(Id::Shelf(ShelfId::Pin)).into()), "not down to the second screen");
+        focus(&mut s, Id::LibraryView(LibraryViewId::Pin));
+        assert_eq!(
+            navigate(&s, &d, &memory, Dir::Down),
+            Some(PointerEvent::Focus(Id::LibraryView(LibraryViewId::Pin)).into()),
+            "not down to the second screen"
+        );
         assert_eq!(shoulder(&s, &d, 1), vec![]);
-        assert_eq!(shortcut(&s, &d, PadInput::Y), vec![ShelfEvent::ToggleFavourite.into()], "sent, but the state has no shortcut there");
-        assert_eq!(s.shelf().shortcut(clamshell_state::shelf::actions::Shortcut::Y, s.pointer()), None);
+        assert_eq!(shortcut(&s, &d, PadInput::Y), vec![LibraryViewEvent::ToggleFavourite.into()], "sent, but the state has no shortcut there");
+        assert_eq!(s.library_view().shortcut(clamshell_state::library_view::actions::Shortcut::Y, s.pointer()), None);
     }
 
     #[test]
-    fn the_pad_reaches_shelfs_actions_only_by_a_held() {
+    fn the_pad_reaches_library_views_actions_only_by_a_held() {
         let mut s = state();
         let mut d = drawn(&s);
-        // Shelf's actions, right beside and below the last game shown.
-        d.0.top.extend([t(60.0, 20.0, Id::Shelf(ShelfId::Launch)), t(60.0, 35.0, Id::Shelf(ShelfId::Favourite))]);
+        // The Library's actions, right beside and below the last game shown.
+        d.0.top.extend([t(60.0, 20.0, Id::LibraryView(LibraryViewId::Launch)), t(60.0, 35.0, Id::LibraryView(LibraryViewId::Favourite))]);
         let last = entry(&s, 1);
         focus(&mut s, last.clone());
         let memory = Screens::default();
         for dir in [Dir::Down, Dir::Right] {
             let to = navigate(&s, &d, &memory, dir);
-            assert!(!matches!(&to, Some(Event::Pointer(PointerEvent::Focus(Id::Shelf(ShelfId::Launch | ShelfId::Favourite))))), "{dir:?}: {to:?}");
+            assert!(
+                !matches!(&to, Some(Event::Pointer(PointerEvent::Focus(Id::LibraryView(LibraryViewId::Launch | LibraryViewId::Favourite))))),
+                "{dir:?}: {to:?}"
+            );
         }
     }
 
     #[test]
-    fn b_on_shelfs_actions_goes_back_to_the_entry() {
+    fn b_on_library_views_actions_goes_back_to_the_entry() {
         let mut s = state();
-        focus(&mut s, Id::Shelf(ShelfId::Launch));
-        let g = entry(&s, s.shelf().cursor().index);
+        focus(&mut s, Id::LibraryView(LibraryViewId::Launch));
+        let g = entry(&s, s.library_view().cursor().index);
         assert_eq!(back(&s), Some(PointerEvent::Focus(g).into()));
     }
 
     #[test]
-    fn y_x_and_start_act_on_shelf_only_while_the_pad_is_there() {
+    fn y_x_and_start_act_on_library_view_only_while_the_pad_is_there() {
         let mut s = state();
         let d = drawn(&s);
         let g = entry(&s, 0);
         focus(&mut s, g);
-        assert_eq!(shortcut(&s, &d, PadInput::Y), vec![ShelfEvent::ToggleFavourite.into()]);
+        assert_eq!(shortcut(&s, &d, PadInput::Y), vec![LibraryViewEvent::ToggleFavourite.into()]);
         focus(&mut s, Id::Tab(Tab::Sysinfo));
-        assert_eq!(shortcut(&s, &d, PadInput::Y), vec![], "the second screen: not shelf's");
+        assert_eq!(shortcut(&s, &d, PadInput::Y), vec![], "the second screen: not the Library's");
         assert_eq!(shortcut(&s, &d, PadInput::X), vec![]);
         // Typing with the pad: X is Backspace.
         s.apply(PointerEvent::Activate(Id::Tab(Tab::Keyboard)).into(), &mut Vec::new());

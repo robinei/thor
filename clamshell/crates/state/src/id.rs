@@ -1,5 +1,5 @@
 //! Stable ids for everything that can be focused or tapped on either screen. [`Id`] groups them by what
-//! they belong to, with an enum of targets per screen (`ShelfId`, `DockId`, `KeymapId`, ...). These ids
+//! they belong to, with an enum of targets per screen (`LibraryViewId`, `DockId`, `KeymapId`, ...). These ids
 //! name targets, not the things the targets act on; a keymap's own id, for example, is its number, a
 //! `u16`.
 //!
@@ -19,8 +19,8 @@ use crate::status::time::ClockField;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Id {
-    /// Shelf, on the main screen.
-    Shelf(ShelfId),
+    /// The Library, on the main screen.
+    LibraryView(LibraryViewId),
     /// The dock tab.
     Dock(DockId),
     /// The settings tab.
@@ -85,7 +85,7 @@ pub enum Id {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum ShelfId {
+pub enum LibraryViewId {
     Entry(Arc<str>),
     /// A collection, by position.
     Collection(u16),
@@ -100,8 +100,8 @@ pub enum ShelfId {
     /// Adds the selected entry, or the selected entries, to what its runner plays (see
     /// [`crate::session::enqueue`]).
     Enqueue,
-    /// A file action on a browsed entry or on the open folder (see [`crate::shelf::files`]).
-    File(crate::shelf::files::FileAction),
+    /// A file action on a browsed entry or on the open folder (see [`crate::library_view::files`]).
+    File(crate::library_view::files::FileAction),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -244,9 +244,9 @@ pub enum AudioId {
 }
 
 impl Id {
-    /// Whether this target is on the main screen. Shelf's are; everything else is on the second screen.
+    /// Whether this target is on the main screen. The Library's are; everything else is on the second screen.
     pub(crate) fn on_top(&self) -> bool {
-        matches!(self, Id::Shelf(_))
+        matches!(self, Id::LibraryView(_))
     }
 }
 
@@ -283,7 +283,7 @@ pub enum DeviceId {
     Refresh,
     /// Finishes the first-start setup.
     Done,
-    /// Back to shelf.
+    /// Back to the Library.
     Close,
 }
 

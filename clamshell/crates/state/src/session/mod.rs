@@ -28,7 +28,7 @@ use windows::{Group, Window, WindowFacts, WindowPlace};
 /// What was in front, as [`Session::follow_front`] goes back to it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum InFront {
-    Shelf,
+    LibraryView,
     Group(Group),
 }
 
@@ -95,7 +95,7 @@ pub struct Session {
     launching: Vec<Launching>,
     /// The compositor's windows.
     windows: Vec<Window>,
-    /// The root of the stack the top screen shows (see [`Session::root_of`]); none while shelf is in
+    /// The root of the stack the top screen shows (see [`Session::root_of`]); none while the Library is in
     /// front. The window taking the input is computed: its topmost ([`Session::top_window`]).
     top: Option<i64>,
     /// The root of the stack placed on the bottom screen, if any. It is shown there while the windows' tab is open
@@ -113,8 +113,8 @@ pub struct Session {
     home_used: bool,
     /// Our running units, as systemd lists them.
     units: Vec<LaunchUnit>,
-    /// What was in front, most recent first: groups, and shelf once something put it in front
-    /// ([`WindowCommand::ShowShelf`]), so that a closed window goes back to where it was opened from.
+    /// What was in front, most recent first: groups, and the Library once something put it in front
+    /// ([`WindowCommand::ShowLibraryView`]), so that a closed window goes back to where it was opened from.
     recent: Vec<InFront>,
     /// The selected stack of each top group, by its root, retained while the group is hidden.
     selected: Vec<(Group, i64)>,
@@ -363,7 +363,7 @@ impl Session {
     }
 
     /// The window the top screen shows in front, taking the input: its stack's topmost (see
-    /// [`Session::topmost`]). None while shelf is in front.
+    /// [`Session::topmost`]). None while the Library is in front.
     pub fn top_window(&self) -> Option<&Window> {
         self.top.map(|root| self.topmost(root)).and_then(|id| self.window(id))
     }
@@ -444,12 +444,12 @@ impl Session {
         &self.units
     }
 
-    /// What is in front on the main screen: shelf, a running entry's window, or another.
+    /// What is in front on the main screen: the Library, a running entry's window, or another.
     pub fn front(&self) -> Front {
         match self.top_window() {
             Some(w) if self.running_of(w).is_some() => Front::Program,
             Some(_) => Front::Other,
-            None => Front::Shelf,
+            None => Front::LibraryView,
         }
     }
 
@@ -650,7 +650,7 @@ impl Session {
         }
         let present = |group: &Group| self.windows.iter().any(|w| w.group.as_ref() == Some(group));
         self.recent.retain(|was| match was {
-            InFront::Shelf => true,
+            InFront::LibraryView => true,
             InFront::Group(group) => present(group),
         });
         if let Some(group) = self.top_window().and_then(|w| w.group.clone()).filter(|g| !self.promoted(g)) {

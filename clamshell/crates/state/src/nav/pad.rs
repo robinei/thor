@@ -1,6 +1,6 @@
 //! Where the controller's input goes.
 //!
-//! What is in front claims the pad. That is shelf, or the program in front, or typing into an app while
+//! What is in front claims the pad. That is the Library, or the program in front, or typing into an app while
 //! the keyboard tab is open. A program gets the pad as a game's pad through its keymap, whether it is a
 //! game or an app. The pad mouse, while on, claims the pad over all of them. The second screen gets the
 //! pad when nothing claims it, and View moves it there and back from the pad mouse or typing.
@@ -12,7 +12,7 @@
 //! [`crate::session::overview`]).
 //!
 //! When the claimant changes, the pad goes to the new one, with one exception. If View moved the pad to
-//! the second screen, it stays there until View moves it back or shelf comes to the front. This way the
+//! the second screen, it stays there until View moves it back or the Library comes to the front. This way the
 //! keyboard that comes up under it can be typed on with the pad.
 //!
 //! The pad mouse is switched by the user, or follows the program in force (its Setting::PadMouse). It is
@@ -28,7 +28,7 @@ pub enum PadRoute {
     /// The game's virtual pad.
     #[default]
     Game,
-    /// ClamShell's own screens, as [`crate::Event::Pad`]. Either shelf's screen and the second screen, or
+    /// ClamShell's own screens, as [`crate::Event::Pad`]. Either the Library's screen and the second screen, or
     /// the second screen alone.
     Ui,
     /// Typing into the app in front while the keyboard is open. The D-pad gives arrows, A gives Enter and
@@ -59,10 +59,10 @@ pub enum PadInput {
     X,
     /// Start plays the selected folder's next video, such as a series' next episode.
     Start,
-    /// The shoulder buttons (L1, R1). They page up or down in shelf, and go to the previous or next tab
+    /// The shoulder buttons (L1, R1). They page up or down in the Library, and go to the previous or next tab
     /// on the second screen.
     Shoulder(i32),
-    /// The triggers (L2, R2) pulled past half. They go to the first or last entry in shelf.
+    /// The triggers (L2, R2) pulled past half. They go to the first or last entry in the Library.
     Trigger(i32),
     /// View/Select moves focus to the other screen.
     Switch,
@@ -82,7 +82,7 @@ pub enum PadMouse {
 /// What claims the pad besides the second screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Claimant {
-    Shelf,
+    LibraryView,
     Game,
     /// Typing into the app in front, while the keyboard tab is open.
     Typing,
@@ -94,7 +94,7 @@ pub struct Pad {
     route: PadRoute,
     mouse: PadMouse,
     /// View moved the pad to the second screen, away from what claims it, such as the pad mouse or
-    /// typing. It stays moved when the claimant changes, until shelf claims the pad.
+    /// typing. It stays moved when the claimant changes, until the Library claims the pad.
     moved_to_ui: bool,
     /// What claimed the pad when last reconciled.
     last_claimant: Option<Claimant>,
@@ -114,10 +114,10 @@ impl Pad {
         self.mouse != PadMouse::Off
     }
 
-    /// Whether the pad, while on ClamShell's screens, may go to shelf's screen or only to the second
-    /// screen. It may go to shelf's when shelf is in front and nothing else has the pad.
+    /// Whether the pad, while on ClamShell's screens, may go to the Library's screen or only to the second
+    /// screen. It may go to the Library's when the Library is in front and nothing else has the pad.
     pub fn on_top(&self) -> bool {
-        self.last_claimant == Some(Claimant::Shelf)
+        self.last_claimant == Some(Claimant::LibraryView)
     }
 
     fn claimant(&self, front: Front, tab: Tab) -> Option<Claimant> {
@@ -125,7 +125,7 @@ impl Pad {
             return Some(Claimant::Mouse);
         }
         match (front, tab) {
-            (Front::Shelf, _) => Some(Claimant::Shelf),
+            (Front::LibraryView, _) => Some(Claimant::LibraryView),
             (Front::Program | Front::Other, Tab::Keyboard) => Some(Claimant::Typing),
             (Front::Program | Front::Other, _) => Some(Claimant::Game),
         }
@@ -135,7 +135,7 @@ impl Pad {
     /// nothing claims it, it goes to the second screen.
     fn wanted_route(&self) -> PadRoute {
         match self.last_claimant {
-            None | Some(Claimant::Shelf) => PadRoute::Ui,
+            None | Some(Claimant::LibraryView) => PadRoute::Ui,
             Some(_) if self.moved_to_ui => PadRoute::Ui,
             Some(Claimant::Game) => PadRoute::Game,
             Some(Claimant::Typing) => PadRoute::Keys,
@@ -148,8 +148,8 @@ impl Pad {
     pub(crate) fn reconcile(&mut self, front: Front, tab: Tab, listening: bool, stepping: bool) -> Option<PadRoute> {
         let claimant = self.claimant(front, tab);
         if claimant != self.last_claimant {
-            // Shelf has both screens, so a later claimant gets the pad again.
-            self.moved_to_ui &= claimant != Some(Claimant::Shelf);
+            // The Library has both screens, so a later claimant gets the pad again.
+            self.moved_to_ui &= claimant != Some(Claimant::LibraryView);
             self.last_claimant = claimant;
         }
         let route = match self.wanted_route() {
@@ -165,7 +165,7 @@ impl Pad {
         })
     }
 
-    /// Switches the pad between the second screen and the pad mouse, typing or a game, but not shelf. A
+    /// Switches the pad between the second screen and the pad mouse, typing or a game, but not the Library. A
     /// game's View belongs to the game, so for a game the switch comes from outside the pad.
     pub(crate) fn switch(&mut self) {
         if matches!(self.last_claimant, Some(Claimant::Mouse | Claimant::Typing | Claimant::Game)) {
@@ -235,13 +235,13 @@ mod tests {
     }
 
     #[test]
-    fn the_pad_goes_to_shelf_the_program_or_typing_by_what_is_in_front() {
+    fn the_pad_goes_to_library_view_the_program_or_typing_by_what_is_in_front() {
         let mut s = state();
         let window = |app_id: &str, unit: Option<&str>| WindowFacts { unit: unit.map(Into::into), ..win(1, app_id) };
-        assert_eq!(route(&mut s, Event::tick(1)), PadRoute::Ui, "nothing known, no game: shelf");
+        assert_eq!(route(&mut s, Event::tick(1)), PadRoute::Ui, "nothing known, no game: the Library");
         crate::testkit::start(&mut s, "zelda-lttp");
-        assert_eq!(s.pad().route(), PadRoute::Ui, "shelf keeps the pad until the first window arrives");
-        assert_eq!(route(&mut s, Event::Home), PadRoute::Ui, "shelf in front");
+        assert_eq!(s.pad().route(), PadRoute::Ui, "the Library keeps the pad until the first window arrives");
+        assert_eq!(route(&mut s, Event::Home), PadRoute::Ui, "the Library in front");
         assert_eq!(shown_route(&mut s, vec![window("foot", Some("clamshell-run-foot_1-1-0.scope"))]), PadRoute::Game, "an app: its pad, as a game's");
         assert_eq!(route(&mut s, PointerEvent::Activate(Id::Tab(Tab::Keyboard)).into()), PadRoute::Keys, "an app and the keyboard: typing");
         assert_eq!(shown_route(&mut s, vec![window("retroarch", Some("clamshell-run-zelda_1-1-0.scope"))]), PadRoute::Keys, "a game too");
@@ -250,10 +250,10 @@ mod tests {
         assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Ui)]);
     }
 
-    /// With shelf in front the pad has both screens, so View has nothing to switch, and a program coming
+    /// With the Library in front the pad has both screens, so View has nothing to switch, and a program coming
     /// in front after it gets the pad.
     #[test]
-    fn view_does_nothing_with_shelf_in_front() {
+    fn view_does_nothing_with_library_view_in_front() {
         let mut s = state();
         assert_eq!(s.pad().route(), PadRoute::Ui);
         assert_eq!(s.applied(Event::PadSwitch), vec![]);
@@ -282,7 +282,7 @@ mod tests {
         // A switch from outside the pad moves it to the second screen and back, since View is the app's.
         assert_eq!(s.applied(Event::PadSwitch), vec![Effect::PadRoute(PadRoute::Ui)]);
         assert_eq!(s.applied(Event::PadSwitch), vec![Effect::PadRoute(PadRoute::Game)]);
-        // With shelf in front and the pad in use on the second screen, the pad stays there when the
+        // With the Library in front and the pad in use on the second screen, the pad stays there when the
         // keyboard comes up under it.
         s.applied(Event::Home);
         s.applied(PointerEvent::Focus(Id::Tab(Tab::Dock)).into());
@@ -291,7 +291,7 @@ mod tests {
     }
 
     #[test]
-    fn the_pad_moved_to_the_second_screen_stays_there_until_view_or_shelf() {
+    fn the_pad_moved_to_the_second_screen_stays_there_until_view_or_library_view() {
         let mut s = state();
         s.observed(vec![foot()]);
         tap(&mut s, Id::Tab(Tab::Dock));
@@ -301,8 +301,8 @@ mod tests {
         assert_eq!(route(&mut s, Event::PadSwitch), PadRoute::Keys, "View: back to what claims it, typing now");
         assert_eq!(route(&mut s, Event::PadSwitch), PadRoute::Ui);
         s.applied(Event::Home);
-        assert_eq!(s.pad().route(), PadRoute::Ui, "shelf in front");
-        assert_eq!(route(&mut s, crate::WindowEvent::Activate(foot().id).into()), PadRoute::Keys, "after shelf, the claimant has it again");
+        assert_eq!(s.pad().route(), PadRoute::Ui, "the Library in front");
+        assert_eq!(route(&mut s, crate::WindowEvent::Activate(foot().id).into()), PadRoute::Keys, "after the Library, the claimant has it again");
     }
 
     #[test]

@@ -75,7 +75,7 @@ license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 publish.workspace = true
-description = "ClamShell: a two-screen handheld shell for the AYN Thor (shelf, the second screen, input and power)"
+description = "ClamShell: a two-screen handheld shell for the AYN Thor (the Library, the second screen, input and power)"
 default-run = "clamshell"
 
 [dependencies]

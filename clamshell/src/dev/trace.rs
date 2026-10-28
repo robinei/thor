@@ -2,7 +2,7 @@
 //! (tests/trace.txt). A summary names the kind and what identifies it, such as the entry launched; it
 //! leaves out payloads such as settings, environments and readings, which other tests cover.
 
-use clamshell_state::shelf::files::BrowseCommand;
+use clamshell_state::library_view::files::BrowseCommand;
 use clamshell_state::{Effect, Event, Save, WindowEvent};
 
 /// The longest Debug text kept whole. A longer one is cut to its kind.

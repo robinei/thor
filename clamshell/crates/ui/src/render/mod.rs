@@ -19,7 +19,7 @@
 mod no_alloc;
 
 #[cfg(any(test, feature = "dev"))]
-use clamshell_state::ShelfEvent;
+use clamshell_state::LibraryViewEvent;
 use clamshell_state::{Event, ListEvent, ListId, State};
 
 #[cfg(any(test, feature = "dev"))]
@@ -262,11 +262,11 @@ pub(crate) fn list_changes(state: &State, out: &FrameOut) -> impl Iterator<Item 
     })
 }
 
-/// What a frame drawn without Wayland reports back to the state, as a live frame would: shelf's rows and
+/// What a frame drawn without Wayland reports back to the state, as a live frame would: the Library's rows and
 /// the lists' visible rows.
 #[cfg(any(test, feature = "dev"))]
 pub(crate) fn frame_events(state: &State, out: &FrameOut) -> Vec<Event> {
-    let mut events: Vec<Event> = out.list_rows.filter(|&r| r != state.shelf().rows()).map(|r| ShelfEvent::Rows(r).into()).into_iter().collect();
+    let mut events: Vec<Event> = out.list_rows.filter(|&r| r != state.library_view().rows()).map(|r| LibraryViewEvent::Rows(r).into()).into_iter().collect();
     events.extend(list_changes(state, out));
     events
 }
@@ -344,8 +344,8 @@ mod frame_times {
         let (mut every, mut sometimes) = (tiny_skia::Pixmap::new(w, h).unwrap(), tiny_skia::Pixmap::new(w, h).unwrap());
         let (mut held_every, mut held_sometimes) = (0, 0);
         for step in 0..7 {
-            // The shelf's selection a row further down each frame.
-            let s = state(vec![Event::Shelf(ShelfEvent::ListStep(step + 1))]);
+            // The Library's selection a row further down each frame.
+            let s = state(vec![Event::LibraryView(LibraryViewEvent::ListStep(step + 1))]);
             frames.record(at, Screen::Top.into(), &s, &mut fonts, &mut images);
             // At step 4 no buffer draws: what it changed is kept for the next draw.
             if step != 4 {
@@ -365,7 +365,7 @@ mod frame_times {
     fn frame_times() {
         let tab = |t| vec![Event::Pointer(PointerEvent::Activate(Id::Tab(t)))];
         let cases = [
-            ("top: shelf", Screen::Top, (1920u32, 1080u32), vec![]),
+            ("top: the Library", Screen::Top, (1920u32, 1080u32), vec![]),
             ("bottom: dock", Screen::Bottom, (1240, 1080), tab(Tab::Dock)),
             ("bottom: settings", Screen::Bottom, (1240, 1080), tab(Tab::Settings)),
             ("bottom: keyboard", Screen::Bottom, (1240, 1080), tab(Tab::Keyboard)),

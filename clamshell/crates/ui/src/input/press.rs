@@ -98,10 +98,10 @@ pub(crate) enum Timer {
 }
 
 /// Whether a finger on `id` may point. That is anywhere on the second screen below the bar. It excludes
-/// shelf's targets on the main screen, where a finger is where it means, and the bar's and the dark
+/// the Library's targets on the main screen, where a finger is where it means, and the bar's and the dark
 /// screen's targets.
 pub(crate) fn points(id: &Id) -> bool {
-    !matches!(id, Id::Shelf(_) | Id::Tab(_) | Id::Control(_) | Id::PadMouse | Id::Wake)
+    !matches!(id, Id::LibraryView(_) | Id::Tab(_) | Id::Control(_) | Id::PadMouse | Id::Wake)
 }
 
 /// What the caller does.

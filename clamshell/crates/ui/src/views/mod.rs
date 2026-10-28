@@ -1,5 +1,5 @@
 //! The screens, drawn in immediate mode. Each is a function of the state and the screen's size that
-//! draws everything and lists what can be tapped or focused. The main screen shows the shelf. The second
+//! draws everything and lists what can be tapped or focused. The main screen shows the Library. The second
 //! screen shows the bar with the open tab below it, or nothing while it is dark. There is one module per
 //! tab. They are drawn with the toolkit (`crate::toolkit`): the frame, style, widgets, text formatting and
 //! scrolled lists.
@@ -21,12 +21,12 @@ mod editor;
 mod keyboard;
 mod keymaps;
 mod levels;
+mod library_view;
 mod notifications;
 mod overlay;
 mod profiles;
 mod radio;
 mod settings;
-mod shelf;
 mod sysinfo;
 mod time;
 mod touchpad;
@@ -34,7 +34,7 @@ mod wifi;
 
 use clamshell_state::Tab;
 use clamshell_state::bottom::editor::Purpose;
-use clamshell_state::shelf::files::FileName;
+use clamshell_state::library_view::files::FileName;
 
 use crate::gfx::Rect;
 use crate::toolkit::Frame;
@@ -42,12 +42,12 @@ use crate::toolkit::Frame;
 /// How much the black layer over the area below the bar hides it while that area is a touchpad.
 const POINTING_FADE: f32 = 0.7;
 
-/// The main screen, over all of `screen`: the shelf, or the Device view shown in its place. The frame
+/// The main screen, over all of `screen`: the Library, or the Device view shown in its place. The frame
 /// starts black (see `render`).
 pub fn top(f: &mut Frame, screen: Rect) {
     f.body = screen;
     match f.s.setup().top_view() {
-        clamshell_state::setup::TopView::Shelf => f.out.list_rows = Some(shelf::draw(f, screen)),
+        clamshell_state::setup::TopView::LibraryView => f.out.list_rows = Some(library_view::draw(f, screen)),
         clamshell_state::setup::TopView::Device => device::draw(f, screen),
     }
 }

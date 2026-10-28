@@ -1,4 +1,4 @@
-//! The browse thread. It lists the folder shelf has open, and lists it again whenever the folder changes
+//! The browse thread. It lists the folder the Library has open, and lists it again whenever the folder changes
 //! (seen through inotify) or a removable filesystem is mounted or unmounted.
 
 use std::fs;
@@ -7,7 +7,7 @@ use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::TryRecvError;
 
-use clamshell_state::shelf::files::{Browse, BrowseCommand, FilesEvent};
+use clamshell_state::library_view::files::{Browse, BrowseCommand, FilesEvent};
 use clamshell_state::{Browsed, Entry, Event};
 use rustix::fs::inotify;
 

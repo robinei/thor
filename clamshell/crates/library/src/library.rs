@@ -1,4 +1,4 @@
-//! The library: every entry in one arena, the tabs (collections) in shelf that list them, and what is
+//! The library: every entry in one arena, the tabs (collections) in the Library that list them, and what is
 //! derived from them: Recent, Favourites, a group's Continue and a browsed folder's listing.
 
 use std::collections::{HashMap, HashSet};
@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::{BrowseKind, Entry, Meta};
 
-/// A tab in shelf. It is a tab from library.json's sources, Games (which also holds the games from Steam
+/// A tab in the Library. It is a tab from library.json's sources, Games (which also holds the games from Steam
 /// and the desktop files), Apps, Recent or Favourites.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Collection {
@@ -145,7 +145,7 @@ impl Library {
     /// was watched to the end. If none was played, it is the first video. It is none when the last video
     /// was watched to the end, or the group holds no videos (a folder of games).
     pub fn to_continue(&self, group: usize) -> Option<usize> {
-        // Walk in order without allocating, since shelf asks every frame to label its Continue.
+        // Walk in order without allocating, since the Library asks every frame to label its Continue.
         let mut walk = ContinueWalk::default();
         for &i in &self.entries.get(group)?.items {
             self.walk_videos(i, &mut walk, 0);

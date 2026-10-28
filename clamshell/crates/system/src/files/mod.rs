@@ -1,6 +1,6 @@
 //! Browsed dirs and file operations (see clamshell-state's `files`).
 //!
-//! The browse thread lists the folder shelf has open, and lists it again whenever it changes, using
+//! The browse thread lists the folder the Library has open, and lists it again whenever it changes, using
 //! inotify. It also notices removable filesystems being mounted and unmounted (udisks2's, under
 //! `/run/media`).
 //!

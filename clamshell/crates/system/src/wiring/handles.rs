@@ -48,8 +48,8 @@ pub struct Handles {
     /// Screenshots, sleep and the other one-off requests (see [`crate::errands`]).
     pub(crate) system: Worker<crate::errands::Command>,
     /// Lists and watches the folder open in the browser.
-    pub(crate) browse: Worker<clamshell_state::shelf::files::BrowseCommand>,
-    pub(crate) files: Worker<clamshell_state::shelf::files::FileOp>,
+    pub(crate) browse: Worker<clamshell_state::library_view::files::BrowseCommand>,
+    pub(crate) files: Worker<clamshell_state::library_view::files::FileOp>,
 }
 
 impl Handles {

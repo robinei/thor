@@ -6,7 +6,7 @@ use crate::{Id, ListEvent, ListId, Scroll, State};
 impl State {
     fn scroll_mut(&mut self, list: ListId) -> Option<&mut Scroll> {
         match list {
-            ListId::Shelf => self.shelf.scroll_mut(),
+            ListId::LibraryView => self.library_view.scroll_mut(),
             _ => self.scrolls.get_mut(list),
         }
     }

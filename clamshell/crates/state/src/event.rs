@@ -47,16 +47,16 @@ pub enum Event {
     Level(LevelEvent),
     /// A scrolled list moved or was laid out.
     List(ListEvent),
-    /// The pad in shelf, and shelf's layout.
-    Shelf(ShelfEvent),
-    /// From the launcher thread: a game started by shelf couldn't start, or a video ended.
+    /// The pad in the Library, and the Library's layout.
+    LibraryView(LibraryViewEvent),
+    /// From the launcher thread: a game started by the Library couldn't start, or a video ended.
     Launch(LaunchEvent),
     /// A window's lifecycle or an activation request. Placement is decided by the session.
     Window(WindowEvent),
     /// Changes from one dispatch of the compositor's X11 window manager (a window's facts and its title),
     /// applied as one event.
     WindowBatch(Vec<WindowEvent>),
-    /// Our running units, after any change. These are dock app instances and games started by shelf.
+    /// Our running units, after any change. These are dock app instances and games started by the Library.
     Units(Vec<LaunchUnit>),
     /// The keys of our slices found frozen at start, sent after the first [`Event::Units`]. They are
     /// treated as suspended (see [`crate::session::background`]).
@@ -72,8 +72,8 @@ pub enum Event {
     Library(Box<crate::Library>),
     /// From the files thread: a browsed folder listed, file operations under way or done, or removable
     /// storage added or removed.
-    Files(crate::shelf::files::FilesEvent),
-    /// The metadata thread started fetching, or is done. While it fetches, what shelf shows is fetched
+    Files(crate::library_view::files::FilesEvent),
+    /// The metadata thread started fetching, or is done. While it fetches, what the Library shows is fetched
     /// first.
     Fetching(bool),
     /// The UI is up. The state sends what it needs at start: the tab's watch, the screens' brightness,
@@ -87,7 +87,7 @@ pub enum Event {
     HomeTap,
     /// Controller input returns keyboard focus to the content selected on top.
     PadActive,
-    /// The View button, away from shelf. Switches the pad between the second screen and whatever else
+    /// The View button, away from the Library. Switches the pad between the second screen and whatever else
     /// wants it, such as the pad mouse or typing.
     PadSwitch,
     /// The pad while it drives ClamShell. The UI handles these and the state ignores them.
@@ -137,8 +137,8 @@ pub enum Event {
     Entry(Arc<str>, EntryAct),
     /// The program in front's windows shown together (see [`crate::session::overview`]).
     Overview(crate::session::overview::OverviewEvent),
-    /// Adds what shelf's details show, or the entries picked in its open folder, to what their runner
-    /// plays (see [`crate::session::enqueue`]). It is about shelf's selection, so it names no entry.
+    /// Adds what the Library's details show, or the entries picked in its open folder, to what their runner
+    /// plays (see [`crate::session::enqueue`]). It is about the Library's selection, so it names no entry.
     Enqueue,
     /// Opens `editor` on the keyboard tab, as for a file's name. When the editor closes, the screen goes
     /// back to the tab the keyboard came up from. While another editor is open there, it is refused with
@@ -267,12 +267,12 @@ pub enum LevelEvent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ShelfEvent {
+pub enum LibraryViewEvent {
     /// The pad moved through the list by this many games. A page is the number of rows on screen.
     ListStep(i32),
     /// The pad switched collections by this many.
     CollectionStep(i32),
-    /// How many list rows shelf shows, from the layout, so the selection stays on screen.
+    /// How many list rows the Library shows, from the layout, so the selection stays on screen.
     Rows(usize),
     /// The pad's Y (F on the desktop) adds the selected entry to the favourites or removes it.
     ToggleFavourite,
@@ -305,7 +305,7 @@ macro_rules! into_event {
     };
 }
 
-into_event!(ListEvent => List, Reading => Reading, NotificationEvent => Notification, PointerEvent => Pointer, Slide => Slide, LevelEvent => Level, ShelfEvent => Shelf, LaunchEvent => Launch, Pointing => Pointing);
+into_event!(ListEvent => List, Reading => Reading, NotificationEvent => Notification, PointerEvent => Pointer, Slide => Slide, LevelEvent => Level, LibraryViewEvent => LibraryView, LaunchEvent => Launch, Pointing => Pointing);
 
 impl Event {
     /// A tick at `secs` on both clocks, for tests and demos where the clocks never jump.

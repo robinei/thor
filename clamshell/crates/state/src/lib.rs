@@ -7,7 +7,7 @@
 //! of other areas as parameters, and an area it changes, where that area alone owns the change, as a
 //! `&mut` parameter (a notice, the pointer's focus). The areas:
 //!
-//! - [`shelf`]: the library view on the main screen ([`Shelf`]), with its actions and files;
+//! - [`library_view`]: the library view on the main screen ([`LibraryView`]), with its actions and files;
 //! - [`bottom`]: the second screen's tabs ([`Bottom`]), the editor, the on-screen keyboard, and the
 //!   screen's own rules;
 //! - [`session`]: what is running and in front ([`Session`]), covering launches, windows, programs
@@ -60,6 +60,7 @@ pub mod idle;
 pub mod keymap;
 pub mod kit;
 pub mod levels;
+pub mod library_view;
 pub mod nav;
 pub mod notifications;
 pub(crate) mod out;
@@ -73,7 +74,6 @@ pub(crate) mod resume;
 pub mod session;
 pub mod settings;
 pub mod setup;
-pub mod shelf;
 pub mod status;
 pub(crate) mod sync;
 #[cfg(test)]
@@ -101,8 +101,8 @@ use sync::{Sent, Wanted};
 pub use apply::keys::HardwareKey;
 pub use clock::Clock;
 pub use effect::{Compositor, Effect, Save, ScreenshotPixels, Watch};
-pub use event::{EntryAct, Event, KeymapEvent, LaunchEvent, LevelEvent, PointerEvent, Reading, ShelfEvent, Slide, Thread};
-pub use id::{AudioId, BatteryId, BtId, DeviceId, DockId, EditorId, Hold, Id, KeymapId, SettingsId, ShelfId, Target, TimeId, WifiId};
+pub use event::{EntryAct, Event, KeymapEvent, LaunchEvent, LevelEvent, LibraryViewEvent, PointerEvent, Reading, Slide, Thread};
+pub use id::{AudioId, BatteryId, BtId, DeviceId, DockId, EditorId, Hold, Id, KeymapId, LibraryViewId, SettingsId, Target, TimeId, WifiId};
 pub use resume::Resume;
 pub use session::windows::{WindowEvent, WindowPlace};
 
@@ -111,6 +111,7 @@ pub use bottom::{Bottom, Tab};
 pub use kit::list::{ItemKey, Scroll};
 pub use levels::slider::{Control, Slider};
 pub use levels::{Brightness, Level, Levels, Sound};
+pub use library_view::{Cursor, LibraryView};
 pub use nav::lists::{ListEvent, ListId, Lists, RowPart};
 pub use nav::pad::{Claimant, Pad, PadInput, PadMouse, PadRoute};
 pub use nav::pointer::Pointer;
@@ -121,7 +122,6 @@ pub use session::dock::{Dock, DockItem};
 pub use session::launch_unit::LaunchUnit;
 pub use session::running::{Front, Launching, Origin, Running};
 pub use settings::panel::{GRID_COLUMNS, Panel, Prefs, Program, SettingsLevel, Source, TileOrigin};
-pub use shelf::{Cursor, Shelf};
 pub use status::time::{ClockField, TimePage, TimeRow, TimeZones};
 pub use status::{Status, Sys};
 
@@ -135,7 +135,7 @@ pub struct Init {
     pub profile: DeviceProfile,
     pub display_modes: presentation::modes::DisplayModes,
     /// The library, or `None` if it is read after the start and comes as [`Event::Library`]: until then
-    /// shelf is empty, and what needs the library waits for it (shelf's place, the dock's pins, autostart).
+    /// the Library is empty, and what needs the library waits for it (the Library's place, the dock's pins, autostart).
     pub library: Option<Library>,
     /// Every game's settings and environment.
     pub settings: Settings,
@@ -149,7 +149,7 @@ pub struct Init {
     pub dock: Dock,
     /// The entries started with ClamShell (see [`crate::session::autostart`]).
     pub autostart: Vec<Arc<str>>,
-    /// Where shelf and the second screen were.
+    /// Where the Library and the second screen were.
     pub resume: Option<Resume>,
     /// The tab to start in instead (a development option).
     pub start_tab: Option<Tab>,
@@ -172,7 +172,7 @@ pub struct Init {
 #[derive(Debug, Default)]
 pub struct State {
     profile: DeviceProfile,
-    shelf: Shelf,
+    library_view: LibraryView,
     bottom: Bottom,
     session: Session,
     dock: Dock,
@@ -191,11 +191,11 @@ pub struct State {
     keymapping: Keymapping,
     curving: crate::curve::screens::Curving,
     presentation: crate::presentation::Presentation,
-    /// Where the lists but shelf are scrolled.
+    /// Where the lists but the Library are scrolled.
     scrolls: Scrolls,
     clock: Clock,
-    /// Where shelf and the second screen are ([`State::resume`]), saved once they stop changing for a
-    /// moment. Shelf and the bottom screen say when they changed; `apply` touches this at its end.
+    /// Where the Library and the second screen are ([`State::resume`]), saved once they stop changing for a
+    /// moment. The Library and the bottom screen say when they changed; `apply` touches this at its end.
     resume: Debounce,
     idle: Idle,
     /// The UI is up (Start came). Before that, no tab or account is watched.
@@ -204,15 +204,15 @@ pub struct State {
     sent: Sent,
     /// The second screen's tab as the last settle saw it, to tell the tab left (see [`State::follow_tab`]).
     settled_tab: Tab,
-    /// Shelf's place as the last settle saw it, to tell when it moved (see [`State::follow_shelf`]).
-    settled_shelf: (usize, Option<usize>, Option<Arc<str>>),
+    /// The Library's place as the last settle saw it, to tell when it moved (see [`State::follow_library_view`]).
+    settled_library_view: (usize, Option<usize>, Option<Arc<str>>),
     /// A hash of the place as a resume saves it, as the last event left it, to tell when it changed (see
     /// [`State::place_hash`]).
     saved_place: u64,
     /// The events the rules queue for State, lent to `apply`'s [`Out`] and returned empty, so that its
     /// room is kept.
     queue: Vec<Event>,
-    /// The plays the session's steps ended, until they are recorded in shelf. Kept empty, so that its
+    /// The plays the session's steps ended, until they are recorded in the Library. Kept empty, so that its
     /// room is reused.
     plays: Vec<crate::session::running::Play>,
 }
@@ -223,7 +223,7 @@ impl State {
     pub fn new(init: Init) -> State {
         let mut s = State {
             profile: init.profile,
-            shelf: init.library.map_or_else(|| Shelf::unread(init.resume.clone()), Shelf::new),
+            library_view: init.library.map_or_else(|| LibraryView::unread(init.resume.clone()), LibraryView::new),
             prefs: Prefs::new(init.settings),
             keymapping: Keymapping::new(init.keymaps),
             curving: crate::curve::screens::Curving::new(init.curves),
@@ -237,17 +237,17 @@ impl State {
         };
         if let Some(resume) = &init.resume {
             resume.restore_tab(&mut s.bottom);
-            if s.shelf.read() {
-                resume.restore_shelf(&mut s.shelf);
+            if s.library_view.read() {
+                resume.restore_library_view(&mut s.library_view);
             }
         }
         s.presentation.read_display_modes(init.display_modes);
         // Unread, the pins are checked as the library comes (`library_read`).
-        if s.shelf.read() {
-            s.dock.drop_gone_at_start(s.shelf.library(), &s.session);
+        if s.library_view.read() {
+            s.dock.drop_gone_at_start(s.library_view.library(), &s.session);
         }
-        s.session.set_pausable_runners(s.shelf.library());
-        s.pointer.focus_shelf(s.shelf.selected());
+        s.session.set_pausable_runners(s.library_view.library());
+        s.pointer.focus_library_view(s.library_view.selected());
         if init.first_start {
             s.pointer.focus_on(Id::Device(crate::DeviceId::Wifi));
         }
@@ -256,8 +256,8 @@ impl State {
         }
         // What was restored is where the last settle and save left things.
         s.settled_tab = s.bottom.tab();
-        let (current, open, selected) = s.shelf.place_key();
-        s.settled_shelf = (current, open, selected.cloned());
+        let (current, open, selected) = s.library_view.place_key();
+        s.settled_library_view = (current, open, selected.cloned());
         s.saved_place = s.place_hash();
         s.reconcile_pad();
         if init.pad_mouse {
@@ -272,8 +272,8 @@ impl State {
         &self.profile
     }
 
-    pub fn shelf(&self) -> &Shelf {
-        &self.shelf
+    pub fn library_view(&self) -> &LibraryView {
+        &self.library_view
     }
 
     pub fn bottom(&self) -> &Bottom {
@@ -350,7 +350,7 @@ impl State {
     pub fn lists(&self) -> Lists<'_> {
         Lists {
             scrolls: &self.scrolls,
-            shelf: &self.shelf,
+            library_view: &self.library_view,
             session: &self.session,
             prefs: &self.prefs,
             keymapping: &self.keymapping,
@@ -408,7 +408,7 @@ impl State {
             Event::Pointer(e) => self.on_pointer(e, out),
             Event::Slide(slide) => self.on_slide(slide, out),
             Event::Level(e) => self.on_level(e, out),
-            Event::Shelf(e) => self.shelf.on_event(e, &mut self.pointer, out),
+            Event::LibraryView(e) => self.library_view.on_event(e, &mut self.pointer, out),
             Event::Launch(e) => self.on_launch_event(e),
             Event::Window(event) => {
                 self.window_event(event, out);
@@ -420,11 +420,11 @@ impl State {
                 }
                 self.session.remember_front();
             }
-            Event::Meta { id, meta } => self.shelf.apply_meta(&id, &meta),
+            Event::Meta { id, meta } => self.library_view.apply_meta(&id, &meta),
             Event::Library(library) => self.library_read(*library, out),
-            Event::Files(e) => self.shelf.on_files(e, self.bottom.notice_mut(), now, out),
+            Event::Files(e) => self.library_view.on_files(e, self.bottom.notice_mut(), now, out),
             Event::Fetching(on) => self.fetching(on),
-            Event::Tray(items) => self.session.set_tray(items, &self.clock, self.shelf.library(), out),
+            Event::Tray(items) => self.session.set_tray(items, &self.clock, self.library_view.library(), out),
             Event::Units(units) => self.session.set_units(units),
             Event::Start => self.ui_started(out),
             Event::Home => self.home(),
@@ -473,7 +473,7 @@ impl State {
     }
 
     fn window_event(&mut self, event: WindowEvent, out: &mut Out) {
-        if self.session.on_window(event, self.shelf.library(), self.clock.mono(), out) {
+        if self.session.on_window(event, self.library_view.library(), self.clock.mono(), out) {
             self.bottom.show_below();
         }
     }
@@ -533,30 +533,30 @@ impl State {
     ///     when the pad leaves ClamShell's screens.
     /// 18. The scrolled lists keep their top items where they are ([`State::follow_lists`]).
     fn settle(&mut self, out: &mut Out) {
-        if self.session.follow_units(&self.clock, self.shelf.library(), self.bottom.notice_mut(), &mut self.plays) {
+        if self.session.follow_units(&self.clock, self.library_view.library(), self.bottom.notice_mut(), &mut self.plays) {
             self.bottom.unwake();
         }
         self.record_plays(out);
         let mut due = Vec::new();
         // The entries to start are looked for in the library, so not before it is read.
-        if self.shelf.read() {
-            self.session.autostart_due(self.shelf.library(), &mut due);
+        if self.library_view.read() {
+            self.session.autostart_due(self.library_view.library(), &mut due);
         }
         for id in due {
             self.launch(id, None, Start::Background, out);
         }
         let mut steam = Vec::new();
-        if self.session.start_by_app_id(&self.clock, self.shelf.library(), &mut steam) {
+        if self.session.start_by_app_id(&self.clock, self.library_view.library(), &mut steam) {
             self.bottom.unwake();
         }
         // Before following the windows, which leaves a starting launch's windows where they are.
         for id in steam {
             self.launch(id, None, Start::Front, out);
         }
-        self.session.follow_windows(&self.clock, self.shelf.library(), &mut self.plays, out);
+        self.session.follow_windows(&self.clock, self.library_view.library(), &mut self.plays, out);
         self.record_plays(out);
         // After the windows are followed, which finds their owners.
-        if self.session.follow_window_rules(self.shelf.library()) {
+        if self.session.follow_window_rules(self.library_view.library()) {
             self.bottom.show_below();
         }
         // The tab left, by a choice or by a window moved down opening the windows' tab.
@@ -570,13 +570,13 @@ impl State {
         // Once the front is settled, so a program shown again when the front window closed is thawed at
         // once; before the quitting, which a quitting entry isn't paused for, its quits given up first.
         self.session.expire_quitting(self.clock.mono());
-        self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
-        self.session.follow_quitting(self.shelf.library(), out);
+        self.session.follow_background(self.clock.mono(), self.library_view.library(), self.prefs.settings(), out);
+        self.session.follow_quitting(self.library_view.library(), out);
         self.dock.follow(&self.session);
         // After every step that reads what the last pass saw: the new windows and the group in front.
         self.session.followed();
         self.bottom.note_clock(&self.clock);
-        self.shelf.follow_folder();
+        self.library_view.follow_folder();
         self.radios.follow(self.clock.mono());
         // Sleep only in the device's own session. A program in front doesn't hold it off; one playing a
         // video asks the compositor to keep the screen on.
@@ -594,15 +594,15 @@ impl State {
         if self.reconcile_pad().is_some_and(|route| route != PadRoute::Ui) {
             self.pointer.hide_focus();
         }
-        // After the steps that change shelf (the plays recorded), so that its moves are found in this pass.
-        self.follow_shelf();
+        // After the steps that change the Library (the plays recorded), so that its moves are found in this pass.
+        self.follow_library_view();
         self.follow_lists();
     }
 
-    /// Records in shelf the plays the session's steps ended.
+    /// Records in the Library the plays the session's steps ended.
     fn record_plays(&mut self, out: &mut Out) {
         for (entry, start) in self.plays.drain(..) {
-            self.shelf.record_play(entry, start, &self.clock, out);
+            self.library_view.record_play(entry, start, &self.clock, out);
         }
     }
 
@@ -631,10 +631,10 @@ impl State {
         let settings = self.in_force();
         let bottom_off = self.bottom_off();
         Wanted {
-            shelf: &self.shelf,
-            fetch_view: self.shelf.fetch_first(),
-            browsed: self.shelf.browsed(),
-            hidden: self.shelf.files().hidden(),
+            library_view: &self.library_view,
+            fetch_view: self.library_view.fetch_first(),
+            browsed: self.library_view.browsed(),
+            hidden: self.library_view.files().hidden(),
             running: self.session.running_entries(),
             stage: self.idle.stage(),
             levels: &self.levels,

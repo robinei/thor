@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Write as _;
 use std::path::Path;
 
-use clamshell_state::{Control, DockId, Event, Id, LevelEvent, PadRoute, PointerEvent, RowPart, ShelfId, State};
+use clamshell_state::{Control, DockId, Event, Id, LevelEvent, LibraryViewId, PadRoute, PointerEvent, RowPart, State};
 use clamshell_ui::{Dir, PadFrames, PadTarget, PadView, Screen};
 
 use super::trace;
@@ -177,8 +177,8 @@ impl<'a> Mapper<'a> {
                 }
             }
         }
-        // Except shelf's collections and its way up out of a group: left and right and B do their work.
-        let by_button = |id: &Id| matches!(id, Id::Shelf(ShelfId::Collection(_) | ShelfId::Up));
+        // Except the Library's collections and its way up out of a group: left and right and B do their work.
+        let by_button = |id: &Id| matches!(id, Id::LibraryView(LibraryViewId::Collection(_) | LibraryViewId::Up));
         let unreached: Vec<String> = focusable.iter().filter(|t| !seen.contains(&t.id) && !by_button(&t.id)).map(|t| format!("{:?}", t.id)).collect();
         if !unreached.is_empty() && start.is_some() {
             failures.push(format!("not reached from {:?}: {}", start, unreached.join(", ")));
@@ -191,9 +191,9 @@ impl<'a> Mapper<'a> {
                 }
             }
         }
-        // With shelf in front, up and down step through its list.
-        if PadView::both_screens(state) && !state.shelf().in_actions(state.pointer()) {
-            self.check_shelf_list(state, &focusable, &moves, &mut failures);
+        // With the Library in front, up and down step through its list.
+        if PadView::both_screens(state) && !state.library_view().in_actions(state.pointer()) {
+            self.check_library_view_list(state, &focusable, &moves, &mut failures);
         }
         let targets: Vec<(PadTarget, [Move; 4])> =
             focusable.into_iter().filter(|t| t.screen == screen).map(|t| (t.clone(), moves.get(&t.id).cloned().unwrap_or_else(stays))).collect();
@@ -263,13 +263,13 @@ impl<'a> Mapper<'a> {
         out
     }
 
-    /// With shelf in front, up and down on an entry go to the entry above and below; up stays on the
+    /// With the Library in front, up and down on an entry go to the entry above and below; up stays on the
     /// first, and down leaves the list from the last.
-    fn check_shelf_list(&self, state: &State, focusable: &[PadTarget], moves: &HashMap<Id, [Move; 4]>, failures: &mut Vec<String>) {
-        let entry = |i: usize| state.shelf().entry_at(i).map(|e| Id::Shelf(ShelfId::Entry(e.id.clone())));
-        let len = state.shelf().list().len();
+    fn check_library_view_list(&self, state: &State, focusable: &[PadTarget], moves: &HashMap<Id, [Move; 4]>, failures: &mut Vec<String>) {
+        let entry = |i: usize| state.library_view().entry_at(i).map(|e| Id::LibraryView(LibraryViewId::Entry(e.id.clone())));
+        let len = state.library_view().list().len();
         for t in focusable {
-            let Id::Shelf(ShelfId::Entry(_)) = &t.id else {
+            let Id::LibraryView(LibraryViewId::Entry(_)) = &t.id else {
                 continue;
             };
             let Some(i) = (0..len).find(|&i| entry(i).as_ref() == Some(&t.id)) else {
@@ -289,7 +289,7 @@ impl<'a> Mapper<'a> {
                 if Some(&down_to) != want.as_ref() {
                     failures.push(format!("down from {:?} (entry {i}) goes to {down_to:?}, not {want:?}", t.id));
                 }
-            } else if matches!(down_to, Id::Shelf(ShelfId::Entry(_))) {
+            } else if matches!(down_to, Id::LibraryView(LibraryViewId::Entry(_))) {
                 failures.push(format!("down from the last entry {:?} stays in the list, at {down_to:?}", t.id));
             }
         }
@@ -310,26 +310,26 @@ fn screen_name(screen: Screen) -> &'static str {
 /// A target's short name and its moves as text.
 pub type Line = (String, [String; 4]);
 
-/// The sections a map's targets are written in: the bar, shelf, the keyboard, and the rest of the screen.
-pub const SECTIONS: [&str; 4] = ["bar", "shelf", "keyboard", "screen"];
+/// The sections a map's targets are written in: the bar, the Library, the keyboard, and the rest of the screen.
+pub const SECTIONS: [&str; 4] = ["bar", "library", "keyboard", "screen"];
 
 fn section(id: &Id) -> usize {
     match id {
         Id::Tab(_) | Id::Control(Control::Volume | Control::Brightness) | Id::PadMouse => 0,
-        Id::Shelf(_) => 1,
+        Id::LibraryView(_) => 1,
         Id::Key(_) => 2,
         _ => 3,
     }
 }
 
-/// A target's short name: a shelf entry as its quoted id, a list row as `List[i]` (with `.Part` for a
-/// part other than the row itself), a key as `Key[row,col]`, a settings target, a shelf target or a
+/// A target's short name: the Library entry as its quoted id, a list row as `List[i]` (with `.Part` for a
+/// part other than the row itself), a key as `Key[row,col]`, a settings target, the Library target or a
 /// keymap screen's and the keymaps' picker's (`Km(..)`) without the screen's name, and anything else as
 /// it is.
 fn short(id: &Id) -> String {
     match id {
-        Id::Shelf(ShelfId::Entry(e)) => format!("{e:?}"),
-        Id::Shelf(s) => format!("{s:?}"),
+        Id::LibraryView(LibraryViewId::Entry(e)) => format!("{e:?}"),
+        Id::LibraryView(s) => format!("{s:?}"),
         Id::Settings(s) => format!("{s:?}"),
         Id::Row { list, i, part: RowPart::Main } => format!("{list:?}[{i}]"),
         Id::Row { list, i, part } => format!("{list:?}[{i}].{part:?}"),
@@ -346,7 +346,7 @@ fn event(e: &Event) -> String {
     match e {
         Event::Pointer(PointerEvent::Focus(id)) => format!("Focus {}", short(id)),
         Event::Pointer(PointerEvent::Activate(id)) => format!("Activate {}", short(id)),
-        Event::Shelf(s) => format!("{s:?}"),
+        Event::LibraryView(s) => format!("{s:?}"),
         Event::Level(LevelEvent::Step(level, step)) => format!("Step {level:?} {step}"),
         other => trace::event(other),
     }
@@ -355,8 +355,8 @@ fn event(e: &Event) -> String {
 /// The map as text: its head and its target lines by section.
 fn text(state: &State, name: &str, screen: Screen, start: Option<&Id>, targets: &[(PadTarget, [Move; 4])]) -> (String, [Vec<Line>; 4]) {
     let screen = screen_name(screen);
-    let pad = if PadView::both_screens(state) && state.shelf().in_actions(state.pointer()) {
-        "shelf's actions"
+    let pad = if PadView::both_screens(state) && state.library_view().in_actions(state.pointer()) {
+        "the Library's actions"
     } else if PadView::both_screens(state) {
         "both screens"
     } else {

@@ -33,7 +33,7 @@ fn a_window_opens_in_front_as_its_opening_focus_says() {
     let one = launch_of("one");
     // The first window of a launch with no launch waiting for it opens behind.
     assert!(s.applied(WindowEvent::Opened(win_of(7, "one", &one)).into()).is_empty());
-    assert!(s.session().shelf_in_front());
+    assert!(s.session().library_view_in_front());
     s.applied(WindowEvent::Activate(7).into());
     // A later window of the program in front comes in front, with the keyboard.
     s.applied(WindowEvent::Opened(win_of(8, "one", &one)).into());
@@ -111,7 +111,7 @@ fn lifecycle_close_falls_back_once_and_retains_the_other_windows() {
     s.applied(WindowEvent::Activate(7).into());
     assert_eq!(s.applied(WindowEvent::Closed(7).into()), vec![Effect::PadRoute(crate::PadRoute::Ui)]);
     assert_eq!(facts(&s), std::slice::from_ref(&other));
-    assert!(s.session().shelf_in_front());
+    assert!(s.session().library_view_in_front());
     assert!(s.applied(WindowEvent::Closed(7).into()).is_empty());
     assert_eq!(facts(&s), &[other]);
 }
@@ -168,7 +168,7 @@ fn home_cancels_a_launchs_late_request_to_take_the_front() {
     s.applied(Event::Home);
     assert!(s.session().front_launch().is_none());
     s.applied(WindowEvent::Opened(win_of(7, "zelda3", &unit)).into());
-    assert_eq!(s.session().front(), crate::session::running::Front::Shelf);
+    assert_eq!(s.session().front(), crate::session::running::Front::LibraryView);
 }
 
 #[test]
@@ -183,7 +183,7 @@ fn lifecycle_open_and_close_follow_launch_ownership() {
     assert!(s.session().front_launch().is_none());
     assert_eq!(s.applied(WindowEvent::Closed(7).into()), vec![Effect::PadRoute(crate::PadRoute::Ui)]);
     assert!(s.session().windows_of("zelda-lttp").next().is_none());
-    assert!(s.session().shelf_in_front());
+    assert!(s.session().library_view_in_front());
 }
 
 #[test]
@@ -229,7 +229,7 @@ fn lifecycle_title_applies_a_bottom_rule_once() {
     let effects = s.applied(event());
     assert_eq!(effects, vec![Effect::Watch(crate::Watch::Metrics, false), Effect::PadRoute(crate::PadRoute::Ui)]);
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
-    assert!(s.session().shelf_in_front());
+    assert!(s.session().library_view_in_front());
     assert_eq!(s.session().windows().first().map(|w| w.title.as_str()), Some("second"));
     assert!(s.bottom().shows_windows(s.session()));
     assert!(s.applied(event()).is_empty());
@@ -418,7 +418,7 @@ fn windows_know_their_launch_unit() {
 }
 
 #[test]
-fn touching_a_home_arrow_consumes_the_release_but_direct_home_still_shows_shelf() {
+fn touching_a_home_arrow_consumes_the_release_but_direct_home_still_shows_library_view() {
     let mut s = state();
     let one = launch_of("one");
     s.observed(vec![win_of(7, "one", &one), win_of(8, "one", &one)]);
@@ -429,12 +429,12 @@ fn touching_a_home_arrow_consumes_the_release_but_direct_home_still_shows_shelf(
     assert!(s.applied(Event::HomeTap).is_empty());
     assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
     s.applied(Event::Home);
-    assert!(s.session().shelf_in_front());
+    assert!(s.session().library_view_in_front());
     s.applied(WindowEvent::Activate(8).into());
     s.applied(Event::HomeHeld(true));
     s.applied(Event::HomeHeld(false));
     s.applied(Event::HomeTap);
-    assert!(s.session().shelf_in_front());
+    assert!(s.session().library_view_in_front());
 }
 
 #[test]
@@ -564,7 +564,7 @@ fn moving_the_top_window_does_not_require_keyboard_focus_there() {
     s.applied(Event::HardwareKey(HardwareKey::WindowDown));
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
     assert_eq!(s.session().place(8), Some(WindowPlace::Top(Some(&group_of(&launch_of("bottom"))))));
-    assert!(s.session().shelf_in_front());
+    assert!(s.session().library_view_in_front());
 }
 
 /// A dialog that closes brings back its parent, not the window its group shows last: the parent is
@@ -600,7 +600,7 @@ fn a_window_sent_down_gives_the_keyboard_to_the_top_window() {
 }
 
 /// The window below, displaced by another program's that its rule sends down, goes back behind in its
-/// group and gives up the keyboard if it had it: with shelf in front, the keyboard goes to ClamShell's UI
+/// group and gives up the keyboard if it had it: with the Library in front, the keyboard goes to ClamShell's UI
 /// rather than staying on a window not shown.
 #[test]
 fn a_window_displaced_from_below_gives_up_the_keyboard() {

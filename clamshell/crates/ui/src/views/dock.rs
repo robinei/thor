@@ -80,7 +80,7 @@ fn entry_tile(f: &mut Frame, r: Rect, i: usize, id: &std::sync::Arc<str>, severa
     let note = if s.session().suspended(id) { "Suspended" } else { "" };
     let face = TileFace { caption: &entry.title, caption_tone, dot: in_force.then_some(Tone::Go), note };
     // For a file, the picture of the app showing it, if its window says which app that is.
-    let picture = s.session().app_showing(id, s.shelf().library()).unwrap_or(entry);
+    let picture = s.session().app_showing(id, s.library_view().library()).unwrap_or(entry);
     widgets::tile(f, Id::Dock(DockId::Entry(i as u16)), r, &TILE, face, |f, r| {
         // Above the caption: portrait box art or a square icon.
         let h = r.h * (CAPTION_Y - ART_TOP - ART_ROOM);
@@ -120,7 +120,7 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
     let running = s.session().running(entry).is_some();
     let pinned = s.dock().items().iter().any(|i| i.id == *entry && i.pinned);
     // A tile for a tray icon alone isn't a library entry, so it can't be pinned.
-    let pinnable = s.shelf().library().has(entry);
+    let pinnable = s.library_view().library().has(entry);
     let item = |id, label, tone| Some((Id::Dock(id), label, tone));
     // An array with `None` for the items that don't apply, so that drawing it every frame doesn't allocate.
     let items = [

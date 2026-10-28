@@ -145,17 +145,17 @@ fn a_fling_slows_down_and_stops_at_the_end() {
 }
 
 #[test]
-fn shelf_settles_on_a_whole_row() {
+fn library_view_settles_on_a_whole_row() {
     let mut state = State::new(Init { library: Some(clamshell_library::demo::library()), ..Init::default() });
-    state.apply(clamshell_state::ShelfEvent::Rows(3).into(), &mut Vec::new());
+    state.apply(clamshell_state::LibraryViewEvent::Rows(3).into(), &mut Vec::new());
     let mut input = Input::default();
     let t = t0();
     let ms = |n| t + Duration::from_millis(n);
-    let entry = Target { list: Some(InList { list: ListId::Shelf, row_h: 100.0 }), ..row(ListId::Shelf, 0) };
+    let entry = Target { list: Some(InList { list: ListId::LibraryView, row_h: 100.0 }), ..row(ListId::LibraryView, 0) };
     input.touch(Source::Touch(1), &entry, (5.0, 400.0), t);
     let fx = input.moved(Source::Touch(1), (5.0, 260.0), ms(500));
     run(&mut state, &fx);
-    assert_eq!(state.lists().scroll(ListId::Shelf).offset(), 1.4);
+    assert_eq!(state.lists().scroll(ListId::LibraryView).offset(), 1.4);
     let up = input.up(Source::Touch(1), End::Release, &state, ms(2000));
     assert!(run(&mut state, &up), "settling");
     let mut at = 2000;
@@ -166,7 +166,7 @@ fn shelf_settles_on_a_whole_row() {
         }
         at += 16;
     }
-    assert_eq!(state.lists().scroll(ListId::Shelf).offset(), 1.0, "the nearest row");
+    assert_eq!(state.lists().scroll(ListId::LibraryView).offset(), 1.0, "the nearest row");
     assert!(at < 2500, "a short animation: {} ms", at - 2000);
 }
 
@@ -325,8 +325,8 @@ fn on_a_list_up_and_down_scrolls_and_only_sideways_points() {
     let moved = input.moved(finger, (5.0 + POINT_START, 300.0 - DRAG_START + 1.0), t);
     assert_eq!(points(&moved), vec![(finger, ContactPhase::Down)]);
     input.up(finger, End::Release, &state, t);
-    // No pointing on shelf, on the main screen, nor with the mouse.
-    let entry = target(Id::Shelf(clamshell_state::ShelfId::Entry("g".into())), None);
+    // No pointing on the Library, on the main screen, nor with the mouse.
+    let entry = target(Id::LibraryView(clamshell_state::LibraryViewId::Entry("g".into())), None);
     input.touch(Source::Touch(2), &entry, (0.0, 0.0), t);
     assert!(points(&input.moved(Source::Touch(2), (100.0, 0.0), t)).is_empty());
     input.touch(Source::Mouse, &tab_free(), (0.0, 0.0), t);

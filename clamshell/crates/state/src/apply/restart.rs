@@ -41,7 +41,7 @@ impl State {
             // Everything saved, written again. A play being recorded is lost.
             Thread::Store => self.save_everything(out),
             Thread::Icons => self.session.find_icons_again(out),
-            Thread::Files => self.shelf.files_interrupted(self.bottom.notice_mut(), now, out),
+            Thread::Files => self.library_view.files_interrupted(self.bottom.notice_mut(), now, out),
             Thread::Freezer => self.session.freeze_again(out),
             // A launch being started is its own thread, which ends as failed if it panics; a video's
             // position being read is lost (its progress bar isn't updated once).
@@ -67,7 +67,7 @@ impl State {
             self.prefs.save_effect(),
             self.keymapping.save_effect(),
             self.curving.save_effect(),
-            Effect::Save(Save::Favourites(self.shelf.library().favourite_ids().map(str::to_owned).collect())),
+            Effect::Save(Save::Favourites(self.library_view.library().favourite_ids().map(str::to_owned).collect())),
             Effect::Save(Save::Resume(self.resume())),
             self.levels.brightness_save(),
             self.session.window_rules_save(),

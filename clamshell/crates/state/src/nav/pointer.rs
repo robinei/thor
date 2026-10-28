@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use crate::id::{Id, ShelfId};
+use crate::id::{Id, LibraryViewId};
 use crate::kit::list::ItemKey;
 
 /// A press on a list item, kept by what the item is rather than where it is, so a list that changes
@@ -31,22 +31,22 @@ impl Pointer {
         self.focus = Some(id);
     }
 
-    /// The focus goes to shelf's selected entry, or nowhere without one.
-    pub(crate) fn focus_shelf(&mut self, selected: Option<&Arc<str>>) {
-        self.focus = selected.cloned().map(|g| Id::Shelf(ShelfId::Entry(g)));
+    /// The focus goes to the Library's selected entry, or nowhere without one.
+    pub(crate) fn focus_library_view(&mut self, selected: Option<&Arc<str>>) {
+        self.focus = selected.cloned().map(|g| Id::LibraryView(LibraryViewId::Entry(g)));
     }
 
-    /// The library came, after the start: a focus left nowhere by the empty shelf goes to its selection.
-    pub(crate) fn shelf_read(&mut self, selected: Option<&Arc<str>>) {
+    /// The library came, after the start: a focus left nowhere by the Library while empty goes to its selection.
+    pub(crate) fn library_view_read(&mut self, selected: Option<&Arc<str>>) {
         if self.focus.is_none() {
-            self.focus_shelf(selected);
+            self.focus_library_view(selected);
         }
     }
 
-    /// Shelf's selection moved. A focus in shelf's list follows it.
-    pub(crate) fn shelf_moved(&mut self, selected: Option<&Arc<str>>) {
-        if matches!(self.focus, Some(Id::Shelf(ShelfId::Entry(_) | ShelfId::Collection(_)))) {
-            self.focus_shelf(selected);
+    /// The Library's selection moved. A focus in the Library's list follows it.
+    pub(crate) fn library_view_moved(&mut self, selected: Option<&Arc<str>>) {
+        if matches!(self.focus, Some(Id::LibraryView(LibraryViewId::Entry(_) | LibraryViewId::Collection(_)))) {
+            self.focus_library_view(selected);
         }
     }
 
@@ -111,13 +111,13 @@ mod tests {
         let s = state();
         assert_eq!(s.keyboard().hold(&Id::Key(find(Key::Char('a')).unwrap())), Hold::Repeat);
         assert_eq!(s.keyboard().hold(&Id::Key(find(Key::Mod(Modifier::Shift)).unwrap())), Hold::Long);
-        assert_eq!(s.keyboard().hold(&Id::Shelf(ShelfId::Launch)), Hold::Long);
+        assert_eq!(s.keyboard().hold(&Id::LibraryView(LibraryViewId::Launch)), Hold::Long);
     }
 
     #[test]
     fn down_and_up_light_a_target() {
         let mut s = state();
-        let launch = Id::Shelf(ShelfId::Launch);
+        let launch = Id::LibraryView(LibraryViewId::Launch);
         s.applied(PointerEvent::Down(launch.clone(), None).into());
         assert_eq!(s.pointer().pressed(), Some(&launch));
         s.applied(PointerEvent::Up(launch).into());
@@ -130,9 +130,9 @@ mod tests {
     #[test]
     fn a_down_without_its_up_lasts_until_the_next_down() {
         let mut s = state();
-        let launch = Id::Shelf(ShelfId::Launch);
+        let launch = Id::LibraryView(LibraryViewId::Launch);
         s.applied(PointerEvent::Down(launch.clone(), None).into());
-        s.applied(PointerEvent::Up(Id::Shelf(ShelfId::Up)).into());
+        s.applied(PointerEvent::Up(Id::LibraryView(LibraryViewId::Up)).into());
         assert_eq!(s.pointer().pressed(), Some(&launch), "another's Up");
         let tab = Id::Tab(crate::Tab::Dock);
         s.applied(PointerEvent::Down(tab.clone(), None).into());
@@ -145,8 +145,8 @@ mod tests {
     fn the_focus_ring_shows_for_the_pad_only() {
         let mut s = state();
         assert!(!s.pointer().show_focus());
-        s.applied(PointerEvent::Focus(Id::Shelf(ShelfId::Launch)).into());
-        assert!(s.pointer().focused(&Id::Shelf(ShelfId::Launch)));
+        s.applied(PointerEvent::Focus(Id::LibraryView(LibraryViewId::Launch)).into());
+        assert!(s.pointer().focused(&Id::LibraryView(LibraryViewId::Launch)));
         s.applied(PointerEvent::HideFocus.into());
         assert!(!s.pointer().show_focus());
     }

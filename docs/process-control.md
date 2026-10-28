@@ -104,7 +104,7 @@ What runs is shown and controlled as entries (the dock's): one per program, each
   which runs in Lutris's unit, and the launch ends. The game's windows are known by the mark the launcher
   gives its processes (see runners.md), waited for up to 2 minutes, and the entry runs by them as a
   handed-over app does. A game started in the launcher's own window starts its entry the same way.
-  While such a game starts, shelf says in which launcher, or that the launcher starts first.
+  While such a game starts, the Library says in which launcher, or that the launcher starts first.
 - A program ClamShell didn't start is found by its tray icon, or by a window no entry has; anything with
   a window is on the dock. Its entry: the library's desktop entry named as the icon's id or the window's
   app id, or whose `StartupWMClass` that is, else one of its own (`tray:…`, `window:<app id>`). Its windows are its group (shown if
@@ -185,7 +185,7 @@ finds running isn't started twice.
 
 ## ClamShell's own wakeups
 
-Measured in the VM, idle, shelf in front, per thread over 20 s (voluntary context switches): about 40 a
+Measured in the VM, idle, the Library in front, per thread over 20 s (voluntary context switches): about 40 a
 second at first. Threads that wait on files (a device, inotify) couldn't also wait on their command
 channel, so they woke on a timer to look at it; and devices and mounts were looked for on timers.
 Now a worker that waits on files has a bell (an eventfd its commands ring, `worker::Bell`), mounts are
@@ -210,7 +210,7 @@ woke about 8 times a second between them).
 ## Measured and tried
 
 `tools/inventory.sh [SECONDS]` (read-only, on the device or in the VM): the running units, and per
-cgroup its memory now and its CPU time over the window (30 s). In the VM (4 GiB, no GPU), idle, shelf
+cgroup its memory now and its CPU time over the window (30 s). In the VM (4 GiB, no GPU), idle, the Library
 in front, the machine used 653 MiB (measured when the session was sway under uwsm, before 2026-10-26) of 3.9 GiB: ClamShell 89 MiB and 134 ms of CPU in 30 s, journald 33
 MiB, the Waydroid container service 30 MiB, the login session (sway and the mako notification daemon, both gone since) 19 MiB, PipeWire's three 16
 MiB, the rest under 10 MiB each. With the Waydroid session up and Calculator open: 1855 MiB used, the
@@ -223,15 +223,15 @@ On the desktop (AMD GPU, PipeWire, Steam), in the nested session as it was under
 - Frozen with systemctl for 10 s, a native Steam game (Super Meat Boy) froze in 37 ms and thawed in
   5 ms; its sound stream stayed open; it went on drawing. RetroArch (snes9x) the same.
 - The Resident Evil 6 benchmark (Proton Experimental): all its processes in its own scope, also with
-  Steam freshly started (its install scripts first); frozen 2 minutes behind shelf with no CPU used,
+  Steam freshly started (its install scripts first); frozen 2 minutes behind the Library with no CPU used,
   drawing on once shown; with no setting (Pauses games) frozen 12 s after Home; stopped from Steam's own
   Stop while frozen behind Steam's window (Steam closed its window, ClamShell thawed it, it ended within
   2 s, Steam showed it stopped); started from Steam's window, moved into its own scope and ended by Quit.
 - A program started through sway, not ClamShell (foot): on the dock, in its own group, in front.
 
 In the VM, as the device's session (`tools/vm/vm-checks.py`, the process control checks): a game
-launched from shelf runs as a service of its own and Quit ends it with one play recorded; a game behind
-shelf is frozen after the grace and thawed when shown; foot started from an app scope and from a login
+launched from the Library runs as a service of its own and Quit ends it with one play recorded; a game behind
+the Library is frozen after the grace and thawed when shown; foot started from an app scope and from a login
 session (as over ssh) is found and moved into a scope of ours; a tray program (a Python
 StatusNotifierItem) is moved too; the clipboard's text outlives the program that set it.
 
@@ -242,7 +242,7 @@ On the Thor (see thor-gameplan.md's device checks):
 1. The inventory in a normal session (with Steam, with the Waydroid session, with a game): memory,
    CPU, and wakeups (powertop) per cgroup; idle power with and without Steam and Waydroid.
 2. Freezing on Freedreno and through FEX: native and Proton games frozen for minutes, sound, the
-   controller, the GPU after; whether a game hidden behind shelf still draws; whether the thresholds tell
+   controller, the GPU after; whether a game hidden behind the Library still draws; whether the thresholds tell
    loading and shader compiling from drawing; a frozen game's memory going to zram.
 3. A game with online play frozen: whether it is dropped (then it is set to run).
 4. ClamShell's own wakeups when idle.

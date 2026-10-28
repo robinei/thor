@@ -44,16 +44,16 @@ impl State {
         self.left_tab(left);
     }
 
-    /// Runs after any event: shelf's place is not the one the last settle saw, so a focus in shelf's list
-    /// follows its selection (see `Pointer::shelf_moved`).
-    pub(crate) fn follow_shelf(&mut self) {
-        let (current, open, selected) = self.shelf.place_key();
-        let (was_current, was_open, was_selected) = &self.settled_shelf;
+    /// Runs after any event: the Library's place is not the one the last settle saw, so a focus in the Library's list
+    /// follows its selection (see `Pointer::library_view_moved`).
+    pub(crate) fn follow_library_view(&mut self) {
+        let (current, open, selected) = self.library_view.place_key();
+        let (was_current, was_open, was_selected) = &self.settled_library_view;
         if (current, open, selected) == (*was_current, *was_open, was_selected.as_ref()) {
             return;
         }
-        self.settled_shelf = (current, open, selected.cloned());
-        self.pointer.shelf_moved(self.shelf.selected());
+        self.settled_library_view = (current, open, selected.cloned());
+        self.pointer.library_view_moved(self.library_view.selected());
     }
 
     fn left_tab(&mut self, left: Tab) {
@@ -84,8 +84,8 @@ impl State {
             (Done::Save, Purpose::ProfileName(ProfileKind::Keymap, action)) => self.keymapping.named_profile(action, &editor.text, out),
             (Done::Save, Purpose::ProfileName(ProfileKind::Curve, action)) => self.curving.named_profile(action, &editor.text, out),
             (Done::Save, Purpose::FileName(purpose)) => {
-                if let Some(op) = crate::shelf::files::named(purpose, &editor.text) {
-                    self.shelf.run_file_op(op, out);
+                if let Some(op) = crate::library_view::files::named(purpose, &editor.text) {
+                    self.library_view.run_file_op(op, out);
                 }
             }
             (Done::Save, Purpose::AccountPassword(step)) => {

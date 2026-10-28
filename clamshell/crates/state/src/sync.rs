@@ -12,23 +12,23 @@ use crate::bottom::touch::TouchLayout;
 use crate::effect::{Effect, Watch};
 use crate::idle::Stage;
 use crate::keymap::screens::Keymapping;
+use crate::library_view::files::{Browse, BrowseCommand};
+use crate::library_view::{LibraryView, ShownList};
 use crate::out::Out;
 use crate::settings::{Setting, Values};
-use crate::shelf::files::{Browse, BrowseCommand};
-use crate::shelf::{Shelf, ShelfView};
 use crate::{Levels, PadRoute, Running, Thread};
 
 /// What the outside should have as things are now. It is built after every event, so it holds
 /// references and small values only.
 pub(crate) struct Wanted<'a> {
-    pub(crate) shelf: &'a Shelf,
-    /// What shelf shows while metadata is being fetched (see [`Shelf::fetch_first`]).
-    pub(crate) fetch_view: Option<ShelfView>,
-    /// The open browsed folder and its directory (see [`Shelf::browsed`]), and whether hidden files are
+    pub(crate) library_view: &'a LibraryView,
+    /// What the Library shows while metadata is being fetched (see [`LibraryView::fetch_first`]).
+    pub(crate) fetch_view: Option<ShownList>,
+    /// The open browsed folder and its directory (see [`LibraryView::browsed`]), and whether hidden files are
     /// listed.
     pub(crate) browsed: Option<(&'a Arc<str>, &'a Path)>,
     pub(crate) hidden: bool,
-    /// The running entries, whose files are in use (see [`Shelf::in_use`]).
+    /// The running entries, whose files are in use (see [`LibraryView::in_use`]).
     pub(crate) running: &'a [Running],
     /// How far idle has gone, and the levels, for the screens' brightness while dimmed.
     pub(crate) stage: Stage,
@@ -64,8 +64,8 @@ pub(crate) struct Wanted<'a> {
 /// What the outside was last sent.
 #[derive(Debug)]
 pub(crate) struct Sent {
-    /// What shelf showed when the entries it shows were last asked for first.
-    fetch_view: Option<ShelfView>,
+    /// What the Library showed when the entries it shows were last asked for first.
+    fetch_view: Option<ShownList>,
     /// The folder listed and watched, or None to send it again.
     browsing: Option<Option<Browse>>,
     /// A hash of the files in use (see [`BrowseCommand::InUse`]), 0 for none, or None to send them again.
@@ -129,7 +129,7 @@ impl Default for Sent {
 /// Why the outside is to be sent something again, whatever it was last sent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Resend {
-    /// The library was read again or fetching started or stopped: shelf's entries shown are asked for
+    /// The library was read again or fetching started or stopped: the Library's entries shown are asked for
     /// first again.
     FetchFirst,
     /// Back from sleep, which may have reset what the settings set, such as frequency caps and cores: they
@@ -192,7 +192,7 @@ impl Sent {
         self.touchpad(w, out);
     }
 
-    /// While metadata is being fetched and what shelf shows has changed, asks for the shown entries'
+    /// While metadata is being fetched and what the Library shows has changed, asks for the shown entries'
     /// metadata first.
     fn fetch_first(&mut self, w: &Wanted, out: &mut Out) {
         let Some(view) = w.fetch_view else {
@@ -203,7 +203,7 @@ impl Sent {
         }
         self.fetch_view = Some(view);
         let mut ids = Vec::new();
-        w.shelf.in_view(&mut ids);
+        w.library_view.in_view(&mut ids);
         out.effects.push(Effect::FetchFirst(ids));
     }
 
@@ -217,7 +217,7 @@ impl Sent {
             self.browsing = Some(browsing);
         }
         // Compared by a hash, so that nothing is collected while they stay the same.
-        let in_use = w.shelf.in_use(w.running);
+        let in_use = w.library_view.in_use(w.running);
         let mut hasher = std::hash::DefaultHasher::new();
         let mut any = false;
         for path in in_use.clone() {

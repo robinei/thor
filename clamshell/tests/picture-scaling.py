@@ -10,7 +10,7 @@ are checked. They are:
 - sdl-pattern (tests/sdl-pattern.c) through SDL 3 on Wayland and on X11 (Xwayland), at the desktop's size
   and after switching to a lower fullscreen mode, as a game picking a resolution.
 
-Each is a library entry that is a game, launched from shelf, with Resolution, Scaling, AA and Sharpen set
+Each is a library entry that is a game, launched from the Library, with Resolution, Scaling, AA and Sharpen set
 through the settings tiles. A screenshot per case is kept in the printed directory.
 
 Build first (in clamshell/): cargo build
@@ -254,7 +254,7 @@ def main():
             return False
 
         def launch(name):
-            """`name` selected on shelf and launched. The selection is read where ClamShell saves it, about
+            """`name` selected on the Library and launched. The selection is read where ClamShell saves it, about
             two seconds after it stops changing."""
             (directory / f"{name}.out").write_text("")
             control("home")
@@ -271,7 +271,7 @@ def main():
                 if found:
                     break
             if not found:
-                raise RuntimeError(f"{name}: not found on shelf (selection {selection()!r})")
+                raise RuntimeError(f"{name}: not found on the Library (selection {selection()!r})")
             control("tap", "launch")
             wait(lambda: running(name), f"{name} started", 300 if name in WINDOWS else 10)
 

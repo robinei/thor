@@ -18,7 +18,7 @@ State commits placement and selection during `apply`. A compositor reads `Sessio
 `top_window`, `bottom_window` and `keyboard_focus` immediately after it returns. Home groups
 (`Window.group`, a `Group`: an entry's by its key, holding all its launches' windows, or a window's own
 for a window of no entry) are not physical output locations: a window below retains its home group. A
-window of no entry has none until the settle after the event that opened it gives it one. The session holds the top screen's window (`top`, none while shelf is in front) and the bottom
+window of no entry has none until the settle after the event that opened it gives it one. The session holds the top screen's window (`top`, none while the Library is in front) and the bottom
 screen's one slot (`bottom`), each once, and each group's selected window while it is hidden; keyboard
 focus is independent and may
 belong to a bottom client or ClamShell's UI (`None`).
@@ -38,10 +38,10 @@ it cannot undo placement or change title. `Title` is independent. The compositor
 happens (Opened, Closed, Changed, Title, KeyboardFocus, and Activate once a token is checked); a later
 fact cannot overwrite a newer state decision.
 
-Placing is the session's own: the steps in the Effects columns here and below (Focus, ShowShelf, Move,
+Placing is the session's own: the steps in the Effects columns here and below (Focus, ShowLibraryView, Move,
 Down, Up, Return) are its window commands (`WindowCommand`), applied to the state during
-`apply`, not effects sent out. The only window effect is closing (`Compositor::Close`). Shelf is not a
-window: it is in front when no top window is shown, and ShowShelf deselects the top windows.
+`apply`, not effects sent out. The only window effect is closing (`Compositor::Close`). The Library is not a
+window: it is in front when no top window is shown, and ShowLibraryView deselects the top windows.
 
 | From | Event / condition | To | Effects | Test |
 |---|---|---|---|---|
@@ -49,12 +49,12 @@ window: it is in front when no top window is shown, and ShowShelf deselects the 
 | present | duplicate Opened | unchanged | — | windows `lifecycle_messages_keep_one_window_and_ignore_late_messages` |
 | present | Title | updated title | matching bottom rule sends Down once | windows `lifecycle_title_applies_a_bottom_rule_once` |
 | present | Changed | updated identity, same place and selection; `x11` kept from Opened | ownership rules may assign its home | windows `stale_identity_facts_cannot_undo_a_placement`, `changed_facts_keep_a_window_x11` |
-| present | Closed | absent, out of the bottom slot; a dialog in front brings back its parent, another window its group's; else what was in front before: the most recent top group still shown, or shelf if shelf was put in front since (the program was launched from it), shelf last | exact Focus or ShowShelf when a group empties | windows `lifecycle_close_falls_back_once_and_retains_the_other_windows`, `a_dialogs_close_brings_back_its_parent`, `closing_the_window_below_empties_its_slot`; front tests, `a_closed_window_goes_back_to_shelf_if_shelf_was_in_front_before_it` |
+| present | Closed | absent, out of the bottom slot; a dialog in front brings back its parent, another window its group's; else what was in front before: the most recent top group still shown, or the Library if the Library was put in front since (the program was launched from it), the Library last | exact Focus or ShowLibraryView when a group empties | windows `lifecycle_close_falls_back_once_and_retains_the_other_windows`, `a_dialogs_close_brings_back_its_parent`, `closing_the_window_below_empties_its_slot`; front tests, `a_closed_window_goes_back_to_library_view_if_library_view_was_in_front_before_it` |
 | absent | late Closed, Title, Changed, Activate or keyboard focus | unchanged | — | windows `lifecycle_messages_keep_one_window_and_ignore_late_messages`, `backend_changes_keep_the_placement`, `keyboard_focus_is_independent_of_both_screens_selected_content` |
-| present on top | validated Activate | selected now | thaw/resume owner before exact Focus or ShowShelf | windows `activation_selects_the_window_on_its_screen`, `activation_thaws_a_suspended_owner_before_selecting_its_window` |
+| present on top | validated Activate | selected now | thaw/resume owner before exact Focus or ShowLibraryView | windows `activation_selects_the_window_on_its_screen`, `activation_thaws_a_suspended_owner_before_selecting_its_window` |
 | present below | validated Activate | bottom shows this window now (the windows' tab opens) | thaw/resume owner, keyboard focus to it | same |
 | either screen selected | KeyboardFocus(Some(id)) of a window shown, or None | the keyboard to that screen's stack, or ClamShell's UI; content stays; a window no screen shows is ignored | — | windows `keyboard_focus_is_independent_of_both_screens_selected_content` |
-| top, regardless of keyboard focus | Down, including a remembered rule | previous bottom returned to its home without activation; requested window below; same-program next top or recent group/shelf selected; the keyboard to the top window | Return before Down, then exact top Focus/fallback | bottom `moving_another_window_down_swaps_the_single_bottom_slot`; windows `displacing_another_programs_bottom_window_does_not_activate_it`, `moving_the_top_window_does_not_require_keyboard_focus_there`, `a_window_sent_down_gives_the_keyboard_to_the_top_window` |
+| top, regardless of keyboard focus | Down, including a remembered rule | previous bottom returned to its home without activation; requested window below; same-program next top or recent group/the Library selected; the keyboard to the top window | Return before Down, then exact top Focus/fallback | bottom `moving_another_window_down_swaps_the_single_bottom_slot`; windows `displacing_another_programs_bottom_window_does_not_activate_it`, `moving_the_top_window_does_not_require_keyboard_focus_there`, `a_window_sent_down_gives_the_keyboard_to_the_top_window` |
 | below, shown or covered | Up | top at retained home, selected now; bottom shows ClamShell | Up to explicit home | bottom `moving_another_window_down_swaps_the_single_bottom_slot` |
 | front launch waiting | Home or another explicit selection | foreground intent cancelled | navigation's own effects | windows `home_cancels_a_launchs_late_request_to_take_the_front`, `activating_another_window_cancels_a_launchs_late_request_to_take_the_front` |
 
@@ -107,7 +107,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 |---|---|---|---|---|
 | Idle | Play of the Device tool | Idle | the Device view opens | device `the_device_entry_opens_it_…` |
 | Idle | Play of another tool | Idle | `Tool` | running `play_of_a_tool_asks_for_it_and_of_an_unknown_id_does_nothing` |
-| Idle | Play of a group | Idle | shelf reveals it, `ShowShelf` | dock `shelf_pins_and_unpins_any_entry_…` |
+| Idle | Play of a group | Idle | the Library reveals it, `ShowLibraryView` | dock `library_view_pins_and_unpins_any_entry_…` |
 | Idle | Play of an id not in the library | Idle | nothing | same |
 | Idle | Play, OpenAnother, autostart, a Steam game found by app id | Launching | runner resumed if paused; `Save(Resume)`; `Launch`; `front_launch` if in front; Starting notice (from Play) | tests `a_launch_says_it_is_starting`; background `a_runner_paused_together…` |
 | Idle | Play of a Heroic game (Heroic's entry in the library) | Running(Windows) until `LAUNCHER_WAIT`, known by Heroic's mark; Heroic's entry Launching, in the background | `Launch` of Heroic's entry with `--no-gui` and the game's URL; `front_launch` of the game if in front | running `a_heroic_game_is_launched_by_heroic_and_runs_as_its_own_entry` |
@@ -142,7 +142,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 ### Steam's interface (system/launch/steam.rs, packages/thor-session)
 
 Steam is started in its controller interface, `-gamepadui`, every way it starts: its packaged desktop
-entry and steam:// links run `steam -gamepadui %U`, and a Steam game from shelf runs `steam -gamepadui
+entry and steam:// links run `steam -gamepadui %U`, and a Steam game from the Library runs `steam -gamepadui
 -silent -applaunch ID`, as a launch of Steam's desktop entry when the client isn't running (with only
 `WAYLAND_DISPLAY` and `DISPLAY` from the game's environment), or handed to the running client; `-silent`
 keeps a cold start from showing the client's window.
@@ -152,7 +152,7 @@ keeps a cold start from showing the client's window.
 
 The state's side is pinned by `steams_windows_open_behind_a_steam_games_launch`,
 `a_game_steam_started_is_followed_as_a_launch_beside_the_others`,
-`a_steam_game_shelf_started_ends_by_the_launcher_not_its_windows`,
+`a_steam_game_library_view_started_ends_by_the_launcher_not_its_windows`,
 `a_steam_games_window_is_the_games_though_it_runs_in_steams_scope`,
 `a_steam_game_found_by_its_window_is_launched_not_found_as_a_program`, and the system's
 `a_steam_game_is_known_by_its_app_id`. The `-gamepadui` argument and the interface it gives are checked on
@@ -162,12 +162,12 @@ the device.
 
 | Trigger | Result | Test |
 |---|---|---|
-| settle: the front group has no window left | Focus the most recent top group, else ShowShelf; remember it 2 s | front `a_closed_window_goes_back_…` |
+| settle: the front group has no window left | Focus the most recent top group, else ShowLibraryView; remember it 2 s | front `a_closed_window_goes_back_…` |
 | settle: within 2 s a window reappears there | Focus it | front `a_window_in_front_replaced_at_once_…` |
 | settle: `front_launch` and its window arrived | Focus, cleared | tests `a_launchs_first_window_is_shown_before_…` |
-| Home, shelf not in front | ShowShelf; cancel foreground launch intent | front `home_always_shows_shelf_and_repeated_home_stays_there` |
-| Home, shelf in front | stays; close Device view first if open | same; device `home_closes_the_device_view_first` |
-| WindowPrevious / WindowNext | wrap within the selected top program's stacks, skipping the bottom slot; absent/single/shelf do nothing | windows `top_window_switching_wraps_within_the_program_and_skips_the_bottom_slot`, `top_window_switching_steps_over_whole_stacks` |
+| Home, the Library not in front | ShowLibraryView; cancel foreground launch intent | front `home_always_shows_library_view_and_repeated_home_stays_there` |
+| Home, the Library in front | stays; close Device view first if open | same; device `home_closes_the_device_view_first` |
+| WindowPrevious / WindowNext | wrap within the selected top program's stacks, skipping the bottom slot; absent/single/the Library do nothing | windows `top_window_switching_wraps_within_the_program_and_skips_the_bottom_slot`, `top_window_switching_steps_over_whole_stacks` |
 | dock tap on the entry in front with two or more top-level windows on the top screen | Overview open, the window in front chosen (a dialog's root); the window in front stays; again closes it | overview `a_tap_on_the_entry_in_front_shows_its_windows_and_the_pad_picks_one`, `one_window_and_its_dialog_open_no_overview` |
 | Overview: Step(dir) / Choose or Pick(id) / Close | the choice moves within the grid; the window comes in front and it closes; it closes | overview `the_entry_again_or_b_goes_back_and_a_tapped_window_comes_in_front` |
 | settle: Overview open, its group not in front or one window left | closed; a chosen window gone leaves the first chosen | overview `it_closes_with_its_group_out_of_front_or_one_window_left` |
@@ -183,7 +183,7 @@ State: `Pauses{unused, paused: Hidden | Held}`.
 |---|---|---|---|---|
 | Running | set to pause, windows, none visible, not quitting, 10 s | Paused(Hidden) | Freeze on | background `pauses_hidden_…` |
 | Paused(Hidden) | shown, no windows, quitting, setting changed | Running | Freeze off | background tests, `a_paused_game_set_to_run_hidden_is_thawed_at_once`; shown again as the front window closes, in the same event: tests `a_paused_game_shown_when_the_front_closes_is_thawed_at_once` |
-| any | Suspend | Held | ShowShelf if visible; Freeze on | background `a_suspended_entry_stays_frozen_…`; dock `the_menus_autostart_and_suspend` |
+| any | Suspend | Held | ShowLibraryView if visible; Freeze on | background `a_suspended_entry_stays_frozen_…`; dock `the_menus_autostart_and_suspend` |
 | Held | shown after its windows were seen hidden (one suspended in view stays frozen while its window is still shown), Show, Quit, ForceKill | Running | Freeze off | same |
 | — | `Frozen(keys)` at start | Held (kept while its unit is listed, until its entry runs) | — | same; found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
 | Running | set to quit when closed, seen, no windows | Quitting | as Quit | background `quits_closed_ends_once_…` |
@@ -281,7 +281,7 @@ bottom screen to open the windows' tab and turn on (`Bottom::show_below`).
 | WindowDown: the selected top window moves down without needing keyboard focus; the old bottom window returns to its group, the screen shows it, a rule is added (notice, `Save(WindowRules)`) | same; `a_programs_only_window_is_remembered_by_its_app_id_alone`; `window_down_with_no_window_in_front_does_nothing` |
 | WindowUp: the window below goes back, its rule is forgotten | same; `moving_another_window_down_swaps_the_single_bottom_slot` |
 | settle: a window matching a rule moves down once, after the windows are followed (a found program's window too, in the event that found it); the tab it leaves is settled in the same event | `a_rule_sends_the_window_down_when_its_program_opens_it_again`; tests `a_found_programs_window_goes_down_by_its_rule_as_it_is_found`, `the_tab_a_rule_leaves_is_settled_in_the_same_event` |
-| the window below displaced by another (Return): back behind in its group, and if its stack had the keyboard, the keyboard goes to the window in front, or to ClamShell's UI with shelf in front | windows `a_window_displaced_from_below_gives_up_the_keyboard` |
+| the window below displaced by another (Return): back behind in its group, and if its stack had the keyboard, the keyboard goes to the window in front, or to ClamShell's UI with the Library in front | windows `a_window_displaced_from_below_gives_up_the_keyboard` |
 | dock tap or BottomWindows → windows shown (the windows' tab), the screen turned on if it was off by hand | running `show_of_an_entry_whose_windows_are_all_below_shows_them_there` |
 | Home+Start: wake if off by itself (dark for a game too, which sets `woken` as a tap does), else toggle off | `the_bottom_screen_turns_off_and_on`, `home_start_brings_back_…`, `…off_by_hand_and_by_itself_at_once`, `home_start_wakes_a_screen_dark_for_a_game` |
 | settle: off by itself when on battery, not refreshing, not set to stay on, no windows shown, no editor, and dark in a game or untouched 4 min | `on_battery_the_untouched_…` and siblings; `a_refresh_calibration_or_an_editor_keeps_it_on` |
@@ -309,9 +309,9 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 
 | Transition | Test |
 |---|---|
-| first start → open, focus on Wi-Fi; Done → closed, `Save(FirstStartDone)`, the Sysinfo tab | `the_first_start_opens_the_device_view_…`, `the_first_start_begins_on_wifi_and_done_leaves_shelf_and_the_default_tab` |
-| the Device tool → open; Close or Done → closed, focus to shelf | `the_device_entry_opens_it_and_close_goes_back_to_shelf` |
-| Home with the view open → closed, focus to shelf's selection; repeated Home stays on shelf | `home_closes_the_device_view_first` |
+| first start → open, focus on Wi-Fi; Done → closed, `Save(FirstStartDone)`, the Sysinfo tab | `the_first_start_opens_the_device_view_…`, `the_first_start_begins_on_wifi_and_done_leaves_library_view_and_the_default_tab` |
+| the Device tool → open; Close or Done → closed, focus to the Library | `the_device_entry_opens_it_and_close_goes_back_to_library_view` |
+| Home with the view open → closed, focus to the Library's selection; repeated Home stays on the Library | `home_closes_the_device_view_first` |
 | open while the UI is up → `Watch(Account)` on; closed → off | `the_account_is_watched_while_the_view_is_open` |
 | Wifi / Zone rows → their tab, its watch | `the_wifi_and_zone_rows_open_their_tabs` |
 | Password → editor for the current then the new password → `Account(Password)` | `the_password_is_typed_below_the_current_one_first` |
@@ -323,16 +323,16 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 
 ## Pad route and pointer (nav/pad.rs, nav/pointer.rs)
 
-Claimant: pad mouse, else shelf in front, else Typing on the Keyboard tab, else the game. Route: Ui for
-shelf; else Ui if switched there by View, else Game/Keys/Mouse; Listen, instead of Ui, while a keymap
+Claimant: pad mouse, else the Library in front, else Typing on the Keyboard tab, else the game. Route: Ui for
+the Library; else Ui if switched there by View, else Game/Keys/Mouse; Listen, instead of Ui, while a keymap
 screen listens. Ui whatever the rest while a dock entry is being moved or the overview of the program's
 windows is open, listening included. The focus ring hides when the route leaves Ui.
 
 | Transition | Test |
 |---|---|
-| front or tab changes the claimant, the route follows | `the_pad_goes_to_shelf_the_program_or_typing_…` |
-| View switches to the second screen and back | `view_moves_the_pad_between_…`, `view_does_nothing_with_shelf_in_front` |
-| a claimant change keeps the switch to the second screen; shelf claiming the pad clears it | `the_pad_moved_to_the_second_screen_stays_there_until_view_or_shelf` |
+| front or tab changes the claimant, the route follows | `the_pad_goes_to_library_view_the_program_or_typing_…` |
+| View switches to the second screen and back | `view_moves_the_pad_between_…`, `view_does_nothing_with_library_view_in_front` |
+| a claimant change keeps the switch to the second screen; the Library claiming the pad clears it | `the_pad_moved_to_the_second_screen_stays_there_until_view_or_library_view` |
 | pad mouse by hand, by game, kept by hand | `pad_mouse_toggles_independently_…`, `the_pad_mouse_follows_the_game_…` |
 | listening, dock move, focus ring | `a_new_keymap_is_named_edited_and_mapped`, `moving_a_dock_entry_takes_the_pad_…`, `the_focus_ring_hides_when_the_pad_leaves_…` |
 | Down/Up light a target; Activate resolves the item pressed | `down_and_up_light_a_target`, `the_pressed_item_is_lit_where_it_is_now`, `a_press_acts_on_the_item_that_was_drawn`; a Down without Up leaves the press until the next Down: `a_down_without_its_up_lasts_until_the_next_down` |
@@ -348,7 +348,7 @@ The pad router owns the chord policy. Home press emits `HomeHeld(true)` and cent
 stick through the current keymap; its physical position is still tracked. While Home is held, right
 stick flicks become WindowDown / WindowUp / WindowPrevious / WindowNext. Home release emits
 `HomeHeld(false)`, and emits `HomeTap` only if no chord used it. State consumes that tap when a
-Home-held arrow already switched a window; otherwise it shows shelf. Direct Home always shows shelf. A stick still out on release remains taken
+Home-held arrow already switched a window; otherwise it shows the Library. Direct Home always shows the Library. A stick still out on release remains taken
 until it returns, including during remap ticks and gyro samples. Unplugging releases Home for state.
 Tests: `home_flicks_once_and_neutralises_the_games_stick_until_it_returns`,
 `losing_the_controller_releases_home_for_the_state`. Away from the game, Home's press gives the mapping
@@ -420,7 +420,7 @@ whole pixels, and the screen's black is labelled below them. `tests/picture-scal
 pattern, and `curve-edit-histogram.png` shows one. The randomized test taps the
 curve screens and slides their parameters.
 
-## Shelf (shelf/)
+## The Library (the Library/)
 
 | Transition | Test |
 |---|---|
@@ -428,17 +428,17 @@ curve screens and slides their parameters.
 | tap selects, tap again opens a group or plays; Up leaves a group | `selecting_then_activating_again_launches`, `a_group_opens_and_back_goes_out_to_it` |
 | tap on an entry not in the list does nothing, the focus included | `a_tap_on_an_entry_not_in_the_list_does_nothing` |
 | long press on the selected entry, by touch or pad: its actions open, the focus ring on the first | `a_held_on_the_selected_entry_opens_its_actions` |
-| typing filters; Enter activates; Clear | `typing_with_shelf_in_front_finds_entries_…` |
+| typing filters; Enter activates; Clear | `typing_with_library_view_in_front_finds_entries_…` |
 | favourite on/off: relayout by name and id, `Save(Favourites)`; a focus in the list follows the selection | `a_favourite_shows_in_its_collection_…`, `a_favourite_removed_moves_the_focus_with_the_selection`, `the_favourites_tab_goes_with_its_last_entry` |
-| a play recorded: relayout (a focus in the list follows the selection), `RecordPlay`, `ReadPosition` for videos | tests `a_launchs_start_and_end…`, `a_video_ended_asks_where_it_was_left`; shelf `a_play_recorded_keeps_shelfs_place_and_focus` |
+| a play recorded: relayout (a focus in the list follows the selection), `RecordPlay`, `ReadPosition` for videos | tests `a_launchs_start_and_end…`, `a_video_ended_asks_where_it_was_left`; the Library `a_play_recorded_keeps_library_views_place_and_focus` |
 | a relayout closes a group no longer in its collection (Recent, Favourites) | `a_group_that_leaves_its_collection_is_closed_there` |
-| a group launched from elsewhere: its collection's places reset, the path opened, `ShowShelf` | `a_group_started_from_elsewhere_opens_in_shelf` |
-| Unread at start (`Init::library` is `None`; the binary reads it on a thread): shelf empty, no "nothing found" said; the tab restored at once; the place, and the focus left nowhere, as the library comes; a resume saved meanwhile is the place it goes back to | resume `before_the_library_is_read_the_place_waits_for_it`; views `an_unread_library_isnt_said_to_be_empty` |
+| a group launched from elsewhere: its collection's places reset, the path opened, `ShowLibraryView` | `a_group_started_from_elsewhere_opens_in_library_view` |
+| Unread at start (`Init::library` is `None`; the binary reads it on a thread): the Library empty, no "nothing found" said; the tab restored at once; the place, and the focus left nowhere, as the library comes; a resume saved meanwhile is the place it goes back to | resume `before_the_library_is_read_the_place_waits_for_it`; views `an_unread_library_isnt_said_to_be_empty` |
 | Library read: places restored by name and id, with what is typed in each list | `listings_outlive_the_library_read_again`, `a_library_read_keeps_what_is_typed`; the selection gone: the list's first, `a_library_read_without_the_selected_entry_selects_the_first` |
 | Continue, Meta, Position | `continue_plays_on_where_the_series_was_left`, `fetched_metadata_goes_to_its_entry`, tests `a_video_ended_asks_where_it_was_left` |
 | actions and button shortcuts (Y, X, Start) | `an_entrys_actions_come_from_…`, `copy_then_paste_…`, `selected_entries_are_what_the_actions_act_on`, `the_shortcuts_are_off_on_the_actions` |
 
-### Files tab (shelf/files.rs)
+### Files tab (the Library/files.rs)
 
 State: `clip`, `selected`, `armed`, `busy`, `hidden`, the listings.
 
@@ -457,17 +457,17 @@ State: `clip`, `selected`, `armed`, `busy`, `hidden`, the listings.
 
 ### Fetch priority and resume
 
-- While metadata is fetched, each change of shelf's view sends `FetchFirst`; Fetching and Library resend
-  it. Test: tests `while_metadata_is_fetched_shelfs_view_goes_first`,
-  `a_library_read_while_fetching_asks_for_shelfs_view_first_again`.
+- While metadata is fetched, each change of the Library's view sends `FetchFirst`; Fetching and Library resend
+  it. Test: tests `while_metadata_is_fetched_library_views_view_goes_first`,
+  `a_library_read_while_fetching_asks_for_library_views_view_first_again`.
 - A folder listing that changes the entries in the list counts as a change of the view. Test: files
   `a_listing_that_changes_the_entries_shown_asks_for_their_metadata_first`.
-- Shelf or tab changes touch the resume debounce; a tick 2 s later saves it; Quit (SIGTERM or SIGINT
+- The Library or tab changes touch the resume debounce; a tick 2 s later saves it; Quit (SIGTERM or SIGINT
   read by the event loop, or nested's window closed) saves it and a brightness change still waiting at
   once, then ends ClamShell (`quit_saves_what_waits_then_ends`). Tests:
   resume `the_place_is_saved_after_a_pause_and_restored`, `open_groups_are_restored`.
 - The record keeps every collection's place, clamped to its list (one that shrank while another was
-  shown). Test: shelf `the_resume_record_keeps_a_place_past_its_shrunk_list`.
+  shown). Test: the Library `the_resume_record_keeps_a_place_past_its_shrunk_list`.
 
 ## Lists and presses (nav/)
 
@@ -582,7 +582,7 @@ compositor test, which sends them with `gdbus`, closes one and taps another.
 | Resend | Raised by | Re-sends | Test |
 |---|---|---|---|
 | Resumed | `Event::Resumed` | Apply | tests `back_from_sleep_applies_the_settings_again_and_wakes_the_screens` |
-| FetchFirst | Fetching, Library | FetchFirst | tests `while_metadata_is_fetched_shelfs_view_goes_first`, `a_library_read_while_fetching_asks_for_shelfs_view_first_again` |
+| FetchFirst | Fetching, Library | FetchFirst | tests `while_metadata_is_fetched_library_views_view_goes_first`, `a_library_read_while_fetching_asks_for_library_views_view_first_again` |
 | Restarted(thread) | `Event::Restarted` | what that thread was sent (below) | tests in `apply/restart.rs` |
 
 At start only what the outside starts with counts as sent (`Sent::new`): the settings in force
@@ -701,7 +701,7 @@ game's resolution, and any other at its own size clipped to the area; Fullscreen
 state, and keyboard focus sets Activated. Drawing and input use one `Geometry` (viewport, origin, scale)
 per window. A scaled Fullscreen window is fitted by its picture (the surface `picture_surface` picks, such
 as Wine's game subsurface), in the picture's own shape when that differs from its place by more than 2 %.
-Native never scales up. A press on the black around a top window reaches neither the window nor shelf
+Native never scales up. A press on the black around a top window reaches neither the window nor the Library
 behind it.
 
 What is shown where is placed in one list, the scene (`scene.rs`), front first: the cursor while it
@@ -901,7 +901,7 @@ The state's side: `a_text_field_brings_up_the_keyboard_and_back`,
 `a_text_field_doesnt_take_the_screen_from_an_open_editor`,
 `a_keyboard_a_text_field_brought_up_isnt_saved_as_the_tab`.
 
-An on-screen key goes to an open editor, the keymap's capture or shelf's find; otherwise it becomes
+An on-screen key goes to an open editor, the keymap's capture or the Library's find; otherwise it becomes
 `Compositor::Key(stroke)`, which `Server::stroke` carries out:
 
 - no client has the seat's keyboard: nothing;
@@ -969,7 +969,7 @@ A menu belongs to its root toplevel and never becomes a window of the state. The
 | menu | a submenu destroyed | menu | focus back to its parent popup |
 | menu | the last popup destroyed | none | focus back to the toplevel |
 | menu | a press (touch, or a first pointer button) outside the root window | none | dismissed, grabs released, then the press routed |
-| menu | Home; keyboard focus to another window; the root hidden, unmapped or destroyed | none | dismissed, grabs released; Home still clears focus and shows shelf |
+| menu | Home; keyboard focus to another window; the root hidden, unmapped or destroyed | none | dismissed, grabs released; Home still clears focus and shows the Library |
 
 Test: `menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy` (hit coordinates and
 focus, an outside touch, Home, a submenu keeping its live keyboard grab, which pins the order, and giving
@@ -1010,7 +1010,7 @@ and its source surface, if any, is that client's. Otherwise the client still get
 nothing.
 
     tracked --5 s old--> removed at the next turn of the loop
-    tracked --the seat's keyboard focus becomes none (Home, shelf)--> every token removed
+    tracked --the seat's keyboard focus becomes none (Home, the Library)--> every token removed
     tracked --an activation request--> removed; if it was under 5 s old, the state has a keyboard focus and the surface is a window of the state: WindowEvent::Activate and a window sync
 
 Activation follows the state's ordinary selection: it never moves a window between the screens, and Home
@@ -1512,9 +1512,9 @@ The Fan tile is dimmed when the profile has no fan (GAP).
 
 | From | Route | To | Test |
 |---|---|---|---|
-| shelf play, Continue, Open in, Pin | queued `Event::Entry` | session, dock | shelf tests |
-| launch of a group / the Device tool | `Session::launch` returns what to do instead | shelf, Device view | `a_group_started_…`, device tests |
-| plays ended | settle fills a reused buffer, then `shelf.record_play` | shelf | tests `a_launchs_start_and_end…`; shelf `a_play_recorded_keeps_shelfs_place_and_focus` |
+| the Library play, Continue, Open in, Pin | queued `Event::Entry` | session, dock | the Library tests |
+| launch of a group / the Device tool | `Session::launch` returns what to do instead | the Library, Device view | `a_group_started_…`, device tests |
+| plays ended | settle fills a reused buffer, then `library_view.record_play` | the Library | tests `a_launchs_start_and_end…`; the Library `a_play_recorded_keeps_library_views_place_and_focus` |
 | a game starting | settle returns it | bottom (`unwake`) | `dark_for_a_game_…` |
 | notices | `&mut NoticeSlot` | bottom | per area |
 | settings in force | parameters to launch and background; sync Apply | session, system | settings tests |
@@ -1527,7 +1527,7 @@ The Fan tile is dimmed when the profile has no fan (GAP).
 | tabs | sync watches; `left_tab` closes the dock menu, releases levels, resets the time page, closes the battery menu | dock, levels, status | per tab; `leaving_the_tab_resets_it_to_its_main_page` |
 | profile (keymap) chosen/deleted/made own | queued `Event::Profile(kind, ProfileEvent)` → prefs, the kind's setting | settings | keymap tests |
 | device view, files, keymaps naming | queued `EditOnKeyboard` / editors | bottom | per area |
-| Library read | problems notice, shelf reload, pausable runners, runner keymaps, dock pins, FetchFirst | bottom, session, keymap, settings, dock | tests `new_library_problems_are_said_once`, `a_library_read_updates_the_runners_paused_together`, `a_library_read_while_fetching_asks_for_shelfs_view_first_again`; shelf `listings_outlive_…`, `a_library_read_keeps_what_is_typed`; settings `a_runner_gets_its_keymap_once`; dock `pins_of_entries_gone_…` |
+| Library read | problems notice, the Library reload, pausable runners, runner keymaps, dock pins, FetchFirst | bottom, session, keymap, settings, dock | tests `new_library_problems_are_said_once`, `a_library_read_updates_the_runners_paused_together`, `a_library_read_while_fetching_asks_for_library_views_view_first_again`; the Library `listings_outlive_…`, `a_library_read_keeps_what_is_typed`; settings `a_runner_gets_its_keymap_once`; dock `pins_of_entries_gone_…` |
 | battery tab quit | queued `Event::Entry` | session | `a_rows_menu_quits_…` |
 | any event | settle `follow_lists` | every scroll | `a_list_changed_by_any_event_…` |
 | battery warning | `Sys::battery_warning` returns it, `State::notify` takes it | notifications | status battery tests |
@@ -1558,7 +1558,7 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    pixels or millimetres aren't known.
    At most one tab's watch is on, and it is the open tab's (or the battery's, for the dock's menu).
 3. **Pad route:** consistent with claimant, listening, dock move and overview; reconciling again changes nothing;
-   the focus ring shows only when the route is Ui, or after a hold on shelf's selected entry opened its
+   the focus ring shows only when the route is Ui, or after a hold on the Library's selected entry opened its
    actions with the pad elsewhere, until the next touch hides it (the ring is what shows the actions are
    open, S24 in the history notes; the focus may move meanwhile, as when the Device view opens).
 4. **Session:** live window ids and running ids unique; at most one selected top window and one window placed
@@ -1577,7 +1577,7 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    would change the top window's root (the group in front has another top-level window, and the top
    window's root is one of them).
 5. **Dock:** ids unique; every running entry is on it; every item is pinned, running or being moved.
-6. **Shelf:** the cursor within the list (the selected entry is worked out as the one at it); the collection index in
+6. **The Library:** the cursor within the list (the selected entry is worked out as the one at it); the collection index in
    range; every entry listed matches the filter.
 7. **Lists:** every scroll offset within its ends.
 8. **Bottom:** dimmed ⇒ no windows shown; the chosen tab differs from the tab only on Keyboard; the editor
@@ -1596,8 +1596,8 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
     names one held with an action and is followed at once by its NotificationClosed.
 
 The generator draws events valid for the current state: taps, holds and presses on the targets shown
-(shelf's only while shelf is in front, the Device view's while it is open, the tab's), Focus only while
-the route is Ui, shelf's pad events only while the pad is on shelf, a touch's HideFocus before its press,
+(the Library's only while the Library is in front, the Device view's while it is open, the tab's), Focus only while
+the route is Ui, the Library's pad events only while the pad is on the Library, a touch's HideFocus before its press,
 Listened only while listening, notifications sent (any urgency, timeout and action), closed by their
 program, tapped and dismissed (mostly ones held), and results only after their requests (a unit or
 LaunchFailed after Launch, a unit ending after EndRun or by itself, windows closing after Close or by

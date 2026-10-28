@@ -32,7 +32,7 @@ fn top_text(state: &State) -> String {
     String::from_utf8_lossy(rec.all_text()).into_owned()
 }
 
-/// Shelf is empty for a moment at start, while the library is read: it doesn't say that nothing was
+/// The Library is empty for a moment at start, while the library is read: it doesn't say that nothing was
 /// found until the library has been read.
 #[test]
 fn an_unread_library_isnt_said_to_be_empty() {

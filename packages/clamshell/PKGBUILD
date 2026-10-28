@@ -4,7 +4,7 @@
 pkgname=clamshell
 pkgver=0
 pkgrel=1
-pkgdesc="The AYN Thor's handheld session: game shelf, second screen, gamepad, the fan daemon"
+pkgdesc="The AYN Thor's handheld session: the game Library, second screen, gamepad, the fan daemon"
 arch=(aarch64 x86_64)
 url=https://github.com/robinei/thor
 license=('MIT OR Apache-2.0')

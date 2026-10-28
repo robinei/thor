@@ -21,14 +21,14 @@ close 900
   PadRoute Ui
 Tick 1760000000
   Save Resume
-Shelf(ToggleFavourite)
+LibraryView(ToggleFavourite)
   Save Favourites(["zelda-lttp"])
-Shelf(TogglePin)
+LibraryView(TogglePin)
   Save Dock(["desktop:steam", "desktop:foot", "desktop:firefox", "zelda-lttp"])
 Units [zelda_lttp_650a1e]
   Apply settings of zelda-lttp
 -- top-played.png
-Pointer(Activate(Shelf(Entry("ff6"))))
+Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_09d141
   Save Resume
 -- top-switch.png
@@ -84,7 +84,7 @@ Tick 1760000000
   PadRoute Ui
 Start
   Watch Metrics on
-Pointer(Activate(Shelf(Entry("ff6"))))
+Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_09d141
   Save Resume
 Tick 1760000005
@@ -155,7 +155,7 @@ Tick 1760000000
   PadRoute Ui
 Start
   Watch Metrics on
-Pointer(Activate(Shelf(Entry("ff6"))))
+Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_09d141
   Save Resume
 Pointer(Activate(Tab(Settings)))
@@ -422,7 +422,7 @@ Tick 1760000000
   PadRoute Ui
 Start
   Watch Metrics on
-Pointer(Activate(Shelf(Entry("ff6"))))
+Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_09d141
   Save Resume
 Pointer(Activate(Tab(Settings)))
@@ -489,7 +489,7 @@ Tick 1760000000
   PadRoute Ui
 Start
   Watch Metrics on
-Pointer(Activate(Shelf(Entry("ff6"))))
+Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_09d141
   Save Resume
 Reading Screens
@@ -520,7 +520,7 @@ Tick 1760000000
   PadRoute Ui
 Start
   Watch Metrics on
-Pointer(Activate(Shelf(Entry("ff6"))))
+Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_09d141
   Save Resume
 Reading Screens
@@ -540,7 +540,7 @@ Tick 1760000000
   PadRoute Ui
 Start
   Watch Metrics on
-Pointer(Activate(Shelf(Entry("ff6"))))
+Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_09d141
   Save Resume
 Reading Screens
@@ -560,7 +560,7 @@ Tick 1760000000
   PadRoute Ui
 Start
   Watch Metrics on
-Pointer(Activate(Shelf(Entry("ff6"))))
+Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_09d141
   Save Resume
 Pointer(Activate(Tab(Settings)))
@@ -699,7 +699,7 @@ Tick 1760000000
   PadRoute Ui
 Start
   Watch Metrics on
-Pointer(Activate(Shelf(Entry("tool:device"))))
+Pointer(Activate(LibraryView(Entry("tool:device"))))
   Watch Account on
 -- device-unavailable.png
 -- device.png

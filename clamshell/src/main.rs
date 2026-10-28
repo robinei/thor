@@ -1,4 +1,4 @@
-//! ClamShell runs the shelf, the second screen, the bar, and input and power policy in one process with
+//! ClamShell runs the Library, the second screen, the bar, and input and power policy in one process with
 //! one state. This crate is the program around them: the command line ([`cli`]), the environment
 //! ([`config`]), the session ([`session`]), the one-shot commands ([`commands`]) and the control pipe
 //! ([`control`]). With the `dev` feature it also has the snapshots and their demo state (`dev`).
@@ -80,7 +80,7 @@ fn carry_out(command: Command) -> Result<(), String> {
             Ok(())
         }
         Command::Library => {
-            commands::print_library(State::new(Init { library: Some(library::load(&sources).library), ..Init::default() }).shelf().library());
+            commands::print_library(State::new(Init { library: Some(library::load(&sources).library), ..Init::default() }).library_view().library());
             Ok(())
         }
         Command::WaylandFilter => {

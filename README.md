@@ -60,7 +60,7 @@ deciding the design, reviewing the work and setting the rules it follows (`AGENT
 
 ## ClamShell
 
-`clamshell/` is one process with one in-memory state for shelf (the game list on the top screen), the
+`clamshell/` is one process with one in-memory state for the Library (the game list on the top screen), the
 second screen (the bar and its tabs), the input path (the controller, the pad mouse, the touchpad, the
 on-screen keyboard), and the games' settings and keymaps. It is also the Wayland compositor the games
 and programs show their windows in. Its crates, the cycle they make and the rules the code follows are in
@@ -84,7 +84,7 @@ RetroArch) are in `packages/thor-session/root/`.
 
 ## The library
 
-Shelf comes from `~/.config/clamshell/library.json`, and nothing is there but what it declares:
+The Library comes from `~/.config/clamshell/library.json`, and nothing is there but what it declares:
 
 - `places`: the tabs (in their order, with their icons; Recent, Favourites and Tools are places of a
   `type`) and folders in them, each with an id to refer to it by (`"@snes"`), and a folder's icon (its
@@ -137,7 +137,7 @@ games from the store; the desktop files' games from SteamGridDB (needs `keys.ste
 file wins. libretro's lists are kept in `~/.cache/clamshell/libretro` for 30 days. The rules:
 `crates/system/src/library/meta/`.
 
-What ClamShell keeps (play time, favourites, settings, keymaps, window rules, the dock's pins, where shelf
+What ClamShell keeps (play time, favourites, settings, keymaps, window rules, the dock's pins, where the Library
 was, brightness) is in JSON files in `~/.local/share/clamshell`, readable and editable by hand; which
 file holds what: `crates/system/src/store.rs`.
 
@@ -155,12 +155,12 @@ ClamShell is a Cargo workspace in `clamshell/` (Rust 1.95 or later); `cargo buil
 On the device, `clamshell --drm` runs on the screens from the first console (`thor-session`); `clamshell`
 without arguments prints its usage.
 
-In shelf, Y makes the selected entry a favourite (the Favourites tab) or not, and X pins it to the dock
-or unpins it; a pinned folder (a series) opens in shelf from the dock.
+In the Library, Y makes the selected entry a favourite (the Favourites tab) or not, and X pins it to the dock
+or unpins it; a pinned folder (a series) opens in the Library from the dock.
 
 On a desktop, keys stand in for the pad while no window has the keyboard: arrows move the focus, Enter or
 Space is A, Backspace B, Tab View, Q and E the shoulders, F is Y, P is X, C Start, Home and End the
-triggers. Whatever has the keyboard, F12 is the Thor's Home button (a tap shows shelf), F11 moves the window
+triggers. Whatever has the keyboard, F12 is the Thor's Home button (a tap shows the Library), F11 moves the window
 in front down to the second screen and F10 brings it back up. A controller's Guide button is Home too.
 
 `clamshell ctl screenshot`, or Home+R1, saves a screenshot of both screens. `clamshell ctl window events
@@ -190,7 +190,7 @@ rules and launch context.
   to open in front, draw, cause no compositor error and end when ClamShell closes its window. `--gpu` as
   above.
 - `clamshell/tests/picture-scaling.py` (after `cargo build` and `cargo build -p clamshell-compositor
-  --example pattern-game`): test games launched from shelf, their pictures checked to fill the top screen
+  --example pattern-game`): test games launched from the Library, their pictures checked to fill the top screen
   at each Resolution and Scaling. Both need sway (as the host), Xwayland and grim; the first also foot,
   dbus-daemon and gdbus, the second a C compiler and SDL 3.
 - `tools/vm/vm-test.sh`: the VM suite end to end, about twenty minutes, for what nothing else can check.

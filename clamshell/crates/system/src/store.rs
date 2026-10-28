@@ -11,7 +11,7 @@
 //!   - `keymaps/<name>.json` holds one keymap, named after it. A keymap owned by an entry or a runner level
 //!     is named like that owner's settings file. With no folder, the initial keymaps are used.
 //!   - `curves/<name>.json` holds one HDR curve, named the same way as keymaps.
-//!   - `window-rules.json`, `dock.json`, `autostart.json`, `favourites.json`, `resume.json` (where shelf
+//!   - `window-rules.json`, `dock.json`, `autostart.json`, `favourites.json`, `resume.json` (where the Library
 //!     and the second screen were), `sticks.json` (the sticks' calibrations, by controller),
 //!     `brightness.json`, `clock.json`, and `first-start.json` (whether the first start is over, see
 //!     `clamshell_state::setup`).
@@ -271,7 +271,7 @@ impl Store {
         read_json::<Vec<String>>(&self.file("autostart.json")).unwrap_or_default().into_iter().map(Arc::from).collect()
     }
 
-    /// Where shelf and the second screen were, or none if that was never saved.
+    /// Where the Library and the second screen were, or none if that was never saved.
     pub fn resume(&self) -> Option<Resume> {
         let r: ResumeFile = read_json(&self.file("resume.json"))?;
         Some(Resume { collection: r.collection, tab: r.tab, places: r.places })

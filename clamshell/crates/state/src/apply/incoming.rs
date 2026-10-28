@@ -56,31 +56,31 @@ impl State {
         }
     }
 
-    /// The library was read again. New problems are reported once and shelf is reloaded. Then what
+    /// The library was read again. New problems are reported once and the Library is reloaded. Then what
     /// depends on its entries is updated: runners' pauses and keymaps, and pins of entries that are
-    /// gone. Shelf's entries shown are asked for first again.
+    /// gone. The Library's entries shown are asked for first again.
     pub(crate) fn library_read(&mut self, library: Library, out: &mut Out) {
         let problems = &library.problems;
-        if !problems.is_empty() && *problems != self.shelf.library().problems {
+        if !problems.is_empty() && *problems != self.library_view.library().problems {
             let first = problems.first().cloned().unwrap_or_default();
             self.bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Problems(first, problems.len()), self.clock.mono());
         }
-        let first = !self.shelf.read();
-        self.shelf.reload(library);
+        let first = !self.library_view.read();
+        self.library_view.reload(library);
         if first {
-            self.pointer.shelf_read(self.shelf.selected());
+            self.pointer.library_view_read(self.library_view.selected());
         }
-        self.session.set_pausable_runners(self.shelf.library());
+        self.session.set_pausable_runners(self.library_view.library());
         self.adopt_runner_keymaps(out);
-        if self.dock.drop_gone(self.shelf.library(), &self.session) {
+        if self.dock.drop_gone(self.library_view.library(), &self.session) {
             out.effects.push(self.dock.save_effect());
         }
         self.sent.resend(Resend::FetchFirst);
     }
 
-    /// Metadata fetching started or stopped. Shelf's entries shown are asked for first again.
+    /// Metadata fetching started or stopped. The Library's entries shown are asked for first again.
     pub(crate) fn fetching(&mut self, on: bool) {
-        self.shelf.set_fetching(on);
+        self.library_view.set_fetching(on);
         self.sent.resend(Resend::FetchFirst);
     }
 
@@ -107,19 +107,19 @@ impl State {
     }
 
     /// Home. On a screen that listens for input, it leaves that screen; Home is never taken as an input.
-    /// When the Device view is in shelf's place, it goes back to shelf. Otherwise the session handles it
+    /// When the Device view is in the Library's place, it goes back to the Library. Otherwise the session handles it
     /// (see [`crate::Session::home`]).
     pub(crate) fn home(&mut self) {
         if self.listening() {
             self.keymapping.back(&mut self.keyboard);
-        } else if self.session.shelf_in_front() && self.setup.is_open() {
-            self.setup.close(&mut self.pointer, self.shelf.selected());
+        } else if self.session.library_view_in_front() && self.setup.is_open() {
+            self.setup.close(&mut self.pointer, self.library_view.selected());
         } else {
             self.session.home();
         }
     }
 
-    /// Quitting ClamShell: where shelf and the second screen are is saved first.
+    /// Quitting ClamShell: where the Library and the second screen are is saved first.
     pub(crate) fn quit(&mut self, out: &mut Out) {
         // What waits a moment to be saved is saved now.
         self.levels.save_due(u64::MAX, out);
@@ -137,7 +137,7 @@ impl State {
     /// have no keymap chosen and none of their own: makes that keymap their own, chooses it, and saves.
     fn adopt_runner_keymaps(&mut self, out: &mut Out) {
         let mut adopted = false;
-        for (key, preset) in &self.shelf.library().runner_keymaps {
+        for (key, preset) in &self.library_view.library().runner_keymaps {
             if self.prefs.settings().overrides_of(key).get(crate::settings::Setting::Keymap).is_some() {
                 continue;
             }

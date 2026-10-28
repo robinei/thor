@@ -2,7 +2,7 @@
 //! ClamShell knows what runs, from systemd's first list of its units, each of these entries that the
 //! library has and that doesn't run is launched. Waiting for that list keeps a restarted ClamShell from
 //! starting again what is still running. They are launched in the background, in their own groups and
-//! not shown, so that a window Steam opens doesn't cover shelf.
+//! not shown, so that a window Steam opens doesn't cover the Library.
 
 use std::sync::Arc;
 
@@ -71,7 +71,7 @@ mod tests {
     fn chosen_entries_wait_for_the_library() {
         let launches = |fx: &[Effect]| fx.iter().filter(|e| matches!(e, Effect::Launch { .. })).count();
         let mut s = State::new(Init { autostart: vec!["zelda-lttp".into()], library: None, ..init() });
-        assert_eq!(launches(&s.applied(Event::Units(vec![]))), 0, "not in the empty shelf, and not given up");
+        assert_eq!(launches(&s.applied(Event::Units(vec![]))), 0, "not in the empty Library, and not given up");
         assert_eq!(launches(&s.applied(Event::Library(Box::new(clamshell_library::demo::library())))), 1);
         assert_eq!(launches(&s.applied(Event::Units(vec![]))), 0, "once");
     }

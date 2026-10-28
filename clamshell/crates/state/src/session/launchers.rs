@@ -19,7 +19,7 @@
 //!   Lutris's own rather than meant to be read, and names can repeat: a wrapper not like this, or two such
 //!   entries of one name, mark nothing, and the game's windows are Lutris's.
 //!
-//! A game launched from shelf is to run without its launcher being seen, and the launcher, which may go on
+//! A game launched from the Library is to run without its launcher being seen, and the launcher, which may go on
 //! running after it (Heroic does, syncing saves), is an entry of its own. Steam's games run their own way
 //! (`clamshell --follow-steam`), and Lutris's shortcuts already start a game without Lutris's window, Lutris
 //! ending with the game. Heroic's shortcut would show Heroic's window and leave Heroic in the game's
@@ -32,7 +32,7 @@ use clamshell_library::{Launch, ids};
 
 use crate::{Entry, Library};
 
-/// A launcher that runs games: its name, as shelf says a game starts in it, and the names of its desktop
+/// A launcher that runs games: its name, as the Library says a game starts in it, and the names of its desktop
 /// files, whose entry is the launcher's own.
 pub(crate) struct Launcher {
     pub(crate) name: &'static str,

@@ -28,7 +28,7 @@ fn running(id: &str, key: &str) -> Running {
     Running { id: id.into(), key: key.into(), origin: Origin::Ours, mark: None, start: 0, seen: false, tray: None, entry: None, told: None, process: None }
 }
 
-/// A game started by shelf, running with a top window and a second window, the second in front.
+/// A game started by the Library, running with a top window and a second window, the second in front.
 fn emulator() -> State {
     let mut s = state();
     s.add_run(running("melonds", "melonds_1"), emu());
@@ -284,11 +284,11 @@ fn the_bottom_screen_dims_untouched_and_lights_when_used() {
     // A touch on it lights it.
     s.applied(Event::BottomTouched);
     assert!(!s.bottom_dimmed());
-    // The pad's focus coming to one of its targets lights it too, but not shelf's targets on the main
+    // The pad's focus coming to one of its targets lights it too, but not the Library's targets on the main
     // screen.
     s.applied(Event::tick(1000 + 3 * DIM_AFTER));
     assert!(s.bottom_dimmed());
-    s.applied(Event::Pointer(crate::PointerEvent::Focus(crate::Id::Shelf(crate::ShelfId::Launch))));
+    s.applied(Event::Pointer(crate::PointerEvent::Focus(crate::Id::LibraryView(crate::LibraryViewId::Launch))));
     assert!(s.bottom_dimmed(), "the main screen's");
     s.applied(Event::Pointer(crate::PointerEvent::Focus(crate::Id::Tab(crate::Tab::Dock))));
     assert!(!s.bottom_dimmed());
@@ -313,13 +313,13 @@ fn the_bottom_screen_turns_off_and_on() {
     assert!(!s.bottom_off());
 }
 
-/// Home + right stick down with no window of a program in front, shelf's or none, does nothing.
+/// Home + right stick down with no window of a program in front, the Library's or none, does nothing.
 #[test]
 fn window_down_with_no_window_in_front_does_nothing() {
     let mut s = state();
     assert_eq!(key(&mut s, HardwareKey::WindowDown), vec![], "no windows");
     s.observed(vec![crate::testkit::win_of(2, "foot", &crate::testkit::launch_of("foot_1"))]);
-    assert_eq!(key(&mut s, HardwareKey::WindowDown), vec![], "shelf in front");
+    assert_eq!(key(&mut s, HardwareKey::WindowDown), vec![], "the Library in front");
     assert!(s.session().window_rules().list().is_empty());
 }
 

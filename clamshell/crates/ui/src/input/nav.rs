@@ -68,7 +68,7 @@ mod tests {
     use super::*;
     use clamshell_state::Tab;
     use clamshell_state::settings::Setting;
-    use clamshell_state::{SettingsId, ShelfId};
+    use clamshell_state::{LibraryViewId, SettingsId};
 
     fn t(screen: Screen, x: f32, y: f32, id: Id) -> NavTarget {
         NavTarget { screen, rect: Rect::new(x, y, 0.1, 0.1), id }
@@ -76,8 +76,8 @@ mod tests {
 
     fn layout() -> Vec<NavTarget> {
         vec![
-            t(Screen::Top, 0.0, 0.0, Id::Shelf(ShelfId::Entry("a".into()))),
-            t(Screen::Top, 0.0, 0.2, Id::Shelf(ShelfId::Entry("b".into()))),
+            t(Screen::Top, 0.0, 0.0, Id::LibraryView(LibraryViewId::Entry("a".into()))),
+            t(Screen::Top, 0.0, 0.2, Id::LibraryView(LibraryViewId::Entry("b".into()))),
             t(Screen::Bottom, 0.0, 1.0, Id::Tab(Tab::Settings)),
             t(Screen::Bottom, 0.5, 1.0, Id::Tab(Tab::Keyboard)),
             t(Screen::Bottom, 0.0, 1.5, Id::Settings(SettingsId::Tile(Setting::Power))),
@@ -87,24 +87,24 @@ mod tests {
     #[test]
     fn down_walks_the_list_then_crosses_to_the_bottom_screen() {
         let l = layout();
-        let b = step(&l, Some(&Id::Shelf(ShelfId::Entry("a".into()))), Dir::Down);
-        assert_eq!(b, Some(Id::Shelf(ShelfId::Entry("b".into()))));
+        let b = step(&l, Some(&Id::LibraryView(LibraryViewId::Entry("a".into()))), Dir::Down);
+        assert_eq!(b, Some(Id::LibraryView(LibraryViewId::Entry("b".into()))));
         let bar = step(&l, b.as_ref(), Dir::Down);
         assert_eq!(bar, Some(Id::Tab(Tab::Settings)));
         assert_eq!(step(&l, bar.as_ref(), Dir::Down), Some(Id::Settings(SettingsId::Tile(Setting::Power))));
-        assert_eq!(step(&l, bar.as_ref(), Dir::Up), Some(Id::Shelf(ShelfId::Entry("b".into()))));
+        assert_eq!(step(&l, bar.as_ref(), Dir::Up), Some(Id::LibraryView(LibraryViewId::Entry("b".into()))));
     }
 
     #[test]
     fn sideways_stays_on_the_screen() {
         let l = layout();
-        assert_eq!(step(&l, Some(&Id::Shelf(ShelfId::Entry("a".into()))), Dir::Right), Some(Id::Shelf(ShelfId::Entry("a".into()))));
+        assert_eq!(step(&l, Some(&Id::LibraryView(LibraryViewId::Entry("a".into()))), Dir::Right), Some(Id::LibraryView(LibraryViewId::Entry("a".into()))));
         assert_eq!(step(&l, Some(&Id::Tab(Tab::Settings)), Dir::Right), Some(Id::Tab(Tab::Keyboard)));
     }
 
     #[test]
     fn lost_focus_goes_to_the_first_target() {
-        assert_eq!(step(&layout(), Some(&Id::Shelf(ShelfId::Launch)), Dir::Down), Some(Id::Shelf(ShelfId::Entry("a".into()))));
+        assert_eq!(step(&layout(), Some(&Id::LibraryView(LibraryViewId::Launch)), Dir::Down), Some(Id::LibraryView(LibraryViewId::Entry("a".into()))));
     }
 
     #[test]

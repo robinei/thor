@@ -14,8 +14,8 @@ pub(crate) const REWAIT_SECS: u64 = 30;
 impl Session {
     /// Runs after every event. If the window in front when the last pass ran (see
     /// [`Session::followed`]) closed and nothing of its group is left, goes back to what was in front
-    /// before it: a group still shown, or shelf, if shelf was in front since, as when the program was
-    /// launched from it; shelf is the last resort. The group is remembered in case a window appears in it
+    /// before it: a group still shown, or the Library, if the Library was in front since, as when the program was
+    /// launched from it; the Library is the last resort. The group is remembered in case a window appears in it
     /// soon after (see [`Session::follow_replacement`]). If its program still runs, its next window is
     /// shown as a launch's first is, for [`REWAIT_SECS`].
     pub(crate) fn follow_front(&mut self, now: u64) {
@@ -33,17 +33,17 @@ impl Session {
         self.closed_front = closed.then_some((was, now));
     }
 
-    /// Shows what was in front before: the most recent group still shown, or shelf if shelf was in front
-    /// since; shelf is the last resort.
+    /// Shows what was in front before: the most recent group still shown, or the Library if the Library was in front
+    /// since; the Library is the last resort.
     pub(crate) fn go_back(&mut self) {
         let shown = |group: &Group| self.windows.iter().any(|w| w.group.as_ref() == Some(group) && !self.below(w.id));
         let back = self.recent.iter().find(|was| match was {
-            InFront::Shelf => true,
+            InFront::LibraryView => true,
             InFront::Group(group) => shown(group),
         });
         match back.cloned() {
             Some(InFront::Group(group)) => self.focus(&group),
-            Some(InFront::Shelf) | None => self.command(WindowCommand::ShowShelf),
+            Some(InFront::LibraryView) | None => self.command(WindowCommand::ShowLibraryView),
         }
     }
 
@@ -56,17 +56,17 @@ impl Session {
         unit.or_else(|| running.outside().then(|| LaunchUnit { key: key.to_owned(), secs: running.start, n: 0 }))
     }
 
-    /// Whether shelf is in front on the main screen, as it is before the compositor reports a window.
-    pub(crate) fn shelf_in_front(&self) -> bool {
+    /// Whether the Library is in front on the main screen, as it is before the compositor reports a window.
+    pub(crate) fn library_view_in_front(&self) -> bool {
         self.top_window().is_none()
     }
 
-    /// The Home button always goes to shelf. (When the Device view is in shelf's place, Home closes it instead: see
+    /// The Home button always goes to the Library. (When the Device view is in the Library's place, Home closes it instead: see
     /// [`crate::setup::Setup::close`].)
     pub(crate) fn home(&mut self) {
         self.cancel_front_launch();
-        if !self.shelf_in_front() {
-            self.command(WindowCommand::ShowShelf);
+        if !self.library_view_in_front() {
+            self.command(WindowCommand::ShowLibraryView);
         }
     }
 
@@ -97,19 +97,19 @@ mod tests {
     use crate::*;
 
     #[test]
-    fn home_always_shows_shelf_and_repeated_home_stays_there() {
+    fn home_always_shows_library_view_and_repeated_home_stays_there() {
         let mut s = state();
         assert!(s.applied(Event::Home).is_empty());
         s.observed(vec![win(7, "app")]);
         assert_eq!(s.applied(Event::Home), vec![Effect::PadRoute(crate::PadRoute::Ui)]);
-        assert!(s.session().shelf_in_front());
+        assert!(s.session().library_view_in_front());
         assert!(s.applied(Event::Home).is_empty());
     }
 
-    /// A game launched from shelf goes back to shelf when it quits, not to the program in front before,
+    /// A game launched from the Library goes back to the Library when it quits, not to the program in front before,
     /// such as the launcher that ran it; a game started from the launcher goes back to the launcher.
     #[test]
-    fn a_closed_window_goes_back_to_shelf_if_shelf_was_in_front_before_it() {
+    fn a_closed_window_goes_back_to_library_view_if_library_view_was_in_front_before_it() {
         let mut s = state();
         let (launcher, game) = (launch_of("heroic"), launch_of("zelda"));
         s.observed(vec![win_of(2, "heroic", &launcher)]);
@@ -118,7 +118,7 @@ mod tests {
         s.observed(vec![win_of(2, "heroic", &launcher), win_of(3, "zelda", &game)]);
         s.applied(WindowEvent::Activate(3).into());
         s.observed(vec![win_of(2, "heroic", &launcher)]);
-        assert!(s.session().shelf_in_front(), "where it was launched from");
+        assert!(s.session().library_view_in_front(), "where it was launched from");
         // Started from the launcher, it goes back there.
         s.applied(WindowEvent::Activate(2).into());
         s.observed(vec![win_of(2, "heroic", &launcher), win_of(3, "zelda", &game)]);
@@ -128,10 +128,10 @@ mod tests {
     }
 
     #[test]
-    fn a_closed_window_goes_back_to_what_was_in_front_before_it_shelf_last() {
+    fn a_closed_window_goes_back_to_what_was_in_front_before_it_library_view_last() {
         let mut s = state();
         let (zelda, terminal) = (launch_of("zelda"), launch_of("foot"));
-        // Shelf, then the terminal, then the game in front.
+        // The Library, then the terminal, then the game in front.
         s.observed(vec![win_of(2, "foot", &terminal)]);
         s.applied(WindowEvent::Activate(2).into());
         s.observed(vec![win_of(2, "foot", &terminal), win_of(3, "retroarch", &zelda)]);
@@ -139,9 +139,9 @@ mod tests {
         // When the game quits, the terminal, which was in front before it, comes back.
         s.observed(vec![win_of(2, "foot", &terminal)]);
         assert_eq!(s.session().top_window().map(|w| w.id), Some(2));
-        // When the terminal quits, shelf comes back.
+        // When the terminal quits, the Library comes back.
         s.observed(vec![]);
-        assert!(s.session().shelf_in_front());
+        assert!(s.session().library_view_in_front());
         // When a program's window closes, its other window comes in front.
         s.observed(vec![win_of(3, "retroarch", &zelda), win_of(4, "retroarch", &zelda)]);
         s.applied(WindowEvent::Activate(3).into());
@@ -156,17 +156,17 @@ mod tests {
         s.applied(Event::tick(100));
         s.observed(vec![win_of(2, "waydroid.org.fdroid.fdroid", &app)]);
         s.applied(WindowEvent::Activate(2).into());
-        // Its window closes and shelf shows. Another window comes in its group, not in front, and the
+        // Its window closes and the Library shows. Another window comes in its group, not in front, and the
         // group is shown again.
         s.observed(vec![]);
-        assert!(s.session().shelf_in_front());
+        assert!(s.session().library_view_in_front());
         s.observed(vec![win_of(3, "waydroid.org.fdroid.fdroid", &app)]);
         assert_eq!(s.session().top_window().map(|w| w.id), Some(3));
         // Later than that, it isn't.
         s.observed(vec![]);
         s.applied(Event::tick(103));
         s.observed(vec![win_of(4, "waydroid.org.fdroid.fdroid", &app)]);
-        assert!(s.session().shelf_in_front(), "too late: it stays behind");
+        assert!(s.session().library_view_in_front(), "too late: it stays behind");
     }
 
     /// A program still running whose window in front closed, as Steam's update dialog does before its
@@ -180,7 +180,7 @@ mod tests {
         let window = |id| win_of(id, "zelda3", &zelda);
         s.observed(vec![window(3)]);
         s.observed(vec![]);
-        assert!(s.session().shelf_in_front());
+        assert!(s.session().library_view_in_front());
         s.applied(Event::tick(1010));
         assert!(!opening_focus(&s, &foot()), "another program's window opens behind");
         s.observed(vec![window(4)]);
@@ -189,7 +189,7 @@ mod tests {
         s.observed(vec![]);
         s.applied(Event::tick(1011 + super::REWAIT_SECS));
         s.observed(vec![window(5)]);
-        assert!(s.session().shelf_in_front(), "too late: it stays behind");
+        assert!(s.session().library_view_in_front(), "too late: it stays behind");
     }
 
     #[test]
@@ -197,19 +197,19 @@ mod tests {
         let mut s = state();
         s.observed(vec![win_of(2, "foot", &launch_of("foot_1"))]);
         s.applied(WindowEvent::Activate(2).into());
-        // With its window moved to the bottom screen and shelf in front, there is nothing to go back to on
+        // With its window moved to the bottom screen and the Library in front, there is nothing to go back to on
         // the main screen.
         s.applied(Event::HardwareKey(crate::HardwareKey::WindowDown));
-        assert!(s.session().shelf_in_front());
+        assert!(s.session().library_view_in_front());
         assert_eq!(s.applied(Event::Home), vec![]);
     }
 
     #[test]
-    fn home_stays_on_shelf_with_an_unowned_program_behind_it() {
+    fn home_stays_on_library_view_with_an_unowned_program_behind_it() {
         let mut s = state();
         s.observed(vec![foot()]);
         s.applied(Event::Home);
         assert!(s.applied(Event::Home).is_empty());
-        assert!(s.session().shelf_in_front());
+        assert!(s.session().library_view_in_front());
     }
 }

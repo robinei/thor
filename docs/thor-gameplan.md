@@ -471,11 +471,11 @@ Then, either way, Steam made as light as it goes, measured before and after with
 Each subsystem, then hibernate with each in use (hibernate matters more to me than suspend).
 
 - [ ] Games paused when hidden (the default): a few native games and Proton games (FEX) frozen for
-      minutes behind shelf, then shown: drawing, sound, the controller; any that jumps ahead or stalls
-      after (its frame time step); whether a game hidden behind shelf still draws (then it is frozen
+      minutes behind the Library, then shown: drawing, sound, the controller; any that jumps ahead or stalls
+      after (its frame time step); whether a game hidden behind the Library still draws (then it is frozen
       after the grace) or stops (low CPU and GPU); whether loading and shader compiling are told from
       drawing (half a core, the GPU under 5 % on Freedreno); a frozen game's memory going to zram.
-- [ ] An online game frozen behind shelf: whether it is dropped (then it is set to run).
+- [ ] An online game frozen behind the Library: whether it is dropped (then it is set to run).
 - [ ] Sleep while busy: an idle session (ClamShell, PipeWire, Steam in its tray, Waydroid up)
       stays under the busy thresholds (the user's processes 0.3 core, the network 100 kB/s), so it
       sleeps; a Steam download keeps it awake (`sleep: not now` in the journal).
@@ -500,7 +500,7 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       key), Back on ClamShell's screens goes back, and on the keymap edit screen it selects Back.
 - [ ] Home then Back with Steam: the virtual pad's Guide (BTN_MODE) while both are held opens Steam's
       overlay, and Guide chords (Guide with a button pressed meanwhile) work; Home alone still goes to
-      shelf, Home with R1 takes a screenshot.
+      the Library, Home with R1 takes a screenshot.
 - [ ] The small buttons' codes (`evtest`), which ClamShell assumes from Armada's driver and PB-OS's map:
       the AYN button under the screen KEY_F24 on its own device (`gpio-keys-ayn`), Back BTN_BACK and
       Home BTN_MODE on the gamepad. AYN and Back are keymap inputs already (`Button::Ayn`, `Button::Back`:
@@ -708,7 +708,7 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       own, as `steam_launchers` in `launcher.rs` expects, whatever FEX puts before them); the entry ends
       when the game does; a game started from Steam's own window is found by its window and followed the
       same way; Suspend and Quit act on the game, not Steam.
-- [ ] ClamShell's idle cost (review 4.2): wakeups per thread, idle on shelf, as measured in the VM (see
+- [ ] ClamShell's idle cost (review 4.2): wakeups per thread, idle on the Library, as measured in the VM (see
       process-control.md, "ClamShell's own wakeups"), and the CPU of a redraw; then whether the clock's
       tick every second is worth limiting to when the clock can be seen.
 - [ ] Archives browsed in the Files tab (ratarmount, a service per archive): mounted, opened, unmounted
@@ -751,7 +751,7 @@ From the review of 2026-10-21 (what Armada, ROCKNIX, Thorch and Kettle do, taken
       (thor-drivers.service: Kettle saw them late otherwise); the lid heeded 5 s after boot or waking
       (`HoldoffTimeoutSec`, Kettle's); `aplay` goes through PipeWire (pipewire-alsa).
 - [ ] zram: `swapon --show` lists `/dev/zram0` (priority 100) and `/swapfile`; `sysctl vm.swappiness`
-      is 180; a game frozen behind shelf goes to zram, and hibernate still writes to the swap file.
+      is 180; a game frozen behind the Library goes to zram, and hibernate still writes to the swap file.
 - [ ] The command line's additions: `/proc/pressure/` exists (`psi=1`; Waydroid's memory killer), and
       `/sys/module/ufshcd_core/parameters/uic_cmd_timeout` is 3000; no UFS errors after sleep (the 54 s
       freeze ROCKNIX saw).

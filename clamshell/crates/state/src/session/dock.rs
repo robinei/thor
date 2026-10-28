@@ -367,21 +367,21 @@ mod tests {
     }
 
     #[test]
-    fn shelf_pins_and_unpins_any_entry_a_series_too() {
+    fn library_view_pins_and_unpins_any_entry_a_series_too() {
         let mut s = state();
-        tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
-        let fx = s.applied(ShelfEvent::TogglePin.into());
+        tap(&mut s, Id::LibraryView(LibraryViewId::Collection(2)));
+        let fx = s.applied(LibraryViewEvent::TogglePin.into());
         assert!(matches!(fx.as_slice(), [Effect::Save(Save::Dock(ids))] if ids.iter().map(|i| &**i).eq(["tv:Cosmos"])), "{fx:?}");
         assert_eq!(entry(&s, 0), Some("tv:Cosmos"));
         assert!(s.dock().is_pinned("tv:Cosmos"));
-        // A tap on it opens it in shelf.
-        tap(&mut s, Id::Shelf(ShelfId::Collection(0)));
+        // A tap on it opens it in the Library.
+        tap(&mut s, Id::LibraryView(LibraryViewId::Collection(0)));
         assert!(tap(&mut s, dock(0)).is_empty());
-        assert!(s.session().shelf_in_front());
-        assert_eq!(s.shelf().group().map(|g| &*g.id), Some("tv:Cosmos"));
-        // Unpinned from shelf, it is removed, since it doesn't run.
-        tap(&mut s, Id::Shelf(ShelfId::Up));
-        s.applied(ShelfEvent::TogglePin.into());
+        assert!(s.session().library_view_in_front());
+        assert_eq!(s.library_view().group().map(|g| &*g.id), Some("tv:Cosmos"));
+        // Unpinned from the Library, it is removed, since it doesn't run.
+        tap(&mut s, Id::LibraryView(LibraryViewId::Up));
+        s.applied(LibraryViewEvent::TogglePin.into());
         assert_eq!(entry(&s, 0), None);
     }
 
@@ -449,7 +449,7 @@ mod tests {
     }
 
     /// The menu's Start with ClamShell toggles and saves the entries started; Suspend freezes a running
-    /// entry and shelf comes in front, and on a suspended one it is Resume, which shows it thawed.
+    /// entry and the Library comes in front, and on a suspended one it is Resume, which shows it thawed.
     #[test]
     fn the_menus_autostart_and_suspend() {
         let mut s = state();
@@ -465,7 +465,7 @@ mod tests {
         let slice = LaunchUnit::slice_of(&clamshell_library::key_of("zelda-lttp"));
         let fx = tap(&mut s, Id::Dock(DockId::Suspend));
         assert_eq!(fx, vec![Effect::Freeze { slice: slice.clone(), frozen: true }, closed(), Effect::PadRoute(crate::PadRoute::Ui)]);
-        assert!(s.session().shelf_in_front());
+        assert!(s.session().library_view_in_front());
         assert!(s.session().suspended("zelda-lttp"));
         long(&mut s, dock(0));
         let fx = tap(&mut s, Id::Dock(DockId::Suspend));

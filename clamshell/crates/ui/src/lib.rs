@@ -49,7 +49,7 @@ pub struct Config {
 
 /// Renders one screen without Wayland, at `size` logical pixels and integer `scale`, to a PNG file, with
 /// its overlay over it as the compositor shows it. For checking layouts and for automated tests. Returns
-/// the events a live frame would send the state, such as the shelf's rows and the lists' rows.
+/// the events a live frame would send the state, such as the Library's rows and the lists' rows.
 #[cfg(any(test, feature = "dev"))]
 pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, path: &std::path::Path) -> Result<Vec<Event>, Error> {
     let at = Placement { size_px: (size.0 * scale, size.1 * scale), scale, drift: (0, 0) };

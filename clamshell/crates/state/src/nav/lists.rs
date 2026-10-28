@@ -1,6 +1,6 @@
-//! The scrolled lists: shelf's games on the main screen, and on the second screen the Wi-Fi networks,
+//! The scrolled lists: the Library's games on the main screen, and on the second screen the Wi-Fi networks,
 //! the Bluetooth devices, the apps playing and the backlights, among others. Each keeps its own scroll
-//! position ([`Scroll`]), and shelf keeps one per collection.
+//! position ([`Scroll`]), and the Library keeps one per collection.
 //!
 //! When the pad's focus moves to a row, the list scrolls just enough to show it. When a list changes
 //! under the view, the row at the top of the view stays where it is, so a network vanishing above
@@ -10,16 +10,16 @@
 //! tap on one does are up to the list's feature ([`crate::kit::list::Rows`], [`crate::State::on_row`]). This
 //! module only maps each list to its feature.
 
-use crate::id::{AudioId, DockId, Id, ShelfId};
+use crate::id::{AudioId, DockId, Id, LibraryViewId};
 use crate::keymap::screens::Keymapping;
 use crate::kit::list::{EMPTY, ItemKey, RowsOf, Scroll};
-use crate::{Dock, Level, Levels, Panel, Pointer, Prefs, Radios, Session, Shelf, Sys};
+use crate::{Dock, Level, Levels, LibraryView, Panel, Pointer, Prefs, Radios, Session, Sys};
 
 /// A scrolled list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ListId {
-    /// Shelf's games, from the current collection.
-    Shelf,
+    /// The Library's games, from the current collection.
+    LibraryView,
     Wifi,
     Bluetooth,
     /// The apps playing, in the volume tab.
@@ -57,7 +57,7 @@ pub enum RowPart {
 impl ListId {
     pub const COUNT: usize = 12;
     pub const ALL: [ListId; ListId::COUNT] = [
-        ListId::Shelf,
+        ListId::LibraryView,
         ListId::Wifi,
         ListId::Bluetooth,
         ListId::Streams,
@@ -80,13 +80,13 @@ impl ListId {
         Id::Row { list: self, i, part: RowPart::Main }
     }
 
-    /// Whether the list rests on whole rows. Shelf does: a drag or fling ends by settling on a row.
+    /// Whether the list rests on whole rows. The Library does: a drag or fling ends by settling on a row.
     pub fn whole_rows(self) -> bool {
-        self == ListId::Shelf
+        self == ListId::LibraryView
     }
 }
 
-/// The scroll position of every list but shelf, which keeps one per collection.
+/// The scroll position of every list but the Library, which keeps one per collection.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Scrolls {
     scrolls: [Scroll; ListId::COUNT],
@@ -108,7 +108,7 @@ impl Scrolls {
 #[derive(Clone, Copy)]
 pub struct Lists<'a> {
     pub(crate) scrolls: &'a Scrolls,
-    pub(crate) shelf: &'a Shelf,
+    pub(crate) library_view: &'a LibraryView,
     pub(crate) session: &'a Session,
     pub(crate) prefs: &'a Prefs,
     pub(crate) keymapping: &'a Keymapping,
@@ -124,13 +124,13 @@ pub struct Lists<'a> {
 
 impl<'a> Lists<'a> {
     fn panel(&self) -> Panel<'a> {
-        Panel::new(self.session, self.shelf, self.prefs, self.keymapping, self.curving)
+        Panel::new(self.session, self.library_view, self.prefs, self.keymapping, self.curving)
     }
 
-    /// Where `list` is scrolled. For shelf, this is the current collection's position.
+    /// Where `list` is scrolled. For the Library, this is the current collection's position.
     pub fn scroll(&self, list: ListId) -> &'a Scroll {
         match list {
-            ListId::Shelf => self.shelf.scroll(),
+            ListId::LibraryView => self.library_view.scroll(),
             _ => self.scrolls.get(list),
         }
     }
@@ -143,7 +143,7 @@ impl<'a> Lists<'a> {
     /// A list's rows, from its feature.
     pub(crate) fn rows(&self, list: ListId) -> RowsOf<'a> {
         match list {
-            ListId::Shelf => RowsOf::Of(self.shelf),
+            ListId::LibraryView => RowsOf::Of(self.library_view),
             ListId::Wifi => RowsOf::Of(self.radios.wifi()),
             ListId::Bluetooth => RowsOf::Of(self.radios.bluetooth()),
             ListId::Streams => RowsOf::Of(self.levels.audio()),
@@ -196,7 +196,7 @@ impl<'a> Lists<'a> {
         match id {
             Id::Row { list, i, .. } => self.rows(*list).key(at(i)),
             Id::Dock(DockId::Entry(i)) => self.dock.items().get(at(i)).map(|e| ItemKey::name(&e.id)),
-            Id::Shelf(ShelfId::Collection(i)) => self.shelf.library().collections.get(at(i)).map(|c| ItemKey::name(&c.name)),
+            Id::LibraryView(LibraryViewId::Collection(i)) => self.library_view.library().collections.get(at(i)).map(|c| ItemKey::name(&c.name)),
             Id::Audio(AudioId::Output(i)) => self.levels.audio().outputs.get(at(i)).map(|o| ItemKey::Number(o.id)),
             _ => None,
         }
@@ -210,8 +210,9 @@ impl<'a> Lists<'a> {
             (Id::Dock(DockId::Entry(_)), ItemKey::Name(_)) => {
                 index(self.dock.items().iter().position(|e| ItemKey::name(&e.id) == *key)).map(|i| Id::Dock(DockId::Entry(i)))
             }
-            (Id::Shelf(ShelfId::Collection(_)), ItemKey::Name(_)) => {
-                index(self.shelf.library().collections.iter().position(|x| ItemKey::name(&x.name) == *key)).map(|i| Id::Shelf(ShelfId::Collection(i)))
+            (Id::LibraryView(LibraryViewId::Collection(_)), ItemKey::Name(_)) => {
+                index(self.library_view.library().collections.iter().position(|x| ItemKey::name(&x.name) == *key))
+                    .map(|i| Id::LibraryView(LibraryViewId::Collection(i)))
             }
             (Id::Audio(AudioId::Output(_)), ItemKey::Number(n)) => {
                 index(self.levels.audio().outputs.iter().position(|x| x.id == *n)).map(|i| Id::Audio(AudioId::Output(i)))
@@ -296,7 +297,8 @@ mod tests {
     #[test]
     fn a_list_changed_by_any_event_stays_within_its_ends() {
         let mut s = state();
-        let ids: Vec<std::sync::Arc<str>> = s.shelf().library().entries.iter().take(3 * crate::session::dock::DOCK_COLUMNS).map(|g| g.id.clone()).collect();
+        let ids: Vec<std::sync::Arc<str>> =
+            s.library_view().library().entries.iter().take(3 * crate::session::dock::DOCK_COLUMNS).map(|g| g.id.clone()).collect();
         for id in &ids {
             s.applied(Event::Entry(id.clone(), EntryAct::TogglePin));
         }

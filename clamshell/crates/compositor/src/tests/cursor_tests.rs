@@ -1,4 +1,4 @@
-//! Real cursor requests retain hotspots and cannot hide the pointer on the shelf.
+//! Real cursor requests retain hotspots and cannot hide the pointer on the Library.
 
 use super::*;
 use smithay::{

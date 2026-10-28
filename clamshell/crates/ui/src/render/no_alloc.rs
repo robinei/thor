@@ -18,8 +18,8 @@ use clamshell_state::setup::account::Account;
 use clamshell_state::setup::sticks::{Phase, Progress, StickAxis};
 use clamshell_state::status::battery;
 use clamshell_state::{
-    DockId, EditorId, Event, Id, Init, KeymapId, LaunchUnit, ListEvent, ListId, PointerEvent, Reading, RowPart, SettingsId, SettingsLevel, ShelfEvent, ShelfId,
-    Slide, State, Status, Tab, Target, TimeZones, levels,
+    DockId, EditorId, Event, Id, Init, KeymapId, LaunchUnit, LibraryViewEvent, LibraryViewId, ListEvent, ListId, PointerEvent, Reading, RowPart, SettingsId,
+    SettingsLevel, Slide, State, Status, Tab, Target, TimeZones, levels,
 };
 
 use crate::Screen;
@@ -64,12 +64,12 @@ fn key(k: Key) -> Event {
     Event::Pointer(PointerEvent::Activate(Id::Key(keyboard::find(k).expect("key on the layout"))))
 }
 
-/// Opens the shelf's Tools collection and runs its Device entry, which shows the Device view.
+/// Opens the Library's Tools collection and runs its Device entry, which shows the Device view.
 fn device() -> Vec<Event> {
     let library = clamshell_library::demo::library();
     let tools = library.collections.iter().position(|c| c.name == "Tools").unwrap_or(0);
-    let entry = || tap(Id::Shelf(ShelfId::Entry("tool:device".into())));
-    vec![tap(Id::Shelf(ShelfId::Collection(u16::try_from(tools).unwrap_or(0)))), entry(), entry()]
+    let entry = || tap(Id::LibraryView(LibraryViewId::Entry("tool:device".into())));
+    vec![tap(Id::LibraryView(LibraryViewId::Collection(u16::try_from(tools).unwrap_or(0)))), entry(), entry()]
 }
 
 /// A sticks calibration as it starts, waiting for the sticks to be let go.
@@ -225,7 +225,7 @@ fn warm_frames_do_not_allocate() {
                 Event::List(ListEvent::Scroll(ListId::Wifi, 3.3)),
             ],
         ),
-        ("shelf, dragged part way", vec![Event::Shelf(ShelfEvent::Rows(3)), Event::List(ListEvent::Scroll(ListId::Shelf, 1.6))]),
+        ("the Library, dragged part way", vec![Event::LibraryView(LibraryViewEvent::Rows(3)), Event::List(ListEvent::Scroll(ListId::LibraryView, 1.6))]),
         ("keymap picker", vec![tap(Id::Tab(Tab::Settings)), PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Keymap))).into()]),
         (
             "tile menu",
@@ -390,15 +390,22 @@ fn warm_frames_do_not_allocate() {
             ],
         ),
         // The demo's TV tab with one of its series open.
-        ("shelf, an open group", vec![Event::Shelf(ShelfEvent::Rows(8)), tap(Id::Shelf(ShelfId::Collection(2))), tap(Id::Shelf(ShelfId::Launch))]),
         (
-            "shelf, a video",
+            "the Library, an open group",
             vec![
-                Event::Shelf(ShelfEvent::Rows(8)),
-                tap(Id::Shelf(ShelfId::Collection(2))),
-                tap(Id::Shelf(ShelfId::Launch)),
-                tap(Id::Shelf(ShelfId::Launch)),
-                Event::Shelf(ShelfEvent::ListStep(1)),
+                Event::LibraryView(LibraryViewEvent::Rows(8)),
+                tap(Id::LibraryView(LibraryViewId::Collection(2))),
+                tap(Id::LibraryView(LibraryViewId::Launch)),
+            ],
+        ),
+        (
+            "the Library, a video",
+            vec![
+                Event::LibraryView(LibraryViewEvent::Rows(8)),
+                tap(Id::LibraryView(LibraryViewId::Collection(2))),
+                tap(Id::LibraryView(LibraryViewId::Launch)),
+                tap(Id::LibraryView(LibraryViewId::Launch)),
+                Event::LibraryView(LibraryViewEvent::ListStep(1)),
             ],
         ),
         (
@@ -465,8 +472,8 @@ fn warm_frames_do_not_allocate() {
         ("notifications", |s| s.notifications().len() == 5 && s.bottom_lit()),
         ("window arrows, Home held", |s| s.session().home_held() && s.session().has_other_top_window()),
         ("keymap name editor", |s| s.bottom().editor().is_some()),
-        ("shelf, an open group", |s| s.shelf().group().is_some()),
-        ("shelf, a video", |s| s.shelf().selected().is_some_and(|id| id.ends_with(".mkv"))),
+        ("the Library, an open group", |s| s.library_view().group().is_some()),
+        ("the Library, a video", |s| s.library_view().selected().is_some_and(|id| id.ends_with(".mkv"))),
         ("dock, an entry's menu", |s| s.dock().menu().is_some() && !s.dock().tray_open()),
         ("dock, a tray menu", |s| s.dock().tray_open()),
         ("battery, a program's menu", |s| s.sys().spender_menu().is_some()),

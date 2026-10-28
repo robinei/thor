@@ -11,7 +11,7 @@ Read `architecture.md` first, then `../AGENTS.md` for how work is done here.
   invariants of the randomized test.
 - `process-control.md`: what runs and who decides. That covers launches as services, adopted programs,
   slices, freezing and ending.
-- `runners.md`: the library's places, runners and sources, and how shelf starts what it shows.
+- `runners.md`: the library's places, runners and sources, and how the Library starts what it shows.
 - `files-tab.md`: the Files tab, its operations and archives.
 - `picture.md`: a game's picture, from the tone curves and the colour pipeline to anti-aliasing,
   upscaling and sharpening.

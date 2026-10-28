@@ -1,26 +1,26 @@
-//! Shelf's rules: its targets, the pad's steps through it, typing to find a title, the favourites, and
+//! The Library's rules: its targets, the pad's steps through it, typing to find a title, the favourites, and
 //! fetching metadata first for the entries it shows.
 
 use crate::bottom::keyboard::{self, Key};
+use crate::library_view::actions::Shortcut;
+use crate::library_view::{LibraryView, ShownList};
 use crate::out::Out;
-use crate::shelf::actions::Shortcut;
-use crate::shelf::{Shelf, ShelfView};
-use crate::{Effect, EntryAct, Event, Id, Pointer, Save, ShelfEvent, ShelfId};
+use crate::{Effect, EntryAct, Event, Id, LibraryViewEvent, LibraryViewId, Pointer, Save};
 
-impl Shelf {
-    /// A tap, or a long press if `long`, on one of shelf's targets.
-    pub(crate) fn on_target(&mut self, id: ShelfId, long: bool, pointer: &mut Pointer, out: &mut Out) {
+impl LibraryView {
+    /// A tap, or a long press if `long`, on one of the Library's targets.
+    pub(crate) fn on_target(&mut self, id: LibraryViewId, long: bool, pointer: &mut Pointer, out: &mut Out) {
         match id {
             // A hold on the selected entry, by touch or with the pad, opens the entry's actions: the
             // focus ring shows on the first. Up and down go through them, A runs one, and B goes back to
             // the list.
-            ShelfId::Entry(entry) if long && self.selected() == Some(&entry) => {
+            LibraryViewId::Entry(entry) if long && self.selected() == Some(&entry) => {
                 if let Some(first) = self.actions().as_slice().first() {
-                    pointer.focus_on(Id::Shelf(first.id()));
+                    pointer.focus_on(Id::LibraryView(first.id()));
                     pointer.show();
                 }
             }
-            ShelfId::Entry(entry) => {
+            LibraryViewId::Entry(entry) => {
                 // Activating the selected entry again opens it if it is a group, or else plays it by
                 // starting it or switching to it.
                 if self.selected() == Some(&entry) {
@@ -29,16 +29,16 @@ impl Shelf {
                     self.select(&entry);
                 }
             }
-            ShelfId::Collection(i) => {
+            LibraryViewId::Collection(i) => {
                 self.set_collection(usize::from(i));
             }
-            ShelfId::Launch => self.activate(out),
-            ShelfId::Favourite => self.toggle_favourite(out),
-            ShelfId::Pin => self.ask(EntryAct::TogglePin, out),
-            ShelfId::Continue => self.continue_selected(out),
-            ShelfId::Enqueue => self.ask_enqueue(out),
-            ShelfId::File(action) => self.on_file(action, out),
-            ShelfId::Up => {
+            LibraryViewId::Launch => self.activate(out),
+            LibraryViewId::Favourite => self.toggle_favourite(out),
+            LibraryViewId::Pin => self.ask(EntryAct::TogglePin, out),
+            LibraryViewId::Continue => self.continue_selected(out),
+            LibraryViewId::Enqueue => self.ask_enqueue(out),
+            LibraryViewId::File(action) => self.on_file(action, out),
+            LibraryViewId::Up => {
                 self.up();
             }
         }
@@ -66,44 +66,44 @@ impl Shelf {
         }
     }
 
-    /// Shelf's action on its selected entry: a group opens, anything else plays.
+    /// The Library's action on its selected entry: a group opens, anything else plays.
     pub(crate) fn activate(&mut self, out: &mut Out) {
         if !self.open() {
             self.ask(EntryAct::Play, out);
         }
     }
 
-    pub(crate) fn on_event(&mut self, event: ShelfEvent, pointer: &mut Pointer, out: &mut Out) {
+    pub(crate) fn on_event(&mut self, event: LibraryViewEvent, pointer: &mut Pointer, out: &mut Out) {
         match event {
-            ShelfEvent::ListStep(step) => {
+            LibraryViewEvent::ListStep(step) => {
                 self.step(step);
-                pointer.focus_shelf(self.selected());
+                pointer.focus_library_view(self.selected());
                 pointer.show();
             }
-            ShelfEvent::CollectionStep(step) => {
+            LibraryViewEvent::CollectionStep(step) => {
                 self.collection_step(step);
                 pointer.show();
             }
-            ShelfEvent::Rows(rows) => {
+            LibraryViewEvent::Rows(rows) => {
                 self.set_rows(rows);
             }
-            // The details' actions on the pad's buttons (see [`crate::shelf::actions`]).
-            ShelfEvent::Continue => {
+            // The details' actions on the pad's buttons (see [`crate::library_view::actions`]).
+            LibraryViewEvent::Continue => {
                 self.act(Shortcut::Start, pointer, out);
             }
-            ShelfEvent::ToggleFavourite => {
+            LibraryViewEvent::ToggleFavourite => {
                 self.act(Shortcut::Y, pointer, out);
             }
-            ShelfEvent::TogglePin => {
+            LibraryViewEvent::TogglePin => {
                 self.act(Shortcut::X, pointer, out);
             }
-            ShelfEvent::ClearFilter => {
+            LibraryViewEvent::ClearFilter => {
                 self.set_filter(String::new());
             }
         }
     }
 
-    /// A key typed with shelf in front. A character narrows the current list to the titles starting with
+    /// A key typed with the Library in front. A character narrows the current list to the titles starting with
     /// what is typed, Backspace removes the last character, Esc clears it all, and Enter opens or plays the
     /// selected entry.
     pub(crate) fn find(&mut self, stroke: keyboard::Stroke, out: &mut Out) {
@@ -130,14 +130,14 @@ impl Shelf {
         out.effects.push(Effect::Save(Save::Favourites(ids)));
     }
 
-    /// Whether metadata is being fetched (see [`Shelf::fetch_first`]).
+    /// Whether metadata is being fetched (see [`LibraryView::fetch_first`]).
     pub(crate) fn set_fetching(&mut self, on: bool) {
         self.fetching = on;
     }
 
     /// While metadata is being fetched, what the list shows, whose entries' metadata is asked for first
     /// whenever it changes (see [`crate::sync::Sent::fetch_first`]).
-    pub(crate) fn fetch_first(&self) -> Option<ShelfView> {
+    pub(crate) fn fetch_first(&self) -> Option<ShownList> {
         self.fetching.then(|| self.view())
     }
 }

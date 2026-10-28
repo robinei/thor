@@ -1,4 +1,4 @@
-//! Running entries: what was launched from shelf or the dock, games and apps alike. Each launch is a unit
+//! Running entries: what was launched from the Library or the dock, games and apps alike. Each launch is a unit
 //! of its own in the entry's slice, with its windows in the entry's group (see [`LaunchUnit`]). An entry
 //! may run more than once; another launch is another unit and another tab.
 //!
@@ -16,10 +16,10 @@
 //! windows too: a new window of no launch of ours that appears within [`HANDOFF`] is moved to its
 //! group, and the file has ended when that window has closed, or when none came.
 //!
-//! In shelf, activating a running entry shows it, and activating a stopped one starts it. Quit asks an
+//! In the Library, activating a running entry shows it, and activating a stopped one starts it. Quit asks an
 //! entry's windows to close and, once none is left and it still runs, ends it. That stops its slice, or for
 //! a Steam game the processes under Steam's launcher for it, and runs its runner's `stop` command. Force
-//! kill ends it at once. What is in front, whether shelf, a running entry or another window, decides where
+//! kill ends it at once. What is in front, whether the Library, a running entry or another window, decides where
 //! the pad goes, what Home does and what the settings page edits.
 
 use crate::Compositor;
@@ -42,7 +42,7 @@ use crate::{Clock, Entry, Library, Session};
 /// What is in front on the main screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Front {
-    Shelf,
+    LibraryView,
     /// A window of a running entry.
     Program,
     /// Another window, not one of ours.
@@ -202,7 +202,7 @@ pub(crate) fn has_mark(library: &Library, g: &Entry, w: &WindowFacts) -> bool {
 }
 
 /// A handed-over entry's app id: its desktop file's name.
-/// A play that ended: the entry and when it started, in monotonic seconds. State records it in shelf.
+/// A play that ended: the entry and when it started, in monotonic seconds. State records it in the Library.
 pub(crate) type Play = (Arc<str>, u64);
 
 fn handed_over_app(g: &Entry) -> Option<&str> {
@@ -577,7 +577,7 @@ pub(crate) enum Launched {
 }
 
 /// What State does in place of a launch: open the Device view on the main screen, show a group open in
-/// shelf, or show the entry, which runs already.
+/// the Library, or show the entry, which runs already.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Instead {
     Device,
@@ -619,7 +619,7 @@ impl Session {
         self.launching.iter().any(|l| &*l.entry == id)
     }
 
-    /// Whether entry `id` is starting, as shelf shows it: its launch is asked for, or it runs with no
+    /// Whether entry `id` is starting, as the Library shows it: its launch is asked for, or it runs with no
     /// window yet while one is waited for, a launch's in front or a launcher's game's. A program started
     /// in the background, as a launcher for its game, isn't.
     pub fn starting(&self, id: &str) -> bool {

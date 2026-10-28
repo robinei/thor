@@ -84,13 +84,13 @@ pub enum Icon {
     Off,
     /// Layers: three sheets stacked.
     Layers,
-    // Shelf's tabs, named in library.json (see [`Icon::named`]).
+    // The Library's tabs, named in library.json (see [`Icon::named`]).
     Film,
     Tv,
     Music,
     Star,
     Clock,
-    /// A folder in shelf's list, which opens: a chevron. With the one pointing back, the window arrows.
+    /// A folder in the Library's list, which opens: a chevron. With the one pointing back, the window arrows.
     Chevron,
     ChevronBack,
     /// The Tools tab: a wrench.
@@ -108,14 +108,14 @@ pub enum Icon {
     App,
     /// A browsed archive, such as a zip, 7z, rar or tar: a box.
     Archive,
-    /// Shelf's row mark for an entry that is running: a dot.
+    /// The Library's row mark for an entry that is running: a dot.
     Dot,
     /// Closes or dismisses something, such as a notification: a cross.
     Close,
 }
 
 impl Icon {
-    /// A shelf tab's icon, by the name library.json gives it: `gamepad`, `apps`, `film`, `tv`, `music`,
+    /// The Library tab's icon, by the name library.json gives it: `gamepad`, `apps`, `film`, `tv`, `music`,
     /// `star`, `clock`, `tools`, `folder`, `archive`, `file`, `trash` or `card`. Any other name has none.
     pub fn named(name: &str) -> Option<Icon> {
         Some(match name {

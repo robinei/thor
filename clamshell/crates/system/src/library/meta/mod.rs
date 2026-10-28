@@ -291,7 +291,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn what_shelf_shows_comes_first() {
+    fn what_library_view_shows_comes_first() {
         let wanted = |id: &str| Wanted { id: id.into(), key: id.into(), title: id.into(), file: None, how: How::SteamGridDb, art: false };
         let queue = Queue::default();
         queue.add(["a", "b", "c", "d"].map(wanted).to_vec());

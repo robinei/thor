@@ -36,7 +36,7 @@ CHECKS_DIR = f"{HOME}/.cache/thor-checks"
 # What the checks' terminal was given to type (see Checks._terminal_with_keyboard).
 TYPED = f"{CHECKS_DIR}/typed"
 # ClamShell's library config, and what it keeps (play time, favourites, settings, keymaps, the dock, where
-# shelf was, brightness: JSON files, see clamshell-system's store).
+# the Library was, brightness: JSON files, see clamshell-system's store).
 CONFIG = f"{CHECKS_DIR}/config/clamshell"
 DATA = f"{CHECKS_DIR}/data/clamshell"
 BACKLIGHT = f"{CHECKS_DIR}/backlight/panel"
@@ -55,8 +55,8 @@ ICONS = {"settings": 51, "dock": 145, "keyboard": 238, "touchpad": 332, "sysinfo
 # A list's first row (Wi-Fi's networks, Bluetooth's devices), and a row's height.
 FIRST_ROW_Y = 240
 ROW_H = 103
-# shelf's list on the main screen: where its first row's middle is, and a row's height (1920x1080).
-SHELF_X, SHELF_FIRST_Y, SHELF_ROW_H = 300, 150, 94.6
+# the Library's list on the main screen: where its first row's middle is, and a row's height (1920x1080).
+LIBRARY_VIEW_X, LIBRARY_VIEW_FIRST_Y, LIBRARY_VIEW_ROW_H = 300, 150, 94.6
 # The time tab: its list's first row, and its header's back arrow.
 TIME_FIRST_Y = 252
 TIME_BACK = (83, 135)
@@ -126,7 +126,7 @@ def kept(name):
 
 
 def resume():
-    """Where shelf and the second screen were (as saved)."""
+    """Where the Library and the second screen were (as saved)."""
     return kept("resume.json") or {}
 
 
@@ -135,7 +135,7 @@ def collection():
 
 
 def selection():
-    """shelf's selected entry in the collection shown (as saved)."""
+    """the Library's selected entry in the collection shown (as saved)."""
     place = dict(map(tuple, resume().get("places", []))).get(collection())
     return place[-1] if place else None
 
@@ -206,10 +206,10 @@ def windows():
 
 def front():
     """The group in front on the main screen, as the compositor shows it: the focused top window's, else
-    "shelf". An entry's group is its key, a window's own "window <id>"."""
+    "the Library". An entry's group is its key, a window's own "window <id>"."""
     shown = next((w for w in windows() if w["focused"]), None)
     if not shown:
-        return "shelf"
+        return "the Library"
     group = shown.get("group") or {}
     return group.get("Entry") or f"window {group.get('Window')}"
 
@@ -334,8 +334,8 @@ def dpad(direction):
     time.sleep(0.4)
 
 
-def focus_shelf():
-    """The pad's focus into shelf's list (after a touch the focus is where the finger was: on the
+def focus_library_view():
+    """The pad's focus into the Library's list (after a touch the focus is where the finger was: on the
     second screen, which is below the main one), on its first game."""
     for _ in range(4):
         dpad("up")
@@ -381,7 +381,7 @@ mkdir -p {CONFIG} {DATA} {CHECKS_DIR}/games {BACKLIGHT}
 systemctl --user stop clamshell
 rm -rf {DATA} && mkdir -p {DATA}
 echo '["desktop:foot"]' > {DATA}/dock.json
-# (Set up: not a first start, which would open the Device view over shelf.)
+# (Set up: not a first start, which would open the Device view over the Library.)
 echo '{{"done": true}}' > {DATA}/first-start.json
 cat > {CONFIG}/library.json <<'EOF'
 {LIBRARY}EOF
@@ -400,7 +400,7 @@ systemctl --user reset-failed clamshell; systemctl --user restart clamshell
         result = subprocess.run([sys.executable, str(Path(vm.__file__)), "bluetooth"], capture_output=True, text=True)
         if result.returncode != 0:
             print(f"  (Bluetooth not set up: {result.stderr.strip() or result.stdout.strip()})")
-    if not until(lambda: sh("systemctl --user is-active clamshell").strip() == "active" and front() == "shelf", 15):
+    if not until(lambda: sh("systemctl --user is-active clamshell").strip() == "active" and front() == "the Library", 15):
         sys.exit("ClamShell didn't start")
     time.sleep(1)
     return since
@@ -450,11 +450,11 @@ class Checks:
         return routes[-1].split("PadRoute(")[1].rstrip(")") if routes else None
 
     def reset(self):
-        """A known start: no fingers down, no game or app, shelf in front, the dock tab, the pad mouse
+        """A known start: no fingers down, no game or app, the Library in front, the dock tab, the pad mouse
         off."""
         self.i.lift_all()
         sh("systemctl --user stop 'clamshell-run-*' 'app-graphical-clamshell-run-*' 2>/dev/null || true")
-        until(lambda: front() == "shelf", 5)
+        until(lambda: front() == "the Library", 5)
         if self.route() == "Mouse":
             self.icon("pad-mouse")
         self.icon("dock")
@@ -650,29 +650,29 @@ class Checks:
             # The test networks in sight again before the next check joins one.
             until(lambda: "ThorTest" in sh("nmcli -t -f SSID dev wifi list --rescan yes"), 30, 2)
 
-    # shelf
+    # the Library
 
-    def shelf_scroll(self):
-        """More games than fit in shelf's list: a drag with the pointer scrolls it, settling on a whole row,
+    def library_view_scroll(self):
+        """More games than fit in the Library's list: a drag with the pointer scrolls it, settling on a whole row,
         and a click then selects the game under it."""
         control("home")
-        until(lambda: front() == "shelf", 5)
+        until(lambda: front() == "the Library", 5)
         if collection() not in (None, "Test"):
-            return self.check("shelf: the Test collection in front", False, f"collection {collection()!r}")
+            return self.check("the Library: the Test collection in front", False, f"collection {collection()!r}")
         # Down by three rows and a bit, slowly; it settles on three.
-        x, y0 = SHELF_X, SHELF_FIRST_Y + 6 * SHELF_ROW_H
+        x, y0 = LIBRARY_VIEW_X, LIBRARY_VIEW_FIRST_Y + 6 * LIBRARY_VIEW_ROW_H
         self.i.pointer(x, y0, "down")
         for step in range(1, 21):
             time.sleep(0.07)
-            self.i.pointer(x, y0 - 3.3 * SHELF_ROW_H * step / 20)
+            self.i.pointer(x, y0 - 3.3 * LIBRARY_VIEW_ROW_H * step / 20)
         time.sleep(0.5)
-        self.i.pointer(x, y0 - 3.3 * SHELF_ROW_H, "up")
+        self.i.pointer(x, y0 - 3.3 * LIBRARY_VIEW_ROW_H, "up")
         time.sleep(1)
         before = selection()
-        self.check("shelf: a drag selects nothing", before is None or before.endswith("test.game"), f"selection {before!r}")
-        self.i.pointer(x, SHELF_FIRST_Y, "down")
+        self.check("the Library: a drag selects nothing", before is None or before.endswith("test.game"), f"selection {before!r}")
+        self.i.pointer(x, LIBRARY_VIEW_FIRST_Y, "down")
         time.sleep(0.05)
-        self.i.pointer(x, SHELF_FIRST_Y, "up")
+        self.i.pointer(x, LIBRARY_VIEW_FIRST_Y, "up")
         # Rows: test, zeta, zulu01, zulu02 ...: three down, the first row is zulu02.
         self.check("  a drag scrolls the list (whole rows) and a click selects the game under it",
                    until(lambda: (selection() or "").endswith("zulu02.game"), 5), f"selection {selection()!r}")
@@ -750,8 +750,8 @@ class Checks:
         sh("pkill -x foot || true")
         until(lambda: not any(w["app_id"] == "foot" for w in windows()), 8)
         top = until(lambda: shown("Top"), 5)
-        shelf = self.i.screenshot(head=0)
-        self.check("main screen: ClamShell alone, scanned out from its own buffers", top and max(shelf[2]) > 100)
+        library_view = self.i.screenshot(head=0)
+        self.check("main screen: ClamShell alone, scanned out from its own buffers", top and max(library_view[2]) > 100)
         bottom = until(lambda: shown("Bottom"), 5)
         self.check("bottom screen: scanned out, the bar shown", bottom and bar_drawn())
         control("tap dock 0")  # foot, pinned by the setup, opened on the main screen
@@ -861,7 +861,7 @@ class Checks:
     # the keyboard's pointing
 
     def keyboard_points(self):
-        # (An app in front: with shelf there, what is typed finds entries instead.)
+        # (An app in front: with the Library there, what is typed finds entries instead.)
         if not self._terminal_with_keyboard():
             return
         if not self.check("  its touchpad ready", until(lambda: bool(device("clamshell touchpad")), 3)):
@@ -885,10 +885,10 @@ class Checks:
 
     # the pad
 
-    def pad_shelf(self):
+    def pad_library_view(self):
         if not self.check("pad: the fake pad grabbed", plug_pad()):
             return
-        focus_shelf()
+        focus_library_view()
         until(lambda: (selection() or "").endswith("test.game"), 4)
         before = selection()
         moved = False
@@ -898,26 +898,26 @@ class Checks:
             moved = until(lambda: selection() not in (None, before), 3)
             if moved:
                 break
-        self.check("pad, shelf in front: the D-pad moves the selection", moved, f"selection {before!r} -> {selection()!r}")
+        self.check("pad, the Library in front: the D-pad moves the selection", moved, f"selection {before!r} -> {selection()!r}")
         dpad("up")
         until(lambda: selection() == before, 3)
         press("a")
-        launched = until(lambda: bool(units("run-")) and front() not in ("shelf", "window None"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("the Library", "window None"), 10)
         game = front()
         self.check("  A launches the selected game, in front", launched, f"units {units('game')}, front {game!r}")
         if not launched:
             return
         press("home")
-        self.check("  Home goes to shelf", until(lambda: front() == "shelf"), f"front {front()!r}")
+        self.check("  Home goes to the Library", until(lambda: front() == "the Library"), f"front {front()!r}")
         press("home")
-        self.check("  Home again stays on shelf", until(lambda: front() == "shelf"), f"front {front()!r}")
+        self.check("  Home again stays on the Library", until(lambda: front() == "the Library"), f"front {front()!r}")
         press("a")
         self.check("  activating the program shows its top window", until(lambda: front() == game), f"front {front()!r}")
 
     def pad_view(self):
         if not plug_pad():
             return self.check("pad: the fake pad grabbed", False)
-        focus_shelf()
+        focus_library_view()
         start = tab()
         press("view")  # focus to the second screen
         press("rb")  # the next tab
@@ -995,7 +995,7 @@ class Checks:
             return self.check("pad: the fake pad grabbed", False)
         since = now()
         control("tap launch")
-        launched = until(lambda: bool(units("run-")) and front() not in ("shelf", "window None"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("the Library", "window None"), 10)
         game_route = logged(since, "PadRoute(Game)")
         if not self.check("pad: a game in front, the pad goes to it", launched and game_route, f"front {front()!r}"):
             return
@@ -1009,7 +1009,7 @@ class Checks:
         if not plug_pad():
             return self.check("pad: the fake pad grabbed", False)
         control("tap launch")
-        launched = until(lambda: bool(units("run-")) and front() not in ("shelf", "window None"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("the Library", "window None"), 10)
         if not self.check("pad: a game in front", launched, f"front {front()!r}"):
             return
         game = front()
@@ -1026,13 +1026,13 @@ class Checks:
         self.check("  AYN: the game's Guide, down then up (the game stays in front)", len(mode) == 2 and "value 1" in mode[0]
                    and "value 0" in mode[1] and front() == game, f"{mode}, front {front()!r}")
         out = capture(f"evtest {virtual}", 3, lambda: pad("tap home 900"))
-        self.check("  Home held long alone: not Guide (Home on release: shelf in front)",
-                   "BTN_MODE" not in out.split("Testing ...")[-1] and until(lambda: front() == "shelf", 3),
+        self.check("  Home held long alone: not Guide (Home on release: the Library in front)",
+                   "BTN_MODE" not in out.split("Testing ...")[-1] and until(lambda: front() == "the Library", 3),
                    f"front {front()!r}")
         press("home")
         out = capture(f"evtest {virtual}", 2, lambda: press("home"))
-        self.check("  Home pressed: ClamShell's (shelf in front), the game sees nothing",
-                   until(lambda: front() == "shelf", 3) and "BTN_MODE" not in out.split("Testing ...")[-1],
+        self.check("  Home pressed: ClamShell's (the Library in front), the game sees nothing",
+                   until(lambda: front() == "the Library", 3) and "BTN_MODE" not in out.split("Testing ...")[-1],
                    f"front {front()!r}")
 
     # keymaps
@@ -1076,7 +1076,7 @@ class Checks:
         applied_since = since
         since = now()
         control("tap launch")
-        launched = until(lambda: bool(units("run-")) and front() not in ("shelf", "window None"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("the Library", "window None"), 10)
         if not self.check("  the game runs with it", launched and logged(applied_since, f"pad: keymap {ident} (Check)", 5),
                           f"front {front()!r}; {journal(since)[-300:]!r}"):
             return
@@ -1142,7 +1142,7 @@ class Checks:
         since = now()
         control(f"tap keymap {rows}")
         control("tap launch")
-        launched = until(lambda: bool(units("run-")) and front() not in ("shelf", "window None"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("the Library", "window None"), 10)
         if not self.check("  the game runs with it", launched and logged(since, "(Layers)", 5), f"front {front()!r}"):
             return
         game = front()
@@ -1183,7 +1183,7 @@ class Checks:
         self.check("  a buzz as it is armed, another as it goes off", "rumble 0 40000" in said and "rumble 30000 0" in said, said)
         self.check("  the game stays in front", front() == game, f"front {front()!r}")
         press("home")
-        self.check("  a Home tap: shelf", until(lambda: front() == "shelf", 3), f"front {front()!r}")
+        self.check("  a Home tap: the Library", until(lambda: front() == "the Library", 3), f"front {front()!r}")
 
     def keymap_actuations(self):
         """A keymap with A to X pressed and to E held, B to Z pressed twice, Y to T with turbo and toggled,
@@ -1205,7 +1205,7 @@ class Checks:
         since = now()
         control(f"tap keymap {rows}")
         control("tap launch")
-        launched = until(lambda: bool(units("run-")) and front() not in ("shelf", "window None"), 10)
+        launched = until(lambda: bool(units("run-")) and front() not in ("the Library", "window None"), 10)
         if not self.check("  the game runs with it", launched and logged(since, "(Acts)", 5), f"front {front()!r}"):
             return
         mouse = device("clamshell pad mouse")
@@ -1236,7 +1236,7 @@ class Checks:
         if not self.check("rumble: the fake pad grabbed", plug_pad()):
             return
         control("tap launch")
-        if not self.check("  a game in front", until(lambda: bool(units("run-")) and front() not in ("shelf", "window None"), 10)):
+        if not self.check("  a game in front", until(lambda: bool(units("run-")) and front() not in ("the Library", "window None"), 10)):
             return
         virtual = device("clamshell pad (Xbox 360)")
         # struct ff_effect: type, id, direction, trigger, replay (length 500 ms), then the rumble's
@@ -1262,7 +1262,7 @@ class Checks:
     # process control
 
     def _launch_test_game(self):
-        """The Test tab's first game (test.game, an idle mpv window) launched from shelf; its group,
+        """The Test tab's first game (test.game, an idle mpv window) launched from the Library; its group,
         once in front (none if it didn't come)."""
         # (Its collection's place depends on which are shown: Recent and Favourites only with entries.)
         for collection in range(4):
@@ -1271,7 +1271,7 @@ class Checks:
             if until(lambda: (selection() or "").endswith("test.game"), 2):
                 break
         control("tap launch")
-        if not until(lambda: not front().startswith(("shelf", "window ")), 10):
+        if not until(lambda: not front().startswith(("the Library", "window ")), 10):
             self.check("process control: the test game launched, in front", False, f"front {front()!r}, units {units('run-')}")
             return None
         return front()
@@ -1281,7 +1281,7 @@ class Checks:
         before = plays()
         if not self._launch_test_game():
             return
-        self.check("process control: a game launched from shelf runs as a service of its own, in front", bool(launches()), f"units {units('run-')}")
+        self.check("process control: a game launched from the Library runs as a service of its own, in front", bool(launches()), f"units {units('run-')}")
         time.sleep(2)
         control("window quit")
         self.check("  Quit ends it (its service gone)", until(lambda: not launches(), 10), f"units {units('run-')}")
@@ -1297,7 +1297,7 @@ class Checks:
         state = lambda: sh(f"systemctl --user show {slice_} -p FreezerState --value").strip()
         time.sleep(1)
         control("home")
-        self.check("pause: a game behind shelf is frozen after the grace", until(lambda: state() == "frozen", 20), f"{slice_}: {state()!r}")
+        self.check("pause: a game behind the Library is frozen after the grace", until(lambda: state() == "frozen", 20), f"{slice_}: {state()!r}")
         control("tap launch")
         self.check("  thawed when shown again", until(lambda: state() == "running" and front() == game, 5), f"{state()!r}, front {front()!r}")
         control("window quit")
@@ -1307,9 +1307,9 @@ class Checks:
         """foot started outside ClamShell (`how`: a command starting it): whether it came in front in its
         entry's group, and a reader of its process's cgroup."""
         sh("pkill -x foot || true")
-        # (Gone, its entry ended, shelf in front: a window opening in an entry's group is that entry's.)
+        # (Gone, its entry ended, the Library in front: a window opening in an entry's group is that entry's.)
         until(lambda: not sh("pgrep -x foot || true").strip() and not [u for u in units("run-foot") if u.endswith((".service", ".scope"))]
-              and front() == "shelf", 10)
+              and front() == "the Library", 10)
         sh(how)
         on = until(lambda: front().startswith("foot_"), 10)
         pid = sh("pgrep -n -x foot || true").strip()
@@ -1559,8 +1559,8 @@ GLib.MainLoop().run()
 
 
 
-CHECKS = ["confirm_key", "session_units", "shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "ui_scanout", "screen_changes", "pad_windows",
-          "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
+CHECKS = ["confirm_key", "session_units", "library_view_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "ui_scanout", "screen_changes", "pad_windows",
+          "pad_library_view", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
           "keymap_actuations", "rumble", "launch_and_quit", "pause_hidden", "found_window", "tray_program", "clipboard",
           "bluetooth", "gyro_sleep"]
 # Checks run only when named.

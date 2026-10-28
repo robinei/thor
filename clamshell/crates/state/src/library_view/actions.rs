@@ -1,20 +1,20 @@
-//! What can be done to what shelf's details show (see docs/runners.md). Each action comes from one source:
+//! What can be done to what the Library's details show (see docs/runners.md). Each action comes from one source:
 //!
 //! - Open (A) comes from the entry's runner, and so does Enqueue, for a runner that takes more while it
 //!   plays.
 //! - Continue (Start) comes from the entry's content, such as a folder of videos.
-//! - The file actions come from the entry's place, a browsed directory (see [`crate::shelf::files`]).
+//! - The file actions come from the entry's place, a browsed directory (see [`crate::library_view::files`]).
 //! - Favourite (Y) and Pin (X) come from an identity that outlives a rescan, which a browsed file doesn't
 //!   have.
 //!
 //! Where Favourite and Pin are missing, Y and X take the place's Copy and Paste, and Start takes its
 //! Select. The details draw these rows in order, and the pad's buttons act on them. Holding the selected
-//! entry, by touch or with A, takes the focus to the rows themselves (see [`Shelf::in_actions`]).
+//! entry, by touch or with A, takes the focus to the rows themselves (see [`LibraryView::in_actions`]).
 
+use crate::library_view::LibraryView;
+use crate::library_view::files::FileAction;
 use crate::out::Out;
-use crate::shelf::Shelf;
-use crate::shelf::files::FileAction;
-use crate::{EntryAct, Pointer, ShelfId};
+use crate::{EntryAct, LibraryViewId, Pointer};
 
 /// A row of the details' actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,7 +30,7 @@ pub enum Action {
 /// Room for every action once: the five of an entry and the fourteen file actions.
 const ROOM: usize = 5 + 14;
 
-/// The details' actions, in order, with at most one of each. It doesn't allocate, because shelf draws
+/// The details' actions, in order, with at most one of each. It doesn't allocate, because the Library draws
 /// them every frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Actions {
@@ -72,19 +72,19 @@ pub enum Shortcut {
 
 impl Action {
     /// Its target in the details.
-    pub fn id(self) -> ShelfId {
+    pub fn id(self) -> LibraryViewId {
         match self {
-            Action::Open => ShelfId::Launch,
-            Action::Continue => ShelfId::Continue,
-            Action::Enqueue => ShelfId::Enqueue,
-            Action::Favourite => ShelfId::Favourite,
-            Action::Pin => ShelfId::Pin,
-            Action::File(a) => ShelfId::File(a),
+            Action::Open => LibraryViewId::Launch,
+            Action::Continue => LibraryViewId::Continue,
+            Action::Enqueue => LibraryViewId::Enqueue,
+            Action::Favourite => LibraryViewId::Favourite,
+            Action::Pin => LibraryViewId::Pin,
+            Action::File(a) => LibraryViewId::File(a),
         }
     }
 }
 
-impl Shelf {
+impl LibraryView {
     /// The details' actions, in order (see the module's doc).
     pub fn actions(&self) -> Actions {
         let mut actions = Actions::default();
@@ -115,12 +115,12 @@ impl Shelf {
     /// mode of its own: the face buttons' shortcuts are off, the focus stays on the actions, A confirms
     /// and B goes back.
     pub fn in_actions(&self, pointer: &Pointer) -> bool {
-        pointer.show_focus() && self.actions().as_slice().iter().any(|a| pointer.focus() == Some(&crate::Id::Shelf(a.id())))
+        pointer.show_focus() && self.actions().as_slice().iter().any(|a| pointer.focus() == Some(&crate::Id::LibraryView(a.id())))
     }
 
     /// The action a pad button stands for: Start for Continue (or else Select), Y for Favourite (or else
     /// Copy), and X for Pin (or else Paste). There is none while the pad is on the actions themselves (see
-    /// [`Shelf::button_of`]).
+    /// [`LibraryView::button_of`]).
     pub fn shortcut(&self, key: Shortcut, pointer: &Pointer) -> Option<Action> {
         if self.in_actions(pointer) {
             return None;
@@ -160,17 +160,17 @@ impl Shelf {
 mod tests {
     use super::*;
     use crate::testkit::*;
-    use crate::{Effect, Event, Id, ShelfEvent};
+    use crate::{Effect, Event, Id, LibraryViewEvent};
 
     #[test]
     fn an_entrys_actions_come_from_its_runner_content_and_identity() {
         let mut s = state();
-        assert_eq!(s.shelf().actions().as_slice(), [Action::Open, Action::Favourite, Action::Pin]);
-        assert_eq!(s.shelf().shortcut(Shortcut::Y, s.pointer()), Some(Action::Favourite));
-        assert_eq!(s.shelf().shortcut(Shortcut::Start, s.pointer()), None, "a game: nothing to continue");
-        tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
-        assert_eq!(s.shelf().actions().as_slice(), [Action::Open, Action::Continue, Action::Favourite, Action::Pin], "a series: Continue");
-        let fx = s.applied(ShelfEvent::Continue.into());
+        assert_eq!(s.library_view().actions().as_slice(), [Action::Open, Action::Favourite, Action::Pin]);
+        assert_eq!(s.library_view().shortcut(Shortcut::Y, s.pointer()), Some(Action::Favourite));
+        assert_eq!(s.library_view().shortcut(Shortcut::Start, s.pointer()), None, "a game: nothing to continue");
+        tap(&mut s, Id::LibraryView(LibraryViewId::Collection(2)));
+        assert_eq!(s.library_view().actions().as_slice(), [Action::Open, Action::Continue, Action::Favourite, Action::Pin], "a series: Continue");
+        let fx = s.applied(LibraryViewEvent::Continue.into());
         assert!(fx.iter().any(|e| matches!(e, Effect::Launch { .. })), "{fx:?}");
         s.applied(Event::tick(1));
     }
@@ -184,28 +184,28 @@ mod tests {
         let g = entry("zelda-lttp");
         s.applied(PointerEvent::Focus(g.clone()).into());
         s.applied(PointerEvent::LongPress(g.clone()).into());
-        assert!(s.shelf().in_actions(s.pointer()));
-        assert_eq!(s.shelf().shortcut(Shortcut::Y, s.pointer()), None);
-        assert_eq!(s.applied(ShelfEvent::ToggleFavourite.into()), vec![], "Y does nothing");
-        assert_eq!(s.applied(ShelfEvent::TogglePin.into()), vec![], "nor X");
+        assert!(s.library_view().in_actions(s.pointer()));
+        assert_eq!(s.library_view().shortcut(Shortcut::Y, s.pointer()), None);
+        assert_eq!(s.applied(LibraryViewEvent::ToggleFavourite.into()), vec![], "Y does nothing");
+        assert_eq!(s.applied(LibraryViewEvent::TogglePin.into()), vec![], "nor X");
         s.applied(PointerEvent::Focus(g).into());
-        assert!(!s.shelf().in_actions(s.pointer()));
-        assert_eq!(s.applied(ShelfEvent::ToggleFavourite.into()), vec![Effect::Save(crate::Save::Favourites(vec!["zelda-lttp".into()]))]);
+        assert!(!s.library_view().in_actions(s.pointer()));
+        assert_eq!(s.applied(LibraryViewEvent::ToggleFavourite.into()), vec![Effect::Save(crate::Save::Favourites(vec!["zelda-lttp".into()]))]);
     }
 
     #[test]
     fn a_held_on_the_selected_entry_opens_its_actions() {
         use crate::PointerEvent;
         let mut s = state();
-        let g = Id::Shelf(ShelfId::Entry(s.shelf().selected().cloned().unwrap_or_else(|| "?".into())));
+        let g = Id::LibraryView(LibraryViewId::Entry(s.library_view().selected().cloned().unwrap_or_else(|| "?".into())));
         // By touch, with no focus shown, the actions open: nothing plays, and the ring is on the first.
         assert!(!s.pointer().show_focus());
         assert_eq!(s.applied(PointerEvent::LongPress(g.clone()).into()), vec![], "not played");
-        assert!(s.pointer().focused(&Id::Shelf(ShelfId::Launch)));
-        assert!(s.shelf().in_actions(s.pointer()));
+        assert!(s.pointer().focused(&Id::LibraryView(LibraryViewId::Launch)));
+        assert!(s.library_view().in_actions(s.pointer()));
         // With the pad, the same.
         s.applied(PointerEvent::Focus(g.clone()).into());
         s.applied(PointerEvent::LongPress(g).into());
-        assert!(s.pointer().focused(&Id::Shelf(ShelfId::Launch)));
+        assert!(s.pointer().focused(&Id::LibraryView(LibraryViewId::Launch)));
     }
 }

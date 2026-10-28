@@ -121,9 +121,9 @@ pub fn foot() -> WindowFacts {
     win(1001, "foot")
 }
 
-/// A game in shelf's list.
+/// A game in the Library's list.
 pub fn entry(id: &str) -> Id {
-    Id::Shelf(ShelfId::Entry(id.into()))
+    Id::LibraryView(LibraryViewId::Entry(id.into()))
 }
 
 /// Taps `id` and returns the effects.
@@ -144,7 +144,7 @@ pub fn notice(s: &State) -> Option<crate::bottom::notice::NoticeKind> {
     s.bottom().notice().map(|n| n.what.clone())
 }
 
-/// Launches `entry` from shelf and has it start. Returns its unit.
+/// Launches `entry` from the Library and has it start. Returns its unit.
 pub fn launch(s: &mut State, id: &str) -> LaunchUnit {
     // Select it if it isn't selected, then play it. The launch is in the effects of one of the two taps.
     let mut fx = tap(s, entry(id));
@@ -175,7 +175,7 @@ pub fn sounds(fx: &[Effect]) -> Vec<crate::Sound> {
 
 /// Whether window `w` would come in front as it opens (see `Session::opening_focus`).
 pub fn opening_focus(s: &State, w: &crate::session::windows::WindowFacts) -> bool {
-    s.session().opening_focus(w, s.shelf().library())
+    s.session().opening_focus(w, s.library_view().library())
 }
 
 pub fn launch_now(s: &mut State, id: &str) -> Vec<Effect> {

@@ -296,8 +296,8 @@ time.sleep(300)
         wait(lambda: pixels((128, 80, 32)) == (True, False), "X11 client returned to top")
         x11.stdin.write(b"unmap\n")
         x11.stdin.flush()
-        # Home showed shelf before the X11 window came back up, so shelf is what was in front before it.
-        wait(lambda: pixels() == (False, False) and pixels((128, 80, 32)) == (False, False), "unmapping X11 goes back to shelf")
+        # Home showed the Library before the X11 window came back up, so the Library is what was in front before it.
+        wait(lambda: pixels() == (False, False) and pixels((128, 80, 32)) == (False, False), "unmapping X11 goes back to the Library")
         x11.stdin.write(b"map\n")
         x11.stdin.flush()
         wait(lambda: pixels((128, 80, 32)) == (True, False), "the same X11 window maps again")
@@ -324,7 +324,7 @@ time.sleep(300)
         control("window", "close")
         assert x11.wait(timeout=5) == 0, "X11 client receives WM_DELETE_WINDOW"
         processes.remove(x11)
-        wait(lambda: pixels((128, 80, 32)) == (False, False), "shelf back after X11 closes")
+        wait(lambda: pixels((128, 80, 32)) == (False, False), "the Library back after X11 closes")
         # The Wayland client, the one entry running, brought back by its dock entry.
         control("tab", "dock")
         control("tap", "dock", "0")
@@ -553,7 +553,7 @@ time.sleep(300)
             processes.remove(vulkan)
             wait(lambda: pixels() == (True, False), "previous client visible after Vulkan client exits")
         control("home")
-        wait(lambda: pixels() == (False, False), "Home rendered shelf")
+        wait(lambda: pixels() == (False, False), "Home rendered the Library")
         shot("home")
         assert client.poll() is None, "Home must leave the client alive"
         os.killpg(client.pid, signal.SIGTERM)

@@ -1,6 +1,6 @@
-//! The Device view, where the device is set up. It shows on the main screen in shelf's place
-//! ([`TopView`]). It is opened by the Device entry in Tools, from shelf or pinned to the dock, and opens
-//! by itself at ClamShell's first start. B, Home or Close go back to shelf.
+//! The Device view, where the device is set up. It shows on the main screen in the Library's place
+//! ([`TopView`]). It is opened by the Device entry in Tools, from the Library or pinned to the dock, and opens
+//! by itself at ClamShell's first start. B, Home or Close go back to the Library.
 //!
 //! It has a row for each thing a device needs set up once, or now and then:
 //!
@@ -29,7 +29,7 @@ use sticks::{Calibrations, Progress, Sticks};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TopView {
     #[default]
-    Shelf,
+    LibraryView,
     Device,
 }
 
@@ -96,7 +96,7 @@ impl Setup {
     }
 
     pub fn top_view(&self) -> TopView {
-        if self.open { TopView::Device } else { TopView::Shelf }
+        if self.open { TopView::Device } else { TopView::LibraryView }
     }
 
     pub(crate) fn is_open(&self) -> bool {
@@ -133,7 +133,7 @@ impl Setup {
         self.account
     }
 
-    /// Opens the view on the main screen, in shelf's place (State brings shelf to the front), with the
+    /// Opens the view on the main screen, in the Library's place (State brings the Library to the front), with the
     /// pad's focus on its first row. The account is read while it is open
     /// ([`crate::sync::Sent::watches`]).
     pub(crate) fn open(&mut self, pointer: &mut Pointer) {
@@ -141,10 +141,10 @@ impl Setup {
         pointer.focus_on(Id::Device(DeviceId::Wifi));
     }
 
-    /// Goes back to shelf, with the focus on its `selected` entry.
+    /// Goes back to the Library, with the focus on its `selected` entry.
     pub(crate) fn close(&mut self, pointer: &mut Pointer, selected: Option<&Arc<str>>) {
         self.open = false;
-        pointer.focus_shelf(selected);
+        pointer.focus_library_view(selected);
     }
 
     /// A reading of the account.
@@ -170,7 +170,7 @@ impl Setup {
     }
 
     /// A tap on one of the Device view's targets at `now` (monotonic seconds). Closing it gives the focus
-    /// back to shelf's selection (`selected`). A tab to open is queued as an event, since State changes
+    /// back to the Library's selection (`selected`). A tab to open is queued as an event, since State changes
     /// tabs.
     pub(crate) fn tap(&mut self, id: DeviceId, now: u64, pointer: &mut Pointer, selected: Option<&Arc<str>>, out: &mut Out) {
         let account = self.account;
@@ -202,7 +202,7 @@ impl Setup {
                 out.effects.push(Effect::CalibrateRefresh);
             }
             DeviceId::Refresh => {}
-            // The first time, Done ends the first start for good. Shelf shows next, with the default tab
+            // The first time, Done ends the first start for good. The Library shows next, with the default tab
             // below.
             DeviceId::Done if self.first_start => {
                 self.first_start = false;
@@ -290,27 +290,27 @@ mod tests {
         assert_eq!(s.setup().top_view(), TopView::Device, "the first start opens it");
         let effects = tap(&mut s, DeviceId::Done);
         assert!(effects.contains(&Effect::Save(Save::FirstStartDone)));
-        assert_eq!(s.setup().top_view(), TopView::Shelf);
+        assert_eq!(s.setup().top_view(), TopView::LibraryView);
         assert!(!s.setup().first_start());
     }
 
     #[test]
-    fn the_device_entry_opens_it_and_close_goes_back_to_shelf() {
+    fn the_device_entry_opens_it_and_close_goes_back_to_library_view() {
         let mut s = State::new(init());
         let effects = launch_now(&mut s, "tool:device");
         assert_eq!(s.setup().top_view(), TopView::Device);
         assert!(effects.is_empty());
-        assert!(s.session().shelf_in_front());
+        assert!(s.session().library_view_in_front());
         assert_eq!(s.pointer().focus(), Some(&Id::Device(DeviceId::Wifi)));
         let effects = tap(&mut s, DeviceId::Close);
-        assert_eq!(s.setup().top_view(), TopView::Shelf);
+        assert_eq!(s.setup().top_view(), TopView::LibraryView);
         assert!(!effects.contains(&Effect::Save(Save::FirstStartDone)), "not the first start: nothing saved");
     }
 
-    /// The first start opens the view with the pad's focus on its first row, and Done goes to shelf's
+    /// The first start opens the view with the pad's focus on its first row, and Done goes to the Library's
     /// selection with the default tab below, whatever tab the setup left open.
     #[test]
-    fn the_first_start_begins_on_wifi_and_done_leaves_shelf_and_the_default_tab() {
+    fn the_first_start_begins_on_wifi_and_done_leaves_library_view_and_the_default_tab() {
         let mut s = State::new(Init { first_start: true, ..init() });
         assert_eq!(s.pointer().focus(), Some(&Id::Device(DeviceId::Wifi)));
         tap(&mut s, DeviceId::Wifi);
@@ -334,7 +334,7 @@ mod tests {
         assert_eq!(s.setup().top_view(), TopView::Device, "the view stays open");
     }
 
-    /// Home closes the Device view back to shelf. Repeated Home stays on shelf.
+    /// Home closes the Device view back to the Library. Repeated Home stays on the Library.
     #[test]
     fn home_closes_the_device_view_first() {
         let mut s = state();
@@ -344,11 +344,11 @@ mod tests {
         launch_now(&mut s, "tool:device");
         assert_eq!(s.setup().top_view(), TopView::Device);
         s.applied(Event::Home);
-        assert!(s.session().shelf_in_front(), "nothing shown but shelf");
-        assert_eq!(s.setup().top_view(), TopView::Shelf);
-        assert_eq!(s.pointer().focus(), Some(&crate::testkit::entry("zelda-lttp")), "the focus on shelf's selection");
+        assert!(s.session().library_view_in_front(), "nothing shown but the Library");
+        assert_eq!(s.setup().top_view(), TopView::LibraryView);
+        assert_eq!(s.pointer().focus(), Some(&crate::testkit::entry("zelda-lttp")), "the focus on the Library's selection");
         s.applied(Event::Home);
-        assert!(s.session().shelf_in_front());
+        assert!(s.session().library_view_in_front());
     }
 
     /// The account is read while the view is open, from when the UI is up: an open view at the first
@@ -359,7 +359,7 @@ mod tests {
         assert!(!s.applied(Event::tick(1)).contains(&Effect::Watch(crate::Watch::Account, true)), "the UI isn't up");
         assert!(s.applied(Event::Start).contains(&Effect::Watch(crate::Watch::Account, true)));
         assert!(tap(&mut s, DeviceId::Done).contains(&Effect::Watch(crate::Watch::Account, false)));
-        // Opened again from shelf, and closed by Home.
+        // Opened again from the Library, and closed by Home.
         let fx = s.applied(Event::Entry("tool:device".into(), crate::EntryAct::Play));
         assert!(fx.contains(&Effect::Watch(crate::Watch::Account, true)), "{fx:?}");
         assert!(s.applied(Event::Home).contains(&Effect::Watch(crate::Watch::Account, false)));

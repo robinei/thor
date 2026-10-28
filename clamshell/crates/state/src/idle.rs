@@ -430,14 +430,14 @@ mod tests {
         s.applied(Event::tick(1300));
         assert_eq!(s.idle().stage(), Stage::Off);
         let fx = tap(&mut s, entry("metroid-zm"));
-        assert_eq!(s.shelf().selected().map(|g| &**g), Some("zelda-lttp"), "not selected");
+        assert_eq!(s.library_view().selected().map(|g| &**g), Some("zelda-lttp"), "not selected");
         assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: true })), "woken: {fx:?}");
         s.applied(Event::tick(1301));
         tap(&mut s, entry("metroid-zm"));
-        assert_eq!(s.shelf().selected().map(|g| &**g), Some("zelda-lttp"), "within a second of waking");
+        assert_eq!(s.library_view().selected().map(|g| &**g), Some("zelda-lttp"), "within a second of waking");
         s.applied(Event::tick(1302));
         tap(&mut s, entry("metroid-zm"));
-        assert_eq!(s.shelf().selected().map(|g| &**g), Some("metroid-zm"), "then it acts");
+        assert_eq!(s.library_view().selected().map(|g| &**g), Some("metroid-zm"), "then it acts");
     }
 
     /// The input devices no longer read, with a compositor that doesn't report, nothing can tell idle, so

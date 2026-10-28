@@ -46,8 +46,8 @@ fn has_mark_agrees_with_mark_of() {
 #[test]
 fn a_play_lasts_by_the_monotonic_clock_however_the_wall_clock_steps() {
     let mut s = state();
-    let first = s.shelf().selected().cloned().unwrap();
-    tap(&mut s, Id::Shelf(ShelfId::Launch));
+    let first = s.library_view().selected().cloned().unwrap();
+    tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
     s.applied(Event::Tick { unix_secs: 100_000, mono_secs: 1000 });
     crate::testkit::start(&mut s, &first);
     // A minute later by the monotonic clock, with the wall clock set forward a day.
@@ -60,16 +60,16 @@ fn a_play_lasts_by_the_monotonic_clock_however_the_wall_clock_steps() {
 #[test]
 fn an_entry_runs_its_plays_count_and_it_may_run_twice() {
     let mut s = state();
-    let first = s.shelf().selected().cloned().unwrap();
-    let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
+    let first = s.library_view().selected().cloned().unwrap();
+    let fx = tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
     assert!(launches(&fx, &first));
-    assert!(!launches(&tap(&mut s, Id::Shelf(ShelfId::Launch)), &first), "not twice while starting");
+    assert!(!launches(&tap(&mut s, Id::LibraryView(LibraryViewId::Launch)), &first), "not twice while starting");
     s.applied(Event::tick(1000));
     crate::testkit::start(&mut s, &first);
     let started = s.session().units().first().cloned().unwrap();
-    assert_eq!(tap(&mut s, Id::Shelf(ShelfId::Launch)), vec![], "running, no window yet: nothing to show");
+    assert_eq!(tap(&mut s, Id::LibraryView(LibraryViewId::Launch)), vec![], "running, no window yet: nothing to show");
     s.observed(vec![win_of(3, "game", &started)]);
-    assert_eq!(tap(&mut s, Id::Shelf(ShelfId::Launch)), vec![Effect::PadRoute(crate::PadRoute::Game)]);
+    assert_eq!(tap(&mut s, Id::LibraryView(LibraryViewId::Launch)), vec![Effect::PadRoute(crate::PadRoute::Game)]);
     assert_eq!(s.session().top_window().map(|w| w.id), Some(3), "running: shown");
     // Another launch, as from the dock's Open another, runs it twice until both end.
     assert!(launches(&launch_now(&mut s, &first), &first));
@@ -84,7 +84,7 @@ fn an_entry_runs_its_plays_count_and_it_may_run_twice() {
     assert!(fx.contains(&Effect::RecordPlay { entry: first.clone(), start: 1000, duration: 660 }), "{fx:?}");
     let g = s.entry(&first).unwrap();
     assert_eq!((g.plays.count, g.plays.seconds), (1, 660), "one play: from its first start to its last end");
-    assert!(s.shelf().library().collections.iter().any(|c| c.name == "Recent"));
+    assert!(s.library_view().library().collections.iter().any(|c| c.name == "Recent"));
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn entries_run_side_by_side() {
     let zelda = launch(&mut s, "zelda-lttp");
     assert_eq!(zelda, LaunchUnit { key: key("zelda-lttp"), secs: 100, n: 0 });
     tap(&mut s, entry("ff6"));
-    assert!(launches(&tap(&mut s, Id::Shelf(ShelfId::Launch)), "ff6"), "no choice: it starts");
+    assert!(launches(&tap(&mut s, Id::LibraryView(LibraryViewId::Launch)), "ff6"), "no choice: it starts");
     crate::testkit::start(&mut s, "ff6");
     assert_eq!(s.session().running_entries().len(), 2);
 }
@@ -226,7 +226,7 @@ fn a_launch_failure_after_it_was_given_up_says_nothing() {
     assert!(s.session().running("zelda-lttp").is_none());
     let mut s = files();
     s.applied(Event::tick(100));
-    tap(&mut s, Id::Shelf(ShelfId::Launch));
+    tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
     s.applied(Event::tick(100 + super::LAUNCH_WAIT));
     crate::testkit::launch_failed(&mut s, "browse:Home/notes.md");
     assert!(s.session().running("browse:Home/notes.md").is_none(), "no wait for a window");
@@ -268,7 +268,7 @@ fn a_game_steam_started_is_followed_as_a_launch_beside_the_others() {
 }
 
 #[test]
-fn a_steam_game_shelf_started_ends_by_the_launcher_not_its_windows() {
+fn a_steam_game_library_view_started_ends_by_the_launcher_not_its_windows() {
     let mut s = steam_ff6();
     launch(&mut s, "ff6");
     let ff6 = s.session().running("ff6").unwrap();
@@ -350,7 +350,7 @@ fn a_dialog_over_a_starting_launchs_window_is_not_found_again_and_again() {
 
 /// While a Steam game starts, Steam's main window stays behind but a dialog of Steam's, asking which
 /// version to launch, comes in front with Steam's group. That isn't remembered as having been in front:
-/// once the dialog is answered shelf comes back, and when the game quits, shelf, where it was launched
+/// once the dialog is answered the Library comes back, and when the game quits, the Library, where it was launched
 /// from, not Steam.
 #[test]
 fn a_launchers_dialog_comes_in_front_while_its_game_starts_and_goes_back_after() {
@@ -364,17 +364,17 @@ fn a_launchers_dialog_comes_in_front_while_its_game_starts_and_goes_back_after()
     launch(&mut s, "ff6");
     let main2 = win_of(6, "steam", &steam);
     s.observed(vec![main.clone(), main2.clone()]);
-    assert!(s.session().shelf_in_front(), "Steam's main windows stay behind");
+    assert!(s.session().library_view_in_front(), "Steam's main windows stay behind");
     let dialog = WindowFacts { role: crate::presentation::WindowRole::Dialog, ..win_of(7, "steam", &steam) };
     s.observed(vec![main.clone(), main2.clone(), dialog.clone()]);
     assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "its dialog in front");
     s.observed(vec![main.clone(), main2.clone()]);
-    assert!(s.session().shelf_in_front(), "answered: back to shelf, not Steam");
+    assert!(s.session().library_view_in_front(), "answered: back to the Library, not Steam");
     s.observed(vec![main.clone(), main2.clone(), dialog.clone()]);
     s.observed(vec![main.clone(), main2.clone(), dialog, win(8, "steam_app_620")]);
     assert_eq!(s.session().top_window().map(|w| w.id), Some(8), "the game in front");
     s.observed(vec![main.clone(), main2.clone()]);
-    assert!(s.session().shelf_in_front(), "the game quit: shelf, not Steam");
+    assert!(s.session().library_view_in_front(), "the game quit: the Library, not Steam");
 }
 
 /// A child window Steam had open before the launch (its friends list) doesn't keep Steam in front once
@@ -394,7 +394,7 @@ fn a_launchers_dialog_answered_goes_back_though_the_launcher_has_other_child_win
     s.observed(vec![main.clone(), friends.clone(), dialog]);
     assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "its dialog in front");
     s.observed(vec![main, friends]);
-    assert!(s.session().shelf_in_front(), "answered: back to shelf, not Steam's friends list");
+    assert!(s.session().library_view_in_front(), "answered: back to the Library, not Steam's friends list");
 }
 
 /// Another tool than the Device view is asked of the system; an id the library doesn't have plays
@@ -474,7 +474,7 @@ fn quit_and_force_kill_of_an_entry_not_running_do_nothing() {
     assert_eq!(s.applied(Event::Entry("zelda-lttp".into(), EntryAct::ForceKill)), vec![]);
 }
 
-/// The program in force is the focused window's owner; with shelf or another window in front it is
+/// The program in force is the focused window's owner; with the Library or another window in front it is
 /// kept while it runs; once it ends, the entry started last that runs takes over, then none.
 #[test]
 fn the_program_in_force_falls_back_to_the_last_started() {
@@ -489,7 +489,7 @@ fn the_program_in_force_falls_back_to_the_last_started() {
     s.applied(crate::WindowEvent::Activate(3).into());
     assert_eq!(program(&s).as_deref(), Some("zelda-lttp"), "in front");
     s.applied(Event::Home);
-    assert_eq!(program(&s).as_deref(), Some("zelda-lttp"), "kept with shelf in front");
+    assert_eq!(program(&s).as_deref(), Some("zelda-lttp"), "kept with the Library in front");
     s.observed(vec![foot(), zelda_window, ff6_window.clone()]);
     assert_eq!(program(&s).as_deref(), Some("zelda-lttp"), "kept with another window in front");
     s.observed(vec![foot(), ff6_window]);
@@ -522,8 +522,8 @@ fn files() -> State {
 #[test]
 fn a_file_that_is_a_library_entry_opens_as_it() {
     let mut s = files();
-    s.applied(ShelfEvent::ListStep(1).into());
-    let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
+    s.applied(LibraryViewEvent::ListStep(1).into());
+    let fx = tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
     assert!(launches(&fx, "zelda-lttp"), "{fx:?}");
 }
 
@@ -533,7 +533,7 @@ fn a_file_handed_to_another_program_runs_by_its_window() {
     s.applied(Event::tick(100));
     let other = win_of(5, "steam", &launch_of("steam"));
     s.observed(vec![other.clone()]);
-    let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
+    let fx = tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
     let ws = fx.iter().find_map(|e| match e {
         Effect::Launch { unit, .. } => Some(group_of(unit)),
         _ => None,
@@ -551,21 +551,21 @@ fn a_file_handed_to_another_program_runs_by_its_window() {
     s.observed(vec![other.clone(), app]);
     s.applied(Event::tick(200));
     assert!(s.session().running("browse:Home/notes.md").is_some(), "runs while its window is open");
-    assert_eq!(s.session().app_showing("browse:Home/notes.md", s.shelf().library()).map(|g| &*g.id), Some("desktop:foot"), "its picture: the app's");
+    assert_eq!(s.session().app_showing("browse:Home/notes.md", s.library_view().library()).map(|g| &*g.id), Some("desktop:foot"), "its picture: the app's");
     // With its file gone from the library meanwhile, it is still shown by what it was.
     s.applied(Event::Library(Box::new(clamshell_library::demo::library())));
-    assert!(s.shelf().entry("browse:Home/notes.md").is_none());
+    assert!(s.library_view().entry("browse:Home/notes.md").is_none());
     assert_eq!(s.entry("browse:Home/notes.md").map(|g| g.title.as_str()), Some("/h/notes.md"));
-    s.applied(Event::Library(Box::new(files().shelf().library().clone())));
+    s.applied(Event::Library(Box::new(files().library_view().library().clone())));
     s.observed(vec![other.clone()]);
     s.applied(Event::tick(200 + REOPEN_SECS + 1));
     assert!(s.session().running("browse:Home/notes.md").is_none(), "its window closed: ended");
     // Another launch that never shows a window is gone after a while.
-    // (The library read again left shelf on another collection: the file is selected first.)
-    while s.shelf().selected().map(|g| &**g) != Some("browse:Home/notes.md") {
-        s.applied(ShelfEvent::CollectionStep(1).into());
+    // (The library read again left the Library on another collection: the file is selected first.)
+    while s.library_view().selected().map(|g| &**g) != Some("browse:Home/notes.md") {
+        s.applied(LibraryViewEvent::CollectionStep(1).into());
     }
-    assert!(launches(&tap(&mut s, Id::Shelf(ShelfId::Launch)), "browse:Home/notes.md"));
+    assert!(launches(&tap(&mut s, Id::LibraryView(LibraryViewId::Launch)), "browse:Home/notes.md"));
     crate::testkit::launch_failed(&mut s, "browse:Home/notes.md");
     s.applied(Event::tick(203 + HANDOFF));
     assert!(s.session().running("browse:Home/notes.md").is_some());
@@ -643,10 +643,10 @@ fn launchers() -> State {
     State::new(Init { library: Some(library), ..init() })
 }
 
-/// A Heroic game launched from shelf is launched as a launch of Heroic's entry, which starts Heroic
+/// A Heroic game launched from the Library is launched as a launch of Heroic's entry, which starts Heroic
 /// without its window and hands it the game: Heroic and the game are entries of their own. The game runs by
 /// its window, which Heroic's mark makes the game's though it is in Heroic's unit; it comes in front, its
-/// play is the game's, and when it closes shelf comes back while Heroic runs on.
+/// play is the game's, and when it closes the Library comes back while Heroic runs on.
 #[test]
 fn a_heroic_game_is_launched_by_heroic_and_runs_as_its_own_entry() {
     let mut s = launchers();
@@ -664,7 +664,7 @@ fn a_heroic_game_is_launched_by_heroic_and_runs_as_its_own_entry() {
     let game = s.session().running("desktop:Pattern Game").unwrap();
     assert_eq!(game.origin, Origin::Windows { since: 1000, until: 1000 + LAUNCHER_WAIT });
     let pattern = s.entry("desktop:Pattern Game").cloned().unwrap();
-    let starts_in = |s: &State| s.session().starts_in(&pattern, s.shelf().library());
+    let starts_in = |s: &State| s.session().starts_in(&pattern, s.library_view().library());
     assert!(s.session().starting("desktop:Pattern Game"));
     assert_eq!(starts_in(&s), Some(("Heroic", false)), "Heroic first");
     s.applied(Event::Units(vec![heroic.clone()]));
@@ -681,7 +681,7 @@ fn a_heroic_game_is_launched_by_heroic_and_runs_as_its_own_entry() {
     assert!(!s.session().starting("desktop:Pattern Game"), "started");
     s.applied(Event::tick(1300));
     s.observed(vec![]);
-    assert!(s.session().shelf_in_front(), "back where it was launched from");
+    assert!(s.session().library_view_in_front(), "back where it was launched from");
     let fx = s.applied(Event::tick(1300 + REOPEN_SECS + 1));
     assert!(fx.contains(&Effect::RecordPlay { entry: "desktop:Pattern Game".into(), start: 1000, duration: 300 + REOPEN_SECS + 1 }), "{fx:?}");
     assert!(s.session().running("desktop:com.heroicgameslauncher.hgl").is_some(), "Heroic runs on");
@@ -713,7 +713,7 @@ fn a_game_handed_over_to_its_running_launcher_is_known_by_the_launchers_mark() {
     assert_eq!(s.session().window(7).and_then(|w| w.group.clone()), Some(Group::entry(&key("desktop:net.lutris.cave-1"))), "the game's, not Lutris's");
     assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "in front");
     s.observed(vec![win_of(5, "net.lutris.Lutris", &lutris)]);
-    assert!(s.session().shelf_in_front(), "back to shelf, where it was launched from");
+    assert!(s.session().library_view_in_front(), "back to the Library, where it was launched from");
 }
 
 /// A game whose launcher ran it in the launch's own unit, as Lutris does when it isn't running, ends with
@@ -790,7 +790,7 @@ fn a_launch_runs_while_a_unit_of_it_is_listed() {
     assert!(!s.applied(Event::Units(vec![])).iter().any(|e| matches!(e, Effect::RecordPlay { .. })), "once");
 }
 
-/// Show, as from shelf, of an entry whose windows are all on the bottom screen shows them there, as a
+/// Show, as from the Library, of an entry whose windows are all on the bottom screen shows them there, as a
 /// tap on its dock tile does, and doesn't focus its empty group on the main screen.
 #[test]
 fn show_of_an_entry_whose_windows_are_all_below_shows_them_there() {
@@ -803,12 +803,12 @@ fn show_of_an_entry_whose_windows_are_all_below_shows_them_there() {
     show(&mut s, "zelda-lttp");
     assert!(s.bottom().shows_windows(s.session()));
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(3));
-    assert!(s.session().shelf_in_front());
+    assert!(s.session().library_view_in_front());
     s.applied(Event::HardwareKey(crate::HardwareKey::BottomView));
     assert!(!s.bottom().shows_windows(s.session()));
     tap(&mut s, Id::Dock(DockId::Entry(0)));
     assert!(s.bottom().shows_windows(s.session()), "the dock tile's tap: the same");
-    assert!(s.session().shelf_in_front());
+    assert!(s.session().library_view_in_front());
     // The bottom screen turned off by hand comes on again for them.
     s.applied(Event::HardwareKey(crate::HardwareKey::BottomPower));
     assert!(s.bottom_off());
@@ -835,7 +835,7 @@ fn the_settings_follow_the_front() {
     in_front(&mut s, win_of(2, "zelda3", &zelda));
     assert_eq!(id(&s).as_deref(), Some("zelda-lttp"), "the entry in front");
     s.applied(Event::Home);
-    assert_eq!(id(&s).as_deref(), Some("ff6"), "shelf in front: its selection");
+    assert_eq!(id(&s).as_deref(), Some("ff6"), "the Library in front: its selection");
     in_front(&mut s, win(3, "foot"));
     assert_eq!(s.panel().context(), None, "a window of none of ours: the defaults");
 }
@@ -895,7 +895,7 @@ fn a_files_window_up_before_its_launch_ended_is_the_files() {
     let mut s = files();
     s.applied(Event::tick(100));
     s.observed(vec![]);
-    let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
+    let fx = tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
     let ws = fx.iter().find_map(|e| match e {
         Effect::Launch { unit, .. } => Some(group_of(unit)),
         _ => None,

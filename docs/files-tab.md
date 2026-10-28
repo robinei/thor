@@ -40,7 +40,7 @@ entry's would be: a folder's `poster`, `cover` or `folder` image, a file's `<nam
 itself, a video's frame (read once in the background, kept with the scanned videos' frames); else a folder
 or file icon. The details show a file's size and age.
 
-Typing on the bottom screen's keyboard with shelf in front narrows the list to the names starting with
+Typing on the bottom screen's keyboard with the Library in front narrows the list to the names starting with
 what is typed, here as in every tab.
 
 A file that is a library entry's (a ROM, a film the sources scanned) opens as that entry: its plays,
@@ -51,7 +51,7 @@ Recent, where mpv left it. Any other file opens with the first `sources` entry w
 `xdg-open` often hands the file to a program not ours (an app's running instance, D-Bus activation) and
 ends at once, so nothing of the launch is left to follow. Such a launch runs on by its windows, as a game
 Steam runs does: a new window of no launch of ours that comes up within 15 seconds is put in its
-group (never left on shelf's), and it ends when that window closes (or when none came). Its dock tile
+group (never left on the Library's), and it ends when that window closes (or when none came). Its dock tile
 shows the picture of the app whose window it is (the desktop file named by the window's app id, or whose
 program it is), for display only.
 
@@ -114,10 +114,10 @@ Files tab shows the home Trash only).
 
 - **Listings:** opening a browsed folder sends `Effect::Browse(folder)`; the browse thread lists it and
   sends `FilesEvent::Listed`, then watches it (inotify) and lists it again when it changes; leaving it
-  (out of it, another tab) drops the watch. The shelf splices a listing into the library
+  (out of it, another tab) drops the watch. The Library splices a listing into the library
   (`Library::set_listing`): entries there before keep their place in the library's list (and their own
   listings), those gone free theirs for the next.
-- **Rescans** replace the library; the shelf keeps the listings it was sent and applies them to the new
+- **Rescans** replace the library; the Library keeps the listings it was sent and applies them to the new
   library (those whose folder is still there), so a rescan keeps the place in a browsed folder.
 - **Operations** go to the files thread (`Effect::Files`), one after another.
 - **Mounts:** the browse thread reads `/proc/self/mounts` as it polls; a change under `/run/media` asks

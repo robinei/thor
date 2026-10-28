@@ -204,7 +204,7 @@ struct Sent {
     freezer_restarted: bool,
     /// Keys ended (not forced) since their last quit or launch.
     ended: Vec<String>,
-    /// The focus ring was shown by a hold on shelf's entry, with the pad elsewhere.
+    /// The focus ring was shown by a hold on the Library's entry, with the pad elsewhere.
     ring_by_hold: bool,
     /// Launches of a launcher's entry that hand it a game (`launchers::headless`), while they wait.
     handovers: Vec<LaunchUnit>,
@@ -259,13 +259,16 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
             ]
             .map(Id::Device),
         ),
-        TopView::Shelf if s.session().shelf_in_front() => {
-            let sh = s.shelf();
-            ids.extend(sh.list().iter().filter_map(|&i| sh.library().entries.get(i)).map(|g| Id::Shelf(ShelfId::Entry(g.id.clone()))));
-            ids.extend((0..sh.library().collections.len() as u16).map(|i| Id::Shelf(ShelfId::Collection(i))));
-            ids.extend([ShelfId::Launch, ShelfId::Up, ShelfId::Favourite, ShelfId::Pin, ShelfId::Continue, ShelfId::Enqueue].map(Id::Shelf));
+        TopView::LibraryView if s.session().library_view_in_front() => {
+            let sh = s.library_view();
+            ids.extend(sh.list().iter().filter_map(|&i| sh.library().entries.get(i)).map(|g| Id::LibraryView(LibraryViewId::Entry(g.id.clone()))));
+            ids.extend((0..sh.library().collections.len() as u16).map(|i| Id::LibraryView(LibraryViewId::Collection(i))));
+            ids.extend(
+                [LibraryViewId::Launch, LibraryViewId::Up, LibraryViewId::Favourite, LibraryViewId::Pin, LibraryViewId::Continue, LibraryViewId::Enqueue]
+                    .map(Id::LibraryView),
+            );
         }
-        TopView::Shelf => {}
+        TopView::LibraryView => {}
     }
     if s.bottom().editor().is_some() {
         ids.extend([EditorId::Save, EditorId::Cancel].map(Id::Editor));
@@ -382,7 +385,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
 }
 
 fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option<Event> {
-    let library = s.shelf().library();
+    let library = s.library_view().library();
     Some(match rng.below(100) {
         // Time passes, mostly a little.
         0..=14 => {
@@ -417,16 +420,16 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 press.into()
             }
         }
-        // The pad in shelf.
-        40..=43 if !(s.pad().route() == PadRoute::Ui && s.pad().on_top()) => ShelfEvent::Rows(3 + rng.below(6)).into(),
+        // The pad in the Library.
+        40..=43 if !(s.pad().route() == PadRoute::Ui && s.pad().on_top()) => LibraryViewEvent::Rows(3 + rng.below(6)).into(),
         40..=43 => match rng.below(7) {
-            0 => ShelfEvent::ListStep(rng.below(5) as i32 - 2).into(),
-            1 => ShelfEvent::CollectionStep(rng.below(3) as i32 - 1).into(),
-            2 => ShelfEvent::Rows(3 + rng.below(6)).into(),
-            3 => ShelfEvent::ToggleFavourite.into(),
-            4 => ShelfEvent::ClearFilter.into(),
-            5 => ShelfEvent::TogglePin.into(),
-            _ => ShelfEvent::Continue.into(),
+            0 => LibraryViewEvent::ListStep(rng.below(5) as i32 - 2).into(),
+            1 => LibraryViewEvent::CollectionStep(rng.below(3) as i32 - 1).into(),
+            2 => LibraryViewEvent::Rows(3 + rng.below(6)).into(),
+            3 => LibraryViewEvent::ToggleFavourite.into(),
+            4 => LibraryViewEvent::ClearFilter.into(),
+            5 => LibraryViewEvent::TogglePin.into(),
+            _ => LibraryViewEvent::Continue.into(),
         },
         // Lists scrolled and laid out.
         44..=45 => {
@@ -763,9 +766,9 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             // The files thread's progress and ends, for the operations sent.
             7 if w.files > 0 => {
                 w.files -= 1;
-                Event::Files(crate::shelf::files::FilesEvent::Done(if rng.one_in(3) { Err("no room".into()) } else { Ok("done".into()) }))
+                Event::Files(crate::library_view::files::FilesEvent::Done(if rng.one_in(3) { Err("no room".into()) } else { Ok("done".into()) }))
             }
-            7 => Event::Files(crate::shelf::files::FilesEvent::Busy { what: "Copying a".into(), fraction: 0.5 }),
+            7 => Event::Files(crate::library_view::files::FilesEvent::Busy { what: "Copying a".into(), fraction: 0.5 }),
             // Quit (SIGTERM): the state saves; the run goes on, as if ClamShell were started again.
             8 if rng.one_in(10) => Event::Quit,
             // What the metadata thread found for an entry.
@@ -977,7 +980,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         PadRoute::Mouse
     } else {
         match (s.session().front(), s.bottom().tab()) {
-            (Front::Shelf, _) => PadRoute::Ui,
+            (Front::LibraryView, _) => PadRoute::Ui,
             (_, Tab::Keyboard) => PadRoute::Keys,
             _ => PadRoute::Game,
         }
@@ -993,17 +996,17 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         ensure!(route == PadRoute::Ui, "3: stepping (a dock entry or the overview) but the route is {route:?}");
     }
     if claimant == PadRoute::Ui && !stepping {
-        ensure!(route == if listening { PadRoute::Listen } else { PadRoute::Ui }, "3: shelf claims, route {route:?}");
+        ensure!(route == if listening { PadRoute::Listen } else { PadRoute::Ui }, "3: the Library claims, route {route:?}");
     }
     ensure!(route == claimant || route == PadRoute::Ui || route == PadRoute::Listen, "3: route {route:?}, claimant's {claimant:?}");
     let again = s.reconcile_pad();
     ensure!(again.is_none(), "3: reconciling again changes the route to {again:?}");
-    // A hold on shelf's selected entry shows the ring on its actions whatever has the pad, since the ring
+    // A hold on the Library's selected entry shows the ring on its actions whatever has the pad, since the ring
     // is what shows the actions are open. It stays until the next touch hides it, though the focus may
     // move meanwhile (the Device view opening puts it on its first row).
     if !s.pointer().show_focus() {
         sent.ring_by_hold = false;
-    } else if route != PadRoute::Ui && s.shelf().in_actions(s.pointer()) {
+    } else if route != PadRoute::Ui && s.library_view().in_actions(s.pointer()) {
         sent.ring_by_hold = true;
     }
     ensure!(!s.pointer().show_focus() || route == PadRoute::Ui || sent.ring_by_hold, "3: the focus ring shows with route {route:?}");
@@ -1065,19 +1068,19 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         ensure!(items.iter().any(|i| i.id == r.id), "5: {} runs off the dock", r.id);
     }
 
-    // 6. Shelf.
-    let shelf = s.shelf();
-    let list = shelf.list();
-    if !shelf.library().collections.is_empty() {
-        ensure!(shelf.current() < shelf.library().collections.len(), "6: collection {} out of range", shelf.current());
+    // 6. The Library.
+    let library_view = s.library_view();
+    let list = library_view.list();
+    if !library_view.library().collections.is_empty() {
+        ensure!(library_view.current() < library_view.library().collections.len(), "6: collection {} out of range", library_view.current());
     }
-    // (The selected entry is the one at the cursor: `Shelf::selected` is worked out so.)
+    // (The selected entry is the one at the cursor: `LibraryView::selected` is worked out so.)
     if !list.is_empty() {
-        let cursor = shelf.cursor().index;
+        let cursor = library_view.cursor().index;
         ensure!(cursor < list.len(), "6: cursor {cursor} past {}", list.len());
     }
-    let filter = shelf.filter().to_lowercase();
-    for g in list.iter().filter_map(|&i| shelf.library().entries.get(i)) {
+    let filter = library_view.filter().to_lowercase();
+    for g in list.iter().filter_map(|&i| library_view.library().entries.get(i)) {
         ensure!(g.title.to_lowercase().starts_with(&filter), "6: {} listed for {filter:?}", g.id);
     }
 
@@ -1205,7 +1208,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
 fn run(seed: u64, events: usize) -> Result<(), String> {
     let mut rng = Rng(seed);
     // As on the device, the library comes after the start, now and then; otherwise it is there from the
-    // start, so that the runs aren't spent on an empty shelf.
+    // start, so that the runs aren't spent on an empty Library.
     let unread = rng.one_in(4);
     let first_start = rng.one_in(3);
     let init = Init { library: (!unread).then(library), keymaps: crate::keymap::Keymaps::initial(), device_session: true, first_start, ..Init::default() };

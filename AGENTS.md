@@ -60,7 +60,7 @@ readings, ticks, windows, units ─▶ Event ───┤
 
 ## The state (crates/state)
 
-- `State` (lib.rs) holds the areas (shelf, session, bottom, radios, ...) and coordinates them; its
+- `State` (lib.rs) holds the areas (the Library, session, bottom, radios, ...) and coordinates them; its
   `impl State` is split by subject into the files of `apply/` (`incoming.rs`, `launching.rs`,
   `restart.rs`, ...). An area owns its fields privately, with its rules and the getters the UI reads.
 - A rule that needs another area's data gets it as a parameter; a change another area alone owns is
@@ -149,7 +149,7 @@ commits of this repository still build after a rebase.
 
 ## Commits and publishing
 
-Short imperative subjects scoped by area (`state/shelf: ...`), one concern per commit. Push, and publish
+Short imperative subjects scoped by area (`state/library_view: ...`), one concern per commit. Push, and publish
 packages (`tools/repo/repo.sh publish`), only when asked. The device is maintained on the device
 (`.claude/commands/maintain.md`), from the published packages.
 

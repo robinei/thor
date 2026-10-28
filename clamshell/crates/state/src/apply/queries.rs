@@ -10,7 +10,7 @@ impl State {
     /// A library entry by its id. An entry that is still running after leaving the library, because its
     /// file was deleted, is returned as it was.
     pub fn entry(&self, id: &str) -> Option<&Entry> {
-        self.session.entry(self.shelf.library(), id)
+        self.session.entry(self.library_view.library(), id)
     }
 
     /// Whether the dock menu offers Open another for `id`. It does when `id` is running and another launch
@@ -42,7 +42,7 @@ impl State {
 
     /// The settings panel as it is now (see [`Panel::new`]).
     pub fn panel(&self) -> Panel<'_> {
-        Panel::new(&self.session, &self.shelf, &self.prefs, &self.keymapping, &self.curving)
+        Panel::new(&self.session, &self.library_view, &self.prefs, &self.keymapping, &self.curving)
     }
 
     /// Whether the second screen is dark (see [`crate::Bottom::dark`]).
@@ -81,17 +81,17 @@ impl State {
         self.keymapping.screen_in(self.bottom.tab()).map(|_| crate::Id::Profile(ProfileKind::Keymap, ProfileId::Back))
     }
 
-    /// Where shelf and the second screen are, to come back to.
+    /// Where the Library and the second screen are, to come back to.
     pub(crate) fn resume(&self) -> Resume {
-        Resume::of(&self.shelf, &self.bottom)
+        Resume::of(&self.library_view, &self.bottom)
     }
 
-    /// A hash of the place as [`State::resume`] saves it: shelf's (see `Shelf::hash_place`) and the second
+    /// A hash of the place as [`State::resume`] saves it: the Library's (see `LibraryView::hash_place`) and the second
     /// screen's chosen tab.
     pub(crate) fn place_hash(&self) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::hash::DefaultHasher::new();
-        self.shelf.hash_place(&mut hasher);
+        self.library_view.hash_place(&mut hasher);
         self.bottom.chosen_tab().hash(&mut hasher);
         hasher.finish()
     }

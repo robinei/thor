@@ -107,7 +107,7 @@ fn it_closes_with_its_group_out_of_front_or_one_window_left() {
     let mut s = running(&[(3, None), (4, None)]);
     tap(&mut s, dock(0));
     s.applied(Event::Home);
-    assert_eq!(s.session().overview(), None, "shelf in front");
+    assert_eq!(s.session().overview(), None, "the Library in front");
     s.applied(crate::WindowEvent::Activate(4).into());
     tap(&mut s, dock(0));
     s.applied(crate::WindowEvent::Closed(3).into());

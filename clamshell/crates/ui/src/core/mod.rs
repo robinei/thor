@@ -16,7 +16,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::time::Instant;
 
 use clamshell_state::bottom::touch::{Contact, Pointing};
-use clamshell_state::{Effect, Event, Id, ShelfEvent, State};
+use clamshell_state::{Effect, Event, Id, LibraryViewEvent, State};
 
 use crate::Error;
 use crate::gfx::fonts::Found;
@@ -95,7 +95,7 @@ pub struct Core {
     /// The events waiting while another is handled.
     queue: EventQueue,
     /// What the frames recorded since the last [`Core::frames_done`] report: a changed row count of
-    /// shelf's list, and the lists' rows.
+    /// the Library's list, and the lists' rows.
     rows: Option<usize>,
     lists: Vec<Event>,
 }
@@ -296,7 +296,7 @@ impl Core {
         let out = s.frames.record(at, layer, &self.state, &mut self.fonts, &mut self.images);
         s.stale = false;
         s.body = out.touchpad_area;
-        self.rows = self.rows.or(out.list_rows.filter(|&rows| rows != self.state.shelf().rows()));
+        self.rows = self.rows.or(out.list_rows.filter(|&rows| rows != self.state.library_view().rows()));
         self.lists.extend(render::list_changes(&self.state, &out));
         if whole {
             s.frames.redraw_all(Bounds::of_size(size_px));
@@ -341,7 +341,7 @@ impl Core {
     /// row count follows the layout, and the state keeps the selection within it.
     pub fn frames_done(&mut self) {
         if let Some(rows) = self.rows.take() {
-            self.handle(Event::Shelf(ShelfEvent::Rows(rows)));
+            self.handle(Event::LibraryView(LibraryViewEvent::Rows(rows)));
         }
         let lists = std::mem::take(&mut self.lists);
         self.handle_all(lists);
@@ -398,13 +398,13 @@ mod tests {
                 return;
             }
             while let Some(event) = self.queue.next() {
-                let Event::Shelf(ShelfEvent::Rows(n)) = event else {
+                let Event::LibraryView(LibraryViewEvent::Rows(n)) = event else {
                     continue;
                 };
                 self.log.push(format!("apply {n}"));
                 if n < 3 {
-                    self.handle(Event::Shelf(ShelfEvent::Rows(n + 1)));
-                    self.handle(Event::Shelf(ShelfEvent::Rows(n + 10)));
+                    self.handle(Event::LibraryView(LibraryViewEvent::Rows(n + 1)));
+                    self.handle(Event::LibraryView(LibraryViewEvent::Rows(n + 10)));
                 }
                 self.log.push(format!("effects {n}"));
             }
@@ -414,11 +414,11 @@ mod tests {
     #[test]
     fn an_event_emitted_while_handling_waits_for_the_effects() {
         let mut app = Fake { queue: EventQueue::default(), log: Vec::new() };
-        app.handle(Event::Shelf(ShelfEvent::Rows(1)));
+        app.handle(Event::LibraryView(LibraryViewEvent::Rows(1)));
         let expected = ["apply 1", "effects 1", "apply 2", "effects 2", "apply 11", "effects 11", "apply 3", "effects 3", "apply 12", "effects 12"];
         assert_eq!(app.log, expected);
         // Done, so the next event is handled at once.
-        app.handle(Event::Shelf(ShelfEvent::Rows(20)));
+        app.handle(Event::LibraryView(LibraryViewEvent::Rows(20)));
         assert_eq!(app.log.get(10..), Some(&["apply 20".to_owned(), "effects 20".to_owned()][..]));
     }
 }

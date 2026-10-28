@@ -166,12 +166,12 @@ mod tests {
         assert_eq!(LaunchUnit::parse("clamshell-run-zelda_3fa2b1"), None, "a key alone is no unit");
         assert_eq!(LaunchUnit::key_of("clamshell-run-zelda_3fa2b1-1234-7"), Some("zelda_3fa2b1"));
         assert_eq!(LaunchUnit::key_of("clamshell-run-zelda_3fa2b1-1234-7.scope"), Some("zelda_3fa2b1"));
-        assert_eq!(LaunchUnit::key_of("clamshell-shelf"), None);
+        assert_eq!(LaunchUnit::key_of("clamshell-the Library"), None);
         assert_eq!(LaunchUnit::from_unit("clamshell-run-x_1-5-0.service").map(|i| i.key).as_deref(), Some("x_1"));
         assert_eq!(LaunchUnit::from_unit("clamshell-run-x_1-5-0.scope").map(|i| i.key).as_deref(), Some("x_1"), "taken in");
         assert!(!LaunchUnit::is_service("clamshell-run-x_1-5-0.service"), "a launch is no system service");
-        assert_eq!(LaunchUnit::from_unit("clamshell-shelf.scope"), None);
+        assert_eq!(LaunchUnit::from_unit("clamshell-the Library.scope"), None);
         assert_eq!(LaunchUnit::parse("1"), None);
-        assert_eq!("clamshell-shelf".parse::<LaunchUnit>(), Err(NotOurs));
+        assert_eq!("clamshell-the Library".parse::<LaunchUnit>(), Err(NotOurs));
     }
 }

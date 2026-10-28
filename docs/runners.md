@@ -1,6 +1,6 @@
 # Library: places, runners, sources
 
-Everything shelf starts is an item opened by a runner: `Zelda.sfc` by SNES (RetroArch with snes9x),
+Everything the Library starts is an item opened by a runner: `Zelda.sfc` by SNES (RetroArch with snes9x),
 `Alien.mkv` by Video (mpv), `README.md` by Text, Spotify by Desktop (its desktop file's command), Hades by
 Steam. library.json declares three things, and ClamShell shows nothing it doesn't declare:
 

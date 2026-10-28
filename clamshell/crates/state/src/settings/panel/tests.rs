@@ -83,10 +83,10 @@ fn the_panel_offers_the_items_levels() {
     let mut s = State::new(Init { library: Some(library), ..init() });
     let levels = |s: &State| s.panel().levels().iter().flatten().map(|(level, l)| (*level, l.title.to_owned())).collect::<Vec<_>>();
     assert_eq!(levels(&s), [(SettingsLevel::Runner, "A Link to the Past".to_owned())], "a game with no runner: its own, as its runner");
-    tap(&mut s, Id::Shelf(ShelfId::Collection(2)));
+    tap(&mut s, Id::LibraryView(LibraryViewId::Collection(2)));
     assert_eq!(levels(&s), [(SettingsLevel::Runner, "Video".to_owned())], "a series: its runner's only");
-    tap(&mut s, Id::Shelf(ShelfId::Launch));
-    tap(&mut s, Id::Shelf(ShelfId::Launch));
+    tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
+    tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
     let title = "1. The Shores of the Cosmic Ocean".to_owned();
     assert_eq!(levels(&s), [(SettingsLevel::Runner, "Video".to_owned()), (SettingsLevel::Content, title.clone())]);
     assert_eq!(s.panel().editing().map(|p| p.title), Some(title.as_str()), "its own by default");
@@ -121,7 +121,7 @@ fn a_runner_gets_its_keymap_once() {
     assert_eq!(s.prefs().settings().overrides_of("runner:text").get(Setting::Keymap), own);
     // With Default chosen for it instead, it is left that way, also when the library is read again.
     s.settings_mut().set(Some(&runner_key("text")), Setting::Keymap, Some(0));
-    let fx = s.applied(Event::Library(Box::new(s.shelf().library().clone())));
+    let fx = s.applied(Event::Library(Box::new(s.library_view().library().clone())));
     assert!(!fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))));
 }
 
@@ -136,7 +136,7 @@ fn a_runners_keymap_given_while_its_item_runs_is_applied() {
     let zelda = launch(&mut s, "zelda-lttp");
     s.observed(vec![win_of(3, "zelda3", &zelda)]);
     assert_eq!(s.session().program().map(|p| &**p), Some("zelda-lttp"));
-    let mut library = s.shelf().library().clone();
+    let mut library = s.library_view().library().clone();
     library.runner_keymaps = vec![(runner_key("text"), "viewer".into())];
     let fx = s.applied(Event::Library(Box::new(library)));
     let own = s.keymapping().keymaps().own_of("runner:text").map(|k| k.id);
@@ -239,7 +239,7 @@ fn the_launch_carries_the_games_settings_and_environment() {
     settings.set_env(Some("zelda-lttp".into()), "B=3 'C=x y'");
     let mut s = state_with(&settings);
     taps(&mut s, Setting::FpsCap, 2);
-    let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
+    let fx = tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
     let Some(Effect::Launch { settings, env, .. }) = fx.iter().find(|e| matches!(e, Effect::Launch { .. })) else { panic!("{fx:?}") };
     assert_eq!(settings.get(Setting::FpsCap), 40);
     let pairs: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
@@ -264,7 +264,11 @@ fn a_running_game_takes_changes_at_once() {
     let mut fx = end(&mut s, "zelda-lttp");
     fx.extend(s.observed(vec![]));
     let fx: Vec<Effect> = fx.into_iter().filter(|e| !matches!(e, Effect::RecordPlay { .. })).collect();
-    assert_eq!(fx, vec![Effect::Apply { entry: None, settings: s.prefs().settings().global }, Effect::PadRoute(PadRoute::Ui)], "and the pad back to shelf");
+    assert_eq!(
+        fx,
+        vec![Effect::Apply { entry: None, settings: s.prefs().settings().global }, Effect::PadRoute(PadRoute::Ui)],
+        "and the pad back to the Library"
+    );
 }
 
 #[test]

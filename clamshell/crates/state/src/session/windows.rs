@@ -50,8 +50,8 @@ pub(crate) enum WindowCommand {
     FocusWindow(i64),
     /// Give a client keyboard focus without changing the selected content on either screen.
     KeyboardFocus(i64),
-    /// Bring shelf to the front.
-    ShowShelf,
+    /// Bring the Library to the front.
+    ShowLibraryView,
     /// Move a window to the bottom screen and show it there, returning the one there to its group. The
     /// top screen keeps the keyboard.
     Down(i64),
@@ -67,10 +67,10 @@ impl Session {
         match &command {
             WindowCommand::KeyboardFocus(id) => self.keys_to(Some(*id)),
             WindowCommand::FocusWindow(id) => self.select_top(*id),
-            WindowCommand::ShowShelf => {
+            WindowCommand::ShowLibraryView => {
                 self.keys = super::Keys::Top;
                 self.top = None;
-                self.remember_in_front(super::InFront::Shelf);
+                self.remember_in_front(super::InFront::LibraryView);
             }
             WindowCommand::Down(id) => {
                 // A dialog goes with its main window: the stack goes down (see [`Session::stack`]).
