@@ -22,12 +22,17 @@ pub(super) fn draw(f: &mut Frame, title: &str, save: &str) {
     let Some(editor) = f.s.bottom().editor() else {
         return;
     };
-    field(f, title, &editor.text, (Id::Editor(EditorId::Cancel), "Cancel"), (Id::Editor(EditorId::Save), save));
+    field_with(f, title, &editor.text, (Id::Editor(EditorId::Cancel), "Cancel"), (Id::Editor(EditorId::Save), save), editor.snippets());
 }
 
 /// Draws the editor's layout: `title`, a field with `text` and a caret, and the two buttons. `cancel` and
 /// `save` give each button's target and label. The keyboard goes below.
 pub(super) fn field(f: &mut Frame, title: &str, text: &str, cancel: (Id, &str), save: (Id, &str)) {
+    field_with(f, title, text, cancel, save, &[]);
+}
+
+/// [`field`], with a row of `snippets` between the field and the keyboard, each a key that types it in.
+fn field_with(f: &mut Frame, title: &str, text: &str, cancel: (Id, &str), save: (Id, &str), snippets: &[&str]) {
     let body = f.body();
     let pad = f.pad();
     let area = style::content(body).shifted(0.0, pad * 0.5);
@@ -53,6 +58,16 @@ pub(super) fn field(f: &mut Frame, title: &str, text: &str, cancel: (Id, &str), 
     let ok = buttons.cell(2, 1, pad * 0.5, 1);
     f.text_button(save_id, ok, ok.h * BUTTON_TEXT, Tone::Fn, save_label, Align::Center);
 
-    let keys_y = field.y + field.h + pad;
+    let mut keys_y = field.y + field.h + pad;
+    if !snippets.is_empty() {
+        let line = Rect::new(body.x + pad * 0.5, keys_y, body.w - pad, field.h * 0.8);
+        for (i, snippet) in snippets.iter().enumerate() {
+            let cell = line.cell(snippets.len().max(4), 1, pad * 0.5, i);
+            // A space shows as a word, being a key of its own here.
+            let label = if *snippet == " " { "space" } else { snippet };
+            f.text_button(Id::Editor(EditorId::Insert(i as u8)), cell, cell.h * BUTTON_TEXT, Tone::Fn, label, Align::Center);
+        }
+        keys_y += line.h + pad * 0.5;
+    }
     keyboard::draw(f, Rect::new(body.x, keys_y, body.w, body.y + f.body().h - keys_y));
 }

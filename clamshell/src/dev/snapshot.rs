@@ -638,6 +638,9 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot("library-edit-sources.png", Top, vec![tap(edit(EditId::Sources))]),
                 shot("library-edit-form.png", Top, vec![tap(edit(EditId::Open)), tap(edit(EditId::Field(3)))]),
                 shot("library-edit-runners.png", Top, vec![tap(edit(EditId::Cancel)), tap(edit(EditId::Runners))]),
+                // A runner's command, typed with its placeholders beside the keyboard.
+                shot("library-edit-command.png", Bottom, vec![tap(edit(EditId::Open)), tap(edit(EditId::Field(4))), tap(Id::Editor(EditorId::Insert(0)))]),
+                shot("library-edit-command-top.png", Top, vec![tap(Id::Editor(EditorId::Save))]),
                 shot(
                     "library-edit-name.png",
                     Bottom,

@@ -82,11 +82,9 @@ impl State {
             Id::Settings(id) => {
                 self.on_settings(id, long, out);
             }
+            Id::Editor(EditorId::Insert(i)) => self.bottom.insert_snippet(usize::from(i)),
             Id::Editor(id) => {
-                let done = match id {
-                    EditorId::Save => Done::Save,
-                    EditorId::Cancel => Done::Cancel,
-                };
+                let done = if id == EditorId::Save { Done::Save } else { Done::Cancel };
                 self.editor_done(done, out);
             }
             Id::Wifi(WifiId::Power) => {

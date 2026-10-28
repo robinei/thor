@@ -391,4 +391,17 @@ mod tests {
         item.toggle(Field::Hide);
         assert_eq!(item.value(&config, Field::Hide), "on");
     }
+
+    /// A command is typed with its placeholders beside the keyboard, and a tap types one in.
+    #[test]
+    fn a_commands_placeholders_are_typed_in() {
+        use crate::testkit::*;
+        use crate::{EditorId, Event, Id};
+        let mut s = state();
+        let editor = crate::Editor { purpose: crate::bottom::editor::Purpose::FormField(Field::Launch), text: "mpv ".into() };
+        assert_eq!(editor.snippets().first(), Some(&"{path}"));
+        s.applied(Event::EditOnKeyboard(editor));
+        tap(&mut s, Id::Editor(EditorId::Insert(0)));
+        assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some("mpv {path}"));
+    }
 }

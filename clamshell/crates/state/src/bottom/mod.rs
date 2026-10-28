@@ -209,6 +209,16 @@ impl Bottom {
         self.set_tab(Tab::Keyboard);
     }
 
+    /// Types the open editor's snippet `i` (see [`editor::Editor::snippets`]).
+    pub(crate) fn insert_snippet(&mut self, i: usize) {
+        let tab = self.tab;
+        if let Some(e) = self.editors.on_mut(tab)
+            && let Some(snippet) = e.snippets().get(i)
+        {
+            e.text.push_str(snippet);
+        }
+    }
+
     /// Goes back to the tab the keyboard came up from, if it did.
     pub(crate) fn back_from_keyboard(&mut self) {
         if let Some(tab) = self.raised_from.take() {

@@ -281,7 +281,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
         TopView::LibraryView => {}
     }
     if s.bottom().editor().is_some() {
-        ids.extend([EditorId::Save, EditorId::Cancel].map(Id::Editor));
+        ids.extend([EditorId::Save, EditorId::Cancel, EditorId::Insert(0), EditorId::Insert(2)].map(Id::Editor));
     }
     let row = |list: ListId, n: usize| (0..n.min(8) as u16).map(move |i| Id::Row { list, i, part: RowPart::Main });
     match s.bottom().tab() {

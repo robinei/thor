@@ -81,6 +81,18 @@ impl Editor {
     }
 
     /// Types `stroke`, a character or Backspace. Enter saves and Esc cancels.
+    /// What the field is often typed with, beside the keyboard: placeholders in a command, the parts of
+    /// a pattern, the start of a folder's path.
+    pub fn snippets(&self) -> &'static [&'static str] {
+        use crate::library_view::form::Field;
+        match &self.purpose {
+            Purpose::FormField(Field::Launch) => &["{path}", "{paths}", "{socket}", "~/", "\""],
+            Purpose::FormField(Field::Match | Field::Also | Field::Items) => &["*.", "*/", "*", " "],
+            Purpose::FormField(Field::Dir) => &["~/", "/", "$"],
+            _ => &[],
+        }
+    }
+
     pub fn key(&mut self, stroke: Stroke) -> Option<Done> {
         match stroke.key {
             Key::Char(c) if !stroke.ctrl && !stroke.alt && !stroke.logo => {

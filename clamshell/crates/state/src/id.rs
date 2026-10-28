@@ -225,6 +225,8 @@ pub enum Target {
 pub enum EditorId {
     Save,
     Cancel,
+    /// One of the field's snippets typed in (see [`crate::bottom::editor::Editor::snippets`]).
+    Insert(u8),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

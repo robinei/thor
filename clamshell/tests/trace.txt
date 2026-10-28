@@ -742,6 +742,12 @@ Tick 1760000005
 -- library-edit-sources.png
 -- library-edit-form.png
 -- library-edit-runners.png
+Pointer(Activate(LibraryView(Edit(Field(4)))))
+  Watch Metrics off
+-- library-edit-command.png
+Pointer(Activate(Editor(Save)))
+  Watch Metrics on
+-- library-edit-command-top.png
 Pointer(Activate(LibraryView(Edit(Row(3)))))
   Watch Metrics off
 -- library-edit-name.png

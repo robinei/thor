@@ -59,6 +59,8 @@ keymaps-chosen.png 4e7a59aa20a56ccc
 keymaps.png 3c1b99523671bf1b
 launcher-running.png 9b13546ee80a0dbe
 launcher.png f1d1c21fd1d2331a
+library-edit-command-top.png 94e5dd00acf61bfb
+library-edit-command.png 331dd9eae9a3a271
 library-edit-cut.png 585cbb11bd970e9a
 library-edit-form.png 11c21146a2229b6c
 library-edit-name.png 17ab3a131f6ae2d0
