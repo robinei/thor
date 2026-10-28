@@ -12,7 +12,7 @@
 //! ```
 //!
 //! `RANDOM_SEEDS=n` runs seeds 1 to n, `RANDOM_SEED=x` that seed alone, and `RANDOM_EVENTS` sets the events
-//! per seed.
+//! per seed. `RANDOM_SETTLED_EVERY=n` checks that settle converged every nth event (see `settled_every`).
 
 use crate::Compositor;
 use std::collections::HashMap;
@@ -1253,8 +1253,8 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
         s.apply(event, &mut effects);
         world.follow(&effects);
         // Settle reaches a fixed point: settling and syncing again changes nothing and sends nothing
-        // (every few events, the state's text being long to compare).
-        if i % SETTLED_EVERY == 0 {
+        // (see [`settled_every`]).
+        if i % settled_every(seed) == 0 {
             let settled = format!("{s:?}");
             let mut again = crate::out::Out::default();
             s.settle(&mut again);
@@ -1276,8 +1276,12 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
     Ok(())
 }
 
-/// How often the run checks that settle reached a fixed point, in events.
-const SETTLED_EVERY: usize = 32;
+/// How often a run checks that settle reached a fixed point, in events: after every event for one seed in
+/// eight (fixed seed 4 among them, so that the routine check has one), and every 32nd for the rest, the
+/// state's text being long to compare. `RANDOM_SETTLED_EVERY` sets it for all seeds.
+fn settled_every(seed: u64) -> usize {
+    var("RANDOM_SETTLED_EVERY").map_or(if seed % 8 == 4 { 1 } else { 32 }, |n| n.max(1) as usize)
+}
 
 /// Where two texts first differ, with some of each around it.
 fn first_difference(a: &str, b: &str) -> String {
