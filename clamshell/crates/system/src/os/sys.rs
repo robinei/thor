@@ -77,8 +77,10 @@ pub(crate) fn same_process(pid: u32) -> bool {
 /// `clamshell_state::session::launchers`), from its environment and the command lines of the processes
 /// in `lineage`, its own first. A process whose environment can't be read, another user's, has none.
 pub fn launcher_game_of(pid: u32, lineage: &[u32]) -> Option<String> {
-    let environ = fs::read(format!("/proc/{pid}/environ")).ok()?;
-    let cmdlines = lineage.iter().map(|p| fs::read(format!("/proc/{p}/cmdline")).unwrap_or_default());
+    let environ = fs::read(format!("/proc/{pid}/environ")).inspect_err(|e| log::debug!("launcher mark: process {pid}'s environment: {e}")).ok()?;
+    let cmdlines = lineage
+        .iter()
+        .map(|p| fs::read(format!("/proc/{p}/cmdline")).inspect_err(|e| log::debug!("launcher mark: process {p}'s command line: {e}")).unwrap_or_default());
     clamshell_state::session::launchers::of_process(&environ, cmdlines)
 }
 
