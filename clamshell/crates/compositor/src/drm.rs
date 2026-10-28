@@ -675,6 +675,7 @@ fn step(
             due = earlier(due, screen.held);
         }
     }
+    drawing.pipeline.let_go();
     after_compose(due, composed, server.pacing.commits, now)
 }
 

@@ -99,6 +99,13 @@ pub(crate) enum Chained {
 }
 
 impl Chains {
+    /// Drops every window's textures, its programs kept. Whether there were any.
+    pub fn drop_textures(&mut self) -> bool {
+        let had = !self.chains.is_empty();
+        self.chains.clear();
+        had
+    }
+
     /// Runs the passes of every surface element that `wants` them, replacing its element in `elements` with
     /// the texture they give, unless the final pass blends SMAA's weights with its buffer, and returns what
     /// the final pass needs of them (see [`Chained`]). The textures of windows no longer wanting passes are

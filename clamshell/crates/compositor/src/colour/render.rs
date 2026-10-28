@@ -72,9 +72,12 @@ struct Scene {
     /// redraws the scene, since the surfaces themselves didn't.
     curves: Vec<(Id, Look)>,
     last_curves: Vec<(Id, Look)>,
-    /// Its windows whose pictures take passes before the scene (SMAA, FXAA, FSR), and their textures.
+    /// Its windows whose pictures take passes before the scene (SMAA, FXAA, FSR), and their textures,
+    /// dropped a while after it last composed.
     chains: super::chain::Chains,
+    chains_hold: crate::hold::Hold,
     /// The surface drawn straight onto the screen, and what of it was drawn last, to know when it changed.
+    /// The element is let go at the end of the turn (see [`Pipeline::let_go`]).
     direct: Option<Converted>,
     direct_drawn: Option<(Id, CommitCounter)>,
     /// Its draws' uniforms' list (see [`Converted::uniforms`]).
@@ -95,6 +98,7 @@ impl Scene {
             curves: Vec::new(),
             last_curves: Vec::new(),
             chains: Default::default(),
+            chains_hold: Default::default(),
             direct: None,
             direct_drawn: None,
             uniforms: Default::default(),
@@ -378,6 +382,7 @@ impl Pipeline {
         if scene.direct_drawn.is_some() && !direct {
             scene.redraw();
         }
+        scene.chains_hold.used(std::time::Instant::now());
         let replaced = scene.chains.run(renderer, elements, |id| {
             chained.iter().find(|(chained, ..)| chained == id).map(|(id, surface, aa, upscale, fused)| {
                 let hdr = server.colour.surfaces.get(id).is_some_and(|colour| colour.hdr());
@@ -462,8 +467,8 @@ impl Pipeline {
         Ok(changed)
     }
 
-    /// Drops the textures of scenes not composed through for a while by `now`, and the screenshot's (see
-    /// `crate::hold`).
+    /// Drops the textures of scenes not composed through for a while by `now`, the textures of their
+    /// picture passes, and the screenshot's (see `crate::hold`).
     pub(crate) fn trim(&mut self, now: std::time::Instant, trims: &mut crate::hold::Trims) {
         if self.capture.is_some() && self.capture_hold.expired(now) {
             log::info!("colour: the screenshot texture dropped");
@@ -479,6 +484,20 @@ impl Pipeline {
                 trims.dropped();
             }
             trims.held(&scene.hold);
+            if scene.chains_hold.expired(now) && scene.chains.drop_textures() {
+                log::info!("colour: the {name} screen's picture passes' textures dropped");
+                trims.dropped();
+            }
+            trims.held(&scene.chains_hold);
+        }
+    }
+
+    /// Lets go of the surfaces drawn straight this turn, once presented or not: they hold their client's
+    /// buffer, which it would otherwise not get back while the screen doesn't compose, and a reference to
+    /// its damage, which its next commit would then copy. The next compose takes them again.
+    pub(crate) fn let_go(&mut self) {
+        for scene in &mut self.scenes {
+            scene.direct = None;
         }
     }
 
