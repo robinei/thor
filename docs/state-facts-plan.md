@@ -75,10 +75,12 @@ Each ends in commits that pass `tools/check.sh` and the randomized test at 3000 
   `running_of`/`root_of`; `Running` holds its `Group` so that comparing doesn't allocate. The library mark
   lookup per window (`start_by_app_id`, O(windows × entries) each settle) cached on the window when its
   facts or the library change.
-- [ ] 3. **Stored recomputes become getters.** `Pad::route(..)`, `Bottom::dimmed(..)`, the bottom
+- [x] 3. **Stored recomputes become getters.** `Pad::route(..)`, `Bottom::dimmed(..)`, the bottom
   screen's idle-off, shelf's selected entry from its cursor. Each drops a settle step, its writers and a
   random invariant that only checked the copy. Cost: O(1) each; the settings in force computed once per
   settle rather than two or three times.
+  Done but for the pad's route: it is recomputed each settle and checked to converge, and its change is
+  the focus ring's edge (hidden as the pad leaves ClamShell's screens), so it stays as recorded.
 - [ ] 4. **Edges from recorded values.** One `Followed` record written at the end of settle: the tab, shelf's
   place, the program, the route, the front. A step compares the derived value with it: the tab left
   (replacing `Bottom.left` and the four immediate calls), shelf moved (replacing `moved()` and its 12
