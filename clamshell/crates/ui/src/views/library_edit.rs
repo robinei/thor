@@ -251,7 +251,12 @@ fn fields(f: &mut Frame, h: f32, config: &Config, item: &Item, selected: Option<
                 let typed = Rect::new(row.x, row.y, row.w - choose_w, row.h);
                 f.button(EditId::Field(i as u16).into(), typed, Look { fill: lit.then_some(SURFACE_HI), ..Look::CARD }, draw);
                 let choose = Rect::new(row.x + row.w - choose_w, row.y, choose_w, row.h);
-                f.text_button(EditId::Pick(i as u16).into(), choose, detail, Tone::Fn, "Choose…", Align::End);
+                // Without a Files tab, there is nowhere to pick in.
+                if f.s.library_view().can_pick() {
+                    f.text_button(EditId::Pick(i as u16).into(), choose, detail, Tone::Fn, "Choose…", Align::End);
+                } else {
+                    f.c.text_fit(choose, detail, Tone::Dim, "No Files tab", Keep::End);
+                }
             }
             (Some(_), None) => f.button(EditId::Field(i as u16).into(), row, Look { fill: lit.then_some(SURFACE_HI), ..Look::CARD }, draw),
             (None, _) => draw(f),
@@ -346,8 +351,13 @@ fn details(f: &mut Frame, h: f32, edit: &Edit, config: &Config, place: &Place, r
     // A tab has no picture: something in it is always selected.
     if place.within.is_some() {
         let file = place.picture.as_deref().map_or("none", |p| p.rsplit('/').next().unwrap_or(p));
-        let picture = Fmt::<128>::of(format_args!("Picture: {file}"));
-        f.text_button(EditId::Picture.into(), row(y), detail, Tone::Fn, &picture, Align::Start);
+        if f.s.library_view().can_pick() {
+            let picture = Fmt::<128>::of(format_args!("Picture: {file}"));
+            f.text_button(EditId::Picture.into(), row(y), detail, Tone::Fn, &picture, Align::Start);
+        } else {
+            let picture = Fmt::<128>::of(format_args!("Picture: {file} (no Files tab to pick in)"));
+            f.c.text_fit(row(y), detail, Tone::Dim, &picture, Keep::Start);
+        }
         y += detail * ACTION;
     }
     if edit.choosing_icon() {

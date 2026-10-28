@@ -120,6 +120,11 @@ impl LibraryView {
         self.pick.as_ref()
     }
 
+    /// Whether there is a Files tab to pick in.
+    pub fn can_pick(&self) -> bool {
+        self.files_tab().is_some()
+    }
+
     /// The tab of the browsed folders: the first with one of them.
     pub(super) fn files_tab(&self) -> Option<usize> {
         let library = &self.library;
