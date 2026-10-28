@@ -609,11 +609,13 @@ then go nowhere, logged once (system crate, `a_thread_that_keeps_panicking_soon_
 - `idle --Restarted(Pad)--> [Keymap, PadRoute, PadActivity, Apply]` (the pad keeps its virtual devices
   through the restart; tested `a_restarted_pad_is_sent_its_keymap_route_and_settings`)
 - `--Restarted(Tuning)--> [Apply]` (tested `a_restarted_tuning_thread_is_sent_the_settings_in_force`)
-- `--Restarted(Mixer | Battery | Metrics | Status | Wifi | Bluetooth)--> [Watch(tab, true), Watch(Status, ..), Watch(Account, ..)]`
-  (tested `a_restarted_reader_is_sent_the_watches`; each thread with the tab it serves,
-  `each_restarted_reader_is_sent_its_tabs_watch`; the account's, `a_restarted_system_thread_is_sent_the_account_watch`).
-  The tab's watch as sent is kept: a tab left in the same event, as a settle may change the tab, still has
-  its watch turned off (tested `a_tab_left_as_a_reader_restarts_has_its_watch_turned_off`)
+- `--Restarted(Mixer | Battery | Metrics | Status | Wifi | Bluetooth | System)--> [Watch(w, wanted)]` for
+  the watches that thread serves (`Watch::threads`): each watch's state as sent is kept, and a restart
+  sets those of the thread to how it starts (off; the bar's status on), so the usual difference sends
+  what it lost and nothing else (tested `a_restarted_reader_is_sent_the_watches`; each thread with the tab
+  it serves, `each_restarted_reader_is_sent_its_tabs_watch`; the account's,
+  `a_restarted_system_thread_is_sent_the_account_watch`). A tab left in the same event still has its
+  watch turned off (tested `a_tab_left_as_a_reader_restarts_has_its_watch_turned_off`)
 - `Asleep --Restarted(System)--> [watches]`, the sleep taken as refused (Busy): Sleep again after
   `SLEEP_RETRY` if still asleep; awake, only the watches (tested
   `a_restarted_system_thread_is_asked_to_sleep_again_after_the_retry`)

@@ -194,6 +194,7 @@ pub struct ScreenshotPixels {
 
 /// What a tab watches while it is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum Watch {
     /// The outputs and the apps playing.
     Audio,
@@ -214,6 +215,32 @@ pub enum Watch {
     /// The bar's status: battery, Wi-Fi and volume. Watched while the screens are on. While they are off,
     /// only the battery is read now and then.
     Status,
+}
+
+impl Watch {
+    /// Every watch, in order (`Watch as usize` is its place).
+    pub const ALL: [Watch; 9] =
+        [Watch::Audio, Watch::Backlights, Watch::Wifi, Watch::Bluetooth, Watch::Battery, Watch::Time, Watch::Account, Watch::Metrics, Watch::Status];
+
+    /// The system threads it is sent to (see clamshell-system's wiring), which lose it when started again.
+    pub fn threads(self) -> &'static [crate::Thread] {
+        use crate::Thread;
+        match self {
+            Watch::Audio | Watch::Backlights => &[Thread::Mixer],
+            Watch::Wifi => &[Thread::Wifi],
+            Watch::Bluetooth => &[Thread::Bluetooth],
+            // The battery tab shows the metrics too.
+            Watch::Battery => &[Thread::Battery, Thread::Metrics],
+            Watch::Metrics => &[Thread::Metrics],
+            Watch::Status => &[Thread::Status],
+            Watch::Time | Watch::Account => &[Thread::System],
+        }
+    }
+
+    /// Whether a thread it is sent to starts with it on: the bar's status is read from the start.
+    pub(crate) fn on_at_start(self) -> bool {
+        self == Watch::Status
+    }
 }
 
 /// What ClamShell stores (clamshell-system's `store`). Each is saved whole.

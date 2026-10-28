@@ -85,16 +85,9 @@ pub(crate) struct Sent {
     outputs: Option<(bool, bool)>,
     /// The main screen's refresh rate.
     refresh: u16,
-    /// The bar's status isn't watched, since the screens are off (see [`Watch::Status`]), or None to
-    /// send it again.
-    status_off: Option<bool>,
-    /// The account is watched, or None to send it again.
-    account: Option<bool>,
-    /// The open tab's watch.
-    tab: Option<Watch>,
-    /// The open tab's watch is to be sent again, to a reader started again. What was sent is kept, so
-    /// that a tab left meanwhile still has its watch turned off.
-    tab_again: bool,
+    /// Each watch as its threads have it (by [`Watch::ALL`]'s order): on or off as last sent, or as they
+    /// start once started again.
+    watches: [bool; Watch::ALL.len()],
     /// The keymap in force as last sent to the pad, by its id and version, or None to send it again.
     keymap: Option<(u16, u64)>,
     /// The keymap sent, to check that the id and version stand for it.
@@ -122,10 +115,7 @@ impl Default for Sent {
             applied: None,
             outputs: Some((true, true)),
             refresh: 0,
-            status_off: Some(false),
-            account: Some(false),
-            tab: None,
-            tab_again: false,
+            watches: Watch::ALL.map(Watch::on_at_start),
             keymap: None,
             #[cfg(debug_assertions)]
             keymap_sent: None,
@@ -160,9 +150,14 @@ impl Sent {
                 // The rumble's strength comes with the settings applied.
                 Thread::Pad => (self.keymap, self.route, self.pad_activity, self.applied) = (None, None, None, None),
                 Thread::Tuning => self.applied = None,
-                // The system thread reads the time and the account as their views open.
+                // The readers start with their watches as at start, which are then sent as they are wanted.
+                // (The system thread reads the time and the account as their views open.)
                 Thread::Mixer | Thread::Battery | Thread::Metrics | Thread::Status | Thread::Wifi | Thread::Bluetooth | Thread::System => {
-                    (self.tab_again, self.status_off, self.account) = (true, None, None);
+                    for (watch, sent) in Watch::ALL.into_iter().zip(&mut self.watches) {
+                        if watch.threads().contains(&thread) {
+                            *sent = watch.on_at_start();
+                        }
+                    }
                 }
                 Thread::Browse => (self.browsing, self.in_use) = (None, None),
                 // The thread holds nothing; the backlights keep their level. Sent again if ClamShell set one.
@@ -297,22 +292,23 @@ impl Sent {
     /// and the UI is up, and the open tab's watch while the tab can be seen and the UI is up.
     fn watches(&mut self, w: &Wanted, out: &mut Out) {
         let screens_off = w.stage >= Stage::Off;
-        if self.status_off.replace(screens_off) != Some(screens_off) {
-            out.effects.push(Effect::Watch(Watch::Status, !screens_off));
-        }
-        let account = w.ui_up && w.setup_open;
-        if self.account.replace(account) != Some(account) {
-            out.effects.push(Effect::Watch(Watch::Account, account));
-        }
         let seen = w.ui_up && w.bottom_seen && !screens_off;
-        let tab = w.tab.filter(|_| seen);
-        let again = std::mem::take(&mut self.tab_again);
-        if tab == self.tab {
-            out.effects.extend(tab.filter(|_| again).map(|w| Effect::Watch(w, true)));
-            return;
+        let wanted = |watch: Watch| match watch {
+            Watch::Status => !screens_off,
+            Watch::Account => w.ui_up && w.setup_open,
+            tab => seen && w.tab == Some(tab),
+        };
+        // The bar's status and the account first, then the tab's: the one left off before the one opened on.
+        let order = [Watch::Status, Watch::Account].into_iter().map(|watch| (watch, None));
+        let tabs = |on: bool| Watch::ALL.into_iter().filter(|watch| !matches!(watch, Watch::Status | Watch::Account)).map(move |watch| (watch, Some(on)));
+        for (watch, only) in order.chain(tabs(false)).chain(tabs(true)) {
+            let on = wanted(watch);
+            let Some(sent) = self.watches.get_mut(watch as usize) else { continue };
+            if *sent != on && only.is_none_or(|only| only == on) {
+                *sent = on;
+                out.effects.push(Effect::Watch(watch, on));
+            }
         }
-        let was = std::mem::replace(&mut self.tab, tab);
-        out.effects.extend(was.map(|w| Effect::Watch(w, false)).into_iter().chain(tab.map(|w| Effect::Watch(w, true))));
     }
 
     /// The pad gets the keymap in force when it changed.

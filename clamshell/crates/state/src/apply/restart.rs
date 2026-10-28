@@ -23,7 +23,7 @@ impl State {
         match thread {
             // The keymap, the route, the activity watch and the settings applied (the rumble's strength).
             // The pad thread keeps its virtual controllers and the sticks' calibrations through a restart.
-            // Watches: the open tab's, the bar's status and the account. The system thread also reads the
+            // Watches: those the thread serves, as it starts (see `Sent::resend`). The system thread also reads the
             // time as views open, and is asked to sleep again if it was last asked; a screenshot or a
             // notification it was handling is lost.
             Thread::Pad
@@ -106,9 +106,7 @@ mod tests {
         let mut s = started(init());
         tap(&mut s, Id::Tab(Tab::Volume));
         let fx = s.applied(Event::Restarted(Thread::Mixer));
-        assert!(fx.contains(&Effect::Watch(Watch::Audio, true)), "{fx:?}");
-        assert!(fx.contains(&Effect::Watch(Watch::Status, true)), "{fx:?}");
-        assert!(!fx.iter().any(|e| matches!(e, Effect::Watch(Watch::Audio | Watch::Status, false))), "{fx:?}");
+        assert_eq!(fx, vec![Effect::Watch(Watch::Audio, true)], "only what it lost");
     }
 
     /// A reader started again while the tab changes in the same event (here the restart is noted before a
@@ -134,7 +132,8 @@ mod tests {
     }
 
     /// Each reader started again is sent the watch of the tab open that it serves (see the system crate's
-    /// `Handles::watch`), and the bar's status watch, whichever reader it is.
+    /// `Handles::watch`), which it lost. The status thread starts watching the bar's status, so it is told
+    /// only when the screens are off.
     #[test]
     fn each_restarted_reader_is_sent_its_tabs_watch() {
         let cases = [
@@ -150,12 +149,16 @@ mod tests {
             let mut s = started(init());
             tap(&mut s, Id::Tab(tab));
             let fx = s.applied(Event::Restarted(thread));
-            assert!(fx.contains(&Effect::Watch(watch, true)) && fx.contains(&Effect::Watch(Watch::Status, true)), "{thread:?}: {fx:?}");
-            assert!(!fx.iter().any(|e| matches!(e, Effect::Watch(w, false) if *w == watch || *w == Watch::Status)), "{thread:?}: {fx:?}");
+            assert!(fx.contains(&Effect::Watch(watch, true)), "{thread:?}: {fx:?}");
+            assert!(!fx.iter().any(|e| matches!(e, Effect::Watch(w, false) if *w == watch)), "{thread:?}: {fx:?}");
         }
         let mut s = started(init());
+        assert!(!s.applied(Event::Restarted(Thread::Status)).iter().any(|e| matches!(e, Effect::Watch(..))), "it starts watching");
+        s.applied(Event::tick(1000));
+        s.applied(Event::Idle(crate::idle::IdleEvent::Watching(true)));
+        s.applied(Event::tick(1300));
         let fx = s.applied(Event::Restarted(Thread::Status));
-        assert!(fx.contains(&Effect::Watch(Watch::Status, true)), "{fx:?}");
+        assert!(fx.contains(&Effect::Watch(Watch::Status, false)), "the screens off: {fx:?}");
     }
 
     /// The system thread reads the account while the Device view is open; started again, it is told to
