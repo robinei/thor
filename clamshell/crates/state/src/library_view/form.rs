@@ -132,81 +132,162 @@ const SOURCE_KINDS: [(&str, &str); 6] = [
     ("builtin", "Library or Device"),
 ];
 
+/// A source or runner borrowed, as it is read and drawn (see [`Item`]).
+#[derive(Debug, Clone, Copy)]
+pub enum ItemRef<'a> {
+    Source(&'a Source),
+    Runner(&'a Runner),
+}
+
+/// A field's value as it shows, borrowed: text, words as typed (see [`words`]), or on or off.
+#[derive(Debug, Clone, Copy)]
+pub enum Value<'a> {
+    Text(&'a str),
+    Words(&'a [String]),
+    OnOff(bool),
+}
+
+impl std::fmt::Display for Value<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Text(t) => f.write_str(t),
+            Value::Words(list) => write!(f, "{}", Words(list)),
+            Value::OnOff(on) => f.write_str(if *on { "on" } else { "off" }),
+        }
+    }
+}
+
+impl<'a> ItemRef<'a> {
+    /// Its fields, in order.
+    pub fn fields(self) -> &'static [Field] {
+        use Field::*;
+        match self {
+            ItemRef::Source(Source::Dir(_)) => &[Kind, Id, Dir, Place, Runner, Match, Also, Items, Metadata],
+            ItemRef::Source(Source::Browse(_)) => &[Kind, Dir, Within, Name, Trash],
+            ItemRef::Source(Source::Desktop(_)) => &[Kind, Id, Name, Categories, Place, Runner, Metadata, Hide],
+            ItemRef::Source(Source::Steam(_)) => &[Kind, Id, Name, Place, Runner, Metadata, Hide],
+            ItemRef::Source(Source::Removable(_)) => &[Kind, Label, Uuid, Fs, Within, Name, Hide],
+            ItemRef::Source(Source::Builtin(_)) => &[Kind, Builtin, Place],
+            ItemRef::Runner(_) => &[Kind, Id, Name, Match, Launch, Keymap, BiosDir, BiosFiles],
+        }
+    }
+
+    /// Field `f`'s value as it shows.
+    pub fn value(self, config: &'a Config, f: Field) -> Value<'a> {
+        let text = |o: &'a Option<String>| Value::Text(o.as_deref().unwrap_or(""));
+        let place = |id: &'a str| Value::Text(config.places.iter().find(|p| p.id == id).map_or(id, |p| p.name.as_str()));
+        let place_opt = |o: &'a Option<String>| o.as_deref().map_or(Value::Text(""), place);
+        let none = Value::Text("");
+        match (self, f) {
+            (ItemRef::Source(s), Field::Kind) => Value::Text(SOURCE_KINDS.iter().find(|(k, _)| *k == source_kind(s)).map_or("", |(_, l)| l)),
+            (ItemRef::Runner(r), Field::Kind) => Value::Text(runner_kind(r.kind)),
+            (ItemRef::Source(Source::Dir(d)), f) => match f {
+                Field::Id => Value::Text(&d.id),
+                Field::Dir => Value::Text(&d.dir),
+                Field::Place => place(&d.place),
+                Field::Runner => text(&d.runner),
+                Field::Match => Value::Words(&d.patterns),
+                Field::Also => Value::Words(&d.also),
+                Field::Items => Value::Words(&d.items),
+                Field::Metadata => text(&d.metadata),
+                _ => none,
+            },
+            (ItemRef::Source(Source::Browse(b)), f) => match f {
+                Field::Dir => Value::Text(&b.dir),
+                Field::Within => place(&b.within),
+                Field::Name => Value::Text(&b.name),
+                Field::Trash => Value::OnOff(b.trash),
+                _ => none,
+            },
+            (ItemRef::Source(Source::Desktop(r) | Source::Steam(r)), f) => match f {
+                Field::Id => text(&r.id),
+                Field::Name => text(&r.name),
+                Field::Categories => text(&r.categories),
+                Field::Place => place_opt(&r.place),
+                Field::Runner => text(&r.runner),
+                Field::Metadata => text(&r.metadata),
+                Field::Hide => Value::OnOff(r.hide),
+                _ => none,
+            },
+            (ItemRef::Source(Source::Removable(m)), f) => match f {
+                Field::Label => text(&m.label),
+                Field::Uuid => text(&m.uuid),
+                Field::Fs => text(&m.fs),
+                Field::Within => place_opt(&m.within),
+                Field::Name => Value::Text(m.name.as_deref().unwrap_or("{label}")),
+                Field::Hide => Value::OnOff(m.hide),
+                _ => none,
+            },
+            (ItemRef::Source(Source::Builtin(b)), f) => match f {
+                Field::Builtin => Value::Text(&b.id),
+                Field::Place => place(&b.place),
+                _ => none,
+            },
+            (ItemRef::Runner(r), f) => match f {
+                Field::Id => Value::Text(&r.id),
+                Field::Name => Value::Text(&r.name),
+                Field::Match => Value::Words(&r.patterns),
+                Field::Launch => Value::Words(&r.launch),
+                Field::Keymap => text(&r.keymap),
+                Field::BiosDir => Value::Text(r.bios.as_ref().map_or("", |b| b.dir.as_str())),
+                Field::BiosFiles => r.bios.as_ref().map_or(none, |b| Value::Words(&b.files)),
+                _ => none,
+            },
+        }
+    }
+}
+
+impl ItemRef<'_> {
+    /// Visits chosen field `f`'s options, each as its value and its label, borrowed (a runner without an
+    /// id has one made from its name).
+    pub fn each_option(self, config: &Config, f: Field, mut visit: impl FnMut(&str, &str)) {
+        match (self, f) {
+            (ItemRef::Source(_), Field::Kind) => SOURCE_KINDS.iter().for_each(|(k, l)| visit(k, l)),
+            (ItemRef::Runner(_), Field::Kind) => ["files", "desktop", "steam"].iter().for_each(|k| visit(k, k)),
+            (_, Field::Place | Field::Within) => config.places.iter().for_each(|p| visit(&p.id, &p.name)),
+            (ItemRef::Source(s), Field::Runner) => {
+                // A scan's runner opens files; a desktop or Steam source's is one of that type.
+                let kind = match s {
+                    Source::Desktop(_) => Some(RunnerKind::Desktop),
+                    Source::Steam(_) => Some(RunnerKind::Steam),
+                    _ => None,
+                };
+                if kind.is_none() {
+                    visit("", "By the file's name");
+                }
+                for r in config.runners.iter().filter(|r| r.kind == kind) {
+                    let made;
+                    let id = if r.id.is_empty() {
+                        made = r.effective_id();
+                        made.as_str()
+                    } else {
+                        r.id.as_str()
+                    };
+                    visit(id, if r.name.is_empty() { id } else { &r.name });
+                }
+            }
+            (_, Field::Builtin) => [("library", "Library"), ("device", "Device")].iter().for_each(|(k, l)| visit(k, l)),
+            _ => {}
+        }
+    }
+}
+
 impl Item {
     /// Its fields, in order.
     pub fn fields(&self) -> &'static [Field] {
-        use Field::*;
-        match self {
-            Item::Source(Source::Dir(_)) => &[Kind, Id, Dir, Place, Runner, Match, Also, Items, Metadata],
-            Item::Source(Source::Browse(_)) => &[Kind, Dir, Within, Name, Trash],
-            Item::Source(Source::Desktop(_)) => &[Kind, Id, Name, Categories, Place, Runner, Metadata, Hide],
-            Item::Source(Source::Steam(_)) => &[Kind, Id, Name, Place, Runner, Metadata, Hide],
-            Item::Source(Source::Removable(_)) => &[Kind, Label, Uuid, Fs, Within, Name, Hide],
-            Item::Source(Source::Builtin(_)) => &[Kind, Builtin, Place],
-            Item::Runner(_) => &[Kind, Id, Name, Match, Launch, Keymap, BiosDir, BiosFiles],
-        }
+        self.as_ref().fields()
     }
 
     /// Field `f`'s value as it shows, and as it is typed again.
     pub fn value(&self, config: &Config, f: Field) -> String {
-        let opt = |o: &Option<String>| o.clone().unwrap_or_default();
-        let place = |id: &str| config.places.iter().find(|p| p.id == id).map_or_else(|| id.to_owned(), |p| p.name.clone());
-        let place_opt = |o: &Option<String>| o.as_deref().map(place).unwrap_or_default();
-        match (self, f) {
-            (Item::Source(s), Field::Kind) => SOURCE_KINDS.iter().find(|(k, _)| *k == source_kind(s)).map_or("", |(_, l)| l).to_owned(),
-            (Item::Runner(r), Field::Kind) => runner_kind(r.kind).to_owned(),
-            (Item::Source(Source::Dir(d)), f) => match f {
-                Field::Id => d.id.clone(),
-                Field::Dir => d.dir.clone(),
-                Field::Place => place(&d.place),
-                Field::Runner => opt(&d.runner),
-                Field::Match => words(&d.patterns),
-                Field::Also => words(&d.also),
-                Field::Items => words(&d.items),
-                Field::Metadata => opt(&d.metadata),
-                _ => String::new(),
-            },
-            (Item::Source(Source::Browse(b)), f) => match f {
-                Field::Dir => b.dir.clone(),
-                Field::Within => place(&b.within),
-                Field::Name => b.name.clone(),
-                Field::Trash => on_off(b.trash),
-                _ => String::new(),
-            },
-            (Item::Source(Source::Desktop(r) | Source::Steam(r)), f) => match f {
-                Field::Id => opt(&r.id),
-                Field::Name => opt(&r.name),
-                Field::Categories => opt(&r.categories),
-                Field::Place => place_opt(&r.place),
-                Field::Runner => opt(&r.runner),
-                Field::Metadata => opt(&r.metadata),
-                Field::Hide => on_off(r.hide),
-                _ => String::new(),
-            },
-            (Item::Source(Source::Removable(m)), f) => match f {
-                Field::Label => opt(&m.label),
-                Field::Uuid => opt(&m.uuid),
-                Field::Fs => opt(&m.fs),
-                Field::Within => place_opt(&m.within),
-                Field::Name => m.name.clone().unwrap_or_else(|| "{label}".into()),
-                Field::Hide => on_off(m.hide),
-                _ => String::new(),
-            },
-            (Item::Source(Source::Builtin(b)), f) => match f {
-                Field::Builtin => b.id.clone(),
-                Field::Place => place(&b.place),
-                _ => String::new(),
-            },
-            (Item::Runner(r), f) => match f {
-                Field::Id => r.id.clone(),
-                Field::Name => r.name.clone(),
-                Field::Match => words(&r.patterns),
-                Field::Launch => words(&r.launch),
-                Field::Keymap => opt(&r.keymap),
-                Field::BiosDir => r.bios.as_ref().map(|b| b.dir.clone()).unwrap_or_default(),
-                Field::BiosFiles => r.bios.as_ref().map(|b| words(&b.files)).unwrap_or_default(),
-                _ => String::new(),
-            },
+        self.as_ref().value(config, f).to_string()
+    }
+
+    /// It borrowed, to read.
+    pub fn as_ref(&self) -> ItemRef<'_> {
+        match self {
+            Item::Source(s) => ItemRef::Source(s),
+            Item::Runner(r) => ItemRef::Runner(r),
         }
     }
 
@@ -289,31 +370,9 @@ impl Item {
 
     /// The options of chosen field `f`, each its value and how it shows.
     pub fn options(&self, config: &Config, f: Field) -> Vec<(String, String)> {
-        let places = || config.places.iter().map(|p| (p.id.clone(), p.name.clone())).collect();
-        match (self, f) {
-            (Item::Source(_), Field::Kind) => SOURCE_KINDS.iter().map(|(k, l)| ((*k).to_owned(), (*l).to_owned())).collect(),
-            (Item::Runner(_), Field::Kind) => ["files", "desktop", "steam"].iter().map(|k| ((*k).to_owned(), (*k).to_owned())).collect(),
-            (_, Field::Place | Field::Within) => places(),
-            (Item::Source(s), Field::Runner) => {
-                // A scan's runner opens files; a desktop or Steam source's is one of that type.
-                let kind = match s {
-                    Source::Desktop(_) => Some(RunnerKind::Desktop),
-                    Source::Steam(_) => Some(RunnerKind::Steam),
-                    _ => None,
-                };
-                let none = std::iter::once((String::new(), "By the file's name".to_owned())).filter(|_| kind.is_none());
-                none.chain(
-                    config
-                        .runners
-                        .iter()
-                        .filter(|r| r.kind == kind)
-                        .map(|r| (r.effective_id(), if r.name.is_empty() { r.effective_id() } else { r.name.clone() })),
-                )
-                .collect()
-            }
-            (_, Field::Builtin) => [("library", "Library"), ("device", "Device")].iter().map(|(k, l)| ((*k).to_owned(), (*l).to_owned())).collect(),
-            _ => Vec::new(),
-        }
+        let mut all = Vec::new();
+        self.as_ref().each_option(config, f, |value, label| all.push((value.to_owned(), label.to_owned())));
+        all
     }
 
     /// Sets chosen field `f` to `value`, one of its options. A source's new type starts it over, keeping
@@ -376,18 +435,37 @@ fn runner_kind(kind: Option<RunnerKind>) -> &'static str {
     }
 }
 
-fn on_off(on: bool) -> String {
-    if on { "on" } else { "off" }.into()
-}
-
 /// Words as they are typed: separated by spaces, one with a space (or none at all) in double quotes, and
 /// a `"` or `\\` in one with a `\\` before it.
 pub fn words(list: &[String]) -> String {
-    let quoted = |w: &String| {
-        let escaped = w.replace('\\', "\\\\").replace('"', "\\\"");
-        if w.contains(' ') || w.is_empty() { format!("\"{escaped}\"") } else { escaped }
-    };
-    list.iter().map(quoted).collect::<Vec<_>>().join(" ")
+    Words(list).to_string()
+}
+
+/// Words as they are typed (see [`words`]), written without being collected first.
+pub struct Words<'a>(pub &'a [String]);
+
+impl std::fmt::Display for Words<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, w) in self.0.iter().enumerate() {
+            if i > 0 {
+                f.write_str(" ")?;
+            }
+            let quoted = w.contains(' ') || w.is_empty();
+            if quoted {
+                f.write_str("\"")?;
+            }
+            for c in w.chars() {
+                if c == '\\' || c == '"' {
+                    f.write_str("\\")?;
+                }
+                write!(f, "{c}")?;
+            }
+            if quoted {
+                f.write_str("\"")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Typed words back into a list (see [`words`]).

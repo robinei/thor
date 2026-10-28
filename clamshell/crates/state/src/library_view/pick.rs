@@ -78,7 +78,7 @@ impl Pick {
     pub fn takes(&self, entry: &Entry) -> bool {
         let Some(browsed) = &entry.browsed else { return false };
         // No patterns: any name.
-        let matches = |patterns: &[String]| patterns.is_empty() || patterns.iter().any(|p| pattern::matches(&p.to_lowercase(), &entry.title.to_lowercase()));
+        let matches = |patterns: &[String]| patterns.is_empty() || patterns.iter().any(|p| pattern::matches_ignoring_case(p, &entry.title));
         match &self.takes {
             Takes::Folder => browsed.folder && !browsed.archive,
             Takes::Files(patterns) => !browsed.folder && matches(patterns),
@@ -236,7 +236,7 @@ impl LibraryView {
     pub fn save_here(&self) -> SaveHere<'_> {
         let names = self.save_names();
         let folder = self.group().filter(|g| g.browsed.as_ref().is_some_and(|b| b.listed));
-        if names.is_empty() || !names.iter().all(|n| file_name(n)) || self.open_dir().is_none() {
+        if names.is_empty() || !names.iter().all(|n| file_name(n)) || self.open_dir_path().is_none() {
             return SaveHere::Off;
         }
         // Until it is listed, what is in it isn't known.
@@ -246,7 +246,9 @@ impl LibraryView {
         let hidden_unknown = !self.files.hidden();
         let mut there = names.iter().filter(|n| listed(n) || (hidden_unknown && n.starts_with('.')));
         let Some(first) = there.next() else { return SaveHere::Saves };
-        let asked = self.open_dir().zip(self.pick.as_ref()).is_some_and(|(dir, p)| p.confirming(&dir.join(first)));
+        // (Compared by its folder and name, not a path made for it: this is asked every frame.)
+        let asked =
+            self.pick.as_ref().and_then(|p| p.confirm.as_deref()).is_some_and(|c| c.parent() == self.open_dir_path() && c.file_name() == Some(first.as_ref()));
         SaveHere::Replaces { first, more: there.count(), asked }
     }
 

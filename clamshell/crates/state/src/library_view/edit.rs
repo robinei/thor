@@ -609,11 +609,13 @@ fn saved(config: &Config, item: Item, index: Option<usize>) -> Result<Config, &'
                 None => changed.sources.push(s),
             }
         }
-        Item::Runner(r) => {
+        Item::Runner(mut r) => {
             let id = r.effective_id();
             if id.is_empty() {
                 return Err("An id or a name is needed");
             }
+            // Written with its id, made from its name if it had none.
+            r.id.clone_from(&id);
             if changed.runners.iter().enumerate().any(|(i, o)| Some(i) != index && o.effective_id() == id) {
                 return Err("Another runner has that id");
             }
@@ -637,6 +639,16 @@ fn saved(config: &Config, item: Item, index: Option<usize>) -> Result<Config, &'
         }
     }
     Ok(changed)
+}
+
+/// Whether a source names `runner`, by its id or, without one, its name's (see
+/// [`clamshell_library::config::Runner::is_named`]).
+pub fn runner_in_use(config: &Config, runner: &Runner) -> bool {
+    config.sources.iter().any(|s| match s {
+        Source::Dir(d) => d.runner.as_deref().is_some_and(|id| runner.is_named(id)),
+        Source::Desktop(r) | Source::Steam(r) => r.runner.as_deref().is_some_and(|id| runner.is_named(id)),
+        _ => false,
+    })
 }
 
 /// Whether a source names runner `id`.

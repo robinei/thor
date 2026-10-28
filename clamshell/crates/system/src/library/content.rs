@@ -162,7 +162,7 @@ pub(crate) fn resolve(id: &str, places: &[Placed]) -> Result<String, String> {
 
 /// Whether a desktop or Steam source's `rule` matches an entry with this id, name and categories.
 pub(crate) fn rule_matches(rule: &Rule, id: &str, name: &str, categories: &[String]) -> bool {
-    let glob = |pattern: &str, value: &str| pattern::matches(&pattern.to_lowercase(), &value.to_lowercase());
+    let glob = |pattern: &str, value: &str| pattern::matches_ignoring_case(pattern, value);
     rule.id.as_deref().is_none_or(|p| glob(p, id))
         && rule.name.as_deref().is_none_or(|p| glob(p, name))
         && rule.categories.as_deref().is_none_or(|p| categories.iter().any(|c| glob(p, c)))
@@ -175,7 +175,7 @@ pub(crate) fn mount_matches(rule: &MountRule, label: &str, uuid: &str, fs: &str)
 
 /// Whether `on` matches a filesystem with this label, UUID and type.
 pub(crate) fn on_matches(on: &On, label: &str, uuid: &str, fs: &str) -> bool {
-    let glob = |pattern: &str, value: &str| pattern::matches(&pattern.to_lowercase(), &value.to_lowercase());
+    let glob = |pattern: &str, value: &str| pattern::matches_ignoring_case(pattern, value);
     on.label.as_deref().is_none_or(|p| glob(p, label)) && on.uuid.as_deref().is_none_or(|p| glob(p, uuid)) && on.fs.as_deref().is_none_or(|p| glob(p, fs))
 }
 

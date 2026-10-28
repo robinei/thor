@@ -9,6 +9,7 @@ use clamshell_state::Control;
 use clamshell_state::DeviceId;
 use clamshell_state::bottom::keyboard::{self, Key, Modifier};
 use clamshell_state::keymap::{Button, Input, Keymaps, Layer, Param, Side};
+use clamshell_state::library_view::edit::EditId;
 use clamshell_state::radios::{bluetooth, wifi};
 use clamshell_state::session::tray;
 use clamshell_state::session::windows::WindowFacts;
@@ -90,6 +91,11 @@ fn notification(id: u32) -> Event {
         timeout_ms: 0,
     };
     clamshell_state::NotificationEvent::Notified(Box::new(n)).into()
+}
+
+/// A tap on one of the Library's edit mode's targets.
+fn edit(id: EditId) -> Event {
+    tap(Id::LibraryView(LibraryViewId::Edit(id)))
 }
 
 fn tap(id: Id) -> Event {
@@ -226,6 +232,28 @@ fn warm_frames_do_not_allocate() {
             ],
         ),
         ("the Library, dragged part way", vec![Event::LibraryView(LibraryViewEvent::Rows(3)), Event::List(ListEvent::Scroll(ListId::LibraryView, 1.6))]),
+        ("edit mode, a tab's folders", [device(), vec![tap(Id::Device(DeviceId::EditLibrary)), edit(EditId::Tab(2))]].concat()),
+        ("edit mode, the sources", [device(), vec![tap(Id::Device(DeviceId::EditLibrary)), edit(EditId::Sources)]].concat()),
+        (
+            "edit mode, a source's place chosen",
+            [device(), vec![tap(Id::Device(DeviceId::EditLibrary)), edit(EditId::Sources), edit(EditId::Open), edit(EditId::Field(3))]].concat(),
+        ),
+        ("edit mode, the runners", [device(), vec![tap(Id::Device(DeviceId::EditLibrary)), edit(EditId::Runners)]].concat()),
+        (
+            "a save picked in Home",
+            vec![
+                Event::Portal(clamshell_state::PortalEvent::Asked(clamshell_state::FileRequest {
+                    id: 1,
+                    title: String::new(),
+                    asks: clamshell_state::Asks::Save { name: "notes.txt".into() },
+                    patterns: vec!["*.txt".into()],
+                    asker: Vec::new(),
+                    folder: None,
+                })),
+                tap(Id::LibraryView(LibraryViewId::Launch)),
+            ],
+        ),
+        ("setup, the password", vec![Event::Reading(Reading::Account(Account::Read { password: false, ssh: false }))]),
         ("keymap picker", vec![tap(Id::Tab(Tab::Settings)), PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Keymap))).into()]),
         (
             "tile menu",

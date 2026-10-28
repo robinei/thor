@@ -6,31 +6,43 @@
 
 /// Whether `name`, a single file or folder name, matches `pattern`, a single part of a pattern.
 pub fn matches(pattern: &str, name: &str) -> bool {
-    let (p, n): (Vec<char>, Vec<char>) = (pattern.chars().collect(), name.chars().collect());
-    // The classic two-pointer match: on a mismatch, the last `*` takes one more character.
+    glob(pattern, name, |a, b| a == b)
+}
+
+/// [`matches()`], with letters matching in either case.
+pub fn matches_ignoring_case(pattern: &str, name: &str) -> bool {
+    glob(pattern, name, |a, b| a == b || a.to_lowercase().eq(b.to_lowercase()))
+}
+
+/// The classic two-pointer match, walking the strings by byte offsets so nothing is allocated: on a
+/// mismatch, the last `*` takes one more character.
+fn glob(pattern: &str, name: &str, same: impl Fn(char, char) -> bool) -> bool {
+    let at = |s: &str, i: usize| s.get(i..).and_then(|rest| rest.chars().next());
     let (mut pi, mut ni) = (0, 0);
     let mut star: Option<(usize, usize)> = None;
-    while ni < n.len() {
-        match p.get(pi) {
+    while let Some(n) = at(name, ni) {
+        match at(pattern, pi) {
             Some('*') => {
                 star = Some((pi, ni));
                 pi += 1;
             }
-            Some(&c) if c == '?' || Some(&c) == n.get(ni) => {
-                pi += 1;
-                ni += 1;
+            Some(c) if c == '?' || same(c, n) => {
+                pi += c.len_utf8();
+                ni += n.len_utf8();
             }
             _ => match star {
                 Some((sp, sn)) => {
+                    // The `*` takes the character at `sn`.
+                    let taken = at(name, sn).map_or(1, char::len_utf8);
                     pi = sp + 1;
-                    ni = sn + 1;
-                    star = Some((sp, sn + 1));
+                    ni = sn + taken;
+                    star = Some((sp, sn + taken));
                 }
                 None => return false,
             },
         }
     }
-    p.get(pi..).is_some_and(|rest| rest.iter().all(|&c| c == '*'))
+    pattern.get(pi..).is_some_and(|rest| rest.chars().all(|c| c == '*'))
 }
 
 /// A pattern's parts, folder level by level, and whether its last part matches folders only.
@@ -57,6 +69,13 @@ mod tests {
         assert!(matches("Season ?", "Season 1") && !matches("Season ?", "Season 10"));
         assert!(matches("*a*b", "xaxxb") && !matches("*a*b", "xaxxbc"));
         assert!(matches("", "") && !matches("", "x"));
+        assert!(matches("Pokémon ?", "Pokémon é") && matches("*ö*", "Bjö rk") && !matches("?", "éé"), "characters, not bytes");
+    }
+
+    #[test]
+    fn letters_in_either_case() {
+        assert!(matches_ignoring_case("*.SFC", "Zelda.sfc") && matches_ignoring_case("ÉTÉ*", "été 1"));
+        assert!(!matches("*.SFC", "Zelda.sfc"));
     }
 
     #[test]

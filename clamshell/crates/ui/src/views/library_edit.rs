@@ -9,7 +9,7 @@
 use clamshell_state::ListId;
 use clamshell_state::config::{Config, Place, Source};
 use clamshell_state::library_view::edit::{self, Edit, EditId, Form, Panel, Row};
-use clamshell_state::library_view::form::{self, Item, Set};
+use clamshell_state::library_view::form::{self, ItemRef, Set};
 
 use super::library_view::{ACTION, DETAIL, HEADER_TEXT, LIST_W, ROW_H, ROW_TEXT, TAB_TEXT, TABS_H, TITLE};
 use crate::gfx::icons::Icon;
@@ -154,7 +154,7 @@ fn list_view(f: &mut Frame, h: f32, edit: &Edit, config: &Config, panel: Panel, 
                     let Some(runner) = config.runners.get(i) else { return };
                     let name = if runner.name.is_empty() { runner.id.as_str() } else { runner.name.as_str() };
                     f.c.text_fit(Rect::new(text.x, text.y, text.w * 0.45, text.h), size, tone, name, Keep::Start);
-                    let opens = form::words(&runner.patterns);
+                    let opens = Fmt::<192>::of(format_args!("{}", form::Words(&runner.patterns)));
                     f.c.text_fit(Rect::new(text.x + text.w * 0.45, text.y, text.w * 0.55, text.h), size * 0.8, Tone::Dim, &opens, Keep::End);
                 }
             }
@@ -164,8 +164,8 @@ fn list_view(f: &mut Frame, h: f32, edit: &Edit, config: &Config, panel: Panel, 
     // The selected one's fields, as its form would show them, and its actions.
     let r = Rect::new(body.x + body.w * LIST_W + pad, body.y, body.w * (1.0 - LIST_W) - pad, body.h);
     let item = match panel {
-        Panel::Sources => config.sources.get(edit.cursor()).cloned().map(Item::Source),
-        _ => config.runners.get(edit.cursor()).cloned().map(Item::Runner),
+        Panel::Sources => config.sources.get(edit.cursor()).map(ItemRef::Source),
+        _ => config.runners.get(edit.cursor()).map(ItemRef::Runner),
     };
     let detail = h * DETAIL;
     let Some(item) = item else {
@@ -177,15 +177,15 @@ fn list_view(f: &mut Frame, h: f32, edit: &Edit, config: &Config, panel: Panel, 
         f.c.text_fit(Rect::new(r.x, r.y, r.w, detail * 1.5), detail, Tone::Dim, says, Keep::Start);
         return;
     };
-    let mut y = fields(f, h, config, &item, None, r);
+    let mut y = fields(f, h, config, item, None, r);
     y += detail;
     let row = |y: f32| Rect::new(r.x, y, r.w * 0.6, detail * ACTION);
     for (id, label) in [(EditId::Open, "Edit"), (EditId::MoveUp, "Move up"), (EditId::MoveDown, "Move down")] {
         f.text_button(id.into(), row(y), detail, Tone::Fn, label, Align::Start);
         y += detail * ACTION;
     }
-    match &item {
-        Item::Runner(runner) if edit::runner_used(config, &runner.effective_id()) => {
+    match item {
+        ItemRef::Runner(runner) if edit::runner_in_use(config, runner) => {
             f.c.text_fit(row(y), detail, Tone::Dim, "Remove: a source names it", Keep::Start);
         }
         _ => f.text_button(EditId::Remove.into(), row(y), detail, Tone::Accent, "Remove", Align::Start),
@@ -197,7 +197,7 @@ fn list_view(f: &mut Frame, h: f32, edit: &Edit, config: &Config, panel: Panel, 
 fn form_view(f: &mut Frame, h: f32, config: &Config, open: &Form, body: Rect) {
     let pad = style::pad(h).max(4.0);
     let left = Rect::new(body.x, body.y, body.w * 0.55, body.h);
-    let mut y = fields(f, h, config, &open.item, Some(open.field), left);
+    let mut y = fields(f, h, config, open.item.as_ref(), Some(open.field), left);
     let detail = h * DETAIL;
     y += detail;
     let half = left.w * 0.3;
@@ -212,29 +212,32 @@ fn form_view(f: &mut Frame, h: f32, config: &Config, open: &Form, body: Rect) {
     let Some(&field) = open.item.fields().get(open.field) else { return };
     if open.choosing {
         let mut y = right.y;
-        let current = open.item.value(config, field);
-        for (j, (value, label)) in open.item.options(config, field).iter().enumerate() {
+        let current = Fmt::<192>::of(format_args!("{}", open.item.as_ref().value(config, field)));
+        let mut j = 0u16;
+        open.item.as_ref().each_option(config, field, |value, label| {
+            // Past the room, the rest isn't drawn.
+            if y > right.y + right.h - detail * ACTION {
+                return;
+            }
             let r = Rect::new(right.x, y, right.w, detail * ACTION);
             // A field shows its value as the option's label (a type) or as the option itself (a runner's id).
-            let tone = if *label == current || *value == current { Tone::Accent } else { Tone::Fn };
-            f.text_button(EditId::Choice(j as u16).into(), r, detail, tone, label, Align::Start);
+            let tone = if label == &*current || value == &*current { Tone::Accent } else { Tone::Fn };
+            f.text_button(EditId::Choice(j).into(), r, detail, tone, label, Align::Start);
             y += detail * ACTION;
-            if y > right.y + right.h - detail * ACTION {
-                break;
-            }
-        }
+            j += 1;
+        });
     }
 }
 
 /// An item's fields, a row each with its label and value, the `selected` one lit; tappable in a form.
 /// Returns where they end.
-fn fields(f: &mut Frame, h: f32, config: &Config, item: &Item, selected: Option<usize>, r: Rect) -> f32 {
+fn fields(f: &mut Frame, h: f32, config: &Config, item: ItemRef<'_>, selected: Option<usize>, r: Rect) -> f32 {
     let detail = h * DETAIL;
     let row_h = detail * ACTION;
     let mut y = r.y;
     for (i, &field) in item.fields().iter().enumerate() {
         let row = Rect::new(r.x, y, r.w, row_h);
-        let value = item.value(config, field);
+        let value = Fmt::<256>::of(format_args!("{}", item.value(config, field)));
         let label_w = r.w * 0.36;
         let lit = selected == Some(i);
         // In a form, a field that names a folder or file is chosen in the Library too, by its Choose… at

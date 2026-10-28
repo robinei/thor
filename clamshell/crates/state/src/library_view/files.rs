@@ -264,9 +264,14 @@ impl LibraryView {
     /// The open folder, if it is browsed and things may be put in it. The Trash and locked folders, such
     /// as an archive's, are left out.
     pub(super) fn open_dir(&self) -> Option<PathBuf> {
+        self.open_dir_path().map(PathBuf::from)
+    }
+
+    /// [`LibraryView::open_dir`], borrowed.
+    pub(super) fn open_dir_path(&self) -> Option<&Path> {
         let g = self.group()?;
         let b = g.browsed.as_ref()?;
-        (!matches!(b.kind, BrowseKind::Trash | BrowseKind::Trashed) && !b.locked).then(|| g.browsed_dir().map(PathBuf::from)).flatten()
+        (!matches!(b.kind, BrowseKind::Trash | BrowseKind::Trashed) && !b.locked).then(|| g.browsed_dir()).flatten()
     }
 
     /// The runner that archive `entry` opens in, for Open in. It is the runner of its library entry, as

@@ -253,6 +253,11 @@ impl Runner {
     pub fn effective_id(&self) -> String {
         if self.id.is_empty() { self.name.to_lowercase().replace(' ', "-") } else { self.id.clone() }
     }
+
+    /// Whether `id` is its [`Runner::effective_id`], compared without making it.
+    pub fn is_named(&self, id: &str) -> bool {
+        if self.id.is_empty() { id.chars().eq(self.name.chars().flat_map(char::to_lowercase).map(|c| if c == ' ' { '-' } else { c })) } else { self.id == id }
+    }
 }
 
 /// A runner that finds its items itself, each with its own command.
