@@ -139,6 +139,7 @@ impl Cursor {
             }
             CursorImageStatus::Named(icon) => self.named(icon, server, renderer, at, out)?,
             CursorImageStatus::Surface(_) => {
+                log::debug!("cursor: the client's cursor surface is gone: the default cursor instead");
                 server.pointer.cursor = CursorImageStatus::default_named();
                 self.named(CursorIcon::Default, server, renderer, at, out)?;
             }

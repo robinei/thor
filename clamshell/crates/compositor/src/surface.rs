@@ -126,8 +126,8 @@ impl Surface {
     /// mode a game picked as a buffer a viewport stretches, or crops. Smaller surfaces above, such as
     /// overlays, aren't the picture.
     pub fn picture_surface(&self) -> Option<WlSurface> {
-        // Asked for every frame: two passes over the surfaces rather than a list of them. Topmost first, as
-        // Smithay goes through them.
+        // Asked for every frame: two passes over the surfaces rather than a list of them. The window's own
+        // topmost first, as Smithay goes through them; its popups, over it, after (a menu isn't a picture).
         let area = |states: &SurfaceData| Self::view(states).map(|view| i64::from(view.dst.w) * i64::from(view.dst.h));
         let mut largest = None;
         self.with_surfaces(|_, states| largest = largest.max(area(states)));
@@ -201,7 +201,8 @@ impl Surface {
 
 /// The elements of `surface`'s tree at `location`, front first, handed to `f` one by one: Smithay's
 /// `render_elements_from_surface_tree` (at scale 1, opaque) without collecting them into a list, so that
-/// drawing a frame allocates nothing. A surface that can't be imported is left out, logged.
+/// drawing a frame allocates nothing, but for a window with xdg popups open (Smithay lists them each time
+/// it walks them). A surface that can't be imported is left out, logged.
 pub(crate) fn surface_tree_elements(
     renderer: &mut GlesRenderer,
     surface: &WlSurface,

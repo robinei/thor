@@ -339,9 +339,6 @@ impl Pipeline {
             let headroom = server.colour.screen(placed.below).headroom() as f32;
             let mut clarity = client.shown.clarity;
             let hdr_peak = client.shown.hdr_peak;
-            // The game's picture: the window's surface with the largest buffer (Wine draws it in a subsurface
-            // over the toplevel's), and whether that buffer is its surface's size (Xwayland and Wine show a
-            // mode a game picked as a smaller buffer scaled by a viewport).
             // The picture's surface (see `Surface::picture_surface`), and whether it shows its buffer unscaled.
             let picture = client.window.picture_surface().map(|surface| {
                 let unscaled = smithay::backend::renderer::utils::with_renderer_surface_state(&surface, |state| {

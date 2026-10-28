@@ -11,8 +11,8 @@
 //!
 //! It is placed again after anything that may move what is shown: the state changing
 //! ([`Server::sync_windows`]), a commit (a window's size or picture), and before drawing. In debug builds
-//! each read of a window's place is checked against a fresh placement, so that a missed one fails the
-//! tests rather than leaving a window drawn where it isn't touched.
+//! each read of a window's place through [`Server::shown`] is checked against a fresh placement, so that a
+//! missed one fails the tests rather than leaving a window drawn where it isn't touched.
 
 use clamshell_ui::{Bounds, Layer, Screen};
 use smithay::input::pointer::CursorImageStatus;
@@ -95,8 +95,8 @@ impl Scene {
 }
 
 impl Server {
-    /// Places what is shown (see the module's doc): the windows, the frontmost last in [`Server::windows`]
-    /// first here, then in front of them the UI: the second screen's view (only above its windows' area
+    /// Places what is shown (see the module's doc): the windows, each screen's stack as the session says
+    /// (`Session::stack`, or the overview's cells), then in front of them the UI: the second screen's view (only above its windows' area
     /// while it shows them), the top screen's while no window covers it, and the overlays where they draw;
     /// and in front of all the cursor, while it shows.
     pub(crate) fn place(&mut self) {

@@ -25,8 +25,8 @@ pub(crate) struct Pacing {
     /// last sent.
     pub frames_due: Option<Instant>,
     frames_sent: (Option<f32>, Option<f32>),
-    /// The clients whose blockers a frame's callbacks or a shown frame cleared, told once each; kept, so
-    /// that pacing a frame allocates nothing.
+    /// The clients whose blockers a frame's callbacks or a commit timing's release cleared, told once each;
+    /// kept, so that pacing a frame allocates nothing.
     cleared: Vec<smithay::reexports::wayland_server::Client>,
 }
 

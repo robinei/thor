@@ -1136,7 +1136,7 @@ fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipel
         }
         Err(error) => {
             log::info!(
-                "window scanout: the {:?} screen can't show window {} from its own buffer: {error}: composed until its buffer changes",
+                "window scanout: the {:?} screen can't show window {} from its own buffer: {error}: composed until its buffers' shape changes",
                 screen.role,
                 candidate.id
             );

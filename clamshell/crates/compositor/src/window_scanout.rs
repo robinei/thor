@@ -2,7 +2,8 @@
 //! composed, so that a fullscreen game costs the GPU nothing but its own drawing. Best effort: a screen
 //! shows a window so while it is the only thing on it ([`Server::scanout_window`]) and its buffer is one
 //! the plane takes as ClamShell would show it, and the display engine passes the commit tested first;
-//! otherwise it is composed, and a window refused stays composed until its buffer changes.
+//! otherwise it is composed, and a window refused stays composed until its buffers' shape changes (their
+//! format, size, the part shown, where, or colour): for a game, usually while it runs.
 //!
 //! The window's colour is what the final pass would make of it (`colour::scanout`): none where its
 //! signal is the screen's and no curve is on, else the plane's colour pipeline, a 1D LUT then a 3D LUT,
@@ -209,7 +210,7 @@ pub(crate) struct WindowScanout {
     colour: Option<(ColourKey, Blobs, Vec<Property>)>,
     /// The pipeline turned off, for a window that needs none and the commits after a window.
     off: Vec<Property>,
-    /// The last shape refused, until a window or its buffer changes it.
+    /// The last shape refused, until another window or its buffers' shape changes it.
     pub refused: Option<Shape>,
 }
 
