@@ -1154,7 +1154,9 @@ fn present(drawing: &mut Drawing, server: &mut Server, index: usize) -> Result<(
         let mut target = renderer.bind(&mut buffer)?;
         pipeline.present_screen(renderer, &mut target, screen.role == ScreenRole::Bottom, screen.size, screen.transform)?
     };
-    screen.queued.states.clone_from(&states.states);
+    // (Not clone_from: a map of another capacity would be allocated anew.)
+    screen.queued.states.clear();
+    screen.queued.states.extend(states.states.iter().map(|(id, state)| (id.clone(), *state)));
     let layers = screen.layers.iter().flat_map(PlaneLayers::states);
     if let Err(error) = screen.surface.queue(Some(sync), layers) {
         if with_layers {
