@@ -62,9 +62,6 @@ pub struct Shelf {
     navs: Vec<Nav>,
     /// How many list rows are on screen, as reported by the UI.
     rows: usize,
-    /// The id of the selected entry, at the current list's cursor. It is shown in shelf's list on the top
-    /// screen and in its settings below.
-    selected: Option<Arc<str>>,
     /// The listings of browsed folders, by folder, in the order they came; a folder's listing comes before
     /// those of the folders in it. They are applied again when the library is read again.
     listings: Vec<(Arc<str>, Vec<Entry>)>,
@@ -134,8 +131,10 @@ impl Shelf {
         self.rows
     }
 
+    /// The id of the selected entry: the current list's, at its cursor. It is shown in shelf's list on the
+    /// top screen and in its settings below.
     pub fn selected(&self) -> Option<&Arc<str>> {
-        self.selected.as_ref()
+        self.selected_entry().map(|g| &g.id)
     }
 
     pub fn collection(&self) -> Option<&Collection> {
@@ -287,10 +286,9 @@ impl Shelf {
         std::mem::take(&mut self.unsaved)
     }
 
-    /// Keeps the cursor in range and on screen, and `selected` in step with it. Returns whether the
-    /// selection changed.
+    /// Keeps the cursor in range and on screen. Returns whether the selection changed.
     pub(crate) fn sync(&mut self) -> bool {
-        let before = self.selected.clone();
+        let before = self.selected().cloned();
         let len = self.list().len();
         let rows = self.rows.max(1) as f32;
         if let Some(p) = self.place_mut() {
@@ -298,8 +296,7 @@ impl Shelf {
             p.scroll.set_visible(rows, len);
             p.scroll.show(p.index, len);
         }
-        self.selected = self.selected_entry().map(|g| g.id.clone());
-        self.selected != before
+        self.selected() != before.as_ref()
     }
 
     /// Moves the cursor by `step` entries, stopping at the ends. Returns whether the selection changed.
@@ -446,7 +443,7 @@ impl Shelf {
     pub(crate) fn relayout(&mut self, change: impl FnOnce(&mut Library)) -> bool {
         let names: Vec<String> = self.library.collections.iter().map(|c| c.name.clone()).collect();
         let current_name = names.get(self.current).cloned();
-        let selected = self.selected.clone();
+        let selected = self.selected().cloned();
         change(&mut self.library);
         let old = std::mem::take(&mut self.navs);
         // Derived collections come and go, so places are matched by name. What is typed in each list is
@@ -460,14 +457,14 @@ impl Shelf {
             self.select(id);
         }
         self.sync();
-        self.selected != selected
+        self.selected() != selected.as_ref()
     }
 
     /// Takes the library read again. The listings of browsed folders that are still there are applied to
     /// it again, and each collection's place is kept by name and ids, with what is typed in each list and
     /// the scroll starting from the top. Returns whether the selection changed.
     pub(crate) fn reload(&mut self, library: Library) -> bool {
-        let before = self.selected.clone();
+        let before = self.selected().cloned();
         let mut places = Vec::new();
         self.kept_places(&mut places);
         let current = self.collection().map(|c| c.name.clone());
@@ -492,7 +489,7 @@ impl Shelf {
         if let Some(resume) = waiting {
             resume.restore_shelf(self);
         }
-        self.selected != before
+        self.selected() != before.as_ref()
     }
 
     /// Appends each collection's place to `places`, to be kept across a library read: its name, and for
@@ -549,7 +546,7 @@ impl Shelf {
         };
         let shown = |s: &Shelf| s.list().iter().filter_map(|&i| s.library.entries.get(i)).map(|g| g.id.clone()).collect::<Vec<_>>();
         let shown_before = shown(self);
-        let before = self.selected.clone();
+        let before = self.selected().cloned();
         self.listings.retain(|(id, _)| *id != folder);
         self.listings.push((folder, entries.clone()));
         self.library.set_listing(f, entries);
@@ -565,7 +562,7 @@ impl Shelf {
         if shown(self) != shown_before {
             self.listings_shown = self.listings_shown.wrapping_add(1);
         }
-        self.selected != before
+        self.selected() != before.as_ref()
     }
 
     /// Keeps each collection's open groups only as far as each is still in the list of the group before
@@ -604,7 +601,7 @@ impl Shelf {
     /// Puts the selected entry in or out of the favourites, if there is one. Returns whether the selection
     /// changed.
     fn favourite_selected(&mut self) -> Option<bool> {
-        let id = self.selected.clone()?;
+        let id = self.selected().cloned()?;
         Some(self.relayout(|lib| {
             if let Some(g) = lib.entries.iter_mut().find(|g| g.id == id) {
                 g.favourite = !g.favourite;

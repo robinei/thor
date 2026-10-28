@@ -1071,17 +1071,10 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     if !shelf.library().collections.is_empty() {
         ensure!(shelf.current() < shelf.library().collections.len(), "6: collection {} out of range", shelf.current());
     }
-    if list.is_empty() {
-        ensure!(shelf.selected().is_none(), "6: {:?} selected in an empty list", shelf.selected());
-    } else {
+    // (The selected entry is the one at the cursor: `Shelf::selected` is worked out so.)
+    if !list.is_empty() {
         let cursor = shelf.cursor().index;
         ensure!(cursor < list.len(), "6: cursor {cursor} past {}", list.len());
-        ensure!(
-            shelf.selected() == shelf.entry_at(cursor).map(|g| &g.id),
-            "6: {:?} selected, {:?} at the cursor",
-            shelf.selected(),
-            shelf.entry_at(cursor).map(|g| &g.id)
-        );
     }
     let filter = shelf.filter().to_lowercase();
     for g in list.iter().filter_map(|&i| shelf.library().entries.get(i)) {

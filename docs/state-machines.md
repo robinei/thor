@@ -1567,7 +1567,7 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    would change the top window's root (the group in front has another top-level window, and the top
    window's root is one of them).
 5. **Dock:** ids unique; every running entry is on it; every item is pinned, running or being moved.
-6. **Shelf:** the cursor within the list; `selected` is the entry at the cursor; the collection index in
+6. **Shelf:** the cursor within the list (the selected entry is worked out as the one at it); the collection index in
    range; every entry listed matches the filter.
 7. **Lists:** every scroll offset within its ends.
 8. **Bottom:** dimmed ⇒ no windows shown; the chosen tab differs from the tab only on Keyboard; the editor
