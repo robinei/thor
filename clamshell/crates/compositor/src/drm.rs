@@ -78,21 +78,19 @@ struct Screen {
     refresh: u16,
     /// When its last frame was shown, by the flip's time.
     flipped: Option<Time<Monotonic>>,
+    /// What it shows (see [`shows`]).
+    shows: Shows,
     /// Its own buffers, with CLAMSHELL_SCANOUT=1, for while it shows nothing but ClamShell (see
-    /// `ui_scanout`); and whether it shows one now.
+    /// `ui_scanout`).
     ui: Option<UiScanout>,
-    ui_shown: bool,
     /// With CLAMSHELL_SCANOUT=1, its means to show a window from the window's own buffer (see
-    /// `window_scanout`), the window it shows so if it does, the window told the plane's formats, the shape
+    /// `window_scanout`), the window's buffer it shows so, the window told the plane's formats, the shape
     /// the display engine last took, and why a window alone on it is composed, as last logged.
     window: Option<WindowScanout>,
-    window_shown: Option<Candidate>,
+    candidate: Option<Candidate>,
     fed: Option<i64>,
     tested: Option<Shape>,
     composed_why: Option<&'static str>,
-    /// The window drawn straight onto it, composed without the scene between (see `colour::render`), if
-    /// it shows one alone.
-    direct: Option<i64>,
     /// With CLAMSHELL_SCANOUT=1, its overlay layer and cursor on planes of their own (see `plane_layers`),
     /// and whether what they show changed since its last commit.
     layers: Option<PlaneLayers>,
@@ -273,14 +271,13 @@ pub fn run(
             flipped: None,
             queued: RenderElementStates::default(),
             feedback: Default::default(),
+            shows: Shows::Composed,
             ui: None,
-            ui_shown: false,
             window: None,
-            window_shown: None,
+            candidate: None,
             fed: None,
             tested: None,
             composed_why: None,
-            direct: None,
             layers: None,
             layers_dirty: false,
             failing: false,
@@ -617,9 +614,7 @@ fn step(
     // straight onto itself.
     record_overlays(server);
     layers_decide(drawing, server);
-    ui_scanout_decide(drawing, server);
-    window_scanout_decide(drawing, server);
-    direct_decide(drawing, server);
+    shows_decide(drawing, server);
     // Each screen composes on its own: when it is free (not waiting for a flip, which composes it with
     // what came meanwhile), unless it shows its own buffers or a window's; for a screenshot, all of them.
     let capture = std::mem::take(&mut server.screenshot_requested);
@@ -676,11 +671,11 @@ fn step(
         }
         due = earlier(due, turn.wake);
         // A commit that failed wakes the loop for the next try (see `failed`).
-        if screen.ui_shown {
+        if screen.shows == Shows::Own {
             if screen.on && !screen.surface.in_flight() {
                 due = earlier(due, present_ui(screen, server, &mut drawing.pipeline, &drawing.cursor));
             }
-        } else if turn.present && screen.window_shown.is_some() {
+        } else if turn.present && matches!(screen.shows, Shows::Window(_)) {
             due = earlier(due, present_window(screen, server, &mut drawing.pipeline, &drawing.cursor));
         } else if turn.present {
             due = earlier(due, present(drawing, server, index));
@@ -865,14 +860,17 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
 fn compose(drawing: &mut Drawing, server: &mut Server, index: usize, capture: bool) -> Result<(), Error> {
     let Drawing { renderer, pipeline, screens, frames, cursor, elements, states, .. } = drawing;
     let (Some(screen), Some(states)) = (screens.get_mut(index), states.get_mut(index)) else { return Ok(()) };
-    let shows_own = screen.ui_shown || screen.window_shown.is_some();
+    let shows_own = matches!(screen.shows, Shows::Own | Shows::Window(_));
     if !composes(screen.on, screen.surface.in_flight(), shows_own, capture) {
         return Ok(());
     }
     let down = screen.role == ScreenRole::Bottom;
-    let skip = screen.window_shown.as_ref().map(|shown| shown.id);
+    let skip = match screen.shows {
+        Shows::Window(id) => Some(id),
+        _ => None,
+    };
     render::elements(server, frames, cursor, renderer, elements, down, skip, screen.planed())?;
-    screen.dirty |= pipeline.compose(server, renderer, down, elements, states, screen.direct.is_some())?;
+    screen.dirty |= pipeline.compose(server, renderer, down, elements, states, matches!(screen.shows, Shows::Straight(_)))?;
     Ok(())
 }
 
@@ -939,7 +937,7 @@ enum Commit {
     Composed,
     /// The screen's own buffer, drawn anew for it if `drew`.
     Own { drew: bool },
-    /// Window `id`'s buffer (the one decided on, see [`window_scanout_decide`]).
+    /// Window `id`'s buffer (the one decided on, see [`shows_decide`]).
     Window { id: i64 },
     /// The frame shown, again, with the planes changed.
     Again,
@@ -1012,25 +1010,21 @@ fn failed(screen: &mut Screen, pipeline: &mut Pipeline, kind: Commit, with_layer
                 Commit::Own { .. } => {
                     log::warn!("ui scanout: the {role:?} screen: {error}: composed from now on");
                     if let Some(ui) = &mut screen.ui {
-                        screen.surface.clear_after(ui.clear());
                         ui.refused = true;
                     }
-                    screen.ui_shown = false;
                 }
                 Commit::Window { id } => {
                     log::info!(
                         "window scanout: the {role:?} screen can't show window {id} from its own buffer: {error}: composed until its buffers' shape changes"
                     );
                     if let Some(scanout) = &mut screen.window {
-                        scanout.refused = screen.window_shown.as_ref().map(Candidate::shape);
-                        screen.surface.clear_after(scanout.clear());
+                        scanout.refused = screen.candidate.as_ref().map(Candidate::shape);
                     }
-                    screen.window_shown = None;
-                    pipeline.redraw_all();
                 }
                 Commit::Composed | Commit::Again => {}
             }
-            screen.dirty = true;
+            // Composed from the next turn, which decides again (see `shows_decide`) without it.
+            show(screen, pipeline, Shows::Composed);
             Some(Instant::now())
         }
     }
@@ -1076,115 +1070,186 @@ fn record_overlays(server: &mut Server) {
     }
 }
 
-/// Decides for each screen with its own buffers whether it shows them: while the scene has nothing but
-/// ClamShell's view on it, or its overlay and cursor on their planes. A screen going back to composing
-/// clears the CRTC's colour in its next commit and is drawn whole; one going back to its own buffers draws
-/// and commits them whole.
-fn ui_scanout_decide(drawing: &mut Drawing, server: &mut Server) {
-    for screen in &mut drawing.screens {
-        if screen.ui.as_ref().is_none_or(|ui| ui.refused) {
-            continue;
+/// What a screen shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Shows {
+    /// A frame composed from the scene.
+    Composed,
+    /// Its own buffers, with ClamShell's view (see `ui_scanout`).
+    Own,
+    /// Window `id` from the window's own buffer (see `window_scanout`).
+    Window(i64),
+    /// Window `id` drawn straight onto it, composed without the scene between (see `colour::render`).
+    Straight(i64),
+}
+
+impl std::fmt::Display for Shows {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Shows::Composed => write!(f, "composes its frames"),
+            Shows::Own => write!(f, "shows its own buffers"),
+            Shows::Window(id) => write!(f, "shows window {id} from its own buffer"),
+            Shows::Straight(id) => write!(f, "draws window {id} straight onto it while it is one element"),
         }
-        let now = ui_only(server, screen.role == ScreenRole::Bottom, screen.planed());
-        let Some(ui) = &mut screen.ui else { continue };
-        if screen.ui_shown && !now {
-            screen.surface.clear_after(ui.clear());
-            screen.dirty = true;
-        }
-        if !screen.ui_shown && now {
-            // Committed whole even if the UI didn't change meanwhile: the screen shows a composed frame.
-            ui.reset();
-        }
-        if now != screen.ui_shown {
-            log::info!("ui scanout: the {:?} screen is {}", screen.role, if now { "scanned out" } else { "composed" });
-        }
-        screen.ui_shown = now;
     }
 }
 
-/// Decides for each screen that can show a window from the window's own buffer whether it does: while the
-/// window is all there is on it, its buffer is one the plane can show as composing would, and the display
-/// engine hasn't refused that (see `window_scanout`). The window alone on a screen is told the plane's
-/// formats, and told the renderer's again once it isn't. A screenshot, taken of the scene composed, has
-/// the window composed for it. A screen going back to composing clears the plane's colour in its next
-/// commit, and the scene, which left the window out, is drawn whole.
-fn window_scanout_decide(drawing: &mut Drawing, server: &mut Server) {
+/// What a screen's showing is decided from (see [`shows`]).
+#[derive(Debug, Clone, Copy)]
+struct Facts {
+    on: bool,
+    /// It has its own buffers, not refused, and nothing but ClamShell's view is on it (but the overlay and
+    /// cursor on their planes).
+    own: bool,
+    /// The window alone on it (see `Server::lone_window`), if one is.
+    lone: Option<i64>,
+    /// Whether that window's buffer can be shown as it is: else why not. None where the screen can't
+    /// show a window's buffer.
+    buffer: Option<Result<(), &'static str>>,
+    /// A screenshot is taken of the scene this turn.
+    screenshot: bool,
+}
+
+/// What a screen shows by its `facts`: its own buffers while it can; the window alone on it from its own
+/// buffer while that can be, else drawn straight; else a frame composed. For a screenshot a lone window
+/// is composed, the scene being what it is taken of.
+fn shows(facts: Facts) -> Shows {
+    match facts.lone {
+        _ if facts.own => Shows::Own,
+        Some(_) if facts.screenshot => Shows::Composed,
+        Some(id) if facts.on && facts.buffer == Some(Ok(())) => Shows::Window(id),
+        Some(id) => Shows::Straight(id),
+        None => Shows::Composed,
+    }
+}
+
+/// What a change of what a screen shows takes.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Change {
+    /// The next commit clears the CRTC's colour its own buffers set.
+    clear_own: bool,
+    /// Its own buffers are drawn and committed whole, though the view didn't change: the screen shows
+    /// something else.
+    reset_own: bool,
+    /// The next commit clears the plane's colour a window's buffer set.
+    clear_window: bool,
+    /// The scenes are drawn whole: they left the window out.
+    redraw: bool,
+    /// The screen shows a new frame.
+    dirty: bool,
+}
+
+/// What going `from` showing one thing `to` another takes.
+fn change(from: Shows, to: Shows) -> Change {
+    let mut change = Change::default();
+    if from == to {
+        return change;
+    }
+    match from {
+        Shows::Own => (change.clear_own, change.dirty) = (true, true),
+        Shows::Window(_) if !matches!(to, Shows::Window(_)) => (change.clear_window, change.redraw, change.dirty) = (true, true, true),
+        _ => {}
+    }
+    match to {
+        Shows::Own => change.reset_own = true,
+        Shows::Window(_) => change.dirty = true,
+        _ => {}
+    }
+    change
+}
+
+/// Has the screen show `to`, with what the change takes, logged.
+fn show(screen: &mut Screen, pipeline: &mut Pipeline, to: Shows) {
+    let change = change(screen.shows, to);
+    if change.clear_own
+        && let Some(ui) = &screen.ui
+    {
+        screen.surface.clear_after(ui.clear());
+    }
+    if change.reset_own
+        && let Some(ui) = &mut screen.ui
+    {
+        ui.reset();
+    }
+    if change.clear_window
+        && let Some(scanout) = &screen.window
+    {
+        screen.surface.clear_after(scanout.clear());
+    }
+    if change.redraw {
+        pipeline.redraw_all();
+    }
+    screen.dirty |= change.dirty;
+    if to != screen.shows {
+        log::info!("drm: the {:?} screen {to}", screen.role);
+    }
+    screen.shows = to;
+    if !matches!(to, Shows::Window(_)) {
+        screen.candidate = None;
+    }
+}
+
+/// Decides for each screen what it shows (see [`shows`]), from what is on it this turn. The window alone on
+/// a screen that can show a window's buffer is told the plane's formats, and told the renderer's again
+/// once it isn't; one that can't be shown so is composed, with the reason logged. A window shown from its
+/// own buffer is committed again when its buffer changes.
+fn shows_decide(drawing: &mut Drawing, server: &mut Server) {
     let Drawing { screens, pipeline, .. } = drawing;
     for screen in screens.iter_mut() {
-        let planed = screen.planed();
-        let Some(scanout) = &mut screen.window else { continue };
         let down = screen.role == ScreenRole::Bottom;
+        let planed = screen.planed();
         let area = Rectangle::new((screen.part.loc.x, screen.part.loc.y).into(), (screen.part.size.w, screen.part.size.h).into());
-        let found = if screen.ui_shown || !screen.on { None } else { server.scanout_window(down, area, pipeline.output_description(down), planed) };
-        let alone = found.as_ref().map(|(id, _)| *id);
-        if alone != screen.fed {
-            if let (Some(id), Some(default)) = (screen.fed, &server.protocols.dmabuf_feedback) {
-                server.dmabuf_feedback(id, default);
+        let own = screen.ui.as_ref().is_some_and(|ui| !ui.refused) && ui_only(server, down, planed);
+        let lone = server.lone_window(down, area, planed).map(|placed| (placed.id, placed.geometry));
+        let mut candidate = None;
+        let mut buffer = None;
+        if let Some(scanout) = &screen.window {
+            let alone = lone.filter(|_| !own && screen.on);
+            if alone.map(|(id, _)| id) != screen.fed {
+                if let (Some(id), Some(default)) = (screen.fed, &server.protocols.dmabuf_feedback) {
+                    server.dmabuf_feedback(id, default);
+                }
+                if let (Some((id, _)), Some(feedback)) = (alone, &scanout.feedback) {
+                    server.dmabuf_feedback(id, feedback);
+                }
+                screen.fed = alone.map(|(id, _)| id);
             }
-            if let (Some(id), Some(feedback)) = (alone, &scanout.feedback) {
-                server.dmabuf_feedback(id, feedback);
+            let chosen = alone.map(|(id, geometry)| match server.candidate(id, geometry, down, area, pipeline.output_description(down)) {
+                Ok(candidate) if candidate.colour.is_some() && !scanout.has_pipeline() => Err("its colour needs a colour pipeline the plane hasn't"),
+                Ok(candidate) if scanout.refused == Some(candidate.shape()) => Err("the display engine refused its buffer"),
+                chosen => chosen,
+            });
+            let why = chosen.as_ref().and_then(|chosen| chosen.as_ref().err().copied());
+            if why != screen.composed_why {
+                if let (Some(why), Some((id, _))) = (why, alone) {
+                    log::info!("window scanout: window {id}, alone on the {:?} screen, is composed: {why}", screen.role);
+                }
+                screen.composed_why = why;
             }
-            screen.fed = alone;
+            buffer = Some(chosen.as_ref().map_or(Err("no window alone"), |chosen| chosen.as_ref().map(|_| ()).map_err(|why| *why)));
+            candidate = chosen.and_then(Result::ok);
         }
-        let chosen = match found {
-            Some((_, Ok(candidate))) if candidate.colour.is_some() && !scanout.has_pipeline() => Err("its colour needs a colour pipeline the plane hasn't"),
-            Some((_, Ok(candidate))) if scanout.refused == Some(candidate.shape()) => Err("the display engine refused its buffer"),
-            Some((_, Ok(candidate))) => Ok(Some(candidate)),
-            Some((_, Err(why))) => Err(why),
-            None => Ok(None),
-        };
-        let why = chosen.as_ref().err().copied();
-        if why != screen.composed_why {
-            if let (Some(why), Some(id)) = (why, alone) {
-                log::info!("window scanout: window {id}, alone on the {:?} screen, is composed: {why}", screen.role);
-            }
-            screen.composed_why = why;
-        }
-        let now = chosen.ok().flatten().filter(|_| !server.screenshot_requested);
-        match (&now, &screen.window_shown) {
-            (Some(candidate), None) => log::info!("window scanout: the {:?} screen shows window {} from its own buffer", screen.role, candidate.id),
-            (None, Some(shown)) => {
-                log::info!("window scanout: the {:?} screen no longer shows window {} from its own buffer", screen.role, shown.id);
-                screen.surface.clear_after(scanout.clear());
-                screen.dirty = true;
-                pipeline.redraw_all();
-            }
-            _ => {}
-        }
-        if let Some(candidate) = &now
-            && screen.window_shown.as_ref().is_none_or(|shown| shown.commit != candidate.commit || shown.shape() != candidate.shape())
+        let facts = Facts { on: screen.on, own, lone: lone.map(|(id, _)| id), buffer, screenshot: server.screenshot_requested };
+        let to = shows(facts);
+        if let Shows::Window(_) = to
+            && screen.candidate.as_ref().zip(candidate.as_ref()).is_none_or(|(shown, now)| shown.commit != now.commit || shown.shape() != now.shape())
         {
+            // A new buffer to show.
             screen.dirty = true;
         }
-        screen.window_shown = now;
-    }
-}
-
-/// Decides for each screen whether a window alone on it is drawn straight onto it, composed without the
-/// scene between (see `colour::render`): unless it is shown from its own buffer, or a screenshot wants the
-/// scene.
-fn direct_decide(drawing: &mut Drawing, server: &Server) {
-    for screen in &mut drawing.screens {
-        let down = screen.role == ScreenRole::Bottom;
-        let area = Rectangle::new((screen.part.loc.x, screen.part.loc.y).into(), (screen.part.size.w, screen.part.size.h).into());
-        let lone = server.lone_window(down, area, screen.planed()).map(|placed| placed.id);
-        let direct = lone.filter(|_| !server.screenshot_requested && !screen.ui_shown && screen.window_shown.is_none());
-        if direct != screen.direct {
-            match direct {
-                Some(id) => log::info!("drm: the {:?} screen draws window {id} straight onto it while it is one element", screen.role),
-                None => log::info!("drm: the {:?} screen composes through the scene again", screen.role),
-            }
-            screen.direct = direct;
+        show(screen, pipeline, to);
+        if let Shows::Window(_) = to {
+            screen.candidate = candidate;
         }
     }
 }
 
-/// Shows the window decided on (see [`window_scanout_decide`]) from its own buffer, in a test commit
+/// Shows the window decided on (see [`shows_decide`]) from its own buffer, in a test commit
 /// first when its shape is new. Returns when to try again if it failed (see [`failed`]): refused, the
 /// window is composed until its buffers' shape changes, and the scene, which left it out, is drawn whole.
 fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipeline, cursor: &crate::cursor::Cursor) -> Option<Instant> {
     let with_layers = prepare_layers(screen, server, cursor);
-    let (Some(scanout), Some(candidate)) = (&mut screen.window, &screen.window_shown) else { return None };
+    let (Some(scanout), Some(candidate)) = (&mut screen.window, &screen.candidate) else { return None };
     let shape = candidate.shape();
     let test = screen.tested != Some(shape);
     // The window's place turned as the composed frame is, its buffer the other way, as the plane takes it.
@@ -1341,6 +1406,38 @@ fn names_ids(identifier: &str, vendor: u32, product: u32, name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// A screen shows its own buffers while it can, else the window alone on it from the window's buffer
+    /// while that can be (not for a screenshot, nor while off), else drawn straight, else composed.
+    #[test]
+    fn a_screen_shows_its_own_buffers_a_lone_windows_or_a_frame_composed() {
+        use super::{Facts, Shows, shows};
+        let none = Facts { on: true, own: false, lone: None, buffer: None, screenshot: false };
+        let lone = Facts { lone: Some(7), buffer: Some(Ok(())), ..none };
+        assert_eq!(shows(none), Shows::Composed);
+        assert_eq!(shows(Facts { own: true, ..none }), Shows::Own);
+        assert_eq!(shows(Facts { own: true, screenshot: true, ..none }), Shows::Own, "a screenshot composes it anyway");
+        assert_eq!(shows(lone), Shows::Window(7));
+        assert_eq!(shows(Facts { buffer: Some(Err("refused")), ..lone }), Shows::Straight(7));
+        assert_eq!(shows(Facts { buffer: None, ..lone }), Shows::Straight(7), "a screen without window scanout");
+        assert_eq!(shows(Facts { on: false, ..lone }), Shows::Straight(7));
+        assert_eq!(shows(Facts { screenshot: true, ..lone }), Shows::Composed, "the scene, for the screenshot");
+    }
+
+    /// Leaving its own buffers clears their colour and composes; going to them commits them whole; leaving
+    /// a window's buffer clears its colour and draws the scenes whole, which left the window out.
+    #[test]
+    fn a_change_of_what_a_screen_shows_takes_what_it_left_and_where_it_goes() {
+        use super::{Change, Shows, change};
+        assert_eq!(change(Shows::Own, Shows::Own), Change::default());
+        assert_eq!(change(Shows::Composed, Shows::Own), Change { reset_own: true, ..Change::default() });
+        assert_eq!(change(Shows::Own, Shows::Composed), Change { clear_own: true, dirty: true, ..Change::default() });
+        assert_eq!(change(Shows::Own, Shows::Window(7)), Change { clear_own: true, dirty: true, ..Change::default() });
+        assert_eq!(change(Shows::Window(7), Shows::Straight(7)), Change { clear_window: true, redraw: true, dirty: true, ..Change::default() });
+        assert_eq!(change(Shows::Window(7), Shows::Own), Change { clear_window: true, redraw: true, dirty: true, reset_own: true, ..Change::default() });
+        assert_eq!(change(Shows::Window(7), Shows::Window(8)), Change { dirty: true, ..Change::default() }, "another window's buffer");
+        assert_eq!(change(Shows::Straight(7), Shows::Composed), Change::default(), "composing sees to that itself");
+    }
+
     /// A failed commit's remedy: away waits, busy or failing tries again, a refusal with the planes showing
     /// turns them off, and one without them refuses what the primary plane showed if the screen can
     /// compose instead.

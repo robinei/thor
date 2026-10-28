@@ -1,6 +1,6 @@
 //! A window shown directly, with CLAMSHELL_SCANOUT=1: its buffer on the screen's primary plane rather than
 //! composed, so that a fullscreen game costs the GPU nothing but its own drawing. Best effort: a screen
-//! shows a window so while it is the only thing on it ([`Server::scanout_window`]) and its buffer is one
+//! shows a window so while it is the only thing on it ([`Server::lone_window`], [`Server::candidate`]) and its buffer is one
 //! the plane takes as ClamShell would show it, and the display engine passes the commit tested first;
 //! otherwise it is composed, and a window refused stays composed until its buffers' shape changes (their
 //! format, size, the part shown, where, or colour): for a game, usually while it runs.
@@ -84,17 +84,6 @@ impl Server {
     /// The window screen `down` could show from its own buffer, `screen` being its area in the scene and
     /// `output` its encoding: none unless one window is all there is on the screen and covers it (see
     /// [`Server::lone_window`]), else that window and whether its buffer can be shown so, or why not.
-    pub(crate) fn scanout_window(
-        &self,
-        down: bool,
-        screen: Rectangle<i32, Logical>,
-        output: ColourDescription,
-        planed: crate::plane_layers::Planed,
-    ) -> Option<(i64, Result<Candidate, &'static str>)> {
-        let placed = self.lone_window(down, screen, planed)?;
-        Some((placed.id, self.candidate(placed.id, placed.geometry, down, screen, output)))
-    }
-
     /// The window that is all there is on screen `down`, `screen` being its area in the scene, covering it
     /// and taking the input: no other window, dim layer, UI layer or cursor on it, but for the overlay
     /// layer and the cursor on planes of their own (`planed`, see `plane_layers`).
@@ -111,7 +100,9 @@ impl Server {
         (on.next().is_none() && placed.input && placed.geometry.viewport == screen).then_some(placed)
     }
 
-    fn candidate(
+    /// Window `id`, placed by `geometry` alone on screen `down` (`screen` its area), as a buffer the plane
+    /// can show for the screen's `output` encoding, or why not.
+    pub(crate) fn candidate(
         &self,
         id: i64,
         geometry: crate::geometry::Geometry,

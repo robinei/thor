@@ -28,7 +28,7 @@ and 4 and at the end.
   dirty and the loop wakes at its next refresh, logged once a run of failures. Away: nothing.
 - [x] 3. **A frame in flight kept once.** `Screen.pending`/`queued_at` and the lost-flip timeout move into
   `Presenter`, beside its `pending` and `lost`.
-- [ ] 4. **What a screen shows, decided once.** `Shows { Composed, Own, Window(Candidate), Straight(id) }`
+- [x] 4. **What a screen shows, decided once.** `Shows { Composed, Own, Window(Candidate), Straight(id) }`
   replaces `ui_shown`, `window_shown` and `direct`. A pure function decides it from a screen's facts (on,
   only ClamShell's view on it, the lone window and its candidate or why not, refusals, a screenshot); a
   second gives each change's effects (properties cleared after, drawn whole, scene redrawn, own buffers
