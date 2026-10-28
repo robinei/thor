@@ -312,7 +312,7 @@ pub(crate) fn back(s: &State) -> Option<Event> {
     }
     // The Library's edit mode goes out of the open folder, or else leaves.
     if let Some(edit) = s.library_view().edit().filter(|_| s.top_view() == clamshell_state::setup::TopView::LibraryView) {
-        let open = s.library_view().library().config.as_ref().and_then(|c| edit.open(edit.config(Some(c))?).next()).is_some();
+        let open = s.library_view().config_shown().and_then(|c| edit.open(c).next()).is_some();
         let id = match (edit.form().is_some(), open) {
             (true, _) => EditId::Cancel,
             (false, true) => EditId::Up,

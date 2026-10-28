@@ -24,7 +24,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect, edit: &Edit) -> usize {
     let pad = style::pad(h).max(4.0);
     let tabs_h = h * TABS_H;
     let rows_fit = ((h - tabs_h - pad * 1.5) / (h * ROW_H)).floor().max(1.0) as usize;
-    let Some(config) = edit.config(s.library_view().library().config.as_ref()) else {
+    let Some(config) = s.library_view().config_shown().map(|c| &**c) else {
         let line = Rect::new(pad, h * 0.4, w - 2.0 * pad, h * ROW_H);
         widgets::centred_text(f, line, h * DETAIL, Tone::Dim, "library.json doesn't read, so it isn't edited here: see the Rescan entry");
         done(f, Rect::new(w - pad - h * 0.2, 0.0, h * 0.2, tabs_h), h * TAB_TEXT);

@@ -793,7 +793,10 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             Event::Tray(if rng.one_in(3) { Vec::new() } else { vec![item] })
         }
         96 => Event::Fetching(rng.one_in(2)),
-        97 if rng.one_in(4) => Event::Library(Box::new(library.clone())),
+        97 if rng.one_in(4) => {
+            // Read by a rescan, or after one of the edit mode's writes.
+            if rng.one_in(2) { Event::Library(Box::new(library.clone())) } else { Event::LibraryWritten(Box::new(library.clone())) }
+        }
         97 => Event::DumpWindowEvents("window-events.json".into()),
         // A system thread started again after a panic.
         98 => match rng.below(10) {

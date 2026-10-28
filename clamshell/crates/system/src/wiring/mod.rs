@@ -70,37 +70,41 @@ pub(crate) enum Rescan {
 }
 
 /// The Tools tab's rescan, the library's first read at start, and its read after an edit. On a thread of
-/// its own, it does what `Rescan` says first, reads the library and sends it, and fetches what the
-/// library wants.
-fn rescanner<S: Sink + Clone>(sources: Sources, paths: Paths, queue: meta::Queue, sink: S) -> Box<dyn Fn(Rescan)> {
-    Box::new(move |first| {
-        let (sources, paths, queue, sink) = (sources.clone(), paths.clone(), queue.clone(), sink.clone());
-        log_failed_start(
-            "rescan",
-            crate::os::worker::detached("rescan", move || {
-                match first {
-                    Rescan::Read => {}
-                    Rescan::Refetch => {
-                        if let Some(art) = paths.art.as_deref() {
-                            log::info!("rescan: {} misses forgotten", Cache::open(art).forget_misses());
-                        }
+/// its own, which takes them in the order asked, so that writes of library.json land in order: it does
+/// what `Rescan` says first, reads the library and sends it (as written, after a write), and fetches what
+/// the library wants.
+fn rescanner<S: Sink + Clone>(sources: Sources, paths: Paths, queue: meta::Queue, sink: S) -> Worker<Rescan> {
+    let spawned = Worker::spawn(clamshell_state::Thread::Rescan.name(), move |commands: &std::sync::mpsc::Receiver<Rescan>| {
+        while let Ok(first) = commands.recv() {
+            let wrote = matches!(first, Rescan::Write(_));
+            match first {
+                Rescan::Read => {}
+                Rescan::Refetch => {
+                    if let Some(art) = paths.art.as_deref() {
+                        log::info!("rescan: {} misses forgotten", Cache::open(art).forget_misses());
                     }
-                    // A failed write leaves the file as it was, and what is read shows that.
-                    Rescan::Write(config) => match library::write(&sources, &config) {
-                        Ok(()) => log::info!("library.json written"),
-                        Err(e) => log::error!("library.json not written: {e}"),
-                    },
                 }
-                let loaded = library::load(&sources);
-                log::info!("rescan: {} entries", loaded.library.entries.len());
-                if sink.send(clamshell_state::Event::Library(Box::new(loaded.library))).is_err() {
-                    return;
-                }
-                if let Some(art) = paths.art.clone() {
-                    meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art }, &queue, sink);
-                }
-            }),
-        );
+                // A failed write leaves the file as it was, and what is read shows that.
+                Rescan::Write(config) => match library::write(&sources, &config) {
+                    Ok(()) => log::info!("library.json written"),
+                    Err(e) => log::error!("library.json not written: {e}"),
+                },
+            }
+            let loaded = library::load(&sources);
+            log::info!("rescan: {} entries", loaded.library.entries.len());
+            let library = Box::new(loaded.library);
+            let event = if wrote { clamshell_state::Event::LibraryWritten(library) } else { clamshell_state::Event::Library(library) };
+            if sink.send(event).is_err() {
+                return;
+            }
+            if let Some(art) = paths.art.clone() {
+                meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art }, &queue, sink.clone());
+            }
+        }
+    });
+    spawned.unwrap_or_else(|e| {
+        log::error!("rescan: couldn't start: {e}");
+        Worker::gone(clamshell_state::Thread::Rescan.name())
     })
 }
 
@@ -120,7 +124,7 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, gl
     let metrics = started("metrics", metrics::spawn(sink.clone()));
     let fetching = meta::Queue::default();
     let rescan = rescanner(sources.clone(), paths.clone(), fetching.clone(), sink.clone());
-    rescan(Rescan::Read);
+    rescan.send(Rescan::Read);
     let touchpad = started("touchpad", touchpad::spawn());
     // Watch input on every device for idle, and the hardware keys in the device's own session.
     log_failed_start("input watch", crate::input::watch::spawn(env.device_session, sink.clone()));

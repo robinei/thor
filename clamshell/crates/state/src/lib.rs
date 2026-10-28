@@ -440,6 +440,10 @@ impl State {
             }
             Event::Meta { id, meta } => self.library_view.apply_meta(&id, &meta),
             Event::Library(library) => self.library_read(*library, out),
+            Event::LibraryWritten(library) => {
+                self.library_view.written_read();
+                self.library_read(*library, out);
+            }
             Event::Files(e) => self.library_view.on_files(e, self.bottom.notice_mut(), now, out),
             Event::Fetching(on) => self.fetching(on),
             Event::Tray(items) => self.session.set_tray(items, &self.clock, self.library_view.library(), out),

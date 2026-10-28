@@ -305,13 +305,14 @@ impl LibraryView {
             return;
         }
         let Some(purpose) = self.end_pick() else { return };
-        let read = self.library.config.as_ref();
+        let read = self.config_shown().cloned();
         match (purpose, &mut self.edit) {
             (PickFor::App { request, .. }, _) => self.answered = Some((request, vec![path])),
             (PickFor::Field(f), Some(edit)) => edit.field_picked(f, &path.to_string_lossy()),
-            (PickFor::PlacePicture(id), Some(edit)) => edit.set_picture(&id, &path.to_string_lossy(), read, out),
+            (PickFor::PlacePicture(id), Some(edit)) => edit.set_picture(&id, &path.to_string_lossy(), read.as_ref(), out),
             (_, None) => {}
         }
+        self.took_written();
     }
 }
 

@@ -72,6 +72,9 @@ pub enum Event {
     },
     /// The library was read again, by the Tools tab's rescan.
     Library(Box<crate::Library>),
+    /// The library read again after the edit mode's write of library.json, written or not (see
+    /// [`crate::library_view::LibraryView::config_shown`]).
+    LibraryWritten(Box<crate::Library>),
     /// From the files thread: a browsed folder listed, file operations under way or done, or removable
     /// storage added or removed.
     Files(crate::library_view::files::FilesEvent),
@@ -346,6 +349,8 @@ pub enum Thread {
     InputWatch,
     Clipboard,
     Sleep,
+    /// The library's reads and library.json's writes, in order.
+    Rescan,
     Notifications,
     /// The file chooser served to apps (see [`crate::portal`]).
     Portal,
@@ -353,7 +358,7 @@ pub enum Thread {
 }
 
 impl Thread {
-    pub const ALL: [Thread; 29] = [
+    pub const ALL: [Thread; 30] = [
         Thread::Pad,
         Thread::PadDevices,
         Thread::Tuning,
@@ -380,6 +385,7 @@ impl Thread {
         Thread::InputWatch,
         Thread::Clipboard,
         Thread::Sleep,
+        Thread::Rescan,
         Thread::Notifications,
         Thread::Portal,
         Thread::Control,
@@ -414,6 +420,7 @@ impl Thread {
             Thread::InputWatch => "input watch",
             Thread::Clipboard => "clipboard",
             Thread::Sleep => "sleep",
+            Thread::Rescan => "rescan",
             Thread::Notifications => "notifications",
             Thread::Portal => "portal",
             Thread::Control => "control",

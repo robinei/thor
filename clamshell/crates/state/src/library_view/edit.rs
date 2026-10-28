@@ -9,9 +9,9 @@
 //! selected showing what it is, with Edit (its form, see [`super::form`]), Move up and down, and Remove (a
 //! runner only while no source names it); the last row makes a new one.
 //!
-//! Each change is made to library.json as read (see [`clamshell_library::config`]) and written; the
-//! library is then read again. Until it comes, what was written is what shows (`pending`), so a change
-//! shows at once.
+//! Each change is made to library.json as it shows and written; the library is then read again. What
+//! shows is the Library's ([`super::LibraryView::config_shown`]): what was written last, until every write
+//! has been read back, so a change shows at once and the next is made on it.
 
 use std::sync::Arc;
 
@@ -125,8 +125,9 @@ pub struct Edit {
     cursor: usize,
     /// The place cut, to be moved where it is pasted.
     cut: Option<String>,
-    /// library.json as last written, until the library read after it comes.
-    pending: Option<Arc<Config>>,
+    /// library.json as just written, until the Library takes it (see
+    /// [`super::LibraryView::config_shown`]).
+    wrote: Option<Arc<Config>>,
 }
 
 /// The tabs: the places in no other, in their order.
@@ -171,14 +172,9 @@ fn new_id(config: &Config, name: &str) -> String {
 }
 
 impl Edit {
-    /// library.json as it shows: as last written, or else as `read`.
-    pub fn config<'a>(&'a self, read: Option<&'a Arc<Config>>) -> Option<&'a Config> {
-        self.pending.as_deref().or(read.map(|c| &**c))
-    }
-
-    /// The library was read again: what shows is it.
-    pub(crate) fn library_read(&mut self) {
-        self.pending = None;
+    /// library.json as just written, for the Library to show until it is read back.
+    pub(crate) fn take_wrote(&mut self) -> Option<Arc<Config>> {
+        self.wrote.take()
     }
 
     pub fn tab(&self) -> usize {
@@ -252,7 +248,7 @@ impl Edit {
 
     /// A tap on one of the edit mode's targets, with library.json as `read`. Returns whether it leaves.
     pub(crate) fn tap(&mut self, id: EditId, read: Option<&Arc<Config>>, out: &mut Out) -> bool {
-        let Some(config) = self.config(read).cloned() else {
+        let Some(config) = read.map(|c| &**c).cloned() else {
             return matches!(id, EditId::Done);
         };
         let here = self.here(&config).map(str::to_owned);
@@ -479,7 +475,7 @@ impl Edit {
 
     /// Place `id`'s picture, chosen: written.
     pub(crate) fn set_picture(&mut self, id: &str, path: &str, read: Option<&Arc<Config>>, out: &mut Out) {
-        let Some(mut changed) = self.config(read).cloned() else { return };
+        let Some(mut changed) = read.map(|c| &**c).cloned() else { return };
         let Some(p) = changed.places.iter_mut().find(|p| p.id == id) else { return };
         p.picture = Some(path.to_owned());
         self.write(changed, out);
@@ -488,7 +484,7 @@ impl Edit {
     /// A name typed for `what`.
     pub(crate) fn named(&mut self, what: PlaceName, name: &str, read: Option<&Arc<Config>>, out: &mut Out) {
         let name = name.trim();
-        let Some(mut changed) = self.config(read).cloned().filter(|_| !name.is_empty()) else {
+        let Some(mut changed) = read.map(|c| &**c).cloned().filter(|_| !name.is_empty()) else {
             return;
         };
         match what {
@@ -513,7 +509,7 @@ impl Edit {
     fn write(&mut self, changed: Config, out: &mut Out) {
         let changed = Arc::new(changed);
         out.effects.push(Effect::WriteLibrary(changed.clone()));
-        self.pending = Some(changed);
+        self.wrote = Some(changed);
     }
 }
 
@@ -566,7 +562,7 @@ mod tests {
     fn a_tab_lists_its_folders_those_sources_make_and_a_new_row() {
         let read = config();
         let mut edit = Edit::default();
-        let c = edit.config(Some(&read)).unwrap();
+        let c = &*read;
         assert_eq!(tabs(c).map(|p| p.name.as_str()).collect::<Vec<_>>(), ["Games", "Files", "Tools"]);
         assert_eq!(edit.rows(c, "games"), 2);
         assert_eq!(edit.row(c, "files", 0), Some(Row::Made("Home")));
@@ -578,23 +574,26 @@ mod tests {
         assert_eq!((edit.here(&read), edit.cursor()), (Some("games"), 0));
     }
 
-    /// A rename, a new folder and a new tab are written, and show at once, until the library is read.
+    /// A rename, a new folder and a new tab are written, each made on the one before as it shows (the
+    /// Library shows what was written, see `LibraryView::config_shown`).
     #[test]
-    fn names_are_written_and_show_at_once() {
-        let read = config();
+    fn names_are_written_each_on_the_last() {
+        let mut shown = config();
         let mut edit = Edit::default();
         let mut out = Out::default();
-        edit.named(PlaceName::Rename("snes".into()), " Super NES ", Some(&read), &mut out);
-        assert_eq!(written(&out).places.iter().find(|p| p.id == "snes").unwrap().name, "Super NES");
-        edit.named(PlaceName::New(Some("games".into())), "Game Cube", Some(&read), &mut out);
-        edit.named(PlaceName::New(None), "Music", Some(&read), &mut out);
-        let c = edit.config(Some(&read)).unwrap();
-        assert!(c.places.iter().any(|p| p.id == "game-cube" && p.within.as_deref() == Some("games")));
-        assert_eq!(tabs(c).map(|p| p.id.as_str()).collect::<Vec<_>>(), ["games", "files", "music", "tools"], "before Tools");
-        edit.named(PlaceName::New(None), "Music", Some(&read), &mut out);
-        assert!(edit.config(Some(&read)).unwrap().places.iter().any(|p| p.id == "music-2"), "ids stay unique");
-        edit.library_read();
-        assert_eq!(edit.config(Some(&read)).unwrap(), &*read, "what was read shows once it comes");
+        let mut name = |edit: &mut Edit, what, text: &str, shown: &mut Arc<Config>| {
+            edit.named(what, text, Some(shown), &mut out);
+            *shown = edit.take_wrote().unwrap();
+        };
+        name(&mut edit, PlaceName::Rename("snes".into()), " Super NES ", &mut shown);
+        assert_eq!(shown.places.iter().find(|p| p.id == "snes").unwrap().name, "Super NES");
+        name(&mut edit, PlaceName::New(Some("games".into())), "Game Cube", &mut shown);
+        name(&mut edit, PlaceName::New(None), "Music", &mut shown);
+        assert!(shown.places.iter().any(|p| p.id == "game-cube" && p.within.as_deref() == Some("games")));
+        assert!(shown.places.iter().any(|p| p.name == "Super NES"), "the rename kept");
+        assert_eq!(tabs(&shown).map(|p| p.id.as_str()).collect::<Vec<_>>(), ["games", "files", "music", "tools"], "before Tools");
+        name(&mut edit, PlaceName::New(None), "Music", &mut shown);
+        assert!(shown.places.iter().any(|p| p.id == "music-2"), "ids stay unique");
     }
 
     /// A place moves by Cut and Paste, not into itself; only a place nothing uses is removed.
@@ -658,7 +657,6 @@ mod tests {
         edit.tap(EditId::Save, Some(&read), &mut out);
         let c = written(&out);
         assert!(matches!(c.sources.first(), Some(Source::Dir(d)) if d.also == ["*.zip"] && d.place == "games"), "{:?}", c.sources.first());
-        edit.library_read();
         // A new one, on the last row.
         let mut out = Out::default();
         let last = edit.listed(&read) as u16 - 1;
@@ -666,12 +664,10 @@ mod tests {
         assert_eq!(edit.form().unwrap().index, None);
         edit.tap(EditId::Save, Some(&read), &mut out);
         assert_eq!(written(&out).sources.len(), read.sources.len() + 1);
-        edit.library_read();
         let mut out = Out::default();
         edit.tap(EditId::Row(0), Some(&read), &mut out);
         edit.tap(EditId::MoveDown, Some(&read), &mut out);
         assert!(matches!(written(&out).sources.get(1), Some(Source::Dir(d)) if d.id == "snes"));
-        edit.library_read();
         let mut out = Out::default();
         edit.tap(EditId::Runners, Some(&read), &mut out);
         edit.tap(EditId::Remove, Some(&read), &mut out);

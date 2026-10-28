@@ -24,7 +24,7 @@ pub struct Handles {
     pub(crate) fetching: crate::library::meta::Queue,
     /// Reads the library again on a thread, and fetches what it wants. With `true` the metadata misses
     /// are forgotten first.
-    pub(crate) rescan: Box<dyn Fn(super::Rescan)>,
+    pub(crate) rescan: Worker<super::Rescan>,
     pub(crate) touchpad: Worker<touchpad::Command>,
     pub(crate) mixer: Worker<mixer::Command>,
     pub(crate) wifi: Worker<wifi::Request>,
@@ -95,11 +95,11 @@ impl Handles {
                 }
             }
             Effect::FetchFirst(ids) => self.fetching.first(ids),
-            Effect::Tool(tool) if *tool == clamshell_library::Tool::Refetch => (self.rescan)(super::Rescan::Refetch),
-            Effect::Tool(_) => (self.rescan)(super::Rescan::Read),
+            Effect::Tool(tool) if *tool == clamshell_library::Tool::Refetch => self.rescan.send(super::Rescan::Refetch),
+            Effect::Tool(_) => self.rescan.send(super::Rescan::Read),
             Effect::WriteLibrary(config) => {
                 log::info!("effect: library.json written");
-                (self.rescan)(super::Rescan::Write(config.clone()));
+                self.rescan.send(super::Rescan::Write(config.clone()));
             }
             Effect::ReadPosition { entry, file } => self.launcher.send(launcher::Command::ReadPosition { entry: entry.clone(), file: file.clone() }),
             Effect::RecordPlay { entry, start, duration } => {

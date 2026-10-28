@@ -60,6 +60,11 @@ impl State {
             Thread::Notifications => {}
             // Its requests' calls are gone with it: none is answered, and a pick for one ends.
             Thread::Portal => self.portal_restarted(),
+            // The writes it hadn't read back won't be: what was read shows, and the library is read again.
+            Thread::Rescan => {
+                self.library_view.writes_lost();
+                out.effects.push(Effect::Tool(clamshell_library::Tool::Rescan));
+            }
         }
     }
 

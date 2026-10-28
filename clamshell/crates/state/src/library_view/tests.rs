@@ -346,3 +346,26 @@ fn a_filter_matches_titles_ignoring_case() {
     assert!(starts("Ōkami HD", "ōka") && starts("Final Fantasy", "FINAL F") && starts("Zelda", ""));
     assert!(!starts("Zelda", "zeldas") && !starts("Zelda", "elda"));
 }
+
+/// The edit mode's change shows at once and the next is made on it, though a read of the library started
+/// before the write comes after it: only the write's own read, once each write has been read back, shows
+/// what was read.
+#[test]
+fn an_edit_isnt_undone_by_a_read_from_before_it() {
+    use crate::library_view::edit::PlaceName;
+    let mut s = state();
+    s.library_view.start_edit();
+    let mut out = crate::out::Out::default();
+    s.library_view.place_named(PlaceName::Rename("snes".into()), "Super NES", &mut out);
+    let renamed = |s: &State| s.library_view().config_shown().is_some_and(|c| c.places.iter().any(|p| p.name == "Super NES"));
+    assert!(renamed(&s));
+    s.applied(Event::Library(Box::new(clamshell_library::demo::library())));
+    assert!(renamed(&s), "a read from before the write");
+    s.library_view.place_named(PlaceName::New(None), "Music", &mut out);
+    let written: Vec<_> = out.effects.iter().filter_map(|e| if let Effect::WriteLibrary(c) = e { Some(c.clone()) } else { None }).collect();
+    assert!(written.last().is_some_and(|c| c.places.iter().any(|p| p.name == "Super NES")), "the next made on it");
+    s.applied(Event::LibraryWritten(Box::new(clamshell_library::demo::library())));
+    assert!(renamed(&s), "one write still to be read back");
+    s.applied(Event::LibraryWritten(Box::new(clamshell_library::demo::library())));
+    assert!(!renamed(&s), "both read back: what was read shows");
+}

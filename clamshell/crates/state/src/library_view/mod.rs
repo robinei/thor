@@ -79,6 +79,9 @@ pub struct LibraryView {
     edit: Option<edit::Edit>,
     /// The pick going on (see [`pick`]).
     pick: Option<pick::Pick>,
+    /// library.json as last written by the edit mode, and how many of its writes haven't been read back:
+    /// while any hasn't, it is what the edit mode shows and changes (see [`LibraryView::config_shown`]).
+    written: Option<(Arc<clamshell_library::config::Config>, u32)>,
     /// An app's pick answered, until the state takes the answer (see [`crate::portal`]).
     answered: Option<(u32, Vec<std::path::PathBuf>)>,
 }
@@ -147,17 +150,48 @@ impl LibraryView {
         }
         // A folder's picture: an image chosen in the Library.
         if id == edit::EditId::Picture {
-            let read = self.library.config.as_ref();
-            let Some(place) = self.edit.as_ref().and_then(|e| e.selected(e.config(read)?)).filter(|p| p.within.is_some()) else { return };
+            let read = self.config_shown().cloned();
+            let Some(place) = self.edit.as_ref().zip(read.as_deref()).and_then(|(e, c)| e.selected(c)).filter(|p| p.within.is_some()) else { return };
             let images = ["*.png", "*.jpg", "*.jpeg", "*.webp", "*.svg"].map(String::from).to_vec();
             if !self.start_pick(pick::Takes::Files(images), pick::PickFor::PlacePicture(place.id.clone())) {
                 out.log(crate::LogLevel::Warn, "library edit: the picture not picked: the library has no Files tab".to_owned());
             }
             return;
         }
-        let read = self.library.config.as_ref();
-        if self.edit.as_mut().is_some_and(|e| e.tap(id, read, out)) {
+        let read = self.config_shown().cloned();
+        if self.edit.as_mut().is_some_and(|e| e.tap(id, read.as_ref(), out)) {
+            self.took_written();
             self.edit = None;
+        }
+        self.took_written();
+    }
+
+    /// library.json as the edit mode shows and changes it: as last written while a write of it hasn't been
+    /// read back, else as read. Built on what was read instead, an edit could undo the one before.
+    pub fn config_shown(&self) -> Option<&Arc<clamshell_library::config::Config>> {
+        self.written.as_ref().map(|(c, _)| c).or(self.library.config.as_ref())
+    }
+
+    /// Takes what the edit mode just wrote, one more write to be read back.
+    pub(crate) fn took_written(&mut self) {
+        if let Some(c) = self.edit.as_mut().and_then(edit::Edit::take_wrote) {
+            let unread = self.written.as_ref().map_or(0, |(_, n)| *n) + 1;
+            self.written = Some((c, unread));
+        }
+    }
+
+    /// The thread that writes library.json started again: the writes it hadn't read back won't be.
+    pub(crate) fn writes_lost(&mut self) {
+        self.written = None;
+    }
+
+    /// A write of library.json read back: once every one has been, what was read shows.
+    pub(crate) fn written_read(&mut self) {
+        if let Some((_, unread)) = &mut self.written {
+            *unread = unread.saturating_sub(1);
+            if *unread == 0 {
+                self.written = None;
+            }
         }
     }
 
@@ -177,10 +211,11 @@ impl LibraryView {
 
     /// A place's name typed (see [`edit::Edit::named`]).
     pub(crate) fn place_named(&mut self, what: edit::PlaceName, name: &str, out: &mut crate::out::Out) {
-        let read = self.library.config.as_ref();
+        let read = self.config_shown().cloned();
         if let Some(e) = &mut self.edit {
-            e.named(what, name, read, out);
+            e.named(what, name, read.as_ref(), out);
         }
+        self.took_written();
     }
 
     /// Whether the library has been read (see [`LibraryView::unread`]).
@@ -556,9 +591,6 @@ impl LibraryView {
     /// it again, and each collection's place is kept by name and ids, with what is typed in each list and
     /// the scroll starting from the top. Returns whether the selection changed.
     pub(crate) fn reload(&mut self, library: Library) -> bool {
-        if let Some(edit) = &mut self.edit {
-            edit.library_read();
-        }
         let before = self.selected().cloned();
         let mut places = Vec::new();
         self.kept_places(&mut places);
