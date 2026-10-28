@@ -213,6 +213,21 @@ mod tests {
         assert_eq!(adopted(&all).map(|(_, pid)| pid), Some(600), "{all:?}");
     }
 
+    /// A second window of a found program's process, opened once the process was moved into our scope,
+    /// joins the program's group, though its client was identified before the move.
+    #[test]
+    fn a_found_programs_next_window_joins_its_group_after_the_move() {
+        let mut s = device();
+        let adopted = |fx: &[Effect]| fx.iter().find_map(|e| if let Effect::Adopt { unit, .. } = e { Some(unit.clone()) } else { None });
+        let first = window(1, "-c", 885, "session-23.scope");
+        let fx = s.observed(vec![first.clone()]);
+        let unit = adopted(&fx).unwrap();
+        s.applied(Event::Units(vec![unit]));
+        let group = s.session().window(1).and_then(|w| w.group.clone());
+        s.observed(vec![first, window(2, "-c", 885, "session-23.scope")]);
+        assert_eq!(s.session().window(2).and_then(|w| w.group.clone()), group, "{:?}", s.session().running_entries());
+    }
+
     #[test]
     fn a_services_window_is_no_entry() {
         let mut s = device();

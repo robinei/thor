@@ -72,7 +72,7 @@ The allocation test includes repeated lifecycle events, Home-held changes, contr
 The compositor's tests check placement before the first configure with real clients
 (`xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu`), and
 `tests/nested-compositor.py` moves between the screens with real programs; the VM suite checks session
-adoption, input routes and services. A dialog takes its parent's group and its parent's screen.
+adoption, input routes and services. A dialog takes its parent's group and its parent's screen; a window of the process and app id of one open takes its group, whatever its client was identified as (`a_found_programs_next_window_joins_its_group_after_the_move`).
 
 A screen shows a stack (`Session::stack`): the window in its slot's root, the window its parents lead to,
 then the root's dialogs in the order they opened. The last takes the input and the keyboard; selecting a
