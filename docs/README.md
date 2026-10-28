@@ -29,6 +29,7 @@ Read `architecture.md` first, then `../AGENTS.md` for how work is done here.
 - `review-2026-10-26b.md`: the second review after the compositor became the only session, and its
   plan.
 - `screen-commits-plan.md`: a screen's commit errors by kind, and what it shows decided once.
+- `window-model-plan.md`: the session's windows, keyboard and slots computed from state where they can be.
 - `window-management-ideas.md`: candidate improvements to window management, not yet decided.
 
 ## History
