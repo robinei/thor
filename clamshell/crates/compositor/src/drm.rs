@@ -416,18 +416,19 @@ pub fn run(
                 if let Err(()) = libinput.resume() {
                     log::warn!("drm: libinput did not resume");
                 }
-                if let Err(error) = drm.activate(false) {
+                // Every screen off and its state forgotten, as the console left them: one that is on is set
+                // up whole by its next commit, one that is off stays so.
+                if let Err(error) = drm.activate(true) {
                     log::warn!("drm: {error}");
                 }
                 let drawing = &mut *resumed.borrow_mut();
                 drawing.away = false;
                 for screen in &mut drawing.screens {
                     screen.reset_buffers();
-                    // The console lit every screen meanwhile: one that is off is turned off again.
                     if !screen.on {
-                        match screen.surface.surface().clear() {
-                            Ok(()) => screen.surface.off(),
-                            Err(error) => log::warn!("drm: turning the {:?} screen off again: {error}", screen.role),
+                        screen.surface.off();
+                        if let Some(layers) = &mut screen.layers {
+                            layers.screen_off();
                         }
                     }
                 }
