@@ -14,17 +14,56 @@ use crate::gfx::{Align, Canvas, Column, Keep, LINE, Rect, Rgb};
 
 /// A row of tabs starting at `area.x`, `area.h` high. Each tab has its icon, if it has one, and its label
 /// cut to `max` wide, with `inner` space on both sides. The current tab is bright with an amber line
-/// under it. Tabs that would pass the area's right edge are left out. Returns where the next tab would
-/// start.
-pub(crate) fn tabs<'a>(f: &mut Frame, area: Rect, size: f32, inner: f32, max: f32, items: impl IntoIterator<Item = (Id, Option<Icon>, &'a str, bool)>) -> f32 {
-    let mut x = area.x;
+/// under it. When they don't all fit, the row scrolls: it starts as far along as it must for the current
+/// tab to show, and a dim ‹ or › at an end says there are more that way. Returns where the next tab
+/// would start.
+pub(crate) fn tabs<'a, I>(f: &mut Frame, area: Rect, size: f32, inner: f32, max: f32, items: I) -> f32
+where
+    I: IntoIterator<Item = (Id, Option<Icon>, &'a str, bool)>,
+    I::IntoIter: Clone,
+{
+    let items = items.into_iter();
     // An icon is about as high as the label's capitals, with a space after it.
     let (icon_w, gap) = (size * 1.1, size * 0.35);
-    for (id, icon, name, current) in items {
+    let width = |f: &mut Frame, icon: bool, name: &str| (if icon { icon_w + gap } else { 0.0 }) + f.c.text_width(size, name).min(max) + 2.0 * inner;
+    let (mut total, mut current, mut to_current) = (0.0, 0, 0.0);
+    for (i, (_, icon, name, now)) in items.clone().enumerate() {
+        total += width(f, icon.is_some(), name);
+        if now {
+            (current, to_current) = (i, total);
+        }
+    }
+    let marker = size * 1.2;
+    // Scrolled: the first tab shown is the first from which the current one fits, room kept for the
+    // markers.
+    let (room, start) = if total <= area.w {
+        (area.w, 0)
+    } else {
+        let room = area.w - 2.0 * marker;
+        let (mut start, mut before) = (0, 0.0);
+        for (_, icon, name, _) in items.clone().take(current) {
+            if to_current - before <= room {
+                break;
+            }
+            before += width(f, icon.is_some(), name);
+            start += 1;
+        }
+        (room, start)
+    };
+    // The ‹ takes room only when tabs are hidden before the first shown.
+    let (left, room) = match (total <= area.w, start) {
+        (true, _) => (area.x, room),
+        (false, 0) => (area.x, room + marker),
+        (false, _) => (area.x + marker, room),
+    };
+    let mut x = left;
+    let mut hidden_after = false;
+    for (id, icon, name, current) in items.clone().skip(start) {
         let lead = if icon.is_some() { icon_w + gap } else { 0.0 };
         let text_w = f.c.text_width(size, name).min(max);
         let r = Rect::new(x, area.y, lead + text_w + 2.0 * inner, area.h);
-        if r.x + r.w > area.x + area.w {
+        if r.x + r.w > left + room {
+            hidden_after = true;
             break;
         }
         f.button(id, r, Look::TAB, |f| {
@@ -38,6 +77,13 @@ pub(crate) fn tabs<'a>(f: &mut Frame, area: Rect, size: f32, inner: f32, max: f3
             }
         });
         x += r.w;
+    }
+    if start > 0 {
+        f.c.text_in(Rect::new(area.x, area.y, marker, area.h), size, Tone::Dim, "‹", Align::Center);
+    }
+    if hidden_after {
+        f.c.text_in(Rect::new(left + room, area.y, marker, area.h), size, Tone::Dim, "›", Align::Center);
+        return left + room + marker;
     }
     x
 }

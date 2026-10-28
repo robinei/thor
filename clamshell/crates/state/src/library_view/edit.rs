@@ -117,7 +117,7 @@ pub struct Edit {
 }
 
 /// The tabs: the places in no other, in their order.
-pub fn tabs(config: &Config) -> impl Iterator<Item = &Place> {
+pub fn tabs(config: &Config) -> impl Iterator<Item = &Place> + Clone {
     config.places.iter().filter(|p| p.within.is_none())
 }
 

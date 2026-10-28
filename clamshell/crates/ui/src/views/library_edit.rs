@@ -33,10 +33,12 @@ pub(super) fn draw(f: &mut Frame, screen: Rect, edit: &Edit) -> usize {
 
     // The tabs, + for a new one, and Done.
     let places = edit.panel() == Panel::Places;
-    // By name alone, without their icons, so that they all fit beside Sources and Runners.
-    let items = edit::tabs(config).enumerate().map(|(i, p)| (EditId::Tab(i as u16).into(), None, p.name.as_str(), places && i == edit.tab()));
-    // Room is kept for +, Sources, Runners and Done; the places' tabs have the rest, more tightly spaced
-    // than the Library's.
+    let items = edit::tabs(config).enumerate().map(|(i, p)| {
+        let icon = p.icon.as_deref().and_then(Icon::named);
+        (EditId::Tab(i as u16).into(), icon, p.name.as_str(), places && i == edit.tab())
+    });
+    // Room is kept for +, Sources, Runners and Done; the places' tabs have the rest, scrolling if they
+    // need more, more tightly spaced than the Library's.
     let (size, inner) = (h * TAB_TEXT, pad * 0.5);
     let lists_w = f.c.text_width(size, "Sources") + f.c.text_width(size, "Runners") + inner * 4.0;
     let right = lists_w + tabs_h + h * 0.2 + pad * 2.0;
