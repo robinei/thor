@@ -1,9 +1,9 @@
 //! A screen's overlay layer (the HUD, notices, the window arrows) and the cursor on display planes of their
 //! own, with CLAMSHELL_SCANOUT=1: blended over whatever the screen's primary plane shows (ClamShell's own
 //! buffer, a window's, or a frame composed) by the display engine, so that neither has the screen composed
-//! nor redrawn when it changes. The overlay is drawn by its painter into buffers of its own, turned to the
-//! panel's mounting, as `ui_scanout` draws a screen, made when it first shows and dropped a while after it
-//! last did (see `crate::hold`); the cursor's image is copied into a small square buffer
+//! nor redrawn when it changes. The overlay is painted into a picture and copied into buffers of its own,
+//! turned to the panel's mounting, as `ui_scanout` does a screen, made when it first shows and dropped a
+//! while after it last did (see `crate::hold`); the cursor's image is copied into a small square buffer
 //! when it changes, and moving it only moves its plane.
 //!
 //! While a layer has its plane it isn't composed at all: the scene leaves it out, and a screen showing a
@@ -350,14 +350,19 @@ impl PlaneLayers {
             log::warn!("plane layers: moving the cursor at once waited {took:?} for the frame queued: it moves with the screen's frames from now on");
             cursor.immediate = false;
         }
-        if moved.is_ok() && !cursor.checked {
+        // The first move to a new place checks that it moved our plane: the ioctl moves the plane the driver
+        // gave the CRTC for its cursor, which may be another (one the other screen uses, even, which this
+        // move then moved once). A plane left where it was differs in x or y, as the place is new.
+        if moved.is_ok() && !cursor.checked && shown.dst.loc != dst.loc {
             cursor.checked = true;
             let props = crate::scanout::properties_of(device, u32::from(cursor.plane.handle), drm_ffi::DRM_MODE_OBJECT_PLANE);
-            let x = props.iter().find(|(name, ..)| name == "CRTC_X").map(|&(_, _, value)| value as i64);
-            if x != Some(i64::from(dst.loc.x)) {
+            let at = |name: &str| props.iter().find(|(n, ..)| n == name).map(|&(_, _, value)| value as i64);
+            let (x, y) = (at("CRTC_X"), at("CRTC_Y"));
+            if (x, y) != (Some(i64::from(dst.loc.x)), Some(i64::from(dst.loc.y))) {
                 log::warn!(
-                    "plane layers: moving the cursor at once moved another plane than its own (its place is {x:?}, not {}): it moves with the screen's frames from now on",
-                    dst.loc.x
+                    "plane layers: moving the cursor at once moved another plane than its own (its place is {x:?}, {y:?}, not {}, {}): it moves with the screen's frames from now on",
+                    dst.loc.x,
+                    dst.loc.y
                 );
                 cursor.immediate = false;
                 return false;
@@ -381,8 +386,8 @@ impl PlaneLayers {
         }
     }
 
-    /// Drops the overlay's buffers once its plane is off and it hasn't shown for a while by `now`. Returns
-    /// when they will be dropped otherwise.
+    /// Drops the overlay's buffers once its plane is off and it hasn't shown for a while by `now`, else
+    /// tells `trims` when they will be.
     pub(crate) fn trim(&mut self, now: std::time::Instant, trims: &mut crate::hold::Trims) {
         let Some(overlay) = &mut self.overlay else { return };
         if self.planed.overlay || overlay.plane.shown.is_some() {
@@ -454,6 +459,21 @@ impl PlaneLayers {
             cursor.shown = None;
         }
     }
+
+    /// The screen was turned off, every plane with it: none shows anything, and none is planed until the
+    /// screen is on again, so that the overlay's buffers are dropped a while after.
+    pub(crate) fn screen_off(&mut self) {
+        self.reset();
+        self.planed = Planed::default();
+        if let Some(overlay) = &mut self.overlay {
+            overlay.plane.shown = None;
+            overlay.plane.wanted = None;
+        }
+        if let Some(cursor) = &mut self.cursor {
+            cursor.plane.shown = None;
+            cursor.plane.wanted = None;
+        }
+    }
 }
 
 /// A plane for a layer, its zpos the primary plane's (`primary`) and `above` it, where its property allows.
@@ -475,8 +495,6 @@ fn megabytes((w, h): (u32, u32)) -> f64 {
     f64::from(w) * f64::from(h) * 12.0 / 1_000_000.0
 }
 
-/// `rect`, the screen's way up on a screen `height` high, as the panel takes it: turned a quarter clockwise
-/// if `quarter` (a screen pixel (x, y) in buffer column height - 1 - y, row x, as `clamshell_ui::Pixels`).
 /// Where the cursor's square buffer, `side` pixels a side, goes on a screen `height` high for `shape`, turned
 /// a quarter if `quarter`; and its hotspot in the buffer, turned as `Cursor::copy` turns the image.
 fn cursor_place(shape: &Shape, side: u32, height: i32, quarter: bool) -> (Rectangle<i32, Physical>, (i32, i32)) {
@@ -486,6 +504,9 @@ fn cursor_place(shape: &Shape, side: u32, height: i32, quarter: bool) -> (Rectan
     (dst, if quarter { (square - 1 - y, x) } else { (x, y) })
 }
 
+/// `rect`, the screen's way up on a screen `height` high, as the panel takes it: turned a quarter clockwise
+/// if `quarter` (a screen pixel (x, y) in buffer column height - 1 - y, row x, as `ui_scanout::copy_area`
+/// copies it).
 fn turned(rect: Rectangle<i32, Logical>, height: i32, quarter: bool) -> Rectangle<i32, Physical> {
     let (x, y, w, h) = (rect.loc.x, rect.loc.y, rect.size.w, rect.size.h);
     if quarter { Rectangle::new((height - (y + h), x).into(), (h, w).into()) } else { Rectangle::new((x, y).into(), (w, h).into()) }

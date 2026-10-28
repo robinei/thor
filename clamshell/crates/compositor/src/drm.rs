@@ -816,7 +816,12 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
                 screen.reset_buffers();
             } else {
                 match screen.surface.surface().clear() {
-                    Ok(()) => screen.surface.off(),
+                    Ok(()) => {
+                        screen.surface.off();
+                        if let Some(layers) = &mut screen.layers {
+                            layers.screen_off();
+                        }
+                    }
                     Err(error) => log::warn!("drm: turning the {:?} screen off: {error}", screen.role),
                 }
             }
@@ -875,7 +880,8 @@ fn layers_decide(drawing: &mut Drawing, server: &mut Server) {
         _ => None,
     });
     let edge = f64::from(server.screens.top_width);
-    for screen in screens.iter_mut() {
+    // (Not for a screen that is off: nothing is planed there until it is on.)
+    for screen in screens.iter_mut().filter(|screen| screen.on) {
         let Some(layers) = &mut screen.layers else { continue };
         let down = screen.role == ScreenRole::Bottom;
         let at = at.filter(|at| (at.x >= edge) == down);

@@ -73,8 +73,8 @@ impl UiFrame {
         })
     }
 
-    /// Drops its surface if the layer hasn't been composed for a while by `now`. Returns when it will be
-    /// dropped otherwise.
+    /// Drops its surface if the layer hasn't been composed for a while by `now`, else tells `trims` when it
+    /// will be.
     pub fn trim(&mut self, now: std::time::Instant, trims: &mut crate::hold::Trims) {
         if let Some(surface) = &self.surface
             && self.hold.expired(now)
