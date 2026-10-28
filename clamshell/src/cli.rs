@@ -7,8 +7,6 @@ use std::path::PathBuf;
 pub enum Command {
     /// Device facts for package scripts.
     DevicePanel,
-    /// Volume Up pressed on a physical device within 20 s, for thor-account's first password.
-    DeviceConfirm,
     /// `--nested`: the session in a window on a desktop.
     Nested,
     /// `--drm`: the session on the machine's own screens, from a VT.
@@ -44,7 +42,6 @@ pub const USAGE: &str = "usage: clamshell --drm | --nested | ctl COMMAND...
   --drm                the session on the screens, from a VT
   --nested             the session in a window on a desktop (built with the nested feature, the default)
   device panel         panel facts as JSON for calibration tools
-  device confirm       waits 20 s for Volume Up on a physical device: exit 0 if pressed (thor-account)
   ctl COMMAND...       drive the running ClamShell (`clamshell ctl help` lists the commands)
 used by ClamShell itself:
   --follow-steam ID    a Steam game's follower, in its launch's scope
@@ -60,7 +57,6 @@ for development:
 pub fn parse(args: &[String]) -> Option<Command> {
     Some(match args {
         [device, what] if device == "device" && what == "panel" => Command::DevicePanel,
-        [device, what] if device == "device" && what == "confirm" => Command::DeviceConfirm,
         [flag] if flag == "--nested" => Command::Nested,
         [flag] if flag == "--drm" => Command::Drm,
         [flag, appid] if flag == "--follow-steam" => Command::FollowSteam(appid.parse().ok()?),
@@ -89,7 +85,6 @@ mod tests {
     fn commands() {
         assert_eq!(parse(&args("")), None, "a session says where");
         assert_eq!(parse(&args("device panel")), Some(Command::DevicePanel));
-        assert_eq!(parse(&args("device confirm")), Some(Command::DeviceConfirm));
         assert_eq!(parse(&args("device unknown")), None);
         assert_eq!(parse(&args("--nested")), Some(Command::Nested));
         assert_eq!(parse(&args("--drm")), Some(Command::Drm));

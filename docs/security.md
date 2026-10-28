@@ -67,8 +67,8 @@ account locked until a password is set. `thor-account` (thor-system's, root thro
 the active local session's user without asking: `50-thor.rules`) sets the first password without asking
 for one, changes it only with the current one (checked as PAM does, by `unix_chkpwd` as the user), and
 turns sshd on only once there is a password. So any program running as `thor` (a game, a script Steam
-runs) can set the first password, and with it gain sudo and ssh: the same trust as the control pipe, and
-the reason to set a password early (ClamShell's Device view opens on the first start for it). Passwords
+runs) could set the first password, and with it gain sudo and ssh, if it ran while there was none: which
+is why ClamShell's Setup sets it before anything else of the user's runs (below). Passwords
 are 8 characters at least; sshd (`/etc/ssh/sshd_config.d/50-thor.conf`) takes only `thor`, no root, 3
 tries a connection (and OpenSSH's own penalties for repeated failures).
 
@@ -82,10 +82,12 @@ killed outright (SIGKILL) leaves the file until the next boot, which removes it
 ## The account and the first password
 
 The image starts with the session's user in `wheel` and no password: no sudo and no ssh until one is
-set in the Device view. `thor-account` (run as root through pkexec, which polkit allows the active
-session without asking) sets it. Any process of the user could run it, so a first password is set only
-once Volume Up is pressed on a physical input device within 20 s (`clamshell device confirm`): a
-virtual device, which any member of the `input` group can make through uinput, doesn't count. Changing
+set. `thor-account` (run as root through pkexec, which polkit allows the active session without asking)
+sets the first one without asking for one, which any process of the user could do. So the first password
+is Setup's first step, which can't be skipped, and nothing of the user's is started until the account has
+one (`clamshell_state::setup::wizard`): every launch is held while Setup shows, "Start with ClamShell"
+waits, and the second screen shows only the keyboard. Setup shows at the first start, and whenever the
+account is read without a password. What runs before it is ClamShell and the image's own services. Changing
 a password asks for the current one.
 
 ## Input devices
