@@ -224,6 +224,26 @@ def units(prefix):
     return sh(f"systemctl --user list-units 'clamshell-{prefix}*' --plain --no-legend | awk '{{print $1}}'").split()
 
 
+def screen_shows(role):
+    """What ClamShell's journal last said screen `role` (Top, Bottom) shows: "composes its frames", "shows
+    its own buffers", "shows window N ..." or "draws window N straight ..."; "" if nothing yet."""
+    shows = ("composes its frames", "shows its own buffers", "shows window ", "draws window ")
+    lines = [l for l in sh("journalctl --user -u clamshell -b -o cat --no-pager").splitlines()
+             if any(f"drm: the {role} screen {what}" in l for what in shows)]
+    return lines[-1].split(f"drm: the {role} screen ", 1)[1] if lines else ""
+
+
+def lit(shot, level=60):
+    """Whether a screen, as QEMU shows it, has anything on it: a pixel brighter than `level`."""
+    return max(shot[2], default=0) > level
+
+
+def screens_on():
+    """How many of the machine's screens are on, by its CRTCs' state (QEMU's picture of a screen turned off
+    keeps its last frame)."""
+    return sh("sudo -n sh -c 'cat /sys/kernel/debug/dri/0/state' 2>/dev/null").count("\tactive=1")
+
+
 def light_pixels(shot, y, x0, x1, level=150):
     """How many pixels of a row stretch are light (the slider's track and knob, against the black bar)."""
     w, _, rgb = shot
@@ -721,11 +741,7 @@ class Checks:
 
     def ui_scanout(self):
         def shown(role):
-            """Whether ClamShell's journal last said the screen shows its own buffers (True), or else."""
-            shows = ("composes its frames", "shows its own buffers", "shows window ", "draws window ")
-            lines = [l for l in sh("journalctl --user -u clamshell -b -o cat --no-pager").splitlines()
-                     if any(f"drm: the {role} screen {what}" in l for what in shows)]
-            return bool(lines) and lines[-1].endswith("shows its own buffers")
+            return screen_shows(role) == "shows its own buffers"
 
         def bar_drawn():
             """Whether the bottom screen, as QEMU shows it, has the bar's icons."""
@@ -750,6 +766,63 @@ class Checks:
         self.check("  moved up: the bottom screen scanned out again, the bar shown", back and until(bar_drawn, 3))
         sh("pkill -x foot || true")
         self.check("  closed: the main screen scanned out again", until(lambda: shown("Top"), 8))
+
+    def screen_changes(self):
+        """What a screen shows across the changes that left it wrong before: another VT and back (each screen
+        shown again, nothing refused for it), the second screen off over a VT switch (off still after),
+        and a window alone drawn straight, composed while a dialog or the overlay is over it, and straight
+        again after."""
+        def bar_drawn():
+            return light_pixels(self.i.screenshot(head=1), BAR_Y, 0, ICONS["windows-below"] + 40, level=100) > 50
+
+        def vt_away_and_back():
+            since = now()
+            sh("sudo -n chvt 2; sleep 2; sudo -n chvt 1")
+            return since, logged(since, "drm: seat resumed", 10)
+
+        refusals = ("composed from now on", "commit failed", "are composed from now on")
+        since, back = vt_away_and_back()
+        shown = until(lambda: lit(self.i.screenshot(head=0)) and bar_drawn(), 8)
+        refused = [l for l in journal(since).splitlines() if any(r in l for r in refusals)]
+        self.check("another VT and back: both screens shown again", back and shown)
+        self.check("  nothing refused for the time away", not refused, "; ".join(refused[:3]))
+        since = now()
+        control("bottom power")
+        off = logged(since, "drm: Bottom screen off", 5)
+        self.check("second screen off", off and until(lambda: screens_on() == 1, 5), f"{screens_on()} on")
+        since, back = vt_away_and_back()
+        time.sleep(2)
+        self.check("  another VT and back: the second screen off still, the main one shown",
+                   back and screens_on() == 1 and until(lambda: lit(self.i.screenshot(head=0)), 5),
+                   f"{screens_on()} on; " + "; ".join(l for l in journal(since).splitlines() if "drm:" in l)[-600:])
+        control("bottom power")
+        self.check("  on again: the bar shown", until(bar_drawn, 8) and screens_on() == 2)
+
+        # A game covers the screen (fitted to it), so that it is alone there.
+        if not self._launch_test_game():
+            return
+        straight = lambda: screen_shows("Top").startswith("draws window ")
+        composed = lambda: screen_shows("Top") == "composes its frames"
+        self.check("a game alone on the main screen: drawn straight onto it", until(straight, 10), screen_shows("Top"))
+        control("window quit")
+        if "ok" not in sh("python3 -c 'import gi; gi.require_version(\"Gtk\", \"3.0\"); print(\"ok\")' 2>/dev/null"):
+            return self.check("  windows with a dialog or the overview over them: GTK 3 for Python", False, "not installed")
+        program = lambda what: sh("setsid -f env GDK_BACKEND=wayland python3 -c " + shlex.quote(GTK_WINDOWS) + f" {what} >/dev/null 2>&1")
+        gone = lambda: sh("pkill -f '^python3 -c # thor-checks-windows' || true")
+        program("dialog")
+        alone = until(straight, 10)
+        self.check("a fullscreen window alone, then a dialog over it: straight, then composed", alone and until(composed, 8), screen_shows("Top"))
+        control("window close")  # Home+B: the dialog, which takes the input
+        self.check("  the dialog closed: straight again", until(straight, 8), screen_shows("Top"))
+        gone()
+        until(lambda: not any(w["app_id"] == "python3" for w in windows()), 5)
+        program("two")
+        alone = until(straight, 10) and until(lambda: len(windows()) >= 2, 5)
+        control("window overview")
+        self.check("two windows of one program, the overview over them: composed", alone and until(composed, 5), screen_shows("Top"))
+        control("window overview")
+        self.check("  the overview closed: straight again", until(straight, 8), screen_shows("Top"))
+        gone()
 
     def pad_windows(self):
         if not plug_pad():
@@ -1444,6 +1517,30 @@ class Checks:
         self.check("  a long press forgets it", forgot and "Paired: yes" not in sh(f"bluetoothctl info {address}"))
 
 
+# The screen check's program: a GTK window, fullscreen (covering the screen, so alone there), then after two
+# seconds a dialog of it ("dialog"), or a second window ("two"). Named in its first line, to be found by.
+GTK_WINDOWS = """# thor-checks-windows
+import sys
+import gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, GLib
+def window(title):
+    window = Gtk.Window(title=title)
+    window.connect("destroy", Gtk.main_quit)
+    window.fullscreen()
+    window.show_all()
+    return window
+first = window("thor-checks first")
+def then():
+    if sys.argv[1] == "dialog":
+        Gtk.MessageDialog(transient_for=first, modal=True, text="thor-checks dialog", buttons=Gtk.ButtonsType.OK).show()
+    else:
+        window("thor-checks second")
+    return False
+GLib.timeout_add(2000, then)
+Gtk.main()
+"""
+
 # The tray check's program: a StatusNotifierItem (named in its first line, to be found by).
 TRAY_ITEM = """# thor-checks-tray-item
 from gi.repository import Gio, GLib
@@ -1462,7 +1559,7 @@ GLib.MainLoop().run()
 
 
 
-CHECKS = ["confirm_key", "session_units", "shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "ui_scanout", "pad_windows",
+CHECKS = ["confirm_key", "session_units", "shelf_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "ui_scanout", "screen_changes", "pad_windows",
           "pad_shelf", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
           "keymap_actuations", "rumble", "launch_and_quit", "pause_hidden", "found_window", "tray_program", "clipboard",
           "bluetooth", "gyro_sleep"]
