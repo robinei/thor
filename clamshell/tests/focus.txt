@@ -720,25 +720,181 @@ Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness)
 -- screen as in settings-env.png
 == library-edit.png (top; the pad on both screens)
 start Edit(Tab(2)); back Activate Edit(Done)
+-- library
+Edit(Tab(0)): ^- vEdit(Row(0)) <- >Edit(Tab(1))
+Edit(Tab(1)): ^- vEdit(Row(0)) <Edit(Tab(0)) >Edit(Tab(2))
+Edit(Tab(2)): ^- vEdit(Row(0)) <Edit(Tab(1)) >Edit(Tab(3))
+Edit(Tab(3)): ^- vEdit(Row(0)) <Edit(Tab(2)) >Edit(Tab(4))
+Edit(Tab(4)): ^- vEdit(Row(0)) <Edit(Tab(3)) >Edit(Tab(5))
+Edit(Tab(5)): ^- vEdit(Row(0)) <Edit(Tab(4)) >Edit(NewTab)
+Edit(NewTab): ^- vEdit(Row(0)) <Edit(Tab(5)) >Edit(Sources)
+Edit(Sources): ^- vEdit(Row(0)) <Edit(NewTab) >Edit(Runners)
+Edit(Runners): ^- vEdit(Row(0)) <Edit(Sources) >Edit(Done)
+Edit(Done): ^- vEdit(Row(0)) <Edit(Runners) >-
+Edit(Row(0)): ^Edit(Tab(1)) vEdit(Row(1)) <Edit(Tab(0)) >Edit(Tab(2))
+Edit(Row(1)): ^Edit(Row(0)) vEdit(Row(2)) <Edit(Tab(0)) >Edit(Rename)
+Edit(Row(2)): ^Edit(Row(1)) vEdit(Row(3)) <Edit(Tab(0)) >Edit(Rename)
+Edit(Row(3)): ^Edit(Row(2)) vEdit(Rename) <Edit(Tab(0)) >Edit(Rename)
+Edit(Rename): ^Edit(Row(3)) vEdit(Cut) <Edit(Row(3)) >Edit(NewTab)
+Edit(Cut): ^Edit(Rename) vEdit(Icon) <Edit(Row(3)) >Edit(NewTab)
+Edit(Icon): ^Edit(Cut) vEdit(Picture) <Edit(Row(3)) >Edit(NewTab)
+Edit(Picture): ^Edit(Icon) vTab(Bluetooth) <Edit(Row(3)) >Edit(NewTab)
 == library-edit-cut.png (top; the pad on both screens)
 start Edit(Row(0)); back Activate Edit(Done)
+-- library
+Edit(Tab(0)): ^- vEdit(Row(0)) <- >Edit(Tab(1))
+Edit(Tab(1)): ^- vEdit(Row(0)) <Edit(Tab(0)) >Edit(Tab(2))
+Edit(Tab(2)): ^- vEdit(Row(0)) <Edit(Tab(1)) >Edit(Tab(3))
+Edit(Tab(3)): ^- vEdit(Row(0)) <Edit(Tab(2)) >Edit(Tab(4))
+Edit(Tab(4)): ^- vEdit(Row(0)) <Edit(Tab(3)) >Edit(Tab(5))
+Edit(Tab(5)): ^- vEdit(Row(0)) <Edit(Tab(4)) >Edit(NewTab)
+Edit(NewTab): ^- vEdit(Row(0)) <Edit(Tab(5)) >Edit(Sources)
+Edit(Sources): ^- vEdit(Row(0)) <Edit(NewTab) >Edit(Runners)
+Edit(Runners): ^- vEdit(Row(0)) <Edit(Sources) >Edit(Done)
+Edit(Done): ^- vEdit(Row(0)) <Edit(Runners) >-
+Edit(Row(0)): ^Edit(Tab(1)) vEdit(Row(1)) <Edit(Tab(0)) >Edit(Tab(2))
+Edit(Row(1)): ^Edit(Row(0)) vEdit(Row(2)) <Edit(Tab(0)) >Edit(Rename)
+Edit(Row(2)): ^Edit(Row(1)) vEdit(Row(3)) <Edit(Tab(0)) >Edit(Rename)
+Edit(Row(3)): ^Edit(Row(2)) vEdit(Rename) <Edit(Tab(0)) >Edit(Rename)
+Edit(Rename): ^Edit(Row(3)) vEdit(Paste) <Edit(Row(3)) >Edit(NewTab)
+Edit(Paste): ^Edit(Rename) vEdit(Icon) <Edit(Row(3)) >Edit(NewTab)
+Edit(Icon): ^Edit(Paste) vEdit(Picture) <Edit(Row(3)) >Edit(NewTab)
+Edit(Picture): ^Edit(Icon) vTab(Bluetooth) <Edit(Row(3)) >Edit(NewTab)
 == library-edit-icons.png (top; the pad on both screens)
 start Edit(Icon); back Activate Edit(Done)
+-- library
+Edit(Tab(0)): ^- vEdit(Row(0)) <- >Edit(Tab(1))
+Edit(Tab(1)): ^- vEdit(Row(0)) <Edit(Tab(0)) >Edit(Tab(2))
+Edit(Tab(2)): ^- vEdit(Row(0)) <Edit(Tab(1)) >Edit(Tab(3))
+Edit(Tab(3)): ^- vEdit(Row(0)) <Edit(Tab(2)) >Edit(Tab(4))
+Edit(Tab(4)): ^- vEdit(Row(0)) <Edit(Tab(3)) >Edit(Tab(5))
+Edit(Tab(5)): ^- vEdit(Row(0)) <Edit(Tab(4)) >Edit(NewTab)
+Edit(NewTab): ^- vEdit(Row(0)) <Edit(Tab(5)) >Edit(Sources)
+Edit(Sources): ^- vEdit(Row(0)) <Edit(NewTab) >Edit(Runners)
+Edit(Runners): ^- vEdit(Row(0)) <Edit(Sources) >Edit(Done)
+Edit(Done): ^- vEdit(Row(0)) <Edit(Runners) >-
+Edit(Row(0)): ^Edit(Tab(1)) vEdit(Row(1)) <Edit(Tab(0)) >Edit(Tab(2))
+Edit(Row(1)): ^Edit(Row(0)) vEdit(Row(2)) <Edit(Tab(0)) >Edit(Rename)
+Edit(Row(2)): ^Edit(Row(1)) vEdit(Row(3)) <Edit(Tab(0)) >Edit(Rename)
+Edit(Row(3)): ^Edit(Row(2)) vEdit(Rename) <Edit(Tab(0)) >Edit(Rename)
+Edit(Rename): ^Edit(Row(3)) vEdit(Paste) <Edit(Row(3)) >Edit(IconChoice(1))
+Edit(Paste): ^Edit(Rename) vEdit(Icon) <Edit(Row(3)) >Edit(IconChoice(1))
+Edit(Icon): ^Edit(Paste) vEdit(Picture) <Edit(IconChoice(0)) >Edit(IconChoice(1))
+Edit(Picture): ^Edit(Icon) vEdit(IconChoice(0)) <Edit(IconChoice(0)) >Edit(IconChoice(1))
+Edit(IconChoice(0)): ^Edit(Picture) vEdit(IconChoice(3)) <Edit(Row(3)) >Edit(Picture)
+Edit(IconChoice(1)): ^Edit(Picture) vEdit(IconChoice(4)) <Edit(Picture) >Edit(IconChoice(2))
+Edit(IconChoice(2)): ^Edit(Picture) vEdit(IconChoice(5)) <Edit(IconChoice(1)) >Edit(Done)
+Edit(IconChoice(3)): ^Edit(IconChoice(0)) vEdit(IconChoice(6)) <Edit(Row(3)) >Edit(IconChoice(4))
+Edit(IconChoice(4)): ^Edit(IconChoice(1)) vEdit(IconChoice(7)) <Edit(IconChoice(3)) >Edit(IconChoice(5))
+Edit(IconChoice(5)): ^Edit(IconChoice(2)) vEdit(IconChoice(8)) <Edit(IconChoice(4)) >Edit(Done)
+Edit(IconChoice(6)): ^Edit(IconChoice(3)) vEdit(IconChoice(9)) <Edit(Row(3)) >Edit(IconChoice(7))
+Edit(IconChoice(7)): ^Edit(IconChoice(4)) vEdit(IconChoice(10)) <Edit(IconChoice(6)) >Edit(IconChoice(8))
+Edit(IconChoice(8)): ^Edit(IconChoice(5)) vEdit(IconChoice(11)) <Edit(IconChoice(7)) >Edit(Done)
+Edit(IconChoice(9)): ^Edit(IconChoice(6)) vEdit(IconChoice(12)) <Edit(Row(3)) >Edit(IconChoice(10))
+Edit(IconChoice(10)): ^Edit(IconChoice(7)) vEdit(IconChoice(13)) <Edit(IconChoice(9)) >Edit(IconChoice(11))
+Edit(IconChoice(11)): ^Edit(IconChoice(8)) vEdit(IconChoice(13)) <Edit(IconChoice(10)) >Edit(Done)
+Edit(IconChoice(12)): ^Edit(IconChoice(9)) vTab(Bluetooth) <Edit(Row(3)) >Edit(IconChoice(13))
+Edit(IconChoice(13)): ^Edit(IconChoice(10)) vTab(Battery) <Edit(IconChoice(12)) >Edit(IconChoice(11))
 == library-edit-scrolled.png (top; the pad on both screens)
 start Edit(Tab(6)); back Activate Edit(Done)
+-- library
+Edit(Tab(1)): ^- vEdit(Row(0)) <- >Edit(Tab(2))
+Edit(Tab(2)): ^- vEdit(Row(0)) <Edit(Tab(1)) >Edit(Tab(3))
+Edit(Tab(3)): ^- vEdit(Row(0)) <Edit(Tab(2)) >Edit(Tab(4))
+Edit(Tab(4)): ^- vEdit(Row(0)) <Edit(Tab(3)) >Edit(Tab(5))
+Edit(Tab(5)): ^- vEdit(Row(0)) <Edit(Tab(4)) >Edit(Tab(6))
+Edit(Tab(6)): ^- vEdit(Row(0)) <Edit(Tab(5)) >Edit(NewTab)
+Edit(NewTab): ^- vEdit(Row(0)) <Edit(Tab(6)) >Edit(Sources)
+Edit(Sources): ^- vEdit(Row(0)) <Edit(NewTab) >Edit(Runners)
+Edit(Runners): ^- vEdit(Row(0)) <Edit(Sources) >Edit(Done)
+Edit(Done): ^- vEdit(Row(0)) <Edit(Runners) >-
+Edit(Row(0)): ^Edit(Tab(2)) vEdit(Rename) <Edit(Tab(1)) >Edit(Tab(2))
+Edit(Rename): ^Edit(Row(0)) vEdit(Paste) <Edit(Row(0)) >Edit(NewTab)
+Edit(Paste): ^Edit(Rename) vEdit(Icon) <Edit(Row(0)) >Edit(NewTab)
+Edit(Icon): ^Edit(Paste) vTab(Bluetooth) <Edit(Row(0)) >Edit(NewTab)
 == library-edit-sources.png (top; the pad on both screens)
 start Edit(Sources); back Activate Edit(Done)
+-- library
+Edit(Tab(0)): ^- vEdit(Row(0)) <- >Edit(Tab(1))
+Edit(Tab(1)): ^- vEdit(Row(0)) <Edit(Tab(0)) >Edit(Tab(2))
+Edit(Tab(2)): ^- vEdit(Row(0)) <Edit(Tab(1)) >Edit(Tab(3))
+Edit(Tab(3)): ^- vEdit(Row(0)) <Edit(Tab(2)) >Edit(Tab(4))
+Edit(Tab(4)): ^- vEdit(Row(0)) <Edit(Tab(3)) >Edit(Tab(5))
+Edit(Tab(5)): ^- vEdit(Row(0)) <Edit(Tab(4)) >Edit(NewTab)
+Edit(NewTab): ^- vEdit(Row(0)) <Edit(Tab(5)) >Edit(Sources)
+Edit(Sources): ^- vEdit(Row(0)) <Edit(NewTab) >Edit(Runners)
+Edit(Runners): ^- vEdit(Row(0)) <Edit(Sources) >Edit(Done)
+Edit(Done): ^- vEdit(Row(0)) <Edit(Runners) >-
+Edit(Row(0)): ^Edit(Tab(1)) vEdit(Row(1)) <Edit(Tab(0)) >Edit(Tab(2))
+Edit(Row(1)): ^Edit(Row(0)) vEdit(Row(2)) <Edit(Tab(0)) >Edit(Tab(2))
+Edit(Row(2)): ^Edit(Row(1)) vEdit(Row(3)) <Edit(Tab(0)) >Edit(Open)
+Edit(Row(3)): ^Edit(Row(2)) vEdit(Row(4)) <Edit(Tab(0)) >Edit(Open)
+Edit(Row(4)): ^Edit(Row(3)) vEdit(Open) <Edit(Tab(0)) >Edit(Open)
+Edit(Open): ^Edit(Row(4)) vEdit(MoveUp) <Edit(Row(4)) >Edit(NewTab)
+Edit(MoveUp): ^Edit(Open) vEdit(MoveDown) <Edit(Row(4)) >Edit(NewTab)
+Edit(MoveDown): ^Edit(MoveUp) vEdit(Remove) <Edit(Row(4)) >Edit(NewTab)
+Edit(Remove): ^Edit(MoveDown) vTab(Bluetooth) <Edit(Row(4)) >Edit(NewTab)
 == library-edit-form.png (top; the pad on both screens)
 start Edit(Field(3)); back Activate Edit(Cancel)
+-- library
+Edit(Tab(0)): ^- vEdit(Field(0)) <- >Edit(Tab(1))
+Edit(Tab(1)): ^- vEdit(Field(0)) <Edit(Tab(0)) >Edit(Tab(2))
+Edit(Tab(2)): ^- vEdit(Field(0)) <Edit(Tab(1)) >Edit(Tab(3))
+Edit(Tab(3)): ^- vEdit(Field(0)) <Edit(Tab(2)) >Edit(Tab(4))
+Edit(Tab(4)): ^- vEdit(Field(0)) <Edit(Tab(3)) >Edit(Tab(5))
+Edit(Tab(5)): ^- vEdit(Choice(0)) <Edit(Tab(4)) >Edit(Choice(0))
+Edit(NewTab): ^- vEdit(Choice(0)) <Edit(Tab(5)) >Edit(Sources)
+Edit(Sources): ^- vEdit(Choice(0)) <Edit(NewTab) >Edit(Runners)
+Edit(Runners): ^- vEdit(Choice(0)) <Edit(Sources) >Edit(Done)
+Edit(Done): ^- vEdit(Choice(0)) <Edit(Runners) >-
+Edit(Field(0)): ^Edit(Tab(2)) vEdit(Field(1)) <Edit(Tab(0)) >Edit(Choice(0))
+Edit(Field(1)): ^Edit(Field(0)) vEdit(Field(2)) <Edit(Field(2)) >Edit(Pick(2))
+Edit(Field(2)): ^Edit(Field(1)) vEdit(Field(3)) <Edit(Tab(0)) >Edit(Pick(2))
+Edit(Pick(2)): ^Edit(Field(1)) vEdit(Field(3)) <Edit(Field(2)) >Edit(Choice(2))
+Edit(Field(3)): ^Edit(Field(2)) vEdit(Field(4)) <Edit(Field(2)) >Edit(Pick(2))
+Edit(Field(4)): ^Edit(Field(3)) vEdit(Field(5)) <Edit(Field(2)) >Edit(Choice(4))
+Edit(Field(5)): ^Edit(Field(4)) vEdit(Field(6)) <Edit(Field(2)) >Edit(Choice(5))
+Edit(Field(6)): ^Edit(Field(5)) vEdit(Field(7)) <Edit(Save) >Edit(Choice(6))
+Edit(Field(7)): ^Edit(Field(6)) vEdit(Field(8)) <Edit(Save) >Edit(Choice(7))
+Edit(Field(8)): ^Edit(Field(7)) vEdit(Cancel) <Edit(Save) >Edit(Choice(8))
+Edit(Save): ^Edit(Field(8)) vTab(Dock) <Edit(Tab(0)) >Edit(Cancel)
+Edit(Cancel): ^Edit(Field(8)) vTab(Touchpad) <Edit(Save) >Edit(Field(8))
+Edit(Choice(0)): ^Edit(Runners) vEdit(Choice(1)) <Edit(Field(0)) >Edit(Runners)
+Edit(Choice(1)): ^Edit(Choice(0)) vEdit(Choice(2)) <Edit(Field(1)) >Edit(Runners)
+Edit(Choice(2)): ^Edit(Choice(1)) vEdit(Choice(3)) <Edit(Pick(2)) >Edit(Runners)
+Edit(Choice(3)): ^Edit(Choice(2)) vEdit(Choice(4)) <Edit(Field(3)) >Edit(Runners)
+Edit(Choice(4)): ^Edit(Choice(3)) vEdit(Choice(5)) <Edit(Field(4)) >Edit(Runners)
+Edit(Choice(5)): ^Edit(Choice(4)) vEdit(Choice(6)) <Edit(Field(5)) >Edit(Runners)
+Edit(Choice(6)): ^Edit(Choice(5)) vEdit(Choice(7)) <Edit(Field(6)) >Edit(Runners)
+Edit(Choice(7)): ^Edit(Choice(6)) vEdit(Choice(8)) <Edit(Field(7)) >Edit(Runners)
+Edit(Choice(8)): ^Edit(Choice(7)) vEdit(Choice(9)) <Edit(Field(8)) >Edit(Runners)
+Edit(Choice(9)): ^Edit(Choice(8)) vEdit(Cancel) <Edit(Field(8)) >Edit(Runners)
 == library-edit-runners.png (top; the pad on both screens)
 start Edit(Runners); back Activate Edit(Done)
+-- library
+Edit(Tab(0)): ^- vEdit(Row(0)) <- >Edit(Tab(1))
+Edit(Tab(1)): ^- vEdit(Row(0)) <Edit(Tab(0)) >Edit(Tab(2))
+Edit(Tab(2)): ^- vEdit(Row(0)) <Edit(Tab(1)) >Edit(Tab(3))
+Edit(Tab(3)): ^- vEdit(Row(0)) <Edit(Tab(2)) >Edit(Tab(4))
+Edit(Tab(4)): ^- vEdit(Row(0)) <Edit(Tab(3)) >Edit(Tab(5))
+Edit(Tab(5)): ^- vEdit(Row(0)) <Edit(Tab(4)) >Edit(NewTab)
+Edit(NewTab): ^- vEdit(Row(0)) <Edit(Tab(5)) >Edit(Sources)
+Edit(Sources): ^- vEdit(Row(0)) <Edit(NewTab) >Edit(Runners)
+Edit(Runners): ^- vEdit(Row(0)) <Edit(Sources) >Edit(Done)
+Edit(Done): ^- vEdit(Row(0)) <Edit(Runners) >-
+Edit(Row(0)): ^Edit(Tab(1)) vEdit(Row(1)) <Edit(Tab(0)) >Edit(Tab(2))
+Edit(Row(1)): ^Edit(Row(0)) vEdit(Row(2)) <Edit(Tab(0)) >Edit(Tab(2))
+Edit(Row(2)): ^Edit(Row(1)) vEdit(Open) <Edit(Tab(0)) >Edit(Open)
+Edit(Open): ^Edit(Row(2)) vEdit(MoveUp) <Edit(Row(2)) >Edit(NewTab)
+Edit(MoveUp): ^Edit(Open) vEdit(MoveDown) <Edit(Row(2)) >Edit(NewTab)
+Edit(MoveDown): ^Edit(MoveUp) vTab(Bluetooth) <Edit(Row(2)) >Edit(NewTab)
 == library-edit-command.png (bottom; the pad on both screens)
 start Editor(Insert(0)); back Activate Editor(Cancel)
 -- bar as in bottom.png except
-Tab(Windows), PadMouse: ^- vEditor(Save)
-Tab(Time): ^- vEditor(Cancel)
-Tab(Settings), Tab(Dock): ^- vEditor(Insert(0))
-Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vEditor(Cancel)
+Tab(Windows), PadMouse: ^Edit(Cancel) vEditor(Save)
+Tab(Time): ^Edit(Cancel) vEditor(Cancel)
+Tab(Settings), Tab(Dock): ^Edit(Save) vEditor(Insert(0))
+Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^Edit(Cancel) vEditor(Cancel)
 -- keyboard as in settings-env.png except
 Key[0,0], Key[0,1]: ^Editor(Insert(0))
 Key[0,2], Key[0,3]: ^Editor(Insert(1))
@@ -755,38 +911,69 @@ Editor(Insert(3)): ^Editor(Cancel) vKey[0,6] <Editor(Insert(2)) >Editor(Insert(4
 Editor(Insert(4)): ^Editor(Save) vKey[0,8] <Editor(Insert(3)) >Key[0,9]
 == library-edit-command-top.png (top; the pad on both screens)
 start Edit(Row(0)); back Activate Edit(Cancel)
+-- library
+Edit(Tab(0)): ^- vEdit(Field(0)) <- >Edit(Tab(1))
+Edit(Tab(1)): ^- vEdit(Field(0)) <Edit(Tab(0)) >Edit(Tab(2))
+Edit(Tab(2)): ^- vEdit(Field(0)) <Edit(Tab(1)) >Edit(Tab(3))
+Edit(Tab(3)): ^- vEdit(Field(0)) <Edit(Tab(2)) >Edit(Tab(4))
+Edit(Tab(4)): ^- vEdit(Field(0)) <Edit(Tab(3)) >Edit(Tab(5))
+Edit(Tab(5)): ^- vEdit(Field(0)) <Edit(Tab(4)) >Edit(NewTab)
+Edit(NewTab): ^- vEdit(Field(0)) <Edit(Tab(5)) >Edit(Sources)
+Edit(Sources): ^- vEdit(Field(0)) <Edit(NewTab) >Edit(Runners)
+Edit(Runners): ^- vEdit(Field(0)) <Edit(Sources) >Edit(Done)
+Edit(Done): ^- vEdit(Field(0)) <Edit(Runners) >-
+Edit(Field(0)): ^Edit(Tab(2)) vEdit(Field(1)) <Edit(Tab(0)) >Edit(Tab(2))
+Edit(Field(1)): ^Edit(Field(0)) vEdit(Field(2)) <Edit(Tab(0)) >Edit(Tab(2))
+Edit(Field(2)): ^Edit(Field(1)) vEdit(Field(3)) <Edit(Field(4)) >Edit(Pick(4))
+Edit(Field(3)): ^Edit(Field(2)) vEdit(Field(4)) <Edit(Field(4)) >Edit(Pick(4))
+Edit(Field(4)): ^Edit(Field(3)) vEdit(Field(5)) <Edit(Save) >Edit(Pick(4))
+Edit(Pick(4)): ^Edit(Field(3)) vEdit(Pick(6)) <Edit(Field(4)) >Edit(Tab(5))
+Edit(Field(5)): ^Edit(Field(4)) vEdit(Field(6)) <Edit(Field(4)) >Edit(Pick(4))
+Edit(Field(6)): ^Edit(Field(5)) vEdit(Field(7)) <Edit(Save) >Edit(Pick(6))
+Edit(Pick(6)): ^Edit(Pick(4)) vEdit(Field(7)) <Edit(Field(6)) >Edit(Tab(5))
+Edit(Field(7)): ^Edit(Field(6)) vEdit(Cancel) <Edit(Field(6)) >Edit(Pick(6))
+Edit(Save): ^Edit(Field(7)) vTab(Dock) <Edit(Tab(0)) >Edit(Cancel)
+Edit(Cancel): ^Edit(Field(7)) vTab(Touchpad) <Edit(Save) >Edit(Field(7))
 == library-pick.png (top; the pad on both screens)
 start "browse:Files/Home/emulator.sh"; back Activate CancelPick
 -- library
-Collection(5): ^"browse:Files/Home/Roms" v"browse:Files/Home/notes.txt" <[CollectionStep(-1)] >[CollectionStep(1)]
-Up: ^Collection(5) v"browse:Files/Home/Pictures" <"browse:Files/Home/Pictures" >-
-"browse:Files/Home/Pictures": ^[ListStep(-2)] v"browse:Files/Home/Roms" <[CollectionStep(-1)] >[CollectionStep(1)]
-"browse:Files/Home/Roms": ^"browse:Files/Home/Pictures" v"browse:Files/Home/emulator.sh" <[CollectionStep(-1)] >[CollectionStep(1)]
-"browse:Files/Home/emulator.sh": ^"browse:Files/Home/Roms" v"browse:Files/Home/notes.txt" <[CollectionStep(-1)] >[CollectionStep(1)]
-"browse:Files/Home/notes.txt": ^"browse:Files/Home/emulator.sh" v"browse:Files/Home/snes.png" <[CollectionStep(-1)] >[CollectionStep(1)]
-"browse:Files/Home/snes.png": ^"browse:Files/Home/notes.txt" vTab(Keyboard) <[CollectionStep(-1)] >[CollectionStep(1)]
+Collection(5): ^"browse:Files/Home/Roms" v"browse:Files/Home/notes.txt" <- >Up
+CancelPick: ^- vUp <Up >-
+Up: ^Collection(5) v"browse:Files/Home/Pictures" <"browse:Files/Home/Pictures" >CancelPick
+"browse:Files/Home/Pictures": ^[ListStep(-2)] v"browse:Files/Home/Roms" <Collection(5) >Up
+"browse:Files/Home/Roms": ^"browse:Files/Home/Pictures" v"browse:Files/Home/emulator.sh" <Collection(5) >Up
+"browse:Files/Home/emulator.sh": ^"browse:Files/Home/Roms" v"browse:Files/Home/notes.txt" <Collection(5) >Up
+"browse:Files/Home/notes.txt": ^"browse:Files/Home/emulator.sh" v"browse:Files/Home/snes.png" <Collection(5) >Up
+"browse:Files/Home/snes.png": ^"browse:Files/Home/notes.txt" vTab(Keyboard) <Collection(5) >Up
 == library-pick-chosen.png (top; the pad on both screens)
 start Edit(Pick(4)); back Activate Edit(Cancel)
+-- library as in library-edit-command-top.png
 == library-edit-name.png (bottom; the pad on both screens)
 start Key[2,4]; back Activate Editor(Cancel)
 -- bar as in bottom.png except
-Tab(Windows), PadMouse: ^- vEditor(Save)
-Tab(Time): ^- vEditor(Cancel)
-Tab(Settings): ^- vKey[0,0]
-Tab(Dock): ^- vKey[0,1]
-Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vEditor(Cancel)
+Tab(Windows), PadMouse: ^Edit(Picture) vEditor(Save)
+Tab(Time): ^Edit(Picture) vEditor(Cancel)
+Tab(Settings): ^Edit(Picture) vKey[0,0]
+Tab(Dock): ^Edit(Picture) vKey[0,1]
+Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^Edit(Picture) vEditor(Cancel)
 -- keyboard as in settings-env.png
 -- screen as in settings-env.png
 == portal-save.png (top; the pad on both screens)
 start "browse:Files/Home/notes.txt"; back Activate CancelPick
--- library as in library-pick.png except
-Collection(5): ^"browse:Files/Home/emulator.sh" v"browse:Files/Home/snes.png"
-"browse:Files/Home/Pictures": ^[ListStep(-3)]
+-- library
+Collection(5): ^"browse:Files/Home/emulator.sh" v"browse:Files/Home/snes.png" <- >Up
+CancelPick: ^- vUp <SaveHere >-
+SaveHere: ^- vUp <Up >CancelPick
+SaveAs: ^- vUp <Up >SaveHere
+Up: ^SaveAs v"browse:Files/Home/Pictures" <"browse:Files/Home/Pictures" >SaveAs
+"browse:Files/Home/Pictures": ^[ListStep(-3)] v"browse:Files/Home/Roms" <Collection(5) >Up
+"browse:Files/Home/Roms": ^"browse:Files/Home/Pictures" v"browse:Files/Home/emulator.sh" <Collection(5) >Up
+"browse:Files/Home/emulator.sh": ^"browse:Files/Home/Roms" v"browse:Files/Home/notes.txt" <Collection(5) >Up
+"browse:Files/Home/notes.txt": ^"browse:Files/Home/emulator.sh" v"browse:Files/Home/snes.png" <Collection(5) >Up
+"browse:Files/Home/snes.png": ^"browse:Files/Home/notes.txt" vTab(Keyboard) <Collection(5) >Up
 == portal-replace.png (top; the pad on both screens)
 start SaveHere; back Activate CancelPick
--- library as in library-pick.png except
-Collection(5): ^"browse:Files/Home/emulator.sh" v"browse:Files/Home/snes.png"
-"browse:Files/Home/Pictures": ^[ListStep(-3)]
+-- library as in portal-save.png
 == setup-password.png (top; the pad on both screens)
 start Setup(Password); back Activate Setup(Back)
 -- screen

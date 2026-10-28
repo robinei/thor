@@ -75,11 +75,15 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     // the right end.
     let problems = &s.library_view().library().problems;
     // Picking, what is asked for and Cancel take their place; saving, also the name (Save as) and Save
-    // here, dimmed while no folder it can go in is open.
+    // here, dimmed while no folder it can go in is open. Each shows the pad's button for it, as the
+    // details' actions do: B, Start and Y.
     if let Some(pick) = s.library_view().pick() {
-        let size = h * TAB_TEXT;
-        let cancel = Rect::new(w - pad - h * 0.2, 0.0, h * 0.2, tabs_h);
-        f.text_button(Id::LibraryView(LibraryViewId::CancelPick), cancel, size, Tone::Fn, "Cancel", crate::gfx::Align::End);
+        let size = h * DETAIL;
+        // The actions a row high, in the middle of the tabs' height.
+        let (row_h, row_y) = (size * 1.6, (tabs_h - size * 1.6) / 2.0);
+        let cancel_w = widgets::key_action_width(f, row_h, "B", "Cancel");
+        let cancel = Rect::new(w - pad - cancel_w, row_y, cancel_w, row_h);
+        widgets::key_action(f, Id::LibraryView(LibraryViewId::CancelPick), cancel, "B", "Cancel", Tone::Fn, false);
         let mut end = cancel.x;
         if pick.saves() {
             use clamshell_state::library_view::pick::SaveHere;
@@ -91,20 +95,21 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
             };
             // At most half the room between the tab and Cancel: a long name is cut, not drawn over the rest.
             let room = end - tabs_end - pad * 3.0;
-            let save_w = (f.c.text_width(size, &label) + pad).min(room * 0.5);
-            let save = Rect::new(end - pad * 2.0 - save_w, 0.0, save_w, tabs_h);
+            let save_w = widgets::key_action_width(f, row_h, "Start", &label).min(room * 0.5);
+            let save = Rect::new(end - pad * 2.0 - save_w, row_y, save_w, row_h);
             let tone = if here == SaveHere::Off { Tone::Dim } else { Tone::Accent };
-            f.text_button(Id::LibraryView(LibraryViewId::SaveHere), save, size, tone, &label, crate::gfx::Align::End);
+            widgets::key_action(f, Id::LibraryView(LibraryViewId::SaveHere), save, "Start", &label, tone, here == SaveHere::Off);
             end = save.x;
         }
         let asks = Rect::new(tabs_end + pad * 2.0, 0.0, end - tabs_end - pad * 3.0, tabs_h);
         match &pick.takes {
             clamshell_state::library_view::pick::Takes::Save { name, .. } => {
                 let text = Fmt::<192>::of(format_args!("Save as: {name} \u{270e}"));
-                f.text_button(Id::LibraryView(LibraryViewId::SaveAs), asks, h * DETAIL, Tone::Fn, &text, crate::gfx::Align::Start);
+                let save_as = Rect::new(asks.x, row_y, widgets::key_action_width(f, row_h, "Y", &text).min(asks.w), row_h);
+                widgets::key_action(f, Id::LibraryView(LibraryViewId::SaveAs), save_as, "Y", &text, Tone::Fn, false);
             }
             _ => {
-                f.c.text_fit(asks, h * DETAIL, Tone::Accent, pick.asks(), Keep::End);
+                f.c.text_fit(asks, size, Tone::Accent, pick.asks(), Keep::End);
             }
         }
     } else if let Some(first) = problems.first() {
@@ -400,7 +405,6 @@ fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f3
             Action::Favourite => (Fmt::of(format_args!("Not a favourite")), Tone::Dim),
             Action::Pin if s.dock().is_pinned(&entry.id) => (Fmt::of(format_args!("On the dock")), Tone::Normal),
             // It always runs, so it is always on the dock, pinned or not.
-            Action::Pin if *entry.id == *clamshell_state::Builtin::Library.id() => (Fmt::of(format_args!("Always on the dock")), Tone::Dim),
             Action::Pin => (Fmt::of(format_args!("Not on the dock")), Tone::Dim),
             Action::File(a) if s.library_view().file_armed(a) => (Fmt::of(format_args!("{} · press again", a.label())), Tone::Accent),
             Action::File(a) => {

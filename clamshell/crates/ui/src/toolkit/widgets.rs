@@ -584,6 +584,14 @@ pub(crate) fn key_action(f: &mut Frame, id: Id, r: Rect, key: &str, label: &str,
     });
 }
 
+/// How wide [`key_action`] draws `key`'s badge and `label` in a rect `h` high.
+pub(crate) fn key_action_width(f: &mut Frame, h: f32, key: &str, label: &str) -> f32 {
+    let d = h * 0.78;
+    let ring_w = d.max(f.c.text_width(d * 0.55, key) + d * 0.6);
+    // (With room to spare, so the label isn't cut at its last letter.)
+    ring_w + f.pad() + f.c.text_width(h * 0.62, label)
+}
+
 /// A button's badge and what it does, drawn as [`key_action`] draws them but as a hint with nothing to
 /// tap. Returns its width.
 pub(crate) fn key_hint(f: &mut Frame, r: Rect, key: &str, label: &str) -> f32 {

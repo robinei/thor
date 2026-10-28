@@ -120,7 +120,9 @@ pub(crate) fn candidates<'d>(s: &State, d: &'d impl Drawn) -> Vec<(Screen, &'d T
         return d.targets(Screen::Top).iter().filter(|t| actions.contains(&t.id)).map(|t| (Screen::Top, t)).collect();
     }
     let screens: &[Screen] = if scope(s) == PadScope::BottomOnly { &[Screen::Bottom] } else { &Screen::BOTH };
-    let actions = |id: &Id| matches!(id, Id::LibraryView(s) if !matches!(s, LibraryViewId::Entry(_) | LibraryViewId::Collection(_) | LibraryViewId::Up));
+    // Only the details' actions: the edit mode's targets and the pick's header are the pad's too.
+    let details: Vec<Id> = s.library_view().actions().as_slice().iter().map(|a| Id::LibraryView(a.id())).collect();
+    let actions = |id: &Id| details.contains(id);
     let fingers = |id: &Id| matches!(id, Id::List(_) | Id::Dock(DockId::Tray(_)));
     screens.iter().flat_map(|&screen| d.targets(screen).iter().map(move |t| (screen, t))).filter(|(_, t)| !fingers(&t.id) && !actions(&t.id)).collect()
 }
@@ -160,6 +162,8 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
         let step = match dir {
             Dir::Up => Some(to(from.saturating_sub(1))),
             Dir::Down if !at_end => Some(to(from + 1)),
+            // Picking, the Files tab is the only one: left and right go to the pick's header instead.
+            Dir::Left | Dir::Right if s.library_view().pick().is_some() => None,
             Dir::Left => Some(LibraryViewEvent::CollectionStep(-1)),
             Dir::Right => Some(LibraryViewEvent::CollectionStep(1)),
             Dir::Down => None,
@@ -307,11 +311,13 @@ pub(crate) fn back(s: &State) -> Option<Event> {
         return Some(PointerEvent::Activate(Id::Profile(Kind::Keymap, ProfileId::Back)).into());
     }
     // A pick is left as it was.
-    if s.library_view().pick().is_some() && s.top_view() == clamshell_state::setup::TopView::LibraryView {
+    // Only while the Library is in front: with a window there, its edit mode or pick is behind it.
+    let library_shown = s.top_view() == clamshell_state::setup::TopView::LibraryView && s.session().shown_builtin() == Some(clamshell_state::Builtin::Library);
+    if s.library_view().pick().is_some() && library_shown {
         return Some(PointerEvent::Activate(Id::LibraryView(LibraryViewId::CancelPick)).into());
     }
     // The Library's edit mode goes out of the open folder, or else leaves.
-    if let Some(edit) = s.library_view().edit().filter(|_| s.top_view() == clamshell_state::setup::TopView::LibraryView) {
+    if let Some(edit) = s.library_view().edit().filter(|_| library_shown) {
         let open = s.library_view().config_shown().and_then(|c| edit.open(c).next()).is_some();
         let id = match (edit.form().is_some(), open) {
             (true, _) => EditId::Cancel,

@@ -70,9 +70,9 @@ library-edit-scrolled.png 7e783dbb9cff5870
 library-edit-sources.png 9ad6d1bed9a8eec0
 library-edit.png 6ef719af745a7272
 library-pick-chosen.png e0e7472f4815f7a9
-library-pick.png 788eeedb232a793f
-portal-replace.png 8c95889e138da201
-portal-save.png 07baa01877dc2e0a
+library-pick.png f5675574ae216b69
+portal-replace.png 7dc20c67a3a6f51e
+portal-save.png 829355a7ee610113
 settings-env.png 141480d50601cd5a
 settings-global.png 67a7863ee4d00c29
 settings-menu.png c0cc8a934b3a9035
