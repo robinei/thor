@@ -73,7 +73,9 @@ impl Session {
     /// picture looked up by its app id, and each is moved into a scope of ours.
     pub(crate) fn start_found(&mut self, new: Vec<Running>, taken: &[i64], clock: &Clock, out: &mut Out) {
         for r in &new {
-            let mine: Vec<&Window> = self.windows.iter().filter(|w| !taken.contains(&w.id) && (r.owns(w) || r.fathered(w))).collect();
+            // A dialog goes with its main window, whose program's it is (see `Session::running_of`).
+            let ours = |w: &Window| self.window(self.root_of(w.id)).is_some_and(|root| r.owns(root) || r.fathered(root));
+            let mine: Vec<&Window> = self.windows.iter().filter(|w| !taken.contains(&w.id) && ours(w)).collect();
             let focused = mine.iter().any(|w| self.top_window().is_some_and(|top| top.id == w.id));
             let ids: Vec<i64> = mine.iter().map(|w| w.id).collect();
             if !ids.is_empty() {
@@ -177,6 +179,23 @@ mod tests {
         // A program the library has a desktop file for runs as that entry.
         s.observed(vec![window(7, "firefox", 501, "app-firefox.scope")]);
         assert!(s.session().running("desktop:firefox").is_some());
+    }
+
+    /// A dialog goes with its main window: one that another program opened over a window of a program
+    /// found (as an X11 window may name another client's window its parent) stays in that program's group
+    /// when its own program is found, as `Session::running_of` makes it that program's.
+    #[test]
+    fn a_dialog_over_another_programs_window_stays_in_that_programs_group() {
+        let mut s = device();
+        let dialog = WindowFacts { parent: Some(5), ..window(6, "foot", 600, "app-foot.scope") };
+        s.observed(vec![window(5, "firefox", 500, "app-firefox.scope"), dialog, window(7, "foot", 600, "app-foot.scope")]);
+        let group = |s: &State, id: i64| s.session().window(id).and_then(|w| w.group.clone());
+        let firefox = s.session().running("desktop:firefox").map(|r| r.group());
+        assert!(firefox.is_some() && s.session().running("desktop:foot").is_some());
+        assert_eq!(group(&s, 6), firefox, "its main window's");
+        assert_eq!(group(&s, 7), s.session().running("desktop:foot").map(|r| r.group()));
+        s.applied(Event::tick(1));
+        assert_eq!(group(&s, 6), firefox, "and stays there");
     }
 
     #[test]
