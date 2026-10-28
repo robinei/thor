@@ -76,7 +76,7 @@ their own folders (browsed, removable) give `in` and a `name` (`{label}`). Built
   { "id": "tools", "name": "Tools", "type": "tools", "icon": "tools" }
 ],
 "sources": [
-  { "type": "dir", "id": "snes", "dir": "~/ROMs/snes", "place": "snes", "runner": "snes", "also": ["*.zip"] },
+  { "type": "dir", "id": "snes", "dir": "~/Roms/snes", "place": "snes", "runner": "snes", "also": ["*.zip"] },
   { "type": "browse", "dir": "~", "in": "files", "name": "Home" },
   { "type": "removable", "in": "files", "name": "{label}" },
   { "type": "builtin", "id": "settings", "place": "tools" }
@@ -117,7 +117,7 @@ Library in edit mode, a place selected:
 │  ▸ SNES               143  ◀    in Games                                     │
 │  ▸ Nintendo 64          0                                                    │
 │  ▸ Game Boy            31       Filled by                                    │
-│  ▸ PlayStation          8         SNES scan · ~/ROMs/snes · 143              │
+│  ▸ PlayStation          8         SNES scan · ~/Roms/snes · 143              │
 │  ▸ Steam               46                                                    │
 │    + New place                  Rename          Icon                         │
 │    · Desktop games      9       Cut             Picture                      │
@@ -149,9 +149,9 @@ Add source…: its kind, then (for files in a folder) the folder in Library's pi
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  Choose a folder for Game Cube                                     ▭ Files   │
-│  ‹ ROMs                                                                      │
+│  ‹ Roms                                                                      │
 │  ▸ gc                      ◀    gc                                           │
-│  ▸ snes                         ~/ROMs/gc                                    │
+│  ▸ snes                         ~/Roms/gc                                    │
 │  ▸ psx                          24 files: 22 .rvz, 2 .iso                    │
 │                                 Choose this folder                           │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -162,7 +162,7 @@ The source, its runner chosen, what it will list:
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  ⚙ Settings  ›  Sources  ›  Game Cube                                        │
-│    Folder         ~/ROMs/gc                  Will list 22 of 24 files        │
+│    Folder         ~/Roms/gc                  Will list 22 of 24 files        │
 │    Opened by      Game Cube (Dolphin)  ◀       Metroid Prime.rvz             │
 │    Files          *.rvz *.iso  (the runner's)  Wind Waker.rvz                │
 │    Also           *.zip                        ...                           │
@@ -178,7 +178,7 @@ A new runner, when none fits:
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  ⚙ Settings  ›  Sources  ›  Game Cube  ›  New runner                         │
 │    Name           Game Cube                                                  │
-│    Opens          *.rvz *.iso *.gcm          from the files in ~/ROMs/gc     │
+│    Opens          *.rvz *.iso *.gcm          from the files in ~/Roms/gc     │
 │    Command        dolphin-emu -b -e {path}  ◀                                │
 │    Keymap         Default                                                    │
 │    More           enqueue, pause, awake…                                     │
@@ -197,13 +197,13 @@ it up.
   the candidates). Each needs checking: built for aarch64 (or packaged by us), its licence lets us
   redistribute it (some emulators' don't), and how it takes a file and the pad.
 - **A runner for each**, in the starter library.json.
-- **A ROMs folder**, `~/ROMs/<system>`, with the short system names other frontends use (`nes`, `snes`,
+- **A Roms folder**, `~/Roms/<system>`, with the short system names other frontends use (`nes`, `snes`,
   `n64`, `gb`, `gbc`, `gba`, `nds`, `megadrive`, `psx`, `ps2`, `psp`, `dreamcast`, `gc`, `wii`, `3ds`), so
   a collection from elsewhere drops in. Made empty at the first start. An empty system's place shows
   dimmed, saying where its files go. Systems needing a BIOS name the file and folder missing as a
   problem.
 - **The menu**: Recent, Favourites, Games (a folder per system, Steam, the desktop's games), Films, TV,
-  Music, Files (Home, ROMs, removable storage), Apps, Tools (Settings and ClamShell's tools).
+  Music, Files (Home, Roms, removable storage), Apps, Tools (Settings and ClamShell's tools).
 - **The dock's first pins**: Library, Firefox, foot. Pins are the user's saved state, so the image's are
   a starter that the first start takes when nothing is saved. Firefox isn't in the image yet.
 
@@ -232,6 +232,6 @@ touches the session or the outside.
   gone.
 - [ ] 4. **The Settings screen**, taking the keymap and curve editors and the rest of the Device view.
 - [ ] 5. **The format**: places by `id`, `name`, `in`; the `match` default and `also`; built-in sources.
-- [ ] 6. **What the image ships**: emulators and runners, `~/ROMs`, the menu, the first pins, Firefox.
+- [ ] 6. **What the image ships**: emulators and runners, `~/Roms`, the menu, the first pins, Firefox.
 - [ ] 7. **The editors**: Library's edit mode, Sources, Runners; the picker for ClamShell's own screens.
 - [ ] 8. **The portal**: Open, then Save.
