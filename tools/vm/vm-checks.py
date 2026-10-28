@@ -1371,7 +1371,8 @@ class Checks:
     def portal(self):
         """An app's file chooser through xdg-desktop-portal is ClamShell's: asked for a folder, the Library
         shows its Files tab, Home selected, and Choose answers the app with Home's URI; asked again and
-        cancelled, the app gets nothing (response 1). The app (the portal_ask example) waits on the bus for
+        cancelled, the app gets nothing (response 1); asked where to save, Home opened and Save here
+        answers with the name in Home. The app (the portal_ask example) waits on the bus for
         the answer, as the portal ends a request whose app has gone."""
         binary = "/mnt/thor/clamshell/target/release/examples/portal_ask"
         sh(vm.copy_local(binary))
@@ -1379,7 +1380,7 @@ class Checks:
         sh("systemctl --user restart xdg-desktop-portal")
         out = "/tmp/thor-portal-ask"
         # (Detached from the ssh session's output, which would wait for it otherwise.)
-        ask = lambda title: sh(f"rm -f {out}; setsid -f {vm.local(binary)} --folder {shlex.quote(title)} > {out} 2>&1 < /dev/null")
+        ask = lambda title, how="--folder": sh(f"rm -f {out}; setsid -f {vm.local(binary)} {how} {shlex.quote(title)} > {out} 2>&1 < /dev/null")
         answer = lambda: sh(f"cat {out} 2>/dev/null")
         since = now()
         ask("Pick a folder")
@@ -1395,6 +1396,15 @@ class Checks:
         until(lambda: collection() == "Files", 8)
         control("tap cancel-pick")
         self.check("  cancelled, the app gets nothing", until(lambda: "response 1" in answer(), 8), answer())
+        since = now()
+        ask("Save it", "--save thor-portal-check.txt")
+        logged(since, "portal: request", 10)
+        until(lambda: collection() == "Files", 8)
+        control("tap launch")
+        time.sleep(1)
+        control("tap save-here")
+        saved = until(lambda: f"file://{home}/thor-portal-check.txt" in answer(), 8)
+        self.check("  asked where to save, Save here in Home answers with the name there", saved, answer())
         sh("pkill -f portal_ask || true")
 
     # A long run

@@ -117,7 +117,7 @@ pub use nav::lists::{ListEvent, ListId, Lists, RowPart};
 pub use nav::pad::{Claimant, Pad, PadInput, PadMouse, PadRoute};
 pub use nav::pointer::Pointer;
 pub use notifications::{CloseReason, Notification, NotificationEvent, NotificationId, Notifications, Urgency};
-pub use portal::{FileRequest, PortalEvent};
+pub use portal::{Asks, FileRequest, PortalEvent};
 pub use radios::{RadioStatus, Radios};
 pub use session::Session;
 pub use session::dock::{Dock, DockItem};

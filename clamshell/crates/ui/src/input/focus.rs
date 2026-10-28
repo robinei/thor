@@ -263,9 +263,17 @@ pub(crate) fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
 
 /// Y, X and Start run the details' actions while the pad is on the Library (see clamshell-state's `actions`).
 /// For an entry these are favourite, on the dock and Continue; for a browsed file, Copy, Paste and
-/// Select. On the second screen with the keyboard open, for typing with the pad, X is Backspace.
-/// Elsewhere they do nothing.
+/// Select. Saving, Start is Save here and Y Save as. On the second screen with the keyboard open, for
+/// typing with the pad, X is Backspace. Elsewhere they do nothing.
 pub(crate) fn shortcut(s: &State, d: &impl Drawn, button: PadInput) -> Vec<Event> {
+    if on_library_view(s, d) && s.library_view().pick().is_some_and(|p| p.saves()) {
+        let id = match button {
+            PadInput::Start => LibraryViewId::SaveHere,
+            PadInput::Y => LibraryViewId::SaveAs,
+            _ => return vec![],
+        };
+        return vec![PointerEvent::Activate(Id::LibraryView(id)).into()];
+    }
     let event = match button {
         PadInput::Y => LibraryViewEvent::ToggleFavourite,
         PadInput::X => LibraryViewEvent::TogglePin,

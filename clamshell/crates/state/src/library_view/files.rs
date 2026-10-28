@@ -263,7 +263,7 @@ impl LibraryView {
 
     /// The open folder, if it is browsed and things may be put in it. The Trash and locked folders, such
     /// as an archive's, are left out.
-    fn open_dir(&self) -> Option<PathBuf> {
+    pub(super) fn open_dir(&self) -> Option<PathBuf> {
         let g = self.group()?;
         let b = g.browsed.as_ref()?;
         (!matches!(b.kind, BrowseKind::Trash | BrowseKind::Trashed) && !b.locked).then(|| g.browsed_dir().map(PathBuf::from)).flatten()

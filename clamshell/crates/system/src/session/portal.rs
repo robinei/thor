@@ -3,9 +3,9 @@
 //! session's portals config (clamshell-portals.conf) sends there. The rest of what apps ask of the desktop
 //! stays with GTK's portal, which also takes the file chooser while ClamShell isn't there.
 //!
-//! An `OpenFile` call is kept, unanswered, and sent on as [`PortalEvent::Asked`]; the state picks it in
-//! the Library (clamshell-state's `portal`) and answers with [`Command::Answer`], which replies with the
-//! file's `file://` URI, or as cancelled. `Close` on the request's handle, from xdg-desktop-portal when the
+//! An `OpenFile`, `SaveFile` or `SaveFiles` call is kept, unanswered, and sent on as
+//! [`PortalEvent::Asked`]; the state picks it in the Library (clamshell-state's `portal`) and answers with
+//! [`Command::Answer`], which replies with the paths' `file://` URIs, or as cancelled. `Close` on the request's handle, from xdg-desktop-portal when the
 //! app gives up, is sent on as [`PortalEvent::Closed`] and the call dropped. A request waits for the
 //! person, with no time limit.
 //!
@@ -13,13 +13,14 @@
 
 use std::fmt;
 use std::io;
+use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use clamshell_state::{Event, FileRequest, PortalEvent};
+use clamshell_state::{Asks, Event, FileRequest, PortalEvent};
 
 use crate::os::dbus::{self, Bus, Message, PropMap, RefArg};
 use crate::os::worker::{self, Bell, Ended, Service, Worker, lost_on};
@@ -46,8 +47,8 @@ static LAST_ID: AtomicU32 = AtomicU32::new(0);
 /// What the state asks.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Command {
-    /// Answer request `id`: the path chosen, or cancelled.
-    Answer { id: u32, path: Option<PathBuf> },
+    /// Answer request `id`: the paths chosen, none if cancelled.
+    Answer { id: u32, paths: Vec<PathBuf> },
 }
 
 #[derive(Debug)]
@@ -159,25 +160,30 @@ fn lock(requests: &Requests) -> std::sync::MutexGuard<'_, Vec<Pending>> {
     requests.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// `OpenFile`'s arguments: the request's handle, the app's id, its window, the title and the options.
-type OpenArgs = (dbus::Path<'static>, String, String, String, PropMap);
+/// The calls' arguments: the request's handle, the app's id, its window, the title and the options.
+type Args = (dbus::Path<'static>, String, String, String, PropMap);
 
-/// Keeps an `OpenFile` call to answer once the state has, sending it on; hands back any other call.
+/// Keeps an `OpenFile`, `SaveFile` or `SaveFiles` call to answer once the state has, sending it on; hands
+/// back any other call.
 fn keep(call: Message, requests: &Requests, sink: &impl Sink) -> Option<Message> {
-    if call.path().as_deref() != Some(PATH) || call.interface().as_deref() != Some(FILE_CHOOSER) || call.member().as_deref() != Some("OpenFile") {
+    let member = call.member().map(|m| m.to_string()).unwrap_or_default();
+    if call.path().as_deref() != Some(PATH)
+        || call.interface().as_deref() != Some(FILE_CHOOSER)
+        || !matches!(member.as_str(), "OpenFile" | "SaveFile" | "SaveFiles")
+    {
         return Some(call);
     }
     // One that can't be read is handed back, and refused as the others are.
-    let (handle, app, _window, title, options): OpenArgs = match call.read_all() {
+    let (handle, app, _window, title, options): Args = match call.read_all() {
         Ok(args) => args,
         Err(e) => {
-            log::warn!("portal: an OpenFile call that can't be read: {e}");
+            log::warn!("portal: a {member} call that can't be read: {e}");
             return Some(call);
         }
     };
     let id = LAST_ID.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
-    let request = request(id, title, &options);
-    log::info!("portal: request {id} from {app:?}: {}, {:?}", if request.folder { "a folder" } else { "a file" }, request.patterns);
+    let request = request(id, &member, title, &options);
+    log::info!("portal: request {id} from {app:?}: {:?}, {:?}", request.asks, request.patterns);
     if sink.send(Event::Portal(PortalEvent::Asked(request))).is_err() {
         log::debug!("portal: request {id} not shown, the UI is gone");
     }
@@ -208,7 +214,7 @@ fn answer(call: &Message, requests: &Requests, sink: &impl Sink) -> Option<Messa
 
 /// Replies to the request `command` answers, if it is still kept.
 fn reply(bus: &mut Bus, requests: &Requests, command: Command) -> dbus::Result<()> {
-    let Command::Answer { id, path } = command;
+    let Command::Answer { id, paths } = command;
     let pending = {
         let mut requests = lock(requests);
         requests.iter().position(|r| r.id == id).map(|i| requests.swap_remove(i))
@@ -217,27 +223,42 @@ fn reply(bus: &mut Bus, requests: &Requests, command: Command) -> dbus::Result<(
         log::debug!("portal: request {id} answered, but it was given up");
         return Ok(());
     };
-    let message = match &path {
-        Some(path) => {
-            log::info!("portal: request {id} chose {}", path.display());
-            pending.call.return_with_args((CHOSEN, PropMap::from([("uris".to_owned(), dbus::value(vec![uri(path)]))])))
-        }
-        None => {
-            log::info!("portal: request {id} cancelled, nothing chosen");
-            pending.call.return_with_args((CANCELLED, PropMap::new()))
-        }
+    let message = if paths.is_empty() {
+        log::info!("portal: request {id} cancelled, nothing chosen");
+        pending.call.return_with_args((CANCELLED, PropMap::new()))
+    } else {
+        log::info!("portal: request {id} chose {paths:?}");
+        let uris: Vec<String> = paths.iter().map(|p| uri(p)).collect();
+        pending.call.return_with_args((CHOSEN, PropMap::from([("uris".to_owned(), dbus::value(uris))])))
     };
     bus.send(message)
 }
 
-/// The request an `OpenFile` call's options make: a folder if `directory`, else a file matching the
-/// globs of the filter the app chose (`current_filter`), or of its first. A filter of MIME types only
+/// The request a call's options make. `OpenFile`: a folder if `directory`, else a file. `SaveFile`: a
+/// file, suggested as `current_name`. `SaveFiles`: a folder for the `files` named. A file matches the
+/// globs of the filter the app chose (`current_filter`), or of its first; a filter of MIME types only
 /// takes any file.
-fn request(id: u32, title: String, options: &PropMap) -> FileRequest {
-    let folder = options.get("directory").and_then(|v| v.0.as_u64()).is_some_and(|b| b != 0);
+fn request(id: u32, member: &str, title: String, options: &PropMap) -> FileRequest {
+    let asks = match member {
+        "SaveFile" => Asks::Save { name: options.get("current_name").and_then(|v| v.0.as_str()).unwrap_or_default().to_owned() },
+        "SaveFiles" => Asks::SaveFiles { names: options.get("files").map(|v| names(&*v.0)).unwrap_or_default() },
+        _ => Asks::Open { folder: options.get("directory").and_then(|v| v.0.as_u64()).is_some_and(|b| b != 0) },
+    };
     let filter = options.get("current_filter").map(|v| &*v.0).or_else(|| options.get("filters").and_then(|v| v.0.as_iter()?.next()));
     let patterns = filter.map(globs).unwrap_or_default();
-    FileRequest { id, title, folder, patterns }
+    FileRequest { id, title, asks, patterns }
+}
+
+/// The names of `SaveFiles`' `files`: paths as bytes, ending with a nul, each named by its last part.
+fn names(files: &dyn RefArg) -> Vec<String> {
+    let Some(files) = files.as_iter() else { return Vec::new() };
+    files
+        .filter_map(|file| {
+            let bytes: Vec<u8> = file.as_iter()?.filter_map(|b| b.as_u64().and_then(|b| u8::try_from(b).ok())).take_while(|&b| b != 0).collect();
+            let path = PathBuf::from(std::ffi::OsString::from_vec(bytes));
+            Some(path.file_name()?.to_string_lossy().into_owned())
+        })
+        .collect()
 }
 
 /// A filter's globs: it is `(name, [(kind, pattern)])`, kind 0 a glob and 1 a MIME type.
@@ -271,6 +292,8 @@ fn uri(path: &Path) -> String {
 /// What is served, as introspection gives it.
 const XML: &str = r#"<node><interface name="org.freedesktop.impl.portal.FileChooser">
 <method name="OpenFile"><arg type="o" name="handle" direction="in"/><arg type="s" name="app_id" direction="in"/><arg type="s" name="parent_window" direction="in"/><arg type="s" name="title" direction="in"/><arg type="a{sv}" name="options" direction="in"/><arg type="u" name="response" direction="out"/><arg type="a{sv}" name="results" direction="out"/></method>
+<method name="SaveFile"><arg type="o" name="handle" direction="in"/><arg type="s" name="app_id" direction="in"/><arg type="s" name="parent_window" direction="in"/><arg type="s" name="title" direction="in"/><arg type="a{sv}" name="options" direction="in"/><arg type="u" name="response" direction="out"/><arg type="a{sv}" name="results" direction="out"/></method>
+<method name="SaveFiles"><arg type="o" name="handle" direction="in"/><arg type="s" name="app_id" direction="in"/><arg type="s" name="parent_window" direction="in"/><arg type="s" name="title" direction="in"/><arg type="a{sv}" name="options" direction="in"/><arg type="u" name="response" direction="out"/><arg type="a{sv}" name="results" direction="out"/></method>
 </interface><interface name="org.freedesktop.impl.portal.Request"><method name="Close"/></interface></node>"#;
 
 #[cfg(test)]
@@ -290,14 +313,26 @@ mod tests {
         let filter = |globs: &[(u32, &str)]| ("Images".to_owned(), globs.iter().map(|(k, p)| (*k, (*p).to_owned())).collect::<Vec<_>>());
         let images = filter(&[(0, "*.png"), (1, "image/jpeg"), (0, "*.jpg")]);
         let options = PropMap::from([("filters".to_owned(), value(vec![images.clone(), filter(&[(0, "*")])]))]);
-        let r = request(1, "Open".into(), &options);
-        assert_eq!((r.folder, r.patterns.as_slice()), (false, ["*.png", "*.jpg"].map(String::from).as_slice()), "the first filter's globs");
+        let r = request(1, "OpenFile", "Open".into(), &options);
+        assert_eq!(
+            (&r.asks, r.patterns.as_slice()),
+            (&Asks::Open { folder: false }, ["*.png", "*.jpg"].map(String::from).as_slice()),
+            "the first filter's globs"
+        );
         let chosen = PropMap::from([("filters".to_owned(), value(vec![images])), ("current_filter".to_owned(), value(filter(&[(0, "*.txt")])))]);
-        assert_eq!(request(1, String::new(), &chosen).patterns, ["*.txt"], "the one chosen");
+        assert_eq!(request(1, "OpenFile", String::new(), &chosen).patterns, ["*.txt"], "the one chosen");
         let mime = PropMap::from([("current_filter".to_owned(), value(filter(&[(1, "text/plain")])))]);
-        assert!(request(1, String::new(), &mime).patterns.is_empty(), "MIME types only: any file");
+        assert!(request(1, "OpenFile", String::new(), &mime).patterns.is_empty(), "MIME types only: any file");
         let folder = PropMap::from([("directory".to_owned(), value(true))]);
-        assert!(request(1, String::new(), &folder).folder);
+        assert_eq!(request(1, "OpenFile", String::new(), &folder).asks, Asks::Open { folder: true });
+    }
+
+    #[test]
+    fn a_save_is_of_the_name_suggested_or_the_files_named() {
+        let named = PropMap::from([("current_name".to_owned(), value("notes.txt".to_owned()))]);
+        assert_eq!(request(1, "SaveFile", String::new(), &named).asks, Asks::Save { name: "notes.txt".into() });
+        let files = PropMap::from([("files".to_owned(), value(vec![b"/tmp/a.txt\0".to_vec(), b"b.png\0".to_vec()]))]);
+        assert_eq!(request(1, "SaveFiles", String::new(), &files).asks, Asks::SaveFiles { names: vec!["a.txt".into(), "b.png".into()] });
     }
 }
 
@@ -334,8 +369,8 @@ mod live {
                 break asked;
             }
         };
-        assert_eq!((asked.title.as_str(), asked.folder), ("Open a save", false));
-        reply(&mut server, &requests, Command::Answer { id: asked.id, path: Some("/h/a b.sav".into()) }).unwrap();
+        assert_eq!((asked.title.as_str(), &asked.asks), ("Open a save", &Asks::Open { folder: false }));
+        reply(&mut server, &requests, Command::Answer { id: asked.id, paths: vec!["/h/a b.sav".into()] }).unwrap();
         let (response, results) = caller.join().unwrap();
         assert_eq!(response, CHOSEN);
         let uris: Vec<String> = results.get("uris").and_then(|v| v.0.as_iter()).unwrap().filter_map(|u| u.as_str().map(str::to_owned)).collect();

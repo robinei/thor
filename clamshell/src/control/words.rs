@@ -146,6 +146,7 @@ pub const TARGETS: &[Form<Id>] = &[
     form("up", "out of the Library's open group", |_| Ok(Id::LibraryView(LibraryViewId::Up))),
     form("choose", "a pick's Choose, on the Library's selection", |_| Ok(Id::LibraryView(LibraryViewId::Choose))),
     form("cancel-pick", "a pick's Cancel", |_| Ok(Id::LibraryView(LibraryViewId::CancelPick))),
+    form("save-here", "saving, Save here: in the open folder", |_| Ok(Id::LibraryView(LibraryViewId::SaveHere))),
     form("collection N", "the Library's collection tab N", |a| Ok(Id::LibraryView(LibraryViewId::Collection(number(arg(a, 0))?)))),
     form(
         "file ACTION",

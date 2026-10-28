@@ -80,7 +80,7 @@ pub struct LibraryView {
     /// The pick going on (see [`pick`]).
     pick: Option<pick::Pick>,
     /// An app's pick answered, until the state takes the answer (see [`crate::portal`]).
-    answered: Option<(u32, Option<std::path::PathBuf>)>,
+    answered: Option<(u32, Vec<std::path::PathBuf>)>,
 }
 
 /// A level of a collection's place kept across a library read: the entry selected in its list (the

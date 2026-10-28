@@ -279,6 +279,8 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
                 [LibraryViewId::Launch, LibraryViewId::Up, LibraryViewId::Favourite, LibraryViewId::Pin, LibraryViewId::Continue, LibraryViewId::Enqueue]
                     .map(Id::LibraryView),
             );
+            // A pick's own (see `crate::library_view::pick`).
+            ids.extend([LibraryViewId::Choose, LibraryViewId::CancelPick, LibraryViewId::SaveHere, LibraryViewId::SaveAs].map(Id::LibraryView));
         }
         TopView::LibraryView => {}
     }
@@ -608,7 +610,14 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 return Some(Event::Portal(crate::portal::PortalEvent::Closed(id)));
             }
             let patterns = if rng.one_in(2) { vec!["*.txt".into()] } else { Vec::new() };
-            Event::Portal(crate::portal::PortalEvent::Asked(crate::portal::FileRequest { id, title: String::new(), folder: rng.one_in(3), patterns }))
+            use crate::portal::Asks;
+            let asks = match rng.below(4) {
+                0 => Asks::Open { folder: true },
+                1 => Asks::Save { name: "notes.txt".into() },
+                2 => Asks::SaveFiles { names: vec!["a.txt".into(), "notes.txt".into()] },
+                _ => Asks::Open { folder: false },
+            };
+            Event::Portal(crate::portal::PortalEvent::Asked(crate::portal::FileRequest { id, title: String::new(), asks, patterns }))
         }
         // Notifications: a program's sent, sent again or closed, and taps on them.
         82 => {

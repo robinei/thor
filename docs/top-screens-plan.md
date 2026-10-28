@@ -345,6 +345,7 @@ touches the session or the outside.
   UI's, chosen in the details) and folders' pictures (picked). The tab row scrolls when its tabs don't
   fit. Under it all, library.json is shared data (clamshell-library's `config`), carried by the
   library as read and written back by `WriteLibrary`.
-- [ ] 7. **The portal**: Open, then Save, then the session's environment. Open and the environment are
-  done (`session::portal`, a VM check through xdg-desktop-portal); the asking window isn't looked up, the
-  window in front when the pick began comes back; the app's starting folder isn't used yet.
+- [x] 7. **The portal**: Open, then Save, then the session's environment (`session::portal`, a VM check
+  through xdg-desktop-portal). Saving is in the open folder: Save here under the name typed (Save as), or
+  over a file chosen, each asking again over a file that is there (Replace). The asking window isn't
+  looked up: the window in front when the pick began comes back. The app's starting folder isn't used.

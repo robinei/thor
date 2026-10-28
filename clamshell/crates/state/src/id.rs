@@ -109,6 +109,10 @@ pub enum LibraryViewId {
     /// The pick's Choose and Cancel (see [`crate::library_view::pick`]).
     Choose,
     CancelPick,
+    /// Saving, the open folder chosen, under the name typed (see [`crate::library_view::pick`]).
+    SaveHere,
+    /// Saving, the name typed on the keyboard.
+    SaveAs,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

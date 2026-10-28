@@ -1,8 +1,13 @@
 //! The Library's pick mode: a file or folder chosen for something of ClamShell's own, such as a source's
-//! folder in the edit mode. It shows the Files tab alone, with its browsed folders and removable storage,
-//! and the details' one action is Choose: on a folder when a folder is wanted, on a file whose name
-//! matches when a file is (others show dimmed). Choosing answers who asked; B, Home or Cancel leaves as it
-//! was.
+//! folder in the edit mode, or an app's file chooser. It shows the Files tab alone, with its browsed folders
+//! and removable storage, and the details' one action is Choose: on a folder when a folder is wanted, on
+//! a file whose name matches when a file is (others show dimmed). Choosing answers who asked; B, Home or
+//! Cancel leaves as it was.
+//!
+//! Saving, the open folder is where: Save here saves in it, under the name typed (Save as), and Choose
+//! on a file saves over it. Over a file that is there, each asks again first (Replace).
+
+use std::path::{Path, PathBuf};
 
 use clamshell_library::{BrowseKind, Entry, pattern};
 
@@ -13,6 +18,8 @@ use super::LibraryView;
 pub struct Pick {
     pub takes: Takes,
     pub purpose: PickFor,
+    /// Saving over this file was asked for once; asked for again, it is chosen.
+    confirm: Option<PathBuf>,
     /// The tab shown before, to go back to.
     back: usize,
 }
@@ -25,6 +32,13 @@ pub enum Takes {
     Files(Vec<String>),
     /// A file that may be run (see [`clamshell_library::Browsed::executable`]).
     Program,
+    /// Where to save a file named `name`, or a file matching `patterns` to save over.
+    Save {
+        name: String,
+        patterns: Vec<String>,
+    },
+    /// A folder to save files of these names in.
+    SaveFiles(Vec<String>),
 }
 
 /// Who asked for a pick.
@@ -42,13 +56,25 @@ impl Pick {
     /// Whether `entry` may be chosen.
     pub fn takes(&self, entry: &Entry) -> bool {
         let Some(browsed) = &entry.browsed else { return false };
+        // No patterns: any name.
+        let matches = |patterns: &[String]| patterns.is_empty() || patterns.iter().any(|p| pattern::matches(&p.to_lowercase(), &entry.title.to_lowercase()));
         match &self.takes {
             Takes::Folder => browsed.folder && !browsed.archive,
-            Takes::Files(patterns) => {
-                !browsed.folder && (patterns.is_empty() || patterns.iter().any(|p| pattern::matches(&p.to_lowercase(), &entry.title.to_lowercase())))
-            }
+            Takes::Files(patterns) => !browsed.folder && matches(patterns),
             Takes::Program => !browsed.folder && browsed.executable,
+            Takes::Save { patterns, .. } => !browsed.folder && matches(patterns),
+            Takes::SaveFiles(_) => false,
         }
+    }
+
+    /// Whether it is a save: in the open folder, by Save here.
+    pub fn saves(&self) -> bool {
+        matches!(self.takes, Takes::Save { .. } | Takes::SaveFiles(_))
+    }
+
+    /// Whether saving over `path` was asked for once, and is asked again (Replace).
+    pub fn confirming(&self, path: &Path) -> bool {
+        self.confirm.as_deref() == Some(path)
     }
 
     /// What is asked for, as the Library says it.
@@ -57,8 +83,12 @@ impl Pick {
             PickFor::Field(f) => f.asks(),
             PickFor::PlacePicture(_) => "Choose the folder's picture",
             PickFor::App { title, .. } if !title.is_empty() => title,
-            PickFor::App { .. } if self.takes == Takes::Folder => "Choose a folder",
-            PickFor::App { .. } => "Choose a file",
+            PickFor::App { .. } => match &self.takes {
+                Takes::Folder => "Choose a folder",
+                Takes::Save { .. } => "Save",
+                Takes::SaveFiles(_) => "Save the files",
+                _ => "Choose a file",
+            },
         }
     }
 }
@@ -88,7 +118,7 @@ impl LibraryView {
     /// Files tab, nothing is picked.
     pub(crate) fn start_pick(&mut self, takes: Takes, purpose: PickFor) -> bool {
         let Some(files) = self.files_tab() else { return false };
-        self.pick = Some(Pick { takes, purpose, back: self.current });
+        self.pick = Some(Pick { takes, purpose, confirm: None, back: self.current });
         self.set_collection(files);
         true
     }
@@ -96,7 +126,46 @@ impl LibraryView {
     /// Leaves the pick, back on the tab shown before it. An app's is answered: nothing chosen.
     pub(crate) fn cancel_pick(&mut self) {
         if let Some(PickFor::App { request, .. }) = self.end_pick() {
-            self.answered = Some((request, None));
+            self.answered = Some((request, Vec::new()));
+        }
+    }
+
+    /// Where Save here saves, and whether a file of a name saved is there already: the open folder, if
+    /// things may be put in it, with the name typed or each of the names asked for.
+    pub fn save_here(&self) -> Option<(Vec<PathBuf>, bool)> {
+        let names: Vec<&str> = match &self.pick.as_ref()?.takes {
+            Takes::Save { name, .. } => vec![name.as_str()],
+            Takes::SaveFiles(names) => names.iter().map(String::as_str).collect(),
+            _ => return None,
+        };
+        let dir = self.open_dir().filter(|_| names.iter().all(|n| !n.is_empty()))?;
+        let there = self.group().is_some_and(|g| g.items.iter().filter_map(|&i| self.library.entries.get(i)).any(|e| names.contains(&e.title.as_str())));
+        Some((names.iter().map(|n| dir.join(n)).collect(), there))
+    }
+
+    /// Save here: answered with the paths in the open folder; over a file that is there, once asked
+    /// again (see [`Pick::confirming`]).
+    pub(crate) fn save(&mut self) {
+        let Some((paths, there)) = self.save_here() else { return };
+        let Some(first) = paths.first().cloned() else { return };
+        if there && self.pick.as_mut().is_some_and(|p| p.confirm.replace(first.clone()) != Some(first)) {
+            return;
+        }
+        self.answer(paths);
+    }
+
+    /// Save as: the name typed for the file saved.
+    pub(crate) fn save_named(&mut self, typed: &str) {
+        if let Some(Pick { takes: Takes::Save { name, .. }, confirm, .. }) = &mut self.pick {
+            typed.trim().clone_into(name);
+            *confirm = None;
+        }
+    }
+
+    /// Ends an app's pick with `paths` as its answer.
+    fn answer(&mut self, paths: Vec<PathBuf>) {
+        if let Some(PickFor::App { request, .. }) = self.end_pick() {
+            self.answered = Some((request, paths));
         }
     }
 
@@ -107,8 +176,8 @@ impl LibraryView {
         Some(pick.purpose)
     }
 
-    /// An app's pick answered since the last look: its request, and the path chosen if one was.
-    pub(crate) fn take_answered(&mut self) -> Option<(u32, Option<std::path::PathBuf>)> {
+    /// An app's pick answered since the last look: its request, and the paths chosen, none if cancelled.
+    pub(crate) fn take_answered(&mut self) -> Option<(u32, Vec<PathBuf>)> {
         self.answered.take()
     }
 
@@ -119,10 +188,16 @@ impl LibraryView {
             return;
         }
         let Some(path) = entry.file.clone() else { return };
+        // Saving over a file: once asked again.
+        if let Some(pick) = self.pick.as_mut().filter(|p| p.saves())
+            && pick.confirm.replace(path.clone()).as_ref() != Some(&path)
+        {
+            return;
+        }
         let Some(purpose) = self.end_pick() else { return };
         let read = self.library.config.as_ref();
         match (purpose, &mut self.edit) {
-            (PickFor::App { request, .. }, _) => self.answered = Some((request, Some(path))),
+            (PickFor::App { request, .. }, _) => self.answered = Some((request, vec![path])),
             (PickFor::Field(f), Some(edit)) => edit.field_picked(f, &path.to_string_lossy()),
             (PickFor::PlacePicture(id), Some(edit)) => edit.set_picture(&id, &path.to_string_lossy(), read, out),
             (_, None) => {}
@@ -185,7 +260,7 @@ mod tests {
     /// A command's program is a file that may be run; another file isn't taken, nor a folder.
     #[test]
     fn a_program_is_a_file_that_may_be_run() {
-        let pick = Pick { takes: Takes::Program, purpose: PickFor::Field(Field::Launch), back: 0 };
+        let pick = Pick { takes: Takes::Program, purpose: PickFor::Field(Field::Launch), confirm: None, back: 0 };
         let file = |executable: bool, folder: bool| clamshell_library::Entry {
             browsed: Some(Browsed { executable, folder, ..Browsed::default() }),
             ..clamshell_library::Entry::new("browse:Files/Home/x", "x")

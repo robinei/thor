@@ -153,7 +153,7 @@ impl Handles {
             Effect::StepClock(field, by) => self.system.send(crate::errands::Command::StepClock(*field, *by)),
             Effect::NotificationClosed { id, reason } => self.notifications.send(Notifications::Closed { id: *id, reason: reason.code() }),
             Effect::ActionInvoked { id, key } => self.notifications.send(Notifications::Invoked { id: *id, key: key.clone() }),
-            Effect::FileChosen { request, path } => self.portal.send(Portal::Answer { id: *request, path: path.clone() }),
+            Effect::FileChosen { request, paths } => self.portal.send(Portal::Answer { id: *request, paths: paths.clone() }),
             // The compositor carries out its own.
             Effect::Compositor(_) => {}
         }

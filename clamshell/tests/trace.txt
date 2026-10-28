@@ -760,6 +760,18 @@ Pointer(Activate(LibraryView(Choose)))
 Pointer(Activate(LibraryView(Edit(Row(3)))))
   Watch Metrics off
 -- library-edit-name.png
+== group portal-save.png
+Tick 1760000000
+  Keymap 0 "Default"
+  PadRoute Ui
+Start
+  Watch Account on
+  Watch Metrics on
+Pointer(Activate(LibraryView(Launch)))
+  Browse open browse:Files/Home
+  Browse in use 1 files
+-- portal-save.png
+-- portal-replace.png
 == group setup-password.png
 Tick 1760000000
   Keymap 0 "Default"

@@ -82,6 +82,7 @@ fn typing(f: &mut Frame, body: Rect) {
         Some(Purpose::PlaceName(clamshell_state::library_view::edit::PlaceName::New(None))) => editor::draw(f, "New tab's name", "Make"),
         Some(Purpose::PlaceName(clamshell_state::library_view::edit::PlaceName::New(Some(_)))) => editor::draw(f, "New folder's name", "Make"),
         Some(Purpose::FormField(field)) => editor::draw(f, field.label(), "Set"),
+        Some(Purpose::SaveName) => editor::draw(f, "Save as", "Set"),
         Some(Purpose::Password { ssid }) => {
             let title = crate::toolkit::format::Fmt::<128>::of(format_args!("Password for {ssid}"));
             editor::draw(f, &title, "Join");

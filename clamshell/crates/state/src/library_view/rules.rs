@@ -35,6 +35,13 @@ impl LibraryView {
             // Picking, a file is chosen rather than opened.
             LibraryViewId::Launch if self.pick().is_some() && self.selected_entry().is_some_and(|g| !g.is_group()) => self.choose(out),
             LibraryViewId::Launch => self.activate(out),
+            LibraryViewId::SaveHere => self.save(),
+            LibraryViewId::SaveAs => {
+                if let Some(super::pick::Takes::Save { name, .. }) = self.pick().map(|p| &p.takes) {
+                    let editor = crate::bottom::editor::Editor { purpose: crate::bottom::editor::Purpose::SaveName, text: name.clone() };
+                    out.events.push(crate::Event::EditOnKeyboard(editor));
+                }
+            }
             LibraryViewId::Choose | LibraryViewId::CancelPick => {
                 if id == LibraryViewId::Choose {
                     self.choose(out);

@@ -26,9 +26,9 @@ impl State {
     /// back; then the next request waiting is picked, the Library in front, once no other pick goes on.
     /// Without a Files tab to pick in, a request is answered at once with nothing chosen.
     pub(crate) fn follow_portal(&mut self, out: &mut Out) {
-        if let Some((request, path)) = self.library_view.take_answered() {
+        if let Some((request, paths)) = self.library_view.take_answered() {
             self.portal.asked.retain(|r| r.id != request);
-            out.effects.push(Effect::FileChosen { request, path });
+            out.effects.push(Effect::FileChosen { request, paths });
             self.portal_back();
         }
         while self.library_view.pick().is_none()
@@ -42,7 +42,7 @@ impl State {
             }
             out.log.push(format!("portal: request {id} answered with nothing: the library has no Files tab to pick in"));
             self.portal.asked.remove(0);
-            out.effects.push(Effect::FileChosen { request: id, path: None });
+            out.effects.push(Effect::FileChosen { request: id, paths: Vec::new() });
         }
     }
 

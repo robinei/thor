@@ -74,13 +74,38 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     // The first problem found reading the library, such as in library.json or a missing folder, shown at
     // the right end.
     let problems = &s.library_view().library().problems;
-    // Picking, what is asked for and Cancel take their place.
+    // Picking, what is asked for and Cancel take their place; saving, also the name (Save as) and Save
+    // here, dimmed while no folder it can go in is open.
     if let Some(pick) = s.library_view().pick() {
         let size = h * TAB_TEXT;
         let cancel = Rect::new(w - pad - h * 0.2, 0.0, h * 0.2, tabs_h);
         f.text_button(Id::LibraryView(LibraryViewId::CancelPick), cancel, size, Tone::Fn, "Cancel", crate::gfx::Align::End);
-        let asks = Rect::new(tabs_end + pad * 2.0, 0.0, cancel.x - tabs_end - pad * 3.0, tabs_h);
-        f.c.text_fit(asks, h * DETAIL, Tone::Accent, pick.asks(), Keep::End);
+        let mut end = cancel.x;
+        if pick.saves() {
+            let here = s.library_view().save_here();
+            let label = match &here {
+                Some((paths, true)) if paths.first().is_some_and(|p| pick.confirming(p)) => {
+                    let name = paths.first().and_then(|p| p.file_name()).map(|n| n.to_string_lossy());
+                    Fmt::<192>::of(format_args!("Replace {}?", name.as_deref().unwrap_or("")))
+                }
+                _ => Fmt::of(format_args!("Save here")),
+            };
+            let save_w = f.c.text_width(size, &label) + pad;
+            let save = Rect::new(end - pad * 2.0 - save_w, 0.0, save_w, tabs_h);
+            let tone = if here.is_some() { Tone::Accent } else { Tone::Dim };
+            f.text_button(Id::LibraryView(LibraryViewId::SaveHere), save, size, tone, &label, crate::gfx::Align::End);
+            end = save.x;
+        }
+        let asks = Rect::new(tabs_end + pad * 2.0, 0.0, end - tabs_end - pad * 3.0, tabs_h);
+        match &pick.takes {
+            clamshell_state::library_view::pick::Takes::Save { name, .. } => {
+                let text = Fmt::<192>::of(format_args!("Save as: {name} \u{270e}"));
+                f.text_button(Id::LibraryView(LibraryViewId::SaveAs), asks, h * DETAIL, Tone::Fn, &text, crate::gfx::Align::Start);
+            }
+            _ => {
+                f.c.text_fit(asks, h * DETAIL, Tone::Accent, pick.asks(), Keep::End);
+            }
+        }
     } else if let Some(first) = problems.first() {
         let more = Fmt::<16>::of(format_args!(" (+{})", problems.len() - 1));
         let text = Fmt::<256>::of(format_args!("{first}{}", if problems.len() > 1 { &*more } else { "" }));
@@ -340,6 +365,11 @@ fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f3
         let starting = s.session().starting(&entry.id);
         let (label, tone) = match action {
             Action::Choose if entry.is_group() => (Fmt::<192>::of(format_args!("Choose this folder")), Tone::Accent),
+            // Saving over a file: Replace, then asked again.
+            Action::Choose if s.library_view().pick().is_some_and(|p| p.saves()) => {
+                let asked = s.library_view().pick().zip(entry.file.as_deref()).is_some_and(|(p, file)| p.confirming(file));
+                if asked { (Fmt::of(format_args!("Replace {}?", entry.title)), Tone::Accent) } else { (Fmt::of(format_args!("Replace")), Tone::Accent) }
+            }
             Action::Choose => (Fmt::<192>::of(format_args!("Choose")), Tone::Accent),
             Action::Open if entry.is_group() => (Fmt::<192>::of(format_args!("Open")), Tone::Normal),
             // A launcher's game says in which launcher it starts, or that the launcher starts first.

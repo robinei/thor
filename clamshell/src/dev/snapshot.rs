@@ -656,6 +656,28 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 ),
             ],
         ),
+        // An app saving through the portal: the name and Save here over the Files tab, then Save here over
+        // a file that is there, asked again.
+        group(
+            vec![LibraryViewEvent::Rows(8).into()],
+            vec![
+                shot(
+                    "portal-save.png",
+                    Top,
+                    vec![
+                        Event::Portal(clamshell_state::PortalEvent::Asked(clamshell_state::FileRequest {
+                            id: 1,
+                            title: String::new(),
+                            asks: clamshell_state::Asks::Save { name: "notes.txt".into() },
+                            patterns: vec!["*.txt".into()],
+                        })),
+                        tap(Id::LibraryView(LibraryViewId::Launch)),
+                        LibraryViewEvent::ListStep(3).into(),
+                    ],
+                ),
+                shot("portal-replace.png", Top, vec![tap(Id::LibraryView(LibraryViewId::SaveHere))]),
+            ],
+        ),
         // Setup at the first start: the password step, the password typed on the keyboard (the bar hidden),
         // a password that wasn't set, then Wi-Fi and the time zone once there is one.
         Group {

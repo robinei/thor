@@ -777,6 +777,16 @@ Tab(Dock): ^- vKey[0,1]
 Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vEditor(Cancel)
 -- keyboard as in settings-env.png
 -- screen as in settings-env.png
+== portal-save.png (top; the pad on both screens)
+start "browse:Files/Home/notes.txt"; back Activate CancelPick
+-- library as in library-pick.png except
+Collection(5): ^"browse:Files/Home/emulator.sh" v"browse:Files/Home/snes.png"
+"browse:Files/Home/Pictures": ^[ListStep(-3)]
+== portal-replace.png (top; the pad on both screens)
+start SaveHere; back Activate CancelPick
+-- library as in library-pick.png except
+Collection(5): ^"browse:Files/Home/emulator.sh" v"browse:Files/Home/snes.png"
+"browse:Files/Home/Pictures": ^[ListStep(-3)]
 == setup-password.png (top; the pad on both screens)
 start Setup(Password); back Activate Setup(Back)
 -- screen
