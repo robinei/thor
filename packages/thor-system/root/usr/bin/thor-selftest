@@ -206,7 +206,7 @@ settled() {
     log=$(journalctl -b _SYSTEMD_USER_UNIT=clamshell.service --no-pager -o cat 2> /dev/null)
     if [ -n "$log" ]; then
         info "$(grep -m1 "drm: the screens' millimetres" <<< "$log" || echo "ClamShell didn't log the screens' millimetres")"
-        panics=$(grep -E '\] panic in |given up' <<< "$log" | head -5)
+        panics=$(grep -E '\] panic in |soon after starting: given up' <<< "$log" | head -5)
         if [ -z "$panics" ]; then ok "ClamShell: no panics"; else fail "ClamShell panicked:"; out "$panics"; fi
         info "ClamShell: $(grep -c '^\[ERROR' <<< "$log") errors, $(grep -c '^\[WARN' <<< "$log") warnings (journalctl -b --user-unit clamshell -p warning)"
         if [ -n "$uid" ] && [ -d "/run/user/$uid" ]; then

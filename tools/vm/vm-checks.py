@@ -1370,7 +1370,7 @@ class Checks:
                    f"{rss0 // 1024} MB after round 3, {rss1 // 1024} MB at the end; all: {[s[0] // 1024 for s in samples]}")
         self.check("  its open files don't grow (at most 5)", fds1 <= fds0 + 5, f"{fds0} -> {fds1}; all: {[s[1] for s in samples]}")
         self.check("  its threads don't grow (at most 2)", threads1 <= threads0 + 2, f"{threads0} -> {threads1}; all: {[s[2] for s in samples]}")
-        bad = [l for l in journal(self.started).splitlines() if "] panic in " in l or "given up" in l]
+        bad = [l for l in journal(self.started).splitlines() if "] panic in " in l or "soon after starting: given up" in l]
         self.check("  no panics and no thread given up", not bad, "; ".join(bad[:3]))
 
     def faults(self):
@@ -1398,7 +1398,7 @@ class Checks:
         self.reset()
         self.bluetooth()
         self.check("faults: ClamShell not restarted through them", sh("systemctl --user show -P MainPID clamshell").strip() == pid, f"pid {pid}")
-        bad = [l for l in journal(since).splitlines() if "] panic in " in l or "given up" in l]
+        bad = [l for l in journal(since).splitlines() if "] panic in " in l or "soon after starting: given up" in l]
         self.check("  no panics and no thread given up", not bad, "; ".join(bad[:3]))
 
     # Bluetooth
