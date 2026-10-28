@@ -334,6 +334,49 @@ fn a_windows_dialogs_show_over_it_the_last_taking_the_input() {
     assert!(stack(&s, false).is_empty());
 }
 
+/// Stepping through a program's windows goes by their stacks: a window with a dialog open is one step,
+/// shown with its dialog, and a dialog isn't a window to step to of its own.
+#[test]
+fn top_window_switching_steps_over_whole_stacks() {
+    let mut s = state();
+    let one = launch_of("one");
+    let dialog = WindowFacts { parent: Some(7), ..win_of(9, "one", &one) };
+    s.observed(vec![win_of(7, "one", &one), win_of(8, "one", &one), dialog.clone()]);
+    s.applied(WindowEvent::Activate(7).into());
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(9));
+    for (action, id) in [(HardwareKey::WindowNext, 8), (HardwareKey::WindowNext, 9), (HardwareKey::WindowPrevious, 8), (HardwareKey::WindowPrevious, 9)] {
+        s.applied(Event::HardwareKey(action));
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(id), "{action:?}");
+    }
+    s.observed(vec![win_of(7, "one", &one), dialog]);
+    assert!(!s.session().has_other_top_window(), "a window and its dialog: nothing to step to");
+}
+
+/// A dialog of the window in front takes the input over it at once, though another program's launch
+/// waits to come in front: the screen shows it over its parent either way.
+#[test]
+fn a_dialog_of_the_window_in_front_takes_the_input_while_a_launch_waits() {
+    let mut s = state();
+    let unit = launch(&mut s, "zelda-lttp");
+    s.applied(WindowEvent::Opened(win_of(7, "game", &unit)).into());
+    launch(&mut s, "ff6");
+    s.applied(WindowEvent::Opened(WindowFacts { parent: Some(7), ..win(8, "dialog") }).into());
+    assert_eq!((s.session().top_window().map(|w| w.id), s.session().keyboard_focus()), (Some(8), Some(8)));
+}
+
+/// The bottom screen's window closing under its dialog leaves the dialog there, with the keyboard.
+#[test]
+fn closing_the_window_below_under_its_dialog_leaves_the_dialog_below() {
+    let mut s = state();
+    let unit = launch(&mut s, "zelda-lttp");
+    s.applied(WindowEvent::Opened(win_of(7, "game", &unit)).into());
+    s.applied(Event::HardwareKey(HardwareKey::WindowDown));
+    s.applied(WindowEvent::Opened(WindowFacts { parent: Some(7), ..win(8, "dialog") }).into());
+    s.applied(WindowEvent::Closed(7).into());
+    assert_eq!(s.session().stack(true).map(|w| w.id).collect::<Vec<_>>(), [8]);
+    assert_eq!(s.session().keyboard_focus(), Some(8));
+}
+
 #[test]
 fn windows_know_their_launch_unit() {
     let w = |unit: Option<&str>, app_id: &str| WindowFacts { unit: unit.map(Into::into), app_id: app_id.into(), ..WindowFacts::default() };

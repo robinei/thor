@@ -340,6 +340,26 @@ fn a_launchers_dialog_comes_in_front_while_its_game_starts_and_goes_back_after()
     assert!(s.session().shelf_in_front(), "the game quit: shelf, not Steam");
 }
 
+/// A child window Steam had open before the launch (its friends list) doesn't keep Steam in front once
+/// its dialog is answered: the promotion is the dialog's.
+#[test]
+fn a_launchers_dialog_answered_goes_back_though_the_launcher_has_other_child_windows() {
+    let mut s = steam_ff6();
+    s.ui_up();
+    let steam = LaunchUnit { key: key("desktop:steam"), secs: 1, n: 0 };
+    s.applied(Event::Units(vec![steam.clone()]));
+    let main = win_of(5, "steam", &steam);
+    let friends = WindowFacts { parent: Some(5), ..win_of(6, "steam", &steam) };
+    s.observed(vec![main.clone(), friends.clone()]);
+    s.applied(Event::Home);
+    launch(&mut s, "ff6");
+    let dialog = WindowFacts { role: crate::presentation::WindowRole::Dialog, ..win_of(7, "steam", &steam) };
+    s.observed(vec![main.clone(), friends.clone(), dialog]);
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "its dialog in front");
+    s.observed(vec![main, friends]);
+    assert!(s.session().shelf_in_front(), "answered: back to shelf, not Steam's friends list");
+}
+
 /// Another tool than the Device view is asked of the system; an id the library doesn't have plays
 /// nothing.
 #[test]

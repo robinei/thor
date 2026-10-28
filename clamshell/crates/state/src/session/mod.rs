@@ -41,9 +41,9 @@ pub(crate) struct FrontLaunch {
     /// For a launcher's game, the key of the launcher's entry, whose dialogs come in front meanwhile
     /// (see [`Session::launcher_dialog`]).
     launcher: Option<String>,
-    /// Whether the launcher's group is in front for a dialog of it. It is not remembered as having been in
-    /// front, so that what comes after the game is what would have come without it.
-    promoted: bool,
+    /// The launcher's dialogs that brought its group in front, while any is open. It is not remembered as
+    /// having been in front, so that what comes after the game is what would have come without it.
+    promoted: Vec<i64>,
 }
 
 /// How soon after the window in front closed a new window in its group is shown again, in seconds.
@@ -217,8 +217,17 @@ impl Session {
         !std::mem::take(&mut self.home_used)
     }
 
+    /// Whether the group in front has another window to step to (see [`Session::step_window`]).
     pub fn has_other_top_window(&self) -> bool {
-        self.top_window().is_some_and(|front| self.windows.iter().any(|w| !self.below(w.id) && w.id != front.id && w.group == front.group))
+        self.top_window()
+            .and_then(|front| front.group.as_ref())
+            .is_some_and(|group| self.windows.iter().filter(|w| self.top_level_in(w, group)).nth(1).is_some())
+    }
+
+    /// Whether `w` is a top-level window of `group` on the top screen: the root of its stack (see
+    /// [`Session::root_of`]), which is what stepping through the group's windows and the overview go by.
+    pub(crate) fn top_level_in(&self, w: &Window, group: &Group) -> bool {
+        self.root_of(w.id) == w.id && !self.below(w.id) && w.group.as_ref() == Some(group)
     }
 
     /// Whether a window opening comes in front. While a launch waits for its window, only its own windows
@@ -254,13 +263,12 @@ impl Session {
     /// [`FrontLaunch::promoted`]); the launcher's other windows stay behind.
     pub(crate) fn launcher_dialog(&self, window: &WindowFacts) -> bool {
         let Some(launcher) = self.front_launch.as_ref().and_then(|f| f.launcher.as_deref()) else { return false };
-        let dialog = window.role == crate::presentation::WindowRole::Dialog || window.parent.is_some();
-        dialog && self.running_of(window).is_some_and(|r| r.key == launcher)
+        window.is_dialog() && self.running_of(window).is_some_and(|r| r.key == launcher)
     }
 
     /// Makes `unit` the launch to show when its window appears, waiting until `until` if given.
     pub(crate) fn set_front_launch(&mut self, unit: LaunchUnit, until: Option<u64>) {
-        self.front_launch = Some(FrontLaunch { unit, until, launcher: None, promoted: false });
+        self.front_launch = Some(FrontLaunch { unit, until, launcher: None, promoted: Vec::new() });
     }
 
     /// The launch in front, `g`'s, is a launcher's game: the launcher's dialogs come in front meanwhile.
@@ -273,23 +281,26 @@ impl Session {
 
     /// Whether `group` is a launcher's, promoted for a dialog of it while its game starts.
     fn promoted(&self, group: &Group) -> bool {
-        self.front_launch.as_ref().is_some_and(|f| f.promoted && f.launcher.as_deref() == group.key())
+        self.front_launch.as_ref().is_some_and(|f| !f.promoted.is_empty() && f.launcher.as_deref() == group.key())
     }
 
+    /// Brings the group in front's next or previous top-level window in front, with its dialogs over it.
     pub(crate) fn step_window(&mut self, next: bool) {
-        let Some(front) = self.top_window() else { return };
-        let mut group = self.windows.iter().filter(|w| !self.below(w.id) && w.group == front.group).cycle();
-        let count = self.windows.iter().filter(|w| !self.below(w.id) && w.group == front.group).count();
-        let id = if next {
-            group.find(|w| w.id == front.id).and_then(|_| group.next()).map(|w| w.id)
-        } else {
-            group.find(|w| w.id == front.id).and_then(|_| group.nth(count.saturating_sub(2))).map(|w| w.id)
-        };
-        if let Some(id) = id.filter(|id| *id != front.id) {
-            self.use_home();
-            self.cancel_front_launch();
-            self.command(WindowCommand::FocusWindow(id));
+        let Some((group, root)) = self.top_window().and_then(|front| Some((front.group.clone()?, self.root_of(front.id)))) else { return };
+        let roots: Vec<i64> = self.windows.iter().filter(|w| self.top_level_in(w, &group)).map(|w| w.id).collect();
+        let Some(at) = roots.iter().position(|id| *id == root) else { return };
+        let to = if next { (at + 1) % roots.len() } else { (at + roots.len() - 1) % roots.len() };
+        if let Some(to) = roots.get(to).copied().filter(|to| *to != root) {
+            self.bring_in_front(to);
         }
+    }
+
+    /// Brings window `id` in front, as the user asked: from Home, the launch waiting for its window
+    /// given up.
+    pub(crate) fn bring_in_front(&mut self, id: i64) {
+        self.use_home();
+        self.cancel_front_launch();
+        self.command(WindowCommand::FocusWindow(id));
     }
 
     pub(crate) fn pad_active(&mut self) {
@@ -313,7 +324,7 @@ impl Session {
     /// input; the compositor darkens those before it, which shows why they don't.
     pub fn stack(&self, below: bool) -> impl Iterator<Item = &Window> {
         let slot = if below { self.bottom } else { self.top };
-        self.windows.iter().filter(move |w| slot.is_some_and(|slot| self.root_of(w.id) == self.root_of(slot)))
+        slot.into_iter().flat_map(|slot| self.stack_of(slot))
     }
 
     /// Window `id`'s stack as a screen would show it (see [`Session::stack`]), as the overview shows it in
@@ -456,10 +467,11 @@ impl Session {
         })
     }
 
-    /// The window Home with B acts on. It is the one in front on the top screen. If there is none, it is the one in view on the bottom screen while it shows the windows moved there
+    /// The window Home with B acts on. It is the one in front on the top screen. If there is none, it is the one taking the input on the bottom screen while it shows the windows moved there
     /// (`shows_windows`).
     pub(crate) fn home_b_window(&self, shows_windows: bool) -> Option<&Window> {
-        self.top_window().or_else(|| shows_windows.then(|| self.bottom_window()).flatten())
+        let bottom = || self.bottom.map(|b| self.topmost(b)).and_then(|id| self.window(id));
+        self.top_window().or_else(|| shows_windows.then(bottom).flatten())
     }
 
     /// Sets the icon of found entry `entry`, once it was found (see [`Effect::FindIcon`]).

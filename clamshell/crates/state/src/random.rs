@@ -810,6 +810,8 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         .find(|w| w.group.is_none() && !s.session().launching().iter().any(|l| l.mark.as_deref().is_some_and(|mark| w.marked(mark))));
     ensure!(unplaced.is_none(), "window {:?} has no group after the settle", unplaced.map(|w| w.id));
     ensure!(s.session().keyboard_focus().is_none_or(|id| s.session().window(id).is_some()), "keyboard focus names a closed window");
+    let session = s.session();
+    ensure!(session.top_window().is_none_or(|w| session.topmost(session.root_of(w.id)) == w.id), "the top screen's window is not the topmost of its stack");
     ensure!(s.presentation().display_modes().rates().iter().all(|hz| (1..=1000).contains(hz)), "invalid detected refresh rate");
     ensure!(s.presentation().display_modes().rates().windows(2).all(|pair| matches!(pair, [a,b] if a < b)), "refresh choices not sorted and unique");
     // 1. Sync converges.

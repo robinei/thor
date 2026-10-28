@@ -570,4 +570,16 @@ mod tests {
         s.applied(Event::HardwareKey(HardwareKey::BottomView));
         assert_eq!(s.applied(Event::HardwareKey(HardwareKey::CloseWindow)), vec![]);
     }
+
+    /// Home with B on the bottom screen closes what takes the input there: a dialog over its window.
+    #[test]
+    fn home_b_closes_the_bottom_screens_dialog_over_its_window() {
+        use crate::HardwareKey;
+        let mut s = state();
+        s.observed(vec![foot()]);
+        s.applied(Event::HardwareKey(HardwareKey::WindowDown));
+        let dialog = WindowFacts { id: foot().id + 1, parent: Some(foot().id), ..foot() };
+        s.observed(vec![foot(), dialog.clone()]);
+        assert_eq!(s.applied(Event::HardwareKey(HardwareKey::CloseWindow)), vec![Effect::Compositor(Compositor::Close(vec![dialog.id]))]);
+    }
 }

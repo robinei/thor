@@ -80,7 +80,11 @@ window with dialogs selects its last. The compositor draws the stack back to fro
 its own presentation, with a black layer (`clamshell_ui::DIM`) behind the topmost darkening the rest, which
 shows why they take no input; a touch there reaches nothing. Moving a dialog down moves its stack, and
 window rules leave dialogs to their parent (`a_windows_dialogs_show_over_it_the_last_taking_the_input`,
-`a_dialog_of_a_window_below_shows_below_over_it`).
+`a_dialog_of_a_window_below_shows_below_over_it`). The bottom screen's window closing leaves its first
+dialog there as the stack's root (`closing_the_window_below_under_its_dialog_leaves_the_dialog_below`).
+Stepping through a program's windows, the overview and Home with B go by stacks: a step is to another
+stack, the overview has a cell for each, and Home with B closes the topmost
+(`top_window_switching_steps_over_whole_stacks`, `home_b_closes_the_bottom_screens_dialog_over_its_window`).
 
 The settle steps that follow the session (units, windows, window rules, what is shown, background,
 quitting, dock) run in the order `State::settle`'s doc lists, with the test that pins each order that
@@ -155,8 +159,8 @@ the device.
 | settle: `front_launch` and its window arrived | Focus, cleared | tests `a_launchs_first_window_is_shown_before_…` |
 | Home, shelf not in front | ShowShelf; cancel foreground launch intent | front `home_always_shows_shelf_and_repeated_home_stays_there` |
 | Home, shelf in front | stays; close Device view first if open | same; device `home_closes_the_device_view_first` |
-| WindowPrevious / WindowNext | wrap within the selected top program, skipping the bottom slot; absent/single/shelf do nothing | windows `top_window_switching_wraps_within_the_program_and_skips_the_bottom_slot` |
-| dock tap on the entry in front with two or more top-level windows on the top screen | Overview open, the window in front chosen (a dialog's parent); the window in front stays; again closes it | overview `a_tap_on_the_entry_in_front_shows_its_windows_and_the_pad_picks_one`, `one_window_and_its_dialog_open_no_overview` |
+| WindowPrevious / WindowNext | wrap within the selected top program's stacks, skipping the bottom slot; absent/single/shelf do nothing | windows `top_window_switching_wraps_within_the_program_and_skips_the_bottom_slot`, `top_window_switching_steps_over_whole_stacks` |
+| dock tap on the entry in front with two or more top-level windows on the top screen | Overview open, the window in front chosen (a dialog's root); the window in front stays; again closes it | overview `a_tap_on_the_entry_in_front_shows_its_windows_and_the_pad_picks_one`, `one_window_and_its_dialog_open_no_overview` |
 | Overview: Step(dir) / Choose or Pick(id) / Close | the choice moves within the grid; the window comes in front and it closes; it closes | overview `the_entry_again_or_b_goes_back_and_a_tapped_window_comes_in_front` |
 | settle: Overview open, its group not in front or one window left | closed; a chosen window gone leaves the first chosen | overview `it_closes_with_its_group_out_of_front_or_one_window_left` |
 | HomeHeld(bool) | the button's state, by which the overlay draws the window arrows (with another top window); a new hold starts unused, so the HomeTap after a Home-held arrow is taken by it; repeated values do nothing | windows `pad_activity_returns_keyboard_focus_to_top_without_moving_windows` |
@@ -652,7 +656,8 @@ On Opened the state decides whether the window comes in front (`Session::opening
 
 | Condition at Opened | Result | Test |
 |---|---|---|
-| a launch waits for its window | in front only if it is that launch's (in its unit, of its entry by mark or process, or a dialog of one), or, for a launcher's game, a dialog of the launcher (a dialog or a window with a parent), whose group is then promoted: in front while the launch waits, not remembered as having been, and back behind once no dialog of it is left; others open behind | `steams_windows_open_behind_a_steam_games_launch`, `a_launchers_dialog_comes_in_front_while_its_game_starts_and_goes_back_after` |
+| a launch waits for its window | in front only if it is that launch's (in its unit, of its entry by mark or process, or a dialog of one), or, for a launcher's game, a dialog of the launcher (a dialog or a window with a parent), whose group is then promoted: in front while the launch waits, not remembered as having been, and back behind once the last of the dialogs that promoted it closed; others open behind | `steams_windows_open_behind_a_steam_games_launch`, `a_launchers_dialog_comes_in_front_while_its_game_starts_and_goes_back_after`, `a_launchers_dialog_answered_goes_back_though_the_launcher_has_other_child_windows` |
+| its parent's stack is shown, on either screen | over it, with the keyboard, whatever else waits | `a_dialog_of_the_window_in_front_takes_the_input_while_a_launch_waits`, `a_dialog_of_a_window_below_shows_below_over_it` |
 | it has a parent | in front if the parent's program is shown | `opening_focus_respects_launch_intent_and_shown_program` |
 | not in a unit of ours | in front | same; `a_window_opens_in_front_as_its_opening_focus_says` |
 | the first window of a unit of ours | behind (it waits for the launch's intent) | same |

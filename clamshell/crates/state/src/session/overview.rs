@@ -13,7 +13,7 @@
 
 use crate::Session;
 use crate::keymap::Dir;
-use crate::session::windows::{Group, Window, WindowCommand};
+use crate::session::windows::{Group, Window};
 
 /// The open overview: the group it shows, and the window the pad has chosen in it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,11 +81,6 @@ impl Session {
         self.windows.iter().filter(move |w| group.is_some_and(|g| self.top_level_in(w, g)))
     }
 
-    /// Whether `w` is a top-level window of `group` on the top screen.
-    fn top_level_in(&self, w: &Window, group: &Group) -> bool {
-        w.parent.is_none() && !self.below(w.id) && w.group.as_ref() == Some(group)
-    }
-
     /// Whether a tap on running entry `id`'s dock tile is for the overview: its group is in front, and it
     /// has more than one window on the top screen, or its overview is open.
     pub(crate) fn overview_of(&self, id: &str) -> bool {
@@ -111,19 +106,19 @@ impl Session {
         }
     }
 
-    /// Opens the overview of the group in front, with the window in front chosen (a dialog's parent), if
+    /// Opens the overview of the group in front, with the window in front chosen (a dialog's root), if
     /// it has more than one window on the top screen.
     fn open_overview(&mut self) {
         let Some(front) = self.top_window() else { return };
         let Some(group) = front.group.clone() else { return };
-        let front = (front.id, front.parent);
+        let root = self.root_of(front.id);
         let mut windows = self.windows.iter().filter(|w| self.top_level_in(w, &group));
         let Some(first) = windows.next().map(|w| w.id) else { return };
         if windows.next().is_none() {
             return;
         }
-        let in_front = self.windows.iter().find(|w| self.top_level_in(w, &group) && (w.id == front.0 || Some(w.id) == front.1)).map(|w| w.id);
-        self.overview = Some(Overview { group, chosen: in_front.unwrap_or(first) });
+        let in_front = self.windows.iter().any(|w| w.id == root && self.top_level_in(w, &group));
+        self.overview = Some(Overview { group, chosen: if in_front { root } else { first } });
     }
 
     /// Moves the choice one cell `dir`, within the grid. Down from a row above a shorter last row goes to
@@ -152,9 +147,7 @@ impl Session {
             return;
         }
         self.overview = None;
-        self.use_home();
-        self.cancel_front_launch();
-        self.command(WindowCommand::FocusWindow(id));
+        self.bring_in_front(id);
     }
 
     /// Runs after anything changed. Closes the overview when another group is in front, or when fewer

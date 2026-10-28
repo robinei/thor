@@ -210,17 +210,18 @@ impl crate::Session {
 
     /// A window opened. Its group is known at once if it is a dialog, whose is its parent's, or a window
     /// of an entry, by its app id, its owner or its launch's unit; another gets one as the windows are
-    /// followed ([`Session::follow_windows`]). It comes in front as [`Session::opening_focus`] says, and a
-    /// dialog of the window below does on the top screen.
+    /// followed ([`Session::follow_windows`]). It comes in front as [`Session::opening_focus`] says. A
+    /// dialog of a window shown, on either screen, is shown over it and takes the input at once: the
+    /// screen draws a stack whole (see [`Session::stack`]).
     fn open(&mut self, facts: WindowFacts, library: &crate::Library) {
         if self.window(facts.id).is_some() {
             return;
         }
-        let parent = facts.parent.and_then(|id| self.window(id)).map(|w| (w.group.clone(), self.below(w.id)));
-        // A dialog of the window below is shown there over it, and takes the keyboard.
-        let parent_below = parent.as_ref().is_some_and(|(_, below)| *below);
+        let parent = facts.parent.and_then(|id| self.window(id)).map(|w| (w.group.clone(), self.below(w.id), self.root_of(w.id)));
+        let parent_below = parent.as_ref().is_some_and(|(_, below, _)| *below);
+        let parent_on_top = parent.as_ref().is_some_and(|(_, below, root)| !below && self.top.is_some_and(|top| self.root_of(top) == *root));
         let group = match parent {
-            Some((group, _)) => group,
+            Some((group, ..)) => group,
             None => library
                 .entries
                 .iter()
@@ -229,12 +230,12 @@ impl crate::Session {
                 .or_else(|| self.running_of(&facts).map(super::running::Running::group))
                 .or_else(|| facts.launch_unit().map(|i| Group::entry(&i.key))),
         };
-        let focus = parent_below || self.opening_focus(&facts);
+        let focus = parent_below || parent_on_top || self.opening_focus(&facts);
         if focus
             && self.launcher_dialog(&facts)
             && let Some(front) = self.front_launch.as_mut()
         {
-            front.promoted = true;
+            front.promoted.push(facts.id);
         }
         let id = facts.id;
         self.opened.push(id);
@@ -274,20 +275,24 @@ impl crate::Session {
             self.keyboard_focus = None;
         }
         let group = self.top_window().filter(|w| w.id == id).and_then(|w| w.group.clone());
+        // The bottom screen's window closing leaves its first dialog there, the root of what is left of
+        // its stack.
+        let heir = self.windows.iter().find(|w| w.parent == Some(id)).map(|w| w.id);
         self.windows.retain(|w| w.id != id);
         if self.top == Some(id) {
             self.top = None;
         }
         if self.bottom == Some(id) {
-            self.bottom = None;
+            self.bottom = heir;
         }
+        // A launcher promoted for its dialogs goes back behind once the last of them closed.
+        let promotion_ended = self.front_launch.as_mut().is_some_and(|front| {
+            let before = front.promoted.len();
+            front.promoted.retain(|d| *d != id);
+            before > 0 && front.promoted.is_empty()
+        });
         if let Some(group) = group.filter(|g| self.windows.iter().any(|w| !self.below(w.id) && w.group.as_ref() == Some(g))) {
-            // A launcher promoted for its dialog goes back behind once no dialog of it is left.
-            let dialog = |w: &Window| w.role == crate::presentation::WindowRole::Dialog || w.parent.is_some();
-            if self.promoted(&group) && !self.windows.iter().any(|w| w.group.as_ref() == Some(&group) && dialog(w)) {
-                if let Some(front) = self.front_launch.as_mut() {
-                    front.promoted = false;
-                }
+            if promotion_ended {
                 self.go_back();
             } else if let Some(parent) = parent {
                 self.command(WindowCommand::FocusWindow(parent));
@@ -347,6 +352,11 @@ impl WindowFacts {
     /// [`super::running::mark_of`]).
     pub(crate) fn marked(&self, mark: &str) -> bool {
         self.app_id == mark || self.game.as_deref() == Some(mark)
+    }
+
+    /// Whether it is a dialog: by its role, or by having a parent.
+    pub(crate) fn is_dialog(&self) -> bool {
+        self.role == crate::presentation::WindowRole::Dialog || self.parent.is_some()
     }
 
     /// The launch it belongs to: its unit's, if we started it.
