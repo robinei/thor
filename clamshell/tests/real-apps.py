@@ -10,12 +10,17 @@ Build first (in clamshell/): cargo build. Steam isn't among them: it allows one 
 would hand over to the desktop's.
 """
 import argparse
+import os
+import re
 import shutil
+import signal
 import subprocess
 import sys
-import time
 
 from nested_env import Nested
+
+# A line the compositor logged at error level: `[time ERROR target] message`.
+ERROR = re.compile(r"^\[\S+ ERROR ")
 
 # Each app: the program it needs, its command (DIR: a folder of its own for its profile), whether it is an
 # X11 client, what is run to the end before it (if anything), and variables of its own.
@@ -37,39 +42,63 @@ def top_screen(n):
 
 
 def run(n, name, argv, x11, before, variables):
-    """One app's case: whether it passed, and what was seen."""
+    """One app's case: whether it passed, and what was seen. The app's processes are gone after it, passed
+    or not, so that a slow one doesn't open its window in the next case."""
     folder = n.directory / name
     folder.mkdir()
     argv = [str(folder) if word == "DIR" else word for word in argv]
     env = {**(n.x11 if x11 else n.nested), **variables}
     if before:
-        subprocess.run(before, env=env, capture_output=True, timeout=180)
+        try:
+            done = subprocess.run(before, env=env, capture_output=True, text=True, timeout=180)
+        except subprocess.TimeoutExpired:
+            return False, [f"{' '.join(before)} didn't end in 180 s"]
+        if done.returncode != 0:
+            return False, [f"{' '.join(before)} failed ({done.returncode}): {done.stderr.strip()[-300:]}"]
     before_ids = {w["id"] for w in n.windows()}
     before_pixels = top_screen(n)
     log_before = len(n.log())
     process = n.spawn(argv, name, env)
     n.expected_exits.add(process)
-    seen = []
+    try:
+        return case(n, name, process, before_ids, before_pixels, log_before)
+    finally:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def case(n, name, process, before_ids, before_pixels, log_before):
     def window():
         return next((w for w in n.windows() if w["id"] not in before_ids and w.get("parent") is None), None)
     try:
         opened = n.wait(window, f"{name}: its window", 60)
+        seen = [f"window {opened.get('app_id')!r} {opened.get('title')!r}"]
+        n.wait(lambda: any(w["id"] == opened["id"] and w.get("focused") for w in n.windows()) or None, f"{name}: in front", 15)
+        # Something drawn: the top screen changed from the shelf, and not to one colour (a window that
+        # draws nothing is black).
+        def drew():
+            pixels = top_screen(n)
+            return pixels != before_pixels and len(set(zip(*[iter(pixels)] * 3))) > 1
+        n.wait(lambda: drew() or None, f"{name}: drawn on the top screen", 15)
     except RuntimeError as e:
         return False, [str(e)]
-    seen.append(f"window {opened.get('app_id')!r} {opened.get('title')!r}")
-    in_front = n.wait(lambda: any(w["id"] == opened["id"] and w.get("focused") for w in n.windows()) or None, f"{name}: in front", 15)
-    drew = n.wait(lambda: top_screen(n) != before_pixels or None, f"{name}: drawn on the top screen", 15)
     n.shot(name)
-    errors = [line for line in n.log()[log_before:].splitlines() if "[ERROR" in line or "protocol error" in line]
+    errors = [line for line in n.log()[log_before:].splitlines() if ERROR.search(line) or "protocol error" in line]
     n.control("window", "close")
+    def gone():
+        process.poll()  # (Its leader reaped: a zombie still counts in its group.)
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            return all(w["id"] != opened["id"] for w in n.windows())
+        return False
     try:
-        n.wait(lambda: process.poll() is not None, f"{name}: ended when its window closed", 20)
-        ended = True
-    except RuntimeError:
-        ended = False
-    ok = bool(in_front and drew) and not errors and ended
-    seen += [f"in front {bool(in_front)}, drew {bool(drew)}, ended when closed {ended}"] + errors[:5]
-    return ok, seen
+        n.wait(gone, f"{name}: ended when its window closed", 20)
+    except RuntimeError as e:
+        return False, seen + [str(e)]
+    return not errors, seen + errors[:5]
 
 
 def main():
@@ -97,8 +126,6 @@ def main():
             print(f"{'ok   ' if ok else 'FAIL '} {name}", flush=True)
             for line in seen:
                 print(f"        {line}", flush=True)
-            # Whatever it left, gone before the next.
-            time.sleep(1)
     print(f"{len(chosen) - failed} of {len(chosen)} not failed; logs in {n.directory}")
     return failed
 
