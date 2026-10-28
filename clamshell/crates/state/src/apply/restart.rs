@@ -93,6 +93,7 @@ impl State {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use crate::idle::Stage;
+    use crate::sync::Resend;
     use crate::testkit::*;
     use crate::{Effect, Event, Id, Save, Tab, Thread, Watch};
 
@@ -115,6 +116,19 @@ mod tests {
         assert!(fx.contains(&Effect::Watch(Watch::Audio, true)), "{fx:?}");
         assert!(fx.contains(&Effect::Watch(Watch::Status, true)), "{fx:?}");
         assert!(!fx.iter().any(|e| matches!(e, Effect::Watch(Watch::Audio | Watch::Status, false))), "{fx:?}");
+    }
+
+    /// A reader started again while the tab changes in the same event (here the restart is noted before a
+    /// tap, as when the event's settle changes the tab) is sent the new tab's watch, and the tab left still
+    /// has its watch turned off: its reader, another, kept it on.
+    #[test]
+    fn a_tab_left_as_a_reader_restarts_has_its_watch_turned_off() {
+        let mut s = started(init());
+        tap(&mut s, Id::Tab(Tab::Volume));
+        s.sent.resend(Resend::Restarted(Thread::Metrics));
+        let fx = tap(&mut s, Id::Tab(Tab::Wifi));
+        assert!(fx.contains(&Effect::Watch(Watch::Audio, false)) && fx.contains(&Effect::Watch(Watch::Wifi, true)), "{fx:?}");
+        assert!(s.applied(Event::tick(1)).is_empty(), "once");
     }
 
     /// The settings thread applies the settings in force; started again, it is sent them, once.

@@ -89,6 +89,9 @@ pub(crate) struct Sent {
     account: Option<bool>,
     /// The open tab's watch.
     tab: Option<Watch>,
+    /// The open tab's watch is to be sent again, to a reader started again. What was sent is kept, so
+    /// that a tab left meanwhile still has its watch turned off.
+    tab_again: bool,
     /// The keymap in force as last sent to the pad, by its id and version, or None to send it again.
     keymap: Option<(u16, u64)>,
     /// The keymap sent, to check that the id and version stand for it.
@@ -118,6 +121,7 @@ impl Default for Sent {
             status_off: Some(false),
             account: Some(false),
             tab: None,
+            tab_again: false,
             keymap: None,
             #[cfg(debug_assertions)]
             keymap_sent: None,
@@ -154,7 +158,7 @@ impl Sent {
                 Thread::Tuning => self.applied = None,
                 // The system thread reads the time and the account as their views open.
                 Thread::Mixer | Thread::Battery | Thread::Metrics | Thread::Status | Thread::Wifi | Thread::Bluetooth | Thread::System => {
-                    (self.tab, self.status_off, self.account) = (None, None, None);
+                    (self.tab_again, self.status_off, self.account) = (true, None, None);
                 }
                 Thread::Browse => (self.browsing, self.in_use) = (None, None),
                 // The thread holds nothing; the backlights keep their level. Sent again if ClamShell set one.
@@ -292,7 +296,9 @@ impl Sent {
         }
         let seen = w.ui_up && w.bottom_seen && !screens_off;
         let tab = w.tab.filter(|_| seen);
+        let again = std::mem::take(&mut self.tab_again);
         if tab == self.tab {
+            out.effects.extend(tab.filter(|_| again).map(|w| Effect::Watch(w, true)));
             return;
         }
         let was = std::mem::replace(&mut self.tab, tab);
