@@ -448,7 +448,7 @@ impl LibraryView {
                 self.listed(folder, entries);
                 // A pick on its way to the folder it starts in goes on.
                 if let Err(e) = self.follow_way() {
-                    out.log.push(format!("pick: not started in the folder asked for: {e}"));
+                    out.log(crate::LogLevel::Info, format!("pick: not started in the folder asked for: {e}"));
                 }
             }
             FilesEvent::Busy { what, fraction } => self.files.busy = Some(Busy { what, fraction }),

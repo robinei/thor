@@ -12,5 +12,20 @@ pub(crate) struct Out {
     /// follow the ones pushed before them.
     pub(crate) events: Vec<Event>,
     /// What went wrong and was worked around, for the journal (see [`crate::State::take_log`]).
-    pub(crate) log: Vec<String>,
+    pub(crate) log: Vec<(LogLevel, String)>,
+}
+
+/// How much a line of the state's log matters, as the journal's levels: what is expected at debug, what
+/// is worth knowing at info, what went wrong at warn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogLevel {
+    Debug,
+    Info,
+    Warn,
+}
+
+impl Out {
+    pub(crate) fn log(&mut self, level: LogLevel, line: String) {
+        self.log.push((level, line));
+    }
 }

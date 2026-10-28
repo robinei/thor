@@ -14,7 +14,10 @@ impl State {
             PortalEvent::Asked(request) => {
                 let program = self.program_of(&request.asker);
                 if program.is_none() && !request.asker.is_empty() {
-                    out.log.push(format!("portal: request {}: process {:?} has no window: the program in front's", request.id, request.asker.first()));
+                    out.log(
+                        crate::LogLevel::Debug,
+                        format!("portal: request {}: process {:?} has no window: the program in front's", request.id, request.asker.first()),
+                    );
                 }
                 // In front: the window's program, or while an app's pick shows over it, that app's.
                 let program = program.or_else(|| self.session.top_window().and_then(|w| w.group.clone())).or_else(|| self.portal.back.clone());
@@ -68,13 +71,13 @@ impl State {
                 if let Some(folder) = &request.folder
                     && let Err(e) = self.library_view.go_to(folder)
                 {
-                    out.log.push(format!("portal: request {id}: not started in {}: {e}", folder.display()));
+                    out.log(crate::LogLevel::Info, format!("portal: request {id}: not started in {}: {e}", folder.display()));
                 }
                 self.portal.back = front;
                 self.show_builtin(Builtin::Library);
                 break;
             }
-            out.log.push(format!("portal: request {id} answered with nothing: the library has no Files tab to pick in"));
+            out.log(crate::LogLevel::Warn, format!("portal: request {id} answered with nothing: the library has no Files tab to pick in"));
             self.portal.asked.remove(i);
             out.effects.push(Effect::FileChosen { request: id, paths: Vec::new() });
         }

@@ -140,7 +140,7 @@ impl LibraryView {
                     e.select_field(usize::from(i));
                 }
                 if !self.start_pick(takes, pick::PickFor::Field(field)) {
-                    out.log.push(format!("library edit: {} not picked: the library has no Files tab", field.label()));
+                    out.log(crate::LogLevel::Warn, format!("library edit: {} not picked: the library has no Files tab", field.label()));
                 }
             }
             return;
@@ -151,7 +151,7 @@ impl LibraryView {
             let Some(place) = self.edit.as_ref().and_then(|e| e.selected(e.config(read)?)).filter(|p| p.within.is_some()) else { return };
             let images = ["*.png", "*.jpg", "*.jpeg", "*.webp", "*.svg"].map(String::from).to_vec();
             if !self.start_pick(pick::Takes::Files(images), pick::PickFor::PlacePicture(place.id.clone())) {
-                out.log.push("library edit: the picture not picked: the library has no Files tab".to_owned());
+                out.log(crate::LogLevel::Warn, "library edit: the picture not picked: the library has no Files tab".to_owned());
             }
             return;
         }

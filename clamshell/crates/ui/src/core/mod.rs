@@ -175,8 +175,12 @@ impl Core {
         }
         self.effects.clear();
         self.state.apply(event, &mut self.effects);
-        for line in self.state.take_log() {
-            log::warn!("{line}");
+        for (level, line) in self.state.take_log() {
+            match level {
+                clamshell_state::LogLevel::Debug => log::debug!("{line}"),
+                clamshell_state::LogLevel::Info => log::info!("{line}"),
+                clamshell_state::LogLevel::Warn => log::warn!("{line}"),
+            }
         }
         self.state_revision = self.state_revision.wrapping_add(1);
         self.changed();

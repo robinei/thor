@@ -64,6 +64,7 @@ pub mod library_view;
 pub mod nav;
 pub mod notifications;
 pub(crate) mod out;
+pub use out::LogLevel;
 pub mod portal;
 pub mod presentation;
 pub mod profiles;
@@ -190,7 +191,7 @@ pub struct State {
     sys: Sys,
     notifications: Notifications,
     /// What went wrong and was worked around, until taken (see [`State::take_log`]).
-    log: Vec<String>,
+    log: Vec<(out::LogLevel, String)>,
     /// Apps' file choosers waiting (see [`portal`]).
     portal: portal::Portal,
     /// Every entry's settings, and the level the settings panel edits.
@@ -405,9 +406,9 @@ impl State {
         self.log = out.log;
     }
 
-    /// What went wrong and was worked around since the last look, a line each, for the journal: the
-    /// state's fallbacks, which it can't log itself.
-    pub fn take_log(&mut self) -> std::vec::Drain<'_, String> {
+    /// What went wrong and was worked around since the last look, a line each with its level, for the
+    /// journal: the state's fallbacks, which it can't log itself.
+    pub fn take_log(&mut self) -> std::vec::Drain<'_, (out::LogLevel, String)> {
         self.log.drain(..)
     }
 

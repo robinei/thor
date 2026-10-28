@@ -190,10 +190,10 @@ mod tests {
         tap(&mut s, Id::LibraryView(LibraryViewId::CancelPick));
         s.applied(Event::Portal(PortalEvent::Asked(FileRequest { id: 2, folder: folder("/home/thor/Missing"), ..request() })));
         assert_eq!(s.library_view().group().map(|g| g.title.as_str()), Some("Home"), "as far as it goes");
-        assert!(s.take_log().any(|line| line.contains("no folder \"Missing\" in Home")));
+        assert!(s.take_log().any(|(_, line)| line.contains("no folder \"Missing\" in Home")));
         tap(&mut s, Id::LibraryView(LibraryViewId::CancelPick));
         s.applied(Event::Portal(PortalEvent::Asked(FileRequest { id: 3, folder: folder("/nowhere"), ..request() })));
-        assert!(s.take_log().any(|line| line.contains("in none of the Files tab's folders")));
+        assert!(s.take_log().any(|(_, line)| line.contains("in none of the Files tab's folders")));
     }
 
     fn save(s: &mut crate::State, id: u32, asks: Asks) {
@@ -239,7 +239,7 @@ mod tests {
         let mut s = state_with(library);
         assert_eq!(chosen(&ask(&mut s, 1, false)), Some((1, vec![])));
         assert!(s.library_view().pick().is_none());
-        assert!(s.take_log().any(|line| line.contains("no Files tab")), "logged");
+        assert!(s.take_log().any(|(_, line)| line.contains("no Files tab")), "logged");
         assert_eq!(s.take_log().count(), 0, "taken");
     }
 }
