@@ -86,7 +86,8 @@ fn warm() -> (State, Vec<WindowFacts>, Vec<LaunchUnit>) {
     s.apply(Event::Start, &mut effects);
     s.apply(Event::Tick { unix_secs: T0, mono_secs: 10 }, &mut effects);
     let mut units = Vec::new();
-    let mut windows = vec![WindowFacts { id: 1, app_id: "foot".into(), ..WindowFacts::default() }];
+    // Its process is known, so each settle asks whether it is a program to find, and its entry runs.
+    let mut windows = vec![WindowFacts { id: 1, app_id: "foot".into(), pids: vec![500], ..WindowFacts::default() }];
     for (n, id) in ["desktop:firefox", "desktop:foot"].into_iter().enumerate() {
         effects.clear();
         s.apply(Event::Entry(id.into(), EntryAct::Play), &mut effects);

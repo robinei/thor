@@ -56,15 +56,17 @@ impl Session {
             }
             // Its process is its own if none of the process's windows belongs to another entry.
             let own = !self.windows.iter().any(|o| o.pids.first() == Some(&pid) && self.running_of(o).is_some());
-            let mark: Option<Arc<str>> = (!w.app_id.is_empty()).then(|| w.app_id.as_str().into());
             // Known by neither its app id nor its process, no entry would find it again.
-            if mark.is_none() && !own {
+            if w.app_id.is_empty() && !own {
+                continue;
+            }
+            // Its entry already runs: checked before making the entry, since this is asked at every settle
+            // for each such window.
+            if self.running.iter().any(|r| is_window_entry(library, w, pid, &r.id)) {
                 continue;
             }
             let entry = window_entry(library, w, pid);
-            if self.running(&entry.id).is_some() {
-                continue;
-            }
+            let mark: Option<Arc<str>> = (!w.app_id.is_empty()).then(|| w.app_id.as_str().into());
             let process = own.then_some(pid);
             new.push(Running { mark, seen: true, process, ..Running::of(&entry, Origin::Found { pid: process }, now) });
         }
@@ -98,14 +100,27 @@ pub(crate) fn window_entry(library: &Library, w: &WindowFacts, pid: u32) -> Entr
     })
 }
 
-/// The entry that a program found by `name`, its window's app id or its tray icon's id, runs as. It is the
-/// library's desktop entry of that name or with that `StartupWMClass`, ignoring case, or else one of its own
-/// made by `own`.
+/// Whether `id` is the entry that [`window_entry`] makes for window `w` of process `pid`, worked out without
+/// making it.
+fn is_window_entry(library: &Library, w: &WindowFacts, pid: u32, id: &str) -> bool {
+    match library_entry(library, &w.app_id) {
+        Some(g) => *g.id == *id,
+        None => id.strip_prefix(ids::WINDOW).is_some_and(|name| if w.app_id.is_empty() { name.parse() == Ok(pid) } else { name == w.app_id }),
+    }
+}
+
+/// The entry that a program found by `name`, its window's app id or its tray icon's id, runs as: the
+/// library's (see [`library_entry`]), or else one of its own made by `own`.
 pub(crate) fn found_entry(library: &Library, name: &str, own: impl FnOnce() -> Entry) -> Entry {
+    library_entry(library, name).cloned().unwrap_or_else(own)
+}
+
+/// The library's desktop entry named `name` or with that `StartupWMClass`, ignoring case.
+fn library_entry<'a>(library: &'a Library, name: &str) -> Option<&'a Entry> {
     let named = |g: &&Entry| {
         ids::desktop_file(&g.id).is_some_and(|d| d.eq_ignore_ascii_case(name)) || g.wm_class.as_deref().is_some_and(|c| c.eq_ignore_ascii_case(name))
     };
-    library.entries.iter().find(named).cloned().unwrap_or_else(own)
+    library.entries.iter().find(named)
 }
 
 /// The icon to look for, for an entry found by its window.
