@@ -129,10 +129,10 @@ Each ends in commits that pass `tools/check.sh` and the randomized test at 3000 
   fields back.
 
 Cost fixes on the way (no behaviour change):
-- [ ] The settings in force (`in_force`, `settings_of`) scan the whole library per call: 2 to 3 times per
+- [x] The settings in force (`in_force`, `settings_of`) scan the whole library per call: 2 to 3 times per
   event in the state, and about 7 times per window per event in the compositor. Keep the runner's key on
   the running entry; look entries up by an index map built when the library changes.
-- [ ] `window_presentation` allocates a list of sizes per call (twice per window per event, from the
+- [x] `window_presentation` allocates a list of sizes per call (twice per window per event, from the
   compositor): an iterator instead.
-- [ ] Typing a shelf filter allocates a lowercased copy of every title per keystroke: a case-insensitive
+- [x] Typing a shelf filter allocates a lowercased copy of every title per keystroke: a case-insensitive
   compare instead.

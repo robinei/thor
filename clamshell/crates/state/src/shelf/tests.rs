@@ -338,3 +338,10 @@ fn selecting_then_activating_again_launches() {
         "{fx:?}"
     );
 }
+
+#[test]
+fn a_filter_matches_titles_ignoring_case() {
+    use super::starts_with_ignoring_case as starts;
+    assert!(starts("Ōkami HD", "ōka") && starts("Final Fantasy", "FINAL F") && starts("Zelda", ""));
+    assert!(!starts("Zelda", "zeldas") && !starts("Zelda", "elda"));
+}

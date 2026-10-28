@@ -228,9 +228,8 @@ impl Shelf {
     /// Appends the entries of collection `c`'s whole list whose titles start with `filter`, ignoring case,
     /// to `found`.
     fn found(&self, c: usize, filter: &str, found: &mut Vec<usize>) {
-        let filter = filter.to_lowercase();
         let entries = &self.library.entries;
-        found.extend(self.whole_list_of(c).iter().copied().filter(|&i| entries.get(i).is_some_and(|g| g.title.to_lowercase().starts_with(&filter))));
+        found.extend(self.whole_list_of(c).iter().copied().filter(|&i| entries.get(i).is_some_and(|g| starts_with_ignoring_case(&g.title, filter))));
     }
 
     /// Finds every list's entries again by what is typed in it, after the library changed under them.
@@ -690,6 +689,12 @@ impl Rows for Shelf {
     fn len(&self) -> usize {
         self.list().len()
     }
+}
+
+/// Whether `text` starts with `prefix`, ignoring case, compared char by char without a lowercased copy.
+fn starts_with_ignoring_case(text: &str, prefix: &str) -> bool {
+    let mut text = text.chars().flat_map(char::to_lowercase);
+    prefix.chars().flat_map(char::to_lowercase).all(|p| text.next() == Some(p))
 }
 
 #[cfg(test)]
