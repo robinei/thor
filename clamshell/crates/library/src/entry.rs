@@ -186,6 +186,8 @@ pub struct Browsed {
     /// A folder whose contents can't be changed because it isn't writable, such as an archive's or a
     /// system folder.
     pub locked: bool,
+    /// A file that may be run: one of its executable bits is set.
+    pub executable: bool,
     pub kind: BrowseKind,
     /// A file's size in bytes, and when it was last changed in seconds since the epoch (0 if not known).
     pub size: Option<u64>,

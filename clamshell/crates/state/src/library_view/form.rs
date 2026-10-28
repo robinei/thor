@@ -82,12 +82,12 @@ impl Field {
         }
     }
 
-    /// What it may be picked as in the Library (see [`super::pick`]): a folder (`true`), a file, or
-    /// nothing. A command's file is its program.
-    pub fn picks(self) -> Option<bool> {
+    /// What it may be picked as in the Library (see [`super::pick`]), if anything. A command's file is
+    /// its program.
+    pub fn picks(self) -> Option<super::pick::Takes> {
         match self {
-            Field::Dir | Field::BiosDir => Some(true),
-            Field::Launch => Some(false),
+            Field::Dir | Field::BiosDir => Some(super::pick::Takes::Folder),
+            Field::Launch => Some(super::pick::Takes::Program),
             _ => None,
         }
     }

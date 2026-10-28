@@ -11,13 +11,20 @@ use super::LibraryView;
 /// What is being picked, and for what.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pick {
-    /// A folder, or else a file.
-    pub folder: bool,
-    /// The names a file may have (`*.png`); none: any.
-    pub patterns: Vec<String>,
+    pub takes: Takes,
     pub purpose: PickFor,
     /// The tab shown before, to go back to.
     back: usize,
+}
+
+/// What a pick takes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Takes {
+    Folder,
+    /// A file with one of these names (`*.png`); none: any.
+    Files(Vec<String>),
+    /// A file that may be run (see [`clamshell_library::Browsed::executable`]).
+    Program,
 }
 
 /// Who asked for a pick.
@@ -33,11 +40,12 @@ impl Pick {
     /// Whether `entry` may be chosen.
     pub fn takes(&self, entry: &Entry) -> bool {
         let Some(browsed) = &entry.browsed else { return false };
-        match self.folder {
-            true => browsed.folder && !browsed.archive,
-            false => {
-                !browsed.folder && (self.patterns.is_empty() || self.patterns.iter().any(|p| pattern::matches(&p.to_lowercase(), &entry.title.to_lowercase())))
+        match &self.takes {
+            Takes::Folder => browsed.folder && !browsed.archive,
+            Takes::Files(patterns) => {
+                !browsed.folder && (patterns.is_empty() || patterns.iter().any(|p| pattern::matches(&p.to_lowercase(), &entry.title.to_lowercase())))
             }
+            Takes::Program => !browsed.folder && browsed.executable,
         }
     }
 
@@ -71,11 +79,10 @@ impl LibraryView {
         library.collections.iter().position(in_folder)
     }
 
-    /// Starts picking a folder (`folder`) or a file matching `patterns`, for `purpose`, in the Files tab.
-    /// Without one, nothing is picked.
-    pub(crate) fn start_pick(&mut self, folder: bool, patterns: Vec<String>, purpose: PickFor) {
+    /// Starts picking what `takes` says, for `purpose`, in the Files tab. Without one, nothing is picked.
+    pub(crate) fn start_pick(&mut self, takes: Takes, purpose: PickFor) {
         let Some(files) = self.files_tab() else { return };
-        self.pick = Some(Pick { folder, patterns, purpose, back: self.current });
+        self.pick = Some(Pick { takes, purpose, back: self.current });
         self.set_collection(files);
     }
 
@@ -111,6 +118,7 @@ mod tests {
     use clamshell_library::config::{Config, Place};
     use clamshell_library::{Browsed, Collection, Library};
 
+    use super::{Pick, PickFor, Takes};
     use crate::library_view::actions::Action;
     use crate::library_view::edit::EditId;
     use crate::library_view::form::Field;
@@ -152,6 +160,18 @@ mod tests {
         let form = s.library_view().edit().and_then(|e| e.form()).unwrap();
         assert_eq!(form.item.value(&Config::default(), Field::Dir), "/h");
         assert_eq!(s.pointer().focus(), Some(&EditId::Pick(2).into()));
+    }
+
+    /// A command's program is a file that may be run; another file isn't taken, nor a folder.
+    #[test]
+    fn a_program_is_a_file_that_may_be_run() {
+        let pick = Pick { takes: Takes::Program, purpose: PickFor::Field(Field::Launch), back: 0 };
+        let file = |executable: bool, folder: bool| clamshell_library::Entry {
+            browsed: Some(Browsed { executable, folder, ..Browsed::default() }),
+            ..clamshell_library::Entry::new("browse:Files/Home/x", "x")
+        };
+        assert!(pick.takes(&file(true, false)));
+        assert!(!pick.takes(&file(false, false)) && !pick.takes(&file(false, true)));
     }
 
     /// A folder's picture is an image file chosen in the Files tab; a file that isn't an image isn't

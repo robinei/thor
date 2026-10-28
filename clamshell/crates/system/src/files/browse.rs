@@ -197,6 +197,7 @@ fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, hidde
             let meta = fs::metadata(&path).inspect_err(|e| log::debug!("browse: {}: {e}", path.display())).ok();
             let is_dir = meta.as_ref().is_some_and(fs::Metadata::is_dir);
             let size = meta.as_ref().filter(|m| m.is_file()).map(fs::Metadata::len);
+            let executable = meta.as_ref().is_some_and(|m| m.is_file() && std::os::unix::fs::PermissionsExt::mode(&m.permissions()) & 0o111 != 0);
             let modified = meta.and_then(|m| m.modified().ok()).map_or(0, crate::time::clock::unix_secs_at);
             let mut game = Entry::new(&format!("{folder}/{name}"), &name);
             // An archive is browsed as a folder through its mount. A runner that opens it is kept for
@@ -228,7 +229,7 @@ fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, hidde
             }
             let locked = archive || (is_dir && rustix::fs::access(&path, rustix::fs::Access::WRITE_OK).is_err());
             game.file = Some(path);
-            game.browsed = Some(Browsed { folder: is_dir || archive, archive, locked, size, modified, ..Browsed::default() });
+            game.browsed = Some(Browsed { folder: is_dir || archive, archive, locked, executable, size, modified, ..Browsed::default() });
             Some(game)
         })
         .collect();

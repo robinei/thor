@@ -84,18 +84,25 @@ pub fn library() -> Library {
             ..Entry::new(builtin.id(), title)
         });
     }
-    // A Files tab: Home, listed, with two folders and two files.
+    // A Files tab: Home, listed, with two folders and three files, one a program.
     let files = games.len();
     let browsed = |name: &str, folder: bool, kind: crate::BrowseKind| Entry {
         file: Some(format!("/home/thor{}", if name.is_empty() { String::new() } else { format!("/{name}") }).into()),
-        browsed: Some(crate::Browsed { folder, listed: name.is_empty(), kind, size: (!folder).then_some(48_000), ..crate::Browsed::default() }),
+        browsed: Some(crate::Browsed {
+            folder,
+            listed: name.is_empty(),
+            executable: name.ends_with(".sh"),
+            kind,
+            size: (!folder).then_some(48_000),
+            ..crate::Browsed::default()
+        }),
         ..Entry::new(
             &format!("browse:Files/Home{}", if name.is_empty() { String::new() } else { format!("/{name}") }),
             if name.is_empty() { "Home" } else { name },
         )
     };
-    games.push(Entry { items: (files + 1..files + 5).collect(), ..browsed("", true, crate::BrowseKind::Root) });
-    for (name, folder) in [("Pictures", true), ("Roms", true), ("notes.txt", false), ("snes.png", false)] {
+    games.push(Entry { items: (files + 1..files + 6).collect(), ..browsed("", true, crate::BrowseKind::Root) });
+    for (name, folder) in [("Pictures", true), ("Roms", true), ("emulator.sh", false), ("notes.txt", false), ("snes.png", false)] {
         games.push(Entry { parent: Some(files), ..browsed(name, folder, crate::BrowseKind::Plain) });
     }
     let collections = vec![

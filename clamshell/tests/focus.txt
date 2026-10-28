@@ -756,13 +756,14 @@ Editor(Insert(4)): ^Editor(Save) vKey[0,8] <Editor(Insert(3)) >Key[0,9]
 == library-edit-command-top.png (top; the pad on both screens)
 start Edit(Row(0)); back Activate Edit(Cancel)
 == library-pick.png (top; the pad on both screens)
-start "browse:Files/Home/notes.txt"; back Activate CancelPick
+start "browse:Files/Home/emulator.sh"; back Activate CancelPick
 -- library
-Collection(5): ^"browse:Files/Home/Roms" v"browse:Files/Home/snes.png" <[CollectionStep(-1)] >[CollectionStep(1)]
+Collection(5): ^"browse:Files/Home/Roms" v"browse:Files/Home/notes.txt" <[CollectionStep(-1)] >[CollectionStep(1)]
 Up: ^Collection(5) v"browse:Files/Home/Pictures" <"browse:Files/Home/Pictures" >-
 "browse:Files/Home/Pictures": ^[ListStep(-2)] v"browse:Files/Home/Roms" <[CollectionStep(-1)] >[CollectionStep(1)]
-"browse:Files/Home/Roms": ^"browse:Files/Home/Pictures" v"browse:Files/Home/notes.txt" <[CollectionStep(-1)] >[CollectionStep(1)]
-"browse:Files/Home/notes.txt": ^"browse:Files/Home/Roms" v"browse:Files/Home/snes.png" <[CollectionStep(-1)] >[CollectionStep(1)]
+"browse:Files/Home/Roms": ^"browse:Files/Home/Pictures" v"browse:Files/Home/emulator.sh" <[CollectionStep(-1)] >[CollectionStep(1)]
+"browse:Files/Home/emulator.sh": ^"browse:Files/Home/Roms" v"browse:Files/Home/notes.txt" <[CollectionStep(-1)] >[CollectionStep(1)]
+"browse:Files/Home/notes.txt": ^"browse:Files/Home/emulator.sh" v"browse:Files/Home/snes.png" <[CollectionStep(-1)] >[CollectionStep(1)]
 "browse:Files/Home/snes.png": ^"browse:Files/Home/notes.txt" vTab(Keyboard) <[CollectionStep(-1)] >[CollectionStep(1)]
 == library-pick-chosen.png (top; the pad on both screens)
 start Edit(Pick(4)); back Activate Edit(Cancel)

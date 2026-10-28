@@ -69,8 +69,8 @@ library-edit-runners.png 26949cfedb5374f5
 library-edit-scrolled.png 7e783dbb9cff5870
 library-edit-sources.png 9ad6d1bed9a8eec0
 library-edit.png 6ef719af745a7272
-library-pick-chosen.png 92b69698d9594f07
-library-pick.png edf476d59de0ba94
+library-pick-chosen.png e0e7472f4815f7a9
+library-pick.png 788eeedb232a793f
 settings-env.png 141480d50601cd5a
 settings-global.png 67a7863ee4d00c29
 settings-menu.png c0cc8a934b3a9035

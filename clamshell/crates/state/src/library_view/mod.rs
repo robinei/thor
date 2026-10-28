@@ -130,14 +130,14 @@ impl LibraryView {
     /// A tap on one of the edit mode's targets (see [`edit::Edit::tap`]); Done leaves it. Choosing a
     /// folder for the form starts a pick.
     pub(crate) fn edit_tap(&mut self, id: edit::EditId, out: &mut crate::out::Out) {
-        // A form's field picked in the Library: a folder, or a file of any name.
+        // A form's field picked in the Library: a folder or a program.
         if let edit::EditId::Pick(i) = id {
             let field = self.edit.as_ref().and_then(|e| e.form()).and_then(|f| f.item.fields().get(usize::from(i)).copied());
-            if let Some((field, folder)) = field.and_then(|f| Some((f, f.picks()?))) {
+            if let Some((field, takes)) = field.and_then(|f| Some((f, f.picks()?))) {
                 if let Some(e) = &mut self.edit {
                     e.select_field(usize::from(i));
                 }
-                self.start_pick(folder, Vec::new(), pick::PickFor::Field(field));
+                self.start_pick(takes, pick::PickFor::Field(field));
             }
             return;
         }
@@ -146,7 +146,7 @@ impl LibraryView {
             let read = self.library.config.as_ref();
             let Some(place) = self.edit.as_ref().and_then(|e| e.selected(e.config(read)?)).filter(|p| p.within.is_some()) else { return };
             let images = ["*.png", "*.jpg", "*.jpeg", "*.webp", "*.svg"].map(String::from).to_vec();
-            return self.start_pick(false, images, pick::PickFor::PlacePicture(place.id.clone()));
+            return self.start_pick(pick::Takes::Files(images), pick::PickFor::PlacePicture(place.id.clone()));
         }
         let read = self.library.config.as_ref();
         if self.edit.as_mut().is_some_and(|e| e.tap(id, read, out)) {
