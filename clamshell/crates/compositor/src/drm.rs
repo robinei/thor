@@ -934,11 +934,16 @@ fn layers_failed(screen: &mut Screen, error: &Error) {
 
 /// Commits the frame the screen shows again, with its overlay and cursor planes as they now are.
 fn present_layers(screen: &mut Screen, server: &mut Server, cursor: &crate::cursor::Cursor) {
-    prepare_layers(screen, server, cursor);
+    let with_layers = prepare_layers(screen, server, cursor);
     let states = screen.layers.iter().flat_map(PlaneLayers::states);
     match screen.surface.show_again(states) {
         Ok(()) => committed(screen),
-        Err(error) => layers_failed(screen, &error),
+        Err(error) if with_layers => layers_failed(screen, &error),
+        // Only turning the planes off, which no display engine refuses: tried again.
+        Err(error) => {
+            log::warn!("drm: the {:?} screen's frame with its planes off: {error}", screen.role);
+            screen.layers_dirty = true;
+        }
     }
 }
 
@@ -1089,12 +1094,14 @@ fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipel
     // The window's place turned as the composed frame is, its buffer the other way, as the plane takes it.
     let logical = screen.transform.transform_size(screen.size);
     let dst = screen.transform.transform_rect_in(candidate.dst.to_physical(1), &logical);
-    let surface = &mut screen.surface;
-    let states = screen.layers.iter().flat_map(PlaneLayers::states);
-    let shown = scanout.framebuffer(&candidate.dmabuf).and_then(|fb| {
-        let properties = scanout.colour(candidate.colour)?;
-        surface.show_window(candidate.buffer.clone(), fb, candidate.src, dst, screen.transform.invert(), properties, states, test)
-    });
+    // A framebuffer or colour the window's buffer can't have is the window's alone, whatever the planes show.
+    let (shown, with_layers) = match scanout.framebuffer(&candidate.dmabuf).and_then(|fb| Ok((fb, scanout.colour(candidate.colour)?))) {
+        Ok((fb, properties)) => {
+            let states = screen.layers.iter().flat_map(PlaneLayers::states);
+            (screen.surface.show_window(candidate.buffer.clone(), fb, candidate.src, dst, screen.transform.invert(), properties, states, test), with_layers)
+        }
+        Err(error) => (Err(error), false),
+    };
     let down = screen.role == ScreenRole::Bottom;
     match shown {
         Ok(()) => {
