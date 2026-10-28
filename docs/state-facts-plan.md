@@ -116,10 +116,13 @@ Each ends in commits that pass `tools/check.sh` and the randomized test at 3000 
   outside isn't taken as the user's, since the reading is the first backlight's level times its share and
   can't be told from ClamShell's own. The four sliders stay: each module also ends its slide when its
   screen closes or an edit is undone, which a single gesture on State would have to take over.
-- [ ] 6. **`Sent` only what was sent.** A watch's state per watch (on, off, unknown), a restart setting
+- [x] 6. **`Sent` only what was sent.** A watch's state per watch (on, off, unknown), a restart setting
   what its thread held to unknown (replacing `tab`, `tab_again`, `status_off`, `account`); freezing and
   runner pauses wanted as a condition and diffed in sync (replacing `freeze_again`); the backlights
   touched as a fact in Levels.
+  Done for the watches and the backlights touched (a fact in `Sent`, kept through a restart). Freezing
+  stays an effect of the background rules: a program is thawed before its windows are closed in the
+  same event, which sync, running after the event, would send too late.
 - [ ] 7. **Shelf's library changes through one place.** One `library_changed` doing what `relayout`,
   `listed` and `reload` each repeat by hand (close gone groups, find again, select again by id, prune the
   file selection); `reload` replacing only the library and places rather than rebuilding and copying
