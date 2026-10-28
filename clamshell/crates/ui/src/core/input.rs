@@ -126,20 +126,11 @@ impl Core {
             }
             return;
         }
-        // While the overview of the program's windows is open, the D-pad moves its choice, A brings the
-        // chosen window in front and B or Back goes back.
         if self.state.session().overview().is_some() {
-            use clamshell_state::keymap::Dir as Step;
-            let event = match input {
-                PadInput::Up => OverviewEvent::Step(Step::Up),
-                PadInput::Down => OverviewEvent::Step(Step::Down),
-                PadInput::Left => OverviewEvent::Step(Step::Left),
-                PadInput::Right => OverviewEvent::Step(Step::Right),
-                PadInput::A(true) => OverviewEvent::Choose,
-                PadInput::B | PadInput::Back => OverviewEvent::Close,
-                _ => return,
-            };
-            return self.handle(Event::Overview(event));
+            if let Some(event) = overview_event(input) {
+                self.handle(Event::Overview(event));
+            }
+            return;
         }
         let dir = match input {
             PadInput::Up => Some(Dir::Up),
@@ -206,5 +197,37 @@ impl Core {
             Some(input) if down => self.pad(input),
             _ => {}
         }
+    }
+}
+
+/// What the pad does while the overview of the program's windows is open: the D-pad moves its choice, A
+/// brings the chosen window in front and B or Back goes back. Anything else does nothing, rather than
+/// act on what is under the overview.
+fn overview_event(input: PadInput) -> Option<OverviewEvent> {
+    use clamshell_state::keymap::Dir as Step;
+    Some(match input {
+        PadInput::Up => OverviewEvent::Step(Step::Up),
+        PadInput::Down => OverviewEvent::Step(Step::Down),
+        PadInput::Left => OverviewEvent::Step(Step::Left),
+        PadInput::Right => OverviewEvent::Step(Step::Right),
+        PadInput::A(true) => OverviewEvent::Choose,
+        PadInput::B | PadInput::Back => OverviewEvent::Close,
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clamshell_state::keymap::Dir as Step;
+
+    #[test]
+    fn the_overview_takes_the_d_pad_a_b_and_back_and_swallows_the_rest() {
+        assert_eq!(overview_event(PadInput::Left), Some(OverviewEvent::Step(Step::Left)));
+        assert_eq!(overview_event(PadInput::A(true)), Some(OverviewEvent::Choose));
+        assert_eq!(overview_event(PadInput::B), Some(OverviewEvent::Close));
+        assert_eq!(overview_event(PadInput::Back), Some(OverviewEvent::Close));
+        assert_eq!(overview_event(PadInput::A(false)), None);
+        assert_eq!(overview_event(PadInput::Y), None);
     }
 }

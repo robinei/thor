@@ -114,3 +114,25 @@ fn it_closes_with_its_group_out_of_front_or_one_window_left() {
     assert_eq!(s.session().overview(), None, "one left");
     assert_eq!(top(&s), Some(4));
 }
+
+/// The chosen window closing, or moving to the bottom screen, leaves the choice on the first; a dialog in
+/// front chooses its stack's root, through dialogs of dialogs.
+#[test]
+fn a_chosen_window_gone_leaves_the_first_chosen() {
+    let mut s = running(&[(3, None), (4, None), (5, None), (6, None)]);
+    tap(&mut s, dock(0));
+    assert_eq!(chosen(&s), Some(6));
+    s.applied(crate::WindowEvent::Closed(6).into());
+    assert_eq!(chosen(&s), Some(3), "closed");
+    tap(&mut s, dock(0));
+    s.applied(crate::WindowEvent::Activate(5).into());
+    tap(&mut s, dock(0));
+    assert_eq!(chosen(&s), Some(5));
+    s.applied(Event::HardwareKey(crate::HardwareKey::WindowDown));
+    assert_eq!(chosen(&s), Some(3), "moved down");
+    assert!(s.session().overview_windows().map(|w| w.id).eq([3, 4]));
+
+    let mut s = running(&[(3, None), (4, None), (5, Some(4)), (6, Some(5))]);
+    tap(&mut s, dock(0));
+    assert_eq!(chosen(&s), Some(4), "the root under two dialogs");
+}

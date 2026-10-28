@@ -96,8 +96,8 @@ the result from the state after apply, so a new window is placed before it is fi
 window effect is closing one (`Compositor::Close`). Shelf is not a window: it is in front when no top window
 is. The program in front's windows can be shown together on the top screen (`session/overview.rs`): the
 state holds the overview and the pad's choice in it, and the cells are one function both sides use, the
-compositor to draw each window fitted into its cell and the UI's overlay for the cells' targets and the
-ring. A metadata change cannot restore an old placement. Foreground launch intent and recent-group history
+compositor to draw each window's stack in its cell, as its screen would show it, and the UI's overlay for
+the cells' targets and the ring. A metadata change cannot restore an old placement. Foreground launch intent and recent-group history
 are session rules. The detailed transitions and their tests are in `docs/state-machines.md`.
 
 ## Living with what apps do

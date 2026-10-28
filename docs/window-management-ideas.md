@@ -6,8 +6,8 @@ decided.
 
 Today each screen shows one window: the top screen the selected window of the group in front (an
 entry's, or the window's own), the bottom screen the window moved there (remembered per program).
-Dialogs are centred at their own size over their window, which is darkened under them. Switching is through the dock, Home, and the program's previous
-and next window.
+Dialogs are centred at their own size over their window, which is darkened under them. Switching is
+through the dock, Home, the program's previous and next window, and the overview of its windows (2).
 
 ## 1. Launchers handing over to their game
 
@@ -22,9 +22,11 @@ instance per user, so the desktop's has to be quit while it runs.
 
 ## 2. A program's windows shown together on the top screen
 
-Built (`session/overview.rs`), as below, except that the windows go on drawing in their cells rather than
-showing their last frame: shown, they get their frame callbacks as the window in front does. `clamshell
-ctl window overview` opens and closes it as the tap does.
+Built (`session/overview.rs`), as below, except that each cell shows the screen as it would look with
+that window in front (its dialogs over it, darkened under them), in the screen's shape, and that the
+windows go on drawing in their cells rather than showing their last frame: shown, they get their frame
+callbacks as the window in front does. `clamshell ctl window overview` opens and closes it as the tap
+does.
 
 The bar has no room for another tab, and the dock already switches between programs; what is missing
 is a choice between one program's windows. So: a tap on the dock entry of the program already in front
