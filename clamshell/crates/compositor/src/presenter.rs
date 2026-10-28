@@ -280,7 +280,9 @@ impl Presenter {
         let state = primary(&self.surface, fb, src, dst, transform, fence, &self.properties);
         let states = || std::iter::once(state.clone()).chain(layers.clone().map(narrowed));
         if test {
-            self.surface.test_state(states(), false).map_err(|e| format!("the display engine refused it: {e}"))?;
+            // (A mode change waiting, as after the refresh changed or the screen came on, goes in the test too.)
+            let modeset = self.surface.commit_pending();
+            self.surface.test_state(states(), modeset).map_err(|e| format!("the display engine refused it: {e}"))?;
         }
         let committed = if self.surface.commit_pending() { self.surface.commit(states(), true) } else { self.surface.page_flip(states(), true) };
         committed.map_err(|e| e.to_string())?;
