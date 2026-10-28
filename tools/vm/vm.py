@@ -102,6 +102,7 @@ class Arch:
             self.base = self.state / "arch-cloudimg.qcow2"
             self.disk = self.state / "disk.qcow2"
             self.ssh_port = 2222
+            # The host's build, copied to the machine's disk at each start (see `service`).
             self.program = "/mnt/thor/clamshell/target/release/clamshell"
 
 
@@ -172,11 +173,30 @@ if [ "$(tty)" = /dev/tty1 ] && ! systemctl --user -q is-active clamshell.service
 fi
 """
 
+# Where a program built on the host runs from in the machine: a copy on its disk. Run from the 9p mount
+# itself, a program hangs after the machine wakes from sleep as soon as it reaches a page of its binary not
+# read before, 9p over virtio not coming back from a suspend.
+LOCAL = "/var/tmp/thor-vm"
+
+
+def local(program):
+    """`program` as run in the machine: a copy, made by `copy_local`, if it is on the 9p mount."""
+    return f"{LOCAL}/{Path(program).name}" if program.startswith("/mnt/thor/") else program
+
+
+def copy_local(program):
+    """The shell command copying `program` from the 9p mount to where it is run from (see `local`)."""
+    return f"install -D -m755 {program} {local(program)}" if program.startswith("/mnt/thor/") else "true"
+
+
 def service():
-    """The device's clamshell.service, with this machine's build and profile, and ClamShell's screens
-    scanned out while they show it alone (its virtual screens take sRGB as it is)."""
+    """The device's clamshell.service, with this machine's build (copied to its disk at each start, see
+    `LOCAL`) and profile, and ClamShell's screens scanned out while they show it alone (its virtual
+    screens take sRGB as it is)."""
     unit = (REPO / "packages/thor-session/root/usr/lib/systemd/user/clamshell.service").read_text()
-    return unit.replace("ExecStart=/usr/bin/clamshell --drm", f"ExecStart={A.program} --drm\nEnvironment=CLAMSHELL_DEVICE=vm\nEnvironment=CLAMSHELL_SCANOUT=1")
+    start = (f"ExecStartPre=/bin/sh -c '{copy_local(A.program)}'\nExecStart={local(A.program)} --drm\n"
+             "Environment=CLAMSHELL_DEVICE=vm\nEnvironment=CLAMSHELL_SCANOUT=1")
+    return unit.replace("ExecStart=/usr/bin/clamshell --drm", start)
 
 
 def session_files():
@@ -753,8 +773,8 @@ def pad(args):
     if args.pad_action == "plug":
         binary = "/mnt/thor/clamshell/target/release/examples/fake_pad"
         script = (f"test -x {binary} || {{ echo 'no {binary}: cargo build --release -p clamshell-system --examples' >&2; exit 1; }}; "
-                  f"systemctl --user stop {FAKE_PAD_UNIT} 2>/dev/null; rm -f {fifo}; mkfifo {fifo}; "
-                  f"systemd-run --user --quiet --collect --unit={FAKE_PAD_UNIT} {binary} --control {fifo}")
+                  f"systemctl --user stop {FAKE_PAD_UNIT} 2>/dev/null; rm -f {fifo}; mkfifo {fifo}; {copy_local(binary)}; "
+                  f"systemd-run --user --quiet --collect --unit={FAKE_PAD_UNIT} {local(binary)} --control {fifo}")
     elif args.pad_action == "unplug":
         script = f"systemctl --user stop {FAKE_PAD_UNIT}"
     else:
