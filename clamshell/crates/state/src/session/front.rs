@@ -182,7 +182,7 @@ mod tests {
         s.observed(vec![]);
         assert!(s.session().shelf_in_front());
         s.applied(Event::tick(1010));
-        assert!(!s.session().opening_focus(&foot()), "another program's window opens behind");
+        assert!(!opening_focus(&s, &foot()), "another program's window opens behind");
         s.observed(vec![window(4)]);
         assert_eq!(s.session().top_window().map(|w| w.id), Some(4));
         // Closed again, and its next window comes too late.

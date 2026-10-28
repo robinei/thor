@@ -13,18 +13,18 @@ fn opening_focus_respects_launch_intent_and_shown_program() {
     let mut s = state();
     let unit = "clamshell-run-one-1-1.scope";
     let first = WindowFacts { unit: Some(unit.into()), ..win(7, "one") };
-    assert!(!s.session().opening_focus(&first));
+    assert!(!opening_focus(&s, &first));
     s.observed(vec![first.clone()]);
     s.applied(WindowEvent::Activate(7).into());
     let next = WindowFacts { id: 8, ..first.clone() };
-    assert!(s.session().opening_focus(&next));
+    assert!(opening_focus(&s, &next));
     let other_launch = WindowFacts { unit: Some("clamshell-run-one-1-2.scope".into()), ..next.clone() };
-    assert!(!s.session().opening_focus(&other_launch));
-    assert!(s.session().opening_focus(&WindowFacts { parent: Some(7), ..next.clone() }), "a dialog of the program in front");
+    assert!(!opening_focus(&s, &other_launch));
+    assert!(opening_focus(&s, &WindowFacts { parent: Some(7), ..next.clone() }), "a dialog of the program in front");
     s.applied(Event::Home);
-    assert!(!s.session().opening_focus(&next));
-    assert!(!s.session().opening_focus(&WindowFacts { parent: Some(7), ..next }), "a dialog of a program behind stays behind");
-    assert!(s.session().opening_focus(&win(9, "foot")));
+    assert!(!opening_focus(&s, &next));
+    assert!(!opening_focus(&s, &WindowFacts { parent: Some(7), ..next }), "a dialog of a program behind stays behind");
+    assert!(opening_focus(&s, &win(9, "foot")));
 }
 
 #[test]

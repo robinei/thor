@@ -54,7 +54,7 @@ What isn't, and where the bugs were:
   after the wake is taken as the brightness on a device where the user hasn't set one, and each dim
   compounds it (the failure 65ec9f62 fixed, still open as a race). Fixed by step 5's readings tagged with
   the command they have seen: a reading from before the wake is older than the wake's command.
-- [ ] **A launcher's dialog opens behind on three paths.** `FrontLaunch.launcher` is set by a second call
+- [x] **A launcher's dialog opens behind on three paths.** `FrontLaunch.launcher` is set by a second call
   on two of the five ways a launch starts waiting (not the re-wait after the window in front closed, nor
   a found or tray program's), so Steam's "which version" dialog opens behind there. Fix: derive it.
 

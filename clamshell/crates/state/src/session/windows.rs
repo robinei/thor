@@ -232,9 +232,9 @@ impl crate::Session {
                 .or_else(|| self.running_of(&facts).map(super::running::Running::group))
                 .or_else(|| facts.launch_unit().map(|i| Group::entry(&i.key))),
         };
-        let focus = parent_below || parent_on_top || self.opening_focus(&facts);
+        let focus = parent_below || parent_on_top || self.opening_focus(&facts, library);
         if focus
-            && self.launcher_dialog(&facts)
+            && self.launcher_dialog(&facts, library)
             && let Some(front) = self.front_launch.as_mut()
         {
             front.promoted.push(facts.id);

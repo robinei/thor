@@ -168,6 +168,11 @@ pub fn force_kill(s: &mut State, id: &str) -> Vec<Effect> {
 }
 
 /// Launches entry `id` again, as the dock's Open another does, with what that does at once.
+/// Whether window `w` would come in front as it opens (see `Session::opening_focus`).
+pub fn opening_focus(s: &State, w: &crate::session::windows::WindowFacts) -> bool {
+    s.session().opening_focus(w, s.shelf().library())
+}
+
 pub fn launch_now(s: &mut State, id: &str) -> Vec<Effect> {
     let mut out = crate::out::Out::default();
     s.launch(id.into(), None, crate::session::running::Start::Front, &mut out);

@@ -305,10 +305,30 @@ fn steams_windows_open_behind_a_steam_games_launch() {
     s.observed(vec![client.clone()]);
     s.applied(crate::WindowEvent::Activate(5).into());
     launch(&mut s, "ff6");
-    assert!(!s.session().opening_focus(&WindowFacts { id: 6, ..client.clone() }), "Steam's window");
-    assert!(s.session().opening_focus(&WindowFacts { id: 6, parent: Some(5), ..client.clone() }), "a dialog of Steam's");
+    assert!(!opening_focus(&s, &WindowFacts { id: 6, ..client.clone() }), "Steam's window");
+    assert!(opening_focus(&s, &WindowFacts { id: 6, parent: Some(5), ..client.clone() }), "a dialog of Steam's");
     let game = win_of(7, "steam_app_620", &steam);
-    assert!(s.session().opening_focus(&game), "the game's, though in Steam's scope");
+    assert!(opening_focus(&s, &game), "the game's, though in Steam's scope");
+}
+
+/// A launcher's dialog comes in front while its game's launch waits again, after the game's window
+/// closed with the game still running, as when it was first launched.
+#[test]
+fn a_launchers_dialog_comes_in_front_while_its_game_waits_again() {
+    let mut s = steam_ff6();
+    s.ui_up();
+    let steam = LaunchUnit { key: key("desktop:steam"), secs: 1, n: 0 };
+    let ff6 = launch(&mut s, "ff6");
+    s.applied(Event::Units(vec![steam.clone(), ff6.clone()]));
+    let main = win_of(5, "steam", &steam);
+    let game = win(8, "steam_app_620");
+    s.observed(vec![main.clone(), game]);
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(8), "the game in front");
+    s.observed(vec![main.clone()]);
+    assert!(s.session().front_launch().is_some(), "waiting again for the game's window");
+    let dialog = WindowFacts { role: crate::presentation::WindowRole::Dialog, ..win_of(7, "steam", &steam) };
+    s.observed(vec![main, dialog]);
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "Steam's dialog in front");
 }
 
 /// Another program's window over a starting launch's window is a dialog of that launch's program: not
