@@ -5,13 +5,19 @@
 //! actions: Rename, New folder, Cut and then Paste to move it, and Remove, for a place nothing is in and
 //! nothing uses.
 //!
+//! After the tabs come Sources and Runners: library.json's sources and runners in their order, each
+//! selected showing what it is, with Edit (its form, see [`super::form`]), Move up and down, and Remove (a
+//! runner only while no source names it); the last row makes a new one.
+//!
 //! Each change is made to library.json as read (see [`clamshell_library::config`]) and written; the
 //! library is then read again. Until it comes, what was written is what shows (`pending`), so a change
 //! shows at once.
 
 use std::sync::Arc;
 
-use clamshell_library::config::{Config, Place, Source};
+use clamshell_library::config::{Config, Place, Runner, Scan, Source};
+
+use super::form::{Field, Item, Set};
 
 use crate::bottom::editor::{Editor, Purpose};
 use crate::effect::Effect;
@@ -37,6 +43,39 @@ pub enum EditId {
     /// Moves the place cut into the folder open, or into the tab.
     Paste,
     Remove,
+    /// The Sources and Runners tabs.
+    Sources,
+    Runners,
+    /// The selected source's or runner's form, and its place in the order.
+    Open,
+    MoveUp,
+    MoveDown,
+    /// The form's field, by position, and the chosen field's option.
+    Field(u16),
+    Choice(u16),
+    /// Writes the form, or leaves it as it was.
+    Save,
+    Cancel,
+}
+
+/// What the edit mode shows: the tabs' places, the sources or the runners.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Panel {
+    #[default]
+    Places,
+    Sources,
+    Runners,
+}
+
+/// A source's or runner's form, open (see [`super::form`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Form {
+    /// Where it is in its list, or none for a new one.
+    pub index: Option<usize>,
+    pub item: Item,
+    /// The field selected, and whether its options show.
+    pub field: usize,
+    pub choosing: bool,
 }
 
 /// What a typed name is for.
@@ -62,6 +101,9 @@ pub enum Row<'a> {
 /// The edit mode's own state (see the module's doc).
 #[derive(Debug, Clone, Default)]
 pub struct Edit {
+    panel: Panel,
+    /// The form open over the sources or runners.
+    form: Option<Form>,
     /// The tab, by position among the tabs.
     tab: usize,
     /// The folders opened in it, outermost first, by id.
@@ -130,6 +172,23 @@ impl Edit {
         self.tab
     }
 
+    pub fn panel(&self) -> Panel {
+        self.panel
+    }
+
+    pub fn form(&self) -> Option<&Form> {
+        self.form.as_ref()
+    }
+
+    /// How many rows the sources' or runners' list has: one each, and one to make a new one.
+    pub fn listed(&self, config: &Config) -> usize {
+        match self.panel {
+            Panel::Sources => config.sources.len() + 1,
+            Panel::Runners => config.runners.len() + 1,
+            Panel::Places => 0,
+        }
+    }
+
     pub fn cursor(&self) -> usize {
         self.cursor
     }
@@ -180,8 +239,15 @@ impl Edit {
             return matches!(id, EditId::Done);
         };
         let here = self.here(&config).map(str::to_owned);
+        if self.panel != Panel::Places || self.form.is_some() {
+            if let Some(leave) = self.list_tap(id, &config, out) {
+                return leave;
+            }
+            return false;
+        }
         match id {
             EditId::Done => return true,
+            EditId::Sources | EditId::Runners => self.show_panel(id),
             EditId::Tab(i) => {
                 (self.tab, self.cursor) = (usize::from(i), 0);
                 self.open.clear();
@@ -226,6 +292,7 @@ impl Edit {
                 }
                 self.write(changed, out);
             }
+            EditId::Open | EditId::MoveUp | EditId::MoveDown | EditId::Field(_) | EditId::Choice(_) | EditId::Save | EditId::Cancel => {}
             EditId::Remove => {
                 let Some(id) = self.selected(&config).map(|p| p.id.clone()) else { return false };
                 if used(&config, &id) || config.places.iter().any(|p| p.id == id && p.kind.is_some()) {
@@ -238,6 +305,128 @@ impl Edit {
             }
         }
         false
+    }
+
+    /// Shows the Sources or Runners panel.
+    fn show_panel(&mut self, id: EditId) {
+        self.panel = if id == EditId::Sources { Panel::Sources } else { Panel::Runners };
+        (self.cursor, self.form) = (0, None);
+    }
+
+    /// A tap on the Sources or Runners panel, or on the form open. Returns whether it leaves the edit
+    /// mode, or none if the tap isn't the panel's.
+    fn list_tap(&mut self, id: EditId, config: &Config, out: &mut Out) -> Option<bool> {
+        let len = self.listed(config);
+        let sources = self.panel == Panel::Sources;
+        match id {
+            EditId::Done => return Some(true),
+            EditId::Tab(i) => {
+                (self.panel, self.form, self.tab, self.cursor) = (Panel::Places, None, usize::from(i), 0);
+                self.open.clear();
+            }
+            EditId::Sources | EditId::Runners => self.show_panel(id),
+            EditId::Row(i) if self.form.is_none() => {
+                let i = usize::from(i);
+                if i == self.cursor || i + 1 == len {
+                    self.cursor = i;
+                    self.open_form(config);
+                } else {
+                    self.cursor = i;
+                }
+            }
+            EditId::Open if self.form.is_none() => self.open_form(config),
+            EditId::MoveUp | EditId::MoveDown if self.form.is_none() && self.cursor + 1 < len => {
+                let to = if id == EditId::MoveUp { self.cursor.checked_sub(1)? } else { self.cursor + 1 };
+                if to + 1 >= len {
+                    return Some(false);
+                }
+                let mut changed = config.clone();
+                if sources {
+                    changed.sources.swap(self.cursor, to);
+                } else {
+                    changed.runners.swap(self.cursor, to);
+                }
+                self.cursor = to;
+                self.write(changed, out);
+            }
+            EditId::Remove if self.form.is_none() && self.cursor + 1 < len => {
+                let mut changed = config.clone();
+                if sources {
+                    changed.sources.remove(self.cursor);
+                } else {
+                    // A runner a source names stays: the source would open nothing.
+                    let named = changed.runners.get(self.cursor).map(|r| r.id.clone()).unwrap_or_default();
+                    if runner_used(config, &named) {
+                        return Some(false);
+                    }
+                    changed.runners.remove(self.cursor);
+                }
+                self.cursor = self.cursor.min(len.saturating_sub(2));
+                self.write(changed, out);
+            }
+            EditId::Field(i) => {
+                let form = self.form.as_mut()?;
+                let i = usize::from(i);
+                let field = *form.item.fields().get(i)?;
+                match field.set() {
+                    Set::Typed => {
+                        form.field = i;
+                        let text = form.item.value(config, field);
+                        out.events.push(Event::EditOnKeyboard(Editor { purpose: Purpose::FormField(field), text }));
+                    }
+                    Set::Chosen => (form.field, form.choosing) = (i, !(form.choosing && form.field == i)),
+                    Set::Toggled => form.item.toggle(field),
+                }
+            }
+            EditId::Choice(j) => {
+                let form = self.form.as_mut()?;
+                let field = *form.item.fields().get(form.field)?;
+                let (value, _) = form.item.options(config, field).into_iter().nth(usize::from(j))?;
+                form.item.choose(field, &value);
+                form.choosing = false;
+            }
+            EditId::Cancel => self.form = None,
+            EditId::Save => {
+                let form = self.form.take()?;
+                let mut changed = config.clone();
+                match (form.item, form.index) {
+                    (Item::Source(s), Some(i)) => *changed.sources.get_mut(i)? = s,
+                    (Item::Source(s), None) => changed.sources.push(s),
+                    (Item::Runner(r), Some(i)) => *changed.runners.get_mut(i)? = r,
+                    (Item::Runner(r), None) => changed.runners.push(r),
+                }
+                self.write(changed, out);
+            }
+            _ => return None,
+        }
+        Some(false)
+    }
+
+    /// Opens the form of the source or runner selected, or a new one's on the last row. A new scan goes
+    /// in the tab or folder last open.
+    fn open_form(&mut self, config: &Config) {
+        let (index, item) = match self.panel {
+            Panel::Sources => match config.sources.get(self.cursor) {
+                Some(s) => (Some(self.cursor), Item::Source(s.clone())),
+                None => {
+                    let place = self.here(config).unwrap_or_default().to_owned();
+                    (None, Item::Source(Source::Dir(Scan { place, ..Scan::default() })))
+                }
+            },
+            Panel::Runners => match config.runners.get(self.cursor) {
+                Some(r) => (Some(self.cursor), Item::Runner(r.clone())),
+                None => (None, Item::Runner(Runner::default())),
+            },
+            Panel::Places => return,
+        };
+        self.form = Some(Form { index, item, field: 0, choosing: false });
+    }
+
+    /// A field of the form open, typed.
+    pub(crate) fn field_typed(&mut self, field: Field, text: &str) {
+        if let Some(form) = &mut self.form {
+            form.item.type_in(field, text);
+        }
     }
 
     /// A name typed for `what`.
@@ -270,6 +459,15 @@ impl Edit {
         out.effects.push(Effect::WriteLibrary(changed.clone()));
         self.pending = Some(changed);
     }
+}
+
+/// Whether a source names runner `id`.
+pub fn runner_used(config: &Config, id: &str) -> bool {
+    config.sources.iter().any(|s| match s {
+        Source::Dir(d) => d.runner.as_deref() == Some(id),
+        Source::Desktop(r) | Source::Steam(r) => r.runner.as_deref() == Some(id),
+        _ => false,
+    })
 }
 
 /// The editor for a place's name, empty.
@@ -371,5 +569,56 @@ mod tests {
         edit.tap(EditId::Row(0), Some(&read), &mut out);
         edit.tap(EditId::Remove, Some(&read), &mut out);
         assert!(!written(&out).places.iter().any(|p| p.id == "rpg"), "RPG is unused");
+    }
+
+    /// A source's form: a field typed, a choice made, saved and written in its place; a new source goes
+    /// at the end; a source moves down; a runner a source names isn't removed.
+    #[test]
+    fn sources_and_runners_are_edited_in_forms() {
+        use clamshell_library::config::{Runner, Scan};
+        let mut read = (*config()).clone();
+        read.runners.push(Runner { id: "snes".into(), name: "SNES".into(), ..Runner::default() });
+        read.sources.insert(
+            0,
+            Source::Dir(Scan { id: "snes".into(), dir: "~/Roms/snes".into(), place: "snes".into(), runner: Some("snes".into()), ..Scan::default() }),
+        );
+        let read = Arc::new(read);
+        let mut edit = Edit::default();
+        let mut out = Out::default();
+        edit.tap(EditId::Sources, Some(&read), &mut out);
+        edit.tap(EditId::Open, Some(&read), &mut out);
+        let fields = edit.form().unwrap().item.fields();
+        let at = |f: Field| fields.iter().position(|x| *x == f).unwrap() as u16;
+        edit.tap(EditId::Field(at(Field::Also)), Some(&read), &mut out);
+        assert!(
+            out.events.iter().any(|e| matches!(e, Event::EditOnKeyboard(Editor { purpose: Purpose::FormField(Field::Also), .. }))),
+            "typed on the keyboard"
+        );
+        edit.field_typed(Field::Also, "*.zip");
+        edit.tap(EditId::Field(at(Field::Place)), Some(&read), &mut out);
+        assert!(edit.form().unwrap().choosing, "its options show");
+        let games = edit.form().unwrap().item.options(&read, Field::Place).iter().position(|(v, _)| v == "games").unwrap() as u16;
+        edit.tap(EditId::Choice(games), Some(&read), &mut out);
+        edit.tap(EditId::Save, Some(&read), &mut out);
+        let c = written(&out);
+        assert!(matches!(c.sources.first(), Some(Source::Dir(d)) if d.also == ["*.zip"] && d.place == "games"), "{:?}", c.sources.first());
+        edit.library_read();
+        // A new one, on the last row.
+        let mut out = Out::default();
+        let last = edit.listed(&read) as u16 - 1;
+        edit.tap(EditId::Row(last), Some(&read), &mut out);
+        assert_eq!(edit.form().unwrap().index, None);
+        edit.tap(EditId::Save, Some(&read), &mut out);
+        assert_eq!(written(&out).sources.len(), read.sources.len() + 1);
+        edit.library_read();
+        let mut out = Out::default();
+        edit.tap(EditId::Row(0), Some(&read), &mut out);
+        edit.tap(EditId::MoveDown, Some(&read), &mut out);
+        assert!(matches!(written(&out).sources.get(1), Some(Source::Dir(d)) if d.id == "snes"));
+        edit.library_read();
+        let mut out = Out::default();
+        edit.tap(EditId::Runners, Some(&read), &mut out);
+        edit.tap(EditId::Remove, Some(&read), &mut out);
+        assert!(out.effects.is_empty(), "SNES's scan names it");
     }
 }

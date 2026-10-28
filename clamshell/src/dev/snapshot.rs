@@ -633,7 +633,14 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
             vec![
                 shot("library-edit.png", Top, vec![tap(edit(EditId::Tab(2)))]),
                 shot("library-edit-cut.png", Top, vec![tap(edit(EditId::Cut))]),
-                shot("library-edit-name.png", Bottom, [tap(edit(EditId::Row(3)))].into_iter().chain(control::type_text("Dreamcast")?).collect()),
+                shot("library-edit-sources.png", Top, vec![tap(edit(EditId::Sources))]),
+                shot("library-edit-form.png", Top, vec![tap(edit(EditId::Open)), tap(edit(EditId::Field(3)))]),
+                shot("library-edit-runners.png", Top, vec![tap(edit(EditId::Cancel)), tap(edit(EditId::Runners))]),
+                shot(
+                    "library-edit-name.png",
+                    Bottom,
+                    [tap(edit(EditId::Tab(2))), tap(edit(EditId::Row(3)))].into_iter().chain(control::type_text("Dreamcast")?).collect(),
+                ),
             ],
         ),
         // Setup at the first start: the password step, the password typed on the keyboard (the bar hidden),

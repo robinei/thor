@@ -30,7 +30,7 @@ impl Editor {
     pub fn tab(&self) -> crate::Tab {
         match self.purpose {
             Purpose::Password { .. } => crate::Tab::Wifi,
-            Purpose::AccountPassword(_) | Purpose::FileName(_) | Purpose::PlaceName(_) => crate::Tab::Keyboard,
+            Purpose::AccountPassword(_) | Purpose::FileName(_) | Purpose::PlaceName(_) | Purpose::FormField(_) => crate::Tab::Keyboard,
             Purpose::Env { .. } | Purpose::KeymapName(_) | Purpose::ProfileName(..) => crate::Tab::Settings,
         }
     }
@@ -52,6 +52,9 @@ pub enum Purpose {
     AccountPassword(crate::setup::account::PasswordStep),
     /// A tab's or folder's name, in the Library's edit mode (see [`crate::library_view::edit`]).
     PlaceName(crate::library_view::edit::PlaceName),
+    /// A field of a source's or runner's form, in the Library's edit mode (see
+    /// [`crate::library_view::form`]).
+    FormField(crate::library_view::form::Field),
 }
 
 /// What a keymap layer's name is for.

@@ -10,6 +10,7 @@
 pub mod actions;
 pub mod edit;
 pub mod files;
+pub mod form;
 mod rules;
 
 use std::sync::Arc;
@@ -135,6 +136,13 @@ impl LibraryView {
     pub(crate) fn edit_select(&mut self, i: usize) {
         if let Some(e) = &mut self.edit {
             e.select(i);
+        }
+    }
+
+    /// A field of the edit mode's form typed (see [`form`]).
+    pub(crate) fn form_typed(&mut self, field: form::Field, text: &str) {
+        if let Some(e) = &mut self.edit {
+            e.field_typed(field, text);
         }
     }
 

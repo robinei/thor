@@ -266,6 +266,8 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
             use crate::library_view::edit::EditId;
             ids.extend((0..4).map(EditId::Tab).chain((0..6).map(EditId::Row)).map(Id::from));
             ids.extend([EditId::NewTab, EditId::Up, EditId::Done, EditId::Rename, EditId::Cut, EditId::Paste, EditId::Remove].map(Id::from));
+            ids.extend([EditId::Sources, EditId::Runners, EditId::Open, EditId::MoveUp, EditId::MoveDown, EditId::Save, EditId::Cancel].map(Id::from));
+            ids.extend((0..9).map(EditId::Field).chain((0..4).map(EditId::Choice)).map(Id::from));
         }
         TopView::LibraryView if s.session().shown_builtin().is_some() => {
             let sh = s.library_view();

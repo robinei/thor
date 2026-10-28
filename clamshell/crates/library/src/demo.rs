@@ -105,7 +105,7 @@ pub fn library() -> Library {
 
 /// A library.json the demo could have been read from: its tabs, a folder per system, and their sources.
 pub fn config() -> crate::config::Config {
-    use crate::config::{BuiltinPlace, Config, OwnTab, Place, Rule, Scan, Source};
+    use crate::config::{BuiltinPlace, Config, OwnTab, Place, Rule, Runner, Scan, Source};
     let place = |id: &str, name: &str, within: Option<&str>, icon: Option<&str>| Place {
         id: id.into(),
         name: name.into(),
@@ -133,6 +133,17 @@ pub fn config() -> crate::config::Config {
             Source::Desktop(Rule { place: Some("apps".into()), ..Rule::default() }),
             Source::Builtin(BuiltinPlace { id: "device".into(), place: "tools".into() }),
         ],
+        runners: ["snes", "gba"]
+            .iter()
+            .zip([["*.sfc", "*.smc"].as_slice(), ["*.gba"].as_slice()])
+            .map(|(id, patterns)| Runner {
+                id: (*id).into(),
+                name: id.to_uppercase(),
+                patterns: patterns.iter().map(|p| (*p).into()).collect(),
+                launch: vec!["retroarch".into(), "-f".into(), "-L".into(), format!("/usr/lib/libretro/{id}_libretro.so"), "{path}".into()],
+                ..Runner::default()
+            })
+            .collect(),
         ..Config::default()
     }
 }

@@ -59,9 +59,12 @@ keymaps-chosen.png 4e7a59aa20a56ccc
 keymaps.png 3c1b99523671bf1b
 launcher-running.png 9b13546ee80a0dbe
 launcher.png f1d1c21fd1d2331a
-library-edit-cut.png f2bf8bd2361a579a
+library-edit-cut.png 2ebb6b2a7611dc3d
+library-edit-form.png f5029b79a41ab9e1
 library-edit-name.png 17ab3a131f6ae2d0
-library-edit.png f82372f747aaaaba
+library-edit-runners.png ac87713d63019756
+library-edit-sources.png d0fa32e93862a805
+library-edit.png c0a676ee6c0fb1c5
 settings-env.png 141480d50601cd5a
 settings-global.png 67a7863ee4d00c29
 settings-menu.png c0cc8a934b3a9035

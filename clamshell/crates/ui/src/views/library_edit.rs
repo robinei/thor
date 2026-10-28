@@ -1,11 +1,14 @@
 //! The Library's edit mode (see `clamshell_state::library_view::edit`), laid out as the Library is: the
-//! tabs along the top with + for a new tab and Done at the right end, the list of the tab's or open
-//! folder's places on the left with how many entries each has, the folders sources make there dimmed and a
-//! row for a new folder, and the selected place's details on the right: what it is in, what fills it, and
-//! its actions.
+//! tabs along the top with + for a new tab, then Sources and Runners, and Done at the right end. For a
+//! tab, the list of its or the open folder's places on the left with how many entries each has, the
+//! folders sources make there dimmed and a row for a new folder, and the selected place's details on the
+//! right: what it is in, what fills it, and its actions. For Sources and Runners, the list of them in
+//! order and the selected one's fields and actions; open, its form, with a chosen field's options on the
+//! right.
 
 use clamshell_state::config::{Config, Place, Source};
-use clamshell_state::library_view::edit::{self, Edit, EditId, Row};
+use clamshell_state::library_view::edit::{self, Edit, EditId, Form, Panel, Row};
+use clamshell_state::library_view::form::{self, Item, Set};
 
 use super::library_view::{ACTION, DETAIL, HEADER_TEXT, LIST_W, ROW_H, ROW_TEXT, TAB_TEXT, TABS_H, TITLE};
 use crate::gfx::icons::Icon;
@@ -29,16 +32,33 @@ pub(super) fn draw(f: &mut Frame, screen: Rect, edit: &Edit) -> usize {
     };
 
     // The tabs, + for a new one, and Done.
-    let items = edit::tabs(config).enumerate().map(|(i, p)| {
-        let icon = p.icon.as_deref().and_then(Icon::named);
-        (EditId::Tab(i as u16).into(), icon, p.name.as_str(), i == edit.tab())
-    });
-    let end = widgets::tabs(f, Rect::new(pad, 0.0, w * 0.75, tabs_h), h * TAB_TEXT, pad * 0.8, f32::INFINITY, items);
-    f.text_button(EditId::NewTab.into(), Rect::new(end, 0.0, tabs_h, tabs_h), h * TAB_TEXT, Tone::Fn, "+", Align::Center);
-    done(f, Rect::new(w - pad - h * 0.2, 0.0, h * 0.2, tabs_h), h * TAB_TEXT);
-    let label = Rect::new(w * 0.6, tabs_h * 0.62, w * 0.4 - pad - h * 0.22, tabs_h * 0.38);
-    f.c.text_in(label, h * DETAIL * 0.7, Tone::Dim, "editing the library", Align::End);
+    let places = edit.panel() == Panel::Places;
+    // By name alone, without their icons, so that they all fit beside Sources and Runners.
+    let items = edit::tabs(config).enumerate().map(|(i, p)| (EditId::Tab(i as u16).into(), None, p.name.as_str(), places && i == edit.tab()));
+    // Room is kept for +, Sources, Runners and Done; the places' tabs have the rest, more tightly spaced
+    // than the Library's.
+    let (size, inner) = (h * TAB_TEXT, pad * 0.5);
+    let lists_w = f.c.text_width(size, "Sources") + f.c.text_width(size, "Runners") + inner * 4.0;
+    let right = lists_w + tabs_h + h * 0.2 + pad * 2.0;
+    let end = widgets::tabs(f, Rect::new(pad, 0.0, w - pad - right, tabs_h), size, inner, f32::INFINITY, items);
+    f.text_button(EditId::NewTab.into(), Rect::new(end, 0.0, tabs_h, tabs_h), size, Tone::Fn, "+", Align::Center);
+    let lists =
+        [(EditId::Sources.into(), None, "Sources", edit.panel() == Panel::Sources), (EditId::Runners.into(), None, "Runners", edit.panel() == Panel::Runners)];
+    widgets::tabs(f, Rect::new(w - pad - h * 0.2 - pad - lists_w, 0.0, lists_w + 1.0, tabs_h), size, inner, f32::INFINITY, lists);
+    done(f, Rect::new(w - pad - h * 0.2, 0.0, h * 0.2, tabs_h), size);
 
+    let body = Rect::new(pad, tabs_h + pad * 0.5, w - 2.0 * pad, h - tabs_h - pad * 1.5);
+    match (edit.panel(), edit.form()) {
+        (Panel::Places, _) => {}
+        (_, Some(open)) => {
+            form_view(f, h, config, open, body);
+            return rows_fit;
+        }
+        (panel, None) => {
+            list_view(f, h, edit, config, panel, body);
+            return rows_fit;
+        }
+    }
     let Some(here) = edit.here(config) else {
         return rows_fit;
     };
@@ -92,6 +112,149 @@ pub(super) fn draw(f: &mut Frame, screen: Rect, edit: &Edit) -> usize {
         details(f, h, edit, config, place, Rect::new(w * LIST_W + pad, tabs_h + pad * 0.5, w - w * LIST_W - 2.0 * pad, h - tabs_h - pad * 1.5));
     }
     rows_fit
+}
+
+/// The Sources' or Runners' list on the left, a row each and one for a new one, and the selected one's
+/// fields and actions on the right.
+fn list_view(f: &mut Frame, h: f32, edit: &Edit, config: &Config, panel: Panel, body: Rect) {
+    let list = Rect::new(body.x, body.y, body.w * LIST_W, body.h);
+    let row_h = h * ROW_H;
+    let shown = ((list.h / row_h).floor() as usize).max(1);
+    let len = edit.listed(config);
+    let top = (edit.cursor() + 2).saturating_sub(shown).min(len.saturating_sub(shown));
+    let pad = style::pad(h).max(4.0);
+    for i in top..len.min(top + shown) {
+        let r = Rect::new(list.x, list.y + (i - top) as f32 * row_h, list.w - pad, row_h - 2.0);
+        let selected = i == edit.cursor();
+        let look = Look { fill: selected.then_some(SURFACE_HI), ..Look::CARD };
+        let size = r.h * ROW_TEXT;
+        let text = Rect::new(r.x + pad * 0.6, r.y, r.w - pad * 1.2, r.h);
+        let tone = if selected { Tone::High } else { Tone::Normal };
+        f.button(EditId::Row(i as u16).into(), r, look, |f| {
+            if i + 1 == len {
+                let new = if panel == Panel::Sources { "+ New source" } else { "+ New runner" };
+                f.c.text_fit(text, size, Tone::Fn, new, Keep::Start);
+                return;
+            }
+            match panel {
+                Panel::Sources => {
+                    let Some(source) = config.sources.get(i) else { return };
+                    let line = Fmt::<192>::of(format_args!("{}", Filled(source)));
+                    f.c.text_fit(Rect::new(text.x, text.y, text.w * 0.62, text.h), size, tone, &line, Keep::Start);
+                    let to = form::source_place(source).and_then(|id| config.places.iter().find(|p| p.id == id)).map_or("", |p| p.name.as_str());
+                    let right = Fmt::<96>::of(format_args!("→ {to}  {}", Taken(f, source)));
+                    f.c.text_fit(Rect::new(text.x + text.w * 0.62, text.y, text.w * 0.38, text.h), size * 0.8, Tone::Dim, &right, Keep::End);
+                }
+                _ => {
+                    let Some(runner) = config.runners.get(i) else { return };
+                    let name = if runner.name.is_empty() { runner.id.as_str() } else { runner.name.as_str() };
+                    f.c.text_fit(Rect::new(text.x, text.y, text.w * 0.45, text.h), size, tone, name, Keep::Start);
+                    let opens = form::words(&runner.patterns);
+                    f.c.text_fit(Rect::new(text.x + text.w * 0.45, text.y, text.w * 0.55, text.h), size * 0.8, Tone::Dim, &opens, Keep::End);
+                }
+            }
+        });
+    }
+    // The selected one's fields, as its form would show them, and its actions.
+    let r = Rect::new(body.x + body.w * LIST_W + pad, body.y, body.w * (1.0 - LIST_W) - pad, body.h);
+    let item = match panel {
+        Panel::Sources => config.sources.get(edit.cursor()).cloned().map(Item::Source),
+        _ => config.runners.get(edit.cursor()).cloned().map(Item::Runner),
+    };
+    let detail = h * DETAIL;
+    let Some(item) = item else {
+        let says = if panel == Panel::Sources {
+            "A new source: a folder scanned, apps, Steam games, a browsable folder, removable storage, or the Library or Device."
+        } else {
+            "A new runner: how files of a kind open, by a command."
+        };
+        f.c.text_fit(Rect::new(r.x, r.y, r.w, detail * 1.5), detail, Tone::Dim, says, Keep::Start);
+        return;
+    };
+    let mut y = fields(f, h, config, &item, None, r);
+    y += detail;
+    let row = |y: f32| Rect::new(r.x, y, r.w * 0.6, detail * ACTION);
+    for (id, label) in [(EditId::Open, "Edit"), (EditId::MoveUp, "Move up"), (EditId::MoveDown, "Move down")] {
+        f.text_button(id.into(), row(y), detail, Tone::Fn, label, Align::Start);
+        y += detail * ACTION;
+    }
+    match &item {
+        Item::Runner(runner) if edit::runner_used(config, &runner.id) => {
+            f.c.text_fit(row(y), detail, Tone::Dim, "Remove: a source names it", Keep::Start);
+        }
+        _ => f.text_button(EditId::Remove.into(), row(y), detail, Tone::Accent, "Remove", Align::Start),
+    }
+}
+
+/// The form open: its fields on the left, a tap to type, choose or flip each, with Save and Cancel under
+/// them, and the chosen field's options on the right.
+fn form_view(f: &mut Frame, h: f32, config: &Config, open: &Form, body: Rect) {
+    let pad = style::pad(h).max(4.0);
+    let left = Rect::new(body.x, body.y, body.w * 0.55, body.h);
+    let mut y = fields(f, h, config, &open.item, Some(open.field), left);
+    let detail = h * DETAIL;
+    y += detail;
+    let half = left.w * 0.3;
+    f.text_button(EditId::Save.into(), Rect::new(left.x, y, half, detail * ACTION), detail, Tone::Fn, "Save", Align::Start);
+    f.text_button(EditId::Cancel.into(), Rect::new(left.x + half, y, half, detail * ACTION), detail, Tone::Fn, "Cancel", Align::Start);
+    let right = Rect::new(body.x + body.w * 0.55 + pad, body.y, body.w * 0.45 - pad, body.h);
+    let Some(&field) = open.item.fields().get(open.field) else { return };
+    if open.choosing {
+        let mut y = right.y;
+        let current = open.item.value(config, field);
+        for (j, (_, label)) in open.item.options(config, field).iter().enumerate() {
+            let r = Rect::new(right.x, y, right.w, detail * ACTION);
+            let tone = if *label == current { Tone::Accent } else { Tone::Fn };
+            f.text_button(EditId::Choice(j as u16).into(), r, detail, tone, label, Align::Start);
+            y += detail * ACTION;
+            if y > right.y + right.h - detail * ACTION {
+                break;
+            }
+        }
+    }
+}
+
+/// An item's fields, a row each with its label and value, the `selected` one lit; tappable in a form.
+/// Returns where they end.
+fn fields(f: &mut Frame, h: f32, config: &Config, item: &Item, selected: Option<usize>, r: Rect) -> f32 {
+    let detail = h * DETAIL;
+    let row_h = detail * ACTION;
+    let mut y = r.y;
+    for (i, &field) in item.fields().iter().enumerate() {
+        let row = Rect::new(r.x, y, r.w, row_h);
+        let value = item.value(config, field);
+        let label_w = r.w * 0.36;
+        let lit = selected == Some(i);
+        let draw = |f: &mut Frame| {
+            f.c.text_fit(Rect::new(row.x, row.y, label_w, row.h), detail, Tone::Dim, field.label(), Keep::Start);
+            let tone = match (field.set(), selected.is_some()) {
+                (_, false) => Tone::Normal,
+                _ if lit => Tone::High,
+                (Set::Typed, true) | (Set::Chosen, true) | (Set::Toggled, true) => Tone::Fn,
+            };
+            let shown = if value.is_empty() { "—" } else { value.as_str() };
+            f.c.text_fit(Rect::new(row.x + label_w, row.y, row.w - label_w, row.h), detail, tone, shown, Keep::Start);
+        };
+        match selected {
+            Some(_) => f.button(EditId::Field(i as u16).into(), row, Look { fill: lit.then_some(SURFACE_HI), ..Look::CARD }, draw),
+            None => draw(f),
+        }
+        y += row_h;
+    }
+    y
+}
+
+/// How many entries a scan takes now, in the library as read: those its ids name, outside its groups.
+struct Taken<'a, 'f, 'c>(&'a Frame<'f, 'c>, &'a Source);
+
+impl std::fmt::Display for Taken<'_, '_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let Source::Dir(scan) = self.1 else { return Ok(()) };
+        let library = self.0.s.library_view().library();
+        let ours = |id: &str| id.strip_prefix(scan.id.as_str()).is_some_and(|rest| rest.starts_with(':'));
+        let top = |g: &&clamshell_state::Entry| ours(&g.id) && g.parent.and_then(|p| library.entries.get(p)).is_none_or(|p| !ours(&p.id));
+        write!(f, "{}", library.entries.iter().filter(top).count())
+    }
 }
 
 /// The Done button at the tabs' right end.
