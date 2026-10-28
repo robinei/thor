@@ -2,7 +2,8 @@
 """The licenses of the Rust crates built into ClamShell's programs (clamshell, clamshell-fan), for the
 clamshell package to carry (/usr/share/licenses/clamshell/THIRD-PARTY): each crate the programs link for
 the target (normal dependencies, not build or dev ones), its declared license, and the license and notice
-files it ships; then the font built in (Noto Sans, OFL). From cargo's metadata of the locked dependencies.
+files it ships; then the font built in (Noto Sans, OFL). From cargo's metadata of the locked dependencies,
+without the default features, as the package builds (the nested session's are for development).
 
     third-party-licenses.py CLAMSHELL_DIR TARGET > THIRD-PARTY
 """
@@ -19,7 +20,7 @@ LICENSE_FILE = re.compile(r"^(LICEN[SC]E|COPYING|NOTICE|COPYRIGHT|UNLICENSE)", r
 def main():
     root, target = Path(sys.argv[1]), sys.argv[2]
     meta = json.loads(subprocess.run(
-        ["cargo", "metadata", "--format-version", "1", "--locked", "--filter-platform", target],
+        ["cargo", "metadata", "--format-version", "1", "--locked", "--no-default-features", "--filter-platform", target],
         cwd=root, check=True, capture_output=True, text=True).stdout)
     packages = {p["id"]: p for p in meta["packages"]}
     nodes = {n["id"]: n for n in meta["resolve"]["nodes"]}
