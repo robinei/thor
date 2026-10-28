@@ -90,7 +90,7 @@ Each ends in commits that pass `tools/check.sh` and the randomized test at 3000 
   Done for the tab left and shelf's moves and saves. The program's pad mouse and the focus ring's hiding
   were already edges found in settle; the front's history stays recorded by the window commands, a front
   shown within an event being part of that history.
-- [ ] 5. **Commands as facts, readings kept as received.** Three kinds of value:
+- [x] 5. **Commands as facts, readings kept as received.** Three kinds of value:
   - **Only ClamShell changes it:** the wanted value is stored (the user's choice), `wanted()` derives the
     rest, and sync sends the difference from what was sent. No readings needed.
   - **Others change it too:** volume and mute (PipeWire restores each output's own on a switch, a
@@ -109,6 +109,13 @@ Each ends in commits that pass `tools/check.sh` and the randomized test at 3000 
     replaces `Local`, `give_up` and their follow, and the edits to the readings.
 
   One slide gesture on State instead of four `slider` fields. Cost: a compare per value, no allocation.
+
+  Done for the sound (numbered commands, the sound thread publishing the last carried out), Wi-Fi and
+  Bluetooth (attempts as facts). Brightness came out simpler: the reading stands for the level only until
+  ClamShell first sets the backlights, after which ClamShell's level is the brightness; a change from
+  outside isn't taken as the user's, since the reading is the first backlight's level times its share and
+  can't be told from ClamShell's own. The four sliders stay: each module also ends its slide when its
+  screen closes or an edit is undone, which a single gesture on State would have to take over.
 - [ ] 6. **`Sent` only what was sent.** A watch's state per watch (on, off, unknown), a restart setting
   what its thread held to unknown (replacing `tab`, `tab_again`, `status_off`, `account`); freezing and
   runner pauses wanted as a condition and diffed in sync (replacing `freeze_again`); the backlights
