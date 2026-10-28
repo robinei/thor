@@ -1,8 +1,10 @@
 //! ClamShell's logger: each record a line on stderr, `[time LEVEL target] message`, the time in UTC to the
-//! second; to the journal (as a service), which keeps the time itself, without it, and starting with its
-//! syslog priority, which journald takes as the entry's, so that `journalctl -p err` finds the errors. `RUST_LOG` filters as env_logger's plain form does: comma-separated
-//! `level` for everything and `target=level` for a module and those under it, the most specific winning;
-//! without it, `info,tracing=warn`.
+//! second; to the journal (as a service), which keeps the time itself, without it, and each line starting
+//! with the record's syslog priority, which journald takes as the entry's, so that `journalctl -p err`
+//! finds the errors, a panic's backtrace whole. `RUST_LOG` filters like env_logger's plain form:
+//! comma-separated `level` for everything and `target=level` for a module and those under it (not every
+//! target starting with its name), the most specific winning; without it, `info,tracing=warn`. A part it
+//! can't read is left out, with a word on stderr.
 
 use std::io::Write;
 
@@ -38,7 +40,8 @@ impl Log for Logger {
                 Level::Info => 6,
                 Level::Debug | Level::Trace => 7,
             };
-            format!("<{priority}>[{:<5} {}] {}\n", record.level(), record.target(), record.args())
+            let text = format!("[{:<5} {}] {}", record.level(), record.target(), record.args());
+            text.lines().map(|line| format!("<{priority}>{line}\n")).collect()
         } else {
             let time = jiff::Timestamp::now().strftime("%Y-%m-%dT%H:%M:%SZ");
             format!("[{time} {:<5} {}] {}\n", record.level(), record.target(), record.args())
@@ -69,6 +72,7 @@ impl Filter {
                     Ok(level) => filter.modules.push((module.trim().to_owned(), level)),
                     Err(_) => eprintln!("logging: RUST_LOG's {part:?} has no level"),
                 },
+                None if part.contains('/') => eprintln!("logging: RUST_LOG's {part:?}: filtering by a pattern isn't supported"),
                 None => match part.parse() {
                     Ok(level) => filter.all = level,
                     // A module named alone is let through whole, as env_logger does.
