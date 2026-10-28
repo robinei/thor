@@ -462,13 +462,21 @@ impl Shelf {
         self.navs =
             self.library.collections.iter().map(|c| names.iter().position(|n| *n == c.name).and_then(|i| old.get(i).cloned()).unwrap_or_default()).collect();
         self.current = current_name.and_then(|n| self.library.collections.iter().position(|c| c.name == n)).unwrap_or(0);
+        self.library_changed(selected.as_ref());
+        self.selected() != selected.as_ref()
+    }
+
+    /// What the library's entries changing takes, wherever it changed (a relayout, a listing, a read):
+    /// groups that are gone closed, each list's typed filter found again, the entry that was `selected`
+    /// selected again, the cursor kept in range, and the files selected that are gone dropped.
+    fn library_changed(&mut self, selected: Option<&Arc<str>>) {
         self.close_gone();
         self.refind();
-        if let Some(id) = &selected {
+        if let Some(id) = selected {
             self.select(id);
         }
         self.sync();
-        self.selected() != selected.as_ref()
+        self.files.keep_selected(&self.library);
     }
 
     /// Takes the library read again. The listings of browsed folders that are still there are applied to
@@ -479,13 +487,12 @@ impl Shelf {
         let mut places = Vec::new();
         self.kept_places(&mut places);
         let current = self.collection().map(|c| c.name.clone());
-        let (rows, fetching) = (self.rows, self.fetching);
         let listings = std::mem::take(&mut self.listings);
-        let files = std::mem::take(&mut self.files);
         let waiting = self.waiting.take();
-        // What shows is asked for first again, from the new library.
-        *self = Shelf { files, fetching, ..Shelf::new(library) };
-        self.rows = rows;
+        // The places start over in the new library, and are restored below; the rest of shelf stays.
+        self.navs = vec![Nav::default(); library.collections.len()];
+        (self.library, self.read, self.current) = (library, true, 0);
+        self.listings_shown = self.listings_shown.wrapping_add(1);
         for (folder, entries) in listings {
             if let Some(f) = self.library.entries.iter().position(|g| g.id == folder) {
                 self.library.set_listing(f, entries.clone());
@@ -500,6 +507,7 @@ impl Shelf {
         if let Some(resume) = waiting {
             resume.restore_shelf(self);
         }
+        self.library_changed(None);
         self.selected() != before.as_ref()
     }
 
@@ -564,12 +572,7 @@ impl Shelf {
         // Drops the listings of folders that went with it.
         let library = &self.library;
         self.listings.retain(|(id, _)| library.entries.iter().any(|g| g.id == *id));
-        self.close_gone();
-        self.refind();
-        if let Some(id) = &before {
-            self.select(&id.clone());
-        }
-        self.sync();
+        self.library_changed(before.as_ref());
         if shown(self) != shown_before {
             self.listings_shown = self.listings_shown.wrapping_add(1);
         }

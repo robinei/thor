@@ -123,7 +123,7 @@ Each ends in commits that pass `tools/check.sh` and the randomized test at 3000 
   Done for the watches and the backlights touched (a fact in `Sent`, kept through a restart). Freezing
   stays an effect of the background rules: a program is thawed before its windows are closed in the
   same event, which sync, running after the event, would send too late.
-- [ ] 7. **Shelf's library changes through one place.** One `library_changed` doing what `relayout`,
+- [x] 7. **Shelf's library changes through one place.** One `library_changed` doing what `relayout`,
   `listed` and `reload` each repeat by hand (close gone groups, find again, select again by id, prune the
   file selection); `reload` replacing only the library and places rather than rebuilding and copying
   fields back.

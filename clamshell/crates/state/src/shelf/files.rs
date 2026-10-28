@@ -162,6 +162,11 @@ pub struct Files {
 }
 
 impl Files {
+    /// Drops the selected files that `library` no longer has.
+    pub(crate) fn keep_selected(&mut self, library: &crate::Library) {
+        self.selected.retain(|id| library.entry(id).is_some());
+    }
+
     /// The entries copied or cut.
     pub fn clip(&self) -> Option<&Clip> {
         self.clip.as_ref()
@@ -441,8 +446,6 @@ impl Shelf {
         match event {
             FilesEvent::Listed { folder, entries } => {
                 self.listed(folder, entries);
-                let library = &self.library;
-                self.files.selected.retain(|id| library.entry(id).is_some());
             }
             FilesEvent::Busy { what, fraction } => self.files.busy = Some(Busy { what, fraction }),
             FilesEvent::Done(result) => {
