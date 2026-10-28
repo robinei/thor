@@ -887,3 +887,22 @@ fn a_late_failure_leaves_a_newer_launch_of_the_entry_waiting() {
     s.applied(Event::Launch(crate::LaunchEvent::LaunchFailed { entry: "zelda-lttp".into(), unit: first }));
     assert_eq!(s.session().launching().iter().map(|l| &l.unit).collect::<Vec<_>>(), [&second], "the newer one waits on");
 }
+
+/// The app's window can come up before the launch that handed the file over has ended: it is still the
+/// file's.
+#[test]
+fn a_files_window_up_before_its_launch_ended_is_the_files() {
+    let mut s = files();
+    s.applied(Event::tick(100));
+    s.observed(vec![]);
+    let fx = tap(&mut s, Id::Shelf(ShelfId::Launch));
+    let ws = fx.iter().find_map(|e| match e {
+        Effect::Launch { unit, .. } => Some(group_of(unit)),
+        _ => None,
+    });
+    s.observed(vec![win(6, "foot")]);
+    crate::testkit::launch_failed(&mut s, "browse:Home/notes.md");
+    assert_eq!(s.session().window(6).and_then(|w| w.group.clone()), ws);
+    s.applied(Event::tick(101 + HANDOFF));
+    assert!(s.session().running("browse:Home/notes.md").is_some(), "runs by its window");
+}

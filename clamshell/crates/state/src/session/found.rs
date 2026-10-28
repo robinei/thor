@@ -36,8 +36,7 @@ impl Session {
     }
 
     /// Makes the programs of main windows that still belong to no entry run as entries found by them.
-    /// `taken` lists windows just given to a browsed file, which are left out.
-    pub(crate) fn follow_found_windows(&mut self, taken: &[i64], clock: &Clock, library: &Library, out: &mut Out) {
+    pub(crate) fn follow_found_windows(&mut self, clock: &Clock, library: &Library, out: &mut Out) {
         let now = clock.mono();
         // A starting launch's window is left out, such as a Steam game found running whose launch is
         // still to come.
@@ -47,7 +46,7 @@ impl Session {
         // By main windows only: a dialog is its main window's program's (see `Session::running_of`), found
         // with it or not at all.
         let roots = self.windows.iter().filter(|w| self.root_of(w.id) == w.id);
-        for w in roots.filter(|w| !taken.contains(&w.id) && !w.launched() && self.running_of(w).is_none()) {
+        for w in roots.filter(|w| !w.launched() && self.running_of(w).is_none()) {
             let Some(&pid) = w.pids.first().filter(|_| !starting(w) && !service(w)) else {
                 continue;
             };

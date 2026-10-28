@@ -473,7 +473,7 @@ impl State {
     }
 
     fn window_event(&mut self, event: WindowEvent, out: &mut Out) {
-        if self.session.on_window(event, self.shelf.library(), out) {
+        if self.session.on_window(event, self.shelf.library(), self.clock.mono(), out) {
             self.bottom.show_below();
         }
     }

@@ -396,40 +396,33 @@ impl Session {
     /// Who owns a window is worked out from facts and claims alone (see [`Session::running_of`]), so that
     /// each step sees the same owners whatever ran before it.
     pub(crate) fn follow_windows(&mut self, clock: &Clock, library: &Library, plays: &mut Vec<Play>, out: &mut Out) {
-        let mut given = Vec::new();
-        let taken = self.claim_opened_windows(clock.mono(), &mut given);
-        self.end_windowless(taken.as_ref(), clock.mono(), plays);
-        self.follow_found_windows(&given, clock, library, out);
-        if taken.is_none() {
-            self.claim_unowned(library);
-        }
+        self.claim_file_windows(clock.mono());
+        self.end_windowless(clock.mono(), plays);
+        self.follow_found_windows(clock, library, out);
+        self.claim_unowned(library);
         self.place_windows(library);
     }
 
-    /// Gives new windows of no launch of ours, those the last pass didn't see, to the latest browsed file
-    /// waiting for one, as a claim. Returns the entry that took them, if one did, and adds those windows
-    /// to `taken`.
-    fn claim_opened_windows(&mut self, now: u64, taken: &mut Vec<i64>) -> Option<Arc<str>> {
-        let opened = &self.opened;
-        let stray: Vec<i64> = self
-            .windows
-            .iter()
-            .filter(|w| opened.contains(&w.id) && !w.launched() && !self.below(w.id) && self.running_of(w).is_none())
-            .map(|w| w.id)
-            .collect();
+    /// Gives the windows of no launch of ours and no program, opened since the latest browsed file waiting
+    /// for one began, to that file's entry, as a claim. A claimed window is the entry's by
+    /// [`Session::running_of`], so the steps after see it as such.
+    fn claim_file_windows(&mut self, now: u64) {
         let waiting = self
             .running
             .iter()
             .filter(|r| r.mark.is_none() && !r.seen && matches!(r.origin, Origin::Windows { until, .. } if now <= until))
             .max_by_key(|r| r.start);
-        let r = waiting.filter(|_| !stray.is_empty())?;
-        let id = r.id.clone();
+        let Some(r) = waiting else { return };
+        let start = r.start;
+        let stray = |s: &Session, w: &Window| w.claim.is_none() && w.opened >= start && !w.launched() && !s.below(w.id) && s.running_of(w).is_none();
+        let ids: Vec<i64> = self.windows.iter().filter(|w| stray(self, w)).map(|w| w.id).collect();
+        if ids.is_empty() {
+            return;
+        }
         let group = r.group();
-        taken.extend(&stray);
-        for w in self.windows.iter_mut().filter(|w| stray.contains(&w.id)) {
+        for w in self.windows.iter_mut().filter(|w| ids.contains(&w.id)) {
             w.claim = Some(group.clone());
         }
-        Some(id)
     }
 
     /// Claims the new main windows that still belong to no entry, after file handoffs and program discovery
@@ -458,15 +451,13 @@ impl Session {
     }
 
     /// Marks entries seen once they have a window or a tray icon. Ends entries running by their windows, or
-    /// found by a tray icon, once those are gone. `taken` is an
-    /// entry that was just given a window, which is still where it came up. A play by windows is added to
-    /// `plays`.
-    fn end_windowless(&mut self, taken: Option<&Arc<str>>, now: u64, plays: &mut Vec<Play>) {
+    /// found by a tray icon, once those are gone. A play by windows is added to `plays`.
+    fn end_windowless(&mut self, now: u64, plays: &mut Vec<Play>) {
         // Which have windows is worked out before any is removed, since a window's entry is found among
         // all of them.
         let mut with = std::mem::take(&mut self.with_windows);
         with.clear();
-        with.extend(self.running.iter().map(|r| (taken == Some(&r.id) || self.windows_of(&r.id).next().is_some(), self.tray_of(&r.id).is_some())));
+        with.extend(self.running.iter().map(|r| (self.windows_of(&r.id).next().is_some(), self.tray_of(&r.id).is_some())));
         let (icons, units) = (&self.tray, &self.units);
         let mut has_windows = with.iter();
         self.running.retain_mut(|r| {
@@ -517,7 +508,7 @@ impl Session {
     }
 
     /// Remembers the windows this pass saw and the group in front, for the next pass (see
-    /// [`Session::claim_opened_windows`] and [`Session::follow_front`]).
+    /// [`Session::claim_unowned`] and [`Session::follow_front`]).
     pub(crate) fn followed(&mut self) {
         self.opened.clear();
         let front = self.top_window().and_then(|w| w.group.as_ref());

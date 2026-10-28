@@ -189,9 +189,9 @@ impl From<WindowEvent> for crate::Event {
 impl crate::Session {
     /// Applies a change to a window. Returns whether the bottom screen is to show its window: one a client
     /// asked to show that is there.
-    pub(crate) fn on_window(&mut self, event: WindowEvent, library: &crate::Library, out: &mut crate::out::Out) -> bool {
+    pub(crate) fn on_window(&mut self, event: WindowEvent, library: &crate::Library, now: u64, out: &mut crate::out::Out) -> bool {
         match event {
-            WindowEvent::Opened(facts) => self.open(facts, library),
+            WindowEvent::Opened(facts) => self.open(facts, library, now),
             WindowEvent::Closed(id) => self.close(id),
             WindowEvent::Title { window, title } => self.retitle(window, title),
             WindowEvent::Changed(facts) => self.change(facts),
@@ -207,7 +207,7 @@ impl crate::Session {
     /// followed ([`Session::follow_windows`]). It comes in front as [`Session::opening_focus`] says. A
     /// dialog of a window shown, on either screen, is shown over it and takes the input at once: the
     /// screen draws a stack whole (see [`Session::stack`]).
-    fn open(&mut self, facts: WindowFacts, library: &crate::Library) {
+    fn open(&mut self, facts: WindowFacts, library: &crate::Library, now: u64) {
         if self.window(facts.id).is_some() {
             return;
         }
@@ -224,7 +224,7 @@ impl crate::Session {
         }
         let id = facts.id;
         self.opened.push(id);
-        self.windows.push(Window { facts, group, claim: None });
+        self.windows.push(Window { facts, group, claim: None, opened: now });
         if parent_below {
             self.keys = super::Keys::Bottom;
         } else if focus {
@@ -364,6 +364,10 @@ pub struct Window {
     /// group. It belongs there for as long as it is open.
     #[serde(default)]
     pub claim: Option<Group>,
+    /// When it opened, in monotonic seconds: a browsed file's entry takes the windows of no program opened
+    /// since its launch began (see [`Session::follow_windows`]).
+    #[serde(default)]
+    pub opened: u64,
 }
 
 impl std::ops::Deref for Window {
