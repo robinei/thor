@@ -219,7 +219,8 @@ impl PlaneLayers {
 
     /// Decides which layers go on their planes this turn: the overlay while it shows anything, the cursor,
     /// with its hotspot `at` on this screen whose top left is `origin` in the scene, while it shows and its
-    /// plane can take it. Returns whether what they show changed, for the screen to commit.
+    /// plane can take it; neither for a screenshot, taken of the scene composed. Returns whether what they
+    /// show changed, for the screen to commit.
     pub(crate) fn decide(
         &mut self,
         server: &mut crate::server::Server,
@@ -230,8 +231,9 @@ impl PlaneLayers {
         origin: Point<i32, Logical>,
     ) -> bool {
         let was = self.planed;
+        let planes = !self.failed && !server.screenshot_requested;
         let area = server.core.overlay_area(screen);
-        self.planed.overlay = !self.failed && self.overlay.is_some() && area.is_some();
+        self.planed.overlay = planes && self.overlay.is_some() && area.is_some();
         let overlay_changed = self.planed.overlay
             && (area != self.area
                 || self
@@ -240,7 +242,7 @@ impl PlaneLayers {
                     .is_some_and(|overlay| overlay.buffers.as_ref().is_none_or(|buffers| buffers.behind(&server.core, Layer::Overlay(screen)))));
         let shape = at.and_then(|at| cursor.shape(server, renderer, at)).map(|shape| shape.from(origin));
         let fits = |side: u32| shape.as_ref().is_some_and(|shape| shape.size.0 <= side && shape.size.1 <= side);
-        self.planed.cursor = !self.failed && self.cursor.as_ref().is_some_and(|cursor| fits(cursor.side));
+        self.planed.cursor = planes && self.cursor.as_ref().is_some_and(|cursor| fits(cursor.side));
         let shown = self.cursor.as_ref().and_then(|cursor| cursor.shown.as_ref());
         let cursor_changed = self.planed.cursor && shape.as_ref() != shown;
         let same_image = shape.as_ref().zip(shown).is_some_and(|(shape, shown)| shape.same_image(shown));
