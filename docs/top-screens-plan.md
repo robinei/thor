@@ -70,7 +70,7 @@ is needed only for `dir` sources, whose entries' ids come from it. Sources that 
 (browsed, removable) give `in` and a `name` (`{label}`). Built-ins are a source type. Desktop and Steam
 runners have no `match`, but the desktop runner's `*.desktop`, for files opened from Files. Sources stay
 one ordered list of all types. A runner may name the BIOS files its emulator needs and where it looks
-for them (`bios`), shown as a problem on its place while one is missing.
+for them (`bios`), shown as a problem on its folder while one is missing.
 
 ```json
 "places": [
@@ -96,15 +96,19 @@ No compatibility with the current format: the starter file and the desktop's are
 
 ## Editing the library
 
-All of it in an edit mode of the Library screen: the places being edited, and Sources and Runners as
-tabs at the end of the tab row. Entered from a place's long-press menu or from Device; B leaves. Each
+All of it in an edit mode of the Library screen: its tabs and folders edited where they are, and Sources
+and Runners as tabs at the end of the tab row. Entered from a tab's or folder's long-press menu or from
+Device; B leaves. Each
 change is written as it is made; the editors write the whole file, and a change made by hand while one is
-open is read again. A place, source or runner that names one gone shows dimmed as a problem.
+open is read again. A folder, source or runner that names one gone shows dimmed as a problem.
 
-- **Places**: the tabs and folders are the tree, edited where they are. The Files tab's verbs mean the
-  same for places (Rename, New place, Cut and Paste to move), plus Icon, Picture, Remove and Add source.
-  Empty places show; folders a source makes show dimmed and are edited in Sources; ClamShell's own tabs
-  can be renamed, given an icon and moved, not removed. Remove only an empty place (no children, nothing
+The UI says tab and folder, never place: "New tab", "New folder", "Nothing fills this folder yet".
+"Places" is only library.json's and the code's word for both.
+
+- **Tabs and folders**: the tree, edited where they are. The Files tab's verbs mean the same here
+  (Rename, New folder, Cut and Paste to move), plus New tab, Icon, Picture, Remove and Add source. Empty
+  tabs and folders show; folders a source makes show dimmed and are edited in Sources; ClamShell's own
+  tabs can be renamed, given an icon and moved, not removed. Remove only an empty one (no children, nothing
   filling it); otherwise the details say what uses it.
 - **Sources**: in order (the first that matches takes an entry), each with the entries it takes now; moved
   as on the dock, the counts following. A source's screen chooses its runner, suggested from the files
@@ -122,7 +126,7 @@ Folders are chosen in Library's pick mode (below).
 
 ### Mockups
 
-Library in edit mode, a place selected:
+Library in edit mode, a folder selected:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -134,18 +138,18 @@ Library in edit mode, a place selected:
 │  ▸ Game Boy            31       Filled by                                    │
 │  ▸ PlayStation          8         SNES scan · ~/Roms/snes · 143              │
 │  ▸ Steam               46                                                    │
-│    + New place                  Rename          Icon                         │
+│    + New folder                 Rename          Icon                         │
 │    · Desktop games      9       Cut             Picture                      │
 │                                 Add source…     Remove                       │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-A new place, empty:
+A new folder, empty:
 
 ```
 │    Game Cube            0  ◀    Game Cube                                    │
 │                                 in Games                                     │
-│                                 Nothing fills this place yet.                │
+│                                 Nothing fills this folder yet.               │
 │                                 Add source…     Rename      Icon             │
 │                                 Picture         Cut         Remove           │
 ```
@@ -274,7 +278,7 @@ snes9x, genesis-plus-gx and FBNeo are non-commercial: fine for a free image, as 
 - **The Roms folder**, `~/Roms/<system>`, with ES-DE's folder names (`nes`, `snes`, `n64`, `gb`, `gbc`,
   `gba`, `nds`, `3ds`, `megadrive`, `mastersystem`, `gamegear`, `pcengine`, `saturn`, `psx`, `ps2`, `psp`,
   `dreamcast`, `gc`, `wii`, `arcade`, `dos`, `scummvm`), so a collection from elsewhere drops in. Made
-  empty at the first start. An empty system's place shows dimmed, saying where its files go.
+  empty at the first start. An empty system's folder shows dimmed, saying where its files go.
 - **The menu**: Recent, Favourites, Games (a folder per system, Steam, the desktop's games), Films, TV,
   Music, Files (Home, Roms, removable storage), Apps, Tools (Device and ClamShell's tools).
 - **The dock's first pins**: Library, Firefox, foot. Pins are the user's saved state, so the image's are
@@ -284,7 +288,7 @@ snes9x, genesis-plus-gx and FBNeo are non-commercial: fine for a free image, as 
 
 Library's pick mode: a request (a file or a folder, a filter, a folder to start in, who asked) shows only
 the Files tab's places, folders always and files that match; the details' actions become Choose, and B or
-Home cancels. ClamShell's own screens use it first (a source's folder, a place's picture).
+Home cancels. ClamShell's own screens use it first (a source's folder, a folder's picture).
 
 Then for apps, through xdg-desktop-portal:
 
@@ -318,6 +322,6 @@ touches the session or the outside.
   runners' `bios`.
 - [ ] 5. **What the image ships**: the repos' emulators and runners, `~/Roms`, the menu, the first pins,
   Firefox; then each emulator we package.
-- [ ] 6. **The editors**: Library's edit mode with Places, Sources and Runners; the keyboard's field keys;
+- [ ] 6. **The editors**: Library's edit mode with its tabs and folders, Sources and Runners; the keyboard's field keys;
   the picker for ClamShell's own screens.
 - [ ] 7. **The portal**: Open, then Save, then the session's environment.
