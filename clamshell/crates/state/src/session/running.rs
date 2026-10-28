@@ -393,8 +393,16 @@ impl Session {
     /// - A new window that still belongs to no entry is claimed by the program in front.
     /// - Every window is placed in its group (see [`Session::place_windows`]).
     ///
-    /// Who owns a window is worked out from facts and claims alone (see [`Session::running_of`]), so that
-    /// each step sees the same owners whatever ran before it.
+    /// Who owns a window is worked out from facts and claims alone (see [`Session::running_of`]). The steps'
+    /// order matters, each acting on what the ones before settled:
+    ///
+    /// - The file's claim first: a window a file was handed to is the file's, not found as a program of
+    ///   its own.
+    /// - Ending before finding: finding passes over a program whose entry runs, so one whose entry just
+    ///   ended is found again in this pass, rather than the next.
+    /// - Finding before the claim for the program in front: a new program's window isn't taken for what is
+    ///   in front.
+    /// - Placing last: the groups, read between passes, follow the claims made above.
     pub(crate) fn follow_windows(&mut self, clock: &Clock, library: &Library, plays: &mut Vec<Play>, out: &mut Out) {
         self.claim_file_windows(clock.mono());
         self.end_windowless(clock.mono(), plays);
@@ -446,6 +454,7 @@ impl Session {
             if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
                 w.claim = Some(front);
             }
+            // Placed before it comes in front, so that it is selected in the group it joined.
             self.place_windows(library);
             self.command(WindowCommand::FocusWindow(id));
         }

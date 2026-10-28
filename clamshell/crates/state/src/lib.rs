@@ -561,6 +561,8 @@ impl State {
         }
         // The tab left, by a choice or by a window moved down opening the windows' tab.
         self.follow_tab();
+        // A launch's first window is shown before a window that came back to the group whose front closed,
+        // so that the one that came back ends in front.
         self.session.follow_front_launch(self.clock.mono());
         self.session.follow_replacement(self.clock.mono());
         self.session.follow_front(self.clock.mono());
@@ -571,6 +573,7 @@ impl State {
         self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
         self.session.follow_quitting(self.shelf.library(), out);
         self.dock.follow(&self.session);
+        // After every step that reads what the last pass saw: the new windows and the group in front.
         self.session.followed();
         self.bottom.note_clock(&self.clock);
         self.shelf.follow_folder();
@@ -580,6 +583,8 @@ impl State {
         let policy = crate::idle::Policy::of(&self.prefs.settings().global, self.session.device_session());
         let refreshing = self.setup.calibrating();
         self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), out);
+        // Once the front is settled, which the program in force follows; the pad's route then follows the
+        // program.
         let changed = self.session.follow_program(self.clock.mono());
         let lit = self.bottom_lit();
         self.notifications.follow(self.clock.mono(), lit, out);
@@ -589,6 +594,7 @@ impl State {
         if self.reconcile_pad().is_some_and(|route| route != PadRoute::Ui) {
             self.pointer.hide_focus();
         }
+        // After the steps that change shelf (the plays recorded), so that its moves are found in this pass.
         self.follow_shelf();
         self.follow_lists();
     }
