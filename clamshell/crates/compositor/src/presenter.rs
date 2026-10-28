@@ -316,6 +316,11 @@ impl Presenter {
         }
     }
 
+    /// Whether the frame shown is one composed (not ClamShell's own buffer or a window's).
+    pub(crate) fn shows_composed(&self) -> bool {
+        matches!(self.current, Some(Shown::Composed(_)))
+    }
+
     /// Drops the buffers composed into if it hasn't composed for a while by `now` and none of them is shown or
     /// on its way, else tells `trims` when they will be.
     pub(crate) fn trim(&mut self, now: std::time::Instant, trims: &mut crate::hold::Trims) {

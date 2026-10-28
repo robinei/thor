@@ -561,6 +561,10 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
     screen.pending = false;
     screen.queued_at = None;
     let submitted = screen.surface.flipped();
+    if screen.surface.shows_composed() && screen.ui.as_ref().is_some_and(|ui| ui.refused) {
+        log::info!("ui scanout: the {:?} screen's own buffers, refused, dropped", screen.role);
+        screen.ui = None;
+    }
     let (time, hw_clock): (Time<Monotonic>, bool) = match metadata.map(|m| m.time) {
         Some(DrmEventTime::Monotonic(at)) => (at.into(), true),
         _ => (server.clock.now(), false),

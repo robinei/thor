@@ -29,7 +29,7 @@ pub(crate) struct UiScanout {
     buffers: LayerBuffers,
     colour: Colour,
     /// The display engine refused a commit of them: the screen is composed from then on. They are kept, as
-    /// one of them may be on the screen still.
+    /// one of them may be on the screen still, until a frame composed instead is (see `drm`'s flips).
     pub refused: bool,
 }
 
