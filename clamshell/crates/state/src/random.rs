@@ -66,9 +66,10 @@ impl Rng {
     }
 }
 
-/// The library: the demo's, with a Steam game (ff6), an app handed over to another program
-/// (desktop:firefox), an enqueue runner's album, a browsed file, the series (a group) and the Device tool.
-/// Any running program may open more than one window.
+/// The library: the demo's, with a Steam game (ff6) and Steam itself, a Heroic game launched through
+/// Heroic, a Lutris game, an app handed over to another program (desktop:firefox), an enqueue runner's
+/// album, a browsed file, the series (a group) and the Device tool. Any running program may open more than
+/// one window.
 fn library() -> Library {
     let mut library = clamshell_library::demo::library();
     for g in &mut library.entries {
@@ -95,8 +96,14 @@ fn library() -> Library {
         browsed: Some(Browsed::default()),
         ..Entry::new("browse:Home/notes.md", "/h/notes.md")
     });
+    let program = |argv: &[&str]| Launch::program(argv.iter().map(|a| (*a).into()).collect());
+    library.entries.push(Entry { launch: program(&["heroic"]), app: true, ..Entry::new("desktop:com.heroicgameslauncher.hgl", "Heroic") });
+    library.entries.push(Entry { launch: program(&["xdg-open", "heroic://launch?appName=hk&runner=legendary"]), ..Entry::new("desktop:hk", "Hollow Knight") });
+    library.entries.push(Entry { launch: program(&["lutris", "lutris:rungameid/3"]), ..Entry::new("desktop:lutris-quake", "Quake") });
+    library.entries.push(Entry { launch: program(&["lutris"]), app: true, ..Entry::new("desktop:net.lutris.Lutris", "Lutris") });
     library.collections.push(Collection::new("Music", vec![n, n + 3]));
     library.collections.push(Collection::new("Files", vec![n + 4]));
+    library.collections.push(Collection::new("Stores", vec![n + 5, n + 6, n + 7, n + 8]));
     library
 }
 
@@ -158,9 +165,14 @@ impl World {
 
     /// A window opens, as the compositor reports it: its facts, which say nothing of where it goes.
     fn open(&mut self, app_id: &str, unit: Option<String>, parent: Option<i64>) -> WindowFacts {
+        self.open_as(WindowFacts { app_id: app_id.into(), unit, parent, ..WindowFacts::default() })
+    }
+
+    /// A window with `facts` opens, given its id and process.
+    fn open_as(&mut self, facts: WindowFacts) -> WindowFacts {
         let id = self.next_window;
         self.next_window += 1;
-        let window = WindowFacts { id, app_id: app_id.into(), unit, parent, pids: vec![1000 + id as u32], ..WindowFacts::default() };
+        let window = WindowFacts { id, pids: vec![1000 + id as u32], ..facts };
         self.windows.push(window.clone());
         window
     }
@@ -194,6 +206,18 @@ struct Sent {
     ended: Vec<String>,
     /// The focus ring was shown by a hold on shelf's entry, with the pad elsewhere.
     ring_by_hold: bool,
+    /// The event is the compositor's report of the keyboard focus it set itself.
+    focus_reported: bool,
+    /// The keyboard focus the compositor reported, while it stands.
+    compositor_focus: Option<i64>,
+    /// Launches of a launcher's entry that hand it a game (`launchers::headless`), while they wait.
+    handovers: Vec<LaunchUnit>,
+}
+
+/// Whether `launch` hands a game to its launcher (see `launchers::headless`): Heroic's command with the
+/// game's URL.
+fn hands_over(launch: &Launch) -> bool {
+    matches!(launch, Launch::Program { argv, .. } if argv.iter().any(|a| a.starts_with("heroic://")))
 }
 
 /// The event drawn next, valid for `s` as it is, and the world changed to match.
@@ -431,10 +455,35 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
         // or a stray one.
         53..=60 if w.windows.len() > 8 => return None,
         53..=60 => {
-            let mut window = match rng.below(6) {
+            // A launcher's dialog, such as Steam asking which version to start, while one of its games is
+            // launching or waited for, often when there can be one: it comes in front, its launcher's
+            // group promoted meanwhile.
+            let launcher = |id: &str| Some(&*crate::session::launchers::launcher_of(library.entry(id)?)?.entry(library)?.key);
+            let launching = s.session().launching().iter().map(|l| &*l.entry);
+            let waited = s.session().running_entries().iter().filter(|r| matches!(r.origin, Origin::Windows { .. })).map(|r| &*r.id);
+            let launchers: Vec<&str> = launching.chain(waited).filter_map(launcher).collect();
+            let units: Vec<&LaunchUnit> = w.units.iter().filter(|u| launchers.contains(&u.key.as_str())).collect();
+            if let Some(unit) = rng.pick(&units).filter(|_| rng.one_in(2)) {
+                let (app_id, unit, role) = (format!("app-{}", unit.key), Some(unit.service()), crate::presentation::WindowRole::Dialog);
+                return Some(WindowEvent::Opened(w.open_as(WindowFacts { app_id, unit, role, ..WindowFacts::default() })).into());
+            }
+            let mut window = match rng.below(7) {
                 0 => w.open("steam_app_620", Some("app-steam.scope".into()), None),
                 1 => w.open("firefox", None, None),
                 2 => w.open("foot", None, None),
+                // A launcher's game, marked by the launcher on its process: in Steam's scope, a unit of ours
+                // (the launcher's, or its own), or none; known by an app id of its own, or by the mark.
+                3 => {
+                    let marks: Vec<String> = library.entries.iter().filter_map(|g| crate::session::launchers::of_entry(library, g)).collect();
+                    let game = rng.pick(&marks)?.clone();
+                    let unit = match rng.below(3) {
+                        0 => Some("app-steam.scope".into()),
+                        1 => rng.pick(&w.units).map(LaunchUnit::service),
+                        _ => None,
+                    };
+                    let app_id = if rng.one_in(3) { game.clone() } else { "game.exe".into() };
+                    w.open_as(WindowFacts { app_id, unit, game: Some(game), ..WindowFacts::default() })
+                }
                 _ => {
                     let unit = rng.pick(&w.units)?.clone();
                     let app = format!("app-{}", unit.key);
@@ -452,17 +501,18 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             }
             WindowEvent::Opened(window).into()
         }
-        // A window closes, by itself or as asked.
+        // A window closes, by itself or as asked; often the one opened last, as a dialog answered.
         61..=64 => {
             let id = match w.closing.pop() {
                 Some(id) if !rng.one_in(4) => id,
+                _ if rng.one_in(3) => w.windows.last()?.id,
                 _ => rng.pick(&w.windows)?.id,
             };
             let closed = w.windows.iter().find(|x| x.id == id).cloned();
             w.windows.retain(|x| x.id != id);
             // Sometimes a program replaces its window with another at once.
             if let Some(closed) = closed.filter(|_| rng.one_in(5)) {
-                let again = w.open(&closed.app_id, closed.unit, closed.parent);
+                let again = w.open_as(WindowFacts { title: String::new(), pids: Vec::new(), ..closed });
                 w.next = Some(WindowEvent::Opened(again).into());
             }
             WindowEvent::Closed(id).into()
@@ -811,7 +861,39 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     ensure!(unplaced.is_none(), "window {:?} has no group after the settle", unplaced.map(|w| w.id));
     ensure!(s.session().keyboard_focus().is_none_or(|id| s.session().window(id).is_some()), "keyboard focus names a closed window");
     let session = s.session();
+    // The keyboard focus is on a window shown, on either screen, except where the compositor reported
+    // focus it set itself (WindowEvent::KeyboardFocus), which may be anywhere, until the session moves it.
+    let focus = session.keyboard_focus();
+    if sent.focus_reported {
+        sent.compositor_focus = focus;
+    } else if sent.compositor_focus != focus {
+        sent.compositor_focus = None;
+    }
+    ensure!(
+        focus.is_none_or(|id| session.shown(id) || sent.compositor_focus == Some(id)),
+        "keyboard focus on window {focus:?}, which isn't shown (top {:?}, bottom {:?})",
+        session.top_window().map(|w| w.id),
+        session.bottom_window().map(|w| w.id)
+    );
     ensure!(session.top_window().is_none_or(|w| session.topmost(session.root_of(w.id)) == w.id), "the top screen's window is not the topmost of its stack");
+    // The bottom screen's window is the root of its stack, which goes down whole.
+    ensure!(session.bottom_window().is_none_or(|w| session.root_of(w.id) == w.id), "the bottom screen's window is a dialog of another");
+    // Stepping (WindowNext/WindowPrevious) has somewhere to go exactly when the group in front has another
+    // top-level window, and the window in front's root is one of them.
+    if let Some(top) = session.top_window() {
+        let root = session.root_of(top.id);
+        let roots: Vec<i64> =
+            top.group.as_ref().map_or_else(Vec::new, |g| session.windows().iter().filter(|w| session.top_level_in(w, g)).map(|w| w.id).collect());
+        let steps = roots.len() > 1 && roots.contains(&root);
+        ensure!(
+            session.has_other_top_window() == steps,
+            "has another top window {}, but stepping from {root} among {roots:?} would {}change it",
+            session.has_other_top_window(),
+            if steps { "" } else { "not " }
+        );
+    } else {
+        ensure!(!session.has_other_top_window(), "another top window with none in front");
+    }
     ensure!(s.presentation().display_modes().rates().iter().all(|hz| (1..=1000).contains(hz)), "invalid detected refresh rate");
     ensure!(s.presentation().display_modes().rates().windows(2).all(|pair| matches!(pair, [a,b] if a < b)), "refresh choices not sorted and unique");
     // 1. Sync converges.
@@ -942,7 +1024,10 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         ensure!(!running.iter().skip(i + 1).any(|o| o.id == r.id), "4: {} runs twice", r.id);
         match r.origin {
             Origin::Ours => ensure!(session.has_units(&r.key), "4: {} runs as ours without a unit", r.id),
-            Origin::Found { .. } => ensure!(!session.has_units(&r.key), "4: {} found with its unit listed", r.id),
+            // Except in the event that found it: an earlier instance's scope may still be listed (its
+            // process outlived its windows), and follow_units, which runs before the windows are
+            // followed, makes it a launch at the next event.
+            Origin::Found { .. } => ensure!(!session.has_units(&r.key) || !before.0.contains(&r.id), "4: {} found with its unit listed", r.id),
             Origin::Windows { .. } => {}
         }
         if session.paused(&r.id) {
@@ -953,8 +1038,19 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         }
     }
     let launching = session.launching();
-    for (i, l) in launching.iter().enumerate() {
-        ensure!(!launching.iter().skip(i + 1).any(|o| o.entry == l.entry), "4: {} launching twice", l.entry);
+    for e in effects {
+        if let Effect::Launch { unit, launch, .. } = e
+            && hands_over(launch)
+        {
+            sent.handovers.push(unit.clone());
+        }
+    }
+    sent.handovers.retain(|u| launching.iter().any(|l| l.unit == *u));
+    // A launcher's entry may also be launching to be handed a game: the launcher, which runs once, takes
+    // the game from the second (as Heroic does), so a game tapped while the launcher starts isn't lost.
+    for (i, l) in launching.iter().enumerate().filter(|(_, l)| !sent.handovers.contains(&l.unit)) {
+        let twice = launching.iter().skip(i + 1).any(|o| o.entry == l.entry && !sent.handovers.contains(&o.unit));
+        ensure!(!twice, "4: {} launching twice", l.entry);
         ensure!(!session.units().contains(&l.unit), "4: {} launching with its unit listed", l.entry);
     }
     if let Some(p) = session.program() {
@@ -1093,10 +1189,11 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
                 ensure!(was_running.contains(entry), "11: a play of {entry}, which didn't run");
                 recorded.push(entry.clone());
             }
-            Effect::Launch { entry, unit, .. } => {
-                // One given up in this event (see LAUNCH_WAIT) may be launched again in it.
+            Effect::Launch { entry, unit, launch, .. } => {
+                // One given up in this event (see LAUNCH_WAIT) may be launched again in it; a launcher's
+                // entry may be launched to be handed a game while it launches (see invariant 4).
                 let now = s.clock().mono();
-                let waiting = was_launching.iter().any(|(e, at)| e == entry && now < at + crate::session::running::LAUNCH_WAIT);
+                let waiting = !hands_over(launch) && was_launching.iter().any(|(e, at)| e == entry && now < at + crate::session::running::LAUNCH_WAIT);
                 ensure!(!waiting && !launched.contains(entry), "11: {entry} launched while launching");
                 launched.push(entry.clone());
                 sent.ended.retain(|k| *k != unit.key);
@@ -1164,6 +1261,7 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
         }
         effects.clear();
         sent.freezer_restarted = matches!(event, Event::Restarted(crate::Thread::Freezer));
+        sent.focus_reported = matches!(event, Event::Window(WindowEvent::KeyboardFocus(_)));
         s.apply(event, &mut effects);
         world.follow(&effects);
         if let Err(e) = check(&mut s, &mut sent, &world, &effects, &before, i >= 1) {

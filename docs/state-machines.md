@@ -65,7 +65,7 @@ compositor reads the placement they lead to from the state after `apply`.
 
 At most one window is shown on top and one placed below, since each is one slot. Live ids are unique,
 the slots name live windows and never the same one, remembered selections belong to their home groups,
-and keyboard focus names a live window or none. The randomized
+and keyboard focus names a shown window, one the compositor focused itself, or none. The randomized
 event-sequence test checks these after every event, including lifecycle, activation and keyboard focus.
 The allocation test includes repeated lifecycle events, Home-held changes, controller focus and activation with live bottom rules.
 
@@ -114,7 +114,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Idle | `Units` lists a scope of a key not in the library, a window or tray icon in it | Running(Ours), as found, named by the name whose key is the scope's (until a window or icon comes, nothing) | — | found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
 | Idle | a window with a library entry's mark (not Steam's): a handed-over app's app id, a Heroic or Lutris game | Running(Windows, seen) | Focus once in its group | running `an_app_handed_over_…`, `a_game_started_in_its_launcher_runs_as_its_entry` |
 | Idle | a Steam game's window by app id | Launching, launched before the windows are followed, so its window isn't found as a program | as a launch | running `a_game_steam_started_is_followed…`; tests `a_steam_game_found_by_its_window_is_launched_not_found_as_a_program` |
-| Idle | a stray window of no entry | Running(Found) | Move, Focus if focused, FindIcon, Adopt (own pid) | found `a_window_of_no_entry_…` and its siblings |
+| Idle | a stray window of no entry | Running(Found) | Move (its windows; a dialog stays with its main window, as `running_of` has it), Focus if focused, FindIcon, Adopt (own pid) | found `a_window_of_no_entry_…` and its siblings; `a_dialog_over_another_programs_window_stays_in_that_programs_group` |
 | Idle | a tray icon not in a unit of ours (device session) | Running(Found{tray}) | Move/Focus, Adopt | tray `a_program_with_a_tray_icon_runs…` |
 | Running(Found) | its scope listed | Running(Ours) (pid dropped, tray key kept) | — | tray test; tray `an_adopted_tray_program_keeps_its_menu` |
 | Running(Found) | icon gone and no windows | Idle, no play recorded | — | tray test |
@@ -274,6 +274,7 @@ bottom screen to open the windows' tab and turn on (`Bottom::show_below`).
 | WindowDown: the selected top window moves down without needing keyboard focus; the old bottom window returns to its group, the screen shows it, a rule is added (notice, `Save(WindowRules)`) | same; `a_programs_only_window_is_remembered_by_its_app_id_alone`; `window_down_with_no_window_in_front_does_nothing` |
 | WindowUp: the window below goes back, its rule is forgotten | same; `moving_another_window_down_swaps_the_single_bottom_slot` |
 | settle: a window matching a rule moves down once, after the windows are followed (a found program's window too, in the event that found it); the tab it leaves is settled in the same event | `a_rule_sends_the_window_down_when_its_program_opens_it_again`; tests `a_found_programs_window_goes_down_by_its_rule_as_it_is_found`, `the_tab_a_rule_leaves_is_settled_in_the_same_event` |
+| the window below displaced by another (Return): back behind in its group, and if its stack had the keyboard, the keyboard goes to the window in front, or to ClamShell's UI with shelf in front | windows `a_window_displaced_from_below_gives_up_the_keyboard` |
 | dock tap or BottomWindows → windows shown (the windows' tab), the screen turned on if it was off by hand | running `show_of_an_entry_whose_windows_are_all_below_shows_them_there` |
 | Home+Start: wake if off by itself (dark for a game too, which sets `woken` as a tap does), else toggle off | `the_bottom_screen_turns_off_and_on`, `home_start_brings_back_…`, `…off_by_hand_and_by_itself_at_once`, `home_start_wakes_a_screen_dark_for_a_game` |
 | settle: off by itself when on battery, not refreshing, not set to stay on, no windows shown, no editor, and dark in a game or untouched 4 min | `on_battery_the_untouched_…` and siblings; `a_refresh_calibration_or_an_editor_keeps_it_on` |
@@ -595,7 +596,9 @@ then go nowhere, logged once (system crate, `a_thread_that_keeps_panicking_soon_
 - `--Restarted(Tuning)--> [Apply]` (tested `a_restarted_tuning_thread_is_sent_the_settings_in_force`)
 - `--Restarted(Mixer | Battery | Metrics | Status | Wifi | Bluetooth)--> [Watch(tab, true), Watch(Status, ..), Watch(Account, ..)]`
   (tested `a_restarted_reader_is_sent_the_watches`; each thread with the tab it serves,
-  `each_restarted_reader_is_sent_its_tabs_watch`; the account's, `a_restarted_system_thread_is_sent_the_account_watch`)
+  `each_restarted_reader_is_sent_its_tabs_watch`; the account's, `a_restarted_system_thread_is_sent_the_account_watch`).
+  The tab's watch as sent is kept: a tab left in the same event, as a settle may change the tab, still has
+  its watch turned off (tested `a_tab_left_as_a_reader_restarts_has_its_watch_turned_off`)
 - `Asleep --Restarted(System)--> [watches]`, the sleep taken as refused (Busy): Sleep again after
   `SLEEP_RETRY` if still asleep; awake, only the watches (tested
   `a_restarted_system_thread_is_asked_to_sleep_again_after_the_retry`)
@@ -1541,11 +1544,19 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    open, S24 in the history notes; the focus may move meanwhile, as when the Device view opens).
 4. **Session:** live window ids and running ids unique; at most one selected top window and one window placed
    below; remembered selections belong to their top groups; keyboard focus is absent or names
-   a live window; at most one launch waiting per entry; no launch waiting with its unit listed in
-   units; Ours ⇒ a unit of it is listed; Found ⇒ not; program in force is running and is the selected top
+   a live window that is shown (`Session::shown`, on either screen), except focus the compositor reported
+   (`WindowEvent::KeyboardFocus`), which may be anywhere until the session moves it; at most one launch
+   waiting per entry, besides launches of a launcher's entry that hand it a game (`launchers::headless`),
+   which the running launcher takes over; no launch waiting with its unit listed in
+   units; Ours ⇒ a unit of it is listed; Found ⇒ not, except in the event that found it (an earlier
+   instance's scope may still be listed; the next event's `follow_units` makes it Ours); program in force
+   is running and is the selected top
    window's owner when it has one; quitting ⇒ running and not paused; paused ⇒ Ours; suspended ⇒ paused;
    at most one selection per group; every window has a group once the event is settled, except one of
-   a program still starting (its app id launching).
+   a program still starting (its app id launching). Stacks: the top screen's window is the topmost of its
+   stack; the bottom screen's window is a stack root; `has_other_top_window` is true exactly when stepping
+   would change the top window's root (the group in front has another top-level window, and the top
+   window's root is one of them).
 5. **Dock:** ids unique; every running entry is on it; every item is pinned, running or being moved.
 6. **Shelf:** the cursor within the list; `selected` is the entry at the cursor; the collection index in
    range; every entry listed matches the filter.
@@ -1573,13 +1584,18 @@ program, tapped and dismissed (mostly ones held), and results only after their r
 LaunchFailed after Launch, a unit ending after EndRun or by itself, windows closing after Close or by
 themselves, the calibrations', account's and screenshot's answers, Busy or Resumed after Sleep). A small model of the
 compositor and systemd follows the effects (focus, moves, windows down). The library holds a Steam game
-(ff6), an app handed over to another program (desktop:firefox), an enqueue runner's album, a browsed file,
-a group (the series), the Device tool, and any program may open several windows; stray windows, a
-landed Steam game's or app's window, and a stray program's tray icon come and go. Clocks advance mostly
+(ff6) and Steam, a Heroic game (launched through Heroic) and Heroic, a Lutris game and Lutris, an app
+handed over to another program (desktop:firefox), an enqueue runner's album, a browsed file, a group (the
+series), the Device tool, and any program may open several windows; stray windows, a landed Steam game's
+or app's window, windows marked with a launcher's game mark (`WindowFacts::game`, in Steam's scope, a unit
+of ours or none), a launcher's dialogs while one of its games launches or is waited for (which promote its
+group), and a stray program's tray icon come and go; a closing window is often the one opened last. Clocks advance mostly
 by 0-3 s, sometimes by up to 400 s, and now and then by 15-25 minutes to sleep.
 
 It runs 8 fixed seeds × 4000 events with the other tests (about 1.5 s in the debug build). More seeds:
 `RANDOM_SEEDS=2000 cargo test -p clamshell-state --release random` runs seeds 1 to 2000,
 `RANDOM_SEED=x` one seed, and `RANDOM_EVENTS=n` sets the events per seed. A failure prints the seed, the
 event's number, its effects and the 20 events before it. 3000 seeds × 5000 events passed after the fixes
-of S50 and S51 (history notes).
+of S50 and S51 (history notes), and again with launcher marks, launcher dialogs and the focus and stack
+invariants, after fixing the keyboard left on a window displaced from below, a found program's Move
+taking another program's dialog, and a reader's restart losing the off of a tab left in the same event.
