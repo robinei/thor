@@ -41,7 +41,7 @@ impl State {
             // Everything saved, written again. A play being recorded is lost.
             Thread::Store => self.save_everything(out),
             Thread::Icons => self.session.find_icons_again(out),
-            Thread::Files => self.shelf.files_interrupted(&mut self.pointer, self.bottom.notice_mut(), now, out),
+            Thread::Files => self.shelf.files_interrupted(self.bottom.notice_mut(), now, out),
             Thread::Freezer => self.session.freeze_again(out),
             // A launch being started is its own thread, which ends as failed if it panics; a video's
             // position being read is lost (its progress bar isn't updated once).

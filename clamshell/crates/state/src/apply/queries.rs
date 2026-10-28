@@ -84,6 +84,16 @@ impl State {
         Resume::of(&self.shelf, &self.bottom)
     }
 
+    /// A hash of the place as [`State::resume`] saves it: shelf's (see `Shelf::hash_place`) and the second
+    /// screen's chosen tab.
+    pub(crate) fn place_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::hash::DefaultHasher::new();
+        self.shelf.hash_place(&mut hasher);
+        self.bottom.chosen_tab().hash(&mut hasher);
+        hasher.finish()
+    }
+
     /// Whether the pad listens for inputs (see [`crate::keymap::screens::Keymapping::listening`]).
     pub(crate) fn listening(&self) -> bool {
         self.keymapping.listening(self.bottom.tab(), self.bottom.editor().is_some())

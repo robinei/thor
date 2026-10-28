@@ -66,9 +66,7 @@ impl State {
             self.bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Problems(first, problems.len()), self.clock.mono());
         }
         let first = !self.shelf.read();
-        if self.shelf.reload(library) {
-            self.shelf.moved(&mut self.pointer);
-        }
+        self.shelf.reload(library);
         if first {
             self.pointer.shelf_read(self.shelf.selected());
         }

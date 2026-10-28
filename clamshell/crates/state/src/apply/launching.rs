@@ -80,7 +80,6 @@ impl State {
             }
             Launched::Instead(Instead::Group) if self.shelf.reveal(&entry) => {
                 self.session.cancel_front_launch();
-                self.shelf.moved(&mut self.pointer);
                 self.session.command(WindowCommand::ShowShelf);
             }
             Launched::Instead(Instead::Show) => self.show(&entry, out),

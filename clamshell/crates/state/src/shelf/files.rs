@@ -18,7 +18,7 @@ use crate::effect::Effect;
 use crate::out::Out;
 use crate::shelf::Shelf;
 use crate::shelf::actions::{Action, Actions};
-use crate::{Entry, EntryAct, Event, Pointer, Running};
+use crate::{Entry, EntryAct, Event, Running};
 
 /// What can be done to a browsed entry, or in the open folder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -430,19 +430,17 @@ impl Shelf {
     /// an operation ended.
     /// The files thread was started again after a panic: the operation it was carrying out, the oldest
     /// sent, ends as failed, since it may be half done. Those after it wait in its channel still.
-    pub(crate) fn files_interrupted(&mut self, pointer: &mut Pointer, notice: &mut NoticeSlot, now: u64, out: &mut Out) {
+    pub(crate) fn files_interrupted(&mut self, notice: &mut NoticeSlot, now: u64, out: &mut Out) {
         if !self.files.running.is_empty() {
             let failed = FilesEvent::Done(Err("Stopped partway: the files thread failed".into()));
-            self.on_files(failed, pointer, notice, now, out);
+            self.on_files(failed, notice, now, out);
         }
     }
 
-    pub(crate) fn on_files(&mut self, event: FilesEvent, pointer: &mut Pointer, notice: &mut NoticeSlot, now: u64, out: &mut Out) {
+    pub(crate) fn on_files(&mut self, event: FilesEvent, notice: &mut NoticeSlot, now: u64, out: &mut Out) {
         match event {
             FilesEvent::Listed { folder, entries } => {
-                if self.listed(folder, entries) {
-                    self.moved(pointer);
-                }
+                self.listed(folder, entries);
                 let library = &self.library;
                 self.files.selected.retain(|id| library.entry(id).is_some());
             }

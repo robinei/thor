@@ -204,6 +204,11 @@ pub struct State {
     sent: Sent,
     /// The second screen's tab as the last settle saw it, to tell the tab left (see [`State::follow_tab`]).
     settled_tab: Tab,
+    /// Shelf's place as the last settle saw it, to tell when it moved (see [`State::follow_shelf`]).
+    settled_shelf: (usize, Option<usize>, Option<Arc<str>>),
+    /// A hash of the place as a resume saves it, as the last event left it, to tell when it changed (see
+    /// [`State::place_hash`]).
+    saved_place: u64,
     /// The events the rules queue for State, lent to `apply`'s [`Out`] and returned empty, so that its
     /// room is kept.
     queue: Vec<Event>,
@@ -232,7 +237,6 @@ impl State {
         };
         if let Some(resume) = &init.resume {
             resume.restore_tab(&mut s.bottom);
-            s.settled_tab = s.bottom.tab();
             if s.shelf.read() {
                 resume.restore_shelf(&mut s.shelf);
             }
@@ -250,6 +254,11 @@ impl State {
         if let Some(tab) = init.start_tab {
             s.bottom.restore_tab(tab);
         }
+        // What was restored is where the last settle and save left things.
+        s.settled_tab = s.bottom.tab();
+        let (current, open, selected) = s.shelf.place_key();
+        s.settled_shelf = (current, open, selected.cloned());
+        s.saved_place = s.place_hash();
         s.reconcile_pad();
         if init.pad_mouse {
             s.pad.toggle_mouse();
@@ -373,8 +382,10 @@ impl State {
         self.apply_event(event, &mut out);
         self.settle(&mut out);
         self.sync(&mut out);
-        // Both are taken, so neither is left marked.
-        if self.shelf.take_unsaved() | self.bottom.take_unsaved() {
+        // The place is saved a while after it last changed (see [`State::resume`]).
+        let place = self.place_hash();
+        if place != self.saved_place {
+            self.saved_place = place;
             self.resume.touch(self.clock.mono());
         }
         // The follow-up steps don't queue events: one queued here would never be handled.
@@ -411,7 +422,7 @@ impl State {
             }
             Event::Meta { id, meta } => self.shelf.apply_meta(&id, &meta),
             Event::Library(library) => self.library_read(*library, out),
-            Event::Files(e) => self.shelf.on_files(e, &mut self.pointer, self.bottom.notice_mut(), now, out),
+            Event::Files(e) => self.shelf.on_files(e, self.bottom.notice_mut(), now, out),
             Event::Fetching(on) => self.fetching(on),
             Event::Tray(items) => self.session.set_tray(items, &self.clock, self.shelf.library(), out),
             Event::Units(units) => self.session.set_units(units),
@@ -578,13 +589,14 @@ impl State {
         if self.reconcile_pad().is_some_and(|route| route != PadRoute::Ui) {
             self.pointer.hide_focus();
         }
+        self.follow_shelf();
         self.follow_lists();
     }
 
     /// Records in shelf the plays the session's steps ended.
     fn record_plays(&mut self, out: &mut Out) {
         for (entry, start) in self.plays.drain(..) {
-            self.shelf.record_play(entry, start, &self.clock, &mut self.pointer, out);
+            self.shelf.record_play(entry, start, &self.clock, out);
         }
     }
 

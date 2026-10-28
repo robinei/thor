@@ -134,7 +134,7 @@ impl State {
                         self.keymapping.captured(crate::keymap::screens::chord(stroke), out);
                     }
                     Some(stroke) if self.session.front() == crate::session::running::Front::Shelf => {
-                        self.shelf.find(stroke, &mut self.pointer, out);
+                        self.shelf.find(stroke, out);
                     }
                     Some(stroke) => out.effects.push(Effect::Compositor(Compositor::Key(stroke))),
                     None => {}

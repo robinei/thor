@@ -44,6 +44,18 @@ impl State {
         self.left_tab(left);
     }
 
+    /// Runs after any event: shelf's place is not the one the last settle saw, so a focus in shelf's list
+    /// follows its selection (see `Pointer::shelf_moved`).
+    pub(crate) fn follow_shelf(&mut self) {
+        let (current, open, selected) = self.shelf.place_key();
+        let (was_current, was_open, was_selected) = &self.settled_shelf;
+        if (current, open, selected) == (*was_current, *was_open, was_selected.as_ref()) {
+            return;
+        }
+        self.settled_shelf = (current, open, selected.cloned());
+        self.pointer.shelf_moved(self.shelf.selected());
+    }
+
     fn left_tab(&mut self, left: Tab) {
         if self.keymapping.capturing(left, false) {
             self.keyboard.take_modifiers();

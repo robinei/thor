@@ -24,26 +24,22 @@ impl Shelf {
                 // Activating the selected entry again opens it if it is a group, or else plays it by
                 // starting it or switching to it.
                 if self.selected() == Some(&entry) {
-                    self.activate(pointer, out);
-                } else if self.select(&entry) {
-                    self.unsaved = true;
+                    self.activate(out);
+                } else {
+                    self.select(&entry);
                 }
             }
             ShelfId::Collection(i) => {
-                if self.set_collection(usize::from(i)) {
-                    self.moved(pointer);
-                }
+                self.set_collection(usize::from(i));
             }
-            ShelfId::Launch => self.activate(pointer, out),
-            ShelfId::Favourite => self.toggle_favourite(pointer, out),
+            ShelfId::Launch => self.activate(out),
+            ShelfId::Favourite => self.toggle_favourite(out),
             ShelfId::Pin => self.ask(EntryAct::TogglePin, out),
             ShelfId::Continue => self.continue_selected(out),
             ShelfId::Enqueue => self.ask_enqueue(out),
             ShelfId::File(action) => self.on_file(action, out),
             ShelfId::Up => {
-                if self.up() {
-                    self.moved(pointer);
-                }
+                self.up();
             }
         }
     }
@@ -71,10 +67,8 @@ impl Shelf {
     }
 
     /// Shelf's action on its selected entry: a group opens, anything else plays.
-    pub(crate) fn activate(&mut self, pointer: &mut Pointer, out: &mut Out) {
-        if self.open() {
-            self.moved(pointer);
-        } else {
+    pub(crate) fn activate(&mut self, out: &mut Out) {
+        if !self.open() {
             self.ask(EntryAct::Play, out);
         }
     }
@@ -82,16 +76,12 @@ impl Shelf {
     pub(crate) fn on_event(&mut self, event: ShelfEvent, pointer: &mut Pointer, out: &mut Out) {
         match event {
             ShelfEvent::ListStep(step) => {
-                if self.step(step) {
-                    self.unsaved = true;
-                }
+                self.step(step);
                 pointer.focus_shelf(self.selected());
                 pointer.show();
             }
             ShelfEvent::CollectionStep(step) => {
-                if self.collection_step(step) {
-                    self.moved(pointer);
-                }
+                self.collection_step(step);
                 pointer.show();
             }
             ShelfEvent::Rows(rows) => {
@@ -108,9 +98,7 @@ impl Shelf {
                 self.act(Shortcut::X, pointer, out);
             }
             ShelfEvent::ClearFilter => {
-                if self.set_filter(String::new()) {
-                    self.moved(pointer);
-                }
+                self.set_filter(String::new());
             }
         }
     }
@@ -118,7 +106,7 @@ impl Shelf {
     /// A key typed with shelf in front. A character narrows the current list to the titles starting with
     /// what is typed, Backspace removes the last character, Esc clears it all, and Enter opens or plays the
     /// selected entry.
-    pub(crate) fn find(&mut self, stroke: keyboard::Stroke, pointer: &mut Pointer, out: &mut Out) {
+    pub(crate) fn find(&mut self, stroke: keyboard::Stroke, out: &mut Out) {
         let mut filter = self.filter().to_owned();
         match stroke.key {
             Key::Char(c) if !stroke.ctrl && !stroke.alt && !stroke.logo => filter.push(if stroke.shift { keyboard::shifted(c) } else { c }),
@@ -126,22 +114,17 @@ impl Shelf {
                 filter.pop();
             }
             Key::Named(keyboard::Named::Esc) => filter.clear(),
-            Key::Named(keyboard::Named::Enter) => return self.activate(pointer, out),
+            Key::Named(keyboard::Named::Enter) => return self.activate(out),
             _ => return,
         }
-        if self.set_filter(filter) {
-            self.moved(pointer);
-        }
+        self.set_filter(filter);
     }
 
     /// Puts the selected entry in or out of the favourites and saves them. A focus in the list follows
     /// the selection, which moves if the entry left the list.
-    pub(crate) fn toggle_favourite(&mut self, pointer: &mut Pointer, out: &mut Out) {
-        let Some(moved) = self.favourite_selected() else {
+    pub(crate) fn toggle_favourite(&mut self, out: &mut Out) {
+        if self.favourite_selected().is_none() {
             return;
-        };
-        if moved {
-            self.moved(pointer);
         }
         let ids = self.library().favourite_ids().map(str::to_owned).collect();
         out.effects.push(Effect::Save(Save::Favourites(ids)));

@@ -146,10 +146,10 @@ impl Shelf {
             return;
         };
         match action {
-            Action::Open => self.activate(pointer, out),
+            Action::Open => self.activate(out),
             Action::Continue => self.continue_selected(out),
             Action::Enqueue => self.ask_enqueue(out),
-            Action::Favourite => self.toggle_favourite(pointer, out),
+            Action::Favourite => self.toggle_favourite(out),
             Action::Pin => self.ask(EntryAct::TogglePin, out),
             Action::File(a) => self.on_file(a, out),
         }

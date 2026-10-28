@@ -101,8 +101,6 @@ pub struct Bottom {
     /// The text on the system clipboard, for Ctrl+V in the editor. Files copied in the Files tab use their
     /// own clipboard (see [`crate::shelf::files`]).
     clipboard: Option<std::sync::Arc<str>>,
-    /// The tab chosen changed and isn't saved yet (see [`crate::Resume`]).
-    unsaved: bool,
     /// The tab the windows' tab was opened from, which Home + right stick press goes back to.
     before_windows: Tab,
 }
@@ -156,7 +154,6 @@ impl Bottom {
         if tab == self.tab {
             return;
         }
-        self.unsaved = true;
         if tab == Tab::Windows {
             self.before_windows = self.tab;
         }
@@ -166,20 +163,13 @@ impl Bottom {
     /// The user chose a tab, by its icon, by tapping a control, or with the shoulder buttons. The tab
     /// stays, even if a text field had brought up the keyboard.
     pub(crate) fn choose_tab(&mut self, tab: Tab) {
-        if self.raised_from.take().is_some() {
-            self.unsaved = true;
-        }
-        self.set_tab(tab)
+        self.raised_from = None;
+        self.set_tab(tab);
     }
 
     /// The tab as it was left, at start.
     pub(crate) fn restore_tab(&mut self, tab: Tab) {
         self.tab = tab;
-    }
-
-    /// Whether the tab chosen changed since this was last asked, so the place is saved.
-    pub(crate) fn take_unsaved(&mut self) -> bool {
-        std::mem::take(&mut self.unsaved)
     }
 
     /// A text field wants typing, or is done. The keyboard comes up, and when the field is done the

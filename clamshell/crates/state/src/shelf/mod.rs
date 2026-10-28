@@ -65,8 +65,6 @@ pub struct Shelf {
     /// The listings of browsed folders, by folder, in the order they came; a folder's listing comes before
     /// those of the folders in it. They are applied again when the library is read again.
     listings: Vec<(Arc<str>, Vec<Entry>)>,
-    /// The place changed since it was last saved (see [`crate::State::resume`]).
-    unsaved: bool,
     /// The clipboard and confirmation for file actions, and the folder being browsed (see [`files`]).
     files: files::Files,
     /// Whether metadata is being fetched (see [`Shelf::fetch_first`]).
@@ -274,18 +272,31 @@ impl Shelf {
         self.list_of(c).iter().position(|&i| self.library.entries.get(i).is_some_and(|g| &*g.id == entry))
     }
 
-    /// Shelf went to another collection or list. The place is saved, and a focus in shelf's list follows
-    /// the selection.
-    pub(crate) fn moved(&mut self, pointer: &mut crate::Pointer) {
-        self.unsaved = true;
-        pointer.shelf_moved(self.selected());
+    /// Where shelf is, for telling when it moved (see [`crate::State::follow_shelf`]): the collection, the
+    /// group open in it, and the entry selected.
+    pub(crate) fn place_key(&self) -> (usize, Option<usize>, Option<&Arc<str>>) {
+        (self.current, self.navs.get(self.current).and_then(|n| n.open.last().copied()), self.selected())
     }
 
-    /// Whether the place changed since this was last asked, so it is saved.
-    pub(crate) fn take_unsaved(&mut self) -> bool {
-        std::mem::take(&mut self.unsaved)
+    /// Adds to `hasher` what of shelf a resume saves (see [`crate::Resume::at`]): the collection, and each
+    /// collection's open groups and selected entry. It allocates nothing, so that a change is told each
+    /// event (see [`crate::State::apply`]).
+    pub(crate) fn hash_place(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        if self.waiting.is_some() {
+            // Before the library is read, the places are where the last start left them.
+            return true.hash(hasher);
+        }
+        self.collection().map(|c| &c.name).hash(hasher);
+        for (c, nav) in self.navs.iter().enumerate().take(self.library.collections.len()) {
+            let list = self.list_of(c);
+            let index = nav.places.last().map_or(0, |p| p.index).min(list.len().saturating_sub(1));
+            for g in nav.open.iter().chain(list.get(index)).filter_map(|&g| self.library.entries.get(g)) {
+                g.id.hash(hasher);
+            }
+            c.hash(hasher);
+        }
     }
-
     /// Keeps the cursor in range and on screen. Returns whether the selection changed.
     pub(crate) fn sync(&mut self) -> bool {
         let before = self.selected().cloned();
@@ -468,13 +479,13 @@ impl Shelf {
         let mut places = Vec::new();
         self.kept_places(&mut places);
         let current = self.collection().map(|c| c.name.clone());
-        let (rows, unsaved, fetching) = (self.rows, self.unsaved, self.fetching);
+        let (rows, fetching) = (self.rows, self.fetching);
         let listings = std::mem::take(&mut self.listings);
         let files = std::mem::take(&mut self.files);
         let waiting = self.waiting.take();
         // What shows is asked for first again, from the new library.
         *self = Shelf { files, fetching, ..Shelf::new(library) };
-        (self.rows, self.unsaved) = (rows, unsaved);
+        self.rows = rows;
         for (folder, entries) in listings {
             if let Some(f) = self.library.entries.iter().position(|g| g.id == folder) {
                 self.library.set_listing(f, entries.clone());
@@ -623,12 +634,10 @@ impl Shelf {
     /// Counts and records a play of `entry` from `start` (monotonic seconds, as in [`crate::Event::Tick`])
     /// until now, dated by the wall clock. For a video, it also reads where mpv left it, which mpv wrote as
     /// it quit. A focus in the list follows the selection.
-    pub(crate) fn record_play(&mut self, entry: Arc<str>, start: u64, clock: &crate::Clock, pointer: &mut crate::Pointer, out: &mut crate::out::Out) {
+    pub(crate) fn record_play(&mut self, entry: Arc<str>, start: u64, clock: &crate::Clock, out: &mut crate::out::Out) {
         let duration = clock.mono().saturating_sub(start);
         let start = clock.unix_at(start);
-        if self.add_play(&entry, start, duration) {
-            self.moved(pointer);
-        }
+        self.add_play(&entry, start, duration);
         let file = self.entry(&entry).and_then(|g| g.mpv_file()).map(std::path::Path::to_path_buf);
         out.effects.push(crate::Effect::RecordPlay { entry: entry.clone(), start, duration });
         if let Some(file) = file {
