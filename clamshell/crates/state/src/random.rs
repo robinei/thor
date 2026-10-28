@@ -1171,6 +1171,11 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
                     ensure!(last.is_some() || *frozen, "11: slice {slice} thawed, never frozen");
                 }
             }
+            // A program found and moved into a scope of ours runs on: one ended in the settle that found
+            // it would be found, and moved, again at the next.
+            Effect::Adopt { unit, .. } => {
+                ensure!(s.session().running_entries().iter().any(|r| r.key == unit.key), "11: {} adopted, and not running", unit.key);
+            }
             Effect::EndRun { key, force: false } => {
                 ensure!(!sent.ended.contains(key), "11: {key} ended twice for one quit");
                 sent.ended.push(key.clone());
@@ -1254,11 +1259,38 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
         sent.freezer_restarted = matches!(event, Event::Restarted(crate::Thread::Freezer));
         s.apply(event, &mut effects);
         world.follow(&effects);
+        // Settle reaches a fixed point: settling and syncing again changes nothing and sends nothing
+        // (every few events, the state's text being long to compare).
+        if i % SETTLED_EVERY == 0 {
+            let settled = format!("{s:?}");
+            let mut again = crate::out::Out::default();
+            s.settle(&mut again);
+            s.sync(&mut again);
+            if !again.effects.is_empty() || !again.events.is_empty() || format!("{s:?}") != settled {
+                let changed = first_difference(&settled, &format!("{s:?}"));
+                return Err(format!(
+                    "seed {seed}, event {i}: settling again sends {:?}, queues {:?}, changes {changed}\nlast events:\n{}",
+                    again.effects,
+                    again.events,
+                    history.join("\n")
+                ));
+            }
+        }
         if let Err(e) = check(&mut s, &mut sent, &world, &effects, &before, i >= 1) {
             return Err(format!("seed {seed}, event {i}: {e}\neffects: {effects:?}\nlast events:\n{}", history.join("\n")));
         }
     }
     Ok(())
+}
+
+/// How often the run checks that settle reached a fixed point, in events.
+const SETTLED_EVERY: usize = 32;
+
+/// Where two texts first differ, with some of each around it.
+fn first_difference(a: &str, b: &str) -> String {
+    let at = a.bytes().zip(b.bytes()).position(|(x, y)| x != y).unwrap_or(a.len().min(b.len()));
+    let around = |s: &str| s.get(at.saturating_sub(80)..(at + 120).min(s.len())).unwrap_or("").to_owned();
+    format!("{:?} -> {:?}", around(a), around(b))
 }
 
 fn var(name: &str) -> Option<u64> {

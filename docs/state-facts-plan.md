@@ -62,11 +62,11 @@ What isn't, and where the bugs were:
 
 Each ends in commits that pass `tools/check.sh` and the randomized test at 3000 seeds.
 
-- [ ] 1. **Settle converges, checked.** The randomized test settles and syncs a second time after each
+- [x] 1. **Settle converges, checked.** The randomized test settles and syncs a second time after each
   event (every Nth, to keep it quick) and requires no effects, no queued events and no change. The scratch
   buffers (`queue`, `plays`, `with_windows`) move into one `Scratch` left out of the comparison. Also: no
   Adopt or FindIcon repeated for an entry. This is the net for every ordered-correction bug from here on.
-- [ ] 2. **One owner function from facts.** `owner(w)`: the root's program by mark, unit or process, never
+- [x] 2. **One owner function from facts.** `owner(w)`: the root's program by mark, unit or process, never
   by a stored group. A window's group is its owner's, else a claim, else its own; the claims (a file's
   window taken by the entry waiting for it, a service dialog given to the program in front) are stored as
   history on the window. Finding programs goes by roots. `FrontLaunch.launcher` derived. Cost: an owner
