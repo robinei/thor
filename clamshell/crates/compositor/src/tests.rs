@@ -877,6 +877,7 @@ mod identify_tests;
 mod pacing_tests;
 mod presentation_tests;
 
+mod scene_tests;
 mod x11_popup_tests;
 
 #[test]
