@@ -721,9 +721,11 @@ class Checks:
 
     def ui_scanout(self):
         def shown(role):
-            """Whether ClamShell's journal last said the screen is scanned out (True) or composed."""
-            lines = [l for l in sh("journalctl --user -u clamshell -b -o cat --no-pager").splitlines() if f"ui scanout: the {role} screen is " in l]
-            return bool(lines) and lines[-1].endswith("scanned out")
+            """Whether ClamShell's journal last said the screen shows its own buffers (True), or else."""
+            shows = ("composes its frames", "shows its own buffers", "shows window ", "draws window ")
+            lines = [l for l in sh("journalctl --user -u clamshell -b -o cat --no-pager").splitlines()
+                     if any(f"drm: the {role} screen {what}" in l for what in shows)]
+            return bool(lines) and lines[-1].endswith("shows its own buffers")
 
         def bar_drawn():
             """Whether the bottom screen, as QEMU shows it, has the bar's icons."""
