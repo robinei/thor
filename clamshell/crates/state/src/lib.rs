@@ -541,9 +541,10 @@ impl State {
         self.session.follow_front(self.clock.mono());
         self.session.follow_overview();
         // Once the front is settled, so a program shown again when the front window closed is thawed at
-        // once; before the quitting, which a quitting entry isn't paused for.
+        // once; before the quitting, which a quitting entry isn't paused for, its quits given up first.
+        self.session.expire_quitting(self.clock.mono());
         self.session.follow_background(self.clock.mono(), self.shelf.library(), self.prefs.settings(), out);
-        self.session.follow_quitting(self.clock.mono(), self.shelf.library(), out);
+        self.session.follow_quitting(self.shelf.library(), out);
         self.dock.follow(&self.session);
         self.session.followed();
         self.bottom.follow_dim(&self.session, &self.clock);
