@@ -37,8 +37,8 @@ fn collections_keep_their_own_place() {
     s.applied(LibraryViewEvent::CollectionStep(1).into());
     assert_eq!(s.library_view().current(), 1);
     assert_eq!(s.library_view().cursor().index, 0);
-    s.applied(LibraryViewEvent::CollectionStep(4).into());
-    assert_eq!(s.library_view().current(), 0, "wraps around (past TV, Apps and Tools)");
+    s.applied(LibraryViewEvent::CollectionStep(5).into());
+    assert_eq!(s.library_view().current(), 0, "wraps around (past TV, Apps, Tools and Files)");
     assert_eq!(s.library_view().cursor().index, 2);
 }
 

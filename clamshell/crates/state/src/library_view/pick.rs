@@ -23,8 +23,8 @@ pub struct Pick {
 /// Who asked for a pick.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PickFor {
-    /// The edit mode's form, for a source's folder.
-    SourceDir,
+    /// The edit mode's form, for one of its fields (see [`super::form::Field::picks`]).
+    Field(super::form::Field),
     /// The edit mode, for the picture of the place with this id.
     PlacePicture(String),
 }
@@ -44,7 +44,7 @@ impl Pick {
     /// What is asked for, as the Library says it.
     pub fn asks(&self) -> &'static str {
         match &self.purpose {
-            PickFor::SourceDir => "Choose the folder to scan",
+            PickFor::Field(f) => f.asks(),
             PickFor::PlacePicture(_) => "Choose the folder's picture",
         }
     }
@@ -96,7 +96,7 @@ impl LibraryView {
         let path = path.to_string_lossy();
         if let Some(edit) = &mut self.edit {
             match purpose {
-                PickFor::SourceDir => edit.field_typed(super::form::Field::Dir, &path),
+                PickFor::Field(f) => edit.field_picked(f, &path),
                 PickFor::PlacePicture(id) => edit.set_picture(&id, &path, read, out),
             }
         }
@@ -142,7 +142,7 @@ mod tests {
         let edit = |s: &mut crate::State, id: EditId| tap(s, Id::LibraryView(LibraryViewId::Edit(id)));
         edit(&mut s, EditId::Sources);
         edit(&mut s, EditId::Row(0));
-        edit(&mut s, EditId::PickDir);
+        edit(&mut s, EditId::Pick(2));
         assert_eq!(s.library_view().collection().map(|c| c.name.as_str()), Some("Files"));
         assert!(!s.library_view.set_collection(0), "the Files tab stays");
         assert_eq!(s.library_view().actions().as_slice(), [Action::Choose]);
@@ -151,7 +151,7 @@ mod tests {
         assert_eq!(s.library_view().collection().map(|c| c.name.as_str()), Some("Games"), "back where it was");
         let form = s.library_view().edit().and_then(|e| e.form()).unwrap();
         assert_eq!(form.item.value(&Config::default(), Field::Dir), "/h");
-        assert_eq!(s.pointer().focus(), Some(&EditId::PickDir.into()));
+        assert_eq!(s.pointer().focus(), Some(&EditId::Pick(2).into()));
     }
 
     /// A folder's picture is an image file chosen in the Files tab; a file that isn't an image isn't

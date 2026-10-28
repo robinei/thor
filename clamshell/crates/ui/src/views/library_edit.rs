@@ -199,11 +199,7 @@ fn form_view(f: &mut Frame, h: f32, config: &Config, open: &Form, body: Rect) {
     let half = left.w * 0.3;
     f.text_button(EditId::Save.into(), Rect::new(left.x, y, half, detail * ACTION), detail, Tone::Fn, "Save", Align::Start);
     f.text_button(EditId::Cancel.into(), Rect::new(left.x + half, y, half, detail * ACTION), detail, Tone::Fn, "Cancel", Align::Start);
-    // A folder is chosen in the Library, as well as typed.
-    if open.item.fields().contains(&form::Field::Dir) {
-        y += detail * ACTION;
-        f.text_button(EditId::PickDir.into(), Rect::new(left.x, y, left.w * 0.6, detail * ACTION), detail, Tone::Fn, "Choose the folder…", Align::Start);
-    }
+
     let right = Rect::new(body.x + body.w * 0.55 + pad, body.y, body.w * 0.45 - pad, body.h);
     let Some(&field) = open.item.fields().get(open.field) else { return };
     if open.choosing {
@@ -232,6 +228,9 @@ fn fields(f: &mut Frame, h: f32, config: &Config, item: &Item, selected: Option<
         let value = item.value(config, field);
         let label_w = r.w * 0.36;
         let lit = selected == Some(i);
+        // In a form, a field that names a folder or file is chosen in the Library too, by its Choose… at
+        // the row's end.
+        let choose_w = if selected.is_some() && field.picks().is_some() { r.w * 0.2 } else { 0.0 };
         let draw = |f: &mut Frame| {
             f.c.text_fit(Rect::new(row.x, row.y, label_w, row.h), detail, Tone::Dim, field.label(), Keep::Start);
             let tone = match (field.set(), selected.is_some()) {
@@ -240,11 +239,17 @@ fn fields(f: &mut Frame, h: f32, config: &Config, item: &Item, selected: Option<
                 (Set::Typed, true) | (Set::Chosen, true) | (Set::Toggled, true) => Tone::Fn,
             };
             let shown = if value.is_empty() { "—" } else { value.as_str() };
-            f.c.text_fit(Rect::new(row.x + label_w, row.y, row.w - label_w, row.h), detail, tone, shown, Keep::Start);
+            f.c.text_fit(Rect::new(row.x + label_w, row.y, row.w - label_w - choose_w, row.h), detail, tone, shown, Keep::Start);
         };
-        match selected {
-            Some(_) => f.button(EditId::Field(i as u16).into(), row, Look { fill: lit.then_some(SURFACE_HI), ..Look::CARD }, draw),
-            None => draw(f),
+        match (selected, field.picks()) {
+            (Some(_), Some(_)) => {
+                let typed = Rect::new(row.x, row.y, row.w - choose_w, row.h);
+                f.button(EditId::Field(i as u16).into(), typed, Look { fill: lit.then_some(SURFACE_HI), ..Look::CARD }, draw);
+                let choose = Rect::new(row.x + row.w - choose_w, row.y, choose_w, row.h);
+                f.text_button(EditId::Pick(i as u16).into(), choose, detail, Tone::Fn, "Choose…", Align::End);
+            }
+            (Some(_), None) => f.button(EditId::Field(i as u16).into(), row, Look { fill: lit.then_some(SURFACE_HI), ..Look::CARD }, draw),
+            (None, _) => draw(f),
         }
         y += row_h;
     }

@@ -642,6 +642,13 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 // A runner's command, typed with its placeholders beside the keyboard.
                 shot("library-edit-command.png", Bottom, vec![tap(edit(EditId::Open)), tap(edit(EditId::Field(4))), tap(Id::Editor(EditorId::Insert(0)))]),
                 shot("library-edit-command-top.png", Top, vec![tap(Id::Editor(EditorId::Save))]),
+                // The command's program picked: the Files tab alone, files the pick takes, and Choose.
+                shot(
+                    "library-pick.png",
+                    Top,
+                    vec![tap(edit(EditId::Pick(4))), tap(Id::LibraryView(LibraryViewId::Launch)), LibraryViewEvent::ListStep(2).into()],
+                ),
+                shot("library-pick-chosen.png", Top, vec![tap(Id::LibraryView(LibraryViewId::Choose))]),
                 shot(
                     "library-edit-name.png",
                     Bottom,

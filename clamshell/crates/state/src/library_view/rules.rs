@@ -42,8 +42,10 @@ impl LibraryView {
                     self.cancel_pick();
                 }
                 // Back in the edit mode's form, on what began the pick.
-                if self.pick().is_none() && self.edit().is_some() {
-                    pointer.focus_on(crate::library_view::edit::EditId::PickDir.into());
+                if self.pick().is_none()
+                    && let Some(form) = self.edit().and_then(|e| e.form())
+                {
+                    pointer.focus_on(crate::library_view::edit::EditId::Pick(form.field as u16).into());
                 }
             }
             LibraryViewId::Favourite => self.toggle_favourite(out),

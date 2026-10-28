@@ -84,12 +84,27 @@ pub fn library() -> Library {
             ..Entry::new(builtin.id(), title)
         });
     }
+    // A Files tab: Home, listed, with two folders and two files.
+    let files = games.len();
+    let browsed = |name: &str, folder: bool, kind: crate::BrowseKind| Entry {
+        file: Some(format!("/home/thor{}", if name.is_empty() { String::new() } else { format!("/{name}") }).into()),
+        browsed: Some(crate::Browsed { folder, listed: name.is_empty(), kind, size: (!folder).then_some(48_000), ..crate::Browsed::default() }),
+        ..Entry::new(
+            &format!("browse:Files/Home{}", if name.is_empty() { String::new() } else { format!("/{name}") }),
+            if name.is_empty() { "Home" } else { name },
+        )
+    };
+    games.push(Entry { items: (files + 1..files + 5).collect(), ..browsed("", true, crate::BrowseKind::Root) });
+    for (name, folder) in [("Pictures", true), ("Roms", true), ("notes.txt", false), ("snes.png", false)] {
+        games.push(Entry { parent: Some(files), ..browsed(name, folder, crate::BrowseKind::Plain) });
+    }
     let collections = vec![
         Collection::with_icon("Games", "gamepad", (0..n).collect()),
         Collection::new("More", ["ff6", "metroid-zm"].iter().filter_map(|id| games.iter().position(|g| &*g.id == *id)).collect()),
         Collection::with_icon("TV", "tv", vec![series]),
         Collection::with_icon("Apps", "apps", (n..n + apps.len()).collect()),
         Collection::with_icon("Tools", "tools", vec![tools, tools + 1]),
+        Collection::with_icon("Files", "folder", vec![files]),
     ];
     let own = |name: &str, icon: &str| Some(OwnTab { name: name.into(), icon: Some(icon.into()) });
     Library {

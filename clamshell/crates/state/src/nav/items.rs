@@ -98,15 +98,15 @@ mod tests {
         assert_eq!(s.library_view().collection().map(|c| c.name.as_str()), Some("More"));
         s.applied(PointerEvent::Up(more.clone()).into());
         // Gone by the time it is let go: nothing, though another collection is at its place.
-        let tools = Id::LibraryView(LibraryViewId::Collection(0));
-        s.applied(PointerEvent::Down(tools.clone(), None).into());
+        let files = Id::LibraryView(LibraryViewId::Collection(0));
+        s.applied(PointerEvent::Down(files.clone(), None).into());
         let mut library = clamshell_library::demo::library();
         library.collections.reverse();
-        library.collections.retain(|c| c.name != "Tools");
+        library.collections.retain(|c| c.name != "Files");
         s.applied(Event::Library(Box::new(library)));
         assert_eq!(s.library_view().collection().map(|c| c.name.as_str()), Some("More"));
-        tap(&mut s, tools);
-        assert_eq!(s.library_view().collection().map(|c| c.name.as_str()), Some("More"), "not Apps, now first");
+        tap(&mut s, files);
+        assert_eq!(s.library_view().collection().map(|c| c.name.as_str()), Some("More"), "not Tools, now first");
     }
 
     /// An audio output pressed is the one chosen, though a reading re-sorted the outputs.

@@ -269,7 +269,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
             ids.extend([EditId::NewTab, EditId::Up, EditId::Done, EditId::Rename, EditId::Cut, EditId::Paste, EditId::Remove].map(Id::from));
             ids.extend([EditId::Sources, EditId::Runners, EditId::Open, EditId::MoveUp, EditId::MoveDown, EditId::Save, EditId::Cancel].map(Id::from));
             ids.extend((0..9).map(EditId::Field).chain((0..4).map(EditId::Choice)).chain((0..3).map(EditId::IconChoice)).map(Id::from));
-            ids.extend([EditId::PickDir, EditId::Icon, EditId::Picture].map(Id::from));
+            ids.extend([EditId::Pick(2), EditId::Pick(4), EditId::Icon, EditId::Picture].map(Id::from));
         }
         TopView::LibraryView if s.session().shown_builtin().is_some() => {
             let sh = s.library_view();

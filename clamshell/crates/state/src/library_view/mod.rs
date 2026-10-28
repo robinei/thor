@@ -130,8 +130,16 @@ impl LibraryView {
     /// A tap on one of the edit mode's targets (see [`edit::Edit::tap`]); Done leaves it. Choosing a
     /// folder for the form starts a pick.
     pub(crate) fn edit_tap(&mut self, id: edit::EditId, out: &mut crate::out::Out) {
-        if id == edit::EditId::PickDir {
-            return self.start_pick(true, Vec::new(), pick::PickFor::SourceDir);
+        // A form's field picked in the Library: a folder, or a file of any name.
+        if let edit::EditId::Pick(i) = id {
+            let field = self.edit.as_ref().and_then(|e| e.form()).and_then(|f| f.item.fields().get(usize::from(i)).copied());
+            if let Some((field, folder)) = field.and_then(|f| Some((f, f.picks()?))) {
+                if let Some(e) = &mut self.edit {
+                    e.select_field(usize::from(i));
+                }
+                self.start_pick(folder, Vec::new(), pick::PickFor::Field(field));
+            }
+            return;
         }
         // A folder's picture: an image chosen in the Library.
         if id == edit::EditId::Picture {

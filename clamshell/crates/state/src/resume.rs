@@ -77,7 +77,14 @@ mod tests {
         assert_eq!((resume.collection.as_str(), resume.tab.as_str()), ("More", "sysinfo"));
         assert_eq!(
             resume.places,
-            vec![place("Games", "ff6"), place("More", "ff6"), place("TV", "tv:Cosmos"), place("Apps", "desktop:steam"), place("Tools", "builtin:library")]
+            vec![
+                place("Games", "ff6"),
+                place("More", "ff6"),
+                place("TV", "tv:Cosmos"),
+                place("Apps", "desktop:steam"),
+                place("Tools", "builtin:library"),
+                place("Files", "browse:Files/Home")
+            ]
         );
         let mut fresh = State::new(Init { resume: Some(resume.clone()), ..init() });
         assert_eq!(fresh.library_view().collection().map(|c| c.name.as_str()), Some("More"));

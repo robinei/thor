@@ -56,8 +56,8 @@ pub enum EditId {
     /// Writes the form, or leaves it as it was.
     Save,
     Cancel,
-    /// Chooses the form's folder in the Library (see [`super::pick`]).
-    PickDir,
+    /// Chooses the form's field, by position, in the Library (see [`super::pick`]).
+    Pick(u16),
     /// Shows the icons to choose the selected place's from, and chooses one of them ([`ICONS`]), the
     /// first being none.
     Icon,
@@ -316,7 +316,7 @@ impl Edit {
             | EditId::Choice(_)
             | EditId::Save
             | EditId::Cancel
-            | EditId::PickDir
+            | EditId::Pick(_)
             | EditId::Picture => {}
             EditId::Icon => self.choosing_icon = !self.choosing_icon,
             EditId::IconChoice(j) => {
@@ -454,6 +454,20 @@ impl Edit {
             Panel::Places => return,
         };
         self.form = Some(Form { index, item, field: 0, choosing: false });
+    }
+
+    /// Selects the form's field `i`.
+    pub(crate) fn select_field(&mut self, i: usize) {
+        if let Some(form) = &mut self.form {
+            (form.field, form.choosing) = (i, false);
+        }
+    }
+
+    /// A field of the form open, picked in the Library.
+    pub(crate) fn field_picked(&mut self, field: Field, path: &str) {
+        if let Some(form) = &mut self.form {
+            form.item.picked(field, path);
+        }
     }
 
     /// A field of the form open, typed.

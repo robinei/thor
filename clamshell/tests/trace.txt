@@ -749,6 +749,14 @@ Pointer(Activate(LibraryView(Edit(Field(4)))))
 Pointer(Activate(Editor(Save)))
   Watch Metrics on
 -- library-edit-command-top.png
+Pointer(Activate(LibraryView(Launch)))
+  Browse open browse:Files/Home
+  Browse in use 1 files
+-- library-pick.png
+Pointer(Activate(LibraryView(Choose)))
+  Browse close
+  Browse in use 0 files
+-- library-pick-chosen.png
 Pointer(Activate(LibraryView(Edit(Row(3)))))
   Watch Metrics off
 -- library-edit-name.png

@@ -8,35 +8,35 @@
 == top.png (top; the pad on both screens)
 start "zelda-lttp"; back -
 -- library
-Collection(0), Collection(1), Collection(2), Collection(3), Collection(4): ^"zelda-lttp" v"metroid-zm" <"builtin:library" >"ff6"
-"zelda-lttp": ^[ListStep(0)] v"metroid-zm" <"builtin:library" >"ff6"
-"metroid-zm": ^"zelda-lttp" v"mk-ds" <"builtin:library" >"ff6"
-"mk-ds": ^"metroid-zm" v"ff6" <"builtin:library" >"ff6"
-"ff6": ^"mk-ds" v"dark-souls" <"builtin:library" >[CollectionStep(1)]
-"dark-souls": ^"ff6" v"hades" <"builtin:library" >"ff6"
-"hades": ^"dark-souls" v"celeste" <"builtin:library" >"ff6"
-"celeste": ^"hades" vTab(Keyboard) <"builtin:library" >"ff6"
+Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5): ^"zelda-lttp" v"metroid-zm" <"browse:Files/Home" >"ff6"
+"zelda-lttp": ^[ListStep(0)] v"metroid-zm" <"browse:Files/Home" >"ff6"
+"metroid-zm": ^"zelda-lttp" v"mk-ds" <"browse:Files/Home" >"ff6"
+"mk-ds": ^"metroid-zm" v"ff6" <"browse:Files/Home" >"ff6"
+"ff6": ^"mk-ds" v"dark-souls" <"browse:Files/Home" >[CollectionStep(1)]
+"dark-souls": ^"ff6" v"hades" <"browse:Files/Home" >"ff6"
+"hades": ^"dark-souls" v"celeste" <"browse:Files/Home" >"ff6"
+"celeste": ^"hades" vTab(Keyboard) <"browse:Files/Home" >"ff6"
 == top-tab2.png (top; the pad on both screens)
 start "ff6"; back -
 -- library
-Collection(0), Collection(1), Collection(2), Collection(3), Collection(4): ^"ff6" v"metroid-zm" <"zelda-lttp" >"tv:Cosmos"
+Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5): ^"ff6" v"metroid-zm" <"zelda-lttp" >"tv:Cosmos"
 "ff6": ^[ListStep(0)] v"metroid-zm" <"zelda-lttp" >"tv:Cosmos"
 "metroid-zm": ^"ff6" vTab(Keyboard) <"zelda-lttp" >"tv:Cosmos"
 == top-tab2-down.png (top; the pad on both screens)
 start "metroid-zm"; back -
 -- library as in top-tab2.png except
-Collection(0), Collection(1), Collection(2), Collection(3), Collection(4): v"ff6"
+Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5): v"ff6"
 "ff6": ^[ListStep(-1)]
 == top-back.png (top; the pad on both screens)
 start "zelda-lttp"; back -
 -- library as in top.png except
-Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), "zelda-lttp": >"metroid-zm"
+Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5), "zelda-lttp": >"metroid-zm"
 "metroid-zm": >[CollectionStep(1)]
 "mk-ds", "ff6", "dark-souls", "hades", "celeste": >"metroid-zm"
 == top-played.png (top; the pad on both screens)
 start "zelda-lttp"; back -
 -- library
-Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5), Collection(6): ^"zelda-lttp" v"metroid-zm" <"zelda-lttp" >"metroid-zm"
+Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5), Collection(6), Collection(7): ^"zelda-lttp" v"metroid-zm" <"zelda-lttp" >"metroid-zm"
 "zelda-lttp": ^[ListStep(0)] v"metroid-zm" <[CollectionStep(-1)] >"metroid-zm"
 "metroid-zm": ^"zelda-lttp" v"mk-ds" <"zelda-lttp" >[CollectionStep(1)]
 "mk-ds": ^"metroid-zm" v"ff6" <"zelda-lttp" >"metroid-zm"
@@ -47,7 +47,7 @@ Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Colle
 == top-switch.png (top; the pad on both screens)
 start "ff6"; back -
 -- library as in top-played.png except
-Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5), Collection(6): ^"mk-ds" v"dark-souls"
+Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5), Collection(6), Collection(7): ^"mk-ds" v"dark-souls"
 "zelda-lttp": ^[ListStep(-3)]
 == top-actions.png (top; the pad on the Library's actions)
 start Launch; back Focus "ff6"
@@ -58,12 +58,12 @@ Pin: ^Favourite v- <- >-
 == top-folder.png (top; the pad on both screens)
 start "tv:Cosmos"; back -
 -- library
-Collection(0), Collection(1), Collection(2), Collection(3), Collection(4): ^"tv:Cosmos" v"tv:Cosmos" <"ff6" >"desktop:steam"
+Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5): ^"tv:Cosmos" v"tv:Cosmos" <"ff6" >"desktop:steam"
 "tv:Cosmos": ^[ListStep(0)] vTab(Keyboard) <"ff6" >"desktop:steam"
 == top-group.png (top; the pad on both screens)
 start "tv:Cosmos/Season 1/10. The Edge of Forever.mkv"; back Activate Up
 -- library
-Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5): ^"tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv" vUp <"ff6" >"desktop:steam"
+Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5), Collection(6): ^"tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv" vUp <"ff6" >"desktop:steam"
 Up: ^Collection(1) v"tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv" <"tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv" >Collection(2)
 "tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv": ^[ListStep(-2)] v"tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv" <"ff6" >"desktop:steam"
 "tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv": ^"tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv" v"tv:Cosmos/Season 1/10. The Edge of Forever.mkv" <"ff6" >"desktop:steam"
@@ -71,8 +71,8 @@ Up: ^Collection(1) v"tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv" <
 == top-recent.png (top; the pad on both screens)
 start "tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv"; back -
 -- library
-Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5): ^"tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv" v"tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv" <"builtin:library" >"zelda-lttp"
-"tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv": ^[ListStep(0)] vTab(Keyboard) <"builtin:library" >"zelda-lttp"
+Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5), Collection(6): ^"tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv" v"tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv" <"browse:Files/Home" >"zelda-lttp"
+"tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv": ^[ListStep(0)] vTab(Keyboard) <"browse:Files/Home" >"zelda-lttp"
 == bottom.png (bottom; the pad on both screens)
 start "zelda-lttp"; back -
 -- bar
@@ -755,6 +755,17 @@ Editor(Insert(3)): ^Editor(Cancel) vKey[0,6] <Editor(Insert(2)) >Editor(Insert(4
 Editor(Insert(4)): ^Editor(Save) vKey[0,8] <Editor(Insert(3)) >Key[0,9]
 == library-edit-command-top.png (top; the pad on both screens)
 start Edit(Row(0)); back Activate Edit(Cancel)
+== library-pick.png (top; the pad on both screens)
+start "browse:Files/Home/notes.txt"; back Activate CancelPick
+-- library
+Collection(5): ^"browse:Files/Home/Roms" v"browse:Files/Home/snes.png" <[CollectionStep(-1)] >[CollectionStep(1)]
+Up: ^Collection(5) v"browse:Files/Home/Pictures" <"browse:Files/Home/Pictures" >-
+"browse:Files/Home/Pictures": ^[ListStep(-2)] v"browse:Files/Home/Roms" <[CollectionStep(-1)] >[CollectionStep(1)]
+"browse:Files/Home/Roms": ^"browse:Files/Home/Pictures" v"browse:Files/Home/notes.txt" <[CollectionStep(-1)] >[CollectionStep(1)]
+"browse:Files/Home/notes.txt": ^"browse:Files/Home/Roms" v"browse:Files/Home/snes.png" <[CollectionStep(-1)] >[CollectionStep(1)]
+"browse:Files/Home/snes.png": ^"browse:Files/Home/notes.txt" vTab(Keyboard) <[CollectionStep(-1)] >[CollectionStep(1)]
+== library-pick-chosen.png (top; the pad on both screens)
+start Edit(Pick(4)); back Activate Edit(Cancel)
 == library-edit-name.png (bottom; the pad on both screens)
 start Key[2,4]; back Activate Editor(Cancel)
 -- bar as in bottom.png except

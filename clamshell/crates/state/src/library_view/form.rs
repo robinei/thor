@@ -40,6 +40,9 @@ pub enum Field {
     /// A runner's command.
     Launch,
     Keymap,
+    /// Where a runner's emulator looks for its BIOS files, and their names.
+    BiosDir,
+    BiosFiles,
 }
 
 /// How a field is set.
@@ -74,6 +77,27 @@ impl Field {
             Field::Builtin => "Screen",
             Field::Launch => "Command",
             Field::Keymap => "Keymap",
+            Field::BiosDir => "BIOS folder",
+            Field::BiosFiles => "BIOS files",
+        }
+    }
+
+    /// What it may be picked as in the Library (see [`super::pick`]): a folder (`true`), a file, or
+    /// nothing. A command's file is its program.
+    pub fn picks(self) -> Option<bool> {
+        match self {
+            Field::Dir | Field::BiosDir => Some(true),
+            Field::Launch => Some(false),
+            _ => None,
+        }
+    }
+
+    /// What a pick for it asks for.
+    pub fn asks(self) -> &'static str {
+        match self {
+            Field::Launch => "Choose the program",
+            Field::BiosDir => "Choose the BIOS folder",
+            _ => "Choose the folder",
         }
     }
 
@@ -119,7 +143,7 @@ impl Item {
             Item::Source(Source::Steam(_)) => &[Kind, Id, Name, Place, Runner, Metadata, Hide],
             Item::Source(Source::Removable(_)) => &[Kind, Label, Uuid, Fs, Within, Name, Hide],
             Item::Source(Source::Builtin(_)) => &[Kind, Builtin, Place],
-            Item::Runner(_) => &[Kind, Id, Name, Match, Launch, Keymap],
+            Item::Runner(_) => &[Kind, Id, Name, Match, Launch, Keymap, BiosDir, BiosFiles],
         }
     }
 
@@ -179,6 +203,8 @@ impl Item {
                 Field::Match => words(&r.patterns),
                 Field::Launch => words(&r.launch),
                 Field::Keymap => opt(&r.keymap),
+                Field::BiosDir => r.bios.as_ref().map(|b| b.dir.clone()).unwrap_or_default(),
+                Field::BiosFiles => r.bios.as_ref().map(|b| words(&b.files)).unwrap_or_default(),
                 _ => String::new(),
             },
         }
@@ -224,8 +250,30 @@ impl Item {
                 Field::Match => r.patterns = split(text),
                 Field::Launch => r.launch = split(text),
                 Field::Keymap => r.keymap = some(),
+                Field::BiosDir | Field::BiosFiles => {
+                    let bios = r.bios.get_or_insert_with(Default::default);
+                    match f {
+                        Field::BiosDir => text.clone_into(&mut bios.dir),
+                        _ => bios.files = split(text),
+                    }
+                    // Neither: no BIOS needed.
+                    if bios.dir.is_empty() && bios.files.is_empty() {
+                        r.bios = None;
+                    }
+                }
                 _ => {}
             },
+        }
+    }
+
+    /// Picked field `f` set to `path`: a command's program replaced, keeping its arguments, or the path.
+    pub fn picked(&mut self, f: Field, path: &str) {
+        match (self, f) {
+            (Item::Runner(r), Field::Launch) => match r.launch.first_mut() {
+                Some(program) => path.clone_into(program),
+                None => r.launch.push(path.to_owned()),
+            },
+            (item, f) => item.type_in(f, path),
         }
     }
 
@@ -390,6 +438,22 @@ mod tests {
         assert_eq!(item.value(&config, Field::Place), "SNES", "kept across the new type");
         item.toggle(Field::Hide);
         assert_eq!(item.value(&config, Field::Hide), "on");
+    }
+
+    /// A runner's program is picked into its command, which keeps its arguments; its BIOS folder and
+    /// files make its BIOS, and emptied, there is none.
+    #[test]
+    fn a_runners_program_and_bios_are_set() {
+        use clamshell_library::config::Runner;
+        let mut item = Item::Runner(Runner { launch: split("retroarch -f {path}"), ..Runner::default() });
+        item.picked(Field::Launch, "/usr/bin/dolphin-emu");
+        assert_eq!(item.value(&Config::default(), Field::Launch), "/usr/bin/dolphin-emu -f {path}");
+        item.picked(Field::BiosDir, "/h/bios");
+        item.type_in(Field::BiosFiles, "a.bin b.bin");
+        assert!(matches!(&item, Item::Runner(r) if r.bios.as_ref().is_some_and(|b| b.dir == "/h/bios" && b.files == ["a.bin", "b.bin"])));
+        item.type_in(Field::BiosDir, "");
+        item.type_in(Field::BiosFiles, "");
+        assert!(matches!(&item, Item::Runner(r) if r.bios.is_none()));
     }
 
     /// A command is typed with its placeholders beside the keyboard, and a tap types one in.
