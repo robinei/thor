@@ -12,6 +12,10 @@ pub const RUNNER: &str = "runner:";
 pub const TRAY: &str = "tray:";
 /// A program found by its window that no desktop file names: `window:<its app id>`.
 pub const WINDOW: &str = "window:";
+/// A folder of a declared place: `place:<the place's id>`.
+pub const PLACE: &str = "place:";
+/// A folder made where no place is declared: `folder:<tab>/<path>`.
+pub const FOLDER: &str = "folder:";
 
 /// The desktop file named by an entry id, if the id is a desktop file's.
 pub fn desktop_file(id: &str) -> Option<&str> {

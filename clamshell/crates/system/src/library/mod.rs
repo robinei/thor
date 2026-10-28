@@ -109,14 +109,14 @@ impl Folders<'_> {
     fn folder(&self, tab: &str, at: &str, title: &str) -> Entry {
         let path = format!("{tab}/{at}");
         let Some(place) = self.places.iter().find(|p| p.path.trim().trim_matches('/') == path) else {
-            return Entry::new(&format!("folder:{path}"), title);
+            return Entry::new(&format!("{}{path}", ids::FOLDER), title);
         };
         let file = |f: &str| match (f.strip_prefix("~/"), self.home, self.config_dir) {
             (Some(rest), Some(home), _) => home.join(rest),
             (None, _, Some(dir)) if !f.starts_with('/') => dir.join(f),
             _ => PathBuf::from(f),
         };
-        let mut g = Entry::new(&format!("place:{}", place.id), title);
+        let mut g = Entry::new(&format!("{}{}", ids::PLACE, place.id), title);
         g.box_front = place.picture.as_deref().map(file);
         match place.icon.as_deref() {
             // Either an image file or one of the UI's icons by name.
@@ -260,9 +260,9 @@ impl Builder<'_> {
     /// `dir`.
     fn put(&mut self, place: &str, dir: &Path, entries: Vec<usize>) {
         let (tab, path) = content::place(place);
+        // A folder is made with nothing in it too: shown dimmed, saying what goes there.
         let entries = match path {
             "" => entries,
-            _ if entries.is_empty() => entries,
             path => self.folders.put(&mut self.games, tab, path, dir, &entries).into_iter().collect(),
         };
         let c = match self.collections.iter().position(|c| c.name == tab) {
@@ -345,8 +345,25 @@ impl Builder<'_> {
             let fitting: Vec<usize> = entries.iter().copied().filter(fits).collect();
             self.hows.extend(fitting.into_iter().map(|i| (i, how.clone())));
         }
-        if let Some(place) = self.resolve(&source.place) {
-            self.put(&place, &dir, entries);
+        let Some(place) = self.resolve(&source.place) else {
+            return;
+        };
+        let empty = entries.is_empty();
+        self.put(&place, &dir, entries);
+        // The folder says where its files go while it has none, and which BIOS files its runner lacks.
+        let (tab, path) = content::place(&place);
+        let missing = named.map(|r| self.missing_bios(r)).unwrap_or_default();
+        if let Some(folder) = self.folders.made.get(&(tab.to_owned(), path.to_owned())).and_then(|&f| self.games.get_mut(f)) {
+            let summary = &mut folder.details.summary;
+            if empty {
+                summary.push_str(&format!("Nothing here yet: its files go in {}.", dir.display()));
+            }
+            for (file, bios) in missing {
+                if !summary.is_empty() {
+                    summary.push('\n');
+                }
+                summary.push_str(&format!("Needs {file} in {}.", bios.display()));
+            }
         }
     }
 
@@ -533,7 +550,7 @@ impl Builder<'_> {
             coll.icon = icon;
             let mut stack: Vec<(usize, bool)> = coll.entries.iter().map(|&i| (i, recent)).collect();
             while let Some((i, inherited)) = stack.pop() {
-                let declared = self.games.get(i).and_then(|g| g.id.strip_prefix("place:")).and_then(|id| places.iter().find(|p| p.id == id));
+                let declared = self.games.get(i).and_then(|g| g.id.strip_prefix(ids::PLACE)).and_then(|id| places.iter().find(|p| p.id == id));
                 let recent = declared.and_then(|p| p.recent).unwrap_or(inherited);
                 if let Some(g) = self.games.get_mut(i) {
                     g.app = !recent;
@@ -588,19 +605,22 @@ impl Builder<'_> {
 
     /// Records a problem for each BIOS file a runner needs that isn't where its emulator looks.
     fn bios(&mut self) {
-        let home = self.sources.home.as_deref();
-        for (name, bios) in self.runners.iter().filter_map(|r| Some((r.title(), r.bios.as_ref()?))) {
-            let dir = match content::expand_dir(&bios.dir, home) {
-                Ok(dir) => dir,
-                Err(var) => {
-                    self.problems.push(format!("{name}: its BIOS folder needs ${var}"));
-                    continue;
-                }
-            };
-            for file in bios.files.iter().filter(|f| !dir.join(f).is_file()) {
-                self.problems.push(format!("{name}: its BIOS {file} isn't in {}", dir.display()));
+        let runners = self.runners;
+        for r in runners {
+            if let Some(Err(var)) = r.bios.as_ref().map(|b| content::expand_dir(&b.dir, self.sources.home.as_deref())) {
+                self.problems.push(format!("{}: its BIOS folder needs ${var}", r.title()));
+            }
+            for (file, dir) in self.missing_bios(r) {
+                self.problems.push(format!("{}: its BIOS {file} isn't in {}", r.title(), dir.display()));
             }
         }
+    }
+
+    /// The BIOS files runner `r` needs that aren't where its emulator looks, each with that folder.
+    fn missing_bios(&self, r: &runners::Runner) -> Vec<(String, PathBuf)> {
+        let Some(bios) = &r.bios else { return Vec::new() };
+        let Ok(dir) = content::expand_dir(&bios.dir, self.sources.home.as_deref()) else { return Vec::new() };
+        bios.files.iter().filter(|f| !dir.join(f).is_file()).map(|f| (f.clone(), dir.clone())).collect()
     }
 
     /// Adds ClamShell's own tools in their tab, if a place declares it, after what sources put there. The
@@ -910,11 +930,13 @@ mod tests {
         }
         let r = root.display();
         let config = format!(
-            r#"{{ "places": [{{ "id": "games", "name": "Games" }}, {{ "id": "files", "name": "Files" }}, {{ "id": "tools", "name": "Tools", "type": "tools" }}],
+            r#"{{ "places": [{{ "id": "games", "name": "Games" }}, {{ "id": "psx", "name": "PlayStation", "in": "games" }}, {{ "id": "files", "name": "Files" }},
+                          {{ "id": "tools", "name": "Tools", "type": "tools" }}],
               "runners": [{{ "id": "snes", "name": "SNES", "match": ["*.sfc"], "launch": ["retroarch", "{{path}}"] }},
                           {{ "id": "psx", "name": "PlayStation", "match": ["*.chd"], "launch": ["retroarch", "{{path}}"],
                              "bios": {{ "dir": "{r}/bios", "files": ["scph5500.bin", "scph5501.bin"] }} }}],
               "sources": [{{ "type": "dir", "id": "snes", "dir": "{r}/snes", "place": "games", "runner": "snes", "also": ["*.zip"] }},
+                          {{ "type": "dir", "id": "psx", "dir": "{r}/psx", "place": "psx", "runner": "psx" }},
                           {{ "type": "browse", "dir": "{r}/home", "in": "files", "name": "Home" }},
                           {{ "type": "builtin", "id": "device", "place": "tools" }}] }}"#
         );
@@ -924,7 +946,11 @@ mod tests {
             let c = lib.collections.iter().find(|c| c.name == name).unwrap();
             c.entries.iter().map(|&i| lib.entries[i].title.clone()).collect::<Vec<_>>()
         };
-        assert_eq!(tab("Games"), ["Mario", "Zelda"], "the runner's *.sfc and also *.zip, not the notes");
+        assert_eq!(tab("Games"), ["PlayStation", "Mario", "Zelda"], "the runner's *.sfc and also *.zip, not the notes");
+        let psx = lib.entry("place:psx").unwrap();
+        assert!(psx.is_empty_folder(), "there, with nothing in it");
+        let said = &psx.details.summary;
+        assert!(said.starts_with("Nothing here yet: its files go in") && said.contains("Needs scph5501.bin in"), "{said}");
         assert_eq!(tab("Files"), ["Home"]);
         assert_eq!(tab("Tools"), ["Device", "Rescan library", "Fetch missing art again"], "one Tools tab");
         assert_eq!(lib.collections.iter().filter(|c| c.name == "Tools").count(), 1);

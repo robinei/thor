@@ -91,7 +91,7 @@ impl LibraryView {
         let Some((entry, selected)) = self.file_target() else {
             return actions;
         };
-        if selected {
+        if selected && !entry.is_empty_folder() {
             actions.push(Action::Open);
         }
         let next = self.selected_index().filter(|_| selected && entry.is_group()).and_then(|g| self.library().to_continue(g));

@@ -675,6 +675,10 @@ impl Session {
         if command.is_none() && library.entry(&entry).is_some_and(Entry::is_group) {
             return Launched::Instead(Instead::Group);
         }
+        // A folder with nothing in it yet has nothing to open.
+        if command.is_none() && library.entry(&entry).is_some_and(Entry::is_empty_folder) {
+            return Launched::No;
+        }
         if self.is_launching(&entry) {
             return Launched::No;
         }

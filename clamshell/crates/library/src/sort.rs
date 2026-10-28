@@ -46,7 +46,8 @@ pub fn list_order(games: &[Entry], a: usize, b: usize) -> Ordering {
     let key = |i: usize| {
         games.get(i).map(|g| match g.browsed.as_ref().map(|b| &b.kind) {
             Some(BrowseKind::Root | BrowseKind::Trash | BrowseKind::Removable(_)) => (false, true, None),
-            _ => (!g.is_group(), false, Some((&g.sort_key, &g.title))),
+            // Folders first, an empty one among them.
+            _ => (!(g.is_group() || g.is_empty_folder()), false, Some((&g.sort_key, &g.title))),
         })
     };
     key(a).cmp(&key(b))

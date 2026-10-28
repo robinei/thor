@@ -144,10 +144,10 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         let at = scrolled.row(position);
         let r = Rect::new(at.x, at.y, list.w - pad * 0.6, row_h - 2.0);
         let selected = position == cursor.index;
-        // A watched video, to its end or into its credits, is dimmer.
+        // A watched video, to its end or into its credits, is dimmer, as is a folder with nothing in it.
         let tone = if selected {
             Tone::High
-        } else if entry.mpv_file().is_some() && entry.watched() {
+        } else if (entry.mpv_file().is_some() && entry.watched()) || entry.is_empty_folder() {
             Tone::Dim
         } else {
             Tone::Normal

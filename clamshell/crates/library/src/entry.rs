@@ -240,6 +240,12 @@ impl Entry {
         !self.items.is_empty() || self.browsed.as_ref().is_some_and(|b| b.folder)
     }
 
+    /// Whether it is a folder of the library's places with nothing in it yet, such as a system's before its
+    /// games are copied in: shown dimmed, with nothing to open.
+    pub fn is_empty_folder(&self) -> bool {
+        (self.id.starts_with(crate::ids::PLACE) || self.id.starts_with(crate::ids::FOLDER)) && self.items.is_empty()
+    }
+
     /// Whether it is a game, rather than an app, a game launcher, a film, a file or a group. Games are
     /// paused when hidden by default, as consoles do.
     pub fn is_game(&self) -> bool {
