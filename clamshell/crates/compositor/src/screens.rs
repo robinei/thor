@@ -40,6 +40,11 @@ pub(crate) struct Screens {
 }
 
 impl Screens {
+    /// Whether a point `x` across the scene is on the second screen, which lies right of the top one.
+    pub(crate) fn below(&self, x: f64) -> bool {
+        x >= f64::from(self.top_width)
+    }
+
     /// The outputs, with their globals, at the configuration's sizes.
     pub fn new(dh: &DisplayHandle, config: &Config) -> Self {
         let outputs = ["ClamShell-Top", "ClamShell-Bottom"].map(|name| {

@@ -456,13 +456,12 @@ fn ui_screen(role: ScreenRole) -> clamshell_ui::Screen {
 /// window, overlay, dim layer or cursor on it (see `ui_scanout`).
 fn ui_only(server: &Server, down: bool, planed: Planed) -> bool {
     use crate::scene::Shown;
-    let edge = server.screens.top_width;
-    let on_it = |x: i32| (x >= edge) == down;
+    let on_it = |x: f64| server.screens.below(x) == down;
     let screen = if down { clamshell_ui::Screen::Bottom } else { clamshell_ui::Screen::Top };
     server.scene.shown().iter().all(|shown| match shown {
         Shown::Window(placed) => placed.below != down,
-        Shown::Dim { area } => !on_it(area.loc.x),
-        Shown::Cursor { at } => planed.cursor || !on_it(at.x as i32),
+        Shown::Dim { area } => !on_it(f64::from(area.loc.x)),
+        Shown::Cursor { at } => planed.cursor || !on_it(at.x),
         Shown::Software { layer, .. } => planed.overlay || *layer != clamshell_ui::Layer::Overlay(screen),
     })
 }
@@ -907,12 +906,11 @@ fn layers_decide(drawing: &mut Drawing, server: &mut Server) {
         crate::scene::Shown::Cursor { at } => Some(*at),
         _ => None,
     });
-    let edge = f64::from(server.screens.top_width);
     // (Not for a screen that is off: nothing is planed there until it is on.)
     for screen in screens.iter_mut().filter(|screen| screen.on) {
         let Some(layers) = &mut screen.layers else { continue };
         let down = screen.role == ScreenRole::Bottom;
-        let at = at.filter(|at| (at.x >= edge) == down);
+        let at = at.filter(|at| server.screens.below(at.x) == down);
         let origin = smithay::utils::Point::<i32, Logical>::from((screen.part.loc.x, screen.part.loc.y));
         screen.layers_dirty |= layers.decide(server, ui_screen(screen.role), cursor, renderer, at, origin);
     }

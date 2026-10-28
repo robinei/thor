@@ -132,7 +132,7 @@ impl Cursor {
                     out.push(element.into());
                 });
                 let [top, bottom] = &server.screens.outputs;
-                let output = if at.x < server.screens.top_width as f64 { top } else { bottom };
+                let output = if server.screens.below(at.x) { bottom } else { top };
                 smithay::desktop::utils::send_frames_surface_tree(&surface, output, server.started.elapsed(), Some(Duration::ZERO), |_, _| {
                     Some(output.clone())
                 });
@@ -281,7 +281,7 @@ impl Cursor {
                     log::warn!("compositor: copying a cursor onto its plane: {error}");
                 }
                 let [top, bottom] = &server.screens.outputs;
-                let output = if f64::from(shape.at.x) < server.screens.top_width as f64 { top } else { bottom };
+                let output = if server.screens.below(f64::from(shape.at.x)) { bottom } else { top };
                 smithay::desktop::utils::send_frames_surface_tree(surface, output, server.started.elapsed(), Some(Duration::ZERO), |_, _| Some(output.clone()));
             }
         }

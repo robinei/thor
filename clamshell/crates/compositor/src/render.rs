@@ -140,8 +140,6 @@ pub(crate) fn elements(
     }
     server.core.frames_done();
     let screen = if down { Screen::Bottom } else { Screen::Top };
-    let top_width = server.screens.top_width;
-    let on_screen = |x: f64| (x >= f64::from(top_width)) == down;
     server.place();
     out.clear();
     let mut dims = 0;
@@ -155,7 +153,7 @@ pub(crate) fn elements(
                 }
                 continue;
             }
-            Some(Shown::Cursor { at }) if !on_screen(at.x) || planed.cursor => continue,
+            Some(Shown::Cursor { at }) if server.screens.below(at.x) != down || planed.cursor => continue,
             Some(Shown::Cursor { at }) => {
                 cursor.elements(server, renderer, at, out)?;
                 continue;
@@ -164,7 +162,7 @@ pub(crate) fn elements(
                 // Numbered across both screens, so that each keeps its id from frame to frame.
                 let id = server.scene.dim_id(dims);
                 dims += 1;
-                if !on_screen(f64::from(area.loc.x)) {
+                if server.screens.below(f64::from(area.loc.x)) != down {
                     continue;
                 }
                 out.push(
