@@ -1,7 +1,8 @@
 //! The file chooser served to apps: ClamShell owns `org.freedesktop.impl.portal.desktop.clamshell` on the
 //! session bus and serves xdg-desktop-portal's `org.freedesktop.impl.portal.FileChooser`, which the
 //! session's portals config (clamshell-portals.conf) sends there. The rest of what apps ask of the desktop
-//! stays with GTK's portal, which also takes the file chooser while ClamShell isn't there.
+//! stays with GTK's portal. xdg-desktop-portal doesn't fall back to another file chooser while ClamShell is
+//! down: an app's request then fails.
 //!
 //! An `OpenFile`, `SaveFile` or `SaveFiles` call is kept, unanswered, and sent on as
 //! [`PortalEvent::Asked`], with the asking process (by the request's handle, which names the app's

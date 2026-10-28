@@ -294,8 +294,9 @@ Then for apps, through xdg-desktop-portal:
 
 - ClamShell serves `org.freedesktop.impl.portal.FileChooser` (OpenFile, SaveFile, SaveFiles) as
   `org.freedesktop.impl.portal.desktop.clamshell`, registered by a `.portal` file; `clamshell-portals.conf`
-  sends only the file chooser to it (`org.freedesktop.impl.portal.FileChooser=clamshell;gtk`), the rest
-  staying with GTK's, which also takes over when ClamShell isn't there.
+  sends only the file chooser to it (`org.freedesktop.impl.portal.FileChooser=clamshell`), the rest
+  staying with GTK's. xdg-desktop-portal takes the first backend listed with the interface whether it runs
+  or not (1.22): there is no fallback while ClamShell is down, when nothing could show a chooser anyway.
 - Answers are `file://` URIs; unsandboxed apps need nothing more. A request waits for the user with no
   timeout, so it is answered asynchronously, off the compositor's loop; several may be open; the portal
   closing one (the app cancelled or went away) closes the picker. For Save, ClamShell asks before

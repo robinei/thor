@@ -116,8 +116,8 @@ What runs is shown and controlled as entries (the dock's): one per program, each
   service runs (the service would lose it), or one that also has another entry's windows (a browser
   showing a file opened from the Files tab: moving it would take the other's windows too); such an entry
   runs while its icon or a window is there, and Quit only closes its windows. A window a systemd service
-  opened (GTK's file chooser while ClamShell's isn't there, the polkit password prompt) is no entry: it belongs to the program that
-  asked for it, and is gone in seconds.
+  opened (the polkit password prompt) is no entry: it belongs to the program that asked for it, and is
+  gone in seconds.
 
 ## Ending
 
