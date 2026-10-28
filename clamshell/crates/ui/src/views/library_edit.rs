@@ -6,6 +6,7 @@
 //! order and the selected one's fields and actions; open, its form, with a chosen field's options on the
 //! right.
 
+use clamshell_state::ListId;
 use clamshell_state::config::{Config, Place, Source};
 use clamshell_state::library_view::edit::{self, Edit, EditId, Form, Panel, Row};
 use clamshell_state::library_view::form::{self, Item, Set};
@@ -14,6 +15,7 @@ use super::library_view::{ACTION, DETAIL, HEADER_TEXT, LIST_W, ROW_H, ROW_TEXT, 
 use crate::gfx::icons::Icon;
 use crate::gfx::{Align, Keep, Rect};
 use crate::toolkit::format::Fmt;
+use crate::toolkit::scroll::Scrolled;
 use crate::toolkit::style::{self, Look, SURFACE_HI, Tone};
 use crate::toolkit::{Frame, widgets};
 
@@ -76,13 +78,13 @@ pub(super) fn draw(f: &mut Frame, screen: Rect, edit: &Edit) -> usize {
         });
     }
     let row_h = h * ROW_H;
-    let shown = ((list.h / row_h).floor() as usize).max(1);
     let len = edit.rows(config, here);
-    // The window keeps the selected row off its edges, so that the pad can step on past them.
-    let top = (edit.cursor() + 2).saturating_sub(shown).min(len.saturating_sub(shown));
-    for i in top..len.min(top + shown) {
+    // The shared scrolled list: dragged, and scrolled by the state to the pad's focus.
+    let scrolled = Scrolled::begin(f, ListId::LibraryEdit, list, row_h, len);
+    for i in scrolled.shown() {
         let Some(row) = edit.row(config, here, i) else { break };
-        let r = Rect::new(list.x, list.y + (i - top) as f32 * row_h, list.w, row_h - 2.0);
+        let at = scrolled.row(i);
+        let r = Rect::new(at.x, at.y, at.w, row_h - 2.0);
         let selected = i == edit.cursor();
         let look = Look { fill: selected.then_some(SURFACE_HI), ..Look::CARD };
         let size = r.h * ROW_TEXT;
@@ -110,6 +112,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect, edit: &Edit) -> usize {
             }
         });
     }
+    scrolled.end(f, list.x + list.w + pad * 0.2);
     if let Some(place) = edit.selected(config) {
         details(f, h, edit, config, place, Rect::new(w * LIST_W + pad, tabs_h + pad * 0.5, w - w * LIST_W - 2.0 * pad, h - tabs_h - pad * 1.5));
     }
@@ -121,12 +124,12 @@ pub(super) fn draw(f: &mut Frame, screen: Rect, edit: &Edit) -> usize {
 fn list_view(f: &mut Frame, h: f32, edit: &Edit, config: &Config, panel: Panel, body: Rect) {
     let list = Rect::new(body.x, body.y, body.w * LIST_W, body.h);
     let row_h = h * ROW_H;
-    let shown = ((list.h / row_h).floor() as usize).max(1);
     let len = edit.listed(config);
-    let top = (edit.cursor() + 2).saturating_sub(shown).min(len.saturating_sub(shown));
     let pad = style::pad(h).max(4.0);
-    for i in top..len.min(top + shown) {
-        let r = Rect::new(list.x, list.y + (i - top) as f32 * row_h, list.w - pad, row_h - 2.0);
+    let scrolled = Scrolled::begin(f, ListId::LibraryEdit, list, row_h, len);
+    for i in scrolled.shown() {
+        let at = scrolled.row(i);
+        let r = Rect::new(at.x, at.y, at.w - pad, row_h - 2.0);
         let selected = i == edit.cursor();
         let look = Look { fill: selected.then_some(SURFACE_HI), ..Look::CARD };
         let size = r.h * ROW_TEXT;
@@ -157,6 +160,7 @@ fn list_view(f: &mut Frame, h: f32, edit: &Edit, config: &Config, panel: Panel, 
             }
         });
     }
+    scrolled.end(f, list.x + list.w - pad * 0.6);
     // The selected one's fields, as its form would show them, and its actions.
     let r = Rect::new(body.x + body.w * LIST_W + pad, body.y, body.w * (1.0 - LIST_W) - pad, body.h);
     let item = match panel {

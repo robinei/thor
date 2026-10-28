@@ -218,6 +218,14 @@ impl Edit {
     }
 
     /// How many rows the sources' or runners' list has: one each, and one to make a new one.
+    /// How many rows its list has: the open folder's, or the sources' or runners'.
+    pub fn list_rows(&self, config: &Config) -> usize {
+        match self.panel {
+            Panel::Places => self.here(config).map_or(0, |here| self.rows(config, here)),
+            Panel::Sources | Panel::Runners => self.listed(config),
+        }
+    }
+
     pub fn listed(&self, config: &Config) -> usize {
         match self.panel {
             Panel::Sources => config.sources.len() + 1,

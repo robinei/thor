@@ -40,6 +40,9 @@ pub enum ListId {
     Values,
     /// The settings grid's rows of tiles, [`crate::GRID_COLUMNS`] to a row (see [`crate::Panel::grid`]).
     Settings,
+    /// The Library's edit mode's list: the open folder's rows, or the sources' or runners' (see
+    /// [`crate::library_view::edit`]).
+    LibraryEdit,
 }
 
 /// Which part of a row a target is: the row itself, or one of its controls.
@@ -55,7 +58,7 @@ pub enum RowPart {
 }
 
 impl ListId {
-    pub const COUNT: usize = 12;
+    pub const COUNT: usize = 13;
     pub const ALL: [ListId; ListId::COUNT] = [
         ListId::LibraryView,
         ListId::Wifi,
@@ -69,6 +72,7 @@ impl ListId {
         ListId::Dock,
         ListId::Values,
         ListId::Settings,
+        ListId::LibraryEdit,
     ];
 
     pub fn index(self) -> usize {
@@ -155,6 +159,7 @@ impl<'a> Lists<'a> {
             ListId::Dock => RowsOf::Count(self.dock.items().len().div_ceil(crate::session::dock::DOCK_COLUMNS)),
             ListId::Values => RowsOf::Count(self.menu_rows),
             ListId::Settings => RowsOf::Count(self.panel().grid().count().div_ceil(crate::GRID_COLUMNS)),
+            ListId::LibraryEdit => RowsOf::Count(self.library_view.edit_rows()),
         }
     }
 
@@ -163,6 +168,7 @@ impl<'a> Lists<'a> {
     pub fn of(&self, id: &Id) -> Option<(ListId, usize)> {
         match id {
             Id::Row { list, i, .. } => Some((*list, usize::from(*i))),
+            Id::LibraryView(LibraryViewId::Edit(crate::library_view::edit::EditId::Row(i))) => Some((ListId::LibraryEdit, usize::from(*i))),
             Id::Dock(DockId::Entry(i)) => Some((ListId::Dock, usize::from(*i) / crate::session::dock::DOCK_COLUMNS)),
             Id::Settings(tile) => self.panel().grid().position(|t| t == *tile).map(|i| (ListId::Settings, i / crate::GRID_COLUMNS)),
             _ => None,

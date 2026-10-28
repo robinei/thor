@@ -172,6 +172,11 @@ impl LibraryView {
         self.written.as_ref().map(|(c, _)| c).or(self.library.config.as_ref())
     }
 
+    /// How many rows the edit mode's list has, if it is on (see [`edit::Edit::list_rows`]).
+    pub fn edit_rows(&self) -> usize {
+        self.edit.as_ref().zip(self.config_shown()).map_or(0, |(e, c)| e.list_rows(c))
+    }
+
     /// Takes what the edit mode just wrote, one more write to be read back.
     pub(crate) fn took_written(&mut self) {
         if let Some(c) = self.edit.as_mut().and_then(edit::Edit::take_wrote) {
