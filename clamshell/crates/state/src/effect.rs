@@ -145,6 +145,12 @@ pub enum Effect {
         id: u32,
         reason: crate::notifications::CloseReason,
     },
+    /// An app's file chooser answered (see [`crate::portal`]): the path chosen, or none if the pick was
+    /// cancelled.
+    FileChosen {
+        request: u32,
+        path: Option<std::path::PathBuf>,
+    },
     /// A program's notification was tapped: emit `ActionInvoked` with its default action's key.
     ActionInvoked {
         id: u32,

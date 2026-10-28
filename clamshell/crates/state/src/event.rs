@@ -35,6 +35,8 @@ pub enum Event {
     Reading(Reading),
     /// A notification sent or closed by a program, or tapped (see [`crate::notifications`]).
     Notification(crate::notifications::NotificationEvent),
+    /// An app's file chooser asked for or given up (see [`crate::portal`]).
+    Portal(crate::portal::PortalEvent),
     /// Touch, the mouse or the pad on a target.
     Pointer(PointerEvent),
     /// A right click on the second screen. Pastes the clipboard's text into the open field, like Ctrl+V.
@@ -345,11 +347,13 @@ pub enum Thread {
     Clipboard,
     Sleep,
     Notifications,
+    /// The file chooser served to apps (see [`crate::portal`]).
+    Portal,
     Control,
 }
 
 impl Thread {
-    pub const ALL: [Thread; 28] = [
+    pub const ALL: [Thread; 29] = [
         Thread::Pad,
         Thread::PadDevices,
         Thread::Tuning,
@@ -377,6 +381,7 @@ impl Thread {
         Thread::Clipboard,
         Thread::Sleep,
         Thread::Notifications,
+        Thread::Portal,
         Thread::Control,
     ];
 
@@ -410,6 +415,7 @@ impl Thread {
             Thread::Clipboard => "clipboard",
             Thread::Sleep => "sleep",
             Thread::Notifications => "notifications",
+            Thread::Portal => "portal",
             Thread::Control => "control",
         }
     }

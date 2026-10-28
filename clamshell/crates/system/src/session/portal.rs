@@ -1,0 +1,344 @@
+//! The file chooser served to apps: ClamShell owns `org.freedesktop.impl.portal.desktop.clamshell` on the
+//! session bus and serves xdg-desktop-portal's `org.freedesktop.impl.portal.FileChooser`, which the
+//! session's portals config (clamshell-portals.conf) sends there. The rest of what apps ask of the desktop
+//! stays with GTK's portal, which also takes the file chooser while ClamShell isn't there.
+//!
+//! An `OpenFile` call is kept, unanswered, and sent on as [`PortalEvent::Asked`]; the state picks it in
+//! the Library (clamshell-state's `portal`) and answers with [`Command::Answer`], which replies with the
+//! file's `file://` URI, or as cancelled. `Close` on the request's handle, from xdg-desktop-portal when the
+//! app gives up, is sent on as [`PortalEvent::Closed`] and the call dropped. A request waits for the
+//! person, with no time limit.
+//!
+//! If another program has the name, that is a warning, and the name is asked for again every [`RETRY`].
+
+use std::fmt;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::mpsc::{Receiver, TryRecvError};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
+
+use clamshell_state::{Event, FileRequest, PortalEvent};
+
+use crate::os::dbus::{self, Bus, Message, PropMap, RefArg};
+use crate::os::worker::{self, Bell, Ended, Service, Worker, lost_on};
+use crate::{Closed, Sink};
+
+const NAME: &str = "org.freedesktop.impl.portal.desktop.clamshell";
+const PATH: &str = "/org/freedesktop/portal/desktop";
+const FILE_CHOOSER: &str = "org.freedesktop.impl.portal.FileChooser";
+const REQUEST: &str = "org.freedesktop.impl.portal.Request";
+const BUS_NAME: &str = "org.freedesktop.DBus";
+const BUS_PATH: &str = "/org/freedesktop/DBus";
+
+/// How long to wait before trying the bus, or the name, again.
+const RETRY: Duration = Duration::from_secs(5);
+
+/// The portal's responses: chosen, and cancelled by the person.
+const CHOSEN: u32 = 0;
+const CANCELLED: u32 = 1;
+
+/// The last request number given out. It outlives the thread, so that one started again after a panic
+/// doesn't give out a number the state still holds.
+static LAST_ID: AtomicU32 = AtomicU32::new(0);
+
+/// What the state asks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Command {
+    /// Answer request `id`: the path chosen, or cancelled.
+    Answer { id: u32, path: Option<PathBuf> },
+}
+
+#[derive(Debug)]
+pub(crate) enum Error {
+    Bus(dbus::Error),
+    /// Another program has the name.
+    Taken,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Bus(e) => write!(f, "{e}"),
+            Error::Taken => write!(f, "another program has {NAME}; apps' file choosers are GTK's until it is ours"),
+        }
+    }
+}
+
+impl From<dbus::Error> for Error {
+    fn from(e: dbus::Error) -> Self {
+        Error::Bus(e)
+    }
+}
+
+lost_on!(Error: dbus::Error);
+
+/// A request kept until the state answers it.
+struct Pending {
+    id: u32,
+    /// The object path xdg-desktop-portal closes it by.
+    handle: String,
+    call: Message,
+}
+
+type Requests = Arc<Mutex<Vec<Pending>>>;
+
+/// Serves the file chooser, sending its requests to `sink`; answers them as the commands say.
+pub(crate) fn spawn(sink: impl Sink + Clone) -> io::Result<Worker<Command>> {
+    let bell = Bell::new()?;
+    let mut server = Server { sink, bell: bell.clone(), requests: Requests::default() };
+    Worker::spawn_belled(clamshell_state::Thread::Portal.name(), bell, move |commands| worker::supervise(&mut server, commands, RETRY))
+}
+
+struct Server<S> {
+    sink: S,
+    bell: Bell,
+    requests: Requests,
+}
+
+impl<S: Sink + Clone> Service for Server<S> {
+    type Command = Command;
+    type Session = Bus;
+    type Error = Error;
+    const NAME: &'static str = "portal";
+
+    fn connect(&mut self) -> Result<Bus, Error> {
+        // The calls of a connection that failed can't be answered: their pickers close.
+        for gone in std::mem::take(&mut *lock(&self.requests)) {
+            log::info!("portal: request {} gone with the bus", gone.id);
+            if self.sink.send(Event::Portal(PortalEvent::Closed(gone.id))).is_err() {
+                log::debug!("portal: request {} not closed, the UI is gone", gone.id);
+            }
+        }
+        let mut bus = Bus::session()?;
+        // Flag 4 is DBUS_NAME_FLAG_DO_NOT_QUEUE. Reply 1 means we are the primary owner, 4 that we already were.
+        let (reply,): (u32,) = bus.call(BUS_NAME, BUS_PATH, BUS_NAME, "RequestName", (NAME, 4u32))?;
+        if !matches!(reply, 1 | 4) {
+            return Err(Error::Taken);
+        }
+        log::info!("portal: {NAME} is ours");
+        let (sink, requests) = (self.sink.clone(), self.requests.clone());
+        bus.serve_later(Box::new(move |call| keep(call, &requests, &sink)));
+        let (sink, requests) = (self.sink.clone(), self.requests.clone());
+        bus.serve(Box::new(move |call| answer(call, &requests, &sink)));
+        Ok(bus)
+    }
+
+    fn run_while_up(&mut self, mut bus: Bus, commands: &Receiver<Command>) -> Result<(), Ended<Error>> {
+        loop {
+            loop {
+                match commands.try_recv() {
+                    Ok(command) => reply(&mut bus, &self.requests, command)?,
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => return Ok(()),
+                }
+            }
+            // Keeps or answers the calls that came.
+            bus.signals()?;
+            // Sleep until a command or a call comes.
+            let mut fds = [
+                rustix::event::PollFd::from_borrowed_fd(self.bell.fd(), rustix::event::PollFlags::IN),
+                rustix::event::PollFd::from_borrowed_fd(bus.fd(), rustix::event::PollFlags::IN),
+            ];
+            if let Err(e) = rustix::event::poll(&mut fds, None) {
+                log::debug!("portal: waiting: {e}");
+            }
+            self.bell.clear();
+        }
+    }
+
+    /// Without the bus, the call to answer is gone (dropped as it reconnects).
+    fn command_while_down(&mut self, command: Command) -> Result<(), Closed> {
+        log::debug!("portal: not answered, the bus or the name isn't ours: {command:?}");
+        Ok(())
+    }
+}
+
+fn lock(requests: &Requests) -> std::sync::MutexGuard<'_, Vec<Pending>> {
+    requests.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// `OpenFile`'s arguments: the request's handle, the app's id, its window, the title and the options.
+type OpenArgs = (dbus::Path<'static>, String, String, String, PropMap);
+
+/// Keeps an `OpenFile` call to answer once the state has, sending it on; hands back any other call.
+fn keep(call: Message, requests: &Requests, sink: &impl Sink) -> Option<Message> {
+    if call.path().as_deref() != Some(PATH) || call.interface().as_deref() != Some(FILE_CHOOSER) || call.member().as_deref() != Some("OpenFile") {
+        return Some(call);
+    }
+    // One that can't be read is handed back, and refused as the others are.
+    let (handle, app, _window, title, options): OpenArgs = match call.read_all() {
+        Ok(args) => args,
+        Err(e) => {
+            log::warn!("portal: an OpenFile call that can't be read: {e}");
+            return Some(call);
+        }
+    };
+    let id = LAST_ID.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+    let request = request(id, title, &options);
+    log::info!("portal: request {id} from {app:?}: {}, {:?}", if request.folder { "a folder" } else { "a file" }, request.patterns);
+    if sink.send(Event::Portal(PortalEvent::Asked(request))).is_err() {
+        log::debug!("portal: request {id} not shown, the UI is gone");
+    }
+    lock(requests).push(Pending { id, handle: handle.to_string(), call });
+    None
+}
+
+/// The reply to a call that isn't kept, or none for one that isn't served.
+fn answer(call: &Message, requests: &Requests, sink: &impl Sink) -> Option<Message> {
+    match (call.interface().as_deref()?, &*call.member()?) {
+        (REQUEST, "Close") => {
+            let path = call.path()?.to_string();
+            let mut requests = lock(requests);
+            if let Some(i) = requests.iter().position(|r| r.handle == path) {
+                let id = requests.swap_remove(i).id;
+                log::info!("portal: request {id} given up by the app");
+                if sink.send(Event::Portal(PortalEvent::Closed(id))).is_err() {
+                    log::debug!("portal: request {id} not closed, the UI is gone");
+                }
+            }
+            Some(call.method_return())
+        }
+        ("org.freedesktop.DBus.Introspectable", "Introspect") => Some(call.return_with_args((XML,))),
+        ("org.freedesktop.DBus.Peer", "Ping") => Some(call.method_return()),
+        _ => None,
+    }
+}
+
+/// Replies to the request `command` answers, if it is still kept.
+fn reply(bus: &mut Bus, requests: &Requests, command: Command) -> dbus::Result<()> {
+    let Command::Answer { id, path } = command;
+    let pending = {
+        let mut requests = lock(requests);
+        requests.iter().position(|r| r.id == id).map(|i| requests.swap_remove(i))
+    };
+    let Some(pending) = pending else {
+        log::debug!("portal: request {id} answered, but it was given up");
+        return Ok(());
+    };
+    let message = match &path {
+        Some(path) => {
+            log::info!("portal: request {id} chose {}", path.display());
+            pending.call.return_with_args((CHOSEN, PropMap::from([("uris".to_owned(), dbus::value(vec![uri(path)]))])))
+        }
+        None => {
+            log::info!("portal: request {id} cancelled, nothing chosen");
+            pending.call.return_with_args((CANCELLED, PropMap::new()))
+        }
+    };
+    bus.send(message)
+}
+
+/// The request an `OpenFile` call's options make: a folder if `directory`, else a file matching the
+/// globs of the filter the app chose (`current_filter`), or of its first. A filter of MIME types only
+/// takes any file.
+fn request(id: u32, title: String, options: &PropMap) -> FileRequest {
+    let folder = options.get("directory").and_then(|v| v.0.as_u64()).is_some_and(|b| b != 0);
+    let filter = options.get("current_filter").map(|v| &*v.0).or_else(|| options.get("filters").and_then(|v| v.0.as_iter()?.next()));
+    let patterns = filter.map(globs).unwrap_or_default();
+    FileRequest { id, title, folder, patterns }
+}
+
+/// A filter's globs: it is `(name, [(kind, pattern)])`, kind 0 a glob and 1 a MIME type.
+fn globs(filter: &dyn RefArg) -> Vec<String> {
+    let Some(list) = filter.as_iter().and_then(|mut f| f.nth(1)) else { return Vec::new() };
+    let Some(items) = list.as_iter() else { return Vec::new() };
+    items
+        .filter_map(|item| {
+            let mut fields = item.as_iter()?;
+            let kind = fields.next()?.as_u64()?;
+            let pattern = fields.next()?.as_str()?;
+            (kind == 0).then(|| pattern.to_owned())
+        })
+        .collect()
+}
+
+/// `path` as a `file://` URI: each byte but the unreserved ones and `/` percent-encoded.
+fn uri(path: &Path) -> String {
+    use std::fmt::Write;
+    let mut out = String::from("file://");
+    for &b in path.as_os_str().as_encoded_bytes() {
+        if b.is_ascii_alphanumeric() || b"-._~/".contains(&b) {
+            out.push(char::from(b));
+        } else {
+            let _ = write!(out, "%{b:02X}");
+        }
+    }
+    out
+}
+
+/// What is served, as introspection gives it.
+const XML: &str = r#"<node><interface name="org.freedesktop.impl.portal.FileChooser">
+<method name="OpenFile"><arg type="o" name="handle" direction="in"/><arg type="s" name="app_id" direction="in"/><arg type="s" name="parent_window" direction="in"/><arg type="s" name="title" direction="in"/><arg type="a{sv}" name="options" direction="in"/><arg type="u" name="response" direction="out"/><arg type="a{sv}" name="results" direction="out"/></method>
+</interface><interface name="org.freedesktop.impl.portal.Request"><method name="Close"/></interface></node>"#;
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::os::dbus::value;
+
+    #[test]
+    fn a_path_is_a_file_uri() {
+        assert_eq!(uri(Path::new("/home/thor/My Game (EU).sfc")), "file:///home/thor/My%20Game%20%28EU%29.sfc");
+        assert_eq!(uri(Path::new("/h/ä~")), "file:///h/%C3%A4~");
+    }
+
+    #[test]
+    fn a_folder_or_the_chosen_filters_globs() {
+        let filter = |globs: &[(u32, &str)]| ("Images".to_owned(), globs.iter().map(|(k, p)| (*k, (*p).to_owned())).collect::<Vec<_>>());
+        let images = filter(&[(0, "*.png"), (1, "image/jpeg"), (0, "*.jpg")]);
+        let options = PropMap::from([("filters".to_owned(), value(vec![images.clone(), filter(&[(0, "*")])]))]);
+        let r = request(1, "Open".into(), &options);
+        assert_eq!((r.folder, r.patterns.as_slice()), (false, ["*.png", "*.jpg"].map(String::from).as_slice()), "the first filter's globs");
+        let chosen = PropMap::from([("filters".to_owned(), value(vec![images])), ("current_filter".to_owned(), value(filter(&[(0, "*.txt")])))]);
+        assert_eq!(request(1, String::new(), &chosen).patterns, ["*.txt"], "the one chosen");
+        let mime = PropMap::from([("current_filter".to_owned(), value(filter(&[(1, "text/plain")])))]);
+        assert!(request(1, String::new(), &mime).patterns.is_empty(), "MIME types only: any file");
+        let folder = PropMap::from([("directory".to_owned(), value(true))]);
+        assert!(request(1, String::new(), &folder).folder);
+    }
+}
+
+#[cfg(test)]
+mod live {
+    use super::*;
+
+    /// Needs a session bus, so a desktop. An OpenFile call through the bus is kept and sent on, and
+    /// answered with the chosen file's URI once the state answers. Served on the connection's own name. Run it by hand with `--ignored`.
+    #[test]
+    #[ignore = "needs a session bus"]
+    #[allow(clippy::unwrap_used)]
+    fn an_open_call_waits_for_its_answer() {
+        let mut server = Bus::session().unwrap();
+        let name = server.unique_name().unwrap();
+        let (sink, events) = std::sync::mpsc::channel();
+        let requests = Requests::default();
+        let (s, r) = (sink.clone(), requests.clone());
+        server.serve_later(Box::new(move |call| keep(call, &r, &s)));
+        let r = requests.clone();
+        server.serve(Box::new(move |call| answer(call, &r, &sink)));
+        let caller = {
+            let name = name.clone();
+            std::thread::spawn(move || {
+                let mut client = Bus::session().unwrap().with_timeout(Duration::from_secs(10));
+                let options = PropMap::from([("directory".to_owned(), dbus::value(false))]);
+                let handle = dbus::Path::from("/org/freedesktop/portal/desktop/request/1_1/t");
+                client.call::<(u32, PropMap)>(&name, PATH, FILE_CHOOSER, "OpenFile", (handle, "app", "", "Open a save", options)).unwrap()
+            })
+        };
+        let asked = loop {
+            server.wait(Some(Duration::from_millis(100))).unwrap();
+            if let Ok(Event::Portal(PortalEvent::Asked(asked))) = events.try_recv() {
+                break asked;
+            }
+        };
+        assert_eq!((asked.title.as_str(), asked.folder), ("Open a save", false));
+        reply(&mut server, &requests, Command::Answer { id: asked.id, path: Some("/h/a b.sav".into()) }).unwrap();
+        let (response, results) = caller.join().unwrap();
+        assert_eq!(response, CHOSEN);
+        let uris: Vec<String> = results.get("uris").and_then(|v| v.0.as_iter()).unwrap().filter_map(|u| u.as_str().map(str::to_owned)).collect();
+        assert_eq!(uris, ["file:///h/a%20b.sav"]);
+    }
+}

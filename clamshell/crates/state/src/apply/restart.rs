@@ -58,6 +58,8 @@ impl State {
             // asks for again. Its ids come from a counter that outlives it, so it doesn't give out an id
             // the state still holds. A signal it was emitting is lost.
             Thread::Notifications => {}
+            // Its requests' calls are gone with it: none is answered, and a pick for one ends.
+            Thread::Portal => self.portal_restarted(),
         }
     }
 

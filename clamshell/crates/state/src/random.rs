@@ -601,6 +601,15 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             }
             _ => return None,
         },
+        // Apps' file choosers asked for and given up (see `crate::portal`).
+        82 if rng.one_in(4) => {
+            let id = 1 + rng.below(4) as u32;
+            if rng.one_in(3) {
+                return Some(Event::Portal(crate::portal::PortalEvent::Closed(id)));
+            }
+            let patterns = if rng.one_in(2) { vec!["*.txt".into()] } else { Vec::new() };
+            Event::Portal(crate::portal::PortalEvent::Asked(crate::portal::FileRequest { id, title: String::new(), folder: rng.one_in(3), patterns }))
+        }
         // Notifications: a program's sent, sent again or closed, and taps on them.
         82 => {
             let held: Vec<NotificationId> = s.notifications().iter().map(|n| n.id).collect();

@@ -41,8 +41,8 @@ has given the user manager and the bus `WAYLAND_DISPLAY` and `DISPLAY`, which br
 `graphical-session.target` (bound to the service) and udiskie with it. As the session ends, `thor-session`
 takes the displays out of the user manager's environment and stops `app-graphical.slice` (every launch) and
 `background-graphical.slice`; then the profile logs out and the autologin starts a new session. The
-session is named `ClamShell` (`XDG_CURRENT_DESKTOP`; xdg-desktop-portal takes GTK's portals,
-`clamshell-portals.conf`). Under a game that takes every core the session keeps up: `session.slice` has four
+session is named `ClamShell` (`XDG_CURRENT_DESKTOP`; xdg-desktop-portal takes ClamShell's file chooser and GTK's
+other portals, `clamshell-portals.conf`). Under a game that takes every core the session keeps up: `session.slice` has four
 times `app.slice`'s CPU weight, and ClamShell asks rtkit for its compositor thread at nice -15 (not
 real-time: the kernel kills a real-time thread that runs past `RLIMIT_RTTIME`, and the compositor draws the
 screens on the CPU). `systemctl --user status clamshell` shows what runs (ClamShell's `STATUS=`: entries,
@@ -116,7 +116,7 @@ What runs is shown and controlled as entries (the dock's): one per program, each
   service runs (the service would lose it), or one that also has another entry's windows (a browser
   showing a file opened from the Files tab: moving it would take the other's windows too); such an entry
   runs while its icon or a window is there, and Quit only closes its windows. A window a systemd service
-  opened (a portal's file chooser, the polkit password prompt) is no entry: it belongs to the program that
+  opened (GTK's file chooser while ClamShell's isn't there, the polkit password prompt) is no entry: it belongs to the program that
   asked for it, and is gone in seconds.
 
 ## Ending

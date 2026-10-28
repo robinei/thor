@@ -79,6 +79,8 @@ pub struct LibraryView {
     edit: Option<edit::Edit>,
     /// The pick going on (see [`pick`]).
     pick: Option<pick::Pick>,
+    /// An app's pick answered, until the state takes the answer (see [`crate::portal`]).
+    answered: Option<(u32, Option<std::path::PathBuf>)>,
 }
 
 /// A level of a collection's place kept across a library read: the entry selected in its list (the
@@ -146,7 +148,8 @@ impl LibraryView {
             let read = self.library.config.as_ref();
             let Some(place) = self.edit.as_ref().and_then(|e| e.selected(e.config(read)?)).filter(|p| p.within.is_some()) else { return };
             let images = ["*.png", "*.jpg", "*.jpeg", "*.webp", "*.svg"].map(String::from).to_vec();
-            return self.start_pick(pick::Takes::Files(images), pick::PickFor::PlacePicture(place.id.clone()));
+            self.start_pick(pick::Takes::Files(images), pick::PickFor::PlacePicture(place.id.clone()));
+            return;
         }
         let read = self.library.config.as_ref();
         if self.edit.as_mut().is_some_and(|e| e.tap(id, read, out)) {

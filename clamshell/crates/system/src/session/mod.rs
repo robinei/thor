@@ -6,5 +6,6 @@ pub mod clipboard;
 pub mod environment;
 pub(crate) mod icons;
 pub(crate) mod notifications;
+pub(crate) mod portal;
 pub mod priority;
 pub mod tray;

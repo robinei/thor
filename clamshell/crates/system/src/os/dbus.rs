@@ -2,7 +2,8 @@
 //! has its own connection ([`Bus`]).
 //!
 //! A method call waits here for its reply. Anything that arrives in the meantime is handled as it comes:
-//! calls to us are answered by what the thread serves ([`Bus::serve`]) and refused otherwise, and
+//! calls to us are answered by what the thread serves ([`Bus::serve`]), kept to be answered later
+//! ([`Bus::serve_later`]), and refused otherwise, and
 //! signals are kept for the thread to read ([`Bus::signals`]) if it asked for them ([`Bus::add_match`]).
 //! A thread waits for the bus with [`Bus::wait`], or polls its file descriptor ([`Bus::fd`]) alongside
 //! others.
@@ -85,11 +86,16 @@ pub type Value = Variant<Box<dyn RefArg>>;
 /// What a thread serves. Given a call, it returns the reply, or `None` to refuse a call it doesn't serve.
 type Serve = Box<dyn FnMut(&Message) -> Option<Message> + Send>;
 
+/// The calls a thread answers later. Given a call, it keeps it and returns `None`, or hands it back to be
+/// served now ([`Serve`]). A kept call's reply is sent later with [`Bus::send`].
+type Later = Box<dyn FnMut(Message) -> Option<Message> + Send>;
+
 /// A connection to a bus, used by one thread.
 pub struct Bus {
     channel: Channel,
     timeout: Duration,
     serve: Option<Serve>,
+    later: Option<Later>,
     /// The signals that have arrived, if any were asked for.
     signals: Option<VecDeque<Message>>,
     closed: bool,
@@ -107,7 +113,7 @@ impl Bus {
     fn open(kind: BusType) -> Result<Bus> {
         let mut channel = Channel::get_private(kind)?;
         channel.set_watch_enabled(true);
-        Ok(Bus { channel, timeout: TIMEOUT, serve: None, signals: None, closed: false })
+        Ok(Bus { channel, timeout: TIMEOUT, serve: None, later: None, signals: None, closed: false })
     }
 
     /// Makes calls fail after `timeout` instead of [`TIMEOUT`].
@@ -119,6 +125,12 @@ impl Bus {
     /// From now on, calls to this connection are answered by `serve`. Until then they are refused.
     pub fn serve(&mut self, serve: Serve) {
         self.serve = Some(serve);
+    }
+
+    /// From now on, calls `later` keeps are answered later; it hands back the others, which [`Bus::serve`]
+    /// answers or which are refused.
+    pub(crate) fn serve_later(&mut self, later: Later) {
+        self.later = Some(later);
     }
 
     pub fn unique_name(&self) -> Option<String> {
@@ -170,7 +182,7 @@ impl Bus {
 
     /// Makes the signals that `rule` matches come to this connection, where they are kept for
     /// [`Bus::signals`].
-    pub(crate) fn add_match(&mut self, rule: &str) -> Result<()> {
+    pub fn add_match(&mut self, rule: &str) -> Result<()> {
         self.signals.get_or_insert_default();
         self.call("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "AddMatch", (rule,))
     }
@@ -184,7 +196,7 @@ impl Bus {
 
     /// Handles what came since the last look without waiting. Calls to us are answered, and the signals
     /// kept since then are returned. Fails once the bus has closed.
-    pub(crate) fn signals(&mut self) -> Result<Vec<Message>> {
+    pub fn signals(&mut self) -> Result<Vec<Message>> {
         self.read(Some(Duration::ZERO))?;
         Ok(self.signals.as_mut().map(|s| s.drain(..).collect()).unwrap_or_default())
     }
@@ -245,6 +257,13 @@ impl Bus {
     fn handle(&mut self, message: Message) {
         match message.msg_type() {
             MessageType::MethodCall => {
+                let message = match self.later.as_mut() {
+                    Some(later) => match later(message) {
+                        Some(message) => message,
+                        None => return,
+                    },
+                    None => message,
+                };
                 let reply = self.serve.as_mut().and_then(|serve| serve(&message));
                 if message.get_no_reply() {
                     return;

@@ -34,6 +34,8 @@ pub enum PickFor {
     Field(super::form::Field),
     /// The edit mode, for the picture of the place with this id.
     PlacePicture(String),
+    /// An app's file chooser (see [`crate::portal`]): its request, and what the app says it is for.
+    App { request: u32, title: String },
 }
 
 impl Pick {
@@ -50,10 +52,13 @@ impl Pick {
     }
 
     /// What is asked for, as the Library says it.
-    pub fn asks(&self) -> &'static str {
+    pub fn asks(&self) -> &str {
         match &self.purpose {
             PickFor::Field(f) => f.asks(),
             PickFor::PlacePicture(_) => "Choose the folder's picture",
+            PickFor::App { title, .. } if !title.is_empty() => title,
+            PickFor::App { .. } if self.takes == Takes::Folder => "Choose a folder",
+            PickFor::App { .. } => "Choose a file",
         }
     }
 }
@@ -79,33 +84,48 @@ impl LibraryView {
         library.collections.iter().position(in_folder)
     }
 
-    /// Starts picking what `takes` says, for `purpose`, in the Files tab. Without one, nothing is picked.
-    pub(crate) fn start_pick(&mut self, takes: Takes, purpose: PickFor) {
-        let Some(files) = self.files_tab() else { return };
+    /// Starts picking what `takes` says, for `purpose`, in the Files tab, and whether it did: without a
+    /// Files tab, nothing is picked.
+    pub(crate) fn start_pick(&mut self, takes: Takes, purpose: PickFor) -> bool {
+        let Some(files) = self.files_tab() else { return false };
         self.pick = Some(Pick { takes, purpose, back: self.current });
         self.set_collection(files);
+        true
     }
 
-    /// Leaves the pick, back on the tab shown before it.
+    /// Leaves the pick, back on the tab shown before it. An app's is answered: nothing chosen.
     pub(crate) fn cancel_pick(&mut self) {
-        if let Some(pick) = self.pick.take() {
-            self.set_collection(pick.back);
+        if let Some(PickFor::App { request, .. }) = self.end_pick() {
+            self.answered = Some((request, None));
         }
+    }
+
+    /// Leaves the pick without answering, back on the tab shown before it, and says what it was for.
+    pub(crate) fn end_pick(&mut self) -> Option<PickFor> {
+        let pick = self.pick.take()?;
+        self.set_collection(pick.back);
+        Some(pick.purpose)
+    }
+
+    /// An app's pick answered since the last look: its request, and the path chosen if one was.
+    pub(crate) fn take_answered(&mut self) -> Option<(u32, Option<std::path::PathBuf>)> {
+        self.answered.take()
     }
 
     /// Chooses what is selected, if the pick takes it, and answers who asked.
     pub(crate) fn choose(&mut self, out: &mut crate::out::Out) {
         let Some((entry, _)) = self.file_target() else { return };
-        let Some(pick) = self.pick.as_ref().filter(|p| p.takes(entry)) else { return };
-        let Some((purpose, path)) = entry.file.clone().map(|f| (pick.purpose.clone(), f)) else { return };
-        self.cancel_pick();
+        if !self.pick.as_ref().is_some_and(|p| p.takes(entry)) {
+            return;
+        }
+        let Some(path) = entry.file.clone() else { return };
+        let Some(purpose) = self.end_pick() else { return };
         let read = self.library.config.as_ref();
-        let path = path.to_string_lossy();
-        if let Some(edit) = &mut self.edit {
-            match purpose {
-                PickFor::Field(f) => edit.field_picked(f, &path),
-                PickFor::PlacePicture(id) => edit.set_picture(&id, &path, read, out),
-            }
+        match (purpose, &mut self.edit) {
+            (PickFor::App { request, .. }, _) => self.answered = Some((request, Some(path))),
+            (PickFor::Field(f), Some(edit)) => edit.field_picked(f, &path.to_string_lossy()),
+            (PickFor::PlacePicture(id), Some(edit)) => edit.set_picture(&id, &path.to_string_lossy(), read, out),
+            (_, None) => {}
         }
     }
 }

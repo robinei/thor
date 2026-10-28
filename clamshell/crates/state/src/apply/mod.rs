@@ -9,6 +9,7 @@ pub(crate) mod incoming;
 pub(crate) mod keys;
 pub(crate) mod launching;
 pub(crate) mod notifying;
+pub(crate) mod picking;
 pub(crate) mod press;
 pub(crate) mod queries;
 pub(crate) mod restart;

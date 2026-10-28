@@ -114,8 +114,10 @@ impl State {
             self.keymapping.back(&mut self.keyboard);
             return;
         }
-        // A pick going on is left as it was.
+        // A pick going on is left as it was; an app's is answered with nothing chosen, and Home stays on the
+        // Library rather than going back to the app.
         self.library_view.cancel_pick();
+        self.portal.back = None;
         let from_device = self.session.shown_builtin() == Some(clamshell_library::Builtin::Device);
         self.session.home();
         if from_device {

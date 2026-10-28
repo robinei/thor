@@ -218,6 +218,11 @@ def system_files():
         ("/etc/modprobe.d/thor-vm.conf", "options mac80211_hwsim radios=3\n"),
         ("/etc/udev/rules.d/70-thor-vm.rules",
          'KERNEL=="uinput", GROUP="input", MODE="0660"\n'),
+        # Apps' file choosers are ClamShell's (as on the device).
+        ("/usr/share/xdg-desktop-portal/clamshell-portals.conf",
+         (REPO / "packages/thor-session/root/usr/share/xdg-desktop-portal/clamshell-portals.conf").read_text()),
+        ("/usr/share/xdg-desktop-portal/portals/clamshell.portal",
+         (REPO / "packages/thor-session/root/usr/share/xdg-desktop-portal/portals/clamshell.portal").read_text()),
         # The time tab sets the time zone (as on the device).
         ("/etc/polkit-1/rules.d/50-thor.rules", (REPO / "packages/thor-system/root/usr/share/polkit-1/rules.d/50-thor.rules").read_text()),
         # NetworkManager has the device's radio only: the wired link (ssh) stays as it is, the access

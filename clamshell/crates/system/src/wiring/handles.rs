@@ -11,6 +11,7 @@ use crate::network::{bluetooth, wifi};
 use crate::os::worker::{self, Shown, Worker};
 use crate::paths::Paths;
 use crate::session::notifications::Command as Notifications;
+use crate::session::portal::Command as Portal;
 use crate::store::{Write, Writer};
 
 /// The threads, and the one device, that effects go to.
@@ -31,6 +32,8 @@ pub struct Handles {
     pub(crate) tray: Worker<clamshell_state::session::tray::TrayCommand>,
     /// The notification server, which emits the signals for programs' notifications closed or tapped.
     pub(crate) notifications: Worker<Notifications>,
+    /// The file chooser served to apps, which answers their requests.
+    pub(crate) portal: Worker<Portal>,
     pub(crate) metrics: Worker<Shown>,
     /// The bar's status, read often while the screens are on.
     pub(crate) status: Worker<Shown>,
@@ -150,6 +153,7 @@ impl Handles {
             Effect::StepClock(field, by) => self.system.send(crate::errands::Command::StepClock(*field, *by)),
             Effect::NotificationClosed { id, reason } => self.notifications.send(Notifications::Closed { id: *id, reason: reason.code() }),
             Effect::ActionInvoked { id, key } => self.notifications.send(Notifications::Invoked { id: *id, key: key.clone() }),
+            Effect::FileChosen { request, path } => self.portal.send(Portal::Answer { id: *request, path: path.clone() }),
             // The compositor carries out its own.
             Effect::Compositor(_) => {}
         }

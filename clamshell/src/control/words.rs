@@ -144,6 +144,8 @@ pub const TARGETS: &[Form<Id>] = &[
     form("launch", "the Library's launch", |_| Ok(Id::LibraryView(LibraryViewId::Launch))),
     form("enqueue", "the Library's Enqueue (added to what its runner plays, else played)", |_| Ok(Id::LibraryView(LibraryViewId::Enqueue))),
     form("up", "out of the Library's open group", |_| Ok(Id::LibraryView(LibraryViewId::Up))),
+    form("choose", "a pick's Choose, on the Library's selection", |_| Ok(Id::LibraryView(LibraryViewId::Choose))),
+    form("cancel-pick", "a pick's Cancel", |_| Ok(Id::LibraryView(LibraryViewId::CancelPick))),
     form("collection N", "the Library's collection tab N", |a| Ok(Id::LibraryView(LibraryViewId::Collection(number(arg(a, 0))?)))),
     form(
         "file ACTION",

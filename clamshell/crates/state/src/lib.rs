@@ -64,6 +64,7 @@ pub mod library_view;
 pub mod nav;
 pub mod notifications;
 pub(crate) mod out;
+pub mod portal;
 pub mod presentation;
 pub mod profiles;
 pub mod radios;
@@ -116,6 +117,7 @@ pub use nav::lists::{ListEvent, ListId, Lists, RowPart};
 pub use nav::pad::{Claimant, Pad, PadInput, PadMouse, PadRoute};
 pub use nav::pointer::Pointer;
 pub use notifications::{CloseReason, Notification, NotificationEvent, NotificationId, Notifications, Urgency};
+pub use portal::{FileRequest, PortalEvent};
 pub use radios::{RadioStatus, Radios};
 pub use session::Session;
 pub use session::dock::{Dock, DockItem};
@@ -184,6 +186,8 @@ pub struct State {
     pointer: Pointer,
     sys: Sys,
     notifications: Notifications,
+    /// Apps' file choosers waiting (see [`portal`]).
+    portal: portal::Portal,
     /// Every entry's settings, and the level the settings panel edits.
     prefs: Prefs,
     keyboard: Keyboard,
@@ -404,6 +408,7 @@ impl State {
             Event::Tick { unix_secs, mono_secs } => self.tick(unix_secs, mono_secs, out),
             Event::Reading(reading) => self.on_reading(reading, out),
             Event::Notification(e) => self.on_notification(e, out),
+            Event::Portal(e) => self.on_portal(e),
             Event::List(e) => self.on_list(e),
             Event::Pointer(e) => self.on_pointer(e, out),
             Event::Slide(slide) => self.on_slide(slide, out),
@@ -566,6 +571,9 @@ impl State {
         }
         // The tab left, by a choice or by a window moved down opening the windows' tab.
         self.follow_tab();
+        // Order: before the front launch and the closed front are followed, so that the app going back in
+        // front once its pick is answered is what they see.
+        self.follow_portal(out);
         // A launch's first window is shown before a window that came back to the group whose front closed,
         // so that the one that came back ends in front.
         self.session.follow_front_launch(self.clock.mono());

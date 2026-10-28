@@ -349,14 +349,16 @@ def plug_pad():
 
 # --- the test environment
 
-# Test games: test.game, zeta.game, zulu01.game to zulu14.game, all in the Test tab, each an empty mpv window (not foot: it asks for text input, which brings up the keyboard). Started through env: ClamShell takes a file mpv starts for a film, not a game.
+# Test games: test.game, zeta.game, zulu01.game to zulu14.game, all in the Test tab (Files, last, browses
+# Home, for the portal's picks), each an empty mpv window (not foot: it asks for text input, which brings up the keyboard). Started through env: ClamShell takes a file mpv starts for a film, not a game.
 LIBRARY = f"""{{ "places": [
   {{ "id": "recent", "name": "Recent", "type": "recent", "icon": "clock" }},
   {{ "id": "favourites", "name": "Favourites", "type": "favourites", "icon": "star" }},
   {{ "id": "test", "name": "Test" }},
   {{ "id": "games", "name": "Games", "icon": "gamepad" }},
   {{ "id": "apps", "name": "Apps", "icon": "apps", "recent": false }},
-  {{ "id": "tools", "name": "Tools", "type": "tools", "icon": "tools" }}
+  {{ "id": "tools", "name": "Tools", "type": "tools", "icon": "tools" }},
+  {{ "id": "files", "name": "Files", "icon": "folder" }}
 ],
   "runners": [
   {{ "type": "desktop", "name": "Desktop", "match": ["*.desktop"] }},
@@ -368,7 +370,8 @@ LIBRARY = f"""{{ "places": [
   {{ "type": "desktop", "categories": "Emulator", "place": "apps" }},
   {{ "type": "desktop", "categories": "Game", "place": "games" }},
   {{ "type": "desktop", "place": "apps" }},
-  {{ "type": "builtin", "id": "device", "place": "tools" }}
+  {{ "type": "builtin", "id": "device", "place": "tools" }},
+  {{ "type": "browse", "dir": "~", "in": "files", "name": "Home" }}
 ] }}
 """
 
@@ -1365,6 +1368,35 @@ class Checks:
         got = sh(f"timeout 5 {program} --clipboard get").strip()
         self.check("  a text set by a program that quit can still be pasted", got == "kept-by-clamshell", f"got {got!r}")
 
+    def portal(self):
+        """An app's file chooser through xdg-desktop-portal is ClamShell's: asked for a folder, the Library
+        shows its Files tab, Home selected, and Choose answers the app with Home's URI; asked again and
+        cancelled, the app gets nothing (response 1). The app (the portal_ask example) waits on the bus for
+        the answer, as the portal ends a request whose app has gone."""
+        binary = "/mnt/thor/clamshell/target/release/examples/portal_ask"
+        sh(vm.copy_local(binary))
+        # (Its config read afresh: the portal reads it as it starts.)
+        sh("systemctl --user restart xdg-desktop-portal")
+        out = "/tmp/thor-portal-ask"
+        # (Detached from the ssh session's output, which would wait for it otherwise.)
+        ask = lambda title: sh(f"rm -f {out}; setsid -f {vm.local(binary)} --folder {shlex.quote(title)} > {out} 2>&1 < /dev/null")
+        answer = lambda: sh(f"cat {out} 2>/dev/null")
+        since = now()
+        ask("Pick a folder")
+        self.check("portal: an app's request reaches ClamShell", logged(since, "portal: request", 10), journal(since)[-600:])
+        self.check("  the Library shows its Files tab", until(lambda: collection() == "Files", 8), f"collection {collection()!r}")
+        control("tap choose")
+        home = sh("echo $HOME").strip()
+        chosen = until(lambda: f"file://{home}" in answer(), 8)
+        self.check("  Choose answers the app with Home's URI", chosen, answer())
+        since = now()
+        ask("Pick another")
+        logged(since, "portal: request", 10)
+        until(lambda: collection() == "Files", 8)
+        control("tap cancel-pick")
+        self.check("  cancelled, the app gets nothing", until(lambda: "response 1" in answer(), 8), answer())
+        sh("pkill -f portal_ask || true")
+
     # A long run
 
     def soak(self):
@@ -1550,7 +1582,7 @@ GLib.MainLoop().run()
 
 CHECKS = ["session_units", "library_view_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "ui_scanout", "screen_changes", "pad_windows",
           "pad_library_view", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
-          "keymap_actuations", "rumble", "launch_and_quit", "pause_hidden", "found_window", "tray_program", "clipboard",
+          "keymap_actuations", "rumble", "launch_and_quit", "pause_hidden", "found_window", "tray_program", "clipboard", "portal",
           "bluetooth", "gyro_sleep"]
 # Checks run only when named.
 OPT_IN = ["soak", "faults"]

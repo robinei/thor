@@ -37,6 +37,8 @@ export XDG_CONFIG_DIRS=/usr/share/thor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}
 # The desktop's name, by which xdg-desktop-portal picks its portals (clamshell-portals.conf) and apps
 # know where they run.
 export XDG_CURRENT_DESKTOP=ClamShell XDG_SESSION_DESKTOP=ClamShell
+# GTK 3 and Qt apps through the portals too, so their file choosers are ClamShell's.
+export GTK_USE_PORTAL=1 QT_QPA_PLATFORMTHEME=xdgdesktopportal
 # This login's environment for the user manager and the bus, which ClamShell and what it starts get (less
 # the shell's own variables).
 env -u PWD -u OLDPWD -u SHLVL -u _ dbus-update-activation-environment --systemd --all
