@@ -247,15 +247,8 @@ impl Session {
             let title = library.entry(&l.entry).map_or_else(|| l.entry.to_string(), |g| g.title.clone());
             notice.show(NoticeKind::NotStarted(title), now);
         }
+        self.follow_adopted();
         let units = &self.units;
-        for r in self.running.iter_mut().filter(|r| r.found()) {
-            if units.iter().any(|u| u.key == r.key.as_str()) {
-                // Its windows are now its unit's, not every window of that app id or process. That would
-                // tie another instance of the program, started later, to it.
-                r.origin = Origin::Ours;
-                r.mark = None;
-            }
-        }
         for unit in units {
             let key = unit.key.as_str();
             // A launch of the entry waiting doesn't hold it off: this unit is another launch's, such as
@@ -380,6 +373,20 @@ impl Session {
         self.set_front_launch(LaunchUnit { key: r.key.clone(), secs: clock.unix(), n: 0 }, None);
         self.running.extend(new);
         true
+    }
+
+    /// An entry found by a window or tray icon runs as ours once a unit of its key is listed: its windows are
+    /// then its unit's, not every window of that app id or process, which would tie another instance of
+    /// the program, started later, to it. Run as units are followed, and as entries are found, whose unit
+    /// may be listed already (left by an earlier adoption of the same key).
+    pub(crate) fn follow_adopted(&mut self) {
+        let units = &self.units;
+        for r in self.running.iter_mut().filter(|r| r.found()) {
+            if units.iter().any(|u| u.key == r.key.as_str()) {
+                r.origin = Origin::Ours;
+                r.mark = None;
+            }
+        }
     }
 
     /// Runs after every event, after the entries started by their windows' app ids

@@ -85,6 +85,9 @@ impl Session {
             let adopted = self.adopt(&key, pid, clock);
             out.effects.push(adopted);
         }
+        // Order: settle follows the units before finding programs, so an entry found with its unit listed
+        // already is made ours here, not a settle later.
+        self.follow_adopted();
     }
 }
 
@@ -190,6 +193,18 @@ mod tests {
     /// A dialog goes with its main window: one that another program opened over a window of a program
     /// found (as an X11 window may name another client's window its parent) stays in that program's group
     /// when its own program is found, as `Session::running_of` makes it that program's.
+    /// A program found whose key has a unit of ours listed already (left by an earlier adoption) runs as
+    /// ours at once, as the units' following would make it a settle later.
+    #[test]
+    fn a_program_found_with_its_unit_listed_runs_as_ours_at_once() {
+        let mut s = device();
+        let key = clamshell_library::key_of("window:org.x.Thing");
+        s.applied(Event::Units(vec![crate::LaunchUnit { key, secs: 1, n: 0 }]));
+        s.observed(vec![window(5, "org.x.Thing", 500, "app-thing.scope")]);
+        let r = s.session().running("window:org.x.Thing").unwrap();
+        assert_eq!((r.found(), r.mark.as_deref()), (false, None));
+    }
+
     #[test]
     fn a_dialog_over_another_programs_window_stays_in_that_programs_group() {
         let mut s = device();
