@@ -136,3 +136,39 @@ fn a_chosen_window_gone_leaves_the_first_chosen() {
     tap(&mut s, dock(0));
     assert_eq!(chosen(&s), Some(4), "the root under two dialogs");
 }
+
+/// The choice stays within its row going left or right, and down from the last row goes nowhere.
+#[test]
+fn the_choice_stops_at_the_grids_edges() {
+    // 3 and 4 above, 5 and 6 below.
+    let mut s = running(&[(3, None), (4, None), (5, None), (6, None)]);
+    tap(&mut s, dock(0));
+    let mut step = |dir| {
+        s.applied(Event::Overview(OverviewEvent::Step(dir)));
+        chosen(&s)
+    };
+    assert_eq!(step(Dir::Left), Some(5));
+    assert_eq!(step(Dir::Left), Some(5), "the row's first");
+    assert_eq!(step(Dir::Down), Some(5), "the last row");
+    assert_eq!(step(Dir::Up), Some(3));
+    assert_eq!(step(Dir::Right), Some(4));
+    assert_eq!(step(Dir::Right), Some(4), "the row's last");
+}
+
+/// A tap on a window the overview doesn't show, such as a dialog, leaves it open.
+#[test]
+fn a_window_not_in_the_overview_is_not_picked() {
+    let mut s = running(&[(3, None), (4, None), (5, Some(3))]);
+    tap(&mut s, dock(0));
+    s.applied(Event::Overview(OverviewEvent::Pick(5)));
+    assert_eq!(chosen(&s), Some(3));
+}
+
+#[test]
+fn rows_are_a_share_and_a_gap_apart() {
+    let screen = (1000.0, 500.0);
+    let gap = GAP * 500.0;
+    let (_, y0, ..) = cell(0, 4, screen);
+    let (_, y2, ..) = cell(2, 4, screen);
+    assert!((y2 - y0 - (500.0 - gap) / 2.0).abs() < 1e-3, "{y0} {y2}");
+}

@@ -506,11 +506,21 @@ mod tests {
         );
         assert!(matches!(CommitError::of(DrmError::TestFailed(crtc)), CommitError::Refused(_)));
         assert_eq!(CommitError::of(DrmError::DeviceInactive), CommitError::Away);
+        assert_eq!(CommitError::of(DrmError::DrmMasterFailed), CommitError::Away);
+        let plane = smithay::reexports::drm::control::plane::Handle::from(
+            smithay::reexports::drm::control::RawResourceHandle::new(2).unwrap_or(std::num::NonZeroU32::MIN),
+        );
+        assert!(matches!(CommitError::of(DrmError::UnsupportedPlaneConfiguration(plane)), CommitError::Refused(_)));
+        assert!(matches!(CommitError::of(DrmError::PlaneNotCompatible(crtc, plane)), CommitError::Refused(_)));
+        assert!(matches!(CommitError::of(DrmError::NoPlane), CommitError::Failed(_)));
         let why = || String::new();
         assert_eq!(CommitError::of_errno(Some(Errno::INVAL), why()), CommitError::Refused(why()));
         assert_eq!(CommitError::of_errno(Some(Errno::RANGE), why()), CommitError::Refused(why()));
         assert_eq!(CommitError::of_errno(Some(Errno::BUSY), why()), CommitError::Busy(why()));
+        assert_eq!(CommitError::of_errno(Some(Errno::AGAIN), why()), CommitError::Busy(why()));
+        assert_eq!(CommitError::of_errno(Some(Errno::INTR), why()), CommitError::Busy(why()));
         assert_eq!(CommitError::of_errno(Some(Errno::ACCESS), why()), CommitError::Away);
+        assert_eq!(CommitError::of_errno(Some(Errno::PERM), why()), CommitError::Away);
         assert_eq!(CommitError::of_errno(Some(Errno::NOMEM), why()), CommitError::Failed(why()));
         assert_eq!(CommitError::of_errno(None, why()), CommitError::Failed(why()));
     }

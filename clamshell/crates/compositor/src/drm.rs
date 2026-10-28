@@ -1457,6 +1457,18 @@ mod tests {
         assert_eq!(remedy(false, false, &refused()), Remedy::Retry, "composed, with nothing else to show");
     }
 
+    /// A commit of the screen's own buffer or a window's can be refused, the screen composing instead; a
+    /// frame composed, or the frame shown committed again, has nothing else to show.
+    #[test]
+    fn only_a_commit_of_a_buffer_not_composed_is_refusable() {
+        use super::Commit;
+        assert!(Commit::Own { drew: true }.refusable());
+        assert!(Commit::Own { drew: false }.refusable());
+        assert!(Commit::Window { id: 7 }.refusable());
+        assert!(!Commit::Composed.refusable());
+        assert!(!Commit::Again.refusable());
+    }
+
     use super::{Timing, Turn, screen_turn, timed_wake};
     use std::time::{Duration, Instant};
 
@@ -1495,6 +1507,27 @@ mod tests {
         assert_eq!(screen_turn(Timing { answered: false, next_callbacks: Some(next), ..IDLE }, now), Turn { wake: Some(next), ..Turn::default() });
         assert_eq!(screen_turn(Timing { answered: false, next_callbacks: Some(now), ..IDLE }, now), Turn { answer: true, ..Turn::default() });
         assert_eq!(screen_turn(IDLE, now), Turn::default(), "nothing to answer");
+    }
+
+    /// Held callbacks due later and commits answered later still: the loop wakes for the earlier.
+    #[test]
+    fn a_screen_wakes_the_loop_for_the_earlier_of_its_held_callbacks_and_its_next_answer() {
+        let now = Instant::now();
+        let (soon, later) = (now + Duration::from_millis(3), now + Duration::from_millis(8));
+        let idle = Timing { answered: false, ..IDLE };
+        assert_eq!(screen_turn(Timing { held: Some(soon), next_callbacks: Some(later), ..idle }, now), Turn { wake: Some(soon), ..Turn::default() });
+        assert_eq!(screen_turn(Timing { held: Some(later), next_callbacks: Some(soon), ..idle }, now), Turn { wake: Some(soon), ..Turn::default() });
+    }
+
+    #[test]
+    fn the_earlier_of_two_times_is_either_present() {
+        let now = Instant::now();
+        let later = now + Duration::from_millis(5);
+        assert_eq!(super::earlier(Some(now), Some(later)), Some(now));
+        assert_eq!(super::earlier(Some(later), Some(now)), Some(now));
+        assert_eq!(super::earlier(None, Some(later)), Some(later));
+        assert_eq!(super::earlier(Some(later), None), Some(later));
+        assert_eq!(super::earlier(None, None), None);
     }
 
     #[test]
@@ -1589,5 +1622,7 @@ mod tests {
         assert_eq!(next_shown(Some(ms(100)), ms(10), false, ms(130)), ms(140), "at a refresh: the one after");
         assert_eq!(next_shown(Some(ms(100)), ms(10), true, ms(123)), ms(140), "a frame queued: a refresh later");
         assert_eq!(next_shown(None, ms(10), false, ms(123)), ms(133), "no flip yet: a refresh on");
+        let us = Duration::from_micros;
+        assert_eq!(next_shown(Some(ms(100)), Duration::ZERO, false, ms(123)), ms(123) + us(1), "no refresh known: taken as a microsecond");
     }
 }

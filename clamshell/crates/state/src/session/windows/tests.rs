@@ -325,6 +325,7 @@ fn a_windows_dialogs_show_over_it_the_last_taking_the_input() {
     let stack = |s: &crate::State, below: bool| s.session().stack(below).map(|w| w.id).collect::<Vec<_>>();
     assert_eq!(stack(&s, false), [7, 8, 9]);
     assert_eq!((s.session().top_window().map(|w| w.id), s.session().keyboard_focus()), (Some(9), Some(9)));
+    assert!([7, 8, 9].iter().all(|id| s.session().shown(*id)), "the whole stack is in view");
     s.applied(WindowEvent::Activate(7).into());
     assert_eq!(s.session().top_window().map(|w| w.id), Some(9), "the window's last dialog, not the window");
     s.applied(WindowEvent::Closed(9).into());
@@ -621,4 +622,69 @@ fn closing_the_window_below_empties_its_slot() {
     s.applied(WindowEvent::Opened(win(8, "foot")).into());
     assert!(matches!(s.session().place(8), Some(WindowPlace::Top(_))), "opened on top, not below");
     assert_eq!(s.session().bottom_window(), None);
+}
+
+/// Stepping in a group with no other window does nothing: a launch waiting for its window still waits.
+#[test]
+fn stepping_with_no_other_window_leaves_a_waiting_launch_waiting() {
+    let mut s = state();
+    let unit = launch(&mut s, "zelda-lttp");
+    s.observed(vec![win_of(7, "game", &unit)]);
+    s.applied(WindowEvent::Activate(7).into());
+    let ff6 = launch(&mut s, "ff6");
+    s.applied(Event::HardwareKey(HardwareKey::WindowNext));
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
+    assert_eq!(s.session().front_launch(), Some(&ff6), "still waiting");
+}
+
+/// A dialog whose window closed is the root of its own stack: a window of its group to step to.
+#[test]
+fn a_dialog_left_by_its_window_is_a_window_of_its_own() {
+    let mut s = state();
+    let one = launch_of("one");
+    s.observed(vec![win_of(7, "one", &one), win_of(8, "one", &one), WindowFacts { parent: Some(7), ..win_of(9, "one", &one) }]);
+    s.applied(WindowEvent::Activate(8).into());
+    s.applied(WindowEvent::Closed(7).into());
+    assert_eq!(s.session().root_of(9), 9);
+    assert!(s.session().has_other_top_window());
+    s.applied(Event::HardwareKey(HardwareKey::WindowNext));
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(9));
+}
+
+/// A dialog of a window that belongs to no entry goes in that window's group.
+#[test]
+fn a_dialog_of_a_window_of_no_entry_is_in_its_group() {
+    let mut s = state();
+    s.applied(WindowEvent::Opened(foot()).into());
+    s.applied(WindowEvent::Opened(WindowFacts { parent: Some(1001), ..win(1002, "dialog") }).into());
+    assert_eq!(s.session().place(1002), Some(WindowPlace::Top(Some(&Group::Window(1001)))));
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(1002));
+}
+
+/// The window below closing under two dialogs leaves the first opened there.
+#[test]
+fn closing_the_window_below_under_two_dialogs_leaves_the_first_below() {
+    let mut s = state();
+    let unit = launch(&mut s, "zelda-lttp");
+    s.applied(WindowEvent::Opened(win_of(7, "game", &unit)).into());
+    s.applied(Event::HardwareKey(HardwareKey::WindowDown));
+    s.applied(WindowEvent::Opened(WindowFacts { parent: Some(7), ..win(8, "dialog") }).into());
+    s.applied(WindowEvent::Opened(WindowFacts { parent: Some(7), ..win(9, "dialog") }).into());
+    s.applied(WindowEvent::Closed(7).into());
+    assert_eq!(s.session().bottom_window().map(|w| w.id), Some(8));
+}
+
+/// A dialog in front that closes while another program's launch waits still brings back its parent:
+/// the launch has no dialogs of its launcher to go back from.
+#[test]
+fn a_dialogs_close_brings_back_its_parent_while_a_launch_waits() {
+    let mut s = state();
+    let one = launch_of("one");
+    s.observed(vec![win_of(7, "one", &one), win_of(8, "one", &one)]);
+    s.applied(WindowEvent::Activate(7).into());
+    launch(&mut s, "ff6");
+    s.applied(WindowEvent::Opened(WindowFacts { parent: Some(7), ..win_of(9, "one", &one) }).into());
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(9));
+    s.applied(WindowEvent::Closed(9).into());
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "the parent, not 8");
 }

@@ -335,6 +335,25 @@ fn a_paused_game_shown_when_the_front_closes_is_thawed_at_once() {
     assert!(fx.iter().any(|e| matches!(e, Effect::Freeze { frozen: false, .. })), "{fx:?}");
 }
 
+/// A game whose window is on the bottom screen is in view there, and isn't paused while another program
+/// is in front.
+#[test]
+fn a_game_whose_window_is_below_is_not_paused() {
+    let mut s = state();
+    s.applied(Event::tick(100));
+    let zelda = launch(&mut s, "zelda-lttp");
+    let zelda_window = win_of(3, "zelda3", &zelda);
+    s.observed(vec![zelda_window.clone()]);
+    s.applied(crate::WindowEvent::Activate(3).into());
+    s.applied(Event::HardwareKey(crate::HardwareKey::WindowDown));
+    let ff6 = launch(&mut s, "ff6");
+    s.observed(vec![zelda_window, win_of(4, "ff6", &ff6)]);
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(4));
+    s.applied(Event::tick(100 + crate::session::background::GRACE));
+    assert!(s.session().shown(3));
+    assert!(!s.session().paused("zelda-lttp"));
+}
+
 /// What the outside starts without goes out at the first event: the brightness as it was left, the
 /// keymap in force and the pad's route (keymap before route, as [`crate::sync::Sent::sync`] says), and
 /// the main screen's refresh rate when the settings want one other than the screen's own. The UI
