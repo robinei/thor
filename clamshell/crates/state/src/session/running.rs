@@ -112,13 +112,17 @@ pub struct Running {
     /// The resolution the compositor told it its screen has, when it connected (see
     /// [`crate::Reading::Told`]); a change of the setting applies the next time it starts.
     pub told: Option<crate::settings::Resolution>,
+    /// For a program found by its window or tray icon, its own process, kept once it is moved into a scope
+    /// of ours: a window of it, or of a process it started, is its, whatever unit its client was
+    /// identified in (see [`Running::fathered`]).
+    pub(crate) process: Option<u32>,
 }
 
 impl Running {
     /// `entry` running as `origin` since `start`, with no launch followed and no window seen yet.
     pub(crate) fn of(entry: &Entry, origin: Origin, start: u64) -> Running {
         let (id, key) = (entry.id.clone(), entry.key.clone());
-        Running { id, key, origin, mark: None, start, seen: false, tray: None, entry: Some(Box::new(entry.clone())), told: None }
+        Running { id, key, origin, mark: None, start, seen: false, tray: None, entry: Some(Box::new(entry.clone())), told: None, process: None }
     }
 
     /// Its own process, if it was found and has one (see [`Origin::Found`]).
@@ -145,7 +149,7 @@ impl Running {
 
     /// Whether `w` is one of its windows by its process: its own process, or one that process started.
     pub(crate) fn fathered(&self, w: &WindowFacts) -> bool {
-        self.pid().is_some_and(|pid| w.pids.contains(&pid))
+        self.process.is_some_and(|pid| w.pids.contains(&pid))
     }
 
     /// Whether its windows are found other than by its unit, by mark or by process, and so are moved
@@ -381,40 +385,29 @@ impl Session {
     /// Runs after every event, after the entries started by their windows' app ids
     /// ([`Session::start_by_app_id`]).
     ///
-    /// - A running entry's windows found by app id go to its group.
-    /// - A new window of no launch of ours goes to the latest browsed file waiting for one, shown.
-    /// - A window that still belongs to no entry makes its program an entry found by it (see
-    ///   [`crate::session::found`]).
-    /// - An unplaced window that belongs to no entry receives a home group.
+    /// - A new window of no launch of ours is claimed by the latest browsed file waiting for one, shown.
     /// - An entry running by its windows that had windows and has none, or that waited in vain, has ended.
     ///   Its play is added to `plays`.
+    /// - A main window that still belongs to no entry makes its program an entry found by it (see
+    ///   [`crate::session::found`]).
+    /// - A new window that still belongs to no entry is claimed by the program in front.
+    /// - Every window is placed in its group (see [`Session::place_windows`]).
+    ///
+    /// Who owns a window is worked out from facts and claims alone (see [`Session::running_of`]), so that
+    /// each step sees the same owners whatever ran before it.
     pub(crate) fn follow_windows(&mut self, clock: &Clock, library: &Library, plays: &mut Vec<Play>, out: &mut Out) {
-        self.place_owned_windows();
         let mut given = Vec::new();
         let taken = self.claim_opened_windows(clock.mono(), &mut given);
+        self.end_windowless(taken.as_ref(), clock.mono(), plays);
         self.follow_found_windows(&given, clock, library, out);
         if taken.is_none() {
-            self.place_unowned();
+            self.claim_unowned(library);
         }
-        self.end_windowless(taken.as_ref(), clock.mono(), plays);
+        self.place_windows(library);
     }
 
-    /// Moves windows found by app id or by process to their entry's group.
-    fn place_owned_windows(&mut self) {
-        let mut commands = Vec::new();
-        for r in &self.running {
-            let away: Vec<i64> = self.windows_of(&r.id).filter(|w| w.group.as_ref().and_then(Group::key) != Some(&r.key)).map(|w| w.id).collect();
-            if !away.is_empty() {
-                commands.push(WindowCommand::Move { windows: away, to: r.group() });
-            }
-        }
-        for command in commands {
-            self.command(command);
-        }
-    }
-
-    /// Moves new windows of no launch of ours, those the last pass didn't see, to the latest browsed file
-    /// waiting for one, and shows it. Returns the entry that took them, if one did, and adds those windows
+    /// Gives new windows of no launch of ours, those the last pass didn't see, to the latest browsed file
+    /// waiting for one, as a claim. Returns the entry that took them, if one did, and adds those windows
     /// to `taken`.
     fn claim_opened_windows(&mut self, now: u64, taken: &mut Vec<i64>) -> Option<Arc<str>> {
         let opened = &self.opened;
@@ -433,21 +426,32 @@ impl Session {
         let id = r.id.clone();
         let group = r.group();
         taken.extend(&stray);
-        self.command(WindowCommand::Move { windows: stray, to: group });
+        for w in self.windows.iter_mut().filter(|w| stray.contains(&w.id)) {
+            w.claim = Some(group.clone());
+        }
         Some(id)
     }
 
-    /// Places unowned windows after file handoffs and program discovery have had their chance. A
-    /// starting launch already has its group, and is left alone. A service dialog uses the current
-    /// program's group; without one it gets a group of its own so Home can still return to shelf.
-    fn place_unowned(&mut self) {
-        let starting = |w: &crate::session::windows::Window| self.launching.iter().any(|l| l.mark.as_deref().is_some_and(|mark| w.marked(mark)));
-        let ids: Vec<i64> = self.windows.iter().filter(|w| w.group.is_none() && self.running_of(w).is_none() && !starting(w)).map(|w| w.id).collect();
+    /// Claims the new main windows that still belong to no entry, after file handoffs and program discovery
+    /// have had their chance, for the program in front: a service's dialog shows in its group. One of a
+    /// launch still starting, or known by a library entry, is left alone. Each comes in front unless it is
+    /// below, in its own group if no program is in front.
+    fn claim_unowned(&mut self, library: &Library) {
+        let opened = &self.opened;
+        let ids: Vec<i64> = self
+            .windows
+            .iter()
+            .filter(|w| opened.contains(&w.id) && w.parent.is_none() && w.claim.is_none() && self.home_of(w, library) == super::Home::Window(w.id))
+            .map(|w| w.id)
+            .collect();
         for id in ids {
             let down = self.below(id);
-            let group = self.top_window().filter(|_| !down).and_then(|w| w.group.clone()).unwrap_or(Group::Window(id));
-            self.command(WindowCommand::Move { windows: vec![id], to: group });
+            let front = self.top_window().filter(|top| !down && self.root_of(top.id) != id).and_then(|top| top.group.clone());
+            if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+                w.claim = front;
+            }
             if !down {
+                self.place_windows(library);
                 self.command(WindowCommand::FocusWindow(id));
             }
         }

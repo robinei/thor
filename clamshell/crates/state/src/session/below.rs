@@ -134,15 +134,28 @@ impl Session {
         Effect::Save(Save::WindowRules(self.window_rules.clone()))
     }
 
-    /// Runs after every event. A window whose program has a rule for it is sent down, once. Returns
-    /// whether one was, for the bottom screen to show it.
+    /// Runs after every event. A window whose program has a rule for it is sent down, once. One displaced
+    /// from the bottom screen by it is looked at in turn, so that its own rule applies in this settle too.
+    /// Returns whether one was sent, for the bottom screen to show it.
     pub(crate) fn follow_window_rules(&mut self, library: &crate::Library) -> bool {
-        let wanted: Vec<i64> = self
-            .windows
+        let mut sent = false;
+        // (Each window is sent once, so this ends.)
+        while let Some(id) = self.wanted_down(library) {
+            sent = true;
+            self.sent_down.push(id);
+            self.command(WindowCommand::Down(id));
+        }
+        let windows = &self.windows;
+        self.sent_down.retain(|id| windows.iter().any(|w| w.id == *id));
+        sent
+    }
+
+    /// The first main window on the top screen, not sent down before, whose program's rule wants it below.
+    fn wanted_down(&self, library: &crate::Library) -> Option<i64> {
+        self.windows
             .iter()
-            // A dialog follows its main window.
             .filter(|w| !self.below(w.id) && !self.sent_down.contains(&w.id) && self.root_of(w.id) == w.id)
-            .filter(|w| {
+            .find(|w| {
                 let owner = self.owner_of(w).or_else(|| {
                     let key = w.group.as_ref()?.key()?;
                     library.entries.iter().find(|g| g.key == key).map(|g| g.id.clone())
@@ -150,14 +163,5 @@ impl Session {
                 owner.is_some_and(|o| self.window_rules.wants(&o, w))
             })
             .map(|w| w.id)
-            .collect();
-        let sent = !wanted.is_empty();
-        for id in wanted {
-            self.sent_down.push(id);
-            self.command(WindowCommand::Down(id));
-        }
-        let windows = &self.windows;
-        self.sent_down.retain(|id| windows.iter().any(|w| w.id == *id));
-        sent
     }
 }

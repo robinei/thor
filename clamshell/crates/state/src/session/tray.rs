@@ -107,9 +107,9 @@ impl Session {
                 }
                 continue;
             }
-            new.push(Running { tray: Some(t.key.clone()), ..Running::of(&entry, Origin::Found { pid: Some(pid) }, now) });
+            new.push(Running { tray: Some(t.key.clone()), process: Some(pid), ..Running::of(&entry, Origin::Found { pid: Some(pid) }, now) });
         }
-        self.start_found(new, &[], clock, out);
+        self.start_found(new, clock, out);
     }
 
     /// The tray icon of a running entry, if it has one: the icon of its unit's process, or the one it was

@@ -50,9 +50,6 @@ pub(crate) enum WindowCommand {
     FocusWindow(i64),
     /// Give a client keyboard focus without changing the selected content on either screen.
     KeyboardFocus(i64),
-    /// Put these windows in this group. Used for an entry known by app id, to move its windows from where
-    /// they opened.
-    Move { windows: Vec<i64>, to: Group },
     /// Bring shelf to the front.
     ShowShelf,
     /// Move a window to the bottom screen and show it there, returning the one there to its group. The
@@ -74,11 +71,6 @@ impl Session {
                 self.keys = super::Keys::Top;
                 self.top = None;
                 self.remember_in_front(super::InFront::Shelf);
-            }
-            WindowCommand::Move { windows, to } => {
-                for w in self.windows.iter_mut().filter(|w| windows.contains(&w.id)) {
-                    w.group = Some(to.clone());
-                }
             }
             WindowCommand::Down(id) => {
                 // A dialog goes with its main window: the stack goes down (see [`Session::stack`]).
@@ -219,19 +211,10 @@ impl crate::Session {
         if self.window(facts.id).is_some() {
             return;
         }
-        let parent = facts.parent.and_then(|id| self.window(id)).map(|w| (w.group.clone(), self.below(w.id), self.root_of(w.id)));
-        let parent_below = parent.as_ref().is_some_and(|(_, below, _)| *below);
-        let parent_on_top = parent.as_ref().is_some_and(|(_, below, root)| !below && self.top.is_some_and(|top| self.root_of(top) == *root));
-        let group = match parent {
-            Some((group, ..)) => group,
-            None => library
-                .entries
-                .iter()
-                .find(|g| super::running::has_mark(library, g, &facts))
-                .map(|g| Group::entry(&g.key))
-                .or_else(|| self.running_of(&facts).map(super::running::Running::group))
-                .or_else(|| facts.launch_unit().map(|i| Group::entry(&i.key))),
-        };
+        let parent = facts.parent.and_then(|id| self.window(id)).map(|w| (self.below(w.id), self.root_of(w.id)));
+        let parent_below = parent.as_ref().is_some_and(|(below, _)| *below);
+        let parent_on_top = parent.as_ref().is_some_and(|(below, root)| !below && self.top.is_some_and(|top| self.root_of(top) == *root));
+        let group = Some(self.home_of(&facts, library).group());
         let focus = parent_below || parent_on_top || self.opening_focus(&facts, library);
         if focus
             && self.launcher_dialog(&facts, library)
@@ -241,7 +224,7 @@ impl crate::Session {
         }
         let id = facts.id;
         self.opened.push(id);
-        self.windows.push(Window { facts, group });
+        self.windows.push(Window { facts, group, claim: None });
         if parent_below {
             self.keys = super::Keys::Bottom;
         } else if focus {
@@ -373,9 +356,14 @@ impl WindowFacts {
 pub struct Window {
     #[serde(flatten)]
     pub facts: WindowFacts,
-    /// Its home group, retained while it is on the bottom screen. None until the session has placed it: a
-    /// window that belongs to no entry is placed after the event that opened it.
+    /// Its home group, retained while it is on the bottom screen (see [`Session::home_of`]): worked out from
+    /// the facts and the claim, as it opens and at every settle.
     pub group: Option<Group>,
+    /// A choice made on it, not in the facts: a browsed file's entry took it, a new window of no launch of
+    /// ours (see [`Session::follow_windows`]), or a window of no program went to the program in front's
+    /// group. It belongs there for as long as it is open.
+    #[serde(default)]
+    pub claim: Option<Group>,
 }
 
 impl std::ops::Deref for Window {

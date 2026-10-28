@@ -43,6 +43,33 @@ pub(crate) struct FrontLaunch {
     promoted: Vec<i64>,
 }
 
+/// A window's group as worked out (see [`Session::home_of`]), borrowed: an entry's, by its key, or a
+/// window's own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Home<'a> {
+    Entry(&'a str),
+    Window(i64),
+}
+
+impl Home<'_> {
+    /// Whether it is `group`.
+    pub(crate) fn is(self, group: &Group) -> bool {
+        match (self, group) {
+            (Home::Entry(key), Group::Entry(other)) => key == &**other,
+            (Home::Window(id), Group::Window(other)) => id == *other,
+            _ => false,
+        }
+    }
+
+    /// It as a group.
+    pub(crate) fn group(self) -> Group {
+        match self {
+            Home::Entry(key) => Group::entry(key),
+            Home::Window(id) => Group::Window(id),
+        }
+    }
+}
+
 /// Where the keyboard is: the top screen's stack, the bottom screen's, or ClamShell's own UI.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 enum Keys {
@@ -457,37 +484,91 @@ impl Session {
         })
     }
 
-    /// The running entry a window belongs to, by the first of these that matches:
+    /// The running entry a window belongs to: its main window's (see [`Session::root_of`]), by the first of
+    /// these that matches, each a fact or a claim, never the group it was placed in:
     ///
     /// - its mark (see [`crate::session::running::mark_of`]), as for a launcher's game that runs in the
     ///   launcher's unit;
     /// - its unit, which also covers windows moved down;
-    /// - its process, for a program found by its tray icon;
-    /// - another window of its process and app id: the same program, whatever its client was identified
-    ///   as (before its process moved into our scope, say);
-    /// - its group.
-    ///
-    /// A dialog's is its parent's.
+    /// - its process, for a program found by its window or tray icon (see [`Running::fathered`]);
+    /// - another main window of its process and app id, by these: the same program, whatever its client
+    ///   was identified as;
+    /// - the claim made on it (see [`Window::claim`]): a program known by the facts above takes its window
+    ///   back from a claim made before it ran;
+    /// - the app id of a program found by another window of it, which a claim stands against: a browsed
+    ///   file's window is the file's, though another window of that app opened elsewhere.
     pub(crate) fn running_of(&self, w: &WindowFacts) -> Option<&Running> {
-        let mut w = w;
-        for _ in 0..self.windows.len() {
-            match w.parent.and_then(|id| self.window(id)) {
-                Some(parent) if parent.id != w.id => w = parent,
-                _ => break,
+        let root = self.root_facts(w);
+        let by_key = |k: Option<&str>| self.running.iter().find(|r| k == Some(r.key.as_str()));
+        let by_facts = |f: &WindowFacts| {
+            self.running
+                .iter()
+                .find(|r| !r.found() && r.owns(f))
+                .or_else(|| by_key(f.unit.as_deref().and_then(LaunchUnit::key_of)))
+                .or_else(|| self.running.iter().find(|r| r.fathered(f)))
+        };
+        by_facts(root)
+            .or_else(|| {
+                let process = root.pids.first()?;
+                let main = |o: &&Window| o.id != root.id && o.parent.is_none() && o.pids.first() == Some(process) && o.app_id == root.app_id;
+                self.windows.iter().filter(main).find_map(|o| by_facts(o))
+            })
+            .or_else(|| by_key(self.window(root.id).and_then(|w| w.claim.as_ref()).and_then(Group::key)))
+            .or_else(|| self.running.iter().find(|r| r.found() && r.owns(root)))
+    }
+
+    /// The facts of window `w`'s main window: of the window its parents lead to (see
+    /// [`Session::root_of`]), `w` itself for one opening that has no parent open.
+    fn root_facts<'a>(&'a self, w: &'a WindowFacts) -> &'a WindowFacts {
+        let root = match self.window(w.id) {
+            Some(_) => self.root_of(w.id),
+            None => w.parent.filter(|p| self.window(*p).is_some()).map_or(w.id, |p| self.root_of(p)),
+        };
+        self.window(root).map_or(w, |root| &root.facts)
+    }
+
+    /// The group window `w` is placed in: its main window's program's (see [`Session::running_of`]), else
+    /// the claim made on its main window, else the library entry its main window is known by (a launch
+    /// still starting, see [`running::has_mark`]) or its launch unit's entry, else a group of its own, its
+    /// main window's. Borrowed, so that working it out allocates nothing.
+    pub(crate) fn home_of<'a>(&'a self, w: &'a WindowFacts, library: &'a Library) -> Home<'a> {
+        let root = self.root_facts(w);
+        if let Some(r) = self.running_of(w) {
+            return Home::Entry(&r.key);
+        }
+        match self.window(root.id).and_then(|w| w.claim.as_ref()) {
+            Some(Group::Entry(key)) => return Home::Entry(key),
+            Some(Group::Window(id)) => return Home::Window(*id),
+            None => {}
+        }
+        library
+            .entries
+            .iter()
+            .find(|g| running::has_mark(library, g, root))
+            .map(|g| Home::Entry(&g.key))
+            .or_else(|| root.unit.as_deref().and_then(LaunchUnit::key_of).filter(|_| root.launched()).map(Home::Entry))
+            .unwrap_or(Home::Window(root.id))
+    }
+
+    /// Places every window in its group (see [`Session::home_of`]), changing only those whose group changed,
+    /// and the groups' selections and history with them.
+    pub(crate) fn place_windows(&mut self, library: &Library) {
+        let mut moved = false;
+        for i in 0..self.windows.len() {
+            let Some(w) = self.windows.get(i) else { continue };
+            let home = self.home_of(w, library);
+            if w.group.as_ref().is_some_and(|group| home.is(group)) {
+                continue;
+            }
+            let home = home.group();
+            if let Some(w) = self.windows.get_mut(i) {
+                w.group = Some(home);
+                moved = true;
             }
         }
-        let by_key = |k: Option<&str>| self.running.iter().find(|r| k == Some(r.key.as_str()));
-        self.running
-            .iter()
-            .find(|r| r.owns(w))
-            .or_else(|| by_key(w.unit.as_deref().and_then(LaunchUnit::key_of)))
-            .or_else(|| self.running.iter().find(|r| r.fathered(w)))
-            .or_else(|| {
-                let process = w.pids.first()?;
-                let sibling = self.windows.iter().find(|o| o.id != w.id && o.pids.first() == Some(process) && o.app_id == w.app_id)?;
-                by_key(sibling.group.as_ref().and_then(Group::key))
-            })
-            .or_else(|| by_key(self.window(w.id).and_then(|w| w.group.as_ref()).and_then(Group::key)))
+        if moved {
+            self.remember_front();
+        }
     }
 
     /// The id of the running entry a window belongs to (see [`Session::running_of`]).

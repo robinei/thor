@@ -24,7 +24,6 @@ use crate::effect::Effect;
 use crate::out::Out;
 use crate::session::launch_unit::LaunchUnit;
 use crate::session::running::{Origin, Running};
-use crate::session::windows::WindowCommand;
 use crate::session::windows::{Window, WindowFacts};
 use crate::{Clock, Entry, Library, Session};
 
@@ -66,27 +65,17 @@ impl Session {
             if self.running(&entry.id).is_some() {
                 continue;
             }
-            new.push(Running { mark, seen: true, ..Running::of(&entry, Origin::Found { pid: own.then_some(pid) }, now) });
+            let process = own.then_some(pid);
+            new.push(Running { mark, seen: true, process, ..Running::of(&entry, Origin::Found { pid: process }, now) });
         }
-        self.start_found(new, taken, clock, out);
+        self.start_found(new, clock, out);
     }
 
-    /// Runs entries just found by windows or tray icons. Their windows, except `taken`, go to their
-    /// groups, which are shown if one of the windows was in front. An entry of its own gets its
+    /// Runs entries just found by windows or tray icons; their windows are theirs by their facts (see
+    /// [`Session::running_of`]) and placed in their groups with the rest. An entry of its own gets its
     /// picture looked up by its app id, and each is moved into a scope of ours.
-    pub(crate) fn start_found(&mut self, new: Vec<Running>, taken: &[i64], clock: &Clock, out: &mut Out) {
+    pub(crate) fn start_found(&mut self, new: Vec<Running>, clock: &Clock, out: &mut Out) {
         for r in &new {
-            // A dialog goes with its main window, whose program's it is (see `Session::running_of`).
-            let ours = |w: &Window| self.window(self.root_of(w.id)).is_some_and(|root| r.owns(root) || r.fathered(root));
-            let mine: Vec<&Window> = self.windows.iter().filter(|w| !taken.contains(&w.id) && ours(w)).collect();
-            let focused = mine.iter().any(|w| self.top_window().is_some_and(|top| top.id == w.id));
-            let ids: Vec<i64> = mine.iter().map(|w| w.id).collect();
-            if !ids.is_empty() {
-                self.command(WindowCommand::Move { windows: ids, to: r.group() });
-            }
-            if focused {
-                self.focus(&r.group());
-            }
             out.effects.extend(find_icon(r));
         }
         let adopt: Vec<(String, u32)> = new.iter().filter_map(|r| Some((r.key.clone(), r.pid()?))).collect();

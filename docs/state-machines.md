@@ -25,8 +25,14 @@ belong to a bottom client or ClamShell's UI (`None`).
 
 `Opened` and `Changed` carry the window's facts (`WindowFacts`: id, app id, title, parent, limits,
 role, colour, unit, processes and the game its launcher marked its process with), never its placement; the session's record of a window is those facts
-with its group and screen. On `Opened` the state resolves the home from a known parent, a library entry's mark
-(app id or launcher's game), owner or launch unit, and decides whether the window comes in front (`Session::opening_focus`, below),
+with its group and screen, and a claim made on it. A window's owner is its main window's, worked out from
+facts and claims only, never from the group it was placed in (`Session::running_of`): a library mark, its
+unit, a found program's process, another main window of its process and app id; then a claim (a browsed
+file's entry took it, or a window of no program went to the program in front's group); then a found
+program's app id, which a claim stands against. Its group follows: the owner's, else the claim, else a
+library mark's or launch unit's entry, else its own (`Session::home_of`). It is worked out as the window
+opens and again at every settle (`Session::place_windows`), so it is never left behind by a change. On
+`Opened` the state also decides whether the window comes in front (`Session::opening_focus`, below),
 before returning. A known parent's bottom placement is inherited. `Changed` updates only identity (app id, unit, process ancestry and parent);
 it cannot undo placement or change title. `Title` is independent. The compositor sends each change as it
 happens (Opened, Closed, Changed, Title, KeyboardFocus, and Activate once a token is checked); a later
@@ -1529,7 +1535,9 @@ are not answered.
 
 After every event (checked by `random.rs`, `random_event_sequences_keep_the_invariants`):
 
-1. **Sync converges:** running sync again emits nothing.
+1. **Settle and sync converge:** settling and syncing again (checked every 32nd event, the comparison
+   being of the whole state) changes nothing, sends nothing and queues nothing; running sync again
+   emits nothing.
 2. **What was sent mirrors the state:** the last PadRoute is `pad().route()`; the last Keymap is the
    keymap in force; Status is watched iff the screens are on; Account iff the UI is up and the Device
    view is open; the last Apply is `(program, in_force)`; the last Outputs is (screens on, bottom on);
