@@ -50,7 +50,7 @@ early() {
         # (pacman -Q with no names would list every package.)
         info "packages: $(pacman -Q $ours 2> /dev/null | tr '\n' ' ')"
     else
-        fail "the [thor] repository isn't in pacman.conf"
+        fail "the [thor] repository lists no packages: not in pacman.conf, or its database not synced (pacman -Sy)"
     fi
     info "command line: $(cat /proc/cmdline)"
     # (Which device tree the bootloader chose, and which way it booted: UEFI or /KERNEL.)

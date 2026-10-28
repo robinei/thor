@@ -1361,7 +1361,8 @@ class Checks:
             print(f"        round {n}: {rss // 1024} MB, {fds} files, {threads} threads" + (f"; missed {failed}" if failed else ""), flush=True)
             self.reset()
         same = sh("systemctl --user show -P MainPID clamshell").strip() == pid
-        self.check(f"soak: {n} rounds in {minutes:g} minutes, ClamShell not restarted", same and n > 3, f"pid {pid}, rounds {n}")
+        self.check("soak: ClamShell not restarted", same, f"pid {pid}")
+        self.check(f"  more than 3 rounds in {minutes:g} minutes, to compare", n > 3, f"{n} rounds")
         if n <= 3:
             return
         self.check("  every round's steps worked", not missed, "; ".join(missed[:10]))
@@ -1394,7 +1395,8 @@ class Checks:
         sh("sudo systemctl restart bluetooth")
         until(lambda: "Powered: yes" in sh("bluetoothctl show 2>/dev/null"), 20)
         # (The test device's registration went with bluetoothd: it is set up again, as at the start.)
-        subprocess.run([sys.executable, str(Path(vm.__file__)), "bluetooth"], capture_output=True, text=True)
+        again = subprocess.run([sys.executable, str(Path(vm.__file__)), "bluetooth"], capture_output=True, text=True)
+        self.check("  the test device set up again", again.returncode == 0, again.stderr.strip()[-300:])
         self.reset()
         self.bluetooth()
         self.check("faults: ClamShell not restarted through them", sh("systemctl --user show -P MainPID clamshell").strip() == pid, f"pid {pid}")
