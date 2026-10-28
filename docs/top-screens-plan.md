@@ -314,7 +314,7 @@ Each ends in commits that pass `tools/check.sh` and the randomized test; the VM 
 touches the session or the outside.
 
 - [x] 1. **Rename** shelf to Library (`LibraryView` in code), in the UI, the code and the docs.
-- [ ] 2. **Setup as a wizard**: password, Wi-Fi, time zone; the bottom screen locked to the keyboard; the
+- [x] 2. **Setup as a wizard**: password, Wi-Fi, time zone; the bottom screen locked to the keyboard; the
   launch gate; Volume Up removed from `thor-account` (a thor-system release) and from `security.md`.
 - [ ] 3. **Built-ins as entries**: Library always running and pinned at 0 by the starter, Device an entry;
   `InFront::Shelf` and `TopView` gone.

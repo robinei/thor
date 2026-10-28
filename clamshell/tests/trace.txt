@@ -5,6 +5,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 -- top.png
 -- top-tab2.png
@@ -37,6 +38,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 -- top-actions.png
 == group top-folder.png
@@ -44,6 +46,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 -- top-folder.png
 Units [1__the_shores_of_030fb1]
@@ -67,6 +70,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 -- bottom.png
 == group windows-empty.png
@@ -74,6 +78,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(Tab(Windows)))
   Watch Metrics off
@@ -83,6 +88,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_09d141
@@ -154,6 +160,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_09d141
@@ -172,6 +179,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
@@ -239,6 +247,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
@@ -326,6 +335,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
@@ -421,6 +431,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_09d141
@@ -488,6 +499,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_09d141
@@ -519,6 +531,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_09d141
@@ -539,6 +552,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_09d141
@@ -559,6 +573,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_09d141
@@ -643,6 +658,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(Tab(Dock)))
   Watch Metrics off
@@ -662,6 +678,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(Tab(Wifi)))
   Watch Metrics off
@@ -674,6 +691,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Units [zelda_lttp_650a1e]
   Apply settings of zelda-lttp
@@ -686,6 +704,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(Tab(Time)))
   Watch Metrics off
@@ -698,9 +717,8 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
-  Watch Metrics on
-Pointer(Activate(LibraryView(Entry("tool:device"))))
   Watch Account on
+  Watch Metrics on
 -- device-unavailable.png
 -- device.png
 Pointer(Activate(Device(Sticks)))
@@ -732,6 +750,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(Tab(Time)))
   Watch Metrics off
@@ -744,6 +763,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(Tab(Bluetooth)))
   Watch Metrics off
@@ -754,6 +774,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(Tab(Volume)))
   Watch Metrics off
@@ -764,6 +785,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(Tab(Brightness)))
   Watch Metrics off
@@ -776,6 +798,7 @@ Tick 1760000000
   Keymap 0 "Default"
   PadRoute Ui
 Start
+  Watch Account on
   Watch Metrics on
 Pointer(Activate(Tab(Dock)))
   Watch Metrics off

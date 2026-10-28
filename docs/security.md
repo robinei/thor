@@ -87,7 +87,7 @@ sets the first one without asking for one, which any process of the user could d
 is Setup's first step, which can't be skipped, and nothing of the user's is started until the account has
 one (`clamshell_state::setup::wizard`): every launch is held while Setup shows, "Start with ClamShell"
 waits, and the second screen shows only the keyboard. Setup shows at the first start, and whenever the
-account is read without a password. What runs before it is ClamShell and the image's own services. Changing
+account, read at every start, has no password. What runs before it is ClamShell and the image's own services. Changing
 a password asks for the current one.
 
 ## Input devices

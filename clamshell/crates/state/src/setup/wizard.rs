@@ -181,17 +181,19 @@ mod tests {
         assert_eq!(s.setup().wizard(), Some(Step::Wifi));
     }
 
-    /// An account read with no password brings the password step back, even once Setup is done, and
-    /// nothing is launched until there is one.
+    /// The account is read at every start, and one with no password brings the password step back, even
+    /// once Setup is done; nothing is launched until there is one.
     #[test]
     fn no_password_brings_setup_back_and_holds_launches() {
-        let mut s = state();
+        let mut s = State::new(init());
+        assert!(s.applied(Event::Start).contains(&Effect::Watch(crate::Watch::Account, true)), "read at start");
         assert_eq!(s.setup().wizard(), None);
         account(&mut s, true, false);
         assert_eq!(s.setup().wizard(), Some(Step::Password));
         assert!(!launch_now(&mut s, "zelda-lttp").iter().any(|e| matches!(e, Effect::Launch { .. })), "held");
         assert!(s.session().launching().is_empty());
-        account(&mut s, true, true);
+        let fx = s.applied(Event::Reading(Reading::Account(Account { available: true, password: true, ssh: false })));
+        assert!(fx.contains(&Effect::Watch(crate::Watch::Account, false)), "read, and Setup gone: {fx:?}");
         assert_eq!(s.setup().wizard(), None);
         assert!(launch_now(&mut s, "zelda-lttp").iter().any(|e| matches!(e, Effect::Launch { .. })));
     }

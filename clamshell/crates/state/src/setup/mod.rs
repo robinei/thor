@@ -113,9 +113,10 @@ impl Setup {
         self.open
     }
 
-    /// Whether the account is read: while the Device view is open or Setup shows.
+    /// Whether the account is read: once at start, so that one without a password brings Setup back (see
+    /// [`wizard`]), and while the Device view is open or Setup shows.
     pub fn reads_account(&self) -> bool {
-        self.open || self.wizard().is_some()
+        !self.account_read || self.open || self.wizard().is_some()
     }
 
     pub fn sticks(&self) -> Option<&Progress> {
@@ -328,12 +329,14 @@ mod tests {
         assert!(s.session().library_view_in_front());
     }
 
-    /// The account is read while the view is open, from when the UI is up.
+    /// The account is read while the view is open, from when the UI is up (and once at start, see
+    /// [`crate::setup::wizard`]).
     #[test]
     fn the_account_is_watched_while_the_view_is_open() {
         let mut s = State::new(init());
         assert!(!s.applied(Event::tick(1)).contains(&Effect::Watch(crate::Watch::Account, true)), "the UI isn't up");
         s.applied(Event::Start);
+        available(&mut s, true);
         // Opened from the Library, and closed by Home.
         let fx = s.applied(Event::Entry("tool:device".into(), crate::EntryAct::Play));
         assert!(fx.contains(&Effect::Watch(crate::Watch::Account, true)), "{fx:?}");
