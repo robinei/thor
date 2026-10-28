@@ -39,6 +39,9 @@ impl Session {
             return;
         }
         due.extend(self.autostart.iter().filter(|id| library.has(id) && self.running(id).is_none()).cloned());
+        // Order: a launcher's game first, which starts the launcher, so that the launcher's own entry, if it
+        // is due too, finds its launch starting (see `Session::launch`) rather than holding the game back.
+        due.sort_by_key(|id| library.entry(id).is_none_or(|g| super::launchers::headless(library, g).is_none()));
     }
 }
 

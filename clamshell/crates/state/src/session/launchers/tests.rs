@@ -63,3 +63,22 @@ fn a_heroic_game_is_launched_by_heroic_without_its_window() {
     assert_eq!(launcher_of(&lutris).map(|l| l.name), Some("Lutris"));
     assert!(headless(&library(vec![game.clone()]), &game).is_none(), "without Heroic's entry, its shortcut as it is");
 }
+
+/// Heroic and one of its games, both to start with ClamShell: the game goes first and starts Heroic,
+/// whose own entry then finds that launch starting. Heroic is launched once.
+#[test]
+fn a_launcher_and_its_game_started_together_launch_the_launcher_once() {
+    use crate::Effect;
+    use crate::testkit::*;
+    let heroic = shortcut("desktop:com.heroicgameslauncher.hgl", "Heroic Games Launcher", &["heroic"]);
+    let game = shortcut("desktop:Pattern Game", "Pattern Game", &["xdg-open", "heroic://launch?appName=patterngame&runner=sideload"]);
+    let init = crate::Init { autostart: vec![heroic.id.clone(), game.id.clone()], ..crate::testkit::init() };
+    let mut s = crate::State::new(crate::Init { library: Some(library(vec![heroic, game])), ..init });
+    let fx = s.applied(crate::Event::Units(vec![]));
+    let launches: Vec<_> = fx.iter().filter_map(|e| if let Effect::Launch { launch, .. } = e { Some(launch.clone()) } else { None }).collect();
+    assert_eq!(launches.len(), 1, "{fx:?}");
+    assert!(
+        matches!(launches.first(), Some(Launch::Program { argv, .. }) if argv.iter().any(|a| a.starts_with("heroic://launch"))),
+        "the game's: {launches:?}"
+    );
+}

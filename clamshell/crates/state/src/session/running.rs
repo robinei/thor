@@ -687,6 +687,10 @@ impl Session {
         if command.is_none()
             && let Some((launcher, argv)) = launchers::headless(library, g)
         {
+            // As for any entry, not while a launch of the launcher is starting: it would be launched twice.
+            if self.is_launching(&launcher.id) {
+                return Launched::No;
+            }
             self.launch_in_launcher(g, (launcher, argv), library, settings, clock, start, out);
             return Launched::Yes;
         }
