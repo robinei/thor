@@ -152,6 +152,8 @@ struct Drawing {
     elements: Vec<render::Element>,
     /// Each screen's elements as last composed.
     states: [RenderElementStates; 2],
+    /// Whether the seat is another session's (another VT shown): nothing is drawn or committed meanwhile.
+    away: bool,
 }
 
 /// A connector chosen for a screen: its handle, mode, the modes it has of that size, its CRTC, and its
@@ -351,6 +353,7 @@ pub fn run(
         cursor: crate::cursor::Cursor::new(),
         elements: Vec::new(),
         states: [RenderElementStates::default(), RenderElementStates::default()],
+        away: false,
     }));
     let on_capture = Rc::new(RefCell::new(on_capture));
 
@@ -398,6 +401,7 @@ pub fn run(
 
     // The seat: paused when another VT is shown, resumed when this one is back.
     let resumed = drawing.clone();
+    let paused = drawing.clone();
     let capture = on_capture.clone();
     base.event_loop
         .handle()
@@ -406,6 +410,7 @@ pub fn run(
                 log::info!("drm: seat paused");
                 libinput.suspend();
                 drm.pause();
+                paused.borrow_mut().away = true;
             }
             SessionEvent::ActivateSession => {
                 log::info!("drm: seat resumed");
@@ -416,10 +421,18 @@ pub fn run(
                     log::warn!("drm: {error}");
                 }
                 let drawing = &mut *resumed.borrow_mut();
+                drawing.away = false;
                 for screen in &mut drawing.screens {
                     screen.reset_buffers();
                     screen.pending = false;
                     screen.queued_at = None;
+                    // The console lit every screen meanwhile: one that is off is turned off again.
+                    if !screen.on {
+                        match screen.surface.surface().clear() {
+                            Ok(()) => screen.surface.off(),
+                            Err(error) => log::warn!("drm: turning the {:?} screen off again: {error}", screen.role),
+                        }
+                    }
                 }
                 drawing.pipeline.redraw_all();
                 step(drawing, server, &mut *capture.borrow_mut(), Instant::now());
@@ -572,6 +585,16 @@ fn step(
     on_capture: &mut impl FnMut(Result<clamshell_state::ScreenshotPixels, String>),
     now: Instant,
 ) -> Option<Instant> {
+    if drawing.away {
+        // The clients' work goes on, their frames held back; the screens wait for the seat (see the
+        // session's events).
+        server.frame();
+        server.import_dmabufs(&mut drawing.renderer);
+        if std::mem::take(&mut server.screenshot_requested) {
+            on_capture(Err("the screens are another session's".into()));
+        }
+        return None;
+    }
     outputs(drawing, server);
     // Commits timed for no later than the top screen's next frame go ahead before it is composed; the
     // loop wakes a refresh before the next one held is due, to compose it in time, or, within a refresh
@@ -853,7 +876,7 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
 /// Composes screen `index` if it is composed now (see [`composes`]), or for a screenshot (`capture`),
 /// marking it changed if its picture did.
 fn compose(drawing: &mut Drawing, server: &mut Server, index: usize, capture: bool) -> Result<(), Error> {
-    let Drawing { renderer, pipeline, screens, frames, cursor, elements, states } = drawing;
+    let Drawing { renderer, pipeline, screens, frames, cursor, elements, states, .. } = drawing;
     let (Some(screen), Some(states)) = (screens.get_mut(index), states.get_mut(index)) else { return Ok(()) };
     let shows_own = screen.ui_shown || screen.window_shown.is_some();
     if !composes(screen.on, screen.pending, shows_own, capture) {
