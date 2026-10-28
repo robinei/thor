@@ -127,6 +127,8 @@ impl State {
                             self.editor_done(done, out);
                         }
                     }
+                    // While Setup shows, the keyboard is only for its editor.
+                    Some(_) if self.setup.wizard().is_some() => {}
                     Some(stroke) if self.keymapping.capturing(self.bottom.tab(), self.bottom.editor().is_some()) => {
                         self.keymapping.captured(crate::keymap::screens::chord(stroke), out);
                     }
@@ -141,6 +143,7 @@ impl State {
             Id::Device(id) => {
                 self.setup.tap(id, self.clock.mono(), &mut self.pointer, self.library_view.selected(), out);
             }
+            Id::Setup(id) => self.setup.wizard_tap(id, &mut self.pointer, self.library_view.selected(), out),
             Id::Battery(id) => {
                 self.sys.on_battery(id, &self.session, out);
             }

@@ -34,7 +34,12 @@ pub fn command(sources: &clamshell_system::library::Sources, dir: &Path) -> Resu
     let real = std::env::var("CLAMSHELL_SNAPSHOT_LIBRARY").is_ok_and(|v| v == "real");
     let library = if real { clamshell_system::library::load(sources).library } else { clamshell_library::demo::library() };
     let now = if std::env::var_os("CLAMSHELL_SNAPSHOT_NOW").is_some() { clamshell_system::time::clock::unix_secs() } else { FIXED_NOW };
-    render(&|| state(library.clone()), now, dir).map_err(|e| e.to_string())
+    render(&|first_start| state(library.clone(), first_start), now, dir).map_err(|e| e.to_string())
+}
+
+/// The device's account, before it has a password.
+fn no_password() -> clamshell_state::setup::account::Account {
+    clamshell_state::setup::account::Account { available: true, password: false, ssh: false }
 }
 
 /// One file: the screen drawn after the events in `before`.
@@ -83,14 +88,15 @@ impl From<ParseError> for Error {
 /// shows the Device view.
 fn open_device() -> Vec<Event> {
     let library = clamshell_library::demo::library();
-    let tools = state(library).library_view().library().collections.iter().position(|c| c.name == "Tools").unwrap_or(0);
+    let tools = state(library, false).library_view().library().collections.iter().position(|c| c.name == "Tools").unwrap_or(0);
     let device = || tap(Id::LibraryView(LibraryViewId::Entry("tool:device".into())));
     vec![tap(Id::LibraryView(LibraryViewId::Collection(u16::try_from(tools).unwrap_or(0)))), device(), device()]
 }
 
 /// The state the snapshots start from: a library with its apps pinned to the dock, a window rule that
-/// sends the terminal's window titled [`demo::BELOW`] to the bottom screen, and nothing else remembered.
-pub fn state(library: Library) -> State {
+/// sends the terminal's window titled [`demo::BELOW`] to the bottom screen, and nothing else remembered;
+/// at ClamShell's `first_start`, or not.
+pub fn state(library: Library, first_start: bool) -> State {
     let dock = Dock::pinned(vec!["desktop:steam".into(), "desktop:foot".into(), "desktop:firefox".into()]);
     let mut display_modes = clamshell_state::presentation::modes::DisplayModes::default();
     for refresh in [60000, 120000] {
@@ -108,6 +114,7 @@ pub fn state(library: Library) -> State {
             app_id: "foot".into(),
             title: Some(demo::BELOW.into()),
         }]),
+        first_start,
         ..Init::default()
     })
 }
@@ -198,6 +205,8 @@ fn taps(setting: Setting, n: usize) -> impl Iterator<Item = Event> {
 pub struct Group {
     pub start: Vec<Event>,
     pub shots: Vec<Shot>,
+    /// It starts at ClamShell's first start, with Setup showing.
+    pub first_start: bool,
 }
 
 /// A keymap named FPS, made on the settings' keymap screens and left on its edit screen with A selected.
@@ -255,7 +264,7 @@ fn fps_with_layer() -> Result<Vec<Event>, ParseError> {
 pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
     use Screen::{Bottom, Top};
     let shot = |name, screen, before| Shot { name, screen, before };
-    let group = |start, shots| Group { start, shots };
+    let group = |start, shots| Group { start, shots, first_start: false };
     let ff6 = || tap(Id::LibraryView(LibraryViewId::Entry("ff6".into())));
     let ctrl = || control::key(Key::Mod(Modifier::Ctrl));
     let volume = Id::Control(Control::Volume);
@@ -605,12 +614,29 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot(
                     "device.png",
                     Top,
-                    vec![Reading::Account(clamshell_state::setup::account::Account { available: true, password: false, ssh: false }).into()],
+                    vec![Reading::Account(clamshell_state::setup::account::Account { available: true, password: true, ssh: false }).into()],
                 ),
                 shot("device-sticks.png", Top, vec![tap(Id::Device(DeviceId::Sticks)), Event::Sticks(SticksEvent::Progress(demo::sticks_progress()))]),
                 shot("device-password.png", Bottom, [tap(Id::Device(DeviceId::Password))].into_iter().chain(control::type_text("secret")?).collect()),
             ],
         ),
+        // Setup at the first start: the password step, the password typed on the keyboard (the bar hidden),
+        // a password that wasn't set, then Wi-Fi and the time zone once there is one.
+        Group {
+            start: vec![LibraryViewEvent::Rows(8).into(), Reading::Account(no_password()).into(), Reading::Wifi(demo::wifi()).into()],
+            shots: vec![
+                shot("setup-password.png", Top, vec![]),
+                shot(
+                    "setup-typing.png",
+                    Bottom,
+                    [tap(Id::Setup(clamshell_state::SetupId::Password))].into_iter().chain(control::type_text("secret")?).collect(),
+                ),
+                shot("setup-problem.png", Top, vec![Event::AccountChanged(Err("too short".into()))]),
+                shot("setup-wifi.png", Top, vec![Reading::Account(clamshell_state::setup::account::Account { password: true, ..no_password() }).into()]),
+                shot("setup-zone.png", Top, vec![tap(Id::Setup(clamshell_state::SetupId::Next))]),
+            ],
+            first_start: true,
+        },
         // The clock set by hand, on a 12-hour dial.
         group(
             vec![],
@@ -681,14 +707,15 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
     ])
 }
 
-/// Draws the scenario into `dir`. Each group starts from a fresh state made by `fresh`, and each file is
+/// Draws the scenario into `dir`. Each group starts from a fresh state made by `fresh` (at the first start
+/// or not, as the group says), and each file is
 /// written as soon as its shot is drawn.
-pub fn render(fresh: &(dyn Fn() -> State + Sync), now: u64, dir: &Path) -> Result<(), Error> {
+pub fn render(fresh: &(dyn Fn(bool) -> State + Sync), now: u64, dir: &Path) -> Result<(), Error> {
     // The groups are independent, so each runs on a thread of its own. Within a group the shots are drawn
     // in order.
     let groups = shots(now)?;
     let results: Vec<Result<(), Error>> = std::thread::scope(|scope| {
-        let threads: Vec<_> = groups.into_iter().map(|group| scope.spawn(move || render_group(fresh(), group, now, dir))).collect();
+        let threads: Vec<_> = groups.into_iter().map(|group| scope.spawn(move || render_group(fresh(group.first_start), group, now, dir))).collect();
         threads.into_iter().map(|t| t.join().unwrap_or(Err(Error::Panicked))).collect()
     });
     results.into_iter().collect()
@@ -729,7 +756,7 @@ fn setup(now: u64) -> [Event; 4] {
 
 /// Brings `state` to each of the group's shots in turn and shows `visit` each event applied and each
 /// shot.
-fn walk_group(state: State, Group { start, shots }: Group, now: u64, visit: &mut impl Visit) -> Result<(), Error> {
+fn walk_group(state: State, Group { start, shots, .. }: Group, now: u64, visit: &mut impl Visit) -> Result<(), Error> {
     let mut walk = Walk { state, log: Vec::new(), effects: Vec::new() };
     for event in setup(now).into_iter().chain(start) {
         walk.apply(event, visit);
@@ -814,12 +841,17 @@ mod tests {
                 scope.spawn(move || {
                     let frames = |screen| (clamshell_ui::Frames::new(screen, size(screen)).unwrap(), clamshell_ui::Frames::new(screen, size(screen)).unwrap());
                     let (mut top, mut bottom) = (frames(Screen::Top), frames(Screen::Bottom));
-                    walk_group(state(clamshell_library::demo::library()), group, FIXED_NOW, &mut |state: &State, _: &[Event], name: &str, screen| {
-                        let (damaged, whole) = if screen == Screen::Top { (&mut top.0, &mut top.1) } else { (&mut bottom.0, &mut bottom.1) };
-                        let (pixels, events) = damaged.draw(state);
-                        assert!(pixels == whole.whole(state).unwrap(), "{name}: drawn frame after frame, it differs from the whole frame");
-                        Ok(events)
-                    })
+                    walk_group(
+                        state(clamshell_library::demo::library(), group.first_start),
+                        group,
+                        FIXED_NOW,
+                        &mut |state: &State, _: &[Event], name: &str, screen| {
+                            let (damaged, whole) = if screen == Screen::Top { (&mut top.0, &mut top.1) } else { (&mut bottom.0, &mut bottom.1) };
+                            let (pixels, events) = damaged.draw(state);
+                            assert!(pixels == whole.whole(state).unwrap(), "{name}: drawn frame after frame, it differs from the whole frame");
+                            Ok(events)
+                        },
+                    )
                     .unwrap();
                 });
             }
@@ -936,7 +968,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let groups = shots(FIXED_NOW).unwrap();
         let library = clamshell_library::demo::library();
-        let fresh = || state(library.clone());
+        let fresh = |first_start| state(library.clone(), first_start);
         let walked: Vec<(Vec<Map>, String)> = std::thread::scope(|scope| {
             let threads: Vec<_> = groups
                 .into_iter()
@@ -944,7 +976,9 @@ mod tests {
                     let (dir, fresh) = (&dir, &fresh);
                     scope.spawn(move || {
                         let first = group.shots.first().map_or("", |s| s.name);
-                        let mut checked = Checked { dir, mapper: Mapper::new(fresh, size), maps: Vec::new(), trace: format!("== group {first}\n") };
+                        let first_start = group.first_start;
+                        let fresh = move || fresh(first_start);
+                        let mut checked = Checked { dir, mapper: Mapper::new(&fresh, size), maps: Vec::new(), trace: format!("== group {first}\n") };
                         walk_group(fresh(), group, FIXED_NOW, &mut checked).unwrap();
                         (checked.maps, checked.trace)
                     })

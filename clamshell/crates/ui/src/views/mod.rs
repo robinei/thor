@@ -27,6 +27,7 @@ mod overlay;
 mod profiles;
 mod radio;
 mod settings;
+mod setup;
 mod sysinfo;
 mod time;
 mod touchpad;
@@ -42,13 +43,14 @@ use crate::toolkit::Frame;
 /// How much the black layer over the area below the bar hides it while that area is a touchpad.
 const POINTING_FADE: f32 = 0.7;
 
-/// The main screen, over all of `screen`: the Library, or the Device view shown in its place. The frame
-/// starts black (see `render`).
+/// The main screen, over all of `screen`: the Library, or the Device view or Setup shown in its place.
+/// The frame starts black (see `render`).
 pub fn top(f: &mut Frame, screen: Rect) {
     f.body = screen;
     match f.s.setup().top_view() {
         clamshell_state::setup::TopView::LibraryView => f.out.list_rows = Some(library_view::draw(f, screen)),
         clamshell_state::setup::TopView::Device => device::draw(f, screen),
+        clamshell_state::setup::TopView::Setup => setup::draw(f, screen),
     }
 }
 
@@ -59,6 +61,21 @@ pub fn overlay(f: &mut Frame, screen: Rect, which: crate::Screen) {
     match which {
         crate::Screen::Top => overlay::draw(f, screen),
         crate::Screen::Bottom => notifications::draw(f, screen),
+    }
+}
+
+/// The keyboard, or over it the editor open: what it edits says how it is titled.
+fn typing(f: &mut Frame, body: Rect) {
+    match f.s.bottom().editor().map(|e| &e.purpose) {
+        Some(Purpose::FileName(FileName::Rename(_))) => editor::draw(f, "New name", "Rename"),
+        Some(Purpose::FileName(FileName::NewFolder(_))) => editor::draw(f, "New folder's name", "Make"),
+        Some(Purpose::FileName(FileName::Extract(_))) => editor::draw(f, "Extract to", "Extract"),
+        Some(Purpose::AccountPassword(_)) => device::draw_password(f),
+        Some(Purpose::Password { ssid }) => {
+            let title = crate::toolkit::format::Fmt::<128>::of(format_args!("Password for {ssid}"));
+            editor::draw(f, &title, "Join");
+        }
+        _ => keyboard::draw(f, body),
     }
 }
 
@@ -77,9 +94,14 @@ fn windows(f: &mut Frame, body: Rect) {
 }
 
 /// The second screen: the bar, the open tab below it, and the slider over both while one is moving.
-/// While a game wants the screen dark, nothing is drawn. The frame starts black (see `render`).
+/// While a game wants the screen dark, nothing is drawn; while Setup shows, only the keyboard and its
+/// editor, over the whole screen. The frame starts black (see `render`).
 pub fn bottom(f: &mut Frame, screen: Rect) {
     f.body = screen;
+    if f.s.setup().wizard().is_some() {
+        typing(f, screen);
+        return;
+    }
     if f.s.bottom_dark() {
         dark::draw(f, screen);
         f.out.touchpad_area = Some(screen);
@@ -91,13 +113,7 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
         Tab::Settings => settings::draw(f),
         // While a browsed file's name or the account password is being typed, the editor replaces the
         // keyboard.
-        Tab::Keyboard => match f.s.bottom().editor().map(|e| &e.purpose) {
-            Some(Purpose::FileName(FileName::Rename(_))) => editor::draw(f, "New name", "Rename"),
-            Some(Purpose::FileName(FileName::NewFolder(_))) => editor::draw(f, "New folder's name", "Make"),
-            Some(Purpose::FileName(FileName::Extract(_))) => editor::draw(f, "Extract to", "Extract"),
-            Some(Purpose::AccountPassword(_)) => device::draw_password(f),
-            _ => keyboard::draw(f, body),
-        },
+        Tab::Keyboard => typing(f, body),
         Tab::Dock => dock::draw(f),
         Tab::Touchpad => touchpad::draw(f),
         Tab::Sysinfo => sysinfo::draw(f),

@@ -3,7 +3,7 @@
 # lead, in sections for the bar, the Library, the keyboard and the rest of the screen. "-" stays; [event] is what a move
 # does that leaves the focus where it is, such as a level's step. Targets written the same next to
 # each other share a line. "-- bar as in x.png": the same as in that shot; "... except" then, for
-# the targets whose moves differ, only the moves that differ. The Library's entries are their quoted ids,
+# the targets whose moves differ, only the moves that differ. The Library entries are their quoted ids,
 # list rows List[i], dock tiles Dock[i], keys Key[row,col].
 == top.png (top; the pad on both screens)
 start "zelda-lttp"; back -
@@ -699,8 +699,9 @@ start Device(Wifi); back Activate Device(Close)
 -- screen
 Device(Wifi): ^- vDevice(Zone) <- >-
 Device(Zone): ^Device(Wifi) vDevice(Password) <- >-
-Device(Password): ^Device(Zone) vDevice(Sticks) <- >-
-Device(Sticks): ^Device(Password) vDevice(Gyro) <- >-
+Device(Password): ^Device(Zone) vDevice(Ssh) <- >-
+Device(Ssh): ^Device(Password) vDevice(Sticks) <- >-
+Device(Sticks): ^Device(Ssh) vDevice(Gyro) <- >-
 Device(Gyro): ^Device(Sticks) vDevice(Refresh) <- >-
 Device(Refresh): ^Device(Gyro) vDevice(Close) <- >-
 Device(Close): ^Device(Refresh) vTab(Touchpad) <- >-
@@ -717,6 +718,44 @@ Tab(Dock): ^Device(Close) vKey[0,1]
 Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^Device(Close) vEditor(Cancel)
 -- keyboard as in settings-env.png
 -- screen as in settings-env.png
+== setup-password.png (top; the pad on both screens)
+start Setup(Password); back Activate Setup(Back)
+-- screen
+Setup(Password): ^- vKey[0,4] <- >-
+== setup-typing.png (bottom; the pad on both screens)
+start Key[2,4]; back Activate Editor(Cancel)
+-- keyboard as in settings-env.png except
+Key[0,0]: ^Editor(Cancel) <-
+Key[0,9]: >-
+Key[1,0]: <-
+Key[1,9]: >-
+Key[2,0]: <-
+Key[2,9]: >-
+Key[3,0]: <-
+Key[3,9]: >-
+Key[5,0]: <-
+Key[5,7]: >-
+-- screen as in settings-env.png except
+Editor(Cancel), Editor(Save): ^-
+== setup-problem.png (top; the pad on both screens)
+start Key[2,4]; back Activate Editor(Cancel)
+== setup-wifi.png (top; the pad on both screens)
+start Key[2,4]; back Activate Setup(Back)
+-- screen
+Wifi(Power): ^- vWifi[0] <Wifi[0] >Setup(Next)
+Wifi[0]: ^Wifi(Power) vWifi[1] <- >Wifi(Power)
+Wifi[1]: ^Wifi[0] vWifi[2] <- >Wifi(Power)
+Wifi[2]: ^Wifi[1] vWifi[3] <- >Wifi(Power)
+Wifi[3]: ^Wifi[2] vSetup(Next) <- >Wifi(Power)
+Setup(Next): ^Wifi[3] vKey[0,8] <Wifi[3] >-
+== setup-zone.png (top; the pad on both screens)
+start Setup(Next); back Activate Setup(Back)
+-- screen
+Time(Zone): ^- vTime(Ntp) <Setup(Back) >Setup(Next)
+Time(Ntp): ^Time(Zone) vTime(TwelveHour) <Setup(Back) >Setup(Next)
+Time(TwelveHour): ^Time(Ntp) vSetup(Back) <Setup(Back) >Setup(Next)
+Setup(Back): ^Time(TwelveHour) vKey[0,1] <- >Time(TwelveHour)
+Setup(Next): ^Time(TwelveHour) vKey[0,8] <Time(TwelveHour) >-
 == time-by-hand.png (bottom; the pad on both screens)
 start Time(TwelveHour); back -
 -- bar as in bottom.png except

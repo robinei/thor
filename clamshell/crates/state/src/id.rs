@@ -63,6 +63,8 @@ pub enum Id {
     Time(TimeId),
     /// The Device view's targets (see [`crate::setup`]).
     Device(DeviceId),
+    /// Setup's targets (see [`crate::setup::wizard`]).
+    Setup(SetupId),
     /// The battery tab's list of what is using the machine (see [`crate::status::battery`]).
     Battery(BatteryId),
     /// An arrow at an edge of the main screen while Home is held: the previous window of the program shown
@@ -281,10 +283,19 @@ pub enum DeviceId {
     Gyro,
     /// Calibrates the top screen's refresh rate.
     Refresh,
-    /// Finishes the first-start setup.
-    Done,
     /// Back to the Library.
     Close,
+}
+
+/// Setup's targets (see [`crate::setup::wizard`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SetupId {
+    /// Opens the password's editor on the keyboard.
+    Password,
+    /// On to the next step, or Done on the last.
+    Next,
+    /// Back to the step before, where there is one to go back to.
+    Back,
 }
 
 /// The battery tab's list of what is using the machine. A tap on a row opens its menu, which offers

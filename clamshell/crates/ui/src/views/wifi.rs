@@ -21,6 +21,11 @@ pub(super) fn draw(f: &mut Frame) {
         let title = Fmt::<128>::of(format_args!("Password for {ssid}"));
         return super::editor::draw(f, &title, "Join");
     }
+    list(f);
+}
+
+/// The header and the networks, without the password's editor (Setup shows them on the main screen).
+pub(super) fn list(f: &mut Frame) {
     let wifi = f.s.radios().wifi();
     let status = Fmt::<256>::of(format_args!("{}", Status(wifi)));
     let list = radio::header(f, Id::Wifi(WifiId::Power), wifi.on, (status_tone(wifi), &status));

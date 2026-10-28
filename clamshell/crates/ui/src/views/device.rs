@@ -42,11 +42,6 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     let small = f.text(Text::Small);
     let heading = f.text(Text::Heading);
     f.c.text_fit(area.top_line(heading), heading, Tone::Normal, "Device", Keep::Start);
-    // At the first start, a line saying what the view is for.
-    if s.setup().first_start() {
-        let intro = "First start: set these up now, or later from Tools, Device";
-        f.c.text_fit(area.top_line(small).shifted(0.0, heading * 1.5), small, Tone::Dim, intro, Keep::Start);
-    }
     let top = heading * 1.5 + small * 2.2;
     let mut right = Rect::new(area.x, area.y + top, area.w, area.h - top);
     let rows = right.take_left(area.w * ROWS_W);
@@ -74,12 +69,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     let account = s.setup().account();
     let password = col.take(row_h);
     if account.available {
-        // The helper sets a first password once Volume Up is pressed on the device itself.
-        let value = match (s.setup().confirming(), account.password) {
-            (true, _) => "Press Volume Up to confirm",
-            (false, true) => "Set",
-            (false, false) => "Not set",
-        };
+        let value = if account.password { "Set" } else { "Not set" };
         f.button(Id::Device(DeviceId::Password), password, Look::ROW, |f| widgets::value_row(f, password, size, "Password", value, account.password));
     } else {
         widgets::value_row(f, password, size, "Password", "Unavailable", false);
@@ -116,11 +106,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     col.skip(row_h * 0.3);
     let end = col.take(row_h);
     let inner = Rect::new(end.x + size * 0.4, end.y, end.w - size * 0.8, end.h);
-    if s.setup().first_start() {
-        f.text_button(Id::Device(DeviceId::Done), inner, size, Tone::Fn, "Done", Align::Start);
-    } else {
-        f.text_button(Id::Device(DeviceId::Close), inner, size, Tone::Fn, "Close", Align::Start);
-    }
+    f.text_button(Id::Device(DeviceId::Close), inner, size, Tone::Fn, "Close", Align::Start);
 
     if let Some(p) = device.sticks() {
         draw_sticks(f, right.inset(pad), p, size);
@@ -163,8 +149,9 @@ pub(super) fn draw_password(f: &mut Frame) {
     };
     let (title, save) = match step {
         PasswordStep::Current => ("Current password", "Next"),
-        PasswordStep::New { current: Some(_) } => ("New password (8 characters at least)", "Set"),
-        PasswordStep::New { current: None } => ("A password, for sudo and remote login (8 characters at least)", "Set"),
+        PasswordStep::New { current: Some(_) } => ("New password (8 characters at least)", "Next"),
+        PasswordStep::New { current: None } => ("A password, for sudo and remote login (8 characters at least)", "Next"),
+        PasswordStep::Again { .. } => ("The same password again", "Set"),
     };
     let dots = Fmt::<256>::of(format_args!("{}", Dots(text.chars().count())));
     let cancel = (Id::Editor(clamshell_state::EditorId::Cancel), "Cancel");

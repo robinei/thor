@@ -55,6 +55,7 @@ pub(crate) fn scope(s: &State) -> PadScope {
 /// screen, or the open tab's button on the bottom one.
 pub(crate) fn default_focus(s: &State, screen: Screen) -> Option<Id> {
     match screen {
+        Screen::Top if let Some(step) = s.setup().wizard() => Some(Id::Setup(step.first_target())),
         Screen::Top => s.library_view().selected().cloned().map(|g| Id::LibraryView(LibraryViewId::Entry(g))),
         Screen::Bottom => Some(Id::Tab(s.bottom().tab())),
     }
@@ -293,6 +294,10 @@ pub(crate) fn back(s: &State) -> Option<Event> {
     }
     if s.keymapping().screen().is_some() {
         return Some(PointerEvent::Activate(Id::Profile(Kind::Keymap, ProfileId::Back)).into());
+    }
+    // Setup goes back a step, where it can.
+    if s.setup().top_view() == clamshell_state::setup::TopView::Setup {
+        return Some(PointerEvent::Activate(Id::Setup(clamshell_state::SetupId::Back)).into());
     }
     // The Device view in the Library's place goes back to the Library.
     if s.setup().top_view() == clamshell_state::setup::TopView::Device {

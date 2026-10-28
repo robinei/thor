@@ -709,6 +709,24 @@ Pointer(Activate(Device(Sticks)))
 Pointer(Activate(Device(Password)))
   Watch Metrics off
 -- device-password.png
+== group setup-password.png
+Tick 1760000000
+  Keymap 0 "Default"
+  PadRoute Ui
+Start
+  Watch Account on
+Tick 1760000005
+  Save Resume
+-- setup-password.png
+-- setup-typing.png
+-- setup-problem.png
+Reading Account
+  Watch Wifi on
+-- setup-wifi.png
+Pointer(Activate(Setup(Next)))
+  Watch Wifi off
+  Watch Time on
+-- setup-zone.png
 == group time-by-hand.png
 Tick 1760000000
   Keymap 0 "Default"

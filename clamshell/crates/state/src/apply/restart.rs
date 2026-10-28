@@ -161,12 +161,12 @@ mod tests {
         assert!(fx.contains(&Effect::Watch(Watch::Status, false)), "the screens off: {fx:?}");
     }
 
-    /// The system thread reads the account while the Device view is open; started again, it is told to
-    /// read it again.
+    /// The system thread reads the account while Setup shows (or the Device view is open); started again,
+    /// it is told to read it again.
     #[test]
     fn a_restarted_system_thread_is_sent_the_account_watch() {
         let mut s = started(crate::Init { first_start: true, ..init() });
-        assert!(s.setup().is_open());
+        assert!(s.setup().reads_account());
         let fx = s.applied(Event::Restarted(Thread::System));
         assert!(fx.contains(&Effect::Watch(Watch::Account, true)), "{fx:?}");
         assert!(!s.applied(Event::Restarted(Thread::Pad)).contains(&Effect::Watch(Watch::Account, true)), "only the readers' restart");

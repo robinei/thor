@@ -1,6 +1,6 @@
 //! The Device view, where the device is set up. It shows on the main screen in the Library's place
-//! ([`TopView`]). It is opened by the Device entry in Tools, from the Library or pinned to the dock, and opens
-//! by itself at ClamShell's first start. B, Home or Close go back to the Library.
+//! ([`TopView`]). It is opened by the Device entry in Tools, from the Library or pinned to the dock. B,
+//! Home or Close go back to the Library. The first start's steps are Setup's ([`wizard`]).
 //!
 //! It has a row for each thing a device needs set up once, or now and then:
 //!
@@ -8,11 +8,11 @@
 //! - the time zone, which opens the time tab;
 //! - the password and remote login (see [`crate::setup::account`]);
 //! - calibrating the controller's sticks ([`crate::setup::sticks`]) and gyro;
-//! - calibrating the top screen's refresh rate (thor-panel-calibration);
-//! - Done, at the first start.
+//! - calibrating the top screen's refresh rate (thor-panel-calibration).
 
 pub mod account;
 pub mod sticks;
+pub mod wizard;
 
 use crate::DeviceId;
 use std::sync::Arc;
@@ -31,6 +31,8 @@ pub enum TopView {
     #[default]
     LibraryView,
     Device,
+    /// The first start's steps (see [`wizard`]).
+    Setup,
 }
 
 /// The refresh rate's calibration.
@@ -60,16 +62,18 @@ pub struct Setup {
     refresh: Refresh,
     /// The stick calibrations by controller. They are saved, and the pad thread has them too.
     calibrations: Calibrations,
-    /// ClamShell's first start (see [`crate::Init::first_start`]).
+    /// ClamShell's first start (see [`crate::Init::first_start`]): Setup isn't done.
     first_start: bool,
-    /// The account, as last read (see [`account`]).
+    /// The step of Setup reached (see [`wizard`]).
+    step: wizard::Step,
+    /// The account, as last read (see [`account`]), and whether it has been.
     account: Account,
+    account_read: bool,
+    /// Why the password last typed in Setup wasn't set, until another is (see [`wizard`]).
+    password_problem: Option<String>,
     /// When remote login was turned on or off (monotonic seconds), until the helper answers. Another tap
     /// waits for the answer, or for [`ANSWER_WAIT`] to pass without one.
     ssh_asked: Option<u64>,
-    /// A first password was sent, and the helper waits for Volume Up to be pressed on the device, until it
-    /// answers (see [`account`]).
-    confirming: bool,
 }
 
 /// How long a request of the Device view waits for its answer, in seconds, before another tap may ask
@@ -90,17 +94,28 @@ pub enum SticksEvent {
 }
 
 impl Setup {
-    /// The view as ClamShell starts. It is open at the first start.
+    /// The view as ClamShell starts: Setup shows at the first start (see [`wizard`]).
     pub(crate) fn new(calibrations: Calibrations, first_start: bool) -> Setup {
-        Setup { open: first_start, calibrations, first_start, ..Setup::default() }
+        Setup { calibrations, first_start, ..Setup::default() }
     }
 
+    /// What the main screen shows of ClamShell's own: Setup while it shows, else the Device view while it
+    /// is open, else the Library.
     pub fn top_view(&self) -> TopView {
-        if self.open { TopView::Device } else { TopView::LibraryView }
+        match (self.wizard(), self.open) {
+            (Some(_), _) => TopView::Setup,
+            (None, true) => TopView::Device,
+            (None, false) => TopView::LibraryView,
+        }
     }
 
     pub(crate) fn is_open(&self) -> bool {
         self.open
+    }
+
+    /// Whether the account is read: while the Device view is open or Setup shows.
+    pub fn reads_account(&self) -> bool {
+        self.open || self.wizard().is_some()
     }
 
     pub fn sticks(&self) -> Option<&Progress> {
@@ -124,7 +139,7 @@ impl Setup {
         &self.calibrations
     }
 
-    /// Whether this is ClamShell's first start, which opens the Device view.
+    /// Whether this is ClamShell's first start, Setup not being done.
     pub fn first_start(&self) -> bool {
         self.first_start
     }
@@ -147,26 +162,19 @@ impl Setup {
         pointer.focus_library_view(selected);
     }
 
-    /// A reading of the account.
+    /// A reading of the account. A password set answers what went wrong with the one before.
     pub(crate) fn read_account(&mut self, account: Account) {
-        self.account = account;
+        if account.password {
+            self.password_problem = None;
+        }
+        (self.account, self.account_read) = (account, true);
     }
 
-    /// A first password was sent: the helper sets it once Volume Up is pressed.
-    pub(crate) fn first_password_sent(&mut self) {
-        self.confirming = true;
-    }
-
-    /// Whether the helper waits for Volume Up to be pressed, to set the first password.
-    pub fn confirming(&self) -> bool {
-        self.confirming
-    }
-
-    /// The account helper answered a change, or can't any more (its thread was started again). Its
-    /// reading follows.
-    pub(crate) fn account_changed(&mut self) {
+    /// The account helper answered a change with `result`, or can't any more (its thread was started
+    /// again). Its reading follows. A failure is kept for Setup to show.
+    pub(crate) fn account_changed(&mut self, result: &Result<String, String>) {
         self.ssh_asked = None;
-        self.confirming = false;
+        self.password_problem = result.as_ref().err().cloned();
     }
 
     /// A tap on one of the Device view's targets at `now` (monotonic seconds). Closing it gives the focus
@@ -202,15 +210,7 @@ impl Setup {
                 out.effects.push(Effect::CalibrateRefresh);
             }
             DeviceId::Refresh => {}
-            // The first time, Done ends the first start for good. The Library shows next, with the default tab
-            // below.
-            DeviceId::Done if self.first_start => {
-                self.first_start = false;
-                self.close(pointer, selected);
-                out.effects.push(Effect::Save(Save::FirstStartDone));
-                out.events.push(Event::ChooseTab(Tab::default()));
-            }
-            DeviceId::Done | DeviceId::Close => self.close(pointer, selected),
+            DeviceId::Close => self.close(pointer, selected),
         }
     }
 
@@ -267,7 +267,7 @@ mod tests {
     use crate::Compositor;
     use crate::id::DeviceId;
     use crate::testkit::*;
-    use crate::{EditorId, Event, Init, Reading, State};
+    use crate::{EditorId, Event, Reading, State};
 
     fn tap(s: &mut State, id: DeviceId) -> Vec<Effect> {
         s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Device(id))))
@@ -285,16 +285,6 @@ mod tests {
     }
 
     #[test]
-    fn the_first_start_opens_the_device_view_and_done_ends_it_for_good() {
-        let mut s = State::new(Init { first_start: true, ..init() });
-        assert_eq!(s.setup().top_view(), TopView::Device, "the first start opens it");
-        let effects = tap(&mut s, DeviceId::Done);
-        assert!(effects.contains(&Effect::Save(Save::FirstStartDone)));
-        assert_eq!(s.setup().top_view(), TopView::LibraryView);
-        assert!(!s.setup().first_start());
-    }
-
-    #[test]
     fn the_device_entry_opens_it_and_close_goes_back_to_library_view() {
         let mut s = State::new(init());
         let effects = launch_now(&mut s, "tool:device");
@@ -305,19 +295,6 @@ mod tests {
         let effects = tap(&mut s, DeviceId::Close);
         assert_eq!(s.setup().top_view(), TopView::LibraryView);
         assert!(!effects.contains(&Effect::Save(Save::FirstStartDone)), "not the first start: nothing saved");
-    }
-
-    /// The first start opens the view with the pad's focus on its first row, and Done goes to the Library's
-    /// selection with the default tab below, whatever tab the setup left open.
-    #[test]
-    fn the_first_start_begins_on_wifi_and_done_leaves_library_view_and_the_default_tab() {
-        let mut s = State::new(Init { first_start: true, ..init() });
-        assert_eq!(s.pointer().focus(), Some(&Id::Device(DeviceId::Wifi)));
-        tap(&mut s, DeviceId::Wifi);
-        assert_eq!(s.bottom().tab(), Tab::Wifi);
-        tap(&mut s, DeviceId::Done);
-        assert_eq!(s.bottom().tab(), Tab::default());
-        assert_eq!(s.pointer().focus(), Some(&crate::testkit::entry("zelda-lttp")));
     }
 
     /// The Wi-Fi and time zone rows open their tabs below, whose readings are then watched.
@@ -351,15 +328,13 @@ mod tests {
         assert!(s.session().library_view_in_front());
     }
 
-    /// The account is read while the view is open, from when the UI is up: an open view at the first
-    /// start is watched from Start.
+    /// The account is read while the view is open, from when the UI is up.
     #[test]
     fn the_account_is_watched_while_the_view_is_open() {
-        let mut s = State::new(Init { first_start: true, ..init() });
+        let mut s = State::new(init());
         assert!(!s.applied(Event::tick(1)).contains(&Effect::Watch(crate::Watch::Account, true)), "the UI isn't up");
-        assert!(s.applied(Event::Start).contains(&Effect::Watch(crate::Watch::Account, true)));
-        assert!(tap(&mut s, DeviceId::Done).contains(&Effect::Watch(crate::Watch::Account, false)));
-        // Opened again from the Library, and closed by Home.
+        s.applied(Event::Start);
+        // Opened from the Library, and closed by Home.
         let fx = s.applied(Event::Entry("tool:device".into(), crate::EntryAct::Play));
         assert!(fx.contains(&Effect::Watch(crate::Watch::Account, true)), "{fx:?}");
         assert!(s.applied(Event::Home).contains(&Effect::Watch(crate::Watch::Account, false)));
@@ -377,6 +352,7 @@ mod tests {
         assert_eq!(s.bottom().tab(), Tab::Keyboard, "typed on the second screen's keyboard");
         assert_eq!(s.bottom().chosen_tab(), tab, "the tab it came up from is the one chosen");
         assert!(type_and_save(&mut s, "old").is_empty(), "then the new one");
+        assert!(type_and_save(&mut s, "newpassword").is_empty(), "then the new one again");
         let effects = type_and_save(&mut s, "newpassword");
         assert!(matches!(effects.first(), Some(Effect::Account(AccountCommand::Password { current: Some(_), .. }))), "{effects:?}");
     }
@@ -393,6 +369,7 @@ mod tests {
         tap(&mut s, DeviceId::Password);
         type_and_save(&mut s, "old");
         assert_eq!(s.bottom().tab(), Tab::Keyboard, "the new one is asked for");
+        type_and_save(&mut s, "newpassword");
         type_and_save(&mut s, "newpassword");
         assert_eq!(s.bottom().tab(), Tab::Dock, "set");
         assert!(s.bottom().editor().is_none());
@@ -523,19 +500,5 @@ mod tests {
         assert!(tap(&mut s, DeviceId::Refresh).is_empty());
         s.applied(Event::RefreshCalibrated(Ok("120 Hz: 118.630 -> 120.089 Hz".into())));
         assert!(matches!(s.setup().refresh(), Refresh::Done(Ok(_))));
-    }
-
-    /// A first password waits for Volume Up to be pressed until the helper answers, whatever it says.
-    #[test]
-    fn a_first_password_waits_for_volume_up_until_the_helper_answers() {
-        let mut s = state();
-        s.applied(Event::Reading(Reading::Account(crate::setup::account::Account { available: true, password: false, ssh: false })));
-        let fx = s.applied(Event::EditOnKeyboard(Editor { purpose: Purpose::AccountPassword(PasswordStep::New { current: None }), text: "secret12".into() }));
-        assert!(!s.setup().confirming(), "not before it is set: {fx:?}");
-        let fx = crate::testkit::tap(&mut s, crate::Id::Editor(crate::EditorId::Save));
-        assert!(fx.iter().any(|e| matches!(e, Effect::Account(AccountCommand::Password { current: None, .. }))), "{fx:?}");
-        assert!(s.setup().confirming());
-        s.applied(Event::AccountChanged(Err("Volume Up not pressed".into())));
-        assert!(!s.setup().confirming());
     }
 }

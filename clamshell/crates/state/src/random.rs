@@ -246,19 +246,11 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
     }
     match s.setup().top_view() {
         TopView::Device => ids.extend(
-            [
-                DeviceId::Wifi,
-                DeviceId::Zone,
-                DeviceId::Password,
-                DeviceId::Ssh,
-                DeviceId::Sticks,
-                DeviceId::Gyro,
-                DeviceId::Refresh,
-                DeviceId::Done,
-                DeviceId::Close,
-            ]
-            .map(Id::Device),
+            [DeviceId::Wifi, DeviceId::Zone, DeviceId::Password, DeviceId::Ssh, DeviceId::Sticks, DeviceId::Gyro, DeviceId::Refresh, DeviceId::Close]
+                .map(Id::Device),
         ),
+        // The step's own; the tab's below are the step's tab's.
+        TopView::Setup => ids.extend([SetupId::Password, SetupId::Next, SetupId::Back].map(Id::Setup)),
         TopView::LibraryView if s.session().library_view_in_front() => {
             let sh = s.library_view();
             ids.extend(sh.list().iter().filter_map(|&i| sh.library().entries.get(i)).map(|g| Id::LibraryView(LibraryViewId::Entry(g.id.clone()))));
@@ -920,7 +912,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         ensure!(sent.route == Some(s.pad().route()), "2: route sent {:?}, state {:?}", sent.route, s.pad().route());
         let in_force = s.keymapping().in_force(s.in_force().get(Setting::Keymap));
         ensure!(sent.keymap.as_ref() == Some(&in_force), "2: keymap sent {:?}, in force {}", sent.keymap.as_ref().map(|k| k.id), in_force.id);
-        ensure!(sent.account == s.setup().is_open(), "2: account watched {}, view open {}", sent.account, s.setup().is_open());
+        ensure!(sent.account == s.setup().reads_account(), "2: account watched {}, read {}", sent.account, s.setup().reads_account());
     }
     let screens_on = s.idle().stage() < Stage::Off;
     ensure!(sent.status == screens_on, "2: status watched {}, screens on {screens_on}", sent.status);

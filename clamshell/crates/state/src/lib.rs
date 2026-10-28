@@ -102,7 +102,7 @@ pub use apply::keys::HardwareKey;
 pub use clock::Clock;
 pub use effect::{Compositor, Effect, Save, ScreenshotPixels, Watch};
 pub use event::{EntryAct, Event, KeymapEvent, LaunchEvent, LevelEvent, LibraryViewEvent, PointerEvent, Reading, Slide, Thread};
-pub use id::{AudioId, BatteryId, BtId, DeviceId, DockId, EditorId, Hold, Id, KeymapId, LibraryViewId, SettingsId, Target, TimeId, WifiId};
+pub use id::{AudioId, BatteryId, BtId, DeviceId, DockId, EditorId, Hold, Id, KeymapId, LibraryViewId, SettingsId, SetupId, Target, TimeId, WifiId};
 pub use resume::Resume;
 pub use session::windows::{WindowEvent, WindowPlace};
 
@@ -249,7 +249,7 @@ impl State {
         s.session.set_pausable_runners(s.library_view.library());
         s.pointer.focus_library_view(s.library_view.selected());
         if init.first_start {
-            s.pointer.focus_on(Id::Device(crate::DeviceId::Wifi));
+            s.pointer.focus_on(Id::Setup(crate::SetupId::Password));
         }
         if let Some(tab) = init.start_tab {
             s.bottom.restore_tab(tab);
@@ -457,7 +457,7 @@ impl State {
             Event::GyroCalibrated(ok) => self.bottom.notice_mut().show(NoticeKind::Gyro(Some(ok)), now),
             // What the helper did, or why it failed, shown for a moment.
             Event::AccountChanged(result) => {
-                self.setup.account_changed();
+                self.setup.account_changed(&result);
                 self.bottom.notice_mut().show(NoticeKind::Account(result), now);
             }
             Event::ChooseTab(tab) => self.choose_tab(tab),
@@ -538,8 +538,9 @@ impl State {
         }
         self.record_plays(out);
         let mut due = Vec::new();
-        // The entries to start are looked for in the library, so not before it is read.
-        if self.library_view.read() {
+        // The entries to start are looked for in the library, so not before it is read, and not while
+        // Setup holds launches.
+        if self.library_view.read() && self.setup.wizard().is_none() {
             self.session.autostart_due(self.library_view.library(), &mut due);
         }
         for id in due {
@@ -558,6 +559,10 @@ impl State {
         // After the windows are followed, which finds their owners.
         if self.session.follow_window_rules(self.library_view.library()) {
             self.bottom.show_below();
+        }
+        // While Setup shows, the second screen has the tab its step needs (see `crate::setup::wizard`).
+        if let Some(step) = self.setup.wizard() {
+            self.bottom.choose_tab(step.tab());
         }
         // The tab left, by a choice or by a window moved down opening the windows' tab.
         self.follow_tab();
@@ -645,7 +650,7 @@ impl State {
             bottom_on: !bottom_off && !self.setup.calibrating(),
             bottom_seen: !self.bottom.shows_windows(&self.session) && !bottom_off,
             tab,
-            setup_open: self.setup.is_open(),
+            setup_open: self.setup.reads_account(),
             ui_up: self.ui_up,
             keymap: self.keymapping.version_of(settings.get(Setting::Keymap)),
             keymapping: &self.keymapping,

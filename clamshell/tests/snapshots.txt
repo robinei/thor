@@ -13,10 +13,10 @@ curve-edit-slider.png 29f09258ad1e9a1a
 curve-edit.png 9d61a32d0849cbd8
 curves-reset.png 39ecce4355e50e2e
 curves.png 56a8a5c36e131bea
-device-password.png fb9970c7d25209f3
-device-sticks.png 5abf365ff8bb8de0
+device-password.png e08be48faf8f35df
+device-sticks.png fe951ccfad9ad6d3
 device-unavailable.png 1c7911bd8e2c2a06
-device.png f253b0d08045afda
+device.png 6fb124183562dd89
 dock-menu.png 04c3529dca164fbf
 keyboard-back.png b4f19cea39f5673c
 keyboard-caps.png db65fb51c99f4de9
@@ -64,6 +64,11 @@ settings-global.png 67a7863ee4d00c29
 settings-menu.png c0cc8a934b3a9035
 settings-running.png 7e1a06b7c4fa9c50
 settings.png f11082fe58d3dd0c
+setup-password.png bc21c471ddcd9b06
+setup-problem.png eb5f8f4e7ff3a240
+setup-typing.png a57d1d0dc99de9bf
+setup-wifi.png 8ea91506c11bd0b4
+setup-zone.png 260a82bc3dbfc2ef
 slider.png 65a6b657a8b8224b
 status-low.png dcd7e61aed6a5359
 sysinfo.png 9debe13d50b2dc86

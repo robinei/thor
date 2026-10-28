@@ -40,16 +40,28 @@ pub enum PasswordStep {
     Current,
     /// The new one, after the current one if there is one.
     New { current: Option<Secret> },
+    /// The new one again, to be sure of it.
+    Again { current: Option<Secret>, new: Secret },
 }
 
-/// The password editor was saved with `text`. After the current password it asks for the new one, and
-/// after the new one it sets the password.
+/// What is said when the new password typed again differs.
+pub const DIFFERENT: &str = "The two passwords differ";
+
+/// The password editor was saved with `text`. After the current password it asks for the new one, after
+/// the new one for it again, and if that is the same it sets the password. If not, that is answered as the
+/// helper's failures are ([`crate::Event::AccountChanged`]).
 pub(crate) fn password_typed(step: PasswordStep, text: String, editors: &mut Editors, out: &mut Out) {
-    match step {
-        PasswordStep::Current => {
-            let step = PasswordStep::New { current: Some(Secret(text)) };
-            editors.open(Editor { purpose: Purpose::AccountPassword(step), text: String::new() });
+    let next = match step {
+        PasswordStep::Current => PasswordStep::New { current: Some(Secret(text)) },
+        PasswordStep::New { current } => PasswordStep::Again { current, new: Secret(text) },
+        PasswordStep::Again { current, new } if new.0 == text => {
+            out.effects.push(Effect::Account(AccountCommand::Password { current, new }));
+            return;
         }
-        PasswordStep::New { current } => out.effects.push(Effect::Account(AccountCommand::Password { current, new: Secret(text) })),
-    }
+        PasswordStep::Again { .. } => {
+            out.events.push(crate::Event::AccountChanged(Err(DIFFERENT.into())));
+            return;
+        }
+    };
+    editors.open(Editor { purpose: Purpose::AccountPassword(next), text: String::new() });
 }
