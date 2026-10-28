@@ -47,7 +47,7 @@ window: it is in front when no top window is shown, and ShowShelf deselects the 
 | absent | late Closed, Title, Changed, Activate or keyboard focus | unchanged | — | windows `lifecycle_messages_keep_one_window_and_ignore_late_messages`, `backend_changes_keep_the_placement`, `keyboard_focus_is_independent_of_both_screens_selected_content` |
 | present on top | validated Activate | selected now | thaw/resume owner before exact Focus or ShowShelf | windows `activation_selects_the_window_on_its_screen`, `activation_thaws_a_suspended_owner_before_selecting_its_window` |
 | present below | validated Activate | bottom shows this window now (the windows' tab opens) | thaw/resume owner, keyboard focus to it | same |
-| either screen selected | KeyboardFocus(Some(live id)) or None | keyboard target changes, content stays | — | windows `keyboard_focus_is_independent_of_both_screens_selected_content` |
+| either screen selected | KeyboardFocus(Some(id)) of a window shown, or None | the keyboard to that screen's stack, or ClamShell's UI; content stays; a window no screen shows is ignored | — | windows `keyboard_focus_is_independent_of_both_screens_selected_content` |
 | top, regardless of keyboard focus | Down, including a remembered rule | previous bottom returned to its home without activation; requested window below; same-program next top or recent group/shelf selected; the keyboard to the top window | Return before Down, then exact top Focus/fallback | bottom `moving_another_window_down_swaps_the_single_bottom_slot`; windows `displacing_another_programs_bottom_window_does_not_activate_it`, `moving_the_top_window_does_not_require_keyboard_focus_there`, `a_window_sent_down_gives_the_keyboard_to_the_top_window` |
 | below, shown or covered | Up | top at retained home, selected now; bottom shows ClamShell | Up to explicit home | bottom `moving_another_window_down_swaps_the_single_bottom_slot` |
 | front launch waiting | Home or another explicit selection | foreground intent cancelled | navigation's own effects | windows `home_cancels_a_launchs_late_request_to_take_the_front`, `activating_another_window_cancels_a_launchs_late_request_to_take_the_front` |
@@ -65,7 +65,8 @@ compositor reads the placement they lead to from the state after `apply`.
 
 At most one window is shown on top and one placed below, since each is one slot. Live ids are unique,
 the slots name live windows and never the same one, remembered selections belong to their home groups,
-and keyboard focus names a shown window, one the compositor focused itself, or none. The randomized
+and keyboard focus names a shown window or none: it is computed, the topmost of the stack on the screen
+the keyboard is on (`Session::keyboard_focus`), so a window no screen shows can't have it. The randomized
 event-sequence test checks these after every event, including lifecycle, activation and keyboard focus.
 The allocation test includes repeated lifecycle events, Home-held changes, controller focus and activation with live bottom rules.
 

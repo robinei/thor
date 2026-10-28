@@ -46,6 +46,15 @@ pub(crate) struct FrontLaunch {
     promoted: Vec<i64>,
 }
 
+/// Where the keyboard is: the top screen's stack, the bottom screen's, or ClamShell's own UI.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum Keys {
+    #[default]
+    Top,
+    Bottom,
+    Ui,
+}
+
 /// How soon after the window in front closed a new window in its group is shown again, in seconds.
 pub(crate) const REOPEN_SECS: u64 = 2;
 
@@ -74,8 +83,8 @@ pub struct Session {
     window_rules: below::WindowRules,
     /// Windows a rule sent to the bottom screen. Each is sent once and dropped from here when it closes.
     sent_down: Vec<i64>,
-    /// The client with keyboard focus; none while ClamShell's own UI receives keys.
-    keyboard_focus: Option<i64>,
+    /// Where the keyboard is; the window with it is computed ([`Session::keyboard_focus`]).
+    keys: Keys,
     home_held: bool,
     home_used: bool,
     /// Our running units, as systemd lists them.
@@ -195,8 +204,27 @@ impl Session {
         self.windows.iter().find(|w| w.id == id)
     }
 
+    /// The window with the keyboard: the topmost of the stack in front on the screen it is on, none while
+    /// ClamShell's own UI takes the keys or that screen shows no window. A window no screen shows can't
+    /// have it.
     pub fn keyboard_focus(&self) -> Option<i64> {
-        self.keyboard_focus
+        let slot = match self.keys {
+            Keys::Top => self.top,
+            Keys::Bottom => self.bottom,
+            Keys::Ui => None,
+        };
+        slot.map(|root| self.topmost(root))
+    }
+
+    /// Puts the keyboard on window `id`'s screen, or on ClamShell's UI for none. A window no screen
+    /// shows is ignored: the keyboard stays where it is.
+    pub(crate) fn keys_to(&mut self, id: Option<i64>) {
+        match id {
+            None => self.keys = Keys::Ui,
+            Some(id) if self.top.is_some_and(|top| top == self.root_of(id)) => self.keys = Keys::Top,
+            Some(id) if self.below(id) => self.keys = Keys::Bottom,
+            Some(_) => {}
+        }
     }
 
     pub fn home_held(&self) -> bool {
@@ -305,7 +333,7 @@ impl Session {
     }
 
     pub(crate) fn pad_active(&mut self) {
-        if let Some(id) = self.top_window().map(|w| w.id).filter(|id| Some(*id) != self.keyboard_focus) {
+        if let Some(id) = self.top_window().map(|w| w.id).filter(|id| Some(*id) != self.keyboard_focus()) {
             self.command(WindowCommand::FocusWindow(id));
         }
     }

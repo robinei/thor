@@ -68,14 +68,10 @@ impl Session {
     /// Carries out a placement decision on the session's windows.
     pub(crate) fn command(&mut self, command: WindowCommand) {
         match &command {
-            WindowCommand::KeyboardFocus(id) => {
-                if self.window(*id).is_some() {
-                    self.keyboard_focus = Some(*id);
-                }
-            }
+            WindowCommand::KeyboardFocus(id) => self.keys_to(Some(*id)),
             WindowCommand::FocusWindow(id) => self.select_top(*id),
             WindowCommand::ShowShelf => {
-                self.keyboard_focus = None;
+                self.keys = super::Keys::Top;
                 self.top = None;
                 self.remember_in_front(super::InFront::Shelf);
             }
@@ -90,9 +86,8 @@ impl Session {
                 if let Some(other) = self.bottom.filter(|other| other != id) {
                     self.command(WindowCommand::Return(other));
                 }
-                if self.keyboard_focus == Some(*id) {
-                    self.keyboard_focus = None;
-                }
+                // The top screen keeps the keyboard, or takes it back from the window that was below.
+                self.keys = super::Keys::Top;
                 if self.window(*id).is_some() {
                     self.bottom = Some(*id);
                 }
@@ -111,10 +106,10 @@ impl Session {
                 self.select_top(*window);
             }
             WindowCommand::Return(window) => {
-                // Behind in its group it isn't shown, so it can't keep the keyboard; the window in front
-                // gets it back (see Down), or ClamShell's UI while shelf is in front.
-                if self.keyboard_focus.is_some_and(|focus| self.root_of(focus) == self.root_of(*window)) {
-                    self.keyboard_focus = None;
+                // Behind in its group it isn't shown, so it can't keep the keyboard: ClamShell's UI takes it
+                // until the window in front does (see Down).
+                if self.keys == super::Keys::Bottom && self.bottom == Some(self.root_of(*window)) {
+                    self.keys = super::Keys::Ui;
                 }
                 let group = self.window(*window).and_then(|w| w.group.clone());
                 if !self.windows.iter().any(|w| !self.below(w.id) && w.group == group) {
@@ -169,7 +164,7 @@ impl Session {
                 None => self.selected.push((group.clone(), root)),
             }
         }
-        self.keyboard_focus = Some(self.topmost(root));
+        self.keys = super::Keys::Top;
         self.top = Some(root);
     }
 }
@@ -188,7 +183,8 @@ pub enum WindowEvent {
     Changed(WindowFacts),
     /// A client's request to show its window, after the backend has checked its activation token.
     Activate(i64),
-    /// Keyboard focus changed without changing which content either screen shows. Unknown ids are ignored.
+    /// Keyboard focus changed without changing which content either screen shows. A window no screen shows
+    /// is ignored (see [`Session::keys_to`]).
     KeyboardFocus(Option<i64>),
 }
 
@@ -253,7 +249,7 @@ impl crate::Session {
         self.opened.push(id);
         self.windows.push(Window { facts, group });
         if parent_below {
-            self.keyboard_focus = Some(id);
+            self.keys = super::Keys::Bottom;
         } else if focus {
             self.select_top(id);
         }
@@ -283,9 +279,6 @@ impl crate::Session {
     /// front.
     fn close(&mut self, id: i64) {
         let parent = self.window(id).and_then(|w| w.parent).filter(|parent| self.window(*parent).is_some() && !self.below(*parent));
-        if self.keyboard_focus == Some(id) {
-            self.keyboard_focus = None;
-        }
         let group = self.top_window().filter(|w| w.id == id).and_then(|w| w.group.clone());
         // A stack's root closing leaves its first dialog as the root of what is left (see
         // [`Session::root_of`]), on its screen.
@@ -327,11 +320,9 @@ impl crate::Session {
         }
     }
 
-    /// Keyboard focus moved to `id`, or to ClamShell's UI; a window that isn't open is ignored.
+    /// The compositor moved the keyboard to `id`, or to ClamShell's UI (see [`Session::keys_to`]).
     fn focus_keyboard(&mut self, id: Option<i64>) {
-        if id.is_none_or(|id| self.window(id).is_some()) {
-            self.keyboard_focus = id;
-        }
+        self.keys_to(id);
     }
 }
 

@@ -206,10 +206,6 @@ struct Sent {
     ended: Vec<String>,
     /// The focus ring was shown by a hold on shelf's entry, with the pad elsewhere.
     ring_by_hold: bool,
-    /// The event is the compositor's report of the keyboard focus it set itself.
-    focus_reported: bool,
-    /// The keyboard focus the compositor reported, while it stands.
-    compositor_focus: Option<i64>,
     /// Launches of a launcher's entry that hand it a game (`launchers::headless`), while they wait.
     handovers: Vec<LaunchUnit>,
 }
@@ -861,16 +857,11 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     ensure!(unplaced.is_none(), "window {:?} has no group after the settle", unplaced.map(|w| w.id));
     ensure!(s.session().keyboard_focus().is_none_or(|id| s.session().window(id).is_some()), "keyboard focus names a closed window");
     let session = s.session();
-    // The keyboard focus is on a window shown, on either screen, except where the compositor reported
-    // focus it set itself (WindowEvent::KeyboardFocus), which may be anywhere, until the session moves it.
+    // The keyboard focus is on a window shown, on either screen: it is computed so (see
+    // `Session::keyboard_focus`).
     let focus = session.keyboard_focus();
-    if sent.focus_reported {
-        sent.compositor_focus = focus;
-    } else if sent.compositor_focus != focus {
-        sent.compositor_focus = None;
-    }
     ensure!(
-        focus.is_none_or(|id| session.shown(id) || sent.compositor_focus == Some(id)),
+        focus.is_none_or(|id| session.shown(id)),
         "keyboard focus on window {focus:?}, which isn't shown (top {:?}, bottom {:?})",
         session.top_window().map(|w| w.id),
         session.bottom_window().map(|w| w.id)
@@ -1261,7 +1252,6 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
         }
         effects.clear();
         sent.freezer_restarted = matches!(event, Event::Restarted(crate::Thread::Freezer));
-        sent.focus_reported = matches!(event, Event::Window(WindowEvent::KeyboardFocus(_)));
         s.apply(event, &mut effects);
         world.follow(&effects);
         if let Err(e) = check(&mut s, &mut sent, &world, &effects, &before, i >= 1) {
