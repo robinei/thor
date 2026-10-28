@@ -62,10 +62,6 @@ struct Screen {
     transform: Transform,
     /// How long a frame is shown.
     interval: Duration,
-    /// A frame is queued and its flip not yet seen.
-    pending: bool,
-    /// When the frame pending was queued (see [`flip_lost`]).
-    queued_at: Option<Instant>,
     /// The scene changed in the screen's part since its last frame.
     dirty: bool,
     /// The commits its last frame callbacks answered, and when an idle screen may send the next ones.
@@ -128,7 +124,7 @@ impl Screen {
 
     /// When a frame composed at `now` would be shown (see [`next_shown`]).
     fn next_shown(&self, now: Time<Monotonic>) -> Time<Monotonic> {
-        Time::from(next_shown(self.flipped.map(Duration::from), self.interval, self.pending, Duration::from(now)))
+        Time::from(next_shown(self.flipped.map(Duration::from), self.interval, self.surface.in_flight(), Duration::from(now)))
     }
 }
 
@@ -266,8 +262,6 @@ pub fn run(
             size,
             transform: transform(profile.screen(role).rotation),
             interval,
-            pending: false,
-            queued_at: None,
             dirty: true,
             answered: 0,
             next_callbacks: None,
@@ -432,8 +426,6 @@ pub fn run(
                 drawing.away = false;
                 for screen in &mut drawing.screens {
                     screen.reset_buffers();
-                    screen.pending = false;
-                    screen.queued_at = None;
                     // The console lit every screen meanwhile: one that is off is turned off again.
                     if !screen.on {
                         match screen.surface.surface().clear() {
@@ -565,8 +557,6 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
     let Some(screen) = drawing.screens.get_mut(index) else {
         return;
     };
-    screen.pending = false;
-    screen.queued_at = None;
     let submitted = screen.surface.flipped();
     if screen.surface.shows_composed() && screen.ui.as_ref().is_some_and(|ui| ui.refused) {
         log::info!("ui scanout: the {:?} screen's own buffers, refused, dropped", screen.role);
@@ -659,12 +649,12 @@ fn step(
     }
     let mut due: Option<Instant> = earlier(timed.flatten(), trims.finish());
     for screen in &mut drawing.screens {
-        if flip_lost(screen.pending, screen.queued_at, now) {
-            log::warn!("drm: {:?} screen: no flip {} ms after its frame: drawn again", screen.role, FLIP_LOST.as_millis());
+        if screen.surface.flip_due().is_some_and(|lost| now >= lost) {
+            log::warn!("drm: {:?} screen: no flip {} ms after its frame: drawn again", screen.role, crate::presenter::FLIP_LOST.as_millis());
             screen.reset_buffers();
-            (screen.pending, screen.queued_at, screen.dirty) = (false, None, true);
+            screen.dirty = true;
         }
-        due = earlier(due, screen.queued_at.filter(|_| screen.pending).map(|at| at + FLIP_LOST));
+        due = earlier(due, screen.surface.flip_due());
     }
     for index in 0..drawing.screens.len() {
         let Some(screen) = drawing.screens.get_mut(index) else {
@@ -672,7 +662,7 @@ fn step(
         };
         let down = screen.role == ScreenRole::Bottom;
         // A frame waits for its flip: a move of the cursor alone goes at once.
-        if screen.pending
+        if screen.surface.in_flight()
             && screen.layers_dirty
             && let Some(layers) = &mut screen.layers
             && layers.move_now(screen.surface.surface())
@@ -687,14 +677,14 @@ fn step(
         due = earlier(due, turn.wake);
         // A commit that failed wakes the loop for the next try (see `failed`).
         if screen.ui_shown {
-            if screen.on && !screen.pending {
+            if screen.on && !screen.surface.in_flight() {
                 due = earlier(due, present_ui(screen, server, &mut drawing.pipeline, &drawing.cursor));
             }
         } else if turn.present && screen.window_shown.is_some() {
             due = earlier(due, present_window(screen, server, &mut drawing.pipeline, &drawing.cursor));
         } else if turn.present {
             due = earlier(due, present(drawing, server, index));
-        } else if screen.layers_dirty && screen.on && !screen.pending {
+        } else if screen.layers_dirty && screen.on && !screen.surface.in_flight() {
             // Only the overlay or the cursor changed: the frame shown, committed again with them.
             due = earlier(due, present_layers(screen, server, &mut drawing.pipeline, &drawing.cursor));
         } else if turn.answer {
@@ -707,15 +697,6 @@ fn step(
     }
     drawing.pipeline.let_go();
     after_compose(due, composed, server.pacing.commits, now)
-}
-
-/// How long a queued frame waits for its flip before it is taken as lost (the driver never answered):
-/// the screen would otherwise never present again, with the loop still turning for the watchdog.
-const FLIP_LOST: Duration = Duration::from_secs(1);
-
-/// Whether the frame `pending` since `queued` lost its flip by `now`.
-fn flip_lost(pending: bool, queued: Option<Instant>, now: Instant) -> bool {
-    pending && queued.is_some_and(|at| now >= at + FLIP_LOST)
 }
 
 /// When the loop wakes next, `due` as the screens' turns say, with `composed` the commit count composed
@@ -767,7 +748,7 @@ impl Timing {
     /// `screen`'s, with the server's commit count `commits`.
     fn of(screen: &Screen, commits: u64) -> Timing {
         Timing {
-            pending: screen.pending,
+            pending: screen.surface.in_flight(),
             dirty: screen.dirty,
             on: screen.on,
             held: screen.held,
@@ -818,14 +799,12 @@ fn screen_turn(timing: Timing, now: Instant) -> Turn {
 struct Power {
     on: bool,
     dirty: bool,
-    pending: bool,
 }
 
-/// A screen turned on or off as `wanted`, if that changes it: no frame is queued on it any more (turned
-/// off, its flip won't come; turned on, it starts afresh), and turned on it is to be drawn whole, since
-/// its last frame is gone.
+/// A screen turned on or off as `wanted`, if that changes it: turned on it is to be drawn whole, since its
+/// last frame is gone. (Either way no frame is in flight any more: see `outputs`.)
 fn switched(power: Power, wanted: bool) -> Option<Power> {
-    (power.on != wanted).then_some(Power { on: wanted, dirty: power.dirty || wanted, pending: false })
+    (power.on != wanted).then_some(Power { on: wanted, dirty: power.dirty || wanted })
 }
 
 /// The mode for a refresh rate of `hz` asked for: `start` for 0 (the screen's own), else the one of
@@ -839,9 +818,9 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
     for screen in &mut drawing.screens {
         let index = usize::from(screen.role == ScreenRole::Bottom);
         let wanted = server.screens.on.get(index).copied().unwrap_or(true);
-        if let Some(power) = switched(Power { on: screen.on, dirty: screen.dirty, pending: screen.pending }, wanted) {
+        if let Some(power) = switched(Power { on: screen.on, dirty: screen.dirty }, wanted) {
             log::info!("drm: {:?} screen {}", screen.role, if wanted { "on" } else { "off" });
-            Power { on: screen.on, dirty: screen.dirty, pending: screen.pending } = power;
+            Power { on: screen.on, dirty: screen.dirty } = power;
             if wanted {
                 // The next frame turns it back on.
                 screen.reset_buffers();
@@ -887,7 +866,7 @@ fn compose(drawing: &mut Drawing, server: &mut Server, index: usize, capture: bo
     let Drawing { renderer, pipeline, screens, frames, cursor, elements, states, .. } = drawing;
     let (Some(screen), Some(states)) = (screens.get_mut(index), states.get_mut(index)) else { return Ok(()) };
     let shows_own = screen.ui_shown || screen.window_shown.is_some();
-    if !composes(screen.on, screen.pending, shows_own, capture) {
+    if !composes(screen.on, screen.surface.in_flight(), shows_own, capture) {
         return Ok(());
     }
     let down = screen.role == ScreenRole::Bottom;
@@ -1078,8 +1057,6 @@ fn committed(screen: &mut Screen) {
         log::info!("drm: the {:?} screen's commits go through again", screen.role);
     }
     layers_committed(screen);
-    screen.pending = true;
-    screen.queued_at = Some(Instant::now());
 }
 
 /// Records the screens' overlays that are stale, and places the scene again if any was: what an overlay
@@ -1393,15 +1370,6 @@ mod tests {
         assert_eq!(super::nearest(&[] as &[u32], |r| *r, 60), None);
     }
 
-    #[test]
-    fn a_frame_without_its_flip_for_a_second_is_lost() {
-        let now = Instant::now();
-        assert!(!flip_lost(true, Some(now), now + FLIP_LOST.saturating_sub(Duration::from_millis(1))));
-        assert!(flip_lost(true, Some(now), now + FLIP_LOST));
-        assert!(!flip_lost(false, Some(now), now + FLIP_LOST), "flipped");
-        assert!(!flip_lost(true, None, now + FLIP_LOST));
-    }
-
     const IDLE: Timing = Timing { pending: false, dirty: false, on: true, held: None, answered: true, next_callbacks: None };
 
     #[test]
@@ -1474,11 +1442,11 @@ mod tests {
     }
 
     #[test]
-    fn a_screen_turned_on_is_drawn_whole_and_one_switched_has_no_frame_queued() {
-        let off = Power { on: false, dirty: false, pending: true };
-        assert_eq!(switched(off, true), Some(Power { on: true, dirty: true, pending: false }), "on: drawn whole");
-        let on = Power { on: true, dirty: true, pending: true };
-        assert_eq!(switched(on, false), Some(Power { on: false, dirty: true, pending: false }), "off: its flip won't come");
+    fn a_screen_turned_on_is_drawn_whole() {
+        let off = Power { on: false, dirty: false };
+        assert_eq!(switched(off, true), Some(Power { on: true, dirty: true }), "on: drawn whole");
+        let on = Power { on: true, dirty: true };
+        assert_eq!(switched(on, false), Some(Power { on: false, dirty: true }));
         assert_eq!(switched(on, true), None, "unchanged");
         assert_eq!(switched(off, false), None);
     }

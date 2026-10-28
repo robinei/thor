@@ -30,8 +30,9 @@ pub(crate) struct Presenter {
     fencing: bool,
     /// The buffer taken to draw into, until it is queued.
     next: Option<Slot<GbmBuffer>>,
-    /// The frame committed, until its flip.
+    /// The frame committed, until its flip, and when it was committed: it is in flight until then.
     pending: Option<Shown>,
+    queued_at: Option<std::time::Instant>,
     /// A frame committed whose flip was lost: it may be the one shown, so it is kept until a flip.
     lost: Option<Shown>,
     /// The frame shown.
@@ -147,6 +148,7 @@ impl Presenter {
                         fencing,
                         next: None,
                         pending: None,
+                        queued_at: None,
                         lost: None,
                         current: None,
                         clear: Vec::new(),
@@ -340,6 +342,7 @@ impl Presenter {
         committed.map_err(CommitError::of)?;
         self.clear.clear();
         self.last = Some(Primary { fb, src, dst, transform });
+        self.queued_at = Some(std::time::Instant::now());
         Ok(())
     }
 
@@ -347,6 +350,7 @@ impl Presenter {
     /// with none committed is a lost frame's, late, as is one of the frame shown again after it (the lost
     /// frame committed again): that frame is the one shown.
     pub(crate) fn flipped(&mut self) -> bool {
+        self.queued_at = None;
         let lost = self.lost.take();
         match self.pending.take() {
             Some(Shown::Again) => {
@@ -366,6 +370,16 @@ impl Presenter {
                 false
             }
         }
+    }
+
+    /// Whether a frame committed waits for its flip.
+    pub(crate) fn in_flight(&self) -> bool {
+        self.queued_at.is_some()
+    }
+
+    /// When the frame in flight is taken as having lost its flip (see [`FLIP_LOST`]).
+    pub(crate) fn flip_due(&self) -> Option<std::time::Instant> {
+        self.queued_at.map(|at| at + FLIP_LOST)
     }
 
     /// Whether the frame shown is one composed (not ClamShell's own buffer or a window's).
@@ -400,6 +414,7 @@ impl Presenter {
     /// Drops the buffers' contents and any frame in flight, as after the seat was away or a flip was lost:
     /// the next frame is drawn whole.
     pub(crate) fn reset_buffers(&mut self) {
+        self.queued_at = None;
         self.swapchain.reset_buffers();
         self.composing_buffers = false;
         self.next = None;
@@ -410,6 +425,7 @@ impl Presenter {
 
     /// The screen was turned off: its plane shows none of its buffers any more, so they may be dropped.
     pub(crate) fn off(&mut self) {
+        self.queued_at = None;
         self.last = None;
         self.next = None;
         self.pending = None;
@@ -430,6 +446,10 @@ impl Presenter {
         Ok(())
     }
 }
+
+/// How long a frame committed waits for its flip before it is taken as lost (the driver never answered):
+/// the screen would otherwise never show another, with the loop still turning for the watchdog.
+pub(crate) const FLIP_LOST: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Buffer `slot`'s framebuffer, made once and kept with it.
 fn framebuffer(surface: &DrmSurface, slot: &Slot<GbmBuffer>, opaque: bool) -> Result<(), String> {

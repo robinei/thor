@@ -26,7 +26,7 @@ and 4 and at the end.
   one function applies it. Committed as now. Refused with the planes showing: planes off. Refused
   otherwise: the screen's own buffers, or that window's shape, refused. Busy or Failed: the screen stays
   dirty and the loop wakes at its next refresh, logged once a run of failures. Away: nothing.
-- [ ] 3. **A frame in flight kept once.** `Screen.pending`/`queued_at` and the lost-flip timeout move into
+- [x] 3. **A frame in flight kept once.** `Screen.pending`/`queued_at` and the lost-flip timeout move into
   `Presenter`, beside its `pending` and `lost`.
 - [ ] 4. **What a screen shows, decided once.** `Shows { Composed, Own, Window(Candidate), Straight(id) }`
   replaces `ui_shown`, `window_shown` and `direct`. A pure function decides it from a screen's facts (on,
