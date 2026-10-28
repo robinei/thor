@@ -128,6 +128,26 @@ pub struct Edit {
     /// library.json as just written, until the Library takes it (see
     /// [`super::LibraryView::config_shown`]).
     wrote: Option<Arc<Config>>,
+    /// Why the last thing asked wasn't done (a name taken, a paste into itself), until something is.
+    problem: Option<&'static str>,
+}
+
+/// Why place name `name` can't be one in `within` (a tab's if none), `id` being the place named, if it
+/// is there: empty, with a `/` (the Library finds places by their names' path), or the name of another
+/// there, or of a folder the Files tab browses there.
+pub fn name_problem(config: &Config, within: Option<&str>, name: &str, id: Option<&str>) -> Option<&'static str> {
+    let name = name.trim();
+    let same = |other: &str| other.trim().eq_ignore_ascii_case(name);
+    if name.is_empty() {
+        return Some("A name is needed");
+    }
+    if name.contains('/') {
+        return Some("A name can't have a /");
+    }
+    let sibling = config.places.iter().any(|p| p.within.as_deref() == within && Some(p.id.as_str()) != id && same(&p.name));
+    let browsed =
+        config.sources.iter().any(|s| matches!(s, clamshell_library::config::Source::Browse(b) if Some(b.within.as_str()) == within && same(&b.name)));
+    (sibling || browsed).then_some("Another there has that name")
 }
 
 /// The tabs: the places in no other, in their order.
@@ -217,12 +237,36 @@ impl Edit {
 
     /// The tab's id, or the open folder's.
     pub fn here<'a>(&'a self, config: &'a Config) -> Option<&'a str> {
-        self.open.last().map(String::as_str).or_else(|| tabs(config).nth(self.tab).map(|p| p.id.as_str()))
+        self.open(config).last().map(|p| p.id.as_str()).or_else(|| tabs(config).nth(self.tab).map(|p| p.id.as_str()))
     }
 
-    /// The open folders, outermost first.
+    /// The open folders, outermost first: those opened that are there still, up to the first that isn't
+    /// (removed, or moved out), so a folder gone takes the edit mode back out of it.
     pub fn open<'a>(&'a self, config: &'a Config) -> impl Iterator<Item = &'a Place> + 'a {
-        self.open.iter().filter_map(|id| config.places.iter().find(|p| &p.id == id))
+        self.open.iter().map_while(|id| config.places.iter().find(|p| &p.id == id))
+    }
+
+    /// Why the last thing asked wasn't done, until something is.
+    pub fn problem(&self) -> Option<&'static str> {
+        self.problem
+    }
+
+    /// Why the selected place can't be cut to be moved: ClamShell's own tabs stay where they are.
+    pub fn cut_problem(&self, config: &Config) -> Option<&'static str> {
+        self.selected(config).filter(|p| p.kind.is_some()).map(|_| "ClamShell's own tabs stay")
+    }
+
+    /// Why the place cut can't be pasted here: not into itself or a folder in it, nor next to one of its
+    /// name.
+    pub fn paste_problem(&self, config: &Config) -> Option<&'static str> {
+        let cut = config.places.iter().find(|p| Some(&p.id) == self.cut.as_ref())?;
+        let here = self.here(config);
+        let inside =
+            |id: &str| std::iter::successors(Some(id.to_owned()), |at| config.places.iter().find(|p| &p.id == at)?.within.clone()).any(|at| at == cut.id);
+        if here.is_some_and(inside) {
+            return Some("Not into itself");
+        }
+        name_problem(config, here, &cut.name, Some(&cut.id))
     }
 
     /// The list's row `i`.
@@ -251,6 +295,10 @@ impl Edit {
         let Some(config) = read.map(|c| &**c).cloned() else {
             return matches!(id, EditId::Done);
         };
+        // A new ask: the last one's problem is gone, and the folders opened are those still there.
+        self.problem = None;
+        let open = self.open(&config).count();
+        self.open.truncate(open);
         let here = self.here(&config).map(str::to_owned);
         if self.panel != Panel::Places || self.form.is_some() {
             if let Some(leave) = self.list_tap(id, &config, out) {
@@ -289,15 +337,19 @@ impl Edit {
                     out.events.push(Event::EditOnKeyboard(Editor { purpose: Purpose::PlaceName(PlaceName::Rename(p.id.clone())), text: p.name.clone() }));
                 }
             }
-            EditId::Cut => self.cut = self.selected(&config).map(|p| p.id.clone()),
+            EditId::Cut => {
+                self.problem = self.cut_problem(&config);
+                if self.problem.is_none() {
+                    self.cut = self.selected(&config).map(|p| p.id.clone());
+                }
+            }
             EditId::Paste => {
-                let Some(cut) = self.cut.take() else { return false };
-                // Not into itself or a place in it.
-                let inside =
-                    |id: &str| std::iter::successors(Some(id.to_owned()), |at| config.places.iter().find(|p| &p.id == at)?.within.clone()).any(|at| at == cut);
-                if here.as_deref().is_some_and(inside) {
+                // Refused, the cut stays, to be pasted elsewhere.
+                self.problem = self.paste_problem(&config);
+                if self.problem.is_some() {
                     return false;
                 }
+                let Some(cut) = self.cut.take() else { return false };
                 let mut changed = config.clone();
                 if let Some(p) = changed.places.iter_mut().find(|p| p.id == cut) {
                     // Pasted on a tab's top, it goes in that tab; in an open folder, in it.
@@ -484,9 +536,15 @@ impl Edit {
     /// A name typed for `what`.
     pub(crate) fn named(&mut self, what: PlaceName, name: &str, read: Option<&Arc<Config>>, out: &mut Out) {
         let name = name.trim();
-        let Some(mut changed) = read.map(|c| &**c).cloned().filter(|_| !name.is_empty()) else {
-            return;
+        let Some(mut changed) = read.map(|c| &**c).cloned() else { return };
+        let (within, id) = match &what {
+            PlaceName::Rename(id) => (changed.places.iter().find(|p| &p.id == id).and_then(|p| p.within.clone()), Some(id.as_str())),
+            PlaceName::New(within) => (within.clone(), None),
         };
+        self.problem = name_problem(&changed, within.as_deref(), name, id);
+        if self.problem.is_some() {
+            return;
+        }
         match what {
             PlaceName::Rename(id) => {
                 let Some(p) = changed.places.iter_mut().find(|p| p.id == id) else { return };
@@ -592,6 +650,8 @@ mod tests {
         assert!(shown.places.iter().any(|p| p.id == "game-cube" && p.within.as_deref() == Some("games")));
         assert!(shown.places.iter().any(|p| p.name == "Super NES"), "the rename kept");
         assert_eq!(tabs(&shown).map(|p| p.id.as_str()).collect::<Vec<_>>(), ["games", "files", "music", "tools"], "before Tools");
+        // Renamed, it keeps its id: a new Music's is another.
+        name(&mut edit, PlaceName::Rename("music".into()), "Songs", &mut shown);
         name(&mut edit, PlaceName::New(None), "Music", &mut shown);
         assert!(shown.places.iter().any(|p| p.id == "music-2"), "ids stay unique");
     }
@@ -607,6 +667,7 @@ mod tests {
         edit.tap(EditId::Row(0), Some(&read), &mut out);
         edit.tap(EditId::Paste, Some(&read), &mut out);
         assert!(out.effects.is_empty(), "not into itself");
+        assert_eq!((edit.problem(), edit.cut()), (Some("Not into itself"), Some("snes")), "said, and the cut kept");
         edit.tap(EditId::Tab(1), Some(&read), &mut out);
         edit.tap(EditId::Cut, Some(&read), &mut out);
         assert_eq!(edit.cut(), Some("files"), "nothing selected: the tab itself");
@@ -624,6 +685,35 @@ mod tests {
         edit.tap(EditId::Row(0), Some(&read), &mut out);
         edit.tap(EditId::Remove, Some(&read), &mut out);
         assert!(!written(&out).places.iter().any(|p| p.id == "rpg"), "RPG is unused");
+    }
+
+    /// ClamShell's own tabs aren't cut; a name with a `/`, or one another there has (a place, or a folder
+    /// the Files tab browses), isn't given, and why shows; a folder removed while open is left.
+    #[test]
+    fn places_keep_names_of_their_own_and_own_tabs_stay() {
+        let read = config();
+        let (mut edit, mut out) = (Edit::default(), Out::default());
+        edit.tap(EditId::Tab(2), Some(&read), &mut out);
+        edit.tap(EditId::Cut, Some(&read), &mut out);
+        assert_eq!((edit.cut(), edit.problem()), (None, Some("ClamShell's own tabs stay")));
+        for (what, name) in [
+            (PlaceName::Rename("snes".into()), "PS1/PSX"),
+            (PlaceName::New(None), "tools"),
+            (PlaceName::New(Some("files".into())), "Home"),
+            (PlaceName::New(Some("games".into())), "snes"),
+        ] {
+            edit.named(what, name, Some(&read), &mut out);
+            assert!(out.effects.is_empty() && edit.problem().is_some(), "{name}");
+        }
+        edit.named(PlaceName::Rename("snes".into()), "Snes", Some(&read), &mut out);
+        assert!(!out.effects.is_empty(), "its own name, cased otherwise");
+        // In SNES, which goes: back out to Games.
+        let (mut edit, mut out) = (Edit::default(), Out::default());
+        edit.tap(EditId::Row(0), Some(&read), &mut out);
+        assert_eq!(edit.here(&read), Some("snes"));
+        let mut gone = (*read).clone();
+        gone.places.retain(|p| p.id != "snes" && p.id != "rpg");
+        assert_eq!(edit.here(&gone), Some("games"));
     }
 
     /// A source's form: a field typed, a choice made, saved and written in its place; a new source goes

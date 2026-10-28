@@ -319,12 +319,20 @@ fn details(f: &mut Frame, h: f32, edit: &Edit, config: &Config, place: &Place, r
     let row = |y: f32| Rect::new(r.x, y, r.w * 0.6, detail * ACTION);
     f.text_button(EditId::Rename.into(), row(y), detail, Tone::Fn, "Rename", Align::Start);
     y += detail * ACTION;
-    match edit.cut().and_then(|id| config.places.iter().find(|p| p.id == id)) {
-        Some(cut) => {
+    match (edit.cut().and_then(|id| config.places.iter().find(|p| p.id == id)), edit.paste_problem(config), edit.cut_problem(config)) {
+        (Some(cut), Some(why), _) => {
+            let label = Fmt::<192>::of(format_args!("Paste {} here: {why}", cut.name));
+            f.c.text_fit(row(y), detail, Tone::Dim, &label, Keep::Start);
+        }
+        (Some(cut), None, _) => {
             let label = Fmt::<128>::of(format_args!("Paste {} here", cut.name));
             f.text_button(EditId::Paste.into(), row(y), detail, Tone::Accent, &label, Align::Start);
         }
-        None => f.text_button(EditId::Cut.into(), row(y), detail, Tone::Fn, "Cut, to move it", Align::Start),
+        (None, _, Some(why)) => {
+            let label = Fmt::<128>::of(format_args!("Cut: {why}"));
+            f.c.text_fit(row(y), detail, Tone::Dim, &label, Keep::Start);
+        }
+        (None, _, None) => f.text_button(EditId::Cut.into(), row(y), detail, Tone::Fn, "Cut, to move it", Align::Start),
     }
     y += detail * ACTION;
     let icon = Fmt::<64>::of(format_args!("Icon: {}", place.icon.as_deref().unwrap_or("none")));
@@ -358,6 +366,11 @@ fn details(f: &mut Frame, h: f32, edit: &Edit, config: &Config, place: &Place, r
         f.c.text_fit(row(y), detail, Tone::Dim, "Remove: something is in it", Keep::Start);
     } else {
         f.text_button(EditId::Remove.into(), row(y), detail, Tone::Accent, "Remove", Align::Start);
+    }
+    // Why the last thing asked wasn't done (a name taken, say).
+    if let Some(problem) = edit.problem() {
+        y += detail * ACTION;
+        f.c.text_fit(Rect::new(r.x, y, r.w, detail * ACTION), detail, Tone::Accent, problem, Keep::Start);
     }
 }
 
