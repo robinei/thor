@@ -15,8 +15,8 @@ use crate::gfx::{Align, Canvas, Column, Keep, LINE, Rect, Rgb};
 /// A row of tabs starting at `area.x`, `area.h` high. Each tab has its icon, if it has one, and its label
 /// cut to `max` wide, with `inner` space on both sides. The current tab is bright with an amber line
 /// under it. When they don't all fit, the row scrolls: it starts as far along as it must for the current
-/// tab to show, and a dim ‹ or › at an end says there are more that way. Returns where the next tab
-/// would start.
+/// tab and the one after it to show, so a tap on the last shown brings the next in, and a dim ‹ or › at an
+/// end says there are more that way. Returns where the next tab would start.
 pub(crate) fn tabs<'a, I>(f: &mut Frame, area: Rect, size: f32, inner: f32, max: f32, items: I) -> f32
 where
     I: IntoIterator<Item = (Id, Option<Icon>, &'a str, bool)>,
@@ -26,23 +26,28 @@ where
     // An icon is about as high as the label's capitals, with a space after it.
     let (icon_w, gap) = (size * 1.1, size * 0.35);
     let width = |f: &mut Frame, icon: bool, name: &str| (if icon { icon_w + gap } else { 0.0 }) + f.c.text_width(size, name).min(max) + 2.0 * inner;
-    let (mut total, mut current, mut to_current) = (0.0, 0, 0.0);
+    // Up to the end of the current tab and of the one after it.
+    let (mut total, mut current, mut to_current, mut to_next) = (0.0, None, 0.0, 0.0);
     for (i, (_, icon, name, now)) in items.clone().enumerate() {
         total += width(f, icon.is_some(), name);
         if now {
-            (current, to_current) = (i, total);
+            (current, to_current, to_next) = (Some(i), total, total);
+        } else if current.is_some_and(|c| c + 1 == i) {
+            to_next = total;
         }
     }
+    let current = current.unwrap_or(0);
     let marker = size * 1.2;
-    // Scrolled: the first tab shown is the first from which the current one fits, room kept for the
-    // markers.
+    // Scrolled: the first tab shown is the first from which the current one and the next fit (or else the
+    // current one alone), room kept for the markers.
     let (room, start) = if total <= area.w {
         (area.w, 0)
     } else {
         let room = area.w - 2.0 * marker;
+        let target = if to_next - to_current <= room / 2.0 { to_next } else { to_current };
         let (mut start, mut before) = (0, 0.0);
         for (_, icon, name, _) in items.clone().take(current) {
-            if to_current - before <= room {
+            if target - before <= room {
                 break;
             }
             before += width(f, icon.is_some(), name);
