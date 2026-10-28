@@ -54,6 +54,8 @@ struct Screen {
     /// The elements' states in the frame queued, for its flip; refilled in place for each frame, so that
     /// queueing one allocates nothing.
     queued: RenderElementStates,
+    /// The presentation feedback of the frame queued, for its flip.
+    feedback: crate::pacing::Feedback,
     /// The screen's part of the scene, and its mode's size before its panel's turn.
     part: Rectangle<i32, Buffer>,
     size: Size<i32, Physical>,
@@ -106,6 +108,8 @@ impl Screen {
     /// drawn whole, composed or its own.
     fn reset_buffers(&mut self) {
         self.surface.reset_buffers();
+        // A frame in flight is taken as never shown.
+        self.feedback.discard();
         if let Some(ui) = &mut self.ui {
             ui.reset();
         }
@@ -272,6 +276,7 @@ pub fn run(
             refresh: 0,
             flipped: None,
             queued: RenderElementStates::default(),
+            feedback: Default::default(),
             ui: None,
             ui_shown: false,
             window: None,
@@ -572,7 +577,7 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
     screen.flipped = Some(time);
     if submitted {
         server.frame_shown(&screen.queued, Some(down));
-        server.present_flip(&screen.queued, time, hw_clock, down, screen.interval, metadata.map_or(0, |m| u64::from(m.sequence)));
+        server.present_flip(&mut screen.feedback, time, hw_clock, screen.interval, metadata.map_or(0, |m| u64::from(m.sequence)));
     }
     screen.held = server.frame_callbacks(Some(down), screen.interval, Instant::now());
 }
@@ -845,6 +850,7 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
                 match screen.surface.surface().clear() {
                     Ok(()) => {
                         screen.surface.off();
+                        screen.feedback.discard();
                         if let Some(layers) = &mut screen.layers {
                             layers.screen_off();
                         }
@@ -1122,6 +1128,7 @@ fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipel
             screen.queued.states.clear();
             screen.queued.states.insert(smithay::backend::renderer::element::Id::from_wayland_resource(&candidate.surface), state);
             server.frame_queued(&screen.queued, Some(down));
+            server.take_feedback(&screen.queued, Some(down), &mut screen.feedback);
             committed(screen);
             screen.dirty = false;
             screen.answered = server.pacing.commits;
@@ -1212,6 +1219,7 @@ fn present(drawing: &mut Drawing, server: &mut Server, index: usize) -> Result<(
     }
     committed(screen);
     server.frame_queued(states, Some(screen.role == ScreenRole::Bottom));
+    server.take_feedback(states, Some(screen.role == ScreenRole::Bottom), &mut screen.feedback);
     screen.dirty = false;
     screen.answered = server.pacing.commits;
     Ok(())

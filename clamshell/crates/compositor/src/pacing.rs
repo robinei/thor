@@ -10,7 +10,7 @@ use smithay::{
     utils::{Monotonic, Time},
     wayland::{
         compositor::with_states,
-        presentation::{PresentationFeedbackCachedState, Refresh},
+        presentation::{PresentationFeedbackCachedState, PresentationFeedbackCallback, Refresh},
     },
 };
 
@@ -28,6 +28,30 @@ pub(crate) struct Pacing {
     /// The clients whose blockers a frame's callbacks or a commit timing's release cleared, told once each;
     /// kept, so that pacing a frame allocates nothing.
     cleared: Vec<smithay::reexports::wayland_server::Client>,
+    /// The feedback of a frame submitted to the nested host, kept so that it allocates nothing.
+    #[cfg(any(feature = "nested", test))]
+    submitted: Feedback,
+}
+
+/// The presentation feedback of a frame queued on a screen: taken as the frame is queued
+/// ([`Server::take_feedback`]), since a client may commit again before it shows, whose feedback is then
+/// the next frame's; given at its flip ([`Server::present_flip`]), or discarded if it never shows.
+#[derive(Default)]
+pub(crate) struct Feedback {
+    /// Each callback, whether its surface is shown from its own buffer, and whether on the second screen.
+    callbacks: Vec<(PresentationFeedbackCallback, bool, bool)>,
+    /// The windows whose root surface it shows, for their frame rates.
+    windows: Vec<i64>,
+}
+
+impl Feedback {
+    /// Its frame won't show: the clients are told.
+    pub(crate) fn discard(&mut self) {
+        for (callback, ..) in self.callbacks.drain(..) {
+            callback.discarded();
+        }
+        self.windows.clear();
+    }
 }
 
 /// The commits of a surface's content in the frame queued for its screen and in the one last shown (see
@@ -87,42 +111,37 @@ impl Server {
         }
     }
 
-    #[cfg(any(feature = "nested", test))]
     /// Called only after a successful host swap. Hidden or occluded surfaces retain their feedback
     /// until they appear, are superseded by another commit, or are destroyed.
+    #[cfg(any(feature = "nested", test))]
     pub(crate) fn present_submission(&mut self, rendered: &RenderElementStates, time: Time<Monotonic>) {
+        let mut feedback = std::mem::take(&mut self.pacing.submitted);
+        self.take_feedback(rendered, None, &mut feedback);
         // Winit exposes neither a display timestamp nor a refresh sequence.
-        self.feedback(rendered, time, None, Refresh::Unknown, 0, Kind::empty());
+        self.give_feedback(&mut feedback, time, Refresh::Unknown, 0, Kind::empty());
+        self.pacing.submitted = feedback;
     }
 
-    /// A page flip on the top screen or the second (`down`): its time (the hardware's, `hw_clock`, or
-    /// else the clock's as the flip was seen), the screen's refresh and the flip's sequence, for the
-    /// windows shown there.
-    pub(crate) fn present_flip(
-        &mut self,
-        rendered: &RenderElementStates,
-        time: Time<Monotonic>,
-        hw_clock: bool,
-        down: bool,
-        refresh: std::time::Duration,
-        sequence: u64,
-    ) {
+    /// A page flip on a screen showed the frame `feedback` was taken for: its time (the hardware's,
+    /// `hw_clock`, or else the clock's as the flip was seen), the screen's refresh and the flip's sequence.
+    pub(crate) fn present_flip(&mut self, feedback: &mut Feedback, time: Time<Monotonic>, hw_clock: bool, refresh: std::time::Duration, sequence: u64) {
         let clock = if hw_clock { Kind::HwClock } else { Kind::empty() };
-        self.feedback(rendered, time, Some(down), Refresh::Fixed(refresh), sequence, Kind::Vsync | Kind::HwCompletion | clock);
+        self.give_feedback(feedback, time, Refresh::Fixed(refresh), sequence, Kind::Vsync | Kind::HwCompletion | clock);
     }
 
-    /// The windows shown get their presentation feedback, and a frame counted if a new buffer was shown.
-    fn feedback(&mut self, rendered: &RenderElementStates, time: Time<Monotonic>, screen: Option<bool>, refresh: Refresh, sequence: u64, kind: Kind) {
+    /// Takes into `feedback` the presentation feedback of the windows' surfaces `rendered` drew on a screen
+    /// (`down`; None: both, nested), as its frame is queued; what it held before, never shown, is
+    /// discarded.
+    pub(crate) fn take_feedback(&mut self, rendered: &RenderElementStates, screen: Option<bool>, feedback: &mut Feedback) {
+        feedback.discard();
         self.place();
-        for client in self.windows.iter_mut() {
+        for client in &self.windows {
             let Some(down) = self.scene.window(client.id).map(|placed| placed.below) else { continue };
             if screen.is_some_and(|screen| screen != down) {
                 continue;
             }
-            let [top, bottom] = &self.screens.outputs;
-            let output = if down { bottom } else { top };
             if client.window.root().is_some_and(|root| rendered.element_was_presented(&root)) {
-                client.frames.shown(time.into());
+                feedback.windows.push(client.id);
             }
             client.window.with_surfaces(|surface, states| {
                 if !rendered.element_was_presented(surface) {
@@ -132,13 +151,23 @@ impl Server {
                 let zero_copy = rendered
                     .element_render_state(surface)
                     .is_some_and(|state| state.presentation_state == smithay::backend::renderer::element::RenderElementPresentationState::ZeroCopy);
-                let kind = if zero_copy { kind | Kind::ZeroCopy } else { kind };
                 let mut cached = states.cached_state.get::<PresentationFeedbackCachedState>();
-                let current = cached.current();
-                for callback in current.callbacks.drain(..) {
-                    callback.presented(output, time, refresh, sequence, kind);
-                }
+                feedback.callbacks.extend(cached.current().callbacks.drain(..).map(|callback| (callback, zero_copy, down)));
             });
+        }
+    }
+
+    /// The windows `feedback` was taken for get it, and a frame counted for each that showed a new buffer.
+    fn give_feedback(&mut self, feedback: &mut Feedback, time: Time<Monotonic>, refresh: Refresh, sequence: u64, kind: Kind) {
+        let [top, bottom] = &self.screens.outputs;
+        for (callback, zero_copy, down) in feedback.callbacks.drain(..) {
+            let kind = if zero_copy { kind | Kind::ZeroCopy } else { kind };
+            callback.presented(if down { bottom } else { top }, time, refresh, sequence, kind);
+        }
+        for id in feedback.windows.drain(..) {
+            if let Some(client) = self.windows.iter_mut().find(|client| client.id == id) {
+                client.frames.shown(time.into());
+            }
         }
     }
 

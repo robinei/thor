@@ -25,9 +25,10 @@ impl Dispatch<wp_presentation_feedback::WpPresentationFeedback, u32> for Client 
     ) {
         match event {
             wp_presentation_feedback::Event::Presented { tv_sec_hi, tv_sec_lo, tv_nsec, refresh, seq_hi, seq_lo, flags } => {
-                assert_eq!(refresh, 0);
-                assert_eq!((seq_hi, seq_lo), (0, 0));
-                assert_eq!(flags, wayland_client::WEnum::Value(wp_presentation_feedback::Kind::empty()));
+                // Submitted to the nested host: no refresh, sequence or flags; or flipped on a screen.
+                let flipped = wayland_client::WEnum::Value(wp_presentation_feedback::Kind::Vsync | wp_presentation_feedback::Kind::HwCompletion);
+                let submitted = refresh == 0 && (seq_hi, seq_lo) == (0, 0) && flags == wayland_client::WEnum::Value(wp_presentation_feedback::Kind::empty());
+                assert!(submitted || (refresh != 0 && flags == flipped), "{refresh} {seq_lo} {flags:?}");
                 let timestamp = Duration::new((u64::from(tv_sec_hi) << 32) | u64::from(tv_sec_lo), tv_nsec);
                 state.presented.push((*id, timestamp));
             }
@@ -150,6 +151,65 @@ fn feedback_follows_submission_visibility_superseding_and_surface_destruction() 
         }
     });
     assert_eq!(checked, 5);
+}
+
+/// A frame's feedback is taken as it is queued and given at its flip: a commit after it was queued is the
+/// next frame's, not presented a flip early.
+#[test]
+fn feedback_is_the_queued_frames_and_given_at_its_flip() {
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let client = spawn_client(&mut display, ClientState::default(), move |globals, mut queue, steps| {
+        let qh = queue.handle();
+        let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
+        let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
+        let shm: wl_shm::WlShm = globals.bind(&qh, 1..=1, ()).unwrap();
+        let presentation: wp_presentation::WpPresentation = globals.bind(&qh, 1..=2, ()).unwrap();
+        let surface = compositor.create_surface(&qh, ());
+        let xdg = shell.get_xdg_surface(&surface, &qh, ());
+        let top = xdg.get_toplevel(&qh, ());
+        top.set_app_id("queued-feedback-test".into());
+        surface.commit();
+        let mut client = Client::default();
+        queue.roundtrip(&mut client).unwrap();
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(&vec![0xff; 960 * 540 * 4]).unwrap();
+        let pool = shm.create_pool(file.as_fd(), 960 * 540 * 4, &qh, ());
+        let buffer = pool.create_buffer(0, 960, 540, 960 * 4, wl_shm::Format::Abgr8888, &qh, ());
+        presentation.feedback(&surface, &qh, 1);
+        surface.attach(Some(&buffer), 0, 0);
+        surface.commit();
+        for phase in 0..3 {
+            queue.roundtrip(&mut client).unwrap();
+            steps.step(phase);
+            queue.roundtrip(&mut client).unwrap();
+            match phase {
+                0 => {
+                    assert!(client.presented.is_empty(), "queued, not shown yet");
+                    presentation.feedback(&surface, &qh, 2);
+                    surface.commit();
+                }
+                1 => assert_eq!(client.presented, vec![(1, Duration::from_secs(123))], "the queued frame's alone"),
+                2 => assert_eq!(client.presented, vec![(1, Duration::from_secs(123)), (2, Duration::from_secs(124))]),
+                _ => panic!(),
+            }
+        }
+        let _ = (top, xdg);
+    });
+    let mut feedback = crate::pacing::Feedback::default();
+    let checked = client.serve(&mut display, &mut server, Server::frame, move |_, server, phase| {
+        let mut rendered = RenderElementStates::default();
+        server.windows[0].window.with_surfaces(|surface, _| {
+            let state =
+                RenderElementState { visible_area: 1, presentation_state: RenderElementPresentationState::Rendering { reason: None }, needs_capture: false };
+            rendered.states.insert(surface.into(), state);
+        });
+        let refresh = Duration::from_millis(16);
+        if phase > 0 {
+            server.present_flip(&mut feedback, Duration::from_secs(if phase == 1 { 123 } else { 124 }).into(), false, refresh, 1);
+        }
+        server.take_feedback(&rendered, Some(false), &mut feedback);
+    });
+    assert_eq!(checked, 3);
 }
 
 #[test]
