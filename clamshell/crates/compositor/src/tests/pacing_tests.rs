@@ -107,11 +107,14 @@ fn a_barrier_goes_once_its_frame_is_shown_and_a_timed_commit_at_its_time() {
         }
         Step::Timed => {
             let commits = server.pacing.commits;
-            let held = server.release_timed_commits(Duration::from_secs(500).into());
+            assert_eq!(server.release_timed_commits(Duration::from_secs(1000).into(), Some(true)), None, "the second screen's: not its window");
+            display.dispatch_clients(server).unwrap();
+            assert_eq!(server.pacing.commits, commits, "not let go by the other screen's frame");
+            let held = server.release_timed_commits(Duration::from_secs(500).into(), Some(false));
             assert_eq!(held.map(Duration::from), Some(Duration::from_secs(1000)), "held until its time");
             display.dispatch_clients(server).unwrap();
             assert_eq!(server.pacing.commits, commits, "not applied before");
-            assert_eq!(server.release_timed_commits(Duration::from_secs(1000).into()), None, "let go at its time");
+            assert_eq!(server.release_timed_commits(Duration::from_secs(1000).into(), None), None, "let go at its time");
             display.dispatch_clients(server).unwrap();
             assert!(server.pacing.commits > commits, "applied once let go");
         }
@@ -161,7 +164,7 @@ fn a_capped_windows_timed_commit_goes_ahead_at_once() {
         Step::Shown => assert_eq!(server.windows.first().map(|w| w.shown.fps_cap), Some(Some(30)), "capped"),
         Step::Timed => {
             let commits = server.pacing.commits;
-            assert_eq!(server.release_timed_commits(Duration::from_secs(500).into()), None, "nothing held");
+            assert_eq!(server.release_timed_commits(Duration::from_secs(500).into(), None), None, "nothing held");
             display.dispatch_clients(server).unwrap();
             assert!(server.pacing.commits > commits, "applied before its time");
         }

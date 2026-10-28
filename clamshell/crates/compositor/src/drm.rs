@@ -594,15 +594,17 @@ fn step(
         return None;
     }
     outputs(drawing, server);
-    // Commits timed for no later than the top screen's next frame go ahead before it is composed; the
-    // loop wakes a refresh before the next one held is due, to compose it in time, or, within a refresh
-    // of it already, at the next refresh, when the frame shown then is composed (not at once again).
-    let timed = drawing.screens.iter().find(|s| s.role == ScreenRole::Top).map(|top| {
-        let clock = server.clock.now();
-        let next = top.next_shown(clock);
-        let held = server.release_timed_commits(next);
-        held.map(|at| timed_wake(now, Duration::from(clock), Duration::from(next), Duration::from(at), top.interval))
-    });
+    // The commits of a screen's windows timed for no later than its next frame go ahead before it is
+    // composed; the loop wakes a refresh of that screen before the next one held is due, to compose it in
+    // time, or, within a refresh of it already, at the next refresh, when the frame shown then is composed
+    // (not at once again). Each screen by its own refresh, which the two needn't share.
+    let clock = server.clock.now();
+    let mut timed = None;
+    for screen in &drawing.screens {
+        let next = screen.next_shown(clock);
+        let held = server.release_timed_commits(next, Some(screen.role == ScreenRole::Bottom));
+        timed = earlier(timed, held.map(|at| timed_wake(now, Duration::from(clock), Duration::from(next), Duration::from(at), screen.interval)));
+    }
     // The frame's own work (the X11 windows' changes to the state) and the buffers' imports, which their
     // clients wait for, every turn.
     server.frame();
@@ -642,7 +644,7 @@ fn step(
             layers.trim(now, &mut trims);
         }
     }
-    let mut due: Option<Instant> = earlier(timed.flatten(), trims.finish());
+    let mut due: Option<Instant> = earlier(timed, trims.finish());
     for screen in &mut drawing.screens {
         if screen.surface.flip_due().is_some_and(|lost| now >= lost) {
             log::warn!("drm: {:?} screen: no flip {} ms after its frame: drawn again", screen.role, crate::presenter::FLIP_LOST.as_millis());
@@ -701,7 +703,7 @@ fn after_compose(due: Option<Instant>, composed: u64, commits: u64, now: Instant
     if commits != composed { Some(now) } else { due }
 }
 
-/// When the loop wakes for a commit timed for `at` (the clock's times since boot), the top screen's next
+/// When the loop wakes for a commit timed for `at` (the clock's times since boot), its screen's next
 /// frame `next` and its refresh `interval`, given the loop's `now` and the clock's `clock`: a refresh before
 /// it is due, to compose it in time; or, within a refresh of it already, at the next frame, when the one
 /// shown then is composed (not at once again, which would turn the loop until then).

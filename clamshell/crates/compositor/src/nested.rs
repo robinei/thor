@@ -119,7 +119,7 @@ pub fn run(
                         let capturing = std::mem::take(&mut server.screenshot_requested);
                         // Commits timed for no later than this frame, shown at the host's next, go ahead.
                         let interval = Duration::from_secs_f64(1000.0 / f64::from(server.screens.refresh.max(1000)));
-                        server.release_timed_commits((Duration::from(server.clock.now()) + interval).into());
+                        server.release_timed_commits((Duration::from(server.clock.now()) + interval).into(), None);
                         for (down, states) in [false, true].into_iter().zip(&mut states) {
                             render::elements(server, &mut frames, &mut cursor, backend.renderer(), &mut elements, down, None, Default::default())?;
                             pipeline.compose(server, backend.renderer(), down, &mut elements, states, false)?;

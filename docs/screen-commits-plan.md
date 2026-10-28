@@ -33,6 +33,6 @@ and 4 and at the end.
   only ClamShell's view on it, the lone window and its candidate or why not, refusals, a screenshot); a
   second gives each change's effects (properties cleared after, drawn whole, scene redrawn, own buffers
   reset). Both tested by tables; the decide passes only gather the facts and apply the result.
-- [ ] 5. **Commit timing per screen.** Each screen's windows' timed commits are released against that
+- [x] 5. **Commit timing per screen.** Each screen's windows' timed commits are released against that
   screen's next frame, the loop waking for the first due. The nested session, one host window, stays as
   it is.
