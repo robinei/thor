@@ -896,7 +896,8 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     );
     let route = s.pad().route();
     let listening = s.listening();
-    let moving = s.dock().moving().is_some() && s.bottom().tab() == Tab::Dock;
+    // A dock entry moving or the overview open takes the pad for stepping, before a game or listening.
+    let stepping = (s.dock().moving().is_some() && s.bottom().tab() == Tab::Dock) || s.session().overview().is_some();
     let claimant = if s.pad().mouse_on() {
         PadRoute::Mouse
     } else {
@@ -907,16 +908,16 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         }
     };
     ensure!(
-        (route == PadRoute::Listen) == (listening && !moving && (claimant == PadRoute::Ui || route == PadRoute::Listen)),
+        (route == PadRoute::Listen) == (listening && !stepping && (claimant == PadRoute::Ui || route == PadRoute::Listen)),
         "3: route {route:?}, listening {listening}"
     );
     if listening {
-        ensure!(route != PadRoute::Ui || moving, "3: listening but route Ui");
+        ensure!(route != PadRoute::Ui || stepping, "3: listening but route Ui");
     }
-    if moving {
-        ensure!(route == PadRoute::Ui, "3: a dock entry moves but the route is {route:?}");
+    if stepping {
+        ensure!(route == PadRoute::Ui, "3: stepping (a dock entry or the overview) but the route is {route:?}");
     }
-    if claimant == PadRoute::Ui && !moving {
+    if claimant == PadRoute::Ui && !stepping {
         ensure!(route == if listening { PadRoute::Listen } else { PadRoute::Ui }, "3: shelf claims, route {route:?}");
     }
     ensure!(route == claimant || route == PadRoute::Ui || route == PadRoute::Listen, "3: route {route:?}, claimant's {claimant:?}");

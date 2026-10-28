@@ -153,9 +153,10 @@ impl Pad {
             self.last_claimant = claimant;
         }
         let route = match self.wanted_route() {
-            PadRoute::Ui if listening => PadRoute::Listen,
-            // A dock entry is being moved with the D-pad, or the overview's choice is.
+            // A dock entry is being moved with the D-pad, or the overview's choice is: that goes first,
+            // listening included, as what the user turned to last.
             _ if stepping => PadRoute::Ui,
+            PadRoute::Ui if listening => PadRoute::Listen,
             route => route,
         };
         (route != self.route).then(|| {

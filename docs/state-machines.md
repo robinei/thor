@@ -311,8 +311,9 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 ## Pad route and pointer (nav/pad.rs, nav/pointer.rs)
 
 Claimant: pad mouse, else shelf in front, else Typing on the Keyboard tab, else the game. Route: Ui for
-shelf; else Ui if switched there by View, else Game/Keys/Mouse; Listen while a keymap screen listens; Ui
-while a dock entry is being moved or the overview of the program's windows is open. The focus ring hides when the route leaves Ui.
+shelf; else Ui if switched there by View, else Game/Keys/Mouse; Listen, instead of Ui, while a keymap
+screen listens. Ui whatever the rest while a dock entry is being moved or the overview of the program's
+windows is open, listening included. The focus ring hides when the route leaves Ui.
 
 | Transition | Test |
 |---|---|
@@ -1528,7 +1529,7 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    least 1) while dimmed. The last SizeTouchpad is the second screen's layout, or None while its
    pixels or millimetres aren't known.
    At most one tab's watch is on, and it is the open tab's (or the battery's, for the dock's menu).
-3. **Pad route:** consistent with claimant, listening and dock move; reconciling again changes nothing;
+3. **Pad route:** consistent with claimant, listening, dock move and overview; reconciling again changes nothing;
    the focus ring shows only when the route is Ui, or after a hold on shelf's selected entry opened its
    actions with the pad elsewhere, until the next touch hides it (the ring is what shows the actions are
    open, S24 in the history notes; the focus may move meanwhile, as when the Device view opens).
