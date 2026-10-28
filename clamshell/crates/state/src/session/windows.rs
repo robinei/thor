@@ -160,17 +160,17 @@ impl Session {
         if self.below(id) {
             return;
         }
-        let id = self.topmost(self.root_of(id));
-        let Some(group) = self.windows.iter().find(|w| w.id == id).map(|w| &w.group) else { return };
+        let root = self.root_of(id);
+        let Some(group) = self.windows.iter().find(|w| w.id == root).map(|w| &w.group) else { return };
         // (A window not placed yet is selected in its group once it is.)
         if let Some(group) = group {
             match self.selected.iter_mut().find(|(g, _)| g == group) {
-                Some((_, selected)) => *selected = id,
-                None => self.selected.push((group.clone(), id)),
+                Some((_, selected)) => *selected = root,
+                None => self.selected.push((group.clone(), root)),
             }
         }
-        self.keyboard_focus = Some(id);
-        self.top = Some(id);
+        self.keyboard_focus = Some(self.topmost(root));
+        self.top = Some(root);
     }
 }
 
@@ -287,12 +287,12 @@ impl crate::Session {
             self.keyboard_focus = None;
         }
         let group = self.top_window().filter(|w| w.id == id).and_then(|w| w.group.clone());
-        // The bottom screen's window closing leaves its first dialog there, the root of what is left of
-        // its stack.
+        // A stack's root closing leaves its first dialog as the root of what is left (see
+        // [`Session::root_of`]), on its screen.
         let heir = self.windows.iter().find(|w| w.parent == Some(id)).map(|w| w.id);
         self.windows.retain(|w| w.id != id);
         if self.top == Some(id) {
-            self.top = None;
+            self.top = heir;
         }
         if self.bottom == Some(id) {
             self.bottom = heir;

@@ -11,7 +11,7 @@ suite runs at the end.
 
 ## Steps
 
-- [ ] 1. **The screens' slots hold stacks' roots.** `top` (and each group's selection) holds the root of
+- [x] 1. **The screens' slots hold stacks' roots.** `top` (and each group's selection) holds the root of
   the stack in front, as `bottom` already does; the window taking the input is computed (`topmost`).
   Opening, closing and selecting a dialog no longer move the slot; the root closing hands it to its first
   dialog, as for the bottom screen.

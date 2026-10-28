@@ -62,9 +62,10 @@ pub struct Session {
     launching: Vec<Launching>,
     /// The compositor's windows.
     windows: Vec<Window>,
-    /// The window the top screen shows; none while shelf is in front.
+    /// The root of the stack the top screen shows (see [`Session::root_of`]); none while shelf is in
+    /// front. The window taking the input is computed: its topmost ([`Session::top_window`]).
     top: Option<i64>,
-    /// The window placed on the bottom screen, if any. It is shown there while the windows' tab is open
+    /// The root of the stack placed on the bottom screen, if any. It is shown there while the windows' tab is open
     /// (see [`crate::Bottom::shows_windows`]).
     bottom: Option<i64>,
     /// The program in front's windows shown together on the top screen (see [`crate::session::overview`]).
@@ -82,7 +83,7 @@ pub struct Session {
     /// What was in front, most recent first: groups, and shelf once something put it in front
     /// ([`WindowCommand::ShowShelf`]), so that a closed window goes back to where it was opened from.
     recent: Vec<InFront>,
-    /// The selected window of each top group, retained while the group is hidden.
+    /// The selected stack of each top group, by its root, retained while the group is hidden.
     selected: Vec<(Group, i64)>,
     /// The launch to show when its first window appears. Until then, other programs' new windows open
     /// behind (see [`Session::opening_focus`]).
@@ -309,9 +310,10 @@ impl Session {
         }
     }
 
-    /// The window the top screen shows, or none while shelf is in front.
+    /// The window the top screen shows in front, taking the input: its stack's topmost (see
+    /// [`Session::topmost`]). None while shelf is in front.
     pub fn top_window(&self) -> Option<&Window> {
-        self.top.and_then(|id| self.window(id))
+        self.top.map(|root| self.topmost(root)).and_then(|id| self.window(id))
     }
 
     /// The window placed on the bottom screen, if any.
