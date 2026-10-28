@@ -114,7 +114,7 @@ The Library comes from `~/.config/clamshell/library.json`, and nothing is there 
     { "id": "video", "name": "Video", "match": ["*.mkv", "*.mp4"], "launch": ["mpv", "{path}"] }
   ],
   "sources": [
-    { "type": "dir", "id": "snes", "dir": "~/Games/snes", "place": "snes", "runner": "snes", "also": ["*.zip"],
+    { "type": "dir", "id": "snes", "dir": "~/Roms/snes", "place": "snes", "runner": "snes", "also": ["*.zip"],
       "metadata": "libretro:Nintendo - Super Nintendo Entertainment System" },
     { "type": "dir", "id": "tv", "dir": "~/TV", "place": "tv", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" },
     { "type": "desktop", "name": "*Uninstall*", "hide": true },
@@ -124,9 +124,10 @@ The Library comes from `~/.config/clamshell/library.json`, and nothing is there 
 ```
 
 The starter library.json (`packages/thor-session/root/usr/share/thor/home/.config/clamshell/library.json`) declares ClamShell's set: Recent, Favourites,
-Games, Films, TV, Files, Apps, Tools; a runner per RetroArch system, Video and Music (mpv), Images (imv),
-PDF (zathura), Text (`less`), last Other files (`xdg-open`); a scan per system and for films and series,
-Steam, the desktop files, Home, Root, the Trash and removable storage. In every list, folders come first.
+Games, Films, TV, Music, Files, Apps, Tools; a runner per system (RetroArch's cores, PPSSPP, ScummVM),
+Video and Music (mpv), Images (imv), PDF (zathura), Text (`less`), last Other files (`xdg-open`); a scan
+per system (`~/Roms/<system>`) and for films, series and music, Steam, the desktop files, Home, the Roms
+folder, Root, the Trash and removable storage. In every list, folders come first.
 A file opened from the Files tab opens by the first runner whose patterns match its name. The design:
 `docs/runners.md`.
 The rules (ids, titles, art, icons): `crates/system/src/library/content.rs`.

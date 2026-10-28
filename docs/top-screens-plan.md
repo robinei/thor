@@ -330,8 +330,13 @@ touches the session or the outside.
   names a place by its id, and every folder is declared (no `@`, no paths, no undeclared folders). A
   missing BIOS is a library problem for now (the Rescan entry lists it); showing it on the system's folder
   is step 5's. Built-ins no source places are entries all the same, in no place.
-- [ ] 5. **What the image ships**: the repos' emulators and runners, `~/Roms`, the menu, the first pins,
+- [x] 5. **What the image ships**: the repos' emulators and runners, `~/Roms`, the menu, the first pins,
   Firefox; then each emulator we package.
+  Done for the repos' part: Master System, Game Gear, PC Engine, Saturn, arcade (MAME), PSP (PPSSPP's
+  `PPSSPPSDL`) and ScummVM beside the cores already shipped, Firefox, `~/Roms/<system>`, Music, and the
+  first pins (the Library, Firefox, foot, Steam, Maintenance). An empty system's folder is dimmed with
+  where its files go and its missing BIOS. Tabs with nothing in them (Films, TV, Music on a new home)
+  are still left out, as before. Packaging Dolphin, Azahar, ARMSX2, DOSBox Pure and FBNeo is still to do.
 - [ ] 6. **The editors**: Library's edit mode with its tabs and folders, Sources and Runners; the keyboard's field keys;
   the picker for ClamShell's own screens.
 - [ ] 7. **The portal**: Open, then Save, then the session's environment.

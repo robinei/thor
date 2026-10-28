@@ -56,10 +56,15 @@ A runner says nothing about where things are or show: that is the sources' and p
 ```
 
 The starter library.json (`packages/thor-session/root/usr/share/thor/home/.config/clamshell/library.json`, put in the home where there is none)
-declares ClamShell's set: Desktop, Steam, one per RetroArch system (NES, SNES, Nintendo 64, Game Boy, Game
-Boy Advance, Nintendo DS, Mega Drive, PlayStation, Dreamcast), Video and Music (mpv), Images (imv), PDF
-(zathura), Text (`less` in foot), last Other files (`xdg-open`, any name). A runner whose program isn't on
-the PATH is shown as a problem (it stays: the program may come).
+declares ClamShell's set: Desktop, Steam, one per system, mostly RetroArch's cores (NES, SNES, Nintendo
+64, Game Boy and Color, Game Boy Advance, Nintendo DS, Mega Drive, Master System, Game Gear, PC Engine,
+Saturn, PlayStation, Dreamcast, arcade with MAME), PSP (PPSSPP), ScummVM, Video and Music (mpv), Images
+(imv), PDF (zathura), Text (`less` in foot), last Other files (`xdg-open`, any name). Each system's games
+are scanned from `~/Roms/<system>`, by ES-DE's folder names (`snes`, `megadrive`, `psx`, ...), so a
+collection from another frontend can be copied in as it is; the folders are made with the starter
+library. A system's folder with nothing in it shows dimmed, saying where its files go, and lists the BIOS
+files its runner lacks (`bios`). A runner whose program isn't on the PATH is shown as a problem (it stays:
+the program may come).
 
 A file is opened the same way wherever it is: a `.sfc` opened from the Files tab is SNES's, scanned or
 not. A file that is a scanned entry's opens as that entry.

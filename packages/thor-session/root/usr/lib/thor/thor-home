@@ -1,8 +1,9 @@
 #!/bin/sh
 # The home's starting files, at each session start (thor-session): each of /usr/share/thor/home's that
 # the home doesn't have is copied in (the user's are never touched; a file deleted comes back, an empty
-# one stays): ClamShell's starter library (a Games tab with a folder per system, each with its RetroArch
-# core; Films and TV played by mpv) and the dock's first pins (Steam, the terminal, Maintenance), mpv's
+# one stays): ClamShell's starter library (a Games tab with a folder per system, each with its emulator,
+# reading ~/Roms/<system> with ES-DE's folder names; Films, TV and Music played by mpv) and the dock's
+# first pins (the Library, Firefox, the terminal, Steam, Maintenance), mpv's
 # config for the top screen and the pad, RetroArch's (its pads through SDL, its hotkeys on AYN) and the
 # profile of ClamShell's virtual pad. With the starter library, the folders it reads; with RetroArch's
 # config, its menu's look (XMB in ClamShell's colours: menu-theme.py, from RetroArch's assets).
@@ -15,8 +16,10 @@ find . -type f | while read -r f; do
     cp "$f" "$HOME/$f"
     case $f in
         ./.config/clamshell/library.json)
-            for d in nes snes n64 gb gba nds md psx dc; do mkdir -p "$HOME/Games/$d"; done
-            mkdir -p "$HOME/Videos/Films" "$HOME/Videos/TV" ;;
+            for d in nes snes n64 gb gbc gba nds megadrive mastersystem gamegear pcengine saturn psx psp dreamcast arcade scummvm; do
+                mkdir -p "$HOME/Roms/$d"
+            done
+            mkdir -p "$HOME/Videos/Films" "$HOME/Videos/TV" "$HOME/Music" ;;
     esac
 done
 if [ ! -e "$HOME/.config/retroarch/clamshell-assets" ] && [ -d /usr/share/retroarch/assets/xmb ]; then
