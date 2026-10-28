@@ -236,7 +236,7 @@ impl Server {
 
     /// Lets the commits timed (`wp_commit_timing`) for no later than `shown`, when the frame about to be
     /// composed is shown, go ahead for the windows on a screen (`down`; None: both, nested; the top screen
-    /// also takes the windows shown on neither), and a capped window's whatever their time: its cap paces
+    /// also takes the windows not shown), and a capped window's whatever their time: its cap paces
     /// it, and Mesa's timing, which takes a frame shown later than it asked as one missed, would move its
     /// times on further each frame the cap holds back. Returns the earliest time a commit is still held for.
     pub fn release_timed_commits(
@@ -245,10 +245,10 @@ impl Server {
         down: Option<bool>,
     ) -> Option<smithay::utils::Time<smithay::utils::Monotonic>> {
         use smithay::wayland::commit_timing::{CommitTimerBarrierStateUserData, Timestamp};
-        self.place();
         let mut held: Option<Timestamp> = None;
+        let state = self.core.state();
         for client in &self.windows {
-            let on_down = self.scene.window(client.id).is_some_and(|placed| placed.below);
+            let on_down = state.session().below(client.id);
             if down.is_some_and(|down| down != on_down) {
                 continue;
             }
