@@ -38,10 +38,11 @@ it cannot undo placement or change title. `Title` is independent. The compositor
 happens (Opened, Closed, Changed, Title, KeyboardFocus, and Activate once a token is checked); a later
 fact cannot overwrite a newer state decision.
 
-Placing is the session's own: the steps in the Effects columns here and below (Focus, ShowLibraryView, Move,
+Placing is the session's own: the steps in the Effects columns here and below (Focus, Show(Library), Move,
 Down, Up, Return) are its window commands (`WindowCommand`), applied to the state during
 `apply`, not effects sent out. The only window effect is closing (`Compositor::Close`). The Library is not a
-window: it is in front when no top window is shown, and ShowLibraryView deselects the top windows.
+window: it is in front when no top window is shown, and `Show(b)` puts a built-in (the Library, or the
+Device view) in front, deselecting the top windows.
 
 | From | Event / condition | To | Effects | Test |
 |---|---|---|---|---|
@@ -49,9 +50,9 @@ window: it is in front when no top window is shown, and ShowLibraryView deselect
 | present | duplicate Opened | unchanged | — | windows `lifecycle_messages_keep_one_window_and_ignore_late_messages` |
 | present | Title | updated title | matching bottom rule sends Down once | windows `lifecycle_title_applies_a_bottom_rule_once` |
 | present | Changed | updated identity, same place and selection; `x11` kept from Opened | ownership rules may assign its home | windows `stale_identity_facts_cannot_undo_a_placement`, `changed_facts_keep_a_window_x11` |
-| present | Closed | absent, out of the bottom slot; a dialog in front brings back its parent, another window its group's; else what was in front before: the most recent top group still shown, or the Library if the Library was put in front since (the program was launched from it), the Library last | exact Focus or ShowLibraryView when a group empties | windows `lifecycle_close_falls_back_once_and_retains_the_other_windows`, `a_dialogs_close_brings_back_its_parent`, `closing_the_window_below_empties_its_slot`; front tests, `a_closed_window_goes_back_to_library_view_if_library_view_was_in_front_before_it` |
+| present | Closed | absent, out of the bottom slot; a dialog in front brings back its parent, another window its group's; else what was in front before: the most recent top group still shown, or the Library if the Library was put in front since (the program was launched from it), the Library last | exact Focus or Show(Library) when a group empties | windows `lifecycle_close_falls_back_once_and_retains_the_other_windows`, `a_dialogs_close_brings_back_its_parent`, `closing_the_window_below_empties_its_slot`; front tests, `a_closed_window_goes_back_to_library_view_if_library_view_was_in_front_before_it` |
 | absent | late Closed, Title, Changed, Activate or keyboard focus | unchanged | — | windows `lifecycle_messages_keep_one_window_and_ignore_late_messages`, `backend_changes_keep_the_placement`, `keyboard_focus_is_independent_of_both_screens_selected_content` |
-| present on top | validated Activate | selected now | thaw/resume owner before exact Focus or ShowLibraryView | windows `activation_selects_the_window_on_its_screen`, `activation_thaws_a_suspended_owner_before_selecting_its_window` |
+| present on top | validated Activate | selected now | thaw/resume owner before exact Focus or Show(Library) | windows `activation_selects_the_window_on_its_screen`, `activation_thaws_a_suspended_owner_before_selecting_its_window` |
 | present below | validated Activate | bottom shows this window now (the windows' tab opens) | thaw/resume owner, keyboard focus to it | same |
 | either screen selected | KeyboardFocus(Some(id)) of a window shown, or None | the keyboard to that screen's stack, or ClamShell's UI; content stays; a window no screen shows is ignored | — | windows `keyboard_focus_is_independent_of_both_screens_selected_content` |
 | top, regardless of keyboard focus | Down, including a remembered rule | previous bottom returned to its home without activation; requested window below; same-program next top or recent group/the Library selected; the keyboard to the top window | Return before Down, then exact top Focus/fallback | bottom `moving_another_window_down_swaps_the_single_bottom_slot`; windows `displacing_another_programs_bottom_window_does_not_activate_it`, `moving_the_top_window_does_not_require_keyboard_focus_there`, `a_window_sent_down_gives_the_keyboard_to_the_top_window` |
@@ -107,7 +108,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 |---|---|---|---|---|
 | Idle | Play of the Device entry (`builtin:device`) | Idle | the Device view opens | device `the_device_entry_opens_it_…` |
 | Idle | Play of another tool | Idle | `Tool` | running `play_of_a_tool_asks_for_it_and_of_an_unknown_id_does_nothing` |
-| Idle | Play of a group | Idle | the Library reveals it, `ShowLibraryView` | dock `library_view_pins_and_unpins_any_entry_…` |
+| Idle | Play of a group | Idle | the Library reveals it, `Show(Library)` | dock `library_view_pins_and_unpins_any_entry_…` |
 | Idle | Play of an id not in the library | Idle | nothing | same |
 | Idle | Play, OpenAnother, autostart, a Steam game found by app id | Launching | runner resumed if paused; `Save(Resume)`; `Launch`; `front_launch` if in front; Starting notice (from Play) | tests `a_launch_says_it_is_starting`; background `a_runner_paused_together…` |
 | Idle | Play of a Heroic game (Heroic's entry in the library) | Running(Windows) until `LAUNCHER_WAIT`, known by Heroic's mark; Heroic's entry Launching, in the background | `Launch` of Heroic's entry with `--no-gui` and the game's URL; `front_launch` of the game if in front | running `a_heroic_game_is_launched_by_heroic_and_runs_as_its_own_entry` |
@@ -154,18 +155,17 @@ The state's side is pinned by `steams_windows_open_behind_a_steam_games_launch`,
 `a_game_steam_started_is_followed_as_a_launch_beside_the_others`,
 `a_steam_game_library_view_started_ends_by_the_launcher_not_its_windows`,
 `a_steam_games_window_is_the_games_though_it_runs_in_steams_scope`,
-`a_steam_game_found_by_its_window_is_launched_not_found_as_a_program`, and the system's
-`a_steam_game_is_known_by_its_app_id`. The `-gamepadui` argument and the interface it gives are checked on
+and `a_steam_game_found_by_its_window_is_launched_not_found_as_a_program`. The `-gamepadui` argument and the interface it gives are checked on
 the device.
 
 ### Front and Home
 
 | Trigger | Result | Test |
 |---|---|---|
-| settle: the front group has no window left | Focus the most recent top group, else ShowLibraryView; remember it 2 s | front `a_closed_window_goes_back_…` |
+| settle: the front group has no window left | Focus the most recent top group, else Show(Library); remember it 2 s | front `a_closed_window_goes_back_…` |
 | settle: within 2 s a window reappears there | Focus it | front `a_window_in_front_replaced_at_once_…` |
 | settle: `front_launch` and its window arrived | Focus, cleared | tests `a_launchs_first_window_is_shown_before_…` |
-| Home, the Library not in front | ShowLibraryView; cancel foreground launch intent | front `home_always_shows_library_view_and_repeated_home_stays_there` |
+| Home, the Library not in front | Show(Library); cancel foreground launch intent | front `home_always_shows_library_view_and_repeated_home_stays_there` |
 | Home, the Library in front | stays; close Device view first if open | same; device `home_goes_to_the_library_from_the_device_view` |
 | WindowPrevious / WindowNext | wrap within the selected top program's stacks, skipping the bottom slot; absent/single/the Library do nothing | windows `top_window_switching_wraps_within_the_program_and_skips_the_bottom_slot`, `top_window_switching_steps_over_whole_stacks` |
 | dock tap on the entry in front with two or more top-level windows on the top screen | Overview open, the window in front chosen (a dialog's root); the window in front stays; again closes it | overview `a_tap_on_the_entry_in_front_shows_its_windows_and_the_pad_picks_one`, `one_window_and_its_dialog_open_no_overview` |
@@ -183,7 +183,7 @@ State: `Pauses{unused, paused: Hidden | Held}`.
 |---|---|---|---|---|
 | Running | set to pause, windows, none visible, not quitting, 10 s | Paused(Hidden) | Freeze on | background `pauses_hidden_…` |
 | Paused(Hidden) | shown, no windows, quitting, setting changed | Running | Freeze off | background tests, `a_paused_game_set_to_run_hidden_is_thawed_at_once`; shown again as the front window closes, in the same event: tests `a_paused_game_shown_when_the_front_closes_is_thawed_at_once` |
-| any | Suspend | Held | ShowLibraryView if visible; Freeze on | background `a_suspended_entry_stays_frozen_…`; dock `the_menus_autostart_and_suspend` |
+| any | Suspend | Held | Show(Library) if visible; Freeze on | background `a_suspended_entry_stays_frozen_…`; dock `the_menus_autostart_and_suspend` |
 | Held | shown after its windows were seen hidden (one suspended in view stays frozen while its window is still shown), Show, Quit, ForceKill | Running | Freeze off | same |
 | — | `Frozen(keys)` at start | Held (kept while its unit is listed, until its entry runs) | — | same; found `a_found_program_in_our_scope_is_found_again_after_a_restart` |
 | Running | set to quit when closed, seen, no windows | Quitting | as Quit | background `quits_closed_ends_once_…` |
@@ -225,6 +225,8 @@ State: `items{id, pinned}`, `menu`, `tray` (submenu path), `moving`, `unsaved`.
 | moving | long press | move ended, menu open | Battery watched (sync) | dock `a_long_press_while_moving_ends_the_move` |
 | any | tab left | menu, tray path and move closed | — | dock `back_at_the_top_of_the_tray_menu_goes_to_the_entrys_menu` |
 | — | Library read or start (with the library read) | entries gone from the library and not running dropped; the menu or move of one ends | `Save(Dock)` | dock `pins_of_entries_gone_…`, `the_menu_and_the_move_end_with_their_entry`, `pins_wait_for_the_library_before_any_is_dropped` |
+| — | settle, a built-in running and not on the dock | the Library put in pinned, first (so a move of it is saved with the pins); the Device view appended while it runs | — | dock `the_librarys_tile_is_always_there` |
+| — | the Library's Pin, Unpin or Quit | nothing: it has no Pin or Unpin in its menu or details, and its Quit does nothing; the Device view's Close (or Quit) closes it | — | same; setup `the_device_view_runs_on_the_dock_until_it_is_closed` |
 
 ## Second screen (bottom/)
 
@@ -309,10 +311,11 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 
 | Transition | Test |
 |---|---|
-| Setup (`setup::wizard`): first start, or an account read with no password → Setup in the Library's place; steps Password (typed twice; Next only without a helper), Wi-Fi (Skip or Next), Time zone (Back, Done); each step's tab below, the bar hidden, keys only to the editor; launches and autostart held; Done → `Save(FirstStartDone)`, the default tab, focus to the Library | `setup_goes_password_wifi_zone_and_done_ends_it_for_good`, `without_a_helper_the_password_step_is_passed`, `no_password_brings_setup_back_and_holds_launches`, `keys_without_an_editor_go_nowhere_while_setup_shows` |
+| the account (`setup::account::Account`) is a fact: Unread at start, NoHelper, Failed(why) or Read{password, ssh}; a crashed read reads as Failed. Programs (launches, autostart) run only once it is NoHelper or Read with a password | `no_password_brings_setup_back_and_holds_launches`, `an_unreadable_account_keeps_setup_and_holds_programs` |
+| Setup (`setup::wizard`), worked out from the account and the step reached: Read without a password or Failed → the password step, at any start; Unread at the first start → the password step, reading; else, at the first start, the step reached. Steps Password (typed twice; Next only with NoHelper), Wi-Fi (Skip or Next), Time zone (Back, Done); the step's tab is chosen below, but the bottom screen shows only the keyboard (and the editor), the bar hidden, keys only to the editor; Setup is put in front over any window (settle); Done → `Save(FirstStartDone)`, the default tab, focus to the Library | `setup_goes_password_wifi_zone_and_done_ends_it_for_good`, `without_a_helper_the_password_step_is_passed`, `an_unreadable_account_keeps_setup_and_holds_programs`, `keys_without_an_editor_go_nowhere_while_setup_shows` |
 | the Device entry → it runs (on the dock) and shows, focus on its first row; Close or Quit → closed, the Library in its place if it showed, focus to the Library's selection | `the_device_view_runs_on_the_dock_until_it_is_closed`,  `the_device_entry_opens_it_and_close_goes_back_to_library_view` |
 | Home with the view shown → the Library, focus to its selection, the view still running; repeated Home stays on the Library | `home_goes_to_the_library_from_the_device_view` |
-| open, or Setup showing, while the UI is up → `Watch(Account)` on; closed → off | `the_account_is_watched_while_the_view_is_open` |
+| unread or Failed, open, or Setup showing, while the UI is up → `Watch(Account)` on (so a failed read is read again); otherwise off | `the_account_is_watched_while_the_view_is_open` |
 | Wifi / Zone rows → their tab, its watch | `the_wifi_and_zone_rows_open_their_tabs` |
 | Password → editor for the current, the new, then the new again → `Account(Password)`; the two differing → `AccountChanged(Err)` | `the_password_is_typed_below_the_current_one_first` |
 | Ssh with a password → `Account(Ssh)`; further taps do nothing until AccountChanged, at most 30 s | `remote_login_needs_a_password`, `remote_login_waits_for_its_answer_before_another_tap`, `remote_login_is_asked_again_after_30_s_without_an_answer` |
@@ -330,7 +333,7 @@ windows is open, listening included. The focus ring hides when the route leaves 
 | Transition | Test |
 |---|---|
 | front or tab changes the claimant, the route follows | `the_pad_goes_to_library_view_the_program_or_typing_…` |
-| View switches to the second screen and back | `view_moves_the_pad_between_…`, `view_does_nothing_with_library_view_in_front` |
+| View switches to the second screen and back | `view_moves_the_pad_between_…`, `view_does_nothing_with_a_builtin_in_front` |
 | a claimant change keeps the switch to the second screen; the Library claiming the pad clears it | `the_pad_moved_to_the_second_screen_stays_there_until_view_or_library_view` |
 | pad mouse by hand, by game, kept by hand | `pad_mouse_toggles_independently_…`, `the_pad_mouse_follows_the_game_…` |
 | listening, dock move, focus ring | `a_new_keymap_is_named_edited_and_mapped`, `moving_a_dock_entry_takes_the_pad_…`, `the_focus_ring_hides_when_the_pad_leaves_…` |
@@ -431,7 +434,7 @@ curve screens and slides their parameters.
 | favourite on/off: relayout by name and id, `Save(Favourites)`; a focus in the list follows the selection | `a_favourite_shows_in_its_collection_…`, `a_favourite_removed_moves_the_focus_with_the_selection`, `the_favourites_tab_goes_with_its_last_entry` |
 | a play recorded: relayout (a focus in the list follows the selection), `RecordPlay`, `ReadPosition` for videos | tests `a_launchs_start_and_end…`, `a_video_ended_asks_where_it_was_left`; the Library `a_play_recorded_keeps_library_views_place_and_focus` |
 | a relayout closes a group no longer in its collection (Recent, Favourites) | `a_group_that_leaves_its_collection_is_closed_there` |
-| a group launched from elsewhere: its collection's places reset, the path opened, `ShowLibraryView` | `a_group_started_from_elsewhere_opens_in_library_view` |
+| a group launched from elsewhere: its collection's places reset, the path opened, `Show(Library)` | `a_group_started_from_elsewhere_opens_in_library_view` |
 | Unread at start (`Init::library` is `None`; the binary reads it on a thread): the Library empty, no "nothing found" said; the tab restored at once; the place, and the focus left nowhere, as the library comes; a resume saved meanwhile is the place it goes back to | resume `before_the_library_is_read_the_place_waits_for_it`; views `an_unread_library_isnt_said_to_be_empty` |
 | Library read: places restored by name and id, with what is typed in each list | `listings_outlive_the_library_read_again`, `a_library_read_keeps_what_is_typed`; the selection gone: the list's first, `a_library_read_without_the_selected_entry_selects_the_first` |
 | Continue, Meta, Position | `continue_plays_on_where_the_series_was_left`, `fetched_metadata_goes_to_its_entry`, tests `a_video_ended_asks_where_it_was_left` |
@@ -453,6 +456,55 @@ State: `clip`, `selected`, `armed`, `busy`, `hidden`, the listings.
 | Listed: listing set, gone folders closed, selection kept by id | `the_folder_open_is_listed_and_watched_while_open`, `a_listing_closes_the_folders_gone_from_it` |
 | Busy, Done: each operation sent ends in one Done, in order; `busy` lasts while any runs; Failed (outside an operation, an archive not mounted) only tells | `busy_lasts_while_any_operation_runs` |
 | sync: `Browse(Open)` on folder or hidden changes, `Browse(InUse)` by hash | `the_folder_open_is_listed…`, `an_archive_is_a_folder_…` |
+
+### Edit mode (the Library/edit.rs, form.rs)
+
+State: `panel` (Places, Sources, Runners), `tab`, `open` (folder ids), `cursor`, `cut`, `form`
+(`opened`, `index`, `item`, `field`, `choosing`), `choosing_icon`, `problem`, `wrote`; on the Library,
+`written` (the config last written and how many writes aren't read back). What shows and is changed is
+`config_shown`: the last written while any write isn't read back, else what was read.
+
+| Transition | Test |
+|---|---|
+| the Device view's Library Edit → edit mode on the Library, focus on its first row; Done leaves | press tests; `a_tab_lists_its_folders_those_sources_make_and_a_new_row` |
+| a change → `WriteLibrary(config)`, the Library's `written` set and counted; `LibraryWritten` (the write's own read, in order on the rescan thread) counts it down, and at none what was read shows; a plain `Library` read changes nothing shown | `names_are_written_each_on_the_last`, `an_edit_isnt_undone_by_a_read_from_before_it` |
+| the open folders are those opened still there, up to the first gone (removed, moved out) | `places_keep_names_of_their_own_and_own_tabs_stay` |
+| Rename, New folder, New tab → name editor; a name empty, with a `/`, or another's there (a place, or a folder the Files tab browses there) → not given, `problem` | same; `names_are_written_each_on_the_last` |
+| Cut (not ClamShell's own tabs) / Paste (not into itself or a folder in it, nor next to a namesake; refused, the cut stays) / Remove (unused, not own) | `places_move_and_unused_ones_go`, `places_keep_names_of_their_own_and_own_tabs_stay` |
+| Icon → the icons, one chosen written; Picture → a pick of an image | `a_folders_picture_and_icon_are_chosen` |
+| Sources, Runners: a row opens its form (`opened` counted), the last row a new one; Move up/down; Remove (a runner only while no source names it, by its id or its name's) | `sources_and_runners_are_edited_in_forms`, `saving_keeps_ids_apart` |
+| a form field: typed (editor for that form, `FormField(field, opened)`; for a form closed since, dropped and logged), chosen (its options; the type it has kept), toggled; Choose… → a pick for it | form tests, `a_sources_folder_is_chosen_in_the_files_tab`, `choosing_a_sources_own_type_keeps_it`, `words_with_quotes_round_trip` |
+| Save: a scan without an id gets one from its folder, others' kept apart; a runner's id must be its own, and changed, the sources naming it follow; refused, the form stays with `problem` | `saving_keeps_ids_apart` |
+
+### Pick mode (the Library/pick.rs)
+
+State: `pick` (`takes`: Folder, Files(patterns), Program, Save{name, patterns}, SaveFiles(names);
+`purpose`: a form's Field, a PlacePicture, or an App request; `confirm`; `on_the_way`; `back`), and
+`answered` until the state takes it.
+
+| Transition | Test |
+|---|---|
+| start → the Files tab alone, the tab before kept to go back to; without a Files tab nothing starts (logged) | `a_sources_folder_is_chosen_in_the_files_tab`, `without_a_files_tab_nothing_is_chosen` |
+| what the pick takes is Choose's; others dimmed; folders open | `a_program_is_a_file_that_may_be_run`, `a_folders_picture_and_icon_are_chosen` |
+| `go_to(folder)`: the deepest Files folder (at the tab's top or in its groups) having it revealed, the rest opened as each is listed, only from the folder reached; a level missing is logged | `a_pick_starts_in_the_folder_asked_for`, `the_way_to_the_folder_asked_for_ends_where_the_person_goes`, `a_folder_on_removable_storage_is_gone_to` |
+| saving: `save_here()` from the open folder, its listing, hidden files' showing and the names: Off (no writable folder open, not listed, a name not one file's), Saves, or Replaces the names that are or may be there, asked again first; Choose on a file saves over it, asked again | `a_file_is_saved_in_the_open_folder_or_over_one`, `a_save_waits_for_the_folder_to_be_listed` |
+| Choose → answered (a field filled, a picture written, an app's paths); Cancel, B → nothing chosen; Home → see the portal below | same tests |
+
+## Apps' file choosers (portal.rs, apply/picking.rs; system session/portal.rs)
+
+The portal thread keeps each call (`Pending`: asker found, sent, closed) and does what follows from that
+after each read: Asked once found and not closed; a closed one answered as ended (response 2), the state
+told Closed only if it had it. The state's requests (`Portal::asked`) each have the program that asked,
+found by the asking process (the window whose process it is, or started; else the program in front).
+
+| Transition | Test |
+|---|---|
+| Asked, its program in front (or windowless, or none) and no pick going on → the pick over it, the Library in front, starting in the folder asked for | `an_apps_file_is_chosen_in_the_library_and_the_app_comes_back`, `a_request_of_a_program_without_windows_is_picked_over_any` |
+| Asked from a program behind → waits until it is in front | `a_request_waits_for_its_program` |
+| answered → `FileChosen{paths}` (none: cancelled), its program back in front | same |
+| Home, or another program shown, while picked → set aside (its program's; one of none is answered with nothing), shown again when its program is | `requests_wait_and_are_cancelled_or_given_up`, `a_request_waits_for_its_program` |
+| Closed → dropped; picked, the pick ends and its program comes back | `requests_wait_and_are_cancelled_or_given_up` |
+| system: a call kept, Close before or after it was sent on, answered, reconnect | live `an_open_call_waits_for_its_answer`; VM check `portal` |
 
 ### Fetch priority and resume
 
@@ -631,6 +683,10 @@ then go nowhere, logged once (system crate, `a_thread_that_keeps_panicking_soon_
   `a_restarted_freezer_is_sent_each_slice_as_it_is`)
 - `--Restarted(Notifications)--> nothing`: the notifications are the state's, and the thread's ids come
   from a counter that outlives it (tested `a_restarted_notifications_thread_is_sent_nothing_and_they_stay`)
+- `--Restarted(Portal)--> nothing`: its requests' calls are gone, so the state drops its requests and a
+  pick for one ends (`portal_restarted`)
+- `--Restarted(Rescan)--> [Tool(Rescan)]`: the writes of library.json it hadn't read back won't be, so the
+  Library drops them (`writes_lost`) and the library is read again
 - Other threads: nothing; `apply/restart.rs` says why for each. Short-lived threads the state waits on (a
   launch, the refresh calibration, an account change) answer with a failure if they panic
   (`os::worker::or_on_panic`). The randomized test restarts random threads.
@@ -1548,8 +1604,8 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    being of the whole state) changes nothing, sends nothing and queues nothing; running sync again
    emits nothing.
 2. **What was sent mirrors the state:** the last PadRoute is `pad().route()`; the last Keymap is the
-   keymap in force; Status is watched iff the screens are on; Account iff the UI is up and the Device
-   view is open; the last Apply is `(program, in_force)`; the last Outputs is (screens on, bottom on);
+   keymap in force; Status is watched iff the screens are on; Account iff the UI is up and the account is
+   unread or unreadable, the Device view runs, or Setup shows; the last Apply is `(program, in_force)`; the last Outputs is (screens on, bottom on);
    the last Refresh is the calibration's rate while it runs, else the rate of the entry launched last
    while its window is yet to show, else the rate of the settings in force, at the modes known.
    Once ClamShell set a brightness level, the last Brightness is that level, or a third of it (at
@@ -1593,6 +1649,8 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
 12. **Notifications:** ids unique; none past its time; a time runs only while the bottom screen is lit;
     every NotificationClosed names one held before the event and gone after it, once; an ActionInvoked
     names one held with an action and is followed at once by its NotificationClosed.
+13. **Setup:** no Launch while the account holds programs (unread, unreadable or without a password);
+    while Setup shows, the Library is in front.
 
 The generator draws events valid for the current state: taps, holds and presses on the targets shown
 (the Library's only while the Library is in front, the Device view's while it is open, the tab's), Focus only while
@@ -1600,7 +1658,11 @@ the route is Ui, the Library's pad events only while the pad is on the Library, 
 Listened only while listening, notifications sent (any urgency, timeout and action), closed by their
 program, tapped and dismissed (mostly ones held), and results only after their requests (a unit or
 LaunchFailed after Launch, a unit ending after EndRun or by itself, windows closing after Close or by
-themselves, the calibrations', account's and screenshot's answers, Busy or Resumed after Sleep). A small model of the
+themselves, the calibrations', account's and screenshot's answers, Busy or Resumed after Sleep), the
+account read early in most runs (late in some, holding programs meanwhile; no helper and failed reads
+among those drawn later), apps' file chooser requests (asked by a window's process or none, from a
+folder or none; open, save or save several) and their closing, and the library read again by a rescan or
+after a write. A small model of the
 compositor and systemd follows the effects (focus, moves, windows down). The library holds a Steam game
 (ff6) and Steam, a Heroic game (launched through Heroic) and Heroic, a Lutris game and Lutris, an app
 handed over to another program (desktop:firefox), an enqueue runner's album, a browsed file, a group (the

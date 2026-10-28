@@ -1,7 +1,7 @@
 # Plan, 2026-10-28: Library, Device and Setup as built-in screens
 
 From a discussion of the top screen's own screens, how library.json is edited, a file picker, and what
-the image ships. Nothing here is built yet.
+the image ships. Built, as the steps at the end say; what changed on the way is noted there.
 
 ## What goes on which screen
 
@@ -18,7 +18,8 @@ needs room and is rare: the device's setup, and editing the library.
 - **Device** is today's Device view: password, remote login, stick, gyro and refresh calibration, Wi-Fi and
   the time zone (opening their tabs).
 - **Setup** is the first start's wizard.
-- In code the three are `builtin::{library_view, device, setup}`; `TopView` goes.
+- In code the three are `builtin::{library_view, device, setup}`; `TopView` stays, as Setup or the
+  Library, the Device view being an entry shown in the Library's place.
 
 ## Built-ins as entries
 

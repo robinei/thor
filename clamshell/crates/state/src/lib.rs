@@ -514,9 +514,10 @@ impl State {
     /// changed for it. Where an order is pinned by a test, the test is named.
     ///
     /// 1. systemd's units: entries found running, found ones promoted to launches, and ours ended
-    ///    ([`crate::Session::follow_units`]). The first time, once what runs is known, the entries to
-    ///    start with ClamShell are started
-    ///    (`chosen_entries_start_once_what_runs_is_known_unless_they_run`).
+    ///    ([`crate::Session::follow_units`]). The first time, once what runs is known, the library is read
+    ///    and the account lets programs run, the entries to start with ClamShell are started
+    ///    (`chosen_entries_start_once_what_runs_is_known_unless_they_run`); then a launcher's games that
+    ///    waited for its launch (`a_launchers_second_game_waits_for_the_launchers_launch`).
     /// 2. Entries started by their windows' app ids ([`crate::Session::start_by_app_id`]), and Steam's
     ///    games among them launched before the windows are followed, since a starting launch's window is
     ///    left where it is (`a_steam_game_found_by_its_window_is_launched_not_found_as_a_program`).
@@ -530,7 +531,9 @@ impl State {
     ///    `the_tab_a_rule_leaves_is_settled_in_the_same_event`).
     /// 5. What is shown: a launch's first window, then a group whose window came back, so the one that
     ///    came back ends in front (`a_launchs_first_window_is_shown_before_a_window_that_came_back`);
-    ///    then going back to what was before when the window in front closed.
+    ///    then going back to what was before when the window in front closed. Once that front is settled,
+    ///    Setup is put in front if it shows, and apps' file choosers are picked over their program or set
+    ///    aside ([`State::follow_portal`]); then the overview follows what is in front.
     /// 6. In the background: entries paused, thawed or ended by their setting, once the front is settled
     ///    (`a_paused_game_shown_when_the_front_closes_is_thawed_at_once`).
     /// 7. Quitting entries are ended once their windows are gone, after 6, which a quitting entry isn't
@@ -543,7 +546,7 @@ impl State {
     ///
     /// 10. The time the second screen goes unused counts from the first clock reading. Whether it is dimmed,
     ///     or off by itself, is worked out when asked ([`State::bottom_dimmed`], [`State::bottom_off`]).
-    /// 11. The browsed folder's selection and armed action.
+    /// 11. The browsed folder's selection and armed action; the radios' scans and joins, by the clock.
     /// 12. The idle stage.
     /// 13. The program in force.
     /// 14. (The second screen off by itself reads the program in force's setting and darkness as 13 left
@@ -553,7 +556,9 @@ impl State {
     /// 16. The pad mouse, when the program in force changed.
     /// 17. What claims the pad, and where it goes. The focus ring shows where the pad is, so it is hidden
     ///     when the pad leaves ClamShell's screens.
-    /// 18. The scrolled lists keep their top items where they are ([`State::follow_lists`]).
+    /// 18. The Library's place, after the steps that change it (plays recorded), so that its moves are
+    ///     found in this pass ([`State::follow_library_view`]); then the scrolled lists keep their top items
+    ///     where they are ([`State::follow_lists`]).
     fn settle(&mut self, out: &mut Out) {
         if self.session.follow_units(&self.clock, self.library_view.library(), self.bottom.notice_mut(), &mut self.plays) {
             self.bottom.unwake();

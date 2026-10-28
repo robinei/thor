@@ -85,17 +85,19 @@ The image starts with the session's user in `wheel` and no password: no sudo and
 set. `thor-account` (run as root through pkexec, which polkit allows the active session without asking)
 sets the first one without asking for one, which any process of the user could do. So the first password
 is Setup's first step, which can't be skipped, and nothing of the user's is started until the account has
-one (`clamshell_state::setup::wizard`): every launch is held while Setup shows, "Start with ClamShell"
-waits, and the second screen shows only the keyboard. Setup shows at the first start, and whenever the
-account, read at every start, has no password. What runs before it is ClamShell and the image's own services. Changing
-a password asks for the current one.
+one (`clamshell_state::setup::account::Account::lets_programs_run`): every launch is held, and "Start with
+ClamShell" waits, until the account, read at every start, reads with a password. Unread, or unreadable
+(the helper failing, as with no polkit agent yet), it is held as one without: Setup shows over anything
+else, reading it again, and its password step can't be passed; only a machine with no helper at all lets
+programs run without one. While Setup shows, the second screen shows only the keyboard. What runs before
+the password is ClamShell and the image's own services. Changing a password asks for the current one.
 
 ## Input devices
 
 The session's user is in the `input` group, for ClamShell's virtual pad and keyboard (uinput) and for
 reading the hardware keys. So any program of the user can read the raw input devices (keys typed on an
-attached keyboard too) and make virtual ones. That is accepted on a single-user device; the first
-password's confirmation is the one place that needs a press only a person can make.
+attached keyboard too) and make virtual ones. That is accepted on a single-user device: no program of the
+user runs before the first password is set (above), so none can type it.
 
 ## Notifications
 
