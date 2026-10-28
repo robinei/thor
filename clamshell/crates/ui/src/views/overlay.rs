@@ -31,7 +31,7 @@ pub fn draw(f: &mut Frame, screen: Rect) {
 
 /// The overview of the program's windows (`clamshell_state::session::overview`), which the compositor draws
 /// in their cells: each cell a target, acted on as it is pressed (`Core::press_overlay`), and the ring
-/// around the one the pad has chosen, as a tile's. The cells are the compositor's, on the whole screen in
+/// around the one the pad has chosen, as a tile's, all the picture's rectangle. The cells are the compositor's, on the whole screen in
 /// its pixels, so they don't move with the burn-in drift.
 fn overview(f: &mut Frame) {
     let session = f.s.session();

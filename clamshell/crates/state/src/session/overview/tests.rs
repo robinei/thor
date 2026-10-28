@@ -32,9 +32,10 @@ fn cells_share_the_screen_in_rows_and_a_short_last_row_is_centred() {
     let gap = GAP * 500.0;
     let (x0, y0, w, h) = cell(0, 2, screen);
     let (x1, y1, ..) = cell(1, 2, screen);
-    assert_eq!((x0, y0, y1), (gap, gap, gap), "two side by side");
-    assert_eq!((w, h), ((1000.0 - 3.0 * gap) / 2.0, 500.0 - 2.0 * gap));
+    assert_eq!((x0, w), (gap, (1000.0 - 3.0 * gap) / 2.0), "two side by side");
     assert_eq!(x1, 2.0 * gap + w);
+    assert!((w / h - 2.0).abs() < 1e-4, "in the screen's shape");
+    assert_eq!((y0 + h / 2.0, y1), (250.0, y0), "centred in their shares");
     // Three: two above, one below in the middle.
     let (x2, y2, w2, _) = cell(2, 3, screen);
     assert_eq!(x2 + w2 / 2.0, 500.0, "centred");

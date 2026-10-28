@@ -54,8 +54,10 @@ pub fn columns(n: usize) -> usize {
     (1..n).find(|c| c * c >= n).unwrap_or(n.max(1))
 }
 
-/// Cell `i` of `n` on a screen of `size`, as x, y, width and height. The cells share the screen evenly,
-/// with a gap between them and around them. A last row with fewer windows is centred.
+/// Cell `i` of `n` on a screen of `size`, as x, y, width and height: the screen in its own shape, as large
+/// as fits in its share of the screen and centred there, which is what the compositor draws in it, the
+/// ring goes round and a tap picks. The shares split the screen evenly, with a gap between them and around
+/// them. A last row with fewer windows is centred.
 pub fn cell(i: usize, n: usize, (w, h): (f32, f32)) -> (f32, f32, f32, f32) {
     let columns = columns(n);
     let rows = n.div_ceil(columns).max(1);
@@ -65,7 +67,10 @@ pub fn cell(i: usize, n: usize, (w, h): (f32, f32)) -> (f32, f32, f32, f32) {
     let (row, column) = (i / columns, i % columns);
     let in_row = if row + 1 == rows { n.saturating_sub(row * columns) } else { columns };
     let indent = columns.saturating_sub(in_row) as f32 * (cell_w + gap) / 2.0;
-    (indent + gap + column as f32 * (cell_w + gap), gap + row as f32 * (cell_h + gap), cell_w, cell_h)
+    let (x, y) = (indent + gap + column as f32 * (cell_w + gap), gap + row as f32 * (cell_h + gap));
+    let k = (cell_w / w.max(1.0)).min(cell_h / h.max(1.0));
+    let (fit_w, fit_h) = (w * k, h * k);
+    (x + (cell_w - fit_w) / 2.0, y + (cell_h - fit_h) / 2.0, fit_w, fit_h)
 }
 
 impl Session {
