@@ -20,9 +20,9 @@ pub struct Pick {
     pub purpose: PickFor,
     /// Saving over this file was asked for once; asked for again, it is chosen.
     confirm: Option<PathBuf>,
-    /// The folders still to open on the way to the one to start in, each as its parent is listed (see
-    /// [`LibraryView::go_to`]).
-    on_the_way: Vec<String>,
+    /// The way to the folder to start in: the folder it goes on from, and the folders still to open from
+    /// there, each as its parent is listed (see [`LibraryView::go_to`]).
+    on_the_way: Option<(std::sync::Arc<str>, Vec<String>)>,
     /// The tab shown before, to go back to.
     back: usize,
 }
@@ -139,7 +139,7 @@ impl LibraryView {
     /// Files tab, nothing is picked.
     pub(crate) fn start_pick(&mut self, takes: Takes, purpose: PickFor) -> bool {
         let Some(files) = self.files_tab() else { return false };
-        self.pick = Some(Pick { takes, purpose, confirm: None, on_the_way: Vec::new(), back: self.current });
+        self.pick = Some(Pick { takes, purpose, confirm: None, on_the_way: None, back: self.current });
         self.set_collection(files);
         true
     }
@@ -149,11 +149,13 @@ impl LibraryView {
     pub(crate) fn go_to(&mut self, folder: &Path) -> Result<(), String> {
         let library = &self.library;
         let files = self.files_tab().and_then(|c| library.collections.get(c)).ok_or("no Files tab")?;
-        // The deepest of the tab's folders that has it.
-        let (root, rest) = files
-            .entries
-            .iter()
-            .filter_map(|&i| library.entries.get(i))
+        // The deepest of the tab's folders that has it: at its top, or in one of its groups, as removable
+        // storage is.
+        let tops = files.entries.iter().filter_map(|&i| library.entries.get(i));
+        let (root, rest) = tops
+            .clone()
+            .chain(tops.flat_map(|g| g.items.iter().filter_map(|&i| library.entries.get(i))))
+            .filter(|g| g.browsed.is_some())
             .filter_map(|g| Some((g, folder.strip_prefix(g.browsed_dir()?).ok()?)))
             .max_by_key(|(_, rest)| std::cmp::Reverse(rest.components().count()))
             .ok_or("in none of the Files tab's folders")?;
@@ -164,30 +166,39 @@ impl LibraryView {
             return Err("its Files folder isn't shown".into());
         }
         if let Some(pick) = &mut self.pick {
-            pick.on_the_way = rest;
+            pick.on_the_way = Some((root, rest));
         }
         self.follow_way()
     }
 
     /// Opens the next folders on the way to the one to start in, as far as they are listed. An error says
     /// where the way ends, a folder listed without the next.
+    /// The way goes on only from the folder it reached: one opened by hand since ends it.
     pub(crate) fn follow_way(&mut self) -> Result<(), String> {
-        while let Some(next) = self.pick.as_ref().and_then(|p| p.on_the_way.last().cloned()) {
-            let Some(open) = self.group() else { break };
+        while let Some((from, next)) = self.pick.as_ref().and_then(|p| p.on_the_way.as_ref()).map(|(from, rest)| (from.clone(), rest.last().cloned())) {
+            let open = self.group().filter(|g| g.id == from);
+            let (Some(open), Some(next)) = (open, next) else {
+                // Arrived, or left for another folder.
+                if let Some(pick) = &mut self.pick {
+                    pick.on_the_way = None;
+                }
+                break;
+            };
             let listed = open.browsed.as_ref().is_some_and(|b| b.listed);
             let found = open.items.iter().filter_map(|&i| self.library.entries.get(i)).find(|g| g.title == next && g.is_group()).map(|g| g.id.clone());
             match found {
                 Some(id) => {
                     self.select(&id);
                     self.open();
-                    if let Some(pick) = &mut self.pick {
-                        pick.on_the_way.pop();
+                    if let Some((from, rest)) = self.pick.as_mut().and_then(|p| p.on_the_way.as_mut()) {
+                        rest.pop();
+                        *from = id;
                     }
                 }
                 None if listed => {
                     let missing = format!("no folder {next:?} in {}", open.title);
                     if let Some(pick) = &mut self.pick {
-                        pick.on_the_way.clear();
+                        pick.on_the_way = None;
                     }
                     return Err(missing);
                 }
@@ -359,7 +370,7 @@ mod tests {
     /// A command's program is a file that may be run; another file isn't taken, nor a folder.
     #[test]
     fn a_program_is_a_file_that_may_be_run() {
-        let pick = Pick { takes: Takes::Program, purpose: PickFor::Field(Field::Launch), confirm: None, on_the_way: Vec::new(), back: 0 };
+        let pick = Pick { takes: Takes::Program, purpose: PickFor::Field(Field::Launch), confirm: None, on_the_way: None, back: 0 };
         let file = |executable: bool, folder: bool| clamshell_library::Entry {
             browsed: Some(Browsed { executable, folder, ..Browsed::default() }),
             ..clamshell_library::Entry::new("browse:Files/Home/x", "x")

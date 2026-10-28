@@ -260,6 +260,67 @@ mod tests {
         assert_eq!(s.library_view().save_here(), SaveHere::Saves);
     }
 
+    /// A request whose program closes its last window while it waits (to its tray, say) is picked over
+    /// whatever is in front: it couldn't come in front any more.
+    #[test]
+    fn a_request_of_a_program_without_windows_is_picked_over_any() {
+        let mut s = state();
+        let with_pid = |id: i64, app: &str, pid: u32| crate::session::windows::WindowFacts { pids: vec![pid, 1], ..win(id, app) };
+        s.observed(vec![with_pid(7, "editor", 70), with_pid(8, "game", 80)]);
+        s.applied(WindowEvent::Activate(8).into());
+        s.applied(Event::Portal(PortalEvent::Asked(FileRequest { id: 1, asker: vec![70, 1], ..request() })));
+        assert!(s.library_view().pick().is_none());
+        s.observed(vec![with_pid(8, "game", 80)]);
+        assert!(s.library_view().pick().is_some(), "the editor has no window left");
+    }
+
+    /// On the way to the folder asked for, a folder opened by hand ends the way: its listing opens nothing
+    /// more.
+    #[test]
+    fn the_way_to_the_folder_asked_for_ends_where_the_person_goes() {
+        let mut s = state();
+        s.applied(Event::Portal(PortalEvent::Asked(FileRequest { id: 1, folder: Some("/home/thor/Pictures/Saves".into()), ..request() })));
+        assert_eq!(s.library_view().group().map(|g| g.title.as_str()), Some("Pictures"));
+        tap(&mut s, Id::LibraryView(LibraryViewId::Up));
+        s.library_view.select("browse:Files/Home/Roms");
+        tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
+        let saves = clamshell_library::Entry {
+            file: Some("/home/thor/Roms/Saves".into()),
+            browsed: Some(clamshell_library::Browsed { folder: true, ..clamshell_library::Browsed::default() }),
+            ..clamshell_library::Entry::new("browse:Files/Home/Roms/Saves", "Saves")
+        };
+        s.applied(Event::Files(crate::library_view::files::FilesEvent::Listed { folder: "browse:Files/Home/Roms".into(), entries: vec![saves] }));
+        assert_eq!(s.library_view().group().map(|g| g.title.as_str()), Some("Roms"), "not Roms/Saves");
+        assert_eq!(s.take_log().count(), 0, "nothing missing either");
+    }
+
+    /// A folder asked for on removable storage, which the Files tab has in a group, is found there.
+    #[test]
+    fn a_folder_on_removable_storage_is_gone_to() {
+        let mut library = clamshell_library::demo::library();
+        let sd = library.entries.len();
+        library.entries.push(clamshell_library::Entry {
+            file: Some("/run/media/thor/SD".into()),
+            browsed: Some(clamshell_library::Browsed {
+                folder: true,
+                listed: true,
+                kind: clamshell_library::BrowseKind::Removable("/dev/mmcblk0p1".into()),
+                ..clamshell_library::Browsed::default()
+            }),
+            ..clamshell_library::Entry::new("browse:Files/Storage/SD", "SD")
+        });
+        library.entries.push(clamshell_library::Entry { items: vec![sd], ..clamshell_library::Entry::new("folder:storage", "Storage") });
+        if let Some(files) = library.collections.iter_mut().find(|c| c.name == "Files") {
+            files.entries.push(sd + 1);
+        }
+        if let Some(card) = library.entries.get_mut(sd) {
+            card.parent = Some(sd + 1);
+        }
+        let mut s = state_with(library);
+        s.applied(Event::Portal(PortalEvent::Asked(FileRequest { id: 1, folder: Some("/run/media/thor/SD".into()), ..request() })));
+        assert_eq!(s.library_view().group().map(|g| g.title.as_str()), Some("SD"));
+    }
+
     /// Without a Files tab to pick in, a request is answered at once with nothing, which is logged.
     #[test]
     fn without_a_files_tab_nothing_is_chosen() {

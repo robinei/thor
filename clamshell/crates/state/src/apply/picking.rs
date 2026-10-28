@@ -62,8 +62,11 @@ impl State {
             self.portal_back();
         }
         let front = self.session.top_window().and_then(|w| w.group.clone());
+        // A program with no window left (closed to its tray, say) can't come in front: its request is
+        // picked over whatever is.
+        let windowless = |program: &crate::session::windows::Group| !self.session.windows().iter().any(|w| w.group.as_ref() == Some(program));
         while self.library_view.pick().is_none()
-            && let Some(i) = self.portal.asked.iter().position(|w| w.program.is_none() || w.program == front)
+            && let Some(i) = self.portal.asked.iter().position(|w| w.program.as_ref().is_none_or(|p| Some(p) == front.as_ref() || windowless(p)))
         {
             let Some(request) = self.portal.asked.get(i).map(|w| w.request.clone()) else { break };
             let id = request.id;
