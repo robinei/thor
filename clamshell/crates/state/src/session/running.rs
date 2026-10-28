@@ -354,7 +354,11 @@ impl Session {
     pub(crate) fn start_by_app_id(&mut self, clock: &Clock, library: &Library, steam: &mut Vec<Arc<str>>) -> bool {
         let now = clock.mono();
         let mut new: Vec<&Entry> = Vec::new();
-        for w in self.windows.iter().filter(|w| !self.running.iter().any(|r| r.owns(w))) {
+        // Order: by the window's owner as the steps after this one see it (`running_of`), not by any
+        // entry's mark: a program found by another window, whose mark a game's window in Steam's unit
+        // carries, doesn't keep it, and ends once its own window closes; the game is taken here, not a
+        // settle later.
+        for w in self.windows.iter().filter(|w| !self.running_of(w).is_some_and(|r| r.owns(w))) {
             let Some(g) = library.entries.iter().find(|g| has_mark(library, g, w)) else {
                 continue;
             };

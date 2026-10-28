@@ -36,7 +36,8 @@ use crate::setup::{SticksEvent, TopView};
 use crate::*;
 
 /// The seeds that run with the other tests, and the events in each.
-const SEEDS: [u64; 8] = [1, 2, 3, 4, 5, 0x5eed, 0xc1a5, 0xdead_beef];
+/// (828: a Steam game's window freed by a found program ending, checked after every event.)
+const SEEDS: [u64; 9] = [1, 2, 3, 4, 5, 828, 0x5eed, 0xc1a5, 0xdead_beef];
 const EVENTS: usize = 4000;
 
 /// SplitMix64: small, seeded, good enough to draw events.
@@ -267,7 +268,8 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
             ids.extend((0..4).map(EditId::Tab).chain((0..6).map(EditId::Row)).map(Id::from));
             ids.extend([EditId::NewTab, EditId::Up, EditId::Done, EditId::Rename, EditId::Cut, EditId::Paste, EditId::Remove].map(Id::from));
             ids.extend([EditId::Sources, EditId::Runners, EditId::Open, EditId::MoveUp, EditId::MoveDown, EditId::Save, EditId::Cancel].map(Id::from));
-            ids.extend((0..9).map(EditId::Field).chain((0..4).map(EditId::Choice)).map(Id::from));
+            ids.extend((0..9).map(EditId::Field).chain((0..4).map(EditId::Choice)).chain((0..3).map(EditId::IconChoice)).map(Id::from));
+            ids.extend([EditId::PickDir, EditId::Icon, EditId::Picture].map(Id::from));
         }
         TopView::LibraryView if s.session().shown_builtin().is_some() => {
             let sh = s.library_view();
