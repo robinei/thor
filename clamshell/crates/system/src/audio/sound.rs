@@ -1,32 +1,33 @@
 //! Setting the sound from the bar's volume slider and the volume tab: the output's volume and mute, an
 //! app's volume and mute, and which output plays, through PipeWire's `wpctl`. It runs on a thread of its
 //! own. While a finger slides, requests come faster than wpctl runs, so only the latest of each kind is
-//! carried out.
+//! carried out. Each command has a number; once a batch of them is carried out, the last of their numbers
+//! is published ([`Carried`]), for the readings to say which commands they have seen.
 
 use std::io;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use clamshell_state::Sound;
 
 use crate::os::command;
 use crate::os::worker::{self, Worker};
 
-/// Which commands replace each other: those for the same setting of the same thing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Kind {
-    Volume,
-    Mute,
-    StreamVolume(u32),
-    StreamMute(u32),
-    Output,
-}
+/// The number of the last sound command carried out, every command before it carried out too, shared
+/// with the threads that read the sound (see `clamshell_state::levels::Levels`). It outlives the sound
+/// thread's restarts.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Carried(Arc<AtomicU64>);
 
-fn kind(sound: &Sound) -> Kind {
-    match sound {
-        Sound::Volume(_) => Kind::Volume,
-        Sound::Mute(_) => Kind::Mute,
-        Sound::StreamVolume(id, _) => Kind::StreamVolume(*id),
-        Sound::StreamMute(id, _) => Kind::StreamMute(*id),
-        Sound::Output(_) => Kind::Output,
+impl Carried {
+    /// The number of the last command carried out. A reader asks before it reads, so that what it reads
+    /// has seen at least that command.
+    pub(crate) fn seen(&self) -> u64 {
+        self.0.load(Ordering::Acquire)
+    }
+
+    fn done(&self, number: u64) {
+        self.0.fetch_max(number, Ordering::Release);
     }
 }
 
@@ -43,11 +44,23 @@ fn wpctl_args(sound: &Sound) -> Vec<String> {
     }
 }
 
-/// Starts the thread that sets the sound. Failures are logged by [`command`].
-pub(crate) fn spawn() -> io::Result<Worker<Sound>> {
-    worker::spawn_coalescing(clamshell_state::Thread::Sound.name(), kind, |sound| {
-        let args = wpctl_args(&sound);
-        command::output("wpctl", &args.iter().map(String::as_str).collect::<Vec<_>>());
+/// Starts the thread that sets the sound, publishing to `carried` what it has carried out. Failures are
+/// logged by [`command`].
+pub(crate) fn spawn(carried: Carried) -> io::Result<Worker<(Sound, u64)>> {
+    Worker::spawn(clamshell_state::Thread::Sound.name(), move |commands| {
+        while let Ok(first) = commands.recv() {
+            // Published once the whole batch is carried out: coalescing may put a later command before an
+            // earlier one of another kind.
+            let batch = worker::coalesce(first, commands, |(sound, _): &(Sound, u64)| sound.kind());
+            let last = batch.iter().map(|(_, number)| *number).max();
+            for (sound, _) in batch {
+                let args = wpctl_args(&sound);
+                command::output("wpctl", &args.iter().map(String::as_str).collect::<Vec<_>>());
+            }
+            if let Some(number) = last {
+                carried.done(number);
+            }
+        }
     })
 }
 
@@ -64,7 +77,7 @@ mod tests {
             tx.send(s).unwrap();
         }
         assert_eq!(
-            worker::coalesce(Sound::Mute(false), &rx, kind),
+            worker::coalesce(Sound::Mute(false), &rx, Sound::kind),
             vec![Sound::Mute(false), Sound::Volume(20), Sound::StreamVolume(80, 6), Sound::StreamVolume(81, 7)],
             "a mute before a volume stays before it"
         );

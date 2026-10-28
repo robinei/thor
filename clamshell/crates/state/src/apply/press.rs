@@ -4,7 +4,7 @@
 use crate::bottom::editor::Done;
 use crate::out::Out;
 use crate::profiles::picker::Kind as ProfileKind;
-use crate::{BtId, Compositor, Control, EditorId, Effect, Id, Level, ListId, PointerEvent, RowPart, State, Tab, WifiId};
+use crate::{BtId, Compositor, Control, EditorId, Effect, Id, ListId, PointerEvent, RowPart, State, Tab, WifiId};
 
 /// How a target was pressed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,9 +48,6 @@ impl State {
             }
             PointerEvent::Up(id) => {
                 self.pointer.up(&id);
-                if Level::of(&id).is_some() {
-                    self.levels.release();
-                }
                 if let Id::Key(pos) = id {
                     self.keyboard.up(pos);
                 }

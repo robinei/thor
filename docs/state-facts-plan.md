@@ -50,7 +50,7 @@ What isn't, and where the bugs were:
   window: it is found by its own process, but `running_of` walks to the root, which it doesn't own, so the
   entry has no windows and ends in the same settle; the next settle finds it again, each time asking for a
   new scope. Predates today's changes.
-- [ ] **The screens can stay dimmed after waking.** A backlight reading taken while dimmed that arrives
+- [x] **The screens can stay dimmed after waking.** A backlight reading taken while dimmed that arrives
   after the wake is taken as the brightness on a device where the user hasn't set one, and each dim
   compounds it (the failure 65ec9f62 fixed, still open as a race). Fixed by step 5's readings tagged with
   the command they have seen: a reading from before the wake is older than the wake's command.

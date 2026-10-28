@@ -42,7 +42,7 @@ pub struct Handles {
     pub(crate) launcher: Worker<launcher::Command>,
     /// Freezes hidden games' slices and thaws them.
     pub(crate) freezer: Worker<crate::launch::freezer::Request>,
-    pub(crate) sound: Worker<clamshell_state::Sound>,
+    pub(crate) sound: Worker<(clamshell_state::Sound, u64)>,
     pub(crate) brightness: Worker<brightness::Command>,
     pub(crate) tuning: Tuning,
     /// Screenshots, sleep and the other one-off requests (see [`crate::errands`]).
@@ -118,7 +118,7 @@ impl Handles {
                 self.browse.send(command.clone());
             }
             Effect::Files(op) => self.files.send(op.clone()),
-            Effect::Sound(sound) => self.sound.send(sound.clone()),
+            Effect::Sound { sound, number } => self.sound.send((sound.clone(), *number)),
             Effect::Brightness { level, shares } => self.brightness.send(brightness::Command { level: *level, shares: shares.clone() }),
             Effect::Wifi(command) => {
                 log::info!("effect: {effect:?}");

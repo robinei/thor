@@ -506,17 +506,25 @@ Wi-Fi and Bluetooth readings replace the state whole; the system is the authorit
 
 ## Levels (levels/)
 
-Volume and mute hold what was set until released; streams, outputs, brightness and per-screen shares;
-the slider; the brightness save. Tests: `the_volume_tab_watches_and_sets_levels`, `leaving_the_tab_mid_
-drag_lets_readings_in_again`, `brightness_is_the_level_times_each_screens_share`, `the_pad_steps_levels`,
+The sound (volume, mute, streams, outputs) is the system's: readings are kept as they come, each with
+the number of the last sound command carried out when it was read, and what is shown is ClamShell's
+latest command of a kind until a reading has seen it, then the reading (`Levels::volume`). A reading
+from before a command can't win over it; one after shows whatever changed the sound since. Commands
+the sound thread hadn't carried out when it restarted give way to the readings. Brightness and
+per-screen shares are ClamShell's; the slider; the brightness save. Tests:
+`the_volume_tab_watches_and_sets_levels`, `commands_lost_with_the_sound_thread_give_way_to_the_readings`,
+`brightness_is_the_level_times_each_screens_share`, `the_pad_steps_levels`,
 the slider tests. Setting a muted stream's level unmutes it, as the output volume does:
 `setting_a_muted_streams_level_unmutes_it`. Dimming takes a third of the brightness, at least 1 but
 never more than it was: `dimming_never_raises_the_brightness`. The Mute key shows the volume's notice
 only when the mute changed (not while the volume is unknown):
 `the_mute_key_shows_the_level_only_when_it_changes_something`. The brightness is sync's
 (`Levels::wanted_brightness`): ClamShell's level; dimmed, a third of the known level; back from dimmed,
-the level read before (a reading taken while dimmed is ignored); nothing while ClamShell neither set a
-level nor touched the backlights. A level set while dimmed is sent dimmed. Tests:
+the level known before; nothing while ClamShell neither set a level nor touched the backlights. The
+backlight's reading stands for the level only until ClamShell first sets the backlights, after which
+they hold what it set (dimmed, say), so a reading taken while dimmed and coming after the wake changes
+nothing: `a_dimmed_reading_after_the_wake_leaves_the_brightness_as_it_was`. A level set while dimmed is
+sent dimmed. Tests:
 `what_the_outside_starts_without_goes_out_at_the_first_event`,
 `the_screens_come_back_from_dimming_at_the_brightness_they_had`, `a_level_set_while_dimmed_is_sent_dimmed`.
 

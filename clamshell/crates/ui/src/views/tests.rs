@@ -233,6 +233,7 @@ fn long_lists_scroll_within_their_area() {
         Reading::Audio(Audio {
             outputs: vec![],
             streams: (0..30).map(|i| Stream { id: i, app: format!("app {i}"), title: String::new(), volume: 50, muted: false }).collect(),
+            seen: 0,
         }),
         Reading::Backlights((0..30).map(|i| format!("panel {i}")).collect()),
     ];
@@ -326,7 +327,7 @@ fn down_from_the_bar_reaches_the_tabs_first_line() {
         let networks = (0..4).map(|i| Network { ssid: format!("net {i}"), ..Network::default() }).collect();
         state.apply(Event::Reading(Reading::Wifi(Wifi { present: true, on: true, networks, ..Wifi::default() })), &mut Vec::new());
         let streams = (0..3).map(|i| Stream { id: i, app: format!("app {i}"), title: String::new(), volume: 50, muted: false }).collect();
-        state.apply(Event::Reading(Reading::Audio(Audio { outputs: vec![], streams })), &mut Vec::new());
+        state.apply(Event::Reading(Reading::Audio(Audio { outputs: vec![], streams, seen: 0 })), &mut Vec::new());
         state.apply(Event::Pointer(clamshell_state::PointerEvent::Activate(Id::Tab(tab))), &mut Vec::new());
         let (targets, _) = draw_bottom(&state, (w, h), &mut cache);
         let all: Vec<NavTarget> = targets

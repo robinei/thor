@@ -8,8 +8,12 @@
 //! each other. Both levels are ours, since the kernel only knows each panel's result. They are saved and
 //! applied at start. Until ClamShell sets a level, the first backlight's reading stands for it.
 //!
-//! The volume and mute belong to the system. Readings come in, and while the finger is on the level its
-//! value wins over them, since a reading may predate it (see [`Held`]).
+//! The sound belongs to the system, and other things change it too: PipeWire restoring an output's own
+//! volume as it switches, a headset's buttons, other programs. Readings are kept as they come. Each sound
+//! command ClamShell sends has a number, and each reading the number of the last command the sound thread
+//! had carried out when it was read. What is shown is ClamShell's latest command until a reading has seen
+//! it, then the reading: one from before a command can't win over it, and one after shows whatever
+//! changed it since (see [`Levels::volume`]).
 //!
 //! The bar's sliders set the same levels as the tabs' rows (`Level::Volume`, `Level::Brightness`).
 
@@ -86,6 +90,8 @@ pub struct Stream {
 pub struct Audio {
     pub outputs: Vec<AudioOutput>,
     pub streams: Vec<Stream>,
+    /// The number of the last sound command carried out when this was read (see [`Levels`]).
+    pub seen: u64,
 }
 
 /// A detected backlight's screen role, or its kernel name when the profile has no role hint.
@@ -140,43 +146,30 @@ pub enum Sound {
     Output(u32),
 }
 
-/// A level the system reports and the finger sets. It holds the latest reading, and while the finger is
-/// on the level, the finger's value, which is shown instead because a reading may predate it. When the
-/// finger lifts, its value stands until the next reading.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Held<T> {
-    read: T,
-    set: Option<T>,
+/// What a sound command sets: a later command of the same kind replaces an earlier one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SoundKind {
+    Volume,
+    Mute,
+    StreamVolume(u32),
+    StreamMute(u32),
+    Output,
 }
 
-impl<T: Copy> Held<T> {
-    /// The value shown.
-    pub fn value(&self) -> T {
-        self.set.unwrap_or(self.read)
-    }
-
-    fn reading(&mut self, value: T) {
-        self.read = value;
-    }
-
-    /// The finger's value, kept over readings until released.
-    fn hold(&mut self, value: T) {
-        self.set = Some(value);
-    }
-
-    /// A value ClamShell set. It is held if the finger is on the level, and otherwise stands until the
-    /// next reading.
-    fn put(&mut self, value: T) {
-        match &mut self.set {
-            Some(set) => *set = value,
-            None => self.read = value,
+impl Sound {
+    pub fn kind(&self) -> SoundKind {
+        match self {
+            Sound::Volume(_) => SoundKind::Volume,
+            Sound::Mute(_) => SoundKind::Mute,
+            Sound::StreamVolume(id, _) => SoundKind::StreamVolume(*id),
+            Sound::StreamMute(id, _) => SoundKind::StreamMute(*id),
+            Sound::Output(_) => SoundKind::Output,
         }
     }
 
-    fn release(&mut self) {
-        if let Some(value) = self.set.take() {
-            self.read = value;
-        }
+    /// Whether the status reading carries what it sets (the output's volume and mute), else the mixer's.
+    fn in_status(&self) -> bool {
+        matches!(self, Sound::Volume(_) | Sound::Mute(_))
     }
 }
 
@@ -185,18 +178,28 @@ const STEP: i16 = 5;
 
 #[derive(Debug, Clone, Default)]
 pub struct Levels {
-    volume: Held<Option<u8>>,
-    muted: Held<bool>,
+    /// The output's volume and mute as the status thread last read them, and the number of the last sound
+    /// command carried out then.
+    volume_read: Option<u8>,
+    muted_read: bool,
+    status_seen: u64,
+    /// The outputs and apps as the mixer thread last read them, its number with them.
+    audio_read: Audio,
+    /// The latest sound command of each kind sent, with its number, while no reading has seen it.
+    sent: Vec<(Sound, u64)>,
+    /// The number of the last sound command sent.
+    sound_number: u64,
+    /// The outputs and apps shown: as read, with the commands not seen yet (see [`Levels::shown_audio`]).
     audio: Audio,
     /// The backlight names, read while the brightness tab is open.
     backlights: Backlights,
     brightness: Brightness,
-    /// The first backlight's level as last read. It stands for the brightness until ClamShell sets one.
-    read_brightness: Option<u8>,
+    /// The first backlight's level as read before ClamShell first set the brightness. It stands for the
+    /// brightness until ClamShell sets one; once ClamShell has, the backlights hold what it set (dimmed,
+    /// say), so a reading is no longer the brightness.
+    untouched: Option<u8>,
     /// Volume or brightness being slid in the bar, if any.
     slider: Option<Slider>,
-    /// The level row a finger is on.
-    holding: Option<Level>,
     /// A change of the brightness, saved a moment later.
     unsaved: Debounce,
     /// The brightness changed during [`Levels::change`].
@@ -208,13 +211,27 @@ impl Levels {
         Levels { brightness, ..Levels::default() }
     }
 
-    /// The output volume, if known.
+    /// The command of `kind` sent and not yet seen by the reading that carries it, if there is one.
+    fn unseen(&self, kind: SoundKind) -> Option<&Sound> {
+        self.sent
+            .iter()
+            .find(|(sound, n)| sound.kind() == kind && *n > if sound.in_status() { self.status_seen } else { self.audio_read.seen })
+            .map(|(sound, _)| sound)
+    }
+
+    /// The output volume, if known: ClamShell's latest, until a reading has seen it, else as read.
     pub fn volume(&self) -> Option<u8> {
-        self.volume.value()
+        match self.unseen(SoundKind::Volume) {
+            Some(Sound::Volume(v)) => Some(*v),
+            _ => self.volume_read,
+        }
     }
 
     pub fn muted(&self) -> bool {
-        self.muted.value()
+        match self.unseen(SoundKind::Mute) {
+            Some(Sound::Mute(m)) => *m,
+            _ => self.muted_read,
+        }
     }
 
     pub fn audio(&self) -> &Audio {
@@ -242,7 +259,7 @@ impl Levels {
     pub fn level(&self, level: Level) -> Option<u8> {
         match level {
             Level::Volume => self.volume(),
-            Level::Brightness => self.brightness.level.or(self.read_brightness),
+            Level::Brightness => self.brightness.level.or(self.untouched),
             Level::Stream(i) => self.audio.streams.get(usize::from(i)).map(|s| s.volume),
             Level::Backlight(i) => self.backlights.0.get(usize::from(i)).map(|name| self.brightness.share(name)),
         }
@@ -261,7 +278,7 @@ impl Levels {
     /// not dark; back from dimmed, the level known before. None when there is nothing to set: no level is
     /// known, or ClamShell never set one and hasn't touched the backlights.
     pub(crate) fn wanted_brightness(&self, dimmed: bool, touched: bool) -> Option<u8> {
-        let known = self.brightness.level.or(self.read_brightness);
+        let known = self.brightness.level.or(self.untouched);
         match (dimmed, self.brightness.level) {
             (true, _) => known.map(|level| (level / 3).max(1).min(level)),
             (false, Some(level)) => Some(level),
@@ -274,15 +291,15 @@ impl Levels {
         Effect::Brightness { level, shares: self.brightness.shares.clone() }
     }
 
-    /// A status reading of the volume, mute and brightness. A finger on the level keeps what it shows.
-    /// While the screens are dimmed (`dimmed`), the backlight shows the dimmed level, not the screens'
-    /// brightness, so its reading is ignored.
-    pub(crate) fn read(&mut self, volume: Option<u8>, muted: bool, brightness: Option<u8>, dimmed: bool) {
-        self.volume.reading(volume);
-        self.muted.reading(muted);
-        if !dimmed {
-            self.read_brightness = brightness;
+    /// A status reading of the volume, mute and brightness, and of the last sound command carried out when
+    /// it was read (`seen`). The brightness is taken only while ClamShell hasn't set the backlights
+    /// (`touched`; see [`Levels::untouched`]).
+    pub(crate) fn read(&mut self, volume: Option<u8>, muted: bool, seen: u64, brightness: Option<u8>, touched: bool) {
+        (self.volume_read, self.muted_read, self.status_seen) = (volume, muted, seen);
+        if !touched {
+            self.untouched = brightness;
         }
+        self.forget_seen();
     }
 
     /// Changes the levels with `change` at `now`. A changed brightness is saved a moment later.
@@ -323,35 +340,58 @@ impl Levels {
         }
     }
 
-    /// New readings of the outputs and streams. A stream the finger is on keeps the finger's value.
-    pub(crate) fn read_audio(&mut self, mut audio: Audio) {
-        if let Some(Level::Stream(i)) = self.holding
-            && let (Some(mine), Some(read)) = (self.audio.streams.get(usize::from(i)), audio.streams.get_mut(usize::from(i)))
-            && mine.id == read.id
-        {
-            read.volume = mine.volume;
-            read.muted = mine.muted;
-        }
-        self.audio = audio;
+    /// New readings of the outputs and streams.
+    pub(crate) fn read_audio(&mut self, audio: Audio) {
+        self.audio_read = audio;
+        self.forget_seen();
     }
 
     pub(crate) fn read_backlights(&mut self, backlights: Vec<String>) {
         self.backlights.0 = backlights;
     }
 
-    /// The finger is on `level`. What it sets is kept over readings until it lifts.
-    fn hold(&mut self, level: Level) {
-        if self.holding != Some(level) {
-            self.release();
-        }
-        self.holding = Some(level);
+    /// The sound thread started again: the commands it hadn't carried out are gone with it, so the
+    /// readings stand.
+    pub(crate) fn sound_restarted(&mut self) {
+        self.sent.clear();
+        self.shown_audio();
     }
 
-    /// The finger lifted. What it set stands until the next reading.
-    pub(crate) fn release(&mut self) {
-        self.holding = None;
-        self.volume.release();
-        self.muted.release();
+    /// Sends `sound` as a command with the next number, replacing the one of its kind sent before.
+    fn command(&mut self, sound: Sound, out: &mut Out) {
+        self.sound_number += 1;
+        let number = self.sound_number;
+        let kind = sound.kind();
+        match self.sent.iter_mut().find(|(sent, _)| sent.kind() == kind) {
+            Some(sent) => *sent = (sound.clone(), number),
+            None => self.sent.push((sound.clone(), number)),
+        }
+        out.effects.push(Effect::Sound { sound, number });
+        self.shown_audio();
+    }
+
+    /// Drops the commands their readings have seen, and works out the outputs and apps shown again.
+    fn forget_seen(&mut self) {
+        let (status, audio) = (self.status_seen, self.audio_read.seen);
+        self.sent.retain(|(sound, n)| *n > if sound.in_status() { status } else { audio });
+        self.shown_audio();
+    }
+
+    /// The outputs and apps shown: as read, with the commands the reading hasn't seen. (Kept, so that the
+    /// UI reads it as a list; worked out here alone, whenever a reading or a command changes it.)
+    fn shown_audio(&mut self) {
+        self.audio.clone_from(&self.audio_read);
+        for (sound, n) in &self.sent {
+            if *n <= self.audio_read.seen {
+                continue;
+            }
+            match *sound {
+                Sound::StreamVolume(id, v) => self.audio.streams.iter_mut().filter(|s| s.id == id).for_each(|s| s.volume = v),
+                Sound::StreamMute(id, m) => self.audio.streams.iter_mut().filter(|s| s.id == id).for_each(|s| s.muted = m),
+                Sound::Output(id) => self.audio.outputs.iter_mut().for_each(|o| o.default = o.id == id),
+                Sound::Volume(_) | Sound::Mute(_) => {}
+            }
+        }
     }
 
     /// A level row set to `value` by the finger on it.
@@ -360,27 +400,21 @@ impl Levels {
         if self.level(level) == Some(value) {
             return;
         }
-        self.hold(level);
         match level {
             Level::Volume => {
-                self.volume.hold(Some(value));
                 // Turning it up or down unmutes.
-                let was_muted = self.muted();
-                self.muted.hold(false);
-                if was_muted {
-                    out.effects.push(Effect::Sound(Sound::Mute(false)));
+                if self.muted() {
+                    self.command(Sound::Mute(false), out);
                 }
-                out.effects.push(Effect::Sound(Sound::Volume(value)));
+                self.command(Sound::Volume(value), out);
             }
             Level::Stream(i) => {
-                if let Some(s) = self.audio.streams.get_mut(usize::from(i)) {
+                if let Some(s) = self.audio.streams.get(usize::from(i)).map(|s| (s.id, s.muted)) {
                     // Turning it up or down unmutes, as the output volume does.
-                    if s.muted {
-                        out.effects.push(Effect::Sound(Sound::StreamMute(s.id, false)));
+                    if s.1 {
+                        self.command(Sound::StreamMute(s.0, false), out);
                     }
-                    s.volume = value;
-                    s.muted = false;
-                    out.effects.push(Effect::Sound(Sound::StreamVolume(s.id, value)));
+                    self.command(Sound::StreamVolume(s.0, value), out);
                 }
             }
             // Sent by sync, dimmed while idle has dimmed the screens.
@@ -395,7 +429,7 @@ impl Levels {
                     // The level as read, until ClamShell sets one. All shares were 100 until then.
                     if self.brightness.level.is_none() {
                         self.brightness_changed = true;
-                        self.brightness.level = self.read_brightness;
+                        self.brightness.level = self.untouched;
                     }
                 }
             }
@@ -421,7 +455,6 @@ impl Levels {
         };
         let value = (i16::from(now) + direction.signum() * STEP).clamp(0, 100) as u8;
         self.set(level, value, out);
-        self.release();
     }
 
     /// Mutes or unmutes the output, once its volume is known. Returns whether it did.
@@ -429,27 +462,20 @@ impl Levels {
         if self.volume().is_none() {
             return false;
         }
-        let muted = !self.muted();
-        self.muted.put(muted);
-        out.effects.push(Effect::Sound(Sound::Mute(muted)));
+        self.command(Sound::Mute(!self.muted()), out);
         true
     }
 
     pub(crate) fn toggle_stream_mute(&mut self, i: usize, out: &mut Out) {
-        if let Some(s) = self.audio.streams.get_mut(i) {
-            s.muted = !s.muted;
-            out.effects.push(Effect::Sound(Sound::StreamMute(s.id, s.muted)));
+        if let Some((id, muted)) = self.audio.streams.get(i).map(|s| (s.id, s.muted)) {
+            self.command(Sound::StreamMute(id, !muted), out);
         }
     }
 
     pub(crate) fn choose_output(&mut self, i: usize, out: &mut Out) {
-        let Some(id) = self.audio.outputs.get(i).filter(|o| !o.default).map(|o| o.id) else {
-            return;
-        };
-        for o in &mut self.audio.outputs {
-            o.default = o.id == id;
+        if let Some(id) = self.audio.outputs.get(i).filter(|o| !o.default).map(|o| o.id) {
+            self.command(Sound::Output(id), out);
         }
-        out.effects.push(Effect::Sound(Sound::Output(id)));
     }
 }
 
@@ -498,6 +524,7 @@ mod tests {
         Audio {
             outputs: vec![AudioOutput { id: 50, name: "Speakers".into(), default: true }, AudioOutput { id: 51, name: "Headphones".into(), default: false }],
             streams: vec![Stream { id: 80, app: "Firefox".into(), title: String::new(), volume: 60, muted: false }],
+            seen: 0,
         }
     }
 
@@ -511,21 +538,34 @@ mod tests {
         assert_eq!(tap(&mut s, Id::Tab(Tab::Volume)), vec![Effect::Watch(Watch::Metrics, false), Effect::Watch(Watch::Audio, true)]);
         read(&mut s, Reading::Audio(audio()));
         read(&mut s, Reading::Status(Status { volume: Some(40), muted: true, ..Status::default() }));
-        assert_eq!(set(&mut s, Level::Volume, 70), vec![Effect::Sound(Sound::Mute(false)), Effect::Sound(Sound::Volume(70))]);
+        assert_eq!(sounds(&set(&mut s, Level::Volume, 70)), [Sound::Mute(false), Sound::Volume(70)]);
         assert_eq!(set(&mut s, Level::Volume, 70), vec![], "no change, nothing sent");
-        // A reading from before the finger moved doesn't jump the level back.
-        read(&mut s, Reading::Status(Status { volume: Some(40), ..Status::default() }));
-        assert_eq!(s.levels().volume(), Some(70));
-        s.applied(PointerEvent::Up(Id::Level(Level::Volume)).into());
-        read(&mut s, Reading::Status(Status { volume: Some(71), ..Status::default() }));
-        assert_eq!(s.levels().volume(), Some(71), "after the finger lifts, the system's");
-        assert_eq!(set(&mut s, Level::Stream(0), 20), vec![Effect::Sound(Sound::StreamVolume(80, 20))]);
-        read(&mut s, Reading::Audio(audio()));
-        assert_eq!(s.levels().level(Level::Stream(0)), Some(20), "kept while held");
-        assert_eq!(tap(&mut s, Id::Row { list: ListId::Streams, i: 0, part: RowPart::Mute }), vec![Effect::Sound(Sound::StreamMute(80, true))]);
-        assert_eq!(tap(&mut s, Id::Audio(AudioId::Output(1))), vec![Effect::Sound(Sound::Output(51))]);
+        // A reading from before the commands were carried out doesn't jump the level back; one after them
+        // shows the system's, whatever changed it since.
+        read(&mut s, Reading::Status(Status { volume: Some(40), sound_seen: 1, ..Status::default() }));
+        assert_eq!((s.levels().volume(), s.levels().muted()), (Some(70), false), "the volume not seen yet");
+        read(&mut s, Reading::Status(Status { volume: Some(71), sound_seen: 2, ..Status::default() }));
+        assert_eq!(s.levels().volume(), Some(71), "seen: the system's");
+        assert_eq!(sounds(&set(&mut s, Level::Stream(0), 20)), [Sound::StreamVolume(80, 20)]);
+        read(&mut s, Reading::Audio(Audio { seen: 2, ..audio() }));
+        assert_eq!(s.levels().level(Level::Stream(0)), Some(20), "kept until a reading sees it");
+        read(&mut s, Reading::Audio(Audio { seen: 3, ..audio() }));
+        assert_eq!(s.levels().level(Level::Stream(0)), Some(60), "seen: the app's own");
+        assert_eq!(sounds(&tap(&mut s, Id::Row { list: ListId::Streams, i: 0, part: RowPart::Mute })), [Sound::StreamMute(80, true)]);
+        assert_eq!(sounds(&tap(&mut s, Id::Audio(AudioId::Output(1)))), [Sound::Output(51)]);
+        assert!(s.levels().audio().outputs.iter().any(|o| o.id == 51 && o.default), "chosen at once");
         assert_eq!(tap(&mut s, Id::Audio(AudioId::Output(1))), vec![], "already there");
         assert_eq!(tap(&mut s, Id::Tab(Tab::Brightness)), vec![Effect::Watch(Watch::Audio, false), Effect::Watch(Watch::Backlights, true)]);
+    }
+
+    /// The sound thread started again: the commands it hadn't carried out are gone, so the readings stand.
+    #[test]
+    fn commands_lost_with_the_sound_thread_give_way_to_the_readings() {
+        let mut s = state();
+        read(&mut s, Reading::Status(Status { volume: Some(40), ..Status::default() }));
+        set(&mut s, Level::Volume, 70);
+        s.applied(Event::Restarted(Thread::Sound));
+        assert_eq!(s.levels().volume(), Some(40));
     }
 
     #[test]
@@ -538,20 +578,9 @@ mod tests {
         }
         read(&mut s, Reading::Audio(muted));
         // Unmuted first, then set, as for the output volume.
-        assert_eq!(set(&mut s, Level::Stream(0), 30), vec![Effect::Sound(Sound::StreamMute(80, false)), Effect::Sound(Sound::StreamVolume(80, 30))]);
+        assert_eq!(sounds(&set(&mut s, Level::Stream(0), 30)), [Sound::StreamMute(80, false), Sound::StreamVolume(80, 30)]);
         assert!(s.levels().audio().streams.first().is_some_and(|stream| !stream.muted));
-        assert_eq!(set(&mut s, Level::Stream(0), 40), vec![Effect::Sound(Sound::StreamVolume(80, 40))], "unmuted already");
-    }
-
-    #[test]
-    fn leaving_the_tab_mid_drag_lets_readings_in_again() {
-        let mut s = state();
-        read(&mut s, Reading::Status(Status { volume: Some(40), ..Status::default() }));
-        tap(&mut s, Id::Tab(Tab::Volume));
-        set(&mut s, Level::Volume, 60);
-        tap(&mut s, Id::Tab(Tab::Dock));
-        read(&mut s, Reading::Status(Status { volume: Some(45), ..Status::default() }));
-        assert_eq!(s.levels().volume(), Some(45));
+        assert_eq!(sounds(&set(&mut s, Level::Stream(0), 40)), [Sound::StreamVolume(80, 40)], "unmuted already");
     }
 
     #[test]
@@ -596,7 +625,7 @@ mod tests {
     fn the_pad_steps_levels() {
         let mut s = state();
         read(&mut s, Reading::Status(Status { volume: Some(98), ..Status::default() }));
-        assert_eq!(s.applied(LevelEvent::Step(Level::Volume, 1).into()), vec![Effect::Sound(Sound::Volume(100))], "up to 100");
+        assert_eq!(sounds(&s.applied(LevelEvent::Step(Level::Volume, 1).into())), [Sound::Volume(100)], "up to 100");
         assert_eq!(s.applied(LevelEvent::Step(Level::Volume, 1).into()), vec![], "and no further");
     }
 
@@ -628,6 +657,24 @@ mod tests {
             assert_eq!(level(&fx), Some(60), "back, cycle {cycle}: {fx:?}");
             s.applied(Event::tick(at + 401));
         }
+    }
+
+    /// A reading of the backlight taken while dimmed that comes after the wake isn't taken as the
+    /// brightness: once ClamShell has set the backlights, they hold what it set.
+    #[test]
+    fn a_dimmed_reading_after_the_wake_leaves_the_brightness_as_it_was() {
+        use crate::idle::IdleEvent;
+        let mut s = State::new(crate::Init { device_session: true, ..crate::testkit::init() });
+        s.applied(Event::tick(1000));
+        s.applied(Event::Idle(IdleEvent::Watching(true)));
+        let level = |fx: &[Effect]| fx.iter().find_map(|e| if let Effect::Brightness { level, .. } = e { Some(*level) } else { None });
+        read(&mut s, Reading::Status(Status { brightness: Some(60), ..Status::default() }));
+        assert_eq!(level(&s.applied(Event::tick(1400))), Some(20), "dimmed");
+        assert_eq!(level(&s.applied(Event::Idle(IdleEvent::DeviceInput))), Some(60), "back");
+        // The status thread read the backlight while it was dimmed; its reading comes now.
+        let fx = s.applied(Reading::Status(Status { brightness: Some(20), ..Status::default() }).into());
+        assert_eq!(level(&fx), None, "{fx:?}");
+        assert_eq!(s.levels().level(Level::Brightness), Some(60));
     }
 
     /// A level set while the screens are dimmed is sent dimmed: the screens don't light up at full.

@@ -90,12 +90,14 @@ fn rescanner<S: Sink + Clone>(sources: Sources, paths: Paths, queue: meta::Queue
 /// on a thread, as the Tools tab's rescan reads it, and sent with what its metadata fetch finds.
 pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, global: &Values, sink: S) -> Handles {
     let backlights = Backlights::new(env.backlights.clone());
+    // The last sound command carried out, which the status and mixer threads read with the sound.
+    let carried = crate::audio::sound::Carried::default();
     if !paths.has_user_systemd() {
         log::error!("no systemd user manager: ClamShell needs one to run apps and games (as services of their own)");
     }
     crate::os::worker::on_restart(restarts_told(sink.clone()));
     log_failed_start("clock", clock::spawn(sink.clone()));
-    let status = started("status", status::spawn(backlights.clone(), sink.clone()));
+    let status = started("status", status::spawn(backlights.clone(), carried.clone(), sink.clone()));
     let metrics = started("metrics", metrics::spawn(sink.clone()));
     let fetching = meta::Queue::default();
     let rescan = rescanner(sources.clone(), paths.clone(), fetching.clone(), sink.clone());
@@ -128,7 +130,7 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, gl
     // Sleep waits for the pad to close the gyro's stream.
     log_failed_start("sleep", crate::power::sleep::spawn_hold(pad.clone()));
     let battery = started("battery", battery::spawn(sink.clone()));
-    let mixer = started("mixer", mixer::spawn(backlights.clone(), sink.clone()));
+    let mixer = started("mixer", mixer::spawn(backlights.clone(), carried.clone(), sink.clone()));
     let bluetooth = started("bluetooth", bluetooth::spawn(sink.clone()));
     let tray = started("tray", crate::session::tray::spawn(sink.clone()));
     let notifications = started("notifications", crate::session::notifications::spawn(sink.clone()));
@@ -180,7 +182,7 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, gl
         pad_taken,
         launcher,
         freezer: started("freezer", freezer::spawn()),
-        sound: started("sound", sound::spawn()),
+        sound: started("sound", sound::spawn(carried)),
         system,
         brightness: started("brightness", brightness::spawn(backlights)),
         tuning,

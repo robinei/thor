@@ -168,6 +168,11 @@ pub fn force_kill(s: &mut State, id: &str) -> Vec<Effect> {
 }
 
 /// Launches entry `id` again, as the dock's Open another does, with what that does at once.
+/// The sound commands among `fx`, without their numbers.
+pub fn sounds(fx: &[Effect]) -> Vec<crate::Sound> {
+    fx.iter().filter_map(|e| if let Effect::Sound { sound, .. } = e { Some(sound.clone()) } else { None }).collect()
+}
+
 /// Whether window `w` would come in front as it opens (see `Session::opening_focus`).
 pub fn opening_focus(s: &State, w: &crate::session::windows::WindowFacts) -> bool {
     s.session().opening_focus(w, s.shelf().library())

@@ -113,14 +113,14 @@ mod tests {
     fn an_output_press_chooses_the_output_it_came_down_on() {
         let mut s = state();
         let output = |id, name: &str, default| AudioOutput { id, name: name.into(), default };
-        read(&mut s, Reading::Audio(Audio { outputs: vec![output(1, "speakers", true), output(2, "buds", false)], streams: vec![] }));
+        read(&mut s, Reading::Audio(Audio { outputs: vec![output(1, "speakers", true), output(2, "buds", false)], streams: vec![], seen: 0 }));
         let second = Id::Audio(AudioId::Output(1));
         s.applied(PointerEvent::Down(second.clone(), None).into());
-        read(&mut s, Reading::Audio(Audio { outputs: vec![output(2, "buds", false), output(1, "speakers", true)], streams: vec![] }));
-        assert_eq!(tap(&mut s, second.clone()), [Effect::Sound(Sound::Output(2))]);
+        read(&mut s, Reading::Audio(Audio { outputs: vec![output(2, "buds", false), output(1, "speakers", true)], streams: vec![], seen: 0 }));
+        assert_eq!(sounds(&tap(&mut s, second.clone())), [Sound::Output(2)]);
         s.applied(PointerEvent::Up(second.clone()).into());
         s.applied(PointerEvent::Down(second.clone(), None).into());
-        read(&mut s, Reading::Audio(Audio { outputs: vec![output(2, "buds", true)], streams: vec![] }));
+        read(&mut s, Reading::Audio(Audio { outputs: vec![output(2, "buds", true)], streams: vec![], seen: 0 }));
         assert_eq!(tap(&mut s, second), [], "gone");
     }
 
@@ -128,12 +128,12 @@ mod tests {
     fn a_level_drag_stays_on_its_app() {
         let mut s = state();
         let stream = |id, app: &str| Stream { id, app: app.into(), title: String::new(), volume: 50, muted: false };
-        read(&mut s, Reading::Audio(Audio { outputs: vec![], streams: vec![stream(1, "a"), stream(2, "b")] }));
+        read(&mut s, Reading::Audio(Audio { outputs: vec![], streams: vec![stream(1, "a"), stream(2, "b")], seen: 0 }));
         s.applied(PointerEvent::Down(Level::Stream(0).id(), None).into());
         s.applied(LevelEvent::Set(Level::Stream(0), 60).into());
         // A new app sorts first.
-        read(&mut s, Reading::Audio(Audio { outputs: vec![], streams: vec![stream(0, "new"), stream(1, "a"), stream(2, "b")] }));
+        read(&mut s, Reading::Audio(Audio { outputs: vec![], streams: vec![stream(0, "new"), stream(1, "a"), stream(2, "b")], seen: 0 }));
         let fx = s.applied(LevelEvent::Set(Level::Stream(0), 70).into());
-        assert_eq!(fx, vec![Effect::Sound(Sound::StreamVolume(1, 70))]);
+        assert_eq!(sounds(&fx), [Sound::StreamVolume(1, 70)]);
     }
 }

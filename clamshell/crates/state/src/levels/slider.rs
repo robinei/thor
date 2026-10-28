@@ -141,11 +141,9 @@ impl Levels {
         self.set(level, value, out);
     }
 
-    /// The finger lifted. The level stays where it was set, and readings count again.
+    /// The finger lifted. The level stays where it was set.
     pub(crate) fn slide_end(&mut self) {
-        if self.slider.take().is_some() {
-            self.release();
-        }
+        self.slider = None;
     }
 }
 
@@ -196,7 +194,7 @@ mod tests {
     fn sliding_the_volume_unmutes_and_a_tap_opens_its_tab() {
         let mut s = with_levels();
         slide(&mut s, Slide::Start { control: Control::Volume, x: 280.0, width: 620.0 });
-        assert_eq!(slide(&mut s, Slide::To { x: 250.0 }), vec![Effect::Sound(Sound::Mute(false)), Effect::Sound(Sound::Volume(30))]);
+        assert_eq!(sounds(&slide(&mut s, Slide::To { x: 250.0 })), [Sound::Mute(false), Sound::Volume(30)]);
         slide(&mut s, Slide::End);
         assert_eq!(s.levels().volume(), Some(30));
         tap(&mut s, Id::Control(Control::Brightness));

@@ -762,7 +762,7 @@ Start
 Pointer(Activate(Tab(Dock)))
   Watch Metrics off
 Slide(To { x: 700.0 })
-  Sound(Volume(83))
+  Sound { sound: Volume(83), number: 1 }
 -- slider.png
 -- keyboard.png
 -- keyboard-fn.png

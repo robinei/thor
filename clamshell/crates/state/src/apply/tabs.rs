@@ -61,7 +61,6 @@ impl State {
             self.keyboard.take_modifiers();
         }
         self.dock.close();
-        self.levels.release();
         self.sys.left_tab();
     }
 

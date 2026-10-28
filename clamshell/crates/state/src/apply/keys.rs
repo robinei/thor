@@ -79,7 +79,7 @@ mod tests {
     use crate::levels::slider::Control;
     use crate::status::Status;
     use crate::testkit::Applied;
-    use crate::testkit::state;
+    use crate::testkit::{sounds, state};
     use crate::{Effect, Event, Reading};
 
     #[test]
@@ -87,10 +87,10 @@ mod tests {
         let mut s = state();
         s.applied(Event::tick(100));
         s.applied(Reading::Status(Status { volume: Some(50), brightness: Some(40), ..Status::default() }).into());
-        assert_eq!(s.applied(Event::HardwareKey(HardwareKey::VolumeUp)), vec![Effect::Sound(Sound::Volume(55))]);
+        assert_eq!(sounds(&s.applied(Event::HardwareKey(HardwareKey::VolumeUp))), [Sound::Volume(55)]);
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::Level(Control::Volume)));
         assert!(matches!(s.applied(Event::HardwareKey(HardwareKey::BrightnessDown)).as_slice(), [Effect::Brightness { level: 35, .. }]));
-        assert_eq!(s.applied(Event::HardwareKey(HardwareKey::Mute)), vec![Effect::Sound(Sound::Mute(true))]);
+        assert_eq!(sounds(&s.applied(Event::HardwareKey(HardwareKey::Mute))), [Sound::Mute(true)]);
         s.applied(Event::tick(101));
         assert!(s.bottom().notice().is_some());
         s.applied(Event::tick(102));
@@ -104,7 +104,7 @@ mod tests {
         assert_eq!(s.applied(Event::HardwareKey(HardwareKey::Mute)), vec![], "the volume unknown");
         assert!(s.bottom().notice().is_none());
         s.applied(Reading::Status(Status { volume: Some(50), ..Status::default() }).into());
-        assert_eq!(s.applied(Event::HardwareKey(HardwareKey::Mute)), vec![Effect::Sound(Sound::Mute(true))]);
+        assert_eq!(sounds(&s.applied(Event::HardwareKey(HardwareKey::Mute))), [Sound::Mute(true)]);
         assert_eq!(s.bottom().notice().map(|n| &n.what), Some(&NoticeKind::Level(Control::Volume)));
     }
 

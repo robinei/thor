@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use clamshell_state::{Event, Reading, Status};
 
-use crate::audio::mixer;
+use crate::audio::{mixer, sound::Carried};
 use crate::display::brightness::Backlights;
 use crate::os::sys;
 use crate::os::worker::{Changed, Shown, Worker};
@@ -22,20 +22,20 @@ const UNSEEN_EVERY: Duration = Duration::from_secs(60);
 
 /// Starts the status thread. Its commands say whether the screens are on (see
 /// [`clamshell_state::Watch::Status`]).
-pub(crate) fn spawn(backlights: Backlights, sink: impl Sink) -> io::Result<Worker<Shown>> {
+pub(crate) fn spawn(backlights: Backlights, carried: Carried, sink: impl Sink) -> io::Result<Worker<Shown>> {
     Worker::spawn(clamshell_state::Thread::Status.name(), move |seen| {
-        let _ = follow(&backlights, &sink, seen);
+        let _ = follow(&backlights, &carried, &sink, seen);
     })
 }
 
-fn follow(backlights: &Backlights, sink: &impl Sink, commands: &Receiver<Shown>) -> Result<(), Closed> {
+fn follow(backlights: &Backlights, carried: &Carried, sink: &impl Sink, commands: &Receiver<Shown>) -> Result<(), Closed> {
     let mut last = Changed::default();
     let mut seen = true;
     // While unseen, the battery is read again and the rest stays as last read.
-    let mut status = read(backlights);
+    let mut status = read(backlights, carried);
     loop {
         if seen {
-            status = read(backlights);
+            status = read(backlights, carried);
         } else {
             (status.battery, status.charging, status.discharging) = read_battery().unwrap_or((None, false, false));
         }
@@ -50,11 +50,14 @@ fn follow(backlights: &Backlights, sink: &impl Sink, commands: &Receiver<Shown>)
     }
 }
 
-fn read(backlights: &Backlights) -> Status {
+/// The status, its volume and mute with the number of the last sound command carried out before they
+/// were read.
+fn read(backlights: &Backlights, carried: &Carried) -> Status {
     let (battery, charging, discharging) = read_battery().unwrap_or((None, false, false));
     let wifi = sys::text("/proc/net/wireless").as_deref().and_then(parse_wireless);
+    let sound_seen = carried.seen();
     let (volume, muted) = mixer::read_volume().map_or((None, false), |(v, m)| (Some(v), m));
-    Status { battery, charging, discharging, wifi, volume, muted, brightness: backlights.level() }
+    Status { battery, charging, discharging, wifi, volume, muted, sound_seen, brightness: backlights.level() }
 }
 
 /// The system's battery: its capacity, whether it is charging (or full on power), and whether it is

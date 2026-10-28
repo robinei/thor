@@ -11,10 +11,11 @@ use clamshell_state::{Event, Id, LaunchUnit, PointerEvent, Reading, Status, Tab,
 
 /// A status that shows every bar icon.
 pub const STATUS: Status =
-    Status { battery: Some(72), charging: true, discharging: false, wifi: Some(80), volume: Some(60), muted: false, brightness: Some(70) };
+    Status { battery: Some(72), charging: true, discharging: false, wifi: Some(80), volume: Some(60), muted: false, sound_seen: 0, brightness: Some(70) };
 
 /// Low battery, no Wi-Fi, muted.
-pub const STATUS_LOW: Status = Status { battery: Some(9), charging: false, discharging: true, wifi: None, volume: Some(40), muted: true, brightness: None };
+pub const STATUS_LOW: Status =
+    Status { battery: Some(9), charging: false, discharging: true, wifi: None, volume: Some(40), muted: true, sound_seen: 0, brightness: None };
 
 /// A launch of entry `id`, the `n`th thing started.
 pub fn run(id: &str, n: u64) -> LaunchUnit {
@@ -187,6 +188,7 @@ pub fn audio() -> Audio {
         streams: [("Firefox", 80, false), ("Steam", 100, false), ("Spotify", 35, true)]
             .map(|(app, volume, muted)| Stream { id: 90, app: app.into(), title: String::new(), volume, muted })
             .to_vec(),
+        seen: 0,
     }
 }
 

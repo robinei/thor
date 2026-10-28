@@ -31,6 +31,9 @@ pub struct Status {
     /// Output volume 0-100, if known, and whether it is muted.
     pub volume: Option<u8>,
     pub muted: bool,
+    /// The number of the last sound command carried out when these were read (see
+    /// [`crate::levels::Levels`]).
+    pub sound_seen: u64,
     /// The first backlight's level 0-100 as read, if there is a backlight. It stands for the brightness
     /// until ClamShell sets one (see [`crate::levels::Brightness`]).
     pub brightness: Option<u8>,

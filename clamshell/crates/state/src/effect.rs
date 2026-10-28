@@ -109,8 +109,12 @@ pub enum Effect {
         start: u64,
         duration: u64,
     },
-    /// Set the output volume and mute, an app's volume and mute, or the output.
-    Sound(Sound),
+    /// Set the output volume and mute, an app's volume and mute, or the output. Readings name `number` as
+    /// the last command carried out once it has been (see [`crate::levels::Levels`]).
+    Sound {
+        sound: Sound,
+        number: u64,
+    },
     /// Set the screens' brightness. Each backlight is set to `level` times its share. Both are 0-100, and
     /// a backlight without a share counts as 100.
     Brightness {

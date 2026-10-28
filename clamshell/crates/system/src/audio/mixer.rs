@@ -23,19 +23,19 @@ pub(crate) enum Command {
 
 const READ_EVERY: Duration = Duration::from_secs(1);
 
-pub(crate) fn spawn(backlights: Backlights, sink: impl Sink) -> io::Result<Worker<Command>> {
+pub(crate) fn spawn(backlights: Backlights, carried: super::sound::Carried, sink: impl Sink) -> io::Result<Worker<Command>> {
     Worker::spawn(clamshell_state::Thread::Mixer.name(), move |commands| {
-        let _ = follow(&backlights, commands, &sink);
+        let _ = follow(&backlights, &carried, commands, &sink);
     })
 }
 
 /// Reads what is watched every second and sends it when it changed, until the command channel or the UI
 /// is gone.
-fn follow(backlights: &Backlights, commands: &Receiver<Command>, sink: &impl Sink) -> Result<(), Closed> {
+fn follow(backlights: &Backlights, carried: &super::sound::Carried, commands: &Receiver<Command>, sink: &impl Sink) -> Result<(), Closed> {
     let (mut audio, mut lights) = (false, false);
     let (mut last_audio, mut last_lights) = (Changed::default(), Changed::default());
     loop {
-        if audio && let Some(read) = last_audio.offer(read_audio()) {
+        if audio && let Some(read) = last_audio.offer(read_audio(carried.seen())) {
             sink.send(Event::Reading(Reading::Audio(read)))?;
         }
         if lights && let Some(read) = last_lights.offer(backlights.names()) {
@@ -69,8 +69,10 @@ fn dump() -> Option<Value> {
     serde_json::from_slice(&ran.stdout).inspect_err(|e| log::debug!("pw-dump: {e}")).ok()
 }
 
-fn read_audio() -> Audio {
-    dump().map(|v| parse(&v)).unwrap_or_default()
+/// The outputs and apps, with `seen`, the number of the last sound command carried out before they were
+/// read.
+fn read_audio(seen: u64) -> Audio {
+    Audio { seen, ..dump().map(|v| parse(&v)).unwrap_or_default() }
 }
 
 /// The default output's volume (0-100) and whether it is muted.
@@ -198,7 +200,7 @@ mod live {
     #[test]
     #[ignore = "needs PipeWire"]
     fn reads_pipewire() {
-        let audio = super::read_audio();
+        let audio = super::read_audio(0);
         println!("{audio:#?}");
         assert!(audio.outputs.iter().filter(|o| o.default).count() <= 1);
         println!("{:?}", super::read_volume());

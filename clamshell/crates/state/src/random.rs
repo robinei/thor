@@ -641,7 +641,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 outputs.truncate(rng.below(3));
                 let mut streams = vec![stream(5, "mpv"), stream(6, "game")];
                 streams.truncate(rng.below(3));
-                Reading::Audio(Audio { outputs, streams })
+                Reading::Audio(Audio { outputs, streams, seen: 0 })
             }
             4 => Reading::Account(crate::setup::account::Account { available: true, password: !rng.one_in(3), ssh: rng.one_in(2) }),
             _ => Reading::Clipboard(rng.one_in(2).then(|| "pasted".into())),

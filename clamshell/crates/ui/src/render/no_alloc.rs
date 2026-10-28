@@ -345,6 +345,7 @@ fn warm_frames_do_not_allocate() {
                 Event::Reading(Reading::Audio(levels::Audio {
                     outputs: vec![levels::AudioOutput { id: 1, name: "Speakers".into(), default: true }],
                     streams: vec![levels::Stream { id: 2, app: "Firefox".into(), title: String::new(), volume: 40, muted: false }],
+                    seen: 0,
                 })),
                 Event::Pointer(PointerEvent::Down(levels::Level::Stream(0).id(), None)),
             ],

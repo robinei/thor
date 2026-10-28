@@ -75,6 +75,9 @@ pub(crate) struct Sent {
     /// The brightness last sent, its level and the shares, or None if none was (see
     /// [`Levels::wanted_brightness`]).
     brightness: Option<(u8, Vec<crate::levels::Share>)>,
+    /// Whether a brightness was ever sent: ClamShell has set the backlights, so what they read is no
+    /// longer the brightness (see [`Levels::read`]). A restart of the brightness thread keeps it.
+    brightness_touched: bool,
     /// The program in force and its settings as they were applied last, or None to apply them again.
     applied: Option<(Option<Arc<str>>, Values)>,
     /// The screens' power as `Compositor::Outputs` has it (whether they are on, and the bottom one while
@@ -115,6 +118,7 @@ impl Default for Sent {
             in_use: Some(0),
             stage: Stage::Awake,
             brightness: None,
+            brightness_touched: false,
             applied: None,
             outputs: Some((true, true)),
             refresh: 0,
@@ -244,7 +248,7 @@ impl Sent {
 
     /// The screens' brightness when it differs from what was sent: the level, or the shares.
     fn brightness(&mut self, w: &Wanted, out: &mut Out) {
-        let Some(level) = w.levels.wanted_brightness(w.stage >= Stage::Dimmed, self.brightness.is_some()) else {
+        let Some(level) = w.levels.wanted_brightness(w.stage >= Stage::Dimmed, self.brightness_touched) else {
             return;
         };
         let shares = &w.levels.brightness().shares;
@@ -252,7 +256,13 @@ impl Sent {
             return;
         }
         self.brightness = Some((level, shares.clone()));
+        self.brightness_touched = true;
         out.effects.push(w.levels.brightness_at(level));
+    }
+
+    /// Whether ClamShell has set the backlights (see [`Sent::brightness_touched`]).
+    pub(crate) fn brightness_touched(&self) -> bool {
+        self.brightness_touched
     }
 
     /// The screens are on while idle hasn't turned them off, and the bottom one as it is set (see

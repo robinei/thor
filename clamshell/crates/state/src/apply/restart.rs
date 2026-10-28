@@ -48,19 +48,12 @@ impl State {
             Thread::Launcher => {}
             // A Bluetooth connection under way ends (its busy mark went above); it can be tapped again.
             Thread::BluetoothConnect => {}
+            // The sound commands it hadn't carried out are gone with it: the readings stand.
+            Thread::Sound => self.levels.sound_restarted(),
             // Nothing the state sent them stands: they read the system afresh as they start (the units
             // are listed again, input devices and the clipboard watched again, the saved clipboard
-            // offered again), or carry out one command at a time (a sound). The control pipe's line being
-            // read is lost.
-            Thread::PadDevices
-            | Thread::Control
-            | Thread::Tray
-            | Thread::Sound
-            | Thread::Units
-            | Thread::Clock
-            | Thread::InputWatch
-            | Thread::Clipboard
-            | Thread::Sleep => {}
+            // offered again). The control pipe's line being read is lost.
+            Thread::PadDevices | Thread::Control | Thread::Tray | Thread::Units | Thread::Clock | Thread::InputWatch | Thread::Clipboard | Thread::Sleep => {}
             // Nothing: the notifications are the state's, and the thread holds only its bus name, which it
             // asks for again. Its ids come from a counter that outlives it, so it doesn't give out an id
             // the state still holds. A signal it was emitting is lost.
