@@ -248,6 +248,13 @@ pub struct Runner {
     pub bios: Option<Bios>,
 }
 
+impl Runner {
+    /// The id sources name it by: its own, or else made from its name.
+    pub fn effective_id(&self) -> String {
+        if self.id.is_empty() { self.name.to_lowercase().replace(' ', "-") } else { self.id.clone() }
+    }
+}
+
 /// A runner that finds its items itself, each with its own command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(rename_all = "lowercase"))]

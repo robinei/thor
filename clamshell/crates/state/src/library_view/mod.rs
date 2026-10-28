@@ -202,10 +202,11 @@ impl LibraryView {
         }
     }
 
-    /// A field of the edit mode's form typed (see [`form`]).
-    pub(crate) fn form_typed(&mut self, field: form::Field, text: &str) {
-        if let Some(e) = &mut self.edit {
-            e.field_typed(field, text);
+    /// A field of the edit mode's form typed (see [`form`]), for the form `opened`; one closed since
+    /// doesn't take it.
+    pub(crate) fn form_typed(&mut self, field: form::Field, opened: u32, text: &str, out: &mut crate::out::Out) {
+        if !self.edit.as_mut().is_some_and(|e| e.field_typed(field, opened, text)) {
+            out.log(crate::LogLevel::Info, format!("library edit: {} typed for a form closed since: dropped", field.label()));
         }
     }
 

@@ -81,6 +81,8 @@ pub enum Panel {
 /// A source's or runner's form, open (see [`super::form`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Form {
+    /// Which form opened it is, counted, so that a field typed for it goes to it and no other.
+    pub opened: u32,
     /// Where it is in its list, or none for a new one.
     pub index: Option<usize>,
     pub item: Item,
@@ -130,6 +132,8 @@ pub struct Edit {
     wrote: Option<Arc<Config>>,
     /// Why the last thing asked wasn't done (a name taken, a paste into itself), until something is.
     problem: Option<&'static str>,
+    /// How many forms have been opened (see [`Form::opened`]).
+    forms: u32,
 }
 
 /// Why place name `name` can't be one in `within` (a tab's if none), `id` being the place named, if it
@@ -437,7 +441,7 @@ impl Edit {
                     changed.sources.remove(self.cursor);
                 } else {
                     // A runner a source names stays: the source would open nothing.
-                    let named = changed.runners.get(self.cursor).map(|r| r.id.clone()).unwrap_or_default();
+                    let named = changed.runners.get(self.cursor).map(Runner::effective_id).unwrap_or_default();
                     if runner_used(config, &named) {
                         return Some(false);
                     }
@@ -454,7 +458,7 @@ impl Edit {
                     Set::Typed => {
                         form.field = i;
                         let text = form.item.value(config, field);
-                        out.events.push(Event::EditOnKeyboard(Editor { purpose: Purpose::FormField(field), text }));
+                        out.events.push(Event::EditOnKeyboard(Editor { purpose: Purpose::FormField(field, form.opened), text }));
                     }
                     Set::Chosen => (form.field, form.choosing) = (i, !(form.choosing && form.field == i)),
                     Set::Toggled => form.item.toggle(field),
@@ -470,14 +474,14 @@ impl Edit {
             EditId::Cancel => self.form = None,
             EditId::Save => {
                 let form = self.form.take()?;
-                let mut changed = config.clone();
-                match (form.item, form.index) {
-                    (Item::Source(s), Some(i)) => *changed.sources.get_mut(i)? = s,
-                    (Item::Source(s), None) => changed.sources.push(s),
-                    (Item::Runner(r), Some(i)) => *changed.runners.get_mut(i)? = r,
-                    (Item::Runner(r), None) => changed.runners.push(r),
+                match saved(config, form.item.clone(), form.index) {
+                    Ok(changed) => self.write(changed, out),
+                    // Not saved: the form stays, saying why.
+                    Err(why) => {
+                        self.problem = Some(why);
+                        self.form = Some(form);
+                    }
                 }
-                self.write(changed, out);
             }
             _ => return None,
         }
@@ -501,7 +505,8 @@ impl Edit {
             },
             Panel::Places => return,
         };
-        self.form = Some(Form { index, item, field: 0, choosing: false });
+        self.forms += 1;
+        self.form = Some(Form { opened: self.forms, index, item, field: 0, choosing: false });
     }
 
     /// Selects the form's field `i`.
@@ -519,9 +524,14 @@ impl Edit {
     }
 
     /// A field of the form open, typed.
-    pub(crate) fn field_typed(&mut self, field: Field, text: &str) {
-        if let Some(form) = &mut self.form {
-            form.item.type_in(field, text);
+    /// Returns whether it was: the form it was typed for is gone, it isn't.
+    pub(crate) fn field_typed(&mut self, field: Field, opened: u32, text: &str) -> bool {
+        match &mut self.form {
+            Some(form) if form.opened == opened => {
+                form.item.type_in(field, text);
+                true
+            }
+            _ => false,
         }
     }
 
@@ -569,6 +579,56 @@ impl Edit {
         out.effects.push(Effect::WriteLibrary(changed.clone()));
         self.wrote = Some(changed);
     }
+}
+
+/// library.json with `item` saved at `index` (a new one's at the end), or why it can't be. A scan
+/// without an id gets one from its folder, other scans' ids kept apart, since its entries are known by it.
+/// A runner's id (or, without one, its name's) must be its own; changed, the sources naming the old one
+/// name the new.
+fn saved(config: &Config, item: Item, index: Option<usize>) -> Result<Config, &'static str> {
+    let mut changed = config.clone();
+    match item {
+        Item::Source(mut s) => {
+            if let Source::Dir(scan) = &mut s {
+                let taken = |id: &str| changed.sources.iter().enumerate().any(|(i, o)| Some(i) != index && matches!(o, Source::Dir(d) if d.id == id));
+                if scan.id.is_empty() || taken(&scan.id) {
+                    let base = scan.dir.trim_end_matches('/').rsplit('/').next().filter(|b| !b.is_empty()).unwrap_or("scan").to_lowercase();
+                    scan.id = (1..).map(|n| if n == 1 { base.clone() } else { format!("{base}-{n}") }).find(|id| !taken(id)).unwrap_or_default();
+                }
+            }
+            match index {
+                Some(i) => *changed.sources.get_mut(i).ok_or("It's gone")? = s,
+                None => changed.sources.push(s),
+            }
+        }
+        Item::Runner(r) => {
+            let id = r.effective_id();
+            if id.is_empty() {
+                return Err("An id or a name is needed");
+            }
+            if changed.runners.iter().enumerate().any(|(i, o)| Some(i) != index && o.effective_id() == id) {
+                return Err("Another runner has that id");
+            }
+            let old = index.and_then(|i| changed.runners.get(i)).map(Runner::effective_id);
+            if let Some(old) = old.filter(|old| *old != id) {
+                for s in &mut changed.sources {
+                    let runner = match s {
+                        Source::Dir(d) => &mut d.runner,
+                        Source::Desktop(rule) | Source::Steam(rule) => &mut rule.runner,
+                        _ => continue,
+                    };
+                    if runner.as_deref() == Some(old.as_str()) {
+                        *runner = Some(id.clone());
+                    }
+                }
+            }
+            match index {
+                Some(i) => *changed.runners.get_mut(i).ok_or("It's gone")? = r,
+                None => changed.runners.push(r),
+            }
+        }
+    }
+    Ok(changed)
 }
 
 /// Whether a source names runner `id`.
@@ -716,6 +776,24 @@ mod tests {
         assert_eq!(edit.here(&gone), Some("games"));
     }
 
+    /// Save keeps ids apart: a scan without one gets one from its folder, not another scan's; a runner's
+    /// must be its own, and changed, the sources naming it follow; a runner known by its name is found used.
+    #[test]
+    fn saving_keeps_ids_apart() {
+        let mut config = (*config()).clone();
+        let scan =
+            |id: &str, dir: &str| Source::Dir(Scan { id: id.into(), dir: dir.into(), place: "snes".into(), runner: Some("snes".into()), ..Scan::default() });
+        config.sources = vec![scan("snes", "~/Roms/snes")];
+        config.runners = vec![Runner { id: "snes".into(), ..Runner::default() }, Runner { name: "Game Boy".into(), ..Runner::default() }];
+        let c = saved(&config, Item::Source(scan("", "~/Roms/snes/")), None).unwrap();
+        assert!(matches!(c.sources.get(1), Some(Source::Dir(d)) if d.id == "snes-2"), "{:?}", c.sources.get(1));
+        assert_eq!(saved(&config, Item::Runner(Runner { id: "game-boy".into(), ..Runner::default() }), Some(0)).err(), Some("Another runner has that id"));
+        let c = saved(&config, Item::Runner(Runner { id: "sfc".into(), ..Runner::default() }), Some(0)).unwrap();
+        assert!(matches!(c.sources.first(), Some(Source::Dir(d)) if d.runner.as_deref() == Some("sfc")), "the source follows");
+        config.sources = vec![Source::Dir(Scan { runner: Some("game-boy".into()), ..Scan::default() })];
+        assert!(runner_used(&config, &config.runners.get(1).unwrap().effective_id()), "known by its name");
+    }
+
     /// A source's form: a field typed, a choice made, saved and written in its place; a new source goes
     /// at the end; a source moves down; a runner a source names isn't removed.
     #[test]
@@ -736,10 +814,12 @@ mod tests {
         let at = |f: Field| fields.iter().position(|x| *x == f).unwrap() as u16;
         edit.tap(EditId::Field(at(Field::Also)), Some(&read), &mut out);
         assert!(
-            out.events.iter().any(|e| matches!(e, Event::EditOnKeyboard(Editor { purpose: Purpose::FormField(Field::Also), .. }))),
+            out.events.iter().any(|e| matches!(e, Event::EditOnKeyboard(Editor { purpose: Purpose::FormField(Field::Also, _), .. }))),
             "typed on the keyboard"
         );
-        edit.field_typed(Field::Also, "*.zip");
+        let opened = edit.form().unwrap().opened;
+        assert!(edit.field_typed(Field::Also, opened, "*.zip"));
+        assert!(!edit.field_typed(Field::Also, opened + 1, "*.7z"), "for another form: not taken");
         edit.tap(EditId::Field(at(Field::Place)), Some(&read), &mut out);
         assert!(edit.form().unwrap().choosing, "its options show");
         let games = edit.form().unwrap().item.options(&read, Field::Place).iter().position(|(v, _)| v == "games").unwrap() as u16;

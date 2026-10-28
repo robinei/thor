@@ -181,7 +181,7 @@ fn list_view(f: &mut Frame, h: f32, edit: &Edit, config: &Config, panel: Panel, 
         y += detail * ACTION;
     }
     match &item {
-        Item::Runner(runner) if edit::runner_used(config, &runner.id) => {
+        Item::Runner(runner) if edit::runner_used(config, &runner.effective_id()) => {
             f.c.text_fit(row(y), detail, Tone::Dim, "Remove: a source names it", Keep::Start);
         }
         _ => f.text_button(EditId::Remove.into(), row(y), detail, Tone::Accent, "Remove", Align::Start),
@@ -199,15 +199,20 @@ fn form_view(f: &mut Frame, h: f32, config: &Config, open: &Form, body: Rect) {
     let half = left.w * 0.3;
     f.text_button(EditId::Save.into(), Rect::new(left.x, y, half, detail * ACTION), detail, Tone::Fn, "Save", Align::Start);
     f.text_button(EditId::Cancel.into(), Rect::new(left.x + half, y, half, detail * ACTION), detail, Tone::Fn, "Cancel", Align::Start);
+    // Why Save didn't save.
+    if let Some(problem) = edit_problem(f) {
+        f.c.text_fit(Rect::new(left.x, y + detail * ACTION, left.w, detail * ACTION), detail, Tone::Accent, problem, Keep::Start);
+    }
 
     let right = Rect::new(body.x + body.w * 0.55 + pad, body.y, body.w * 0.45 - pad, body.h);
     let Some(&field) = open.item.fields().get(open.field) else { return };
     if open.choosing {
         let mut y = right.y;
         let current = open.item.value(config, field);
-        for (j, (_, label)) in open.item.options(config, field).iter().enumerate() {
+        for (j, (value, label)) in open.item.options(config, field).iter().enumerate() {
             let r = Rect::new(right.x, y, right.w, detail * ACTION);
-            let tone = if *label == current { Tone::Accent } else { Tone::Fn };
+            // A field shows its value as the option's label (a type) or as the option itself (a runner's id).
+            let tone = if *label == current || *value == current { Tone::Accent } else { Tone::Fn };
             f.text_button(EditId::Choice(j as u16).into(), r, detail, tone, label, Align::Start);
             y += detail * ACTION;
             if y > right.y + right.h - detail * ACTION {
@@ -420,4 +425,9 @@ impl std::fmt::Display for Path<'_> {
         }
         Ok(())
     }
+}
+
+/// Why the edit mode's last ask wasn't done, if it wasn't.
+fn edit_problem(f: &Frame) -> Option<&'static str> {
+    f.s.library_view().edit().and_then(|e| e.problem())
 }

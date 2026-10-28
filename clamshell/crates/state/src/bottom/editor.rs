@@ -30,7 +30,7 @@ impl Editor {
     pub fn tab(&self) -> crate::Tab {
         match self.purpose {
             Purpose::Password { .. } => crate::Tab::Wifi,
-            Purpose::AccountPassword(_) | Purpose::FileName(_) | Purpose::PlaceName(_) | Purpose::FormField(_) | Purpose::SaveName => crate::Tab::Keyboard,
+            Purpose::AccountPassword(_) | Purpose::FileName(_) | Purpose::PlaceName(_) | Purpose::FormField(..) | Purpose::SaveName => crate::Tab::Keyboard,
             Purpose::Env { .. } | Purpose::KeymapName(_) | Purpose::ProfileName(..) => crate::Tab::Settings,
         }
     }
@@ -54,7 +54,8 @@ pub enum Purpose {
     PlaceName(crate::library_view::edit::PlaceName),
     /// A field of a source's or runner's form, in the Library's edit mode (see
     /// [`crate::library_view::form`]).
-    FormField(crate::library_view::form::Field),
+    /// And which form opened it is (see [`crate::library_view::edit::Form::opened`]).
+    FormField(crate::library_view::form::Field, u32),
     /// The name of a file an app saves (see [`crate::library_view::pick`]).
     SaveName,
 }
@@ -88,9 +89,9 @@ impl Editor {
     pub fn snippets(&self) -> &'static [&'static str] {
         use crate::library_view::form::Field;
         match &self.purpose {
-            Purpose::FormField(Field::Launch) => &["{path}", "{paths}", "{socket}", "~/", "\""],
-            Purpose::FormField(Field::Match | Field::Also | Field::Items) => &["*.", "*/", "*", " "],
-            Purpose::FormField(Field::Dir) => &["~/", "/", "$"],
+            Purpose::FormField(Field::Launch, _) => &["{path}", "{paths}", "{socket}", "~/", "\""],
+            Purpose::FormField(Field::Match | Field::Also | Field::Items, _) => &["*.", "*/", "*", " "],
+            Purpose::FormField(Field::Dir, _) => &["~/", "/", "$"],
             _ => &[],
         }
     }

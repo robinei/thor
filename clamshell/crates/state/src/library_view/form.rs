@@ -303,7 +303,11 @@ impl Item {
                 };
                 let none = std::iter::once((String::new(), "By the file's name".to_owned())).filter(|_| kind.is_none());
                 none.chain(
-                    config.runners.iter().filter(|r| r.kind == kind).map(|r| (r.id.clone(), if r.name.is_empty() { r.id.clone() } else { r.name.clone() })),
+                    config
+                        .runners
+                        .iter()
+                        .filter(|r| r.kind == kind)
+                        .map(|r| (r.effective_id(), if r.name.is_empty() { r.effective_id() } else { r.name.clone() })),
                 )
                 .collect()
             }
@@ -317,6 +321,8 @@ impl Item {
     pub fn choose(&mut self, f: Field, value: &str) {
         let some = (!value.is_empty()).then(|| value.to_owned());
         match (self, f) {
+            // The type it has already: nothing to start over.
+            (Item::Source(s), Field::Kind) if value == source_kind(s) => {}
             (Item::Source(s), Field::Kind) => {
                 let place = source_place(s).map(str::to_owned).unwrap_or_default();
                 *s = match value {
@@ -374,9 +380,13 @@ fn on_off(on: bool) -> String {
     if on { "on" } else { "off" }.into()
 }
 
-/// Words as they are typed: separated by spaces, one with a space in double quotes.
+/// Words as they are typed: separated by spaces, one with a space (or none at all) in double quotes, and
+/// a `"` or `\\` in one with a `\\` before it.
 pub fn words(list: &[String]) -> String {
-    let quoted = |w: &String| if w.contains(' ') || w.is_empty() { format!("\"{w}\"") } else { w.clone() };
+    let quoted = |w: &String| {
+        let escaped = w.replace('\\', "\\\\").replace('"', "\\\"");
+        if w.contains(' ') || w.is_empty() { format!("\"{escaped}\"") } else { escaped }
+    };
     list.iter().map(quoted).collect::<Vec<_>>().join(" ")
 }
 
@@ -385,8 +395,14 @@ pub fn split(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut word = String::new();
     let (mut quoted, mut any) = (false, false);
-    for c in text.chars() {
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
         match c {
+            // The next character as it is.
+            '\\' => {
+                word.extend(chars.next());
+                any = true;
+            }
             '"' => {
                 quoted = !quoted;
                 any = true;
@@ -424,6 +440,22 @@ mod tests {
     }
 
     /// A field typed, chosen or toggled sets what it shows; a new type keeps the place.
+    /// Quotes and backslashes in a word come back as they were.
+    #[test]
+    fn words_with_quotes_round_trip() {
+        let argv: Vec<String> = ["sh", "-c", "echo \"hi\"", "--title=\"X\"", "a\\b", "", "two words"].map(String::from).to_vec();
+        assert_eq!(split(&words(&argv)), argv);
+    }
+
+    /// The type a source has, chosen again, leaves it as it is.
+    #[test]
+    fn choosing_a_sources_own_type_keeps_it() {
+        let scan = Scan { id: "snes".into(), dir: "~/Roms/snes".into(), place: "snes".into(), ..Scan::default() };
+        let mut item = Item::Source(Source::Dir(scan.clone()));
+        item.choose(Field::Kind, "dir");
+        assert_eq!(item, Item::Source(Source::Dir(scan)));
+    }
+
     #[test]
     fn fields_are_set_as_they_show() {
         let config = Config { places: vec![Place { id: "snes".into(), name: "SNES".into(), ..Place::default() }], ..Config::default() };
@@ -462,7 +494,7 @@ mod tests {
         use crate::testkit::*;
         use crate::{EditorId, Event, Id};
         let mut s = state();
-        let editor = crate::Editor { purpose: crate::bottom::editor::Purpose::FormField(Field::Launch), text: "mpv ".into() };
+        let editor = crate::Editor { purpose: crate::bottom::editor::Purpose::FormField(Field::Launch, 1), text: "mpv ".into() };
         assert_eq!(editor.snippets().first(), Some(&"{path}"));
         s.applied(Event::EditOnKeyboard(editor));
         tap(&mut s, Id::Editor(EditorId::Insert(0)));

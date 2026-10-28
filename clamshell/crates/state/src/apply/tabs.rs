@@ -89,7 +89,7 @@ impl State {
                 }
             }
             (Done::Save, Purpose::PlaceName(what)) => self.library_view.place_named(what, &editor.text, out),
-            (Done::Save, Purpose::FormField(field)) => self.library_view.form_typed(field, &editor.text),
+            (Done::Save, Purpose::FormField(field, opened)) => self.library_view.form_typed(field, opened, &editor.text, out),
             (Done::Save, Purpose::SaveName) => self.library_view.save_named(&editor.text),
             (Done::Save, Purpose::AccountPassword(step)) => {
                 crate::setup::account::password_typed(step, editor.text, self.bottom.editors_mut(), out);

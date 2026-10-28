@@ -111,7 +111,7 @@ pub(crate) fn checked(config: &[Runner], installed: &dyn Fn(&str) -> bool) -> (V
     let mut problems = Vec::new();
     let mut runners = Vec::new();
     for r in config {
-        let id = if r.id.is_empty() { r.name.to_lowercase().replace(' ', "-") } else { r.id.clone() };
+        let id = r.effective_id();
         let name = if r.name.is_empty() { id.clone() } else { r.name.clone() };
         match (id.is_empty(), r.kind, r.launch.first()) {
             (true, _, _) => problems.push(format!("a runner without an id or a name: {}", r.launch.join(" "))),
