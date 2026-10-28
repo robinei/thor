@@ -30,6 +30,7 @@ Read `architecture.md` first, then `../AGENTS.md` for how work is done here.
   plan.
 - `screen-commits-plan.md`: a screen's commit errors by kind, and what it shows decided once.
 - `window-model-plan.md`: the session's windows, keyboard and slots computed from state where they can be.
+- `state-facts-plan.md`: State as facts and the rest derived: the review, the bugs it found, the steps.
 - `window-management-ideas.md`: candidate improvements to window management, not yet decided.
 
 ## History

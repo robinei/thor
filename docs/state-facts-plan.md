@@ -1,0 +1,109 @@
+# Plan, 2026-10-28: State as facts, the rest derived
+
+From four read-only reviews of the state crate (the session; shelf, the bottom screen, the pad and
+pointer; levels, radios, status, idle, presentation, setup and settings; and `apply`, `settle` and
+`sync`), after `window-model-plan.md`.
+
+## The aim
+
+State holds facts: what the outside reported, what the user chose, and records of the past that decisions
+need. A fact can be stale or missing, but not wrong. Everything else is derived: a function of the facts,
+or recomputed whenever they change, so that it can only be wrong by a bug in its derivation, never by a
+change that forgot to update it. The areas that kept producing bugs should become obviously correct.
+
+And it stays cheap. Measured on the desktop (release, the random test's stream): `apply` takes 2.4 µs at
+the median and 7.2 µs at p99, and a second settle with nothing to do 1.8 µs; settle is already about
+three quarters of apply and already walks everything each event. Deriving instead of storing adds no
+walks. Every step below says what it costs; none may allocate per event (`tests/apply_alloc.rs`).
+
+## Where it stands
+
+Much is already fact-shaped: the settings in force, idle's stage, the pad's route, the dock's running
+items, the folder selection, the lists' scrolls are reconciled each settle; `sync` sends the difference
+between what the state wants and what was sent; keymaps' versions are kept by their only mutators.
+
+What isn't, and where the bugs were:
+
+- **Who owns a window, and its group.** Ownership has several definitions (`running_of` walks to the
+  root and falls back on the stored group; finding a program goes by the window's own process;
+  `start_found` by the root), and the group is both derived from the owner and read to find it. Three of
+  the latest bugs, and a live one: a found program adopted again on every event (below).
+- **Stored recomputes:** the pad's route, the bottom screen's dimming and idle-off, shelf's selected
+  entry beside its cursor: each kept current by a settle step or by its callers.
+- **Edges kept by callers:** shelf's `moved()` (12 callers) and its `unsaved` flags, the tab left
+  (4 immediate calls and a deferred one), `remember_front` called after some commands and events.
+- **Readings edited in place:** the volume and mute held while a finger is on them (`Held`, `holding`,
+  released from three places), stream mute and output written into the audio reading, Wi-Fi's and
+  Bluetooth's `busy` and `error` overwritten by our attempt (`Local`; two past fixes). The fact is "we
+  sent this at time t"; what to show is derived from it and the readings.
+- **`Sent` beyond "what was sent":** `tab_again`, a send-again flag modelling one tab slot where the
+  outside has a watch per reader; "ClamShell has touched the backlights" kept in `Sent` and erased by a
+  restart. Freeze and runner pause sent as edges from settle, not as a wanted condition, which needs
+  `freeze_again` on restart and half of a random invariant to check.
+- **Settle doesn't reach a fixed point.** Settling a second time after an event changes the state in
+  three ways (verified over 150 seeds): the adoption loop, a found program picked up an event late
+  (`end_windowless` runs after `follow_found_windows`), and a background grace timer started an event late.
+
+## Bugs found, fixed first
+
+- [ ] **A found program adopted on every event.** A window of another program over a starting launch's
+  window: it is found by its own process, but `running_of` walks to the root, which it doesn't own, so the
+  entry has no windows and ends in the same settle; the next settle finds it again, each time asking for a
+  new scope. Predates today's changes.
+- [ ] **The screens can stay dimmed after waking.** A backlight reading taken while dimmed that arrives
+  after the wake is taken as the brightness on a device where the user hasn't set one, and each dim
+  compounds it (the failure 65ec9f62 fixed, still open as a race). Fix: keep the backlight as read before
+  ClamShell first set it, frozen from then on.
+- [ ] **A launcher's dialog opens behind on three paths.** `FrontLaunch.launcher` is set by a second call
+  on two of the five ways a launch starts waiting (not the re-wait after the window in front closed, nor
+  a found or tray program's), so Steam's "which version" dialog opens behind there. Fix: derive it.
+
+## Steps
+
+Each ends in commits that pass `tools/check.sh` and the randomized test at 3000 seeds.
+
+- [ ] 1. **Settle converges, checked.** The randomized test settles and syncs a second time after each
+  event (every Nth, to keep it quick) and requires no effects, no queued events and no change. The scratch
+  buffers (`queue`, `plays`, `with_windows`) move into one `Scratch` left out of the comparison. Also: no
+  Adopt or FindIcon repeated for an entry. This is the net for every ordered-correction bug from here on.
+- [ ] 2. **One owner function from facts.** `owner(w)`: the root's program by mark, unit or process, never
+  by a stored group. A window's group is its owner's, else a claim, else its own; the claims (a file's
+  window taken by the entry waiting for it, a service dialog given to the program in front) are stored as
+  history on the window. Finding programs goes by roots. `FrontLaunch.launcher` derived. Cost: an owner
+  and root table built once per settle into a reused buffer when the windows or programs changed (a
+  generation counter, as keymaps' versions), replacing today's O(programs × windows²) of repeated
+  `running_of`/`root_of`; `Running` holds its `Group` so that comparing doesn't allocate. The library mark
+  lookup per window (`start_by_app_id`, O(windows × entries) each settle) cached on the window when its
+  facts or the library change.
+- [ ] 3. **Stored recomputes become getters.** `Pad::route(..)`, `Bottom::dimmed(..)`, the bottom
+  screen's idle-off, shelf's selected entry from its cursor. Each drops a settle step, its writers and a
+  random invariant that only checked the copy. Cost: O(1) each; the settings in force computed once per
+  settle rather than two or three times.
+- [ ] 4. **Edges from recorded values.** One `Followed` record written at the end of settle: the tab, shelf's
+  place, the program, the route, the front. A step compares the derived value with it: the tab left
+  (replacing `Bottom.left` and the four immediate calls), shelf moved (replacing `moved()` and its 12
+  callers), the program's pad mouse, the focus ring hidden, the front remembered once per apply. Resume
+  saved when a hash of the place differs from the last saved, replacing both `unsaved` flags. Cost: a few
+  compares and a hash over a few dozen ids, no allocation.
+- [ ] 5. **Commands sent as facts, readings kept as received.** One helper for "sent this at time t":
+  what a level shows is our send while it is younger than the readings' period, else the reading
+  (replacing `Held`, `holding`, its three releases and the edits to the audio reading); Wi-Fi's and
+  Bluetooth's busy and error derived from the attempt and the reading (replacing `Local`, `give_up` and
+  their follow). One slide gesture on State instead of four `slider` fields. Cost: a scan of a few sends.
+- [ ] 6. **`Sent` only what was sent.** A watch's state per watch (on, off, unknown), a restart setting
+  what its thread held to unknown (replacing `tab`, `tab_again`, `status_off`, `account`); freezing and
+  runner pauses wanted as a condition and diffed in sync (replacing `freeze_again`); the backlights
+  touched as a fact in Levels.
+- [ ] 7. **Shelf's library changes through one place.** One `library_changed` doing what `relayout`,
+  `listed` and `reload` each repeat by hand (close gone groups, find again, select again by id, prune the
+  file selection); `reload` replacing only the library and places rather than rebuilding and copying
+  fields back.
+
+Cost fixes on the way (no behaviour change):
+- [ ] The settings in force (`in_force`, `settings_of`) scan the whole library per call: 2 to 3 times per
+  event in the state, and about 7 times per window per event in the compositor. Keep the runner's key on
+  the running entry; look entries up by an index map built when the library changes.
+- [ ] `window_presentation` allocates a list of sizes per call (twice per window per event, from the
+  compositor): an iterator instead.
+- [ ] Typing a shelf filter allocates a lowercased copy of every title per keystroke: a case-insensitive
+  compare instead.
