@@ -197,7 +197,9 @@ impl Presenter {
             if fence.is_none() {
                 // Without a fence to hand the commit, the drawing is waited on here; implicit sync covers
                 // a wait that fails.
-                let _ = sync.wait();
+                if let Err(error) = sync.wait() {
+                    log::debug!("drm: waiting for the drawing failed, left to implicit sync: {error:?}");
+                }
             }
             fence
         });
@@ -287,27 +289,40 @@ impl Presenter {
         Ok(())
     }
 
-    /// The frame committed is shown: the buffer shown before is free again. Whether there was one.
+    /// The frame committed is shown: the buffer shown before is free again. Whether there was one. A flip
+    /// with none committed is a lost frame's, late, as is one of the frame shown again after it (the lost
+    /// frame committed again): that frame is the one shown.
     pub(crate) fn flipped(&mut self) -> bool {
-        self.lost = None;
+        let lost = self.lost.take();
         match self.pending.take() {
-            Some(Shown::Again) => true,
+            Some(Shown::Again) => {
+                if let Some(lost) = lost {
+                    self.current = Some(lost);
+                }
+                true
+            }
             Some(pending) => {
                 self.current = Some(pending);
                 true
             }
-            None => false,
+            None => {
+                if let Some(lost) = lost {
+                    self.current = Some(lost);
+                }
+                false
+            }
         }
     }
 
     /// Drops the buffers composed into if it hasn't composed for a while by `now` and none of them is shown or
-    /// on its way. Returns when they will be dropped otherwise.
+    /// on its way, else tells `trims` when they will be.
     pub(crate) fn trim(&mut self, now: std::time::Instant, trims: &mut crate::hold::Trims) {
         if !self.composing_buffers {
             return;
         }
         let in_use = |shown: &Option<Shown>| matches!(shown, Some(Shown::Composed(_)));
-        if self.next.is_some() || in_use(&self.pending) || in_use(&self.lost) || in_use(&self.current) {
+        // (A buffer taken but not queued, its drawing failed, isn't in use: it is only kept for the next.)
+        if in_use(&self.pending) || in_use(&self.lost) || in_use(&self.current) {
             // In use: kept until a while after it no longer is.
             self.hold.used(now);
             return;
@@ -315,6 +330,7 @@ impl Presenter {
         if self.hold.expired(now) {
             log::info!("drm: plane {:?}'s buffers to compose into dropped", self.surface.plane());
             self.swapchain.reset_buffers();
+            self.next = None;
             self.composing_buffers = false;
             trims.dropped();
             return;
@@ -335,6 +351,7 @@ impl Presenter {
 
     /// The screen was turned off: its plane shows none of its buffers any more, so they may be dropped.
     pub(crate) fn off(&mut self) {
+        self.last = None;
         self.next = None;
         self.pending = None;
         self.lost = None;
