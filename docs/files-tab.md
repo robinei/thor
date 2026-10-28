@@ -8,24 +8,24 @@ listed again whenever it changes while it is open.
 
 ```json
 "sources": [
-  { "type": "browse", "place": "@files/Home", "dir": "~" },
-  { "type": "browse", "place": "@files/Root", "dir": "/" },
-  { "type": "browse", "place": "@files/Trash", "dir": "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "trash": true },
-  { "type": "removable", "label": "SD*", "place": "@files/SD card" },
-  { "type": "removable", "fs": "vfat", "place": "@files/USB/{label}" },
+  { "type": "browse", "dir": "~", "in": "files", "name": "Home" },
+  { "type": "browse", "dir": "/", "in": "files", "name": "Root" },
+  { "type": "browse", "dir": "${XDG_DATA_HOME:-~/.local/share}/Trash/files", "in": "files", "name": "Trash", "trash": true },
+  { "type": "removable", "label": "SD*", "in": "files", "name": "SD card" },
+  { "type": "removable", "fs": "vfat", "in": "files", "name": "USB {label}" },
   { "type": "removable", "uuid": "1234-ABCD", "hide": true },
-  { "type": "removable", "place": "@files/{label}" }
+  { "type": "removable", "in": "files" }
 ]
 ```
 
-- `browse`: a source per dir, its own folder at `place` (its last part the folder's title; `Files/Places/Root`
-  puts it in a folder `Places`). Nothing in it is scanned, fetched or counted beforehand.
+- `browse`: a source per dir, a folder of its own titled `name` in the place `in` (a declared place's id:
+  `files`, or a folder declared in it). Nothing in it is scanned, fetched or counted beforehand.
 - `dir` (here and in scans): `~` and `~/` at the start; `$VAR`, `${VAR}`, `${VAR:-default}` anywhere
   (the default itself expanded). An unset variable without a default skips the entry, shown as a problem.
 - `removable`: the removable filesystems mounted under `/run/media` (udisks2's mounts; udiskie mounts what
   is put in), each taken by the first removable source matching it (`label`, `uuid`, `fs`: globs, any
-  case; none: all) and put at its `place` (`{label}` in it replaced by its label, else its UUID), or left
-  out (`hide`). One no source takes, or without a removable source, doesn't show. A mount or unmount reads the library again, so a
+  case; none: all) and put in the place `in` as a folder titled `name` (`{label}` in it replaced by its
+  label, else its UUID; that is the default name), or left out (`hide`). One no source takes, or without a removable source, doesn't show. A mount or unmount reads the library again, so a
   folder comes and goes, and scans on it come back.
 - Browsed dirs' folders come after the tab's other folders, in the order library.json and the mounts give
   them.

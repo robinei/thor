@@ -324,8 +324,12 @@ touches the session or the outside.
   `WindowCommand::Show`). `TopView` stays, worked out by State. The Library's tile is first on the dock
   whenever it isn't pinned (it always runs), so no starter pin is needed for position 0; once pinned it
   stays pinned, and can be moved. The code wasn't regrouped into `builtin::` modules.
-- [ ] 4. **The format**: places by `id`, `name`, `in`; the `match` default and `also`; built-in sources;
+- [x] 4. **The format**: places by `id`, `name`, `in`; the `match` default and `also`; built-in sources;
   runners' `bios`.
+  Done as planned. A place's path is worked out from its `in` chain as the library is read; a source
+  names a place by its id, and every folder is declared (no `@`, no paths, no undeclared folders). A
+  missing BIOS is a library problem for now (the Rescan entry lists it); showing it on the system's folder
+  is step 5's. Built-ins no source places are entries all the same, in no place.
 - [ ] 5. **What the image ships**: the repos' emulators and runners, `~/Roms`, the menu, the first pins,
   Firefox; then each emulator we package.
 - [ ] 6. **The editors**: Library's edit mode with its tabs and folders, Sources and Runners; the keyboard's field keys;

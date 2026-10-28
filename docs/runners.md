@@ -40,6 +40,8 @@ The first runner whose patterns match a file's name opens it. A runner has:
   process-control.md).
 - `awake`: a command that succeeds while its app on screen keeps the screen on in a way the compositor
   doesn't see (Android's keep-screen-on for a video); run before the screens dim.
+- `bios`: the BIOS files its emulator needs and the folder it looks in (`{ "dir": "~/.config/retroarch/system",
+  "files": ["scph5500.bin"] }`); each one missing is a problem.
 
 A runner says nothing about where things are or show: that is the sources' and places' (below).
 
@@ -76,38 +78,52 @@ the `desktop` and `steam` sources' (below).
 
 ## Places and sources: where things show
 
-`places` declares places: an `id` (`"place": "@snes"` elsewhere, `"@snes/RPG"` a folder in it; the folder's
-id is `place:snes`, so pins, favourites and where a tab was outlive a new path), the `path` (a tab, then
-folders in it), an `icon` and a folder's `picture`. A tab has only an icon, one of the UI's (`gamepad`):
-something in it is always selected. A folder's icon (an image file, or one of the UI's) is what its row
-shows; its picture is what the details show large when it is selected (a console, in a system's folder).
-`"recent": false` keeps what is in a place (and its folders, unless they say) out of Recent: apps.
-ClamShell's own tabs are places of a `type`: `recent`, `favourites`, `tools` (their path their name). The
-declared tabs come in that order; a place not declared still works as a path (`folder:Games/SNES` its
-folder's id). Nothing has a place or an icon of ClamShell's choosing.
+`places` declares the tabs and the folders in them, each by its `id` (`"place": "snes"` elsewhere), with
+its `name` and `in`, the id of the place it is in (none: a tab). A rename changes only `name` and a move
+only `in`, so what is kept by the id stays: sources' places, and a folder's pins, favourites and where a
+tab was (its id is `place:snes`). Each has an `icon` and a folder a `picture`. A tab has only an icon, one
+of the UI's (`gamepad`): something in it is always selected. A folder's icon (an image file, or one of the
+UI's) is what its row shows; its picture is what the details show large when it is selected (a console,
+in a system's folder). `"recent": false` keeps what is in a place (and its folders, unless they say) out
+of Recent: apps. ClamShell's own tabs are places of a `type`: `recent`, `favourites`, `tools`. The tabs
+come in the order declared. Nothing has a place or an icon of ClamShell's choosing.
+
+```json
+"places": [
+  { "id": "games", "name": "Games", "icon": "gamepad" },
+  { "id": "snes", "name": "SNES", "in": "games", "picture": "snes.png" },
+  { "id": "files", "name": "Files", "icon": "folder" },
+  { "id": "tools", "name": "Tools", "type": "tools", "icon": "tools" }
+]
+```
 
 `sources` says where entries come from and where they go, each by `type`:
 
 - `dir`: a dir scanned, with an `id` (entries' ids are `<id>:<path in dir>`), `dir`, `place`, its `match`
   and `items` for the dir's layout, `metadata` (where its entries' covers and details come from:
   `libretro:<system>`, `tmdb:movie`, `tmdb:tv`) and, optionally, `runner`: the runner that opens all its
-  entries (else each opens by the runner its file's name matches). The SNES scan names SNES, since its
-  `*.zip` files would be Other files' by their name; the TV scan names none, its episodes Video's by
-  theirs. Several may fill one place (SNES on internal storage and on an SD card). `on`: the removable
+  entries (else each opens by the runner its file's name matches). Without `match`, the files are its
+  runner's (its patterns); `also` adds patterns to either. The SNES scan names SNES and adds `*.zip`
+  (`"also": ["*.zip"]`), which would be Other files' by its name; the TV scan names none, its episodes
+  Video's by theirs. Several may fill one place (SNES on internal storage and on an SD card). `on`: the removable
   filesystem its `dir` is on (`{ "label": "SD*" }`; `dir` then a path in it, `roms/snes`): while none
   matching is mounted the source is away (its entries' plays and settings kept), and it comes back when
   one is (a mount reads the library again).
-- `browse`: a dir listed as it is opened (see files-tab.md), its own folder at its place.
+- `browse`: a dir listed as it is opened (see files-tab.md), a folder of its own, `name`, in the place
+  `in`.
 - `desktop`, `steam`, `removable`: the desktop files' apps and games, Steam's installed games, the
   removable filesystems mounted (browsed). The sources of a type take their entries in turn: each, in
   order, the ones still left that it matches (desktop and Steam by id, name, a desktop file's categories;
   removable by `label`, `uuid`, `fs`; a source matching nothing in particular takes all that are left),
-  putting them at its `place` or leaving them out (`hide`). An entry is in one place at most, the first
+  putting them at its `place` (a removable source: as a folder of its own, `name`, default `{label}`, in
+  the place `in`) or leaving them out (`hide`). An entry is in one place at most, the first
   matching source's; what none takes is left out. A desktop or Steam source names its `runner` (else the
   first of its type) and its `metadata` (`steamgriddb`, which needs `keys.steamgriddb`; a Steam source's
   `steam`, the store; none: nothing fetched). Games in Games and the rest in Apps is three sources in the
-  starter library.json: `{ "type": "desktop", "categories": "Emulator", "place": "@apps" }`,
-  `{ "type": "desktop", "categories": "Game", "place": "@games" }`, `{ "type": "desktop", "place": "@apps" }`.
+  starter library.json: `{ "type": "desktop", "categories": "Emulator", "place": "apps" }`,
+  `{ "type": "desktop", "categories": "Game", "place": "games" }`, `{ "type": "desktop", "place": "apps" }`.
+- `builtin`: one of ClamShell's own screens, by its `id` (`library`, `device`), at its `place`. One not
+  placed is there all the same, in no place (the Library is always on the dock).
 
 A source decides nothing about opening: that is the runners'.
 

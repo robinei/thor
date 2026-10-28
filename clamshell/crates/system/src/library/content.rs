@@ -4,11 +4,12 @@
 //!
 //! ```json
 //! { "places": [
-//!     { "id": "recent", "path": "Recent", "type": "recent", "icon": "clock" },
-//!     { "id": "games", "path": "Games", "icon": "gamepad" },
-//!     { "id": "apps", "path": "Apps", "icon": "apps", "recent": false },
-//!     { "id": "tools", "path": "Tools", "type": "tools", "icon": "tools" },
-//!     { "id": "snes", "path": "Games/SNES", "icon": "snes-icon.png", "picture": "snes.png" }
+//!     { "id": "recent", "name": "Recent", "type": "recent", "icon": "clock" },
+//!     { "id": "games", "name": "Games", "icon": "gamepad" },
+//!     { "id": "snes", "name": "SNES", "in": "games", "icon": "snes-icon.png", "picture": "snes.png" },
+//!     { "id": "apps", "name": "Apps", "icon": "apps", "recent": false },
+//!     { "id": "files", "name": "Files", "icon": "folder" },
+//!     { "id": "tools", "name": "Tools", "type": "tools", "icon": "tools" }
 //!   ],
 //!   "runners": [
 //!     { "type": "desktop", "id": "desktop", "name": "Desktop", "match": ["*.desktop"] },
@@ -17,36 +18,37 @@
 //!     { "id": "other", "name": "Other files", "match": ["*"], "launch": ["xdg-open", "{path}"] }
 //!   ],
 //!   "sources": [
-//!     { "type": "dir", "id": "snes", "dir": "~/Games/snes", "place": "@snes", "runner": "snes",
-//!       "match": ["*.sfc", "*.zip"], "metadata": "libretro:..." },
-//!     { "type": "desktop", "categories": "Game", "place": "@games" },
-//!     { "type": "desktop", "place": "@apps" },
-//!     { "type": "browse", "dir": "~", "place": "@files/Home" }
+//!     { "type": "dir", "id": "snes", "dir": "~/Roms/snes", "place": "snes", "runner": "snes",
+//!       "also": ["*.zip"], "metadata": "libretro:..." },
+//!     { "type": "desktop", "categories": "Game", "place": "games" },
+//!     { "type": "desktop", "place": "apps" },
+//!     { "type": "browse", "dir": "~", "in": "files", "name": "Home" },
+//!     { "type": "removable", "in": "files", "name": "{label}" },
+//!     { "type": "builtin", "id": "device", "place": "tools" }
 //!   ],
 //!   "keys": { "tmdb": "...", "steamgriddb": "..." } }
 //! ```
 //!
-//! `places` (see [`Place`]) have these fields:
-//! - `id` refers to the place, as in `"place": "@snes"`, or `"@snes/RPG"` for a folder in it. The place's
-//!   folder gets the id `place:snes`, which stays the same if its path changes.
-//! - `path` is a tab, then folders in it (see [`place`]). A place that isn't declared can be given as a
-//!   path too.
+//! `places` (see [`Place`]) are the tabs and the folders in them, each by its `id`:
+//! - `name` is its title. `in` is the id of the place it is in; without it, it is a tab. Renaming changes
+//!   only `name` and moving only `in`, so what is kept by the id (a folder's pins and favourites, as
+//!   `place:<id>`, and sources' places) stays.
 //! - `icon` is one of the UI's icons by name. A folder's icon can also be an image file, shown in its row.
 //! - `picture` is a folder's image, shown large when the folder is selected.
 //! - `recent: false` keeps what is in the place out of Recent, for apps.
-//! - `type` makes it one of ClamShell's own tabs (`recent`, `favourites`, `tools`), named by its path.
+//! - `type` makes it one of ClamShell's own tabs (`recent`, `favourites`, `tools`).
 //!
-//! The tabs come in the order they are declared. Tabs that aren't declared come after, in the order they
-//! are first named.
+//! The tabs come in the order they are declared.
 //!
-//! `sources` (see [`Source`]), by `type`:
+//! `sources` (see [`Source`]), by `type`, each naming the place its entries go to by its id:
 //! - `dir` (see [`Scan`]) is a dir that is scanned.
 //!   - `runner`, an id, opens its entries. Without it, each file opens with the runner whose patterns its
 //!     name matches, and a group opens as its first entry.
 //!   - `match` is a list of patterns (see clamshell-library's `pattern`) matched against paths in `dir`;
-//!     without it, the runner's are used. Each name at the top of `dir` gives one entry: a file, or a
-//!     folder matched itself (`*/`) or through a file in it (`*/*.cue`). Where several files in a folder
-//!     match, the first pattern wins, then the first name.
+//!     without it, the runner's are used. `also` adds patterns to either, such as `*.zip`, which no runner
+//!     opens by its name. Each name at the top of `dir` gives one entry: a file, or a folder matched itself
+//!     (`*/`) or through a file in it (`*/*.cue`). Where several files in a folder match, the first
+//!     pattern wins, then the first name.
 //!   - `items` makes each matched folder a group. In it and every folder under it, the files matching
 //!     these patterns are entries and the folders containing any are groups, such as a series' seasons and
 //!     their episodes.
@@ -69,8 +71,8 @@
 //!   plays, whose frame is its picture. The folder at the source's place uses the place's picture, or
 //!   else a `poster`, `cover` or `folder` image in the scan's dir.
 //! - `browse` is a dir that is listed when it is opened instead of being scanned, so it has no metadata
-//!   and isn't in Recent. It gets its own folder at its `place`, titled by the last part. `trash` marks it
-//!   as the Trash's `files` dir.
+//!   and isn't in Recent. It is a folder of its own, `name`, in the place `in`. `trash` marks it as the
+//!   Trash's `files` dir.
 //! - `desktop` and `steam` take the apps and games from desktop files and Steam's installed games, which
 //!   are opened by a runner of that type. The sources of each type take entries in order: each takes the
 //!   remaining ones it matches (see [`Rule`]) and puts them at its `place`, or leaves them out with
@@ -79,14 +81,16 @@
 //!   type that opens them, by default the first. `metadata` is `steamgriddb`, or `steam` for a Steam
 //!   source. A desktop file's id is its name without `.desktop`, and a Steam game's is its app id.
 //!   Examples, in order:
-//!   `{ "type": "desktop", "id": "net.lutris.*", "place": "@apps" }`,
-//!   `{ "type": "desktop", "categories": "Game", "place": "@games" }`,
+//!   `{ "type": "desktop", "id": "net.lutris.*", "place": "apps" }`,
+//!   `{ "type": "desktop", "categories": "Game", "place": "games" }`,
 //!   `{ "type": "desktop", "id": "*uninstall*", "hide": true }`,
-//!   `{ "type": "desktop", "place": "@apps" }` for the rest.
+//!   `{ "type": "desktop", "place": "apps" }` for the rest.
 //! - `removable` takes the mounted removable filesystems (udisks2's, under `/run/media/$USER`). They are
 //!   browsed like `browse` dirs and taken in the same way as `desktop` entries, matched by `label`, `uuid`
-//!   and `fs` (see [`MountRule`]). Each goes at its source's `place`, where `{label}` is replaced by the
-//!   filesystem's label, or its UUID if it has none.
+//!   and `fs` (see [`MountRule`]). Each is a folder of its own in the place `in`, titled by `name`, where
+//!   `{label}` is the filesystem's label, or its UUID if it has none (the default name).
+//! - `builtin` places one of ClamShell's own screens, by its `id` (`library`, `device`). One not placed
+//!   is still there (the Library is always on the dock), in no place.
 //!
 //! `~` and `~/` at the start of `dir` or of a launch argument mean the home dir. In `dir`, `$VAR`,
 //! `${VAR}` and `${VAR:-default}` are environment variables, as in `${XDG_DATA_HOME:-~/.local/share}/roms`.
@@ -105,8 +109,8 @@ use serde::Deserialize;
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Config {
-    /// The declared places, with their ids (referred to as `@id`), icons and pictures. They also set the
-    /// tabs' order and declare ClamShell's own tabs.
+    /// The declared places: the tabs and the folders in them, by their ids, with their icons and
+    /// pictures. They set the tabs' order and declare ClamShell's own tabs.
     #[serde(default)]
     pub(crate) places: Vec<Place>,
     #[serde(default)]
@@ -119,8 +123,8 @@ pub(crate) struct Config {
 }
 
 /// Where entries come from, by `type`, and where they go. The types are a scanned dir (`dir`), a browsed
-/// dir (`browse`), the apps and games from desktop files (`desktop`), Steam's installed games (`steam`)
-/// and the mounted removable filesystems (`removable`).
+/// dir (`browse`), the apps and games from desktop files (`desktop`), Steam's installed games (`steam`),
+/// the mounted removable filesystems (`removable`) and ClamShell's own screens (`builtin`).
 ///
 /// For the last three, the sources of a type take their entries in turn. Each takes the remaining ones it
 /// matches (see [`Rule`], [`MountRule`]) and puts them at its place, or leaves them out with `hide`.
@@ -133,26 +137,41 @@ pub(crate) enum Source {
     Desktop(Rule),
     Steam(Rule),
     Removable(MountRule),
+    Builtin(BuiltinPlace),
+}
+
+/// One of ClamShell's own screens, by `id` (`library`, `device`), placed at `place`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BuiltinPlace {
+    pub(crate) id: String,
+    pub(crate) place: String,
 }
 
 /// A declared place.
 ///
-/// - `id` refers to it elsewhere, as `"place": "@snes"` or `"@snes/RPG"`. Its folder's id is
-///   `place:snes`, which stays the same if the path changes.
-/// - `path` is like `Games/SNES`; a single part is a tab.
+/// - `id` refers to it elsewhere, as `"place": "snes"`. Its folder's id is `place:snes`, which stays the
+///   same as it is renamed or moved.
+/// - `name` is its title, and `in` the id of the place it is in; without one, it is a tab.
 /// - `icon` is one of the UI's icons by name, such as `gamepad`. A folder's icon can also be an image
 ///   file, shown in its row.
 /// - `picture` is a folder's image file, shown large when it is selected. A tab has none, because
 ///   something in it is always selected.
 /// - `recent: false` keeps what is in it out of Recent, for apps. Its folders inherit this unless they
 ///   set it themselves.
-/// - `type` makes it one of ClamShell's own tabs (`recent`, `favourites`, `tools`), named by its path.
+/// - `type` makes it one of ClamShell's own tabs (`recent`, `favourites`, `tools`).
 ///
 /// Image file paths starting with `~/` are in the home dir; others are relative to library.json's dir.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Place {
     pub(crate) id: String,
+    pub(crate) name: String,
+    #[serde(default, rename = "in")]
+    pub(crate) within: Option<String>,
+    /// Its tab and the folders in it to it, as `Games/SNES`: worked out from `name` and `in` (see
+    /// [`paths`]).
+    #[serde(skip)]
     pub(crate) path: String,
     #[serde(default)]
     pub(crate) icon: Option<String>,
@@ -175,33 +194,63 @@ pub(crate) enum OwnTab {
     Tools,
 }
 
-/// `place` with a declared place's id (`@snes`, `@snes/RPG`) replaced by its path. Errs if the id isn't
-/// declared.
-pub(crate) fn resolve(place: &str, places: &[Place]) -> Result<String, String> {
-    let Some(reference) = place.trim().strip_prefix('@') else {
-        return Ok(place.to_owned());
-    };
-    let (id, rest) = reference.split_once('/').unwrap_or((reference, ""));
-    let declared = places.iter().find(|p| p.id == id).ok_or_else(|| format!("{place}: no place {id} declared"))?;
-    Ok(if rest.is_empty() { declared.path.clone() } else { format!("{}/{rest}", declared.path.trim_end_matches('/')) })
+/// Works out each place's path from its `name` and the places it is in. A place in one that isn't
+/// declared, or in itself through others, is a tab; each is a problem returned.
+pub(crate) fn paths(places: &mut [Place]) -> Vec<String> {
+    let mut problems = Vec::new();
+    let mut paths = Vec::with_capacity(places.len());
+    for place in places.iter() {
+        let mut names = vec![place.name.trim()];
+        let mut within = place.within.as_deref();
+        while let Some(id) = within {
+            match places.iter().find(|p| p.id == id) {
+                Some(_) if names.len() > places.len() => {
+                    problems.push(format!("place {}: in itself, through the places it is in", place.id));
+                    names.truncate(1);
+                    break;
+                }
+                Some(p) => {
+                    names.push(p.name.trim());
+                    within = p.within.as_deref();
+                }
+                None => {
+                    problems.push(format!("place {}: in {id}, which isn't declared", place.id));
+                    names.truncate(1);
+                    break;
+                }
+            }
+        }
+        names.reverse();
+        paths.push(names.join("/"));
+    }
+    for (place, path) in places.iter_mut().zip(paths) {
+        place.path = path;
+    }
+    problems
 }
 
-/// A browsed dir. It gets its own folder at `place`, titled by the last part (`Files/Home`,
-/// `Files/Places/Root`), and is listed when it is opened. `trash` marks it as the Trash's `files` dir,
-/// whose entries can be restored or deleted.
+/// The path of the place declared as `id` (see [`paths`]). Errs if there is none.
+pub(crate) fn resolve(id: &str, places: &[Place]) -> Result<String, String> {
+    places.iter().find(|p| p.id == id.trim()).map(|p| p.path.clone()).ok_or_else(|| format!("no place {id} declared"))
+}
+
+/// A browsed dir. It is a folder of its own, titled `name`, in the place `in`, listed when it is opened.
+/// `trash` marks it as the Trash's `files` dir, whose entries can be restored or deleted.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct BrowseRoot {
-    pub(crate) place: String,
+    #[serde(rename = "in")]
+    pub(crate) within: String,
+    pub(crate) name: String,
     pub(crate) dir: String,
     #[serde(default)]
     pub(crate) trash: bool,
 }
 
 /// A removable source. The remaining mounted removable filesystems that match all of its `label`, `uuid`
-/// and `fs` go at `place` as their own folders, or are left out with `hide`. The fields are globs in any
-/// case, and an unset one matches anything. The folder is titled by the last part of `place`, where
-/// `{label}` is replaced by the filesystem's label, or its UUID if it has none.
+/// and `fs` go in the place `in` as their own folders, or are left out with `hide`. The fields are globs
+/// in any case, and an unset one matches anything. The folder is titled `name`, where `{label}` is
+/// replaced by the filesystem's label, or its UUID if it has none; that is the default name.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct MountRule {
@@ -211,8 +260,10 @@ pub(crate) struct MountRule {
     uuid: Option<String>,
     #[serde(default)]
     fs: Option<String>,
+    #[serde(default, rename = "in")]
+    pub(crate) within: Option<String>,
     #[serde(default)]
-    pub(crate) place: Option<String>,
+    pub(crate) name: Option<String>,
     #[serde(default)]
     pub(crate) hide: bool,
 }
@@ -225,8 +276,7 @@ impl MountRule {
 }
 
 /// A desktop or Steam source. The remaining desktop file entries or Steam games that match all of its
-/// `id`, `name` and `categories` go at `place`, a tab or a folder in one (`@games/Launchers`), or are left
-/// out with `hide`. The fields are globs in any case, and an unset one matches anything. `categories`
+/// `id`, `name` and `categories` go at `place`, a declared place's id, or are left out with `hide`. The fields are globs in any case, and an unset one matches anything. `categories`
 /// matches if any of an entry's categories does; Steam games have none.
 ///
 /// `runner`, an id, is the runner that opens them; by default it is the first runner of the type.
@@ -263,9 +313,10 @@ impl Rule {
 
 /// A dir whose entries go in the library.
 ///
-/// `id` names the entries as `<id>:<path in dir>`, and `place` says where they show. `match` and `items`
-/// say what is an entry: `match` is matched against paths in `dir`, one part per folder level
-/// (`*/*.cue`), and `items` against a matched folder's own entries. `metadata` says where their covers and
+/// `id` names the entries as `<id>:<path in dir>`, and `place`, a declared place's id, says where they
+/// show. `match` and `items` say what is an entry: `match` is matched against paths in `dir`, one part
+/// per folder level (`*/*.cue`), and `items` against a matched folder's own entries; without `match`, the
+/// runner's patterns are used, and `also` adds to either. `metadata` says where their covers and
 /// details come from. `runner`, an id, opens them all; without it, each opens with the runner its file
 /// name matches (see [`super::runners`]).
 #[derive(Debug, Clone, Deserialize)]
@@ -273,10 +324,12 @@ impl Rule {
 pub(crate) struct Scan {
     pub(crate) id: String,
     pub(crate) dir: String,
-    /// Where its entries go: a tab (`Games`) or a folder in one (`Games/SNES`, `@snes`).
+    /// Where its entries go: a declared place's id.
     pub(crate) place: String,
     #[serde(default, rename = "match")]
     pub(crate) patterns: Vec<String>,
+    #[serde(default)]
+    pub(crate) also: Vec<String>,
     #[serde(default)]
     pub(crate) items: Vec<String>,
     #[serde(default)]
@@ -722,12 +775,18 @@ mod tests {
     }
 
     #[test]
-    fn places_are_referred_to_by_id() {
-        let places: Vec<Place> = serde_json::from_str(r#"[{ "id": "snes", "path": "Games/SNES" }]"#).unwrap();
-        assert_eq!(resolve("@snes", &places).unwrap(), "Games/SNES");
-        assert_eq!(resolve("@snes/RPG", &places).unwrap(), "Games/SNES/RPG");
-        assert_eq!(resolve("Games/GBA", &places).unwrap(), "Games/GBA", "a path as it is");
-        assert!(resolve("@gba", &places).is_err());
+    fn places_are_named_in_the_places_they_are_in() {
+        let mut places: Vec<Place> = serde_json::from_str(
+            r#"[{ "id": "games", "name": "Games" }, { "id": "rpg", "name": "RPG", "in": "snes" }, { "id": "snes", "name": "SNES", "in": "games" },
+                { "id": "lost", "name": "Lost", "in": "nowhere" }, { "id": "a", "name": "A", "in": "b" }, { "id": "b", "name": "B", "in": "a" }]"#,
+        )
+        .unwrap();
+        let problems = paths(&mut places);
+        assert_eq!(resolve("snes", &places).unwrap(), "Games/SNES");
+        assert_eq!(resolve("rpg", &places).unwrap(), "Games/SNES/RPG", "declared before what it is in");
+        assert_eq!(resolve("lost", &places).unwrap(), "Lost", "in one not declared: a tab");
+        assert!(resolve("gba", &places).is_err());
+        assert_eq!(problems.len(), 3, "{problems:?}");
     }
 
     #[test]

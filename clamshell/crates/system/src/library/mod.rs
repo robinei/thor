@@ -176,7 +176,8 @@ pub struct Loaded {
 /// its metadata comes from. Adds ClamShell's own tabs as declared and puts the tabs in order. Then adds
 /// each entry's plays, whether it is a favourite, and what was fetched about it.
 pub fn load(sources: &Sources) -> Loaded {
-    let (config, config_problem) = sources.config.as_deref().map(content::read_config).unwrap_or_default();
+    let (mut config, config_problem) = sources.config.as_deref().map(content::read_config).unwrap_or_default();
+    let place_problems = content::paths(&mut config.places);
     let (runners, runner_problems) = runners::in_force(&config.runners);
     let config_dir = sources.config.as_deref().and_then(Path::parent);
     let mut b = Builder {
@@ -187,7 +188,7 @@ pub fn load(sources: &Sources) -> Loaded {
         collections: Vec::new(),
         folders: Folders { made: HashMap::new(), places: &config.places, home: sources.home.as_deref(), config_dir },
         hows: Vec::new(),
-        problems: config_problem.into_iter().chain(runner_problems).collect(),
+        problems: config_problem.into_iter().chain(place_problems).chain(runner_problems).collect(),
         away: Vec::new(),
         mounts: if config.sources.iter().any(|s| matches!(s, content::Source::Removable(_) | content::Source::Dir(content::Scan { on: Some(_), .. }))) {
             crate::files::mounts::media_mounts()
@@ -200,13 +201,16 @@ pub fn load(sources: &Sources) -> Loaded {
         match source {
             content::Source::Dir(scan) => b.scan(scan),
             content::Source::Browse(root) => b.browse(root),
+            content::Source::Builtin(place) => b.builtin(place),
             // These are handled one type at a time below, with each type's sources in turn.
             content::Source::Desktop(_) | content::Source::Steam(_) | content::Source::Removable(_) => {}
         }
     }
     b.removable();
     b.installed();
+    b.unplaced_builtins();
     b.needed();
+    b.bios();
     b.order();
     b.mark_recent();
     b.tools();
@@ -246,8 +250,8 @@ impl Builder<'_> {
         }
     }
 
-    /// A place as library.json gives it, with `@id` replaced by the declared place's path. If that fails,
-    /// the problem is recorded and none is returned.
+    /// The path of the place declared as `id`. If there is none, the problem is recorded and none is
+    /// returned.
     fn resolve(&mut self, place: &str) -> Option<String> {
         content::resolve(place, &self.config.places).map_err(|e| self.problems.push(e)).ok()
     }
@@ -304,10 +308,11 @@ impl Builder<'_> {
             Some(Ok(r)) => Some(r),
             None => None,
         };
-        let patterns = match named {
+        let mut patterns = match named {
             Some(r) if source.patterns.is_empty() => r.patterns.clone(),
             _ => source.patterns.clone(),
         };
+        patterns.extend(source.also.iter().cloned());
         let open = |path: &Path| match named {
             Some(r) => Some((r.command(path, home), r.of(home))),
             None => runners::open(runners, path, home),
@@ -345,12 +350,12 @@ impl Builder<'_> {
         }
     }
 
-    /// A browse source: puts its dir's own folder at its place, to be listed when it is opened.
+    /// A browse source: puts its dir's own folder in its place, to be listed when it is opened.
     fn browse(&mut self, root: &content::BrowseRoot) {
-        let Some(place) = self.resolve(&root.place) else {
+        let Some(within) = self.resolve(&root.within) else {
             return;
         };
-        let place = place.trim().trim_matches('/').to_owned();
+        let place = format!("{}/{}", within.trim().trim_matches('/'), root.name.trim());
         let dir = match content::expand_dir(&root.dir, self.sources.home.as_deref()) {
             Ok(dir) if dir.is_dir() || root.trash => dir,
             Ok(dir) => return self.problems.push(format!("{place}: no folder {}", dir.display())),
@@ -381,13 +386,14 @@ impl Builder<'_> {
             let Some(rule) = rules.iter().find(|r| r.matches(&m.label, &m.uuid, &m.fs)) else {
                 continue;
             };
-            let Some(place) = rule.place.as_deref().filter(|_| !rule.hide) else {
+            let Some(within) = rule.within.as_deref().filter(|_| !rule.hide) else {
                 continue;
             };
-            let name = if m.label.is_empty() { &m.uuid } else { &m.label };
-            let Some(place) = self.resolve(place).map(|p| p.replace("{label}", name)) else {
+            let label = if m.label.is_empty() { &m.uuid } else { &m.label };
+            let Some(within) = self.resolve(within) else {
                 continue;
             };
+            let place = format!("{within}/{}", rule.name.as_deref().unwrap_or("{label}").replace("{label}", label));
             let id = format!("{}media/{}", ids::BROWSE, if m.uuid.is_empty() { &m.device } else { &m.uuid });
             self.browsed_root(&place, browsed_root(&id, m.dir, BrowseKind::Removable(m.device)));
         }
@@ -553,17 +559,57 @@ impl Builder<'_> {
         }
     }
 
-    /// Adds ClamShell's own screens and tools, in their tab, if a place declares it. The rescan entry's
-    /// details list the library's current problems.
+    /// Places one of ClamShell's own screens, as a `builtin` source says.
+    fn builtin(&mut self, source: &content::BuiltinPlace) {
+        let id = format!("builtin:{}", source.id.trim());
+        let Some(builtin) = clamshell_library::Builtin::of(&id) else {
+            return self.problems.push(format!("builtin {}: not one of ClamShell's screens (library, device)", source.id));
+        };
+        if self.games.iter().any(|g| g.launch == Launch::Builtin(builtin)) {
+            return self.problems.push(format!("builtin {}: placed twice", source.id));
+        }
+        let Some(place) = self.resolve(&source.place) else {
+            return;
+        };
+        self.games.push(builtin_entry(builtin));
+        let i = self.games.len() - 1;
+        self.put(&place, Path::new(""), vec![i]);
+    }
+
+    /// Adds ClamShell's own screens no source placed, in no place: they are entries all the same, the
+    /// Library always on the dock.
+    fn unplaced_builtins(&mut self) {
+        for builtin in clamshell_library::Builtin::ALL {
+            if !self.games.iter().any(|g| g.launch == Launch::Builtin(builtin)) {
+                self.games.push(builtin_entry(builtin));
+            }
+        }
+    }
+
+    /// Records a problem for each BIOS file a runner needs that isn't where its emulator looks.
+    fn bios(&mut self) {
+        let home = self.sources.home.as_deref();
+        for (name, bios) in self.runners.iter().filter_map(|r| Some((r.title(), r.bios.as_ref()?))) {
+            let dir = match content::expand_dir(&bios.dir, home) {
+                Ok(dir) => dir,
+                Err(var) => {
+                    self.problems.push(format!("{name}: its BIOS folder needs ${var}"));
+                    continue;
+                }
+            };
+            for file in bios.files.iter().filter(|f| !dir.join(f).is_file()) {
+                self.problems.push(format!("{name}: its BIOS {file} isn't in {}", dir.display()));
+            }
+        }
+    }
+
+    /// Adds ClamShell's own tools in their tab, if a place declares it, after what sources put there. The
+    /// rescan entry's details list the library's current problems.
     fn tools(&mut self) {
         let Some(tab) = self.own(content::OwnTab::Tools) else {
             return;
         };
         let first = self.games.len();
-        for (builtin, title, summary) in clamshell_library::BUILTINS {
-            let details = Details { summary: summary.into(), ..Details::default() };
-            self.games.push(Entry { launch: Launch::Builtin(builtin), app: true, details, ..Entry::new(builtin.id(), title) });
-        }
         for (id, title, tool, summary) in TOOLS {
             let mut summary = summary.to_owned();
             if tool == Tool::Rescan && !self.problems.is_empty() {
@@ -575,8 +621,19 @@ impl Builder<'_> {
             }
             self.games.push(Entry { launch: Launch::Tool(tool), app: true, details: Details { summary, ..Details::default() }, ..Entry::new(id, title) });
         }
-        self.collections.push(Collection { icon: tab.icon, ..Collection::new(&tab.name, (first..self.games.len()).collect()) });
+        let tools = first..self.games.len();
+        match self.collections.iter_mut().find(|c| c.name == tab.name) {
+            Some(c) => c.entries.extend(tools),
+            None => self.collections.push(Collection { icon: tab.icon, ..Collection::new(&tab.name, tools.collect()) }),
+        }
     }
+}
+
+/// The entry of one of ClamShell's own screens.
+fn builtin_entry(builtin: clamshell_library::Builtin) -> Entry {
+    let (title, summary) = clamshell_library::BUILTINS.iter().find(|(b, ..)| *b == builtin).map_or(("", ""), |(_, t, s)| (*t, *s));
+    let details = Details { summary: summary.into(), ..Details::default() };
+    Entry { launch: Launch::Builtin(builtin), app: true, details, ..Entry::new(builtin.id(), title) }
 }
 
 /// The first of `rules` matching an entry with this id, name and categories.
@@ -681,8 +738,10 @@ mod tests {
         // The Steam sources go in `steam`.
         let config = |steam: &str| {
             format!(
-                r#"{{ "runners": [{{ "name": "Test SNES", "match": ["*.sfc"], "launch": ["retroarch", "{{path}}"] }}, {{ "type": "steam", "id": "steam", "name": "Steam" }}],
-                    "sources": [{{ "type": "dir", "place": "Games/SNES", "id": "snes", "dir": "{}" , "match": ["*.sfc"] }}, {steam}] }}"#,
+                r#"{{ "places": [{{ "id": "games", "name": "Games" }}, {{ "id": "snes", "name": "SNES", "in": "games" }}, {{ "id": "steam", "name": "Steam", "in": "games" }},
+                                {{ "id": "text", "name": "Text", "in": "steam" }}],
+                    "runners": [{{ "name": "Test SNES", "match": ["*.sfc"], "launch": ["retroarch", "{{path}}"] }}, {{ "type": "steam", "id": "steam", "name": "Steam" }}],
+                    "sources": [{{ "type": "dir", "place": "snes", "id": "snes", "dir": "{}" , "match": ["*.sfc"] }}, {steam}] }}"#,
                 root.join("snes").display()
             )
         };
@@ -692,12 +751,12 @@ mod tests {
             let tab = lib.collections.iter().find(|c| c.name == "Games").unwrap();
             tab.entries.iter().map(|&i| lib.entries[i].title.clone()).collect::<Vec<_>>()
         };
-        assert_eq!(games_tab(&config(r#"{ "type": "steam", "place": "Games" }"#)), ["SNES", "Arma", "Zork"], "the folder first, before Arma");
-        assert_eq!(games_tab(&config(r#"{ "type": "steam", "place": "Games/Steam" }"#)), ["SNES", "Steam"], "Steam's games in their folder");
+        assert_eq!(games_tab(&config(r#"{ "type": "steam", "place": "games" }"#)), ["SNES", "Arma", "Zork"], "the folder first, before Arma");
+        assert_eq!(games_tab(&config(r#"{ "type": "steam", "place": "steam" }"#)), ["SNES", "Steam"], "Steam's games in their folder");
         // Match by name or app id, into folders or hidden, and the rest by a source that matches anything.
         // Each is taken by the first source matching it: Zork by z*, not by the last one.
-        let rules = r#"{ "type": "steam", "name": "z*", "place": "Games/Steam/Text" }, { "type": "steam", "id": "10", "hide": true },
-                       { "type": "steam", "place": "Games/Steam" }"#;
+        let rules = r#"{ "type": "steam", "name": "z*", "place": "text" }, { "type": "steam", "id": "10", "hide": true },
+                       { "type": "steam", "place": "steam" }"#;
         std::fs::write(steam.join("steamapps/appmanifest_30.acf"), manifest(30, "Celeste")).unwrap();
         std::fs::write(root.join("library.json"), config(rules)).unwrap();
         let lib = load(&Sources { config: Some(root.join("library.json")), steam: Some(steam.clone()), ..Sources::default() }).library;
@@ -720,13 +779,14 @@ mod tests {
         std::fs::create_dir_all(steam.join("steamapps")).unwrap();
         std::fs::write(steam.join("steamapps/libraryfolders.vdf"), format!("\"libraryfolders\" {{ \"0\" {{ \"path\" \"{}\" }} }}", steam.display())).unwrap();
         std::fs::write(steam.join("steamapps/appmanifest_10.acf"), "\"AppState\" { \"appid\" \"10\" \"name\" \"Arma\" \"StateFlags\" \"4\" }").unwrap();
-        let config = r#"{ "runners": [{ "type": "desktop", "id": "apps", "name": "Apps" }, { "type": "desktop", "id": "desktop-games", "name": "Desktop games" },
+        let config = r#"{ "places": [{ "id": "games", "name": "Games" }, { "id": "apps", "name": "Apps" }],
+          "runners": [{ "type": "desktop", "id": "apps", "name": "Apps" }, { "type": "desktop", "id": "desktop-games", "name": "Desktop games" },
             { "type": "steam", "name": "Steam" }],
           "sources": [
-            { "type": "desktop", "categories": "Game", "place": "Games", "runner": "desktop-games", "metadata": "steamgriddb" },
-            { "type": "desktop", "place": "Apps" },
-            { "type": "steam", "place": "Games", "metadata": "steam" },
-            { "type": "dir", "id": "sd", "dir": "roms", "place": "Games", "match": ["*"], "on": { "label": "NO SUCH CARD" } }
+            { "type": "desktop", "categories": "Game", "place": "games", "runner": "desktop-games", "metadata": "steamgriddb" },
+            { "type": "desktop", "place": "apps" },
+            { "type": "steam", "place": "games", "metadata": "steam" },
+            { "type": "dir", "id": "sd", "dir": "roms", "place": "games", "match": ["*"], "on": { "label": "NO SUCH CARD" } }
           ] }"#;
         std::fs::write(root.join("library.json"), config).unwrap();
         let loaded =
@@ -762,12 +822,13 @@ mod tests {
         write("lutris", "Lutris", "Game;");
         write("uninstall-foo", "Uninstall Foo", "Utility;");
         write("foot", "Foot", "System;");
-        let config = r#"{ "places": [{ "id": "apps", "path": "Apps", "recent": false }],
+        let config = r#"{ "places": [{ "id": "apps", "name": "Apps", "recent": false }, { "id": "launchers", "name": "Launchers" },
+            { "id": "games", "name": "Games" }, { "id": "platformers", "name": "Platformers", "in": "games" }],
           "runners": [{ "type": "desktop", "name": "Desktop" }], "sources": [
-            { "type": "desktop", "id": "lutris", "place": "Launchers" },
-            { "type": "desktop", "id": "celeste", "place": "Games/Platformers" },
+            { "type": "desktop", "id": "lutris", "place": "launchers" },
+            { "type": "desktop", "id": "celeste", "place": "platformers" },
             { "type": "desktop", "name": "uninstall*", "hide": true },
-            { "type": "desktop", "place": "@apps" }
+            { "type": "desktop", "place": "apps" }
         ] }"#;
         std::fs::write(root.join("library.json"), config).unwrap();
         let lib = load(&Sources { config: Some(root.join("library.json")), data_dirs: vec![root.join("data")], ..Sources::default() }).library;
@@ -791,24 +852,20 @@ mod tests {
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(p, "").unwrap();
         }
-        let source = |group: &str, id: &str, pattern: &str, emulator: &str| {
-            let place = match group {
-                "" => "Games".to_owned(),
-                g if g.starts_with('@') => g.to_owned(),
-                g => format!("Games/{g}"),
-            };
+        let source = |place: &str, id: &str, pattern: &str, emulator: &str| {
             (
                 format!(r#"{{ "name": "Test {id}", "match": ["{pattern}"], "launch": ["{emulator}", "{{path}}"] }}"#),
                 format!(r#"{{ "type": "dir", "place": "{place}", "id": "{id}", "dir": "{}/{id}", "match": ["{pattern}"] }}"#, root.display()),
             )
         };
-        let (snes, gba, pc) = (source("SNES", "snes", "*.sfc", "snes9x"), source("@gba", "gba", "*.gba", "mgba"), source("", "pc", "*.sh", "sh"));
+        let (snes, gba, pc) = (source("snes", "snes", "*.sfc", "snes9x"), source("gba", "gba", "*.gba", "mgba"), source("games", "pc", "*.sh", "sh"));
         // The PC scan names its runner; the other files open by their names.
         let pc_scan = pc.1.replace(r#""match""#, r#""runner": "test-pc", "match""#);
         let config = format!(
-            r#"{{ "places": [{{ "id": "other", "path": "Other", "icon": "star" }}, {{ "id": "games", "path": "Games", "icon": "film" }},
-                {{ "id": "gba", "path": "Games/Handhelds/GBA", "icon": "gba.png", "picture": "~/gba-large.png" }},
-                {{ "id": "tools", "path": "Mine", "type": "tools", "icon": "tools" }}],
+            r#"{{ "places": [{{ "id": "other", "name": "Other", "icon": "star" }}, {{ "id": "games", "name": "Games", "icon": "film" }},
+                {{ "id": "snes", "name": "SNES", "in": "games" }}, {{ "id": "handhelds", "name": "Handhelds", "in": "games" }},
+                {{ "id": "gba", "name": "GBA", "in": "handhelds", "icon": "gba.png", "picture": "~/gba-large.png" }},
+                {{ "id": "tools", "name": "Mine", "type": "tools", "icon": "tools" }}],
               "runners": [ {}, {}, {} ], "sources": [ {}, {}, {} ] }}"#,
             snes.0, gba.0, pc.0, snes.1, gba.1, pc_scan
         );
@@ -834,8 +891,45 @@ mod tests {
         assert_eq!((gba.title.as_str(), games(&gba.items)), ("GBA", vec!["Metroid".to_owned()]));
         assert_eq!(&*gba.id, "place:gba", "a declared place's id");
         assert_eq!(gba.icon.as_deref(), Some(root.join("gba.png").as_path()), "its icon, from library.json's dir");
-        assert_eq!(handhelds.id.as_ref(), "folder:Games/Handhelds", "one not declared: its path");
+        assert_eq!(handhelds.id.as_ref(), "place:handhelds");
         assert!(matches!(&lib.entries[gba.items[0]].launch, Launch::Program { argv, .. } if argv[0] == "mgba"));
         assert_eq!(lib.groups_of(gba.items[0]), [tab.entries[0], handhelds.items[0]]);
+    }
+
+    /// A scan's files are its runner's, and `also`'s; a builtin source places a built-in in a tab that
+    /// ClamShell's tools join, and one not placed is there all the same; a browsed dir is a folder in the
+    /// place `in`, titled `name`; a runner's BIOS files not where its emulator looks are problems.
+    #[test]
+    fn also_builtins_browsed_folders_and_bios() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        for f in ["snes/Zelda.sfc", "snes/Mario.zip", "snes/notes.txt", "home/a.txt", "bios/scph5500.bin"] {
+            let p = root.join(f);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, "").unwrap();
+        }
+        let r = root.display();
+        let config = format!(
+            r#"{{ "places": [{{ "id": "games", "name": "Games" }}, {{ "id": "files", "name": "Files" }}, {{ "id": "tools", "name": "Tools", "type": "tools" }}],
+              "runners": [{{ "id": "snes", "name": "SNES", "match": ["*.sfc"], "launch": ["retroarch", "{{path}}"] }},
+                          {{ "id": "psx", "name": "PlayStation", "match": ["*.chd"], "launch": ["retroarch", "{{path}}"],
+                             "bios": {{ "dir": "{r}/bios", "files": ["scph5500.bin", "scph5501.bin"] }} }}],
+              "sources": [{{ "type": "dir", "id": "snes", "dir": "{r}/snes", "place": "games", "runner": "snes", "also": ["*.zip"] }},
+                          {{ "type": "browse", "dir": "{r}/home", "in": "files", "name": "Home" }},
+                          {{ "type": "builtin", "id": "device", "place": "tools" }}] }}"#
+        );
+        std::fs::write(root.join("library.json"), config).unwrap();
+        let lib = load(&Sources { config: Some(root.join("library.json")), ..Sources::default() }).library;
+        let tab = |name: &str| {
+            let c = lib.collections.iter().find(|c| c.name == name).unwrap();
+            c.entries.iter().map(|&i| lib.entries[i].title.clone()).collect::<Vec<_>>()
+        };
+        assert_eq!(tab("Games"), ["Mario", "Zelda"], "the runner's *.sfc and also *.zip, not the notes");
+        assert_eq!(tab("Files"), ["Home"]);
+        assert_eq!(tab("Tools"), ["Device", "Rescan library", "Fetch missing art again"], "one Tools tab");
+        assert_eq!(lib.collections.iter().filter(|c| c.name == "Tools").count(), 1);
+        assert!(lib.entry("builtin:library").is_some(), "not placed, but there");
+        assert!(lib.problems.iter().any(|p| p.starts_with("PlayStation: its BIOS scph5501.bin isn't in")), "{:?}", lib.problems);
+        assert!(!lib.problems.iter().any(|p| p.contains("scph5500")), "{:?}", lib.problems);
     }
 }

@@ -102,10 +102,11 @@ The Library comes from `~/.config/clamshell/library.json`, and nothing is there 
 
 ```json
 { "places": [
-    { "id": "recent", "path": "Recent", "type": "recent", "icon": "clock" },
-    { "id": "games", "path": "Games", "icon": "gamepad" },
-    { "id": "apps", "path": "Apps", "icon": "apps", "recent": false },
-    { "id": "snes", "path": "Games/SNES", "icon": "snes-icon.png", "picture": "snes.png" }
+    { "id": "recent", "name": "Recent", "type": "recent", "icon": "clock" },
+    { "id": "games", "name": "Games", "icon": "gamepad" },
+    { "id": "tv", "name": "TV", "icon": "tv" },
+    { "id": "apps", "name": "Apps", "icon": "apps", "recent": false },
+    { "id": "snes", "name": "SNES", "in": "games", "icon": "snes-icon.png", "picture": "snes.png" }
   ],
   "runners": [
     { "type": "desktop", "id": "desktop", "name": "Desktop", "match": ["*.desktop"] },
@@ -113,12 +114,12 @@ The Library comes from `~/.config/clamshell/library.json`, and nothing is there 
     { "id": "video", "name": "Video", "match": ["*.mkv", "*.mp4"], "launch": ["mpv", "{path}"] }
   ],
   "sources": [
-    { "type": "dir", "id": "snes", "dir": "~/Games/snes", "place": "@snes", "runner": "snes", "match": ["*.sfc", "*.smc", "*.zip"],
+    { "type": "dir", "id": "snes", "dir": "~/Games/snes", "place": "snes", "runner": "snes", "also": ["*.zip"],
       "metadata": "libretro:Nintendo - Super Nintendo Entertainment System" },
-    { "type": "dir", "id": "tv", "dir": "~/TV", "place": "TV", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" },
+    { "type": "dir", "id": "tv", "dir": "~/TV", "place": "tv", "match": ["*/"], "items": ["*.mkv", "*.mp4"], "metadata": "tmdb:tv" },
     { "type": "desktop", "name": "*Uninstall*", "hide": true },
-    { "type": "desktop", "categories": "Game", "place": "@games" },
-    { "type": "desktop", "place": "@apps" }
+    { "type": "desktop", "categories": "Game", "place": "games" },
+    { "type": "desktop", "place": "apps" }
 ] }
 ```
 

@@ -145,9 +145,9 @@ def main():
         # Held open for reading and writing, so the game's end opens at once and sees no end of input.
         fifos[name] = os.open(fifo, os.O_RDWR | os.O_NONBLOCK)
     library = {
-        "places": [{"id": "test", "path": "Test"}],
+        "places": [{"id": "test", "name": "Test"}],
         "runners": [{"name": "Pattern game", "match": ["*.pgame"], "launch": [str(wrapper), "{path}"]}],
-        "sources": [{"type": "dir", "id": "test", "dir": str(games), "place": "@test", "match": ["*.pgame"]}],
+        "sources": [{"type": "dir", "id": "test", "dir": str(games), "place": "test", "match": ["*.pgame"]}],
     }
     (config / "library.json").write_text(json.dumps(library))
     sway_config = directory / "sway.conf"

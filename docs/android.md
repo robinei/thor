@@ -38,7 +38,7 @@ top, Android's permission prompt, and its window with it.
 ],
 "sources": [
   { "type": "desktop", "id": "Waydroid", "hide": true },
-  { "type": "desktop", "id": "waydroid.*", "place": "@apps", "runner": "android" }
+  { "type": "desktop", "id": "waydroid.*", "place": "apps", "runner": "android" }
 ]
 ```
 

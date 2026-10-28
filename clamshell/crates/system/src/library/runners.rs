@@ -70,6 +70,18 @@ pub(crate) struct Runner {
     /// the screens dim.
     #[serde(default)]
     awake: Vec<String>,
+    /// The BIOS files its emulator needs, and the folder it looks for them in. One missing is a problem.
+    #[serde(default)]
+    pub(crate) bios: Option<Bios>,
+}
+
+/// A runner's BIOS files (see [`Runner::bios`]).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Bios {
+    /// Where its emulator looks for them; `~` and environment variables as in a source's `dir`.
+    pub(crate) dir: String,
+    pub(crate) files: Vec<String>,
 }
 
 /// A runner that finds its items itself, each with its own command.
@@ -93,6 +105,11 @@ impl Runner {
             None => clamshell_library::RunnerOf { command: self.template(home).into(), ..clamshell_library::RunnerOf::new(&self.id, &self.name, true) }
                 .command_for(&[path.to_path_buf()]),
         }
+    }
+
+    /// Its title, as its settings page shows it.
+    pub(crate) fn title(&self) -> &str {
+        &self.name
     }
 
     /// The runner in the form an entry keeps it, with `~/` expanded to the home dir in its commands.

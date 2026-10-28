@@ -351,12 +351,12 @@ def plug_pad():
 
 # Test games: test.game, zeta.game, zulu01.game to zulu14.game, all in the Test tab, each an empty mpv window (not foot: it asks for text input, which brings up the keyboard). Started through env: ClamShell takes a file mpv starts for a film, not a game.
 LIBRARY = f"""{{ "places": [
-  {{ "id": "recent", "path": "Recent", "type": "recent", "icon": "clock" }},
-  {{ "id": "favourites", "path": "Favourites", "type": "favourites", "icon": "star" }},
-  {{ "id": "test", "path": "Test" }},
-  {{ "id": "games", "path": "Games", "icon": "gamepad" }},
-  {{ "id": "apps", "path": "Apps", "icon": "apps", "recent": false }},
-  {{ "id": "tools", "path": "Tools", "type": "tools", "icon": "tools" }}
+  {{ "id": "recent", "name": "Recent", "type": "recent", "icon": "clock" }},
+  {{ "id": "favourites", "name": "Favourites", "type": "favourites", "icon": "star" }},
+  {{ "id": "test", "name": "Test" }},
+  {{ "id": "games", "name": "Games", "icon": "gamepad" }},
+  {{ "id": "apps", "name": "Apps", "icon": "apps", "recent": false }},
+  {{ "id": "tools", "name": "Tools", "type": "tools", "icon": "tools" }}
 ],
   "runners": [
   {{ "type": "desktop", "name": "Desktop", "match": ["*.desktop"] }},
@@ -364,10 +364,11 @@ LIBRARY = f"""{{ "places": [
     "launch": ["env", "mpv", "--idle", "--force-window", "--vo=wlshm", "--no-terminal", "--wayland-app-id=testgame"] }}
 ],
   "sources": [
-  {{ "type": "dir", "id": "test", "dir": "{CHECKS_DIR}/games", "place": "@test", "match": ["*.game"] }},
-  {{ "type": "desktop", "categories": "Emulator", "place": "@apps" }},
-  {{ "type": "desktop", "categories": "Game", "place": "@games" }},
-  {{ "type": "desktop", "place": "@apps" }}
+  {{ "type": "dir", "id": "test", "dir": "{CHECKS_DIR}/games", "place": "test", "match": ["*.game"] }},
+  {{ "type": "desktop", "categories": "Emulator", "place": "apps" }},
+  {{ "type": "desktop", "categories": "Game", "place": "games" }},
+  {{ "type": "desktop", "place": "apps" }},
+  {{ "type": "builtin", "id": "device", "place": "tools" }}
 ] }}
 """
 
@@ -381,7 +382,7 @@ mkdir -p {CONFIG} {DATA} {CHECKS_DIR}/games {BACKLIGHT}
 systemctl --user stop clamshell
 rm -rf {DATA} && mkdir -p {DATA}
 echo '["desktop:foot"]' > {DATA}/dock.json
-# (Set up: not a first start, which would open the Device view over the Library.)
+# (Set up: not a first start, which would show Setup over the Library.)
 echo '{{"done": true}}' > {DATA}/first-start.json
 cat > {CONFIG}/library.json <<'EOF'
 {LIBRARY}EOF
