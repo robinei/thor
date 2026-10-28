@@ -75,6 +75,8 @@ Each ends in commits that pass `tools/check.sh` and the randomized test at 3000 
   `running_of`/`root_of`; `Running` holds its `Group` so that comparing doesn't allocate. The library mark
   lookup per window (`start_by_app_id`, O(windows × entries) each settle) cached on the window when its
   facts or the library change.
+  Done for the owner function and finding by roots. The owner and root table and the mark cache weren't
+  built: `running_of` still walks to the root on each call, which profiling hasn't asked to change.
 - [x] 3. **Stored recomputes become getters.** `Pad::route(..)`, `Bottom::dimmed(..)`, the bottom
   screen's idle-off, shelf's selected entry from its cursor. Each drops a settle step, its writers and a
   random invariant that only checked the copy. Cost: O(1) each; the settings in force computed once per
@@ -141,3 +143,18 @@ Cost fixes on the way (no behaviour change):
   against.
 - [x] Typing a shelf filter allocates a lowercased copy of every title per keystroke: a case-insensitive
   compare instead.
+
+## Afterwards: a review of the session's order
+
+A read-only review of `follow_windows` and settle's session steps found their order to be a real data
+flow (a file's claim before finding programs, ended entries before finding again, finding before the
+claim for the program in front, placing last), with no step out of order. Folding them into one ownership
+pass would turn the sequence into a precedence list without removing a dependency, so it wasn't done.
+It found three bugs, fixed: a browsed file's window that opened before its launch ended wasn't taken (a
+window's open time is now kept, and the file takes those opened since it began); a window of no program
+never joined the group in front, and while a launch waited was taken and brought in front over it; and a
+program to find whose entry already runs was built and dropped at every settle. The random test now
+checks settle's convergence after every event for one seed in eight.
+
+Left: `claim_unowned` and finding by tray icons still act on what changed (`opened`, the tray list), which
+the convergence check can't see. No sequence that goes wrong is known.
