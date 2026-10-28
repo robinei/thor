@@ -377,6 +377,29 @@ fn closing_the_window_below_under_its_dialog_leaves_the_dialog_below() {
     assert_eq!(s.session().keyboard_focus(), Some(8));
 }
 
+/// The bottom screen's window closing under two dialogs leaves both there, one stack, the second still
+/// taking the input; the same on the top screen.
+#[test]
+fn a_closed_windows_dialogs_stay_one_stack() {
+    let mut s = state();
+    let unit = launch(&mut s, "zelda-lttp");
+    s.applied(WindowEvent::Opened(win_of(7, "game", &unit)).into());
+    s.applied(Event::HardwareKey(HardwareKey::WindowDown));
+    s.applied(WindowEvent::Opened(WindowFacts { parent: Some(7), ..win(8, "dialog") }).into());
+    s.applied(WindowEvent::Opened(WindowFacts { parent: Some(7), ..win(9, "dialog") }).into());
+    s.applied(WindowEvent::Closed(7).into());
+    assert_eq!(s.session().stack(true).map(|w| w.id).collect::<Vec<_>>(), [8, 9]);
+    assert_eq!((s.session().keyboard_focus(), s.session().shown(9)), (Some(9), true));
+    // (Another program's: this one's windows now open below, as it was moved there.)
+    s.applied(WindowEvent::Opened(win(10, "other")).into());
+    s.applied(WindowEvent::Activate(10).into());
+    s.applied(WindowEvent::Opened(WindowFacts { parent: Some(10), ..win(11, "dialog") }).into());
+    s.applied(WindowEvent::Opened(WindowFacts { parent: Some(10), ..win(12, "dialog") }).into());
+    s.applied(WindowEvent::Closed(10).into());
+    assert_eq!(s.session().stack(false).map(|w| w.id).collect::<Vec<_>>(), [11, 12]);
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(12));
+}
+
 #[test]
 fn windows_know_their_launch_unit() {
     let w = |unit: Option<&str>, app_id: &str| WindowFacts { unit: unit.map(Into::into), app_id: app_id.into(), ..WindowFacts::default() };

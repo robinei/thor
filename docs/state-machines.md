@@ -80,8 +80,9 @@ window with dialogs selects its last. The compositor draws the stack back to fro
 its own presentation, with a black layer (`clamshell_ui::DIM`) behind the topmost darkening the rest, which
 shows why they take no input; a touch there reaches nothing. Moving a dialog down moves its stack, and
 window rules leave dialogs to their parent (`a_windows_dialogs_show_over_it_the_last_taking_the_input`,
-`a_dialog_of_a_window_below_shows_below_over_it`). The bottom screen's window closing leaves its first
-dialog there as the stack's root (`closing_the_window_below_under_its_dialog_leaves_the_dialog_below`).
+`a_dialog_of_a_window_below_shows_below_over_it`). A window closing leaves its dialogs one stack, the first
+standing for it as the root, on its screen (`closing_the_window_below_under_its_dialog_leaves_the_dialog_below`,
+`a_closed_windows_dialogs_stay_one_stack`).
 Stepping through a program's windows, the overview and Home with B go by stacks: a step is to another
 stack, the overview has a cell for each, and Home with B closes the topmost
 (`top_window_switching_steps_over_whole_stacks`, `home_b_closes_the_bottom_screens_dialog_over_its_window`).

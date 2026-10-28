@@ -334,13 +334,20 @@ impl Session {
         self.windows.iter().filter(move |w| self.root_of(w.id) == root)
     }
 
-    /// The window that window `id`'s parents lead to, its main window: itself if it has no parent open.
+    /// The window that window `id`'s parents lead to, its main window: itself if it has no parent. A
+    /// window whose parent closed leads to the first of that parent's dialogs still open, which stands for
+    /// it: the dialogs left by a window stay one stack.
     pub fn root_of(&self, id: i64) -> i64 {
         let mut at = id;
         // A bound, so that a cycle of parents can't loop.
         for _ in 0..self.windows.len() {
-            match self.window(at).and_then(|w| w.parent).filter(|parent| *parent != at && self.window(*parent).is_some()) {
-                Some(parent) => at = parent,
+            let next = match self.window(at).and_then(|w| w.parent).filter(|parent| *parent != at) {
+                Some(parent) if self.window(parent).is_some() => Some(parent),
+                Some(parent) => self.windows.iter().find(|w| w.parent == Some(parent)).map(|w| w.id).filter(|first| *first != at),
+                None => None,
+            };
+            match next {
+                Some(next) => at = next,
                 None => break,
             }
         }
