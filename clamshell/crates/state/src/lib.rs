@@ -564,6 +564,10 @@ impl State {
         for id in due {
             self.launch(id, None, Start::Background, out);
         }
+        // Launcher games asked for while their launcher's launch was starting, now that it has.
+        for (id, start) in self.session.due_after_launchers() {
+            self.launch(id, None, start, out);
+        }
         let mut steam = Vec::new();
         if self.session.start_by_app_id(&self.clock, self.library_view.library(), &mut steam) {
             self.bottom.unwake();

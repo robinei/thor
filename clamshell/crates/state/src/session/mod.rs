@@ -95,6 +95,9 @@ pub struct Session {
     refresh_launch: Option<(Arc<str>, u64)>,
     /// Launches asked for that haven't started.
     launching: Vec<Launching>,
+    /// Launcher games asked for while their launcher's own launch was starting, and how each starts: they
+    /// are launched once it has (see [`Session::due_after_launchers`]).
+    after_launcher: Vec<(Arc<str>, Arc<str>, running::Start)>,
     /// The compositor's windows.
     windows: Vec<Window>,
     /// The root of the stack the top screen shows (see [`Session::root_of`]); none while the Library is in

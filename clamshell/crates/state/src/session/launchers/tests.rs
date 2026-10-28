@@ -82,3 +82,29 @@ fn a_launcher_and_its_game_started_together_launch_the_launcher_once() {
         "the game's: {launches:?}"
     );
 }
+
+/// Two of Heroic's games to start with ClamShell: the first starts Heroic with it, and the second waits
+/// for that launch, then goes once it has started (its unit listed), not dropped.
+#[test]
+fn a_launchers_second_game_waits_for_the_launchers_launch() {
+    use crate::Effect;
+    use crate::testkit::*;
+    let heroic = shortcut("desktop:com.heroicgameslauncher.hgl", "Heroic Games Launcher", &["heroic"]);
+    let first = shortcut("desktop:Pattern Game", "Pattern Game", &["xdg-open", "heroic://launch?appName=patterngame&runner=sideload"]);
+    let second = shortcut("desktop:Other Game", "Other Game", &["xdg-open", "heroic://launch?appName=othergame&runner=sideload"]);
+    let init = crate::Init { autostart: vec![first.id.clone(), second.id.clone()], ..crate::testkit::init() };
+    let mut s = crate::State::new(crate::Init { library: Some(library(vec![heroic, first, second])), ..init });
+    let launches = |fx: &[Effect]| {
+        fx.iter().filter_map(|e| if let Effect::Launch { launch, unit, .. } = e { Some((launch.clone(), unit.clone())) } else { None }).collect::<Vec<_>>()
+    };
+    let fx = s.applied(crate::Event::Units(vec![]));
+    let first_launch = launches(&fx);
+    assert_eq!(first_launch.len(), 1, "one at a time: {fx:?}");
+    let Some((_, unit)) = first_launch.into_iter().next() else { return };
+    let fx = s.applied(crate::Event::Units(vec![unit]));
+    let second_launch = launches(&fx);
+    assert!(
+        matches!(second_launch.as_slice(), [(Launch::Program { argv, .. }, _)] if argv.iter().any(|a| a.contains("othergame"))),
+        "the second, once Heroic's launch started: {fx:?}"
+    );
+}

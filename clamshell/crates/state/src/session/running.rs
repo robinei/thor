@@ -627,6 +627,16 @@ impl Session {
     }
 
     /// Whether a launch of entry `id` was asked for and hasn't started.
+    /// The launcher games waiting for their launcher's launch that has now started or failed, to be
+    /// launched, each with how it starts.
+    pub(crate) fn due_after_launchers(&mut self) -> Vec<(Arc<str>, Start)> {
+        let launching = &self.launching;
+        let (due, waiting): (Vec<_>, Vec<_>) =
+            std::mem::take(&mut self.after_launcher).into_iter().partition(|(_, launcher, _)| !launching.iter().any(|l| l.entry == *launcher));
+        self.after_launcher = waiting;
+        due.into_iter().map(|(game, _, start)| (game, start)).collect()
+    }
+
     pub(crate) fn is_launching(&self, id: &str) -> bool {
         self.launching.iter().any(|l| &*l.entry == id)
     }
@@ -696,8 +706,12 @@ impl Session {
             && let Some((launcher, argv)) = launchers::headless(library, g)
         {
             // As for any entry, not while a launch of the launcher is starting: it would be launched twice.
+            // The game waits for it, and is launched once it has started.
             if self.is_launching(&launcher.id) {
-                return Launched::No;
+                if !self.after_launcher.iter().any(|(game, ..)| *game == entry) {
+                    self.after_launcher.push((entry, launcher.id.clone(), start));
+                }
+                return Launched::Yes;
             }
             self.launch_in_launcher(g, (launcher, argv), library, settings, clock, start, out);
             return Launched::Yes;
