@@ -132,7 +132,11 @@ Cost fixes on the way (no behaviour change):
 - [x] The settings in force (`in_force`, `settings_of`) scan the whole library per call: 2 to 3 times per
   event in the state, and about 7 times per window per event in the compositor. Keep the runner's key on
   the running entry; look entries up by an index map built when the library changes.
+  Done by the entry a running program started with, which `Running` already keeps; no index map, the
+  library's entries being changed in many places.
 - [x] `window_presentation` allocates a list of sizes per call (twice per window per event, from the
   compositor): an iterator instead.
+  Done by passing on only the window's fixed size when the screen offers it, the one thing it is checked
+  against.
 - [x] Typing a shelf filter allocates a lowercased copy of every title per keystroke: a case-insensitive
   compare instead.
