@@ -721,12 +721,12 @@ class Checks:
             sh("pkill -x foot || true")
             # (Its launch ended too: a tap on a running entry shows it rather than starting it.)
             until(lambda: not where() and not units("run-"), 8)
-            control("tap dock 0")  # foot, pinned by the setup
+            control("tap dock 1")  # foot, pinned by the setup (after the Library's tile)
             until(lambda: bool(where()), 8)
             time.sleep(1)
             return where()
 
-        control("tap dock 0")
+        control("tap dock 1")
         if not self.check("bottom screen: foot open", until(lambda: bool(where()), 8), where()):
             return
         control("window down")
@@ -754,7 +754,7 @@ class Checks:
         self.check("main screen: ClamShell alone, scanned out from its own buffers", top and max(library_view[2]) > 100)
         bottom = until(lambda: shown("Bottom"), 5)
         self.check("bottom screen: scanned out, the bar shown", bottom and bar_drawn())
-        control("tap dock 0")  # foot, pinned by the setup, opened on the main screen
+        control("tap dock 1")  # foot, pinned by the setup (after the Library's tile), opened on the main screen
         opened = until(lambda: any(w["app_id"] == "foot" for w in windows()), 8)
         self.check("main screen: composed while a window is on it", opened and until(lambda: not shown("Top"), 5))
         control("window down")
@@ -841,9 +841,9 @@ class Checks:
             pad("press home", f"stick right {x} {y}", "sleep 120", "stick right 0 0", "release home")
             time.sleep(0.5)
 
-        control("tap dock 0")
+        control("tap dock 1")
         until(lambda: len(foot()) == 1, 8)
-        control("long dock 0")
+        control("long dock 1")
         control("tap dock-menu open-another")
         if not self.check("window flicks: two top windows of one program", until(lambda: len(foot()) == 2, 8), foot()):
             return
