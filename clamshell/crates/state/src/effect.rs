@@ -166,7 +166,7 @@ pub enum Compositor {
     Close(Vec<i64>),
     /// The screens' power, sent when it changes and when it is to be set again (the same value twice
     /// means set it again). `top` is whether the screens are on, which idle turns off together; `bottom`
-    /// is whether the second screen is on while they are (see [`crate::Bottom::off`]).
+    /// is whether the second screen is on while they are (see [`crate::State::bottom_off`]).
     Outputs { top: bool, bottom: bool },
     /// The main screen's refresh rate in Hz, where 0 means the rate it had at start. It follows the
     /// settings in force, and a launch's settings from the moment it starts, so the rate changes before

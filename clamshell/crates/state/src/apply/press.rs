@@ -22,7 +22,7 @@ impl State {
             _ => false,
         };
         if used {
-            self.bottom.used(&self.session, &self.clock);
+            self.bottom.used(&self.clock);
         }
         // Input that reached ClamShell itself, such as the pad driving the screens.
         self.idle.own_input(self.clock.mono());

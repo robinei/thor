@@ -6,16 +6,14 @@ use crate::bottom::Bottom;
 use crate::settings::BottomWhenIdle;
 use crate::{Clock, Session};
 
-/// What the bottom screen shows, besides being on or off.
+/// The bottom screen's power as chosen; whether it is off by itself is worked out (see [`Bottom::off_at`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct BottomScreen {
     /// Turned off with Home+Start.
     off: bool,
-    /// Turned off by itself, when idle or dark on battery ([`Bottom::follow_power`]).
-    idle_off: bool,
 }
 
-/// What the second screen's power follows from the rest of the state (see [`Bottom::follow_power`]).
+/// What the second screen's power follows from the rest of the state (see [`Bottom::off_at`]).
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Power {
     /// Windows are moved to the bottom screen.
@@ -32,7 +30,7 @@ pub(crate) struct Power {
 
 /// How long, in seconds, the second screen goes untouched and without the pad's focus before it dims,
 /// and after that before it powers off by itself. It only powers off on battery and when the setting
-/// isn't "Screen on" (see [`Bottom::follow_power`]).
+/// isn't "Screen on" (see [`Bottom::off_at`]).
 const DIM_AFTER: u64 = 60;
 const OFF_AFTER: u64 = 180;
 
@@ -43,13 +41,13 @@ impl Bottom {
         in_game && when_idle == BottomWhenIdle::DarkInGame && !self.woken
     }
 
-    /// Whether the second screen is drawn dimmed. It is when it shows ClamShell's view and has gone
-    /// untouched, without the pad's focus, for [`DIM_AFTER`]. Windows moved there are never dimmed, since
-    /// they are watched without touching. This spares the OLED while a game played with the pad on the
-    /// main screen keeps the device awake and nobody looks below. A touch on it, or the pad's focus
-    /// coming to it, brings it back. Kept by [`Bottom::follow_dim`], which runs after every event.
-    pub fn dimmed(&self) -> bool {
-        self.dimmed
+    /// Whether the second screen is drawn dimmed at `now`. It is when it shows ClamShell's view and has
+    /// gone untouched, without the pad's focus, for [`DIM_AFTER`]. Windows moved there are never dimmed,
+    /// since they are watched without touching. This spares the OLED while a game played with the pad on
+    /// the main screen keeps the device awake and nobody looks below. A touch on it, or the pad's focus
+    /// coming to it, brings it back.
+    pub(crate) fn dimmed_at(&self, session: &Session, now: u64) -> bool {
+        !self.shows_windows(session) && self.idle_for(now) >= DIM_AFTER
     }
 
     /// Seconds since the second screen was last used at `now`, or 0 before the clock's first reading.
@@ -58,17 +56,15 @@ impl Bottom {
     }
 
     /// The second screen is in use, so it is lit.
-    pub(crate) fn used(&mut self, session: &Session, clock: &Clock) {
+    pub(crate) fn used(&mut self, clock: &Clock) {
         self.used_at = Some(clock.mono());
-        self.follow_dim(session, clock);
     }
 
-    /// Runs after any event. The time counts from the first clock reading.
-    pub(crate) fn follow_dim(&mut self, session: &Session, clock: &Clock) {
+    /// Runs after any event: the time it goes unused counts from the first clock reading.
+    pub(crate) fn note_clock(&mut self, clock: &Clock) {
         if self.used_at.is_none() && clock.read() {
             self.used_at = Some(clock.mono());
         }
-        self.dimmed = !self.shows_windows(session) && self.idle_for(clock.mono()) >= DIM_AFTER;
     }
 
     /// Whether the bottom screen shows the windows moved there: the windows' tab is open and there are
@@ -82,9 +78,10 @@ impl Bottom {
         self.tab == super::Tab::Windows && any_down
     }
 
-    /// Whether the bottom screen is turned off, by hand or by itself.
-    pub fn off(&self) -> bool {
-        self.screen.off || self.screen.idle_off
+    /// Whether the bottom screen is off at `now`: by hand, or by itself as [`Bottom::idle_wanted`] says with
+    /// `p`. A touch, the pad's focus, a window moved down or the charger turn it on again.
+    pub(crate) fn off_at(&self, p: Power, now: u64) -> bool {
+        self.screen.off || self.idle_wanted(p, now)
     }
 
     /// Whether the bottom screen should be off by itself at `now`. That needs all of: running on battery,
@@ -101,13 +98,6 @@ impl Bottom {
             && !self.shows(p.any_down)
             && self.editor().is_none()
             && (self.dark(p.in_game, p.when_idle) || untouched)
-    }
-
-    /// Runs after any event. Turns the bottom screen off or on by itself as [`Bottom::idle_wanted`] says.
-    /// A touch, the pad's focus, a window moved down or the charger turn it on again. The screen is told
-    /// after the event (see [`crate::sync::Sent::outputs`]).
-    pub(crate) fn follow_power(&mut self, p: Power, now: u64) {
-        self.screen.idle_off = self.idle_wanted(p, now);
     }
 
     /// The darkened second screen was tapped awake. This lasts until the next game.
@@ -160,7 +150,6 @@ impl Bottom {
     /// lights if it was dark for a game, as if tapped.
     pub(crate) fn light(&mut self, now: u64) {
         self.screen.off = false;
-        self.screen.idle_off = false;
         self.used_at = Some(now);
         self.woken = true;
     }
@@ -168,10 +157,9 @@ impl Bottom {
     /// Home+Start turns the bottom screen off, or on again. If it had turned off by itself, this turns it
     /// on, as a touch would.
     pub(crate) fn toggle_power(&mut self, p: Power, now: u64) {
-        if self.screen.idle_off && !self.screen.off {
+        if !self.screen.off && self.idle_wanted(p, now) {
             self.used_at = Some(now);
             self.woken = true;
-            self.follow_power(p, now);
             return;
         }
         self.screen.off = !self.screen.off;
@@ -179,7 +167,6 @@ impl Bottom {
         if !self.screen.off {
             self.used_at = Some(now);
             self.woken = true;
-            self.screen.idle_off = false;
         }
     }
 }

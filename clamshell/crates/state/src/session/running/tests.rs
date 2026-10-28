@@ -811,10 +811,10 @@ fn show_of_an_entry_whose_windows_are_all_below_shows_them_there() {
     assert!(s.session().shelf_in_front());
     // The bottom screen turned off by hand comes on again for them.
     s.applied(Event::HardwareKey(crate::HardwareKey::BottomPower));
-    assert!(s.bottom().off());
+    assert!(s.bottom_off());
     s.applied(Event::HardwareKey(crate::HardwareKey::BottomView));
     tap(&mut s, Id::Dock(DockId::Entry(0)));
-    assert!(!s.bottom().off() && s.bottom().shows_windows(s.session()), "on again");
+    assert!(!s.bottom_off() && s.bottom().shows_windows(s.session()), "on again");
     // With a window of it on the main screen, that is shown.
     s.observed(vec![win_of(3, "zelda3", &zelda), win_of(4, "second", &zelda)]);
     show(&mut s, "zelda-lttp");

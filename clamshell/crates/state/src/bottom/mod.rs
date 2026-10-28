@@ -83,9 +83,8 @@ pub struct Bottom {
     tab: Tab,
     /// When the second screen was last touched or had the pad's focus, in monotonic seconds as in
     /// [`crate::Event::Tick`]. None before the clock's first reading. Also whether the screen is drawn
-    /// dimmed (see [`Bottom::dimmed`]).
+    /// dimmed (see [`Bottom::dimmed_at`]).
     used_at: Option<u64>,
-    dimmed: bool,
     /// The tab that was open when an app's text field brought up the keyboard. The screen goes back to it
     /// when the field is done, unless the user chose a tab in the meantime.
     raised_from: Option<Tab>,

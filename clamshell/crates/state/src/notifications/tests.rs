@@ -59,7 +59,7 @@ fn notifications_are_held_newest_first_and_one_sent_again_replaces_its_own() {
 fn a_notification_waits_for_the_bottom_screen_and_then_shows_its_time() {
     let mut s = ticking();
     s.applied(Event::HardwareKey(HardwareKey::BottomPower));
-    assert!(s.bottom().off());
+    assert!(s.bottom_off());
     notify(&mut s, note(1, Urgency::Normal, -1));
     assert_eq!(s.notifications().expires_at(bus(1)), None, "waiting");
     assert_eq!(s.applied(Event::tick(1100)), [], "kept while the screen is off");
@@ -165,7 +165,7 @@ fn a_critical_notification_wakes_the_screens_and_turns_the_bottom_screen_on() {
     let fx = notify(&mut s, note(2, Urgency::Critical, -1));
     assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: true })), "{fx:?}");
     assert_eq!(s.idle().stage(), Stage::Awake);
-    assert!(!s.bottom().off(), "on again, though it was off by hand");
+    assert!(!s.bottom_off(), "on again, though it was off by hand");
     assert_eq!(s.notifications().expires_at(bus(1)), Some(1300 + DEFAULT_SECS), "the ordinary one is seen with it");
     assert_eq!(s.notifications().expires_at(bus(2)), None, "the critical one stays");
 }
@@ -177,10 +177,10 @@ fn a_critical_notification_lights_a_screen_dark_for_a_game() {
     s.applied(Event::Reading(crate::Reading::Status(status)));
     s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::DarkInGame.value());
     crate::testkit::start(&mut s, "zelda-lttp");
-    assert!(s.bottom_dark() && s.bottom().off());
+    assert!(s.bottom_dark() && s.bottom_off());
     notify(&mut s, note(1, Urgency::Normal, -1));
-    assert!(s.bottom().off(), "an ordinary one leaves it dark");
+    assert!(s.bottom_off(), "an ordinary one leaves it dark");
     let fx = notify(&mut s, note(2, Urgency::Critical, 0));
     assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: true })), "{fx:?}");
-    assert!(!s.bottom_dark() && !s.bottom().off());
+    assert!(!s.bottom_dark() && !s.bottom_off());
 }

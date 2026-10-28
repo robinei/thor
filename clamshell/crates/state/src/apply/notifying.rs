@@ -42,12 +42,12 @@ impl State {
     /// A notification over the bottom screen was tapped: input, and a use of that screen.
     fn touched_notification(&mut self, now: u64) {
         self.idle.own_input(now);
-        self.bottom.used(&self.session, &self.clock);
+        self.bottom.used(&self.clock);
     }
 
     /// Whether the bottom screen is lit, so that what is over it is seen: it is on, and so are the
     /// screens. Notifications are drawn, and their times run, only then.
     pub fn bottom_lit(&self) -> bool {
-        !self.bottom.off() && !self.setup.calibrating() && self.idle.stage() < Stage::Off
+        !self.bottom_off() && !self.setup.calibrating() && self.idle.stage() < Stage::Off
     }
 }

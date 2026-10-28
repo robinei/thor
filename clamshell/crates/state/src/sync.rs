@@ -41,7 +41,7 @@ pub(crate) struct Wanted<'a> {
     /// else the settings in force's: their Refresh, or under a frame rate cap one it divides (see
     /// [`crate::presentation::modes::DisplayModes::refresh_for`]).
     pub(crate) refresh: u16,
-    /// The bottom screen is on (see [`crate::Bottom::off`]).
+    /// The bottom screen is on (see [`crate::State::bottom_off`]).
     pub(crate) bottom_on: bool,
     /// ClamShell's view is on the bottom screen, and that screen is on.
     pub(crate) bottom_seen: bool,
@@ -256,7 +256,7 @@ impl Sent {
     }
 
     /// The screens are on while idle hasn't turned them off, and the bottom one as it is set (see
-    /// [`crate::Bottom::off`]), when either changes. The UI tells a change of the bottom one alone from
+    /// [`crate::State::bottom_off`]), when either changes. The UI tells a change of the bottom one alone from
     /// idle by what it was sent last.
     fn outputs(&mut self, w: &Wanted, out: &mut Out) {
         let outputs = (w.stage < Stage::Off, w.bottom_on);

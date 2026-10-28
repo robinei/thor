@@ -268,6 +268,16 @@ impl State {
         &self.bottom
     }
 
+    /// Whether the bottom screen is drawn dimmed now (see [`Bottom::dimmed_at`]).
+    pub fn bottom_dimmed(&self) -> bool {
+        self.bottom.dimmed_at(&self.session, self.clock.mono())
+    }
+
+    /// Whether the bottom screen is off now, by hand or by itself (see [`Bottom::off_at`]).
+    pub fn bottom_off(&self) -> bool {
+        self.bottom.off_at(self.power(), self.clock.mono())
+    }
+
     pub fn session(&self) -> &Session {
         &self.session
     }
@@ -420,7 +430,7 @@ impl State {
             Event::Resumed => self.resumed(),
             Event::Idle(event) => self.idle.heard(event, now),
             Event::HardwareKey(key) => self.on_hardware_key(key, out),
-            Event::BottomTouched => self.bottom.used(&self.session, &self.clock),
+            Event::BottomTouched => self.bottom.used(&self.clock),
             Event::Frozen(keys) => self.session.found_frozen(keys),
             Event::Paste => self.bottom.paste(),
             Event::DumpWindowEvents(path) => out.effects.push(Effect::Compositor(Compositor::DumpWindowEvents(path))),
@@ -474,9 +484,10 @@ impl State {
     /// 2. Entries started by their windows' app ids ([`crate::Session::start_by_app_id`]), and Steam's
     ///    games among them launched before the windows are followed, since a starting launch's window is
     ///    left where it is (`a_steam_game_found_by_its_window_is_launched_not_found_as_a_program`).
-    /// 3. The windows: moved to their entries, given to a browsed file waiting for one, programs found by
-    ///    them, the rest given groups of their own, and entries ended by them
-    ///    ([`crate::Session::follow_windows`], which compares with the windows the last pass saw).
+    /// 3. The windows: claimed by a browsed file waiting for one, entries ended by them, programs found by
+    ///    them, new ones of no program claimed by the program in front, and each placed in its group
+    ///    ([`crate::Session::follow_windows`], which compares with the windows the last pass saw). Owners
+    ///    are worked out from facts and claims, so each of these sees the same.
     /// 4. The window rules send windows down, which reads the owners 3 found
     ///    (`a_found_programs_window_goes_down_by_its_rule_as_it_is_found`), and the tab a window moved
     ///    down left is settled as any tab left (`the_tab_a_rule_leaves_is_settled_in_the_same_event`).
@@ -493,13 +504,14 @@ impl State {
     ///
     /// Then the rest:
     ///
-    /// 10. The second screen's dimming.
+    /// 10. The time the second screen goes unused counts from the first clock reading. Whether it is dimmed,
+    ///     or off by itself, is worked out when asked ([`State::bottom_dimmed`], [`State::bottom_off`]).
     /// 11. The browsed folder's selection and armed action.
     /// 12. The idle stage.
     /// 13. The program in force.
-    /// 14. The second screen turning off or on by itself, which reads the program in force's setting and
-    ///     darkness (`dark_for_a_game_on_battery_it_goes_off_and_a_tap_wakes_it`).
-    /// 15. The notifications' times, which run while the second screen is lit, as 12 and 14 left it
+    /// 14. (The second screen off by itself reads the program in force's setting and darkness as 13 left
+    ///     them: `dark_for_a_game_on_battery_it_goes_off_and_a_tap_wakes_it`.)
+    /// 15. The notifications' times, which run while the second screen is lit, as 12 and 13 leave it
     ///     (`a_notification_waits_for_the_bottom_screen_and_then_shows_its_time`).
     /// 16. The pad mouse, when the program in force changed.
     /// 17. What claims the pad, and where it goes. The focus ring shows where the pad is, so it is hidden
@@ -547,7 +559,7 @@ impl State {
         self.session.follow_quitting(self.shelf.library(), out);
         self.dock.follow(&self.session);
         self.session.followed();
-        self.bottom.follow_dim(&self.session, &self.clock);
+        self.bottom.note_clock(&self.clock);
         self.shelf.follow_folder();
         self.radios.follow(self.clock.mono());
         // Sleep only in the device's own session. A program in front doesn't hold it off; one playing a
@@ -556,7 +568,6 @@ impl State {
         let refreshing = self.setup.calibrating();
         self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), out);
         let changed = self.session.follow_program(self.clock.mono());
-        self.bottom.follow_power(self.power(), self.clock.mono());
         let lit = self.bottom_lit();
         self.notifications.follow(self.clock.mono(), lit, out);
         if changed {
@@ -598,6 +609,7 @@ impl State {
             tab => tab.watch(),
         };
         let settings = self.in_force();
+        let bottom_off = self.bottom_off();
         Wanted {
             shelf: &self.shelf,
             fetch_view: self.shelf.fetch_first(),
@@ -610,8 +622,8 @@ impl State {
             settings,
             refresh: self.refresh_wanted(&settings),
             // Off while the refresh rate calibration runs, so only the main screen's vblanks come.
-            bottom_on: !self.bottom.off() && !self.setup.calibrating(),
-            bottom_seen: !self.bottom.shows_windows(&self.session) && !self.bottom.off(),
+            bottom_on: !bottom_off && !self.setup.calibrating(),
+            bottom_seen: !self.bottom.shows_windows(&self.session) && !bottom_off,
             tab,
             setup_open: self.setup.is_open(),
             ui_up: self.ui_up,

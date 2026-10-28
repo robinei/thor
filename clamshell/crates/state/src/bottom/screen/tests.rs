@@ -164,9 +164,9 @@ fn on_battery_the_untouched_bottom_screen_goes_off_and_a_touch_brings_it_back() 
     s.applied(Event::tick(1000));
     assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER - 1))), None, "dimmed, not yet off");
     assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), Some(false), "off by itself");
-    assert!(s.bottom().off());
+    assert!(s.bottom_off());
     assert_eq!(power(&s.applied(Event::BottomTouched)), Some(true), "a touch: on again");
-    assert!(!s.bottom().off());
+    assert!(!s.bottom_off());
 }
 
 #[test]
@@ -181,7 +181,7 @@ fn off_by_itself_as_the_screens_go_off_it_goes_off_with_them_and_stays_off() {
     // The screens go off for idle after 5 minutes, and the bottom one by itself 4 minutes after the
     // touch, at the same time.
     let fx = s.applied(Event::tick(1060 + DIM_AFTER + OFF_AFTER));
-    assert!(s.bottom().off());
+    assert!(s.bottom_off());
     assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: false, bottom: false })), "{fx:?}");
     let fx = s.applied(Event::Idle(IdleEvent::DeviceInput));
     assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: false })), "{fx:?}");
@@ -195,7 +195,7 @@ fn the_wall_clock_set_back_does_not_keep_it_on() {
     s.applied(Event::Tick { unix_secs: 2 * year, mono_secs: 1000 });
     let at = |mono: u64| Event::Tick { unix_secs: year + mono, mono_secs: mono };
     assert_eq!(power(&s.applied(at(1000 + DIM_AFTER + OFF_AFTER - 1))), None);
-    assert!(s.bottom().dimmed(), "dimmed on time");
+    assert!(s.bottom_dimmed(), "dimmed on time");
     assert_eq!(power(&s.applied(at(1000 + DIM_AFTER + OFF_AFTER))), Some(false), "off on time");
 }
 
@@ -222,7 +222,7 @@ fn dark_for_a_game_on_battery_it_goes_off_and_a_tap_wakes_it() {
     s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::DarkInGame.value());
     crate::testkit::start(&mut s, "zelda-lttp");
     assert!(s.bottom_dark());
-    assert!(s.bottom().off(), "dark on battery: off at once");
+    assert!(s.bottom_off(), "dark on battery: off at once");
     assert_eq!(power(&s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::Wake)))), Some(true), "tapped: on");
 }
 
@@ -235,11 +235,11 @@ fn home_start_wakes_a_screen_dark_for_a_game() {
     s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::DarkInGame.value());
     s.applied(Event::tick(1000));
     crate::testkit::start(&mut s, "zelda-lttp");
-    assert!(s.bottom().off());
+    assert!(s.bottom_off());
     assert_eq!(power(&key(&mut s, HardwareKey::BottomPower)), Some(true));
-    assert!(!s.bottom_dark() && !s.bottom().off());
+    assert!(!s.bottom_dark() && !s.bottom_off());
     assert_eq!(power(&s.applied(Event::tick(1001))), None, "it stays on");
-    assert!(!s.bottom().off());
+    assert!(!s.bottom_off());
 }
 
 #[test]
@@ -260,7 +260,7 @@ fn home_start_brings_back_a_screen_off_by_hand_and_by_itself_at_once() {
     key(&mut s, HardwareKey::BottomPower);
     s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER));
     assert_eq!(power(&key(&mut s, HardwareKey::BottomPower)), Some(true), "one press");
-    assert!(!s.bottom().off(), "on, and not off by itself either");
+    assert!(!s.bottom_off(), "on, and not off by itself either");
 }
 
 #[test]
@@ -270,7 +270,7 @@ fn home_start_brings_back_a_screen_off_by_itself() {
     s.applied(Event::tick(1000));
     s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER));
     assert_eq!(power(&key(&mut s, HardwareKey::BottomPower)), Some(true), "on, as a touch would");
-    assert!(!s.bottom().off());
+    assert!(!s.bottom_off());
 }
 
 #[test]
@@ -278,27 +278,27 @@ fn the_bottom_screen_dims_untouched_and_lights_when_used() {
     let mut s = state();
     s.applied(Event::tick(1000));
     s.applied(Event::tick(1000 + DIM_AFTER - 1));
-    assert!(!s.bottom().dimmed());
+    assert!(!s.bottom_dimmed());
     s.applied(Event::tick(1000 + DIM_AFTER));
-    assert!(s.bottom().dimmed(), "untouched a while: dimmed");
+    assert!(s.bottom_dimmed(), "untouched a while: dimmed");
     // A touch on it lights it.
     s.applied(Event::BottomTouched);
-    assert!(!s.bottom().dimmed());
+    assert!(!s.bottom_dimmed());
     // The pad's focus coming to one of its targets lights it too, but not shelf's targets on the main
     // screen.
     s.applied(Event::tick(1000 + 3 * DIM_AFTER));
-    assert!(s.bottom().dimmed());
+    assert!(s.bottom_dimmed());
     s.applied(Event::Pointer(crate::PointerEvent::Focus(crate::Id::Shelf(crate::ShelfId::Launch))));
-    assert!(s.bottom().dimmed(), "the main screen's");
+    assert!(s.bottom_dimmed(), "the main screen's");
     s.applied(Event::Pointer(crate::PointerEvent::Focus(crate::Id::Tab(crate::Tab::Dock))));
-    assert!(!s.bottom().dimmed());
+    assert!(!s.bottom_dimmed());
     // Windows moved there are watched without touching, so they are never dimmed.
     let mut s = emulator();
     key(&mut s, HardwareKey::WindowDown);
     s.observed(vec![win(1, GAME, "Top"), win(2, GAME, "Bottom")]);
     s.applied(Event::tick(5000));
     s.applied(Event::tick(5000 + 2 * DIM_AFTER));
-    assert!(s.bottom().shows_windows(s.session()) && !s.bottom().dimmed());
+    assert!(s.bottom().shows_windows(s.session()) && !s.bottom_dimmed());
 }
 
 #[test]
@@ -306,11 +306,11 @@ fn the_bottom_screen_turns_off_and_on() {
     let mut s = emulator();
     let off = vec![Effect::Compositor(Compositor::Outputs { top: true, bottom: false }), Effect::Watch(crate::Watch::Metrics, false)];
     assert_eq!(key(&mut s, HardwareKey::BottomPower), off, "nothing seen: not watched");
-    assert!(s.bottom().off());
+    assert!(s.bottom_off());
     // A window moved down turns it on again.
     let fx = key(&mut s, HardwareKey::WindowDown);
     assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: true })), "{fx:?}");
-    assert!(!s.bottom().off());
+    assert!(!s.bottom_off());
 }
 
 /// Home + right stick down with no window of a program in front, shelf's or none, does nothing.
@@ -344,9 +344,9 @@ fn a_refresh_calibration_or_an_editor_keeps_it_on() {
     let fx = s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::Device(crate::DeviceId::Refresh))));
     assert_eq!(power(&fx), Some(false), "off while calibrating");
     assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), None, "calibrating");
-    assert!(!s.bottom().off());
+    assert!(!s.bottom_off());
     assert_eq!(power(&s.applied(Event::RefreshCalibrated(Ok(String::new())))), None, "done: off by itself, so it stays off");
-    assert!(s.bottom().off());
+    assert!(s.bottom_off());
     let mut s = state();
     on_battery(&mut s, true);
     s.applied(Event::tick(1000));
@@ -377,10 +377,10 @@ fn moving_a_window_down_from_another_tab_opens_the_windows_tab_with_the_screen_o
     let mut s = emulator();
     tap(&mut s, crate::Id::Tab(Tab::Settings));
     key(&mut s, HardwareKey::BottomPower);
-    assert!(s.bottom().off());
+    assert!(s.bottom_off());
     let fx = key(&mut s, HardwareKey::WindowDown);
     assert_eq!(s.bottom().tab(), Tab::Windows, "{fx:?}");
-    assert!(!s.bottom().off(), "not moved to a dark panel");
+    assert!(!s.bottom_off(), "not moved to a dark panel");
     assert!(s.bottom().shows_windows(s.session()));
     // Back to the settings, where it was moved from.
     key(&mut s, HardwareKey::BottomView);
