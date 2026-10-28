@@ -47,6 +47,59 @@ pub(crate) struct Presenter {
     composing_buffers: bool,
 }
 
+/// Why a commit didn't go through, by what is to be done about it.
+#[derive(Debug, PartialEq)]
+pub(crate) enum CommitError {
+    /// The display engine refused what was asked of it: asked again, it answers the same.
+    Refused(String),
+    /// It was busy (a flip still in flight): the same commit may go through later.
+    Busy(String),
+    /// The seat is another session's.
+    Away,
+    /// Anything else, which may pass: the commit is tried again.
+    Failed(String),
+}
+
+impl std::fmt::Display for CommitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Refused(why) => write!(f, "the display engine refused it: {why}"),
+            Self::Busy(why) => write!(f, "busy: {why}"),
+            Self::Away => write!(f, "the seat is another session's"),
+            Self::Failed(why) => write!(f, "{why}"),
+        }
+    }
+}
+
+impl std::error::Error for CommitError {}
+
+impl CommitError {
+    /// A commit's error from Smithay, by what it says: a failed test commit or `EINVAL`/`ERANGE` (a
+    /// property or value the display engine doesn't take) refused; `EBUSY`, `EAGAIN` and `EINTR` busy;
+    /// the device paused, or no longer ours, away.
+    fn of(error: smithay::backend::drm::DrmError) -> CommitError {
+        use smithay::backend::drm::DrmError;
+        let why = error.to_string();
+        match &error {
+            DrmError::TestFailed(_) | DrmError::UnsupportedPlaneConfiguration(_) | DrmError::PlaneNotCompatible(..) => Self::Refused(why),
+            DrmError::DeviceInactive | DrmError::DrmMasterFailed => Self::Away,
+            DrmError::Access(access) => Self::of_errno(rustix::io::Errno::from_io_error(&access.source), why),
+            _ => Self::Failed(why),
+        }
+    }
+
+    /// A commit's error by its errno, if it has one.
+    fn of_errno(errno: Option<rustix::io::Errno>, why: String) -> CommitError {
+        use rustix::io::Errno;
+        match errno {
+            Some(Errno::INVAL | Errno::RANGE) => Self::Refused(why),
+            Some(Errno::BUSY | Errno::AGAIN | Errno::INTR) => Self::Busy(why),
+            Some(Errno::ACCESS | Errno::PERM) => Self::Away,
+            _ => Self::Failed(why),
+        }
+    }
+}
+
 /// What the primary plane shows: which framebuffer, which part of it, where, turned how.
 #[derive(Clone, Copy)]
 struct Primary {
@@ -189,8 +242,8 @@ impl Presenter {
     /// Commits the buffer drawn into, once `sync` says the drawing is done: by the commit waiting on its
     /// fence where it can, else after waiting here, with the other planes `layers`. It is shown at the next
     /// flip.
-    pub(crate) fn queue<'l>(&mut self, sync: Option<SyncPoint>, layers: impl Iterator<Item = PlaneState<'l>> + Clone) -> Result<(), Error> {
-        let slot = self.next.take().ok_or("no buffer drawn")?;
+    pub(crate) fn queue<'l>(&mut self, sync: Option<SyncPoint>, layers: impl Iterator<Item = PlaneState<'l>> + Clone) -> Result<(), CommitError> {
+        let slot = self.next.take().ok_or(CommitError::Failed("no buffer drawn".into()))?;
         self.swapchain.submitted(&slot);
         let fence = sync.and_then(|sync| {
             let fence = self.fencing.then(|| sync.export()).flatten();
@@ -203,10 +256,9 @@ impl Presenter {
             }
             fence
         });
-        let fb = *slot.userdata().get::<GbmFramebuffer>().ok_or("no framebuffer")?.as_ref();
+        let fb = *slot.userdata().get::<GbmFramebuffer>().ok_or(CommitError::Failed("no framebuffer".into()))?.as_ref();
         let (src, dst) = whole(&self.surface);
-        self.commit(fb, src, dst, Transform::Normal, fence.as_ref().map(std::os::fd::AsFd::as_fd), &[], layers, false)
-            .map_err(|e| format!("committing: {e}"))?;
+        self.commit(fb, src, dst, Transform::Normal, fence.as_ref().map(std::os::fd::AsFd::as_fd), &[], layers, false)?;
         self.pending = Some(Shown::Composed(slot));
         Ok(())
     }
@@ -218,9 +270,9 @@ impl Presenter {
         fb: smithay::reexports::drm::control::framebuffer::Handle,
         properties: &[crate::scanout::Property],
         layers: impl Iterator<Item = PlaneState<'l>> + Clone,
-    ) -> Result<(), Error> {
+    ) -> Result<(), CommitError> {
         let (src, dst) = whole(&self.surface);
-        self.commit(fb, src, dst, Transform::Normal, None, properties, layers, false).map_err(|e| format!("committing ClamShell's own buffer: {e}"))?;
+        self.commit(fb, src, dst, Transform::Normal, None, properties, layers, false)?;
         self.pending = Some(Shown::Ui);
         Ok(())
     }
@@ -239,7 +291,7 @@ impl Presenter {
         properties: &[crate::scanout::Property],
         layers: impl Iterator<Item = PlaneState<'l>> + Clone,
         test: bool,
-    ) -> Result<(), Error> {
+    ) -> Result<(), CommitError> {
         self.commit(*(*fb).as_ref(), src, dst, transform, None, properties, layers, test)?;
         self.pending = Some(Shown::Window(buffer, fb));
         Ok(())
@@ -247,8 +299,8 @@ impl Presenter {
 
     /// Commits the frame shown again, with the other planes `layers` changed (the cursor moved, the overlay
     /// redrawn). It stays shown.
-    pub(crate) fn show_again<'l>(&mut self, layers: impl Iterator<Item = PlaneState<'l>> + Clone) -> Result<(), Error> {
-        let Primary { fb, src, dst, transform } = self.last.ok_or("nothing shown to commit again")?;
+    pub(crate) fn show_again<'l>(&mut self, layers: impl Iterator<Item = PlaneState<'l>> + Clone) -> Result<(), CommitError> {
+        let Primary { fb, src, dst, transform } = self.last.ok_or(CommitError::Failed("nothing shown to commit again".into()))?;
         self.commit(fb, src, dst, transform, None, &[], layers, false)?;
         self.pending = Some(Shown::Again);
         Ok(())
@@ -273,7 +325,7 @@ impl Presenter {
         properties: &[crate::scanout::Property],
         layers: impl Iterator<Item = PlaneState<'l>> + Clone,
         test: bool,
-    ) -> Result<(), Error> {
+    ) -> Result<(), CommitError> {
         self.properties.clear();
         self.properties.extend_from_slice(&self.clear);
         self.properties.extend_from_slice(properties);
@@ -282,10 +334,10 @@ impl Presenter {
         if test {
             // (A mode change waiting, as after the refresh changed or the screen came on, goes in the test too.)
             let modeset = self.surface.commit_pending();
-            self.surface.test_state(states(), modeset).map_err(|e| format!("the display engine refused it: {e}"))?;
+            self.surface.test_state(states(), modeset).map_err(CommitError::of)?;
         }
         let committed = if self.surface.commit_pending() { self.surface.commit(states(), true) } else { self.surface.page_flip(states(), true) };
-        committed.map_err(|e| e.to_string())?;
+        committed.map_err(CommitError::of)?;
         self.clear.clear();
         self.last = Some(Primary { fb, src, dst, transform });
         Ok(())
@@ -418,4 +470,28 @@ fn plane_has(surface: &DrmSurface, name: &str) -> bool {
     surface
         .get_properties(surface.plane())
         .is_ok_and(|props| props.iter().any(|(handle, _)| surface.get_property(*handle).is_ok_and(|info| info.name().to_str() == Ok(name))))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rustix::io::Errno;
+
+    /// A commit's error says what to do: a refusal isn't asked again, the rest is.
+    #[test]
+    fn commit_errors_are_sorted_by_what_to_do_about_them() {
+        use smithay::backend::drm::DrmError;
+        let crtc = smithay::reexports::drm::control::crtc::Handle::from(
+            smithay::reexports::drm::control::RawResourceHandle::new(1).unwrap_or(std::num::NonZeroU32::MIN),
+        );
+        assert!(matches!(CommitError::of(DrmError::TestFailed(crtc)), CommitError::Refused(_)));
+        assert_eq!(CommitError::of(DrmError::DeviceInactive), CommitError::Away);
+        let why = || String::new();
+        assert_eq!(CommitError::of_errno(Some(Errno::INVAL), why()), CommitError::Refused(why()));
+        assert_eq!(CommitError::of_errno(Some(Errno::RANGE), why()), CommitError::Refused(why()));
+        assert_eq!(CommitError::of_errno(Some(Errno::BUSY), why()), CommitError::Busy(why()));
+        assert_eq!(CommitError::of_errno(Some(Errno::ACCESS), why()), CommitError::Away);
+        assert_eq!(CommitError::of_errno(Some(Errno::NOMEM), why()), CommitError::Failed(why()));
+        assert_eq!(CommitError::of_errno(None, why()), CommitError::Failed(why()));
+    }
 }

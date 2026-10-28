@@ -19,7 +19,7 @@ and 4 and at the end.
 
 ## Steps
 
-- [ ] 1. **Commit errors by kind** (`presenter.rs`). Commits return `Refused` (the test commit failed, or
+- [x] 1. **Commit errors by kind** (`presenter.rs`). Commits return `Refused` (the test commit failed, or
   `EINVAL`/`ERANGE`), `Busy` (`EBUSY`), `Away` (`DeviceInactive`) or `Failed` (anything else), sorted by
   one function tested against Smithay's errors.
 - [ ] 2. **One present path, one outcome table** (`drm.rs`). The four present paths return an outcome;

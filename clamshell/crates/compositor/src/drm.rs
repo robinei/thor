@@ -932,7 +932,7 @@ fn layers_committed(screen: &mut Screen) {
 
 /// The screen's commit with its planes failed: they are off from now on, composed, and the screen is
 /// committed again.
-fn layers_failed(screen: &mut Screen, error: &Error) {
+fn layers_failed(screen: &mut Screen, error: &impl std::fmt::Display) {
     if let Some(layers) = &mut screen.layers {
         layers.fail(&format!("a commit with them failed: {error}").into(), &format!("{:?}", screen.role));
     }
@@ -1114,7 +1114,7 @@ fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipel
             let states = screen.layers.iter().flat_map(PlaneLayers::states);
             (screen.surface.show_window(candidate.buffer.clone(), fb, candidate.src, dst, screen.transform.invert(), properties, states, test), with_layers)
         }
-        Err(error) => (Err(error), false),
+        Err(error) => (Err(crate::presenter::CommitError::Refused(error.to_string())), false),
     };
     let down = screen.role == ScreenRole::Bottom;
     match shown {
