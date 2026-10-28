@@ -183,24 +183,25 @@ impl crate::session::windows::WindowFacts {
 impl crate::State {
     pub fn window_presentation(&self, id: i64) -> Option<WindowPresentation> {
         let window = self.session().window(id)?;
-        let game = self.session().running_of(window).and_then(|r| self.session().entry(self.shelf().library(), &r.id)).is_some_and(crate::Entry::is_game);
+        // The entry it started with, as the settings below, rather than searching the library.
+        let game = self.session().running_of(window).and_then(|r| r.entry.as_deref()).is_some_and(crate::Entry::is_game);
         // What the top screen may tell its windows: a game is told its resolution when it starts, which may
         // have changed since, and an X11 game the modes Xwayland offers, one of which it may switch to. The
-        // second's size isn't known here, and games are shown on the top one.
-        let mut screen: Vec<(u32, u32)> = self
-            .presentation()
-            .top_size()
-            .filter(|_| !self.session().below(id))
-            .map(|top| {
-                use crate::settings::{Choice, Resolution, Setting};
-                Setting::Resolution.choices().iter().map(|value| Resolution::of(*value).size_on(top)).collect()
-            })
-            .unwrap_or_default();
-        if window.x11 && !self.session().below(id) {
-            screen.extend(self.presentation().xwayland_modes());
-        }
+        // second's size isn't known here, and games are shown on the top one. Only whether the window's
+        // fixed size is one of these matters, so that is all that is passed on.
+        let offers = |size: (u32, u32)| {
+            use crate::settings::{Choice, Resolution, Setting};
+            let below = self.session().below(id);
+            let told = self
+                .presentation()
+                .top_size()
+                .filter(|_| !below)
+                .is_some_and(|top| Setting::Resolution.choices().iter().any(|value| Resolution::of(*value).size_on(top) == size));
+            told || (window.x11 && !below && self.presentation().xwayland_modes().contains(&size))
+        };
+        let offered = window.limits.fixed_size().filter(|size| offers(*size));
         let size = self.session().running_of(window).map_or_else(Default::default, |r| self.settings_of(&r.id).choice());
-        Some(window.presentation(game, &screen, size))
+        Some(window.presentation(game, offered.as_slice(), size))
     }
 
     /// The tone curve for window `id`'s content: the curve chosen for the program running it, in its
