@@ -105,8 +105,6 @@ pub struct Bottom {
     unsaved: bool,
     /// The tab the windows' tab was opened from, which Home + right stick press goes back to.
     before_windows: Tab,
-    /// The tab left as a window moved down, not yet settled (see [`Bottom::take_left`]).
-    left: Option<Tab>,
 }
 
 impl Bottom {
@@ -152,22 +150,22 @@ impl Bottom {
 
 impl Bottom {
     /// Changes the tab. Whatever the old tab had open, such as an editor or the keymap screens, stays
-    /// there for coming back to. Returns the tab left if it changed, so State can follow (see
-    /// [`crate::State::left_tab`]).
-    pub(crate) fn set_tab(&mut self, tab: Tab) -> Option<Tab> {
+    /// there for coming back to; what the tab left had going ends when the state settles (see
+    /// [`crate::State::follow_tab`]).
+    pub(crate) fn set_tab(&mut self, tab: Tab) {
         if tab == self.tab {
-            return None;
+            return;
         }
         self.unsaved = true;
         if tab == Tab::Windows {
             self.before_windows = self.tab;
         }
-        Some(std::mem::replace(&mut self.tab, tab))
+        self.tab = tab;
     }
 
     /// The user chose a tab, by its icon, by tapping a control, or with the shoulder buttons. The tab
-    /// stays, even if a text field had brought up the keyboard. Returns the tab left if it changed.
-    pub(crate) fn choose_tab(&mut self, tab: Tab) -> Option<Tab> {
+    /// stays, even if a text field had brought up the keyboard.
+    pub(crate) fn choose_tab(&mut self, tab: Tab) {
         if self.raised_from.take().is_some() {
             self.unsaved = true;
         }
@@ -186,47 +184,46 @@ impl Bottom {
 
     /// A text field wants typing, or is done. The keyboard comes up, and when the field is done the
     /// screen goes back to the tab it came from, unless the user chose a tab in the meantime. A field
-    /// taking focus brings typing back from pointing. Returns the tab left if it changed.
-    pub(crate) fn text_input(&mut self, active: bool) -> Option<Tab> {
+    /// taking focus brings typing back from pointing.
+    pub(crate) fn text_input(&mut self, active: bool) {
         self.pointing &= !active;
         if active {
             // Not over an open editor, since what is typed there would be lost.
-            if self.tab == Tab::Keyboard || self.editor().is_some() {
-                None
-            } else {
+            if self.tab != Tab::Keyboard && self.editor().is_none() {
                 self.raised_from = Some(self.tab);
-                self.set_tab(Tab::Keyboard)
+                self.set_tab(Tab::Keyboard);
             }
         } else {
             // An editor open on the keyboard keeps it, and goes back when it closes.
             if self.editor().is_some() {
-                return None;
+                return;
             }
-            match self.raised_from.take() {
-                Some(tab) if self.tab == Tab::Keyboard => self.set_tab(tab),
-                _ => None,
+            if let Some(tab) = self.raised_from.take().filter(|_| self.tab == Tab::Keyboard) {
+                self.set_tab(tab);
             }
         }
     }
 
     /// Opens `editor` on the keyboard tab, which goes back to the tab it came up from when the editing is
     /// done (see [`Bottom::back_from_keyboard`]). While another editor is open there, it is refused with a
-    /// notice at `now`, so what was typed there isn't lost. Returns the tab left if it changed.
-    pub(crate) fn open_on_keyboard(&mut self, editor: Editor, now: u64) -> Option<Tab> {
+    /// notice at `now`, so what was typed there isn't lost.
+    pub(crate) fn open_on_keyboard(&mut self, editor: Editor, now: u64) {
         if self.editors.on(Tab::Keyboard).is_some() {
             self.notice.show(NoticeKind::KeyboardBusy, now);
-            return None;
+            return;
         }
         self.editors.open(editor);
         if self.tab != Tab::Keyboard {
             self.raised_from = Some(self.tab);
         }
-        self.set_tab(Tab::Keyboard)
+        self.set_tab(Tab::Keyboard);
     }
 
-    /// Goes back to the tab the keyboard came up from, if it did. Returns the tab left if it changed.
-    pub(crate) fn back_from_keyboard(&mut self) -> Option<Tab> {
-        self.raised_from.take().and_then(|tab| self.set_tab(tab))
+    /// Goes back to the tab the keyboard came up from, if it did.
+    pub(crate) fn back_from_keyboard(&mut self) {
+        if let Some(tab) = self.raised_from.take() {
+            self.set_tab(tab);
+        }
     }
 
     /// Contacts on the area below the bar, passed on to the virtual touchpad, or none (see [`touch`]).

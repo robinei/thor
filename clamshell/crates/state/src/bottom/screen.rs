@@ -110,17 +110,9 @@ impl Bottom {
         self.woken = false;
     }
 
-    /// Opens the windows' tab as a window moves there. The tab left is settled later (see
-    /// [`Bottom::take_left`]), since this can happen while windows are followed.
+    /// Opens the windows' tab as a window moves there.
     fn open_windows_tab(&mut self) {
-        if let Some(left) = self.choose_tab(super::Tab::Windows) {
-            self.left = Some(left);
-        }
-    }
-
-    /// The tab left as a window moved down, for State to settle as any tab left (`left_tab`).
-    pub(crate) fn take_left(&mut self) -> Option<super::Tab> {
-        self.left.take()
+        self.choose_tab(super::Tab::Windows);
     }
 
     /// The tab Home + right stick press goes to: the windows' tab, or from it the tab it was opened from.

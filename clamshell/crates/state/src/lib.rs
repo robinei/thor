@@ -202,6 +202,8 @@ pub struct State {
     ui_up: bool,
     /// What the outside was last sent (see [`crate::sync`]).
     sent: Sent,
+    /// The second screen's tab as the last settle saw it, to tell the tab left (see [`State::follow_tab`]).
+    settled_tab: Tab,
     /// The events the rules queue for State, lent to `apply`'s [`Out`] and returned empty, so that its
     /// room is kept.
     queue: Vec<Event>,
@@ -230,6 +232,7 @@ impl State {
         };
         if let Some(resume) = &init.resume {
             resume.restore_tab(&mut s.bottom);
+            s.settled_tab = s.bottom.tab();
             if s.shelf.read() {
                 resume.restore_shelf(&mut s.shelf);
             }
@@ -489,8 +492,9 @@ impl State {
     ///    ([`crate::Session::follow_windows`], which compares with the windows the last pass saw). Owners
     ///    are worked out from facts and claims, so each of these sees the same.
     /// 4. The window rules send windows down, which reads the owners 3 found
-    ///    (`a_found_programs_window_goes_down_by_its_rule_as_it_is_found`), and the tab a window moved
-    ///    down left is settled as any tab left (`the_tab_a_rule_leaves_is_settled_in_the_same_event`).
+    ///    (`a_found_programs_window_goes_down_by_its_rule_as_it_is_found`); then the tab left since the
+    ///    last settle, by a choice or by a window moved down, is settled ([`State::follow_tab`],
+    ///    `the_tab_a_rule_leaves_is_settled_in_the_same_event`).
     /// 5. What is shown: a launch's first window, then a group whose window came back, so the one that
     ///    came back ends in front (`a_launchs_first_window_is_shown_before_a_window_that_came_back`);
     ///    then going back to what was before when the window in front closed.
@@ -544,10 +548,8 @@ impl State {
         if self.session.follow_window_rules(self.shelf.library()) {
             self.bottom.show_below();
         }
-        // A window moved down opened the windows' tab; the tab it left settles as any tab left.
-        if let Some(left) = self.bottom.take_left() {
-            self.left_tab(left);
-        }
+        // The tab left, by a choice or by a window moved down opening the windows' tab.
+        self.follow_tab();
         self.session.follow_front_launch(self.clock.mono());
         self.session.follow_replacement(self.clock.mono());
         self.session.follow_front(self.clock.mono());

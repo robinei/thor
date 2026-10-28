@@ -9,9 +9,7 @@ use crate::{State, Tab};
 impl State {
     /// The user chose a tab (see [`crate::Bottom::choose_tab`]).
     pub(crate) fn choose_tab(&mut self, tab: Tab) {
-        if let Some(left) = self.bottom.choose_tab(tab) {
-            self.left_tab(left);
-        }
+        self.bottom.choose_tab(tab);
     }
 
     /// A text field wants typing, or is done (see [`crate::Bottom::text_input`]). While the second screen shows
@@ -20,30 +18,33 @@ impl State {
         if active && self.bottom.shows_windows(&self.session) {
             return;
         }
-        if let Some(left) = self.bottom.text_input(active) {
-            self.left_tab(left);
-        }
+        self.bottom.text_input(active);
     }
 
     /// Opens `editor` on the keyboard tab (see [`crate::Bottom::open_on_keyboard`]).
     pub(crate) fn edit_on_keyboard(&mut self, editor: crate::Editor) {
-        if let Some(left) = self.bottom.open_on_keyboard(editor, self.clock.mono()) {
-            self.left_tab(left);
-        }
+        self.bottom.open_on_keyboard(editor, self.clock.mono());
     }
 
     /// Goes back to the tab the keyboard came up from, if it did.
     fn back_from_keyboard(&mut self) {
-        if let Some(left) = self.bottom.back_from_keyboard() {
-            self.left_tab(left);
-        }
+        self.bottom.back_from_keyboard();
     }
 
-    /// The second screen's tab changed from `left`, and its watch follows (see
-    /// [`crate::sync::Sent::watches`]). What the tab left had going ends: the dock's menu or move, any
-    /// level row being set, and the modifiers armed on the keymaps' capture screen. The time tab opens on
-    /// its main page again.
-    pub(crate) fn left_tab(&mut self, left: Tab) {
+    /// Runs after any event: the second screen's tab is not the one the last settle saw, `left` (its watch
+    /// follows in sync, see [`crate::sync::Sent::watches`]). What the tab left had going ends: the dock's
+    /// menu or move, any level row being set, and the modifiers armed on the keymaps' capture screen. The
+    /// time tab opens on its main page again. A tab left and come back to within one event isn't left.
+    pub(crate) fn follow_tab(&mut self) {
+        let tab = self.bottom.tab();
+        if tab == self.settled_tab {
+            return;
+        }
+        let left = std::mem::replace(&mut self.settled_tab, tab);
+        self.left_tab(left);
+    }
+
+    fn left_tab(&mut self, left: Tab) {
         if self.keymapping.capturing(left, false) {
             self.keyboard.take_modifiers();
         }
