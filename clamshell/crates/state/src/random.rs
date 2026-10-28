@@ -617,7 +617,12 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 2 => Asks::SaveFiles { names: vec!["a.txt".into(), "notes.txt".into()] },
                 _ => Asks::Open { folder: false },
             };
-            Event::Portal(crate::portal::PortalEvent::Asked(crate::portal::FileRequest { id, title: String::new(), asks, patterns }))
+            // Asked by a window's process, a process of none, or the process of none known; from Home,
+            // from a folder in it, or from none.
+            let asker =
+                rng.pick(&s.session().windows().iter().map(|w| w.pids.clone()).collect::<Vec<_>>()).cloned().filter(|_| !rng.one_in(3)).unwrap_or_default();
+            let folder = rng.pick(&[None, Some("/home/thor".into()), Some("/home/thor/Pictures".into()), Some("/nowhere".into())])?.clone();
+            Event::Portal(crate::portal::PortalEvent::Asked(crate::portal::FileRequest { id, title: String::new(), asks, patterns, asker, folder }))
         }
         // Notifications: a program's sent, sent again or closed, and taps on them.
         82 => {

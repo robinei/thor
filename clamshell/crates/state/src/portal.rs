@@ -1,8 +1,16 @@
 //! Apps' file choosers: ClamShell serves xdg-desktop-portal's file chooser (clamshell-system's
 //! `session::portal`), and each request is a pick in the Library (see [`crate::library_view::pick`]): a
-//! file or folder to open, or where to save, in the open folder under a name or over a file.
-//! Requests wait their turn, one picked at a time, the Library in front; once one is answered, what was
-//! in front before comes back.
+//! file or folder to open, or where to save, in the open folder under a name or over a file. It starts in
+//! the folder the app suggests, if the Files tab has it.
+//!
+//! A request is its program's, as a dialog is: its pick shows while that program is in front, the
+//! Library over it, and the program comes back once it is answered. Asked from a program behind, it waits
+//! until that program is in front. Leaving the pick for something else, by Home or by showing another
+//! program, sets it aside until the program is in front again; only Cancel and B answer it with nothing.
+//! The program is found by the asking process: the one whose window's process it is, or started. A
+//! request from no program's process is the one in front's.
+
+use std::path::PathBuf;
 
 use crate::library_view::pick::Takes;
 use crate::session::windows::Group;
@@ -26,6 +34,10 @@ pub struct FileRequest {
     pub asks: Asks,
     /// The names a file may have (`*.png`), from the app's filter; none: any.
     pub patterns: Vec<String>,
+    /// The asking process, then its parent, and so on; empty if it isn't known.
+    pub asker: Vec<u32>,
+    /// The folder the app suggests starting in.
+    pub folder: Option<PathBuf>,
 }
 
 /// What a request asks for.
@@ -50,13 +62,20 @@ impl FileRequest {
     }
 }
 
-/// The requests waiting and what to go back to.
+/// The requests not answered yet, and what to go back to.
 #[derive(Debug, Default)]
 pub(crate) struct Portal {
-    /// In the order they came; the first is being picked, if a pick for an app goes on.
-    pub(crate) asked: Vec<FileRequest>,
-    /// The group in front when the pick began, shown again when it is answered.
+    /// In the order they came. One may be being picked (see [`crate::library_view::pick::PickFor::App`]).
+    pub(crate) asked: Vec<Waiting>,
+    /// The program whose request is being picked, shown again when it is answered.
     pub(crate) back: Option<Group>,
+}
+
+/// A request, and the program that asked: none if no program was in front and the process isn't one's.
+#[derive(Debug)]
+pub(crate) struct Waiting {
+    pub(crate) request: FileRequest,
+    pub(crate) program: Option<Group>,
 }
 
 #[cfg(test)]
@@ -68,7 +87,12 @@ mod tests {
 
     fn ask(s: &mut crate::State, id: u32, folder: bool) -> Vec<Effect> {
         let asks = Asks::Open { folder };
-        s.applied(Event::Portal(PortalEvent::Asked(FileRequest { id, title: String::new(), asks, patterns: vec!["*.txt".into()] })))
+        s.applied(Event::Portal(PortalEvent::Asked(FileRequest { id, asks, patterns: vec!["*.txt".into()], ..request() })))
+    }
+
+    /// A request from a process that is no program's.
+    fn request() -> FileRequest {
+        FileRequest { id: 0, title: String::new(), asks: Asks::Open { folder: false }, patterns: Vec::new(), asker: Vec::new(), folder: None }
     }
 
     fn chosen(fx: &[Effect]) -> Option<(u32, Vec<std::path::PathBuf>)> {
@@ -96,8 +120,8 @@ mod tests {
         assert!(s.library_view().pick().is_none());
     }
 
-    /// Requests wait their turn. Cancelled, one is answered with nothing; Home answers so too but stays on
-    /// the Library; one the app gave up isn't answered.
+    /// Requests wait their turn. Cancelled, one is answered with nothing; one the app gave up isn't
+    /// answered; one left with Home is set aside, the Library staying, until its program is in front.
     #[test]
     fn requests_wait_and_are_cancelled_or_given_up() {
         let mut s = state();
@@ -115,14 +139,65 @@ mod tests {
         let fx = s.applied(Event::Portal(PortalEvent::Closed(2)));
         assert_eq!(chosen(&fx), None);
         assert_eq!(s.library_view().pick().map(|p| p.asks()), Some("Choose a file"));
-        // The third, left with Home: answered, and the Library stays.
+        // The third, left with Home: set aside, and the Library stays; back with its program.
         let fx = s.applied(Event::Home);
-        assert_eq!(chosen(&fx), Some((3, vec![])));
+        assert_eq!(chosen(&fx), None);
         assert!(s.session().top_window().is_none() && s.library_view().pick().is_none());
+        s.applied(WindowEvent::Activate(7).into());
+        assert_eq!(s.library_view().pick().map(|p| p.asks()), Some("Choose a file"), "its program in front");
+        assert!(s.session().top_window().is_none(), "the Library over it");
+    }
+
+    /// A request is its program's, found by the asking process, here one the window's process started:
+    /// asked from a program behind, it waits until that program is in front, and the program comes back
+    /// once it is answered. Showing another program sets it aside.
+    #[test]
+    fn a_request_waits_for_its_program() {
+        let mut s = state();
+        let with_pid = |id: i64, app: &str, pid: u32| crate::session::windows::WindowFacts { pids: vec![pid, 1], ..win(id, app) };
+        s.observed(vec![with_pid(7, "editor", 70), with_pid(8, "game", 80)]);
+        s.applied(WindowEvent::Activate(8).into());
+        s.applied(Event::Portal(PortalEvent::Asked(FileRequest { id: 1, asker: vec![71, 70, 1], ..request() })));
+        assert!(s.library_view().pick().is_none() && s.session().top_window().map(|w| w.id) == Some(8), "the game stays in front");
+        s.applied(WindowEvent::Activate(7).into());
+        assert!(s.library_view().pick().is_some() && s.session().top_window().is_none(), "picked over the editor");
+        // Another program shown: set aside, unanswered; back with the editor.
+        let fx = s.applied(WindowEvent::Activate(8).into());
+        assert_eq!(chosen(&fx), None);
+        assert!(s.library_view().pick().is_none() && s.session().top_window().map(|w| w.id) == Some(8));
+        s.applied(WindowEvent::Activate(7).into());
+        let fx = tap(&mut s, Id::LibraryView(LibraryViewId::CancelPick));
+        assert_eq!(chosen(&fx), Some((1, vec![])));
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "the editor back");
+    }
+
+    /// A pick starts in the folder the app suggests: under the Files tab's folder that has it, each folder
+    /// on the way opened as its parent is listed. One not there is logged, the pick left where it got to.
+    #[test]
+    fn a_pick_starts_in_the_folder_asked_for() {
+        let mut s = state();
+        let folder = |path: &str| Some(std::path::PathBuf::from(path));
+        s.applied(Event::Portal(PortalEvent::Asked(FileRequest { id: 1, folder: folder("/home/thor/Pictures/Saves"), ..request() })));
+        assert_eq!(s.library_view().group().map(|g| g.title.as_str()), Some("Pictures"), "Home listed, Pictures not yet");
+        let saves = clamshell_library::Entry {
+            file: Some("/home/thor/Pictures/Saves".into()),
+            browsed: Some(clamshell_library::Browsed { folder: true, ..clamshell_library::Browsed::default() }),
+            ..clamshell_library::Entry::new("browse:Files/Home/Pictures/Saves", "Saves")
+        };
+        let listed = crate::library_view::files::FilesEvent::Listed { folder: "browse:Files/Home/Pictures".into(), entries: vec![saves] };
+        s.applied(Event::Files(listed));
+        assert_eq!(s.library_view().group().map(|g| g.title.as_str()), Some("Saves"));
+        tap(&mut s, Id::LibraryView(LibraryViewId::CancelPick));
+        s.applied(Event::Portal(PortalEvent::Asked(FileRequest { id: 2, folder: folder("/home/thor/Missing"), ..request() })));
+        assert_eq!(s.library_view().group().map(|g| g.title.as_str()), Some("Home"), "as far as it goes");
+        assert!(s.take_log().any(|line| line.contains("no folder \"Missing\" in Home")));
+        tap(&mut s, Id::LibraryView(LibraryViewId::CancelPick));
+        s.applied(Event::Portal(PortalEvent::Asked(FileRequest { id: 3, folder: folder("/nowhere"), ..request() })));
+        assert!(s.take_log().any(|line| line.contains("in none of the Files tab's folders")));
     }
 
     fn save(s: &mut crate::State, id: u32, asks: Asks) {
-        s.applied(Event::Portal(PortalEvent::Asked(FileRequest { id, title: String::new(), asks, patterns: vec!["*.txt".into()] })));
+        s.applied(Event::Portal(PortalEvent::Asked(FileRequest { id, asks, patterns: vec!["*.txt".into()], ..request() })));
     }
 
     /// Saving: Save here saves in the open folder under the name typed; over a file that is there, or one

@@ -670,6 +670,8 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                             title: String::new(),
                             asks: clamshell_state::Asks::Save { name: "notes.txt".into() },
                             patterns: vec!["*.txt".into()],
+                            asker: Vec::new(),
+                            folder: None,
                         })),
                         tap(Id::LibraryView(LibraryViewId::Launch)),
                         LibraryViewEvent::ListStep(3).into(),

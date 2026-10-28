@@ -347,5 +347,7 @@ touches the session or the outside.
   library as read and written back by `WriteLibrary`.
 - [x] 7. **The portal**: Open, then Save, then the session's environment (`session::portal`, a VM check
   through xdg-desktop-portal). Saving is in the open folder: Save here under the name typed (Save as), or
-  over a file chosen, each asking again over a file that is there (Replace). The asking window isn't
-  looked up: the window in front when the pick began comes back. The app's starting folder isn't used.
+  over a file chosen, each asking again over a file that is there (Replace). A request is its program's,
+  found by the asking process (the request's handle names its connection), and shows as its dialog
+  would: over that program when it is in front, set aside when left. The pick starts in the folder the
+  app suggests, under the Files tab's folder that has it.

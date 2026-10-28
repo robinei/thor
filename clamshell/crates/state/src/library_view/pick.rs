@@ -20,6 +20,9 @@ pub struct Pick {
     pub purpose: PickFor,
     /// Saving over this file was asked for once; asked for again, it is chosen.
     confirm: Option<PathBuf>,
+    /// The folders still to open on the way to the one to start in, each as its parent is listed (see
+    /// [`LibraryView::go_to`]).
+    on_the_way: Vec<String>,
     /// The tab shown before, to go back to.
     back: usize,
 }
@@ -118,9 +121,64 @@ impl LibraryView {
     /// Files tab, nothing is picked.
     pub(crate) fn start_pick(&mut self, takes: Takes, purpose: PickFor) -> bool {
         let Some(files) = self.files_tab() else { return false };
-        self.pick = Some(Pick { takes, purpose, confirm: None, back: self.current });
+        self.pick = Some(Pick { takes, purpose, confirm: None, on_the_way: Vec::new(), back: self.current });
         self.set_collection(files);
         true
+    }
+
+    /// Opens `folder` in the pick, under the Files tab's folder that has it: the folders on the way are
+    /// opened as each one's parent is listed ([`LibraryView::follow_way`]). An error says why it can't be.
+    pub(crate) fn go_to(&mut self, folder: &Path) -> Result<(), String> {
+        let library = &self.library;
+        let files = self.files_tab().and_then(|c| library.collections.get(c)).ok_or("no Files tab")?;
+        // The deepest of the tab's folders that has it.
+        let (root, rest) = files
+            .entries
+            .iter()
+            .filter_map(|&i| library.entries.get(i))
+            .filter_map(|g| Some((g, folder.strip_prefix(g.browsed_dir()?).ok()?)))
+            .max_by_key(|(_, rest)| std::cmp::Reverse(rest.components().count()))
+            .ok_or("in none of the Files tab's folders")?;
+        let (root, mut rest): (std::sync::Arc<str>, Vec<String>) =
+            (root.id.clone(), rest.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect());
+        rest.reverse();
+        if !self.reveal(&root) {
+            return Err("its Files folder isn't shown".into());
+        }
+        if let Some(pick) = &mut self.pick {
+            pick.on_the_way = rest;
+        }
+        self.follow_way()
+    }
+
+    /// Opens the next folders on the way to the one to start in, as far as they are listed. An error says
+    /// where the way ends, a folder listed without the next.
+    pub(crate) fn follow_way(&mut self) -> Result<(), String> {
+        while let Some(next) = self.pick.as_ref().and_then(|p| p.on_the_way.last().cloned()) {
+            let Some(open) = self.group() else { break };
+            let listed = open.browsed.as_ref().is_some_and(|b| b.listed);
+            let found = open.items.iter().filter_map(|&i| self.library.entries.get(i)).find(|g| g.title == next && g.is_group()).map(|g| g.id.clone());
+            match found {
+                Some(id) => {
+                    self.select(&id);
+                    self.open();
+                    if let Some(pick) = &mut self.pick {
+                        pick.on_the_way.pop();
+                    }
+                }
+                None if listed => {
+                    let missing = format!("no folder {next:?} in {}", open.title);
+                    if let Some(pick) = &mut self.pick {
+                        pick.on_the_way.clear();
+                    }
+                    return Err(missing);
+                }
+                // Not listed yet: on when it is.
+                None => break,
+            }
+        }
+        self.sync();
+        Ok(())
     }
 
     /// Leaves the pick, back on the tab shown before it. An app's is answered: nothing chosen.
@@ -260,7 +318,7 @@ mod tests {
     /// A command's program is a file that may be run; another file isn't taken, nor a folder.
     #[test]
     fn a_program_is_a_file_that_may_be_run() {
-        let pick = Pick { takes: Takes::Program, purpose: PickFor::Field(Field::Launch), confirm: None, back: 0 };
+        let pick = Pick { takes: Takes::Program, purpose: PickFor::Field(Field::Launch), confirm: None, on_the_way: Vec::new(), back: 0 };
         let file = |executable: bool, folder: bool| clamshell_library::Entry {
             browsed: Some(Browsed { executable, folder, ..Browsed::default() }),
             ..clamshell_library::Entry::new("browse:Files/Home/x", "x")

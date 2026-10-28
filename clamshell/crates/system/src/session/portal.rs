@@ -4,7 +4,8 @@
 //! stays with GTK's portal, which also takes the file chooser while ClamShell isn't there.
 //!
 //! An `OpenFile`, `SaveFile` or `SaveFiles` call is kept, unanswered, and sent on as
-//! [`PortalEvent::Asked`]; the state picks it in the Library (clamshell-state's `portal`) and answers with
+//! [`PortalEvent::Asked`], with the asking process (by the request's handle, which names the app's
+//! connection) and the folder the app suggests; the state picks it in the Library (clamshell-state's `portal`) and answers with
 //! [`Command::Answer`], which replies with the paths' `file://` URIs, or as cancelled. `Close` on the request's handle, from xdg-desktop-portal when the
 //! app gives up, is sent on as [`PortalEvent::Closed`] and the call dropped. A request waits for the
 //! person, with no time limit.
@@ -81,6 +82,8 @@ struct Pending {
     /// The object path xdg-desktop-portal closes it by.
     handle: String,
     call: Message,
+    /// The request, until it is sent on (`run_while_up`), the asking process found first.
+    unsent: Option<FileRequest>,
 }
 
 type Requests = Arc<Mutex<Vec<Pending>>>;
@@ -119,8 +122,8 @@ impl<S: Sink + Clone> Service for Server<S> {
             return Err(Error::Taken);
         }
         log::info!("portal: {NAME} is ours");
-        let (sink, requests) = (self.sink.clone(), self.requests.clone());
-        bus.serve_later(Box::new(move |call| keep(call, &requests, &sink)));
+        let requests = self.requests.clone();
+        bus.serve_later(Box::new(move |call| keep(call, &requests)));
         let (sink, requests) = (self.sink.clone(), self.requests.clone());
         bus.serve(Box::new(move |call| answer(call, &requests, &sink)));
         Ok(bus)
@@ -135,8 +138,9 @@ impl<S: Sink + Clone> Service for Server<S> {
                     Err(TryRecvError::Disconnected) => return Ok(()),
                 }
             }
-            // Keeps or answers the calls that came.
+            // Keeps or answers the calls that came, and sends on the requests kept.
             bus.signals()?;
+            self.send_kept(&mut bus);
             // Sleep until a command or a call comes.
             let mut fds = [
                 rustix::event::PollFd::from_borrowed_fd(self.bell.fd(), rustix::event::PollFlags::IN),
@@ -156,6 +160,41 @@ impl<S: Sink + Clone> Service for Server<S> {
     }
 }
 
+impl<S: Sink> Server<S> {
+    /// Sends on the requests kept since the last look, each with the asking process and its parents. They
+    /// are found here and not as the call is kept, when the bus can't be called.
+    fn send_kept(&mut self, bus: &mut Bus) {
+        let unsent: Vec<(String, FileRequest)> = lock(&self.requests).iter_mut().filter_map(|p| Some((p.handle.clone(), p.unsent.take()?))).collect();
+        for (handle, mut request) in unsent {
+            let pid = sender(&handle).and_then(|name| {
+                bus.call::<(u32,)>(BUS_NAME, BUS_PATH, BUS_NAME, "GetConnectionUnixProcessID", (name.as_str(),))
+                    .inspect_err(|e| log::warn!("portal: request {}: the asking process of {name}: {e}", request.id))
+                    .ok()
+            });
+            request.asker = pid.map(|(pid,)| crate::os::sys::lineage(pid)).unwrap_or_default();
+            log::info!(
+                "portal: request {}: {:?}, {:?}, asked by {:?}, from {:?}",
+                request.id,
+                request.asks,
+                request.patterns,
+                request.asker.first(),
+                request.folder
+            );
+            if self.sink.send(Event::Portal(PortalEvent::Asked(request))).is_err() {
+                log::debug!("portal: a request not shown, the UI is gone");
+            }
+        }
+    }
+}
+
+/// The unique bus name of the app a request's handle is for: its path is
+/// `/org/freedesktop/portal/desktop/request/SENDER/TOKEN`, SENDER the name without its `:` and with `_`
+/// for each `.`.
+fn sender(handle: &str) -> Option<String> {
+    let sender = handle.strip_prefix("/org/freedesktop/portal/desktop/request/")?.split('/').next()?;
+    Some(format!(":{}", sender.replace('_', ".")))
+}
+
 fn lock(requests: &Requests) -> std::sync::MutexGuard<'_, Vec<Pending>> {
     requests.lock().unwrap_or_else(PoisonError::into_inner)
 }
@@ -165,7 +204,7 @@ type Args = (dbus::Path<'static>, String, String, String, PropMap);
 
 /// Keeps an `OpenFile`, `SaveFile` or `SaveFiles` call to answer once the state has, sending it on; hands
 /// back any other call.
-fn keep(call: Message, requests: &Requests, sink: &impl Sink) -> Option<Message> {
+fn keep(call: Message, requests: &Requests) -> Option<Message> {
     let member = call.member().map(|m| m.to_string()).unwrap_or_default();
     if call.path().as_deref() != Some(PATH)
         || call.interface().as_deref() != Some(FILE_CHOOSER)
@@ -183,11 +222,8 @@ fn keep(call: Message, requests: &Requests, sink: &impl Sink) -> Option<Message>
     };
     let id = LAST_ID.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
     let request = request(id, &member, title, &options);
-    log::info!("portal: request {id} from {app:?}: {:?}, {:?}", request.asks, request.patterns);
-    if sink.send(Event::Portal(PortalEvent::Asked(request))).is_err() {
-        log::debug!("portal: request {id} not shown, the UI is gone");
-    }
-    lock(requests).push(Pending { id, handle: handle.to_string(), call });
+    log::info!("portal: request {id}: a {member} call from {app:?}");
+    lock(requests).push(Pending { id, handle: handle.to_string(), call, unsent: Some(request) });
     None
 }
 
@@ -198,9 +234,11 @@ fn answer(call: &Message, requests: &Requests, sink: &impl Sink) -> Option<Messa
             let path = call.path()?.to_string();
             let mut requests = lock(requests);
             if let Some(i) = requests.iter().position(|r| r.handle == path) {
-                let id = requests.swap_remove(i).id;
+                let given_up = requests.swap_remove(i);
+                let id = given_up.id;
                 log::info!("portal: request {id} given up by the app");
-                if sink.send(Event::Portal(PortalEvent::Closed(id))).is_err() {
+                // One not sent on yet is just dropped: the state never had it.
+                if given_up.unsent.is_none() && sink.send(Event::Portal(PortalEvent::Closed(id))).is_err() {
                     log::debug!("portal: request {id} not closed, the UI is gone");
                 }
             }
@@ -240,25 +278,32 @@ fn reply(bus: &mut Bus, requests: &Requests, command: Command) -> dbus::Result<(
 /// takes any file.
 fn request(id: u32, member: &str, title: String, options: &PropMap) -> FileRequest {
     let asks = match member {
-        "SaveFile" => Asks::Save { name: options.get("current_name").and_then(|v| v.0.as_str()).unwrap_or_default().to_owned() },
+        "SaveFile" => {
+            let name = options.get("current_name").and_then(|v| v.0.as_str().map(str::to_owned));
+            let of_file = || options.get("current_file").and_then(|v| bytes_path(&*v.0)?.file_name().map(|n| n.to_string_lossy().into_owned()));
+            Asks::Save { name: name.or_else(of_file).unwrap_or_default() }
+        }
         "SaveFiles" => Asks::SaveFiles { names: options.get("files").map(|v| names(&*v.0)).unwrap_or_default() },
         _ => Asks::Open { folder: options.get("directory").and_then(|v| v.0.as_u64()).is_some_and(|b| b != 0) },
     };
     let filter = options.get("current_filter").map(|v| &*v.0).or_else(|| options.get("filters").and_then(|v| v.0.as_iter()?.next()));
     let patterns = filter.map(globs).unwrap_or_default();
-    FileRequest { id, title, asks, patterns }
+    // The folder to start in: the one suggested, or the file's to save over.
+    let path = |key: &str| options.get(key).and_then(|v| bytes_path(&*v.0));
+    let folder = path("current_folder").or_else(|| path("current_file").and_then(|f| Some(f.parent()?.to_path_buf())));
+    FileRequest { id, title, asks, patterns, asker: Vec::new(), folder }
+}
+
+/// A path sent as bytes, ending with a nul.
+fn bytes_path(bytes: &dyn RefArg) -> Option<PathBuf> {
+    let bytes: Vec<u8> = bytes.as_iter()?.filter_map(|b| b.as_u64().and_then(|b| u8::try_from(b).ok())).take_while(|&b| b != 0).collect();
+    (!bytes.is_empty()).then(|| PathBuf::from(std::ffi::OsString::from_vec(bytes)))
 }
 
 /// The names of `SaveFiles`' `files`: paths as bytes, ending with a nul, each named by its last part.
 fn names(files: &dyn RefArg) -> Vec<String> {
     let Some(files) = files.as_iter() else { return Vec::new() };
-    files
-        .filter_map(|file| {
-            let bytes: Vec<u8> = file.as_iter()?.filter_map(|b| b.as_u64().and_then(|b| u8::try_from(b).ok())).take_while(|&b| b != 0).collect();
-            let path = PathBuf::from(std::ffi::OsString::from_vec(bytes));
-            Some(path.file_name()?.to_string_lossy().into_owned())
-        })
-        .collect()
+    files.filter_map(|file| Some(bytes_path(file)?.file_name()?.to_string_lossy().into_owned())).collect()
 }
 
 /// A filter's globs: it is `(name, [(kind, pattern)])`, kind 0 a glob and 1 a MIME type.
@@ -340,8 +385,8 @@ mod tests {
 mod live {
     use super::*;
 
-    /// Needs a session bus, so a desktop. An OpenFile call through the bus is kept and sent on, and
-    /// answered with the chosen file's URI once the state answers. Served on the connection's own name. Run it by hand with `--ignored`.
+    /// Needs a session bus, so a desktop. An OpenFile call through the bus is kept and sent on, with the
+    /// asking process and the folder it suggests, and answered with the chosen file's URI once the state answers. Served on the connection's own name. Run it by hand with `--ignored`.
     #[test]
     #[ignore = "needs a session bus"]
     #[allow(clippy::unwrap_used)]
@@ -349,27 +394,35 @@ mod live {
         let mut server = Bus::session().unwrap();
         let name = server.unique_name().unwrap();
         let (sink, events) = std::sync::mpsc::channel();
+        let events_sink = sink.clone();
         let requests = Requests::default();
-        let (s, r) = (sink.clone(), requests.clone());
-        server.serve_later(Box::new(move |call| keep(call, &r, &s)));
+        let r = requests.clone();
+        server.serve_later(Box::new(move |call| keep(call, &r)));
         let r = requests.clone();
         server.serve(Box::new(move |call| answer(call, &r, &sink)));
+        let mut portal = Server { sink: events_sink, bell: Bell::new().unwrap(), requests: requests.clone() };
         let caller = {
             let name = name.clone();
             std::thread::spawn(move || {
                 let mut client = Bus::session().unwrap().with_timeout(Duration::from_secs(10));
-                let options = PropMap::from([("directory".to_owned(), dbus::value(false))]);
-                let handle = dbus::Path::from("/org/freedesktop/portal/desktop/request/1_1/t");
+                let folder = b"/h/saves\0".to_vec();
+                let options = PropMap::from([("directory".to_owned(), dbus::value(false)), ("current_folder".to_owned(), dbus::value(folder))]);
+                // As xdg-desktop-portal names it: by the app's connection.
+                let me = client.unique_name().unwrap().trim_start_matches(':').replace('.', "_");
+                let handle = dbus::Path::from(format!("/org/freedesktop/portal/desktop/request/{me}/t"));
                 client.call::<(u32, PropMap)>(&name, PATH, FILE_CHOOSER, "OpenFile", (handle, "app", "", "Open a save", options)).unwrap()
             })
         };
         let asked = loop {
             server.wait(Some(Duration::from_millis(100))).unwrap();
+            portal.send_kept(&mut server);
             if let Ok(Event::Portal(PortalEvent::Asked(asked))) = events.try_recv() {
                 break asked;
             }
         };
         assert_eq!((asked.title.as_str(), &asked.asks), ("Open a save", &Asks::Open { folder: false }));
+        assert_eq!(asked.asker.first(), Some(&std::process::id()), "asked by this process");
+        assert_eq!(asked.folder.as_deref(), Some(std::path::Path::new("/h/saves")));
         reply(&mut server, &requests, Command::Answer { id: asked.id, paths: vec!["/h/a b.sav".into()] }).unwrap();
         let (response, results) = caller.join().unwrap();
         assert_eq!(response, CHOSEN);

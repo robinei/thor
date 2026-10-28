@@ -417,7 +417,7 @@ impl State {
             Event::Tick { unix_secs, mono_secs } => self.tick(unix_secs, mono_secs, out),
             Event::Reading(reading) => self.on_reading(reading, out),
             Event::Notification(e) => self.on_notification(e, out),
-            Event::Portal(e) => self.on_portal(e),
+            Event::Portal(e) => self.on_portal(e, out),
             Event::List(e) => self.on_list(e),
             Event::Pointer(e) => self.on_pointer(e, out),
             Event::Slide(slide) => self.on_slide(slide, out),
@@ -580,14 +580,15 @@ impl State {
         }
         // The tab left, by a choice or by a window moved down opening the windows' tab.
         self.follow_tab();
-        // Order: before the front launch and the closed front are followed, so that the app going back in
-        // front once its pick is answered is what they see.
-        self.follow_portal(out);
         // A launch's first window is shown before a window that came back to the group whose front closed,
         // so that the one that came back ends in front.
         self.session.follow_front_launch(self.clock.mono());
         self.session.follow_replacement(self.clock.mono());
         self.session.follow_front(self.clock.mono());
+        // Order: once the front is settled (a launch's window, a closed window's replacement), which an
+        // app's pick is shown over or set aside for; before the overview, which follows what is in front, so
+        // a pick shown or a program back after it is what the overview and the next steps see.
+        self.follow_portal(out);
         self.session.follow_overview();
         // Once the front is settled, so a program shown again when the front window closed is thawed at
         // once; before the quitting, which a quitting entry isn't paused for, its quits given up first.
