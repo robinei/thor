@@ -599,6 +599,26 @@ fn a_window_sent_down_gives_the_keyboard_to_the_top_window() {
     assert_eq!(s.session().keyboard_focus(), Some(1001));
 }
 
+/// The window below, displaced by another program's that its rule sends down, goes back behind in its
+/// group and gives up the keyboard if it had it: with shelf in front, the keyboard goes to ClamShell's UI
+/// rather than staying on a window not shown.
+#[test]
+fn a_window_displaced_from_below_gives_up_the_keyboard() {
+    use crate::session::below::{WindowRule, WindowRules};
+    let rule = |owner: &str, app_id: &str| WindowRule { owner: owner.into(), app_id: app_id.into(), title: None };
+    let rules = WindowRules::from_list(vec![rule("zelda-lttp", "zelda3"), rule("metroid-zm", "metroid")]);
+    let mut s = started(crate::Init { window_rules: rules, ..init() });
+    let unit = |id: &str| LaunchUnit { key: clamshell_library::key_of(id), secs: 1, n: 0 };
+    s.applied(WindowEvent::Opened(win_of(8, "zelda3", &unit("zelda-lttp"))).into());
+    s.applied(WindowEvent::Activate(8).into());
+    assert_eq!((s.session().top_window().map(|w| w.id), s.session().bottom_window().map(|w| w.id)), (None, Some(8)));
+    assert_eq!(s.session().keyboard_focus(), Some(8));
+    s.applied(WindowEvent::Opened(win_of(9, "metroid", &unit("metroid-zm"))).into());
+    assert_eq!((s.session().top_window().map(|w| w.id), s.session().bottom_window().map(|w| w.id)), (None, Some(9)));
+    assert!(!s.session().shown(8));
+    assert_eq!(s.session().keyboard_focus(), None);
+}
+
 /// Whether a window is X11 is known when it opens; a later `Changed` doesn't carry it, so it is kept.
 #[test]
 fn changed_facts_keep_a_window_x11() {

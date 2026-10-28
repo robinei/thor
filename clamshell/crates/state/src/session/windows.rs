@@ -111,6 +111,11 @@ impl Session {
                 self.select_top(*window);
             }
             WindowCommand::Return(window) => {
+                // Behind in its group it isn't shown, so it can't keep the keyboard; the window in front
+                // gets it back (see Down), or ClamShell's UI while shelf is in front.
+                if self.keyboard_focus.is_some_and(|focus| self.root_of(focus) == self.root_of(*window)) {
+                    self.keyboard_focus = None;
+                }
                 let group = self.window(*window).and_then(|w| w.group.clone());
                 if !self.windows.iter().any(|w| !self.below(w.id) && w.group == group) {
                     self.recent.retain(|was| !matches!(was, super::InFront::Group(g) if Some(g) == group.as_ref()));
