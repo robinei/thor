@@ -210,8 +210,8 @@ impl crate::Session {
     }
 
     /// A window opened. Its group is known at once if it is a dialog, whose is its parent's, or a window
-    /// of an entry, by its app id, its owner or its launch's unit, or another window of its process and
-    /// app id; another gets one as the windows are
+    /// of an entry, by its app id, its owner (see [`Session::running_of`]) or its launch's unit; another
+    /// gets one as the windows are
     /// followed ([`Session::follow_windows`]). It comes in front as [`Session::opening_focus`] says. A
     /// dialog of a window shown, on either screen, is shown over it and takes the input at once: the
     /// screen draws a stack whole (see [`Session::stack`]).
@@ -230,13 +230,7 @@ impl crate::Session {
                 .find(|g| super::running::has_mark(library, g, &facts))
                 .map(|g| Group::entry(&g.key))
                 .or_else(|| self.running_of(&facts).map(super::running::Running::group))
-                .or_else(|| facts.launch_unit().map(|i| Group::entry(&i.key)))
-                // Another window of its process and app id: the same program, whatever its client was
-                // identified as (before its process moved into our scope, say).
-                .or_else(|| {
-                    let process = facts.pids.first()?;
-                    self.windows.iter().find(|w| w.pids.first() == Some(process) && w.app_id == facts.app_id).and_then(|w| w.group.clone())
-                }),
+                .or_else(|| facts.launch_unit().map(|i| Group::entry(&i.key))),
         };
         let focus = parent_below || parent_on_top || self.opening_focus(&facts);
         if focus

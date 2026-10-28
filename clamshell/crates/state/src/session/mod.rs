@@ -466,6 +466,8 @@ impl Session {
     ///   launcher's unit;
     /// - its unit, which also covers windows moved down;
     /// - its process, for a program found by its tray icon;
+    /// - another window of its process and app id: the same program, whatever its client was identified
+    ///   as (before its process moved into our scope, say);
     /// - its group.
     ///
     /// A dialog's is its parent's.
@@ -483,6 +485,11 @@ impl Session {
             .find(|r| r.owns(w))
             .or_else(|| by_key(w.unit.as_deref().and_then(LaunchUnit::key_of)))
             .or_else(|| self.running.iter().find(|r| r.fathered(w)))
+            .or_else(|| {
+                let process = w.pids.first()?;
+                let sibling = self.windows.iter().find(|o| o.id != w.id && o.pids.first() == Some(process) && o.app_id == w.app_id)?;
+                by_key(sibling.group.as_ref().and_then(Group::key))
+            })
             .or_else(|| by_key(self.window(w.id).and_then(|w| w.group.as_ref()).and_then(Group::key)))
     }
 

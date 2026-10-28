@@ -19,7 +19,7 @@ suite runs at the end.
   the window with it is that screen's topmost, or none for ClamShell's UI or a screen with nothing on it.
   The compositor's reports and the session's choices set where, by the screen of the window they name (a
   window on neither is ignored). A window no screen shows can't have the keyboard.
-- [ ] 3. **A window's owner by its process at every settle.** The rule that a window of the process and
+- [x] 3. **A window's owner by its process at every settle.** The rule that a window of the process and
   app id of one open is that one's program moves from `open` into `Session::running_of`, so that the
   settle's placing of owned windows applies it to windows already open too.
 
