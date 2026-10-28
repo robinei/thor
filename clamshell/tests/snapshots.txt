@@ -14,9 +14,9 @@ curve-edit.png 9d61a32d0849cbd8
 curves-reset.png 39ecce4355e50e2e
 curves.png 56a8a5c36e131bea
 device-password.png e08be48faf8f35df
-device-sticks.png fe951ccfad9ad6d3
-device-unavailable.png 1c7911bd8e2c2a06
-device.png 6fb124183562dd89
+device-sticks.png e346e711a2db8089
+device-unavailable.png 71f020b096dd5d7c
+device.png 4883bb43e4f2febb
 dock-menu.png 6618bd0c09a9017e
 keyboard-back.png b4f19cea39f5673c
 keyboard-caps.png db65fb51c99f4de9
@@ -59,6 +59,9 @@ keymaps-chosen.png 4e7a59aa20a56ccc
 keymaps.png 3c1b99523671bf1b
 launcher-running.png 9b13546ee80a0dbe
 launcher.png f1d1c21fd1d2331a
+library-edit-cut.png f2bf8bd2361a579a
+library-edit-name.png 17ab3a131f6ae2d0
+library-edit.png f82372f747aaaaba
 settings-env.png 141480d50601cd5a
 settings-global.png 67a7863ee4d00c29
 settings-menu.png c0cc8a934b3a9035

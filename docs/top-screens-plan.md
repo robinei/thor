@@ -339,4 +339,8 @@ touches the session or the outside.
   are still left out, as before. Packaging Dolphin, Azahar, ARMSX2, DOSBox Pure and FBNeo is still to do.
 - [ ] 6. **The editors**: Library's edit mode with its tabs and folders, Sources and Runners; the keyboard's field keys;
   the picker for ClamShell's own screens.
+  In parts: 6a tabs and folders (Rename, New tab and folder, Cut and Paste, Remove; entered from the
+  Device view) [done]; 6b icons and pictures; 6c Sources; 6d Runners; 6e the keyboard's field keys; 6f
+  the picker. Under it all, library.json is shared data (clamshell-library's `config`), carried by the
+  library as read and written back by `WriteLibrary`.
 - [ ] 7. **The portal**: Open, then Save, then the session's environment.

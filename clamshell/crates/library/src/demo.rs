@@ -98,6 +98,41 @@ pub fn library() -> Library {
         order: vec!["Recent".into(), "Favourites".into()],
         recent: own("Recent", "clock"),
         favourites: own("Favourites", "star"),
+        config: Some(std::sync::Arc::new(config())),
         ..Library::default()
+    }
+}
+
+/// A library.json the demo could have been read from: its tabs, a folder per system, and their sources.
+pub fn config() -> crate::config::Config {
+    use crate::config::{BuiltinPlace, Config, OwnTab, Place, Rule, Scan, Source};
+    let place = |id: &str, name: &str, within: Option<&str>, icon: Option<&str>| Place {
+        id: id.into(),
+        name: name.into(),
+        within: within.map(Into::into),
+        icon: icon.map(Into::into),
+        ..Place::default()
+    };
+    let own = |kind, id: &str, name: &str, icon: &str| Place { kind: Some(kind), ..place(id, name, None, Some(icon)) };
+    Config {
+        places: vec![
+            own(OwnTab::Recent, "recent", "Recent", "clock"),
+            own(OwnTab::Favourites, "favourites", "Favourites", "star"),
+            place("games", "Games", None, Some("gamepad")),
+            place("more", "More", None, None),
+            place("tv", "TV", None, Some("tv")),
+            place("apps", "Apps", None, Some("apps")),
+            own(OwnTab::Tools, "tools", "Tools", "tools"),
+            place("snes", "SNES", Some("games"), None),
+            place("gba", "Game Boy Advance", Some("games"), None),
+            place("gc", "Game Cube", Some("games"), None),
+        ],
+        sources: vec![
+            Source::Dir(Scan { id: "snes".into(), dir: "~/Roms/snes".into(), place: "snes".into(), runner: Some("snes".into()), ..Scan::default() }),
+            Source::Dir(Scan { id: "gba".into(), dir: "~/Roms/gba".into(), place: "gba".into(), runner: Some("gba".into()), ..Scan::default() }),
+            Source::Desktop(Rule { place: Some("apps".into()), ..Rule::default() }),
+            Source::Builtin(BuiltinPlace { id: "device".into(), place: "tools".into() }),
+        ],
+        ..Config::default()
     }
 }

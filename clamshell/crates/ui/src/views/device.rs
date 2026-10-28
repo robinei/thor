@@ -103,6 +103,11 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     };
     f.button(Id::Device(DeviceId::Refresh), refresh, Look::ROW, |f| widgets::value_row(f, refresh, size, "Top screen's refresh", &value, ok));
 
+    // The library's tabs, folders, sources and runners, edited in the Library.
+    col.skip(row_h * 0.3);
+    let library = col.take(row_h);
+    f.button(Id::Device(DeviceId::EditLibrary), library, Look::ROW, |f| widgets::value_row(f, library, size, "Library", "Edit", true));
+
     col.skip(row_h * 0.3);
     let end = col.take(row_h);
     let inner = Rect::new(end.x + size * 0.4, end.y, end.w - size * 0.8, end.h);

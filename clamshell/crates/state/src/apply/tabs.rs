@@ -88,6 +88,7 @@ impl State {
                     self.library_view.run_file_op(op, out);
                 }
             }
+            (Done::Save, Purpose::PlaceName(what)) => self.library_view.place_named(what, &editor.text, out),
             (Done::Save, Purpose::AccountPassword(step)) => {
                 crate::setup::account::password_typed(step, editor.text, self.bottom.editors_mut(), out);
             }

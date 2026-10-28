@@ -16,17 +16,17 @@ use crate::toolkit::style::{self, Look, RADIUS_L, SURFACE_HI, Tone};
 use crate::toolkit::{Frame, widgets};
 
 /// The tab bar's height and text size, as fractions of the screen's height.
-const TABS_H: f32 = 0.08;
-const TAB_TEXT: f32 = 0.034;
+pub(super) const TABS_H: f32 = 0.08;
+pub(super) const TAB_TEXT: f32 = 0.034;
 /// The list's share of the width.
-const LIST_W: f32 = 0.42;
+pub(super) const LIST_W: f32 = 0.42;
 /// The target row height, as a fraction of the screen's height. Rows are stretched to fill the list
 /// exactly.
-const ROW_H: f32 = 0.085;
+pub(super) const ROW_H: f32 = 0.085;
 /// Title size and thumbnail height (`THUMB`), as fractions of a row's height.
-const ROW_TEXT: f32 = 0.36;
+pub(super) const ROW_TEXT: f32 = 0.36;
 /// The text size of the filter and an open group's header, a little larger than a row's.
-const HEADER_TEXT: f32 = ROW_TEXT * 1.15;
+pub(super) const HEADER_TEXT: f32 = ROW_TEXT * 1.15;
 const THUMB: f32 = 0.82;
 /// The size of a row's marks (favourite, on the dock, running), as a fraction of a row's height.
 const MARK: f32 = 0.3;
@@ -38,11 +38,11 @@ const THUMB_RADIUS: f32 = 3.0;
 /// The large art's height, as a fraction of the list's height.
 const ART_H: f32 = 0.78;
 /// Details text sizes, as fractions of the screen's height.
-const TITLE: f32 = 0.05;
-const DETAIL: f32 = 0.03;
+pub(super) const TITLE: f32 = 0.05;
+pub(super) const DETAIL: f32 = 0.03;
 const SUMMARY: f32 = 0.028;
 /// An action row's height, as a multiple of the details' text size.
-const ACTION: f32 = 1.45;
+pub(super) const ACTION: f32 = 1.45;
 /// The gap after each paragraph of the details, as a fraction of the padding.
 const PARA_GAP: f32 = 0.4;
 /// The largest screenshot height, as a fraction of the list's height. The screenshot is as wide as the

@@ -127,7 +127,7 @@ pub use status::{Status, Sys};
 
 pub use clamshell_device::DeviceProfile;
 pub use clamshell_device::layout::{ControlLayout, Group as ControlGroup, Labels as ControlLabels};
-pub use clamshell_library::{BrowseKind, Browsed, Builtin, Collection, Entry, Launch, Library, Meta, RunnerOf, runner_key};
+pub use clamshell_library::{BrowseKind, Browsed, Builtin, Collection, Entry, Launch, Library, Meta, RunnerOf, config, ids, runner_key};
 
 /// What the state starts from, as read from disk and the environment.
 #[derive(Debug, Default)]

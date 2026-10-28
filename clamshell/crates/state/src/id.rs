@@ -104,6 +104,8 @@ pub enum LibraryViewId {
     Enqueue,
     /// A file action on a browsed entry or on the open folder (see [`crate::library_view::files`]).
     File(crate::library_view::files::FileAction),
+    /// The edit mode's targets (see [`crate::library_view::edit`]).
+    Edit(crate::library_view::edit::EditId),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -283,6 +285,8 @@ pub enum DeviceId {
     Gyro,
     /// Calibrates the top screen's refresh rate.
     Refresh,
+    /// The Library's edit mode (see [`crate::library_view::edit`]).
+    EditLibrary,
     /// Back to the Library.
     Close,
 }

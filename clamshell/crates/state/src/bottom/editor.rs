@@ -26,11 +26,11 @@ impl fmt::Debug for Editor {
 
 impl Editor {
     /// The tab the editor shows on: Wi-Fi for a network's password, Settings for the environment and a
-    /// keymap's name, and Keyboard for the account password and a file's name.
+    /// keymap's name, and Keyboard for the account password and a file's or place's name.
     pub fn tab(&self) -> crate::Tab {
         match self.purpose {
             Purpose::Password { .. } => crate::Tab::Wifi,
-            Purpose::AccountPassword(_) | Purpose::FileName(_) => crate::Tab::Keyboard,
+            Purpose::AccountPassword(_) | Purpose::FileName(_) | Purpose::PlaceName(_) => crate::Tab::Keyboard,
             Purpose::Env { .. } | Purpose::KeymapName(_) | Purpose::ProfileName(..) => crate::Tab::Settings,
         }
     }
@@ -50,6 +50,8 @@ pub enum Purpose {
     FileName(crate::library_view::files::FileName),
     /// The account's password, current or new (see [`crate::setup::account`]).
     AccountPassword(crate::setup::account::PasswordStep),
+    /// A tab's or folder's name, in the Library's edit mode (see [`crate::library_view::edit`]).
+    PlaceName(crate::library_view::edit::PlaceName),
 }
 
 /// What a keymap layer's name is for.

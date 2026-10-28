@@ -8,6 +8,7 @@
 
 use clamshell_state::bottom::keyboard;
 use clamshell_state::levels::Level;
+use clamshell_state::library_view::edit::EditId;
 use clamshell_state::profiles::picker::{Kind, ProfileId};
 use clamshell_state::{DockId, EditorId, Event, Id, LevelEvent, LibraryViewEvent, LibraryViewId, PadInput, PointerEvent, RowPart, State, Tab};
 use xkeysym::Keysym;
@@ -56,6 +57,7 @@ pub(crate) fn scope(s: &State) -> PadScope {
 pub(crate) fn default_focus(s: &State, screen: Screen) -> Option<Id> {
     match screen {
         Screen::Top if let Some(step) = s.setup().wizard() => Some(Id::Setup(step.first_target())),
+        Screen::Top if let Some(edit) = s.library_view().edit() => Some(EditId::Row(edit.cursor() as u16).into()),
         Screen::Top => s.library_view().selected().cloned().map(|g| Id::LibraryView(LibraryViewId::Entry(g))),
         Screen::Bottom => Some(Id::Tab(s.bottom().tab())),
     }
@@ -243,7 +245,7 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
 
 /// Whether the pad is on the Library, rather than on a view shown in its place.
 fn on_library_view(s: &State, d: &impl Drawn) -> bool {
-    s.pad().on_top() && focus_screen(s, d) == Screen::Top && s.top_view() == clamshell_state::setup::TopView::LibraryView
+    s.pad().on_top() && focus_screen(s, d) == Screen::Top && s.top_view() == clamshell_state::setup::TopView::LibraryView && s.library_view().edit().is_none()
 }
 
 /// L2 and R2 go to the Library's first or last entry.
@@ -294,6 +296,12 @@ pub(crate) fn back(s: &State) -> Option<Event> {
     }
     if s.keymapping().screen().is_some() {
         return Some(PointerEvent::Activate(Id::Profile(Kind::Keymap, ProfileId::Back)).into());
+    }
+    // The Library's edit mode goes out of the open folder, or else leaves.
+    if let Some(edit) = s.library_view().edit().filter(|_| s.top_view() == clamshell_state::setup::TopView::LibraryView) {
+        let open = s.library_view().library().config.as_ref().and_then(|c| edit.open(edit.config(Some(c))?).next()).is_some();
+        let id = if open { clamshell_state::library_view::edit::EditId::Up } else { clamshell_state::library_view::edit::EditId::Done };
+        return Some(PointerEvent::Activate(id.into()).into());
     }
     // Setup goes back a step, where it can.
     if s.top_view() == clamshell_state::setup::TopView::Setup {

@@ -8,6 +8,7 @@
 //! area, such as playing an entry, is queued as an event.
 
 pub mod actions;
+pub mod edit;
 pub mod files;
 mod rules;
 
@@ -72,6 +73,8 @@ pub struct LibraryView {
     /// Counts the listings that changed the entries in the current list, so that the view changes with
     /// them (see [`ShownList`]).
     listings_shown: u32,
+    /// The edit mode, while the Library is in it (see [`edit`]).
+    edit: Option<edit::Edit>,
 }
 
 /// A level of a collection's place kept across a library read: the entry selected in its list (the
@@ -108,6 +111,39 @@ impl LibraryView {
 
     pub fn library(&self) -> &Library {
         &self.library
+    }
+
+    /// The edit mode, while the Library is in it (see [`edit`]).
+    pub fn edit(&self) -> Option<&edit::Edit> {
+        self.edit.as_ref()
+    }
+
+    /// Enters the edit mode, at the first tab.
+    pub(crate) fn start_edit(&mut self) {
+        self.edit.get_or_insert_with(edit::Edit::default);
+    }
+
+    /// A tap on one of the edit mode's targets (see [`edit::Edit::tap`]); Done leaves it.
+    pub(crate) fn edit_tap(&mut self, id: edit::EditId, out: &mut crate::out::Out) {
+        let read = self.library.config.as_ref();
+        if self.edit.as_mut().is_some_and(|e| e.tap(id, read, out)) {
+            self.edit = None;
+        }
+    }
+
+    /// Selects the edit mode's row `i`, as the focus comes to it.
+    pub(crate) fn edit_select(&mut self, i: usize) {
+        if let Some(e) = &mut self.edit {
+            e.select(i);
+        }
+    }
+
+    /// A place's name typed (see [`edit::Edit::named`]).
+    pub(crate) fn place_named(&mut self, what: edit::PlaceName, name: &str, out: &mut crate::out::Out) {
+        let read = self.library.config.as_ref();
+        if let Some(e) = &mut self.edit {
+            e.named(what, name, read, out);
+        }
     }
 
     /// Whether the library has been read (see [`LibraryView::unread`]).
@@ -482,6 +518,9 @@ impl LibraryView {
     /// it again, and each collection's place is kept by name and ids, with what is typed in each list and
     /// the scroll starting from the top. Returns whether the selection changed.
     pub(crate) fn reload(&mut self, library: Library) -> bool {
+        if let Some(edit) = &mut self.edit {
+            edit.library_read();
+        }
         let before = self.selected().cloned();
         let mut places = Vec::new();
         self.kept_places(&mut places);

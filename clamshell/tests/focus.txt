@@ -690,8 +690,9 @@ Device(Wifi): ^- vDevice(Zone) <- >-
 Device(Zone): ^Device(Wifi) vDevice(Sticks) <- >-
 Device(Sticks): ^Device(Zone) vDevice(Gyro) <- >-
 Device(Gyro): ^Device(Sticks) vDevice(Refresh) <- >-
-Device(Refresh): ^Device(Gyro) vDevice(Close) <- >-
-Device(Close): ^Device(Refresh) vTab(Touchpad) <- >-
+Device(Refresh): ^Device(Gyro) vDevice(EditLibrary) <- >-
+Device(EditLibrary): ^Device(Refresh) vDevice(Close) <- >-
+Device(Close): ^Device(EditLibrary) vTab(Touchpad) <- >-
 == device.png (top; the pad on both screens)
 start Device(Wifi); back Activate Device(Close)
 -- screen
@@ -701,8 +702,9 @@ Device(Password): ^Device(Zone) vDevice(Ssh) <- >-
 Device(Ssh): ^Device(Password) vDevice(Sticks) <- >-
 Device(Sticks): ^Device(Ssh) vDevice(Gyro) <- >-
 Device(Gyro): ^Device(Sticks) vDevice(Refresh) <- >-
-Device(Refresh): ^Device(Gyro) vDevice(Close) <- >-
-Device(Close): ^Device(Refresh) vTab(Touchpad) <- >-
+Device(Refresh): ^Device(Gyro) vDevice(EditLibrary) <- >-
+Device(EditLibrary): ^Device(Refresh) vDevice(Close) <- >-
+Device(Close): ^Device(EditLibrary) vTab(Touchpad) <- >-
 == device-sticks.png (top; the pad on both screens)
 start Device(Sticks); back Activate Device(Close)
 -- screen as in device.png
@@ -714,6 +716,20 @@ Tab(Time): ^Device(Close) vEditor(Cancel)
 Tab(Settings): ^Device(Close) vKey[0,0]
 Tab(Dock): ^Device(Close) vKey[0,1]
 Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^Device(Close) vEditor(Cancel)
+-- keyboard as in settings-env.png
+-- screen as in settings-env.png
+== library-edit.png (top; the pad on both screens)
+start Edit(Tab(2)); back Activate Edit(Done)
+== library-edit-cut.png (top; the pad on both screens)
+start Edit(Row(0)); back Activate Edit(Done)
+== library-edit-name.png (bottom; the pad on both screens)
+start Key[2,4]; back Activate Editor(Cancel)
+-- bar as in bottom.png except
+Tab(Windows), PadMouse: ^- vEditor(Save)
+Tab(Time): ^- vEditor(Cancel)
+Tab(Settings): ^- vKey[0,0]
+Tab(Dock): ^- vKey[0,1]
+Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vEditor(Cancel)
 -- keyboard as in settings-env.png
 -- screen as in settings-env.png
 == setup-password.png (top; the pad on both screens)

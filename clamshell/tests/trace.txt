@@ -727,6 +727,20 @@ Pointer(Activate(Device(Sticks)))
 Pointer(Activate(Device(Password)))
   Watch Metrics off
 -- device-password.png
+== group library-edit.png
+Tick 1760000000
+  Keymap 0 "Default"
+  PadRoute Ui
+Start
+  Watch Account on
+  Watch Metrics on
+Tick 1760000005
+  Save Resume
+-- library-edit.png
+-- library-edit-cut.png
+Pointer(Activate(LibraryView(Edit(Row(3)))))
+  Watch Metrics off
+-- library-edit-name.png
 == group setup-password.png
 Tick 1760000000
   Keymap 0 "Default"

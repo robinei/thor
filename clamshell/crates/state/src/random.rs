@@ -246,11 +246,27 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
     }
     match s.top_view() {
         TopView::Device => ids.extend(
-            [DeviceId::Wifi, DeviceId::Zone, DeviceId::Password, DeviceId::Ssh, DeviceId::Sticks, DeviceId::Gyro, DeviceId::Refresh, DeviceId::Close]
-                .map(Id::Device),
+            [
+                DeviceId::Wifi,
+                DeviceId::Zone,
+                DeviceId::Password,
+                DeviceId::Ssh,
+                DeviceId::Sticks,
+                DeviceId::Gyro,
+                DeviceId::Refresh,
+                DeviceId::EditLibrary,
+                DeviceId::Close,
+            ]
+            .map(Id::Device),
         ),
         // The step's own; the tab's below are the step's tab's.
         TopView::Setup => ids.extend([SetupId::Password, SetupId::Next, SetupId::Back].map(Id::Setup)),
+        // The edit mode's: its tabs, its rows, and its actions.
+        TopView::LibraryView if s.session().shown_builtin().is_some() && s.library_view().edit().is_some() => {
+            use crate::library_view::edit::EditId;
+            ids.extend((0..4).map(EditId::Tab).chain((0..6).map(EditId::Row)).map(Id::from));
+            ids.extend([EditId::NewTab, EditId::Up, EditId::Done, EditId::Rename, EditId::Cut, EditId::Paste, EditId::Remove].map(Id::from));
+        }
         TopView::LibraryView if s.session().shown_builtin().is_some() => {
             let sh = s.library_view();
             ids.extend(sh.list().iter().filter_map(|&i| sh.library().entries.get(i)).map(|g| Id::LibraryView(LibraryViewId::Entry(g.id.clone()))));

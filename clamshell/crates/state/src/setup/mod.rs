@@ -181,7 +181,7 @@ impl Setup {
                 out.effects.push(Effect::CalibrateRefresh);
             }
             DeviceId::Refresh => {}
-            DeviceId::Close => {}
+            DeviceId::Close | DeviceId::EditLibrary => {}
         }
     }
 

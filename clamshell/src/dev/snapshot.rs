@@ -13,6 +13,7 @@ use clamshell_state::DeviceId;
 use clamshell_state::bottom::keyboard::{Key, Modifier, Named};
 use clamshell_state::keymap::{Actuation, Button, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
 use clamshell_state::levels::Level;
+use clamshell_state::library_view::edit::EditId;
 use clamshell_state::settings::Setting;
 use clamshell_state::setup::SticksEvent;
 use clamshell_state::{
@@ -35,6 +36,11 @@ pub fn command(sources: &clamshell_system::library::Sources, dir: &Path) -> Resu
     let library = if real { clamshell_system::library::load(sources).library } else { clamshell_library::demo::library() };
     let now = if std::env::var_os("CLAMSHELL_SNAPSHOT_NOW").is_some() { clamshell_system::time::clock::unix_secs() } else { FIXED_NOW };
     render(&|first_start| state(library.clone(), first_start), now, dir).map_err(|e| e.to_string())
+}
+
+/// The Library's edit mode's target `id`.
+fn edit(id: EditId) -> Id {
+    id.into()
 }
 
 /// The device's account, before it has a password.
@@ -618,6 +624,16 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 ),
                 shot("device-sticks.png", Top, vec![tap(Id::Device(DeviceId::Sticks)), Event::Sticks(SticksEvent::Progress(demo::sticks_progress()))]),
                 shot("device-password.png", Bottom, [tap(Id::Device(DeviceId::Password))].into_iter().chain(control::type_text("secret")?).collect()),
+            ],
+        ),
+        // The Library's edit mode, from the Device view: the Games tab's folders with their counts, a
+        // place cut to be moved, and a new folder's name typed on the keyboard.
+        group(
+            [LibraryViewEvent::Rows(8).into()].into_iter().chain(open_device()).chain([tap(Id::Device(DeviceId::EditLibrary))]).collect(),
+            vec![
+                shot("library-edit.png", Top, vec![tap(edit(EditId::Tab(2)))]),
+                shot("library-edit-cut.png", Top, vec![tap(edit(EditId::Cut))]),
+                shot("library-edit-name.png", Bottom, [tap(edit(EditId::Row(3)))].into_iter().chain(control::type_text("Dreamcast")?).collect()),
             ],
         ),
         // Setup at the first start: the password step, the password typed on the keyboard (the bar hidden),

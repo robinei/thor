@@ -21,6 +21,7 @@ mod editor;
 mod keyboard;
 mod keymaps;
 mod levels;
+mod library_edit;
 mod library_view;
 mod notifications;
 mod overlay;
@@ -48,7 +49,12 @@ const POINTING_FADE: f32 = 0.7;
 pub fn top(f: &mut Frame, screen: Rect) {
     f.body = screen;
     match f.s.top_view() {
-        clamshell_state::setup::TopView::LibraryView => f.out.list_rows = Some(library_view::draw(f, screen)),
+        clamshell_state::setup::TopView::LibraryView => {
+            f.out.list_rows = Some(match f.s.library_view().edit() {
+                Some(edit) => library_edit::draw(f, screen, edit),
+                None => library_view::draw(f, screen),
+            });
+        }
         clamshell_state::setup::TopView::Device => device::draw(f, screen),
         clamshell_state::setup::TopView::Setup => setup::draw(f, screen),
     }
@@ -71,6 +77,9 @@ fn typing(f: &mut Frame, body: Rect) {
         Some(Purpose::FileName(FileName::NewFolder(_))) => editor::draw(f, "New folder's name", "Make"),
         Some(Purpose::FileName(FileName::Extract(_))) => editor::draw(f, "Extract to", "Extract"),
         Some(Purpose::AccountPassword(_)) => device::draw_password(f),
+        Some(Purpose::PlaceName(clamshell_state::library_view::edit::PlaceName::Rename(_))) => editor::draw(f, "New name", "Rename"),
+        Some(Purpose::PlaceName(clamshell_state::library_view::edit::PlaceName::New(None))) => editor::draw(f, "New tab's name", "Make"),
+        Some(Purpose::PlaceName(clamshell_state::library_view::edit::PlaceName::New(Some(_)))) => editor::draw(f, "New folder's name", "Make"),
         Some(Purpose::Password { ssid }) => {
             let title = crate::toolkit::format::Fmt::<128>::of(format_args!("Password for {ssid}"));
             editor::draw(f, &title, "Join");
