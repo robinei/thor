@@ -906,3 +906,23 @@ fn a_files_window_up_before_its_launch_ended_is_the_files() {
     s.applied(Event::tick(101 + HANDOFF));
     assert!(s.session().running("browse:Home/notes.md").is_some(), "runs by its window");
 }
+
+/// A window of no program, such as a portal's, opening over a program in front joins its group and comes in
+/// front. While a launch waits it is left alone: it may be the launch's.
+#[test]
+fn a_window_of_no_program_joins_the_program_in_front_unless_a_launch_waits() {
+    let mut s = state();
+    let zelda = launch(&mut s, "zelda-lttp");
+    s.applied(Event::tick(100));
+    let game = win_of(3, "zelda3", &zelda);
+    s.observed(vec![game.clone()]);
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(3));
+    s.observed(vec![game.clone(), win(8, "xdg-desktop-portal-gtk")]);
+    assert_eq!(s.session().window(8).and_then(|w| w.group.clone()), Some(group_of(&zelda)));
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
+    s.observed(vec![game.clone()]);
+    launch_now(&mut s, "desktop:firefox");
+    s.observed(vec![game, win(9, "xdg-desktop-portal-gtk")]);
+    assert_eq!(s.session().window(9).and_then(|w| w.claim.clone()), None);
+    assert_ne!(s.session().top_window().map(|w| w.id), Some(9));
+}

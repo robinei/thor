@@ -426,9 +426,11 @@ impl Session {
     }
 
     /// Claims the new main windows that still belong to no entry, after file handoffs and program discovery
-    /// have had their chance, for the program in front: a service's dialog shows in its group. One of a
-    /// launch still starting, or known by a library entry, is left alone. Each comes in front unless it is
-    /// below, in its own group if no program is in front.
+    /// have had their chance, for the program that was in front before them: a service's dialog shows in
+    /// its group. Only a window that came in front as it opened (see [`Session::opening_focus`]): not one
+    /// below, nor one that opened while a launch waits, which may yet be the launch's or a file's. One of a
+    /// launch still starting, or known by a library entry, is left alone, and with no program in front a
+    /// window keeps its own group.
     fn claim_unowned(&mut self, library: &Library) {
         let opened = &self.opened;
         let ids: Vec<i64> = self
@@ -438,15 +440,14 @@ impl Session {
             .map(|w| w.id)
             .collect();
         for id in ids {
-            let down = self.below(id);
-            let front = self.top_window().filter(|top| !down && self.root_of(top.id) != id).and_then(|top| top.group.clone());
+            let shown = !self.below(id) && self.top == Some(self.root_of(id));
+            let front = self.followed_front.as_ref().filter(|g| self.windows.iter().any(|w| w.id != id && w.group.as_ref() == Some(*g)));
+            let Some(front) = front.filter(|_| shown).cloned() else { continue };
             if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
-                w.claim = front;
+                w.claim = Some(front);
             }
-            if !down {
-                self.place_windows(library);
-                self.command(WindowCommand::FocusWindow(id));
-            }
+            self.place_windows(library);
+            self.command(WindowCommand::FocusWindow(id));
         }
     }
 
