@@ -99,11 +99,11 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
                 f.drag(Drag::Slide { control, track: Track { x0: screen.x, w: screen.w }, at_once: false });
             }
         }
-        f.bar_tab(tab, b.id);
+        f.tab_stop(Id::Tab(tab), b.id, tab == s.bottom().tab());
     }
     // Then, left to right, those right of the line.
     for tab in at(BarPlace::Clock).chain(at(BarPlace::End)) {
-        f.bar_tab(tab, (tabs::view(tab).button)(s).id);
+        f.tab_stop(Id::Tab(tab), (tabs::view(tab).button)(s).id, tab == s.bottom().tab());
     }
     body
 }

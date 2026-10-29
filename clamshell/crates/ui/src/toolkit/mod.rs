@@ -13,7 +13,7 @@ pub mod widgets;
 
 use clamshell_state::levels::Level;
 use clamshell_state::levels::slider::Control;
-use clamshell_state::{Event, Hold, Id, ItemKey, ListId, PadInput, PointerEvent, State, Tab};
+use clamshell_state::{Event, Hold, Id, ItemKey, ListId, PadInput, PointerEvent, State};
 
 use crate::gfx::images::Images;
 use crate::gfx::{Canvas, Rect};
@@ -101,11 +101,25 @@ pub struct PadOut {
     /// What the view's list does with the pad's moves while the focus is on its targets ([`PadUse::List`]):
     /// the directions, and the shoulders' pages and the triggers' ends while the focus is on the screen.
     pub moves: Option<ListMoves>,
-    /// The bar's tabs, left to right, each with its button's target, which the shoulders step through.
-    pub tabs: [Option<(Tab, Id)>; Tab::ALL.len()],
+    /// The tabs the shoulders step through, left to right (see [`Frame::tab_stop`]).
+    pub tabs: [Option<TabStop>; MAX_TABS],
     /// A mode of the view's, such as a dock tile being moved, that takes the pad's buttons before anything
     /// else does: what each does in it.
     pub mode: Option<fn(PadInput) -> Option<Event>>,
+}
+
+/// How many tabs a screen may declare for the shoulders (see [`PadOut::tabs`]).
+pub const MAX_TABS: usize = 16;
+
+/// A tab the shoulders step to, as a screen declares it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TabStop {
+    /// What is pressed to open it.
+    pub open: Id,
+    /// Where the focus goes once it is open, such as its button.
+    pub focus: Id,
+    /// Whether it is the tab open now, which the shoulders step from.
+    pub current: bool,
 }
 
 /// A move of the pad's that a view's list may take (see [`PadOut::moves`]).
@@ -330,10 +344,13 @@ impl<'f, 'c> Frame<'f, 'c> {
         }
     }
 
-    /// The bar's tab `tab` is drawn, after those left of it, with its button's target `id`.
-    pub fn bar_tab(&mut self, tab: Tab, id: Id) {
-        if let Some(slot) = self.out.pad.tabs.iter_mut().find(|t| t.is_none()) {
-            *slot = Some((tab, id));
+    /// A tab the shoulders step to, after those declared before it: pressing `open` opens it, and the
+    /// focus then goes to `focus`. `current` says it is the tab open now. Past [`MAX_TABS`] a tab is left
+    /// out, logged.
+    pub fn tab_stop(&mut self, open: Id, focus: Id, current: bool) {
+        match self.out.pad.tabs.iter_mut().find(|t| t.is_none()) {
+            Some(slot) => *slot = Some(TabStop { open, focus, current }),
+            None => log::warn!("more than {MAX_TABS} tabs declared: {open:?} left out of the shoulders' steps"),
         }
     }
 

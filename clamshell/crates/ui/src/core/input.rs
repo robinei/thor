@@ -143,7 +143,7 @@ impl Core {
                 self.handle(Event::PadSwitch);
                 if on_ui(&self.state) {
                     let event = focus::focus_bottom(&self.state, &self.screens, &self.focus_memory);
-                    self.handle(event);
+                    self.handle_all(event);
                 }
             }
             PadInput::Up | PadInput::Down | PadInput::Left | PadInput::Right => {}

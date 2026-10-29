@@ -6,7 +6,7 @@
 //! in the Library's list up and down step through the games. With anything else in front, it stays on the
 //! second screen.
 
-use clamshell_state::{Event, Hold, Id, LevelEvent, PadInput, PointerEvent, RowPart, State, Tab};
+use clamshell_state::{Event, Hold, Id, LevelEvent, PadInput, PointerEvent, RowPart, State};
 use xkeysym::Keysym;
 
 use crate::gfx::Rect;
@@ -83,13 +83,20 @@ pub fn focus_screen(s: &State, d: &impl Drawn) -> Screen {
 
 /// Moves the focus onto the second screen. It stays where it is if that is drawn there. Otherwise it
 /// goes where it last was on that screen, as kept in `memory`, if that is still drawn, and failing that
-/// to the open tab.
-pub fn focus_bottom(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> Event {
+/// to where the screen declared it starts, or the first target there the pad moves to. With nothing
+/// there, it stays.
+pub fn focus_bottom(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> Option<Event> {
     let bottom = Some(Screen::Bottom);
     let current = s.pointer().focus().cloned().filter(|id| drawn_on(d, bottom, id));
     let remembered = memory.bottom.clone().filter(|id| drawn_on(d, bottom, id));
-    let target = current.or(remembered).or_else(|| default_focus(d, Screen::Bottom)).unwrap_or(Id::Tab(Tab::default()));
-    PointerEvent::Focus(target).into()
+    let first = || first_moved_to(d, Screen::Bottom);
+    let target = current.or(remembered).or_else(|| default_focus(d, Screen::Bottom)).or_else(first)?;
+    Some(PointerEvent::Focus(target).into())
+}
+
+/// The first target on `screen` the pad moves to: not one only touch reaches, or one reached by holding A.
+fn first_moved_to(d: &impl Drawn, screen: Screen) -> Option<Id> {
+    d.targets(screen).iter().find(|t| matches!(t.pad, PadUse::Moves | PadUse::List)).map(|t| t.id.clone())
 }
 
 /// Moves the focus to the other screen, with the Library in front. It goes where it last was on that screen if
@@ -101,9 +108,7 @@ pub fn switch_screen(s: &State, d: &impl Drawn, memory: &mut Screens<Option<Id>>
     memory[from] = s.pointer().focus().cloned();
     let drawn = |id: &Id| drawn_on(d, Some(to), id);
     let remembered = memory[to].clone().filter(drawn);
-    // (Failing those, the first the pad moves to there: not one only touch reaches, or one reached by holding A.)
-    let first = d.targets(to).iter().find(|t| matches!(t.pad, PadUse::Moves | PadUse::List)).map(|t| t.id.clone());
-    let target = remembered.or_else(|| default_focus(d, to).filter(drawn)).or(first)?;
+    let target = remembered.or_else(|| default_focus(d, to).filter(drawn)).or_else(|| first_moved_to(d, to))?;
     Some(PointerEvent::Focus(target).into())
 }
 
@@ -154,7 +159,7 @@ pub fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, dir: Di
     }
     // Away from the Library, only the second screen is used. If the focus is elsewhere, it moves there first.
     if scope == PadScope::BottomOnly && focus_screen(s, d) != Screen::Bottom {
-        return Some(focus_bottom(s, d, memory));
+        return focus_bottom(s, d, memory);
     }
     // On a drawn target that sets a level, left and right step the level.
     if let (Some(focus), Dir::Left | Dir::Right) = (s.pointer().focus(), dir)
@@ -201,12 +206,12 @@ pub fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> Option<
     match s.pointer().focus() {
         Some(id) if let Some(t) = drawn_in(d, screen, id) => Some(PadPress::Press(id.clone(), t.hold)),
         _ if s.pad().on_top() => default_focus(d, Screen::Top).map(|id| PadPress::Focus(PointerEvent::Focus(id).into())),
-        _ => Some(PadPress::Focus(focus_bottom(s, d, memory))),
+        _ => focus_bottom(s, d, memory).map(PadPress::Focus),
     }
 }
 
-/// The shoulders. On the Library they move a page through the list. Elsewhere they step through the bar's
-/// tabs from left to right, opening and focusing each.
+/// The shoulders. On the Library they move a page through the list. Elsewhere they step through the tabs
+/// the second screen declared (see [`PadOut::tabs`]), from the open one, opening and focusing each.
 pub fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     // On the Library's actions, the Library stays where it is.
     if on_actions(s, d) {
@@ -216,17 +221,15 @@ pub fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     if let Some(taken) = list_moves(s, d, PadMove::Page(step)) {
         return taken.into_iter().collect();
     }
-    // The bar's tabs, as it draws them.
     let tabs = &d.pad(Screen::Bottom).tabs;
     let n = tabs.iter().flatten().count() as i32;
     if n == 0 {
         return vec![];
     }
-    let at = tabs.iter().flatten().position(|(t, _)| *t == s.bottom().tab()).unwrap_or(0) as i32;
+    let at = tabs.iter().flatten().position(|t| t.current).unwrap_or(0) as i32;
     let next = (at + step).rem_euclid(n) as usize;
     match tabs.iter().flatten().nth(next) {
-        // Open the tab and focus its button, as the bar declared it.
-        Some((tab, id)) => vec![PointerEvent::Activate(Id::Tab(*tab)).into(), PointerEvent::Focus(id.clone()).into()],
+        Some(tab) => vec![PointerEvent::Activate(tab.open.clone()).into(), PointerEvent::Focus(tab.focus.clone()).into()],
         None => vec![],
     }
 }
@@ -306,7 +309,7 @@ mod tests {
     use super::*;
     use clamshell_state::LibraryViewId;
     use clamshell_state::settings::Setting;
-    use clamshell_state::{Init, ListId, SettingsId};
+    use clamshell_state::{Init, ListId, SettingsId, Tab};
 
     /// Targets on each screen, with both screens 100 by 100, and what the pad's buttons do there.
     struct Fake(Screens<Vec<Target>>, Screens<PadOut>);
@@ -358,11 +361,17 @@ mod tests {
                     t(0.0, 50.0, Id::Settings(SettingsId::Tile(Setting::Power))),
                 ],
             },
-            Screens {
-                top: start(entry(s, s.library_view().cursor().index)),
-                bottom: PadOut { tabs: Tab::ALL.map(|t| Some((t, Id::Tab(t)))), ..start(Id::Tab(s.bottom().tab())) },
-            },
+            Screens { top: start(entry(s, s.library_view().cursor().index)), bottom: PadOut { tabs: tab_stops(s), ..start(Id::Tab(s.bottom().tab())) } },
         )
+    }
+
+    /// Every tab, each opened and focused by its button, as the bar declares them.
+    fn tab_stops(s: &State) -> [Option<crate::toolkit::TabStop>; crate::toolkit::MAX_TABS] {
+        let mut tabs = <[Option<crate::toolkit::TabStop>; crate::toolkit::MAX_TABS]>::default();
+        for (slot, tab) in tabs.iter_mut().zip(Tab::ALL) {
+            *slot = Some(crate::toolkit::TabStop { open: Id::Tab(tab), focus: Id::Tab(tab), current: tab == s.bottom().tab() });
+        }
+        tabs
     }
 
     fn focus(s: &mut State, id: Id) {
@@ -405,6 +414,20 @@ mod tests {
         assert_eq!(switch_screen(&s, &d, &mut Screens::default()), Some(PointerEvent::Focus(Id::Tab(Tab::Settings)).into()));
     }
 
+    /// With nothing remembered or declared to start at, the focus comes to the second screen's first
+    /// target the pad moves to; with nothing there, it stays.
+    #[test]
+    fn focus_bottom_goes_to_the_first_target_without_a_start() {
+        let mut s = state();
+        let mut d = drawn(&s);
+        d.1.bottom.start = None;
+        let g = entry(&s, 0);
+        focus(&mut s, g);
+        assert_eq!(focus_bottom(&s, &d, &Screens::default()), Some(PointerEvent::Focus(Id::Tab(Tab::Settings)).into()));
+        d.0.bottom.clear();
+        assert_eq!(focus_bottom(&s, &d, &Screens::default()), None);
+    }
+
     #[test]
     fn a_focus_that_is_gone_is_recovered() {
         let mut s = state();
@@ -414,7 +437,7 @@ mod tests {
         // drawn either, so the focus goes to the open tab.
         focus(&mut s, Id::Settings(SettingsId::Env));
         assert_eq!(press(&s, &d, &memory), Some(PadPress::Focus(PointerEvent::Focus(entry(&s, 0)).into())));
-        assert_eq!(focus_bottom(&s, &d, &memory), PointerEvent::Focus(Id::Tab(s.bottom().tab())).into());
+        assert_eq!(focus_bottom(&s, &d, &memory), Some(PointerEvent::Focus(Id::Tab(s.bottom().tab())).into()));
         // A drawn target is pressed.
         focus(&mut s, Id::Tab(Tab::Sysinfo));
         assert_eq!(press(&s, &d, &memory), Some(PadPress::Press(Id::Tab(Tab::Sysinfo), Hold::Long)));
