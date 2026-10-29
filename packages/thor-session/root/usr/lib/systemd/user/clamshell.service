@@ -19,6 +19,9 @@ Type=notify
 NotifyAccess=main
 WatchdogSec=30
 ExecStart=/usr/bin/clamshell --drm
+# However it ended (a crash, a kill), the battery goes back to its own charging; a session that comes
+# back holds it again as its settings say.
+ExecStopPost=/usr/bin/clamshell --release-charge
 Restart=on-failure
 RestartSec=2
 Slice=session.slice

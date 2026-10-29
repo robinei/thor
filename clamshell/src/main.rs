@@ -94,6 +94,10 @@ fn carry_out(command: Command) -> Result<(), String> {
             clamshell_system::session::clipboard::set(text).map_err(|e| format!("clipboard: {e}"))
         }
         Command::Tray => commands::print_tray(),
+        Command::ReleaseCharge => {
+            clamshell_system::release_charge(env.profile.charge, env.charge_limit.as_deref());
+            Ok(())
+        }
         Command::FetchMetadata => commands::fetch_metadata(&paths, &sources),
         #[cfg(any(test, feature = "dev"))]
         Command::Snapshot(dir) => crate::dev::snapshot::command(&sources, &dir),

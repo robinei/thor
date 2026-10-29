@@ -47,6 +47,11 @@ use clamshell_state::Event;
 
 pub use os::worker::Closed;
 
+/// Hands the battery back to its firmware's own charging (see `power::tuning`), for after ClamShell ended.
+pub fn release_charge(policy: clamshell_device::charge::Charge, method: Option<&str>) {
+    power::tuning::release_charge(policy, method);
+}
+
 /// Where system threads deliver events: the compositor's event loop.
 pub trait Sink: Send + 'static {
     fn send(&self, event: Event) -> Result<(), Closed>;

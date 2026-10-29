@@ -184,6 +184,15 @@ pub(crate) fn spawn(policy: ChargePolicy, method: Option<String>) -> io::Result<
     })
 }
 
+/// Hands the battery back to its firmware's own charging, as the hardware thread does when ClamShell ends:
+/// for after it ended, by a crash or a kill too (clamshell.service's `ExecStopPost`), so that a session
+/// that doesn't come back doesn't leave charging held or limited. `policy` and `method` are as for
+/// [`spawn`].
+pub(crate) fn release_charge(policy: ChargePolicy, method: Option<&str>) {
+    let mut charge = Charge { hold: Hold::selected(method, policy), switches: policy.switches, held: false };
+    charge.battery(100, &mut Quiet::default());
+}
+
 /// Applies the settings in force to the hardware: frequency caps for the profile, or the CPU and GPU caps
 /// where set, the big cores and the charge limit. `known` holds the policies as last read (see the
 /// module doc).
