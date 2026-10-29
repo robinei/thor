@@ -5,7 +5,7 @@
 # chooser, GTK's for the rest), Steam's starter and setup, the Maintenance app. Built from the checkout
 # this PKGBUILD is in.
 pkgname=thor-session
-pkgver=r570.5759033
+pkgver=0
 pkgrel=1
 pkgdesc="The AYN Thor's session: autologin into ClamShell, its configs, Steam's starter"
 arch=(any)
