@@ -12,6 +12,7 @@
 //! are written where they are used.
 
 mod apps;
+mod art;
 mod bar;
 mod battery;
 mod bluetooth;

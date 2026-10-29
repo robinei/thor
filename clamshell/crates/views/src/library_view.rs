@@ -16,6 +16,7 @@ use clamshell_ui::toolkit::scroll::Scrolled;
 use clamshell_ui::toolkit::style::{self, Look, RADIUS_L, SURFACE_HI, Tone};
 use clamshell_ui::toolkit::{Frame, PadMove, PadUse, widgets};
 
+use super::art;
 use super::format::{Bytes, DaysAgo, PlayTime};
 
 /// The tab bar's height and text size, as fractions of the screen's height.
@@ -274,7 +275,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         let thumb_h = r.h * THUMB;
         let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * ROW_ASPECT, thumb_h);
         f.button(Id::LibraryView(LibraryViewId::Entry(entry.id.clone())), r, look, |f| {
-            widgets::thumb(f.c, f.images, entry, thumb, THUMB_RADIUS, false);
+            art::thumb(f.c, f.images, entry, thumb, THUMB_RADIUS, false);
             // The marks at the row's right end, from right to left: a folder's chevron, running (dim
             // while starting or paused), on the dock, and favourite.
             let mark = r.h * MARK;
@@ -325,7 +326,7 @@ fn selected(f: &mut Frame, entry: &Entry, screen: Rect, list: Rect, pad: f32) {
     let h = screen.h;
     let x0 = screen.w * LIST_W + pad;
     let room = Rect::new(x0, list.y, (screen.w - pad - x0) * COVER_W, list.h * ART_H);
-    let cover = widgets::cover(f.c, f.images, entry, room, RADIUS_L, BOX_ASPECT);
+    let cover = art::cover(f.c, f.images, entry, room, RADIUS_L, BOX_ASPECT);
     let landscape = cover.w > cover.h;
     let tx = if landscape { room.x + room.w } else { cover.x + cover.w } + pad * 1.2;
     let text_w = screen.w - pad - tx;
@@ -391,7 +392,7 @@ fn selected(f: &mut Frame, entry: &Entry, screen: Rect, list: Rect, pad: f32) {
 
     // A screenshot goes under landscape box art at the same width, or else at the bottom of the text. The
     // summary takes as many lines as fit above that. There is no screenshot if it is already the picture.
-    let shot = match (entry.details.shot.is_some() && !widgets::wide_picture(entry), landscape) {
+    let shot = match (entry.details.shot.is_some() && !art::wide_picture(entry), landscape) {
         (false, _) => None,
         (true, true) => {
             let y = cover.y + cover.h + pad;
@@ -413,7 +414,7 @@ fn selected(f: &mut Frame, entry: &Entry, screen: Rect, list: Rect, pad: f32) {
         f.c.wrap(Span { x: tx, y: top, w: text_w }, size, Tone::Normal, &entry.details.summary, lines.min(12));
     }
     if let Some(r) = shot.filter(|r| r.h > pad) {
-        widgets::shot(f.c, f.images, entry, r);
+        art::shot(f.c, f.images, entry, r);
     }
 }
 

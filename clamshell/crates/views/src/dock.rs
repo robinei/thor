@@ -19,6 +19,7 @@ use clamshell_ui::toolkit::style::{self, Look, Text, Tone};
 use clamshell_ui::toolkit::widgets::{self, CAPTION_Y, HeaderRight, TileFace, TileShape};
 use clamshell_ui::toolkit::{Frame, PadUse};
 
+use super::art;
 use super::format::{Bytes, MaybeShare, Share};
 
 /// The grid always has room for at least this many rows, so that a few entries still get normal-sized
@@ -104,7 +105,7 @@ fn entry_tile(f: &mut Frame, r: Rect, i: usize, id: &std::sync::Arc<str>, severa
         let h = r.h * (CAPTION_Y - ART_TOP - ART_ROOM);
         let w = if picture.box_front.is_some() { h * 2.0 / 3.0 } else { h };
         let art = Rect::new(r.x + (r.w - w) / 2.0, r.y + r.h * ART_TOP, w, h);
-        widgets::art(f.c, f.images, picture, art, ART_RADIUS, clamshell_ui::gfx::Align::Center, !running);
+        art::art(f.c, f.images, picture, art, ART_RADIUS, clamshell_ui::gfx::Align::Center, !running);
     });
     if s.session().tray_of(id).is_some() {
         tray_mark(f, r, i);
