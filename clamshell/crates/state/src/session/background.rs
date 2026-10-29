@@ -265,7 +265,7 @@ impl Session {
         }
         let shown = self.windows_of(id).any(|w| self.shown(w.id));
         if shown {
-            self.command(crate::session::windows::WindowCommand::Show(clamshell_library::Builtin::Library));
+            self.command(crate::session::windows::WindowCommand::Show(clamshell_library::BuiltinApp::Library));
         }
         let Some(r) = self.running.iter().find(|r| &*r.id == id) else {
             return;

@@ -138,8 +138,8 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
     let pinned = s.dock().items().iter().any(|i| i.id == *entry && i.pinned);
     // A built-in isn't a process: it isn't started with ClamShell or killed, the Device view's Quit
     // closes it, and the Library stays pinned and running.
-    let builtin = clamshell_state::Builtin::of(entry);
-    let library = builtin == Some(clamshell_state::Builtin::Library);
+    let builtin = clamshell_state::BuiltinApp::of(entry);
+    let library = builtin == Some(clamshell_state::BuiltinApp::Library);
     // A tile for a tray icon alone isn't a library entry, so it can't be pinned.
     let pinnable = s.library_view().library().has(entry) && !library;
     let item = |id, label, tone| Some((Id::Dock(id), label, tone));

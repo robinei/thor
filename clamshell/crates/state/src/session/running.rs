@@ -581,7 +581,7 @@ pub(crate) enum Launched {
 /// Library, or show the entry, which runs already.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Instead {
-    Builtin(clamshell_library::Builtin),
+    Builtin(clamshell_library::BuiltinApp),
     Group,
     Show,
 }

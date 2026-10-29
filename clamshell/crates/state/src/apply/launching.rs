@@ -7,7 +7,7 @@ use crate::out::Out;
 use crate::session::running::{Instead, LaunchRequest, Launched, Start};
 use crate::session::windows::WindowCommand;
 use crate::{Effect, EntryAct, Launch, LaunchEvent, Save, State};
-use clamshell_library::Builtin;
+use clamshell_library::BuiltinApp;
 
 impl State {
     /// Something done to entry `id`.
@@ -15,15 +15,15 @@ impl State {
         match act {
             EntryAct::Play => self.play(id, out),
             // A built-in is shown as it is started.
-            EntryAct::Show if Builtin::of(&id).is_some() => self.play(id, out),
+            EntryAct::Show if BuiltinApp::of(&id).is_some() => self.play(id, out),
             EntryAct::Show => self.show(&id, out),
             EntryAct::OpenAnother => self.open_another(id, out),
             EntryAct::Suspend => self.session.suspend(&id, self.clock.mono(), out),
             EntryAct::ToggleAutostart => self.session.toggle_autostart(id, out),
             EntryAct::TogglePin => self.dock.toggle_pin(id, &self.session, out),
             // A built-in isn't a process: Quit closes the Device view, and the Library always runs.
-            EntryAct::Quit | EntryAct::ForceKill if Builtin::of(&id).is_some() => {
-                if Builtin::of(&id) == Some(Builtin::Device) {
+            EntryAct::Quit | EntryAct::ForceKill if BuiltinApp::of(&id).is_some() => {
+                if BuiltinApp::of(&id) == Some(BuiltinApp::Device) {
                     self.close_device();
                 }
             }
@@ -73,7 +73,7 @@ impl State {
 
     /// Shows built-in `b` on the main screen, with the pad's focus on it: the Device view's first row, or the
     /// Library's selection.
-    pub(crate) fn show_builtin(&mut self, b: Builtin) {
+    pub(crate) fn show_builtin(&mut self, b: BuiltinApp) {
         self.session.cancel_front_launch();
         self.session.command(WindowCommand::Show(b));
     }
@@ -104,7 +104,7 @@ impl State {
         match launched {
             Launched::Yes => out.effects.push(Effect::Save(Save::Resume(self.resume()))),
             Launched::Instead(Instead::Builtin(b)) => self.show_builtin(b),
-            Launched::Instead(Instead::Group) if self.library_view.reveal(&entry) => self.show_builtin(Builtin::Library),
+            Launched::Instead(Instead::Group) if self.library_view.reveal(&entry) => self.show_builtin(BuiltinApp::Library),
             Launched::Instead(Instead::Show) => self.show(&entry, out),
             Launched::Instead(Instead::Group) | Launched::No => {}
         }

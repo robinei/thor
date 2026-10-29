@@ -132,7 +132,7 @@ pub use status::{Status, Sys};
 
 pub use clamshell_device::DeviceProfile;
 pub use clamshell_device::layout::{ControlLayout, Group as ControlGroup, Labels as ControlLabels};
-pub use clamshell_library::{BrowseKind, Browsed, Builtin, Collection, Entry, Launch, Library, Meta, RunnerOf, config, ids, runner_key};
+pub use clamshell_library::{BrowseKind, Browsed, BuiltinApp, Collection, Entry, Launch, Library, Meta, RunnerOf, config, ids, runner_key};
 
 /// What the state starts from, as read from disk and the environment.
 #[derive(Debug, Default)]
@@ -608,8 +608,8 @@ impl State {
         self.session.follow_replacement(self.clock.mono());
         self.session.follow_front(self.clock.mono());
         // Setup is drawn in the Library's place: while it shows, the Library is in front, over any window.
-        if self.setup.wizard().is_some() && self.session.shown_builtin() != Some(clamshell_library::Builtin::Library) {
-            self.show_builtin(clamshell_library::Builtin::Library);
+        if self.setup.wizard().is_some() && self.session.shown_builtin() != Some(clamshell_library::BuiltinApp::Library) {
+            self.show_builtin(clamshell_library::BuiltinApp::Library);
         }
         // Order: once the front is settled (a launch's window, a closed window's replacement), which an
         // app's pick is shown over or set aside for; before the overview, which follows what is in front, so
@@ -692,7 +692,7 @@ impl State {
             bottom_on: !bottom_off && !self.setup.calibrating(),
             bottom_seen: !self.bottom.shows_windows(&self.session) && !bottom_off && !self.bottom_dark(),
             tab,
-            setup_open: self.setup.reads_account(self.session.runs_builtin(clamshell_library::Builtin::Device)),
+            setup_open: self.setup.reads_account(self.session.runs_builtin(clamshell_library::BuiltinApp::Device)),
             ui_up: self.ui_up,
             keymap: self.keymapping.version_of(settings.get(Setting::Keymap)),
             keymapping: &self.keymapping,

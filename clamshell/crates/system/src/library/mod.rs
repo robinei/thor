@@ -593,7 +593,7 @@ impl Builder<'_> {
     /// Places one of ClamShell's own screens, as a `builtin` source says.
     fn builtin(&mut self, source: &content::BuiltinPlace) {
         let id = format!("builtin:{}", source.id.trim());
-        let Some(builtin) = clamshell_library::Builtin::of(&id) else {
+        let Some(builtin) = clamshell_library::BuiltinApp::of(&id) else {
             return self.problems.push(format!("builtin {}: not one of ClamShell's screens (library, device)", source.id));
         };
         if self.games.iter().any(|g| g.launch == Launch::Builtin(builtin)) {
@@ -610,7 +610,7 @@ impl Builder<'_> {
     /// Adds ClamShell's own screens no source placed, in no place: they are entries all the same, the
     /// Library always on the dock.
     fn unplaced_builtins(&mut self) {
-        for builtin in clamshell_library::Builtin::ALL {
+        for builtin in clamshell_library::BuiltinApp::ALL {
             if !self.games.iter().any(|g| g.launch == Launch::Builtin(builtin)) {
                 self.games.push(builtin_entry(builtin));
             }
@@ -664,7 +664,7 @@ impl Builder<'_> {
 }
 
 /// The entry of one of ClamShell's own screens.
-fn builtin_entry(builtin: clamshell_library::Builtin) -> Entry {
+fn builtin_entry(builtin: clamshell_library::BuiltinApp) -> Entry {
     let (title, summary) = clamshell_library::BUILTINS.iter().find(|(b, ..)| *b == builtin).map_or(("", ""), |(_, t, s)| (*t, *s));
     let details = Details { summary: summary.into(), ..Details::default() };
     Entry { launch: Launch::Builtin(builtin), app: true, details, ..Entry::new(builtin.id(), title) }

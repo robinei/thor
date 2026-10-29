@@ -21,13 +21,13 @@ pub enum Launch {
     /// One of ClamShell's own tools (the Tools tab).
     Tool(Tool),
     /// One of ClamShell's own screens on the main screen.
-    Builtin(Builtin),
+    Builtin(BuiltinApp),
 }
 
 /// ClamShell's own screens on the main screen, entries like any other: placed in the library, pinned
 /// and on the dock while they run (see clamshell-state's session).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum Builtin {
+pub enum BuiltinApp {
     /// What the device has, browsed. It always runs.
     #[default]
     Library,
@@ -35,20 +35,20 @@ pub enum Builtin {
     Device,
 }
 
-impl Builtin {
-    pub const ALL: [Builtin; 2] = [Builtin::Library, Builtin::Device];
+impl BuiltinApp {
+    pub const ALL: [BuiltinApp; 2] = [BuiltinApp::Library, BuiltinApp::Device];
 
     /// Its entry's id.
     pub fn id(self) -> &'static str {
         match self {
-            Builtin::Library => "builtin:library",
-            Builtin::Device => "builtin:device",
+            BuiltinApp::Library => "builtin:library",
+            BuiltinApp::Device => "builtin:device",
         }
     }
 
     /// The built-in whose entry is `id`, if one is.
-    pub fn of(id: &str) -> Option<Builtin> {
-        Builtin::ALL.into_iter().find(|b| b.id() == id)
+    pub fn of(id: &str) -> Option<BuiltinApp> {
+        BuiltinApp::ALL.into_iter().find(|b| b.id() == id)
     }
 }
 

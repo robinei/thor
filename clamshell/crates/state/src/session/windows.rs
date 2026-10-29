@@ -52,7 +52,7 @@ pub(crate) enum WindowCommand {
     KeyboardFocus(i64),
     /// Bring the Library to the front.
     /// No window in front: the built-in shows.
-    Show(clamshell_library::Builtin),
+    Show(clamshell_library::BuiltinApp),
     /// Move a window to the bottom screen and show it there, returning the one there to its group. The
     /// top screen keeps the keyboard.
     Down(i64),
@@ -72,7 +72,7 @@ impl Session {
                 self.keys = super::Keys::Top;
                 self.top = None;
                 self.builtin = *b;
-                self.device_open |= *b == clamshell_library::Builtin::Device;
+                self.device_open |= *b == clamshell_library::BuiltinApp::Device;
                 self.remember_in_front(super::InFront::Builtin(*b));
             }
             WindowCommand::Down(id) => {

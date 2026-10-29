@@ -36,7 +36,7 @@ impl State {
         if let Some(w) = self.session.top_window() {
             return Top::Window { program: self.session.running_of(w).is_some() };
         }
-        if self.session.shown_builtin() == Some(clamshell_library::Builtin::Device) {
+        if self.session.shown_builtin() == Some(clamshell_library::BuiltinApp::Device) {
             return Top::Device;
         }
         Top::Library(if self.library_view.pick().is_some() {

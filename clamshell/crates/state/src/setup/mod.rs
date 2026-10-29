@@ -1,4 +1,4 @@
-//! The Device view, where the device is set up: a built-in entry ([`clamshell_library::Builtin::Device`]),
+//! The Device view, where the device is set up: a built-in entry ([`clamshell_library::BuiltinApp::Device`]),
 //! which the session runs and shows on the main screen ([`crate::Top::Device`]). It is opened from Tools or the
 //! dock, and runs until Close, B or Quit closes it; Home goes to the Library and leaves it running. The
 //! first start's steps are Setup's ([`wizard`]).

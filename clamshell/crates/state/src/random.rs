@@ -894,7 +894,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     // password (see `crate::setup::wizard`). And Setup, while it shows, is in front.
     ensure!(!(s.setup().holds_programs() && effects.iter().any(|e| matches!(e, Effect::Launch { .. }))), "launched while the account holds programs");
     ensure!(
-        s.setup().wizard().is_none() || s.session().shown_builtin() == Some(clamshell_library::Builtin::Library),
+        s.setup().wizard().is_none() || s.session().shown_builtin() == Some(clamshell_library::BuiltinApp::Library),
         "Setup shows but the Library isn't in front"
     );
     // 4. Live window ids are unique.
@@ -976,7 +976,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         ensure!(sent.route == Some(s.pad().route()), "2: route sent {:?}, state {:?}", sent.route, s.pad().route());
         let in_force = s.keymapping().in_force(s.in_force().get(Setting::Keymap));
         ensure!(sent.keymap.as_ref() == Some(&in_force), "2: keymap sent {:?}, in force {}", sent.keymap.as_ref().map(|k| k.id), in_force.id);
-        let reads = s.setup().reads_account(s.session().runs_builtin(clamshell_library::Builtin::Device));
+        let reads = s.setup().reads_account(s.session().runs_builtin(clamshell_library::BuiltinApp::Device));
         ensure!(sent.account == reads, "2: account watched {}, read {reads}", sent.account);
     }
     let screens_on = s.idle().stage() < Stage::Off;
@@ -1124,7 +1124,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     for r in running {
         ensure!(items.iter().any(|i| i.id == r.id), "5: {} runs off the dock", r.id);
     }
-    for b in clamshell_library::Builtin::ALL.into_iter().filter(|b| session.runs_builtin(*b)) {
+    for b in clamshell_library::BuiltinApp::ALL.into_iter().filter(|b| session.runs_builtin(*b)) {
         ensure!(items.iter().any(|i| &*i.id == b.id()), "5: built-in {b:?} runs off the dock");
     }
 

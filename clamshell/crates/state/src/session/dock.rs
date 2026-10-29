@@ -17,7 +17,7 @@
 //! with each submenu as another page.
 
 use crate::Compositor;
-use clamshell_library::Builtin;
+use clamshell_library::BuiltinApp;
 use std::sync::Arc;
 
 use crate::effect::{Effect, Save};
@@ -156,9 +156,9 @@ impl Dock {
         }
         // The built-ins that run: the Library always pinned, first unless it was moved; the others where
         // a running entry goes.
-        for b in Builtin::ALL.into_iter().filter(|b| session.runs_builtin(*b)) {
+        for b in BuiltinApp::ALL.into_iter().filter(|b| session.runs_builtin(*b)) {
             if self.position(b.id()).is_none() {
-                let (at, pinned) = if b == Builtin::Library { (0, true) } else { (self.items.len(), false) };
+                let (at, pinned) = if b == BuiltinApp::Library { (0, true) } else { (self.items.len(), false) };
                 self.items.insert(at, DockItem { id: b.id().into(), pinned });
                 added = true;
             }
@@ -243,7 +243,7 @@ impl Dock {
     /// runs. The pins are saved.
     pub(crate) fn toggle_pin(&mut self, entry: Arc<str>, session: &Session, out: &mut Out) {
         // The Library stays pinned.
-        if &*entry == Builtin::Library.id() {
+        if &*entry == BuiltinApp::Library.id() {
             return;
         }
         match self.position(&entry).and_then(|i| self.items.get_mut(i)) {

@@ -150,7 +150,7 @@ impl State {
             // The Library comes in front, in its edit mode.
             Id::Device(crate::DeviceId::EditLibrary) => {
                 self.library_view.start_edit();
-                self.show_builtin(clamshell_library::Builtin::Library);
+                self.show_builtin(clamshell_library::BuiltinApp::Library);
             }
             Id::Device(id) => self.setup.tap(id, self.clock.mono(), out),
             Id::Setup(id) => self.setup.wizard_tap(id, out),

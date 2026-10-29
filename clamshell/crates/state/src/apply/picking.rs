@@ -1,6 +1,6 @@
 //! Apps' file choosers, picked in the Library (see [`crate::portal`]).
 
-use clamshell_library::Builtin;
+use clamshell_library::BuiltinApp;
 
 use crate::library_view::pick::PickFor;
 use crate::out::Out;
@@ -86,7 +86,7 @@ impl State {
                     out.log(crate::LogLevel::Info, format!("portal: request {id}: not started in {}: {e}", folder.display()));
                 }
                 self.portal.back = front;
-                self.show_builtin(Builtin::Library);
+                self.show_builtin(BuiltinApp::Library);
                 break;
             }
             out.log(crate::LogLevel::Warn, format!("portal: request {id} answered with nothing: the library has no Files tab to pick in"));
@@ -139,7 +139,7 @@ impl State {
     fn portal_back(&mut self) {
         let Some(group) = self.portal.back.take() else { return };
         let shown = self.session.windows().iter().any(|w| w.group.as_ref() == Some(&group) && !self.session.below(w.id));
-        if shown && self.session.shown_builtin() == Some(Builtin::Library) {
+        if shown && self.session.shown_builtin() == Some(BuiltinApp::Library) {
             self.session.focus(&group);
         }
     }
