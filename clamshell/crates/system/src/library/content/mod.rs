@@ -105,6 +105,11 @@ use clamshell_library::pattern::{self, hidden};
 use clamshell_library::titles::{episode_title, season_of, stem, untagged};
 use clamshell_library::{Entry, Launch, sort};
 
+mod config;
+mod paths;
+pub(crate) use config::*;
+pub(crate) use paths::*;
+
 pub(crate) use clamshell_library::config::{BrowseRoot, BuiltinPlace, Config, MountRule, On, OwnTab, Place, Rule, Scan, Source};
 
 /// A declared place with its path: its tab and the folders in it to it, as `Games/SNES`, worked out from
@@ -189,90 +194,6 @@ pub(crate) fn place(place: &str) -> (&str, &str) {
     match place.split_once('/') {
         Some((tab, path)) => (tab.trim(), path.trim().trim_matches('/')),
         None => (place, ""),
-    }
-}
-
-/// The config at `file`. It is the default if the file is missing or doesn't parse; in the second case,
-/// what is wrong with it is returned too.
-pub(crate) fn read_config(file: &Path) -> (Config, Option<String>) {
-    let Ok(text) = fs::read_to_string(file).inspect_err(|e| {
-        crate::os::log_unread("library", file, e);
-    }) else {
-        return (Config::default(), None);
-    };
-    match serde_json::from_str(&text) {
-        Ok(config) => (config, None),
-        Err(e) => {
-            log::warn!("library: {}: {e}", file.display());
-            (Config::default(), Some(format!("library.json: {e}")))
-        }
-    }
-}
-
-/// Writes `config` to `file`, one place, runner or source a line as the starter is written, whole (see
-/// `os::fs::write_file`): a crash mid-write leaves the last library.json.
-pub(crate) fn write_config(file: &Path, config: &Config) -> std::io::Result<()> {
-    crate::os::fs::write_file(file, config_text(config)?.as_bytes())
-}
-
-/// `config` as library.json's text: one place, runner or source a line.
-fn config_text(config: &Config) -> std::io::Result<String> {
-    let line = |v: &dyn erased::Line| v.line();
-    let list = |name: &str, items: Vec<String>| {
-        let lines: Vec<String> = items.iter().map(|i| format!("    {i}")).collect();
-        format!("  \"{name}\": [\n{}\n  ]", lines.join(",\n"))
-    };
-    let places = config.places.iter().map(|p| line(p)).collect::<Result<Vec<_>, _>>()?;
-    let runners = config.runners.iter().map(|r| line(r)).collect::<Result<Vec<_>, _>>()?;
-    let sources = config.sources.iter().map(|s| line(s)).collect::<Result<Vec<_>, _>>()?;
-    let keys = line(&config.keys)?;
-    Ok(format!("{{\n{},\n{},\n{},\n  \"keys\": {keys}\n}}\n", list("places", places), list("runners", runners), list("sources", sources)))
-}
-
-mod erased {
-    /// A value as one line of JSON, with spaces inside its braces.
-    pub(super) trait Line {
-        fn line(&self) -> std::io::Result<String>;
-    }
-
-    impl<T: serde::Serialize> Line for T {
-        fn line(&self) -> std::io::Result<String> {
-            let text = serde_json::to_string(self).map_err(std::io::Error::other)?;
-            Ok(spaced(&text))
-        }
-    }
-
-    /// `{"a":1,"b":[2,3]}` as `{ "a": 1, "b": [2, 3] }`, leaving strings as they are.
-    fn spaced(json: &str) -> String {
-        let mut out = String::with_capacity(json.len() * 5 / 4);
-        let (mut in_string, mut escaped) = (false, false);
-        let mut chars = json.chars().peekable();
-        while let Some(c) = chars.next() {
-            if in_string {
-                out.push(c);
-                match c {
-                    _ if escaped => escaped = false,
-                    '\\' => escaped = true,
-                    '"' => in_string = false,
-                    _ => {}
-                }
-                continue;
-            }
-            match c {
-                '"' => {
-                    in_string = true;
-                    out.push(c);
-                }
-                '{' if chars.peek() == Some(&'}') => out.push('{'),
-                '{' => out.push_str("{ "),
-                '}' if out.ends_with('{') => out.push('}'),
-                '}' => out.push_str(" }"),
-                ':' => out.push_str(": "),
-                ',' => out.push_str(", "),
-                c => out.push(c),
-            }
-        }
-        out
     }
 }
 
@@ -466,73 +387,6 @@ pub(crate) fn folder_art(folder: &Path) -> Option<PathBuf> {
         .iter()
         .flat_map(|name| IMAGES.iter().map(move |ext| format!("{name}.{ext}")))
         .find_map(|wanted| files.iter().find(|(n, p)| *n == wanted && p.is_file()).map(|(_, p)| p.clone()))
-}
-
-/// `~` and `~/...` against `home`.
-pub(crate) fn expand(path: &str, home: Option<&Path>) -> PathBuf {
-    match (path.strip_prefix("~/"), home) {
-        (Some(rest), Some(home)) => home.join(rest),
-        (None, Some(home)) if path == "~" => home.to_path_buf(),
-        _ => PathBuf::from(path),
-    }
-}
-
-/// Expands a dir as library.json gives it: environment variables first (see [`expand_vars`]), then `~/`.
-/// Errs with the name of a variable that has no value and no default.
-pub(crate) fn expand_dir(dir: &str, home: Option<&Path>) -> Result<PathBuf, String> {
-    expand_vars(dir, &|name| std::env::var(name).ok()).map(|d| expand(&d, home))
-}
-
-/// Expands `$NAME`, `${NAME}` and `${NAME:-default}` in `text` using `lookup`. The default is used when
-/// the variable is unset or empty, and is expanded itself. A `$` followed by anything else stays as it is.
-/// Errs with the name of a variable that has no value and no default.
-fn expand_vars(text: &str, lookup: &dyn Fn(&str) -> Option<String>) -> Result<String, String> {
-    let name_len =
-        |s: &str| s.char_indices().find(|&(i, c)| !(c == '_' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit()))).map_or(s.len(), |(i, _)| i);
-    let mut out = String::new();
-    let mut rest = text;
-    while let Some(at) = rest.find('$') {
-        out.push_str(rest.get(..at).unwrap_or(""));
-        let after = rest.get(at + 1..).unwrap_or("");
-        if let Some(inner) = after.strip_prefix('{') {
-            // Find the matching brace, since a default may contain `${...}` itself.
-            let mut depth = 1;
-            let end = inner.char_indices().find(|&(_, c)| {
-                depth += match c {
-                    '{' => 1,
-                    '}' => -1,
-                    _ => 0,
-                };
-                depth == 0
-            });
-            let Some((end, _)) = end else {
-                out.push_str(rest.get(at..).unwrap_or(""));
-                return Ok(out);
-            };
-            let body = inner.get(..end).unwrap_or("");
-            let (name, default) = match body.split_once(":-") {
-                Some((name, default)) => (name, Some(default)),
-                None => (body, None),
-            };
-            match (lookup(name).filter(|v| !v.is_empty()), default) {
-                (Some(value), _) => out.push_str(&value),
-                (None, Some(default)) => out.push_str(&expand_vars(default, lookup)?),
-                (None, None) => return Err(name.to_owned()),
-            }
-            rest = inner.get(end + 1..).unwrap_or("");
-        } else {
-            let len = name_len(after);
-            if len == 0 {
-                out.push('$');
-            } else {
-                let name = after.get(..len).unwrap_or("");
-                out.push_str(&lookup(name).ok_or_else(|| name.to_owned())?);
-            }
-            rest = after.get(len..).unwrap_or("");
-        }
-    }
-    out.push_str(rest);
-    Ok(out)
 }
 
 #[cfg(test)]
