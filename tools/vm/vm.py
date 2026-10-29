@@ -164,14 +164,14 @@ def ssh_key():
     sys.exit("no ssh key in ~/.ssh (ssh-keygen -t ed25519)")
 
 
-BASH_PROFILE = """\
-# The session on the first console: ClamShell's compositor by the repository's thor-session, its service
-# this machine's (as on the device: logged out once it has run, the console staying with why when it
-# can't go on).
-if [ "$(tty)" = /dev/tty1 ] && ! systemctl --user -q is-active clamshell.service; then
-    /mnt/thor/packages/thor-session/root/usr/bin/thor-session && exit
-fi
-"""
+def bash_profile():
+    """The session on the first console as the device starts it (thor-session's profile.d script), with
+    the repository's thor-session rather than the image's."""
+    script = (REPO / "packages/thor-session/root/etc/profile.d/thor-session.sh").read_text()
+    if "/usr/bin/thor-session" not in script:
+        sys.exit("thor-session.sh doesn't run /usr/bin/thor-session: vm.py can't put the repository's in")
+    return script.replace("/usr/bin/thor-session", "/mnt/thor/packages/thor-session/root/usr/bin/thor-session")
+
 
 # Where a program built on the host runs from in the machine: a copy on its disk. Run from the 9p mount
 # itself, a program hangs after the machine wakes from sleep as soon as it reaches a page of its binary not
@@ -205,7 +205,7 @@ def service():
 
 def session_files():
     return [
-        (f"/home/{USER}/.bash_profile", BASH_PROFILE),
+        (f"/home/{USER}/.bash_profile", bash_profile()),
         (f"/home/{USER}/.config/systemd/user/clamshell.service", service()),
         (f"/home/{USER}/.config/systemd/user/session.slice.d/thor.conf",
          (REPO / "packages/thor-session/root/usr/lib/systemd/user/session.slice.d/thor.conf").read_text()),
