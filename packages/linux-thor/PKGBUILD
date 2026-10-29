@@ -48,7 +48,7 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         # power, FastRPC to the ADSP's sensor hub (the motion sensors), deep sleep's wake by a charger
         # and no battery notifications while asleep (0505 changes deep sleep only; 0547 any sleep).
         # thor-*: the body's motor as an LRA (PB-OS's device tree lines, tried on a Thor), the gamepad
-        # MCU's joystick frame settable, the sensor hub's device tree nodes (PB-OS's), FastRPC's legacy
+        # MCU's joystick frame settable, the sensor hub's process types and PDR (PB-OS's), FastRPC's legacy
         # mappings refused without a session. (The top panel's frame length calibrated per unit,
         # ROCKNIX's, is Armada's 0518 since their 664da8c; it was our thor-0005.) rocknix-*: ROCKNIX's
         # (ROCKNIX/distribution, packages/linux/patches/7.2, at 86d6ef9c76, PR #3495, tried on a Thor):
@@ -77,7 +77,7 @@ sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             659f5142f8e34fcaf9dc970b9ff612a23ce766a5e40e6750cc4762001fc63be6
             28a66e81b378e90d2dd996a750d3bd3da64cd8ce8f40c873fd98d3b7ac289ba0
             c5c3784a3a6330813a1fb1bf0b5e1017e48262918b8903da867ba4bf9161c801
-            9a49eff03726996373b65c9bddb70933b0da31ff323d20536e65aac5c14129d4
+            b065edfcc841075261dcc63573b9875cadd74f216d36167630f9d398c22c7365
             57ea5d13bcb9b00609bb02da07ba0b38398960f4ba17f9fadbdd79ae9677d966
             ffeb7c26a9e482734553faa4bb08b035b41a16ac9c4172334bbbf736ad2afa30
             b76d35f52f1c936ed0d01eacb8a41ce6149fec324a896bfbc5f0ec9da297cfd1
