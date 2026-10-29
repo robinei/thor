@@ -199,7 +199,7 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
                 widgets::switch_row(f, Id::Keymap(KeymapId::Toggle(p)), row, small, p.label(), v > 0);
             } else {
                 let value = shown(p, v);
-                let slider = view.slider.filter(|sl| sl.control == Control::Param(p));
+                let slider = f.s.held_slider().filter(|sl| sl.control == Control::Param(p));
                 // The track spans the screen's width, over the drawing, as the bar's sliders do.
                 let track = Track { x0: body.x, w: body.w };
                 // A held slider is drawn last, so its card covers the rows below it.

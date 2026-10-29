@@ -112,8 +112,8 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
 /// The slider while one is moving, or else a notice of what a key just did. It is drawn last, over the
 /// bar and the tab below it.
 pub(super) fn draw_slider_over(f: &mut Frame, screen: Rect, bar_h: f32) {
-    if let Some(slider) = f.s.levels().slider() {
-        draw_slider(f, *slider, screen.w, bar_h);
+    if let Some(slider) = f.s.held_slider().filter(|s| s.control.level().is_some()) {
+        draw_slider(f, slider, screen.w, bar_h);
     } else if let Some(notice) = f.s.bottom().notice() {
         draw_notice(f, &notice.what, screen.w, bar_h);
     }
@@ -124,7 +124,7 @@ pub(super) fn draw_slider_over(f: &mut Frame, screen: Rect, bar_h: f32) {
 fn draw_notice(f: &mut Frame, what: &NoticeKind, w: f32, bar_h: f32) {
     let (icon, text): (Option<Icon>, Fmt<96>) = match what {
         NoticeKind::Level(control) => {
-            let level = f.s.levels().control(*control);
+            let level = f.s.control(*control);
             let icon = level_icon(f, *control, level.unwrap_or(0));
             let text = match (control, level) {
                 (Control::Volume, _) if f.s.levels().muted() => Fmt::of(format_args!("Muted")),

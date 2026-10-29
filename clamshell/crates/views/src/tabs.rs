@@ -89,12 +89,12 @@ pub(super) fn view(tab: Tab) -> TabView {
             Button { id: Id::Tab(Tab::Bluetooth), face: Face::Icon(Icon::Bluetooth { connected }), tone: reading(bt.on && connected) }
         }),
         Tab::Volume => tab_view(levels::draw_volume, |s| {
-            let volume = s.levels().control(Control::Volume);
+            let volume = s.control(Control::Volume);
             let icon = Icon::volume(volume.unwrap_or(0), s.levels().muted());
             Button { id: Id::Control(Control::Volume), face: Face::Icon(icon), tone: reading(volume.is_some()) }
         }),
         Tab::Brightness => tab_view(levels::draw_brightness, |s| {
-            let lit = s.levels().control(Control::Brightness).is_some();
+            let lit = s.control(Control::Brightness).is_some();
             Button { id: Id::Control(Control::Brightness), face: Face::Icon(Icon::Brightness), tone: reading(lit) }
         }),
         // Its button is the clock.

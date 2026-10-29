@@ -17,58 +17,71 @@ impl State {
         self.levels.on_event(event, self.clock.mono(), out);
     }
 
+    /// A slider held, slid or let go. Each kind is started from, and sets, its own area's value: a level, a
+    /// keymap's or a curve's parameter, or a setting; and when it is let go after moving, its area saves.
     pub(crate) fn on_slide(&mut self, slide: Slide, out: &mut Out) {
         match slide {
-            Slide::Start { control: Control::Param(param), x, width } => {
-                self.keymapping.param_slide_start(param, x, width);
-            }
-            Slide::Start { control: Control::Curve(param), x, width } => {
-                self.curving.slide_start(param, x, width);
-            }
-            Slide::Start { control: control @ Control::Setting(setting), x, width } => {
-                let len = self.setting_stops(setting);
-                let own = match self.panel().source(setting) {
-                    crate::settings::panel::Source::Written(_) => Some(self.panel().tile_value(setting)),
-                    _ => None,
-                };
-                let at = own.and_then(|v| (1..len).find(|i| self.setting_stop(setting, *i) == Some(Some(v)))).unwrap_or(0);
-                let (at, hi) = (u8::try_from(at).unwrap_or(0), u8::try_from(len.saturating_sub(1)).unwrap_or(0));
-                self.prefs.hold_slider(Some(Slider::ranged(control, at, 0, hi, x, width)));
-            }
             Slide::Start { control, x, width } => {
-                self.levels.slide_start(control, x, width);
-            }
-            Slide::To { x } if self.levels.slider().is_none() => {
-                self.keymapping.param_slide_to(x);
-                self.curving.slide_to(x);
-                self.setting_slide_to(x);
+                self.slider = match control {
+                    Control::Param(param) => self.keymapping.param_slider(param, x, width),
+                    Control::Curve(param) => self.curving.slider(param, x, width),
+                    Control::Setting(setting) => Some(self.setting_slider_at(setting, x, width)),
+                    control => Some(self.levels.slider(control, x, width)),
+                };
             }
             Slide::To { x } => {
-                self.levels.change(self.clock.mono(), |l| l.slide_to(x, out));
+                let Some(slider) = self.slider else { return };
+                let value = slider.value_at(x);
+                if value == slider.value {
+                    return;
+                }
+                let value = match slider.control {
+                    Control::Param(param) => self.keymapping.param_slid(param, value),
+                    Control::Curve(param) => {
+                        self.curving.slid(param, value);
+                        Some(value)
+                    }
+                    Control::Setting(setting) => {
+                        self.setting_slid(setting, value);
+                        Some(value)
+                    }
+                    control => {
+                        self.levels.change(self.clock.mono(), |l| l.slid(control, value, out));
+                        Some(value)
+                    }
+                };
+                if let Some(value) = value.filter(|v| *v != slider.value) {
+                    self.slider = Some(Slider { value, moved: true, ..slider });
+                }
             }
             Slide::End => {
-                self.levels.slide_end();
-                self.keymapping.param_slide_end(out);
-                self.curving.slide_end(out);
-                let held = self.prefs.slider();
-                self.prefs.hold_slider(None);
-                if held.is_some_and(|s| s.moved) {
-                    out.effects.push(self.prefs.save_effect());
+                let Some(slider) = self.slider.take().filter(|s| s.moved) else { return };
+                match slider.control {
+                    Control::Param(_) => out.effects.push(self.keymapping.save()),
+                    Control::Curve(_) => out.effects.push(self.curving.save_effect()),
+                    Control::Setting(_) => out.effects.push(self.prefs.save_effect()),
+                    // A level stays where it was set; the brightness saves itself a moment later.
+                    _ => {}
                 }
             }
         }
     }
 
-    /// A setting's slider moved: the stop under the finger is written where the panel edits at once (Default
-    /// clears it there), and saved when the finger lifts.
-    fn setting_slide_to(&mut self, x: f32) {
-        let Some(slider) = self.prefs.slider() else { return };
-        let Control::Setting(setting) = slider.control else { return };
-        let position = slider.value_at(x);
-        if position == slider.value {
-            return;
-        }
-        self.prefs.hold_slider(Some(Slider { value: position, moved: true, ..slider }));
+    /// A setting's slider, on the stop of the value written at the level edited, or Default.
+    fn setting_slider_at(&self, setting: Setting, x: f32, width: f32) -> Slider {
+        let len = self.setting_stops(setting);
+        let own = match self.panel().source(setting) {
+            crate::settings::panel::Source::Written(_) => Some(self.panel().tile_value(setting)),
+            _ => None,
+        };
+        let at = own.and_then(|v| (1..len).find(|i| self.setting_stop(setting, *i) == Some(Some(v)))).unwrap_or(0);
+        let (at, hi) = (u8::try_from(at).unwrap_or(0), u8::try_from(len.saturating_sub(1)).unwrap_or(0));
+        Slider::ranged(Control::Setting(setting), at, 0, hi, x, width)
+    }
+
+    /// A setting's slider moved to stop `position`: written where the panel edits at once (Default clears
+    /// it there), and saved when the finger lifts.
+    fn setting_slid(&mut self, setting: Setting, position: u8) {
         if let Some(stop) = self.setting_stop(setting, usize::from(position)) {
             let entry = self.panel().editing().map(|g| g.id.clone());
             self.prefs.set(entry.as_ref(), setting, stop);
@@ -77,13 +90,15 @@ impl State {
 
     /// The slider held, of whichever kind: a level's, a keymap's or a curve's parameter's, or a setting's.
     pub fn held_slider(&self) -> Option<Slider> {
-        let levels = self.levels.slider().copied();
-        levels.or(self.keymapping.edit().slider).or(self.curving.slider()).or(self.prefs.slider())
+        self.slider
     }
 
-    /// A setting's slider held, if one is (see [`crate::Prefs::slider`]).
-    pub fn setting_slider(&self) -> Option<Slider> {
-        self.prefs.slider()
+    /// The level a bar control shows now: the slider's value while it is slid, otherwise the level's.
+    pub fn control(&self, control: Control) -> Option<u8> {
+        match self.slider {
+            Some(s) if s.control == control => Some(s.value),
+            _ => self.levels.level(control.level()?),
+        }
     }
 
     /// How many stops `setting`'s slider has at the level edited (see [`State::setting_stop`]).

@@ -138,15 +138,13 @@ pub struct Keymapping {
 
 /// The edit screen's own state, kept while the screens for its input are open. It holds the layer shown
 /// and edited, the input selected into the panel and which of its actuations is shown, whether "No
-/// changes" waits for confirmation, and the slider of one of the input's parameters while a finger is on
-/// it.
+/// changes" waits for confirmation.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct EditView {
     pub layer: Layer,
     pub selected: Option<Input>,
     pub act: Actuation,
     pub clearing: bool,
-    pub slider: Option<Slider>,
 }
 
 /// A stroke of the keyboard as a chord.

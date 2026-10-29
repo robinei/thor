@@ -204,6 +204,9 @@ pub struct State {
     portal: portal::Portal,
     /// Every entry's settings, and the level the settings panel edits.
     prefs: Prefs,
+    /// The slider held, while a finger is on it: a level's in the bar, a keymap's or a curve's parameter's,
+    /// or a setting's (see [`apply::sliders`]). Its control says whose.
+    slider: Option<Slider>,
     keyboard: Keyboard,
     /// The keymaps and their screens (see [`crate::keymap::screens`]).
     keymapping: Keymapping,

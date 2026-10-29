@@ -22,13 +22,11 @@ pub enum CurveScreen {
     Edit(u16),
 }
 
-/// The curves and their screens: every curve, the screen open over the settings tab, and a parameter's
-/// slider while a finger is on it.
+/// The curves and their screens: every curve, and the screen open over the settings tab.
 #[derive(Debug, Clone, Default)]
 pub struct Curving {
     curves: Curves,
     open: Option<CurveScreen>,
-    slider: Option<Slider>,
 }
 
 impl Curving {
@@ -43,11 +41,6 @@ impl Curving {
     /// The curves' screen open over the settings tab, if one is.
     pub fn screen(&self) -> Option<CurveScreen> {
         self.open
-    }
-
-    /// A parameter's slider, while a finger is on it.
-    pub fn slider(&self) -> Option<Slider> {
-        self.slider
     }
 
     fn picker_screen(&self) -> Option<PickerScreen> {
@@ -100,7 +93,6 @@ impl Curving {
     /// Goes back one screen: from the edit screen to the picker, within the picker, and from the picker to
     /// the settings.
     pub(crate) fn back(&mut self) {
-        self.slider = None;
         self.open = match self.open {
             None => None,
             Some(CurveScreen::Picker(p)) => picker::back(p).map(CurveScreen::Picker),
@@ -108,44 +100,28 @@ impl Curving {
         };
     }
 
-    /// A finger is held or slid on a parameter's row of the edit screen. Its slider starts from the value
-    /// now.
-    pub(crate) fn slide_start(&mut self, param: CurveParam, x: f32, width: f32) {
+    /// A finger is held or slid on a parameter's row of the edit screen: its slider, from the value now.
+    /// None off the edit screen.
+    pub(crate) fn slider(&self, param: CurveParam, x: f32, width: f32) -> Option<Slider> {
+        let Some(CurveScreen::Edit(id)) = self.open else {
+            return None;
+        };
+        let curve = self.in_force(id)?;
+        let (lo, hi, _) = param.range();
+        Some(Slider::ranged(Control::Curve(param), param.position(param.get(curve)), param.position(lo), param.position(hi), x, width))
+    }
+
+    /// A parameter's slider moved to `position`. The curve follows at once, so the game shows it as it
+    /// changes (it is saved when the finger lifts).
+    pub(crate) fn slid(&mut self, param: CurveParam, position: u8) {
         let Some(CurveScreen::Edit(id)) = self.open else {
             return;
         };
-        let Some(curve) = self.in_force(id) else {
-            return;
-        };
-        let (lo, hi, _) = param.range();
-        self.slider = Some(Slider::ranged(Control::Curve(param), param.position(param.get(curve)), param.position(lo), param.position(hi), x, width));
-    }
-
-    /// The slider moved. The curve follows at once, so the game shows it as it changes.
-    pub(crate) fn slide_to(&mut self, x: f32) {
-        let (Some(slider), Some(CurveScreen::Edit(id))) = (self.slider, self.open) else {
-            return;
-        };
-        let Control::Curve(param) = slider.control else {
-            return;
-        };
-        let position = slider.value_at(x);
-        if position == slider.value {
-            return;
-        }
-        self.slider = Some(Slider { value: position, moved: true, ..slider });
         self.curves.edit(id, |p| {
             let before = p.body;
             param.set(&mut p.body, param.value(position));
             p.body != before
         });
-    }
-
-    /// The finger lifted. The curves are saved if the slider changed anything.
-    pub(crate) fn slide_end(&mut self, out: &mut Out) {
-        if self.slider.take().is_some_and(|s| s.moved) {
-            out.effects.push(self.save_effect());
-        }
     }
 
     pub(crate) fn save_effect(&self) -> Effect {
@@ -169,7 +145,6 @@ impl Owner for Curving {
         self.open = screen.map(CurveScreen::Picker);
     }
     fn open_edit(&mut self, id: u16) {
-        self.slider = None;
         self.open = Some(CurveScreen::Edit(id));
     }
     fn save(&mut self) -> Effect {
@@ -257,7 +232,7 @@ mod tests {
         assert_eq!(s.curving().screen(), Some(CurveScreen::Edit(1)));
         let before = *s.curving().in_force(1).unwrap();
         assert!(s.applied(Slide::Start { control: Control::Curve(CurveParam::Highlights), x: 300.0, width: 620.0 }.into()).is_empty());
-        let slider = s.curving().slider().unwrap();
+        let slider = s.held_slider().unwrap();
         assert_eq!(slider.start, CurveParam::Highlights.position(before.highlights));
         assert_eq!(s.held_slider().map(|s| s.control), Some(slider.control), "the slider held, as the UI sees it");
         // Moving right raises the peak at once, without saving yet.
@@ -265,10 +240,10 @@ mod tests {
         assert!(saved(&fx).is_none(), "{fx:?}");
         let moved = *s.curving().in_force(1).unwrap();
         assert!(moved.highlights > before.highlights, "{moved:?}");
-        assert_eq!(CurveParam::Highlights.position(moved.highlights), s.curving().slider().unwrap().value);
+        assert_eq!(CurveParam::Highlights.position(moved.highlights), s.held_slider().unwrap().value);
         let fx = s.applied(Slide::End.into());
         assert_eq!(saved(&fx).and_then(|c| c.get(1)).map(|p| p.body), Some(moved));
-        assert_eq!(s.curving().slider(), None);
+        assert_eq!(s.held_slider(), None);
         // A touch that doesn't move saves nothing.
         s.applied(Slide::Start { control: Control::Curve(CurveParam::Black), x: 300.0, width: 620.0 }.into());
         assert!(saved(&s.applied(Slide::End.into())).is_none());

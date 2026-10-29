@@ -62,7 +62,6 @@ impl Keymapping {
         if self.keymaps.get(id).is_none_or(|k| k.layer_name(view.layer).is_none()) {
             view.layer = Layer::BASE;
         }
-        view.slider = None;
         out.effects.push(self.save());
     }
 

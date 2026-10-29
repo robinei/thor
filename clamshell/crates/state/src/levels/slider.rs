@@ -117,33 +117,19 @@ impl Slider {
 }
 
 impl Levels {
-    pub(crate) fn slide_start(&mut self, control: Control, x: f32, width: f32) {
-        // Without a reading, as on a desktop without a backlight, start from the middle so the slider
-        // still shows.
-        let start = self.control(control).unwrap_or(UNKNOWN_START);
-        self.slider = Some(Slider::new(control, start, x, width));
+    /// A bar control's slider, from the level now under the finger at `x`. Without a reading, as on a
+    /// desktop without a backlight, it starts from the middle so the slider still shows.
+    pub(crate) fn slider(&self, control: Control, x: f32, width: f32) -> Slider {
+        let start = control.level().and_then(|l| self.level(l)).unwrap_or(UNKNOWN_START);
+        Slider::new(control, start, x, width)
     }
 
-    pub(crate) fn slide_to(&mut self, x: f32, out: &mut Out) {
-        let Some(slider) = self.slider.as_mut() else {
-            return;
-        };
-        let Some(level) = slider.control.level() else {
-            return;
-        };
-        let value = slider.value_at(x);
-        if value == slider.value {
-            return;
+    /// A bar control's slider moved to `value`: the same level as the tab's row is set. Turning the volume
+    /// up or down unmutes.
+    pub(crate) fn slid(&mut self, control: Control, value: u8, out: &mut Out) {
+        if let Some(level) = control.level() {
+            self.set(level, value, out);
         }
-        slider.value = value;
-        slider.moved = true;
-        // The same level as the tab's row. Turning the volume up or down unmutes.
-        self.set(level, value, out);
-    }
-
-    /// The finger lifted. The level stays where it was set.
-    pub(crate) fn slide_end(&mut self) {
-        self.slider = None;
     }
 }
 
@@ -179,7 +165,7 @@ mod tests {
         // A finger at 300 on a 620-wide screen, at 80 %. 281.4 fits left of it for 80 % of the track, and
         // more fits right of it, so the track is the longest allowed, half the screen.
         slide(&mut s, Slide::Start { control: Control::Brightness, x: 300.0, width: 620.0 });
-        let slider = *s.levels().slider().unwrap();
+        let slider = s.held_slider().unwrap();
         assert!((slider.length - 310.0).abs() < 0.01);
         assert!((slider.track_start() + 0.8 * slider.length - 300.0).abs() < 0.01, "80% under the finger");
         assert!(slider.track_start() >= 0.0 && slider.track_start() + slider.length <= 620.0, "on screen");
@@ -187,7 +173,7 @@ mod tests {
         assert_eq!(slide(&mut s, Slide::To { x: 2000.0 }), vec![Effect::Brightness { level: 100, shares: vec![] }], "clamped");
         assert_eq!(slide(&mut s, Slide::To { x: 2100.0 }), vec![], "no change, nothing sent");
         slide(&mut s, Slide::End);
-        assert_eq!((s.levels().slider(), s.levels().control(Control::Brightness)), (None, Some(100)));
+        assert_eq!((s.held_slider(), s.control(Control::Brightness)), (None, Some(100)));
     }
 
     #[test]
@@ -241,6 +227,6 @@ mod tests {
     fn without_a_level_the_slider_starts_in_the_middle() {
         let mut s = state();
         slide(&mut s, Slide::Start { control: Control::Brightness, x: 300.0, width: 620.0 });
-        assert_eq!(s.levels().slider().map(|s| s.start), Some(50));
+        assert_eq!(s.held_slider().map(|s| s.start), Some(50));
     }
 }

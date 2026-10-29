@@ -27,7 +27,6 @@ use crate::nav::lists::{ListId, RowPart};
 use crate::out::Out;
 use crate::resume::SAVE_AFTER;
 use crate::{AudioId, LevelEvent};
-use slider::{Control, Slider};
 
 /// A level row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -198,8 +197,6 @@ pub struct Levels {
     /// brightness until ClamShell sets one; once ClamShell has, the backlights hold what it set (dimmed,
     /// say), so a reading is no longer the brightness.
     untouched: Option<u8>,
-    /// Volume or brightness being slid in the bar, if any.
-    slider: Option<Slider>,
     /// A change of the brightness, saved a moment later.
     unsaved: Debounce,
     /// The brightness changed during [`Levels::change`].
@@ -251,10 +248,6 @@ impl Levels {
         &self.brightness
     }
 
-    pub fn slider(&self) -> Option<&Slider> {
-        self.slider.as_ref()
-    }
-
     /// A level row's value now.
     pub fn level(&self, level: Level) -> Option<u8> {
         match level {
@@ -262,14 +255,6 @@ impl Levels {
             Level::Brightness => self.brightness.level.or(self.untouched),
             Level::Stream(i) => self.audio.streams.get(usize::from(i)).map(|s| s.volume),
             Level::Backlight(i) => self.backlights.0.get(usize::from(i)).map(|name| self.brightness.share(name)),
-        }
-    }
-
-    /// The level a bar control shows now: the slider's value while sliding, otherwise the level's.
-    pub fn control(&self, control: Control) -> Option<u8> {
-        match self.slider {
-            Some(s) if s.control == control => Some(s.value),
-            _ => self.level(control.level()?),
         }
     }
 

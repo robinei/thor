@@ -29,7 +29,7 @@ fn profile(s: &mut State, id: ProfileId) -> Vec<Effect> {
 /// Slides the selected input's parameter to `value`: a finger is held on its row, moved and lifted.
 fn slide(s: &mut State, param: Param, value: u8) -> Vec<Effect> {
     s.applied(Slide::Start { control: Control::Param(param), x: 300.0, width: 620.0 }.into());
-    let slider = s.keymapping().edit().slider.unwrap();
+    let slider = s.held_slider().unwrap();
     assert_eq!(
         slider.start,
         param.get(&s.keymapping().param_base(s.keymapping().screen().and_then(Screen::keymap).unwrap(), s.keymapping().edit().selected.unwrap()).unwrap())
@@ -516,7 +516,7 @@ fn parameters_slide_and_switch_whatever_the_mapping() {
     // An input as on the pad can still be tuned. The slider changes it as it moves, and it is saved when
     // the finger lifts.
     s.applied(Slide::Start { control: Control::Param(Param::Deadzone), x: 300.0, width: 620.0 }.into());
-    let slider = s.keymapping().edit().slider.unwrap();
+    let slider = s.held_slider().unwrap();
     assert_eq!((slider.start, slider.control), (0, Control::Param(Param::Deadzone)));
     // Deadzone's range is 0-50, so about a quarter of the track is 12.
     assert_eq!((slider.lo, slider.hi), (0, 50));
@@ -524,10 +524,10 @@ fn parameters_slide_and_switch_whatever_the_mapping() {
     assert!(fx.iter().all(|e| !matches!(e, Effect::Save(_))), "not saved while sliding: {fx:?}");
     let k = s.keymapping().keymaps().get(1).unwrap().get(ls).copied();
     assert_eq!(k.map(|b| (b.output, b.deadzone)), Some((Output::Stick(Side::Left), 12)));
-    assert_eq!(s.keymapping().edit().slider.map(|s| s.value), Some(12));
+    assert_eq!(s.held_slider().map(|s| s.value), Some(12));
     let fx = s.applied(Slide::End.into());
     assert!(matches!(fx.as_slice(), [Effect::Save(Save::Keymaps(_))]), "{fx:?}");
-    assert_eq!(s.keymapping().edit().slider, None);
+    assert_eq!(s.held_slider(), None);
     // The value is kept within its range, and a switch flips.
     slide(&mut s, Param::Deadzone, 90);
     assert_eq!(s.keymapping().keymaps().get(1).unwrap().get(ls).map(|b| b.deadzone), Some(50));
@@ -548,9 +548,9 @@ fn parameters_slide_and_switch_whatever_the_mapping() {
     assert_eq!(slide_start(&mut s, Param::Threshold), None);
     keymap(&mut s, KeymapId::Input(Input::Button(Button::A)));
     assert_eq!(slide_start(&mut s, Param::Speed), None);
-    // The bar's sliders are unchanged by it.
+    // The bar's sliders are held as their own.
     s.applied(Slide::Start { control: Control::Volume, x: 300.0, width: 620.0 }.into());
-    assert!(s.levels().slider().is_some() && s.keymapping().edit().slider.is_none());
+    assert_eq!(s.held_slider().map(|s| s.control), Some(Control::Volume));
     s.applied(Slide::End.into());
 }
 
@@ -609,7 +609,7 @@ fn the_hold_and_double_tabs_edit_their_own_bindings() {
 
 fn slide_start(s: &mut State, param: Param) -> Option<Slider> {
     s.applied(Slide::Start { control: Control::Param(param), x: 300.0, width: 620.0 }.into());
-    let slider = s.keymapping().edit().slider;
+    let slider = s.held_slider();
     s.applied(Slide::End.into());
     slider
 }

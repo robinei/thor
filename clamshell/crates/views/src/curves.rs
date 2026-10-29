@@ -75,7 +75,7 @@ fn edit(f: &mut Frame, id: u16) {
     // The track spans the screen's width, as the keymap parameters' sliders do.
     let body = f.body();
     let track = Track { x0: body.x, w: body.w };
-    let slider = s.curving().slider();
+    let slider = s.held_slider().filter(|s| matches!(s.control, Control::Curve(_)));
     let mut held = None;
     for p in CurveParam::ALL {
         let Some(row) = col.next(rh) else {
@@ -115,7 +115,7 @@ fn edit(f: &mut Frame, id: u16) {
     let mut held_setting = None;
     if let Some(row) = col.next(rh) {
         let control = Control::Setting(setting);
-        let sl = s.setting_slider().filter(|sl| sl.control == control);
+        let sl = s.held_slider().filter(|sl| sl.control == control);
         let written = matches!(source, Source::Written(_));
         let text = setting_text(s, setting, written);
         if let Some(sl) = sl {

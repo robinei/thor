@@ -3,15 +3,12 @@
 use super::*;
 
 impl Keymapping {
-    /// A finger is held or slid on a parameter's row of the panel. This starts its slider from its current
-    /// value.
-    pub(crate) fn param_slide_start(&mut self, param: Param, x: f32, width: f32) {
-        let Some((_, _, b)) = self.param_binding(param) else {
-            return;
-        };
-        // The current value starts under the finger, as with the bar's sliders.
+    /// A finger is held or slid on a parameter's row of the panel: its slider, from its current value
+    /// under the finger, as with the bar's sliders. None if the parameter isn't the selected input's.
+    pub(crate) fn param_slider(&self, param: Param, x: f32, width: f32) -> Option<Slider> {
+        let (_, _, b) = self.param_binding(param)?;
         let range = param.range();
-        self.edit.slider = Some(Slider::ranged(Control::Param(param), param.get(&b), *range.start(), *range.end(), x, width));
+        Some(Slider::ranged(Control::Param(param), param.get(&b), *range.start(), *range.end(), x, width))
     }
 
     /// What the selected input's parameters start from in the layer and actuation shown: its binding
@@ -47,30 +44,12 @@ impl Keymapping {
         self.keymaps.edit(id, |k| k.set_of(layer, input, act, (!plain).then_some(b)))
     }
 
-    /// The parameter's slider moved. The binding follows at once, so the pad gets the keymap as it
-    /// changes, and it is saved when the finger lifts.
-    pub(crate) fn param_slide_to(&mut self, x: f32) {
-        let Some(slider) = self.edit.slider else {
-            return;
-        };
-        let Control::Param(param) = slider.control else {
-            return;
-        };
-        let Some((id, input, mut b)) = self.param_binding(param) else {
-            return;
-        };
-        param.set(&mut b, slider.value_at(x));
-        let value = param.get(&b);
-        if value != slider.value {
-            self.edit.slider = Some(Slider { value, moved: true, ..slider });
-            self.set_tuned(id, input, b);
-        }
-    }
-
-    /// The finger lifted. The keymaps are saved if the slider changed anything.
-    pub(crate) fn param_slide_end(&mut self, out: &mut Out) {
-        if self.edit.slider.take().is_some_and(|s| s.moved) {
-            out.effects.push(self.save());
-        }
+    /// The parameter's slider moved to `value`. The binding follows at once, so the pad gets the keymap
+    /// as it changes (it is saved when the finger lifts). Returns the value the parameter took.
+    pub(crate) fn param_slid(&mut self, param: Param, value: u8) -> Option<u8> {
+        let (id, input, mut b) = self.param_binding(param)?;
+        param.set(&mut b, value);
+        self.set_tuned(id, input, b);
+        Some(param.get(&b))
     }
 }
