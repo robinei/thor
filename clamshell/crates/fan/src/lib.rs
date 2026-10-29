@@ -1,7 +1,7 @@
 //! The fan's mode, as ClamShell writes it and the daemon (`clamshell-fan`) reads it. ClamShell's Fan
 //! setting chooses the mode (`clamshell_state::settings::fan`) and writes it to [`MODE_FILE`], which the
 //! image makes writable by the session's user. Without that file, the daemon runs [`Mode::Auto`]. The
-//! daemon has its own curves and steps for each mode.
+//! curves and steps for each mode are the device profile's (`clamshell_device::fan`).
 
 /// Where the mode is written, as its name from [`Mode::name`].
 pub const MODE_FILE: &str = "/run/clamshell-fan";

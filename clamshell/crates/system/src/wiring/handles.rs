@@ -22,8 +22,7 @@ pub struct Handles {
     pub(crate) store: Option<Writer>,
     /// The entries waiting for their metadata.
     pub(crate) fetching: crate::library::meta::Queue,
-    /// Reads the library again on a thread, and fetches what it wants. With `true` the metadata misses
-    /// are forgotten first.
+    /// Reads the library again on a thread, and fetches what it wants (see [`super::Rescan`]).
     pub(crate) rescan: Worker<super::Rescan>,
     pub(crate) touchpad: Worker<touchpad::Command>,
     pub(crate) mixer: Worker<mixer::Command>,

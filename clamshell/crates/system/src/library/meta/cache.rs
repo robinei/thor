@@ -1,6 +1,6 @@
 //! What was fetched about an entry, and a video's length. Each is a file per entry in the art cache,
 //! beside its images: `<key>-meta.json` and `<key>-probe.json`, with the entry's id inside. Each file is
-//! written whole by one thread, either the metadata fetcher or the folder browser.
+//! written whole by the metadata fetcher.
 
 use std::collections::HashMap;
 use std::fs;

@@ -120,6 +120,9 @@ fn connect(client: UnixStream, upstream: &Path, settings: &Path, ended: &mpsc::S
 #[allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 mod tests {
     use super::objects::*;
+    /// xdg_toplevel's `set_app_id` and the `activated` state, which pass through as they are.
+    const SET_APP_ID: u16 = 3;
+    const ACTIVATED: u32 = 4;
     use super::wire::*;
     use super::*;
     use std::io::IoSliceMut;

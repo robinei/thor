@@ -74,7 +74,7 @@ pub(crate) enum How {
     /// SteamGridDB, by name.
     SteamGridDb,
     /// A video's length from ffprobe, and a frame from a quarter of the way in from ffmpeg. These are
-    /// stored apart from the rest (see [`crate::store`]).
+    /// stored apart from the rest, in the art cache's `<key>-probe.json` (see [`cache`]).
     Duration,
 }
 

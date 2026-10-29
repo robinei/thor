@@ -283,8 +283,8 @@ impl Charge {
         let switches = self.switches.and_then(|names| oem_switches(Path::new("/sys/bus/auxiliary/devices"), names).map(|dir| (dir, names)));
         let firmware = self.hold == Hold::Firmware && switches.is_some();
         let (_, _, charge_now, limit80) = targets(self.hold, limit, firmware);
-        // The switch files show what was last written, or -1 before that, so the firmware's defaults are
-        // written once.
+        // The switch files show what was last written, or -1 before that. They are written where they
+        // differ, and at every pass while the firmware holds the limit, which may forget it.
         if let Some((dir, names)) = switches {
             for (name, want) in [(names.charge_now, charge_now), (names.limit80, limit80)] {
                 let file = dir.join(name);

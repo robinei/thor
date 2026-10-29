@@ -101,9 +101,6 @@ pub struct Loaded {
     pub keys: Keys,
 }
 
-/// Reads library.json's sources into its places (see [`content`]), with each entry's runner and where
-/// its metadata comes from. Adds ClamShell's own tabs as declared and puts the tabs in order. Then adds
-/// each entry's plays, whether it is a favourite, and what was fetched about it.
 /// Writes library.json as `config` (see [`content::write_config`]). Errs if there is no library.json
 /// to write (no config dir) or writing failed.
 pub fn write(sources: &Sources, config: &clamshell_library::config::Config) -> std::io::Result<()> {
@@ -111,6 +108,9 @@ pub fn write(sources: &Sources, config: &clamshell_library::config::Config) -> s
     content::write_config(file, config)
 }
 
+/// Reads library.json's sources into its places (see [`content`]), with each entry's runner and where
+/// its metadata comes from. Adds ClamShell's own tabs as declared and puts the tabs in order. Then adds
+/// each entry's plays, whether it is a favourite, and what was fetched about it.
 pub fn load(sources: &Sources) -> Loaded {
     let (config, config_problem) = sources.config.as_deref().map(content::read_config).unwrap_or_default();
     let config_problem_none = config_problem.is_none();

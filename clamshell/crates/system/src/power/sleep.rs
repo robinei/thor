@@ -143,14 +143,15 @@ fn user_cgroup() -> Option<PathBuf> {
 pub(crate) fn suspend() {
     let logind = |bus: &mut dbus::Bus, method: &str| bus.call::<(String,)>(LOGIN1, LOGIN1_PATH, MANAGER, method, ());
     let slept = dbus::Bus::system().and_then(|mut bus| {
-        let (method, interactive) = if logind(&mut bus, "CanSuspendThenHibernate")?.0 == "yes" {
+        let method = if logind(&mut bus, "CanSuspendThenHibernate")?.0 == "yes" {
             log::info!("sleep: suspend, then hibernate");
-            ("SuspendThenHibernate", false)
+            "SuspendThenHibernate"
         } else {
             log::info!("sleep: suspend");
-            ("Suspend", false)
+            "Suspend"
         };
-        bus.call::<()>(LOGIN1, LOGIN1_PATH, MANAGER, method, (interactive,))
+        // (Not interactive: no polkit question is asked for it.)
+        bus.call::<()>(LOGIN1, LOGIN1_PATH, MANAGER, method, (false,))
     });
     if let Err(e) = slept {
         log::warn!("sleep: {e}");

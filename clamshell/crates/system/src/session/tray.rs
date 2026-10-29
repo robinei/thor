@@ -490,7 +490,6 @@ mod tests {
         let nodes: Vec<Value> = message.read1().unwrap();
         let entries: Vec<TrayEntry> = nodes.iter().filter_map(|n| entry(n)).collect();
         assert_eq!(entries.iter().map(|e| e.label.as_str()).collect::<Vec<_>>(), ["Games", "Big Picture"]);
-        assert_eq!(entries.iter().map(|e| e.label.as_str()).collect::<Vec<_>>(), ["Games", "Big Picture"]);
         assert_eq!(entries[0].children[0].label, "Zelda");
         assert_eq!(entries[1].checked, Some(true));
     }

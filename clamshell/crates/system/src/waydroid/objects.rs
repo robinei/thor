@@ -1,5 +1,5 @@
 //! What the proxy reads of the protocol and what it changes. It reads the registry, `xdg_wm_base`, its
-//! surfaces and their toplevels (app id, size, activated). It drops toplevel configures of an unchanged
+//! surfaces and their toplevels (their size). It drops toplevel configures of an unchanged
 //! size and puts Android's caption out of sight.
 
 use std::collections::{HashMap, HashSet};
@@ -27,12 +27,8 @@ pub(super) const GET_TOPLEVEL: u16 = 1;
 
 pub(super) const SET_WINDOW_GEOMETRY: u16 = 3;
 
-/// xdg_toplevel: `set_app_id` (request), `configure` (event) and its `activated` state.
-pub(super) const SET_APP_ID: u16 = 3;
-
+/// xdg_toplevel: `configure` (event).
 pub(super) const CONFIGURE: u16 = 0;
-
-pub(super) const ACTIVATED: u32 = 4;
 
 /// How often the settings' files are read again.
 pub(super) const SETTINGS_EVERY: Duration = Duration::from_secs(1);
@@ -83,11 +79,9 @@ impl Settings {
 #[derive(Debug)]
 pub(super) struct Toplevel {
     xdg_surface: u32,
-    app_id: String,
     /// The size of the last configure passed on, as the compositor gave it. With none yet, the first
     /// configure goes through.
     size: Option<(i32, i32)>,
-    active: bool,
 }
 
 /// What the proxy knows of a connection's objects.
@@ -131,7 +125,7 @@ impl Objects {
             }
             GET_TOPLEVEL if self.xdg_surfaces.contains(&object) => {
                 if let Some(id) = word(0) {
-                    let t = Toplevel { xdg_surface: object, app_id: String::new(), size: None, active: false };
+                    let t = Toplevel { xdg_surface: object, size: None };
                     self.toplevels.insert(id, t);
                 }
             }
@@ -144,13 +138,6 @@ impl Objects {
                     && h > caption
                 {
                     return Pass::Replace(message(object, opcode, &ints(&[x, y + caption, w, h - caption])));
-                }
-            }
-            SET_APP_ID if self.toplevels.contains_key(&object) => {
-                let len = word(0).unwrap_or(0) as usize;
-                let app_id = args.get(4..4 + len.saturating_sub(1)).map(|b| String::from_utf8_lossy(b).into_owned()).unwrap_or_default();
-                if let Some(t) = self.toplevels.get_mut(&object) {
-                    t.app_id = app_id;
                 }
             }
             _ => {}
@@ -181,10 +168,6 @@ impl Objects {
         let (Some(w), Some(h)) = (int(0), int(1)) else {
             return Pass::Keep;
         };
-        // The states are an array: its length in bytes, then u32s.
-        let states_len = int(2).unwrap_or(0) as usize;
-        let states = args.get(12..12 + states_len).unwrap_or_default();
-        t.active = states.chunks_exact(4).any(|s| s.try_into().ok().map(u32::from_ne_bytes) == Some(ACTIVATED));
         if t.size == Some((w, h)) {
             return Pass::Drop;
         }
