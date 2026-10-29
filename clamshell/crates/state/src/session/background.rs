@@ -26,7 +26,7 @@
 
 use std::sync::Arc;
 
-use clamshell_library::{Entry, Library, RunnerOf};
+use clamshell_library::Library;
 
 use crate::Session;
 use crate::effect::Effect;
@@ -44,8 +44,6 @@ pub(crate) const GRACE: u64 = 10;
 #[derive(Debug, Default)]
 pub(crate) struct Background {
     entries: Pauses,
-    /// The runners whose entries are paused together, from the library.
-    runners: Vec<RunnerOf>,
     runner_pauses: Pauses,
 }
 
@@ -134,7 +132,7 @@ impl Pauses {
 
 impl Session {
     /// What entry or level `id` does while hidden ([`crate::settings::Setting::Background`]). If it is set
-    /// to Pauses games, the default, it is paused if it is a game (see [`Entry::is_game`]), or for a
+    /// to Pauses games, the default, it is paused if it is a game (see [`crate::Entry::is_game`]), or for a
     /// runner's level if all of the runner's entries are games, and runs otherwise. A game that minds,
     /// such as one played online, can be set to run.
     pub(crate) fn background_of(&self, id: &str, library: &Library, settings: &Settings) -> InBackground {
@@ -142,10 +140,7 @@ impl Session {
         let runner = entry.and_then(|g| g.runner.as_ref()).map(|r| &*r.key);
         let is_game = || match entry {
             Some(g) => g.is_game(),
-            None => {
-                let mut of_runner = library.entries().iter().filter(|g| g.runner.as_ref().is_some_and(|r| &*r.key == id)).peekable();
-                of_runner.peek().is_some() && of_runner.all(Entry::is_game)
-            }
+            None => library.runner(id).is_some_and(|r| r.all_games),
         };
         match settings.of_in(id, runner.as_slice()).choice::<InBackground>() {
             InBackground::PausesGames if is_game() => InBackground::Pauses,
@@ -190,23 +185,13 @@ impl Session {
         self.follow_runner_pauses(now, library, settings, out);
     }
 
-    /// The runners whose entries are paused together: those of the library's entries with a `pause`.
-    pub(crate) fn set_pausable_runners(&mut self, library: &Library) {
-        let runners = &mut self.background.runners;
-        runners.clear();
-        for r in library.entries().iter().filter_map(|g| g.runner.as_ref()).filter(|r| !r.pause.is_empty()) {
-            if !runners.iter().any(|o| o.key == r.key) {
-                runners.push(r.clone());
-            }
-        }
-    }
-
     /// Pauses each runner whose entries are paused together, when it is set to Pauses hidden and none of
     /// its entries has been shown for the grace period. None may be starting either, that is launched with
     /// no window yet, or still waiting for its unit, since paused it would never draw one. Resumes the runner as one is shown, or when its
     /// setting changes.
     fn follow_runner_pauses(&mut self, now: u64, library: &Library, settings: &Settings, out: &mut Out) {
-        for runner in &self.background.runners {
+        // The runners whose entries are paused together: those with a `pause`.
+        for runner in library.runners().iter().map(|r| &r.of).filter(|r| !r.pause.is_empty()) {
             let pauses = self.background_of(&runner.key, library, settings) == InBackground::Pauses;
             let of_runner = |r: &Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| o.key == runner.key);
             let shown = self.windows.iter().filter(|w| self.shown(w.id)).any(|w| self.running_of(w).is_some_and(of_runner));

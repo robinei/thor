@@ -1605,7 +1605,7 @@ The Fan tile is dimmed when the profile has no fan (GAP).
 | tabs | sync watches; `left_tab` closes the dock menu, releases levels, resets the time page, closes the battery menu | dock, levels, status | per tab; `leaving_the_tab_resets_it_to_its_main_page` |
 | profile (keymap) chosen/deleted/made own | queued `Event::Profile(kind, ProfileEvent)` → prefs, the kind's setting | settings | keymap tests |
 | device view, files, keymaps naming | queued `EditOnKeyboard` / editors | bottom | per area |
-| Library read | problems notice, the Library reload, pausable runners, runner keymaps, dock pins, FetchFirst | bottom, session, keymap, settings, dock | tests `new_library_problems_are_said_once`, `a_library_read_updates_the_runners_paused_together`, `a_library_read_while_fetching_asks_for_library_views_view_first_again`; the Library `listings_outlive_…`, `a_library_read_keeps_what_is_typed`; settings `a_runner_gets_its_keymap_once`; dock `pins_of_entries_gone_…` |
+| Library read | problems notice, the Library reload (with it the runners paused together), runner keymaps, dock pins, FetchFirst | bottom, session, keymap, settings, dock | tests `new_library_problems_are_said_once`, `a_library_read_updates_the_runners_paused_together`, `a_library_read_while_fetching_asks_for_library_views_view_first_again`; the Library `listings_outlive_…`, `a_library_read_keeps_what_is_typed`; settings `a_runner_gets_its_keymap_once`; dock `pins_of_entries_gone_…` |
 | battery tab quit | queued `Event::Entry` | session | `a_rows_menu_quits_…` |
 | any event | settle `follow_lists` | every scroll | `a_list_changed_by_any_event_…` |
 | battery warning | `Sys::battery_warning` returns it, `State::notify` takes it | notifications | status battery tests |

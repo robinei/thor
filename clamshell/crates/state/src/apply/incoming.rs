@@ -62,8 +62,7 @@ impl State {
     }
 
     /// The library was read again. New problems are reported once and the Library is reloaded. Then what
-    /// depends on its entries is updated: runners' pauses and keymaps, and pins of entries that are
-    /// gone. The Library's entries shown are asked for first again. A runner's keymap that ClamShell has
+    /// depends on its entries is updated: runners' keymaps, and pins of entries that are gone. The Library's entries shown are asked for first again. A runner's keymap that ClamShell has
     /// none of is a problem too.
     pub(crate) fn library_read(&mut self, mut library: Library, out: &mut Out) {
         for (key, preset) in &library.runner_keymaps {
@@ -81,7 +80,6 @@ impl State {
         if first {
             self.pointer.library_view_read(self.library_view.selected());
         }
-        self.session.set_pausable_runners(self.library_view.library());
         self.adopt_runner_keymaps(out);
         if self.dock.drop_gone(self.library_view.library(), &self.session) {
             out.effects.push(self.dock.save_effect());

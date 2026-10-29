@@ -270,7 +270,6 @@ impl State {
         if s.library_view.read() {
             s.dock.drop_gone_at_start(s.library_view.library(), &s.session);
         }
-        s.session.set_pausable_runners(s.library_view.library());
         s.pointer.focus_library_view(s.library_view.selected());
         if init.first_start {
             s.pointer.focus_on(Id::Setup(crate::SetupId::Password));

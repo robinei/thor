@@ -23,6 +23,7 @@ mod meta;
 mod runner;
 
 pub use entry::{BrowseKind, Browsed, BuiltinApp, DONE, Details, Entry, Launch, Playback, Tool, key_of};
+pub use index::Runner;
 pub use library::{Collection, Library, OwnTab};
 pub use meta::Meta;
 pub use plays::Plays;

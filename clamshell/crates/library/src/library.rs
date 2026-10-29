@@ -146,6 +146,16 @@ impl Library {
         self.entries.get(names.iter().filter_map(|name| self.index.desktop_file(&self.entries, name)).min()?)
     }
 
+    /// The runner with key `key`, if an entry has it.
+    pub fn runner(&self, key: &str) -> Option<&crate::Runner> {
+        self.index.runner(key)
+    }
+
+    /// The runners of its entries, by key.
+    pub fn runners(&self) -> &[crate::Runner] {
+        self.index.runners()
+    }
+
     /// Whether entry `id` is in it, or its source is away.
     pub fn has(&self, id: &str) -> bool {
         self.position(id).is_some() || self.away.iter().any(|p| id.starts_with(p.as_str()))

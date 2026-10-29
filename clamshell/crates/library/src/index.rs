@@ -13,7 +13,16 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::{Entry, ids};
+use crate::{Entry, RunnerOf, ids};
+
+/// A runner of the library's entries, and what they are.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Runner {
+    /// The runner, as the first of its entries has it.
+    pub of: RunnerOf,
+    /// Whether every entry it opens is a game ([`Entry::is_game`]).
+    pub all_games: bool,
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Index {
@@ -27,6 +36,8 @@ pub(crate) struct Index {
     files: Vec<(u64, usize)>,
     /// The desktop file name and `StartupWMClass` of each entry that has them, ASCII-lowercased.
     desktop: Vec<(u64, usize)>,
+    /// The runners of the entries, sorted by key.
+    runners: Vec<Runner>,
     /// In tests, every hash is the same, so that each lookup has to tell entries apart by comparing.
     #[cfg(test)]
     pub(crate) collide: bool,
@@ -48,6 +59,16 @@ impl Index {
                 let name = self.hash_lowercase(name);
                 self.desktop.push((name, i));
             }
+            if let Some(r) = &g.runner {
+                match self.runners.binary_search_by(|o| o.of.key.cmp(&r.key)) {
+                    Ok(at) => {
+                        if let Some(o) = self.runners.get_mut(at) {
+                            o.all_games &= g.is_game();
+                        }
+                    }
+                    Err(at) => self.runners.insert(at, Runner { of: r.clone(), all_games: g.is_game() }),
+                }
+            }
         }
         for pairs in [&mut self.keys, &mut self.files, &mut self.desktop] {
             pairs.sort_unstable();
@@ -62,6 +83,7 @@ impl Index {
         self.keys.clear();
         self.files.clear();
         self.desktop.clear();
+        self.runners.clear();
         self.stale = true;
     }
 
@@ -95,6 +117,16 @@ impl Index {
     /// The first slot of a desktop file named `name`, exactly.
     pub(crate) fn desktop_file(&self, entries: &[Entry], name: &str) -> Option<usize> {
         self.find(&self.desktop, self.hash_lowercase(name), entries, |g| ids::desktop_file(&g.id) == Some(name))
+    }
+
+    /// The runner with key `key`.
+    pub(crate) fn runner(&self, key: &str) -> Option<&Runner> {
+        self.runners().binary_search_by(|o| (*o.of.key).cmp(key)).ok().and_then(|at| self.runners.get(at))
+    }
+
+    pub(crate) fn runners(&self) -> &[Runner] {
+        debug_assert!(!self.stale, "the library's index is used after its entries changed");
+        &self.runners
     }
 
     /// The first slot among `pairs` with hash `hash` whose entry `matches`.
@@ -134,7 +166,8 @@ impl Index {
 mod tests {
     use std::path::Path;
 
-    use crate::{Browsed, Entry, Library, demo, ids};
+    use super::Runner;
+    use crate::{Browsed, Entry, Library, RunnerOf, demo, ids};
 
     /// Asserts that each lookup gives what scanning the entries in slot order gives, for each entry's
     /// facts and for some that no entry has.
@@ -162,6 +195,12 @@ mod tests {
             assert_eq!(slot(lib.entry_by_desktop(&name)), first(&named), "{name}");
             assert_eq!(slot(lib.entry_of_desktop_file(&[&name])), first(&|g| ids::desktop_file(&g.id) == Some(&name)), "{name}");
         }
+        for key in entries.iter().filter_map(|g| g.runner.as_ref()).map(|r| &*r.key).chain(misses) {
+            let of = |g: &&Entry| g.runner.as_ref().is_some_and(|r| &*r.key == key);
+            let runner = entries.iter().find(of).map(|g| Runner { of: g.runner.clone().unwrap(), all_games: entries.iter().filter(of).all(Entry::is_game) });
+            assert_eq!(lib.runner(key), runner.as_ref(), "{key}");
+        }
+        assert!(lib.runners().is_sorted_by(|a, b| a.of.key < b.of.key));
     }
 
     /// The demo library with entries that share facts: a key, a file, a desktop file name in other case
@@ -174,6 +213,11 @@ mod tests {
         entries.push(Entry { file: Some("/home/thor/notes.txt".into()), key: "notes".into(), ..Entry::new("notes:1", "Notes") });
         entries.push(Entry { file: Some("/home/thor/notes.txt".into()), key: "notes".into(), ..Entry::new("notes:2", "Notes again") });
         entries.push(Entry { file: Some("/home/thor/Pictures".into()), items: vec![0], ..Entry::new("folder:Pictures", "Pictures") });
+        let snes = RunnerOf::new("snes", "SNES", true);
+        entries.push(Entry { runner: Some(snes.clone()), ..Entry::new("snes:zelda", "Zelda") });
+        entries.push(Entry { runner: Some(snes.clone()), ..Entry::new("snes:mario", "Mario") });
+        entries.push(Entry { runner: Some(RunnerOf::new("mpv", "Videos", false)), app: true, ..Entry::new("mpv:film", "Film") });
+        entries.push(Entry { runner: Some(snes), app: true, ..Entry::new("snes:tool", "Tool") });
         lib.reindex();
         lib
     }
@@ -208,7 +252,10 @@ mod tests {
         let mut lib = demo::library();
         let home = lib.position("browse:Files/Home").unwrap();
         let listing = |names: &[&str]| names.iter().map(|n| browsed(&format!("browse:Files/Home/{n}"), !n.contains('.'))).collect::<Vec<_>>();
-        lib.set_listing(home, listing(&["Pictures", "Roms", "a.sfc", "b.txt"]));
+        let mut listed = listing(&["Pictures", "Roms", "a.sfc", "b.txt"]);
+        listed[2].runner = Some(RunnerOf::new("snes", "SNES", true));
+        lib.set_listing(home, listed);
+        assert!(lib.runner("runner:snes").is_some(), "a listing's runner");
         assert!(lib.index_is_current());
         agrees(&lib);
         let roms = lib.position("browse:Files/Home/Roms").unwrap();
