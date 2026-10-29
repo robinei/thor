@@ -1305,7 +1305,7 @@ Xwayland runs on demand behind one display socket, and ClamShell is its window m
 connection. Managed X11 windows reach the state as the same facts as Wayland ones; menus, tooltips and
 selections stay in the adapter. `tests/nested-compositor.py` drives real X11 clients (`examples/x11-client`,
 `x11-selection`, `x11-copy`) on the software and GPU hosts; its checks are named here by what they say. Test
-files: mod `x11/mod.rs`, transport `x11/transport.rs`, wm `x11/wm.rs`, properties `x11/properties.rs`,
+files: mod `x11/mod.rs`, transport `x11/transport.rs`, wm `x11/wm/`, properties `x11/properties.rs`,
 popup `tests/x11_popup_tests.rs`, send `x11/selection/send/tests.rs`, receive
 `x11/selection/receive/transfer/tests.rs`.
 
@@ -1352,7 +1352,7 @@ are outstanding: property queries wait for room, any other request past that sto
 | writing | the peer not reading | writing | WouldBlock keeps the bytes; past 1 MiB refused; 3 s: stopping | transport `full_write_buffers_keep_the_queue_bounded_and_still_return_to_the_loop` |
 | connected | 32,768 requests since the last reply | anchoring | GetSelectionOwner(WM_S0), so the 16-bit sequence can't wrap unanchored; the reply must name the WM | transport `sequence_anchors_follow_actual_traffic_across_wire_wrap`; the owner check: GAP |
 
-### X11 windows (x11/wm.rs, x11/properties.rs, x11/shell.rs)
+### X11 windows (x11/wm/, x11/properties.rs, x11/shell.rs)
 
 The WM follows the root's children it didn't create, at most 128; the client of one more is ended
 (KillClient). Each gets a model id never used again, so a late reply for a destroyed window can't change
@@ -1384,7 +1384,7 @@ The facts: properties `property_fixtures_translate_to_the_same_protocol_neutral_
 "XRes reports the app, not Xwayland", "fixed-size X11 content is centred on black", "X11 transient maps
 before its parent", "a transient stays centred even before its parent maps".
 
-### X11 focus (x11/wm.rs)
+### X11 focus (x11/wm/settle.rs)
 
 X11's focus follows the state's keyboard focus among open X11 windows, and is None when a Wayland window or
 nothing has it. The server ignores a focus request older than the last focus change, which an active client
@@ -1404,7 +1404,7 @@ Nested: "active X11 client receives a timestamped focus offer" (the fixture fail
 model's policy and key strokes, "no-input clients receive no keys", "Home removes X11 keyboard focus",
 "remapping restores X11 keyboard focus", "touching the bottom parent restores its keyboard focus".
 
-### X11 menus and tooltips (x11/menus.rs, popup.rs, surface.rs)
+### X11 menus and tooltips (x11/wm/menus.rs, popup.rs, surface.rs)
 
 Override-redirect windows are drawn as popups of a managed parent and never reach the state; a tooltip
 (_NET_WM_WINDOW_TYPE_TOOLTIP) takes no input. The owner is found by following WM_TRANSIENT_FOR through
